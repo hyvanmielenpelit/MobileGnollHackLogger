@@ -680,7 +680,13 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             .ToList());
         result.OwnWaitShare = CallTelemetryMeasures.OwnWaitShare(answers);
         result.FailedAnswers = answers.Count(a => a.Status != BenchmarkAnswerStatus.Ok);
-        result.ProviderErrors = answers.Count(a => a.Status == BenchmarkAnswerStatus.ProviderError);
+
+        // Provider-class candidate attempts and re-runs, from the rollup columns of the completed runs
+        // and their lineage predecessors.
+        var availability = await new BenchmarkProviderAvailabilityService(_db).CardForPoolAsync(runIds, ct);
+        result.ProviderErrors = availability.Recorded ? availability.ProviderErrors : null;
+        result.RerunsNeeded = availability.Recorded ? availability.RerunsNeeded : null;
+
         result.Retries = answers.Sum(a => CallTelemetryMeasures.CandidateCalls(a).Sum(c => Math.Max(0, c.AttemptCount - 1)));
 
         decimal? candidate = 0m;

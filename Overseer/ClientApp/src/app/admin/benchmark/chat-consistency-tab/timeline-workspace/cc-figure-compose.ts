@@ -31,6 +31,7 @@ import { FigureSizeSettings, resolveSizeDensity, resolveSizeResolution, sizeErro
 import { FigureAppearanceStyle, TimelineFigureStyle } from '../../model-comparison/figure-style';
 import { ResolvedFigureTheme } from '../../model-comparison/figure-theme';
 import {
+  CcAvailabilityForm,
   CcChartConfig,
   CcChartOptions,
   CcDecimalPlaces,
@@ -64,6 +65,8 @@ export interface CcComposeContext {
   readonly hiddenSeries: ReadonlySet<string>;
   readonly zeroBaseline: boolean;
   readonly decimals: CcDecimalPlaces;
+  /** The provider availability figure's form; the default when absent. */
+  readonly availabilityForm?: CcAvailabilityForm;
 }
 
 /**
@@ -78,6 +81,7 @@ const CC_FIGURE_DIRECTIONS: Readonly<Record<CcFigureKey, FigureDirection['y'] | 
   tools: null,
   cost: 'bottom',
   reliability: 'bottom',
+  availability: 'bottom',
   timeline: null
 };
 
@@ -93,6 +97,7 @@ export function ccComposedChartOptions(context: CcComposeContext): CcChartOption
     hiddenSeries: context.hiddenSeries,
     zeroBaseline: context.zeroBaseline,
     decimals: context.decimals,
+    ...(context.availabilityForm ? { availabilityForm: context.availabilityForm } : {}),
     style: {
       axisTextSizePx: timeline.axisTextSizePx,
       axisTitleSizePx: timeline.axisTitleSizePx,
@@ -118,8 +123,9 @@ export function buildComposedCcFigure(key: CcFigureKey, input: CcFigureInput, co
   return buildCcFigure(key, input, ccComposedChartOptions(context));
 }
 
-/** The points a figure draws with a value, counted once each. */
+/** The points a figure draws with a value, counted once each; the figure's own count where it gives one. */
 function plottedUnitCount(figure: CcFigure): number {
+  if (figure.plottedUnits !== undefined) return figure.plottedUnits;
   const ids = new Set<number>();
   for (const dataset of figure.config?.data.datasets ?? []) {
     for (const point of dataset.data) {
@@ -156,7 +162,8 @@ export function ccFigureChrome(figure: CcFigure, context: CcComposeContext): Fig
     { text: plural(count, context.unitNoun), tone: 'neutral' as const, kind: 'runs' as const },
     { text: context.datesLabel, tone: 'neutral' as const, kind: 'dates' as const }
   ].filter(badge => badge.text !== ''), timeline.hiddenBadges);
-  const better = CC_FIGURE_DIRECTIONS[figure.key];
+  // The strip's vertical axis holds its two measures, not a value.
+  const better = figure.availabilityForm === 'strip' ? null : CC_FIGURE_DIRECTIONS[figure.key];
   const notes: FigureNote[] = [];
   const markers = timeline.markerNote ? ccMarkerNoteText(figure) : '';
   if (markers) notes.push({ text: markers, tone: 'info' });

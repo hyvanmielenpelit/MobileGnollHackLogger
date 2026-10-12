@@ -30,6 +30,8 @@ import {
 import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { ModelIdentityComponent } from '../../../shared/model-identity/model-identity.component';
+import { ProviderErrorBadgeComponent } from '../shared/provider-availability/provider-error-badge.component';
+import { cardHasProviderTrouble } from '../shared/provider-availability/provider-availability';
 import type {
   BenchmarkBatteryRunDto,
   BenchmarkRunGroupDto,
@@ -295,7 +297,7 @@ function conditionHueClass(ordinal: number | null): string {
 @Component({
   selector: 'app-comparison-source-picker',
   standalone: true,
-  imports: [CommonModule, FormsModule, FilterFacetComponent, InfoTipComponent, ModelIdentityComponent],
+  imports: [CommonModule, FormsModule, FilterFacetComponent, InfoTipComponent, ModelIdentityComponent, ProviderErrorBadgeComponent],
   templateUrl: './comparison-source-picker.component.html',
   styleUrls: ['./comparison-source-picker.component.scss']
 })
@@ -1642,6 +1644,9 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
   formatIndex(value: number | null | undefined): string {
     return value == null || !Number.isFinite(value) ? '—' : value.toFixed(1);
   }
+
+  /** Whether a card's meta line ends in the provider-error badge (and the separator before it). */
+  readonly cardHasProviderTrouble = cardHasProviderTrouble;
 
   // ---------------------------------------------------------------------------------------------
   // Battery results

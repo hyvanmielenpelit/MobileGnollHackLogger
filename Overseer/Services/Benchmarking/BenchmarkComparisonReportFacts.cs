@@ -25,6 +25,9 @@ using Overseer.Models;
 //                                                  subject's name, provider and model id, the suite name, the
 //                                                  comparison facts and every fact comparing it with peers
 //                                                  are left out
+//   model.<L>.availability.*                       of the provider availability facts only the eight headline keys:
+//                                                  attempts, providerErrors, providerErrorRate with its Ci95Low and
+//                                                  Ci95High bounds, unattributedErrors, reruns and providerReruns
 //   model.<L>.quality.rank                         its joint rank among the covered models' Intelligence Indices
 //   model.<L>.speed.rank, model.<L>.cost.rank      its rank among the covered models not degraded on the axis
 //   model.<L>.frontier                             the Pareto frontiers it lies on
@@ -221,8 +224,9 @@ public static class BenchmarkComparisonReportFacts
 
     /// <summary>
     /// The sheet and content of a comparison of runs and analysis groups over the covered keys: each
-    /// model's per-model sheet over the covered models (<see cref="BenchmarkReportFacts.Build"/>) and
-    /// its content (<see cref="BenchmarkReportContent.Build"/>), then <see cref="Build"/>.
+    /// model's per-model sheet over the covered models (<see cref="BenchmarkReportFacts.Build"/>), with its
+    /// provider availability from <paramref name="availability"/> by entry key where given, and its
+    /// content (<see cref="BenchmarkReportContent.Build"/>), then <see cref="Build"/>.
     /// </summary>
     public static BenchmarkComparisonReportFactsResult BuildFromRuns(
         BenchmarkModelComparisonDto comparison,
@@ -232,7 +236,8 @@ public static class BenchmarkComparisonReportFacts
         BenchmarkPairedComparisonDto? referenceFamily = null,
         BenchmarkPairedComparisonDto? allPairsFamily = null,
         string? pairedTestsUnavailableReason = null,
-        int? comparisonId = null)
+        int? comparisonId = null,
+        IReadOnlyDictionary<string, ProviderAvailabilitySummary>? availability = null)
     {
         ArgumentNullException.ThrowIfNull(comparison);
         ArgumentNullException.ThrowIfNull(coveredKeys);
@@ -245,7 +250,13 @@ public static class BenchmarkComparisonReportFacts
         var entries = new List<BenchmarkComparisonReportEntry>();
         foreach (var entry in restricted.Entries)
         {
-            var built = BenchmarkReportFacts.Build(new BenchmarkReportFactsInput { Comparison = restricted, SubjectKey = entry.Key, Runs = runs });
+            var built = BenchmarkReportFacts.Build(new BenchmarkReportFactsInput
+            {
+                Comparison = restricted,
+                SubjectKey = entry.Key,
+                Runs = runs,
+                Availability = availability?.GetValueOrDefault(entry.Key)
+            });
             if (built.Sheet == null) return new BenchmarkComparisonReportFactsResult { Refusal = entry.Label + ": " + built.Refusal };
 
             var entryRuns = entry.RunIds.Where(runs.ContainsKey).Distinct().OrderBy(id => id).Select(id => runs[id]).ToList();
@@ -476,11 +487,15 @@ public static class BenchmarkComparisonReportFacts
     /// <summary>The prefix of a pair's facts: <c>pair.A.C.</c>, the earlier letter first.</summary>
     public static string PairPrefix(string first, string second) => "pair." + first + "." + second + ".";
 
-    /// <summary>Whether a per-model fact describes the subject alone and is copied under its letter.</summary>
+    /// <summary>
+    /// Whether a per-model fact describes the subject alone and is copied under its letter. Of the
+    /// provider availability facts only the headline keys are.
+    /// </summary>
     public static bool IsModelFact(string key)
         => !BenchmarkReportFacts.IsPeerFact(key)
            && !key.StartsWith("comparison.", StringComparison.Ordinal)
-           && key is not ("subject.label" or "subject.provider" or "subject.modelId" or "suite.name");
+           && key is not ("subject.label" or "subject.provider" or "subject.modelId" or "suite.name")
+           && (!key.StartsWith(BenchmarkReportFacts.AvailabilityPrefix, StringComparison.Ordinal) || BenchmarkReportFacts.IsAvailabilityHeadlineKey(key));
 
     /// <summary>A per-model fact key under a covered model's letter: <c>subject.runs</c> becomes <c>model.A.runs</c>.</summary>
     public static string ModelKey(string letter, string key)
@@ -1035,6 +1050,15 @@ public static class BenchmarkComparisonReportFacts
                 HarnessVersion = own.HarnessVersion,
                 FirstRunUtc = own.FirstRunUtc,
                 LastRunUtc = own.LastRunUtc,
+                ProviderAvailabilityRecorded = own.ProviderAvailabilityRecorded,
+                ProviderAttempts = own.ProviderAttempts,
+                ProviderErrors = own.ProviderErrors,
+                ProviderErrorRate = own.ProviderErrorRate,
+                ProviderErrorRateLow = own.ProviderErrorRateLow,
+                ProviderErrorRateHigh = own.ProviderErrorRateHigh,
+                ProviderUnattributedErrors = own.ProviderUnattributedErrors,
+                RerunsNeeded = own.RerunsNeeded,
+                ProviderRerunsNeeded = own.ProviderRerunsNeeded,
                 Extra = (own.Extra ?? new List<BenchmarkReportFact>()).Select(f => new BenchmarkReportFact
                 {
                     Key = f.Key,

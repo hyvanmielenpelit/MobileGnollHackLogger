@@ -6,6 +6,33 @@ using System.Linq;
 using System.Text.Json;
 using MobileGnollHackLogger.Data;
 
+/// <summary>
+/// Attempt counts by side, the four candidate rollups of <see cref="BenchmarkRun"/>: valid attempts
+/// (the denominator, outcome classes 0–21), the provider's failures (10–13), the unattributed ones
+/// (20–21) and our own (30–36), which are outside the denominator.
+/// </summary>
+public readonly record struct ProviderRollupCounts(int Valid, int Provider, int Unattributed, int OurSide)
+{
+    public bool IsZero => Valid == 0 && Provider == 0 && Unattributed == 0 && OurSide == 0;
+
+    public static ProviderRollupCounts Of(IEnumerable<ProviderAttemptOutcome> outcomes)
+        => Of(outcomes.Select(o => (o, 1)));
+
+    public static ProviderRollupCounts Of(IEnumerable<(ProviderAttemptOutcome Outcome, int Count)> outcomeCounts)
+    {
+        int valid = 0, provider = 0, unattributed = 0, ourSide = 0;
+        foreach (var (outcome, count) in outcomeCounts)
+        {
+            if (ProviderAttemptOutcomes.IsValid(outcome)) valid += count;
+            if (ProviderAttemptOutcomes.IsProvider(outcome)) provider += count;
+            if (ProviderAttemptOutcomes.IsUnattributed(outcome)) unattributed += count;
+            if (ProviderAttemptOutcomes.IsOurs(outcome)) ourSide += count;
+        }
+
+        return new ProviderRollupCounts(valid, provider, unattributed, ourSide);
+    }
+}
+
 public static class BenchmarkRunFinalizer
 {
     /// <summary>The length of <see cref="BenchmarkRun.ServedModelIdsJson"/>.</summary>
@@ -377,6 +404,30 @@ public static class BenchmarkRunFinalizer
         run.ServedModelIdsJson = run.CallTelemetryVersion == null
             ? null
             : BuildServedModelIdsJson(candidateCallCounts);
+    }
+
+    /// <summary>
+    /// Sets the four candidate attempt rollups of <see cref="BenchmarkRun"/> from the run's candidate
+    /// ledger rows, given as outcome and attempt count, over every pass. All four stay null, "not
+    /// recorded", on a run without <see cref="BenchmarkRun.ProviderLedgerVersion"/>.
+    /// </summary>
+    public static void ApplyProviderRollups(
+        BenchmarkRun run, IEnumerable<(ProviderAttemptOutcome Outcome, int Count)> candidateOutcomeCounts)
+    {
+        if (run.ProviderLedgerVersion == null)
+        {
+            run.CandidateValidAttemptCount = null;
+            run.CandidateProviderErrorCount = null;
+            run.CandidateUnattributedErrorCount = null;
+            run.CandidateOurSideFailureCount = null;
+            return;
+        }
+
+        var counts = ProviderRollupCounts.Of(candidateOutcomeCounts);
+        run.CandidateValidAttemptCount = counts.Valid;
+        run.CandidateProviderErrorCount = counts.Provider;
+        run.CandidateUnattributedErrorCount = counts.Unattributed;
+        run.CandidateOurSideFailureCount = counts.OurSide;
     }
 
     /// <summary>

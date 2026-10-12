@@ -63,6 +63,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkReportDocumentRun> BenchmarkReportDocumentRuns { get; set; } = null!;
         public DbSet<BenchmarkComparison> BenchmarkComparisons { get; set; } = null!;
         public DbSet<ModelCallTelemetry> ModelCallTelemetry { get; set; } = null!;
+        public DbSet<BenchmarkProviderAttempt> BenchmarkProviderAttempts { get; set; } = null!;
         public DbSet<ChatConsistencyAnalysis> ChatConsistencyAnalyses { get; set; } = null!;
         public DbSet<ChatConsistencyAnnotation> ChatConsistencyAnnotations { get; set; } = null!;
 
@@ -643,6 +644,19 @@ namespace MobileGnollHackLogger.Data
                 e.HasIndex(m => new { m.Source, m.Provider, m.RequestedModelId, m.StartedAtUtc });
                 e.HasOne(m => m.BenchmarkRunAnswer).WithMany(a => a.ModelCalls).HasForeignKey(m => m.BenchmarkRunAnswerId).OnDelete(DeleteBehavior.Cascade);
             });
+
+            // The provider attempt ledger is append-only and goes with its run only; the answer id is a plain
+            // indexed column so a row outlives an answer a later re-run replaced.
+            modelBuilder.Entity<BenchmarkProviderAttempt>(e =>
+            {
+                e.HasIndex(p => new { p.BenchmarkRunId, p.Source });
+                e.HasIndex(p => p.BenchmarkRunAnswerId);
+                e.HasIndex(p => p.StartedAtUtc);
+                e.HasOne(p => p.BenchmarkRun).WithMany().HasForeignKey(p => p.BenchmarkRunId).OnDelete(DeleteBehavior.Cascade);
+            });
+
+            // A replacement link is an indexed id, not a foreign key: a predecessor may be deleted.
+            modelBuilder.Entity<BenchmarkRun>().HasIndex(r => r.ReplacesRunId);
 
             modelBuilder.Entity<ChatConsistencyAnalysis>(e =>
             {

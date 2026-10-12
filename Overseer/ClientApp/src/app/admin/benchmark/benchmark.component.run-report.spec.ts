@@ -1556,7 +1556,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(keys).toEqual(component.shownKeyFigureKeys);
         expect(keys).toEqual([
           'intelligence', 'raw-quality', 'critical-errors', 'answered', 'speed', 'mean-time', 'panel',
-          'agreement', 'holistic', 'answer-duration', 'wall-time', 'model-cost', 'estimated-cost'
+          'agreement', 'holistic', 'answer-duration', 'wall-time', 'model-cost', 'estimated-cost', 'provider-errors'
         ]);
       });
 
@@ -1593,19 +1593,20 @@ describe('AdminBenchmarkComponent', () => {
         expect(chooser.matches(':modal')).toBe(true);
         const allKeys = [
           'intelligence', 'critical-errors', 'answered', 'speed', 'mean-time', 'holistic', 'answer-duration',
-          'wall-time', 'estimated-cost'
+          'wall-time', 'estimated-cost', 'provider-errors'
         ];
         const rows = Array.from(chooser.querySelectorAll('li[data-figure]')).map(li => li.getAttribute('data-figure'));
         expect(rows).toEqual(allKeys);
         expect(textOf(chooser.querySelector('li[data-figure="mean-time"] label'))).toBe('Mean Time per Question — 1.0 s');
         expect(textOf(chooser.querySelector('li[data-figure="critical-errors"] label'))).toBe('Critical Errors — 1');
         expect(textOf(chooser.querySelector('li[data-figure="answered"] label'))).toBe('Answered — 3 / 3');
-        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('9 of 9 selected');
+        expect(textOf(chooser.querySelector('li[data-figure="provider-errors"] label'))).toBe('Provider Errors — Not recorded');
+        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('10 of 10 selected');
 
         (chooser.querySelector('#kfch-speed') as HTMLInputElement).click();
         (chooser.querySelector('#kfch-estimated-cost') as HTMLInputElement).click();
         fixture.detectChanges();
-        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('7 of 9 selected');
+        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('8 of 10 selected');
 
         expect(JSON.parse(localStorage.getItem(KEY_FIGURES_STORAGE_KEY)!))
           .toEqual({ version: 1, excluded: ['speed', 'estimated-cost'] });
@@ -1616,7 +1617,8 @@ describe('AdminBenchmarkComponent', () => {
           expect(getComputedStyle(card).display, key).toBe('none');
         }
         expect(shownFigureKeys()).toEqual([
-          'intelligence', 'critical-errors', 'answered', 'mean-time', 'holistic', 'answer-duration', 'wall-time'
+          'intelligence', 'critical-errors', 'answered', 'mean-time', 'holistic', 'answer-duration', 'wall-time',
+          'provider-errors'
         ]);
 
         const closed = nextEvent(chooser, 'close');
@@ -1627,12 +1629,12 @@ describe('AdminBenchmarkComponent', () => {
         expect(chooser.open).toBe(false);
         expect(document.activeElement).toBe(choose);
         expect(reportDialog().open).toBe(true);
-        expect(textOf(choose)).toBe('Choose figures (7 of 9)');
-        expect(choose.getAttribute('aria-label')).toBe('Choose key figures for run 55, 7 of 9 selected');
+        expect(textOf(choose)).toBe('Choose figures (8 of 10)');
+        expect(choose.getAttribute('aria-label')).toBe('Choose key figures for run 55, 8 of 10 selected');
         expect(dialog().querySelector('#rr-figures-copy-btn')?.getAttribute('aria-label'))
-          .toBe('Copy key figures of run 55 as an image, 7 of 9 key figures');
+          .toBe('Copy key figures of run 55 as an image, 8 of 10 key figures');
         expect(dialog().querySelector('#rr-figures-download-btn')?.getAttribute('aria-label'))
-          .toBe('Download key figures of run 55 as a PNG image, 7 of 9 key figures');
+          .toBe('Download key figures of run 55 as a PNG image, 8 of 10 key figures');
 
         const save = vi.spyOn(keyFiguresImageIo, 'save').mockReturnValue(undefined);
         const handler = vi.spyOn(component, 'downloadKeyFigures');
@@ -1664,7 +1666,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(getComputedStyle(figures).display).toBe('none');
         expect(textOf(dialog().querySelector('.rr-figures-empty')))
           .toBe('No key figures are selected. Use Choose figures to show them.');
-        expect(textOf(choose)).toBe('Choose figures (0 of 9)');
+        expect(textOf(choose)).toBe('Choose figures (0 of 10)');
 
         (chooser.querySelector('#kfch-holistic') as HTMLInputElement).click();
         fixture.detectChanges();
@@ -1679,7 +1681,7 @@ describe('AdminBenchmarkComponent', () => {
 
         const others = [
           'intelligence', 'critical-errors', 'answered', 'speed', 'mean-time', 'answer-duration', 'wall-time',
-          'estimated-cost'
+          'estimated-cost', 'provider-errors'
         ];
         expect(document.activeElement).toBe(choose);
         expect(reportDialog().open).toBe(true);
@@ -1703,7 +1705,7 @@ describe('AdminBenchmarkComponent', () => {
 
         component.keyFigureExclusions = ['panel', 'holistic'];
         fixture.detectChanges();
-        expect(component.keyFiguresSelectionLabel).toBe('8 of 9');
+        expect(component.keyFiguresSelectionLabel).toBe('9 of 10');
         await clickAndSettle(dialog().querySelector('#rr-figures-copy-btn') as HTMLButtonElement, handler);
         expect(copy).toHaveBeenCalledTimes(1);
         expect(status()).toBe('Key figures copied as an image.');
@@ -1743,7 +1745,7 @@ describe('AdminBenchmarkComponent', () => {
         fixture.detectChanges();
         const chooser = dialog().querySelector('app-key-figures-chooser dialog') as HTMLDialogElement;
         expect(textOf(chooser.querySelector('.kfch-summary'))).toMatch(/^Downloads a PNG, about \d+ × \d+ px\.$/);
-        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('9 of 9 selected');
+        expect(textOf(chooser.querySelector('[role="status"]'))).toBe('10 of 10 selected');
 
         (chooser.querySelector('#kfch-fmt-format-webp') as HTMLInputElement).click();
         fixture.detectChanges();

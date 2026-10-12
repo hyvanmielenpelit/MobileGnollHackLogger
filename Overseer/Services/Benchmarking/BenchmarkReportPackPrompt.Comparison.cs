@@ -217,6 +217,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- When a model's response-style conflict fact is true, its completeness is its lowest dimension, well below its accuracy, and it answered under the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is. Where that model's completeness is discussed, say that it was graded under that style. Never say that the style caused the gap or a part of it: no run of this comparison compares response styles. Never present the gap as that model's failing alone either. Where the fact is true for several models, say it once for all of them, and never use it to explain a difference in completeness between models. Never call the style the benchmark's instruction or attribute it to a grader.");
         Line(sb, "- Mention a degraded state wherever a comparison depends on it.");
         Line(sb, "- Never re-grade an answer with your own judgment, and never invent a cause the data does not show.");
+        Line(sb, "- Report provider errors (a model's availability facts) only as provider errors observed in GnollBench runs, always with their denominator through that model's model.X.availability.providerErrors fact, which reads as a count of attempts, and never with a cause or an intent: never write that a provider throttled, limited or refused anything.");
         Line(sb);
     }
 

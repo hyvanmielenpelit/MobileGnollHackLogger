@@ -296,7 +296,7 @@ describe('ModelBatchProgressDialogComponent', () => {
     expect(done.querySelector('app-index-badge .index-badge-md')).not.toBeNull();
     expect(text('.mb-member-score-label', done)).toBe('Intelligence Index');
     expect(Array.from(done.querySelectorAll('.mb-member-figures dt')).map(dt => dt.textContent?.trim()))
-      .toEqual(['Median model time', 'TTFT P50', 'Cost / question', 'Total cost', 'Refuted claims']);
+      .toEqual(['Median model time', 'TTFT P50', 'Cost / question', 'Total cost', 'Refuted claims', 'Provider errors']);
     expect(text('.mb-member-figures', done)).toContain('$0.0042');
     expect(done.querySelector('.mb-member-index-withheld')).toBeNull();
     expect(text('.mb-member-ref', done)).toBe('Run #61');
@@ -320,15 +320,17 @@ describe('ModelBatchProgressDialogComponent', () => {
         result: {
           intelligenceIndex: 64, speedIndex: 71.4, medianModelTimeMs: 17200, ttftP50Ms: 1800,
           candidateCostPerQuestionUsd: 0.0042, totalCostUsd: 1.2, refutedClaims: 1, confirmedCriticalErrors: 0,
-          flaggedAnswers: 3, failedAnswers: 2, providerErrors: 0, retries: 0
+          flaggedAnswers: 3, failedAnswers: 2, providerErrors: 4, rerunsNeeded: 1, retries: 0
         }
       })]
     }));
     const done = card(100);
     expect(Array.from(done.querySelectorAll('.mb-member-figures dt')).map(dt => dt.textContent?.trim())).toEqual([
       'Speed Index', 'Duration', 'Median model time', 'TTFT P50', 'Cost / question', 'Total cost',
-      'Refuted claims', 'Flagged answers', 'Failed answers'
+      'Refuted claims', 'Flagged answers', 'Failed answers', 'Provider errors', 'Re-runs'
     ]);
+    expect(text('[data-figure="provider-errors"] dd', done)).toBe('4');
+    expect(text('[data-figure="reruns"] dd', done)).toBe('1');
     expect(text('[data-figure="speed-index"] dd', done)).toBe('71');
     expect(text('[data-figure="duration"] dd', done)).toBe('13m 40s');
     const failed = done.querySelector('[data-figure="failed-answers"] dd') as HTMLElement;

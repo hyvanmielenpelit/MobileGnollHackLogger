@@ -1,13 +1,13 @@
 ---
 name: server_chat_consistency
 description: >-
-  GnollBench Chat Consistency in Overseer: whether the Overseer chat stays as good, fast and cheap over
-  time with a given model, judged from GnollBench runs. Read before running or interpreting a chat
+  GnollBench Chat Consistency in Overseer: whether the Overseer chat stays as good, fast, cheap and
+  available over time with a given model, judged from GnollBench runs. Read before running or interpreting a chat
   consistency analysis, writing about the chat or a model getting slower, faster, worse or better,
   planning checkpoint or control runs, or classifying a new HarnessVersion in HarnessImpactLedger.
 ---
 
-# Chat Consistency: Is the Overseer Chat Still as Good, Fast and Cheap?
+# Chat Consistency: Is the Overseer Chat Still as Good, Fast, Cheap and Available?
 
 GnollBench is the user's name for the Overseer AI benchmark.
 
@@ -17,8 +17,9 @@ must not get wrong when it runs, reads or writes about an analysis.
 ## 1. What It Answers
 
 Whether the **Overseer chat with one model** — model, system prompt, tools and guides, corpora and
-agent loop together — changed between a baseline and a comparison period, on five pre-declared
-endpoints (Protocol V1):
+agent loop together — changed between a baseline and a comparison period, on the pre-declared primary
+endpoints of the analysis's **protocol**: **Protocol V1** has P1–P5; **Protocol V2** has P1–P6, and new
+analyses use it.
 
 | Id | Endpoint | Margin |
 |----|----------|--------|
@@ -27,9 +28,24 @@ endpoints (Protocol V1):
 | P3 | Answer streaming rate | ±10 % |
 | P4 | Work per turn (output tokens; *more* / *less work*, never better or worse) | ±15 % |
 | P5 | Cost per question (one price card for every run) | ±10 % |
+| P6 | Provider error rate (V2 only): candidate provider-class attempts ÷ valid attempts, stratified by time of week with `MinimumAttemptsPerStratum` 30 and the common strata fixed at the point estimate; lower is better | ±1.0 percentage point |
 
-α 0.05 with Holm across P1–P5; Benjamini–Hochberg within each secondary family. The evidence is
-**GnollBench runs only**: only a rubric-graded run can show a change of quality.
+α 0.05 with Holm across the protocol's primary endpoints (P1–P5 under V1, P1–P6 under V2);
+Benjamini–Hochberg within each secondary family. **V1 and V2 verdicts are not interchangeable**: a sixth
+endpoint changes Holm's adjustment of the other five, so cite the protocol with every verdict and never
+set a V1 verdict beside a V2 one. **Analyze again** keeps the stored analysis's protocol; only a new
+analysis is V2. The evidence is **GnollBench runs only**: only a rubric-graded run can show a change of
+quality.
+
+P6 counts what `docs/overseer/ai-benchmark-provider-availability.md` defines as provider errors: most
+HTTP 429s are **ours** (the providers document them as our limit) or **unattributed**, never the
+provider's; our billing, key, governor, network and question-budget failures are left out of the
+denominator. It reads every recorded run (harness 56 and later), and also, as **availability-only**
+units, the failed or canceled runs and superseded battery members inside a period's run range and the
+units' lineage predecessors — added by the server, never chosen. With no recorded unit in a period P6 is
+`notRecorded`. Word a P6 change as *more provider errors observed in GnollBench runs*, never as *the
+provider throttled*; its attribution row is R12, provider side, only when P6 is isolated and no
+`ProviderErrorAccounting` boundary lies in the span.
 
 P3 reads `CallTelemetryMeasures.AnswerStreamingRate`, which from harness 54 has no value for an answer
 whose final call's decode span is under 500 ms or whose rate is over 1,000 tokens/s — visible text that
@@ -49,8 +65,9 @@ changed is listed in the method document's § 16.
   sample, telemetry data and no relaxed pooling; **Indicated** is a decisive verdict missing any of
   those; **Not established** is inconclusive or not computable.
 - **Minimum sample**: P1, P4, P5 — at least 2 units per period on at least 2 UTC days and at least 20
-  paired items; P2, P3 — at least 3 units per period in one common time stratum. Fewer: at most
-  Indicated. A **unit** is a run, or, when the analysis compares within a battery (`AnalysisCodeVersion`
+  paired items; P2, P3 — at least 3 units per period in one common time stratum; P6 — at least 3 units
+  per period with attempts in one common stratum, a stratum being common at 30 valid attempts per period.
+  Fewer: at most Indicated. A **unit** is a run, or, when the analysis compares within a battery (`AnalysisCodeVersion`
   4, step 1's **Compare**), a **battery run**: its usable members are merged into one unit, so one
   battery run of two suites is one unit, never two, and the bootstrap and leave-one-out resample battery
   runs. A result is comparable only within one battery definition or one suite; a run-by-run analysis
@@ -83,7 +100,7 @@ changed is listed in the method document's § 16.
 
 ## 4. Sides, and Why Control Runs Matter
 
-Attribution (rules R1–R11) names a **side**: *ours*, *provider*, *infrastructure* or *undetermined*.
+Attribution (rules R1–R12) names a **side**: *ours*, *provider*, *infrastructure* or *undetermined*.
 A control run is another model's run under the **same Overseer build** (equal instrument fingerprint)
 on the same suite. With an event in the span:
 
@@ -174,7 +191,7 @@ comparison's first, else the comparison's first start — with `baselineEndUtc =
 **before/after presets** (*Before vs after an annotation*, *Before vs after an Overseer change*) take
 every eligible step-1 unit before the anchor against every one at or after it, with no window around
 the anchor: step 1's *First run* and *Last run* bound the scope. **Control runs** are other models' runs
-under the same build and serve attribution only, never the P1–P5 verdicts.
+under the same build and serve attribution only, never the primary verdicts.
 
 **Leaving runs out after looking at the timeline is detection too.** Step 1 of the wizard lets the
 operator mark a first and a last run and leave runs out; nothing stops dropping a run *because* it is an
@@ -208,6 +225,7 @@ Classify the new version from its changelog on `HarnessVersion` and `docs/overse
 | `Grading` | any grader prompt, rule, role, routing or detector |
 | `Scoring` | how grades become scores (a scoring method, a score rule) |
 | `CandidateAccounting` | how candidate tokens or cost are counted from what the provider reported |
+| `ProviderErrorAccounting` | what counts as a provider error: the attempt classifier, the retry policy, the request governor, or timeouts that change attribution (breaks P6's availability axis, never bridged; harness 56 carries it alone) |
 | `ReportingOnly` | reports, UI or storage alone — never combined with another flag |
 
 - **Conservatively**: a version that mixes kinds carries every flag that applies; a tool-output change

@@ -224,14 +224,13 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void HarnessVersion_IsFiftyFive()
+    public void HarnessVersion_IsFiftySix()
     {
-        // Harness 55: the SOURCE-CODE REFERENCES rule names source files and paths and leaves
-        // function, macro, constant and field names graded as usual; the report counts the source
-        // locations charged as missing; the claim verifier retries a provider error; the report
-        // says how to repeat a lost claim verification; and 'inverts' counts as a stated defect
-        // and a charge.
-        Assert.Equal("55", BenchmarkAssessmentPrompt.HarnessVersion);
+        // Harness 56: every candidate and grader provider attempt is recorded with its outcome
+        // class; answers ended by our own time budget, governor or network are Failed rather than
+        // ProviderError; the synthesis prompt lists Failed answers as excluded exactly as
+        // ProviderError answers; and re-run passes and replacement lineage are recorded.
+        Assert.Equal("56", BenchmarkAssessmentPrompt.HarnessVersion);
     }
 
     [Fact]
@@ -946,15 +945,39 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs55_ScoringMethodIs14()
+    public void Versions_HarnessIs56_ScoringMethodIs14()
     {
-        Assert.Equal("55", BenchmarkAssessmentPrompt.HarnessVersion);
+        Assert.Equal("56", BenchmarkAssessmentPrompt.HarnessVersion);
 
-        // Harness 55 rewords the SOURCE-CODE REFERENCES rule, adds the claim verifier's
-        // provider-error retry and widens the 'inverts' word lists, and changes report lines; the
-        // ACCURACY anchors, the weights and the level-to-points mapping do not change, so scoring
-        // method 14 stays.
+        // Harness 56 records every provider attempt, attributes terminal failures to the provider,
+        // to nobody or to our side, and lists Failed answers in the synthesis prompt exactly as
+        // ProviderError answers; the ACCURACY anchors, the weights and the level-to-points mapping
+        // do not change, so scoring method 14 stays.
         Assert.Equal(14, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+    }
+
+    [Fact]
+    public void BuildFinalSynthesisPrompt_AFailedAnswer_IsListedAsExcludedExactlyAsAProviderError()
+    {
+        BenchmarkPerQuestionVerdictSummary Summary(BenchmarkAnswerStatus status) => new()
+        {
+            OrderIndex = 1,
+            QuestionText = "Q?",
+            AccuracyLevel = 0,
+            CompletenessLevel = 0,
+            ConcisenessLevel = 0,
+            ReadabilityLevel = 0,
+            Status = status
+        };
+
+        string failed = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { Summary(BenchmarkAnswerStatus.Failed) });
+        string providerError = BenchmarkAssessmentPrompt.BuildFinalSynthesisPrompt("Suite", new[] { Summary(BenchmarkAnswerStatus.ProviderError) });
+
+        // An answer ended by our own question budget moved from ProviderError to Failed in harness
+        // 56; the synthesis grader must read it exactly as before.
+        Assert.Contains("Status: ProviderError (Excluded from scoring)", failed);
+        Assert.DoesNotContain("Levels: Acc=", failed);
+        Assert.Equal(providerError, failed);
     }
 
     [Fact]

@@ -84,6 +84,9 @@ describe('chat-consistency-report-charts', () => {
     expect(await ccReportChartSettingsHash(fewer)).not.toBe(hash);
     const smaller = { ...DEFAULTS, layout: { ...DEFAULTS.layout, [ExecutiveSummary]: { ...CC_DEFAULT_DOCUMENT_CHART_LAYOUT, labelPt: 7 } } };
     expect(await ccReportChartSettingsHash(smaller)).not.toBe(hash);
+    // The provider availability form draws cc5 differently.
+    expect(await ccReportChartSettingsHash(DEFAULTS, 'points')).toBe(hash);
+    expect(await ccReportChartSettingsHash(DEFAULTS, 'strip')).not.toBe(hash);
   });
 
   it('sizes a figure as Model Comparison does: its width\'s aspect, taller only where the frame leaves the plot too little', () => {
@@ -121,6 +124,23 @@ describe('chat-consistency-report-charts', () => {
   it('draws nothing for a figure without values', async () => {
     const empty: CcFigureInput = { points: [ccPoint(1, '2026-09-01T00:00:00Z', { qualityIndex: null })] };
     expect(await composeCcReportChart('cc1-quality', empty, 'a'.repeat(64), CC_DEFAULT_DOCUMENT_CHART_LAYOUT)).toBeNull();
+    // Runs before the provider attempt ledger give the provider availability figure nothing to draw.
+    expect(await composeCcReportChart('cc5-availability', input, 'a'.repeat(64), CC_DEFAULT_DOCUMENT_CHART_LAYOUT)).toBeNull();
+  });
+
+  it('draws the provider availability figure as points, with its caption', async () => {
+    const recorded: CcFigureInput = {
+      points: ccTimeline().points.map((point, i) => ({
+        ...point, availabilityRecorded: true, validAttemptCount: 400, providerErrorCount: i, providerErrorRate: i / 400
+      }))
+    };
+    const upload = await composeCcReportChart('cc5-availability', recorded, 'a'.repeat(64), CC_DEFAULT_DOCUMENT_CHART_LAYOUT);
+    expect(upload!.figureKey).toBe('cc5-availability');
+    expect(upload!.title).toBe('Provider availability');
+    expect(upload!.caption).toBe(buildCcFigure('availability', recorded).takeaway);
+    expect(upload!.caption.startsWith('The provider error rate ranged from 0 % to 1.3 % across 6 runs (15 of 2,400 attempts in all).')).toBe(true);
+    const strip = await composeCcReportChart('cc5-availability', recorded, 'a'.repeat(64), CC_DEFAULT_DOCUMENT_CHART_LAYOUT, 'strip');
+    expect(strip!.caption).toBe(buildCcFigure('availability', recorded, { availabilityForm: 'strip' }).takeaway);
   });
 
   describe('publishing', () => {

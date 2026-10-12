@@ -267,7 +267,8 @@ public sealed class BenchmarkReportPackPreparation
         {
             Comparison = comparison,
             SubjectKey = subject!.Key,
-            Runs = runsById
+            Runs = runsById,
+            Availability = await AvailabilityOfAsync(new BenchmarkProviderAvailabilityService(db), subject, ct)
         });
         if (facts.Sheet == null)
         {
@@ -348,7 +349,8 @@ public sealed class BenchmarkReportPackPreparation
             AnswerOutcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(db, subjectRunIds, withRefutedSentences: false, ct),
             AnswerExcerptChars = answerExcerptChars,
             DetailQuestionsPerSuite = detailQuestionsPerSuite,
-            MaxPromptChars = maxPromptChars
+            MaxPromptChars = maxPromptChars,
+            Availability = await AvailabilityOfAsync(new BenchmarkProviderAvailabilityService(db), subject, ct)
         });
         if (built.Sheet == null || built.Content == null)
         {
@@ -450,8 +452,14 @@ public sealed class BenchmarkReportPackPreparation
                 .Where(r => runIds.Contains(r.Id))
                 .OrderBy(r => r.Id)
                 .ToListAsync(ct);
+            var availabilityService = new BenchmarkProviderAvailabilityService(db);
+            var availability = new Dictionary<string, ProviderAvailabilitySummary>(StringComparer.Ordinal);
+            foreach (var entry in restricted.Entries)
+            {
+                availability[entry.Key] = await AvailabilityOfAsync(availabilityService, entry, ct);
+            }
             built = BenchmarkComparisonReportFacts.BuildFromRuns(
-                comparison, covered, runs.ToDictionary(r => r.Id), answerExcerptChars, reference, allPairs, pairedUnavailable, comparisonId);
+                comparison, covered, runs.ToDictionary(r => r.Id), answerExcerptChars, reference, allPairs, pairedUnavailable, comparisonId, availability);
         }
         if (built.Sheet == null || built.Content == null) return (null, built.Refusal ?? "The fact sheet could not be computed.");
         if (runs.Count == 0) return (null, "The covered models' runs no longer exist.");
@@ -545,6 +553,7 @@ public sealed class BenchmarkReportPackPreparation
             .ToListAsync(ct);
         var runsById = runs.ToDictionary(r => r.Id);
 
+        var availabilityService = new BenchmarkProviderAvailabilityService(db);
         var entries = new List<BenchmarkComparisonReportEntry>();
         foreach (var entry in restricted.Entries)
         {
@@ -558,7 +567,8 @@ public sealed class BenchmarkReportPackPreparation
                 AnswerOutcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(db, memberIds, withRefutedSentences: false, ct),
                 AnswerExcerptChars = answerExcerptChars,
                 DetailQuestionsPerSuite = detailQuestionsPerSuite,
-                MaxPromptChars = 0
+                MaxPromptChars = 0,
+                Availability = await AvailabilityOfAsync(availabilityService, entry, ct)
             });
             if (built.Sheet == null || built.Content == null)
             {
@@ -619,6 +629,21 @@ public sealed class BenchmarkReportPackPreparation
             .Select(k => long.TryParse(k.AsSpan(prefix.Length), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out long id) ? id : 0)
             .Where(id => id > 0)
             .ToList();
+
+    /// <summary>
+    /// An entry's provider availability, as the comparison computes it: a battery result's over every member
+    /// run of its battery run, superseded ones included, any other entry's over its runs; both with their
+    /// lineage predecessors.
+    /// </summary>
+    private static async Task<ProviderAvailabilitySummary> AvailabilityOfAsync(
+        BenchmarkProviderAvailabilityService service, BenchmarkModelComparisonEntryDto entry, CancellationToken ct)
+    {
+        if (entry.BatteryRunId is long batteryRunId && await service.ForBatteryRunAsync(batteryRunId, ct) is { } battery)
+        {
+            return battery.Pool.Summary;
+        }
+        return (await service.ForRunsAsync(entry.RunIds, ct)).Summary;
+    }
 
     /// <summary>A stand-in configuration carrying only the subject's provider and model id, for the compliance checks.</summary>
     public static SystemAiApiConfiguration SubjectIdentity(BenchmarkModelComparisonEntryDto subject)

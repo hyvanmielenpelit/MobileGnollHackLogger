@@ -36,6 +36,8 @@ public class BenchmarkServiceTests
     [InlineData("API Error: 503 - Service temporarily unavailable.", true, 503)]
     [InlineData("The requested monster could not be found in the database.", false, null)]
     [InlineData("Syntax error in user query.", false, null)]
+    [InlineData("API Error: 400 - prompt is too long: 205000 tokens > 200000", false, null)]
+    [InlineData("Request throttled: Rate limit cooldown active for Anthropic:system:503 (10.0s remaining), exceeding wait timeout of 5.0s.", false, null)]
     public void Classify_CorrectlyIdentifiesProviderErrors(string message, bool expectedIsProvider, int? expectedStatus)
     {
         var result = BenchmarkProviderErrorClassifier.Classify(message);
@@ -357,6 +359,12 @@ public class BenchmarkServiceTests
 
         var info4 = BenchmarkAssessmentFailure.Describe(null, null);
         Assert.Contains("Assessor response could not be parsed", info4.Message);
+
+        // The governor's own refusal is a failed call, not a provider error, whatever digits its key holds.
+        var info5 = BenchmarkAssessmentFailure.Describe("Request throttled: Timed out after 120.0s waiting for concurrent model slot on OpenAI:system:429.", null);
+        Assert.Contains("Assessor call failed: Request throttled:", info5.Message);
+        Assert.Null(info5.HttpStatus);
+        Assert.False(info5.IsProviderError);
     }
 
     [Fact]
@@ -2599,6 +2607,207 @@ public class BenchmarkServiceTests
         });
         Assert.Equal(230_000, live.TotalClaimVerificationLongContextInputTokens);
         Assert.Equal(6_000, live.TotalClaimVerificationLongContextCacheCreationTokens);
+    }
+
+    // --- Candidate failure attribution (harness 56) --------------------------------------------
+
+    private static readonly ProviderErrorClassification NotAProviderError = new(false, null, "Not a provider error");
+
+    /// <summary>A candidate turn whose single call ended on <paramref name="attempts"/>, the last of them terminal.</summary>
+    private static Overseer.Services.Agents.AgentRunResult TurnEndingOn(params ProviderAttemptOutcome[] attempts)
+    {
+        var call = new Overseer.Services.Agents.ModelCallRecord { Provider = "OpenAI", RequestedModelId = "gpt-6.1-sol" };
+        for (int i = 0; i < attempts.Length; i++)
+        {
+            call.Attempts.Add(new Overseer.Services.Agents.ProviderAttemptRecord { AttemptIndex = i, Outcome = attempts[i] });
+        }
+
+        var result = new Overseer.Services.Agents.AgentRunResult();
+        result.ModelCalls.Add(call);
+        if (attempts.Length > 0 && attempts[^1] != ProviderAttemptOutcome.Ok)
+        {
+            result.TerminalOutcome = attempts[^1];
+        }
+
+        return result;
+    }
+
+    private static BenchmarkService.CandidateOutcome Attribute(
+        Overseer.Services.Agents.AgentRunResult runResult,
+        bool recorded = true,
+        string? terminalError = "503 Unavailable. Max retries exceeded.",
+        ProviderErrorClassification? classification = null,
+        bool canceledByOperator = false,
+        bool operatorCanceled = false,
+        bool questionBudgetCanceled = false,
+        bool emptyAnswer = false)
+        => BenchmarkService.AttributeCandidateOutcome(
+            recorded, canceledByOperator, operatorCanceled, questionBudgetCanceled, terminalError,
+            classification ?? NotAProviderError, emptyAnswer, runResult);
+
+    [Theory]
+    [InlineData(ProviderAttemptOutcome.ProviderOverloaded, BenchmarkAnswerStatus.ProviderError, BenchmarkFailureOrigin.Provider)]
+    [InlineData(ProviderAttemptOutcome.ProviderServerError, BenchmarkAnswerStatus.ProviderError, BenchmarkFailureOrigin.Provider)]
+    [InlineData(ProviderAttemptOutcome.ProviderTimeout, BenchmarkAnswerStatus.ProviderError, BenchmarkFailureOrigin.Provider)]
+    [InlineData(ProviderAttemptOutcome.ProviderStreamFailure, BenchmarkAnswerStatus.ProviderError, BenchmarkFailureOrigin.Provider)]
+    [InlineData(ProviderAttemptOutcome.RateLimitUnattributed, BenchmarkAnswerStatus.ProviderError, BenchmarkFailureOrigin.Unattributed)]
+    [InlineData(ProviderAttemptOutcome.TransportUnattributed, BenchmarkAnswerStatus.ProviderError, BenchmarkFailureOrigin.Unattributed)]
+    [InlineData(ProviderAttemptOutcome.OurRateLimit, BenchmarkAnswerStatus.Failed, BenchmarkFailureOrigin.Ours)]
+    [InlineData(ProviderAttemptOutcome.OurBilling, BenchmarkAnswerStatus.Failed, BenchmarkFailureOrigin.Ours)]
+    [InlineData(ProviderAttemptOutcome.OurKey, BenchmarkAnswerStatus.Failed, BenchmarkFailureOrigin.Ours)]
+    [InlineData(ProviderAttemptOutcome.OurRequest, BenchmarkAnswerStatus.Failed, BenchmarkFailureOrigin.Ours)]
+    [InlineData(ProviderAttemptOutcome.OurThrottle, BenchmarkAnswerStatus.Failed, BenchmarkFailureOrigin.Ours)]
+    [InlineData(ProviderAttemptOutcome.OurNetwork, BenchmarkAnswerStatus.Failed, BenchmarkFailureOrigin.Ours)]
+    public void ARecordedTerminalFailure_IsAttributedToTheAttemptThatEndedIt(
+        ProviderAttemptOutcome terminal, BenchmarkAnswerStatus expectedStatus, BenchmarkFailureOrigin expectedOrigin)
+    {
+        // The classifier's verdict is overridden by the attempt record, whichever way it points.
+        var outcome = Attribute(
+            TurnEndingOn(ProviderAttemptOutcome.ProviderOverloaded, terminal),
+            classification: new ProviderErrorClassification(true, 503, "Provider error"));
+
+        Assert.Equal(expectedStatus, outcome.Status);
+        Assert.Equal(expectedOrigin, outcome.FailureOrigin);
+        Assert.Equal(terminal.ToString(), outcome.FailureKind);
+    }
+
+    [Fact]
+    public void OurQuestionBudget_IsAFailedAnswerOnOurSide()
+    {
+        var caught = Attribute(
+            TurnEndingOn(ProviderAttemptOutcome.OurCanceled),
+            terminalError: "Per-question timeout exceeded (600 s) after 3 model call(s) and 2 tool call(s); …",
+            questionBudgetCanceled: true);
+        Assert.Equal(new BenchmarkService.CandidateOutcome(
+            BenchmarkAnswerStatus.Failed, BenchmarkFailureOrigin.Ours, BenchmarkService.QuestionBudgetFailureKind), caught);
+
+        // The runner's own record of the budget cancel is enough, whatever the catch saw.
+        var turn = TurnEndingOn(ProviderAttemptOutcome.OurCanceled);
+        turn.TerminalQuestionBudgetCanceled = true;
+        var recorded = Attribute(turn, terminalError: "Request canceled.");
+        Assert.Equal(BenchmarkService.QuestionBudgetFailureKind, recorded.FailureKind);
+        Assert.Equal(BenchmarkAnswerStatus.Failed, recorded.Status);
+    }
+
+    [Theory]
+    [InlineData(false, BenchmarkAnswerStatus.Ok)]
+    [InlineData(true, BenchmarkAnswerStatus.EmptyAnswer)]
+    public void ARecordedAnswerThatDidNotFail_HasOriginNone(bool emptyAnswer, BenchmarkAnswerStatus expectedStatus)
+    {
+        // A failed attempt that was retried into a good answer leaves no failure on the answer.
+        var outcome = Attribute(
+            TurnEndingOn(ProviderAttemptOutcome.ProviderOverloaded, ProviderAttemptOutcome.Ok),
+            terminalError: null, emptyAnswer: emptyAnswer);
+
+        Assert.Equal(new BenchmarkService.CandidateOutcome(expectedStatus, BenchmarkFailureOrigin.None, null), outcome);
+    }
+
+    [Fact]
+    public void AnOperatorCancel_IsCanceled_OnEveryRun()
+    {
+        var recorded = Attribute(TurnEndingOn(ProviderAttemptOutcome.OurCanceled), canceledByOperator: true, operatorCanceled: true);
+        Assert.Equal(new BenchmarkService.CandidateOutcome(
+            BenchmarkAnswerStatus.Canceled, BenchmarkFailureOrigin.Ours, nameof(ProviderAttemptOutcome.OurCanceled)), recorded);
+
+        var unrecorded = Attribute(
+            TurnEndingOn(ProviderAttemptOutcome.OurCanceled), recorded: false, canceledByOperator: true, operatorCanceled: true);
+        Assert.Equal(new BenchmarkService.CandidateOutcome(BenchmarkAnswerStatus.Canceled, null, null), unrecorded);
+    }
+
+    [Fact]
+    public void AnOperatorCancelAfterAProviderError_KeepsTheProviderError()
+    {
+        // The cancel cut the retry that followed a 500; the 500 is what ended the answer.
+        var outcome = Attribute(
+            TurnEndingOn(ProviderAttemptOutcome.ProviderServerError, ProviderAttemptOutcome.OurCanceled),
+            operatorCanceled: true);
+
+        Assert.Equal(BenchmarkAnswerStatus.ProviderError, outcome.Status);
+        Assert.Equal(BenchmarkFailureOrigin.Provider, outcome.FailureOrigin);
+        Assert.Equal(nameof(ProviderAttemptOutcome.ProviderServerError), outcome.FailureKind);
+    }
+
+    [Theory]
+    [InlineData(503, ProviderAttemptOutcome.ProviderOverloaded, BenchmarkFailureOrigin.Provider)]
+    [InlineData(529, ProviderAttemptOutcome.ProviderOverloaded, BenchmarkFailureOrigin.Provider)]
+    [InlineData(500, ProviderAttemptOutcome.ProviderServerError, BenchmarkFailureOrigin.Provider)]
+    [InlineData(408, ProviderAttemptOutcome.ProviderTimeout, BenchmarkFailureOrigin.Provider)]
+    [InlineData(429, ProviderAttemptOutcome.RateLimitUnattributed, BenchmarkFailureOrigin.Unattributed)]
+    [InlineData(null, ProviderAttemptOutcome.TransportUnattributed, BenchmarkFailureOrigin.Unattributed)]
+    public void WithoutAFailedAttempt_TheClassifiersProviderVerdictIsMappedOntoAClass(
+        int? httpStatus, ProviderAttemptOutcome expectedKind, BenchmarkFailureOrigin expectedOrigin)
+    {
+        var outcome = Attribute(
+            new Overseer.Services.Agents.AgentRunResult(),
+            classification: new ProviderErrorClassification(true, httpStatus, "Provider error"));
+
+        Assert.Equal(BenchmarkAnswerStatus.ProviderError, outcome.Status);
+        Assert.Equal(expectedOrigin, outcome.FailureOrigin);
+        Assert.Equal(expectedKind.ToString(), outcome.FailureKind);
+    }
+
+    [Fact]
+    public void WithoutAFailedAttempt_AFailureTheClassifierDoesNotCallAProviderError_IsOurs()
+    {
+        // A delivery check that refused the request before any attempt, for one.
+        var outcome = Attribute(
+            new Overseer.Services.Agents.AgentRunResult(),
+            terminalError: "Harness delivery check failed: the board did not reach the candidate.");
+
+        Assert.Equal(new BenchmarkService.CandidateOutcome(BenchmarkAnswerStatus.Failed, BenchmarkFailureOrigin.Ours, null), outcome);
+    }
+
+    [Fact]
+    public void AnUnrecordedRun_KeepsTheClassifiersStatus_AndCarriesNoAttribution()
+    {
+        var turn = TurnEndingOn(ProviderAttemptOutcome.OurBilling);
+
+        var providerError = Attribute(turn, recorded: false, classification: new ProviderErrorClassification(true, 429, "Rate limited"));
+        Assert.Equal(new BenchmarkService.CandidateOutcome(BenchmarkAnswerStatus.ProviderError, null, null), providerError);
+
+        var failed = Attribute(turn, recorded: false);
+        Assert.Equal(new BenchmarkService.CandidateOutcome(BenchmarkAnswerStatus.Failed, null, null), failed);
+
+        var ok = Attribute(new Overseer.Services.Agents.AgentRunResult(), recorded: false, terminalError: null);
+        Assert.Equal(new BenchmarkService.CandidateOutcome(BenchmarkAnswerStatus.Ok, null, null), ok);
+    }
+
+    // --- Repair passes --------------------------------------------------------------------------
+
+    [Fact]
+    public void BeginRepairPass_CountsEveryPass_AndAProviderPassWhenAReExecutedAnswerLastFailedAtTheProvider()
+    {
+        var run = new BenchmarkRun { Id = 1 };
+
+        BenchmarkService.BeginRepairPass(run, new[]
+        {
+            new BenchmarkRunAnswer { Status = BenchmarkAnswerStatus.Failed, FailureOrigin = BenchmarkFailureOrigin.Ours },
+            new BenchmarkRunAnswer { Status = BenchmarkAnswerStatus.ProviderError, FailureOrigin = BenchmarkFailureOrigin.Unattributed }
+        });
+        Assert.Equal(1, run.RepairPassCount);
+        Assert.Equal(0, run.ProviderRepairPassCount);
+
+        BenchmarkService.BeginRepairPass(run, new[]
+        {
+            new BenchmarkRunAnswer { Status = BenchmarkAnswerStatus.ProviderError, FailureOrigin = BenchmarkFailureOrigin.Provider },
+            new BenchmarkRunAnswer { Status = BenchmarkAnswerStatus.Failed, FailureOrigin = BenchmarkFailureOrigin.Ours }
+        });
+        Assert.Equal(2, run.RepairPassCount);
+        Assert.Equal(1, run.ProviderRepairPassCount);
+
+        // An unrecorded answer carries no origin, so its pass is never provider-caused; a
+        // single-answer re-run of a good answer is still a pass.
+        BenchmarkService.BeginRepairPass(run, new[] { new BenchmarkRunAnswer { Status = BenchmarkAnswerStatus.ProviderError } });
+        BenchmarkService.BeginRepairPass(run, new[] { new BenchmarkRunAnswer { Status = BenchmarkAnswerStatus.Ok, FailureOrigin = BenchmarkFailureOrigin.None } });
+        Assert.Equal(4, run.RepairPassCount);
+        Assert.Equal(1, run.ProviderRepairPassCount);
+    }
+
+    [Fact]
+    public void RecordsProviderLedger_OnlyForTheCurrentLedgerVersion()
+    {
+        Assert.True(BenchmarkService.RecordsProviderLedger(new BenchmarkRun { ProviderLedgerVersion = BenchmarkService.CurrentProviderLedgerVersion }));
+        Assert.False(BenchmarkService.RecordsProviderLedger(new BenchmarkRun { ProviderLedgerVersion = null }));
     }
 }
 

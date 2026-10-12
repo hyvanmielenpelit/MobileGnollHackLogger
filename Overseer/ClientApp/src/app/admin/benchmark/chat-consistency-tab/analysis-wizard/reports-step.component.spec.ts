@@ -710,19 +710,22 @@ describe('CcReportsStepComponent', () => {
       fixture.detectChanges();
     };
 
-    it('offers the four figures for the four documents, with the sections, widths and the two layout fields', () => {
+    it('offers the five figures for the four documents, with the sections, widths and the two layout fields', () => {
       expect(textOf(el.querySelector('fieldset.cc-rep-charts-choice legend'))).toBe('Charts in PDF and Word');
       const pills = Array.from(picker().querySelectorAll<HTMLElement>('[role="tab"]'));
       expect(pills.map(item => textOf(item.querySelector('.rcp-tab-name')))).toEqual(['Executive', 'Researchers', 'Internal', 'Provider']);
-      expect(pills.map(item => textOf(item.querySelector('.rcp-tab-count')))).toEqual(['2', '4', '2', '—']);
+      expect(pills.map(item => textOf(item.querySelector('.rcp-tab-count')))).toEqual(['2', '5', '2', '—']);
       expect(textOf(pill(ProviderIssueReport).querySelector('.visually-hidden'))).toBe(', not chosen in New reports');
 
       const titles = Array.from(picker().querySelectorAll('.rcp-figure-title')).map(title => textOf(title));
-      expect(titles).toEqual(['Intelligence per run', 'Time to first answer text', 'Work per turn (output tokens per answer)', 'Runs and events']);
+      expect(titles).toEqual([
+        'Intelligence per run', 'Time to first answer text', 'Work per turn (output tokens per answer)', 'Runs and events', 'Provider availability'
+      ]);
       const sections = () => Array.from(picker().querySelectorAll('.rcp-placement')).map(section => textOf(section));
-      expect(sections()).toEqual(['Results', 'Results', 'Results', 'Results']);
+      expect(sections()).toEqual(['Results', 'Results', 'Results', 'Results', 'Results']);
       expect(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-cc1-quality-width`)!.value).toBe('half');
       expect(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-cc4-timeline-width`)!.value).toBe('twoThirds');
+      expect(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-cc5-availability-width`)!.value).toBe('half');
       expect(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-label`)!.value).toBe('8');
       expect(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-maxHeight`)!.value).toBe('50');
       for (const field of ['orientation', 'sideBySide', 'heading', 'logo', 'theme']) {
@@ -731,7 +734,7 @@ describe('CcReportsStepComponent', () => {
 
       pill(TechnicalReport).click();
       fixture.detectChanges();
-      expect(sections()).toEqual(['Results', 'Results', 'Results', 'Events']);
+      expect(sections()).toEqual(['Results', 'Results', 'Results', 'Events', 'Results']);
 
       pill(ProviderIssueReport).click();
       fixture.detectChanges();
@@ -846,6 +849,7 @@ describe('CcReportsStepComponent', () => {
       first.flush({ chartCount: 1, figureKeys: ['cc1-quality'] });
 
       const second = await waitForPut(502);
+      // Provider availability is chosen too, but the fixture's runs recorded no provider attempts, so it has nothing to draw.
       expect(keysOf(second)).toEqual(['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline']);
       expect(second.request.body.layout.figures).toEqual([
         { key: 'cc1-quality', widthShare: 0.5, rowGroup: 1 },

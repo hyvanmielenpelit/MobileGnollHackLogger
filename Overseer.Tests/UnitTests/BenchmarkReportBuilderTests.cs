@@ -4451,7 +4451,7 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
-    public void BuildMarkdownReport_ProviderErrorsCount_IncludesBothProviderErrorAndFailed()
+    public void BuildMarkdownReport_TerminalFailuresCount_IncludesBothProviderErrorAndFailed()
     {
         var ok = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90);
         var providerError = TerminalFailureAnswer(2, BenchmarkAnswerStatus.ProviderError, 503, "overloaded");
@@ -4473,8 +4473,118 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("**Provider Errors:** 2", report);
-        Assert.Contains("**Terminal provider failures:** 2", report);
+        // A run started before harness 56 records no failure origin.
+        Assert.Contains("- **Terminal failures:** 2 — *origin not recorded before harness 56*\n", report.Replace("\r\n", "\n"));
+        Assert.DoesNotContain("**Provider Errors:**", report);
+        Assert.DoesNotContain("**Terminal provider failures:**", report);
+        Assert.DoesNotContain("**Provider availability:**", report);
+
+        // An answer without an origin keeps its old wording; a Failed one prints its error, not an empty reply.
+        Assert.Contains("**Provider Error:** overloaded", report);
+        Assert.Contains("**Failed:** timed out", report);
+    }
+
+    /// <summary>A recorded run (harness 56) with one answer of each failure origin.</summary>
+    private static BenchmarkRun RecordedRunWithFailures()
+    {
+        var ok = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90);
+        var provider = TerminalFailureAnswer(2, BenchmarkAnswerStatus.ProviderError, 529, "Overloaded");
+        provider.FailureOrigin = BenchmarkFailureOrigin.Provider;
+        provider.FailureKind = nameof(ProviderAttemptOutcome.ProviderOverloaded);
+        var unattributed = TerminalFailureAnswer(3, BenchmarkAnswerStatus.ProviderError, 429, "429 Rate Limited. Max retries exceeded.");
+        unattributed.FailureOrigin = BenchmarkFailureOrigin.Unattributed;
+        unattributed.FailureKind = nameof(ProviderAttemptOutcome.RateLimitUnattributed);
+        var ours = TerminalFailureAnswer(4, BenchmarkAnswerStatus.Failed, null, "Per-question timeout exceeded (420 s).");
+        ours.FailureOrigin = BenchmarkFailureOrigin.Ours;
+        ours.FailureKind = "question_budget";
+
+        return new BenchmarkRun
+        {
+            Id = 63,
+            SuiteName = "Recorded Failure Suite",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
+            Status = BenchmarkRunStatus.CompletedWithErrors,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+            CompletedAtUtc = DateTime.UtcNow,
+            HarnessVersion = "56",
+            ProviderLedgerVersion = 1,
+            TotalQuestionCount = 4,
+            Answers = new List<BenchmarkRunAnswer> { ok, provider, unattributed, ours }
+        };
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_ARecordedRun_SplitsItsTerminalFailuresByOrigin_AndLabelsEachErrorLine()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(RecordedRunWithFailures()).Replace("\r\n", "\n");
+
+        Assert.Contains("- **Terminal failures:** 3 (provider 1 · unattributed 1 · our side 1)\n", report);
+        Assert.Contains("**Provider error (overloaded):** Overloaded", report);
+        Assert.Contains("**Unattributed error (rate limited):** 429 Rate Limited. Max retries exceeded.", report);
+        Assert.Contains("**Failed: our side (question time budget):** Per-question timeout exceeded (420 s).", report);
+        Assert.DoesNotContain("**Provider Error:**", report);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_WithAvailability_PrintsTheProviderAvailabilityLinesUnderRunIntegrity()
+    {
+        var availability = new ProviderAvailabilitySummary
+        {
+            Recorded = true,
+            RecordedRuns = 1,
+            TotalRuns = 1,
+            ValidAttempts = 1480,
+            ProviderErrors = 12,
+            UnattributedErrors = 3,
+            OurSideFailures = 5,
+            ProviderErrorRate = 12.0 / 1480,
+            ProviderErrorRateLow = 0.0046,
+            ProviderErrorRateHigh = 0.014,
+            InclusiveRate = 15.0 / 1480,
+            InclusiveRateLow = 0.006,
+            InclusiveRateHigh = 0.017,
+            Overloaded = 7,
+            ServerErrors = 4,
+            StreamFailures = 1,
+            RateLimitedOurs = 2,
+            RateLimitedUnattributed = 1,
+            TransportUnattributed = 2,
+            QuestionsLost = 1,
+            Calls = 400,
+            FirstAttemptSuccessCalls = 392,
+            RepairPasses = 2,
+            ProviderRepairPasses = 1,
+            ReplacementRuns = 1,
+            ProviderReplacementRuns = 1,
+            RerunsNeeded = 3,
+            ProviderRerunsNeeded = 2,
+            GraderValidAttempts = 900,
+            GraderProviderErrors = 2
+        };
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(RecordedRunWithFailures(), availability: availability).Replace("\r\n", "\n");
+
+        Assert.Contains("- **Terminal failures:** 3 (provider 1 · unattributed 1 · our side 1)\n"
+            + "- **Provider availability:** 0.81 % (12 of 1,480 attempts; 95 % CI 0.46–1.4 %) of the candidate's attempts failed at the provider", report);
+        Assert.Contains("  - **Upper bound including unattributed errors:** 1.0 % (15 of 1,480 attempts; 95 % CI 0.60–1.7 %) — 3 unattributed\n", report);
+        Assert.Contains("  - **By class:** overloaded 7 · server errors 4 · timeouts 0 · stream failures 1 · rate limited, unattributed 1 · transport, unattributed 2\n", report);
+        Assert.Contains("  - **Our-side failures (excluded):** 5, of them rate limited by our own limits 2\n", report);
+        Assert.Contains("  - **First-attempt success:** 98 % of 400 candidate calls\n", report);
+        Assert.Contains("  - **Questions lost to provider errors:** 1\n", report);
+        Assert.Contains("  - **Re-runs needed:** 3 re-runs (2 for provider errors), including 1 replaced run\n", report);
+        Assert.Contains("  - **Grader attempts (information only):** 2 provider errors in 900 valid attempts\n", report);
+        Assert.DoesNotContain("throttl", report, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildMarkdownReport_WithAnAvailabilityNotRecorded_SaysSoInOneLine()
+    {
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(RecordedRunWithFailures(), availability: ProviderAvailabilitySummary.NotRecorded(1))
+            .Replace("\r\n", "\n");
+
+        Assert.Contains("- **Provider availability:** not recorded before harness 56 — *this run kept no record of its API attempts*\n", report);
+        Assert.DoesNotContain("**By class:**", report);
     }
 
     [Fact]
@@ -7105,6 +7215,18 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain("Timing Decomposition", report);
         Assert.DoesNotContain("Time to First Answer Text", report);
         Assert.DoesNotContain("Own waits were", report);
+    }
+
+    [Fact]
+    public void TimingDecomposition_SplitsThe429s_IntoOursAndUnattributed_WhenTheLedgerIsRecorded()
+    {
+        var availability = new ProviderAvailabilitySummary { Recorded = true, RecordedRuns = 1, TotalRuns = 1, RateLimitedOurs = 2, RateLimitedUnattributed = 1 };
+
+        string recorded = BenchmarkReportBuilder.BuildMarkdownReport(TimingDecompositionRun(), availability: availability);
+        string notRecorded = BenchmarkReportBuilder.BuildMarkdownReport(TimingDecompositionRun(), availability: ProviderAvailabilitySummary.NotRecorded(1));
+
+        Assert.Contains("HTTP 429 ×2 (rate limits in the attempt ledger: ours ×2, unattributed ×1), HTTP 5xx ×1", recorded);
+        Assert.Contains("; 3 retried attempt(s); HTTP 429 ×2, HTTP 5xx ×1", notRecorded);
     }
 
     [Fact]

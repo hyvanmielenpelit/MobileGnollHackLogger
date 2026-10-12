@@ -14,6 +14,21 @@ public readonly record struct ModelCallLinks(
     long? SystemAiApiConfigurationId = null,
     ModelCallGraderRole? GraderRole = null);
 
+/// <summary>Where a model call's provider attempt ledger rows belong.</summary>
+/// <param name="BenchmarkRunId">The run; every ledger row has one.</param>
+/// <param name="BenchmarkRunAnswerId">The answer; null for a run-level call such as synthesis, or an answer not yet saved.</param>
+/// <param name="QuestionId">The question the answer was produced for; null for a run-level call.</param>
+/// <param name="SystemAiApiConfigurationId">The configuration that made the call; attribution only.</param>
+/// <param name="GraderRole">The grading role; null for a candidate call.</param>
+/// <param name="Pass">0 for the run's initial execution, n for its n-th repair pass.</param>
+public readonly record struct ProviderAttemptLinks(
+    long BenchmarkRunId,
+    long? BenchmarkRunAnswerId = null,
+    long? QuestionId = null,
+    long? SystemAiApiConfigurationId = null,
+    ModelCallGraderRole? GraderRole = null,
+    int Pass = 0);
+
 /// <summary>
 /// Turns the in-memory <see cref="ModelCallRecord"/>s of an agent run into
 /// <see cref="ModelCallTelemetry"/> rows, cutting every string to its column and every count to its
@@ -108,6 +123,52 @@ public static class ModelCallTelemetryWriter
     }
 
     /// <summary>
+    /// One <see cref="BenchmarkProviderAttempt"/> ledger row per attempt of <paramref name="record"/>, in
+    /// attempt order, at <paramref name="callIndex"/>. Strings are cut to their columns and the error
+    /// code is restricted to <c>[A-Za-z0-9_.-]</c> again, so a record that slipped past the runner's
+    /// sanitizer is stored rather than throwing at save time.
+    /// </summary>
+    public static List<BenchmarkProviderAttempt> MapAttempts(
+        ModelCallRecord record, int callIndex, ModelCallSource source, ProviderAttemptLinks links)
+    {
+        string provider = Cut(record.Provider, 32) ?? string.Empty;
+        string requestedModelId = Cut(record.RequestedModelId, 128) ?? string.Empty;
+        ModelCallGraderRole? graderRole = source == ModelCallSource.BenchmarkGrader ? links.GraderRole : null;
+
+        return record.Attempts
+            .Select(attempt => new BenchmarkProviderAttempt
+            {
+                BenchmarkRunId = links.BenchmarkRunId,
+                BenchmarkRunAnswerId = links.BenchmarkRunAnswerId,
+                QuestionId = links.QuestionId,
+                Source = source,
+                GraderRole = graderRole,
+                Provider = provider,
+                RequestedModelId = requestedModelId,
+                SystemAiApiConfigurationId = links.SystemAiApiConfigurationId,
+                EndpointKind = attempt.EndpointKind,
+                Pass = Math.Max(0, links.Pass),
+                CallIndex = callIndex,
+                AttemptIndex = ToByte(attempt.AttemptIndex),
+                StartedAtUtc = attempt.StartedAtUtc,
+                DurationMs = Math.Max(0, attempt.DurationMs),
+                Outcome = attempt.Outcome,
+                HttpStatus = attempt.HttpStatus is int status && status >= short.MinValue && status <= short.MaxValue
+                    ? (short)status
+                    : null,
+                ProviderErrorCode = SanitizeErrorCode(attempt.ProviderErrorCode),
+                Retried = attempt.Retried,
+                RetryAfterMs = attempt.RetryAfterMs is int retryAfter ? Math.Max(0, retryAfter) : null,
+            })
+            .ToList();
+    }
+
+    /// <summary>The ledger rows of every call of <paramref name="result"/>, each at its own <see cref="ModelCallRecord.CallIndex"/>.</summary>
+    public static List<BenchmarkProviderAttempt> MapAllAttempts(
+        AgentRunResult result, ModelCallSource source, ProviderAttemptLinks links) =>
+        result.ModelCalls.SelectMany(r => MapAttempts(r, r.CallIndex, source, links)).ToList();
+
+    /// <summary>
     /// The model id every call that reported one agrees on; null when none reported one or two
     /// disagree.
     /// </summary>
@@ -133,4 +194,22 @@ public static class ModelCallTelemetryWriter
         value == null || value.Length <= max ? value : value[..max];
 
     private static byte ToByte(int value) => (byte)Math.Clamp(value, 0, byte.MaxValue);
+
+    /// <summary>The characters <c>[A-Za-z0-9_.-]</c> of <paramref name="code"/>, at most 64; null when none remain.</summary>
+    internal static string? SanitizeErrorCode(string? code)
+    {
+        if (string.IsNullOrEmpty(code)) return null;
+
+        var kept = new System.Text.StringBuilder(Math.Min(code.Length, 64));
+        foreach (char c in code)
+        {
+            if (kept.Length == 64) break;
+            if (char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-')
+            {
+                kept.Append(c);
+            }
+        }
+
+        return kept.Length == 0 ? null : kept.ToString();
+    }
 }

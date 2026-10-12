@@ -28,6 +28,8 @@ import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils
 import { MAX_COMPARISON_SOURCES } from '../model-comparison/comparison-source-picker.component';
 import { RunFactBadge, runFactBadges } from '../run-report-frame/run-facts';
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
+import { providerErrorSortKey } from '../benchmark.models';
+import { NOT_RECORDED_TEXT, cardRateText } from '../shared/provider-availability/provider-availability';
 import {
   batteryRunStatusLabel,
   formatCost,
@@ -258,6 +260,18 @@ export class BatteryLeaderboardDialogComponent implements OnInit, OnDestroy {
   readonly formatNumber = formatNumber;
   readonly statusLabel = batteryRunStatusLabel;
 
+  /** The Provider errors cell: `0.81 % (12/1,480)`, `—` without valid attempts, or `Not recorded`. */
+  providerErrorsText(row: BenchmarkBatteryLeaderboardRowDto): string {
+    if (row.providerValidAttempts == null) {
+      return NOT_RECORDED_TEXT;
+    }
+    return cardRateText({
+      providerAvailabilityRecorded: true,
+      providerValidAttempts: row.providerValidAttempts,
+      providerErrorCount: row.providerErrorCount
+    }) ?? '—';
+  }
+
   request: BatteryLeaderboardOpenRequest | null = null;
   leaderboard: BenchmarkBatteryLeaderboardDto | null = null;
   classViews: LeaderboardClassView[] = [];
@@ -271,6 +285,8 @@ export class BatteryLeaderboardDialogComponent implements OnInit, OnDestroy {
     overallIndex: r => r.row.overallIndex ?? null,
     speed: r => r.row.overallSpeedIndex ?? null,
     passCost: r => r.row.passCost ?? null,
+    // Rate, then count; a battery run that does not record the ledger sorts last.
+    providerErrors: r => providerErrorSortKey(r.row.providerErrorRate, r.row.providerErrorCount),
     analyzed: r => (r.analyzedIso ? new Date(r.analyzedIso) : null)
   });
 

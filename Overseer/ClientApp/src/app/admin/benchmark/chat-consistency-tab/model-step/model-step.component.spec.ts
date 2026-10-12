@@ -381,8 +381,47 @@ describe('CcModelStepComponent', () => {
       expect(textOf(card(103).querySelector('.cc-elig-reason'))).toBe('Speed (telemetry): No call telemetry');
 
       const facts = Array.from(card(106).querySelectorAll('.cc-run-facts dt')).map(dt => textOf(dt));
-      expect(facts).toEqual(['Segment', 'Telemetry', 'Re-grade', 'Matched controls']);
+      expect(facts).toEqual(['Segment', 'Telemetry', 'Re-grade', 'Matched controls', 'Provider errors']);
       expect(textOf(card(106).querySelector('[data-fact="controls"] dd'))).toContain('#206');
+      // Before harness 56 a run records no provider attempts.
+      expect(textOf(card(106).querySelector('[data-fact="providerErrors"] dd'))).toBe('Not recorded');
+    });
+
+    it('shows a recorded run\'s provider errors with their count and re-runs', () => {
+      withModel(ccRunRows().map(row => row.runId === 106
+        ? { ...row, availabilityRecorded: true, validAttemptCount: 1480, providerErrorCount: 12, rerunsNeeded: 2, providerRerunsNeeded: 1 }
+        : row));
+      expect(textOf(card(106).querySelector('[data-fact="providerErrors"] dd')))
+        .toBe('0.81 % (12 of 1,480 attempts); 2 re-runs (1 for provider errors)');
+    });
+
+    it('lists a run kept for provider availability only, labeled, outside the selection and refusing the marks', () => {
+      const scopes = hostScope();
+      withModel([
+        ...ccRunRows(),
+        ccRunRow(107, '2026-10-02T08:00:00Z', {
+          status: 'failed', availabilityOnly: true, availabilityRecorded: true, validAttemptCount: 40, providerErrorCount: 8,
+          eligibility: [{ axis: 'quality', eligible: false, segment: null, reason: 'Failed or canceled: counted for provider availability only.' }]
+        })
+      ]);
+      expect(cardIds()).toContain('107');
+      expect(textOf(card(107).querySelector('.cc-availability-only-tag'))).toBe('Provider availability only (P6)');
+      expect(card(107).getAttribute('data-inclusion')).toBe('availabilityOnly');
+      expect(checkbox(107).checked).toBe(false);
+      expect(checkbox(107).getAttribute('aria-disabled')).toBe('true');
+      expect(textOf(el.querySelector('#cc-run-107-reason')))
+        .toBe('Provider availability only (P6): failed or canceled, its provider attempts still count');
+      expect(textOf(card(107).querySelector('[data-fact="providerErrors"] dd'))).toBe('20 % (8 of 40 attempts)');
+      // The selection counts the six usable runs only.
+      expect(textOf(el.querySelector('#cc-scope-label'))).toBe('Runs in the analysis — all 6 runs in these dates');
+
+      const first = card(107).querySelector<HTMLButtonElement>('.cc-first-btn')!;
+      expect(first.getAttribute('aria-disabled')).toBe('true');
+      first.click();
+      checkbox(107).click();
+      expect(scopes).toEqual([]);
+      expect(component.facets.find(facet => facet.column === 'inclusion')!.options)
+        .toContainEqual({ value: 'availabilityOnly', label: 'Provider availability only (P6)', count: 1 });
     });
 
     it('includes every run by default, with a named checkbox the title labels', () => {
@@ -719,6 +758,8 @@ describe('CcModelStepComponent', () => {
       twelve.querySelector<HTMLButtonElement>('.cc-battery-member[data-run-id="303"] .cc-open-report-btn')!.click();
       expect(batteryReports).toEqual([12]);
       expect(reports).toEqual([303]);
+      expect(textOf(twelve.querySelector('.cc-run-facts [data-fact="providerErrors"] dt'))).toBe('Provider errors');
+      expect(textOf(twelve.querySelector('[data-fact="providerErrors"] dd'))).toBe('Not recorded');
     });
 
     it('disables an incomplete battery run with its reason, and leaves it out of the analysis', () => {

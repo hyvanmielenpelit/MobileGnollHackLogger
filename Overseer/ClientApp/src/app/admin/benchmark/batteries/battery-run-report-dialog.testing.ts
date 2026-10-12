@@ -12,10 +12,13 @@ import {
   BenchmarkBatteryMemberDto,
   BenchmarkBatteryRunDto,
   BenchmarkBatterySlotDto,
+  BenchmarkBatteryMemberAvailabilityDto,
   BenchmarkPairComparisonDto,
   BenchmarkPairedMeasureDto,
-  BenchmarkRunDetailDto
+  BenchmarkRunDetailDto,
+  ProviderAvailabilityDto
 } from '../../../services/admin-benchmark.service';
+import { PROVIDER_AVAILABILITY_VIEW_STORAGE_KEY } from '../shared/provider-availability/provider-availability.component';
 import { SystemService } from '../../../services/system.service';
 import { BenchmarkDownloadCenterComponent } from '../download-center/benchmark-download-center.component';
 import {
@@ -130,6 +133,41 @@ export function batteryRun(overrides: Partial<BenchmarkBatteryRunDto> = {}): Ben
     analysisHasExcludedMembers: false,
     ...overrides
   });
+}
+
+/**
+ * Battery run #7's provider availability over both members: 99 valid attempts, 2 provider errors, one
+ * repair pass for provider errors. Not part of `batteryRun()`, whose Integrity tab stays legacy.
+ */
+export function providerAvailability(overrides: Partial<ProviderAvailabilityDto> = {}): ProviderAvailabilityDto {
+  return {
+    recorded: true, recordedRuns: 2, totalRuns: 2, replacedRunsIncluded: 0,
+    validAttempts: 99, providerErrors: 2, unattributedErrors: 0, ourSideFailures: 0,
+    providerErrorRate: 2 / 99, providerErrorRateLow: 0.0056, providerErrorRateHigh: 0.071, designEffect: 1,
+    inclusiveRate: 2 / 99, inclusiveRateLow: 0.0056, inclusiveRateHigh: 0.071, fewAttempts: true,
+    overloaded: 2, serverErrors: 0, timeouts: 0, streamFailures: 0, rateLimitedOurs: 0,
+    rateLimitedUnattributed: 0, transportUnattributed: 0,
+    byOutcome: [
+      { outcome: 'Ok', code: 0, side: 'ok', count: 97, httpStatuses: [200] },
+      { outcome: 'ProviderOverloaded', code: 10, side: 'provider', count: 2, httpStatuses: [529] }
+    ],
+    questionsLost: 0, calls: 97, firstAttemptSuccessCalls: 95, repairPasses: 1, providerRepairPasses: 1,
+    replacementRuns: 0, providerReplacementRuns: 0, rerunsNeeded: 1, providerRerunsNeeded: 1,
+    graderValidAttempts: 40, graderProviderErrors: 0,
+    bins: [{ startUtc: '2026-10-01T10:00:00Z', valid: 99, provider: 2, unattributed: 0, ours: 0 }],
+    replaces: [],
+    ...overrides
+  };
+}
+
+/** One member row of battery run #7's availability table. */
+export function availabilityMember(overrides: Partial<BenchmarkBatteryMemberAvailabilityDto> = {}): BenchmarkBatteryMemberAvailabilityDto {
+  return {
+    memberId: 1, runId: 101, suiteIndex: 0, round: 1, superseded: false, recorded: true,
+    validAttempts: 50, providerErrors: 2, unattributedErrors: 0, providerErrorRate: 0.04,
+    rerunsNeeded: 1, providerRerunsNeeded: 1,
+    ...overrides
+  };
 }
 
 export function profile(overrides: Partial<BenchmarkBatterySuiteProfile>): BenchmarkBatterySuiteProfile {
@@ -397,7 +435,8 @@ const STORAGE_KEYS = [
   BATTERY_RUN_REPORT_KEY_FIGURES_STORAGE_KEY,
   BATTERY_RUN_REPORT_IMAGE_DETAILS_STORAGE_KEY,
   KEY_FIGURES_EXPORT_STORAGE_KEY,
-  KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY
+  KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY,
+  PROVIDER_AVAILABILITY_VIEW_STORAGE_KEY
 ];
 
 export function clearBatteryRunReportStorage(): void {

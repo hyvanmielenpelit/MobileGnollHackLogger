@@ -20,16 +20,17 @@ using Overseer.Services.Telemetry;
 /// baseline and a comparison period, and which side does the change fit. Reads stored runs only; it
 /// makes no model call and spends nothing.
 ///
-/// <para>The steps, in order: evidence; events and segments; the five primary endpoints; Holm across
-/// them; verdicts, robustness checks and grades; attribution; minimum detectable effects; the scope
-/// statement; data quality; next-run suggestions; persistence of one <see cref="ChatConsistencyAnalysis"/>
-/// row. Fixed inputs give fixed results: every resampling is seeded from the protocol and every
-/// collection is ordered.</para>
+/// <para>The steps, in order: evidence; events and segments; the protocol's primary endpoints (P1–P5,
+/// and P6 under Protocol V2); Holm across them; verdicts, robustness checks and grades; attribution;
+/// minimum detectable effects; the scope statement; data quality; next-run suggestions; persistence of
+/// one <see cref="ChatConsistencyAnalysis"/> row. Fixed inputs give fixed results: every resampling is
+/// seeded from the protocol and every collection is ordered. Every endpoint loop iterates the
+/// analysis's own protocol, so a V1 analysis never reads P6.</para>
 ///
 /// <para>p-values. Item-paired endpoints (P1, P4, P5) use the Wilcoxon signed-rank test on the per-item
 /// differences of the period means, the primary paired test of <see cref="BenchmarkGroupStatistics.Compare"/>;
-/// their intervals come from the two-level run-then-item bootstrap. The stratified speed endpoints (P2,
-/// P3) use a run-cluster bootstrap p: twice the smaller of the shares of replicates at or below and at or
+/// their intervals come from the two-level run-then-item bootstrap. The stratified endpoints (P2, P3 and
+/// P6) use a run-cluster bootstrap p: twice the smaller of the shares of replicates at or below and at or
 /// above 0, each with one added to numerator and denominator, capped at 1.</para>
 ///
 /// <para>Units. The statistics count and resample units: a battery run in a battery set, whose member runs
@@ -39,7 +40,7 @@ using Overseer.Services.Telemetry;
 public class ChatConsistencyAnalysisService
 {
     /// <summary>The version of this analysis code; stored with every analysis.</summary>
-    public const int CurrentAnalysisCodeVersion = 7;
+    public const int CurrentAnalysisCodeVersion = 8;
 
     private const int MaxNameLength = 200;
     private const int MaxSubjectKeyLength = 512;
@@ -66,8 +67,11 @@ public class ChatConsistencyAnalysisService
     /// <summary>
     /// Runs the analysis and saves it. Refuses, with <see cref="ChatConsistencyRequestException"/>, a
     /// request whose periods are malformed or overlap, whose comparison set or battery run ids are
-    /// malformed, whose run selection is malformed or leaves out a selected run or battery run, or whose
-    /// periods hold no usable run of the subject. The run selection's bounds are taken as UTC.
+    /// malformed, whose run selection is malformed or leaves out a selected run or battery run, whose
+    /// protocol version is unknown, which re-analyzes an unknown analysis, or whose periods hold no usable
+    /// run of the subject. The run selection's bounds are taken as UTC. The protocol is the request's
+    /// version; without one, a re-analysis keeps the stored analysis's and a new analysis uses
+    /// <see cref="ChatConsistencyProtocol.Latest"/>.
     /// </summary>
     public async Task<ChatConsistencyAnalysisResult> AnalyzeAsync(ChatConsistencyAnalysisRequest request, CancellationToken ct = default)
     {
@@ -81,7 +85,8 @@ public class ChatConsistencyAnalysisService
             };
         }
 
-        var protocol = ChatConsistencyProtocol.V1.WithOverrides(request.ProtocolOverrides);
+        request = request with { ProtocolVersion = await ResolveProtocolVersionAsync(request, ct) };
+        var protocol = ChatConsistencyProtocol.ForVersion(request.ProtocolVersion).WithOverrides(request.ProtocolOverrides);
         var evidence = await _evidence.LoadAsync(request, ct);
         if (evidence.BaselineRuns.Count == 0)
         {
@@ -154,6 +159,35 @@ public class ChatConsistencyAnalysisService
     }
 
     /// <summary>
+    /// The protocol version an analysis of <paramref name="request"/> uses: the request's, normalized; else,
+    /// for a re-analysis, the stored analysis's (decision R13: "Analyze again" keeps the protocol); else
+    /// <see cref="ChatConsistencyProtocol.Latest"/>. Refuses an unknown version and an unknown analysis.
+    /// </summary>
+    private async Task<string> ResolveProtocolVersionAsync(ChatConsistencyAnalysisRequest request, CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(request.ProtocolVersion))
+        {
+            return ChatConsistencyProtocol.ForVersion(request.ProtocolVersion).ProtocolVersion;
+        }
+
+        if (request.ReanalysisOfAnalysisId is int id)
+        {
+            string? stored = await _db.ChatConsistencyAnalyses.AsNoTracking()
+                .Where(a => a.Id == id)
+                .Select(a => a.ProtocolVersion)
+                .FirstOrDefaultAsync(ct);
+            if (stored == null)
+            {
+                throw new ChatConsistencyRequestException("Analysis #" + Inv(id) + ", whose protocol a re-analysis keeps, was not found.");
+            }
+
+            return ChatConsistencyProtocol.ForVersion(stored).ProtocolVersion;
+        }
+
+        return ChatConsistencyProtocol.Latest.ProtocolVersion;
+    }
+
+    /// <summary>
     /// Whether saved analysis <paramref name="id"/> is out of date: saved under an earlier analysis code
     /// version, or its inputs changed since. The inputs are checked by repeating the stored request's evidence
     /// load and comparing the input fingerprint with the stored one; nothing is saved and no statistic is
@@ -190,8 +224,10 @@ public class ChatConsistencyAnalysisService
             {
                 try
                 {
-                    request = WithEndpointMarginKeys(request);
-                    var protocol = ChatConsistencyProtocol.V1.WithOverrides(request.ProtocolOverrides);
+                    // The stored analysis's protocol: a V2 analysis checked under V1 would always read as changed.
+                    var published = ChatConsistencyProtocol.ForVersion(row.ProtocolVersion);
+                    request = WithEndpointMarginKeys(request with { ProtocolVersion = request.ProtocolVersion ?? published.ProtocolVersion }, published);
+                    var protocol = published.WithOverrides(request.ProtocolOverrides);
                     var evidence = await _evidence.LoadAsync(request, ct);
                     changed = !string.Equals(ComputeInputSha256(request, protocol, evidence), row.InputSha256, StringComparison.Ordinal);
                 }
@@ -215,14 +251,14 @@ public class ChatConsistencyAnalysisService
     }
 
     /// <summary>
-    /// The stored request with its margin overrides keyed by endpoint id again: the result's JSON camelCases
-    /// dictionary keys (<c>p1</c>), and the protocol matches ids exactly (<c>P1</c>).
+    /// The stored request with its margin overrides keyed by <paramref name="protocol"/>'s endpoint ids again:
+    /// the result's JSON camelCases dictionary keys (<c>p1</c>), and the protocol matches ids exactly (<c>P1</c>).
     /// </summary>
-    private static ChatConsistencyAnalysisRequest WithEndpointMarginKeys(ChatConsistencyAnalysisRequest request)
+    private static ChatConsistencyAnalysisRequest WithEndpointMarginKeys(ChatConsistencyAnalysisRequest request, ChatConsistencyProtocol protocol)
     {
         if (request.ProtocolOverrides?.Margins is not { Count: > 0 } margins) return request;
 
-        var ids = ChatConsistencyProtocol.V1.Endpoints.Select(e => e.Id).ToList();
+        var ids = protocol.Endpoints.Select(e => e.Id).ToList();
         var keyed = margins.ToDictionary(
             p => ids.FirstOrDefault(id => string.Equals(id, p.Key, StringComparison.OrdinalIgnoreCase)) ?? p.Key,
             p => p.Value,
@@ -749,7 +785,13 @@ public class ChatConsistencyAnalysisService
         private readonly Dictionary<long, IReadOnlyDictionary<int, ChatConsistencyCalibrationVerdict>> _commonVerdicts = new();
         private ChatConsistencyCommonGrader? _commonGrader;
         private ComparabilityAssessment _assessment = new(Array.Empty<RunSegments>(), Array.Empty<MeasurementBoundary>(), Array.Empty<SpeedExclusion>());
+        private ComparabilityAssessment _availabilityAssessment = new(Array.Empty<RunSegments>(), Array.Empty<MeasurementBoundary>(), Array.Empty<SpeedExclusion>());
         private readonly Dictionary<string, EndpointWork> _work = new(StringComparer.Ordinal);
+        private readonly bool _availability;
+
+        // P6's units of each period before segment selection: the analyzed units with their availability-only runs.
+        private List<AnalysisUnit> _availabilityBaselineUnits = new();
+        private List<AnalysisUnit> _availabilityComparisonUnits = new();
         private int _seedOffset;
 
         public Engine(ChatConsistencyAnalysisRequest request, ChatConsistencyProtocol protocol, ChatConsistencyEvidence evidence)
@@ -762,9 +804,13 @@ public class ChatConsistencyAnalysisService
             _battery = evidence.UnitKind == ChatConsistencyComparisonSetKinds.BatteryRunUnit;
             _baselineUnits = UnitsOf(_baseline);
             _comparisonUnits = UnitsOf(_comparison);
+            _availability = protocol.Has(ChatConsistencyEndpointIds.ProviderErrorRate);
         }
 
         private int NextSeed() => unchecked(_protocol.BootstrapSeed + 7919 * _seedOffset++);
+
+        /// <summary>The protocol's endpoint ids that were set up, in protocol order: never an endpoint the protocol lacks.</summary>
+        private List<string> EndpointIds => _protocol.Endpoints.Select(e => e.Id).Where(_work.ContainsKey).ToList();
 
         // --- Units -----------------------------------------------------------------------------
 
@@ -832,6 +878,7 @@ public class ChatConsistencyAnalysisService
             // 1–2. Evidence, the common grader, events and segments.
             SelectCommonGrader();
             _assessment = _evidence.Assess(_commonGrader?.CoveredRunIds);
+            if (_availability) _availabilityAssessment = _evidence.AssessAvailability();
 
             // 3. Endpoints.
             ComputeQuality();
@@ -839,9 +886,10 @@ public class ChatConsistencyAnalysisService
             ComputeStreamingRate();
             ComputeWork();
             ComputeCost();
+            if (_availability) ComputeAvailability();
 
             // 4. Multiplicity: Holm across the primary endpoints that produced a p-value.
-            var tested = ChatConsistencyEndpointIds.All.Select(id => _work[id]).Where(w => w.Computed && w.PValue.HasValue).ToList();
+            var tested = EndpointIds.Select(id => _work[id]).Where(w => w.Computed && w.PValue.HasValue).ToList();
             var adjusted = ChatConsistencyStatistics.Holm(tested.Select(w => w.PValue!.Value).ToList());
             for (int i = 0; i < tested.Count; i++) tested[i].AdjustedPValue = adjusted[i];
 
@@ -853,7 +901,7 @@ public class ChatConsistencyAnalysisService
             var drift = ComputeGraderDrift();
             var grossP2 = ComputeGrossTimeToFirstAnswerText();
 
-            foreach (var id in ChatConsistencyEndpointIds.All)
+            foreach (var id in EndpointIds)
             {
                 var w = _work[id];
                 if (!w.Computed) continue;
@@ -871,11 +919,16 @@ public class ChatConsistencyAnalysisService
             var attribution = ChatConsistencyAttribution.Attribute(AttributionInput(served, scope, families, reliability, ownWaits, grossP2, controls));
 
             // 7–10. Scope, data quality, limitations, next runs, headline.
-            var endpoints = ChatConsistencyEndpointIds.All.Select(id => EndpointResult(_work[id])).ToList();
+            var endpoints = EndpointIds.Select(id => EndpointResult(_work[id])).ToList();
             AddDataQuality();
+            AddAvailabilityDataQuality(reliability);
             var nextRuns = NextRuns(controls);
-            var increases = reliability.Where(r => r.EstablishedIncrease).Select(r => r.Name + " up from "
-                + Percent(r.BaselineRate) + " to " + Percent(r.ComparisonRate)).ToList();
+
+            // Under V2 the attempt-level provider rates are left out: P6 states them.
+            var increases = reliability
+                .Where(r => r.EstablishedIncrease && !(_availability && AttemptRateIds.Contains(r.Id)))
+                .Select(r => r.Name + " up from " + Percent(r.BaselineRate) + " to " + Percent(r.ComparisonRate))
+                .ToList();
 
             var subject = _evidence.Subject;
             string headline = Headline(subject, endpoints, scope, increases);
@@ -1553,7 +1606,8 @@ public class ChatConsistencyAnalysisService
                 return;
             }
 
-            var (point, distribution) = ChatConsistencyResampling.StratifiedRunBootstrap(cb, cc, _protocol.BootstrapReplicates, NextSeed());
+            var (point, distribution) = ChatConsistencyResampling.StratifiedRunBootstrap(
+                cb, cc, BootstrapStatistic.HodgesLehmann, _protocol.BootstrapReplicates, NextSeed());
             if (!point.Shift.HasValue || distribution == null || distribution.Replicates.Count == 0)
             {
                 NotComputed(w, "The periods share no time-of-week stratum, so their times cannot be compared on common support.",
@@ -1636,7 +1690,8 @@ public class ChatConsistencyAnalysisService
 
             var (cb, cc, items) = Center(SpeedUnits(net.BaselineUnits, gross), SpeedUnits(net.ComparisonUnits, gross));
             if (items == 0) return null;
-            var (point, distribution) = ChatConsistencyResampling.StratifiedRunBootstrap(cb, cc, _protocol.BootstrapReplicates, NextSeed());
+            var (point, distribution) = ChatConsistencyResampling.StratifiedRunBootstrap(
+                cb, cc, BootstrapStatistic.HodgesLehmann, _protocol.BootstrapReplicates, NextSeed());
             if (!point.Shift.HasValue || distribution == null || distribution.Replicates.Count == 0) return null;
 
             double p = ChatConsistencyResampling.BootstrapPValue(distribution);
@@ -1652,6 +1707,289 @@ public class ChatConsistencyAnalysisService
                 Method = "as P2, without subtracting permit and retry-backoff waits; unadjusted p",
                 ItemCount = items,
                 Verdict = verdict
+            };
+        }
+
+        // --- Provider availability (P6, Protocol V2) -------------------------------------------
+
+        /// <summary>
+        /// The units of <paramref name="period"/> P6 reads: the analyzed units, a battery unit with its failed or
+        /// superseded members, and in a run-by-run or suite analysis each availability-only run as a unit of its
+        /// own; ordered by start, then id.
+        /// </summary>
+        private List<AnalysisUnit> AvailabilityUnitsOf(string period, List<AnalysisUnit> units)
+        {
+            var extra = _evidence.AvailabilityRuns.Where(a => a.Period == period).ToList();
+            if (_battery)
+            {
+                return units.Select(u =>
+                {
+                    var members = extra.Where(a => a.UnitId == u.Id).Select(a => a.Run).Where(r => u.Members.All(m => m.Id != r.Id)).ToList();
+                    return members.Count == 0 ? u : u with { Members = u.Members.Concat(members).ToList() };
+                }).ToList();
+            }
+
+            var own = units.SelectMany(u => u.Members).Select(r => r.Id).ToHashSet();
+            return units
+                .Concat(extra.Where(a => !own.Contains(a.Run.Id)).Select(a => new AnalysisUnit(a.Run.Id, a.Run.StartedAtUtc, new[] { a.Run })))
+                .OrderBy(u => ChatConsistencyMeasures.AsUtc(u.StartedAtUtc))
+                .ThenBy(u => u.Id)
+                .ToList();
+        }
+
+        /// <summary>The valid candidate attempts of each unit as 0/100 observations by the stratum of their start.</summary>
+        private List<IReadOnlyList<StratifiedObservation>> AttemptObservations(List<AnalysisUnit> units)
+            => units.Select(u => (IReadOnlyList<StratifiedObservation>)ChatConsistencyAvailability.Observations(u.Members, _evidence.Attempts)).ToList();
+
+        /// <summary>
+        /// P6: the stratified difference of provider error rates in percentage points. Each valid candidate
+        /// attempt is a 0/100 observation in the time stratum of its start; a stratum is common when each
+        /// period has at least <see cref="ChatConsistencyProtocol.MinimumAttemptsPerStratum"/> valid attempts
+        /// in it; the effect is the equal-weight mean of the per-stratum differences of means over the common
+        /// strata, fixed at the point estimate for every replicate of the run-cluster bootstrap.
+        /// </summary>
+        private void ComputeAvailability()
+        {
+            var p = _protocol.Endpoint(ChatConsistencyEndpointIds.ProviderErrorRate);
+            var w = new EndpointWork(p) { LogScale = false, Statistic = BootstrapStatistic.Mean };
+            _work[p.Id] = w;
+
+            _availabilityBaselineUnits = AvailabilityUnitsOf("baseline", _baselineUnits);
+            _availabilityComparisonUnits = AvailabilityUnitsOf("comparison", _comparisonUnits);
+
+            static bool Recorded(AnalysisUnit u) => u.Members.Any(ChatConsistencyAvailability.IsRecorded);
+            bool baselineRecorded = _availabilityBaselineUnits.Any(Recorded);
+            bool comparisonRecorded = _availabilityComparisonUnits.Any(Recorded);
+            if (!baselineRecorded || !comparisonRecorded)
+            {
+                string period = !baselineRecorded ? "baseline" : "comparison";
+                NotComputed(w, "No " + UnitNoun + " of the " + period + " period recorded provider attempts; the attempt ledger starts with harness 56.",
+                    ChatConsistencyNotComputedKinds.NotRecorded);
+                return;
+            }
+
+            var (b, c, pooled, refusal, kind) = SelectAvailabilityUnits(_availabilityBaselineUnits, _availabilityComparisonUnits, p.Name);
+            if (refusal != null)
+            {
+                NotComputed(w, refusal, kind ?? ChatConsistencyNotComputedKinds.Other);
+                return;
+            }
+
+            AvailabilityStratified(w, b, c, pooled);
+        }
+
+        /// <summary>
+        /// <see cref="SelectBatteryUnits"/> on the availability axis for P6's units, run units and battery units
+        /// alike: a unit is usable when every member recorded provider attempts, and is kept only when every
+        /// member lies in the chosen segment, the latest both periods share. A battery run that loses a member
+        /// either way is left out whole with a <c>segment</c> note.
+        /// </summary>
+        private (List<AnalysisUnit> Baseline, List<AnalysisUnit> Comparison, bool Pooled, string? Refusal, string? RefusalKind) SelectAvailabilityUnits(
+            List<AnalysisUnit> baseline, List<AnalysisUnit> comparison, string endpointName)
+        {
+            const ChatConsistencyAxis axis = ChatConsistencyAxis.Availability;
+            int? Segment(BenchmarkRun r) => _availabilityAssessment.RunOf(r.Id)?.SegmentOf(axis);
+
+            List<AnalysisUnit> Usable(List<AnalysisUnit> units)
+            {
+                var kept = new List<AnalysisUnit>();
+                foreach (var u in units)
+                {
+                    var unusable = u.Members.Where(r => !Segment(r).HasValue).ToList();
+                    if (unusable.Count == 0)
+                    {
+                        kept.Add(u);
+                    }
+                    else if (unusable.Count < u.Members.Count)
+                    {
+                        _dataQuality.Add(Note("segment", endpointName + ": battery run #" + Inv(u.Id) + " was left out: its "
+                            + MemberPhrase(unusable) + " not usable for this endpoint."));
+                    }
+                }
+
+                return kept;
+            }
+
+            var b = Usable(baseline);
+            var c = Usable(comparison);
+            if (b.Count == 0 || c.Count == 0)
+            {
+                string period = b.Count == 0 ? "baseline" : "comparison";
+                return (b, c, false, "No " + UnitNoun + " of the " + period + " period is usable for " + endpointName.ToLowerInvariant() + ".",
+                    ChatConsistencyNotComputedKinds.NotRecorded);
+            }
+
+            int? UnitSegment(AnalysisUnit u)
+            {
+                var segments = u.Members.Select(r => Segment(r)!.Value).Distinct().ToList();
+                return segments.Count == 1 ? segments[0] : null;
+            }
+
+            var sb = b.SelectMany(u => u.Members).Select(r => Segment(r)!.Value).Distinct().ToList();
+            var sc = c.SelectMany(u => u.Members).Select(r => Segment(r)!.Value).Distinct().ToList();
+            if (sb.Count == 1 && sc.Count == 1 && sb[0] == sc[0]) return (b, c, false, null, null);
+
+            if (_request.RelaxedPooling) return (b, c, true, null, null);
+
+            var common = b.Select(UnitSegment).Where(s => s.HasValue).Select(s => s!.Value)
+                .Intersect(c.Select(UnitSegment).Where(s => s.HasValue).Select(s => s!.Value))
+                .ToList();
+            if (common.Count > 0)
+            {
+                int segment = common.Max();
+                var dropped = b.Concat(c).Where(u => UnitSegment(u) != segment).ToList();
+                if (_battery)
+                {
+                    foreach (var u in dropped)
+                    {
+                        var outside = u.Members.Where(r => Segment(r) != segment).ToList();
+                        _dataQuality.Add(Note("segment", endpointName + ": battery run #" + Inv(u.Id) + " was left out: its "
+                            + MemberPhrase(outside) + " outside the measurement segment; the comparison uses the latest measurement segment "
+                            + "both periods share."));
+                    }
+                }
+                else if (dropped.Count > 0)
+                {
+                    _dataQuality.Add(Note("segment",
+                        endpointName + ": runs " + string.Join(", ", dropped.Select(u => "#" + Inv(u.Id))) + " were measured differently from the rest and were left out; "
+                        + "the comparison uses the latest measurement segment both periods share."));
+                }
+
+                return (b.Where(u => UnitSegment(u) == segment).ToList(), c.Where(u => UnitSegment(u) == segment).ToList(), false, null, null);
+            }
+
+            var reasons = _availabilityAssessment.Boundaries
+                .Where(x => !x.Bridged && x.Axes.Contains(axis) && x.SubjectKey == _evidence.SubjectKey)
+                .Select(x => x.Reason.Trim().TrimEnd('.').TrimEnd())
+                .Where(x => x.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            return (b, c, false, "The measurement of " + endpointName.ToLowerInvariant() + " changed between the periods"
+                + (reasons.Count > 0 ? " (" + string.Join("; ", reasons) + ")" : string.Empty) + ". Choose relaxed pooling to pool across the change.",
+                ChatConsistencyNotComputedKinds.MeasurementChanged);
+        }
+
+        /// <summary>The stratified P6 point over fixed <paramref name="strata"/>; null when a period lacks one.</summary>
+        private static double? AvailabilityPoint(
+            List<IReadOnlyList<StratifiedObservation>> b, List<IReadOnlyList<StratifiedObservation>> c, IReadOnlyCollection<int> strata)
+            => ChatConsistencyStatistics.StratifiedShift(b.SelectMany(r => r).ToList(), c.SelectMany(r => r).ToList(), BootstrapStatistic.Mean, strata).Shift;
+
+        private void AvailabilityStratified(EndpointWork w, List<AnalysisUnit> b, List<AnalysisUnit> c, bool pooled)
+        {
+            w.BaselineUnits = b;
+            w.ComparisonUnits = c;
+            w.Baseline = MembersOf(b);
+            w.Comparison = MembersOf(c);
+            w.Pooled = pooled;
+            w.UsesLegacy = false;
+
+            var ob = AttemptObservations(b);
+            var oc = AttemptObservations(c);
+            var nb = ob.SelectMany(r => r).GroupBy(o => o.Stratum).ToDictionary(g => g.Key, g => g.Count());
+            var nc = oc.SelectMany(r => r).GroupBy(o => o.Stratum).ToDictionary(g => g.Key, g => g.Count());
+            int minimum = MinimumAttemptsPerStratum;
+            var common = nb.Keys.Where(s => nc.ContainsKey(s) && nb[s] >= minimum && nc[s] >= minimum).OrderBy(s => s).ToList();
+            if (common.Count == 0)
+            {
+                NotComputed(w, "The periods share no time-of-week stratum with at least " + Plural(minimum, "valid attempt")
+                    + " in each, so their provider error rates cannot be compared on common support.", ChatConsistencyNotComputedKinds.NoCommonStratum);
+                return;
+            }
+
+            var (point, distribution) = ChatConsistencyResampling.StratifiedRunBootstrap(
+                ob, oc, BootstrapStatistic.Mean, _protocol.BootstrapReplicates, NextSeed(), common);
+            if (!point.Shift.HasValue || distribution == null || distribution.Replicates.Count == 0)
+            {
+                NotComputed(w, "The bootstrap produced no replicate.", ChatConsistencyNotComputedKinds.Other);
+                return;
+            }
+
+            w.Computed = true;
+            w.Distribution = distribution;
+            w.Estimate = point.Shift.Value;
+            w.ItemCount = common.Sum(s => nb[s] + nc[s]);
+            w.Strata = common;
+            w.StratumShifts = point.StratumShifts.ToDictionary(p => p.Key, p => p.Value);
+            w.StratumExcludedShare = point.ExcludedShare;
+            w.PValue = ChatConsistencyResampling.BootstrapPValue(distribution);
+            w.PValueMethod = (_battery ? "battery-run-cluster" : "run-cluster")
+                + " bootstrap of the stratified difference in provider error rates, two-sided (share of replicates on the far side of 0, doubled)";
+
+            foreach (int s in common)
+            {
+                w.StratumRunCounts[s] = (ob.Count(r => r.Any(o => o.Stratum == s)), oc.Count(r => r.Any(o => o.Stratum == s)));
+            }
+
+            var best = w.StratumRunCounts.OrderByDescending(x => Math.Min(x.Value.Baseline, x.Value.Comparison)).ThenBy(x => x.Key).First();
+            w.MinimumSampleMet = w.StratumRunCounts.Values.Any(v => v.Baseline >= _protocol.MinimumSpeedRunsPerStratum && v.Comparison >= _protocol.MinimumSpeedRunsPerStratum);
+            w.MinimumSampleDetail = "best common stratum " + ChatConsistencyStatistics.StratumLabel(best.Key) + ": baseline "
+                + Plural(best.Value.Baseline, UnitNoun) + ", comparison " + Plural(best.Value.Comparison, UnitNoun) + " with attempts; the minimum is "
+                + Inv(_protocol.MinimumSpeedRunsPerStratum) + " " + UnitsNoun + " per period with attempts in at least one common stratum.";
+
+            if (b.Count >= 2)
+            {
+                for (int i = 0; i < b.Count; i++) w.LeaveOneOut.Add((b[i].Id, AvailabilityPoint(ob.Where((_, j) => j != i).ToList(), oc, common)));
+            }
+
+            if (c.Count >= 2)
+            {
+                for (int i = 0; i < c.Count; i++) w.LeaveOneOut.Add((c[i].Id, AvailabilityPoint(ob, oc.Where((_, j) => j != i).ToList(), common)));
+            }
+
+            // Unit rates in the common strata, for the minimum detectable effect and the unit-to-unit spread.
+            var strata = common.ToHashSet();
+            List<IReadOnlyList<double>> UnitValues(List<IReadOnlyList<StratifiedObservation>> units) => units
+                .Select(r => (IReadOnlyList<double>)r.Where(o => strata.Contains(o.Stratum)).Select(o => o.Value).ToList())
+                .Where(r => r.Count > 0)
+                .ToList();
+            var rb = UnitValues(ob);
+            var rc = UnitValues(oc);
+            w.Mde = ChatConsistencyStatistics.MinimumDetectableEffect(rb, rc, _protocol.Alpha, _protocol.Power);
+            w.RunStandardDeviation = PooledStandardDeviation(rb.Select(r => r.Average()).ToList(), rc.Select(r => r.Average()).ToList());
+        }
+
+        /// <summary>The protocol's minimum valid attempts per common stratum (V2's default when a stored protocol lacks it).</summary>
+        private int MinimumAttemptsPerStratum => _protocol.MinimumAttemptsPerStratum ?? ChatConsistencyProtocol.DefaultMinimumAttemptsPerStratum;
+
+        /// <summary>P6's attempt counts over its units, and the rates over its common strata.</summary>
+        private ChatConsistencyEndpointAvailability AvailabilityDetail(EndpointWork w)
+        {
+            var b = w.Computed ? w.BaselineUnits : _availabilityBaselineUnits;
+            var c = w.Computed ? w.ComparisonUnits : _availabilityComparisonUnits;
+            var ab = ChatConsistencyAvailability.AttemptsOf(MembersOf(b), _evidence.Attempts);
+            var ac = ChatConsistencyAvailability.AttemptsOf(MembersOf(c), _evidence.Attempts);
+
+            double? Rate(List<AnalysisUnit> units)
+            {
+                if (!w.Computed || w.Strata.Count == 0) return null;
+                var observations = AttemptObservations(units).SelectMany(r => r).ToList();
+                var perStratum = w.Strata
+                    .Select(s => observations.Where(o => o.Stratum == s).Select(o => o.Value).ToList())
+                    .Where(v => v.Count > 0)
+                    .Select(v => v.Average())
+                    .ToList();
+                return perStratum.Count == w.Strata.Count ? Fin(perStratum.Average()) : null;
+            }
+
+            var availabilityIds = _evidence.AvailabilityRuns.Select(a => a.Run.Id).ToHashSet();
+            List<long> AvailabilityOnly(List<AnalysisUnit> units)
+                => MembersOf(units).Select(r => r.Id).Where(availabilityIds.Contains).Distinct().OrderBy(id => id).ToList();
+
+            return new ChatConsistencyEndpointAvailability
+            {
+                BaselineValidAttempts = ab.Count(a => ProviderAttemptOutcomes.IsValid(a.Outcome)),
+                BaselineProviderErrors = ab.Count(a => ProviderAttemptOutcomes.IsProvider(a.Outcome)),
+                BaselineUnattributedErrors = ab.Count(a => ProviderAttemptOutcomes.IsUnattributed(a.Outcome)),
+                BaselineOurSideFailures = ab.Count(a => ProviderAttemptOutcomes.IsOurs(a.Outcome)),
+                ComparisonValidAttempts = ac.Count(a => ProviderAttemptOutcomes.IsValid(a.Outcome)),
+                ComparisonProviderErrors = ac.Count(a => ProviderAttemptOutcomes.IsProvider(a.Outcome)),
+                ComparisonUnattributedErrors = ac.Count(a => ProviderAttemptOutcomes.IsUnattributed(a.Outcome)),
+                ComparisonOurSideFailures = ac.Count(a => ProviderAttemptOutcomes.IsOurs(a.Outcome)),
+                BaselineRate = Rate(b),
+                ComparisonRate = Rate(c),
+                MinimumAttemptsPerStratum = MinimumAttemptsPerStratum,
+                BaselineAvailabilityOnlyRunIds = AvailabilityOnly(b),
+                ComparisonAvailabilityOnlyRunIds = AvailabilityOnly(c)
             };
         }
 
@@ -1728,9 +2066,20 @@ public class ChatConsistencyAnalysisService
                 }
             }
 
-            // Own-side explanations: retries, and for speed the own waits.
+            // Own-side explanations: retries, and for speed the own waits; for P6, the exclusion of our own failures.
+            bool availability = w.Protocol.Id == ChatConsistencyEndpointIds.ProviderErrorRate;
             var parts = new List<(bool? Holds, string Text)>();
-            if (decisive && w.RetriesPresent)
+            if (availability)
+            {
+                if (decisive)
+                {
+                    var detail = AvailabilityDetail(w);
+                    parts.Add((true, "attempts that failed on our side (our rate limits, billing, key, request, governor, cancellations and network) "
+                        + "are left out of the denominator: baseline " + Inv(detail.BaselineOurSideFailures) + ", comparison "
+                        + Inv(detail.ComparisonOurSideFailures)));
+                }
+            }
+            else if (decisive && w.RetriesPresent)
             {
                 bool? held = Holds(w, w.RetryFreeEstimate);
                 parts.Add((held, "restricted to answers without retries the estimate is " + Number(w.RetryFreeEstimate)
@@ -1741,7 +2090,7 @@ public class ChatConsistencyAnalysisService
                 parts.Add((true, "no answer was retried"));
             }
 
-            if (decisive && w.Protocol.Stratified)
+            if (decisive && w.Protocol.Stratified && !availability)
             {
                 var baselineShare = ownWaits[0].OwnWaitShare;
                 var comparisonShare = ownWaits[1].OwnWaitShare;
@@ -1802,7 +2151,9 @@ public class ChatConsistencyAnalysisService
                 "Baseline " + Plural(ub.Count, UnitNoun) + " on " + Plural(Days(ub), "day") + "; comparison "
                 + Plural(uc.Count, UnitNoun) + " on " + Plural(Days(uc), "day") + "."));
 
-            // Served tier.
+            // Served tier; attempts carry none, so P6 has no such check.
+            if (availability) return checks;
+
             if (!w.TierDataPresent)
             {
                 checks.Add(Check("Served-tier match", ChatConsistencyCheckStatus.NotAssessable, "No served service tier was recorded."));
@@ -1871,6 +2222,7 @@ public class ChatConsistencyAnalysisService
             var p = w.Protocol;
             bool log = p.Scale == ChatConsistencyEffectScale.LogRatio;
             string direction = p.WorkDirection ? "work" : p.HigherIsBetter ? "higherIsBetter" : "lowerIsBetter";
+            var availability = p.Id == ChatConsistencyEndpointIds.ProviderErrorRate ? AvailabilityDetail(w) : null;
             if (!w.Computed)
             {
                 return new ChatConsistencyEndpointResult
@@ -1879,7 +2231,8 @@ public class ChatConsistencyAnalysisService
                     Direction = direction, Computed = false, NotComputedReason = w.NotComputedReason, NotComputedKind = w.NotComputedKind,
                     VerdictLabel = "not computable",
                     Grade = ChatConsistencyEvidenceGrade.NotEstablished, GradeReasons = new[] { "Not computable: " + w.NotComputedReason },
-                    LegacyProxy = w.LegacyProxy, CommonGrader = w.CommonGrader
+                    LegacyProxy = w.LegacyProxy, CommonGrader = w.CommonGrader,
+                    Availability = availability
                 };
             }
 
@@ -1912,7 +2265,7 @@ public class ChatConsistencyAnalysisService
                 AdjustedPValue = Fin(w.AdjustedPValue),
                 PValueMethod = w.PValueMethod,
                 Verdict = w.Verdict,
-                VerdictLabel = VerdictLabel(w.Verdict, p.WorkDirection),
+                VerdictLabel = VerdictLabel(w.Verdict, p),
                 Grade = w.Grade,
                 GradeReasons = w.GradeReasons.Concat(w.Notes).ToList(),
                 MinimumDetectableEffect = w.Mde == null ? null : Fin(w.Mde.Effect),
@@ -1932,7 +2285,8 @@ public class ChatConsistencyAnalysisService
                 ItemCount = w.ItemCount,
                 StrataUsed = w.Strata.Select(ChatConsistencyStatistics.StratumLabel).ToList(),
                 StratumExcludedShare = Fin(w.StratumExcludedShare),
-                RobustnessChecks = w.Checks
+                RobustnessChecks = w.Checks,
+                Availability = availability
             };
         }
 
@@ -1953,10 +2307,19 @@ public class ChatConsistencyAnalysisService
                 RateOf("timeouts", "Timeouts", "answers", ab.Count(ChatConsistencyMeasures.IsTimeout), ab.Count, ac.Count(ChatConsistencyMeasures.IsTimeout), ac.Count),
                 RateOf("emptyAnswers", "Empty answers", "answers", ab.Count(ChatConsistencyMeasures.IsEmptyAnswer), ab.Count, ac.Count(ChatConsistencyMeasures.IsEmptyAnswer), ac.Count),
                 RateOf("refusals", "Refusals", "answers", tb.Count(ChatConsistencyMeasures.IsRefusal), tb.Count, tc.Count(ChatConsistencyMeasures.IsRefusal), tc.Count),
-                RateOf("toolBudgetExhausted", "Tool-budget exhaustion", "answers", ab.Count(ChatConsistencyMeasures.IsToolBudgetExhausted), ab.Count, ac.Count(ChatConsistencyMeasures.IsToolBudgetExhausted), ac.Count),
-                RateOf("http429", "429 responses", "calls", cb.Count(c => c.Http429Count > 0), cb.Count, cc.Count(c => c.Http429Count > 0), cc.Count),
-                RateOf("http5xx", "5xx responses", "calls", cb.Count(c => c.Http5xxCount > 0), cb.Count, cc.Count(c => c.Http5xxCount > 0), cc.Count)
+                RateOf("toolBudgetExhausted", "Tool-budget exhaustion", "answers", ab.Count(ChatConsistencyMeasures.IsToolBudgetExhausted), ab.Count, ac.Count(ChatConsistencyMeasures.IsToolBudgetExhausted), ac.Count)
             };
+
+            if (_availability)
+            {
+                rates.AddRange(AttemptRates());
+                rates.Add(ProviderRerunUnits());
+            }
+            else
+            {
+                rates.Add(RateOf("http429", "429 responses", "calls", cb.Count(c => c.Http429Count > 0), cb.Count, cc.Count(c => c.Http429Count > 0), cc.Count));
+                rates.Add(RateOf("http5xx", "5xx responses", "calls", cb.Count(c => c.Http5xxCount > 0), cb.Count, cc.Count(c => c.Http5xxCount > 0), cc.Count));
+            }
 
             var tested = rates.Select((r, i) => (Rate: r, Index: i)).Where(x => x.Rate.PValue.HasValue).ToList();
             var bh = ChatConsistencyStatistics.BenjaminiHochberg(tested.Select(x => x.Rate.PValue!.Value).ToList(), _protocol.SecondaryFalseDiscoveryRate);
@@ -1976,6 +2339,118 @@ public class ChatConsistencyAnalysisService
 
             return rates;
         }
+
+        /// <summary>
+        /// The attempt-level rates of Protocol V2 over P6's units with their recorded attempts: each provider and
+        /// unattributed class among valid attempts, and our own rate limits and every our-side failure among all
+        /// attempts. Each attempt is a 0/1 observation of its unit; the difference of the pooled rates is tested
+        /// by the cluster bootstrap that resamples units whole (a ratio of sums, cluster-correct), and each
+        /// period's interval is the cluster-adjusted Wilson interval.
+        /// </summary>
+        private List<ChatConsistencyRateResult> AttemptRates()
+        {
+            var b = _availabilityBaselineUnits;
+            var c = _availabilityComparisonUnits;
+            return new List<ChatConsistencyRateResult>
+            {
+                AttemptRate("providerOverloaded", "Provider overloaded (503, 529)", o => o == ProviderAttemptOutcome.ProviderOverloaded, false, b, c),
+                AttemptRate("providerServerErrors", "Provider server errors (5xx)", o => o == ProviderAttemptOutcome.ProviderServerError, false, b, c),
+                AttemptRate("providerTimeouts", "Provider timeouts", o => o == ProviderAttemptOutcome.ProviderTimeout, false, b, c),
+                AttemptRate("providerStreamFailures", "Provider stream failures", o => o == ProviderAttemptOutcome.ProviderStreamFailure, false, b, c),
+                AttemptRate("rateLimitOurs", "Rate limited, our limit (429)", o => o == ProviderAttemptOutcome.OurRateLimit, true, b, c),
+                AttemptRate("rateLimitUnattributed", "Rate limited, unattributed (429)", o => o == ProviderAttemptOutcome.RateLimitUnattributed, false, b, c),
+                AttemptRate("transportUnattributed", "Transport failures, unattributed", o => o == ProviderAttemptOutcome.TransportUnattributed, false, b, c),
+                AttemptRate("ourSideFailures", "Our-side failures", ProviderAttemptOutcomes.IsOurs, true, b, c)
+            };
+        }
+
+        private ChatConsistencyRateResult AttemptRate(
+            string id, string name, Func<ProviderAttemptOutcome, bool> counted, bool allAttempts, List<AnalysisUnit> baseline, List<AnalysisUnit> comparison)
+        {
+            List<List<ProviderAttemptRow>> Units(List<AnalysisUnit> units) => units
+                .Select(u => ChatConsistencyAvailability.AttemptsOf(u.Members, _evidence.Attempts)
+                    .Where(a => allAttempts || ProviderAttemptOutcomes.IsValid(a.Outcome))
+                    .ToList())
+                .Where(l => l.Count > 0)
+                .ToList();
+
+            var ub = Units(baseline);
+            var uc = Units(comparison);
+            int kb = ub.Sum(l => l.Count(a => counted(a.Outcome))), nb = ub.Sum(l => l.Count);
+            int kc = uc.Sum(l => l.Count(a => counted(a.Outcome))), nc = uc.Sum(l => l.Count);
+
+            List<IReadOnlyList<double>> Observations(List<List<ProviderAttemptRow>> units)
+                => units.Select(l => (IReadOnlyList<double>)l.Select(a => counted(a.Outcome) ? 1.0 : 0.0).ToList()).ToList();
+            var distribution = ub.Count > 0 && uc.Count > 0
+                ? ChatConsistencyStatistics.ClusterBootstrapTwoSample(
+                    Observations(ub), Observations(uc), BootstrapStatistic.Mean, resampleItems: false, _protocol.BootstrapReplicates, NextSeed())
+                : null;
+
+            double? rb = nb > 0 ? kb / (double)nb : null;
+            double? rc = nc > 0 ? kc / (double)nc : null;
+            return new ChatConsistencyRateResult
+            {
+                Id = id,
+                Name = name,
+                Denominator = allAttempts ? "attempts" : "valid attempts",
+                BaselineCount = kb,
+                BaselineTotal = nb,
+                BaselineRate = rb,
+                BaselineCi95 = ClusteredInterval(ub, counted),
+                ComparisonCount = kc,
+                ComparisonTotal = nc,
+                ComparisonRate = rc,
+                ComparisonCi95 = ClusteredInterval(uc, counted),
+                PValue = distribution == null || distribution.Replicates.Count == 0 ? null : Fin(ChatConsistencyResampling.BootstrapPValue(distribution)),
+                Method = AttemptRateMethod,
+                Increased = rb.HasValue && rc.HasValue && rc.Value > rb.Value
+            };
+        }
+
+        /// <summary>
+        /// The cluster-adjusted Wilson 95 % interval of a period's attempt rate: clusters are (unit, 10-minute
+        /// UTC block) and, with two or more units, units; the larger design effect is used.
+        /// </summary>
+        private static ChatConsistencyInterval? ClusteredInterval(List<List<ProviderAttemptRow>> units, Func<ProviderAttemptOutcome, bool> counted)
+        {
+            if (units.Sum(l => l.Count) == 0) return null;
+
+            long block = BenchmarkProviderAvailability.ClusterBlockWidth.Ticks;
+            var blocks = units
+                .SelectMany((l, i) => l.Select(a => (Key: Inv(i) + "@" + Inv(ChatConsistencyMeasures.AsUtc(a.StartedAtUtc).Ticks / block), Hit: counted(a.Outcome))))
+                .GroupBy(x => x.Key, StringComparer.Ordinal)
+                .Select(g => (g.Key, g.Count(x => x.Hit), g.Count()));
+            var interval = BenchmarkProviderAvailability.ClusterAdjustedWilson95(blocks);
+            if (units.Count >= 2)
+            {
+                var byUnit = BenchmarkProviderAvailability.ClusterAdjustedWilson95(
+                    units.Select((l, i) => (Inv(i), l.Count(a => counted(a.Outcome)), l.Count)));
+                if (byUnit.Deff > interval.Deff) interval = byUnit;
+            }
+
+            return interval.Low is double low && interval.High is double high ? new ChatConsistencyInterval(low, high) : null;
+        }
+
+        /// <summary>
+        /// Whether each analyzed unit needed a re-run for the provider, its recorded units only: a member with a
+        /// provider-caused repair pass, or a member that replaced a run which failed at the provider. Units are
+        /// independent, so Fisher's exact test applies.
+        /// </summary>
+        private ChatConsistencyRateResult ProviderRerunUnits()
+        {
+            static bool Recorded(AnalysisUnit u) => u.Members.All(ChatConsistencyAvailability.IsRecorded);
+            static bool Needed(AnalysisUnit u) => u.Members.Any(r =>
+                r.ProviderRepairPassCount > 0 || r.ReplacementCause == BenchmarkReplacementCause.ProviderFailure);
+
+            var b = _baselineUnits.Where(Recorded).ToList();
+            var c = _comparisonUnits.Where(Recorded).ToList();
+            return RateOf("providerRerunUnits", "Units needing a re-run for provider errors", UnitsNoun,
+                b.Count(Needed), b.Count, c.Count(Needed), c.Count);
+        }
+
+        /// <summary>The test of the attempt-level rates.</summary>
+        private const string AttemptRateMethod =
+            "cluster bootstrap of the difference in pooled attempt rates (0/1 attempt outcomes, units resampled whole), two-sided";
 
         private static ChatConsistencyRateResult RateOf(string id, string name, string denominator, int kb, int nb, int kc, int nc)
         {
@@ -2133,11 +2608,13 @@ public class ChatConsistencyAnalysisService
                 var latest = controlB.Concat(controlC).OrderBy(r => r.StartedAtUtc).ThenBy(r => r.Id).Last();
                 var display = ChatConsistencyMeasures.SubjectOf(subject.Key, latest);
 
-                foreach (var id in ChatConsistencyEndpointIds.All)
+                foreach (var id in EndpointIds)
                 {
                     var w = _work[id];
                     if (!w.Computed) continue;
-                    var effect = ControlEffect(w, subject.Key, display, controlB, controlC);
+                    var effect = id == ChatConsistencyEndpointIds.ProviderErrorRate
+                        ? AvailabilityControlEffect(w, subject.Key, display, controlB, controlC)
+                        : ControlEffect(w, subject.Key, display, controlB, controlC);
                     if (effect != null) effects.Add(effect);
                 }
             }
@@ -2285,6 +2762,60 @@ public class ChatConsistencyAnalysisService
             };
         }
 
+        /// <summary>
+        /// P6 against one control subject: the run-level difference in differences of provider error rates,
+        /// each a pooled <c>Σk/Σn</c> of an arm's units in a period (the target's P6 units, the control's
+        /// recorded runs), in percentage points, with the same unit bootstrap as the target's own interval.
+        /// Null when an arm has no valid attempt in a period.
+        /// </summary>
+        private ChatConsistencyControlEffect? AvailabilityControlEffect(
+            EndpointWork w, string controlKey, ChatConsistencySubject control, List<BenchmarkRun> controlB, List<BenchmarkRun> controlC)
+        {
+            (int K, int N) Counts(IEnumerable<BenchmarkRun> runs)
+            {
+                var valid = ChatConsistencyAvailability.AttemptsOf(runs, _evidence.Attempts).Where(a => ProviderAttemptOutcomes.IsValid(a.Outcome)).ToList();
+                return (valid.Count(a => ProviderAttemptOutcomes.IsProvider(a.Outcome)), valid.Count);
+            }
+
+            var cb = controlB.Where(ChatConsistencyAvailability.IsRecorded).ToList();
+            var cc = controlC.Where(ChatConsistencyAvailability.IsRecorded).ToList();
+            var kb = cb.Select(r => Counts(new[] { r })).ToList();
+            var kc = cc.Select(r => Counts(new[] { r })).ToList();
+            if (kb.All(x => x.N == 0) || kc.All(x => x.N == 0)) return null;
+
+            var tb = w.BaselineUnits.Select(u => Counts(u.Members)).ToList();
+            var tc = w.ComparisonUnits.Select(u => Counts(u.Members)).ToList();
+            var did = ChatConsistencyStatistics.RateDifferenceInDifferences(tb, tc, kb, kc, _protocol.BootstrapReplicates, NextSeed());
+            var own = ChatConsistencyStatistics.RateDifference(kb, kc, _protocol.BootstrapReplicates, NextSeed());
+            if (did == null || own == null || did.Replicates.Count == 0) return null;
+
+            var didCi = did.Interval95;
+            bool includesZero = didCi.Lower <= 0.0 && didCi.Upper >= 0.0;
+            int targetSign = Math.Sign(w.Estimate);
+            bool separates = !includesZero && targetSign != 0 && Math.Sign(did.Estimate) == targetSign;
+            bool sameWay = targetSign != 0 && Math.Sign(own.Estimate) == targetSign;
+
+            return new ChatConsistencyControlEffect
+            {
+                EndpointId = w.Protocol.Id,
+                ControlSubjectKey = controlKey,
+                ControlDisplay = control.DisplayName,
+                ControlProvider = control.Provider,
+                SameProvider = string.Equals(control.Provider, _evidence.Subject.Provider, StringComparison.OrdinalIgnoreCase),
+                ControlBaselineRunIds = cb.Select(r => r.Id).ToList(),
+                ControlComparisonRunIds = cc.Select(r => r.Id).ToList(),
+                ItemCount = 0,
+                ControlChange = Fin(own.Estimate),
+                ControlChangeCi95 = Interval(own.Interval95),
+                DidEstimate = Fin(did.Estimate),
+                DidCi95 = Interval(didCi),
+                DidPValue = Fin(ChatConsistencyResampling.BootstrapPValue(did)),
+                DidIncludesZero = includesZero,
+                DidSeparatesTarget = separates,
+                ControlMovedSameWay = sameWay
+            };
+        }
+
         // --- Secondary families --------------------------------------------------------------
 
         private List<ChatConsistencyFamilyResult> SecondaryFamilies(
@@ -2345,9 +2876,13 @@ public class ChatConsistencyAnalysisService
                     PValue = r.PValue,
                     AdjustedPValue = r.AdjustedPValue,
                     Rejected = r.AdjustedPValue.HasValue && r.AdjustedPValue.Value <= _protocol.SecondaryFalseDiscoveryRate,
-                    Method = "Fisher's exact test, two-sided",
+                    Method = r.Method ?? "Fisher's exact test, two-sided",
                     Note = r.EstablishedIncrease ? "Established increase." : null
-                }).ToList()
+                }).ToList(),
+                Note = _availability
+                    ? "Attempt rates (provider classes, unattributed classes and our side): " + AttemptRateMethod
+                      + "; answer rates and units needing a provider re-run: Fisher's exact test, two-sided."
+                    : null
             });
 
             // Tool use.
@@ -2459,7 +2994,9 @@ public class ChatConsistencyAnalysisService
                 Ci95 = e.DidCi95,
                 PValue = e.DidPValue,
                 ItemCount = e.ItemCount,
-                Method = "item difference-in-differences, run-cluster bootstrap",
+                Method = e.EndpointId == ChatConsistencyEndpointIds.ProviderErrorRate
+                    ? "run-level difference-in-differences of provider error rates, run-cluster bootstrap"
+                    : "item difference-in-differences, run-cluster bootstrap",
                 Note = "baseline value is the control's own change"
             }).ToList(), effects.Count == 0 ? "No control subject has matched runs in both periods." : null));
 
@@ -2728,9 +3265,20 @@ public class ChatConsistencyAnalysisService
                 .Select(ChatConsistencyMeasures.AnnotationView)
                 .ToList();
 
+            // R6's rate input: the 429 and 5xx call rates under V1, the attributed provider attempt rates under V2.
+            bool rateIncrease = _availability
+                ? reliability.Any(r => ProviderRateIds.Contains(r.Id)
+                    && r.Increased && r.AdjustedPValue.HasValue && r.AdjustedPValue.Value <= _protocol.SecondaryFalseDiscoveryRate)
+                : reliability.Any(r => (r.Id == "http429" || r.Id == "http5xx")
+                    && r.Increased && r.AdjustedPValue.HasValue && r.AdjustedPValue.Value <= _protocol.SecondaryFalseDiscoveryRate);
+
+            bool accountingChanged = _availability && _availabilityAssessment.Boundaries.Any(x =>
+                x.Kind == MeasurementChangeKind.ProviderErrorAccounting && x.SubjectKey == _evidence.SubjectKey
+                && ChatConsistencyMeasures.AsUtc(x.AtUtc) >= spanStart && ChatConsistencyMeasures.AsUtc(x.AtUtc) <= spanEnd);
+
             return new ChatConsistencyAttributionInput
             {
-                Endpoints = ChatConsistencyEndpointIds.All.Select(id =>
+                Endpoints = EndpointIds.Select(id =>
                 {
                     var w = _work[id];
                     return new ChatConsistencyAttributionEndpoint
@@ -2739,7 +3287,7 @@ public class ChatConsistencyAnalysisService
                         Name = w.Protocol.Name,
                         Computed = w.Computed,
                         Verdict = w.Verdict,
-                        VerdictLabel = VerdictLabel(w.Verdict, w.Protocol.WorkDirection),
+                        VerdictLabel = VerdictLabel(w.Verdict, w.Protocol),
                         Grade = w.Grade,
                         Estimate = w.Computed ? Fin(w.Estimate) : null
                     };
@@ -2756,8 +3304,9 @@ public class ChatConsistencyAnalysisService
                 StreamingRateStrataDiffer = Differ(p3),
                 TimeToFirstAnswerTextHighRunVariance = p2.Computed && p2.RunStandardDeviation > p2.Protocol.Margin,
                 StreamingRateHighRunVariance = p3.Computed && p3.RunStandardDeviation > p3.Protocol.Margin,
-                RateLimitOrServerErrorIncrease = reliability.Any(r => (r.Id == "http429" || r.Id == "http5xx")
-                    && r.Increased && r.AdjustedPValue.HasValue && r.AdjustedPValue.Value <= _protocol.SecondaryFalseDiscoveryRate),
+                RateLimitOrServerErrorIncrease = rateIncrease,
+                ProviderErrorRatesAttributed = _availability,
+                ProviderErrorAccountingChangedInSpan = accountingChanged,
                 UsBusinessHoursCovered = us,
                 OutsideBusinessHoursCovered = outside,
                 GrossTimeToFirstAnswerTextVerdict = grossP2?.Verdict,
@@ -2921,6 +3470,12 @@ public class ChatConsistencyAnalysisService
                 }
             }
 
+            if (_work.TryGetValue(ChatConsistencyEndpointIds.ProviderErrorRate, out var p6) && p6.Computed && p6.StratumExcludedShare is > 0)
+            {
+                _dataQuality.Add(Note("strata", p6.Protocol.Name + ": " + Percent(p6.StratumExcludedShare) + " of valid attempts fall in time strata without "
+                    + Plural(MinimumAttemptsPerStratum, "valid attempt") + " in each period and are excluded."));
+            }
+
             if (!_evidence.PriceCard.Available)
             {
                 _dataQuality.Add(Note("priceCard", "No price card resolved, so cost was not computed."));
@@ -2935,13 +3490,71 @@ public class ChatConsistencyAnalysisService
         }
 
         /// <summary>
+        /// Under Protocol V2: an <c>availabilityOnly</c> note naming the runs that enter P6 only; a
+        /// <c>availabilityNotRecorded</c> note naming the analyzed runs without provider attempts; and an
+        /// <c>ourSideFailures</c> note when the rate of our own failures changed, with the governor, network
+        /// and cancellation counts. Our own failures are never attributed to the provider.
+        /// </summary>
+        private void AddAvailabilityDataQuality(List<ChatConsistencyRateResult> reliability)
+        {
+            if (!_availability) return;
+
+            var availability = _evidence.AvailabilityRuns;
+            if (availability.Count > 0)
+            {
+                var named = availability.Take(MaxRunSelectionNoteRuns)
+                    .Select(a => "#" + Inv(a.Run.Id) + (a.BatteryRunId is long battery ? " of battery run #" + Inv(battery) : string.Empty)
+                        + " (" + a.Period + ", " + RunStatusText(a.Run.Status) + ")")
+                    .ToList();
+                int more = availability.Count - named.Count;
+                _dataQuality.Add(Note("availabilityOnly", Plural(availability.Count, "failed, canceled or superseded run") + " of the model "
+                    + Agree(availability.Count, "enters", "enter") + " the provider error rate only, chosen automatically: "
+                    + string.Join(", ", named) + (more > 0 ? "; and " + Inv(more) + " more" : string.Empty) + "."));
+            }
+
+            var unrecorded = _baseline.Concat(_comparison).Where(r => !ChatConsistencyAvailability.IsRecorded(r)).Select(r => "#" + Inv(r.Id)).ToList();
+            if (unrecorded.Count > 0)
+            {
+                _dataQuality.Add(Note("availabilityNotRecorded", "Provider error rate: " + Plural(unrecorded.Count, "analyzed run") + " ("
+                    + string.Join(", ", unrecorded.Take(MaxRunSelectionNoteRuns)) + (unrecorded.Count > MaxRunSelectionNoteRuns ? ", …" : string.Empty)
+                    + ") recorded no provider attempts, which the attempt ledger records from harness 56."));
+            }
+
+            var ours = reliability.FirstOrDefault(r => r.Id == "ourSideFailures");
+            if (ours is { AdjustedPValue: double p } && p <= _protocol.SecondaryFalseDiscoveryRate)
+            {
+                string Counts(List<AnalysisUnit> units)
+                {
+                    var rows = ChatConsistencyAvailability.AttemptsOf(MembersOf(units), _evidence.Attempts);
+                    int governor = rows.Count(a => a.Outcome == ProviderAttemptOutcome.OurThrottle);
+                    int network = rows.Count(a => a.Outcome == ProviderAttemptOutcome.OurNetwork);
+                    int canceled = rows.Count(a => a.Outcome == ProviderAttemptOutcome.OurCanceled);
+                    return "governor " + Inv(governor) + ", network " + Inv(network) + ", time budget or cancellation " + Inv(canceled);
+                }
+
+                _dataQuality.Add(Note("ourSideFailures", "Our-side failures changed between the periods (baseline " + Inv(ours.BaselineCount) + " of "
+                    + Plural(ours.BaselineTotal, "attempt") + ", comparison " + Inv(ours.ComparisonCount) + " of " + Plural(ours.ComparisonTotal, "attempt")
+                    + "; baseline " + Counts(_availabilityBaselineUnits) + "; comparison " + Counts(_availabilityComparisonUnits)
+                    + "). They are Overseer's own failures, left out of the provider error rate and never attributed to the provider."));
+            }
+        }
+
+        private static string RunStatusText(BenchmarkRunStatus status) => status switch
+        {
+            BenchmarkRunStatus.Failed => "failed",
+            BenchmarkRunStatus.Canceled => "canceled",
+            _ => "superseded"
+        };
+
+        /// <summary>
         /// One <c>runSelection</c> note naming the usable runs of the subject in the periods that were not
         /// analyzed, each with its battery run when it has one, grouped by reason in <see cref="ChatConsistencyUnanalyzedReasons.All"/> order; at most
-        /// <see cref="MaxRunSelectionNoteRuns"/> runs are named, the rest counted.
+        /// <see cref="MaxRunSelectionNoteRuns"/> runs are named, the rest counted. The availability-only runs,
+        /// chosen automatically, have their own note.
         /// </summary>
         private void AddRunSelectionNote()
         {
-            var runs = _evidence.UnanalyzedRuns;
+            var runs = OperatorUnanalyzedRuns;
             if (runs.Count == 0) return;
 
             var groups = new List<string>();
@@ -2962,6 +3575,10 @@ public class ChatConsistencyAnalysisService
             _dataQuality.Add(Note("runSelection", UnanalyzedCountText(runs.Count) + " — " + string.Join("; ", groups)
                 + (more > 0 ? "; and " + Inv(more) + " more" : string.Empty) + "."));
         }
+
+        /// <summary>The runs not analyzed because of the operator's selection: every unanalyzed run but the availability-only ones.</summary>
+        private List<ChatConsistencyUnanalyzedRun> OperatorUnanalyzedRuns
+            => _evidence.UnanalyzedRuns.Where(u => u.Reason != ChatConsistencyUnanalyzedReasons.AvailabilityOnly).ToList();
 
         private ChatConsistencyRunSelectionView RunSelectionView()
         {
@@ -3006,10 +3623,17 @@ public class ChatConsistencyAnalysisService
                 list.Add("P2 uses model time per item as a legacy proxy: it spans the provider's whole turn, not the wait for the first answer text.");
             }
 
-            if (_evidence.UnanalyzedRuns.Count > 0)
+            var chosen = OperatorUnanalyzedRuns;
+            if (chosen.Count > 0)
             {
-                list.Add("The operator chose the runs: " + UnanalyzedCountText(_evidence.UnanalyzedRuns.Count)
+                list.Add("The operator chose the runs: " + UnanalyzedCountText(chosen.Count)
                     + " (see the run selection). The verdicts hold for the analyzed runs; leaving runs out after looking at the timeline can bias them.");
+            }
+
+            if (_availability)
+            {
+                list.Add("The provider error rate counts provider-class attempts among valid candidate attempts as recorded in GnollBench runs, "
+                    + "at the hours they ran; our own failures are left out of the denominator, and the cause of an error is never inferred.");
             }
 
             return list;
@@ -3033,12 +3657,13 @@ public class ChatConsistencyAnalysisService
             string noEarlierUnit = "No other " + UnitNoun + " of " + subject + " exists for the baseline period. "
                 + "A later analysis can take this comparison period as its baseline.";
 
-            foreach (var id in ChatConsistencyEndpointIds.All)
+            foreach (var id in EndpointIds)
             {
                 var w = _work[id];
+                bool availability = id == ChatConsistencyEndpointIds.ProviderErrorRate;
                 if (!w.Computed && w.Protocol.Stratified && w.NotComputedKind == ChatConsistencyNotComputedKinds.NoCommonStratum)
                 {
-                    var stratum = MostPopulatedStratum(_baseline);
+                    var stratum = availability ? MostAttemptedStratum(_availabilityBaselineUnits) : MostPopulatedStratum(_baseline);
                     if (stratum.HasValue)
                     {
                         int runs = _protocol.MinimumSpeedRunsPerStratum;
@@ -3047,7 +3672,10 @@ public class ChatConsistencyAnalysisService
                             Kind = "stratum",
                             Period = "comparison",
                             EndpointId = id,
-                            Reason = "The periods share no time-of-week stratum, so speed cannot be compared.",
+                            Reason = availability
+                                ? "The periods share no time-of-week stratum with at least " + Plural(MinimumAttemptsPerStratum, "valid attempt")
+                                  + " in each, so provider error rates cannot be compared."
+                                : "The periods share no time-of-week stratum, so speed cannot be compared.",
                             Suggestion = Plural(runs, UnitNoun) + " of " + subject + " on " + comparisonTarget + " starting in "
                                 + StrataText(new[] { stratum.Value }) + ", in the comparison period.",
                             RepeatRunId = latestComparison.Id
@@ -3074,7 +3702,7 @@ public class ChatConsistencyAnalysisService
                                 Kind = "stratum",
                                 Period = "comparison",
                                 EndpointId = id,
-                                Reason = w.Protocol.Name + " is below the minimum speed sample.",
+                                Reason = w.Protocol.Name + (availability ? " is below the minimum sample." : " is below the minimum speed sample."),
                                 Suggestion = Inv(more) + " more " + Agree(more, UnitNoun, UnitsNoun) + " of " + subject + " on " + comparisonTarget + " starting in "
                                     + StrataText(new[] { best.Key }) + " in the comparison period.",
                                 RepeatRunId = latestComparison.Id
@@ -3165,7 +3793,7 @@ public class ChatConsistencyAnalysisService
             }
 
             bool changedWithEvent = _evidence.Events.Count > 0
-                && ChatConsistencyEndpointIds.All.Select(id => _work[id]).Any(w => w.Computed && w.Verdict is ConsistencyVerdict.ChangedDegraded or ConsistencyVerdict.ChangedImproved);
+                && EndpointIds.Select(id => _work[id]).Any(w => w.Computed && w.Verdict is ConsistencyVerdict.ChangedDegraded or ConsistencyVerdict.ChangedImproved);
             if (changedWithEvent || controls.Effects.Count == 0)
             {
                 foreach (var note in controls.MissingControls)
@@ -3245,6 +3873,19 @@ public class ChatConsistencyAnalysisService
             };
         }
 
+        /// <summary>The stratum most valid attempts of <paramref name="units"/> started in; the lower index on a tie; null without any.</summary>
+        private int? MostAttemptedStratum(IEnumerable<AnalysisUnit> units)
+        {
+            var counts = AttemptObservations(units.ToList())
+                .SelectMany(r => r)
+                .GroupBy(o => o.Stratum)
+                .Select(g => (Stratum: g.Key, Count: g.Count()))
+                .OrderByDescending(x => x.Count)
+                .ThenBy(x => x.Stratum)
+                .ToList();
+            return counts.Count == 0 ? null : counts[0].Stratum;
+        }
+
         /// <summary>The stratum most of <paramref name="runs"/>' delivered, timed answers started in; the lower index on a tie; null without any.</summary>
         private int? MostPopulatedStratum(IEnumerable<BenchmarkRun> runs)
         {
@@ -3275,8 +3916,32 @@ public class ChatConsistencyAnalysisService
                 + "; work " + V(E(ChatConsistencyEndpointIds.Work))
                 + "; cost " + V(E(ChatConsistencyEndpointIds.Cost))
                 + (scope.StrataIndexes.Count == 0 ? "; the periods share no common time stratum" : " within " + scope.Text);
+            if (endpoints.FirstOrDefault(e => e.Id == ChatConsistencyEndpointIds.ProviderErrorRate) is { } p6)
+            {
+                headline += AvailabilityClause(p6, V(p6));
+            }
             if (increases.Count > 0) headline += "; reliability: " + string.Join(", ", increases) + " (established)";
             return headline;
+        }
+
+        /// <summary>
+        /// The headline's availability clause: <c>; availability: more provider errors (established) within
+        /// weekdays 12–16 UTC</c>, the scope the attempts' common strata; for periods whose attempts share no
+        /// such stratum, <c>; availability: not computable; the periods' attempts share no common time stratum</c>.
+        /// </summary>
+        private static string AvailabilityClause(ChatConsistencyEndpointResult p6, string verdict)
+        {
+            if (!p6.Computed && p6.NotComputedKind == ChatConsistencyNotComputedKinds.NoCommonStratum)
+            {
+                return "; availability: not computable; the periods' attempts share no common time stratum";
+            }
+
+            if (!p6.Computed) return "; availability: not computable";
+
+            var strata = p6.StrataUsed
+                .Select(label => Enumerable.Range(0, ChatConsistencyStatistics.StratumCount).First(i => ChatConsistencyStatistics.StratumLabel(i) == label))
+                .ToList();
+            return "; availability: " + verdict + " within " + ScopeText(strata);
         }
 
         private static string GradeText(ChatConsistencyEvidenceGrade grade) => grade switch
@@ -3362,7 +4027,7 @@ public class ChatConsistencyAnalysisService
                 }
             }
 
-            return new ChatConsistencyPeriodLevels
+            var levels = new ChatConsistencyPeriodLevels
             {
                 Period = period,
                 AnswerCount = pairs.Count,
@@ -3375,6 +4040,37 @@ public class ChatConsistencyAnalysisService
                 MeanOutputTokensPerAnswer = outputs.Count > 0 ? Fin(outputs.Average()) : null,
                 MeanCostPerQuestionUsd = costs.Count > 0 ? Fin(costs.Average()) : null,
                 FailedAnswerCount = pairs.Count(p => ChatConsistencyMeasures.IsTerminalFailure(p.Answer))
+            };
+            return _availability ? WithAvailabilityLevels(levels, period) : levels;
+        }
+
+        /// <summary>
+        /// <paramref name="levels"/> with the period's provider availability: the candidate attempts of its
+        /// analyzed units and availability-only runs, the cluster-adjusted interval, and the re-runs through
+        /// their lineage. Descriptive: every stratum, not P6's common strata.
+        /// </summary>
+        private ChatConsistencyPeriodLevels WithAvailabilityLevels(ChatConsistencyPeriodLevels levels, string period)
+        {
+            var units = period == "baseline" ? _availabilityBaselineUnits : _availabilityComparisonUnits;
+            var runs = MembersOf(units).DistinctBy(r => r.Id).ToList();
+            var summary = ChatConsistencyAvailability.Summary(runs, _evidence.Attempts, _evidence.Lineage);
+            var availabilityIds = _evidence.AvailabilityRuns.Select(a => a.Run.Id).ToHashSet();
+            bool recorded = runs.Any(ChatConsistencyAvailability.IsRecorded);
+            return levels with
+            {
+                AvailabilityRecorded = recorded,
+                AvailabilityRunCount = runs.Count,
+                AvailabilityRecordedRunCount = runs.Count(ChatConsistencyAvailability.IsRecorded),
+                AvailabilityOnlyRunCount = runs.Count(r => availabilityIds.Contains(r.Id)),
+                ValidAttemptCount = recorded ? summary.ValidAttempts : null,
+                ProviderErrorCount = recorded ? summary.ProviderErrors : null,
+                UnattributedErrorCount = recorded ? summary.UnattributedErrors : null,
+                OurSideFailureCount = recorded ? summary.OurSideFailures : null,
+                ProviderErrorRate = recorded ? Fin(summary.ProviderErrorRate) : null,
+                ProviderErrorRateLow = recorded ? Fin(summary.ProviderErrorRateLow) : null,
+                ProviderErrorRateHigh = recorded ? Fin(summary.ProviderErrorRateHigh) : null,
+                RerunsNeeded = summary.RerunsNeeded,
+                ProviderRerunsNeeded = summary.ProviderRerunsNeeded
             };
         }
 
@@ -3391,7 +4087,8 @@ public class ChatConsistencyAnalysisService
                 SpeedTelemetry = s.SpeedTelemetry,
                 SpeedLegacy = s.SpeedLegacy,
                 Work = s.Work,
-                Cost = s.Cost
+                Cost = s.Cost,
+                Availability = s.Availability
             }).ToList();
         }
 
@@ -3399,9 +4096,11 @@ public class ChatConsistencyAnalysisService
 
         /// <summary>
         /// Lower-case hex SHA-256 over a canonical serialization of every input: the request with its run
-        /// selection and comparison set, the protocol, each run with the fields and per-answer values the
-        /// analysis reads, the calibrations, the annotations and the price card, all in id order, the runs not
-        /// analyzed and why, by start, and the compared set with the unit kind and each unit's member runs.
+        /// selection, comparison set and protocol version, the protocol, each run with the fields and
+        /// per-answer values the analysis reads (its provider attempt rollups, re-run counts and replacement
+        /// link included), the calibrations, the annotations and the price card, all in id order, the runs not
+        /// analyzed and why, by start, the availability-only runs with their rollups, and the compared set with
+        /// the unit kind and each unit's member runs.
         /// </summary>
         public string InputSha256()
         {
@@ -3433,6 +4132,7 @@ public class ChatConsistencyAnalysisService
                     r.MaxParallelQuestionsUsed,
                     Suite = ChatConsistencyMeasures.SuiteIdentity(r),
                     r.IsConsistencyAnchor,
+                    Ledger = Ledger(r),
                     Answers = r.Answers.OrderBy(a => a.Id).Select(a => new
                     {
                         a.Id,
@@ -3501,6 +4201,20 @@ public class ChatConsistencyAnalysisService
                 })
                 .ToList();
 
+            // The provider attempt rollups, re-run counts and lineage a run carries.
+            object Ledger(BenchmarkRun r) => new
+            {
+                r.ProviderLedgerVersion,
+                r.CandidateValidAttemptCount,
+                r.CandidateProviderErrorCount,
+                r.CandidateUnattributedErrorCount,
+                r.CandidateOurSideFailureCount,
+                r.RepairPassCount,
+                r.ProviderRepairPassCount,
+                r.ReplacesRunId,
+                r.ReplacementCause
+            };
+
             object Calibration(BenchmarkAssessorCalibration c) => new
             {
                 c.Id,
@@ -3543,11 +4257,26 @@ public class ChatConsistencyAnalysisService
                         : null,
                     ComparisonSet = _request.ComparisonSet is { } set ? new { set.Kind, set.Key } : null,
                     BaselineBatteryRunIds = _request.BaselineBatteryRunIds?.Distinct().OrderBy(i => i).ToList(),
-                    ComparisonBatteryRunIds = _request.ComparisonBatteryRunIds?.Distinct().OrderBy(i => i).ToList()
+                    ComparisonBatteryRunIds = _request.ComparisonBatteryRunIds?.Distinct().OrderBy(i => i).ToList(),
+                    _request.ProtocolVersion
                 },
                 Protocol = _protocol.ToJson(),
                 Runs = runs,
                 UnanalyzedRuns = _evidence.UnanalyzedRuns.Select(u => new { u.RunId, u.Period, u.Reason, u.BatteryRunId }).ToList(),
+                AvailabilityRuns = _evidence.AvailabilityRuns
+                    .OrderBy(a => a.Run.Id)
+                    .Select(a => new
+                    {
+                        a.Run.Id,
+                        a.Period,
+                        a.UnitId,
+                        StartedAtUtc = ChatConsistencyMeasures.AsUtc(a.Run.StartedAtUtc),
+                        a.Run.Status,
+                        a.Run.HarnessVersion,
+                        a.Run.RerunHarnessVersion,
+                        Ledger = Ledger(a.Run)
+                    })
+                    .ToList(),
                 ComparisonSet = _evidence.ComparisonSet,
                 UnitKind,
                 Units = UnitViews().Select(u => new { u.Period, u.UnitId, u.StartedAtUtc, u.MemberRunIds }).ToList(),
@@ -3582,6 +4311,32 @@ public class ChatConsistencyAnalysisService
         _ => "not computable"
     };
 
+    /// <summary>
+    /// The verdict as <paramref name="endpoint"/> words it: P6 reads <c>more provider errors</c> or <c>fewer
+    /// provider errors</c>, the errors as observed in GnollBench runs, never a judgment of the provider.
+    /// </summary>
+    private static string VerdictLabel(ConsistencyVerdict? verdict, ChatConsistencyEndpointProtocol endpoint)
+        => endpoint.Id == ChatConsistencyEndpointIds.ProviderErrorRate && verdict is ConsistencyVerdict.ChangedDegraded or ConsistencyVerdict.ChangedImproved
+            ? verdict == ConsistencyVerdict.ChangedDegraded ? MoreProviderErrors : FewerProviderErrors
+            : VerdictLabel(verdict, endpoint.WorkDirection);
+
+    /// <summary>P6's decisive verdict labels.</summary>
+    public const string MoreProviderErrors = "more provider errors";
+    public const string FewerProviderErrors = "fewer provider errors";
+
+    /// <summary>The reliability family's attempt-level rates under Protocol V2.</summary>
+    private static readonly IReadOnlySet<string> AttemptRateIds = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "providerOverloaded", "providerServerErrors", "providerTimeouts", "providerStreamFailures",
+        "rateLimitOurs", "rateLimitUnattributed", "transportUnattributed", "ourSideFailures"
+    };
+
+    /// <summary>The attempt-level rates of provider-class attempts, R6's input under Protocol V2.</summary>
+    private static readonly IReadOnlySet<string> ProviderRateIds = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "providerOverloaded", "providerServerErrors", "providerTimeouts", "providerStreamFailures"
+    };
+
     /// <summary>A <see cref="ChatConsistencyUnanalyzedReasons"/> value as the notes write it.</summary>
     private static string UnanalyzedReasonText(string reason) => reason switch
     {
@@ -3590,6 +4345,7 @@ public class ChatConsistencyAnalysisService
         ChatConsistencyUnanalyzedReasons.BeforeFirstRun => "before the first run",
         ChatConsistencyUnanalyzedReasons.AfterLastRun => "after the last run",
         ChatConsistencyUnanalyzedReasons.NotSelected => "not assigned to a period",
+        ChatConsistencyUnanalyzedReasons.AvailabilityOnly => "provider availability only",
         _ => reason
     };
 
@@ -3777,16 +4533,22 @@ internal static class ChatConsistencyResampling
 
     /// <summary>
     /// The run-cluster bootstrap of the stratified shift: each replicate draws each period's runs with
-    /// replacement, keeps each drawn run whole, and recomputes <see cref="ChatConsistencyStatistics.StratifiedShift"/>.
-    /// The distribution is null when the point estimate is undefined.
+    /// replacement, keeps each drawn run whole, and recomputes <see cref="ChatConsistencyStatistics.StratifiedShift"/>
+    /// with <paramref name="statistic"/> (Hodges–Lehmann for P2 and P3, the mean for P6's 0/100 attempts, whose
+    /// per-stratum mean is the rate Σk/Σn). With <paramref name="fixedStrata"/> every replicate keeps those
+    /// strata, and a replicate missing one is dropped; otherwise each replicate uses the strata it holds in
+    /// common. The distribution is null when the point estimate is undefined.
     /// </summary>
     public static (StratifiedShiftResult Point, BootstrapDistribution? Distribution) StratifiedRunBootstrap(
         IReadOnlyList<IReadOnlyList<StratifiedObservation>> baseline,
         IReadOnlyList<IReadOnlyList<StratifiedObservation>> comparison,
+        BootstrapStatistic statistic,
         int replicates,
-        int seed)
+        int seed,
+        IReadOnlyCollection<int>? fixedStrata = null)
     {
-        var point = ChatConsistencyStatistics.StratifiedShift(baseline.SelectMany(r => r).ToList(), comparison.SelectMany(r => r).ToList());
+        var point = ChatConsistencyStatistics.StratifiedShift(
+            baseline.SelectMany(r => r).ToList(), comparison.SelectMany(r => r).ToList(), statistic, fixedStrata);
         if (!point.Shift.HasValue || baseline.Count == 0 || comparison.Count == 0) return (point, null);
 
         var rng = new Random(seed);
@@ -3799,7 +4561,7 @@ internal static class ChatConsistencyResampling
             sc.Clear();
             for (int j = 0; j < baseline.Count; j++) sb.AddRange(baseline[rng.Next(baseline.Count)]);
             for (int j = 0; j < comparison.Count; j++) sc.AddRange(comparison[rng.Next(comparison.Count)]);
-            values[r] = ChatConsistencyStatistics.StratifiedShift(sb, sc).Shift ?? double.NaN;
+            values[r] = ChatConsistencyStatistics.StratifiedShift(sb, sc, statistic, fixedStrata).Shift ?? double.NaN;
         }
 
         return (point, new BootstrapDistribution(point.Shift.Value, values, replicates, new[] { baseline.Count, comparison.Count }));

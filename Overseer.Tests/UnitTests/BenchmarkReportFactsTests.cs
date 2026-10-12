@@ -1400,4 +1400,244 @@ public class BenchmarkReportFactsTests
         };
         Assert.Equal(BenchmarkReportFacts.SupportOneGraderDifferentProvider, BenchmarkReportFacts.RowSupportLabelFor(single, new[] { 1 }, sheet));
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Provider availability (format version 12)
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// A recorded pool of two runs, one of them replaced: 12 provider errors in 1,480 valid attempts
+    /// (0.81 %, about 1 in 123), 3 unattributed, 5 our-side failures, 3 re-runs of which 2 for provider errors.
+    /// </summary>
+    internal static ProviderAvailabilitySummary RecordedAvailability() => new()
+    {
+        Recorded = true,
+        RecordedRuns = 2,
+        TotalRuns = 2,
+        ReplacedRunsIncluded = 1,
+        ValidAttempts = 1480,
+        ProviderErrors = 12,
+        UnattributedErrors = 3,
+        OurSideFailures = 5,
+        ProviderErrorRate = 12.0 / 1480,
+        ProviderErrorRateLow = 0.0046,
+        ProviderErrorRateHigh = 0.014,
+        InclusiveRate = 15.0 / 1480,
+        InclusiveRateLow = 0.006,
+        InclusiveRateHigh = 0.017,
+        Overloaded = 7,
+        ServerErrors = 4,
+        Timeouts = 0,
+        StreamFailures = 1,
+        RateLimitedOurs = 2,
+        RateLimitedUnattributed = 1,
+        TransportUnattributed = 2,
+        QuestionsLost = 1,
+        RepairPasses = 2,
+        ProviderRepairPasses = 1,
+        ReplacementRuns = 1,
+        ProviderReplacementRuns = 1,
+        RerunsNeeded = 3,
+        ProviderRerunsNeeded = 2
+    };
+
+    [Fact]
+    public void ARecordedPool_StatesEveryAvailabilityFact_InTheSharedFormatting()
+    {
+        var comparison = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80, 75, 85));
+        var input = Input(comparison, "run:1", SimpleRun(1, "OpenAI"));
+
+        var sheet = BuildSheet(new BenchmarkReportFactsInput
+        {
+            Comparison = input.Comparison,
+            SubjectKey = input.SubjectKey,
+            Runs = input.Runs,
+            Availability = RecordedAvailability()
+        });
+
+        var keys = sheet.Facts.Where(f => f.Key.StartsWith("availability.", StringComparison.Ordinal)).Select(f => f.Key).ToList();
+        Assert.Equal(BenchmarkReportFacts.AvailabilityKeys.OrderBy(k => k, StringComparer.Ordinal), keys);
+        Assert.Equal(22, keys.Count);
+        Assert.All(keys, key => Assert.True(FactOf(sheet, key).Available, key));
+
+        Assert.Equal("1,480 attempts", FactOf(sheet, "availability.attempts").Display);
+        Assert.Equal("12 of 1,480 attempts", FactOf(sheet, "availability.providerErrors").Display);
+        Assert.Equal("0.81 %", FactOf(sheet, "availability.providerErrorRate").Display);
+        Assert.Equal("0.46 %", FactOf(sheet, "availability.providerErrorRateCi95Low").Display);
+        Assert.Equal("1.4 %", FactOf(sheet, "availability.providerErrorRateCi95High").Display);
+        Assert.Equal("3 of 1,480 attempts", FactOf(sheet, "availability.unattributedErrors").Display);
+        Assert.Equal("1.0 %", FactOf(sheet, "availability.inclusiveRate").Display);
+        Assert.Equal("7", FactOf(sheet, "availability.overloaded").Display);
+        Assert.Equal("0", FactOf(sheet, "availability.timeouts").Display);
+        Assert.Equal("5", FactOf(sheet, "availability.ourSideFailures").Display);
+        Assert.Equal("1 question", FactOf(sheet, "availability.questionsLost").Display);
+        Assert.Equal("3 re-runs", FactOf(sheet, "availability.reruns").Display);
+        Assert.Equal("2 re-runs", FactOf(sheet, "availability.providerReruns").Display);
+        Assert.Equal("1 replaced run", FactOf(sheet, "availability.replacedRuns").Display);
+        Assert.Equal("about 1 in 123", FactOf(sheet, "availability.oneIn").Display);
+        Assert.Equal(12.0 / 1480, FactOf(sheet, "availability.providerErrorRate").Value!.GetValue<double>(), 12);
+    }
+
+    [Fact]
+    public void APoolRecordedForSomeRunsOnly_SaysSo_OnItsAttempts()
+    {
+        var comparison = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80, 75, 85));
+        var summary = RecordedAvailability() with { RecordedRuns = 1, TotalRuns = 3 };
+
+        var sheet = BuildSheet(new BenchmarkReportFactsInput
+        {
+            Comparison = comparison,
+            SubjectKey = "run:1",
+            Runs = new Dictionary<long, BenchmarkRun> { [1] = SimpleRun(1, "OpenAI") },
+            Availability = summary
+        });
+
+        Assert.Equal("1,480 attempts; recorded for 1 of 3 runs", FactOf(sheet, "availability.attempts").Display);
+    }
+
+    [Fact]
+    public void ALegacyPool_MarksEveryAvailabilityFactUnavailable_NotRecordedBeforeHarness56()
+    {
+        var comparison = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80, 75, 85));
+
+        var sheet = BuildSheet(new BenchmarkReportFactsInput
+        {
+            Comparison = comparison,
+            SubjectKey = "run:1",
+            Runs = new Dictionary<long, BenchmarkRun> { [1] = SimpleRun(1, "OpenAI") },
+            Availability = ProviderAvailabilitySummary.NotRecorded(1)
+        });
+
+        var facts = sheet.Facts.Where(f => f.Key.StartsWith("availability.", StringComparison.Ordinal)).ToList();
+        Assert.Equal(BenchmarkReportFacts.AvailabilityKeys.Count, facts.Count);
+        Assert.All(facts, fact =>
+        {
+            Assert.False(fact.Available);
+            Assert.Equal(BenchmarkReportFacts.NotAvailable, fact.Display);
+            Assert.Equal("not recorded before harness 56", fact.UnavailableReason);
+        });
+
+        var subject = Assert.Single(sheet.Entries, e => e.IsSubject);
+        Assert.False(subject.ProviderAvailabilityRecorded);
+        Assert.Null(subject.ProviderErrors);
+    }
+
+    [Fact]
+    public void WithoutASummary_TheSheetCarriesNoAvailabilityFact()
+    {
+        var comparison = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80, 75, 85));
+
+        var sheet = BuildSheet(Input(comparison, "run:1", SimpleRun(1, "OpenAI")));
+
+        Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("availability.", StringComparison.Ordinal));
+        Assert.Null(Assert.Single(sheet.Entries).ProviderAvailabilityRecorded);
+    }
+
+    [Fact]
+    public void AZeroRate_HasNoNaturalFrequency_AndNoValidAttempt_LeavesTheRatesUnavailable()
+    {
+        var comparison = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80, 75, 85));
+        BenchmarkReportFactSheet SheetOf(ProviderAvailabilitySummary summary) => BuildSheet(new BenchmarkReportFactsInput
+        {
+            Comparison = comparison,
+            SubjectKey = "run:1",
+            Runs = new Dictionary<long, BenchmarkRun> { [1] = SimpleRun(1, "OpenAI") },
+            Availability = summary
+        });
+
+        var zero = SheetOf(RecordedAvailability() with { ProviderErrors = 0, ProviderErrorRate = 0.0, ProviderErrorRateLow = 0.0, ProviderErrorRateHigh = 0.0026 });
+        Assert.Equal("0 %", FactOf(zero, "availability.providerErrorRate").Display);
+        Assert.False(FactOf(zero, "availability.oneIn").Available);
+        Assert.Equal(BenchmarkReportFacts.OneInReason, FactOf(zero, "availability.oneIn").UnavailableReason);
+
+        var none = SheetOf(new ProviderAvailabilitySummary { Recorded = true, RecordedRuns = 1, TotalRuns = 1 });
+        Assert.Equal("0 attempts", FactOf(none, "availability.attempts").Display);
+        foreach (string key in new[] { "availability.providerErrorRate", "availability.providerErrorRateCi95Low", "availability.inclusiveRateCi95High" })
+        {
+            Assert.False(FactOf(none, key).Available);
+            Assert.Equal(BenchmarkReportFacts.NoValidAttemptsReason, FactOf(none, key).UnavailableReason);
+        }
+    }
+
+    [Fact]
+    public void TheEntryFigures_CarryTheSubjectsSummary_AndEachPeersComparisonAvailability()
+    {
+        var subjectEntry = Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80, 75, 85);
+        var peerEntry = Entry("run:2", new long[] { 2 }, "Peer", "Google", 70, 65, 75);
+        peerEntry.Availability = new ProviderAvailabilityDto
+        {
+            Recorded = true,
+            ValidAttempts = 900,
+            ProviderErrors = 27,
+            ProviderErrorRate = 0.03,
+            ProviderErrorRateLow = 0.02,
+            ProviderErrorRateHigh = 0.045,
+            UnattributedErrors = 4,
+            RerunsNeeded = 1,
+            ProviderRerunsNeeded = 0
+        };
+        var comparison = Comparison(subjectEntry, peerEntry);
+
+        var sheet = BuildSheet(new BenchmarkReportFactsInput
+        {
+            Comparison = comparison,
+            SubjectKey = "run:1",
+            Runs = new Dictionary<long, BenchmarkRun> { [1] = SimpleRun(1, "OpenAI"), [2] = SimpleRun(2, "Google") },
+            Availability = RecordedAvailability()
+        });
+
+        var subject = Assert.Single(sheet.Entries, e => e.IsSubject);
+        Assert.True(subject.ProviderAvailabilityRecorded);
+        Assert.Equal(1480, subject.ProviderAttempts);
+        Assert.Equal(12, subject.ProviderErrors);
+        Assert.Equal(3, subject.ProviderUnattributedErrors);
+        Assert.Equal(3, subject.RerunsNeeded);
+        Assert.Equal(2, subject.ProviderRerunsNeeded);
+        Assert.Equal(0.0046, subject.ProviderErrorRateLow);
+
+        var peer = Assert.Single(sheet.Entries, e => e.PeerLetter == "A");
+        Assert.True(peer.ProviderAvailabilityRecorded);
+        Assert.Equal(900, peer.ProviderAttempts);
+        Assert.Equal(27, peer.ProviderErrors);
+        Assert.Equal(0.03, peer.ProviderErrorRate);
+        Assert.Equal(4, peer.ProviderUnattributedErrors);
+
+        // Peers carry no availability facts of their own on a per-model sheet.
+        Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("peer.", StringComparison.Ordinal) && f.Key.Contains("availability", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AComparisonSheet_CarriesOnlyTheEightHeadlineKeysPerModel_AndCopiesTheEntryFigures()
+    {
+        var comparison = FiveModelComparison();
+        var runs = FiveModelRuns();
+        var keys = BenchmarkComparisonReportFacts.DefaultCoveredKeys(comparison);
+        var availability = keys.ToDictionary(k => k, _ => RecordedAvailability());
+
+        var result = BenchmarkComparisonReportFacts.BuildFromRuns(comparison, keys, runs, 120, availability: availability);
+        var sheet = Assert.IsType<BenchmarkReportFactSheet>(result.Sheet);
+
+        Assert.Equal(8, BenchmarkReportFacts.AvailabilityHeadlineKeys.Count);
+        foreach (var model in sheet.Peers)
+        {
+            string prefix = BenchmarkComparisonReportFacts.ModelPrefix(model.Letter);
+            var availabilityKeys = sheet.Facts
+                .Select(f => f.Key)
+                .Where(k => k.StartsWith(prefix + "availability.", StringComparison.Ordinal))
+                .Select(k => k[prefix.Length..])
+                .ToList();
+            Assert.Equal(BenchmarkReportFacts.AvailabilityHeadlineKeys.OrderBy(k => k, StringComparer.Ordinal), availabilityKeys);
+            Assert.Equal("12 of 1,480 attempts", FactOf(sheet, prefix + "availability.providerErrors").Display);
+
+            var entry = Assert.Single(sheet.Entries, e => e.PeerLetter == model.Letter);
+            Assert.True(entry.ProviderAvailabilityRecorded);
+            Assert.Equal(1480, entry.ProviderAttempts);
+            Assert.Equal(12, entry.ProviderErrors);
+            Assert.Equal(12.0 / 1480, entry.ProviderErrorRate);
+            Assert.Equal(3, entry.RerunsNeeded);
+        }
+        Assert.DoesNotContain(sheet.Facts, f => f.Key.EndsWith(".availability.overloaded", StringComparison.Ordinal)
+                                                || f.Key.EndsWith(".availability.oneIn", StringComparison.Ordinal)
+                                                || f.Key.EndsWith(".availability.inclusiveRate", StringComparison.Ordinal));
+    }
 }

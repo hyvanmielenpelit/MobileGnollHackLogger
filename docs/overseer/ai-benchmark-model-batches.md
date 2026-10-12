@@ -368,6 +368,27 @@ batch is driven, a run is in flight or another claim is held.
   dropped. The earlier runs stay in Run History but leave the batch. The dialog asks for confirmation
   first, stating the number of completed models and their last total cost.
 
+**Lineage of a relaunched child.** Every relaunch above that replaces a superseded child records which
+run replaced which (`BenchmarkRun.ReplacesRunId`, with a `ReplacementCause`), from the member's newest
+superseded link (`ChildReplacementAsync`):
+
+- a **single-run** child: the new run replaces the superseded run;
+- a **series** child: the whole series is replaced, and the link is recorded **member to member** — each
+  member run of the new series replaces the newest run at the same index of the superseded series;
+- a **battery** child: the whole battery run is replaced, **member to member** — each member of the new
+  battery run replaces the superseded battery run's member in the same `(SuiteIndex, Round)` slot (its
+  live member, else its newest superseded), where one exists.
+
+The cause is `InstrumentChange` under *Re-run under current instrument*, `OperatorRequest` when the
+replaced run was canceled, `ProviderFailure` when one of its answers failed at the provider, `OurFailure`
+for any other recorded run, and `Unknown` for a run started before harness 56 or no longer stored. A
+child that **Continue** keeps adds no link; a stopped series or battery run it resumes links as its own
+resume does — a battery run's relaunched member replaces the member it supersedes, and a series resume
+replaces nothing ([`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 3.10). The pooled provider-availability figures of a member, a
+Model Comparison entry and a battery run include the replaced runs, so a run that failed at the provider
+and was relaunched still counts ([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md)
+§§ 7 and 8).
+
 **Skip a pending model.** `POST runs/{id}/members/{memberId}/skip` marks a `Pending` member `Skipped`
 while the batch is live or stopped; it never runs. **400** for a member in any other state or a final
 batch.
@@ -411,8 +432,15 @@ re-score, a new battery analysis — refreshes the result without a status chang
   text over those with call telemetry (`TtftP50Ms`).
 - **Cost** — candidate and total cost summed over the completed runs, each on its own pricing snapshot,
   and the candidate cost per answered question; null when any run cannot be priced.
-- **Errors** — refuted claims, confirmed critical errors, the own-wait share, failed answers, provider
-  errors and retries, and `FlaggedAnswers`, the answers carrying an advisory flag.
+- **Errors** — refuted claims, confirmed critical errors, the own-wait share, failed answers, retries,
+  and `FlaggedAnswers`, the answers carrying an advisory flag.
+- **Provider availability** — `ProviderErrors`, the candidate's **provider-class attempts** over the
+  member's recorded runs (no longer a count of `ProviderError` answers), with its valid attempts and
+  rate, and `RerunsNeeded`, the repair passes and replacement runs the member needed with their
+  provider-caused part. They are read from the runs' rollup columns and lineage
+  ([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md)); a member whose runs
+  all started before harness 56 reads *not recorded*. The progress dialog's member figures show them as
+  **Provider errors** (*0.81 % (12 of 1,480 attempts)*) and **Re-runs** (*3 (2 provider)*).
 - **Size** — `QuestionCount`, the questions summed over the completed runs.
 
 The batch carries the live candidate and total cost of every member run so far (a running run's from its

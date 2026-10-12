@@ -151,6 +151,12 @@
                       <div popover="hint" class="gh-tooltip" [id]="'tip-instr-' + run.id"
                            [attr.style]="'position-anchor: --tip-instr-' + run.id">{{ change.description }}</div>
                     }
+                    @if (cardHasProviderTrouble(run)) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <app-provider-error-badge [recorded]="run.providerAvailabilityRecorded" [valid]="run.providerValidAttempts"
+                                                [providerErrors]="run.providerErrorCount" [unattributed]="run.providerUnattributedErrorCount"
+                                                [rerunsNeeded]="run.rerunsNeeded" [providerReruns]="run.providerRerunsNeeded" />
+                    }
                   </div>
                   <!-- Focused after Load more and after a delete. -->
                   <h5 class="rh-card-title" [id]="'rh-run-' + run.id + '-title'" tabindex="-1">
@@ -328,6 +334,12 @@
                     } @else if (battery.analysisStale) {
                       <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                       <span class="gh-tag gh-tag-changed rh-battery-stale">Analysis stale</span>
+                    }
+                    @if (cardHasProviderTrouble(battery)) {
+                      <span class="rh-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                      <app-provider-error-badge [recorded]="battery.providerAvailabilityRecorded" [valid]="battery.providerValidAttempts"
+                                                [providerErrors]="battery.providerErrorCount" [unattributed]="battery.providerUnattributedErrorCount"
+                                                [rerunsNeeded]="battery.rerunsNeeded" [providerReruns]="battery.providerRerunsNeeded" />
                     }
                   </div>
                   <!-- Focused after Load more and after a delete. -->

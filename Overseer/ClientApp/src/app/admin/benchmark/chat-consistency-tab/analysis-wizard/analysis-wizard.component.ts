@@ -61,14 +61,17 @@ import {
 } from '../chat-consistency-periods';
 import {
   CC_PROTOCOL_V1,
-  CC_PROTOCOL_V1_ENDPOINTS,
+  CC_PROTOCOL_V2,
   CcEndpointReadiness,
   CcPreviewNote,
+  CcProtocolEndpoint,
   ccEndpointReadiness,
   ccIneligibleInPeriods,
   ccMarginText,
   ccPeriodSample,
   ccPreviewNotes,
+  ccProtocolAxes,
+  ccProtocolEndpoints,
   ccSampleCountText,
   ccSampleLine,
   ccSegmentNotes
@@ -76,6 +79,7 @@ import {
 import { CC_ALL_DATES, CcDateRange, ccDateRangeText, ccRangeBounds } from '../chat-consistency-range';
 import { CC_EMPTY_SCOPE, CcRunScope, scopeIsDefault } from '../chat-consistency-scope';
 import {
+  CC_LATEST_PROTOCOL_VERSION,
   CcAnalysisRequest,
   CcAnalysisResult,
   CcAnalysisSummary,
@@ -85,6 +89,7 @@ import {
   CcComparisonSet,
   CcModelAxis,
   CcProtocolOverrides,
+  CcProtocolVersion,
   CcRunRow,
   CcRunSelection,
   CcTimeline,
@@ -98,7 +103,7 @@ import { CcRegradePanelComponent } from './regrade-panel.component';
 import { CcReportsStepComponent } from './reports-step.component';
 import { CcResultsViewComponent } from './results-view.component';
 
-export { CC_PROTOCOL_V1, CC_PROTOCOL_V1_ENDPOINTS } from '../chat-consistency-readiness';
+export { CC_PROTOCOL_V1, CC_PROTOCOL_V1_ENDPOINTS, CC_PROTOCOL_V2, CC_PROTOCOL_V2_ENDPOINTS } from '../chat-consistency-readiness';
 
 /** The analysis steps the outer wizard shows through this component, in order. */
 export type CcAnalysisStep = 'analyze' | 'results' | 'reports' | 'documents';
@@ -197,6 +202,11 @@ const BOUND_NOTE_LABELS: Readonly<Record<CcPeriodBound, string>> = {
   comparisonLastId: 'Comparison last run'
 };
 
+/** A stored analysis's protocol version as the request names it; a missing or unknown one reads as V1. */
+function storedProtocolVersion(version: string | null | undefined): CcProtocolVersion {
+  return (version ?? '').trim().toUpperCase() === 'V2' ? 'V2' : 'V1';
+}
+
 const NO_POINTS: readonly CcTimelinePoint[] = [];
 const NO_BATTERY_POINTS: readonly CcBatteryTimelinePoint[] = [];
 
@@ -225,8 +235,8 @@ interface PeriodState {
  * The analysis steps of the Chat Consistency wizard over one subject, without navigation of their
  * own: the outer wizard chooses the step through `step` and draws the step bar, headings and footer.
  * *Analyze* is a workspace: a settings sidebar (Setup: the subject, the name and the Split rule;
- * Controls: the control runs, the common-grader re-grade and pooling; Protocol: Protocol V1 and its
- * overrides) beside the *Periods* view — a summary strip over the step-1 units as cards, on which the
+ * Controls: the control runs, the common-grader re-grade and pooling; Protocol: the analysis's protocol —
+ * V2 for a new analysis, the stored analysis's on *Analyze again* — and its overrides) beside the *Periods* view — a summary strip over the step-1 units as cards, on which the
  * four period bounds are set — and the *Preview* view of what the analysis will see. *Results* shows
  * the saved result, *Reports* writes its AI reports, and *Documents* lists them in the Download Center
  * panel. A step's body is mounted on its first visit and afterwards kept, hidden while another step
@@ -309,8 +319,6 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   @ViewChild(CcPeriodUnitsComponent) periodUnitsList?: CcPeriodUnitsComponent;
   @ViewChild('workspace') private workspaceRef?: ElementRef<HTMLElement>;
 
-  readonly protocolEndpoints = CC_PROTOCOL_V1_ENDPOINTS;
-  readonly protocol = CC_PROTOCOL_V1;
   readonly rules = CC_SPLIT_RULES;
   readonly sidebarTabs = CC_ANALYZE_SIDEBAR_TABS;
   readonly views = CC_ANALYZE_VIEWS;
@@ -341,9 +349,16 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   /** What the last bound press or *Split here* did, for the polite note under the view bar. */
   periodNote = '';
 
-  /** The margin overrides as typed, by endpoint id: index points for P1, percent for the others. */
+  /** The margin overrides as typed, by endpoint id: index points for P1, percentage points for P6, percent for the others. */
   marginOverrides: Record<string, string> = {};
   alphaOverride = '';
+
+  /**
+   * The saved analysis whose settings step 3 holds, from opening it or *Analyze again*, and its protocol
+   * version, which the request keeps; null for a new analysis, which uses the latest protocol. Setting the
+   * periods anew, by a bound, a Split rule or *Split here*, starts a new analysis.
+   */
+  reanalysis: { analysisId: number; protocolVersion: CcProtocolVersion } | null = null;
 
   /** The checked control runs; only those among {@link controlCandidates} are used. */
   readonly controlSelected = new Set<number>();
@@ -404,6 +419,40 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   /** `run`, or `battery run` in a battery set. */
   get noun(): string {
     return this.batteryMode ? 'battery run' : 'run';
+  }
+
+  // --- Protocol ---
+
+  /** The protocol the request carries: the stored analysis's while step 3 holds its settings, else the latest. */
+  get protocolVersion(): CcProtocolVersion {
+    return this.reanalysis?.protocolVersion ?? CC_LATEST_PROTOCOL_VERSION;
+  }
+
+  /** The protocol's own primary endpoints: P1–P5 under V1, P1–P6 under V2. */
+  get protocolEndpoints(): readonly CcProtocolEndpoint[] {
+    return ccProtocolEndpoints(this.protocolVersion);
+  }
+
+  /** The protocol's α and minimum samples; `minimumAttemptsPerStratum` under V2 only. */
+  get protocol(): typeof CC_PROTOCOL_V1 & { readonly minimumAttemptsPerStratum?: number } {
+    return this.protocolVersion === 'V2' ? CC_PROTOCOL_V2 : CC_PROTOCOL_V1;
+  }
+
+  /** `P1–P5`, `P1–P6`: the endpoints Holm adjusts across. */
+  get protocolSpan(): string {
+    const endpoints = this.protocolEndpoints;
+    return endpoints.length > 1 ? `${endpoints[0].id}–${endpoints[endpoints.length - 1].id}` : endpoints[0]?.id ?? '';
+  }
+
+  /**
+   * Why the protocol is not the latest: `Kept from analysis #12, which Analyze again repeats. Setting the
+   * periods anew starts a new analysis under Protocol V2.`; empty for a new analysis.
+   */
+  get protocolNote(): string {
+    const reanalysis = this.reanalysis;
+    if (!reanalysis || reanalysis.protocolVersion === CC_LATEST_PROTOCOL_VERSION) return '';
+    return `Kept from analysis #${reanalysis.analysisId}, which Analyze again repeats. `
+      + `Setting the periods anew starts a new analysis under Protocol ${CC_LATEST_PROTOCOL_VERSION}.`;
   }
 
   ngOnDestroy(): void {
@@ -472,7 +521,7 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   get overridesError(): string {
-    for (const endpoint of CC_PROTOCOL_V1_ENDPOINTS) {
+    for (const endpoint of this.protocolEndpoints) {
       const text = (this.marginOverrides[endpoint.id] ?? '').trim();
       if (text === '') continue;
       const value = Number(text);
@@ -513,12 +562,19 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     this.presetAnchorUtc = null;
     this.periodNote = '';
     this.relaxedPooling = result.request?.relaxedPooling ?? result.endpoints.some(endpoint => endpoint.relaxedPooling);
+    // Analyzing these settings again keeps the stored analysis's protocol.
+    this.reanalysis = result.analysisId === null
+      ? null
+      : {
+        analysisId: result.analysisId,
+        protocolVersion: storedProtocolVersion(result.protocol?.protocolVersion ?? result.request?.protocolVersion)
+      };
     // The margin and α overrides the analysis was requested with, as the step-3 fields hold them; none
     // for an analysis that records no request. Stored margin keys are camelCased (p1), the fields' ids are not.
     const overrides = result.request?.protocolOverrides ?? null;
     const margins = Object.entries(overrides?.margins ?? {});
     this.marginOverrides = {};
-    for (const endpoint of CC_PROTOCOL_V1_ENDPOINTS) {
+    for (const endpoint of this.protocolEndpoints) {
       const margin = margins.find(([id]) => id.toLowerCase() === endpoint.id.toLowerCase())?.[1];
       if (typeof margin === 'number' && Number.isFinite(margin)) {
         this.marginOverrides[endpoint.id] = String(endpoint.unit === '%' ? Math.round(margin * 100 * 1e6) / 1e6 : margin);
@@ -677,14 +733,18 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
 
   // --- Units and periods ---
 
-  /** The step-1 units, ordered by start then id: battery runs in a battery set (complete ones only), else runs. */
+  /**
+   * The step-1 units, ordered by start then id: battery runs in a battery set (complete ones only), else
+   * runs. A failed or canceled run listed for provider availability only is never a unit: the server adds
+   * the ones P6 reads by the periods' run ranges.
+   */
   get units(): readonly CcPeriodUnit[] {
     const battery = this.batteryMode;
     const cache = this.unitsCache;
     if (cache && cache.rows === this.rows && cache.batteryRows === this.batteryRows && cache.battery === battery) {
       return cache.units;
     }
-    const units = ccPeriodUnits(this.rows, this.batteryRows, battery);
+    const units = ccPeriodUnits(this.rows.filter(row => row.availabilityOnly !== true), this.batteryRows, battery);
     this.unitsCache = { rows: this.rows, batteryRows: this.batteryRows, battery, units };
     return units;
   }
@@ -795,6 +855,7 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     this.presetNote = '';
     this.presetAnchorUtc = null;
     this.resultUnits = null;
+    this.reanalysis = null;
     const label = BOUND_NOTE_LABELS[change.key];
     const what = this.ids[change.key] === null ? `${label} cleared.` : `${label}: ${this.noun} #${change.unitId}.`;
     this.periodNote = ruleChanged ? `${what} Split rule set to Manual.` : what;
@@ -855,6 +916,7 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     this.presetAnchorUtc = null;
     this.periodNote = '';
     this.resultUnits = null;
+    if (preset !== 'custom') this.reanalysis = null;
     const units = this.units;
     const battery = this.batteryMode;
     if (this.axis) {
@@ -935,7 +997,7 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     const battery = this.batteryMode;
     const units = battery
       ? this.batteryRows.map(row => ({ id: row.batteryRunId, startedAtUtc: row.startedAtUtc }))
-      : this.rows.map(row => ({ id: row.runId, startedAtUtc: row.startedAtUtc }));
+      : this.rows.filter(row => row.availabilityOnly !== true).map(row => ({ id: row.runId, startedAtUtc: row.startedAtUtc }));
     if (units.length === 0) return '';
     const noun = battery ? 'battery run' : 'run';
     const ordered = units.sort((a, b) => utcMillis(a.startedAtUtc) - utcMillis(b.startedAtUtc) || a.id - b.id);
@@ -958,8 +1020,13 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     return this.marginOverrides[id] ?? '';
   }
 
-  marginText(margin: number, unit: 'index points' | '%'): string {
+  marginText(margin: number, unit: CcProtocolEndpoint['unit']): string {
     return ccMarginText(margin, unit);
+  }
+
+  /** The unit an override field is typed in: `index points`, `%`, or `percentage points`. */
+  overrideUnit(unit: CcProtocolEndpoint['unit']): string {
+    return unit === 'pp' ? 'percentage points' : unit;
   }
 
   onMarginInput(id: string, event: Event): void {
@@ -1102,18 +1169,20 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   /** Each primary endpoint's readiness over the two periods; see {@link ccEndpointReadiness}. */
   get endpointReadiness(): readonly CcEndpointReadiness[] {
     const state = this.periodState;
-    return this.memo('readiness', [state, this.pointsById, this.relaxedPooling], () =>
-      ccEndpointReadiness(CC_PROTOCOL_V1_ENDPOINTS, state.baseline, state.comparison, this.pointsById, state.battery,
+    const endpoints = this.protocolEndpoints;
+    return this.memo('readiness', [state, this.pointsById, this.relaxedPooling, endpoints], () =>
+      ccEndpointReadiness(endpoints, state.baseline, state.comparison, this.pointsById, state.battery,
         { relaxedPooling: this.relaxedPooling }));
   }
 
   /** The preview's notes; each counts once in the Preview tab's badge and the strip's link. */
   get previewNotes(): readonly CcPreviewNote[] {
     const state = this.periodState;
-    return this.memo('notes', [state, this.eventGroupsInSpan, this.leftOutInPeriods, this.relaxedPooling], () => ccPreviewNotes({
+    const endpoints = this.protocolEndpoints;
+    return this.memo('notes', [state, this.eventGroupsInSpan, this.leftOutInPeriods, this.relaxedPooling, endpoints], () => ccPreviewNotes({
       battery: state.battery,
       eventGroupsInSpan: this.eventGroupsInSpan,
-      segmentNotes: ccSegmentNotes(state.baseline, state.comparison, this.relaxedPooling),
+      segmentNotes: ccSegmentNotes(state.baseline, state.comparison, this.relaxedPooling, ccProtocolAxes(endpoints)),
       periodRuns: [...this.periodRows('baseline'), ...this.periodRows('comparison')],
       leftOutInPeriods: this.leftOutInPeriods,
       ineligible: state.refusal ? [] : ccIneligibleInPeriods(state.units, state.ids, state.assignment)
@@ -1128,7 +1197,7 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   get previewFacts(): readonly CcPreviewFact[] {
     return this.memo('facts', [
       this.periodState, this.name, this.preset, this.presetAnnotationId, this.presetEventGroupKey, this.controlsRevision,
-      this.relaxedPooling, this.marginOverrides, this.alphaOverride, this.leftOutInPeriods, this.timeline
+      this.relaxedPooling, this.marginOverrides, this.alphaOverride, this.leftOutInPeriods, this.timeline, this.protocolVersion
     ], () => {
       const facts: CcPreviewFact[] = [
         { key: 'name', term: 'Name', value: this.name.trim() || 'Automatic' },
@@ -1201,17 +1270,23 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     return [...byGrader].map(([display, count]) => `Re-graded by ${display}: ${count} of ${plural(runs.length, 'run')}`).join('; ');
   }
 
-  /** `V1`, or `V1 with overrides: P2 margin 20 %, α 0.1`; an invalid override is named as the note. */
+  /**
+   * `V2`, or `V2 with overrides: P2 margin 20 %, α 0.1`; an invalid override is named as the note, and a
+   * protocol kept from the stored analysis says so.
+   */
   private get protocolFact(): { value: string; note?: string } {
+    const version = this.protocolVersion;
+    const kept = this.protocolNote;
     const error = this.overridesError;
-    if (error) return { value: 'V1', note: error };
+    if (error) return { value: version, note: error };
     const parts: string[] = [];
-    for (const endpoint of CC_PROTOCOL_V1_ENDPOINTS) {
+    for (const endpoint of this.protocolEndpoints) {
       const text = (this.marginOverrides[endpoint.id] ?? '').trim();
       if (text !== '') parts.push(`${endpoint.id} margin ${ccMarginText(Number(text), endpoint.unit).replace(/^±/, '')}`);
     }
     if (this.alphaOverride.trim() !== '') parts.push(`α ${Number(this.alphaOverride.trim())}`);
-    return { value: parts.length > 0 ? `V1 with overrides: ${parts.join(', ')}` : 'V1' };
+    const value = parts.length > 0 ? `${version} with overrides: ${parts.join(', ')}` : version;
+    return kept ? { value, note: kept } : { value };
   }
 
   get analyzeBlocked(): string {
@@ -1250,6 +1325,9 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     if (this.controlCandidates.length > 0) request.controlRunIds = this.selectedControls;
     const overrides = this.protocolOverrides();
     if (overrides) request.protocolOverrides = overrides;
+    // A new analysis is V2; analyzing a stored analysis's settings again keeps its protocol.
+    request.protocolVersion = this.protocolVersion;
+    if (this.reanalysis) request.reanalysisOfAnalysisId = this.reanalysis.analysisId;
     return request;
   }
 
@@ -1278,7 +1356,7 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
 
   private protocolOverrides(): CcProtocolOverrides | null {
     const margins: Record<string, number> = {};
-    for (const endpoint of CC_PROTOCOL_V1_ENDPOINTS) {
+    for (const endpoint of this.protocolEndpoints) {
       const text = (this.marginOverrides[endpoint.id] ?? '').trim();
       if (text === '') continue;
       const value = Number(text);
@@ -1342,6 +1420,7 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
     this.controlsRevision++;
     this.selectionKey = null;
     this.resultUnits = null;
+    this.reanalysis = null;
     this.ids = CC_NO_PERIOD_IDS;
     this.choosePreset(this.axis ? 'earliest' : 'custom');
   }

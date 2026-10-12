@@ -84,9 +84,8 @@ public class BenchmarkProviderErrorClassifierTests
     [Fact]
     public void Classify_Message_BracketedStatusOutsideFiveHundreds_IsNotRecognizedByTheBracketRule()
     {
-        // [429] is already caught by the 429 branch above (a plain substring match); a bracketed
-        // code the earlier branches do not already recognise, and that is not itself in 500-599, is
-        // not a provider error.
+        // [429] is caught by the 429 branch above as an anchored status; a bracketed code the earlier
+        // branches do not recognize, and that is not itself in 500-599, is not a provider error.
         var result = BenchmarkProviderErrorClassifier.Classify("[418]");
 
         Assert.False(result.IsProviderError);
@@ -308,6 +307,100 @@ public class BenchmarkProviderErrorClassifierTests
 
         Assert.True(result.IsProviderError);
         Assert.Equal(503, result.HttpStatus);
+    }
+
+    // --- Anchored status digits: a bare number is not a status ---
+
+    [Theory]
+    [InlineData("API Error: 400 - {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"prompt is too long: 205000 tokens > 200000 maximum\"}}")]
+    [InlineData("prompt is too long: 205000 tokens > 200000")]
+    [InlineData("API Error: 400 - The request used 4290 input tokens and 15030 cached tokens.")]
+    [InlineData("API Error: 400 - Invalid value at 'generation_config.max_output_tokens' (5029).")]
+    public void Classify_Message_StatusDigitsInsideOtherNumbers_AreNotAProviderError(string message)
+    {
+        var result = BenchmarkProviderErrorClassifier.Classify(message);
+
+        Assert.False(result.IsProviderError);
+        Assert.Null(result.HttpStatus);
+    }
+
+    [Theory]
+    [InlineData("429 Rate Limited. Max retries (4) exceeded. Please try again later.", 429)]
+    [InlineData("503 Unavailable. Max retries exceeded.", 503)]
+    [InlineData("API Error: 529 - {\"type\":\"error\",\"error\":{\"type\":\"overloaded_error\"}}", 529)]
+    [InlineData("API Error: 502 - <html>Bad Gateway</html>", 502)]
+    [InlineData("API Error: 408 - Request Timeout", 408)]
+    [InlineData("Upstream returned HTTP 504 after 60 s.", 504)]
+    [InlineData("Response status code does not indicate success: 503 (Service Unavailable).", 503)]
+    [InlineData("Proxy error. Status: 500", 500)]
+    [InlineData("Google stream error: [503] This model is currently experiencing high demand.", 503)]
+    [InlineData("Stream interrupted: The response ended prematurely. | 503 Unavailable. Max retries exceeded.", 503)]
+    public void Classify_Message_AnchoredStatus_StillClassifies(string message, int expectedStatus)
+    {
+        var result = BenchmarkProviderErrorClassifier.Classify(message);
+
+        Assert.True(result.IsProviderError);
+        Assert.Equal(expectedStatus, result.HttpStatus);
+    }
+
+    [Fact]
+    public void Classify_Message_AnchoredOtherFiveHundred_MapsToThatStatus()
+    {
+        var result = BenchmarkProviderErrorClassifier.Classify("Upstream returned HTTP 520.");
+
+        Assert.True(result.IsProviderError);
+        Assert.Equal(520, result.HttpStatus);
+    }
+
+    // --- Overseer's own failure texts are never provider errors ---
+
+    [Theory]
+    [InlineData("Request throttled: Timed out after 120.0s waiting for concurrent model slot on Anthropic:system:429.")]
+    [InlineData("Request throttled: Rate limit cooldown active for OpenAI:system:503 (30.0s remaining), exceeding wait timeout of 10.0s.")]
+    [InlineData("Rate limit cooldown active for Google:system:529 (12.5s remaining), exceeding wait timeout of 5.0s.")]
+    [InlineData("Per-question timeout exceeded (720 s) after 3 model call(s) and 2 tool call(s); first token at 1.6 s; last stream event 690 s before the timeout.")]
+    public void Classify_Message_OwnFailureText_IsNotAProviderError(string message)
+    {
+        var result = BenchmarkProviderErrorClassifier.Classify(message);
+
+        Assert.False(result.IsProviderError);
+        Assert.Null(result.HttpStatus);
+        Assert.Equal(message, result.Message);
+    }
+
+    [Fact]
+    public void Classify_Typed_OwnFailureText_IsNotAProviderErrorWhateverTheException()
+    {
+        string message = "Request throttled: Timed out after 120.0s waiting for concurrent model slot on OpenAI:system:503.";
+
+        var result = BenchmarkProviderErrorClassifier.Classify(new TimeoutException(message), message, false);
+
+        Assert.False(result.IsProviderError);
+        Assert.Null(result.HttpStatus);
+    }
+
+    // --- The question budget is ours ---
+
+    [Fact]
+    public void Classify_Typed_OperationCanceled_QuestionBudget_IsNotAProviderError()
+    {
+        var ex = new TaskCanceledException("A task was canceled.");
+
+        var result = BenchmarkProviderErrorClassifier.Classify(ex, "A task was canceled.", callerCanceled: false, questionBudgetCanceled: true);
+
+        Assert.False(result.IsProviderError);
+        Assert.Null(result.HttpStatus);
+    }
+
+    [Fact]
+    public void Classify_Typed_QuestionTimeoutText_WithoutTheFlag_IsStillNotAProviderError()
+    {
+        // The budget's own text is recognized by its marker before the exception chain is read.
+        string message = "Per-question timeout exceeded (420 s) after 1 model call(s) and 0 tool call(s); no token received; last stream event 420 s before the timeout.";
+
+        var result = BenchmarkProviderErrorClassifier.Classify(new OperationCanceledException(), message, callerCanceled: false);
+
+        Assert.False(result.IsProviderError);
     }
 
     [Theory]

@@ -285,6 +285,23 @@ line as *"peers: min 60, max 90, 2 of 4 scored clearly higher"*. The `dimension.
 `band.<b>.difference` facts keep their unrounded value but display the difference of the two printed
 whole numbers, and so does a question's *Difference* column, so every printed row adds up.
 
+**Provider availability facts (format 12).** A run sheet (`BenchmarkReportFacts`) and a battery sheet
+(`BenchmarkBatteryReportFacts`) carry the `availability.*` family, the candidate's provider errors
+observed in the subject's runs and their lineage
+([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md)): `availability.attempts`,
+`.providerErrors`, `.providerErrorRate`, `.providerErrorRateCi95Low`, `.providerErrorRateCi95High`,
+`.unattributedErrors`, `.inclusiveRate`, `.inclusiveRateCi95Low`, `.inclusiveRateCi95High`, `.overloaded`,
+`.serverErrors`, `.timeouts`, `.streamFailures`, `.rateLimitedOurs`, `.rateLimitedUnattributed`,
+`.transportUnattributed`, `.ourSideFailures`, `.questionsLost`, `.reruns`, `.providerReruns`,
+`.replacedRuns` and `.oneIn` (*about 1 in 123*, prose only). The interval bounds are two-part keys after
+the `ci95Low` / `ci95High` convention, and every key has a label in `BenchmarkReportFactLabels`. A legacy
+run, started before harness 56, marks every one of them unavailable, *not recorded before harness 56*.
+A comparison sheet carries only the **eight headline keys** through `model.<L>.*` (`attempts`,
+`providerErrors`, `providerErrorRate` and its two bounds, `unattributedErrors`, `reruns`,
+`providerReruns`), because the comparison prompt lists every sheet fact (§ 15). The writer cites them as
+tokens like every figure, and its prompt has one sentence for them: report provider errors as observed
+in GnollBench runs, always with their denominator, and never their cause or intent.
+
 **Support labels.** Each strength and weakness is printed with a support label computed by code from the
 finding rows it cites, never written by the model:
 
@@ -674,15 +691,42 @@ A golden test fails on any change to the renderer's output.
 `purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
 JSON. Format 1 had none of these.
 
+**Provider availability (2026-10-12, with harness 56 in `ai-benchmark.md`)** moves every scope:
+per-model documents to **format 12** (`ReportFormatVersion`), comparison-wide documents to **format 13**
+(`ComparisonReportFormatVersion`) and chat consistency documents to **format 3**
+(`ChatConsistencyReportFormatVersion`). The three numbers are independent; the per-model 12 is not the
+comparison-wide 12 of 2026-10-06. What the formats add
+([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md) is the method):
+
+- **Key Figures** gains a fifth code-written bullet in all three audiences, *Provider availability:*
+  the rate *of attempts failed at the provider* (*k of n*; *95 % CI …*), *plus* the re-runs, from the
+  facts' display values.
+- **A `### Provider availability` subsection**: in the Report for AI Researchers and Developers after
+  its key figures, and in the Internal Improvement Brief under *3. The model's result* after its key
+  figures (the brief's numbered `##` headings are pinned, so no new one is added). Each holds the table
+  *class · count · share* with a footnote that defines the classes and the denominator. The Executive
+  Summary has the bullet only.
+- **Threats to validity** (the Report for AI Researchers and Developers; `ComparisonThreats` in a
+  comparison) gains code-written lines when errors could not be attributed (*"N errors could not be
+  attributed; the upper bound including them is …"*), when the subject needed re-runs, and when
+  provider availability was not recorded.
+- **Figure A1** (`a1-availability`, § 13) and, in chat consistency documents, endpoint P6, the
+  `availability.<period>.*` facts and figure `cc5-availability` (§ 16).
+
+Every block renders **only when the sheet carries the availability facts**: a document stored under an
+earlier format re-renders without them, and a legacy run's unavailable facts render as *not recorded*.
+`BenchmarkReportChartLayout.CurrentVersion` does not move: the chart layout schema is unchanged and a new
+figure key is additive.
+
 **Format version 12** (2026-10-06) is the format of the comparison-wide documents
-(`ComparisonReportFormatVersion`, § 15); `BenchmarkReportPackRenderer.CurrentFormatVersion(scope)` gives
-each scope's version. Per-model documents are written under format 11. Every Report Pack document of a
+(`ComparisonReportFormatVersion`, § 15, 13 since 2026-10-12); `BenchmarkReportPackRenderer.CurrentFormatVersion(scope)` gives
+each scope's version. Per-model documents were written under format 11 until 2026-10-12. Every Report Pack document of a
 numbered comparison prints its comparison (§ 15), and every per-model document prints a named peer
 without its letter, a *Letter* column in *Compared models* and joint ranks (*"joint 1st of 2 (intervals
 overlap)"*), whatever format it was written under.
 
-**Chat consistency format version 2** is the format of the chat consistency documents
-(`ChatConsistencyReportFormatVersion = 2`, § 16), numbered on its own: `CurrentFormatVersion(scope)`
+**Chat consistency format version 2** was the format of the chat consistency documents
+(`ChatConsistencyReportFormatVersion`, § 16, **3** since 2026-10-12), numbered on its own: `CurrentFormatVersion(scope)`
 returns it for `ChatConsistency`, the document stores it, and its reproducibility section and Markdown
 footer print it; the PDF and Word covers of a chat consistency document have no *Generated format* row
 (§ 16).
@@ -722,7 +766,7 @@ item the claim verifier left out reads *"The verifier gave no ruling on this ite
 range rounds to 1 reads *"1 point apart"*, and one whose two displayed values are equal *"97 for every
 model"*; that fact text reaches new documents only.
 
-**Format version 11** (the current per-model one, 2026-10-04, with harness 49 in `ai-benchmark.md`) comes from the
+**Format version 11** (per-model, 2026-10-04, with harness 49 in `ai-benchmark.md`) comes from the
 battery run 4 analysis (runs 82 and 83). It changes no score or index of its own; stored documents
 re-render with the new renderer on their next download, and the prompt changes reach only documents
 written from now on.
@@ -1918,6 +1962,13 @@ no message, unless a job is in progress, so the status never describes a documen
 keeps its report writer. After a delete the tab clears the writer picker when it held the model that
 wrote the deleted document, so a rewrite starts from a deliberate choice.
 
+**Provider availability.** The fact sheet of a run-completion document carries the run's `availability.*`
+facts (§ 2), computed by `BenchmarkProviderAvailabilityService` from the run's attempt ledger and its
+lineage predecessors when the job prepares the sheet, and the documents print them as § 7 describes
+(format 12). A run started before harness 56 has no ledger, and its documents say *not recorded*. A
+stored document's facts are never recomputed, so a document written before a later repair pass keeps
+the figures it was written with. A stand-alone document carries no chart, so it has no figure A1.
+
 ---
 
 ## 12. The Comparison Wizard's Write and Documents Steps, and the Comparison Reports Launcher
@@ -2134,7 +2185,7 @@ share of the text column, rows of two, and a height cap.
 
 ### The figures and where they go
 
-Seven figures can be chosen per document type (`BenchmarkReportChartPlacement`; the client's
+Eight figures can be chosen per document type (`BenchmarkReportChartPlacement`; the client's
 `REPORT_CHART_FIGURES`), in this order:
 
 | Key | Figure | Needs |
@@ -2146,16 +2197,18 @@ Seven figures can be chosen per document type (`BenchmarkReportChartPlacement`; 
 | `s1-quality-speed` | Intelligence against speed | Two plotted models |
 | `s2-quality-cost` | Intelligence against cost | Two plotted models |
 | `s3-speed-cost` | Speed against cost | Two plotted models |
+| `a1-availability` | Provider errors: each model's provider error rate with its cluster-adjusted 95 % interval, labeled *k/n* (format 12, [`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md)) | Two plotted models, one with provider attempts recorded |
 
 | Document | Where the figures go |
 |---|---|
-| Executive Summary | All in *How it compares*, after the comparison and dimensions tables and before the writer's paragraph |
-| Report for AI Researchers and Developers | Intelligence at the end of *Results against peers → Quality*; Speed and Cost at the end of their blocks; Model profiles at the very end of *Results against peers*; the three trade-off charts after the *Speed and cost* table (and not at all when that section is absent) |
-| Internal Improvement Brief | All in section 3, after *Key figures* and the interval sentence |
+| Executive Summary | All in *How it compares*, after the comparison and dimensions tables and before the writer's paragraph; Provider errors after the *Provider availability* Key Figures bullet (anchor `ProviderAvailability`) |
+| Report for AI Researchers and Developers | Intelligence at the end of *Results against peers → Quality*; Speed and Cost at the end of their blocks; Model profiles at the very end of *Results against peers*; the three trade-off charts after the *Speed and cost* table (and not at all when that section is absent); Provider errors after the *Provider availability* subsection |
+| Internal Improvement Brief | All in section 3, after *Key figures* and the interval sentence; Provider errors after the *Provider availability* subsection |
 
-Several figures at one anchor appear in the order of the first table. A comparison-wide document has its
+Several figures at one anchor appear in the order of the first table. Every model-scope audience has an
+anchor for A1, because the placement tables hold one entry per figure. A comparison-wide document has its
 own anchors (§ 15); the picker shows each figure's section for the scope being written. A chat
-consistency document has four figures of its own, `cc1-quality` … `cc4-timeline`, kept in
+consistency document has five figures of its own, `cc1-quality` … `cc5-availability`, kept in
 `BenchmarkReportChartPlacement.ChatConsistencyFigureKeys` apart from `FigureKeys` (`AllFigureKeys`
 joins both); they are chosen per document type in the same picker, on the Chat Consistency wizard's
 step 5, with its own figures, document types and defaults (§ 16).
@@ -2198,9 +2251,9 @@ A width or label size that would not fit (below) stays offered, `aria-disabled` 
 fit)*, its reason listed in the disclosure; choosing it keeps the current value and says why. The
 disclosure sits 1 rem below the figures; **Preview layout** is beside **Generate** (§ 12).
 
-The defaults are the Executive Summary's Intelligence and Intelligence against cost; all seven for the
-Report for AI Researchers and Developers; and Intelligence, Speed and Cost for the Internal Improvement
-Brief. The last selection and every document type's layout are remembered per browser in
+The defaults are the Executive Summary's Intelligence and Intelligence against cost; every figure, A1
+included, for the Report for AI Researchers and Developers; and Intelligence, Speed and Cost for the
+Internal Improvement Brief. The last selection and every document type's layout are remembered per browser in
 `localStorage['overseer.benchmark.reportCharts']` (**version 2**, `{ selection, layout }`); a stored
 version 1 keeps its selection and takes the default layout.
 
@@ -2412,6 +2465,16 @@ a battery document renders through the same code as a run's:
 
 A battery sheet has **no finding rows**: its items cite fact keys and question references as evidence.
 
+**Provider availability (format 12).** A battery sheet carries every `availability.*` key a run sheet
+does (§ 2; `ABatterySheet_SuppliesEveryKeyARunSheetCarries` requires it), pooled over the battery run's
+member runs **including its superseded members and their lineage predecessors**, with every repair pass
+of each ([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md) § 8): a member
+that failed at the provider and was relaunched still counts. The battery's deterministic Markdown report
+(`BenchmarkBatteryReportBuilder`) adds a `### n.2 Provider availability` subsection (`n.1` when the
+battery is incomplete), with a per-member table, inside its numbered `## n. Overall Intelligence Index`
+section rather than a new numbered `##` section; the controller loads the
+availability summaries for it, since it loads the member runs without their answers.
+
 **Questions.** They are numbered across the battery, suite by suite, and referred to as **`S<n>-Q<m>`**
 — `S2-Q7` is question seven of suite two — in the prose, in `evidence` and in the rendered document;
 that form replaces `Q7` and is the only place a digit may appear in the prose. The validator applies
@@ -2599,7 +2662,12 @@ other models without naming them.
 - **Per-model facts** `model.<L>.*`: every fact the per-model sheet has for its subject, the `subject.`
   prefix dropped (`subject.runs` becomes `model.A.runs`), plus `model.<L>.quality.rank` (the joint rank,
   below), `model.<L>.speed.rank`, `model.<L>.cost.rank` and `model.<L>.frontier` (*"on the intelligence
-  against cost frontier"*).
+  against cost frontier"*). Of the `availability.*` family only the eight headline keys pass through
+  (format 13: `model.<L>.availability.attempts`, `.providerErrors`, `.providerErrorRate`, its two bounds,
+  `.unattributedErrors`, `.reruns`, `.providerReruns`); the by-class breakdown stays out, since the
+  prompt lists every sheet fact and the breakdown for twelve models would add about 260 lines. The entry
+  figures (`BenchmarkReportEntryFigures`) carry the same headline fields, so `BuildEntries` copies them
+  from each subject row.
 - **Comparison facts**: `comparison.models`, `comparison.pricingBasis` and its kind, `comparison.signature`,
   `suite.name` (runs and groups), the Pareto frontiers `frontier.qualityCost`, `frontier.qualitySpeed` and
   `frontier.speedCost` (the models no other model matches or beats on both measures), the spreads
@@ -2703,8 +2771,8 @@ behind a confirmation.
 
 ### The rendered documents
 
-`ReportFormatVersion` for comparison scope is **12** (`ComparisonReportFormatVersion`); per-model
-documents stay at 11. The sections, by audience:
+`ReportFormatVersion` for comparison scope is **13** (`ComparisonReportFormatVersion`); per-model
+documents are at 12 (§ 7). The sections, by audience:
 
 - **Executive Summary**: *The result in one sentence*, *The comparison in one paragraph*, *Which model to
   use*, *How they compare* (every model's Intelligence Index with its interval and joint rank, median
@@ -2719,6 +2787,13 @@ documents stay at 11. The sections, by audience:
 - **Internal Improvement Brief**: *Models compared*, *1. Shared gaps*, *2. Model-specific gaps*, *3. The
   benchmarking system* (with *Paired tests*), *4. Leads*, *5. Per-question matrix* with the question
   details, and *6. Fact sheet*.
+
+**Provider availability (format 13).** The results table (`ResultsTable`) gains a **Provider errors**
+column, *0.81 % (12/1,480)* or *not recorded*, from the entry figures; `Pdf/BenchmarkTableLayout.cs`
+abbreviates its header (`HeaderAbbreviations`) so the eleven-column table still fits. The Report for AI
+Researchers and Developers adds a per-model availability table, and `ComparisonThreats` gains the
+unattributed, re-run and not-recorded lines of § 7. Each block renders only when the sheet carries the
+facts.
 
 *Paired tests* names the family, its adjustment and its size, and notes that another set of models gives
 another family: a subset document's adjusted *p* can differ from step 2's view over all models, and both
@@ -2756,9 +2831,9 @@ The per-model documents print the same way: a named peer reads *Grok 5*, never *
 
 | Document | Where the figures go |
 |---|---|
-| Executive Summary | All in *How they compare*, after its tables |
-| Report for AI Researchers and Developers | Intelligence in *Results*; Model profiles in *Dimension profiles*; Speed, Cost and the three trade-off charts in *Speed and cost frontier* |
-| Internal Improvement Brief | All in *Models compared*, after its table |
+| Executive Summary | All in *How they compare*, after its tables, except Provider errors (A1), which this audience does not place |
+| Report for AI Researchers and Developers | Intelligence in *Results*; Model profiles in *Dimension profiles*; Speed, Cost and the three trade-off charts in *Speed and cost frontier*; Provider errors (A1) with the per-model availability table |
+| Internal Improvement Brief | All in *Models compared*, after its table, Provider errors (A1) included |
 
 A comparison-scope document plots its **covered models only**: the named variant is step 2's chart with
 *Show* limited to the covered set (step 2's *Highlight* kept where it falls inside it), and the
@@ -2803,7 +2878,7 @@ of runs, with no peers to rank against.
 | `SubjectKey` | `chat-consistency:<id>` (`BenchmarkChatConsistencyReportFacts.SubjectKeyPrefix`) |
 | `ChatConsistencyAnalysisId` | the analysis, a `Restrict` foreign key: the analysis cannot be deleted while documents written from it exist (the API answers 409) |
 | `ComparisonKey`, `ComparisonId`, `CoveredEntryKeysJson` | null |
-| `ReportFormatVersion` | `ChatConsistencyReportFormatVersion`, currently **2** (§ 7) |
+| `ReportFormatVersion` | `ChatConsistencyReportFormatVersion`, currently **3** (§ 7) |
 
 The title is *Overseer Chat Consistency Report: \<model\>*. The sheet's subject block
 (`BenchmarkReportChatConsistencySubject`) carries the analysis id, name, headline, protocol label,
@@ -2904,7 +2979,7 @@ endpoints, the Established grades, the attributions, the provider-confirmed caus
 assessability and the hours — for a Provider Issue Report also the provider-side attributions, the
 Overseer events to list under `ruledOut` and the sample request ids. The fact families are `analysis.*`,
 `subject.*`, `verdict.*`, `scope.*`, `coverage.*`, `period.<baseline|comparison>.*`, `sample.*`,
-`protocol.*`, `n.*`, `endpoint.<P1…P5>.*`, `level.*`, `quality.*`, `flip.*`, `grader.drift.*`, `reliability.*`,
+`protocol.*`, `n.*`, `endpoint.<P1…P6>.*` (P6 under Protocol V2 only), `availability.<period>.*`, `level.*`, `quality.*`, `flip.*`, `grader.drift.*`, `reliability.*`,
 `tools.*`, `secondary.*`, `events.*`, `eventGroups.*`, `controls.*`, `controls.missing.*`, `did.*`, `robustness.*`, `identity.*`,
 `serving.*`, `ownWaits.*`, `pricing.*`, `annotation.*`, `attribution.*`, `limitation.*`, `nextRuns.*`
 and, for the Provider Issue Report, `requestIds.sample.*` (`BenchmarkChatConsistencyReportFacts`).
@@ -2962,8 +3037,21 @@ each period's pair a combined fact states once (above), and in a battery compari
 have a battery Overall Index, each period's `level.<p>.quality`, the mean answer score, so that quality
 has one figure. Rule C8 treats a token of either kind as kept from the writer.
 
-The writer prompt names the canonical endpoint names (P1 Quality, P2 Time to first answer text, P3
-Answer streaming rate, P4 Work per turn, P5 Cost per question) and forbids any other; counts in battery
+**Provider availability (format 3).** Under Protocol V2 the analysis has a sixth primary endpoint,
+**P6 Provider error rate** ([`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md) § 9).
+It renders through the generic `endpoint.<Id>.*` block with its margin `protocol.margin.P6` (*±1.0
+percentage point*), and the validator's C1 and C4 already read any `endpoint.<id>.*` key, so P6 needed no
+validator change. Each period's availability is the three-part family `availability.<period>.*` (its
+attempts, provider errors, rate with its interval, unattributed errors and re-runs), labeled through the
+period names. The per-period levels table (*Where the chat stands*) and the writer prompt's endpoint
+sentence iterate the analysis's own protocol endpoints rather than a fixed P1–P5 list, so a V1 analysis
+renders its five endpoints as before and only the sentence's wording is general. The writer is told to
+report provider errors as observed in GnollBench runs, with their denominator, and never a cause or an
+intent.
+
+The writer prompt names the canonical endpoint names of the analysis's protocol (P1 Quality, P2 Time to
+first answer text, P3 Answer streaming rate, P4 Work per turn, P5 Cost per question, and under Protocol V2
+P6 Provider error rate) and forbids any other; counts in battery
 runs where the analysis compares battery runs; asks for the sample shortfall where the minimum is not
 met; says that GnollBench runs are made by hand, never *monitored* or *watched*; and lists, before the
 slots and beside each slot, the code-built blocks printed above it (`ChatBlocksBeforeSlotsText`,
@@ -3014,13 +3102,14 @@ an event*) cannot drop text; a note of either marks the document **Completed wit
 | `cc2-speed` | Time to first answer text (telemetry; the legacy proxy hollow) |
 | `cc3-work` | Output tokens per answer |
 | `cc4-timeline` | Runs and events (telemetry and legacy runs; Overseer changes, annotations, served-model changes) |
+| `cc5-availability` | Provider availability (format 3): each unit's provider error rate with its interval, availability-only units hollow, in the form chosen on the Charts step — points, a Laney p′ chart with *control limits*, or a day strip ([`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md) § 17.3) |
 
 Two anchors: `ChatConsistencyResults` (13), after the verdict table, and `ChatConsistencyEvents` (14),
-after the events table. **Every document type may carry every figure**; which ones it carries is
+after the events table. cc5 is placed with cc1–cc3, after the verdict table. **Every document type may carry every figure**; which ones it carries is
 chosen per document type on the wizard's step 5, and the server places what it is given
 (`BenchmarkReportChartPlacement.ChatConsistencyAnchors`):
 
-| Document | cc1, cc2, cc3 | cc4 |
+| Document | cc1, cc2, cc3, cc5 | cc4 |
 |---|---|---|
 | Executive Summary | after the verdict table | after the verdict table (it prints no events table) |
 | Report for AI Researchers and Developers, Internal Improvement Brief, Provider Issue Report | after the verdict table | after the events table |
@@ -3041,6 +3130,8 @@ uploaded before the figures were chosen per document — is placed by the earlie
 | Report for AI Researchers and Developers | cc1, cc2, cc3 after the verdict table; cc4 after the events table |
 | Internal Improvement Brief | cc1, cc3 after the verdict table |
 | Provider Issue Report | cc2 after the verdict table; cc4 after the events table |
+
+The legacy table places no cc5, which did not exist when those chart sets were uploaded.
 
 The render service passes whether the chart set has a layout (`ReadRenderLayout`) into the renderer
 (`BenchmarkReportPackRenderer.Render(document, options, chartLayoutPresent)`, the renderer's
@@ -3069,7 +3160,8 @@ Executive Summary cc1, cc2; Researcher Report all four; Internal Improvement Bri
 Issue Report cc2, cc4; cc1–cc3 half column and cc4 two-thirds; 8 pt labels; at most 50 % of the page
 tall; stored per browser in `localStorage['overseer.benchmark.chatConsistency.reportCharts']`
 (`{ version: 1, selection, layout }`). In the picker the figures are *Intelligence per run*, *Time to
-first answer text*, *Output tokens per answer* and *Runs and events*, placed *Results* or *Events*; the
+first answer text*, *Output tokens per answer*, *Runs and events* and, from format 3, *Provider
+availability*, placed *Results* or *Events*; the
 document types *Executive*, *Researchers*, *Internal* and *Provider*; a not computable endpoint's
 figure carries a note; the *Layout* disclosure offers only the label size and the maximum height; and
 a document type neither checked nor already written reads *Not chosen in New reports.* This scope is
@@ -3100,7 +3192,7 @@ metadata only. Other scopes keep their cover and the *Source … · PDF layout 8
 which is kept on one page, moves with the table instead of staying alone at a page foot, layout 7; and a
 bold label paragraph such as **Where the chat stands** does the same before its short table, layout 8,
 § 8).
-`ChatConsistencyReportFormatVersion` is 2.
+`ChatConsistencyReportFormatVersion` is 3.
 
 ### Endpoints
 

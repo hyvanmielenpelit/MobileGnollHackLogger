@@ -68,9 +68,12 @@ import {
 } from '../../model-comparison/preview-view';
 import { CcAnnotationsPanelComponent } from '../annotations/annotations-panel.component';
 import {
+  CC_AVAILABILITY_FORMS,
   CC_DECIMAL_CHOICES,
+  CC_DEFAULT_AVAILABILITY_FORM,
   CC_FIGURE_KEYS,
   CC_FIGURE_SERIES,
+  CcAvailabilityForm,
   CcDecimalPlaces,
   CcFigure,
   CcFigureInput,
@@ -195,6 +198,8 @@ export interface CcTimelineLayout {
   readonly decimals: CcDecimalPlaces;
   /** Runs not in the analysis are drawn as gray crosses with dotted segments. */
   readonly markNotAnalyzed: boolean;
+  /** How the provider availability figure draws. */
+  readonly availabilityForm: CcAvailabilityForm;
   readonly imageFormat: FigureExportFormat;
   readonly webpQuality: WebpQuality;
   readonly chartSizeOpen: boolean;
@@ -211,8 +216,11 @@ export interface CcLegacyImageSettings {
   readonly logo: boolean | null;
 }
 
-/** The version `writeStoredTimelineLayout` writes. Version 1 had one *Work per answer* chart, `work`, with `work.tools`. */
-export const CC_TIMELINE_LAYOUT_VERSION = 2;
+/**
+ * The version `writeStoredTimelineLayout` writes. Version 1 had one *Work per answer* chart, `work`, with
+ * `work.tools`; version 2 had no *Provider availability* chart, `availability`.
+ */
+export const CC_TIMELINE_LAYOUT_VERSION = 3;
 
 const FIGURE_KEY_ORDER: readonly CcFigureKey[] = CC_FIGURE_KEYS.map(entry => entry.key);
 const SERIES_IDS: ReadonlySet<string> = new Set(
@@ -233,6 +241,7 @@ export function defaultTimelineLayout(): CcTimelineLayout {
     zeroBaseline: false,
     decimals: {},
     markNotAnalyzed: true,
+    availabilityForm: CC_DEFAULT_AVAILABILITY_FORM,
     imageFormat: 'png',
     webpQuality: DEFAULT_WEBP_QUALITY,
     chartSizeOpen: false,
@@ -263,15 +272,19 @@ function decimalsOf(value: unknown): CcDecimalPlaces {
 /**
  * A stored layout read field by field: a missing field, or one of the wrong kind, takes its default.
  * A layout before version 2 that shows `work` shows `tools` too; its retired `work.tools` series id is
- * dropped with every other unknown id.
+ * dropped with every other unknown id. A layout before version 3 that keeps a list of charts shows
+ * `availability` too.
  */
 export function parseTimelineLayout(stored: unknown): CcTimelineLayout {
   const fallback = defaultTimelineLayout();
   if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) return fallback;
   const record = { ...(stored as Record<string, unknown>) };
   const version = typeof record['version'] === 'number' ? record['version'] as number : 1;
-  if (version < CC_TIMELINE_LAYOUT_VERSION && Array.isArray(record['figures']) && record['figures'].includes('work')) {
+  if (version < 2 && Array.isArray(record['figures']) && record['figures'].includes('work')) {
     record['figures'] = [...record['figures'], 'tools'];
+  }
+  if (version < 3 && Array.isArray(record['figures'])) {
+    record['figures'] = [...record['figures'], 'availability'];
   }
   const flag = (key: string, otherwise: boolean): boolean => typeof record[key] === 'boolean' ? record[key] as boolean : otherwise;
   const oneOf = <T extends string | number>(key: string, options: readonly T[], otherwise: T): T =>
@@ -293,6 +306,7 @@ export function parseTimelineLayout(stored: unknown): CcTimelineLayout {
     zeroBaseline: flag('zeroBaseline', fallback.zeroBaseline),
     decimals: decimalsOf(record['decimals']),
     markNotAnalyzed: flag('markNotAnalyzed', fallback.markNotAnalyzed),
+    availabilityForm: oneOf<CcAvailabilityForm>('availabilityForm', CC_AVAILABILITY_FORMS.map(form => form.id), fallback.availabilityForm),
     imageFormat: oneOf<FigureExportFormat>('imageFormat', ['png', 'webp'], fallback.imageFormat),
     webpQuality: oneOf<WebpQuality>('webpQuality', WEBP_QUALITY_OPTIONS, fallback.webpQuality),
     chartSizeOpen: flag('chartSizeOpen', fallback.chartSizeOpen),
@@ -488,6 +502,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   readonly sidebarTabs = CC_TIMELINE_SIDEBAR_TABS;
   readonly viewTabs = CC_TIMELINE_VIEW_TABS;
   readonly figureKeys = CC_FIGURE_KEYS;
+  readonly availabilityForms = CC_AVAILABILITY_FORMS;
   readonly markerKindOptions = CC_MARKER_KIND_OPTIONS;
   readonly sliderSteps = PREVIEW_SLIDER_STEPS;
   readonly SIDEBAR_WIDTH_MIN = CC_SIDEBAR_WIDTH_MIN;
@@ -527,6 +542,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
   zeroBaseline = this.stored.zeroBaseline;
   decimals: CcDecimalPlaces = this.stored.decimals;
   markNotAnalyzed = this.stored.markNotAnalyzed;
+  availabilityForm: CcAvailabilityForm = this.stored.availabilityForm;
   imageFormat: FigureExportFormat = this.stored.imageFormat;
   webpQuality: WebpQuality = this.stored.webpQuality;
   private singleKey: CcFigureKey = this.stored.singleFigure;
@@ -769,7 +785,8 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       loadedAt: this.loadedAt,
       hiddenSeries: this.hiddenSeries,
       zeroBaseline: this.zeroBaseline,
-      decimals: this.decimals
+      decimals: this.decimals,
+      availabilityForm: this.availabilityForm
     };
   }
 
@@ -811,7 +828,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.totalEventItems = eventItemCount(buildEventDays(this.eventGroups, timeline.annotations, this.servedChanges));
     const bare: CcFigureInput = { points, unitKind: this.plotsBatteryRuns ? 'batteryRun' : 'run', events: [], annotations: [] };
     for (const { key } of CC_FIGURE_KEYS) {
-      const config = buildCcFigure(key, bare, { reducedMotion: true }).config;
+      const config = buildCcFigure(key, bare, { reducedMotion: true, availabilityForm: this.availabilityForm }).config;
       this.presentSeries[key] = config
         ? config.data.datasets.map(dataset => {
           const label = dataset.label ?? dataset.seriesId;
@@ -955,6 +972,14 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
 
   setMarkNotAnalyzed(on: boolean): void {
     this.markNotAnalyzed = on;
+    this.afterFigureSettings();
+  }
+
+  /** The provider availability figure's form; its series checklist follows the form's series. */
+  setAvailabilityForm(form: CcAvailabilityForm): void {
+    if (form === this.availabilityForm || !CC_AVAILABILITY_FORMS.some(option => option.id === form)) return;
+    this.availabilityForm = form;
+    this.rebuildTimeline();
     this.afterFigureSettings();
   }
 
@@ -1922,6 +1947,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
       zeroBaseline: this.zeroBaseline,
       decimals: this.decimals,
       markNotAnalyzed: this.markNotAnalyzed,
+      availabilityForm: this.availabilityForm,
       imageFormat: this.imageFormat,
       webpQuality: this.webpQuality,
       chartSizeOpen: this.chartSizeOpen,

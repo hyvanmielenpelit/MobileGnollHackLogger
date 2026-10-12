@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 /// <summary>The scale an endpoint's effect is estimated on.</summary>
 public enum ChatConsistencyEffectScale
@@ -16,7 +17,10 @@ public enum ChatConsistencyEffectScale
     LogRatio = 1
 }
 
-/// <summary>The ids of the five primary endpoints, in protocol order.</summary>
+/// <summary>
+/// The ids of every primary endpoint, in protocol order. A protocol carries its own list
+/// (<see cref="ChatConsistencyProtocol.Endpoints"/>): V1 has P1–P5, V2 adds P6.
+/// </summary>
 public static class ChatConsistencyEndpointIds
 {
     public const string Quality = "P1";
@@ -25,7 +29,10 @@ public static class ChatConsistencyEndpointIds
     public const string Work = "P4";
     public const string Cost = "P5";
 
-    public static readonly IReadOnlyList<string> All = new[] { Quality, TimeToFirstAnswerText, StreamingRate, Work, Cost };
+    /// <summary>Provider error rate, Protocol V2 only.</summary>
+    public const string ProviderErrorRate = "P6";
+
+    public static readonly IReadOnlyList<string> All = new[] { Quality, TimeToFirstAnswerText, StreamingRate, Work, Cost, ProviderErrorRate };
 }
 
 /// <summary>One pre-declared primary endpoint.</summary>
@@ -35,7 +42,7 @@ public sealed record ChatConsistencyEndpointProtocol
 
     public string Name { get; init; } = string.Empty;
 
-    /// <summary>The unit of the effect: "index points", or "log ratio" for a ratio endpoint.</summary>
+    /// <summary>The unit of the effect: "index points", "pp" (percentage points), or "log ratio" for a ratio endpoint.</summary>
     public string Unit { get; init; } = string.Empty;
 
     public ChatConsistencyEffectScale Scale { get; init; }
@@ -77,8 +84,8 @@ public sealed record ChatConsistencyProtocolOverride(string Field, string From, 
 public sealed record ChatConsistencyProtocolOverrides
 {
     /// <summary>
-    /// Margins by endpoint id: index points for a difference endpoint, a fraction (0.15 = ±15 %) for a
-    /// log-ratio endpoint.
+    /// Margins by endpoint id: the endpoint's own unit for a difference endpoint (index points, or
+    /// percentage points for P6), a fraction (0.15 = ±15 %) for a log-ratio endpoint.
     /// </summary>
     public IReadOnlyDictionary<string, double>? Margins { get; init; }
 
@@ -106,13 +113,40 @@ public sealed record ChatConsistencyProtocolOverrides
 /// rate, P4 work per turn, P5 cost per question) at α = 0.05 with Holm's adjustment across them;
 /// Benjamini–Hochberg within each secondary family; Lakens' verdicts against each margin; the
 /// minimum samples, evidence grades and robustness checks of the analysis service.</para>
+///
+/// <para>V2: V1's endpoints and P6 provider error rate (percentage points, ±1.0, lower is better),
+/// Holm across the six; <see cref="MinimumAttemptsPerStratum"/>; the attempt-level reliability family.
+/// <see cref="V1"/> and <see cref="V2"/> are built explicitly with their own endpoint lists; the property
+/// defaults are V1's, so a default never changes a published protocol.</para>
 /// </summary>
 public sealed record ChatConsistencyProtocol
 {
     public const string V1Version = "V1";
 
+    public const string V2Version = "V2";
+
+    /// <summary>V2: a time stratum is common to the periods when each has at least this many valid attempts in it (P6).</summary>
+    public const int DefaultMinimumAttemptsPerStratum = 30;
+
     /// <summary>The weekday strata overlapping US business hours, weekdays 14–22 UTC: 12–16, 16–20 and 20–24 UTC.</summary>
     private static readonly IReadOnlyList<int> DefaultUsBusinessHourStrata = new[] { 3, 4, 5 };
+
+    private static readonly ChatConsistencyEndpointProtocol ProviderErrorRateEndpoint = new()
+    {
+        Id = ChatConsistencyEndpointIds.ProviderErrorRate,
+        Name = "Provider error rate",
+        Unit = "pp",
+        Scale = ChatConsistencyEffectScale.Difference,
+        Margin = 1.0,
+        HigherIsBetter = false,
+        Axis = ChatConsistencyAxis.Availability,
+        RunClustersOnly = true,
+        Stratified = true,
+        Pairing = "Provider-class attempts among valid candidate attempts (our own failures excluded), in percentage points: "
+            + "the rate within each time stratum of the attempts' starts, a stratum common when each period has at least the "
+            + "minimum valid attempts in it; equal-weight mean of the per-stratum differences; run-cluster bootstrap with the "
+            + "common strata fixed at the point estimate."
+    };
 
     private static readonly IReadOnlyList<ChatConsistencyEndpointProtocol> DefaultEndpoints = new[]
     {
@@ -183,8 +217,40 @@ public sealed record ChatConsistencyProtocol
         }
     };
 
-    /// <summary>The published protocol.</summary>
-    public static ChatConsistencyProtocol V1 { get; } = new();
+    private static readonly IReadOnlyList<ChatConsistencyEndpointProtocol> V2Endpoints = DefaultEndpoints.Append(ProviderErrorRateEndpoint).ToArray();
+
+    /// <summary>The published Protocol V1: P1–P5.</summary>
+    public static ChatConsistencyProtocol V1 { get; } = new() { ProtocolVersion = V1Version, Endpoints = DefaultEndpoints };
+
+    /// <summary>The published Protocol V2: P1–P6, the protocol of every new analysis.</summary>
+    public static ChatConsistencyProtocol V2 { get; } = new()
+    {
+        ProtocolVersion = V2Version,
+        Endpoints = V2Endpoints,
+        MinimumAttemptsPerStratum = DefaultMinimumAttemptsPerStratum
+    };
+
+    /// <summary>The protocol a new analysis uses.</summary>
+    public static ChatConsistencyProtocol Latest => V2;
+
+    /// <summary>The published protocol of <paramref name="version"/> (case-insensitive); refuses an unknown version with <see cref="ChatConsistencyRequestException"/>.</summary>
+    public static ChatConsistencyProtocol ForVersion(string? version)
+    {
+        string v = (version ?? string.Empty).Trim();
+        if (string.Equals(v, V1Version, StringComparison.OrdinalIgnoreCase)) return V1;
+        if (string.Equals(v, V2Version, StringComparison.OrdinalIgnoreCase)) return V2;
+        throw new ChatConsistencyRequestException("Unknown chat consistency protocol version '" + v + "'; the versions are " + V1Version + " and " + V2Version + ".");
+    }
+
+    /// <summary>Whether the published protocol of <paramref name="version"/> has endpoint <paramref name="id"/>; false for an unknown version.</summary>
+    public static bool VersionHas(string? version, string id)
+    {
+        string v = (version ?? string.Empty).Trim();
+        var protocol = string.Equals(v, V1Version, StringComparison.OrdinalIgnoreCase) ? V1
+            : string.Equals(v, V2Version, StringComparison.OrdinalIgnoreCase) ? V2
+            : null;
+        return protocol?.Has(id) == true;
+    }
 
     public string ProtocolVersion { get; init; } = V1Version;
 
@@ -207,8 +273,15 @@ public sealed record ChatConsistencyProtocol
     /// <summary>... and at least this many paired items.</summary>
     public int MinimumPairedItems { get; init; } = 20;
 
-    /// <summary>P2, P3: at least this many runs per period in at least one common stratum.</summary>
+    /// <summary>P2, P3 and P6: at least this many runs per period in at least one common stratum.</summary>
     public int MinimumSpeedRunsPerStratum { get; init; } = 3;
+
+    /// <summary>
+    /// P6 (V2): a time stratum is common when each period has at least this many valid attempts in it.
+    /// Null in V1, and then left out of the stored JSON.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MinimumAttemptsPerStratum { get; init; }
 
     /// <summary>A common stratum enters the across-strata sign check with at least this many runs per period.</summary>
     public int MinimumRunsPerStratumForSignCheck { get; init; } = 2;
@@ -238,12 +311,15 @@ public sealed record ChatConsistencyProtocol
     /// <summary>True when any field deviates from the published protocol.</summary>
     public bool IsOverridden => Overrides.Count > 0;
 
-    /// <summary><c>V1</c>, or <c>V1 with overrides: …</c>.</summary>
+    /// <summary><c>V1</c> or <c>V2</c>, or <c>V2 with overrides: …</c>.</summary>
     public string Label => IsOverridden
         ? ProtocolVersion + " with overrides: " + string.Join("; ", Overrides.Select(o => o.Field + " " + o.From + " → " + o.To))
         : ProtocolVersion;
 
-    /// <summary>The endpoint with <paramref name="id"/>.</summary>
+    /// <summary>Whether the protocol has the endpoint <paramref name="id"/>.</summary>
+    public bool Has(string id) => Endpoints.Any(e => string.Equals(e.Id, id, StringComparison.Ordinal));
+
+    /// <summary>The endpoint with <paramref name="id"/>; throws for an endpoint the protocol does not have (P6 under V1).</summary>
     public ChatConsistencyEndpointProtocol Endpoint(string id)
         => Endpoints.FirstOrDefault(e => string.Equals(e.Id, id, StringComparison.Ordinal))
            ?? throw new ArgumentOutOfRangeException(nameof(id), id, "Unknown endpoint.");

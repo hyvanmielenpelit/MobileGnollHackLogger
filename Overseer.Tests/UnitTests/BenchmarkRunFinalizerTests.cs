@@ -1613,4 +1613,87 @@ public class BenchmarkRunFinalizerTests
         Assert.Null(answers[0].PanelQualityScore);
         Assert.Equal(50, run.QualityIndex);
     }
+
+    private static readonly (ProviderAttemptOutcome Outcome, int Count)[] EveryClass =
+    {
+        (ProviderAttemptOutcome.Ok, 40),
+        (ProviderAttemptOutcome.ProviderOverloaded, 3),
+        (ProviderAttemptOutcome.ProviderServerError, 2),
+        (ProviderAttemptOutcome.ProviderTimeout, 1),
+        (ProviderAttemptOutcome.ProviderStreamFailure, 1),
+        (ProviderAttemptOutcome.RateLimitUnattributed, 4),
+        (ProviderAttemptOutcome.TransportUnattributed, 1),
+        (ProviderAttemptOutcome.OurRateLimit, 5),
+        (ProviderAttemptOutcome.OurBilling, 1),
+        (ProviderAttemptOutcome.OurKey, 1),
+        (ProviderAttemptOutcome.OurRequest, 1),
+        (ProviderAttemptOutcome.OurThrottle, 2),
+        (ProviderAttemptOutcome.OurCanceled, 1),
+        (ProviderAttemptOutcome.OurNetwork, 1),
+    };
+
+    [Fact]
+    public void ApplyProviderRollups_CountsValidProviderUnattributedAndOurSideAttempts()
+    {
+        var run = new BenchmarkRun { Id = 3, ProviderLedgerVersion = 1 };
+
+        BenchmarkRunFinalizer.ApplyProviderRollups(run, EveryClass);
+
+        // Valid is Ok plus the provider and unattributed classes; our side stays out of it.
+        Assert.Equal(40 + 7 + 5, run.CandidateValidAttemptCount);
+        Assert.Equal(7, run.CandidateProviderErrorCount);
+        Assert.Equal(5, run.CandidateUnattributedErrorCount);
+        Assert.Equal(12, run.CandidateOurSideFailureCount);
+    }
+
+    [Fact]
+    public void ApplyProviderRollups_MergesRepeatedOutcomes_AndIsZeroWithoutAttempts()
+    {
+        var run = new BenchmarkRun { Id = 3, ProviderLedgerVersion = 1 };
+
+        BenchmarkRunFinalizer.ApplyProviderRollups(run, new[]
+        {
+            (ProviderAttemptOutcome.ProviderOverloaded, 2),
+            (ProviderAttemptOutcome.ProviderOverloaded, 3),
+        });
+        Assert.Equal(5, run.CandidateProviderErrorCount);
+        Assert.Equal(5, run.CandidateValidAttemptCount);
+
+        BenchmarkRunFinalizer.ApplyProviderRollups(run, Array.Empty<(ProviderAttemptOutcome, int)>());
+        Assert.Equal(0, run.CandidateValidAttemptCount);
+        Assert.Equal(0, run.CandidateProviderErrorCount);
+        Assert.Equal(0, run.CandidateUnattributedErrorCount);
+        Assert.Equal(0, run.CandidateOurSideFailureCount);
+    }
+
+    [Fact]
+    public void ApplyProviderRollups_LeavesAnUnrecordedRunNotRecorded()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 4,
+            ProviderLedgerVersion = null,
+            CandidateValidAttemptCount = 9,
+            CandidateProviderErrorCount = 1,
+            CandidateUnattributedErrorCount = 1,
+            CandidateOurSideFailureCount = 1
+        };
+
+        BenchmarkRunFinalizer.ApplyProviderRollups(run, EveryClass);
+
+        Assert.Null(run.CandidateValidAttemptCount);
+        Assert.Null(run.CandidateProviderErrorCount);
+        Assert.Null(run.CandidateUnattributedErrorCount);
+        Assert.Null(run.CandidateOurSideFailureCount);
+    }
+
+    [Fact]
+    public void ProviderRollupCounts_OfSingleOutcomes_MatchesTheCountedForm()
+    {
+        var outcomes = EveryClass.SelectMany(c => Enumerable.Repeat(c.Outcome, c.Count)).ToList();
+
+        Assert.Equal(ProviderRollupCounts.Of(EveryClass), ProviderRollupCounts.Of(outcomes));
+        Assert.True(ProviderRollupCounts.Of(Array.Empty<ProviderAttemptOutcome>()).IsZero);
+        Assert.False(ProviderRollupCounts.Of(new[] { ProviderAttemptOutcome.OurThrottle }).IsZero);
+    }
 }

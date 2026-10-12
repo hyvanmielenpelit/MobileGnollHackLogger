@@ -617,3 +617,12 @@
   font-size: var(--text-secondary);
   color: #a1a1aa;
 }
+
+/* The Provider Errors card's "few attempts" tag: outlined and neutral, the words carry it. */
+.score-card .rr-few-attempts {
+  align-self: flex-start;
+  width: fit-content;
+  padding: 0 6px;
+  border: 1px solid #555;
+  border-radius: 999px;
+}

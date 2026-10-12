@@ -107,6 +107,30 @@ public static class BenchmarkReportFactLabels
         ["run.promptSha256"] = "System prompt SHA-256 prefix",
         ["run.toolGuidesSha256"] = "Tool guides SHA-256 prefix",
 
+        // Provider availability
+        ["availability.attempts"] = "Valid attempts",
+        ["availability.providerErrors"] = "Provider errors",
+        ["availability.providerErrorRate"] = "Provider error rate",
+        ["availability.providerErrorRateCi95Low"] = "Lower bound of the provider error rate's 95 % interval",
+        ["availability.providerErrorRateCi95High"] = "Upper bound of the provider error rate's 95 % interval",
+        ["availability.unattributedErrors"] = "Unattributed errors",
+        ["availability.inclusiveRate"] = "Error rate including unattributed errors (upper bound)",
+        ["availability.inclusiveRateCi95Low"] = "Lower bound of the 95 % interval of the error rate including unattributed errors",
+        ["availability.inclusiveRateCi95High"] = "Upper bound of the 95 % interval of the error rate including unattributed errors",
+        ["availability.overloaded"] = "Provider overloaded (HTTP 503 and 529)",
+        ["availability.serverErrors"] = "Provider server errors (HTTP 5xx)",
+        ["availability.timeouts"] = "Provider timeouts",
+        ["availability.streamFailures"] = "Provider stream failures",
+        ["availability.rateLimitedOurs"] = "Rate limited by our own limits (HTTP 429, excluded)",
+        ["availability.rateLimitedUnattributed"] = "Rate limited, unattributed (HTTP 429)",
+        ["availability.transportUnattributed"] = "Transport failures, unattributed",
+        ["availability.ourSideFailures"] = "Our-side failures (excluded)",
+        ["availability.questionsLost"] = "Questions lost to provider errors",
+        ["availability.reruns"] = "Re-runs needed",
+        ["availability.providerReruns"] = "Re-runs needed for provider errors",
+        ["availability.replacedRuns"] = "Replaced runs",
+        ["availability.oneIn"] = "Provider errors as a natural frequency",
+
         // Chat consistency: the fixed keys of BenchmarkChatConsistencyReportFacts
         ["subject.serviceTier"] = "Service tier",
         ["analysis.id"] = "Analysis ID",
@@ -176,6 +200,7 @@ public static class BenchmarkReportFactLabels
         ["P3"] = "Answer streaming rate",
         ["P4"] = "Work per turn",
         ["P5"] = "Cost per question",
+        ["P6"] = "Provider error rate",
     };
 
     /// <summary>The periods of a chat consistency analysis.</summary>
@@ -319,6 +344,22 @@ public static class BenchmarkReportFactLabels
         ["outputTokens"] = "mean output tokens per answer",
         ["costPerQuestion"] = "mean cost per question",
         ["failedAnswers"] = "failed answers",
+    };
+
+    /// <summary>The <c>availability.&lt;period&gt;.&lt;measure&gt;</c> measures of a chat consistency sheet.</summary>
+    private static readonly IReadOnlyDictionary<string, string> AvailabilityPeriodMeasureNames = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["attempts"] = "valid attempts",
+        ["providerErrors"] = "provider errors",
+        ["providerErrorRate"] = "provider error rate",
+        ["providerErrorRateCi95Low"] = "provider error rate, 95 % interval low",
+        ["providerErrorRateCi95High"] = "provider error rate, 95 % interval high",
+        ["unattributedErrors"] = "unattributed errors",
+        ["ourSideFailures"] = "our-side failures (excluded)",
+        ["reruns"] = "re-runs needed",
+        ["providerReruns"] = "re-runs for provider errors",
+        ["recordedRuns"] = "runs that recorded attempts",
+        ["availabilityOnlyRuns"] = "availability-only runs",
     };
 
     /// <summary>
@@ -468,6 +509,12 @@ public static class BenchmarkReportFactLabels
             // level.<baseline|comparison>.<measure>
             case "level" when parts.Length == 3 && PeriodNames.TryGetValue(parts[1], out var levelPeriod) && LevelMeasureNames.TryGetValue(parts[2], out var measure):
                 label = levelPeriod + " period level: " + measure;
+                return true;
+
+            // availability.<baseline|comparison>.<measure>; a run sheet's availability.<x> keys are two-part and labeled explicitly
+            case "availability" when parts.Length == 3 && PeriodNames.TryGetValue(parts[1], out var availabilityPeriod)
+                                     && AvailabilityPeriodMeasureNames.TryGetValue(parts[2], out var availabilityMeasure):
+                label = availabilityPeriod + " period: " + availabilityMeasure;
                 return true;
 
             // robustness.<check>.summary

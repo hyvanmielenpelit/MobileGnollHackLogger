@@ -14,6 +14,7 @@
     <File Path="docs/overseer/ai-benchmark-model-batches.md" />
     <File Path="docs/overseer/ai-benchmark-multi-run.md" />
     <File Path="docs/overseer/ai-benchmark-multi-suite.md" />
+    <File Path="docs/overseer/ai-benchmark-provider-availability.md" />
     <File Path="docs/overseer/ai-benchmark-report-pack.md" />
     <File Path="docs/overseer/ai-changelog.md" />
     <File Path="docs/overseer/anthropic-model-latency-measurements.md" />

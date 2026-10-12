@@ -202,7 +202,8 @@ export class CcWizardComponent {
       const noun = set.kind === 'battery' ? 'battery run' : 'run';
       text = `${axis.displayName} · ${set.label} · ${plural(this.scopeState().units.length, noun)} · ${this.rangeText}`;
     } else {
-      const count = this.timeline?.points.length ?? axis.runCount;
+      // Usable runs only, as the model axis counts them; a failed run kept for provider availability is not one.
+      const count = this.timeline?.points.filter(point => !point.availabilityOnly).length ?? axis.runCount;
       text = `${axis.displayName} · ${plural(count, 'run')} · ${this.rangeText}`;
     }
     return scopeIsDefault(this.scope) && !this.hasIncompleteUnits ? text : `${text} · ${this.scopeState().scoped.length} in the analysis`;

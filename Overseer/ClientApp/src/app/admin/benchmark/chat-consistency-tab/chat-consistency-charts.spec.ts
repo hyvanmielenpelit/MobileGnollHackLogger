@@ -6,6 +6,7 @@ import { DEFAULT_FIGURE_STYLE } from '../model-comparison/figure-style';
 import type { FigureAppearanceStyle } from '../model-comparison/figure-style';
 import { resolveFigureTheme } from '../model-comparison/figure-theme';
 import {
+  CC_AVAILABILITY_FORMS,
   CC_CHART_STYLE_DEFAULTS,
   CC_DECIMAL_CHOICES,
   CC_FIGURE_ENDPOINTS,
@@ -29,6 +30,7 @@ import {
   CcFigureInput,
   analysisBands,
   analysisChartPoints,
+  availabilityFigure,
   buildCcFigure,
   buildCcFigures,
   buildMarkers,
@@ -37,6 +39,8 @@ import {
   ccChartThemeFor,
   ccHeaderHeight,
   ccIntervalText,
+  ccLaneyPPrimeLimits,
+  ccMeasurePoints,
   ccNotComparableText,
   ccPeriodBreak,
   ccPeriodLabelPlacement,
@@ -44,6 +48,7 @@ import {
   ccPlaceLabels,
   ccPointLabelFont,
   ccStepDecimals,
+  ccStripShade,
   ccTagBandHeight,
   ccTagRowHeight,
   ccTagRows,
@@ -65,7 +70,7 @@ import {
   workFigure
 } from './chat-consistency-charts';
 import { CcMarkerFilter, CcMarkerKind, eventGroupLabel, groupOverseerEvents } from './chat-consistency-events';
-import { CC_REPORT_FIGURE_KEYS } from './chat-consistency.models';
+import { CC_REPORT_FIGURE_KEYS, CcTimelinePoint } from './chat-consistency.models';
 import {
   CC_BATTERY_SET_KEY,
   ccAnalysisResult,
@@ -81,6 +86,12 @@ import {
 } from './chat-consistency-tab.testing';
 
 const at = (iso: string) => Date.parse(iso);
+
+/**
+ * The fixtures' runs recorded no provider attempts, so Provider availability draws nothing from them;
+ * the tests over every figure that need a drawing leave it out, and its own tests cover it.
+ */
+const drawsFromFixtures = (key: string) => key !== 'availability';
 
 describe('chat-consistency-charts', () => {
   const timeline = ccTimeline();
@@ -368,8 +379,9 @@ describe('chat-consistency-charts', () => {
   });
 
   it('builds the timeline figures in order and maps every report key to one', () => {
-    expect(buildCcFigures(input).map(f => f.key)).toEqual(['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'reliability', 'timeline']);
-    expect(CC_REPORT_FIGURE_KEYS.map(key => CC_REPORT_FIGURES[key])).toEqual(['quality', 'ttfat', 'work', 'timeline']);
+    expect(buildCcFigures(input).map(f => f.key))
+      .toEqual(['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'reliability', 'availability', 'timeline']);
+    expect(CC_REPORT_FIGURE_KEYS.map(key => CC_REPORT_FIGURES[key])).toEqual(['quality', 'ttfat', 'work', 'timeline', 'availability']);
   });
 
   it('turns analysis periods into bands', () => {
@@ -590,7 +602,7 @@ describe('chat-consistency-charts', () => {
       // A run's Intelligence is its native Intelligence Index, a battery run's the Overall Intelligence Index.
       const forRuns = (key: string) => CC_FIGURE_SERIES[key as keyof typeof CC_FIGURE_SERIES]
         .map(series => series.id).filter(id => id !== 'quality.overall');
-      for (const figure of buildCcFigures(full)) {
+      for (const figure of buildCcFigures(full).filter(f => drawsFromFixtures(f.key))) {
         expect(figure.config!.data.datasets.map(ds => ds.seriesId), figure.key).toEqual(forRuns(figure.key));
       }
       const battery = qualityFigure({
@@ -676,7 +688,7 @@ describe('chat-consistency-charts', () => {
       expect(ccValueAxis([0, 0], ratio(1))).toEqual({ min: 0, max: 1, stepSize: 0.2 });
       // Reliability at all zero reads 0–10 %, not 0–1 %.
       expect(ccValueAxis([0, 0, 0], ratio(10, 100))).toEqual({ min: 0, max: 10, stepSize: 2 });
-      for (const figure of buildCcFigures(input).filter(f => f.key !== 'quality' && f.key !== 'timeline')) {
+      for (const figure of buildCcFigures(input).filter(f => f.key !== 'quality' && f.key !== 'timeline' && drawsFromFixtures(f.key))) {
         expect(bounds(figure).min, figure.key).toBe(0);
         expect(axis(figure, 'y1'), figure.key).toBeUndefined();
       }
@@ -729,8 +741,9 @@ describe('chat-consistency-charts', () => {
     });
 
     it('leaves the other figures’ value axes unchanged by the full Intelligence scale', () => {
-      const plain = buildCcFigures(input).filter(f => f.key !== 'quality' && f.key !== 'timeline');
-      const zero = buildCcFigures(input, { zeroBaseline: true }).filter(f => f.key !== 'quality' && f.key !== 'timeline');
+      const plain = buildCcFigures(input).filter(f => f.key !== 'quality' && f.key !== 'timeline' && drawsFromFixtures(f.key));
+      const zero = buildCcFigures(input, { zeroBaseline: true })
+        .filter(f => f.key !== 'quality' && f.key !== 'timeline' && drawsFromFixtures(f.key));
       expect(zero.map(bounds)).toEqual(plain.map(bounds));
     });
   });
@@ -942,8 +955,8 @@ describe('chat-consistency-charts', () => {
     });
 
     it('keeps the series ids, markers and overlay plugin', () => {
-      const plain = buildCcFigures(input);
-      buildCcFigures(marked).forEach((figure, i) => {
+      const plain = buildCcFigures(input).filter(f => drawsFromFixtures(f.key));
+      buildCcFigures(marked).filter(f => drawsFromFixtures(f.key)).forEach((figure, i) => {
         expect(figure.config!.data.datasets.map(ds => ds.seriesId), figure.key).toEqual(plain[i].config!.data.datasets.map(ds => ds.seriesId));
         expect(figure.markers, figure.key).toEqual(plain[i].markers);
         expect(figure.config!.plugins.map(p => p.id), figure.key).toEqual(['ccOverlay']);
@@ -951,8 +964,8 @@ describe('chat-consistency-charts', () => {
     });
 
     it('draws every figure exactly as before with an empty map', () => {
-      const plain = buildCcFigures(input);
-      buildCcFigures({ ...input, notAnalyzed: new Map() }).forEach((figure, i) => {
+      const plain = buildCcFigures(input).filter(f => drawsFromFixtures(f.key));
+      buildCcFigures({ ...input, notAnalyzed: new Map() }).filter(f => drawsFromFixtures(f.key)).forEach((figure, i) => {
         expect(figure.config!.data.datasets, figure.key).toEqual(plain[i].config!.data.datasets);
         expect(figure.takeaway, figure.key).toBe(plain[i].takeaway);
         expect(figure.altText, figure.key).toBe(plain[i].altText);
@@ -1317,14 +1330,14 @@ describe('chat-consistency-charts', () => {
 
     it('leaves every figure\'s axis ticks as their step writes them', () => {
       type ValueAxis = { min: number; max: number; ticks: { stepSize: number; callback: (value: number) => string } };
-      const decimals = { quality: 3, ttfat: 3, rate: 3, work: 3, tools: 3, cost: 4, reliability: 3 };
+      const decimals = { quality: 3, ttfat: 3, rate: 3, work: 3, tools: 3, cost: 4, reliability: 3, availability: 3 };
       const ticks = (figure: CcFigure) => {
         const scale = figure.config!.options.scales!['y'] as unknown as ValueAxis;
         return Array.from({ length: Math.round((scale.max - scale.min) / scale.ticks.stepSize) + 1 },
           (_, i) => scale.ticks.callback(scale.min + i * scale.ticks.stepSize));
       };
-      const plain = buildCcFigures(input).filter(f => f.key !== 'timeline');
-      const chosen = buildCcFigures(input, { decimals }).filter(f => f.key !== 'timeline');
+      const plain = buildCcFigures(input).filter(f => f.key !== 'timeline' && drawsFromFixtures(f.key));
+      const chosen = buildCcFigures(input, { decimals }).filter(f => f.key !== 'timeline' && drawsFromFixtures(f.key));
       expect(chosen.map(ticks)).toEqual(plain.map(ticks));
     });
 
@@ -1353,7 +1366,7 @@ describe('chat-consistency-charts', () => {
     });
 
     it('colors each measure with its own palette slot, never by rank', () => {
-      const colors = buildCcFigures(input).filter(f => f.key !== 'reliability')
+      const colors = buildCcFigures(input).filter(f => f.key !== 'reliability' && drawsFromFixtures(f.key))
         .map(f => [f.key, f.config!.data.datasets[0].borderColor]);
       expect(colors).toEqual([
         ['quality', s[0]], ['ttfat', s[1]], ['rate', s[3]], ['work', s[4]], ['tools', s[2]], ['cost', s[5]], ['timeline', s[0]]
@@ -1670,7 +1683,7 @@ describe('chat-consistency-charts', () => {
       const boxed: CcChartTheme = { ...CC_PRINT_THEME, tooltip: { background: '#ffffff', border: '#d1d5db' } };
       const marked: CcFigureInput = { ...input, notAnalyzed: new Map([[104, 'left out in step 1']]) };
       for (const figureInput of [input, marked]) {
-        for (const { key } of CC_FIGURE_KEYS) {
+        for (const { key } of CC_FIGURE_KEYS.filter(entry => drawsFromFixtures(entry.key))) {
           const bare = buildCcFigure(key, figureInput, { theme: CC_PRINT_THEME });
           const hover = buildCcFigure(key, figureInput, { theme: boxed });
           expect(withoutInteraction(bare), key).toEqual(withoutInteraction(hover));
@@ -1814,21 +1827,171 @@ describe('chat-consistency-charts', () => {
       expect(checked, figure.key).toBeGreaterThan(0);
     }
 
+    const drawnKeys = CC_FIGURE_KEYS.filter(entry => drawsFromFixtures(entry.key));
+
     it('carries the unit, the start and every series’ value of a run', () => {
-      for (const { key } of CC_FIGURE_KEYS) expectTooltipFactsInTable(buildCcFigure(key, input), input);
+      for (const { key } of drawnKeys) expectTooltipFactsInTable(buildCcFigure(key, input), input);
     });
 
     it('carries the unit, the start and every series’ value of a battery run', () => {
-      for (const { key } of CC_FIGURE_KEYS) expectTooltipFactsInTable(buildCcFigure(key, battery), battery);
+      for (const { key } of drawnKeys) expectTooltipFactsInTable(buildCcFigure(key, battery), battery);
     });
 
     it('carries whether a run or a battery run is in the analysis, and why not', () => {
       const runs: CcFigureInput = { ...input, notAnalyzed };
       const batteries: CcFigureInput = { ...battery, notAnalyzed: new Map([[11, 'left out in step 1']]) };
-      for (const { key } of CC_FIGURE_KEYS) {
+      for (const { key } of drawnKeys) {
         expectTooltipFactsInTable(buildCcFigure(key, runs), runs);
         expectTooltipFactsInTable(buildCcFigure(key, batteries), batteries);
       }
+    });
+  });
+
+  describe('provider availability', () => {
+    const recorded = (valid: number, provider: number, low: number, high: number, extra: Partial<CcTimelinePoint> = {}) => ({
+      availabilityRecorded: true, validAttemptCount: valid, providerErrorCount: provider, unattributedErrorCount: 0,
+      providerErrorRate: provider / valid, providerErrorRateLow: low, providerErrorRateHigh: high, rerunsNeeded: 0, providerRerunsNeeded: 0,
+      ...extra
+    });
+    /** Two recorded runs, a failed run kept for availability only, and a run before the ledger. */
+    const availability: CcFigureInput = {
+      points: [
+        ccPoint(4, '2026-09-05T08:00:00Z'),
+        ccPoint(2, '2026-09-02T08:00:00Z', recorded(250, 5, 0.008, 0.05, { rerunsNeeded: 1, providerRerunsNeeded: 1 })),
+        ccPoint(1, '2026-09-01T08:00:00Z', recorded(1000, 10, 0.005, 0.018, { unattributedErrorCount: 2 })),
+        ccPoint(3, '2026-09-04T08:00:00Z', {
+          status: 'failed', availabilityOnly: true, qualityIndex: null, ...recorded(40, 8, 0.1, 0.35)
+        })
+      ]
+    };
+    const ys = (figure: CcFigure, id: string) =>
+      (figure.config!.data.datasets.find(ds => ds.seriesId === id)!.data as CcChartPoint[]).map(point => point.y);
+
+    it('mirrors the server\'s Laney p′ limits', () => {
+      const limits = ccLaneyPPrimeLimits([{ k: 2, n: 100 }, { k: 5, n: 100 }, { k: 1, n: 100 }], 200)!;
+      expect(limits.center).toBeCloseTo(8 / 300, 10);
+      expect(limits.sigmaZ).toBeCloseTo(1.92594, 4);
+      expect(limits.lower).toBe(0);
+      expect(limits.upper).toBeCloseTo(0.092488, 5);
+      // One baseline unit, or a rate of 0, is the plain p chart; the limits are clipped to [0, 1].
+      expect(ccLaneyPPrimeLimits([{ k: 2, n: 100 }], 100)!.sigmaZ).toBe(1);
+      expect(ccLaneyPPrimeLimits([{ k: 0, n: 100 }, { k: 0, n: 50 }], 100)).toEqual({ center: 0, lower: 0, upper: 0, sigmaZ: 1 });
+      expect(ccLaneyPPrimeLimits([{ k: 50, n: 100 }], 1)).toEqual({ center: 0.5, lower: 0, upper: 1, sigmaZ: 1 });
+      expect(ccLaneyPPrimeLimits([{ k: 0, n: 0 }], 100)).toBeNull();
+      expect(ccLaneyPPrimeLimits([{ k: 2, n: 100 }], 0)).toBeNull();
+    });
+
+    it('draws a dot per unit with its interval, the availability-only run hollow, and says what it shows', () => {
+      const figure = availabilityFigure(availability);
+      expect(figure.availabilityForm).toBe('points');
+      expect(figure.plottedUnits).toBe(3);
+      expect(figure.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['availability.units', 'availability.onlyUnits']);
+      expect(ys(figure, 'availability.units')).toEqual([1, 2, null, null]);
+      expect(ys(figure, 'availability.onlyUnits')).toEqual([null, null, 20, null]);
+      expect(figure.config!.data.datasets.every(ds => (ds as { showLine?: boolean }).showLine === false)).toBe(true);
+      expect(figure.config!.data.datasets[1].pointBackgroundColor).toBe(CC_SCREEN_THEME.surface);
+      expect(figure.config!.plugins.map(plugin => plugin.id)).toEqual(['ccOverlay', 'ccWhiskers', 'ccGlyphs']);
+      // A dot's area follows its valid attempts: 1,000, 250 and 40 of them.
+      const ds = figure.config!.data.datasets[0];
+      const radius = ds.pointRadius as unknown as (ctx: { raw: CcChartPoint }) => number;
+      const data = ds.data as CcChartPoint[];
+      expect([radius({ raw: data[0] }), radius({ raw: data[1] })]).toEqual([8, 4]);
+      const only = figure.config!.data.datasets[1];
+      expect((only.pointRadius as unknown as (ctx: { raw: CcChartPoint }) => number)({ raw: (only.data as CcChartPoint[])[2] })).toBe(2);
+      expect(figure.takeaway).toBe('The provider error rate ranged from 1.0 % to 20 % across 3 runs (23 of 1,290 attempts in all). '
+        + 'A dot\'s area follows its run\'s valid attempts and its bar is the run\'s 95 % interval. '
+        + '1 failed or canceled run is drawn hollow: its attempts count for provider availability only. '
+        + '▲ marks 1 run that needed a re-run for provider errors. 1 run recorded no provider attempts (before harness 56).');
+      expect(figure.altText).toBe(`Provider errors per run. ${figure.takeaway}`);
+      expect(figure.table.columns).toEqual(['Run', 'Started', 'Provider errors', 'Rate', '95 % interval', 'Unattributed', 'Re-runs', 'Availability only']);
+      expect(figure.table.rows).toEqual([
+        ['#1', '2026-09-01 08:00 UTC', '10 of 1,000 attempts', '1.0 %', '0.50 %–1.8 %', '2', '0', 'No'],
+        ['#2', '2026-09-02 08:00 UTC', '5 of 250 attempts', '2.0 %', '0.80 %–5.0 %', '0', '1 (1 for provider errors)', 'No'],
+        ['#3', '2026-09-04 08:00 UTC', '8 of 40 attempts', '20 %', '10 %–35 %', '0', '0', 'Yes'],
+        ['#4', '2026-09-05 08:00 UTC', 'Not recorded', '—', '—', '—', '0', 'No']
+      ]);
+    });
+
+    it('is drawn by every other figure without the availability-only runs', () => {
+      expect(ccMeasurePoints(availability.points).map(point => point.runId)).toEqual([4, 2, 1]);
+      for (const key of ['quality', 'ttfat', 'cost', 'reliability', 'timeline'] as const) {
+        expect(buildCcFigure(key, availability).table.rows.map(cells => cells[0]), key).toEqual(['#1', '#2', '#4']);
+      }
+    });
+
+    it('says when no run recorded provider attempts, and draws nothing', () => {
+      const figure = availabilityFigure(input);
+      expect(figure.config).toBeNull();
+      expect(figure.takeaway).toBe('No run in this range recorded provider attempts; they are recorded from harness 56. '
+        + '6 runs recorded no provider attempts (before harness 56).');
+    });
+
+    it('draws Laney p′ control limits from the baseline period and labels the units beyond them', () => {
+      const bands = analysisBands(
+        { startUtc: '2026-09-01T00:00:00Z', endUtc: '2026-09-02T23:59:59.999Z' },
+        { startUtc: '2026-09-03T00:00:00Z', endUtc: '2026-09-05T23:59:59.999Z' });
+      const figure = availabilityFigure({ ...availability, bands }, { availabilityForm: 'controlChart' });
+      expect(figure.availabilityForm).toBe('controlChart');
+      expect(figure.config!.data.datasets.map(ds => ds.seriesId)).toEqual([
+        'availability.units', 'availability.onlyUnits', 'availability.center', 'availability.upper', 'availability.lower'
+      ]);
+      const upper = figure.config!.data.datasets.find(ds => ds.seriesId === 'availability.upper')!;
+      expect((upper as { stepped?: string }).stepped).toBe('middle');
+      expect(upper.borderDash).toEqual([6, 4]);
+      const baseline = [{ k: 10, n: 1000 }, { k: 5, n: 250 }];
+      expect(ys(figure, 'availability.upper')[2]).toBeCloseTo(ccLaneyPPrimeLimits(baseline, 40)!.upper * 100, 10);
+      expect(ys(figure, 'availability.center')[0]).toBeCloseTo(1.2, 10);
+      expect(figure.config!.plugins.map(plugin => plugin.id)).toEqual(['ccOverlay', 'ccGlyphs']);
+      expect((figure.config!.options.scales!['y'] as unknown as { title: { text: string } }).title.text)
+        .toBe('Provider errors (%), with control limits');
+      expect(figure.takeaway).toBe('The center line is the baseline period\'s pooled rate, 1.2 % (15 of 1,250 attempts), with Laney\'s σ_Z 1.54. '
+        + '1 run lies beyond the control limits: #3 (20 %, 8 of 40 attempts). 1 run recorded no provider attempts (before harness 56).');
+      expect(figure.table.columns.slice(-3)).toEqual(['Lower limit', 'Upper limit', 'Beyond the limits']);
+      expect(figure.table.rows.map(cells => cells[cells.length - 1])).toEqual(['No', 'No', 'Yes', '—']);
+    });
+
+    it('shades one cell per UTC day and measure, hatched where no attempt was recorded', () => {
+      const figure = availabilityFigure(availability, { availabilityForm: 'strip' });
+      expect(figure.config!.data.datasets.map(ds => ds.seriesId)).toEqual(['availability.strict', 'availability.inclusive']);
+      expect(figure.config!.plugins.map(plugin => plugin.id)).toEqual(['ccOverlay', 'ccStrip']);
+      const y = figure.config!.options.scales!['y'] as unknown as { min: number; max: number; ticks: { callback: (value: number) => string } };
+      expect([y.min, y.max, y.ticks.callback(1), y.ticks.callback(0)]).toEqual([-0.5, 1.5, 'Strict', 'Inclusive']);
+      const legend = figure.config!.options.plugins!.legend!.labels!.generateLabels!(null as unknown as Chart);
+      expect(legend.map(item => item.text)).toEqual(['0 %', 'up to 1 %', 'up to 5 %', 'up to 20 %', 'over 20 %', 'No recorded attempts']);
+      expect(figure.plottedUnits).toBe(3);
+      expect(figure.table.columns).toEqual(['Day (UTC)', 'Runs', 'Valid attempts', 'Strict', 'Inclusive']);
+      expect(figure.table.rows).toEqual([
+        ['2026-09-01', '1', '1,000', '1.0 % (10 of 1,000 attempts)', '1.2 % (12 of 1,000 attempts)'],
+        ['2026-09-02', '1', '250', '2.0 % (5 of 250 attempts)', '2.0 % (5 of 250 attempts)'],
+        ['2026-09-03', '0', '—', 'No runs', 'No runs'],
+        ['2026-09-04', '1', '40', '20 % (8 of 40 attempts)', '20 % (8 of 40 attempts)'],
+        ['2026-09-05', '1', '—', 'Not recorded', 'Not recorded']
+      ]);
+      expect(figure.takeaway).toContain('A hatched cell is a day without recorded attempts.');
+      expect([0, 0.004, 0.01, 0.03, 0.2, 0.5].map(ccStripShade)).toEqual([0, 1, 1, 2, 3, 4]);
+    });
+
+    it('lists its three forms, points first', () => {
+      expect(CC_AVAILABILITY_FORMS.map(form => form.id)).toEqual(['points', 'controlChart', 'strip']);
+      expect(CC_DECIMAL_CHOICES.availability).toEqual([0, 1, 2, 3]);
+      expect(ccAutoDecimalsText('availability', 'run')).toBe('Automatic (2 significant digits)');
+      expect(availabilityFigure(availability, { decimals: { availability: 2 } }).table.rows[0][3]).toBe('1.00 %');
+    });
+
+    it('draws an analysis\'s availability-only runs with its periods\' runs', () => {
+      const p6 = ccEndpoint('P6', {
+        availability: {
+          baselineValidAttempts: 1250, baselineProviderErrors: 15, baselineUnattributedErrors: 2, baselineOurSideFailures: 0,
+          comparisonValidAttempts: 40, comparisonProviderErrors: 8, comparisonUnattributedErrors: 0, comparisonOurSideFailures: 0,
+          minimumAttemptsPerStratum: 30, baselineAvailabilityOnlyRunIds: [], comparisonAvailabilityOnlyRunIds: [3]
+        }
+      });
+      const result = ccAnalysisResult({
+        endpoints: [p6],
+        baseline: { ...ccAnalysisResult().baseline, runIds: [1, 2] },
+        comparison: { ...ccAnalysisResult().comparison, runIds: [4] }
+      });
+      expect(analysisChartPoints(result, availability.points, []).points.map(point => point.runId)).toEqual([4, 2, 1, 3]);
     });
   });
 
@@ -1908,7 +2071,7 @@ describe('chat-consistency-charts', () => {
     });
 
     it('maps each report figure to the endpoint it plots', () => {
-      expect(CC_REPORT_FIGURE_KEYS.map(key => CC_FIGURE_ENDPOINTS[CC_REPORT_FIGURES[key]] ?? null)).toEqual(['P1', 'P2', 'P4', null]);
+      expect(CC_REPORT_FIGURE_KEYS.map(key => CC_FIGURE_ENDPOINTS[CC_REPORT_FIGURES[key]] ?? null)).toEqual(['P1', 'P2', 'P4', null, 'P6']);
     });
   });
 });

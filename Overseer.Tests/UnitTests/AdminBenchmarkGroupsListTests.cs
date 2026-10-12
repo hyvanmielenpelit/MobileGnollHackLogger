@@ -179,7 +179,7 @@ public class AdminBenchmarkGroupsListTests
                     })
                     .FirstOrDefaultAsync();
 
-            dtos.Add(new BenchmarkRunGroupDto
+            var dto = new BenchmarkRunGroupDto
             {
                 Id = group.Id,
                 Name = group.Name,
@@ -203,7 +203,10 @@ public class AdminBenchmarkGroupsListTests
                 LatestAnalysisId = latest?.Id,
                 LatestAnalysisAtUtc = latest?.ComputedAtUtc,
                 AnalysisStale = BenchmarkGroupAnalysisService.IsStale(group, latest)
-            });
+            };
+            BenchmarkProviderAvailabilityService.ApplyCard(
+                dto, await new BenchmarkProviderAvailabilityService(db).CardForPoolAsync(memberRunIds));
+            dtos.Add(dto);
         }
 
         return dtos;

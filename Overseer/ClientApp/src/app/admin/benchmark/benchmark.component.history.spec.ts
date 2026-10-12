@@ -427,6 +427,7 @@ describe('AdminBenchmarkComponent', () => {
         'Cost, lowest first',
         'Cost, highest first',
         'Duration, shortest first',
+        'Most provider errors',
         'Tested model (A–Z)',
         'Suite (A–Z)'
       ]);
@@ -645,6 +646,105 @@ describe('AdminBenchmarkComponent', () => {
 
       ctx.historyTab().onHistoryFacetChange('changes', ['Instrument changed']);
       expect(shownIds()).toEqual([4]);
+    });
+
+    describe('provider availability', () => {
+      /** A run's recorded provider availability: k provider errors of n valid attempts, and its re-runs. */
+      function recorded(k: number, n: number, reruns = 0, providerReruns = 0): Record<string, unknown> {
+        return {
+          providerAvailabilityRecorded: true,
+          providerRecordedRunCount: 1,
+          providerRunCount: 1,
+          providerValidAttempts: n,
+          providerErrorCount: k,
+          providerUnattributedErrorCount: 0,
+          providerErrorRate: n > 0 ? k / n : null,
+          rerunsNeeded: reruns,
+          providerRerunsNeeded: providerReruns
+        };
+      }
+
+      /** A run that predates the ledger: every figure null. */
+      const legacy = {
+        providerAvailabilityRecorded: false,
+        providerValidAttempts: null,
+        providerErrorCount: null,
+        providerErrorRate: null,
+        rerunsNeeded: null,
+        providerRerunsNeeded: null
+      };
+
+      function cardOf(id: number): HTMLElement {
+        return fixture.nativeElement.querySelector(`article.rh-card[data-run-id="${id}"]`) as HTMLElement;
+      }
+
+      it('should badge the kicker only for a recorded run with provider errors or re-runs, after a separator', () => {
+        openHistoryWith([
+          buildHistoryRun({ id: 4, ...recorded(12, 1480) }),
+          buildHistoryRun({ id: 3, ...recorded(0, 300, 2, 1) }),
+          buildHistoryRun({ id: 2, ...recorded(0, 300) }),
+          buildHistoryRun({ id: 1, ...legacy })
+        ]);
+
+        for (const id of [4, 3]) {
+          const badge = cardOf(id).querySelector('.rh-card-kicker > app-provider-error-badge') as HTMLElement;
+          expect(badge, `run ${id}`).toBeTruthy();
+          expect(badge.previousElementSibling?.classList.contains('rh-sep'), `run ${id}`).toBe(true);
+        }
+        expect(cardOf(4).querySelector('app-provider-error-badge')?.textContent).toContain('Provider errors');
+        expect(cardOf(3).querySelector('app-provider-error-badge')?.textContent).toContain('2 re-runs');
+
+        // All well, or not recorded: no badge and no dangling separator at the end of the kicker.
+        for (const id of [2, 1]) {
+          const kicker = cardOf(id).querySelector('.rh-card-kicker') as HTMLElement;
+          expect(kicker.querySelector('app-provider-error-badge'), `run ${id}`).toBeNull();
+          expect(kicker.lastElementChild?.classList.contains('rh-sep'), `run ${id}`).toBe(false);
+          expect(kicker.textContent, `run ${id}`).not.toContain('Provider errors');
+        }
+        // The provider name badge in the title is a different component and stays.
+        expect(cardOf(4).querySelector('.rh-card-title app-provider-badge')).toBeTruthy();
+      });
+
+      it('should offer Provider errors beside Failed at the provider in the Flags facet', () => {
+        openHistoryWith([
+          buildHistoryRun({ id: 4, ...recorded(3, 400) }),
+          buildHistoryRun({ id: 3, ...recorded(0, 400), terminalFailureAnswerCount: 1 }),
+          buildHistoryRun({ id: 2, ...recorded(5, 400), terminalFailureAnswerCount: 2 }),
+          buildHistoryRun({ id: 1, ...legacy })
+        ]);
+
+        const facet = ctx.historyTab().historyFacets.find(f => f.column === 'flags')!;
+        expect(facet.options.map(o => [o.value, o.count])).toEqual([
+          ['Failed at the provider', 2],
+          ['Provider errors', 2],
+          ['None', 1]
+        ]);
+
+        ctx.historyTab().onHistoryFacetChange('flags', ['Provider errors']);
+        expect(shownIds()).toEqual([4, 2]);
+
+        ctx.historyTab().onHistoryFacetChange('flags', ['Failed at the provider']);
+        expect(shownIds()).toEqual([3, 2]);
+      });
+
+      it('should sort Most provider errors by rate, then by count, with runs that do not record it last', () => {
+        openHistoryWith([
+          buildHistoryRun({ id: 5, ...legacy }),
+          buildHistoryRun({ id: 4, ...recorded(1, 100) }),
+          buildHistoryRun({ id: 3, ...recorded(0, 200) }),
+          buildHistoryRun({ id: 2, ...recorded(2, 200) }),
+          buildHistoryRun({ id: 1, ...recorded(9, 300) })
+        ]);
+        const select = fixture.nativeElement.querySelector('#rh-sort') as HTMLSelectElement;
+
+        select.value = 'provider-errors-desc';
+        select.dispatchEvent(new Event('change'));
+
+        // 3 % first; 1 % twice, the larger count first; 0 %; the legacy run last.
+        expect(shownIds()).toEqual([1, 2, 4, 3, 5]);
+        expect(ctx.workspace.historyTable.sortColumn).toBe('providerErrors');
+        expect(ctx.workspace.historyTable.sortDirection).toBe('desc');
+      });
     });
   });
 

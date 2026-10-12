@@ -85,6 +85,79 @@ public class BenchmarkBatteryReportBuilderTests
     }
 
     [Fact]
+    public async Task TheOverallSection_CarriesTheProviderAvailabilitySubsection_WithItsMemberRows_AndNoNewNumberedSection()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var definition = BenchmarkBatteryTestData.Definition();
+        long id = await BenchmarkBatteryTestData.SeedAsync(_db, definition,
+            (BenchmarkBatteryTestData.SuiteARun(1), 0, 1), (BenchmarkBatteryTestData.SuiteBRun(2), 1, 1));
+        var service = BenchmarkBatteryTestData.Service(_db);
+        var (analysis, result, _, error) = await service.AnalyseAsync(id, null, null, ct);
+        Assert.Null(error);
+        var loaded = await service.LoadAsync(id, ct);
+        var batteryRun = await _db.BenchmarkBatteryRuns.Include(b => b.Members).SingleAsync(b => b.Id == id, ct);
+
+        var summary = new ProviderAvailabilitySummary
+        {
+            Recorded = true,
+            RecordedRuns = 1,
+            TotalRuns = 2,
+            ValidAttempts = 1000,
+            ProviderErrors = 8,
+            UnattributedErrors = 2,
+            OurSideFailures = 3,
+            ProviderErrorRate = 0.008,
+            ProviderErrorRateLow = 0.004,
+            ProviderErrorRateHigh = 0.016,
+            InclusiveRate = 0.01,
+            InclusiveRateLow = 0.0055,
+            InclusiveRateHigh = 0.018,
+            Overloaded = 8,
+            RateLimitedOurs = 3,
+            RateLimitedUnattributed = 2,
+            RerunsNeeded = 1,
+            ProviderRerunsNeeded = 1,
+            RepairPasses = 1,
+            ProviderRepairPasses = 1
+        };
+        var pool = new ProviderAvailabilityPool(
+            summary, Array.Empty<RunLineageRow>(), Array.Empty<ProviderAvailabilityLink>(),
+            new Dictionary<ProviderAttemptOutcome, IReadOnlyList<int>>());
+        var members = new List<ProviderAvailabilityMemberRow>
+        {
+            new(1, 1, 0, 1, false, true, 1000, 8, 2, 0.008, 1, 1),
+            new(2, 2, 1, 1, false, false, 0, 0, 0, null, 0, 0)
+        };
+
+        string report = BenchmarkBatteryReportBuilder.BuildMarkdownReport(
+            batteryRun, definition, result!, analysis, loaded!.MemberRuns, loaded.Comparability,
+            providerAvailability: new BatteryProviderAvailability(pool, members)).Replace("\r\n", "\n");
+
+        int overall = report.IndexOf("## 2. Overall Intelligence Index", StringComparison.Ordinal);
+        int subsection = report.IndexOf("### 2.2 Provider availability", StringComparison.Ordinal);
+        int profile = report.IndexOf("## 3. Suite Profile", StringComparison.Ordinal);
+        Assert.True(overall >= 0 && overall < subsection && subsection < profile);
+
+        Assert.Contains("- **Provider error rate:** 0.80 % (8 of 1,000 attempts; 95 % CI 0.40–1.6 %); recorded for 1 of 2 runs\n", report);
+        Assert.Contains("- **Upper bound including unattributed errors:** 1.0 % (10 of 1,000 attempts; 95 % CI 0.55–1.8 %) — 2 unattributed\n", report);
+        Assert.Contains("- **Our-side failures (excluded):** 3, of them rate limited by our own limits 3\n", report);
+        Assert.Contains("- **Re-runs needed:** 1 re-run (1 for provider errors)\n", report);
+        Assert.Contains("| 1 | #1 | current | 1,000 | 8 | 0.80 % | 2 | 1 re-run (1 for provider errors) |\n", report);
+        Assert.Contains("| 1 | #2 | current | not recorded | — | — | — | — |\n", report);
+        Assert.Contains("These are provider errors observed in GnollBench runs", report);
+        Assert.DoesNotContain("throttl", report, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task WithoutProviderAvailability_TheReportHasNoProviderAvailabilitySubsection()
+    {
+        string report = await BuildAsync((BenchmarkBatteryTestData.SuiteARun(1), 0, 1), (BenchmarkBatteryTestData.SuiteBRun(2), 1, 1));
+
+        Assert.DoesNotContain("Provider availability", report);
+        Assert.DoesNotContain("Provider error rate", report);
+    }
+
+    [Fact]
     public async Task TheManifest_ListsTheGraders_FromTheNewestUsableMember_AndTheReportWriter()
     {
         var ct = TestContext.Current.CancellationToken;

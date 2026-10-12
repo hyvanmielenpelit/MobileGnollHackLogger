@@ -3,8 +3,23 @@ import type { ChartConfiguration, ChartType, FontSpec, Plugin, Scale } from 'cha
 import { toFont } from 'chart.js/helpers';
 import ChartDataLabels from 'chartjs-plugin-datalabels';
 import {
+  A1_AVAILABILITY_ID,
+  A1_AVAILABILITY_TITLE,
   ACCENT,
+  AVAILABILITY_DETAIL_INCLUSIVE,
+  AVAILABILITY_DETAIL_STRICT,
+  AVAILABILITY_FIGURE_IDS,
+  AVAILABILITY_MARKER_NOTE,
+  AVAILABILITY_MARKER_THRESHOLD,
   AXIS_TITLE_RESERVE_PX,
+  P1_AVAILABILITY_ID,
+  P1_AVAILABILITY_TITLE,
+  availabilityGapText,
+  availabilityMarked,
+  availabilityMarkerPlugin,
+  availabilityPoint,
+  availabilitySqrtTicks,
+  availabilityText,
   axisTitleLines,
   buildNumberSamples,
   splitAxisTitle,
@@ -58,6 +73,7 @@ import {
   widestLabelPx,
 } from './model-comparison-charts';
 import type {
+  AvailabilityMarkerPluginOptions,
   BarOrientation,
   ChartSpec,
   CostMeasure,
@@ -68,6 +84,7 @@ import type {
   DirectLabelPluginOptions,
   DirectLabelValue,
   FigureSetOptions,
+  ModelComparisonAvailability,
   ModelComparisonContext,
   ModelComparisonEntry,
   ProfileFigure,
@@ -2053,6 +2070,7 @@ describe('model-comparison-charts', () => {
       numbers: DEFAULT_FIGURE_STYLE.numbers,
       appearance: DEFAULT_FIGURE_STYLE.appearance,
       table: DEFAULT_FIGURE_STYLE.table,
+      availability: DEFAULT_FIGURE_STYLE.availability,
     });
 
     const noteTexts = (spec: { chrome: { notes: readonly { text: string }[] } }): string[] =>
@@ -2723,6 +2741,8 @@ describe('chart.js registration', () => {
     figures.smallMultiples.quality,
     figures.smallMultiples.speed,
     figures.smallMultiples.cost,
+    figures.smallMultiples.availability,
+    figures.availability,
     // Every profile tile is the same chart type; the first stands for them all.
     { id: figures.profile.id, config: figures.profile.tiles[0] },
   ].map(demandOf);
@@ -2731,9 +2751,9 @@ describe('chart.js registration', () => {
     Chart.register(...APP_CHART_REGISTRABLES);
   });
 
-  it('demands cover all seven figures', () => {
-    expect(demands.length).toBe(7);
-    expect(new Set(demands.map((demand) => demand.id)).size).toBe(7);
+  it('demands cover all nine figures, the provider-error dot plots included', () => {
+    expect(demands.length).toBe(9);
+    expect(new Set(demands.map((demand) => demand.id)).size).toBe(9);
   });
 
   demands.forEach((demand) => {
@@ -3840,5 +3860,219 @@ describe('the figure theme in the charts', () => {
       plotFramePlugin.afterDraw?.(chart as unknown as Chart, {} as never, { color: '#c3c2b7' } as never);
       expect(calls).toEqual([{ op: 'strokeRect', args: [10.5, 20.5, 389, 279], strokeStyle: '#c3c2b7', lineWidth: 1 }]);
     });
+  });
+});
+
+describe('provider availability', () => {
+  function availabilityOf(
+    k: number,
+    n: number,
+    low: number,
+    high: number,
+    extra: Partial<ModelComparisonAvailability> = {},
+  ): ModelComparisonAvailability {
+    return {
+      recorded: true,
+      validAttempts: n,
+      providerErrors: k,
+      unattributedErrors: 3,
+      rate: k / n,
+      low,
+      high,
+      inclusiveRate: (k + 3) / n,
+      inclusiveLow: low,
+      inclusiveHigh: high + 0.002,
+      fewAttempts: n < 100,
+      ...extra,
+    };
+  }
+
+  const UNRECORDED: ModelComparisonAvailability = {
+    recorded: false, validAttempts: 0, providerErrors: 0, unattributedErrors: 0,
+    rate: null, low: null, high: null, inclusiveRate: null, inclusiveLow: null, inclusiveHigh: null, fewAttempts: false,
+  };
+
+  /** A recorded model, a high-error one clearly above 2 %, a few-attempts one and a legacy one. */
+  const ENTRIES: ModelComparisonEntry[] = [
+    makeEntry({ key: 'A', provider: 'google', intelligenceIndex: 90, availability: availabilityOf(12, 1480, 0.0044, 0.015) }),
+    makeEntry({ key: 'B', provider: 'anthropic', intelligenceIndex: 70, availability: availabilityOf(60, 1480, 0.031, 0.052) }),
+    makeEntry({ key: 'C', provider: 'openai', intelligenceIndex: 50, availability: availabilityOf(1, 40, 0.004, 0.13) }),
+    makeEntry({ key: 'D', provider: 'openai', intelligenceIndex: 30, availability: UNRECORDED }),
+  ];
+
+  interface DotProbe {
+    config: {
+      type: string;
+      data: { labels: unknown[]; datasets: Record<string, unknown>[] };
+      options: {
+        indexAxis?: string;
+        scales: Record<string, ScaleProbe & { offset?: boolean; suggestedMax?: number }>;
+        plugins: { datalabels: { formatter: (value: unknown, ctx: { dataIndex: number }) => string } };
+      };
+    };
+  }
+
+  function styleWith(availability: Partial<FigureStyle['availability']>): FigureStyle {
+    return { ...DEFAULT_FIGURE_STYLE, availability: { ...DEFAULT_FIGURE_STYLE.availability, ...availability } };
+  }
+
+  function dotPlot(style: FigureStyle = DEFAULT_FIGURE_STYLE, orientation: BarOrientation = 'vertical') {
+    return buildSmallMultiples(ENTRIES, smallMultiplesOptions({ style, orientation })).availability;
+  }
+
+  /** The label beside each dot, as the datalabels plugin writes it. */
+  function labelsOf(spec: unknown): string[] {
+    const probe = spec as DotProbe;
+    const data = probe.config.data.datasets[0]['data'] as unknown[];
+    return data.map((_point, dataIndex) => probe.config.options.plugins.datalabels.formatter(null, { dataIndex }));
+  }
+
+  it('reads the strict and the inclusive rate, interval and count, and nothing for an unrecorded entry', () => {
+    expect(availabilityPoint(ENTRIES[0], 'strict')).toEqual({ rate: 12 / 1480, low: 0.0044, high: 0.015, k: 12, n: 1480, fewAttempts: false });
+    const inclusive = availabilityPoint(ENTRIES[0], 'inclusive')!;
+    expect({ ...inclusive, high: 0 }).toEqual({ rate: 15 / 1480, low: 0.0044, high: 0, k: 15, n: 1480, fewAttempts: false });
+    expect(inclusive.high).toBeCloseTo(0.017, 12);
+    expect(availabilityPoint(ENTRIES[3], 'strict')).toBeNull();
+    expect(availabilityGapText(ENTRIES[3])).toBe('not recorded');
+    expect(availabilityGapText(makeEntry({ key: 'E' }))).toBe('not recorded');
+    expect(availabilityGapText(makeEntry({ key: 'F', availability: { ...UNRECORDED, recorded: true } }))).toBe('no valid attempts');
+    expect(availabilityText(ENTRIES[0], 'strict')).toBe('0.81 % (12 of 1,480 attempts; 95 % CI 0.44–1.5 %)');
+    expect(availabilityText(ENTRIES[2], 'strict')).toBe('2.5 % (1 of 40 attempts; 95 % CI 0.40–13 %; few attempts)');
+  });
+
+  it('marks a model only when the lower bound of its provider error rate exceeds 2 %', () => {
+    expect(AVAILABILITY_MARKER_THRESHOLD).toBe(0.02);
+    expect(ENTRIES.map(availabilityMarked)).toEqual([false, true, false, false]);
+    // A rate above 2 % whose interval reaches below it is noise, not a mark.
+    expect(availabilityMarked(makeEntry({ key: 'G', availability: availabilityOf(45, 1480, 0.015, 0.045) }))).toBe(false);
+  });
+
+  it('spaces the square-root ticks out of the crowd near zero and ends them at the first round rate above the data', () => {
+    expect(availabilitySqrtTicks(1.5)).toEqual({ top: 2, ticks: [0, 0.1, 0.5, 1, 2] });
+    expect(availabilitySqrtTicks(30)).toEqual({ top: 50, ticks: [0, 2, 10, 20, 50] });
+    expect(availabilitySqrtTicks(0).top).toBe(0.1);
+  });
+
+  it('draws P1\'s fourth panel as a dot per model in P1\'s order, on a square-root scale by default, with whiskers and k/n', () => {
+    const multiples = buildSmallMultiples(ENTRIES, smallMultiplesOptions());
+    const spec = multiples.availability;
+    const probe = spec as unknown as DotProbe;
+    expect(spec.id).toBe(P1_AVAILABILITY_ID);
+    expect(spec.title).toBe(P1_AVAILABILITY_TITLE);
+    expect(probe.config.type).toBe('line');
+    expect(probe.config.data.labels).toEqual(multiples.quality.config.data.labels);
+    expect(probe.config.data.datasets[0]['showLine']).toBe(false);
+    expect(probe.config.options.scales['x'].type).toBe('category');
+    expect(probe.config.options.scales['x'].offset).toBe(true);
+
+    const data = probe.config.data.datasets[0]['data'] as { x: number; y: number; yErrLow?: number; yErrHigh?: number }[];
+    expect(data[0].x).toBe(0);
+    expect(data[0].y).toBeCloseTo(Math.sqrt(1200 / 1480), 10);
+    expect(data[0].yErrLow).toBeCloseTo(Math.sqrt(1200 / 1480) - Math.sqrt(0.44), 10);
+    expect(data[0].yErrHigh).toBeCloseTo(Math.sqrt(1.5) - Math.sqrt(1200 / 1480), 10);
+    // The legacy model sits at zero with no dot and no whisker, named as not recorded.
+    expect(data[3]).toEqual({ x: 3, y: 0, yErrLow: undefined, yErrHigh: undefined });
+    expect((probe.config.data.datasets[0]['pointRadius'] as number[])[3]).toBe(0);
+    expect(labelsOf(spec)).toEqual(['12/1,480', '60/1,480', '1/40', 'not recorded']);
+    // A hollow dot below 100 attempts, keyed in words.
+    expect((probe.config.data.datasets[0]['pointBackgroundColor'] as string[])[2]).toBe('transparent');
+    expect((probe.config.data.datasets[0]['pointBackgroundColor'] as string[])[0]).not.toBe('transparent');
+    expect(spec.chrome.key).toContainEqual({ glyph: 'hollow', text: 'Fewer than 100 attempts' });
+    expect(spec.chrome.direction).toEqual({ y: 'bottom', label: 'Better' });
+
+    // C's upper bound, 13 %, sets the axis top at 20 %.
+    const value = probe.config.options.scales['y'];
+    expect(value.max).toBeCloseTo(Math.sqrt(20), 10);
+    expect(ticksOf(value)).toEqual(availabilitySqrtTicks(13).ticks.map((pct) => Math.sqrt(pct)));
+    expect(value.ticks!.callback!(Math.sqrt(2), 0, [])).toBe('2 %');
+    expect(JSON.stringify(value.title!.text)).toContain('square-root scale');
+  });
+
+  it('switches to a linear scale and to the inclusive measure from the style', () => {
+    const linear = dotPlot(styleWith({ scale: 'linear' })) as unknown as DotProbe;
+    const data = linear.config.data.datasets[0]['data'] as { y: number }[];
+    expect(data[0].y).toBeCloseTo(1200 / 1480, 10);
+    expect(linear.config.options.scales['y'].suggestedMax).toBeCloseTo(13, 10);
+    expect(linear.config.options.scales['y'].ticks!.callback!(0.5, 0, [])).toBe('0.5 %');
+
+    const inclusive = dotPlot(styleWith({ measure: 'inclusive' }));
+    expect(labelsOf(inclusive)).toEqual(['15/1,480', '63/1,480', '4/40', 'not recorded']);
+    expect(inclusive.chrome.detail).toBe(AVAILABILITY_DETAIL_INCLUSIVE);
+    expect(dotPlot().chrome.detail).toBe(AVAILABILITY_DETAIL_STRICT);
+  });
+
+  it('turns with P1 when the bars turn horizontal', () => {
+    const probe = dotPlot(DEFAULT_FIGURE_STYLE, 'horizontal') as unknown as DotProbe;
+    expect(probe.config.options.indexAxis).toBe('y');
+    expect(probe.config.options.scales['y'].type).toBe('category');
+    const data = probe.config.data.datasets[0]['data'] as { x: number; y: number; xErrHigh?: number }[];
+    expect(data[1].y).toBe(1);
+    expect(data[1].xErrHigh).toBeGreaterThan(0);
+  });
+
+  it('gives every model a sentence in the text alternative, and notes the models it cannot draw', () => {
+    const spec = dotPlot();
+    expect(spec.summary).toEqual([
+      'A: 0.81 % (12 of 1,480 attempts; 95 % CI 0.44–1.5 %)',
+      'B: 4.1 % (60 of 1,480 attempts; 95 % CI 3.1–5.2 %)',
+      'C: 2.5 % (1 of 40 attempts; 95 % CI 0.40–13 %; few attempts)',
+      'D: not recorded',
+    ]);
+    expect(spec.chrome.notes.map((note) => note.text)).toContain('Not recorded for D: its runs predate the provider attempt ledger.');
+    // Descriptive only: no model is singled out as best or worst.
+    expect(spec.chrome.highlight).toBe('');
+  });
+
+  it('builds A1 as the same plot on its own, whatever the panel setting', () => {
+    const figures = buildComparisonFigures(ENTRIES, { context: CONTEXT });
+    expect(figures.availability.id).toBe(A1_AVAILABILITY_ID);
+    expect(figures.availability.title).toBe(A1_AVAILABILITY_TITLE);
+    expect(labelsOf(figures.availability)).toEqual(labelsOf(figures.smallMultiples.availability));
+    expect(AVAILABILITY_FIGURE_IDS).toEqual(['p1d-availability', 'a1-availability']);
+    const off = buildComparisonFigures(ENTRIES, { context: CONTEXT, style: styleWith({ panel: 'off' }) });
+    expect(off.availability.id).toBe(A1_AVAILABILITY_ID);
+  });
+
+  it('rings and labels the clearly high model on every scatter once the markers are on, and states the rule', () => {
+    const options = (style: FigureStyle) => ({ ...BASE_FIGURE_OPTIONS, style });
+    const off = buildQualityCostScatter(ENTRIES, options(DEFAULT_FIGURE_STYLE));
+    expect(off.plugins.map((plugin) => plugin.id)).not.toContain(availabilityMarkerPlugin.id);
+    expect(off.chrome.notes.map((note) => note.text)).not.toContain(AVAILABILITY_MARKER_NOTE);
+
+    for (const build of [buildQualitySpeedScatter, buildQualityCostScatter, buildSpeedCostScatter]) {
+      const spec = build(ENTRIES, options(styleWith({ markers: 'on' })));
+      expect(spec.plugins.map((plugin) => plugin.id), spec.id).toContain(availabilityMarkerPlugin.id);
+      const marker = (spec.config.options!.plugins as unknown as Record<string, AvailabilityMarkerPluginOptions>)[availabilityMarkerPlugin.id];
+      expect(marker.marks, spec.id).toEqual([{ datasetIndex: 1, text: '4.1 % provider errors' }]);
+      expect(spec.chrome.notes.map((note) => note.text), spec.id).toContain(AVAILABILITY_MARKER_NOTE);
+      expect(spec.summary, spec.id).toContain('Provider errors above 2 %: B, 4.1 % provider errors');
+    }
+  });
+
+  it('draws a dashed ring and the label on a halo at a marked mark', () => {
+    const calls: string[] = [];
+    const ctx = {
+      save: () => undefined,
+      restore: () => undefined,
+      setLineDash: (dash: number[]) => calls.push(`dash ${dash.join(',')}`),
+      beginPath: () => undefined,
+      arc: (x: number, y: number, r: number) => calls.push(`arc ${x},${y},${r}`),
+      stroke: () => calls.push('stroke'),
+      measureText: () => ({ width: 60 }),
+      strokeText: (text: string) => calls.push(`halo ${text}`),
+      fillText: (text: string) => calls.push(`text ${text}`),
+      font: '', textAlign: '', textBaseline: '', lineJoin: '', lineWidth: 0, strokeStyle: '', fillStyle: '',
+    };
+    const chart = {
+      ctx,
+      chartArea: { left: 0, top: 0, right: 400, bottom: 300 },
+      getDatasetMeta: () => ({ hidden: false, data: [{ x: 100, y: 100 }] }),
+    };
+    const options: AvailabilityMarkerPluginOptions = {
+      marks: [{ datasetIndex: 0, text: '4.1 % provider errors' }],
+      markRadiusPx: 6, fontSizePx: 11, ringColor: '#e0ba6d', inkColor: '#c3c2b7', surfaceColor: '#0b0b0b',
+    };
+    availabilityMarkerPlugin.afterDatasetsDraw?.(chart as unknown as Chart, {} as never, options as never, false as never);
+    expect(calls).toEqual(['dash 3,3', 'arc 100,100,10', 'stroke', 'dash ', 'halo 4.1 % provider errors', 'text 4.1 % provider errors']);
   });
 });

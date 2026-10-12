@@ -994,4 +994,125 @@ public class BenchmarkModelComparisonServiceTests
         Assert.Null(result);
         Assert.Equal("A comparison needs at least one run, group or battery result.", error);
     }
+
+    // --- Provider availability ---------------------------------------------------------------------------
+
+    private static BenchmarkRun LedgerRun(long id, BenchmarkRunStatus status = BenchmarkRunStatus.Completed,
+        long? replaces = null, BenchmarkReplacementCause? cause = null)
+    {
+        var run = BenchmarkBatteryTestData.SuiteARun(id);
+        run.Status = status;
+        run.ProviderLedgerVersion = 1;
+        run.ReplacesRunId = replaces;
+        run.ReplacementCause = cause;
+        return run;
+    }
+
+    /// <summary><paramref name="ok"/> successful and <paramref name="overloaded"/> provider-overloaded candidate attempts.</summary>
+    private static IEnumerable<BenchmarkProviderAttempt> LedgerAttempts(long runId, int ok, int overloaded)
+        => Enumerable.Range(0, ok + overloaded).Select(i => new BenchmarkProviderAttempt
+        {
+            BenchmarkRunId = runId,
+            Source = ModelCallSource.BenchmarkCandidate,
+            Provider = "OpenAI",
+            RequestedModelId = "gpt-5.6-luna",
+            CallIndex = i,
+            StartedAtUtc = new DateTime(2026, 10, 1, 10, 0, 0, DateTimeKind.Utc).AddSeconds(i),
+            Outcome = i < ok ? ProviderAttemptOutcome.Ok : ProviderAttemptOutcome.ProviderOverloaded,
+            HttpStatus = i < ok ? (short)200 : (short)529
+        });
+
+    [Fact]
+    public async Task Availability_PoolsAReplacedFailedPredecessor_ThatTheEntryItselfNeverAdmits()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = BenchmarkBatteryTestData.NewDb();
+
+        db.BenchmarkRuns.Add(LedgerRun(31, BenchmarkRunStatus.Failed));
+        db.BenchmarkRuns.Add(LedgerRun(32, replaces: 31, cause: BenchmarkReplacementCause.ProviderFailure));
+        db.BenchmarkProviderAttempts.AddRange(LedgerAttempts(31, ok: 8, overloaded: 2));
+        db.BenchmarkProviderAttempts.AddRange(LedgerAttempts(32, ok: 19, overloaded: 1));
+        await db.SaveChangesAsync(ct);
+
+        var (result, error) = await new BenchmarkModelComparisonService(db)
+            .CompareAsync(new BenchmarkModelComparisonRequest { RunIds = { 32 } }, ct);
+        Assert.True(result != null, error);
+
+        var entry = Entry(result!, "run:32");
+        Assert.Equal(new long[] { 32 }, entry.RunIds);
+
+        var availability = entry.Availability!;
+        Assert.True(availability.Recorded);
+        Assert.Equal(2, availability.TotalRuns);
+        Assert.Equal(1, availability.ReplacedRunsIncluded);
+        Assert.Equal(30, availability.ValidAttempts);
+        Assert.Equal(3, availability.ProviderErrors);
+        Assert.Equal(0.1, availability.ProviderErrorRate!.Value, 9);
+        Assert.Equal(1, availability.ProviderRerunsNeeded);
+        Assert.Equal(31, Assert.Single(availability.Replaces).RunId);
+
+        var table = entry.Table!;
+        Assert.Equal(0.1, table.ProviderErrorRate!.Value, 9);
+        Assert.Equal(3, table.ProviderErrorCount);
+        Assert.Equal(30, table.ProviderAttempts);
+        Assert.Equal(1, table.RerunsNeeded);
+        Assert.Equal(1, table.ProviderReruns);
+    }
+
+    [Fact]
+    public async Task Availability_OfUnrecordedRuns_IsNotRecorded_AndLeavesTheTableColumnsEmpty()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        db.BenchmarkRuns.Add(BenchmarkBatteryTestData.SuiteARun(41));
+        await db.SaveChangesAsync(ct);
+
+        var (result, error) = await new BenchmarkModelComparisonService(db)
+            .CompareAsync(new BenchmarkModelComparisonRequest { RunIds = { 41 } }, ct);
+        Assert.True(result != null, error);
+
+        var entry = Entry(result!, "run:41");
+        Assert.False(entry.Availability!.Recorded);
+        Assert.Equal(0, entry.Availability.RecordedRuns);
+        Assert.Equal(1, entry.Availability.TotalRuns);
+        Assert.Null(entry.Availability.ProviderErrorRate);
+        Assert.Null(entry.Table!.ProviderErrorRate);
+        Assert.Null(entry.Table.ProviderErrorCount);
+        Assert.Null(entry.Table.ProviderAttempts);
+        Assert.Null(entry.Table.RerunsNeeded);
+    }
+
+    [Fact]
+    public async Task Availability_OfAGroupMixingRecordedAndLegacyRuns_IsRecordedForMOfN()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await using var db = BenchmarkBatteryTestData.NewDb();
+
+        db.BenchmarkRuns.Add(LedgerRun(51, BenchmarkRunStatus.Failed));
+        db.BenchmarkRuns.Add(LedgerRun(52, replaces: 51, cause: BenchmarkReplacementCause.OurFailure));
+        db.BenchmarkRuns.Add(BenchmarkBatteryTestData.SuiteARun(53));
+        db.BenchmarkProviderAttempts.AddRange(LedgerAttempts(51, ok: 9, overloaded: 1));
+        db.BenchmarkProviderAttempts.AddRange(LedgerAttempts(52, ok: 10, overloaded: 0));
+
+        var group = new BenchmarkRunGroup { Name = "Mixed ledger", BenchmarkSuiteId = BenchmarkBatteryTestData.SuiteA };
+        group.Members.Add(new BenchmarkRunGroupMember { BenchmarkRunId = 52 });
+        group.Members.Add(new BenchmarkRunGroupMember { BenchmarkRunId = 53 });
+        db.BenchmarkRunGroups.Add(group);
+        await db.SaveChangesAsync(ct);
+
+        var (result, error) = await new BenchmarkModelComparisonService(db)
+            .CompareAsync(new BenchmarkModelComparisonRequest { GroupIds = { group.Id } }, ct);
+        Assert.True(result != null, error);
+
+        var availability = Entry(result!, $"group:{group.Id}").Availability!;
+        Assert.True(availability.Recorded);
+        Assert.Equal(2, availability.RecordedRuns);
+        Assert.Equal(3, availability.TotalRuns);
+        Assert.Equal(1, availability.ReplacedRunsIncluded);
+        Assert.Equal(20, availability.ValidAttempts);
+        Assert.Equal(1, availability.ProviderErrors);
+        Assert.Equal(1, availability.RerunsNeeded);
+        Assert.Equal(0, availability.ProviderRerunsNeeded);
+        Assert.Equal("OurFailure", Assert.Single(availability.Replaces).Cause);
+    }
 }

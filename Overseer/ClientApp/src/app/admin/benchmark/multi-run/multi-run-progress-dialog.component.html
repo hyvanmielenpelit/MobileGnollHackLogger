@@ -249,6 +249,7 @@
               <th scope="col">Speed</th>
               <th scope="col">Duration</th>
               <th scope="col">Cost</th>
+              <th scope="col">Provider errors</th>
               <th scope="col">Instrument</th>
               <th scope="col"><span class="visually-hidden">Actions</span></th>
             </tr>
@@ -270,6 +271,7 @@
                 <td>{{ member.speedIndex ?? '—' }}</td>
                 <td>{{ member.durationMs != null ? formatDuration(member.durationMs) : '—' }}</td>
                 <td>{{ member.estimatedCost != null ? ('$' + (member.estimatedCost | number:'1.2-4')) : '—' }}</td>
+                <td class="member-provider-errors">{{ memberProviderErrorsText(member) }}</td>
                 <td><code class="fingerprint">{{ shortFingerprint(member.shortFingerprint) }}</code></td>
                 <td class="member-actions">
                   @if (member.status === 'Running') {
@@ -295,7 +297,7 @@
               </tr>
             } @empty {
               <tr>
-                <td colspan="9" class="empty-members">No member runs have been launched yet.</td>
+                <td colspan="10" class="empty-members">No member runs have been launched yet.</td>
               </tr>
             }
           </tbody>

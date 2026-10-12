@@ -1641,8 +1641,10 @@ public static class BenchmarkReportBuilder
     /// candidate telemetry rows: time to first answer text net of own waits, the answer streaming
     /// rate, Overseer's own waits and retries, what the provider served, and one interpretation line
     /// comparing own waits with model time. Definitions are those of <see cref="CallTelemetryMeasures"/>.
+    /// A recorded <paramref name="availability"/> splits the run's 429s into ours and unattributed.
     /// </summary>
-    private static void AppendTimingDecomposition(StringBuilder sb, BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers)
+    private static void AppendTimingDecomposition(
+        StringBuilder sb, BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers, ProviderAvailabilitySummary? availability)
     {
         var covered = answers.Where(CallTelemetryMeasures.HasCandidateTelemetry).ToList();
         sb.AppendLine($"- **Timing Decomposition:** call telemetry version {Inv(run.CallTelemetryVersion!.Value)}, recorded on {covered.Count} of {answers.Count} answers");
@@ -1695,7 +1697,11 @@ public static class BenchmarkReportBuilder
         int retryCount = covered.Sum(a => a.RetryAttemptCount ?? 0);
         int http429Count = candidateCalls.Sum(c => (int)c.Http429Count);
         int http5xxCount = candidateCalls.Sum(c => (int)c.Http5xxCount);
-        sb.AppendLine($"  - **Own Waits:** permit wait {SecondsText(permitWaitMs)}, retry backoff {SecondsText(backoffWaitMs)}; {Inv(retryCount, "N0")} retried attempt(s); HTTP 429 ×{Inv(http429Count, "N0")}, HTTP 5xx ×{Inv(http5xxCount, "N0")}");
+        // The ledger counts every attempt of every pass, so its split need not sum to the telemetry's 429s.
+        string http429Split = availability is { Recorded: true }
+            ? $" (rate limits in the attempt ledger: ours ×{Inv(availability.RateLimitedOurs, "N0")}, unattributed ×{Inv(availability.RateLimitedUnattributed, "N0")})"
+            : string.Empty;
+        sb.AppendLine($"  - **Own Waits:** permit wait {SecondsText(permitWaitMs)}, retry backoff {SecondsText(backoffWaitMs)}; {Inv(retryCount, "N0")} retried attempt(s); HTTP 429 ×{Inv(http429Count, "N0")}{http429Split}, HTTP 5xx ×{Inv(http5xxCount, "N0")}");
 
         var servedTiers = candidateCalls
             .Where(c => !string.IsNullOrWhiteSpace(c.ServedServiceTier))
@@ -1711,6 +1717,104 @@ public static class BenchmarkReportBuilder
                 ? $"  - *Own waits were {PercentText(ownWaitShare.Value)} of model time; the rate limit, not the provider, dominated.*"
                 : $"  - *Own waits were {PercentText(ownWaitShare.Value)} of model time.*");
         }
+    }
+
+    /// <summary>
+    /// The label of a failed answer's error line, by its failure origin: <c>Provider error (overloaded)</c>,
+    /// <c>Unattributed error (rate limited)</c>, <c>Failed: our side (question time budget)</c>. An answer
+    /// without an origin (a run started before harness 56) keeps <c>Provider Error</c>, or reads <c>Failed</c>.
+    /// </summary>
+    private static string FailureLabel(BenchmarkRunAnswer a)
+    {
+        string label = a.FailureOrigin switch
+        {
+            BenchmarkFailureOrigin.Provider => "Provider error",
+            BenchmarkFailureOrigin.Unattributed => "Unattributed error",
+            BenchmarkFailureOrigin.Ours => "Failed: our side",
+            _ => a.Status == BenchmarkAnswerStatus.ProviderError ? "Provider Error" : "Failed"
+        };
+        if (a.FailureOrigin is null or BenchmarkFailureOrigin.None || string.IsNullOrWhiteSpace(a.FailureKind)) return label;
+
+        string kind = a.FailureKind.Trim() switch
+        {
+            nameof(ProviderAttemptOutcome.ProviderOverloaded) => "overloaded",
+            nameof(ProviderAttemptOutcome.ProviderServerError) => "server error",
+            nameof(ProviderAttemptOutcome.ProviderTimeout) => "timeout",
+            nameof(ProviderAttemptOutcome.ProviderStreamFailure) => "stream failure",
+            nameof(ProviderAttemptOutcome.RateLimitUnattributed) => "rate limited",
+            nameof(ProviderAttemptOutcome.TransportUnattributed) => "transport failure",
+            nameof(ProviderAttemptOutcome.OurRateLimit) => "our rate limit",
+            nameof(ProviderAttemptOutcome.OurBilling) => "billing",
+            nameof(ProviderAttemptOutcome.OurKey) => "rejected key",
+            nameof(ProviderAttemptOutcome.OurRequest) => "rejected request",
+            nameof(ProviderAttemptOutcome.OurThrottle) => "request governor",
+            nameof(ProviderAttemptOutcome.OurCanceled) => "canceled",
+            nameof(ProviderAttemptOutcome.OurNetwork) => "network",
+            "question_budget" => "question time budget",
+            var other => other
+        };
+        return label + " (" + kind + ")";
+    }
+
+    /// <summary>
+    /// <c>3 (provider 1 · unattributed 1 · our side 1)</c>: the answers that ended in a terminal failure
+    /// (<see cref="BenchmarkRunFinalizer.HasTerminalFailure"/>), by the failure origin a recorded run stores
+    /// on each; the count alone, its origin marked not recorded, on a run started before harness 56.
+    /// </summary>
+    private static string TerminalFailuresText(BenchmarkRun run, IReadOnlyList<BenchmarkRunAnswer> answers, int count)
+    {
+        if (run.ProviderLedgerVersion == null)
+        {
+            return count == 0 ? "0" : $"{count} — *origin {BenchmarkReportFacts.AvailabilityNotRecordedReason}*";
+        }
+
+        var terminal = answers.Where(BenchmarkRunFinalizer.HasTerminalFailure).ToList();
+        int provider = terminal.Count(a => a.FailureOrigin == BenchmarkFailureOrigin.Provider);
+        int unattributed = terminal.Count(a => a.FailureOrigin == BenchmarkFailureOrigin.Unattributed);
+        int ours = terminal.Count(a => a.FailureOrigin == BenchmarkFailureOrigin.Ours);
+        int unknown = terminal.Count - provider - unattributed - ours;
+        return $"{count} (provider {provider} · unattributed {unattributed} · our side {ours}"
+               + (unknown > 0 ? $" · origin not recorded {unknown}" : string.Empty) + ")";
+    }
+
+    /// <summary>
+    /// Run Integrity's Provider availability lines: the provider error rate of the candidate's attempts
+    /// over the run and its lineage predecessors, the upper bound including unattributed errors, the
+    /// classes, our-side failures, first-attempt success, questions lost, re-runs and the graders'
+    /// attempts for information; one line on a run not recorded; nothing when <paramref name="availability"/>
+    /// is null. Every number is written by <see cref="BenchmarkProviderAvailability"/>'s formatting.
+    /// </summary>
+    private static void AppendProviderAvailability(StringBuilder sb, ProviderAvailabilitySummary? availability)
+    {
+        if (availability == null) return;
+
+        var s = availability;
+        if (!s.Recorded)
+        {
+            sb.AppendLine($"- **Provider availability:** {BenchmarkReportFacts.AvailabilityNotRecordedReason} — *this run kept no record of its API attempts*");
+            return;
+        }
+
+        static string N(int value) => BenchmarkReportFacts.Thousands(value);
+
+        sb.AppendLine($"- **Provider availability:** {BenchmarkProviderAvailability.FormatRate(s.ProviderErrors, s.ValidAttempts, s.ProviderErrorRateLow, s.ProviderErrorRateHigh)}"
+                      + " of the candidate's attempts failed at the provider — *provider errors observed in GnollBench runs; our-side failures are left out of the denominator*");
+        if (s.RecordedRuns < s.TotalRuns)
+        {
+            sb.AppendLine($"  - *Recorded for {N(s.RecordedRuns)} of {N(s.TotalRuns)} runs; the figures are computed on the recorded runs.*");
+        }
+        sb.AppendLine($"  - **Upper bound including unattributed errors:** {BenchmarkProviderAvailability.FormatRate(s.ProviderErrors + s.UnattributedErrors, s.ValidAttempts, s.InclusiveRateLow, s.InclusiveRateHigh)} — {N(s.UnattributedErrors)} unattributed");
+        sb.AppendLine($"  - **By class:** overloaded {N(s.Overloaded)} · server errors {N(s.ServerErrors)} · timeouts {N(s.Timeouts)} · stream failures {N(s.StreamFailures)} · rate limited, unattributed {N(s.RateLimitedUnattributed)} · transport, unattributed {N(s.TransportUnattributed)}");
+        sb.AppendLine($"  - **Our-side failures (excluded):** {N(s.OurSideFailures)}, of them rate limited by our own limits {N(s.RateLimitedOurs)}");
+        if (s.Calls > 0)
+        {
+            sb.AppendLine($"  - **First-attempt success:** {BenchmarkProviderAvailability.FormatPercent((double)s.FirstAttemptSuccessCalls / s.Calls)} of {N(s.Calls)} candidate calls");
+        }
+        sb.AppendLine($"  - **Questions lost to provider errors:** {N(s.QuestionsLost)}");
+        sb.AppendLine($"  - **Re-runs needed:** {BenchmarkReportFacts.RerunsText(s.RerunsNeeded)}"
+                      + (s.ProviderRerunsNeeded > 0 ? $" ({N(s.ProviderRerunsNeeded)} for provider errors)" : string.Empty)
+                      + (s.ReplacementRuns > 0 ? $", including {N(s.ReplacementRuns)} replaced {(s.ReplacementRuns == 1 ? "run" : "runs")}" : string.Empty));
+        sb.AppendLine($"  - **Grader attempts (information only):** {N(s.GraderProviderErrors)} provider errors in {N(s.GraderValidAttempts)} valid attempts");
     }
 
     /// <summary><c>same-family</c> when a grader shares the candidate's provider, otherwise <c>cross-family</c>.</summary>
@@ -1849,13 +1953,17 @@ public static class BenchmarkReportBuilder
 
     /// <summary>
     /// The run's Markdown report. <paramref name="battery"/> is the battery run slot the run fills,
-    /// printed in the manifest; null when the run is no battery member.
+    /// printed in the manifest; null when the run is no battery member. <paramref name="availability"/>
+    /// is the run's provider availability over its attempt ledger and lineage predecessors
+    /// (<see cref="BenchmarkProviderAvailabilityService.ForRunAsync"/>); when null, Run Integrity leaves
+    /// out its Provider availability lines and Own Waits its split of the 429s.
     /// </summary>
     public static string BuildMarkdownReport(
         BenchmarkRun run,
         string? overseerVersion = null,
         BenchmarkRunPricing? runPricing = null,
-        BenchmarkRunBatteryContext? battery = null)
+        BenchmarkRunBatteryContext? battery = null,
+        ProviderAvailabilitySummary? availability = null)
     {
         var sb = new StringBuilder();
         // Read back from the run's own profile snapshot, so the report describes the run in
@@ -2909,7 +3017,7 @@ public static class BenchmarkReportBuilder
 
         if (run.CallTelemetryVersion != null)
         {
-            AppendTimingDecomposition(sb, run, answers);
+            AppendTimingDecomposition(sb, run, answers, availability);
         }
 
         sb.AppendLine($"- **Total Input Tokens:** {Inv(run.TotalInputTokens, "N0")}");
@@ -3563,10 +3671,8 @@ public static class BenchmarkReportBuilder
             sb.AppendLine($"- **Near a Ceiling:** {string.Join("; ", nearCeiling.Select(x => $"Q{x.Answer.OrderIndex} — {x.Note}"))} — *finished within one step of a configured cap, so the cap may be shaping the answer even though it never fired*");
         }
         sb.AppendLine($"- **Unanswered:** {unansweredCount} — *the model produced no answer; scored 0, not excluded*");
-        sb.AppendLine($"- **Provider Errors:** {providerErrorCount}");
-        // The finalizer's own persisted count, as of the last Apply — see IndexHeadline above. A
-        // mismatch against Provider Errors means the answers moved since the run was last finalized.
-        sb.AppendLine($"- **Terminal provider failures:** {terminalFailureCount}");
+        sb.AppendLine($"- **Terminal failures:** {TerminalFailuresText(run, answers, providerErrorCount)}");
+        AppendProviderAvailability(sb, availability);
         if (RunHasBoard(run))
         {
             foreach (var gap in BoardDeliveryFigures(run, answers).Where(f => f.MissingQuestions.Count > 0))
@@ -5032,9 +5138,9 @@ public static class BenchmarkReportBuilder
 
             sb.AppendLine();
 
-            if (a.Status == BenchmarkAnswerStatus.ProviderError)
+            if (a.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed)
             {
-                sb.AppendLine($"**Provider Error:** {a.ErrorMessage}");
+                sb.AppendLine($"**{FailureLabel(a)}:** {a.ErrorMessage}");
             }
             else if (a.Status == BenchmarkAnswerStatus.Canceled)
             {

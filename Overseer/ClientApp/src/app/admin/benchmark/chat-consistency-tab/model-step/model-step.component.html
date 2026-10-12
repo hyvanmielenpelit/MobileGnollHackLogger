@@ -391,6 +391,10 @@
                   <li class="cc-battery-member cc-muted">No usable member run.</li>
                 }
               </ul>
+
+              <dl class="cc-run-facts">
+                <div class="cc-run-fact" data-fact="providerErrors"><dt>Provider errors</dt><dd>{{ providerErrors(row) }}</dd></div>
+              </dl>
             </article>
           </li>
         }
@@ -399,8 +403,9 @@
       <ul class="cc-run-cards" role="list" aria-labelledby="cc-tl-runs-title" aria-describedby="cc-tl-runs-legend"
           [class.is-refreshing]="loading" [attr.aria-busy]="loading ? 'true' : null">
         @for (row of cards; track row.runId) {
-          @let inclusion = inclusionOf(row);
+          @let inclusion = inclusionValue(row);
           @let reason = outReason(row);
+          @let refused = markRefused(row);
           <li class="cc-run-card-item">
             <article class="cc-run-card" [attr.data-run-id]="row.runId" [attr.data-inclusion]="inclusion"
                      [attr.aria-labelledby]="'cc-run-' + row.runId + '-title'">
@@ -450,6 +455,10 @@
                     <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                     <span class="gh-tag cc-member-tag">{{ member }}</span>
                   }
+                  @if (availabilityOnly(row)) {
+                    <span class="cc-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                    <span class="gh-tag cc-availability-only-tag">{{ availabilityOnlyLabel }}</span>
+                  }
                 </div>
                 <!-- Focused after Show more. -->
                 <h6 class="cc-run-title" [id]="'cc-run-' + row.runId + '-title'" tabindex="-1">
@@ -463,9 +472,13 @@
               </header>
 
               <div class="cc-run-actions" role="group" [attr.aria-label]="'Actions for run #' + row.runId">
+                <!-- A run listed for provider availability only cannot bound the analysis: the marks are
+                     aria-disabled and described by the card's reason. -->
                 <button type="button" class="btn-ghost cc-mark-btn cc-first-btn"
                         [attr.aria-pressed]="isFirst(row) ? 'true' : 'false'"
                         [attr.aria-label]="'Use run #' + row.runId + ' as the first run of the analysis'"
+                        [attr.aria-disabled]="refused ? 'true' : null"
+                        [attr.aria-describedby]="refused ? 'cc-run-' + row.runId + '-reason' : null"
                         (click)="toggleFirst(row)">
                   @if (isFirst(row)) {
                     <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -475,6 +488,8 @@
                 <button type="button" class="btn-ghost cc-mark-btn cc-last-btn"
                         [attr.aria-pressed]="isLast(row) ? 'true' : 'false'"
                         [attr.aria-label]="'Use run #' + row.runId + ' as the last run of the analysis'"
+                        [attr.aria-disabled]="refused ? 'true' : null"
+                        [attr.aria-describedby]="refused ? 'cc-run-' + row.runId + '-reason' : null"
                         (click)="toggleLast(row)">
                   @if (isLast(row)) {
                     <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -544,6 +559,7 @@
                 <div class="cc-run-fact" data-fact="telemetry"><dt>Telemetry</dt><dd>{{ row.isLegacy ? 'Legacy' : 'Recorded' }}</dd></div>
                 <div class="cc-run-fact" data-fact="regrade"><dt>Re-grade</dt><dd>{{ regrade(row) }}</dd></div>
                 <div class="cc-run-fact" data-fact="controls"><dt>Matched controls</dt><dd>{{ controls(row) }}</dd></div>
+                <div class="cc-run-fact" data-fact="providerErrors"><dt>Provider errors</dt><dd>{{ providerErrors(row) }}</dd></div>
               </dl>
             </article>
           </li>

@@ -181,6 +181,32 @@ export interface TimelineFigureStyle extends FigureChromeStyle {
   readonly betterBadgePlacement: BetterBadgePlacement;
 }
 
+export type AvailabilitySwitch = 'off' | 'on';
+/** `strict` counts provider errors alone; `inclusive` adds the unattributed ones. */
+export type AvailabilityMeasure = 'strict' | 'inclusive';
+export type AvailabilityScale = 'sqrt' | 'linear';
+
+export const AVAILABILITY_SWITCHES: readonly AvailabilitySwitch[] = ['off', 'on'];
+export const AVAILABILITY_MEASURES: readonly AvailabilityMeasure[] = ['strict', 'inclusive'];
+export const AVAILABILITY_SCALES: readonly AvailabilityScale[] = ['sqrt', 'linear'];
+
+/**
+ * Provider availability in the comparison figures: the error-rate panel of the bar charts, its
+ * measure and scale, and the markers on the trade-off scatters. Its own group, so each option is
+ * claimed by one family section of the style panel and the document-chart settings hash moves only
+ * when one of them changes.
+ */
+export interface AvailabilityFigureStyle {
+  /** The fourth bar panel, a dot plot of each model's provider error rate. Bar family. */
+  readonly panel: AvailabilitySwitch;
+  /** Bar family. */
+  readonly measure: AvailabilityMeasure;
+  /** Rates cluster near 0; a square-root scale spreads them and keeps 0. Bar family. */
+  readonly scale: AvailabilityScale;
+  /** A dashed ring and a label on a scatter mark whose interval's lower bound exceeds 2 %. Scatter family. */
+  readonly markers: AvailabilitySwitch;
+}
+
 /**
  * Four families: the bar panels, the trade-off scatters, the profile and Chat Consistency's
  * timelines, and the number formats the first three share.
@@ -195,6 +221,8 @@ export interface FigureStyle {
   /** Theme, background, fonts and border of every chart and the table image. */
   readonly appearance: FigureAppearanceStyle;
   readonly table: TableImageStyle;
+  /** Provider availability; its options sit in the bar and scatter sections of the style panel. */
+  readonly availability: AvailabilityFigureStyle;
 }
 
 /**
@@ -224,6 +252,14 @@ export const DEFAULT_APPEARANCE_STYLE: FigureAppearanceStyle = {
 export const DEFAULT_TABLE_IMAGE_STYLE: TableImageStyle = {
   rowShading: 'medium',
   rowRules: false,
+};
+
+/** The provider-availability panel shown, provider errors alone, on a square-root scale; no scatter markers. */
+export const DEFAULT_AVAILABILITY_STYLE: AvailabilityFigureStyle = {
+  panel: 'on',
+  measure: 'strict',
+  scale: 'sqrt',
+  markers: 'off',
 };
 
 /** The composer's caption sizes and a shown footer. */
@@ -311,6 +347,7 @@ export const DEFAULT_FIGURE_STYLE: FigureStyle = {
   numbers: DEFAULT_MEASURE_DECIMALS,
   appearance: DEFAULT_APPEARANCE_STYLE,
   table: DEFAULT_TABLE_IMAGE_STYLE,
+  availability: DEFAULT_AVAILABILITY_STYLE,
 };
 
 /** The caption note a figure carries when its uncertainty bars are hidden and would have drawn. */
@@ -640,6 +677,18 @@ function normalizeTableImageStyle(value: unknown): TableImageStyle {
   };
 }
 
+/** Each option on its own: a missing or unknown one, or a style stored before the group existed, takes its default. */
+function normalizeAvailability(value: unknown): AvailabilityFigureStyle {
+  const d = DEFAULT_AVAILABILITY_STYLE;
+  const v = isRecord(value) ? value : {};
+  return {
+    panel: oneOf(v['panel'], AVAILABILITY_SWITCHES, d.panel),
+    measure: oneOf(v['measure'], AVAILABILITY_MEASURES, d.measure),
+    scale: oneOf(v['scale'], AVAILABILITY_SCALES, d.scale),
+    markers: oneOf(v['markers'], AVAILABILITY_SWITCHES, d.markers),
+  };
+}
+
 function normalizeProfile(value: unknown): ProfileFigureStyle {
   const v = isRecord(value) ? value : {};
   return { ...normalizeChrome(v), hiddenBadges: normalizeBadgeKinds(v['hiddenBadges']) };
@@ -696,5 +745,6 @@ export function normalizeFigureStyle(value: unknown): FigureStyle {
     numbers: normalizeNumbers(v['numbers']),
     appearance: normalizeAppearance(v['appearance']),
     table: normalizeTableImageStyle(v['table']),
+    availability: normalizeAvailability(v['availability']),
   };
 }

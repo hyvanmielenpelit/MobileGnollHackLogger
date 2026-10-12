@@ -30,12 +30,16 @@ using Overseer.Services.ChatConsistency;
 //   level.<baseline|comparison>.answers, .quality, .overallIndex, .timeToFirstAnswerText, .streamingRate, .outputTokens,
 //     .costPerQuestion, .failedAnswers   descriptive, unavailable before analysis code version 6
 //     level.<period>.quality is kept from the writer in a battery comparison with both Overall Indexes (WriterHiddenKeys)
+//   availability.<baseline|comparison>.attempts, .providerErrors, .providerErrorRate, .providerErrorRateCi95Low,
+//     .providerErrorRateCi95High, .unattributedErrors, .ourSideFailures, .reruns, .providerReruns, .recordedRuns,
+//     .availabilityOnlyRuns   Protocol V2 only (the analysis has P6), candidate attempts of the period's analyzed
+//     units and availability-only runs; unavailable for a period that recorded no attempt
 //   sample.minimumUnits, .minimumDays, .minimumPairedItems, .met, .shortfall (only when not met)
-//   protocol.version, .label, .alpha, .overridden, protocol.margin.<P1..P5>
+//   protocol.version, .label, .alpha, .overridden, protocol.margin.<P1..P5, P6 under V2>
 //   n.targetRuns, n.controlRuns, n.answers
-//   endpoint.<P1..P5>.name, .verdict, .grade, .estimate, .percent (log scale), .ci95, .ci95Low, .ci95High,
-//     .ci90, .p, .adjustedP, .mde, .mdeNote, .runsForMargin, .runs, .items, .legacyProxy, .commonGrader, .minimumSampleMet,
-//     .notComputedKind (not computed, analysis code version 6 on)
+//   endpoint.<P1..P5, P6 under V2>.name, .verdict, .grade, .estimate, .percent (log scale), .ci95, .ci95Low, .ci95High,
+//     .ci90, .p, .adjustedP, .mde, .mdeNote, .runsForMargin, .runs, .items (P6: valid attempts in the common strata),
+//     .legacyProxy, .commonGrader, .minimumSampleMet, .notComputedKind (not computed, analysis code version 6 on)
 //   quality.dimensions.<d>.*, quality.criticalErrors.*, flip.*   secondary results of the quality detail family
 //   quality.commonGrader
 //   grader.drift.count, grader.drift.<n>.anchorRun, .grader, .earliest, .latest, .drift, .items, .withinMargin
@@ -202,7 +206,11 @@ public static class BenchmarkChatConsistencyReportFacts
     {
         ArgumentNullException.ThrowIfNull(endpoints);
         var computed = endpoints.Where(e => e.Computed).ToList();
-        if (computed.Any(e => e.VerdictLabel is "degraded" or "improved" or "more work" or "less work")) return "The chat changed";
+        if (computed.Any(e => e.VerdictLabel is "degraded" or "improved" or "more work" or "less work"
+                              or ChatConsistencyAnalysisService.MoreProviderErrors or ChatConsistencyAnalysisService.FewerProviderErrors))
+        {
+            return "The chat changed";
+        }
         if (computed.Count == 0) return "Nothing could be computed";
         if (computed.All(e => e.VerdictLabel is "equivalent" or "changed, negligible"))
         {
@@ -315,6 +323,7 @@ public static class BenchmarkChatConsistencyReportFacts
         AddPeriod(facts, Baseline, result.Baseline ?? new ChatConsistencyPeriodSummary(), result);
         AddPeriod(facts, Comparison, result.Comparison ?? new ChatConsistencyPeriodSummary(), result);
         AddLevels(facts, result);
+        AddAvailability(facts, result);
         AddSample(facts, result);
         AddProtocol(facts, result);
         AddCounts(facts, result);
@@ -507,8 +516,8 @@ public static class BenchmarkChatConsistencyReportFacts
         ArgumentNullException.ThrowIfNull(endpoints);
         var computed = endpoints.Where(e => e.Computed).ToList();
         if (computed.Count == 0) return "not computable";
-        if (computed.Any(e => e.VerdictLabel == "degraded")) return "degraded";
-        if (computed.Any(e => e.VerdictLabel == "improved")) return "improved";
+        if (computed.Any(e => e.VerdictLabel is "degraded" or ChatConsistencyAnalysisService.MoreProviderErrors)) return "degraded";
+        if (computed.Any(e => e.VerdictLabel is "improved" or ChatConsistencyAnalysisService.FewerProviderErrors)) return "improved";
         if (computed.Any(e => e.VerdictLabel is "more work" or "less work")) return "changed";
         if (computed.All(e => e.VerdictLabel is "equivalent" or "changed, negligible")) return "consistent";
         return "inconclusive";
@@ -750,6 +759,75 @@ public static class BenchmarkChatConsistencyReportFacts
         "answers", "quality", "overallIndex", "timeToFirstAnswerText", "streamingRate", "outputTokens", "costPerQuestion", "failedAnswers"
     };
 
+    /// <summary>The <c>availability.&lt;period&gt;.*</c> measures, in key order.</summary>
+    public static readonly IReadOnlyList<string> AvailabilityMeasures = new[]
+    {
+        "attempts", "availabilityOnlyRuns", "ourSideFailures", "providerErrorRate", "providerErrorRateCi95High",
+        "providerErrorRateCi95Low", "providerErrors", "providerReruns", "recordedRuns", "reruns", "unattributedErrors"
+    };
+
+    /// <summary>Why an availability fact is unavailable for a period whose runs recorded no provider attempt.</summary>
+    public const string AvailabilityNotRecordedReason = "not recorded before harness 56";
+
+    /// <summary>
+    /// <c>availability.&lt;period&gt;.&lt;measure&gt;</c> of an analysis whose protocol has P6: each period's
+    /// candidate attempts with their denominator, the provider error rate and its cluster-adjusted 95 % interval,
+    /// the unattributed errors and our own failures, the re-runs, and the runs counted. Nothing under Protocol V1;
+    /// every measure unavailable for a period that recorded no attempt.
+    /// </summary>
+    private static void AddAvailability(BenchmarkReportFacts.FactList facts, ChatConsistencyAnalysisResult result)
+    {
+        if (!result.Endpoints.Any(e => e.Id == ChatConsistencyEndpointIds.ProviderErrorRate)) return;
+
+        foreach (string period in new[] { Baseline, Comparison })
+        {
+            string p = "availability." + period + ".";
+            var levels = result.PeriodLevels?.FirstOrDefault(l => string.Equals(l.Period, period, StringComparison.Ordinal));
+            if (levels is not { AvailabilityRecorded: true, ValidAttemptCount: int n })
+            {
+                foreach (string measure in AvailabilityMeasures) facts.Unavailable(p + measure, AvailabilityNotRecordedReason);
+                continue;
+            }
+
+            int k = levels.ProviderErrorCount ?? 0;
+            facts.Add(p + "attempts", n, BenchmarkReportFormat.Count(n) + (n == 1 ? " valid attempt" : " valid attempts"));
+            facts.Add(p + "providerErrors", k, BenchmarkProviderAvailability.FormatCount(k, n));
+            facts.Add(p + "providerErrorRate", levels.ProviderErrorRate ?? 0.0,
+                NoBreakPercent(BenchmarkProviderAvailability.FormatRate(k, n, levels.ProviderErrorRateLow, levels.ProviderErrorRateHigh)));
+            if (levels.ProviderErrorRateLow is double low && levels.ProviderErrorRateHigh is double high)
+            {
+                facts.Add(p + "providerErrorRateCi95Low", low, NoBreakPercent(BenchmarkProviderAvailability.FormatPercent(low)));
+                facts.Add(p + "providerErrorRateCi95High", high, NoBreakPercent(BenchmarkProviderAvailability.FormatPercent(high)));
+            }
+            else
+            {
+                facts.Unavailable(p + "providerErrorRateCi95Low", "No valid attempt in the " + period + " period.");
+                facts.Unavailable(p + "providerErrorRateCi95High", "No valid attempt in the " + period + " period.");
+            }
+
+            int unattributed = levels.UnattributedErrorCount ?? 0;
+            int ours = levels.OurSideFailureCount ?? 0;
+            facts.Add(p + "unattributedErrors", unattributed, BenchmarkProviderAvailability.FormatCount(unattributed, n));
+            facts.Add(p + "ourSideFailures", ours, BenchmarkReportFormat.Count(ours) + (ours == 1 ? " attempt" : " attempts")
+                + " failed on our side, left out of the denominator");
+            int reruns = levels.RerunsNeeded ?? 0;
+            int providerReruns = levels.ProviderRerunsNeeded ?? 0;
+            facts.Add(p + "reruns", reruns, Inv(reruns) + (reruns == 1 ? " re-run" : " re-runs") + " (" + Inv(providerReruns) + " for provider errors)");
+            facts.Add(p + "providerReruns", providerReruns, Inv(providerReruns) + (providerReruns == 1 ? " re-run" : " re-runs") + " for provider errors");
+            int recorded = levels.AvailabilityRecordedRunCount ?? 0;
+            int total = levels.AvailabilityRunCount ?? 0;
+            facts.Add(p + "recordedRuns", recorded, "recorded for " + Inv(recorded) + " of " + Runs(total));
+            int availabilityOnly = levels.AvailabilityOnlyRunCount ?? 0;
+            facts.Add(p + "availabilityOnlyRuns", availabilityOnly, availabilityOnly == 0
+                ? "no failed, canceled or superseded run"
+                : Inv(availabilityOnly) + (availabilityOnly == 1 ? " failed, canceled or superseded run" : " failed, canceled or superseded runs")
+                  + " counted for provider availability only");
+        }
+    }
+
+    /// <summary>A shared availability format with the space before each percent sign made the unit space (U+00A0).</summary>
+    private static string NoBreakPercent(string text) => text.Replace(" %", UnitSpace + "%", StringComparison.Ordinal);
+
     private static void Level(BenchmarkReportFacts.FactList facts, string key, double? value, Func<double, string> format, string reason)
     {
         if (value is double v && double.IsFinite(v)) facts.Add(key, v, format(v));
@@ -850,7 +928,9 @@ public static class BenchmarkChatConsistencyReportFacts
         facts.Add(p + "grade", grade, e.GradeReasons.Count > 0 ? grade + ": " + string.Join("; ", e.GradeReasons) : grade);
         facts.Add(p + "runs", e.BaselineRunCount + e.ComparisonRunCount,
             Runs(e.BaselineRunCount) + " in the baseline and " + Runs(e.ComparisonRunCount) + " in the comparison");
-        facts.Add(p + "items", e.ItemCount, Items(e.ItemCount));
+        facts.Add(p + "items", e.ItemCount, e.Id == ChatConsistencyEndpointIds.ProviderErrorRate
+            ? BenchmarkReportFormat.Count(e.ItemCount) + (e.ItemCount == 1 ? " valid attempt" : " valid attempts") + " in the common strata"
+            : Items(e.ItemCount));
         facts.Add(p + "legacyProxy", e.LegacyProxy, e.LegacyProxy
             ? "measured by the legacy proxy, model time per item"
             : "measured directly");

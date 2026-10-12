@@ -1374,6 +1374,245 @@ public class BenchmarkBatteryOrchestratorTests
         }
     }
 
+    // --- Replacement lineage ------------------------------------------------------------------
+
+    /// <summary>The cause of a replacement, decided from the replaced run in the documented order.</summary>
+    [Theory]
+    [InlineData(true, false, BenchmarkRunStatus.Canceled, true, true, BenchmarkReplacementCause.InstrumentChange)]
+    [InlineData(false, true, BenchmarkRunStatus.Failed, true, true, BenchmarkReplacementCause.OperatorRequest)]
+    [InlineData(false, false, BenchmarkRunStatus.Canceled, true, true, BenchmarkReplacementCause.OperatorRequest)]
+    [InlineData(false, false, BenchmarkRunStatus.Canceled, false, false, BenchmarkReplacementCause.OperatorRequest)]
+    [InlineData(false, false, BenchmarkRunStatus.Failed, true, true, BenchmarkReplacementCause.ProviderFailure)]
+    [InlineData(false, false, BenchmarkRunStatus.Failed, true, false, BenchmarkReplacementCause.OurFailure)]
+    [InlineData(false, false, BenchmarkRunStatus.CompletedWithErrors, true, false, BenchmarkReplacementCause.OurFailure)]
+    [InlineData(false, false, BenchmarkRunStatus.Failed, false, false, BenchmarkReplacementCause.Unknown)]
+    public void ReplacementCause_IsDecidedFromTheReplacedRun_InOrder(
+        bool instrumentChange, bool attached, BenchmarkRunStatus status, bool recorded, bool providerFailure,
+        BenchmarkReplacementCause expected)
+    {
+        var facts = new BenchmarkReplacedRunFacts(status, recorded, providerFailure);
+
+        Assert.Equal(expected, BenchmarkReplacementCauses.Decide(facts, instrumentChange, attached));
+    }
+
+    [Fact]
+    public void ReplacementCause_OfARunNoLongerStored_IsUnknown_UnlessTheReplacementSaysWhy()
+    {
+        Assert.Equal(BenchmarkReplacementCause.Unknown, BenchmarkReplacementCauses.Decide(null));
+        Assert.Equal(BenchmarkReplacementCause.InstrumentChange, BenchmarkReplacementCauses.Decide(null, instrumentChange: true));
+        Assert.Equal(BenchmarkReplacementCause.OperatorRequest, BenchmarkReplacementCauses.Decide(null, attached: true));
+    }
+
+    /// <summary>Gives a run a provider ledger and, optionally, a terminal answer that failed with provider origin.</summary>
+    private static async Task MarkRecordedAsync(Fixture fixture, long runId, bool providerFailure)
+    {
+        using var db = CreateDbContext(fixture.DbName);
+        var run = await db.BenchmarkRuns.SingleAsync(r => r.Id == runId);
+        run.ProviderLedgerVersion = 1;
+        if (providerFailure)
+        {
+            run.Answers.Add(new BenchmarkRunAnswer
+            {
+                OrderIndex = 1,
+                QuestionText = "Q1",
+                AnswerText = string.Empty,
+                Status = BenchmarkAnswerStatus.ProviderError,
+                FailureOrigin = BenchmarkFailureOrigin.Provider
+            });
+        }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SupersedeAsync(Fixture fixture, long memberId)
+    {
+        using var db = CreateDbContext(fixture.DbName);
+        (await db.BenchmarkBatteryRunMembers.SingleAsync(m => m.Id == memberId)).Superseded = true;
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task<BenchmarkRun> ReadRunAsync(Fixture fixture, long runId)
+    {
+        using var db = CreateDbContext(fixture.DbName);
+        return await db.BenchmarkRuns.AsNoTracking().SingleAsync(r => r.Id == runId);
+    }
+
+    /// <summary>An attached run replaces the unusable occupant it supersedes, at the operator's request.</summary>
+    [Fact]
+    public async Task Attach_StampsTheAttachedRun_AsReplacingTheOccupantItSupersedes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync();
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.Stopped);
+        await SeedMemberAsync(fixture, batteryRun, suiteIndex: 0);
+        var withheld = await SeedMemberAsync(fixture, batteryRun, suiteIndex: 1,
+            status: BenchmarkRunStatus.CompletedWithErrors, qualityIndex: null, terminalFailures: 1);
+        await MarkRecordedAsync(fixture, withheld.BenchmarkRunId, providerFailure: true);
+        var replacement = await SeedRunAsync(fixture, suiteIndex: 1, hoursAgo: 2);
+
+        var result = await fixture.Orchestrator.AttachAsync(batteryRun.Id, suiteIndex: 1, round: 1, replacement.Id, ct);
+
+        Assert.Equal(BenchmarkBatteryAttachOutcome.Ok, result.Outcome);
+        var attached = await ReadRunAsync(fixture, replacement.Id);
+        Assert.Equal(withheld.BenchmarkRunId, attached.ReplacesRunId);
+        Assert.Equal(BenchmarkReplacementCause.OperatorRequest, attached.ReplacementCause);
+    }
+
+    /// <summary>A slot the drive loop emptied by superseding a failed member: the attached run replaces that member's run.</summary>
+    [Fact]
+    public async Task Attach_ToASlotEmptiedByAFailedMember_ReplacesThatMembersRun()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync();
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.Stopped);
+        await SeedMemberAsync(fixture, batteryRun, suiteIndex: 0);
+        var failed = await SeedMemberAsync(fixture, batteryRun, suiteIndex: 1, status: BenchmarkRunStatus.Failed, qualityIndex: null);
+        await SupersedeAsync(fixture, failed.Id);
+        var replacement = await SeedRunAsync(fixture, suiteIndex: 1, hoursAgo: 2);
+
+        var result = await fixture.Orchestrator.AttachAsync(batteryRun.Id, suiteIndex: 1, round: 1, replacement.Id, ct);
+
+        Assert.Equal(BenchmarkBatteryAttachOutcome.Ok, result.Outcome);
+        var attached = await ReadRunAsync(fixture, replacement.Id);
+        Assert.Equal(failed.BenchmarkRunId, attached.ReplacesRunId);
+        Assert.Equal(BenchmarkReplacementCause.OperatorRequest, attached.ReplacementCause);
+    }
+
+    /// <summary>An attached run that already names a predecessor keeps it.</summary>
+    [Fact]
+    public async Task Attach_LeavesARunThatAlreadyNamesAPredecessorAlone()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync();
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.Stopped);
+        await SeedMemberAsync(fixture, batteryRun, suiteIndex: 0);
+        await SeedMemberAsync(fixture, batteryRun, suiteIndex: 1,
+            status: BenchmarkRunStatus.CompletedWithErrors, qualityIndex: null, terminalFailures: 1);
+        var replacement = await SeedRunAsync(fixture, suiteIndex: 1, hoursAgo: 2);
+        using (var db = CreateDbContext(fixture.DbName))
+        {
+            var run = await db.BenchmarkRuns.SingleAsync(r => r.Id == replacement.Id, ct);
+            run.ReplacesRunId = 4242;
+            run.ReplacementCause = BenchmarkReplacementCause.ProviderFailure;
+            await db.SaveChangesAsync(ct);
+        }
+
+        var result = await fixture.Orchestrator.AttachAsync(batteryRun.Id, suiteIndex: 1, round: 1, replacement.Id, ct);
+
+        Assert.Equal(BenchmarkBatteryAttachOutcome.Ok, result.Outcome);
+        var attached = await ReadRunAsync(fixture, replacement.Id);
+        Assert.Equal(4242L, attached.ReplacesRunId);
+        Assert.Equal(BenchmarkReplacementCause.ProviderFailure, attached.ReplacementCause);
+    }
+
+    /// <summary>
+    /// Continue relaunches the slot of the member it superseded, replacing that member's run with the
+    /// cause read from it; a slot whose member was kept is not launched and replaces nothing. The cap
+    /// keeps the drive loop waiting, so no member is launched while the test reads.
+    /// </summary>
+    [Fact]
+    public async Task Continue_TheSupersededSlotsLaunch_ReplacesItsMembersRun_WithTheRunsCause()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: 10, maxRunsPerHour: 1));
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.CompletedWithErrors, allowCapWait: true);
+        await SeedMemberAsync(fixture, batteryRun, suiteIndex: 0);
+        var withheld = await SeedMemberAsync(fixture, batteryRun, suiteIndex: 1,
+            status: BenchmarkRunStatus.CompletedWithErrors, qualityIndex: null, terminalFailures: 1);
+        await MarkRecordedAsync(fixture, withheld.BenchmarkRunId, providerFailure: true);
+        await FillCapAsync(fixture);
+
+        var result = await fixture.Orchestrator.ResumeAsync(batteryRun.Id, BenchmarkBatteryResumeMode.Continue, ct);
+        Assert.Equal(BenchmarkBatteryStartOutcome.Started, result.Outcome);
+
+        try
+        {
+            using var db = CreateDbContext(fixture.DbName);
+            Assert.Equal(
+                new BenchmarkRunReplacement(withheld.BenchmarkRunId, BenchmarkReplacementCause.ProviderFailure),
+                await fixture.Orchestrator.SlotReplacementAsync(db, batteryRun.Id, 1, 1, ct));
+            Assert.Null(await fixture.Orchestrator.SlotReplacementAsync(db, batteryRun.Id, 0, 1, ct));
+        }
+        finally
+        {
+            await fixture.Orchestrator.CancelAsync(batteryRun.Id, ct);
+        }
+    }
+
+    /// <summary>Re-running under the current instrument makes every slot's launch replace its member's run as an instrument change.</summary>
+    [Fact]
+    public async Task Rerun_EverySlotsLaunch_ReplacesItsMembersRun_AsAnInstrumentChange()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: 10, maxRunsPerHour: 1));
+        var batteryRun = await SeedBatteryRunAsync(fixture, BenchmarkRunSeriesStatus.Stopped, allowCapWait: true);
+        var usable = await SeedMemberAsync(fixture, batteryRun, suiteIndex: 0);
+        var guarded = await SeedMemberAsync(fixture, batteryRun, suiteIndex: 1, guardFailure: "moved");
+        await FillCapAsync(fixture);
+
+        var result = await fixture.Orchestrator.ResumeAsync(batteryRun.Id, BenchmarkBatteryResumeMode.RerunUnderCurrentInstrument, ct);
+        Assert.Equal(BenchmarkBatteryStartOutcome.Started, result.Outcome);
+
+        try
+        {
+            using var db = CreateDbContext(fixture.DbName);
+            Assert.Equal(
+                new BenchmarkRunReplacement(usable.BenchmarkRunId, BenchmarkReplacementCause.InstrumentChange),
+                await fixture.Orchestrator.SlotReplacementAsync(db, batteryRun.Id, 0, 1, ct));
+            Assert.Equal(
+                new BenchmarkRunReplacement(guarded.BenchmarkRunId, BenchmarkReplacementCause.InstrumentChange),
+                await fixture.Orchestrator.SlotReplacementAsync(db, batteryRun.Id, 1, 1, ct));
+        }
+        finally
+        {
+            await fixture.Orchestrator.CancelAsync(batteryRun.Id, ct);
+        }
+    }
+
+    /// <summary>
+    /// A battery run started with a replaces map (a model batch's battery child) applies a slot's entry
+    /// at the slot's first launch only; once the slot holds a superseded member, that member's run is
+    /// the predecessor instead.
+    /// </summary>
+    [Fact]
+    public async Task Start_WithAReplacesMap_AppliesASlotsEntry_OnlyAtItsFirstLaunch()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var fixture = await CreateFixtureAsync(CreateConfig(maxRunsPerDay: 10, maxRunsPerHour: 1));
+        await FillCapAsync(fixture);
+        var entry = new BenchmarkRunReplacement(4242, BenchmarkReplacementCause.ProviderFailure);
+        var replaces = new Dictionary<(int SuiteIndex, int Round), BenchmarkRunReplacement> { [(0, 1)] = entry };
+
+        var result = await fixture.Orchestrator.StartAsync(
+            StartRequest(fixture.Battery.Id, allowCapWait: true), "user", ct, batchOwner: null, replaces: replaces);
+        Assert.True(result.Started);
+        long batteryRunId = result.BatteryRunId!.Value;
+
+        try
+        {
+            using (var db = CreateDbContext(fixture.DbName))
+            {
+                Assert.Equal(entry, await fixture.Orchestrator.SlotReplacementAsync(db, batteryRunId, 0, 1, ct));
+                Assert.Null(await fixture.Orchestrator.SlotReplacementAsync(db, batteryRunId, 1, 1, ct));
+            }
+
+            var failed = await SeedMemberAsync(fixture, await ReadBatteryRunAsync(fixture, batteryRunId), suiteIndex: 0,
+                status: BenchmarkRunStatus.Failed, qualityIndex: null);
+            await SupersedeAsync(fixture, failed.Id);
+
+            using (var db = CreateDbContext(fixture.DbName))
+            {
+                Assert.Equal(
+                    new BenchmarkRunReplacement(failed.BenchmarkRunId, BenchmarkReplacementCause.Unknown),
+                    await fixture.Orchestrator.SlotReplacementAsync(db, batteryRunId, 0, 1, ct));
+            }
+        }
+        finally
+        {
+            await fixture.Orchestrator.CancelAsync(batteryRunId, ct);
+        }
+    }
+
     // --- Cancel and reconcile ------------------------------------------------------------------
 
     [Fact]

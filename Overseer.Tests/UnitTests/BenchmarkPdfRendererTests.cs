@@ -587,22 +587,23 @@ public class BenchmarkPdfRendererTests
     {
         var prepared = BenchmarkPdfMarkdownComposer.Prepare(
             "[[figure:p1a-quality]]\n\n[[figure:p1b-speed]]\n\n[[figure:p1c-cost]]\n\nText.\n\n[[figure:p2-profile]]\n\n"
-            + "[[figure:s1-quality-speed]]\n\n[[figure:s2-quality-cost]]\n\n[[figure:s3-speed-cost]]\n",
+            + "[[figure:s1-quality-speed]]\n\n[[figure:s2-quality-cost]]\n\n[[figure:s3-speed-cost]]\n\n[[figure:a1-availability]]\n",
             "Title",
-            new[] { "p1a-quality", "p1b-speed", "p1c-cost", "p2-profile", "s1-quality-speed", "s2-quality-cost", "s3-speed-cost" }
+            new[] { "p1a-quality", "p1b-speed", "p1c-cost", "p2-profile", "s1-quality-speed", "s2-quality-cost", "s3-speed-cost", "a1-availability" }
                 .Select((key, i) => Chart(key, 640, 360, (byte)(i * 30), key, string.Empty, "Alt " + key))
                 .ToArray(),
             Layout(null,
                 ("p1a-quality", 0.5, 1), ("p1b-speed", 0.5, 1), ("p1c-cost", 0.5, 1),
                 ("p2-profile", 0.5, 2),
-                ("s1-quality-speed", 0.5, 3), ("s2-quality-cost", 0.5, 4), ("s3-speed-cost", 0.6667, null)));
+                ("s1-quality-speed", 0.5, 3), ("s2-quality-cost", 0.5, 4), ("s3-speed-cost", 0.6667, null),
+                ("a1-availability", 0.5, 5)));
 
         // Three of one group: the first two pair and the third prints alone; text ends a group; groups differ.
         var rows = prepared.FigureRows.Values.Select(r => string.Join(",", r.Select(f => f.Chart.FigureKey))).ToList();
         Assert.Equal(new[] { "p1a-quality,p1b-speed" }, rows);
         Assert.Single(prepared.RowFollowers);
         Assert.Equal(0.6667, prepared.Figures.Values.Single(f => f.Chart.FigureKey == "s3-speed-cost").WidthShare, 4);
-        Assert.Equal(new[] { 1, 2, 3, 4, 5, 6, 7 }, prepared.OrderedFigures.Select(f => f.Number));
+        Assert.Equal(new[] { 1, 2, 3, 4, 5, 6, 7, 8 }, prepared.OrderedFigures.Select(f => f.Number));
     }
 
     [Fact]

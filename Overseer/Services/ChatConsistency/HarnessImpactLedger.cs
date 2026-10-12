@@ -43,7 +43,13 @@ public enum HarnessImpact
     /// How candidate tokens or cost are counted from what the provider reported. Breaks the work and
     /// cost measures; repricing with one rate card does not resolve it.
     /// </summary>
-    CandidateAccounting = 32
+    CandidateAccounting = 32,
+
+    /// <summary>
+    /// What counts as a provider error: the attempt classifier, the retry policy, the request governor,
+    /// or timeouts that change attribution. Breaks the provider availability measures.
+    /// </summary>
+    ProviderErrorAccounting = 64
 }
 
 /// <summary>
@@ -94,7 +100,8 @@ public static class HarnessImpactLedger
         | HarnessImpact.CandidateTiming
         | HarnessImpact.Grading
         | HarnessImpact.Scoring
-        | HarnessImpact.CandidateAccounting;
+        | HarnessImpact.CandidateAccounting
+        | HarnessImpact.ProviderErrorAccounting;
 
     private const HarnessImpact CI = HarnessImpact.CandidateInput;
     private const HarnessImpact CT = HarnessImpact.CandidateTiming;
@@ -102,6 +109,7 @@ public static class HarnessImpactLedger
     private const HarnessImpact S = HarnessImpact.Scoring;
     private const HarnessImpact R = HarnessImpact.ReportingOnly;
     private const HarnessImpact CA = HarnessImpact.CandidateAccounting;
+    private const HarnessImpact PA = HarnessImpact.ProviderErrorAccounting;
 
     private static readonly IReadOnlyList<HarnessLedgerEntry> Table = BuildTable();
 
@@ -304,6 +312,8 @@ public static class HarnessImpactLedger
                 "Graders told when source references are disallowed; get_constants reads brace-on-next-line enums and the source miss probe is whole-word; streaming-rate bounds and report fixes."),
             new("55", G,
                 "Source-location grading rule names files and paths; claim verifier retries a provider error once; 'inverts' counts as a stated defect and a charge."),
+            new("56", PA,
+                "Provider attempt ledger and failure attribution; answers ended by our time budget, governor or network are Failed, which the synthesis lists as excluded like ProviderError and which never carry text to grade."),
         };
 
         return table.OrderBy(e => e.Number).ToList();

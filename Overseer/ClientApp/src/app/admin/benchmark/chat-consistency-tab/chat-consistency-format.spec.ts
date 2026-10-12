@@ -1,4 +1,5 @@
 import {
+  CC_AVAILABILITY_ONLY_LABEL,
   MINUS,
   NO_VALUE,
   addUtcDays,
@@ -15,6 +16,7 @@ import {
   formatInterval,
   formatMs,
   formatPValue,
+  formatPp,
   formatSigned,
   formatSignedPercent,
   formatTokenRate,
@@ -23,8 +25,11 @@ import {
   formatUtcDateTime,
   gradeText,
   isUtcDateInput,
+  measurementChangeText,
+  notComputedKindText,
   parseUtc,
   plural,
+  providerErrorsText,
   regradeStatusText,
   runStatusText,
   startOfUtcDay,
@@ -170,6 +175,47 @@ describe('chat-consistency-format', () => {
       expect(annotationKindText('providerConfirmedCause')).toBe('Provider confirmed a cause');
       expect(plural(1, 'run')).toBe('1 run');
       expect(plural(1200, 'run')).toBe('1,200 runs');
+    });
+
+    it('labels the availability axis, the P6 kinds and the availability-only reason', () => {
+      expect(axisText('availability')).toBe('Availability');
+      expect(notComputedKindText('notRecorded')).toBe('Not recorded');
+      expect(notComputedKindText('noCommonStratum')).toBe('No common time stratum');
+      expect(notComputedKindText(undefined)).toBe('Not computable');
+      expect(measurementChangeText('providerErrorAccounting')).toBe('Provider error accounting');
+      expect(CC_AVAILABILITY_ONLY_LABEL).toBe('Provider availability only (P6)');
+    });
+  });
+
+  describe('provider errors', () => {
+    it('writes a row\'s rate with its count and re-runs, and Not recorded before the ledger', () => {
+      expect(providerErrorsText({ availabilityRecorded: true, validAttemptCount: 1480, providerErrorCount: 12 }))
+        .toBe('0.81 % (12 of 1,480 attempts)');
+      expect(providerErrorsText({
+        availabilityRecorded: true, validAttemptCount: 1480, providerErrorCount: 12, rerunsNeeded: 2, providerRerunsNeeded: 1
+      })).toBe('0.81 % (12 of 1,480 attempts); 2 re-runs (1 for provider errors)');
+      expect(providerErrorsText({ availabilityRecorded: true, validAttemptCount: 0, providerErrorCount: 0 })).toBe('No valid attempts');
+      expect(providerErrorsText({ availabilityRecorded: false })).toBe('Not recorded');
+      expect(providerErrorsText({})).toBe('Not recorded');
+    });
+  });
+
+  describe('percentage points', () => {
+    it('writes P6 differences in percentage points with one decimal', () => {
+      expect(formatPp(1.24)).toBe('1.2 pp');
+      expect(formatPp(1.24, true)).toBe('+1.2 pp');
+      expect(formatPp(-0.36, true)).toBe(`${MINUS}0.4 pp`);
+      expect(formatPp(0.01, true)).toBe('0.0 pp');
+      expect(formatPp(null)).toBe(NO_VALUE);
+    });
+
+    it('writes a P6 estimate and its detectable effect in pp, as the other difference endpoints', () => {
+      const p6 = ccEndpoint('P6', {
+        name: 'Provider error rate', unit: 'pp', scale: 'difference', margin: 1, marginText: '±1 pp',
+        estimate: 1.24, ci95: { lower: 0.3, upper: 2.1 }, minimumDetectableEffect: 0.84
+      });
+      expect(endpointEstimateText(p6)).toBe('+1.2 pp (95 % CI [+0.3, +2.1])');
+      expect(endpointMdeText(p6)).toBe('±0.8 pp');
     });
   });
 });

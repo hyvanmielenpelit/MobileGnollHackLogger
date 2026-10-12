@@ -11,10 +11,10 @@
  * nullable here, and nothing is computed that the server did not already compute.
  */
 
-import type { BenchmarkComparabilityDifferenceDto } from '../../../services/admin-benchmark.service';
+import type { BenchmarkComparabilityDifferenceDto, ProviderAvailabilityDto } from '../../../services/admin-benchmark.service';
 import type { FigureNote } from './figure-chrome';
 import { modelLabelText } from './model-comparison-charts';
-import type { ModelComparisonContext, ModelComparisonEntry } from './model-comparison-charts';
+import type { ModelComparisonAvailability, ModelComparisonContext, ModelComparisonEntry } from './model-comparison-charts';
 
 export type { BenchmarkComparabilityDifferenceDto };
 
@@ -153,6 +153,12 @@ export interface BenchmarkModelComparisonTableDto {
   costPerIndexPointUsd?: number | null;
   meanStoredQualityIndex?: number | null;
   unstableItemCount: number;
+  /** Provider errors over valid candidate attempts (a proportion), lineage-pooled; all null when not recorded. */
+  providerErrorRate?: number | null;
+  providerErrorCount?: number | null;
+  providerAttempts?: number | null;
+  rerunsNeeded?: number | null;
+  providerReruns?: number | null;
 }
 
 /** One model, as configured, on one comparison. */
@@ -216,6 +222,8 @@ export interface BenchmarkModelComparisonEntryDto {
   speed?: BenchmarkModelComparisonSpeedDto | null;
   cost?: BenchmarkModelComparisonCostDto | null;
   table?: BenchmarkModelComparisonTableDto | null;
+  /** The entry's provider availability, pooled with its runs' lineage predecessors; set on excluded entries too. */
+  availability?: ProviderAvailabilityDto | null;
 }
 
 /** A measure the comparison deliberately refuses to chart, and the reason. */
@@ -1327,7 +1335,25 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
     costDegraded: entry.costDegraded,
     excluded: entry.excluded,
     excludedReasonKeys: entry.excludingKeys,
+    ...(entry.availability ? { availability: toChartAvailability(entry.availability) } : {}),
   }));
+}
+
+/** The figures' share of an entry's provider availability: the headline rate, its inclusive bound, k, n and the flags. */
+export function toChartAvailability(availability: ProviderAvailabilityDto): ModelComparisonAvailability {
+  return {
+    recorded: availability.recorded,
+    validAttempts: availability.validAttempts ?? 0,
+    providerErrors: availability.providerErrors ?? 0,
+    unattributedErrors: availability.unattributedErrors ?? 0,
+    rate: availability.providerErrorRate ?? null,
+    low: availability.providerErrorRateLow ?? null,
+    high: availability.providerErrorRateHigh ?? null,
+    inclusiveRate: availability.inclusiveRate ?? null,
+    inclusiveLow: availability.inclusiveRateLow ?? null,
+    inclusiveHigh: availability.inclusiveRateHigh ?? null,
+    fewAttempts: availability.fewAttempts ?? false,
+  };
 }
 
 /** What one candidate cost per pass covers: one run of the suite, or one pass over a battery's suites. */

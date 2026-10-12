@@ -112,6 +112,16 @@ public sealed record ChatConsistencyAnalysisRequest
 
     /// <summary>With a battery set, exactly these battery runs form the comparison.</summary>
     public IReadOnlyList<long>? ComparisonBatteryRunIds { get; init; }
+
+    /// <summary>
+    /// The protocol version (<c>V1</c> or <c>V2</c>). Without it, a re-analysis (<see cref="ReanalysisOfAnalysisId"/>)
+    /// keeps the stored analysis's protocol and a new analysis uses <see cref="ChatConsistencyProtocol.Latest"/>.
+    /// The result's request records the version used.
+    /// </summary>
+    public string? ProtocolVersion { get; init; }
+
+    /// <summary>"Analyze again": the saved analysis this one repeats, whose protocol version it keeps when <see cref="ProtocolVersion"/> is not given.</summary>
+    public int? ReanalysisOfAnalysisId { get; init; }
 }
 
 /// <summary>The kinds of <see cref="ChatConsistencyComparisonSetRef"/>, and the unit each analyzes.</summary>
@@ -350,13 +360,43 @@ public sealed record ChatConsistencyEndpointResult
     public IReadOnlyList<long> BaselineRunIds { get; init; } = Array.Empty<long>();
     public IReadOnlyList<long> ComparisonRunIds { get; init; } = Array.Empty<long>();
 
-    /// <summary>Paired items the estimate rests on.</summary>
+    /// <summary>Paired items the estimate rests on; for P6, the valid attempts in the common strata of both periods.</summary>
     public int ItemCount { get; init; }
     public IReadOnlyList<string> StrataUsed { get; init; } = Array.Empty<string>();
 
     /// <summary>Observations outside the common strata, as a share (stratified endpoints).</summary>
     public double? StratumExcludedShare { get; init; }
     public IReadOnlyList<ChatConsistencyCheck> RobustnessChecks { get; init; } = Array.Empty<ChatConsistencyCheck>();
+
+    /// <summary>P6's attempt counts and rates; null for every other endpoint.</summary>
+    public ChatConsistencyEndpointAvailability? Availability { get; init; }
+}
+
+/// <summary>
+/// The provider attempts behind P6, candidate attempts only, over the endpoint's units (the analyzed units
+/// with their availability-only runs). Rates in percentage points.
+/// </summary>
+public sealed record ChatConsistencyEndpointAvailability
+{
+    public int BaselineValidAttempts { get; init; }
+    public int BaselineProviderErrors { get; init; }
+    public int BaselineUnattributedErrors { get; init; }
+    public int BaselineOurSideFailures { get; init; }
+    public int ComparisonValidAttempts { get; init; }
+    public int ComparisonProviderErrors { get; init; }
+    public int ComparisonUnattributedErrors { get; init; }
+    public int ComparisonOurSideFailures { get; init; }
+
+    /// <summary>The equal-weight mean of the per-stratum rates over the common strata, percentage points; null when none.</summary>
+    public double? BaselineRate { get; init; }
+    public double? ComparisonRate { get; init; }
+
+    /// <summary>The protocol's <see cref="ChatConsistencyProtocol.MinimumAttemptsPerStratum"/>.</summary>
+    public int MinimumAttemptsPerStratum { get; init; }
+
+    /// <summary>Failed or canceled runs inside the period's run range, and lineage predecessors, that enter P6 only.</summary>
+    public IReadOnlyList<long> BaselineAvailabilityOnlyRunIds { get; init; } = Array.Empty<long>();
+    public IReadOnlyList<long> ComparisonAvailabilityOnlyRunIds { get; init; } = Array.Empty<long>();
 }
 
 /// <summary>The values of <see cref="ChatConsistencyEndpointResult.NotComputedKind"/>.</summary>
@@ -365,8 +405,11 @@ public static class ChatConsistencyNotComputedKinds
     /// <summary>The periods share no measurement segment on the endpoint's axis.</summary>
     public const string MeasurementChanged = "measurementChanged";
 
-    /// <summary>The periods share no time-of-week stratum.</summary>
+    /// <summary>The periods share no time-of-week stratum (for P6, none with the minimum valid attempts in each).</summary>
     public const string NoCommonStratum = "noCommonStratum";
+
+    /// <summary>No unit of a period recorded provider attempts (P6): the attempt ledger starts with harness 56.</summary>
+    public const string NotRecorded = "notRecorded";
 
     /// <summary>A period has no run with the call telemetry the endpoint needs.</summary>
     public const string NoTelemetry = "noTelemetry";
@@ -429,6 +472,33 @@ public sealed record ChatConsistencyPeriodLevels
 
     /// <summary>Terminal failures among <see cref="AnswerCount"/>.</summary>
     public int FailedAnswerCount { get; init; }
+
+    // Provider availability (Protocol V2), candidate attempts of the period's analyzed units and their
+    // availability-only runs; every field null under V1. Rates are proportions in [0, 1].
+
+    /// <summary>At least one of the period's runs recorded provider attempts.</summary>
+    public bool? AvailabilityRecorded { get; init; }
+
+    /// <summary>Runs counted: the units' members and availability-only runs; and how many of them recorded attempts.</summary>
+    public int? AvailabilityRunCount { get; init; }
+    public int? AvailabilityRecordedRunCount { get; init; }
+
+    /// <summary>Availability-only runs among <see cref="AvailabilityRunCount"/>.</summary>
+    public int? AvailabilityOnlyRunCount { get; init; }
+
+    public int? ValidAttemptCount { get; init; }
+    public int? ProviderErrorCount { get; init; }
+    public int? UnattributedErrorCount { get; init; }
+    public int? OurSideFailureCount { get; init; }
+    public double? ProviderErrorRate { get; init; }
+
+    /// <summary>The cluster-adjusted Wilson 95 % interval of <see cref="ProviderErrorRate"/>.</summary>
+    public double? ProviderErrorRateLow { get; init; }
+    public double? ProviderErrorRateHigh { get; init; }
+
+    /// <summary>Repair passes plus replaced runs of the counted runs and their lineage, and the provider-caused part.</summary>
+    public int? RerunsNeeded { get; init; }
+    public int? ProviderRerunsNeeded { get; init; }
 }
 
 /// <summary>Whether a saved analysis is out of date, and why.</summary>
@@ -482,13 +552,13 @@ public sealed record ChatConsistencyFamilyResult
     public string? Note { get; init; }
 }
 
-/// <summary>One answer-level or call-level rate compared between the periods.</summary>
+/// <summary>One answer-level, call-level, attempt-level or unit-level rate compared between the periods.</summary>
 public sealed record ChatConsistencyRateResult
 {
     public string Id { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
 
-    /// <summary><c>answers</c> or <c>calls</c>.</summary>
+    /// <summary><c>answers</c> or <c>calls</c> (V1); <c>answers</c>, <c>valid attempts</c>, <c>attempts</c> or <c>runs</c> / <c>battery runs</c> (V2).</summary>
     public string Denominator { get; init; } = string.Empty;
     public int BaselineCount { get; init; }
     public int BaselineTotal { get; init; }
@@ -499,8 +569,11 @@ public sealed record ChatConsistencyRateResult
     public double? ComparisonRate { get; init; }
     public ChatConsistencyInterval? ComparisonCi95 { get; init; }
 
-    /// <summary>Fisher's exact test, two-sided.</summary>
+    /// <summary>The test <see cref="Method"/> names, two-sided.</summary>
     public double? PValue { get; init; }
+
+    /// <summary>The test behind <see cref="PValue"/>; null for Fisher's exact test.</summary>
+    public string? Method { get; init; }
 
     /// <summary>Benjamini–Hochberg adjusted within the reliability family.</summary>
     public double? AdjustedPValue { get; init; }
@@ -554,6 +627,7 @@ public sealed record ChatConsistencySegmentView
     public int? SpeedLegacy { get; init; }
     public int? Work { get; init; }
     public int? Cost { get; init; }
+    public int? Availability { get; init; }
 }
 
 /// <summary>A control run qualified for a target run.</summary>
@@ -742,7 +816,10 @@ public sealed record ChatConsistencyNote
     public string Text { get; init; } = string.Empty;
 }
 
-/// <summary>A usable run of the subject inside a period that the analysis did not use.</summary>
+/// <summary>
+/// A usable run of the subject inside a period that the analysis did not use, or a failed, canceled or
+/// superseded run it used for provider availability (P6) only.
+/// </summary>
 public sealed record ChatConsistencyUnanalyzedRun
 {
     public long RunId { get; init; }
@@ -751,7 +828,10 @@ public sealed record ChatConsistencyUnanalyzedRun
     public string Period { get; init; } = string.Empty;
     public DateTime StartedAtUtc { get; init; }
 
-    /// <summary><c>leftOut</c>, <c>outsideDateRange</c>, <c>beforeFirstRun</c>, <c>afterLastRun</c>, <c>notSelected</c> or <c>outsideComparisonSet</c>.</summary>
+    /// <summary>
+    /// <c>leftOut</c>, <c>outsideDateRange</c>, <c>beforeFirstRun</c>, <c>afterLastRun</c>, <c>notSelected</c>,
+    /// <c>outsideComparisonSet</c> or <c>availabilityOnly</c>.
+    /// </summary>
     public string Reason { get; init; } = string.Empty;
 
     /// <summary>In a battery set, the battery run the reason applies to; null for a run of a suite set or outside the compared set.</summary>
@@ -779,7 +859,13 @@ public static class ChatConsistencyUnanalyzedReasons
     /// <summary>It is not part of the compared battery or suite.</summary>
     public const string OutsideComparisonSet = "outsideComparisonSet";
 
-    public static readonly IReadOnlyList<string> All = new[] { LeftOut, OutsideDateRange, BeforeFirstRun, AfterLastRun, NotSelected, OutsideComparisonSet };
+    /// <summary>
+    /// A failed or canceled run inside the period's run range, a failed or superseded member of a compared
+    /// battery run, or a lineage predecessor: used for provider availability (P6) only, chosen automatically.
+    /// </summary>
+    public const string AvailabilityOnly = "availabilityOnly";
+
+    public static readonly IReadOnlyList<string> All = new[] { LeftOut, OutsideDateRange, BeforeFirstRun, AfterLastRun, NotSelected, OutsideComparisonSet, AvailabilityOnly };
 }
 
 /// <summary>The run selection as recorded with the analysis.</summary>
@@ -901,7 +987,10 @@ public sealed record ChatConsistencyAnalysisResult
     public DateTime? CreatedAtUtc { get; init; }
     public string Name { get; init; } = string.Empty;
 
-    /// <summary>"Overseer chat with &lt;model&gt;: quality …; speed …; work …; cost … within &lt;scope&gt;", plus any established reliability increase.</summary>
+    /// <summary>
+    /// "Overseer chat with &lt;model&gt;: quality …; speed …; work …; cost … within &lt;scope&gt;", under V2
+    /// "; availability: … within &lt;attempt scope&gt;", plus any established reliability increase.
+    /// </summary>
     public string Headline { get; init; } = string.Empty;
     public IReadOnlyList<string> HeadlineReliabilityIncreases { get; init; } = Array.Empty<string>();
     public ChatConsistencySubject Subject { get; init; } = new();
@@ -1027,6 +1116,9 @@ public sealed record ChatConsistencyModelAxis
 
     /// <summary>Distinct battery runs with a non-superseded member on this axis.</summary>
     public int BatteryRunCount { get; init; }
+
+    /// <summary>Failed or canceled runs on this axis that recorded provider attempts: provider availability only, not in <see cref="RunCount"/>.</summary>
+    public int AvailabilityOnlyRunCount { get; init; }
 }
 
 /// <summary>A common-grader quality figure of one run.</summary>
@@ -1086,6 +1178,27 @@ public record ChatConsistencyTimelinePoint
     public bool StrataEstimated { get; init; }
     public int AnswerCount { get; init; }
     public int MaxParallelQuestions { get; init; }
+
+    // Provider availability, candidate attempts only; on a battery point over its usable members and its
+    // failed or superseded members. Null when not recorded. Rates are proportions in [0, 1].
+
+    /// <summary>The run (a member, on a battery point) recorded provider attempts.</summary>
+    public bool AvailabilityRecorded { get; init; }
+    public int? ValidAttemptCount { get; init; }
+    public int? ProviderErrorCount { get; init; }
+    public int? UnattributedErrorCount { get; init; }
+    public double? ProviderErrorRate { get; init; }
+
+    /// <summary>The cluster-adjusted Wilson 95 % interval of <see cref="ProviderErrorRate"/>.</summary>
+    public double? ProviderErrorRateLow { get; init; }
+    public double? ProviderErrorRateHigh { get; init; }
+
+    /// <summary>Repair passes plus replaced runs through the lineage, and the provider-caused part; also for an unrecorded run.</summary>
+    public int? RerunsNeeded { get; init; }
+    public int? ProviderRerunsNeeded { get; init; }
+
+    /// <summary>A failed or canceled run: it carries only identity, status and availability, and every other series skips it.</summary>
+    public bool AvailabilityOnly { get; init; }
 }
 
 /// <summary>
@@ -1206,6 +1319,21 @@ public sealed record ChatConsistencyRunRow
     /// <summary>1-based position of the run's suite in that battery run's definition.</summary>
     public int? BatterySuitePosition { get; init; }
     public int? BatterySuiteCount { get; init; }
+
+    /// <summary>A failed or canceled run: listed for provider availability only, never selectable for an analysis.</summary>
+    public bool AvailabilityOnly { get; init; }
+
+    // Provider availability from the run's candidate rollups; null when the run did not record attempts.
+
+    public bool AvailabilityRecorded { get; init; }
+    public int? ValidAttemptCount { get; init; }
+    public int? ProviderErrorCount { get; init; }
+    public int? UnattributedErrorCount { get; init; }
+
+    /// <summary>A proportion in [0, 1].</summary>
+    public double? ProviderErrorRate { get; init; }
+    public int? RerunsNeeded { get; init; }
+    public int? ProviderRerunsNeeded { get; init; }
 }
 
 /// <summary>One battery run of the subject in the step-1 battery-run table.</summary>
@@ -1238,6 +1366,19 @@ public sealed record ChatConsistencyBatteryRunRow
 
     /// <summary>Per axis: eligible when every member is; otherwise the members' reasons, each prefixed <c>#&lt;run id&gt;: </c>.</summary>
     public IReadOnlyList<ChatConsistencyAxisEligibility> Eligibility { get; init; } = Array.Empty<ChatConsistencyAxisEligibility>();
+
+    // Provider availability from the candidate rollups of the usable members and the failed or superseded
+    // members on the subject's axis; null when none recorded attempts.
+
+    public bool AvailabilityRecorded { get; init; }
+    public int? ValidAttemptCount { get; init; }
+    public int? ProviderErrorCount { get; init; }
+    public int? UnattributedErrorCount { get; init; }
+
+    /// <summary>A proportion in [0, 1].</summary>
+    public double? ProviderErrorRate { get; init; }
+    public int? RerunsNeeded { get; init; }
+    public int? ProviderRerunsNeeded { get; init; }
 }
 
 // --- Re-grade ------------------------------------------------------------------------------------

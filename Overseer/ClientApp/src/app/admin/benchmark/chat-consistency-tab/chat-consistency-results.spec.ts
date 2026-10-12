@@ -16,7 +16,7 @@ import {
   ccResultKeyFigures,
   ccResultPeriodUnits
 } from './chat-consistency-results';
-import { CcEndpointResult, CcNextRun } from './chat-consistency.models';
+import { CcEndpointAvailability, CcEndpointResult, CcNextRun, CcPeriodLevels } from './chat-consistency.models';
 import {
   ccAnalysisResult,
   ccBatteryMemberRows,
@@ -198,6 +198,17 @@ describe('chat consistency results', () => {
     it('words a change in work per turn as the server does', () => {
       expect(ccEndpointBriefStatusText(ccEndpointBrief('P4', { verdictLabel: 'more work' }))).toBe('More work');
       expect(ccEndpointBriefStatusText(ccEndpointBrief('P4', { verdictLabel: 'less work' }))).toBe('Less work');
+    });
+
+    it('reads a change in provider error rate as the full P6 endpoint reads it', () => {
+      const more = ccEndpointBrief('P6', { verdictLabel: 'more provider errors' });
+      const fewer = ccEndpointBrief('P6', { verdictLabel: 'fewer provider errors' });
+      expect(ccEndpointBriefStatus(more)).toBe('changed');
+      expect(ccEndpointBriefStatus(fewer)).toBe('improved');
+      expect(ccEndpointBriefStatusText(more)).toBe('More provider errors');
+      expect(ccEndpointBriefStatusText(fewer)).toBe('Fewer provider errors');
+      const full = ccEndpoint('P6', { verdict: 'changedImproved', verdictLabel: 'fewer provider errors', direction: 'lowerIsBetter' });
+      expect(ccEndpointStatusText(full)).toBe(ccEndpointBriefStatusText(fewer));
     });
 
     it('reads an unknown label as inconclusive, and a not-computed endpoint as not computable whatever its label', () => {
@@ -441,6 +452,65 @@ describe('chat consistency results', () => {
       });
       const figures = ccResultKeyFigures(result);
       expect(figures[1]).toEqual({ key: 'baseline', label: 'Baseline', value: '1 battery run', sub: '3 runs · 3 days', note: '2026-09-01 – 2026-09-14' });
+    });
+
+    describe('provider errors', () => {
+      const p6 = (overrides: Partial<CcEndpointResult> = {}): CcEndpointResult => ccEndpoint('P6', {
+        name: 'Provider error rate', unit: 'pp', scale: 'difference', margin: 1, marginText: '±1 pp', direction: 'lowerIsBetter',
+        ...overrides
+      });
+      const levels = (period: string, overrides: Partial<CcPeriodLevels>): CcPeriodLevels => ({
+        period, answerCount: 60, nativeMeanQuality: null, overallIndex: null, overallIndexHalfWidth: null, overallIndexIntervalNote: null,
+        medianTimeToFirstAnswerTextMs: null, medianStreamingRate: null, meanOutputTokensPerAnswer: null, meanCostPerQuestionUsd: null,
+        failedAnswerCount: 0, ...overrides
+      });
+
+      it('compares the periods\' rates, each with its count, and the re-runs, before the next runs', () => {
+        const figures = ccResultKeyFigures(ccAnalysisResult({
+          endpoints: [...ccAnalysisResult().endpoints, p6()],
+          periodLevels: [
+            levels('baseline', { availabilityRecorded: true, validAttemptCount: 1480, providerErrorCount: 12, rerunsNeeded: 0, providerRerunsNeeded: 0 }),
+            levels('comparison', { availabilityRecorded: true, validAttemptCount: 1500, providerErrorCount: 30, rerunsNeeded: 2, providerRerunsNeeded: 1 })
+          ]
+        }));
+        expect(figures.map(figure => figure.key)).toEqual(['decided', 'baseline', 'comparison', 'pairedItems', 'providerErrors', 'nextRuns']);
+        expect(figures.find(figure => figure.key === 'providerErrors')).toEqual({
+          key: 'providerErrors',
+          label: 'Provider errors',
+          value: '0.81 % → 2.0 %',
+          sub: 'Baseline 12 of 1,480 attempts · Comparison 30 of 1,500 attempts',
+          note: 'Re-runs: baseline 0 re-runs · comparison 2 re-runs (1 for provider errors)'
+        });
+      });
+
+      it('reads P6\'s own counts without period levels', () => {
+        const availability: CcEndpointAvailability = {
+          baselineValidAttempts: 200, baselineProviderErrors: 2, baselineUnattributedErrors: 1, baselineOurSideFailures: 0,
+          comparisonValidAttempts: 100, comparisonProviderErrors: 0, comparisonUnattributedErrors: 0, comparisonOurSideFailures: 3,
+          minimumAttemptsPerStratum: 30, baselineAvailabilityOnlyRunIds: [], comparisonAvailabilityOnlyRunIds: []
+        };
+        const figure = ccResultKeyFigures(ccAnalysisResult({ endpoints: [p6({ availability })], periodLevels: null }))
+          .find(entry => entry.key === 'providerErrors');
+        expect(figure).toEqual({
+          key: 'providerErrors', label: 'Provider errors', value: '1.0 % → 0 %',
+          sub: 'Baseline 2 of 200 attempts · Comparison 0 of 100 attempts', note: 'No re-runs'
+        });
+      });
+
+      it('says Not recorded when a period recorded no provider attempts, and has no card under Protocol V1', () => {
+        const notRecorded = p6({
+          computed: false, notComputedKind: 'notRecorded', notComputedReason: 'No unit of the baseline recorded provider attempts.',
+          verdict: null, verdictLabel: '', grade: 'notEstablished'
+        });
+        const figure = ccResultKeyFigures(ccAnalysisResult({
+          endpoints: [notRecorded],
+          periodLevels: [levels('baseline', { availabilityRecorded: false }), levels('comparison', { availabilityRecorded: true, validAttemptCount: 90 })]
+        })).find(entry => entry.key === 'providerErrors');
+        expect(figure).toEqual({
+          key: 'providerErrors', label: 'Provider errors', value: 'Not recorded', note: 'Provider attempts are recorded from harness 56'
+        });
+        expect(ccResultKeyFigures(ccAnalysisResult()).some(entry => entry.key === 'providerErrors')).toBe(false);
+      });
     });
 
     it('says no verdict waits on more data without next runs', () => {

@@ -1262,9 +1262,9 @@ public class BenchmarkReportPackRendererTests
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public void TheFormatVersion_IsEleven()
+    public void TheFormatVersion_IsTwelve()
     {
-        Assert.Equal(11, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(12, BenchmarkReportPackRenderer.ReportFormatVersion);
     }
 
     [Fact]
@@ -2078,16 +2078,19 @@ public class BenchmarkReportPackRendererTests
         int At(string key) => Pos(MarkerOf(key));
         var keys = BenchmarkReportChartPlacement.FigureKeys;
 
+        // Provider availability (keys[7]) follows the Key figures, or their Provider availability subsection.
         switch (audience)
         {
             case BenchmarkReportAudience.ExecutiveSummary:
                 AssertInOrder(
+                    Pos("## Key figures"), Pos("- **Critical errors:**"), At(keys[7]),
                     Pos("## How it compares"), Pos("| Readability | 90 | 89 | +1 |\n"),
                     At(keys[0]), At(keys[1]), At(keys[2]), At(keys[3]), At(keys[4]), At(keys[5]), At(keys[6]),
                     Pos("GPT-5.6 Luna places joint 1st of 3 (intervals overlap)"), Pos("## What it did well"));
                 break;
             case BenchmarkReportAudience.TechnicalReport:
                 AssertInOrder(
+                    Pos("## Key figures"), Pos("- **Critical errors:**"), At(keys[7]), Pos("## Setup and method"),
                     Pos("### Quality"), Pos("*GPT-5.6 Luna: its 95 % interval overlaps"), Pos("No pair of models"), At("p1a-quality"),
                     Pos("### Speed"), Pos("Not ranked on speed:"), At("p1b-speed"),
                     Pos("### Cost"), At("p1c-cost"), Pos("### Dimensions"),
@@ -2098,6 +2101,7 @@ public class BenchmarkReportPackRendererTests
             default:
                 AssertInOrder(
                     Pos("## 3. The model's result"), Pos("### Key figures"), Pos("The 95 % interval is 77–83"),
+                    At(keys[7]),
                     At(keys[0]), At(keys[1]), At(keys[2]), At(keys[3]), At(keys[4]), At(keys[5]), At(keys[6]),
                     Pos("### Strengths"), Pos("## 4. Leads"));
                 break;
@@ -2138,10 +2142,10 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void ThePlacement_KnowsTheSevenFigures_AndWhereEachAudienceDrawsThem()
+    public void ThePlacement_KnowsTheEightFigures_AndWhereEachAudienceDrawsThem()
     {
         Assert.Equal(
-            new[] { "p1a-quality", "p1b-speed", "p1c-cost", "p2-profile", "s1-quality-speed", "s2-quality-cost", "s3-speed-cost" },
+            new[] { "p1a-quality", "p1b-speed", "p1c-cost", "p2-profile", "s1-quality-speed", "s2-quality-cost", "s3-speed-cost", "a1-availability" },
             BenchmarkReportChartPlacement.FigureKeys);
         Assert.All(BenchmarkReportChartPlacement.FigureKeys, key => Assert.True(BenchmarkReportChartPlacement.IsKnown(key)));
         Assert.False(BenchmarkReportChartPlacement.IsKnown(null));
@@ -2149,10 +2153,25 @@ public class BenchmarkReportPackRendererTests
         Assert.False(BenchmarkReportChartPlacement.IsKnown("P1A-QUALITY"));
         Assert.False(BenchmarkReportChartPlacement.IsKnown("p9-other"));
 
-        Assert.Equal(BenchmarkReportChartPlacement.FigureKeys,
+        var sevenFigures = BenchmarkReportChartPlacement.FigureKeys.Take(7).ToList();
+        Assert.Equal(sevenFigures,
             BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportChartAnchor.HowItCompares));
-        Assert.Equal(BenchmarkReportChartPlacement.FigureKeys,
+        Assert.Equal(sevenFigures,
             BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.InternalBrief, BenchmarkReportChartAnchor.ModelResult));
+
+        // Every model-scope audience draws provider availability at its own anchor.
+        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief })
+        {
+            Assert.Equal(new[] { "a1-availability" }, BenchmarkReportChartPlacement.KeysAt(audience, BenchmarkReportChartAnchor.ProviderAvailability));
+            Assert.Equal(BenchmarkReportChartAnchor.ProviderAvailability, BenchmarkReportChartPlacement.AnchorOf(audience, "a1-availability"));
+        }
+
+        // A comparison-scope Executive Summary does not draw it; the other two audiences do.
+        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, "a1-availability", BenchmarkReportScope.Comparison));
+        Assert.Equal(BenchmarkReportChartAnchor.ProviderAvailability,
+            BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, "a1-availability", BenchmarkReportScope.Comparison));
+        Assert.Equal(BenchmarkReportChartAnchor.ModelsCompared,
+            BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.InternalBrief, "a1-availability", BenchmarkReportScope.Comparison));
 
         var researcher = BenchmarkReportAudience.TechnicalReport;
         Assert.Equal(new[] { "p1a-quality" }, BenchmarkReportChartPlacement.KeysAt(researcher, BenchmarkReportChartAnchor.QualityResults));
@@ -2653,12 +2672,12 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion12()
+    public void AComparisonDocument_IsCurrentAtFormatVersion13()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(12, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 12 · ", text);
+        Assert.Equal(13, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 13 · ", text);
         Assert.Contains(" · models named*", text);
     }
 
@@ -2730,19 +2749,19 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AChatConsistencyDocument_IsCurrentAtFormatVersion2_AndTheOtherScopesKeepTheirs()
+    public void AChatConsistencyDocument_IsCurrentAtFormatVersion3_AndTheOtherScopesKeepTheirs()
     {
-        Assert.Equal(2, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
-        Assert.Equal(2, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(11, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(12, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
-        Assert.Equal(11, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(12, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(3, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
+        Assert.Equal(3, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
+        Assert.Equal(12, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(13, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(12, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(13, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-        Assert.Contains(" · format version 2 · ", text);
+        Assert.Contains(" · format version 3 · ", text);
         Assert.Contains(" · controls named*", text);
-        Assert.Contains("- **Report format version:** 2\n", text);
+        Assert.Contains("- **Report format version:** 3\n", text);
     }
 
     [Theory]
@@ -3101,20 +3120,27 @@ public class BenchmarkReportPackRendererTests
         var results = BenchmarkReportChartAnchor.ChatConsistencyResults;
         var events = BenchmarkReportChartAnchor.ChatConsistencyEvents;
 
-        Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc4-timeline" }, BenchmarkReportChartPlacement.ChatConsistencyFigureKeys);
+        Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc4-timeline", "cc5-availability" }, BenchmarkReportChartPlacement.ChatConsistencyFigureKeys);
         Assert.All(BenchmarkReportChartPlacement.ChatConsistencyFigureKeys, key => Assert.True(BenchmarkReportChartPlacement.IsKnown(key)));
-        Assert.Equal(11, BenchmarkReportChartPlacement.AllFigureKeys.Count);
+        Assert.Equal(13, BenchmarkReportChartPlacement.AllFigureKeys.Count);
 
-        // With a layout every audience may draw every figure: the timeline after the events table, and
-        // in the Executive Summary, which has none, after the verdict table.
-        Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc4-timeline" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, results, chat));
+        // With a layout every audience may draw every figure: provider availability with quality, speed
+        // and work after the verdict table, the timeline after the events table, and in the Executive
+        // Summary, which has none, after the verdict table.
+        Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc4-timeline", "cc5-availability" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, results, chat));
         Assert.Empty(BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, events, chat));
         foreach (var audience in new[] { BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief, BenchmarkReportAudience.ProviderIssueReport })
         {
-            Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work" }, BenchmarkReportChartPlacement.KeysAt(audience, results, chat));
+            Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc5-availability" }, BenchmarkReportChartPlacement.KeysAt(audience, results, chat));
             Assert.Equal(new[] { "cc4-timeline" }, BenchmarkReportChartPlacement.KeysAt(audience, events, chat));
         }
         Assert.Equal(results, BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, "cc4-timeline", chat));
+
+        // No legacy chart set holds the provider availability figure.
+        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief, BenchmarkReportAudience.ProviderIssueReport })
+        {
+            Assert.Null(BenchmarkReportChartPlacement.AnchorOf(audience, "cc5-availability", chat, legacy: true));
+        }
 
         // Without one, the legacy per-audience placement.
         Assert.Equal(new[] { "cc1-quality", "cc2-speed" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, results, chat, legacy: true));
@@ -3227,5 +3253,246 @@ public class BenchmarkReportPackRendererTests
 
         Assert.Single(AllIndexesOf(text, MarkerOf("cc1-quality")));
         Assert.Contains("- **Control models:** none\n", text);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Provider availability (format version 12; comparison format version 13)
+    // ---------------------------------------------------------------------------------------------
+
+    private const string AvailabilityBullet = "- **Provider availability:** 0.81 % of attempts failed at the provider "
+        + "(12 of 1,480 attempts; 95 % CI 0.46–1.4 %), plus 3 re-runs (2 for provider errors).\n";
+
+    /// <summary><see cref="Document"/> with the subject's <c>availability.*</c> facts of <paramref name="summary"/>, as a sheet of format version 12 carries them.</summary>
+    private static BenchmarkReportDocument DocumentWithAvailability(BenchmarkReportAudience audience, ProviderAvailabilitySummary summary)
+    {
+        var document = Document(audience);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        var availability = new BenchmarkReportFacts.FactList();
+        BenchmarkReportFacts.AddAvailabilityFacts(availability, summary);
+        sheet.Facts = sheet.Facts.Concat(availability.Sorted()).OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+        return document;
+    }
+
+    private static string RenderAvailability(BenchmarkReportAudience audience, ProviderAvailabilitySummary summary)
+        => BenchmarkReportPackRenderer.Render(DocumentWithAvailability(audience, summary),
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport)]
+    [InlineData(BenchmarkReportAudience.InternalBrief)]
+    public void KeyFigures_StateProviderAvailability_AsTheirFifthBullet(BenchmarkReportAudience audience)
+    {
+        string text = RenderAvailability(audience, BenchmarkReportFactsTests.RecordedAvailability());
+
+        Assert.Contains("- **Critical errors:** 1 of 4 answers.\n" + AvailabilityBullet + "\n", text);
+        Assert.Single(AllIndexesOf(text, "- **Provider availability:**"));
+        Assert.DoesNotContain("throttl", text, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TheInternalBriefsModelResult_StatesTheIntervalSpan_ThenItsProviderAvailability_AfterItsKeyFigures()
+    {
+        string text = RenderAvailability(BenchmarkReportAudience.InternalBrief, BenchmarkReportFactsTests.RecordedAvailability());
+
+        Assert.Contains("- **Critical errors:** 1 of 4 answers.\n" + AvailabilityBullet + "\n"
+            + "The 95 % interval is 77–83, a span of 6 points, and rests on 4 of 4 questions with a scored answer.\n\n"
+            + "### Provider availability\n\n| Class | Count | Share of valid attempts |\n", text);
+        AssertInOrder(
+            text.IndexOf("## 3. The model's result", StringComparison.Ordinal),
+            text.IndexOf("### Provider availability", StringComparison.Ordinal),
+            text.IndexOf("### Strengths", StringComparison.Ordinal),
+            text.IndexOf("## 4. Leads", StringComparison.Ordinal));
+        Assert.DoesNotContain("## 7.", text);
+    }
+
+    [Fact]
+    public void TheResearcherReport_PrintsTheProviderAvailabilitySubsection_WithItsTableAndFootnote_AfterItsKeyFigures()
+    {
+        string text = RenderAvailability(BenchmarkReportAudience.TechnicalReport, BenchmarkReportFactsTests.RecordedAvailability());
+
+        Assert.Contains(AvailabilityBullet + "\n### Provider availability\n\n"
+            + "| Class | Count | Share of valid attempts |\n"
+            + "|---|---|---|\n"
+            + "| Provider overloaded (HTTP 503 and 529) | 7 | 0.47 % |\n"
+            + "| Provider server errors (HTTP 5xx) | 4 | 0.27 % |\n"
+            + "| Provider timeouts | 0 | 0 % |\n"
+            + "| Provider stream failures | 1 | 0.068 % |\n"
+            + "| Provider errors, total | 12 | 0.81 % |\n"
+            + "| Rate limited, unattributed (HTTP 429) | 1 | 0.068 % |\n"
+            + "| Transport failures, unattributed | 2 | 0.14 % |\n"
+            + "| Unattributed errors, total | 3 | 0.20 % |\n"
+            + "| Rate limited by our own limits (HTTP 429, excluded) | 2 | excluded |\n"
+            + "| Our-side failures (excluded) | 5 | excluded |\n\n"
+            + "*Valid attempts: 1,480 attempts of the model under test, the denominator of every share. Provider errors are", text);
+        Assert.Contains("These are provider errors observed in GnollBench runs, counted over every pass of every run and every run they replaced.*\n\n"
+            + "- **Upper bound including unattributed errors:** 1.0 % (95 % CI 0.60–1.7 %)\n"
+            + "- **Questions lost to provider errors:** 1 question\n"
+            + "- **Re-runs needed:** 3 re-runs (2 for provider errors), including 1 replaced run\n\n"
+            + "## Setup and method\n", text);
+    }
+
+    [Fact]
+    public void TheResearcherReportsThreats_NameTheUnattributedErrorsAndTheReruns()
+    {
+        string text = RenderAvailability(BenchmarkReportAudience.TechnicalReport, BenchmarkReportFactsTests.RecordedAvailability());
+
+        Assert.Contains("- Provider availability: 3 errors could not be attributed to the provider or to Overseer; the upper bound "
+            + "including them is 1.0 % (95 % CI 0.60–1.7 %).\n", text);
+        Assert.Contains("- Provider availability: 3 re-runs (2 for provider errors) were needed before the benchmarking was complete; "
+            + "the attempts of every pass and of every replaced run are counted.\n", text);
+        AssertInOrder(
+            text.IndexOf("## Threats to validity", StringComparison.Ordinal),
+            text.IndexOf("- Provider availability: 3 errors", StringComparison.Ordinal),
+            text.IndexOf("## Reproducibility appendix", StringComparison.Ordinal));
+
+        string quiet = RenderAvailability(BenchmarkReportAudience.TechnicalReport,
+            BenchmarkReportFactsTests.RecordedAvailability() with { UnattributedErrors = 0, RerunsNeeded = 0, ProviderRerunsNeeded = 0 });
+        Assert.DoesNotContain("- Provider availability:", quiet);
+    }
+
+    [Fact]
+    public void TheExecutiveSummary_HasTheBulletOnly()
+    {
+        string text = RenderAvailability(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportFactsTests.RecordedAvailability());
+
+        Assert.Contains(AvailabilityBullet, text);
+        Assert.DoesNotContain("### Provider availability", text);
+        Assert.DoesNotContain("| Class | Count |", text);
+        Assert.DoesNotContain("could not be attributed", text);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport)]
+    [InlineData(BenchmarkReportAudience.InternalBrief)]
+    public void ALegacyRun_RendersItsProviderAvailability_AsNotRecorded(BenchmarkReportAudience audience)
+    {
+        string text = RenderAvailability(audience, ProviderAvailabilitySummary.NotRecorded(1));
+
+        Assert.Contains("- **Critical errors:** 1 of 4 answers.\n- **Provider availability:** not recorded before harness 56.\n", text);
+        Assert.DoesNotContain("| Class | Count |", text);
+        if (audience == BenchmarkReportAudience.ExecutiveSummary)
+        {
+            Assert.DoesNotContain("### Provider availability", text);
+            return;
+        }
+
+        Assert.Contains("### Provider availability\n\nProvider availability was not recorded before harness 56: these runs kept no record of "
+            + "their API attempts, so provider errors cannot be told apart from failures on Overseer's side.\n", text);
+        if (audience == BenchmarkReportAudience.TechnicalReport)
+        {
+            Assert.Contains("- Provider availability: not recorded before harness 56, so provider errors cannot be separated from failures on Overseer's side.\n", text);
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Combinations))]
+    public void ADocumentStoredUnderFormat11_RendersWithoutAnyProviderAvailabilityBlock(
+        BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming, string file)
+    {
+        var document = Document(audience);
+        document.ReportFormatVersion = 11;
+
+        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming });
+
+        Assert.DoesNotContain("Provider availability", text);
+        Assert.DoesNotContain("provider errors observed", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("generated under format version 11 · rendered with format version 12", text);
+        Assert.NotEmpty(file);
+    }
+
+    /// <summary>
+    /// The fixture comparison's document with provider availability for every model: the recorded pool
+    /// of <see cref="BenchmarkReportFactsTests.RecordedAvailability"/>, and Zeta Prime (Model E) not recorded.
+    /// </summary>
+    private static BenchmarkReportDocument ComparisonDocumentWithAvailability(BenchmarkReportAudience audience)
+    {
+        var comparison = FiveModelComparison();
+        var runs = FiveModelRuns();
+        var keys = BenchmarkComparisonReportFacts.DefaultCoveredKeys(comparison);
+        var (reference, allPairs, unavailable) = BenchmarkComparisonReportFacts.PairedFromRuns(comparison, keys, runs);
+        var availability = keys.ToDictionary(
+            k => k,
+            k => k == "run:35" ? ProviderAvailabilitySummary.NotRecorded(1) : BenchmarkReportFactsTests.RecordedAvailability());
+        var built = BenchmarkComparisonReportFacts.BuildFromRuns(
+            comparison, keys, runs, 120, reference, allPairs, unavailable, ComparisonNumber, availability);
+
+        var document = ComparisonDocument(audience);
+        document.FactsJson = BenchmarkReportJson.Serialize(built.Sheet!);
+        document.ContentJson = BenchmarkReportJson.Serialize(built.Content);
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(ComparisonWriter(audience, built.Sheet!));
+        return document;
+    }
+
+    [Fact]
+    public void AComparisonResultsTable_GainsTheProviderErrorsColumn_OnlyWhenTheSheetCarriesTheFacts()
+    {
+        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Anonymized };
+        string text = BenchmarkReportPackRenderer.Render(ComparisonDocumentWithAvailability(BenchmarkReportAudience.TechnicalReport), options);
+
+        Assert.Contains("| Model | Intelligence Index | 95 % interval | Rank | Median answer time | Speed rank | Cost per question | Cost rank | Critical errors | Provider errors |\n"
+            + "|---|---|---|---|---|---|---|---|---|---|\n", text);
+        Assert.Equal(4, AllIndexesOf(text, " | 0.81 % (12/1,480) |\n").Count);
+        Assert.Contains(" | not recorded |\n", text);
+
+        string without = RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+        Assert.Contains("| Model | Intelligence Index | 95 % interval | Rank | Median answer time | Speed rank | Cost per question | Cost rank | Critical errors |\n", without);
+        Assert.DoesNotContain("Provider errors", without);
+        Assert.DoesNotContain("Provider availability", without);
+    }
+
+    [Fact]
+    public void AComparisonResearcherReport_PrintsThePerModelAvailabilityTable_AndItsThreats()
+    {
+        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Anonymized };
+        string text = BenchmarkReportPackRenderer.Render(ComparisonDocumentWithAvailability(BenchmarkReportAudience.TechnicalReport), options);
+
+        Assert.Contains("### Provider availability\n\n"
+            + "| Model | Valid attempts | Provider errors | Provider error rate | Unattributed errors | Re-runs needed |\n"
+            + "|---|---|---|---|---|---|\n"
+            + "| Model A | 1,480 | 12 | 0.81 % (95 % CI 0.46–1.4 %) | 3 | 3 re-runs (2 for provider errors) |\n", text);
+        Assert.Contains("| Model E | not recorded before harness 56 | — | — | — | — |\n", text);
+        AssertInOrder(
+            text.IndexOf("## Results\n", StringComparison.Ordinal),
+            text.IndexOf("### Paired tests\n", StringComparison.Ordinal),
+            text.IndexOf("### Provider availability\n", StringComparison.Ordinal),
+            text.IndexOf("## Dimension profiles\n", StringComparison.Ordinal));
+
+        Assert.Contains("- Provider availability of Model A: 3 errors could not be attributed to the provider or to Overseer; "
+            + "the upper bound including them is 1.0 %.\n", text);
+        Assert.Contains("- Provider availability of Model E: not recorded before harness 56, so provider errors cannot be separated "
+            + "from failures on Overseer's side.\n", text);
+
+        string executive = BenchmarkReportPackRenderer.Render(ComparisonDocumentWithAvailability(BenchmarkReportAudience.ExecutiveSummary),
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Anonymized });
+        Assert.DoesNotContain("Provider availability", executive);
+        Assert.DoesNotContain("Provider errors", executive);
+    }
+
+    [Fact]
+    public void AComparisonDocument_DrawsFigureA1_InTheResearcherReportAndTheBrief_NotTheExecutiveSummary()
+    {
+        var a1 = Charts(BenchmarkReportChartPlacement.AvailabilityKey);
+
+        string technical = RenderWithCharts(ComparisonDocumentWithAvailability(BenchmarkReportAudience.TechnicalReport),
+            BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, a1);
+        AssertInOrder(
+            technical.IndexOf("### Provider availability\n", StringComparison.Ordinal),
+            technical.IndexOf("\n\n" + MarkerOf("a1-availability") + "\n\n", StringComparison.Ordinal),
+            technical.IndexOf("## Dimension profiles\n", StringComparison.Ordinal));
+        Assert.Single(AllIndexesOf(technical, MarkerOf("a1-availability")));
+
+        string brief = RenderWithCharts(ComparisonDocumentWithAvailability(BenchmarkReportAudience.InternalBrief),
+            BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, a1);
+        AssertInOrder(
+            brief.IndexOf("## Models compared\n", StringComparison.Ordinal),
+            brief.IndexOf(MarkerOf("a1-availability"), StringComparison.Ordinal),
+            brief.IndexOf("## 1. Shared gaps\n", StringComparison.Ordinal));
+
+        string executive = RenderWithCharts(ComparisonDocumentWithAvailability(BenchmarkReportAudience.ExecutiveSummary),
+            BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, a1);
+        Assert.DoesNotContain(MarkerOf("a1-availability"), executive);
     }
 }

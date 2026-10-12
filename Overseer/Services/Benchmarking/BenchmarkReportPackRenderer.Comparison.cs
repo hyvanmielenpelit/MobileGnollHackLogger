@@ -138,6 +138,8 @@ public static partial class BenchmarkReportPackRenderer
         Figures(sb, ctx, BenchmarkReportChartAnchor.ComparisonResults);
         Slot(sb, ctx, BenchmarkReportSlots.Results);
         PairedTestsSection(sb, ctx, "### Paired tests");
+        ComparisonAvailabilityTable(sb, ctx);
+        Figures(sb, ctx, BenchmarkReportChartAnchor.ProviderAvailability);
 
         Heading(sb, "## Dimension profiles");
         DimensionsTable(sb, ctx);
@@ -338,14 +340,20 @@ public static partial class BenchmarkReportPackRenderer
         if (spreads.Count > 0) Line(sb);
     }
 
+    /// <summary>
+    /// Every covered model's results: the Intelligence Index with its interval and joint rank, speed and
+    /// cost with their ranks, critical errors and, on a sheet that carries the availability facts, provider errors.
+    /// </summary>
     private static void ResultsTable(StringBuilder sb, Context ctx)
     {
+        bool availability = HasComparisonAvailability(ctx);
         var header = ModelColumns(ctx);
         header.AddRange(new[]
         {
             Label("quality.index"), Label("quality.interval"), "Rank", Label("speed.modelTimeP50"), "Speed rank",
             Label("cost.perQuestion"), "Cost rank", Label("errors.critical")
         });
+        if (availability) header.Add(Label("availability.providerErrors"));
         TableHeaderOf(sb, header);
 
         foreach (var (entry, peer) in ComparisonRows(ctx))
@@ -360,6 +368,7 @@ public static partial class BenchmarkReportPackRenderer
                 index, interval, QualityRankCell(ctx, entry), TimeCell(entry), RankCell(entry.SpeedRank),
                 CostCell(entry), RankCell(entry.CostRank), CriticalErrorsCell(ctx, entry, peer)
             });
+            if (availability) cells.Add(ProviderErrorsCell(entry));
             Line(sb, "| " + string.Join(" | ", cells) + " |");
         }
         Line(sb);
@@ -908,6 +917,13 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "- Composite: each Overall Index weights the suites under the battery's scheme; another scheme gives another figure.");
             Line(sb, "- Detail: the writer was given the full text of " + DetailQuestionsText(ctx) + ", and the other questions as matrix rows.");
         }
+        foreach (var peer in OrderedPeers(ctx.Sheet))
+        {
+            foreach (string threat in AvailabilityThreats(ctx, BenchmarkComparisonReportFacts.ModelPrefix(peer.Letter)))
+            {
+                Line(sb, "- Provider availability of " + ProseName(ctx, peer) + ": " + threat);
+            }
+        }
         if (ComparisonWriterCaveat(ctx) is string caveat)
         {
             Line(sb, "- " + caveat);
@@ -1217,6 +1233,71 @@ public static partial class BenchmarkReportPackRenderer
     {
         Line(sb, "| " + string.Join(" | ", columns) + " |");
         Line(sb, "|" + string.Concat(columns.Select(_ => "---|")));
+    }
+
+    /// <summary>Whether the sheet carries any covered model's provider availability facts (format version 13 and later).</summary>
+    private static bool HasComparisonAvailability(Context ctx)
+        => OrderedPeers(ctx.Sheet).Any(p => Fact(ctx, ModelKey(p.Letter, "availability.attempts")) != null);
+
+    /// <summary>
+    /// A model's provider errors in the results table: <c>0.81 % (12/1,480)</c>, <c>not recorded</c>, or
+    /// <c>not available</c> for an entry whose availability was not computed.
+    /// </summary>
+    private static string ProviderErrorsCell(BenchmarkReportEntryFigures entry)
+    {
+        if (entry.ProviderAvailabilityRecorded is not bool recorded) return BenchmarkReportFacts.NotAvailable;
+        if (!recorded) return "not recorded";
+        if (entry.ProviderErrorRate is not double rate || entry.ProviderAttempts is not int attempts) return "no valid attempts";
+
+        return BenchmarkProviderAvailability.FormatPercent(rate)
+            + " (" + BenchmarkReportFacts.Thousands(entry.ProviderErrors ?? 0) + "/" + BenchmarkReportFacts.Thousands(attempts) + ")";
+    }
+
+    /// <summary>
+    /// The Report for AI Researchers and Developers' per-model provider availability: valid attempts,
+    /// provider errors, the rate with its interval, unattributed errors and re-runs needed, with the
+    /// footnote defining the classes and the denominator; nothing on a sheet without the availability facts.
+    /// </summary>
+    private static void ComparisonAvailabilityTable(StringBuilder sb, Context ctx)
+    {
+        if (!HasComparisonAvailability(ctx)) return;
+
+        Heading(sb, "### Provider availability");
+        var header = ModelColumns(ctx);
+        header.AddRange(new[]
+        {
+            Label("availability.attempts"), Label("availability.providerErrors"), Label("availability.providerErrorRate"),
+            Label("availability.unattributedErrors"), Label("availability.reruns")
+        });
+        TableHeaderOf(sb, header);
+
+        foreach (var peer in OrderedPeers(ctx.Sheet))
+        {
+            string prefix = BenchmarkComparisonReportFacts.ModelPrefix(peer.Letter);
+            var cells = ModelCells(ctx, peer);
+            var attempts = Fact(ctx, prefix + "availability.attempts");
+            if (attempts is not { Available: true })
+            {
+                cells.AddRange(new[] { Cell(attempts == null ? BenchmarkReportFacts.NotAvailable : NotRecordedText(attempts)), NoValue, NoValue, NoValue, NoValue });
+                Line(sb, "| " + string.Join(" | ", cells) + " |");
+                continue;
+            }
+
+            string Count(string key) => NumberOf(Fact(ctx, prefix + key)) is double count ? BenchmarkReportFacts.Thousands((long)count) : NoValue;
+            string rate = Fact(ctx, prefix + "availability.providerErrorRate") is { Available: true } r
+                ? r.Display + (AvailabilityInterval(ctx, prefix + "availability.providerErrorRate") is { Length: > 0 } interval ? " (" + interval + ")" : string.Empty)
+                : NoValue;
+            cells.AddRange(new[]
+            {
+                Count("availability.attempts"), Count("availability.providerErrors"), Cell(rate),
+                Count("availability.unattributedErrors"), Cell(AvailabilityRerunsText(ctx, prefix))
+            });
+            Line(sb, "| " + string.Join(" | ", cells) + " |");
+        }
+        Line(sb);
+        Line(sb, "*Valid attempts: each model's API attempts except our-side failures, the denominator of its provider error rate, "
+            + "whose interval is a cluster-adjusted Wilson 95 % interval. " + AvailabilityFootnoteClasses + "*");
+        Line(sb);
     }
 
     private static string TimeCell(BenchmarkReportEntryFigures entry)

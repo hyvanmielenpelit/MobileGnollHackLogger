@@ -928,6 +928,33 @@ public sealed class BenchmarkReportEntryFigures
     /// <summary>The latest completion time of the entry's runs (the start time of a run that recorded none), UTC.</summary>
     public DateTime? LastRunUtc { get; set; }
 
+    /// <summary>
+    /// Whether any run of the entry's pool (its runs and their lineage predecessors) records provider
+    /// availability. Null on a document stored before format version 12 and on an entry whose
+    /// availability was not computed; the availability fields below are null then, and when false.
+    /// </summary>
+    public bool? ProviderAvailabilityRecorded { get; set; }
+
+    /// <summary>The candidate's valid attempts: the denominator of <see cref="ProviderErrorRate"/>.</summary>
+    public int? ProviderAttempts { get; set; }
+
+    /// <summary>Provider-class attempts: overloaded, server error, timeout and stream failure.</summary>
+    public int? ProviderErrors { get; set; }
+
+    /// <summary>Provider errors ÷ valid attempts, a proportion; null without a valid attempt.</summary>
+    public double? ProviderErrorRate { get; set; }
+
+    /// <summary>The cluster-adjusted Wilson 95 % interval of <see cref="ProviderErrorRate"/>.</summary>
+    public double? ProviderErrorRateLow { get; set; }
+    public double? ProviderErrorRateHigh { get; set; }
+
+    /// <summary>Attempts that could not be attributed to the provider or to Overseer.</summary>
+    public int? ProviderUnattributedErrors { get; set; }
+
+    /// <summary>Repair passes plus replacement runs, and the part of them caused by provider errors.</summary>
+    public int? RerunsNeeded { get; set; }
+    public int? ProviderRerunsNeeded { get; set; }
+
     /// <summary>Additional per-entry figures (dimensions, bands, tools), sorted by key.</summary>
     public List<BenchmarkReportFact> Extra { get; set; } = new();
 }

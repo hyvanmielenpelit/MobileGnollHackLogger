@@ -296,8 +296,14 @@ public class BenchmarkModelBatchMemberResultDto
     /// <summary>Answers that did not end Ok.</summary>
     public int FailedAnswers { get; set; }
 
-    /// <summary>Answers that ended with a provider error.</summary>
-    public int ProviderErrors { get; set; }
+    /// <summary>
+    /// Candidate attempts that failed at the provider, from the rollup columns of the member's completed
+    /// runs and their lineage predecessors; null when none of them records the provider ledger.
+    /// </summary>
+    public int? ProviderErrors { get; set; }
+
+    /// <summary>Repair passes plus replacement runs over the same runs; null under the same condition as <see cref="ProviderErrors"/>.</summary>
+    public int? RerunsNeeded { get; set; }
 
     /// <summary>Candidate call attempts beyond the first, summed.</summary>
     public int Retries { get; set; }

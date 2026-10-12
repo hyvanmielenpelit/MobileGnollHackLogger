@@ -6,6 +6,7 @@
  */
 
 import { formatThinkingLevel } from '../../../utils/model-badge-format.util';
+import { NOT_RECORDED_TEXT, formatCount, formatPercent, formatReruns } from '../shared/provider-availability/provider-availability';
 import {
   NO_VALUE,
   ccNumber,
@@ -151,25 +152,36 @@ export function ccEndpointStatus(endpoint: CcEndpointResult): CcEndpointStatus {
   return statusOf(endpoint.computed, endpoint.verdict, endpoint.direction === 'work');
 }
 
-/** The status word of an endpoint; a change in work per turn reads as the server's *More work* / *Less work*. */
+/**
+ * The status word of an endpoint; a change in work per turn reads as the server's *More work* / *Less
+ * work*, and one in provider error rate (P6) as *More provider errors* / *Fewer provider errors*.
+ */
 export function ccEndpointStatusText(endpoint: CcEndpointResult): string {
   const status = ccEndpointStatus(endpoint);
   if (status === 'changed' && endpoint.direction === 'work') return verdictText(endpoint.verdict, endpoint.verdictLabel);
+  if ((status === 'changed' || status === 'improved') && verdictOfLabel(endpoint.verdictLabel)?.named) {
+    return verdictText(endpoint.verdict, endpoint.verdictLabel);
+  }
   return CC_ENDPOINT_STATUS_TEXT[status];
 }
 
-/** The server's verdict labels (`ChatConsistencyAnalysisService.VerdictLabel`), read back as a verdict. */
-const VERDICT_OF_LABEL: Readonly<Record<string, { verdict: CcVerdict; work: boolean }>> = Object.freeze({
+/**
+ * The server's verdict labels (`ChatConsistencyAnalysisService.VerdictLabel`), read back as a verdict;
+ * `named` marks a label that names the change itself.
+ */
+const VERDICT_OF_LABEL: Readonly<Record<string, { verdict: CcVerdict; work: boolean; named?: boolean }>> = Object.freeze({
   'degraded': { verdict: 'changedDegraded', work: false },
   'improved': { verdict: 'changedImproved', work: false },
-  'more work': { verdict: 'changedDegraded', work: true },
-  'less work': { verdict: 'changedImproved', work: true },
+  'more work': { verdict: 'changedDegraded', work: true, named: true },
+  'less work': { verdict: 'changedImproved', work: true, named: true },
+  'more provider errors': { verdict: 'changedDegraded', work: false, named: true },
+  'fewer provider errors': { verdict: 'changedImproved', work: false, named: true },
   'changed, negligible': { verdict: 'changedNegligible', work: false },
   'equivalent': { verdict: 'equivalent', work: false },
   'inconclusive': { verdict: 'inconclusive', work: false }
 });
 
-function verdictOfLabel(label: string | null | undefined): { verdict: CcVerdict; work: boolean } | null {
+function verdictOfLabel(label: string | null | undefined): { verdict: CcVerdict; work: boolean; named?: boolean } | null {
   return VERDICT_OF_LABEL[(label ?? '').trim().toLowerCase()] ?? null;
 }
 
@@ -179,10 +191,12 @@ export function ccEndpointBriefStatus(endpoint: CcEndpointBrief): CcEndpointStat
   return statusOf(endpoint.computed, read?.verdict ?? null, read?.work ?? false);
 }
 
-/** The status word of a summary endpoint; a change in work per turn reads as *More work* / *Less work*. */
+/** The status word of a summary endpoint; a change in work per turn or provider error rate reads as the server names it. */
 export function ccEndpointBriefStatusText(endpoint: CcEndpointBrief): string {
   const status = ccEndpointBriefStatus(endpoint);
-  if (status === 'changed' && verdictOfLabel(endpoint.verdictLabel)?.work) return verdictText(null, endpoint.verdictLabel);
+  if ((status === 'changed' || status === 'improved') && verdictOfLabel(endpoint.verdictLabel)?.named) {
+    return verdictText(null, endpoint.verdictLabel);
+  }
   return CC_ENDPOINT_STATUS_TEXT[status];
 }
 
@@ -608,7 +622,7 @@ export function ccNextRunActionCount(groups: readonly CcNextRunGroup[]): number 
 
 // --- Key figures ---
 
-export type CcResultKeyFigureKey = 'decided' | 'baseline' | 'comparison' | 'pairedItems' | 'nextRuns';
+export type CcResultKeyFigureKey = 'decided' | 'baseline' | 'comparison' | 'pairedItems' | 'providerErrors' | 'nextRuns';
 
 /** One key figure card. */
 export interface CcResultKeyFigure {
@@ -634,10 +648,70 @@ function periodFigure(result: CcAnalysisResult, period: 'baseline' | 'comparison
   return { key: period, label, value: plural(summary.runCount, 'run'), sub: days, note };
 }
 
+/** One period's provider attempts, from its levels or, without them, from P6's counts. */
+interface PeriodAttempts {
+  recorded: boolean;
+  valid: number;
+  provider: number;
+  reruns: number;
+  providerReruns: number;
+}
+
+function periodAttempts(result: CcAnalysisResult, period: 'baseline' | 'comparison'): PeriodAttempts | null {
+  const levels = result.periodLevels?.find(entry => entry.period === period);
+  if (levels && levels.availabilityRecorded !== null && levels.availabilityRecorded !== undefined) {
+    return {
+      recorded: levels.availabilityRecorded,
+      valid: levels.validAttemptCount ?? 0,
+      provider: levels.providerErrorCount ?? 0,
+      reruns: levels.rerunsNeeded ?? 0,
+      providerReruns: levels.providerRerunsNeeded ?? 0
+    };
+  }
+  const counts = result.endpoints.find(endpoint => endpoint.id === 'P6')?.availability;
+  if (!counts) return null;
+  const valid = period === 'baseline' ? counts.baselineValidAttempts : counts.comparisonValidAttempts;
+  return {
+    recorded: valid > 0,
+    valid,
+    provider: period === 'baseline' ? counts.baselineProviderErrors : counts.comparisonProviderErrors,
+    reruns: 0,
+    providerReruns: 0
+  };
+}
+
+/**
+ * The *Provider errors* card of a Protocol V2 result: the baseline's rate against the comparison's, each
+ * with its count, and the re-runs; *Not recorded* when no unit of a period recorded provider attempts.
+ * Null under Protocol V1, which has no P6 and no period availability.
+ */
+function providerErrorsFigure(result: CcAnalysisResult): CcResultKeyFigure | null {
+  const p6 = result.endpoints.find(endpoint => endpoint.id === 'P6');
+  const baseline = periodAttempts(result, 'baseline');
+  const comparison = periodAttempts(result, 'comparison');
+  if (!p6 && !baseline && !comparison) return null;
+  const label = 'Provider errors';
+  if (!baseline?.recorded || !comparison?.recorded) {
+    return { key: 'providerErrors', label, value: NOT_RECORDED_TEXT, note: 'Provider attempts are recorded from harness 56' };
+  }
+  const rate = (attempts: PeriodAttempts) => (attempts.valid > 0 ? formatPercent(attempts.provider / attempts.valid) : NO_VALUE);
+  const reruns = baseline.reruns + comparison.reruns > 0
+    ? `Re-runs: baseline ${formatReruns(baseline.reruns, baseline.providerReruns)} · `
+      + `comparison ${formatReruns(comparison.reruns, comparison.providerReruns)}`
+    : 'No re-runs';
+  return {
+    key: 'providerErrors',
+    label,
+    value: `${rate(baseline)} → ${rate(comparison)}`,
+    sub: `Baseline ${formatCount(baseline.provider, baseline.valid)} · Comparison ${formatCount(comparison.provider, comparison.valid)}`,
+    note: reruns
+  };
+}
+
 /**
  * The key figure cards, in order: the endpoints decided, the two periods, the paired items (only while
- * a paired endpoint is computed) and the next runs. *Next runs* counts the runs and re-grades the cards
- * ask for, with the count of each kind.
+ * a paired endpoint is computed), the provider errors (Protocol V2) and the next runs. *Next runs*
+ * counts the runs and re-grades the cards ask for, with the count of each kind.
  */
 export function ccResultKeyFigures(result: CcAnalysisResult): CcResultKeyFigure[] {
   const endpoints = result.endpoints;
@@ -660,6 +734,9 @@ export function ccResultKeyFigures(result: CcAnalysisResult): CcResultKeyFigure[
   if (paired.length > 0) {
     figures.push({ key: 'pairedItems', label: 'Paired items', value: formatInteger(Math.max(...paired)), note: 'Items answered in both periods' });
   }
+
+  const providerErrors = providerErrorsFigure(result);
+  if (providerErrors) figures.push(providerErrors);
 
   const groups = ccNextRunGroups(result, []);
   if (groups.length === 0) {

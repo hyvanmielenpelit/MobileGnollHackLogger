@@ -64,8 +64,9 @@ export const CC_REPORT_CHART_PICKER_AUDIENCES: readonly ReportChartPickerAudienc
 export type CcReportChartAnchor = 'Results' | 'Events';
 
 /**
- * Where a figure lands: every figure after the verdict table, but the overview after the events
- * table, except in the Executive Summary, which has no events table. Mirrors the server's anchors.
+ * Where a figure lands: every figure, provider availability included, after the verdict table, but the
+ * overview after the events table, except in the Executive Summary, which has no events table. Mirrors
+ * the server's anchors.
  */
 export function ccReportChartAnchor(audience: BenchmarkReportAudience, key: CcReportFigureKey): CcReportChartAnchor {
   return key === 'cc4-timeline' && audience !== ExecutiveSummary ? 'Events' : 'Results';
@@ -93,12 +94,14 @@ export const CC_DEFAULT_REPORT_CHART_SELECTION: CcReportChartSelection = Object.
 });
 
 /**
- * Half column for the three measures, so two in a row at one anchor share it; two thirds for the
- * overview; 8 pt labels; at most half the page tall; the print theme, no heading and no logo.
+ * Half column for the measures and provider availability, so two in a row at one anchor share it; two
+ * thirds for the overview; 8 pt labels; at most half the page tall; the print theme, no heading and no logo.
  */
 export const CC_DEFAULT_DOCUMENT_CHART_LAYOUT: CcDocumentChartLayout = Object.freeze({
   ...DEFAULT_DOCUMENT_CHART_LAYOUT,
-  widths: Object.freeze({ 'cc1-quality': 'half', 'cc2-speed': 'half', 'cc3-work': 'half', 'cc4-timeline': 'twoThirds' }),
+  widths: Object.freeze({
+    'cc1-quality': 'half', 'cc2-speed': 'half', 'cc3-work': 'half', 'cc4-timeline': 'twoThirds', 'cc5-availability': 'half'
+  }),
   sideBySide: true,
   labelPt: 8,
   maxHeightPercent: 50,
@@ -146,7 +149,7 @@ export function ccDefaultReportChartSettings(endpoints: readonly CcEndpointResul
     : Object.freeze({ selection, layout: CC_DEFAULT_REPORT_CHART_LAYOUT });
 }
 
-/** The four figures and four document types only, each figure once, in document order. */
+/** The five figures and four document types only, each figure once, in document order. */
 export function normalizeCcReportChartSelection(selection: unknown): CcReportChartSelection {
   return normalizePickerSelection(selection, CC_REPORT_FIGURE_KEYS, CC_REPORT_CHART_AUDIENCE_KEYS);
 }

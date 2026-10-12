@@ -299,6 +299,7 @@ builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkGroupAnalysis
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkBatteryAnalysisService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkBatteryLeaderboardService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkRunCostEstimator>();
+builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkProviderAvailabilityService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkModelComparisonService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComparisonIdentityService>();
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkComparabilityIndexService>();

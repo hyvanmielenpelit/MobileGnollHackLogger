@@ -1,21 +1,29 @@
 /**
- * What the browser can tell about an analysis before it is sent: each period's sample against Protocol
- * V1's published minimums, which primary endpoints can reach a verdict, and the notes the Analyze step's
- * preview lists. Pure and DOM-free. It never predicts a verdict, and of a grade only that it is at
+ * What the browser can tell about an analysis before it is sent: each period's sample against the
+ * protocol's published minimums, which primary endpoints can reach a verdict, and the notes the Analyze
+ * step's preview lists. Pure and DOM-free. It never predicts a verdict, and of a grade only that it is at
  * most Indicated or not computable: the server applies the protocol itself.
  */
 
 import { CcEventGroup } from './chat-consistency-events';
-import { axisText, plural } from './chat-consistency-format';
+import { axisText, formatInteger, plural } from './chat-consistency-format';
 import { CcPeriod, CcPeriodIds, CcPeriodUnit, CcUnitPeriod } from './chat-consistency-periods';
-import { CC_AXES, CcAxis, CcAxisEligibility, CcRunRow, CcTimelinePoint } from './chat-consistency.models';
+import {
+  CC_AXES,
+  CcAxis,
+  CcAxisEligibility,
+  CcProtocolVersion,
+  CcRunRow,
+  CcTimelinePoint
+} from './chat-consistency.models';
 
-/** One of Protocol V1's primary endpoints, as the client needs it. */
+/** One of a protocol's primary endpoints, as the client needs it. */
 export interface CcProtocolEndpoint {
   readonly id: string;
   readonly name: string;
   readonly margin: number;
-  readonly unit: 'index points' | '%';
+  /** `pp`: percentage points, P6's difference scale. */
+  readonly unit: 'index points' | '%' | 'pp';
   /** The measurement axis whose eligibility and segments the endpoint's runs need. */
   readonly axis: CcAxis;
   /** The effect is taken within the time strata both periods sampled. */
@@ -37,6 +45,15 @@ export const CC_PROTOCOL_V1_ENDPOINTS: readonly CcProtocolEndpoint[] = [
   { id: 'P5', name: 'Cost per question', margin: 10, unit: '%', axis: 'cost', stratified: false, legacyAxis: null }
 ];
 
+/**
+ * Protocol V2's primary endpoints (`ChatConsistencyProtocol.V2`): V1's and P6, provider error rate, a
+ * difference in percentage points stratified by the time strata of the attempts.
+ */
+export const CC_PROTOCOL_V2_ENDPOINTS: readonly CcProtocolEndpoint[] = [
+  ...CC_PROTOCOL_V1_ENDPOINTS,
+  { id: 'P6', name: 'Provider error rate', margin: 1, unit: 'pp', axis: 'availability', stratified: true, legacyAxis: null }
+];
+
 /** Protocol V1's α and minimum samples. */
 export const CC_PROTOCOL_V1 = Object.freeze({
   alpha: 0.05,
@@ -46,9 +63,24 @@ export const CC_PROTOCOL_V1 = Object.freeze({
   minimumSpeedRunsPerStratum: 3
 });
 
-/** `±3 index points`, `±15 %`. */
+/** Protocol V2's: V1's, and the valid attempts per period that make a time stratum common for P6. */
+export const CC_PROTOCOL_V2 = Object.freeze({
+  ...CC_PROTOCOL_V1,
+  minimumAttemptsPerStratum: 30
+});
+
+/** The primary endpoints of a protocol version; V1's for a missing or unknown version, as stored analyses before V2 are. */
+export function ccProtocolEndpoints(version: CcProtocolVersion | string | null | undefined): readonly CcProtocolEndpoint[] {
+  return (version ?? '').trim().toUpperCase() === 'V2' ? CC_PROTOCOL_V2_ENDPOINTS : CC_PROTOCOL_V1_ENDPOINTS;
+}
+
+/** `±3 index points`, `±15 %`, `±1.0 percentage point`. */
 export function ccMarginText(margin: number, unit: CcProtocolEndpoint['unit']): string {
-  return unit === '%' ? `±${margin} %` : `±${margin} ${unit}`;
+  if (unit === '%') return `±${margin} %`;
+  if (unit === 'pp') {
+    return `±${Number.isInteger(margin) ? margin.toFixed(1) : String(margin)} percentage ${margin === 1 ? 'point' : 'points'}`;
+  }
+  return `±${margin} ${unit}`;
 }
 
 function unitNoun(battery: boolean): string {
@@ -325,13 +357,61 @@ function stratifiedReadiness(
   return { status: 'belowMinimum', fact: `No common stratum has ${min} runs in each period: ${counts}.${proxy}` };
 }
 
+/** The unit recorded provider attempts: its battery run's aggregate, or any of its runs. */
+function unitAvailabilityRecorded(unit: CcPeriodUnit): boolean {
+  return unit.battery?.availabilityRecorded ?? unit.runs.some(run => run.availabilityRecorded === true);
+}
+
+/** The valid candidate attempts of the units. */
+function validAttempts(units: readonly CcPeriodUnit[]): number {
+  return units.reduce((sum, unit) => sum + (unit.battery
+    ? unit.battery.validAttemptCount ?? 0
+    : unit.runs.reduce((runs, run) => runs + (run.validAttemptCount ?? 0), 0)), 0);
+}
+
+/**
+ * P6's readiness: not computable while a period has no unit that recorded provider attempts (harness 56
+ * or later); otherwise the runs per common time stratum against the minimum, as P2 and P3, with the
+ * valid attempts of each period. Whether a stratum holds the protocol's minimum valid attempts in each
+ * period the analysis decides from the attempts' own start times, which the browser does not have.
+ */
+function availabilityReadiness(
+  baseline: readonly CcPeriodUnit[],
+  comparison: readonly CcPeriodUnit[],
+  points: ReadonlyMap<number, CcTimelinePoint>,
+  battery: boolean
+): Pick<CcEndpointReadiness, 'status' | 'fact'> {
+  const b = baseline.filter(unitAvailabilityRecorded);
+  const c = comparison.filter(unitAvailabilityRecorded);
+  if (b.length === 0 || c.length === 0) {
+    const where = b.length === 0 && c.length === 0 ? 'either period' : b.length === 0 ? 'the baseline' : 'the comparison';
+    return {
+      status: 'notComputed',
+      fact: `No ${unitNoun(battery)} in ${where} recorded provider attempts; they are recorded from harness 56.`
+    };
+  }
+  const attempts = `Valid attempts, baseline / comparison: ${formatInteger(validAttempts(b))} / ${formatInteger(validAttempts(c))}.`;
+  const bc = strataCounts(b, points);
+  const cc = strataCounts(c, points);
+  const common = [...bc.keys()].filter(stratum => cc.has(stratum)).sort();
+  if (common.length === 0) return { status: 'notComputed', fact: `The periods share no time stratum. ${attempts}` };
+  const min = CC_PROTOCOL_V2.minimumSpeedRunsPerStratum;
+  const counts = common.map(stratum => `${stratum}: ${bc.get(stratum)} / ${cc.get(stratum)}`).join(' · ');
+  const strataRule = `A stratum is common with ${CC_PROTOCOL_V2.minimumAttemptsPerStratum} valid attempts in each period.`;
+  if (common.some(stratum => (bc.get(stratum) ?? 0) >= min && (cc.get(stratum) ?? 0) >= min)) {
+    return { status: 'meets', fact: `Runs per common stratum, baseline / comparison: ${counts}. ${attempts} ${strataRule}` };
+  }
+  return { status: 'belowMinimum', fact: `No common stratum has ${min} runs in each period: ${counts}. ${attempts} ${strataRule}` };
+}
+
 /**
  * Each endpoint's readiness over the eligible units of the two periods: P1, P4 and P5 by the minimum
  * runs and days of the units eligible on their axis, below which they are at most Indicated; P2 and P3
- * by the runs per common time stratum, P2 falling back to its legacy proxy as the server does. P1 is
- * not computable where the periods share no quality measurement segment (a grading or scoring change)
- * and no re-grade by one assessor covers every run of both periods, unless pooling is on, which caps
- * it at Indicated. `points` are the timeline's run points by run id.
+ * by the runs per common time stratum, P2 falling back to its legacy proxy as the server does; P6, in a
+ * Protocol V2 list, by the units that recorded provider attempts. P1 is not computable where the periods
+ * share no quality measurement segment (a grading or scoring change) and no re-grade by one assessor
+ * covers every run of both periods, unless pooling is on, which caps it at Indicated. `endpoints` is the
+ * protocol's own list; `points` are the timeline's run points by run id.
  */
 export function ccEndpointReadiness(
   endpoints: readonly CcProtocolEndpoint[],
@@ -345,9 +425,11 @@ export function ccEndpointReadiness(
     id: endpoint.id,
     name: endpoint.name,
     marginText: ccMarginText(endpoint.margin, endpoint.unit),
-    ...(endpoint.stratified
-      ? stratifiedReadiness(endpoint, baseline, comparison, points, battery)
-      : plainReadiness(endpoint, baseline, comparison, battery, options))
+    ...(endpoint.axis === 'availability'
+      ? availabilityReadiness(baseline, comparison, points, battery)
+      : endpoint.stratified
+        ? stratifiedReadiness(endpoint, baseline, comparison, points, battery)
+        : plainReadiness(endpoint, baseline, comparison, battery, options))
   }));
 }
 
@@ -363,18 +445,24 @@ export interface CcSegmentNote {
   text: string;
 }
 
+/** The axes a protocol's endpoints read, their legacy proxies included, in {@link CC_AXES} order. */
+export function ccProtocolAxes(endpoints: readonly CcProtocolEndpoint[]): CcAxis[] {
+  return CC_AXES.filter(axis => endpoints.some(endpoint => endpoint.axis === axis || endpoint.legacyAxis === axis));
+}
+
 /**
- * The axes on which the runs of the two periods' eligible units carry more than one measurement
- * segment: refused unless pooling is on, which caps the grades at Indicated.
+ * The axes, of `axes` (by default every axis), on which the runs of the two periods' eligible units carry
+ * more than one measurement segment: refused unless pooling is on, which caps the grades at Indicated.
  */
 export function ccSegmentNotes(
   baseline: readonly CcPeriodUnit[],
   comparison: readonly CcPeriodUnit[],
-  relaxedPooling: boolean
+  relaxedPooling: boolean,
+  axes: readonly CcAxis[] = CC_AXES
 ): CcSegmentNote[] {
   const runs = [...baseline, ...comparison].flatMap(unit => unit.runs);
   const notes: CcSegmentNote[] = [];
-  for (const axis of CC_AXES) {
+  for (const axis of axes) {
     const segments = [...new Set(runs.flatMap(run => run.eligibility)
       .filter(entry => entry.axis === axis && entry.eligible && entry.segment !== null)
       .map(entry => entry.segment as number))].sort((a, b) => a - b);

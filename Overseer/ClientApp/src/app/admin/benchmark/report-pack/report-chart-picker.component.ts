@@ -23,6 +23,7 @@ import {
   normalizeChartLayoutSettings,
   normalizeChartSelection,
   normalizeDocumentChartLayout,
+  reportChartDrawn,
   reportChartPlacementLabel
 } from './report-charts';
 
@@ -74,7 +75,14 @@ export const REPORT_CHART_COLUMN_DISABLED_REASON = 'Not checked under Documents 
 
 /** The reason a figure cannot be drawn, when the host gives none. */
 export function defaultChartUnavailableReason(key: string): string {
-  return key === 'p2-profile' ? 'needs three or more models' : 'needs two or more models';
+  switch (key) {
+    case 'p2-profile':
+      return 'needs three or more models';
+    case 'a1-availability':
+      return 'needs two or more models, one with provider errors recorded';
+    default:
+      return 'needs two or more models';
+  }
 }
 
 /** One refused choice of a layout field, and why. */
@@ -394,15 +402,28 @@ export class ReportChartPickerComponent {
     return this.rows.filter(row => this.isChecked(column.audience, row)).length;
   }
 
-  drawableCount(): number {
-    return this.rows.filter(row => row.unavailableReason === null).length;
+  /** The figures the comparison can draw; given a document type, those it also places. */
+  drawableCount(column?: ReportChartPickerColumn): number {
+    return this.rows.filter(row => row.unavailableReason === null && (!column || this.isPlaced(column.audience, row.key))).length;
   }
 
   /** The segment's status for assistive technology: `, 2 of 7 charts`, or why it cannot be changed. */
   tabStatus(column: ReportChartPickerColumn): string {
     return column.enabled
-      ? `, ${this.selectedCount(column)} of ${this.drawableCount()} charts`
+      ? `, ${this.selectedCount(column)} of ${this.drawableCount(column)} charts`
       : `, ${statusPhrase(this.columnDisabledReason)}`;
+  }
+
+  /**
+   * Whether the document type places the figure at all. A Report Pack figure its scope does not place
+   * (A1 in a comparison-scope Executive Summary) is listed with its placement saying so, never offered
+   * or selected; a host's own figure always is.
+   */
+  isPlaced(audience: BenchmarkReportAudience, key: string): boolean {
+    if (this.figureList.find(figure => figure.key === key)?.placement !== undefined) {
+      return true;
+    }
+    return reportChartDrawn(audience, key as ReportChartFigureKey, this.scope);
   }
 
   placement(audience: BenchmarkReportAudience, key: string): string {
@@ -420,11 +441,11 @@ export class ReportChartPickerComponent {
 
   /** Checked when selected and drawable; a figure the comparison cannot draw reads unchecked. */
   isChecked(audience: BenchmarkReportAudience, row: ReportChartPickerRow): boolean {
-    return row.unavailableReason === null && (this.current[audience] ?? []).includes(row.key);
+    return row.unavailableReason === null && this.isPlaced(audience, row.key) && (this.current[audience] ?? []).includes(row.key);
   }
 
   isCellDisabled(column: ReportChartPickerColumn, row: ReportChartPickerRow): boolean {
-    return !column.enabled || row.unavailableReason !== null;
+    return !column.enabled || row.unavailableReason !== null || !this.isPlaced(column.audience, row.key);
   }
 
   /** `Include Intelligence in the Executive Summary`. */
@@ -485,7 +506,9 @@ export class ReportChartPickerComponent {
     if (!column.enabled) {
       return;
     }
-    this.commit(column.audience, this.rows.filter(row => row.unavailableReason === null).map(row => row.key));
+    this.commit(column.audience, this.rows
+      .filter(row => row.unavailableReason === null && this.isPlaced(column.audience, row.key))
+      .map(row => row.key));
   }
 
   /** None: no figure. */

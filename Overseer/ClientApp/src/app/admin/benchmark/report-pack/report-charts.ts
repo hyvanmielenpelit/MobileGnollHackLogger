@@ -21,9 +21,10 @@ import { CC_REPORT_FIGURE_KEYS, CcReportFigureKey } from '../chat-consistency-ta
  */
 
 export type ReportChartFigureKey =
-  'p1a-quality' | 'p1b-speed' | 'p1c-cost' | 'p2-profile' | 's1-quality-speed' | 's2-quality-cost' | 's3-speed-cost';
+  'p1a-quality' | 'p1b-speed' | 'p1c-cost' | 'p2-profile' | 's1-quality-speed' | 's2-quality-cost' | 's3-speed-cost'
+  | 'a1-availability';
 
-/** In placement order. */
+/** In placement order. A1 also needs a plotted model that records provider errors. */
 export const REPORT_CHART_FIGURES: readonly { readonly key: ReportChartFigureKey; readonly title: string; readonly minModels: number }[] = [
   { key: 'p1a-quality', title: 'Intelligence', minModels: 2 },
   { key: 'p1b-speed', title: 'Speed', minModels: 2 },
@@ -31,7 +32,8 @@ export const REPORT_CHART_FIGURES: readonly { readonly key: ReportChartFigureKey
   { key: 'p2-profile', title: 'Model profiles', minModels: 3 },
   { key: 's1-quality-speed', title: 'Intelligence against speed', minModels: 2 },
   { key: 's2-quality-cost', title: 'Intelligence against cost', minModels: 2 },
-  { key: 's3-speed-cost', title: 'Speed against cost', minModels: 2 }
+  { key: 's3-speed-cost', title: 'Speed against cost', minModels: 2 },
+  { key: 'a1-availability', title: 'Provider errors', minModels: 2 }
 ];
 
 const FIGURE_KEYS: ReadonlySet<string> = new Set<string>(REPORT_CHART_FIGURES.map(figure => figure.key));
@@ -65,17 +67,26 @@ export function isDocumentChartFigureKey(value: string): value is ReportChartFig
 /** A per-model document, or one that covers several entries of a comparison as equals. */
 export type ReportChartScope = 'model' | 'comparison';
 
-/** Per document type, the section each figure lands in. */
+/** Per document type, the section each figure lands in, or {@link REPORT_CHART_NOT_DRAWN}. */
 export type ReportChartPlacementTable =
   Readonly<Partial<Record<BenchmarkReportAudience, Readonly<Partial<Record<ReportChartFigureKey, string>>>>>>;
 
-function everyFigureIn(section: string): Readonly<Record<ReportChartFigureKey, string>> {
-  return Object.freeze(Object.fromEntries(REPORT_CHART_FIGURES.map(figure => [figure.key, section])) as Record<ReportChartFigureKey, string>);
+/** The placement of a figure a document type does not draw; the publisher leaves it out. */
+export const REPORT_CHART_NOT_DRAWN = 'Not drawn in this document type';
+
+/** Every figure in `section`, except A1, which lands in `availability`. */
+function everyFigureIn(section: string, availability: string = section): Readonly<Record<ReportChartFigureKey, string>> {
+  return Object.freeze(Object.fromEntries(REPORT_CHART_FIGURES.map(figure =>
+    [figure.key, figure.key === 'a1-availability' ? availability : section])) as Record<ReportChartFigureKey, string>);
 }
 
-/** Per-model documents; mirrors the server's placement table. */
+/**
+ * Per-model documents; mirrors the server's placement table. A1 is drawn in every document type at
+ * its own anchor: after the Key figures in the Executive Summary, after the Provider availability
+ * subsection in the other two.
+ */
 export const MODEL_SCOPE_CHART_PLACEMENTS: ReportChartPlacementTable = Object.freeze({
-  [BenchmarkReportAudience.ExecutiveSummary]: everyFigureIn('How it compares'),
+  [BenchmarkReportAudience.ExecutiveSummary]: everyFigureIn('How it compares', 'Key figures'),
   [BenchmarkReportAudience.TechnicalReport]: Object.freeze({
     'p1a-quality': 'Results against peers → Quality',
     'p1b-speed': 'Results against peers → Speed',
@@ -83,18 +94,19 @@ export const MODEL_SCOPE_CHART_PLACEMENTS: ReportChartPlacementTable = Object.fr
     'p2-profile': 'Results against peers',
     's1-quality-speed': 'Speed and cost',
     's2-quality-cost': 'Speed and cost',
-    's3-speed-cost': 'Speed and cost'
+    's3-speed-cost': 'Speed and cost',
+    'a1-availability': 'Key figures → Provider availability'
   }),
-  [BenchmarkReportAudience.InternalBrief]: everyFigureIn('§3 Key figures')
+  [BenchmarkReportAudience.InternalBrief]: everyFigureIn('§3 Key figures', '§3 Provider availability')
 });
 
 /**
  * Comparison-scope documents; mirrors the comparison-scope chart anchors per document type in the
  * server's `BenchmarkReportPackRenderer`. A document type or figure missing here takes its
- * model-scope section.
+ * model-scope section. The comparison-scope Executive Summary does not draw A1.
  */
 export const COMPARISON_SCOPE_CHART_PLACEMENTS: ReportChartPlacementTable = Object.freeze({
-  [BenchmarkReportAudience.ExecutiveSummary]: everyFigureIn('How they compare'),
+  [BenchmarkReportAudience.ExecutiveSummary]: everyFigureIn('How they compare', REPORT_CHART_NOT_DRAWN),
   [BenchmarkReportAudience.TechnicalReport]: Object.freeze({
     'p1a-quality': 'Results',
     'p1b-speed': 'Speed and cost frontier',
@@ -102,7 +114,8 @@ export const COMPARISON_SCOPE_CHART_PLACEMENTS: ReportChartPlacementTable = Obje
     'p2-profile': 'Dimension profiles',
     's1-quality-speed': 'Speed and cost frontier',
     's2-quality-cost': 'Speed and cost frontier',
-    's3-speed-cost': 'Speed and cost frontier'
+    's3-speed-cost': 'Speed and cost frontier',
+    'a1-availability': 'Results → Provider availability'
   }),
   [BenchmarkReportAudience.InternalBrief]: everyFigureIn('Models compared')
 });
@@ -123,6 +136,11 @@ export function reportChartPlacementLabel(
     return label;
   }
   return scope === 'model' ? '' : reportChartPlacementLabel(audience, key, 'model');
+}
+
+/** Whether a document type of `scope` draws the figure at all. */
+export function reportChartDrawn(audience: BenchmarkReportAudience, key: ReportChartFigureKey, scope: ReportChartScope = 'model'): boolean {
+  return reportChartPlacementLabel(audience, key, scope) !== REPORT_CHART_NOT_DRAWN;
 }
 
 // --- The figure selection ---
@@ -828,6 +846,11 @@ export class ReportChartPublisher {
     this.cancelRequested = false;
 
     const normalized = normalizeChartSelection(selection);
+    // A figure the target's document type does not draw is neither composed nor uploaded.
+    const figuresOf = (target: ReportChartTarget): readonly ReportChartFigureKey[] => {
+      const scope: ReportChartScope = reportChartCoveredKeys(target) ? 'comparison' : 'model';
+      return (normalized[target.audience] ?? []).filter(key => reportChartDrawn(target.audience, key, scope));
+    };
     const published: { documentId: number; chartCount: number; figureCount: number }[] = [];
     const failed: { documentId: number; message: string }[] = [];
     const skipped: number[] = [];
@@ -836,7 +859,7 @@ export class ReportChartPublisher {
 
     // One unit per image to compose and one per upload.
     const total = targets.reduce((sum, target) => {
-      const figures = normalized[target.audience]?.length ?? 0;
+      const figures = figuresOf(target).length;
       return figures === 0 ? sum : sum + figures * variantsFor(target).length + 1;
     }, 0);
     let done = 0;
@@ -850,7 +873,7 @@ export class ReportChartPublisher {
           canceled = true;
           break;
         }
-        const figures = normalized[target.audience] ?? [];
+        const figures = figuresOf(target);
         if (figures.length === 0) {
           skipped.push(target.documentId);
           continue;

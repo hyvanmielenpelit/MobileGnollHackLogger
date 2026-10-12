@@ -707,17 +707,20 @@ public class BenchmarkModelComparisonService
     private readonly ModelPricingService? _pricingService;
     private readonly ILogger<BenchmarkModelComparisonService>? _logger;
     private readonly BenchmarkBatteryLeaderboardService _leaderboard;
+    private readonly BenchmarkProviderAvailabilityService _availability;
 
     public BenchmarkModelComparisonService(
         ApplicationDbContext db,
         ILogger<BenchmarkModelComparisonService>? logger = null,
         ModelPricingService? pricingService = null,
-        BenchmarkBatteryLeaderboardService? leaderboard = null)
+        BenchmarkBatteryLeaderboardService? leaderboard = null,
+        BenchmarkProviderAvailabilityService? availability = null)
     {
         _db = db;
         _logger = logger;
         _pricingService = pricingService;
         _leaderboard = leaderboard ?? new BenchmarkBatteryLeaderboardService(db);
+        _availability = availability ?? new BenchmarkProviderAvailabilityService(db);
     }
 
     public async Task<(BenchmarkModelComparisonDto? Result, string? Error)> CompareAsync(
@@ -817,6 +820,7 @@ public class BenchmarkModelComparisonService
         }
 
         var result = BenchmarkModelComparison.Build(sources, basis, today, DateTime.UtcNow);
+        await ApplyAvailabilityAsync(result, ct);
 
         _logger?.LogInformation(
             "Computed a cross-model comparison over {EntryCount} entries on the {Basis} pricing basis: "
@@ -850,6 +854,7 @@ public class BenchmarkModelComparisonService
 
         var distinguishing = await DistinguishingKeysAsync(sources, ct);
         var result = BenchmarkBatteryModelComparison.Build(sources, distinguishing, basis, today, DateTime.UtcNow);
+        await ApplyAvailabilityAsync(result, ct);
 
         _logger?.LogInformation(
             "Computed a battery comparison over {EntryCount} entries on the {Basis} pricing basis: "
@@ -857,6 +862,34 @@ public class BenchmarkModelComparisonService
             result.Entries.Count, basis, result.ComparableCount, result.ExcludedCount);
 
         return (result, null);
+    }
+
+    /// <summary>
+    /// Sets each entry's provider availability, pooled over its runs and their lineage predecessors, and
+    /// the table's availability columns where the entry has a table. A battery result pools every member
+    /// run of its battery run, superseded ones included.
+    /// </summary>
+    private async Task ApplyAvailabilityAsync(BenchmarkModelComparisonDto result, CancellationToken ct)
+    {
+        foreach (var entry in result.Entries)
+        {
+            var pool = entry.BatteryRunId is long batteryRunId
+                ? (await _availability.ForBatteryRunAsync(batteryRunId, ct))?.Pool
+                : null;
+            pool ??= await _availability.ForRunsAsync(entry.RunIds, ct);
+
+            var availability = BenchmarkProviderAvailabilityService.ToDto(pool);
+            entry.Availability = availability;
+
+            if (entry.Table != null && availability.Recorded)
+            {
+                entry.Table.ProviderErrorRate = availability.ProviderErrorRate;
+                entry.Table.ProviderErrorCount = availability.ProviderErrors;
+                entry.Table.ProviderAttempts = availability.ValidAttempts;
+                entry.Table.RerunsNeeded = availability.RerunsNeeded;
+                entry.Table.ProviderReruns = availability.ProviderRerunsNeeded;
+            }
+        }
     }
 
     /// <summary>

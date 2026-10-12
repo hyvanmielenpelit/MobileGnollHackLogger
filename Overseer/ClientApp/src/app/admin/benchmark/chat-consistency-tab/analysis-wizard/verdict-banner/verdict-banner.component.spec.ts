@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { CcAnalysisResult } from '../../chat-consistency.models';
-import { ccAnalysisResult, ccEndpoint, ccSubjectWithLevel, textOf } from '../../chat-consistency-tab.testing';
+import { ccAnalysisResult, ccEndpoint, ccProtocol, ccSubjectWithLevel, textOf } from '../../chat-consistency-tab.testing';
 import { CcVerdictBannerComponent } from './verdict-banner.component';
 
 /** P1 inconclusive, P2 and P3 not computable, P4 less work, P5 equivalent. */
@@ -223,6 +223,32 @@ describe('CcVerdictBannerComponent', () => {
     expect(terms('verdicts')).toEqual(['Degraded or improved', 'Changed, negligible', 'Equivalent', 'Inconclusive', 'Not computable']);
     expect(terms('grades')).toEqual(['Established', 'Indicated', 'Not established']);
     expect(textOf(el.querySelector('#cc-vb-protocol-tip'))).toContain('Never read it as no change');
+  });
+
+  it('shows P6 as a chip and in the protocol dialog under Protocol V2, from the result\'s own endpoints', () => {
+    const p6 = ccEndpoint('P6', {
+      name: 'Provider error rate', unit: 'pp', scale: 'difference', margin: 1, marginText: '±1 pp', direction: 'lowerIsBetter',
+      estimate: 1.4, ci95: { lower: 1.1, upper: 1.9 }, verdict: 'changedDegraded', verdictLabel: 'more provider errors', grade: 'indicated'
+    });
+    show(ccAnalysisResult({
+      protocol: { ...ccProtocol(), protocolVersion: 'V2', label: 'V2', minimumAttemptsPerStratum: 30 },
+      protocolLabel: 'V2',
+      endpoints: [...['P1', 'P2', 'P3', 'P4', 'P5'].map(id => ccEndpoint(id)), p6]
+    }));
+    const chips = Array.from(el.querySelectorAll('ul.cc-vb-endpoints > li > button.cc-vb-endpoint'));
+    expect(chips.map(button => button.getAttribute('data-endpoint'))).toEqual(['P1', 'P2', 'P3', 'P4', 'P5', 'P6']);
+    expect(chip('P6')?.getAttribute('data-status')).toBe('changed');
+    expect(textOf(chip('P6')?.querySelector('.cc-vb-endpoint-word'))).toBe('More provider errors');
+    expect(chip('P6')?.getAttribute('aria-label')).toBe('P6 Provider error rate: More provider errors. Show its verdict.');
+
+    expect(textOf(el.querySelector('#cc-vb-protocol-tip-title'))).toBe('About Protocol V2');
+    expect(textOf(protocolFact('endpoint-P6')?.querySelector('dd'))).toBe('Margin ±1 pp');
+    expect(textOf(protocolFact('significance')?.querySelector('dd'))).toBe('α 0.05, with Holm\'s correction across P1–P6.');
+    expect(textOf(protocolFact('sample')?.querySelector('dd'))).toBe(
+      'P1, P4, P5: at least 2 runs per period on at least 2 UTC days, and 20 paired items. '
+      + 'P2, P3: at least 3 runs per period in one common time block. '
+      + 'P6: at least 3 runs per period with attempts in one common time block, a block common with 30 valid attempts in each period. '
+      + 'With fewer, an endpoint is at most Indicated.');
   });
 
   it('counts battery runs in the minimum sample of a battery analysis', () => {

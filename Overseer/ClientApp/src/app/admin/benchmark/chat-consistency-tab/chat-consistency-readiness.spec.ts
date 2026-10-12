@@ -2,6 +2,8 @@ import { groupOverseerEvents } from './chat-consistency-events';
 import { CcPeriodIds, ccPeriodAssignment, ccPeriodUnits } from './chat-consistency-periods';
 import {
   CC_PROTOCOL_V1_ENDPOINTS,
+  CC_PROTOCOL_V2,
+  CC_PROTOCOL_V2_ENDPOINTS,
   CC_READINESS_STATUS_TEXT,
   ccEndpointReadiness,
   ccIneligibleInPeriods,
@@ -10,6 +12,8 @@ import {
   ccNothingEstablishable,
   ccPeriodSample,
   ccPreviewNotes,
+  ccProtocolAxes,
+  ccProtocolEndpoints,
   ccSampleCountText,
   ccSampleDayText,
   ccSampleLine,
@@ -68,6 +72,24 @@ describe('chat consistency readiness', () => {
     it('writes a margin in its unit', () => {
       expect(ccMarginText(3, 'index points')).toBe('±3 index points');
       expect(ccMarginText(15, '%')).toBe('±15 %');
+      expect(ccMarginText(1, 'pp')).toBe('±1.0 percentage point');
+      expect(ccMarginText(1.5, 'pp')).toBe('±1.5 percentage points');
+    });
+
+    it('copies Protocol V2 as V1\'s endpoints and P6, in percentage points on the availability axis', () => {
+      expect(CC_PROTOCOL_V2_ENDPOINTS.slice(0, 5)).toEqual(CC_PROTOCOL_V1_ENDPOINTS);
+      expect(CC_PROTOCOL_V2_ENDPOINTS[5]).toEqual({
+        id: 'P6', name: 'Provider error rate', margin: 1, unit: 'pp', axis: 'availability', stratified: true, legacyAxis: null
+      });
+      expect(CC_PROTOCOL_V2.minimumAttemptsPerStratum).toBe(30);
+    });
+
+    it('lists a protocol version\'s own endpoints, V1\'s for a stored analysis without one', () => {
+      expect(ccProtocolEndpoints('V2')).toBe(CC_PROTOCOL_V2_ENDPOINTS);
+      expect(ccProtocolEndpoints('V1')).toBe(CC_PROTOCOL_V1_ENDPOINTS);
+      expect(ccProtocolEndpoints(undefined)).toBe(CC_PROTOCOL_V1_ENDPOINTS);
+      expect(ccProtocolAxes(CC_PROTOCOL_V1_ENDPOINTS)).toEqual(['quality', 'speedTelemetry', 'speedLegacy', 'work', 'cost']);
+      expect(ccProtocolAxes(CC_PROTOCOL_V2_ENDPOINTS)).toEqual(['quality', 'speedTelemetry', 'speedLegacy', 'work', 'cost', 'availability']);
     });
   });
 
@@ -168,6 +190,30 @@ describe('chat consistency readiness', () => {
         capped: 'At most Indicated',
         notComputed: 'Not computable'
       });
+    });
+
+    it('does not compute P6 while a period has no run that recorded provider attempts', () => {
+      const units = sixRuns();
+      const rows = ccEndpointReadiness(CC_PROTOCOL_V2_ENDPOINTS, units.slice(0, 3), units.slice(3), pointsById(), false);
+      expect(rows.map(row => row.id)).toEqual(['P1', 'P2', 'P3', 'P4', 'P5', 'P6']);
+      expect(rows[5]).toEqual({
+        id: 'P6', name: 'Provider error rate', marginText: '±1.0 percentage point', status: 'notComputed',
+        fact: 'No run in either period recorded provider attempts; they are recorded from harness 56.'
+      });
+    });
+
+    it('counts P6\'s recorded runs per common stratum, with each period\'s valid attempts', () => {
+      const recorded = (row: CcRunRow): CcRunRow => ({ ...row, availabilityRecorded: true, validAttemptCount: 500 });
+      const units = ccPeriodUnits(ccRunRows().map(recorded), [], false);
+      const p6 = ccEndpointReadiness(CC_PROTOCOL_V2_ENDPOINTS, units.slice(0, 3), units.slice(3), pointsById(), false)[5];
+      // Run 103 has no call telemetry but recorded its attempts, so P6 counts it.
+      expect(p6.status).toBe('meets');
+      expect(p6.fact).toBe('Runs per common stratum, baseline / comparison: weekday 08–12 UTC: 3 / 3. '
+        + 'Valid attempts, baseline / comparison: 1,500 / 1,500. A stratum is common with 30 valid attempts in each period.');
+
+      const legacyBaseline = ccPeriodUnits(ccRunRows().map(row => (row.runId <= 103 ? row : recorded(row))), [], false);
+      expect(ccEndpointReadiness(CC_PROTOCOL_V2_ENDPOINTS, legacyBaseline.slice(0, 3), legacyBaseline.slice(3), pointsById(), false)[5].fact)
+        .toBe('No run in the baseline recorded provider attempts; they are recorded from harness 56.');
     });
 
     it('reads a battery run\'s eligibility from its aggregate', () => {

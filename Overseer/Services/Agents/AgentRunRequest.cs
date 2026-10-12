@@ -37,6 +37,14 @@ public class AgentRunRequest
     /// </summary>
     public bool DisableProviderPromptCache { get; set; }
     public string? CredentialKey { get; set; }
+
+    /// <summary>
+    /// The operator's own cancellation, when the caller links it with a time budget into the token the
+    /// run receives. When that token fires and this one has not, the attempt was cut by the caller's
+    /// budget rather than by the operator. <see cref="CancellationToken.None"/> when the caller has no budget.
+    /// </summary>
+    public CancellationToken OperatorCancellation { get; set; }
+
     public TimeSpan? PermitWaitTimeout { get; set; }
     public List<object> SeedHistory { get; set; } = new();
     public string? ThinkingLevel { get; set; }

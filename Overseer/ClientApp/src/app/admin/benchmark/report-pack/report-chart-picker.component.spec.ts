@@ -15,6 +15,7 @@ import {
   DEFAULT_CHART_SELECTION,
   DEFAULT_DOCUMENT_CHART_LAYOUT,
   REPORT_CHART_FIGURES,
+  REPORT_CHART_NOT_DRAWN,
   REPORT_CHART_STORAGE_KEY,
   ReportChartLayoutSettings,
   ReportChartSelection,
@@ -90,9 +91,9 @@ describe('ReportChartPickerComponent', () => {
     expect(text(panel.querySelector('.rcp-panel-title'))).toBe('Executive Summary');
 
     const boxes = Array.from(panel.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'));
-    expect(boxes.length).toBe(7);
+    expect(boxes.length).toBe(8);
     expect(boxes.every(box => box.id.startsWith(`rcp-${ExecutiveSummary}-`))).toBe(true);
-    expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(7);
+    expect(host.querySelectorAll('input[type="checkbox"]').length).toBe(8);
     const titles = Array.from(panel.querySelectorAll('.rcp-figure-title')).map(title => text(title));
     expect(titles).toEqual(REPORT_CHART_FIGURES.map(figure => figure.title));
   });
@@ -184,14 +185,14 @@ describe('ReportChartPickerComponent', () => {
 
   it('counts the selection on each segment', () => {
     const counts = (): string[] => Array.from(host.querySelectorAll('.rcp-tab-count')).map(count => text(count));
-    expect(counts()).toEqual(['2', '7', '3']);
+    expect(counts()).toEqual(['2', '8', '3']);
     expect(q('.rcp-tab-count')!.getAttribute('aria-hidden')).toBe('true');
-    expect(text(tab(ExecutiveSummary).querySelector('.visually-hidden'))).toBe(', 2 of 7 charts');
+    expect(text(tab(ExecutiveSummary).querySelector('.visually-hidden'))).toBe(', 2 of 8 charts');
 
     cell(ExecutiveSummary, 'p1c-cost').click();
     fixture.detectChanges();
-    expect(counts()).toEqual(['3', '7', '3']);
-    expect(text(tab(ExecutiveSummary).querySelector('.visually-hidden'))).toBe(', 3 of 7 charts');
+    expect(counts()).toEqual(['3', '8', '3']);
+    expect(text(tab(ExecutiveSummary).querySelector('.visually-hidden'))).toBe(', 3 of 8 charts');
   });
 
   it('keeps an unchecked document selectable but inert, with the reason', () => {
@@ -245,7 +246,7 @@ describe('ReportChartPickerComponent', () => {
     expect(text(q('#rcp-row-p2-profile-reason'))).toBe('needs three or more models');
     expect(profile.getAttribute('aria-describedby')).toContain('rcp-row-p2-profile-reason');
     expect(text(q('#rcp-row-s3-speed-cost-reason'))).toBe('no cost measured');
-    expect(text(tab(TechnicalReport).querySelector('.visually-hidden'))).toBe(', 5 of 5 charts');
+    expect(text(tab(TechnicalReport).querySelector('.visually-hidden'))).toBe(', 6 of 6 charts');
 
     profile.click();
     fixture.detectChanges();
@@ -255,7 +256,7 @@ describe('ReportChartPickerComponent', () => {
     // All takes only the figures the comparison can draw.
     button('all', TechnicalReport).click();
     fixture.detectChanges();
-    expect(emitted[0][TechnicalReport]).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost', 's1-quality-speed', 's2-quality-cost']);
+    expect(emitted[0][TechnicalReport]).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost', 's1-quality-speed', 's2-quality-cost', 'a1-availability']);
   });
 
   it('shows one document type without a tab row', () => {
@@ -269,7 +270,7 @@ describe('ReportChartPickerComponent', () => {
     expect(panel.hasAttribute('tabindex')).toBe(false);
     const title = q(`#${panel.getAttribute('aria-labelledby')}`)!;
     expect(text(title)).toBe('Internal Improvement Brief');
-    expect(panel.querySelectorAll('input[type="checkbox"]').length).toBe(7);
+    expect(panel.querySelectorAll('input[type="checkbox"]').length).toBe(8);
     expect(cell(InternalBrief, 'p1a-quality').checked).toBe(true);
   });
 
@@ -328,6 +329,33 @@ describe('ReportChartPickerComponent', () => {
     select(TechnicalReport);
     expect(text(q(`#rcp-${TechnicalReport}-p1a-quality-placement`))).toBe('Results');
     expect(text(q(`#rcp-${TechnicalReport}-p2-profile-placement`))).toBe('Dimension profiles');
+    expect(text(q(`#rcp-${TechnicalReport}-a1-availability-placement`))).toBe('Results → Provider availability');
+  });
+
+  it('never offers or selects A1 in a comparison-scope Executive Summary, which does not place it', () => {
+    fixture.componentRef.setInput('scope', 'comparison');
+    fixture.componentRef.setInput('selection', { ...DEFAULT_CHART_SELECTION, [ExecutiveSummary]: ['p1a-quality', 'a1-availability'] });
+    fixture.detectChanges();
+
+    const a1 = cell(ExecutiveSummary, 'a1-availability');
+    expect(a1.checked).toBe(false);
+    expect(a1.getAttribute('aria-disabled')).toBe('true');
+    expect(text(q(`#rcp-${ExecutiveSummary}-a1-availability-placement`))).toBe(REPORT_CHART_NOT_DRAWN);
+    expect(text(tab(ExecutiveSummary).querySelector('.visually-hidden'))).toBe(', 1 of 7 charts');
+
+    a1.click();
+    fixture.detectChanges();
+    expect(emitted).toEqual([]);
+
+    select(TechnicalReport);
+    expect(cell(TechnicalReport, 'a1-availability').checked).toBe(true);
+    expect(cell(TechnicalReport, 'a1-availability').getAttribute('aria-disabled')).toBeNull();
+  });
+
+  it('gives A1 its own reason when the comparison cannot draw it', () => {
+    fixture.componentRef.setInput('available', ALL_KEYS.filter(key => key !== 'a1-availability'));
+    fixture.detectChanges();
+    expect(text(q('#rcp-row-a1-availability-reason'))).toBe('needs two or more models, one with provider errors recorded');
   });
 
   describe('with a layout', () => {
@@ -357,7 +385,7 @@ describe('ReportChartPickerComponent', () => {
       expect(intelligence.getAttribute('aria-label')).toBe('Width of Intelligence in the Executive Summary');
       expect(intelligence.value).toBe('full');
       expect(Array.from(intelligence.options).map(item => item.value)).toEqual(['full', 'twoThirds', 'half']);
-      expect(host.querySelectorAll('.rcp-width-select').length).toBe(7);
+      expect(host.querySelectorAll('.rcp-width-select').length).toBe(8);
     });
 
     /** The Executive Summary's labels at 9 pt, where half width does not fit. */
@@ -394,7 +422,7 @@ describe('ReportChartPickerComponent', () => {
 
     it('sets each width select beside its figure in a wide picker and under the figure title in a narrow one', () => {
       const rows = Array.from(host.querySelectorAll<HTMLElement>('.rcp-row'));
-      expect(rows.length).toBe(7);
+      expect(rows.length).toBe(8);
       expect(q('.rcp-width-label')).toBeNull();
 
       host.style.inlineSize = '24rem';

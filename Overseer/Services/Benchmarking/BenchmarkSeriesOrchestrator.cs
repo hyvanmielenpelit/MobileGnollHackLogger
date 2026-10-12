@@ -108,6 +108,9 @@ public class BenchmarkSeriesOrchestrator
     /// <summary>The model batch claim each series driven for a batch launches its members under.</summary>
     private readonly ConcurrentDictionary<long, string> _batchOwners = new();
 
+    /// <summary>For a series that replaces a superseded one, the run each member replaces, by 1-based index.</summary>
+    private readonly ConcurrentDictionary<long, IReadOnlyDictionary<int, BenchmarkRunReplacement>> _replaces = new();
+
     public BenchmarkSeriesOrchestrator(
         IServiceScopeFactory scopeFactory,
         BenchmarkRunManager runManager,
@@ -136,11 +139,16 @@ public class BenchmarkSeriesOrchestrator
     /// cap are then the same action, which is the correct coupling: a series may never be a way
     /// around the cap.
     /// </remarks>
+    /// <param name="replaces">
+    /// For a series that replaces a superseded one: the run each member replaces, by 1-based series index.
+    /// Applied at each index's first launch only; a series resume skips a failed member and links nothing to it.
+    /// </param>
     public async Task<BenchmarkSeriesStartResult> StartSeriesAsync(
         StartBenchmarkRunRequest request,
         string? userId,
         CancellationToken ct = default,
-        string? batchOwner = null)
+        string? batchOwner = null,
+        IReadOnlyDictionary<int, BenchmarkRunReplacement>? replaces = null)
     {
         if (_runManager.CurrentRunId.HasValue)
         {
@@ -261,8 +269,30 @@ public class BenchmarkSeriesOrchestrator
         }
 
         SetBatchOwner(series.Id, batchOwner);
+        if (replaces is { Count: > 0 })
+        {
+            _replaces[series.Id] = replaces;
+        }
         BeginDriving(series.Id);
         return BenchmarkSeriesStartResult.Ok(series.Id);
+    }
+
+    /// <summary>The run a member replaces, by series and 1-based index, from <see cref="StartSeriesAsync"/>'s map.</summary>
+    private BenchmarkRunReplacement? ReplacementFor(long seriesId, int seriesIndex) =>
+        _replaces.TryGetValue(seriesId, out var map) && map.TryGetValue(seriesIndex, out var replacement) ? replacement : null;
+
+    /// <summary>
+    /// The run member <paramref name="seriesIndex"/> replaces: <see cref="ReplacementFor"/>'s entry, applied
+    /// only at the index's first launch, so a resume never stamps it on a second run.
+    /// </summary>
+    internal async Task<BenchmarkRunReplacement?> MemberReplacementAsync(
+        ApplicationDbContext db, long seriesId, int seriesIndex, CancellationToken ct = default)
+    {
+        var replacement = ReplacementFor(seriesId, seriesIndex);
+        if (replacement == null) return null;
+
+        bool launched = await db.BenchmarkRuns.AnyAsync(r => r.RunSeriesId == seriesId && r.RunSeriesIndex == seriesIndex, ct);
+        return launched ? null : replacement;
     }
 
     private void SetBatchOwner(long seriesId, string? batchOwner)
@@ -673,6 +703,7 @@ public class BenchmarkSeriesOrchestrator
             if (series.CompletedRunCount >= series.RequestedRunCount)
             {
                 await FinishSeriesAsync(scope.ServiceProvider, db, series, ct);
+                _replaces.TryRemove(seriesId, out _);
                 return;
             }
 
@@ -704,8 +735,10 @@ public class BenchmarkSeriesOrchestrator
             series.LastProgressAtUtc = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
 
+            var replacement = await MemberReplacementAsync(db, seriesId, nextIndex, ct);
             var launch = await launcher.CreateAndLaunchRunAsync(
-                request, series.StartedByUserId, series.Id, nextIndex, ct, batchOwner: BatchOwnerOf(seriesId));
+                request, series.StartedByUserId, series.Id, nextIndex, ct, batchOwner: BatchOwnerOf(seriesId),
+                replacesRunId: replacement?.RunId, replacementCause: replacement?.Cause);
 
             if (!launch.Started)
             {

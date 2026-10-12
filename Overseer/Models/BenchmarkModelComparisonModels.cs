@@ -260,6 +260,21 @@ public class BenchmarkModelComparisonTableDto
 
     /// <summary>Items whose cross-run quality standard deviation reached the instability threshold.</summary>
     public int UnstableItemCount { get; set; }
+
+    // The Provider errors and Re-runs needed columns, from the entry's Availability. All null when no
+    // run behind the entry records the provider ledger.
+
+    /// <summary>Provider errors ÷ valid candidate attempts, a proportion in [0, 1].</summary>
+    public double? ProviderErrorRate { get; set; }
+    public int? ProviderErrorCount { get; set; }
+
+    /// <summary>Valid candidate attempts, the denominator of <see cref="ProviderErrorRate"/>.</summary>
+    public int? ProviderAttempts { get; set; }
+
+    public int? RerunsNeeded { get; set; }
+
+    /// <summary>The provider-caused part of <see cref="RerunsNeeded"/>.</summary>
+    public int? ProviderReruns { get; set; }
 }
 
 /// <summary>One model, as configured, on one comparison.</summary>
@@ -349,6 +364,14 @@ public class BenchmarkModelComparisonEntryDto
 
     /// <summary>Table-only figures. Also null on an excluded entry.</summary>
     public BenchmarkModelComparisonTableDto? Table { get; set; }
+
+    /// <summary>
+    /// The candidate's provider availability over the entry's runs and their lineage predecessors (for
+    /// a battery result, every member run of the battery run, superseded ones included). Descriptive,
+    /// never an axis of comparability, so it is set on excluded entries too; null only when the
+    /// comparison was built without the database.
+    /// </summary>
+    public ProviderAvailabilityDto? Availability { get; set; }
 }
 
 /// <summary>

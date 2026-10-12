@@ -193,8 +193,18 @@ public class BenchmarkTelemetryPersistenceTests
 
     internal sealed record CandidateRun(BenchmarkRunAnswer Answer, CapturingHandler Handler, ApplicationDbContext Db, IServiceScope Scope);
 
-    /// <summary>One question of a board suite, answered by the named provider through the production candidate path.</summary>
-    internal static async Task<CandidateRun> RunCandidateAsync(string providerName)
+    /// <summary>The production candidate path: a <see cref="BenchmarkService"/> over the real runner and providers.</summary>
+    private sealed record CandidateService(BenchmarkService Service, IServiceScopeFactory ScopeFactory);
+
+    /// <summary>
+    /// A <see cref="BenchmarkService"/> whose "AiProvider" HTTP client is answered by
+    /// <paramref name="handler"/>, over the database <paramref name="configureDb"/> names, with
+    /// <paramref name="settings"/> as its configuration.
+    /// </summary>
+    private static CandidateService CreateCandidateService(
+        HttpMessageHandler handler,
+        Action<DbContextOptionsBuilder> configureDb,
+        IDictionary<string, string?>? settings = null)
     {
         var providerConfig = ProviderConfig();
         IAiProvider[] providers =
@@ -206,8 +216,7 @@ public class BenchmarkTelemetryPersistenceTests
 
         var services = new ServiceCollection();
         services.AddLogging();
-        string dbName = Guid.NewGuid().ToString();
-        services.AddDbContext<ApplicationDbContext>(o => o.UseInMemoryDatabase(dbName));
+        services.AddDbContext<ApplicationDbContext>(configureDb);
         foreach (var p in providers)
         {
             services.AddSingleton(p);
@@ -215,11 +224,10 @@ public class BenchmarkTelemetryPersistenceTests
         var sp = services.BuildServiceProvider();
         var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
 
-        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>()).Build();
+        var config = new ConfigurationBuilder().AddInMemoryCollection(settings ?? new Dictionary<string, string?>()).Build();
         var cache = new MemoryCache(new MemoryCacheOptions());
         var handlers = new List<IToolHandler>();
         var clientBridge = new NullClientBridge();
-        var handler = new CapturingHandler(CannedStream(providerName));
 
         var runner = new AgentLoopRunner(
             providers,
@@ -245,10 +253,31 @@ public class BenchmarkTelemetryPersistenceTests
             config,
             NullLogger<BenchmarkService>.Instance);
 
+        return new CandidateService(service, scopeFactory);
+    }
+
+    /// <summary>One question of a board suite, answered by the named provider through the production candidate path.</summary>
+    internal static async Task<CandidateRun> RunCandidateAsync(string providerName)
+        => await RunCandidateAsync(providerName, providerLedgerVersion: null);
+
+    /// <summary>
+    /// <see cref="RunCandidateAsync(string)"/> on a run that does or does not record the provider
+    /// attempt ledger. The run is not saved, so the live rollup increment has no row to reach.
+    /// </summary>
+    private static async Task<CandidateRun> RunCandidateAsync(
+        string providerName, byte? providerLedgerVersion, HttpMessageHandler? handlerOverride = null,
+        IDictionary<string, string?>? settings = null)
+    {
+        var handler = new CapturingHandler(CannedStream(providerName));
+        string dbName = Guid.NewGuid().ToString();
+        var (service, scopeFactory) = CreateCandidateService(
+            handlerOverride ?? handler, o => o.UseInMemoryDatabase(dbName), settings);
+
         var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
         {
             Id = 70,
             StartedByUserId = "user-golden",
+            ProviderLedgerVersion = providerLedgerVersion,
             BenchmarkSuite = new BenchmarkSuite { Id = 4, Name = "Snapshot Suite" },
             GameSnapshotNameUsed = "Tommi2",
             GameSnapshotSha256Used = new string('0', 64),
@@ -437,5 +466,391 @@ public class BenchmarkTelemetryPersistenceTests
 
         Assert.Null(withoutTelemetry.ServedModelIdsJson);
         Assert.Equal("{\"gemini-3.8-flash\":2}", withTelemetry.ServedModelIdsJson);
+    }
+
+    // --- Provider attempt ledger and failure attribution ---------------------------------------
+
+    /// <summary>Holds every request until the caller's token cancels it, as a provider that never answers.</summary>
+    private sealed class StallingHandler : HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            throw new InvalidOperationException("unreachable");
+        }
+    }
+
+    /// <summary>A one-second question budget in every band, so a stalled provider is cut by our own budget.</summary>
+    private static Dictionary<string, string?> OneSecondBudget() => new()
+    {
+        { "Benchmark:QuestionTimeoutSeconds:Simple", "1" },
+        { "Benchmark:QuestionTimeoutSeconds:Intermediate", "1" },
+        { "Benchmark:QuestionTimeoutSeconds:Advanced", "1" }
+    };
+
+    [Fact]
+    public async Task ARecordedRun_LedgersTheCandidateAttempt_AndSendsTheGoldenRequest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var result = await RunCandidateAsync("Anthropic", BenchmarkService.CurrentProviderLedgerVersion);
+        using var scope = result.Scope;
+        var answer = result.Answer;
+
+        Assert.Equal(BenchmarkAnswerStatus.Ok, answer.Status);
+        Assert.Equal(BenchmarkFailureOrigin.None, answer.FailureOrigin);
+        Assert.Null(answer.FailureKind);
+
+        var row = Assert.Single(await result.Db.BenchmarkProviderAttempts.AsNoTracking().ToListAsync(ct));
+        Assert.Equal(70L, row.BenchmarkRunId);
+        Assert.Equal(answer.Id, row.BenchmarkRunAnswerId);
+        Assert.Equal(11L, row.QuestionId);
+        Assert.Equal(ModelCallSource.BenchmarkCandidate, row.Source);
+        Assert.Null(row.GraderRole);
+        Assert.Equal("Anthropic", row.Provider);
+        Assert.Equal("claude-opus-5", row.RequestedModelId);
+        Assert.Equal(32L, row.SystemAiApiConfigurationId);
+        Assert.Equal(BenchmarkEndpointKind.Official, row.EndpointKind);
+        Assert.Equal(0, row.Pass);
+        Assert.Equal(0, row.CallIndex);
+        Assert.Equal((byte)0, row.AttemptIndex);
+        Assert.Equal(ProviderAttemptOutcome.Ok, row.Outcome);
+        Assert.False(row.Retried);
+
+        // Recording the ledger changes nothing the provider is sent.
+        string request = Assert.Single(result.Handler.Requests);
+        string path = GoldenPath("candidate_anthropic.txt");
+        if (!BenchmarkReportPackFixture.UpdateGoldens && File.Exists(path))
+        {
+            Assert.Equal(new UTF8Encoding(false).GetString(File.ReadAllBytes(path)), request);
+        }
+    }
+
+    [Fact]
+    public async Task AnUnrecordedRun_WritesNoLedgerRow_AndNoAttribution()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var result = await RunCandidateAsync("Google");
+        using var scope = result.Scope;
+
+        Assert.Equal(BenchmarkAnswerStatus.Ok, result.Answer.Status);
+        Assert.Null(result.Answer.FailureOrigin);
+        Assert.Null(result.Answer.FailureKind);
+        Assert.Empty(await result.Db.BenchmarkProviderAttempts.AsNoTracking().ToListAsync(ct));
+    }
+
+    [Fact]
+    public async Task OurQuestionBudget_EndsARecordedAnswerFailed_OnOurSide_NeverAsAProviderError()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var result = await RunCandidateAsync(
+            "OpenAI", BenchmarkService.CurrentProviderLedgerVersion, new StallingHandler(), OneSecondBudget());
+        using var scope = result.Scope;
+        var answer = result.Answer;
+
+        Assert.Equal(BenchmarkAnswerStatus.Failed, answer.Status);
+        Assert.Equal(BenchmarkFailureOrigin.Ours, answer.FailureOrigin);
+        Assert.Equal(BenchmarkService.QuestionBudgetFailureKind, answer.FailureKind);
+        Assert.StartsWith("Per-question timeout exceeded (1 s)", answer.ErrorMessage);
+
+        // The attempt our budget cut is ours, and stays out of the provider's denominator.
+        var rows = await result.Db.BenchmarkProviderAttempts.AsNoTracking().ToListAsync(ct);
+        Assert.NotEmpty(rows);
+        Assert.All(rows, r => Assert.Equal(ProviderAttemptOutcome.OurCanceled, r.Outcome));
+    }
+
+    [Fact]
+    public async Task OurQuestionBudget_EndsAnUnrecordedAnswerFailed_WithoutAttribution()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var result = await RunCandidateAsync("OpenAI", providerLedgerVersion: null, new StallingHandler(), OneSecondBudget());
+        using var scope = result.Scope;
+
+        Assert.Equal(BenchmarkAnswerStatus.Failed, result.Answer.Status);
+        Assert.Null(result.Answer.FailureOrigin);
+        Assert.Null(result.Answer.FailureKind);
+        Assert.Empty(await result.Db.BenchmarkProviderAttempts.AsNoTracking().ToListAsync(ct));
+    }
+
+    [Fact]
+    public async Task ApplyProviderRollups_CountsTheRunsCandidateRowsOfEveryPass_AndNoGraderRow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using var db = new ApplicationDbContext(options);
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun { Id = 5, SuiteName = "Suite", ProviderLedgerVersion = 1 });
+        var other = BenchmarkModelSnapshots.Attach(new BenchmarkRun { Id = 6, SuiteName = "Suite", ProviderLedgerVersion = 1 });
+        db.BenchmarkRuns.AddRange(run, other);
+
+        BenchmarkProviderAttempt Row(long runId, ProviderAttemptOutcome outcome, int pass,
+            ModelCallSource source = ModelCallSource.BenchmarkCandidate) => new()
+        {
+            BenchmarkRunId = runId, Source = source, Provider = "OpenAI", RequestedModelId = "gpt-6.1-sol",
+            Pass = pass, Outcome = outcome, StartedAtUtc = DateTime.UtcNow,
+            GraderRole = source == ModelCallSource.BenchmarkGrader ? ModelCallGraderRole.Assessor : null
+        };
+        db.BenchmarkProviderAttempts.AddRange(
+            Row(5, ProviderAttemptOutcome.ProviderOverloaded, 0),
+            Row(5, ProviderAttemptOutcome.Ok, 0),
+            Row(5, ProviderAttemptOutcome.RateLimitUnattributed, 1),
+            Row(5, ProviderAttemptOutcome.OurThrottle, 1),
+            Row(5, ProviderAttemptOutcome.Ok, 1),
+            Row(5, ProviderAttemptOutcome.ProviderServerError, 1, ModelCallSource.BenchmarkGrader),
+            Row(6, ProviderAttemptOutcome.ProviderOverloaded, 0));
+        await db.SaveChangesAsync(ct);
+
+        await BenchmarkService.ApplyProviderRollupsAsync(db, run);
+
+        Assert.Equal(4, run.CandidateValidAttemptCount);
+        Assert.Equal(1, run.CandidateProviderErrorCount);
+        Assert.Equal(1, run.CandidateUnattributedErrorCount);
+        Assert.Equal(1, run.CandidateOurSideFailureCount);
+    }
+
+    /// <summary>
+    /// A relational database in memory, for the paths the in-memory provider cannot run: the re-run
+    /// deletes rows set-based, and the live rollups are one set-based update. The caller disposes
+    /// the connection.
+    /// </summary>
+    private static (Microsoft.Data.Sqlite.SqliteConnection Connection, DbContextOptions<ApplicationDbContext> Options) OpenRelationalDb()
+    {
+        var connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
+        connection.Open();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
+        using (var db = new ApplicationDbContext(options))
+        {
+            db.Database.EnsureCreated();
+        }
+
+        return (connection, options);
+    }
+
+    /// <summary>A suite with one question and a running run of it, saved; the run records the ledger when <paramref name="ledgerVersion"/> is set.</summary>
+    private static async Task<(long RunId, BenchmarkQuestion Question)> SeedRelationalRunAsync(
+        DbContextOptions<ApplicationDbContext> options, byte? ledgerVersion)
+    {
+        await using var db = new ApplicationDbContext(options);
+        var suite = new BenchmarkSuite { Name = "Ledger Suite " + Guid.NewGuid().ToString("N") };
+        var question = new BenchmarkQuestion
+        {
+            BenchmarkSuite = suite,
+            OrderIndex = 1,
+            ItemRevision = 1,
+            QuestionText = QuestionText,
+            ExpectedPoints = "- Fortune cookies are readable.",
+            Difficulty = BenchmarkDifficulty.Intermediate
+        };
+        db.BenchmarkQuestions.Add(question);
+
+        // Snapshots are unique by content on a relational database, so each seeded run gets its own.
+        string unique = Guid.NewGuid().ToString("N");
+        int? zero = ledgerVersion == null ? null : 0;
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "test-candidate-" + unique),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(
+                BenchmarkModelSnapshots.DefaultAssessorProvider, "test-assessor-" + unique),
+            SuiteName = suite.Name,
+            BenchmarkSuite = suite,
+            Status = BenchmarkRunStatus.Running,
+            StartedAtUtc = DateTime.UtcNow,
+            ProviderLedgerVersion = ledgerVersion,
+            CandidateValidAttemptCount = zero,
+            CandidateProviderErrorCount = zero,
+            CandidateUnattributedErrorCount = zero,
+            CandidateOurSideFailureCount = zero
+        });
+        db.BenchmarkRuns.Add(run);
+        await db.SaveChangesAsync();
+
+        return (run.Id, question);
+    }
+
+    /// <summary>
+    /// Answers the seeded question, then re-executes the answer in a repair pass, through the
+    /// production candidate path on a relational database. Returns the answer's id.
+    /// </summary>
+    private static async Task<long> AnswerAndReExecuteAsync(
+        DbContextOptions<ApplicationDbContext> options, long runId, BenchmarkQuestion question,
+        Microsoft.Data.Sqlite.SqliteConnection connection, CancellationToken ct)
+    {
+        var (service, _) = CreateCandidateService(
+            new CapturingHandler(CannedStream("Anthropic")), o => o.UseSqlite(connection));
+        var segments = new SegmentedPrompt(SystemPrompt[..160], SystemPrompt[160..], string.Empty);
+        var tested = TestedConfig("Anthropic");
+
+        await using var db = new ApplicationDbContext(options);
+        var run = await db.BenchmarkRuns.FirstAsync(r => r.Id == runId, ct);
+
+        var answer = await service.ExecuteSingleQuestionAsync(
+            db, configService: null!, run, question, tested, ApiKey,
+            SystemPrompt, segments, new List<string>(),
+            maxResultLength: 10000, maxCallsPerSession: 45, ct);
+
+        BenchmarkService.BeginRepairPass(run, new[] { answer });
+        await db.SaveChangesAsync(ct);
+
+        await service.ReExecuteSingleAnswerAsync(
+            db, configService: null!, run, answer, tested, ApiKey,
+            SystemPrompt, segments, new List<string>(),
+            maxResultLength: 10000, maxCallsPerSession: 45, ct);
+
+        return answer.Id;
+    }
+
+    [Fact]
+    public async Task TheLedger_KeepsTheReplacedAttempt_WhenARecordedAnswerIsReExecuted()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (connection, options) = OpenRelationalDb();
+        await using var openConnection = connection;
+        var (runId, question) = await SeedRelationalRunAsync(options, BenchmarkService.CurrentProviderLedgerVersion);
+
+        long answerId = await AnswerAndReExecuteAsync(options, runId, question, connection, ct);
+
+        await using var verify = new ApplicationDbContext(options);
+        var rows = await verify.BenchmarkProviderAttempts.AsNoTracking()
+            .Where(a => a.BenchmarkRunId == runId)
+            .OrderBy(a => a.Pass)
+            .ToListAsync(ct);
+
+        // The re-run replaced the answer's telemetry but appended to its ledger: one row per pass.
+        Assert.Equal(new[] { 0, 1 }, rows.Select(r => r.Pass));
+        Assert.All(rows, r =>
+        {
+            Assert.Equal(answerId, r.BenchmarkRunAnswerId);
+            Assert.Equal(question.Id, r.QuestionId);
+            Assert.Equal(ModelCallSource.BenchmarkCandidate, r.Source);
+            Assert.Equal(ProviderAttemptOutcome.Ok, r.Outcome);
+        });
+        Assert.Single(await verify.ModelCallTelemetry.AsNoTracking()
+            .Where(t => t.BenchmarkRunAnswerId == answerId)
+            .ToListAsync(ct));
+
+        // The live increments reached the row without the finalizer, and the tracking context's own
+        // saves in between did not overwrite them.
+        var saved = await verify.BenchmarkRuns.AsNoTracking().FirstAsync(r => r.Id == runId, ct);
+        Assert.Equal(2, saved.CandidateValidAttemptCount);
+        Assert.Equal(0, saved.CandidateProviderErrorCount);
+        Assert.Equal(0, saved.CandidateUnattributedErrorCount);
+        Assert.Equal(0, saved.CandidateOurSideFailureCount);
+        Assert.Equal(1, saved.RepairPassCount);
+        Assert.Equal(0, saved.ProviderRepairPassCount);
+
+        var answer = await verify.BenchmarkRunAnswers.AsNoTracking().FirstAsync(a => a.Id == answerId, ct);
+        Assert.Equal(1, answer.ReExecutionCount);
+        Assert.Equal(BenchmarkAnswerStatus.Ok, answer.Status);
+        Assert.Equal(BenchmarkAnswerStatus.Ok, answer.RerunOfStatus);
+        Assert.Equal(BenchmarkFailureOrigin.None, answer.FailureOrigin);
+
+        // The finalizer's recount from the ledger agrees with the live figure.
+        var tracked = await verify.BenchmarkRuns.FirstAsync(r => r.Id == runId, ct);
+        await BenchmarkService.ApplyProviderRollupsAsync(verify, tracked);
+        Assert.Equal(2, tracked.CandidateValidAttemptCount);
+    }
+
+    [Fact]
+    public async Task ALegacyRunRepaired_StaysUnrecorded_ButCountsItsRepairPass()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (connection, options) = OpenRelationalDb();
+        await using var openConnection = connection;
+        var (runId, question) = await SeedRelationalRunAsync(options, ledgerVersion: null);
+
+        long answerId = await AnswerAndReExecuteAsync(options, runId, question, connection, ct);
+
+        await using var verify = new ApplicationDbContext(options);
+        Assert.Empty(await verify.BenchmarkProviderAttempts.AsNoTracking().ToListAsync(ct));
+
+        var run = await verify.BenchmarkRuns.FirstAsync(r => r.Id == runId, ct);
+        await BenchmarkService.ApplyProviderRollupsAsync(verify, run);
+        Assert.Null(run.ProviderLedgerVersion);
+        Assert.Null(run.CandidateValidAttemptCount);
+        Assert.Null(run.CandidateProviderErrorCount);
+        Assert.Null(run.CandidateUnattributedErrorCount);
+        Assert.Null(run.CandidateOurSideFailureCount);
+        Assert.Equal(1, run.RepairPassCount);
+
+        var answer = await verify.BenchmarkRunAnswers.AsNoTracking().FirstAsync(a => a.Id == answerId, ct);
+        Assert.Null(answer.FailureOrigin);
+        Assert.Null(answer.FailureKind);
+        Assert.Equal(1, answer.ReExecutionCount);
+    }
+
+    [Fact]
+    public async Task LiveRollupIncrements_AreAddedInTheDatabase_AndATrackingContextsSaveKeepsThem()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (connection, options) = OpenRelationalDb();
+        await using var openConnection = connection;
+        var (runId, _) = await SeedRelationalRunAsync(options, BenchmarkService.CurrentProviderLedgerVersion);
+        var (legacyRunId, _) = await SeedRelationalRunAsync(options, ledgerVersion: null);
+
+        // The run's own context tracks it while two question contexts add their answers' attempts.
+        await using var outer = new ApplicationDbContext(options);
+        var tracked = await outer.BenchmarkRuns.FirstAsync(r => r.Id == runId, ct);
+
+        await using (var q1 = new ApplicationDbContext(options))
+        {
+            await BenchmarkService.IncrementCandidateRollupsAsync(q1, runId, new ProviderRollupCounts(3, 1, 1, 2));
+            await BenchmarkService.IncrementCandidateRollupsAsync(q1, legacyRunId, new ProviderRollupCounts(3, 1, 1, 2));
+        }
+        await using (var q2 = new ApplicationDbContext(options))
+        {
+            await BenchmarkService.IncrementCandidateRollupsAsync(q2, runId, new ProviderRollupCounts(4, 2, 0, 1));
+        }
+
+        tracked.ErrorMessage = "touched by the run's own context";
+        await outer.SaveChangesAsync(ct);
+
+        await using var verify = new ApplicationDbContext(options);
+        var saved = await verify.BenchmarkRuns.AsNoTracking().FirstAsync(r => r.Id == runId, ct);
+        Assert.Equal(7, saved.CandidateValidAttemptCount);
+        Assert.Equal(3, saved.CandidateProviderErrorCount);
+        Assert.Equal(1, saved.CandidateUnattributedErrorCount);
+        Assert.Equal(3, saved.CandidateOurSideFailureCount);
+        Assert.Equal("touched by the run's own context", saved.ErrorMessage);
+
+        var legacy = await verify.BenchmarkRuns.AsNoTracking().FirstAsync(r => r.Id == legacyRunId, ct);
+        Assert.Null(legacy.CandidateValidAttemptCount);
+        Assert.Null(legacy.CandidateProviderErrorCount);
+    }
+
+    [Fact]
+    public async Task LiveRollupIncrements_WithoutARelationalDatabase_ReachOnlyARunTheContextTracks()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        await using (var seed = new ApplicationDbContext(options))
+        {
+            seed.BenchmarkRuns.Add(BenchmarkModelSnapshots.Attach(new BenchmarkRun
+            {
+                Id = 8, SuiteName = "Suite", ProviderLedgerVersion = 1, CandidateValidAttemptCount = 0,
+                CandidateProviderErrorCount = 0, CandidateUnattributedErrorCount = 0, CandidateOurSideFailureCount = 0
+            }));
+            await seed.SaveChangesAsync(ct);
+        }
+
+        await using (var untracked = new ApplicationDbContext(options))
+        {
+            await BenchmarkService.IncrementCandidateRollupsAsync(untracked, 8, new ProviderRollupCounts(5, 1, 0, 0));
+            Assert.Empty(untracked.ChangeTracker.Entries<BenchmarkRun>());
+        }
+
+        await using (var tracking = new ApplicationDbContext(options))
+        {
+            var run = await tracking.BenchmarkRuns.FirstAsync(r => r.Id == 8, ct);
+            await BenchmarkService.IncrementCandidateRollupsAsync(tracking, 8, new ProviderRollupCounts(2, 1, 0, 1));
+            Assert.Equal(2, run.CandidateValidAttemptCount);
+        }
+
+        await using var verify = new ApplicationDbContext(options);
+        var saved = await verify.BenchmarkRuns.AsNoTracking().FirstAsync(r => r.Id == 8, ct);
+        Assert.Equal(2, saved.CandidateValidAttemptCount);
+        Assert.Equal(1, saved.CandidateProviderErrorCount);
+        Assert.Equal(1, saved.CandidateOurSideFailureCount);
     }
 }

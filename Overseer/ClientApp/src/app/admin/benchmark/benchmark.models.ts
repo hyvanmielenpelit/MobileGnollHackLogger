@@ -61,14 +61,34 @@ export const RUN_HISTORY_SORTS: readonly CardListSort[] = [
   { id: 'cost-asc', label: 'Cost, lowest first', column: 'estimatedCost', direction: 'asc' },
   { id: 'cost-desc', label: 'Cost, highest first', column: 'estimatedCost', direction: 'desc' },
   { id: 'duration-asc', label: 'Duration, shortest first', column: 'durationMs', direction: 'asc' },
+  { id: 'provider-errors-desc', label: 'Most provider errors', column: 'providerErrors', direction: 'desc' },
   { id: 'tested-asc', label: 'Tested model (A–Z)', column: 'testedModelDisplayNameUsed', direction: 'asc' },
   { id: 'suite-asc', label: 'Suite (A–Z)', column: 'suiteName', direction: 'asc' }
 ];
 
-/** The Flags facet's values, in the order it lists them. */
+/**
+ * The Flags facet's values, in the order it lists them. *Failed at the provider* is a run with
+ * answers that ended in a provider failure; *Provider errors* is a recorded run or battery run with
+ * provider-class attempts, whether or not a retry recovered them. *Not analyzed*, *Analysis stale* and
+ * *Incomplete* belong to battery runs. A fixed order drops every value it does not name, so each flag
+ * `historyFlagsOf` can set must be listed here.
+ */
 export const RUN_HISTORY_FLAGS = [
-  'Degraded answers', 'Unanswered questions', 'Failed at the provider', 'Advisory timing', 'Pricing incomplete', 'None'
+  'Degraded answers', 'Unanswered questions', 'Failed at the provider', 'Provider errors', 'Advisory timing', 'Pricing incomplete',
+  'Not analyzed', 'Analysis stale', 'Incomplete', 'None'
 ] as const;
+
+/**
+ * A sort key that ranks by provider error rate, then by provider error count: the rate in steps of
+ * 10⁻⁹ times 10⁶, plus the count (capped below 10⁶). Null when the rate is not recorded, so
+ * `TableState` puts such rows last in either direction.
+ */
+export function providerErrorSortKey(rate: number | null | undefined, count: number | null | undefined): number | null {
+  if (rate == null || Number.isNaN(rate)) {
+    return null;
+  }
+  return Math.round(Math.min(1, Math.max(0, rate)) * 1e9) * 1e6 + Math.min(Math.max(0, count ?? 0), 999_999);
+}
 
 /** The Changes facet's values, in the order it lists them. */
 export const RUN_HISTORY_CHANGES = ['Instrument changed', 'Options changed', 'No change'] as const;

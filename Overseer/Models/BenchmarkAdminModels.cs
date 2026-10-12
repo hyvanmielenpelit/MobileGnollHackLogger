@@ -794,6 +794,22 @@ public class BenchmarkRunAnswerDto
     public string? RerunOfErrorMessage { get; set; }
 
     /// <summary>
+    /// Whose fault the answer's terminal failure was, as the name of a <c>BenchmarkFailureOrigin</c>
+    /// value (<c>None</c>, <c>Provider</c>, <c>Unattributed</c>, <c>Ours</c>). Null on an answer of a run
+    /// that does not record the provider ledger: "not recorded".
+    /// </summary>
+    public string? FailureOrigin { get; set; }
+
+    /// <summary>
+    /// The outcome class of the attempt that ended the answer (a <c>ProviderAttemptOutcome</c> name), or
+    /// <c>question_budget</c>; null when the answer did not fail or is not recorded.
+    /// </summary>
+    public string? FailureKind { get; set; }
+
+    /// <summary>How many times a re-run re-executed the answer; null when the run is not recorded.</summary>
+    public int? ReExecutionCount { get; set; }
+
+    /// <summary>
     /// Per-claim verdicts from the claim verifier, as a JSON array of
     /// { claim, verdict, citation, basis }. Advisory: nothing here is read by any scoring path.
     /// </summary>
@@ -858,7 +874,7 @@ public class BenchmarkToolCallDto
     public int ResultLengthChars { get; set; }
 }
 
-public class BenchmarkRunDetailDto
+public class BenchmarkRunDetailDto : IProviderAvailabilityCardDto
 {
     public long Id { get; set; }
 
@@ -1442,7 +1458,174 @@ public class BenchmarkRunDetailDto
     /// <summary>The run's answers by outcome class and its critical errors by resolution. Null before scoring method 13.</summary>
     public BenchmarkRunOutcomeSummaryDto? OutcomeSummary { get; set; }
 
+    /// <summary>
+    /// The run's provider availability from the attempt ledger, pooled with its lineage predecessors;
+    /// <see cref="ProviderAvailabilityDto.Recorded"/> is false on a run that does not record the ledger.
+    /// </summary>
+    public ProviderAvailabilityDto? ProviderAvailability { get; set; }
+
+    // The compact provider availability figures (IProviderAvailabilityCardDto), from the rollup columns.
+    public bool? ProviderAvailabilityRecorded { get; set; }
+    public int? ProviderRecordedRunCount { get; set; }
+    public int? ProviderRunCount { get; set; }
+    public int? ProviderValidAttempts { get; set; }
+    public int? ProviderErrorCount { get; set; }
+    public int? ProviderUnattributedErrorCount { get; set; }
+    public double? ProviderErrorRate { get; set; }
+    public int? RerunsNeeded { get; set; }
+    public int? ProviderRerunsNeeded { get; set; }
+
     public List<BenchmarkRunAnswerDto> Answers { get; set; } = new();
+}
+
+/// <summary>
+/// The compact provider availability figures of a card or table row, summed from the runs' rollup
+/// columns (never the attempt ledger) over the row's runs and their lineage predecessors. Candidate
+/// attempts only. A row whose runs record no ledger reads "not recorded":
+/// <see cref="ProviderAvailabilityRecorded"/> false and every other figure null.
+/// </summary>
+public interface IProviderAvailabilityCardDto
+{
+    /// <summary>At least one run of the row records the provider ledger; null when not computed.</summary>
+    bool? ProviderAvailabilityRecorded { get; set; }
+
+    /// <summary>Runs of the row that record the ledger, of <see cref="ProviderRunCount"/>.</summary>
+    int? ProviderRecordedRunCount { get; set; }
+
+    /// <summary>Runs behind the figures, lineage predecessors included.</summary>
+    int? ProviderRunCount { get; set; }
+
+    /// <summary>Valid candidate attempts (the denominator).</summary>
+    int? ProviderValidAttempts { get; set; }
+
+    /// <summary>Candidate attempts that failed at the provider.</summary>
+    int? ProviderErrorCount { get; set; }
+
+    /// <summary>Candidate attempts whose failure could not be attributed.</summary>
+    int? ProviderUnattributedErrorCount { get; set; }
+
+    /// <summary>Provider errors ÷ valid attempts, a proportion in [0, 1]; null without a valid attempt.</summary>
+    double? ProviderErrorRate { get; set; }
+
+    /// <summary>Repair passes plus replacement runs.</summary>
+    int? RerunsNeeded { get; set; }
+
+    /// <summary>The provider-caused part of <see cref="RerunsNeeded"/>.</summary>
+    int? ProviderRerunsNeeded { get; set; }
+}
+
+/// <summary>
+/// The provider availability of a run or a pool of runs, as the run and battery dialogs, the model
+/// comparison and the documents read it. Candidate-only except the grader line. Rates are proportions
+/// in [0, 1]; they and their bounds are null without a valid attempt. On a pool that records no run
+/// <see cref="Recorded"/> is false and only the run and re-run counts carry information.
+/// </summary>
+public class ProviderAvailabilityDto
+{
+    public bool Recorded { get; set; }
+
+    /// <summary>"Recorded for M of N runs": the figures are computed on the recorded runs only.</summary>
+    public int RecordedRuns { get; set; }
+    public int TotalRuns { get; set; }
+
+    /// <summary>Runs in the pool that a later run replaced (lineage predecessors).</summary>
+    public int ReplacedRunsIncluded { get; set; }
+
+    public int ValidAttempts { get; set; }
+    public int ProviderErrors { get; set; }
+    public int UnattributedErrors { get; set; }
+
+    /// <summary>Our-side failures, excluded from <see cref="ValidAttempts"/>.</summary>
+    public int OurSideFailures { get; set; }
+
+    /// <summary>The headline: provider errors ÷ valid attempts, with its cluster-adjusted Wilson 95 % interval.</summary>
+    public double? ProviderErrorRate { get; set; }
+    public double? ProviderErrorRateLow { get; set; }
+    public double? ProviderErrorRateHigh { get; set; }
+
+    /// <summary>The design effect behind the interval; 1 means no clustering adjustment.</summary>
+    public double DesignEffect { get; set; } = 1.0;
+
+    /// <summary>The upper bound including unattributed errors, with its interval.</summary>
+    public double? InclusiveRate { get; set; }
+    public double? InclusiveRateLow { get; set; }
+    public double? InclusiveRateHigh { get; set; }
+
+    /// <summary>Fewer than 100 valid attempts.</summary>
+    public bool FewAttempts { get; set; }
+
+    public int Overloaded { get; set; }
+    public int ServerErrors { get; set; }
+    public int Timeouts { get; set; }
+    public int StreamFailures { get; set; }
+    public int RateLimitedOurs { get; set; }
+    public int RateLimitedUnattributed { get; set; }
+    public int TransportUnattributed { get; set; }
+
+    /// <summary>Every outcome class in value order, zero counts included: the breakdown table's rows.</summary>
+    public List<ProviderAvailabilityOutcomeDto> ByOutcome { get; set; } = new();
+
+    /// <summary>Answers of the recorded runs whose terminal status is ProviderError with origin Provider.</summary>
+    public int QuestionsLost { get; set; }
+
+    /// <summary>Candidate calls with a valid attempt, and those whose first attempt succeeded.</summary>
+    public int Calls { get; set; }
+    public int FirstAttemptSuccessCalls { get; set; }
+
+    public int RepairPasses { get; set; }
+    public int ProviderRepairPasses { get; set; }
+    public int ReplacementRuns { get; set; }
+    public int ProviderReplacementRuns { get; set; }
+    public int RerunsNeeded { get; set; }
+    public int ProviderRerunsNeeded { get; set; }
+
+    /// <summary>Grader attempts, for information only.</summary>
+    public int GraderValidAttempts { get; set; }
+    public int GraderProviderErrors { get; set; }
+
+    /// <summary>5-minute UTC bins of the candidate attempts, contiguous; empty for a span over 30 days.</summary>
+    public List<ProviderAvailabilityBinDto> Bins { get; set; } = new();
+
+    /// <summary>The lineage links inside the pool, for "replaces run #41" links.</summary>
+    public List<ProviderAvailabilityLinkDto> Replaces { get; set; } = new();
+}
+
+/// <summary>One outcome class of a <see cref="ProviderAvailabilityDto"/>.</summary>
+public class ProviderAvailabilityOutcomeDto
+{
+    /// <summary>The <c>ProviderAttemptOutcome</c> name, for example <c>ProviderOverloaded</c>.</summary>
+    public string Outcome { get; set; } = string.Empty;
+
+    /// <summary>The stored class value: 0, 10–13, 20–21, 30–36.</summary>
+    public int Code { get; set; }
+
+    /// <summary><c>ok</c>, <c>provider</c>, <c>unattributed</c> or <c>ours</c>.</summary>
+    public string Side { get; set; } = string.Empty;
+
+    public int Count { get; set; }
+
+    /// <summary>The HTTP statuses seen on the class's candidate attempts, most frequent first, at most three.</summary>
+    public List<int> HttpStatuses { get; set; } = new();
+}
+
+/// <summary>One 5-minute UTC bin of the attempt strip.</summary>
+public class ProviderAvailabilityBinDto
+{
+    public DateTime StartUtc { get; set; }
+    public int Valid { get; set; }
+    public int Provider { get; set; }
+    public int Unattributed { get; set; }
+    public int Ours { get; set; }
+}
+
+/// <summary>Run <see cref="RunId"/> was replaced by run <see cref="ReplacedByRunId"/>.</summary>
+public class ProviderAvailabilityLinkDto
+{
+    public long RunId { get; set; }
+    public long ReplacedByRunId { get; set; }
+
+    /// <summary>The <c>BenchmarkReplacementCause</c> name; null when not stored.</summary>
+    public string? Cause { get; set; }
 }
 
 /// <summary>
@@ -1817,7 +2000,7 @@ public class SuiteDescriptionGenerationResultDto
     public string? RawResponseText { get; set; }   // only when IncludeDebugText
 }
 
-public class BenchmarkRunSummaryDto
+public class BenchmarkRunSummaryDto : IProviderAvailabilityCardDto
 {
     public long Id { get; set; }
 
@@ -1912,6 +2095,18 @@ public class BenchmarkRunSummaryDto
 
     /// <summary>K, the number of suites in the battery run.</summary>
     public int? BatterySuiteCount { get; set; }
+
+    // The compact provider availability figures (IProviderAvailabilityCardDto), over the run and its
+    // lineage predecessors, from the rollup columns.
+    public bool? ProviderAvailabilityRecorded { get; set; }
+    public int? ProviderRecordedRunCount { get; set; }
+    public int? ProviderRunCount { get; set; }
+    public int? ProviderValidAttempts { get; set; }
+    public int? ProviderErrorCount { get; set; }
+    public int? ProviderUnattributedErrorCount { get; set; }
+    public double? ProviderErrorRate { get; set; }
+    public int? RerunsNeeded { get; set; }
+    public int? ProviderRerunsNeeded { get; set; }
 }
 
 // --- Benchmark Game Snapshot Models ---

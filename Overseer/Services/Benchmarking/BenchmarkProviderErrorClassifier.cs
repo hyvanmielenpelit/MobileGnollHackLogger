@@ -12,10 +12,31 @@ public record ProviderErrorClassification(bool IsProviderError, int? HttpStatus,
 
 public static class BenchmarkProviderErrorClassifier
 {
-    private static readonly Regex ApiErrorRegex = new(@"API Error:\s*(\d{3})", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+    /// <summary>
+    /// A status code in a form only a status takes: <c>API Error: NNN</c>, <c>HTTP NNN</c>,
+    /// <c>status code NNN</c> (also .NET's "status code does not indicate success: NNN"),
+    /// <c>Status: NNN</c>, a bracketed <c>[NNN]</c> such as a Cloudflare edge code, and a leading
+    /// <c>NNN </c> at the start of the text or of a " | "-joined part, which is how the agent loop's
+    /// own terminal texts begin ("429 Rate Limited. …"). A bare number anywhere else, such as a token
+    /// count, is not a status.
+    /// </summary>
+    private static readonly Regex AnchoredStatusRegex = new(
+        @"(?:API Error:\s*|\bHTTP\s+|\bstatus code\s+(?:does not indicate success:\s*)?|\bStatus:\s*)(?<code>\d{3})\b"
+        + @"|\[(?<code>\d{3})\]"
+        + @"|(?:^|\s\|\s)(?<code>\d{3})(?=\s)",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
-    /// <summary>A bracketed status code an upstream returns verbatim, e.g. a Cloudflare edge code ([520], [521]).</summary>
-    private static readonly Regex BracketedStatusRegex = new(@"\[(\d{3})\]", RegexOptions.Compiled);
+    /// <summary>
+    /// Fixed openings of Overseer's own failure texts: the request governor's permit timeout and
+    /// cooldown refusal, and the benchmark's per-question time budget. They are never provider errors,
+    /// whatever status-like words they carry.
+    /// </summary>
+    private static readonly string[] OwnFailureMarkers =
+    {
+        "Request throttled:",
+        "Rate limit cooldown active",
+        "Per-question timeout exceeded ("
+    };
 
     /// <summary>
     /// Socket failures that mean the provider was unreachable rather than that it answered badly.
@@ -56,7 +77,11 @@ public static class BenchmarkProviderErrorClassifier
     /// provider error — from a cancellation the transport raised, and only the caller knows which it
     /// was. Falls back to <see cref="Classify(string?)"/> when no type in the chain matches.
     /// </summary>
-    public static ProviderErrorClassification Classify(Exception? exception, string? errorMessage, bool callerCanceled)
+    /// <param name="questionBudgetCanceled">
+    /// The caller's own per-question time budget cut the attempt. Like a caller cancel, that is never a
+    /// provider error.
+    /// </param>
+    public static ProviderErrorClassification Classify(Exception? exception, string? errorMessage, bool callerCanceled, bool questionBudgetCanceled = false)
     {
         if (exception == null)
         {
@@ -66,10 +91,15 @@ public static class BenchmarkProviderErrorClassifier
         var chain = Unwrap(exception).ToList();
         string message = !string.IsNullOrWhiteSpace(errorMessage) ? errorMessage!.Trim() : exception.Message;
 
+        if (IsOwnFailure(message))
+        {
+            return new ProviderErrorClassification(false, null, message);
+        }
+
         // A caller cancel is checked ahead of every transport rule: tearing the provider stream down
         // raises an IOException or SocketException around the cancellation, and those rules would
         // otherwise claim the chain before the intent behind it is considered.
-        if (callerCanceled && chain.OfType<OperationCanceledException>().Any())
+        if ((callerCanceled || questionBudgetCanceled) && chain.OfType<OperationCanceledException>().Any())
         {
             return new ProviderErrorClassification(false, null, message);
         }
@@ -141,15 +171,22 @@ public static class BenchmarkProviderErrorClassifier
 
         string msg = errorMessage.Trim();
 
+        if (IsOwnFailure(msg))
+        {
+            return new ProviderErrorClassification(false, null, msg);
+        }
+
+        var statuses = AnchoredStatuses(msg);
+
         // 429 Rate limiting
-        if (msg.Contains("429") || msg.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0 ||
+        if (statuses.Contains(429) || msg.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0 ||
             msg.IndexOf("rate_limit_exceeded", StringComparison.OrdinalIgnoreCase) >= 0)
         {
             return new ProviderErrorClassification(true, 429, msg);
         }
 
         // 529 Overload (Anthropic)
-        if (msg.Contains("529") || msg.IndexOf("overloaded_error", StringComparison.OrdinalIgnoreCase) >= 0)
+        if (statuses.Contains(529) || msg.IndexOf("overloaded_error", StringComparison.OrdinalIgnoreCase) >= 0)
         {
             return new ProviderErrorClassification(true, 529, msg);
         }
@@ -157,24 +194,23 @@ public static class BenchmarkProviderErrorClassifier
         // 503 / Overloaded / Service Unavailable / Bad Gateway / 504 Gateway Timeout / 500 Internal Server Error /
         // server_error and [server_error] (OpenAI's in-stream error code) / "Our servers are currently
         // overloaded" (OpenAI's own wording for the same condition)
-        if (msg.Contains("503") || msg.IndexOf("overloaded", StringComparison.OrdinalIgnoreCase) >= 0 ||
+        if (statuses.Contains(503) || msg.IndexOf("overloaded", StringComparison.OrdinalIgnoreCase) >= 0 ||
             msg.IndexOf("service unavailable", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            msg.Contains("502") || msg.IndexOf("bad gateway", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            msg.Contains("504") || msg.IndexOf("gateway timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            msg.Contains("500") || msg.IndexOf("internal server error", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            statuses.Contains(502) || msg.IndexOf("bad gateway", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            statuses.Contains(504) || msg.IndexOf("gateway timeout", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            statuses.Contains(500) || msg.IndexOf("internal server error", StringComparison.OrdinalIgnoreCase) >= 0 ||
             msg.IndexOf("server_error", StringComparison.OrdinalIgnoreCase) >= 0 ||
             msg.IndexOf("Our servers are currently overloaded", StringComparison.OrdinalIgnoreCase) >= 0)
         {
-            int code = msg.Contains("502") ? 502 : (msg.Contains("504") ? 504 : (msg.Contains("500") ? 500 : 503));
+            int code = statuses.Contains(502) ? 502 : (statuses.Contains(504) ? 504 : (statuses.Contains(500) ? 500 : 503));
             return new ProviderErrorClassification(true, code, msg);
         }
 
-        // A bracketed 5xx status the checks above did not already recognise by its literal digits.
-        var bracketedStatus = BracketedStatusRegex.Match(msg);
-        if (bracketedStatus.Success && int.TryParse(bracketedStatus.Groups[1].Value, out int bracketedCode) &&
-            bracketedCode is >= 500 and <= 599)
+        // An anchored 5xx status the checks above did not already recognize, such as a Cloudflare edge code.
+        int otherServerStatus = statuses.FirstOrDefault(s => s is >= 500 and <= 599);
+        if (otherServerStatus != 0)
         {
-            return new ProviderErrorClassification(true, bracketedCode, msg);
+            return new ProviderErrorClassification(true, otherServerStatus, msg);
         }
 
         // Timeouts
@@ -193,17 +229,40 @@ public static class BenchmarkProviderErrorClassifier
             }
         }
 
-        // API Error: XXX
-        var match = ApiErrorRegex.Match(msg);
-        if (match.Success && int.TryParse(match.Groups[1].Value, out int statusCode))
+        // An anchored 408 Request Timeout.
+        if (statuses.Contains(408))
         {
-            if (statusCode == 429 || statusCode == 500 || statusCode == 502 || statusCode == 503 || statusCode == 504 || statusCode == 529 || statusCode == 408)
-            {
-                return new ProviderErrorClassification(true, statusCode, msg);
-            }
+            return new ProviderErrorClassification(true, 408, msg);
         }
 
         // Genuine model or application errors (not provider transient failure)
         return new ProviderErrorClassification(false, null, msg);
+    }
+
+    /// <summary>Whether the text is one of Overseer's own failures, by <see cref="OwnFailureMarkers"/>.</summary>
+    public static bool IsOwnFailure(string message)
+    {
+        foreach (string marker in OwnFailureMarkers)
+        {
+            if (message.Contains(marker, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /// <summary>The status codes the text carries in an anchored form, in order of appearance.</summary>
+    private static List<int> AnchoredStatuses(string message)
+    {
+        var statuses = new List<int>();
+        foreach (Match match in AnchoredStatusRegex.Matches(message))
+        {
+            if (int.TryParse(match.Groups["code"].Value, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int status))
+            {
+                statuses.Add(status);
+            }
+        }
+        return statuses;
     }
 }

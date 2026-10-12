@@ -5,12 +5,20 @@
  */
 
 import {
+  NOT_RECORDED_TEXT,
+  formatCount,
+  formatPercent,
+  formatReruns
+} from '../shared/provider-availability/provider-availability';
+import {
   CcAnnotationKind,
   CcAxis,
   CcBatteryRunStatus,
   CcEndpointResult,
   CcGrade,
   CcInterval,
+  CcMeasurementChangeKind,
+  CcNotComputedKind,
   CcNumber,
   CcRegradeJobStatus,
   CcRunRow,
@@ -88,6 +96,16 @@ export function formatFractionPercent(fraction: CcNumber | null | undefined, dig
 export function formatSignedPercent(percent: CcNumber | null | undefined, digits = 1): string {
   const n = ccNumber(percent);
   return n === null ? NO_VALUE : `${formatSigned(n, digits)} %`;
+}
+
+/**
+ * Percentage points, P6's unit: one decimal and the `pp` suffix, as the other difference endpoints are
+ * written: `1.2 pp`; `signed` writes `+1.2 pp`, `−0.4 pp`.
+ */
+export function formatPp(value: CcNumber | null | undefined, signed = false, digits = 1): string {
+  const n = ccNumber(value);
+  if (n === null) return NO_VALUE;
+  return `${signed ? formatSigned(n, digits) : formatFixed(n, digits)} pp`;
 }
 
 /** Milliseconds: `850 ms` below a second, `2.4 s` from one, the seconds to `secondsDigits` decimals. */
@@ -268,11 +286,45 @@ const AXIS_LABELS: Record<CcAxis, string> = {
   speedTelemetry: 'Speed (telemetry)',
   speedLegacy: 'Speed (legacy)',
   work: 'Work',
-  cost: 'Cost'
+  cost: 'Cost',
+  availability: 'Availability'
 };
 
 export function axisText(axis: CcAxis | string): string {
   return AXIS_LABELS[axis as CcAxis] ?? axis;
+}
+
+/** The run-selection label of a run P6 reads and no other endpoint (`availabilityOnly`). */
+export const CC_AVAILABILITY_ONLY_LABEL = 'Provider availability only (P6)';
+
+const NOT_COMPUTED_KIND_LABELS: Record<CcNotComputedKind, string> = {
+  measurementChanged: 'Measurement changed',
+  noCommonStratum: 'No common time stratum',
+  notRecorded: 'Not recorded',
+  noTelemetry: 'No call telemetry',
+  noPricing: 'No price card',
+  tooFewPairs: 'Too few paired items',
+  other: 'Not computable'
+};
+
+/** Why an endpoint was not computed, as a short label: `Not recorded` for P6 without recorded attempts. */
+export function notComputedKindText(kind: CcNotComputedKind | string | null | undefined): string {
+  return (kind && NOT_COMPUTED_KIND_LABELS[kind as CcNotComputedKind]) || NOT_COMPUTED_KIND_LABELS.other;
+}
+
+const MEASUREMENT_CHANGE_LABELS: Record<CcMeasurementChangeKind, string> = {
+  grading: 'Grading',
+  scoring: 'Scoring',
+  candidateTiming: 'Candidate timing',
+  callTelemetry: 'Call telemetry',
+  candidateAccounting: 'Candidate accounting',
+  pricing: 'Pricing',
+  providerErrorAccounting: 'Provider error accounting'
+};
+
+/** A measurement change kind: `Provider error accounting`. */
+export function measurementChangeText(kind: CcMeasurementChangeKind | string): string {
+  return MEASUREMENT_CHANGE_LABELS[kind as CcMeasurementChangeKind] ?? kind;
 }
 
 const RUN_STATUS_LABELS: Record<CcRunStatus, string> = {
@@ -351,6 +403,23 @@ export function regradeCoverageText(row: CcRunRow): string {
 /** The matched control runs of a run. */
 export function controlRunsText(row: CcRunRow): string {
   return row.matchedControlRunIds.length === 0 ? 'None' : row.matchedControlRunIds.map(id => `#${id}`).join(', ');
+}
+
+/** The provider availability fields a run row and a battery-run row carry. */
+export type CcAvailabilityFields = Pick<CcRunRow,
+  'availabilityRecorded' | 'validAttemptCount' | 'providerErrorCount' | 'rerunsNeeded' | 'providerRerunsNeeded'>;
+
+/**
+ * A row's *Provider errors* fact, the rate always with its count: `0.81 % (12 of 1,480 attempts)`,
+ * with `; 2 re-runs (1 for provider errors)` when any; `Not recorded` before harness 56.
+ */
+export function providerErrorsText(row: CcAvailabilityFields): string {
+  if (!row.availabilityRecorded) return NOT_RECORDED_TEXT;
+  const n = row.validAttemptCount ?? 0;
+  const k = row.providerErrorCount ?? 0;
+  const head = n > 0 ? `${formatPercent(k / n)} (${formatCount(k, n)})` : 'No valid attempts';
+  const reruns = row.rerunsNeeded ?? 0;
+  return reruns > 0 ? `${head}; ${formatReruns(reruns, row.providerRerunsNeeded ?? 0)}` : head;
 }
 
 /** A run, or a battery run, counts as eligible for an analysis when at least one axis can use it. */

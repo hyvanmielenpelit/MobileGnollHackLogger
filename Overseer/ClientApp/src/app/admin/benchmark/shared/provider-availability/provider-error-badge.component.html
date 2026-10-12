@@ -1,0 +1,14 @@
+@if (shown()) {
+  <span class="peb" [attr.interestfor]="tipId" [attr.style]="'anchor-name: --' + tipId">
+    @if (errorsText(); as errors) {
+      <span class="peb-errors">{{ errors }}</span>
+    }
+    @if (errorsText() && rerunsText()) {
+      <span class="peb-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+    }
+    @if (rerunsText(); as reruns) {
+      <span class="peb-reruns">{{ reruns }}</span>
+    }
+  </span>
+  <div popover="hint" class="gh-tooltip" [id]="tipId" [attr.style]="'position-anchor: --' + tipId">{{ sentence() }}</div>
+}

@@ -29,10 +29,18 @@ public class BenchmarkReportFactLabelsTests
             "run:1", subject, peer)).Sheet!;
         var standalone = BenchmarkReportFacts.Build(Input(
             Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 60, 55, 65)), "run:1", subject)).Sheet!;
+        var withAvailability = BenchmarkReportFacts.Build(new BenchmarkReportFactsInput
+        {
+            Comparison = Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 60, 55, 65)),
+            SubjectKey = "run:1",
+            Runs = new Dictionary<long, BenchmarkRun> { [1] = subject },
+            Availability = BenchmarkReportFactsTests.RecordedAvailability()
+        }).Sheet!;
 
         return withPeer.Facts.Select(f => f.Key)
             .Concat(withPeer.Entries.SelectMany(e => e.Extra).Select(f => f.Key))
             .Concat(standalone.Facts.Select(f => f.Key))
+            .Concat(withAvailability.Facts.Select(f => f.Key))
             .Concat(Sheet().Facts.Select(f => f.Key))
             .Distinct()
             .OrderBy(k => k, System.StringComparer.Ordinal)
@@ -49,6 +57,7 @@ public class BenchmarkReportFactLabelsTests
         Assert.Contains("answers.scored", keys);
         Assert.Contains("speed.modelTimeMean", keys);
         Assert.Contains("bands.authored.advanced", keys);
+        Assert.All(BenchmarkReportFacts.AvailabilityKeys, key => Assert.Contains(key, keys));
 
         var unlabeled = keys.Where(k => !BenchmarkReportFactLabels.TryLabel(k, out _)).ToList();
 
@@ -96,6 +105,20 @@ public class BenchmarkReportFactLabelsTests
     [InlineData("peer.A.pairedDifference", "Paired difference from Model A")]
     [InlineData("peer.A.pairedInterval", "Paired-bootstrap interval against Model A")]
     [InlineData("peer.B.sharedQuestions", "Questions shared with Model B")]
+    [InlineData("availability.attempts", "Valid attempts")]
+    [InlineData("availability.providerErrors", "Provider errors")]
+    [InlineData("availability.providerErrorRate", "Provider error rate")]
+    [InlineData("availability.providerErrorRateCi95Low", "Lower bound of the provider error rate's 95 % interval")]
+    [InlineData("availability.unattributedErrors", "Unattributed errors")]
+    [InlineData("availability.reruns", "Re-runs needed")]
+    [InlineData("availability.providerReruns", "Re-runs needed for provider errors")]
+    [InlineData("availability.oneIn", "Provider errors as a natural frequency")]
+    [InlineData("endpoint.P6.estimate", "Provider error rate (P6): change")]
+    [InlineData("protocol.margin.P6", "Equivalence margin of provider error rate (P6)")]
+    [InlineData("endpoint.P6.ci95", "Provider error rate (P6): 95 % interval")]
+    [InlineData("availability.baseline.attempts", "Baseline period: valid attempts")]
+    [InlineData("availability.comparison.providerErrorRateCi95High", "Comparison period: provider error rate, 95 % interval high")]
+    [InlineData("availability.comparison.availabilityOnlyRuns", "Comparison period: availability-only runs")]
     public void Labels_AreExplicitOrFollowTheirPattern(string key, string expected)
     {
         Assert.True(BenchmarkReportFactLabels.TryLabel(key, out string label));

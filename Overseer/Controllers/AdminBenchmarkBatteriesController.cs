@@ -54,6 +54,10 @@ public class AdminBenchmarkBatteriesController : ControllerBase
     private readonly BenchmarkBatteryAnalysisService _analysisService;
     private readonly BenchmarkBatteryLeaderboardService _leaderboard;
     private readonly BenchmarkRunManager _runManager;
+    private BenchmarkProviderAvailabilityService? _providerAvailability;
+
+    /// <summary>The provider availability loader over this request's context.</summary>
+    private BenchmarkProviderAvailabilityService ProviderAvailability => _providerAvailability ??= new(_db);
 
     public AdminBenchmarkBatteriesController(
         ApplicationDbContext db,
@@ -989,6 +993,12 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         if (includeLiveFigures)
         {
             await SetLiveFiguresAsync(dto, costEstimator, ct);
+
+            if (await ProviderAvailability.ForBatteryRunAsync(id, ct) is { } availability)
+            {
+                dto.ProviderAvailability = BenchmarkProviderAvailabilityService.ToDto(availability.Pool);
+                dto.ProviderAvailabilityMembers = availability.Members.Select(m => BenchmarkProviderAvailabilityService.ToDto(m)).ToList();
+            }
         }
 
         return dto;
@@ -1200,6 +1210,18 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         foreach (var dto in dtos)
         {
             dto.ModelBatchRunId = batches.TryGetValue(dto.Id, out long batchId) ? batchId : null;
+        }
+
+        // Card figures from the rollup columns: each member run with its predecessors, and each battery
+        // run over every member run, superseded ones included.
+        var availabilityCards = await ProviderAvailability.LoadCardsAsync(state.Members.Select(m => m.BenchmarkRunId), ct);
+        foreach (var dto in dtos)
+        {
+            BenchmarkProviderAvailabilityService.ApplyCard(dto, availabilityCards.ForPool(dto.Members.Select(m => m.RunId)));
+            foreach (var member in dto.Members)
+            {
+                BenchmarkProviderAvailabilityService.ApplyCard(member, availabilityCards.ForRun(member.RunId));
+            }
         }
 
         return dtos;
@@ -1899,9 +1921,13 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             var answerOutcomes = await BenchmarkBatteryAnswerOutcomes.LoadAsync(_db, memberRunIds, withRefutedSentences: true, ct);
             var graders = await _analysisService.LoadGradersAsync(batteryRun, memberRuns, ct);
             var earlierRuns = await _analysisService.LoadEarlierRunsAsync(batteryRun, ct);
+
+            // The battery run's provider availability as of now: every member run, superseded ones
+            // included, with their predecessors, and the per-member rows.
+            BatteryProviderAvailability? providerAvailability = await ProviderAvailability.ForBatteryRunAsync(batteryRun.Id, ct);
             string markdown = BenchmarkBatteryReportBuilder.BuildMarkdownReport(
                 batteryRun, definition, result, analysis, memberRuns, comparability, comparison, comparisonLabel,
-                GetOverseerVersion(), answerOutcomes, graders, earlierRuns);
+                GetOverseerVersion(), answerOutcomes, graders, earlierRuns, providerAvailability);
 
             string? modelName = memberRuns
                 .Select(r => r.TestedModelSnapshot.Label())
@@ -1987,6 +2013,15 @@ public class AdminBenchmarkBatteriesController : ControllerBase
                     configLabels,
                     identities.TryGetValue(a.BenchmarkBatteryRunId, out var identity) ? identity : null))
                 .ToList();
+
+            var availabilityCards = await ProviderAvailability.LoadCardsAsync(state.Members.Select(m => m.BenchmarkRunId), ct);
+            foreach (var row in rows)
+            {
+                var card = availabilityCards.ForPool(state.Of(row.BatteryRunId).Select(m => m.BenchmarkRunId));
+                row.ProviderErrorRate = card.ProviderErrorRate;
+                row.ProviderErrorCount = card.Recorded ? card.ProviderErrors : null;
+                row.ProviderValidAttempts = card.Recorded ? card.ValidAttempts : null;
+            }
 
             var ranked = rows
                 .Where(r => BenchmarkBatteryLeaderboardService.IsRanked(r.Complete, r.ComparabilityClassSha256, r.OverallIndex))

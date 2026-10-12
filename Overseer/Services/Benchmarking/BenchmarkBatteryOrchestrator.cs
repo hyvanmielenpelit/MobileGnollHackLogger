@@ -147,6 +147,15 @@ public class BenchmarkBatteryOrchestrator
     /// <summary>The model batch claim each battery run driven for a batch launches its members under.</summary>
     private readonly ConcurrentDictionary<long, string> _batchOwners = new();
 
+    /// <summary>For a battery run that replaces a superseded one, the run each member slot replaces.</summary>
+    private readonly ConcurrentDictionary<long, IReadOnlyDictionary<(int SuiteIndex, int Round), BenchmarkRunReplacement>> _replaces = new();
+
+    /// <summary>
+    /// The member runs each battery run superseded under <see cref="BenchmarkBatteryResumeMode.RerunUnderCurrentInstrument"/>;
+    /// their replacements carry <see cref="BenchmarkReplacementCause.InstrumentChange"/>. Replaced whole, never mutated.
+    /// </summary>
+    private readonly ConcurrentDictionary<long, IReadOnlySet<long>> _instrumentReruns = new();
+
     /// <summary>
     /// Guards taking the claim for a reconcile or a resume, and <see cref="_reconciling"/>, so the two
     /// never hold one battery run's claim at once.
@@ -203,11 +212,16 @@ public class BenchmarkBatteryOrchestrator
     /// writer belongs to the battery run: it is checked here against the tested configuration and
     /// stored on the row, and every member is launched without one.</para>
     /// </summary>
+    /// <param name="replaces">
+    /// For a battery run that replaces a superseded one: the run each member slot replaces, keyed by
+    /// <c>(SuiteIndex, Round)</c>, applied at the slot's first launch.
+    /// </param>
     public async Task<BenchmarkBatteryStartResult> StartAsync(
         StartBenchmarkBatteryRunRequest request,
         string? userId,
         CancellationToken ct = default,
-        string? batchOwner = null)
+        string? batchOwner = null,
+        IReadOnlyDictionary<(int SuiteIndex, int Round), BenchmarkRunReplacement>? replaces = null)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -403,8 +417,90 @@ public class BenchmarkBatteryOrchestrator
         }
 
         SetBatchOwner(batteryRun.Id, batchOwner);
+        if (replaces is { Count: > 0 })
+        {
+            _replaces[batteryRun.Id] = replaces;
+        }
         BeginDriving(batteryRun.Id);
         return BenchmarkBatteryStartResult.Ok(batteryRun.Id);
+    }
+
+    /// <summary>The run a member slot replaces, from <see cref="StartAsync"/>'s map.</summary>
+    private BenchmarkRunReplacement? ReplacementFor(long batteryRunId, int suiteIndex, int round) =>
+        _replaces.TryGetValue(batteryRunId, out var map) && map.TryGetValue((suiteIndex, round), out var replacement) ? replacement : null;
+
+    /// <summary>
+    /// The run a launch into a free slot replaces: the slot's newest superseded member, or, at the slot's
+    /// first launch, <see cref="ReplacementFor"/>'s entry. Null when neither exists.
+    /// </summary>
+    internal async Task<BenchmarkRunReplacement?> SlotReplacementAsync(
+        ApplicationDbContext db, long batteryRunId, int suiteIndex, int round, CancellationToken ct = default)
+    {
+        var inSlot = await db.BenchmarkBatteryRunMembers
+            .AsNoTracking()
+            .Where(m => m.BenchmarkBatteryRunId == batteryRunId && m.SuiteIndex == suiteIndex && m.Round == round)
+            .Select(m => new { m.Id, m.BenchmarkRunId, m.Superseded, m.AddedAtUtc })
+            .ToListAsync(ct);
+
+        if (inSlot.Count == 0)
+        {
+            return ReplacementFor(batteryRunId, suiteIndex, round);
+        }
+
+        var predecessor = inSlot
+            .Where(m => m.Superseded)
+            .OrderByDescending(m => m.AddedAtUtc)
+            .ThenByDescending(m => m.Id)
+            .FirstOrDefault();
+        if (predecessor == null) return null;
+
+        bool instrumentChange = _instrumentReruns.TryGetValue(batteryRunId, out var reruns)
+                                && reruns.Contains(predecessor.BenchmarkRunId);
+        return await BenchmarkReplacementCauses.ReplacementAsync(db, predecessor.BenchmarkRunId, instrumentChange, ct: ct);
+    }
+
+    /// <summary>
+    /// Stamps the run an attach places in a slot as replacing the slot's previous run: its live occupant,
+    /// else its newest superseded member. Left alone when the run already names a predecessor, the slot
+    /// had none, or the link would close a cycle.
+    /// </summary>
+    private static async Task StampAttachReplacementAsync(
+        ApplicationDbContext db,
+        long batteryRunId,
+        int suiteIndex,
+        int round,
+        long attachedRunId,
+        IReadOnlyList<BenchmarkBatteryRunMember> occupants,
+        CancellationToken ct)
+    {
+        long? replacedRunId = occupants.FirstOrDefault()?.BenchmarkRunId;
+        if (replacedRunId == null)
+        {
+            replacedRunId = await db.BenchmarkBatteryRunMembers
+                .AsNoTracking()
+                .Where(m => m.BenchmarkBatteryRunId == batteryRunId && m.SuiteIndex == suiteIndex && m.Round == round && m.Superseded)
+                .OrderByDescending(m => m.AddedAtUtc)
+                .ThenByDescending(m => m.Id)
+                .Select(m => (long?)m.BenchmarkRunId)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        if (replacedRunId is not long predecessorId || predecessorId == attachedRunId) return;
+
+        var attached = await db.BenchmarkRuns.FirstOrDefaultAsync(r => r.Id == attachedRunId, ct);
+        if (attached == null || attached.ReplacesRunId != null) return;
+
+        // Walks the predecessor's own chain; reaching the attached run would make the chain a cycle.
+        long? cursor = predecessorId;
+        var seen = new HashSet<long>();
+        while (cursor is long id && seen.Add(id))
+        {
+            if (id == attachedRunId) return;
+            cursor = await db.BenchmarkRuns.AsNoTracking().Where(r => r.Id == id).Select(r => r.ReplacesRunId).FirstOrDefaultAsync(ct);
+        }
+
+        attached.ReplacesRunId = predecessorId;
+        attached.ReplacementCause = BenchmarkReplacementCauses.Decide(null, attached: true);
     }
 
     private void SetBatchOwner(long batteryRunId, string? batchOwner)
@@ -747,6 +843,8 @@ public class BenchmarkBatteryOrchestrator
         {
             return BenchmarkBatteryAttachResult.Fail(BenchmarkBatteryAttachOutcome.Ineligible, check.Reason!);
         }
+
+        await StampAttachReplacementAsync(db, batteryRun.Id, suiteIndex, round, run.Id, slot.Occupants, ct);
 
         foreach (var occupant in slot.Occupants)
         {
@@ -1263,6 +1361,7 @@ public class BenchmarkBatteryOrchestrator
             }
         }
 
+        IReadOnlyList<long> supersededUnderRerun = Array.Empty<long>();
         if (!rerun)
         {
             string? guardRefusal = GuardFailureRefusal(live.Select(s => s.Member));
@@ -1327,6 +1426,8 @@ public class BenchmarkBatteryOrchestrator
                 member.Superseded = true;
             }
 
+            supersededUnderRerun = live.Select(s => s.Member.BenchmarkRunId).ToList();
+
             var fingerprints = new Dictionary<int, BenchmarkInstrumentFingerprint?>();
             foreach (var suite in definition.Suites)
             {
@@ -1370,6 +1471,15 @@ public class BenchmarkBatteryOrchestrator
         {
             if (!claimAlreadyHeld) _runManager.ReleaseOrchestrator(owner);
             throw;
+        }
+
+        if (supersededUnderRerun.Count > 0)
+        {
+            var reruns = _instrumentReruns.TryGetValue(batteryRun.Id, out var earlier)
+                ? new HashSet<long>(earlier)
+                : new HashSet<long>();
+            reruns.UnionWith(supersededUnderRerun);
+            _instrumentReruns[batteryRun.Id] = reruns;
         }
 
         SetBatchOwner(batteryRun.Id, batchOwner);
@@ -1774,6 +1884,8 @@ public class BenchmarkBatteryOrchestrator
             if (next == null)
             {
                 await FinishAsync(scope.ServiceProvider, db, batteryRun, definition, ct);
+                _replaces.TryRemove(batteryRunId, out _);
+                _instrumentReruns.TryRemove(batteryRunId, out _);
                 return;
             }
 
@@ -1807,8 +1919,10 @@ public class BenchmarkBatteryOrchestrator
                 AddedAtUtc = DateTime.UtcNow
             };
 
+            var replacement = await SlotReplacementAsync(db, batteryRunId, suiteIndex, round, ct);
             var launch = await launcher.CreateAndLaunchRunAsync(
-                request, batteryRun.StartedByUserId, null, null, ct, member, BatchOwnerOf(batteryRunId));
+                request, batteryRun.StartedByUserId, null, null, ct, member, BatchOwnerOf(batteryRunId),
+                replacesRunId: replacement?.RunId, replacementCause: replacement?.Cause);
 
             if (!launch.Started)
             {

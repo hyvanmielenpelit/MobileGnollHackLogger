@@ -399,7 +399,7 @@ describe('BatteryLeaderboardDialogComponent', () => {
 
     expect(q('.gh-datatable-scroll .bl-table')!.classList).toContain('gh-datatable');
     const headers = qa('.bl-table thead th').map(th => (th.textContent ?? '').replace(/\s+/g, ' ').trim());
-    expect(headers).toEqual(['Rank', 'Model', 'Overall Index', '95 % interval', 'Speed', 'Pass cost', 'R', 'Analyzed', 'Actions']);
+    expect(headers).toEqual(['Rank', 'Model', 'Overall Index', '95 % interval', 'Speed', 'Pass cost', 'Provider errors', 'R', 'Analyzed', 'Actions']);
     expect(rankedIds()).toEqual([1, 2, 3]);
     expect(ranks()).toEqual(['1', '2', '3']);
 
@@ -415,6 +415,31 @@ describe('BatteryLeaderboardDialogComponent', () => {
     expect(second.querySelector('.bl-cost')!.textContent!.trim()).toBe('$0.5000');
     expect(second.querySelector('.bl-r')!.textContent!.trim()).toBe('3');
     expect(second.querySelector('time')!.getAttribute('datetime')).toBe(hourIso(2));
+  });
+
+  it('shows each result\'s provider errors with their count, and sorts them by rate with unrecorded results last', () => {
+    const rows = threeRows();
+    rows[0].providerErrorRate = 2 / 200;
+    rows[0].providerErrorCount = 2;
+    rows[0].providerValidAttempts = 200;
+    rows[2].providerErrorRate = 12 / 1480;
+    rows[2].providerErrorCount = 12;
+    rows[2].providerValidAttempts = 1480;
+    open(board([cls(CLASS_A, rows)]));
+
+    const cells = () => bodyRows().map(r => (r.querySelector('.bl-provider-errors')?.textContent ?? '').trim());
+    expect(cells()).toEqual(['1.0 % (2/200)', 'Not recorded', '0.81 % (12/1,480)']);
+
+    sortButton('Provider errors').click();
+    fixture.detectChanges();
+    expect(sortButton('Provider errors').closest('th')!.getAttribute('aria-sort')).toBe('descending');
+    expect(rankedIds()).toEqual([1, 3, 2]);
+    expect(ranks()).toEqual(['1', '3', '2']);
+
+    sortButton('Provider errors').click();
+    fixture.detectChanges();
+    // Ascending, and the result that does not record it is still last.
+    expect(rankedIds()).toEqual([3, 1, 2]);
   });
 
   it('marks a rank whose interval overlaps the result above', () => {

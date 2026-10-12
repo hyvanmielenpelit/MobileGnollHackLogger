@@ -230,6 +230,11 @@ public static class BenchmarkBatteryReportBuilder
     /// <see cref="BenchmarkBatteryAnalysisService.LoadEarlierRunsAsync"/>; the manifest's history table
     /// is left out when there is none.
     /// </param>
+    /// <param name="providerAvailability">
+    /// The battery run's provider availability with its member rows, from
+    /// <see cref="BenchmarkProviderAvailabilityService.ForBatteryRunAsync"/>; when null, the Overall
+    /// section's Provider availability subsection is left out.
+    /// </param>
     public static string BuildMarkdownReport(
         BenchmarkBatteryRun batteryRun,
         BenchmarkBatteryDefinition definition,
@@ -242,7 +247,8 @@ public static class BenchmarkBatteryReportBuilder
         string? overseerVersion = null,
         BenchmarkBatteryAnswerOutcomes? answerOutcomes = null,
         BenchmarkBatteryGraders? graders = null,
-        IReadOnlyList<BenchmarkBatteryEarlierRun>? earlierRuns = null)
+        IReadOnlyList<BenchmarkBatteryEarlierRun>? earlierRuns = null,
+        BatteryProviderAvailability? providerAvailability = null)
     {
         ArgumentNullException.ThrowIfNull(batteryRun);
         ArgumentNullException.ThrowIfNull(definition);
@@ -254,7 +260,7 @@ public static class BenchmarkBatteryReportBuilder
 
         AppendHeader(sb, batteryRun, result, analysis, runs, overseerVersion);
         AppendManifest(sb, ++section, batteryRun, definition, result, analysis, runs, comparability, graders, earlierRuns);
-        AppendOverall(sb, ++section, result);
+        AppendOverall(sb, ++section, definition, result, providerAvailability);
         AppendProfile(sb, ++section, result);
         AppendSensitivity(sb, ++section, result);
         AppendLeaveOneOut(sb, ++section, result);
@@ -619,7 +625,12 @@ public static class BenchmarkBatteryReportBuilder
 
     // --- Headline ------------------------------------------------------------------------------------
 
-    private static void AppendOverall(StringBuilder sb, int section, BenchmarkBatteryStatisticsResult result)
+    private static void AppendOverall(
+        StringBuilder sb,
+        int section,
+        BenchmarkBatteryDefinition definition,
+        BenchmarkBatteryStatisticsResult result,
+        BatteryProviderAvailability? providerAvailability)
     {
         sb.AppendLine($"## {section}. Overall Intelligence Index");
         sb.AppendLine();
@@ -629,6 +640,7 @@ public static class BenchmarkBatteryReportBuilder
         {
             sb.AppendLine($"> **Incomplete ({Int(result.CompletedSuiteCount)} of {Int(result.SuiteCount)} suites): no Overall Index is reported.** A suite without a usable member would have to be dropped and the remaining weights renormalized, which changes what the index estimates and makes a partial battery look complete. The per-suite figures below are reported as they stand.");
             sb.AppendLine();
+            AppendProviderAvailability(sb, $"### {section}.1 Provider availability", definition, result, providerAvailability);
             sb.AppendLine("---");
             sb.AppendLine();
             return;
@@ -695,7 +707,75 @@ public static class BenchmarkBatteryReportBuilder
 
         sb.AppendLine($"> {BenchmarkBatteryStatistics.CriticalValueCaveat}");
         sb.AppendLine();
+        AppendProviderAvailability(sb, $"### {section}.2 Provider availability", definition, result, providerAvailability);
         sb.AppendLine("---");
+        sb.AppendLine();
+    }
+
+    /// <summary>
+    /// The battery run's provider availability: the headline over every member run, superseded ones
+    /// included, and their lineage predecessors, the upper bound, our-side failures, questions lost and
+    /// re-runs, then one row per member with its own run's figures, and the footnote that defines the
+    /// classes and the denominator. One line when no member run is recorded; nothing when not loaded.
+    /// Every number is written by <see cref="BenchmarkProviderAvailability"/>'s formatting.
+    /// </summary>
+    private static void AppendProviderAvailability(
+        StringBuilder sb,
+        string heading,
+        BenchmarkBatteryDefinition definition,
+        BenchmarkBatteryStatisticsResult result,
+        BatteryProviderAvailability? availability)
+    {
+        if (availability == null) return;
+
+        sb.AppendLine(heading);
+        sb.AppendLine();
+
+        var s = availability.Pool.Summary;
+        if (!s.Recorded)
+        {
+            sb.AppendLine($"- **Provider availability:** {BenchmarkReportFacts.AvailabilityNotRecordedReason} — the member runs kept no record of their API attempts, so provider errors cannot be told apart from failures on Overseer's side.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine($"- **Provider error rate:** {BenchmarkProviderAvailability.FormatRate(s.ProviderErrors, s.ValidAttempts, s.ProviderErrorRateLow, s.ProviderErrorRateHigh)}"
+                      + (s.RecordedRuns < s.TotalRuns ? $"; recorded for {Int(s.RecordedRuns)} of {Int(s.TotalRuns)} runs" : string.Empty));
+        sb.AppendLine($"- **Upper bound including unattributed errors:** {BenchmarkProviderAvailability.FormatRate(s.ProviderErrors + s.UnattributedErrors, s.ValidAttempts, s.InclusiveRateLow, s.InclusiveRateHigh)}"
+                      + $" — {BenchmarkReportFacts.Thousands(s.UnattributedErrors)} unattributed");
+        sb.AppendLine($"- **By class:** overloaded {BenchmarkReportFacts.Thousands(s.Overloaded)} · server errors {BenchmarkReportFacts.Thousands(s.ServerErrors)} · timeouts {BenchmarkReportFacts.Thousands(s.Timeouts)} · stream failures {BenchmarkReportFacts.Thousands(s.StreamFailures)} · rate limited, unattributed {BenchmarkReportFacts.Thousands(s.RateLimitedUnattributed)} · transport, unattributed {BenchmarkReportFacts.Thousands(s.TransportUnattributed)}");
+        sb.AppendLine($"- **Our-side failures (excluded):** {BenchmarkReportFacts.Thousands(s.OurSideFailures)}, of them rate limited by our own limits {BenchmarkReportFacts.Thousands(s.RateLimitedOurs)}");
+        sb.AppendLine($"- **Questions lost to provider errors:** {BenchmarkReportFacts.Thousands(s.QuestionsLost)}");
+        sb.AppendLine($"- **Re-runs needed:** {BenchmarkReportFacts.RerunsText(s.RerunsNeeded)}"
+                      + (s.ProviderRerunsNeeded > 0 ? $" ({BenchmarkReportFacts.Thousands(s.ProviderRerunsNeeded)} for provider errors)" : string.Empty)
+                      + (s.ReplacementRuns > 0 ? $", including {BenchmarkReportFacts.Thousands(s.ReplacementRuns)} replaced {(s.ReplacementRuns == 1 ? "run" : "runs")}" : string.Empty));
+        sb.AppendLine();
+
+        if (availability.Members.Count > 0)
+        {
+            sb.AppendLine("| Suite | Round | Run | Member | Valid attempts | Provider errors | Provider error rate | Unattributed | Re-runs |");
+            sb.AppendLine("|---|---:|---:|---|---:|---:|---:|---:|---|");
+            foreach (var m in availability.Members)
+            {
+                string suite = Cell(SuiteName(definition, result, m.SuiteIndex));
+                string member = m.Superseded ? "superseded" : "current";
+                if (!m.Recorded)
+                {
+                    sb.AppendLine($"| {suite} | {Int(m.Round)} | #{m.RunId.ToString(CultureInfo.InvariantCulture)} | {member} | not recorded | — | — | — | — |");
+                    continue;
+                }
+
+                string rate = m.ProviderErrorRate is double r ? BenchmarkProviderAvailability.FormatPercent(r) : "—";
+                string reruns = BenchmarkReportFacts.RerunsText(m.RerunsNeeded)
+                                + (m.ProviderRerunsNeeded > 0 ? $" ({BenchmarkReportFacts.Thousands(m.ProviderRerunsNeeded)} for provider errors)" : string.Empty);
+                sb.AppendLine($"| {suite} | {Int(m.Round)} | #{m.RunId.ToString(CultureInfo.InvariantCulture)} | {member} " +
+                              $"| {BenchmarkReportFacts.Thousands(m.ValidAttempts)} | {BenchmarkReportFacts.Thousands(m.ProviderErrors)} | {rate} " +
+                              $"| {BenchmarkReportFacts.Thousands(m.UnattributedErrors)} | {reruns} |");
+            }
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("> Candidate attempts only. Valid attempts are every API attempt of the model under test except our-side failures, which are counted but left out of the denominator: our own rate limits, billing, a rejected key or request, Overseer's request governor, our cancellations and per-question time budget, and our network. Provider errors are the attempts the provider answered with an overload (HTTP 503 or 529), a server error (HTTP 5xx), no response headers within the request timeout, or a stream that broke after it started; unattributed errors (rate limits and transport failures no rule attributes to either side) stay in the denominator and out of the provider error rate. The interval is a cluster-adjusted Wilson 95 % interval. These are provider errors observed in GnollBench runs, pooled over every member run, superseded members included, every run they replaced and every repair pass.");
         sb.AppendLine();
     }
 

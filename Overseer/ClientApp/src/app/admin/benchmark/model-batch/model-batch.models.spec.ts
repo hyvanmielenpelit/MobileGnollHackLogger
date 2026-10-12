@@ -31,7 +31,7 @@ describe('model batch models', () => {
         startedAtUtc: '2026-10-10T08:00:00Z', completedAtUtc: '2026-10-10T08:13:40Z',
         result: result({
           speedIndex: 71.6, medianModelTimeMs: 17200, ttftP50Ms: 1800, candidateCostPerQuestionUsd: 0.0042,
-          totalCostUsd: 1.2, refutedClaims: 2, flaggedAnswers: 3, failedAnswers: 1
+          totalCostUsd: 1.2, refutedClaims: 2, flaggedAnswers: 3, failedAnswers: 1, providerErrors: 1204, rerunsNeeded: 2
         })
       }));
       expect(figures).toEqual([
@@ -43,19 +43,35 @@ describe('model batch models', () => {
         { key: 'total-cost', label: 'Total cost', value: '$1.20' },
         { key: 'refuted-claims', label: 'Refuted claims', value: '2' },
         { key: 'flagged-answers', label: 'Flagged answers', value: '3' },
-        { key: 'failed-answers', label: 'Failed answers', value: '1', tone: 'warning' }
+        { key: 'failed-answers', label: 'Failed answers', value: '1', tone: 'warning' },
+        { key: 'provider-errors', label: 'Provider errors', value: '1,204' },
+        { key: 'reruns', label: 'Re-runs', value: '2' }
       ]);
     });
 
-    it('omits missing figures, keeps refuted claims at zero, and drops flagged and failed answers at zero', () => {
+    it('omits missing figures, keeps refuted claims and provider errors at zero, and drops flagged and failed answers at zero', () => {
       const figures = modelBatchMemberFigures(member({ result: result({ totalCostUsd: 0.42, flaggedAnswers: 0 }) }));
-      expect(figures.map(f => f.label)).toEqual(['Total cost', 'Refuted claims']);
+      expect(figures.map(f => f.label)).toEqual(['Total cost', 'Refuted claims', 'Provider errors']);
       expect(figures).toContainEqual({ key: 'refuted-claims', label: 'Refuted claims', value: '0' });
+      expect(figures).toContainEqual({ key: 'provider-errors', label: 'Provider errors', value: '0' });
     });
 
     it('omits the duration without both timestamps', () => {
       const figures = modelBatchMemberFigures(member({ startedAtUtc: '2026-10-10T08:00:00Z', result: result() }));
-      expect(figures.map(f => f.key)).toEqual(['refuted-claims']);
+      expect(figures.map(f => f.key)).toEqual(['refuted-claims', 'provider-errors']);
+    });
+
+    it('says Not recorded for provider errors, and leaves out re-runs, for a result that predates the ledger', () => {
+      const figures = modelBatchMemberFigures(member({ result: result({ providerErrors: null, rerunsNeeded: null }) }));
+      expect(figures).toEqual([
+        { key: 'refuted-claims', label: 'Refuted claims', value: '0' },
+        { key: 'provider-errors', label: 'Provider errors', value: 'Not recorded' }
+      ]);
+    });
+
+    it('shows recorded re-runs at zero', () => {
+      const figures = modelBatchMemberFigures(member({ result: result({ providerErrors: 0, rerunsNeeded: 0 }) }));
+      expect(figures.map(f => [f.key, f.value])).toEqual([['refuted-claims', '0'], ['provider-errors', '0'], ['reruns', '0']]);
     });
 
     it('has at most the duration without a result', () => {

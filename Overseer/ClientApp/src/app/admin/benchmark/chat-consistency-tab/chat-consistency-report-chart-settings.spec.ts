@@ -24,23 +24,27 @@ import {
 import { ccEndpoint } from './chat-consistency-tab.testing';
 
 const { ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport } = BenchmarkReportAudience;
-const ALL = ['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline'];
+const ALL = ['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline', 'cc5-availability'];
 
 describe('chat-consistency-report-chart-settings', () => {
   beforeEach(() => localStorage.removeItem(CC_REPORT_CHART_STORAGE_KEY));
   afterEach(() => localStorage.removeItem(CC_REPORT_CHART_STORAGE_KEY));
 
   describe('the picker', () => {
-    it('lists the four figures, titled as the charts, in document order', () => {
+    it('lists the five figures, titled as the charts, in document order', () => {
       expect(CC_REPORT_CHART_PICKER_FIGURES.map(figure => figure.key)).toEqual(ALL);
-      expect(CC_REPORT_CHART_PICKER_FIGURES.map(figure => figure.title))
-        .toEqual(['Intelligence per run', 'Time to first answer text', 'Work per turn (output tokens per answer)', 'Runs and events']);
+      expect(CC_REPORT_CHART_PICKER_FIGURES.map(figure => figure.title)).toEqual([
+        'Intelligence per run', 'Time to first answer text', 'Work per turn (output tokens per answer)', 'Runs and events',
+        'Provider availability'
+      ]);
     });
 
-    it('places the measures after the verdicts and the overview after the events, but in the Executive Summary', () => {
+    it('places the measures and provider availability after the verdicts and the overview after the events, but in the Executive Summary', () => {
       expect([ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport].map(audience => ccReportChartAnchor(audience, 'cc4-timeline')))
         .toEqual(['Results', 'Events', 'Events', 'Events']);
       expect(ccReportChartAnchor(TechnicalReport, 'cc1-quality')).toBe('Results');
+      expect([ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport].map(audience => ccReportChartAnchor(audience, 'cc5-availability')))
+        .toEqual(['Results', 'Results', 'Results', 'Results']);
       const overview = CC_REPORT_CHART_PICKER_FIGURES[3].placement as Record<number, string>;
       expect(overview[ExecutiveSummary]).toBe('Results');
       expect(overview[InternalBrief]).toBe('Events');
@@ -61,18 +65,20 @@ describe('chat-consistency-report-chart-settings', () => {
       const notes = ccReportChartNotes([
         ccEndpoint('P1', { computed: false, notComputedReason: 'No common grader.' }),
         ccEndpoint('P2'),
-        ccEndpoint('P4', { computed: false })
+        ccEndpoint('P4', { computed: false }),
+        ccEndpoint('P6', { computed: false, notComputedKind: 'notRecorded' })
       ]);
       expect(notes).toEqual({
         'cc1-quality': 'P1 was not computable in this analysis; the chart\'s caption says it is not comparable.',
-        'cc3-work': 'P4 was not computable in this analysis; the chart\'s caption says it is not comparable.'
+        'cc3-work': 'P4 was not computable in this analysis; the chart\'s caption says it is not comparable.',
+        'cc5-availability': 'P6 was not computable in this analysis; the chart\'s caption says it is not comparable.'
       });
       expect(ccReportChartNotes(null)).toEqual({});
     });
   });
 
   describe('defaults', () => {
-    it('chooses two charts for the summary, all four for researchers, and two each for the brief and the provider', () => {
+    it('chooses two charts for the summary, all five for researchers, and two each for the brief and the provider', () => {
       expect(CC_DEFAULT_REPORT_CHART_SELECTION).toEqual({
         [ExecutiveSummary]: ['cc1-quality', 'cc2-speed'],
         [TechnicalReport]: ALL,
@@ -81,10 +87,10 @@ describe('chat-consistency-report-chart-settings', () => {
       });
     });
 
-    it('lays the measures out at half and the overview at two thirds, at 8 pt and half the page at most', () => {
+    it('lays the measures and provider availability out at half and the overview at two thirds, at 8 pt and half the page at most', () => {
       expect(CC_DEFAULT_DOCUMENT_CHART_LAYOUT).toEqual({
         ...DEFAULT_DOCUMENT_CHART_LAYOUT,
-        widths: { 'cc1-quality': 'half', 'cc2-speed': 'half', 'cc3-work': 'half', 'cc4-timeline': 'twoThirds' },
+        widths: { 'cc1-quality': 'half', 'cc2-speed': 'half', 'cc3-work': 'half', 'cc4-timeline': 'twoThirds', 'cc5-availability': 'half' },
         labelPt: 8,
         maxHeightPercent: 50
       });
@@ -124,7 +130,7 @@ describe('chat-consistency-report-chart-settings', () => {
   });
 
   describe('normalizing', () => {
-    it('keeps the four figures in document order, once each, for the four documents', () => {
+    it('keeps the five figures in document order, once each, for the four documents', () => {
       expect(normalizeCcReportChartSelection({
         [ExecutiveSummary]: ['cc4-timeline', 'p1a-quality', 'cc1-quality', 'cc4-timeline', 7],
         [ProviderIssueReport]: [],
@@ -189,7 +195,8 @@ describe('chat-consistency-report-chart-settings', () => {
           { key: 'cc1-quality', widthShare: 0.5, rowGroup: 1 },
           { key: 'cc2-speed', widthShare: 0.5, rowGroup: 1 },
           { key: 'cc3-work', widthShare: 0.5, rowGroup: null },
-          { key: 'cc4-timeline', widthShare: 2 / 3, rowGroup: null }
+          { key: 'cc4-timeline', widthShare: 2 / 3, rowGroup: null },
+          { key: 'cc5-availability', widthShare: 0.5, rowGroup: null }
         ],
         maxHeightShare: 0.5
       });

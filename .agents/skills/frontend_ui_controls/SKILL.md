@@ -1919,6 +1919,19 @@ line up down the list at a wide width, as Run History's `.rh-metrics` does.
   about 30rem. Run History's card is *head · metrics · actions / instrument*, puts the metrics under the
   head below 60rem and goes to one column below 30rem. No viewport media queries.
 
+**The provider-error badge** (`app-provider-error-badge`, `admin/benchmark/shared/provider-availability/`) is the
+shared kicker badge for GnollBench provider availability: Run History's run and battery-run cards put it
+in `div.rh-card-kicker` after its `span.rh-sep`, like the other kicker badges, and the Model Comparison
+source cards, which have no kicker, at the end of `p.csp-card-meta`. It **renders only when the figure is
+non-zero** — provider errors or re-runs above 0 — so a card shows nothing while all is well. It is a
+plain **outlined** badge whose words carry the state (*Provider errors 0.81 %*, *2 re-runs*), **never
+color alone** and never a red, amber or green fill. Its full sentence (*12 of 1,480 attempts; 3
+unattributed; 2 re-runs, 1 for provider errors*) is an `interestfor` tooltip; because its inputs carry no
+id, the component **generates its own unique id** for the `interestfor` / `anchor-name` pair, and it calls
+`ensureOverlayPolyfills()` in `ngOnInit` (§ Polyfills). Its inputs are `[valid]`, `[providerErrors]`,
+`[unattributed]`, `[rerunsNeeded]`, `[providerReruns]` and `[recorded]`. Keep it distinct from
+`app-provider-badge`, the provider-name badge in the same kicker.
+
 **The filter bar**, above the list, in this order:
 
 1. A **search** field: `<input type="search">` with a real visually hidden `<label for>`, a

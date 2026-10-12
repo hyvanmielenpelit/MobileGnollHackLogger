@@ -1,0 +1,15 @@
+/* A plain outlined badge in the card kicker's neutral ink: the words carry the meaning, never a color. */
+.peb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border: 1px solid var(--nav-color);
+  border-radius: 4px;
+  color: var(--nav-color);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}

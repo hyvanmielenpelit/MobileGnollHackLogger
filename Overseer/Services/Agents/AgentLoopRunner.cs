@@ -246,7 +246,12 @@ public class AgentLoopRunner
                 EndpointKind = request.Endpoint.IsCustom ? "custom" : "official"
             };
             result.ModelCalls.Add(callRecord);
-            var call = new ModelCallTracker(callRecord);
+            var call = new ModelCallTracker(callRecord)
+            {
+                Result = result,
+                OperatorCancellation = request.OperatorCancellation,
+                EndpointKind = request.Endpoint.IsCustom ? BenchmarkEndpointKind.Custom : BenchmarkEndpointKind.Official
+            };
 
             await foreach (var evt in ExecuteApiWithRetriesAsync(
                 async ct =>
@@ -752,40 +757,45 @@ public class AgentLoopRunner
             }
             yield return new ChatEvent { Type = "status", Data = $"Waiting for {providerName}..." };
 
+            // The iteration's attempt record, appended in the finally below however the iteration ends.
+            var draft = new AttemptDraft();
             IDisposable? permit = null;
-            string? throttleError = null;
-            if (_governor != null && !string.IsNullOrEmpty(credentialKey))
-            {
-                // The governor's cooldown sleeps inside AcquirePermitAsync, so it counts as permit wait.
-                long permitStartTicks = ProviderCallMeta.Now();
-                try
-                {
-                    permit = await _governor.AcquirePermitAsync(credentialKey, permitWaitTimeout, cancellationToken);
-                }
-                catch (TimeoutException tex)
-                {
-                    throttleError = $"Request throttled: {tex.Message}";
-                }
-                catch (OperationCanceledException)
-                {
-                    record.ErrorKind ??= "canceled";
-                    throw;
-                }
-                finally
-                {
-                    record.PermitWaitMs += ElapsedMsSince(permitStartTicks);
-                }
-            }
-
-            if (throttleError != null)
-            {
-                record.ErrorKind ??= "permit_timeout";
-                yield return new ChatEvent { Type = "error", Data = throttleError };
-                yield break;
-            }
-
             try
             {
+                string? throttleError = null;
+                if (_governor != null && !string.IsNullOrEmpty(credentialKey))
+                {
+                    // The governor's cooldown sleeps inside AcquirePermitAsync, so it counts as permit wait.
+                    long permitStartTicks = ProviderCallMeta.Now();
+                    try
+                    {
+                        permit = await _governor.AcquirePermitAsync(credentialKey, permitWaitTimeout, cancellationToken);
+                    }
+                    catch (TimeoutException tex)
+                    {
+                        throttleError = $"Request throttled: {tex.Message}";
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        record.ErrorKind ??= "canceled";
+                        draft.CanceledBeforeSend = true;
+                        throw;
+                    }
+                    finally
+                    {
+                        record.PermitWaitMs += ElapsedMsSince(permitStartTicks);
+                    }
+                }
+
+                if (throttleError != null)
+                {
+                    record.ErrorKind ??= "permit_timeout";
+                    draft.GovernorRefused = true;
+                    draft.EndTicks = ProviderCallMeta.Now();
+                    yield return new ChatEvent { Type = "error", Data = throttleError };
+                    yield break;
+                }
+
                 HttpResponseMessage? response = null;
                 Exception? requestException = null;
                 record.AttemptCount++;
@@ -798,6 +808,7 @@ public class AgentLoopRunner
                 record.RateLimitJson = null;
                 // The request factory restamps just before SendAsync; this covers a factory that throws first.
                 call.AttemptSendTicks = ProviderCallMeta.Now();
+                draft.Stage = AttemptStage.AwaitingHeaders;
                 try
                 {
                     response = await requestFactory(cancellationToken);
@@ -809,9 +820,12 @@ public class AgentLoopRunner
 
                 long sendTicks = call.AttemptSendTicks;
                 call.SendTicks = sendTicks;
+                draft.SendTicks = sendTicks;
 
                 if (requestException != null)
                 {
+                    draft.Exception = requestException;
+                    draft.EndTicks = ProviderCallMeta.Now();
                     sw.Stop();
                     bool isHttpClientTimeout = requestException is TaskCanceledException tce
                         && (tce.InnerException is TimeoutException || requestException.Message.Contains("HttpClient.Timeout"));
@@ -863,6 +877,8 @@ public class AgentLoopRunner
                     record.RateLimitJson = headers.RateLimitJson;
                     record.HttpVersion = response.Version.ToString();
                     record.FinalHttpStatus = (int)response.StatusCode;
+                    draft.HttpStatus = (int)response.StatusCode;
+                    draft.Stage = AttemptStage.Streaming;
                     if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                     {
                         record.Http429Count++;
@@ -901,7 +917,14 @@ public class AgentLoopRunner
                             catch (Exception ex) when (ex is OperationCanceledException || ex is System.IO.IOException)
                             {
                                 streamException = ex;
+                                draft.Exception ??= ex;
                                 break;
+                            }
+                            catch (Exception ex)
+                            {
+                                draft.Exception ??= ex;
+                                draft.EndTicks ??= ProviderCallMeta.Now();
+                                throw;
                             }
 
                             if (!hasNext) break;
@@ -910,6 +933,10 @@ public class AgentLoopRunner
                             if (evt.Type == "service_tier")
                             {
                                 sawTierEvent = true;
+                            }
+                            else if (evt.Type == "call_meta" && evt.CallMeta?.CompletedTicks != null)
+                            {
+                                draft.CompletionSeen = true;
                             }
 
                             if (!firstChunkReceived && (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete"))
@@ -924,6 +951,16 @@ public class AgentLoopRunner
                             if (evt.Type == "chunk" || evt.Type == "thinking_chunk" || evt.Type == "tool_call_complete")
                             {
                                 hasYieldedChunks = true;
+                                if (!draft.StreamErrorEvent)
+                                {
+                                    draft.ChunksReceived = true;
+                                }
+                            }
+
+                            // The first provider error event is the attempt's evidence.
+                            if (evt.Type == "error" && !draft.StreamErrorEvent)
+                            {
+                                CaptureStreamError(draft, providerName, evt, response);
                             }
 
                             if (evt.Type == "error" && !hasYieldedChunks)
@@ -947,6 +984,7 @@ public class AgentLoopRunner
                                         _governor.RecordRateLimit(credentialKey, TimeSpan.FromSeconds(delaySeconds));
                                     }
 
+                                    draft.EndTicks = ProviderCallMeta.Now();
                                     record.FailedAttemptMs += ElapsedMsSince(sendTicks);
                                     record.StreamErrorRetryCount++;
 
@@ -1007,6 +1045,7 @@ public class AgentLoopRunner
                             }
                         }
 
+                        draft.EndTicks ??= ProviderCallMeta.Now();
                         record.StreamEndMs = ElapsedMsSince(sendTicks);
                     }
                     finally
@@ -1073,6 +1112,7 @@ public class AgentLoopRunner
                 {
                     var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
                     int attemptMs = ElapsedMsSince(sendTicks);
+                    CaptureErrorResponse(draft, errorBody, response);
                     // The debug event only reaches a session that asked for it; the failure itself is
                     // always worth a server-side line, with the body bounded so a wall of HTML cannot
                     // flood the log.
@@ -1088,6 +1128,8 @@ public class AgentLoopRunner
                     // Before the 429 branch: OpenAI reports an empty balance as 429 insufficient_quota,
                     // and neither an empty balance nor a rejected key clears by retrying.
                     var keyFailure = ApiKeyAlerts.ApiKeyFailureClassifier.Classify(providerName, (int)response.StatusCode, errorBody);
+                    draft.ApiKeyBilling = keyFailure == ApiKeyAlerts.ApiKeyFailureKind.InsufficientBalance;
+                    draft.ApiKeyRejected = keyFailure == ApiKeyAlerts.ApiKeyFailureKind.KeyRejected;
                     if (keyFailure != null)
                     {
                         await RecordAndReportKeyFailureAsync(
@@ -1115,6 +1157,7 @@ public class AgentLoopRunner
                     // A withdrawn model does not come back by retrying.
                     if (ModelNotFoundClassifier.IsModelNotFound(providerName, (int)response.StatusCode, errorBody, modelId))
                     {
+                        draft.ModelNotFound = true;
                         record.ErrorKind ??= "model_not_found";
                         if (systemModelId.HasValue)
                         {
@@ -1251,6 +1294,9 @@ public class AgentLoopRunner
                 {
                     record.ErrorKind ??= cancellationToken.IsCancellationRequested ? "canceled" : "exception";
                 }
+
+                // Before an exception leaves the runner, so a caller holding the result reads the attempt.
+                AppendAttempt(call, draft, providerName, success, retryScheduled, cancellationToken);
             }
         }
 
@@ -1258,7 +1304,234 @@ public class AgentLoopRunner
         if (!success)
         {
             record.ErrorKind ??= "canceled";
+            SetTerminalOutcome(call, cancellationToken);
         }
+    }
+
+    /// <summary>
+    /// Appends the iteration's <see cref="ProviderAttemptRecord"/> to the call and refreshes the run's
+    /// terminal outcome. Never throws: it runs in a finally, where a throw would replace the exception
+    /// that is leaving.
+    /// </summary>
+    private void AppendAttempt(
+        ModelCallTracker call, AttemptDraft draft, string providerName, bool success, bool retried, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var record = call.Record;
+            long endTicks = draft.EndTicks ?? ProviderCallMeta.Now();
+            long startTicks = draft.SendTicks ?? draft.StartTicks;
+            bool tokenCanceled = cancellationToken.IsCancellationRequested;
+
+            // A verdict the provider (or our governor) gave. A 2xx stream that ended without its
+            // completion event while our token was canceled was cut by us, not broken by the provider.
+            bool httpError = draft.HttpStatus is int status && (status < 200 || status > 299);
+            bool completed = success && (draft.CompletionSeen || draft.StreamErrorEvent || !tokenCanceled);
+            bool ended = draft.GovernorRefused || httpError || draft.StreamErrorEvent || completed;
+
+            bool cut = !ended && (tokenCanceled || draft.CanceledBeforeSend);
+            bool budget = cut && IsQuestionBudgetCancel(call.OperatorCancellation);
+
+            // No verdict, no exception and no cancel: the consumer stopped enumerating mid-attempt.
+            bool abandoned = !ended && !cut && draft.Exception == null;
+
+            var fields = draft.Error;
+            var evidence = new ProviderAttemptEvidence(
+                providerName,
+                call.EndpointKind,
+                draft.HttpStatus,
+                fields?.Code,
+                fields?.Type,
+                draft.BodyExcerpt,
+                draft.RateLimitHeaders,
+                draft.Exception,
+                draft.Stage,
+                draft.ChunksReceived,
+                draft.CompletionSeen,
+                CallerCanceled: (cut && !budget) || abandoned,
+                QuestionBudgetCanceled: budget,
+                GovernorRefused: draft.GovernorRefused,
+                ApiKeyBilling: draft.ApiKeyBilling,
+                ApiKeyRejected: draft.ApiKeyRejected,
+                ModelNotFound: draft.ModelNotFound,
+                StreamErrorEvent: draft.StreamErrorEvent,
+                StreamErrorStatus: draft.StreamErrorEvent ? fields?.NumericCode : null,
+                ErrorStatus: fields?.Status,
+                ErrorDetailTypes: fields?.DetailTypes);
+
+            var outcome = ProviderAttemptClassifier.Classify(evidence);
+
+            record.Attempts.Add(new ProviderAttemptRecord
+            {
+                AttemptIndex = record.Attempts.Count,
+                StartedAtUtc = draft.StartedAtUtc.AddTicks(StopwatchToTimeSpanTicks(startTicks - draft.StartTicks)),
+                DurationMs = Math.Max(0, ProviderCallMeta.MsBetween(startTicks, endTicks) ?? 0),
+                Outcome = outcome,
+                HttpStatus = draft.HttpStatus,
+                ProviderErrorCode = outcome == ProviderAttemptOutcome.Ok || fields == null
+                    ? null
+                    : ProviderAttemptClassifier.PreferredErrorCode(providerName, fields.Code, fields.Type, fields.Status),
+                EndpointKind = call.EndpointKind,
+                Retried = retried,
+                RetryAfterMs = draft.RetryAfterMs,
+                QuestionBudgetCanceled = budget
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record a provider attempt of {Provider}.", providerName);
+        }
+
+        SetTerminalOutcome(call, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sets the run's terminal outcome from this call: cleared when the call produced a response,
+    /// otherwise the class of its last attempt, or <c>OurCanceled</c> when a cancel ended the call
+    /// between attempts (during a backoff, or before the next send).
+    /// </summary>
+    private static void SetTerminalOutcome(ModelCallTracker call, CancellationToken cancellationToken)
+    {
+        var result = call.Result;
+        if (result == null) return;
+
+        var record = call.Record;
+        var last = record.Attempts.Count > 0 ? record.Attempts[^1] : null;
+
+        if (record.ErrorKind == null && last?.Outcome != ProviderAttemptOutcome.OurCanceled)
+        {
+            result.TerminalOutcome = null;
+            result.TerminalErrorCode = null;
+            result.TerminalQuestionBudgetCanceled = false;
+            return;
+        }
+
+        if (last == null || (record.ErrorKind == "canceled" && last.Outcome != ProviderAttemptOutcome.OurCanceled))
+        {
+            result.TerminalOutcome = ProviderAttemptOutcome.OurCanceled;
+            result.TerminalErrorCode = null;
+            result.TerminalQuestionBudgetCanceled =
+                cancellationToken.IsCancellationRequested && IsQuestionBudgetCancel(call.OperatorCancellation);
+            return;
+        }
+
+        result.TerminalOutcome = last.Outcome;
+        result.TerminalErrorCode = last.ProviderErrorCode;
+        result.TerminalQuestionBudgetCanceled = last.QuestionBudgetCanceled;
+    }
+
+    /// <summary>
+    /// The run's token fired while the operator's had not: the caller's own time budget. A caller with
+    /// no budget passes <see cref="CancellationToken.None"/>, and every cancel is then the caller's.
+    /// </summary>
+    private static bool IsQuestionBudgetCancel(CancellationToken operatorCancellation) =>
+        operatorCancellation.CanBeCanceled && !operatorCancellation.IsCancellationRequested;
+
+    private static long StopwatchToTimeSpanTicks(long stopwatchTicks) =>
+        (long)(stopwatchTicks * ((double)TimeSpan.TicksPerSecond / System.Diagnostics.Stopwatch.Frequency));
+
+    /// <summary>Records the first provider error event of a 2xx stream as the attempt's evidence.</summary>
+    private static void CaptureStreamError(AttemptDraft draft, string providerName, ChatEvent evt, HttpResponseMessage response)
+    {
+        string? text = evt.Detail ?? evt.Data;
+        draft.StreamErrorEvent = true;
+        draft.Error = ProviderAttemptClassifier.ParseStreamErrorEvent(evt.Data, evt.Detail);
+        draft.BodyExcerpt = ProviderAttemptClassifier.Excerpt(text);
+        var keyFailure = ApiKeyAlerts.ApiKeyFailureClassifier.Classify(providerName, null, text);
+        draft.ApiKeyBilling = keyFailure == ApiKeyAlerts.ApiKeyFailureKind.InsufficientBalance;
+        draft.ApiKeyRejected = keyFailure == ApiKeyAlerts.ApiKeyFailureKind.KeyRejected;
+        draft.RateLimitHeaders = ReadRateLimitHeaders(response);
+    }
+
+    /// <summary>Records a non-2xx response's error fields, rate-limit headers and Retry-After as the attempt's evidence.</summary>
+    private static void CaptureErrorResponse(AttemptDraft draft, string errorBody, HttpResponseMessage response)
+    {
+        draft.EndTicks = ProviderCallMeta.Now();
+        draft.Error = ProviderAttemptClassifier.ParseErrorBody(errorBody);
+        draft.BodyExcerpt = ProviderAttemptClassifier.Excerpt(errorBody);
+        draft.RateLimitHeaders = ReadRateLimitHeaders(response);
+        draft.RetryAfterMs = ReadRetryAfterMs(response);
+    }
+
+    /// <summary>The response's rate-limit headers, lower-case names; null when it sent none.</summary>
+    private static Dictionary<string, string>? ReadRateLimitHeaders(HttpResponseMessage response)
+    {
+        Dictionary<string, string>? limits = null;
+        foreach (var header in response.Headers)
+        {
+            string key = header.Key.ToLowerInvariant();
+            if (key.StartsWith("x-ratelimit-", StringComparison.Ordinal)
+                || key.StartsWith("anthropic-ratelimit-", StringComparison.Ordinal)
+                || key == "retry-after"
+                || key == "retry-after-ms")
+            {
+                limits ??= new Dictionary<string, string>(StringComparer.Ordinal);
+                limits[key] = string.Join(",", header.Value);
+            }
+        }
+        return limits;
+    }
+
+    /// <summary>The wait the provider asked for, from <c>retry-after-ms</c> or <c>Retry-After</c>; null when it named none.</summary>
+    private static int? ReadRetryAfterMs(HttpResponseMessage response)
+    {
+        if (response.Headers.TryGetValues("retry-after-ms", out var msValues)
+            && int.TryParse(msValues.FirstOrDefault(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int ms)
+            && ms >= 0)
+        {
+            return ms;
+        }
+
+        var retryAfter = response.Headers.RetryAfter;
+        double? wait = retryAfter?.Delta is TimeSpan delta ? (double?)delta.TotalMilliseconds
+            : retryAfter?.Date is DateTimeOffset date ? Math.Max(0, (date - DateTimeOffset.UtcNow).TotalMilliseconds)
+            : (double?)null;
+        return wait == null ? null : (int)Math.Min(int.MaxValue, Math.Round(wait.Value));
+    }
+
+    /// <summary>What one loop iteration has seen so far, from which its <see cref="ProviderAttemptRecord"/> is built.</summary>
+    private sealed class AttemptDraft
+    {
+        public DateTime StartedAtUtc { get; } = DateTime.UtcNow;
+
+        public long StartTicks { get; } = ProviderCallMeta.Now();
+
+        public long? SendTicks { get; set; }
+
+        public long? EndTicks { get; set; }
+
+        public AttemptStage Stage { get; set; } = AttemptStage.BeforeSend;
+
+        public bool GovernorRefused { get; set; }
+
+        /// <summary>The permit wait was canceled; no request was sent.</summary>
+        public bool CanceledBeforeSend { get; set; }
+
+        public int? HttpStatus { get; set; }
+
+        public ProviderErrorFields? Error { get; set; }
+
+        public bool StreamErrorEvent { get; set; }
+
+        /// <summary>At most <see cref="ProviderAttemptClassifier.MaxBodyExcerptLength"/> characters, dropped with the draft.</summary>
+        public string? BodyExcerpt { get; set; }
+
+        public IReadOnlyDictionary<string, string>? RateLimitHeaders { get; set; }
+
+        public int? RetryAfterMs { get; set; }
+
+        public Exception? Exception { get; set; }
+
+        /// <summary>Output arrived before the first provider error event (or at all, without one).</summary>
+        public bool ChunksReceived { get; set; }
+
+        public bool CompletionSeen { get; set; }
+
+        public bool ApiKeyBilling { get; set; }
+
+        public bool ApiKeyRejected { get; set; }
+
+        public bool ModelNotFound { get; set; }
     }
 
     private static int ElapsedMsSince(long startTicks) =>
@@ -1281,6 +1554,14 @@ public class AgentLoopRunner
 
         /// <summary>The send of the latest attempt: the successful one once the stream is read.</summary>
         public long SendTicks { get; set; }
+
+        /// <summary>The run whose terminal outcome each attempt refreshes; null for none.</summary>
+        public AgentRunResult? Result { get; init; }
+
+        /// <summary>The operator's own token, which tells a caller budget's cancel from the operator's.</summary>
+        public CancellationToken OperatorCancellation { get; init; }
+
+        public BenchmarkEndpointKind EndpointKind { get; init; }
     }
 
     /// <summary>The URL the request factory posts to, or null if it cannot be built; the request reports that failure itself.</summary>

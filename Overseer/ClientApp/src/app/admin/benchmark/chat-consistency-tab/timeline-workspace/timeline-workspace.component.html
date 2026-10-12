@@ -82,6 +82,18 @@
             </label>
           </fieldset>
 
+          <fieldset class="gh-choice cc-tl-group cc-tl-availability-form" aria-describedby="cc-tl-availability-form-hint">
+            <legend>Provider availability</legend>
+            <p id="cc-tl-availability-form-hint" class="cc-tl-hint">Provider errors observed in GnollBench runs, as a share of the valid attempts of each run or day.</p>
+            @for (option of availabilityForms; track option.id) {
+              <label class="gh-radio">
+                <input type="radio" name="cc-tl-availability-form" [id]="'cc-tl-availability-form-' + option.id" [value]="option.id"
+                       [checked]="availabilityForm === option.id" (change)="setAvailabilityForm(option.id)">
+                {{ option.label }}
+              </label>
+            }
+          </fieldset>
+
           <fieldset class="gh-fieldset cc-tl-group">
             <legend>Runs</legend>
             <label class="checkbox-label align-start">

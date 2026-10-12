@@ -620,6 +620,40 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(labels()).toEqual(['Overall Index', 'Class', 'Runs per suite']);
   });
 
+  it('ends the meta line of a run, group or battery card with the provider-error badge only when it has provider errors or re-runs', () => {
+    const trouble = {
+      providerAvailabilityRecorded: true, providerRecordedRunCount: 3, providerRunCount: 3,
+      providerValidAttempts: 1480, providerErrorCount: 12, providerUnattributedErrorCount: 3,
+      providerErrorRate: 12 / 1480, rerunsNeeded: 2, providerRerunsNeeded: 1
+    };
+    const allWell = { ...trouble, providerErrorCount: 0, providerUnattributedErrorCount: 0, providerErrorRate: 0, rerunsNeeded: 0, providerRerunsNeeded: 0 };
+    render({
+      runs: [buildRun({ id: 2, ...trouble }), buildRun({ id: 1, ...allWell })],
+      groups: [buildGroup({ id: 2, ...trouble }), buildGroup({ id: 1 })],
+      batteryRuns: [buildBattery({ id: 5, ...trouble }), buildBattery({ id: 4, ...allWell })]
+    });
+    const card = (id: number) => cards().find(c => c.getAttribute('data-source-id') === String(id)) as HTMLElement;
+    const expectBadgeOn = (troubled: number, quiet: number) => {
+      const meta = card(troubled).querySelector('.csp-card-meta') as HTMLElement;
+      const badge = meta.lastElementChild as HTMLElement;
+      expect(badge.tagName.toLowerCase()).toBe('app-provider-error-badge');
+      expect(badge.previousElementSibling?.classList.contains('csp-sep')).toBe(true);
+      const quietMeta = card(quiet).querySelector('.csp-card-meta') as HTMLElement;
+      expect(quietMeta.querySelector('app-provider-error-badge')).toBeNull();
+      expect(quietMeta.lastElementChild?.classList.contains('csp-sep')).toBe(false);
+    };
+
+    expectBadgeOn(2, 1);
+
+    component.selectSourceTab('groups');
+    fixture.detectChanges();
+    expectBadgeOn(2, 1);
+
+    component.selectSourceTab('batteries');
+    fixture.detectChanges();
+    expectBadgeOn(5, 4);
+  });
+
   // -------------------------------------------------------------------------------------------
   // The comparability index
   // -------------------------------------------------------------------------------------------

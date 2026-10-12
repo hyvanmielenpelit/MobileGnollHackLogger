@@ -24,7 +24,8 @@ internal sealed record BenchmarkTableLayout
         ["Critical errors"] = "Crit.",
         ["Contribution"] = "Contrib.",
         ["Cost per run, graders included"] = "Cost/run",
-        ["Critical-error rate"] = "Crit. rate"
+        ["Critical-error rate"] = "Crit. rate",
+        ["Provider errors"] = "Prov. err."
     };
 
     /// <summary>The header of the per-question tables' column that may move onto a second line.</summary>

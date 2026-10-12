@@ -41,7 +41,8 @@ public class ChatConsistencyAttributionTests
         [ChatConsistencyEndpointIds.TimeToFirstAnswerText] = "Time to first answer text",
         [ChatConsistencyEndpointIds.StreamingRate] = "Answer streaming rate",
         [ChatConsistencyEndpointIds.Work] = "Work per turn",
-        [ChatConsistencyEndpointIds.Cost] = "Cost per question"
+        [ChatConsistencyEndpointIds.Cost] = "Cost per question",
+        [ChatConsistencyEndpointIds.ProviderErrorRate] = "Provider error rate"
     };
 
     private static ChatConsistencyAttributionEndpoint Endpoint(
@@ -50,6 +51,7 @@ public class ChatConsistencyAttributionTests
         ChatConsistencyEvidenceGrade grade = ChatConsistencyEvidenceGrade.Established)
     {
         bool work = id == ChatConsistencyEndpointIds.Work;
+        bool availability = id == ChatConsistencyEndpointIds.ProviderErrorRate;
         bool higherIsBetter = id is ChatConsistencyEndpointIds.Quality or ChatConsistencyEndpointIds.StreamingRate;
         double estimate = verdict switch
         {
@@ -61,8 +63,8 @@ public class ChatConsistencyAttributionTests
 
         string label = verdict switch
         {
-            ConsistencyVerdict.ChangedDegraded => work ? "more work" : "degraded",
-            ConsistencyVerdict.ChangedImproved => work ? "less work" : "improved",
+            ConsistencyVerdict.ChangedDegraded => work ? "more work" : availability ? "more provider errors" : "degraded",
+            ConsistencyVerdict.ChangedImproved => work ? "less work" : availability ? "fewer provider errors" : "improved",
             ConsistencyVerdict.ChangedNegligible => "changed, negligible",
             ConsistencyVerdict.Equivalent => "equivalent",
             _ => "inconclusive"
@@ -80,11 +82,11 @@ public class ChatConsistencyAttributionTests
         };
     }
 
-    /// <summary>Every endpoint Equivalent, no event, no control, the same served model in both periods.</summary>
+    /// <summary>Every endpoint of Protocol V2 Equivalent, no event, no control, the same served model in both periods.</summary>
     private static ChatConsistencyAttributionInput Quiet(params ChatConsistencyAttributionEndpoint[] changes)
     {
-        var endpoints = ChatConsistencyEndpointIds.All
-            .Select(id => changes.FirstOrDefault(c => c.Id == id) ?? Endpoint(id, ConsistencyVerdict.Equivalent))
+        var endpoints = ChatConsistencyProtocol.V2.Endpoints
+            .Select(e => changes.FirstOrDefault(c => c.Id == e.Id) ?? Endpoint(e.Id, ConsistencyVerdict.Equivalent))
             .ToList();
 
         return new ChatConsistencyAttributionInput
@@ -408,6 +410,59 @@ public class ChatConsistencyAttributionTests
         Assert.Equal(ChatConsistencyAttribution.SideProvider, row.Side);
     }
 
+    // --- R12 ---------------------------------------------------------------------------------
+
+    [Fact]
+    public void AnIsolatedProviderErrorRateChangeIsAProviderAvailabilityChange_AndNotUndetermined()
+    {
+        var outcome = ChatConsistencyAttribution.Attribute(
+            Quiet(Endpoint(ChatConsistencyEndpointIds.ProviderErrorRate, ConsistencyVerdict.ChangedDegraded, ChatConsistencyEvidenceGrade.Indicated)));
+
+        var row = Single(outcome, ChatConsistencyAttribution.RuleProviderAvailability);
+        Assert.Equal("Provider availability changed (within the sampled hours)", row.Label);
+        Assert.Equal(ChatConsistencyAttribution.SideProvider, row.Side);
+        Assert.Equal(ChatConsistencyEvidenceGrade.Indicated, row.Grade);
+        Assert.Equal(new[] { ChatConsistencyEndpointIds.ProviderErrorRate }, row.Endpoints);
+        Assert.StartsWith("More provider errors observed in GnollBench runs", row.Evidence);
+        Assert.DoesNotContain(outcome.Attributions, a => a.Rule == ChatConsistencyAttribution.RuleUndetermined);
+    }
+
+    [Fact]
+    public void AProviderErrorRateChange_WithAnEventAndNoSeparatingControl_OrAcrossAnAccountingChange_IsNoAvailabilityChange()
+    {
+        var p6 = Endpoint(ChatConsistencyEndpointIds.ProviderErrorRate, ConsistencyVerdict.ChangedDegraded);
+
+        var withEvent = ChatConsistencyAttribution.Attribute(Quiet(p6) with { Events = new[] { ToolGuidesEvent } });
+        var accounting = ChatConsistencyAttribution.Attribute(Quiet(p6) with { ProviderErrorAccountingChangedInSpan = true });
+        var separated = ChatConsistencyAttribution.Attribute(Quiet(p6) with
+        {
+            Events = new[] { ToolGuidesEvent },
+            ControlEffects = new[] { Control(ChatConsistencyEndpointIds.ProviderErrorRate, false, false, true) }
+        });
+
+        Assert.DoesNotContain(withEvent.Attributions, a => a.Rule == ChatConsistencyAttribution.RuleProviderAvailability);
+        var notAttributable = Single(withEvent, ChatConsistencyAttribution.RuleNotAttributable);
+        Assert.StartsWith("Provider error rate: more provider errors observed in GnollBench runs.", notAttributable.Evidence);
+        Assert.DoesNotContain(accounting.Attributions, a => a.Rule == ChatConsistencyAttribution.RuleProviderAvailability);
+        Assert.Contains(accounting.Attributions, a => a.Rule == ChatConsistencyAttribution.RuleUndetermined);
+        Single(separated, ChatConsistencyAttribution.RuleProviderAvailability);
+    }
+
+    [Fact]
+    public void UnderV2_TheLoadRow_ReadsTheAttributedProviderRates()
+    {
+        var input = Quiet(Endpoint(ChatConsistencyEndpointIds.TimeToFirstAnswerText, ConsistencyVerdict.ChangedDegraded)) with
+        {
+            RateLimitOrServerErrorIncrease = true,
+            ProviderErrorRatesAttributed = true
+        };
+
+        var row = Single(ChatConsistencyAttribution.Attribute(input), ChatConsistencyAttribution.RuleLoadRelated);
+
+        Assert.Contains("rate of provider errors observed in GnollBench attempts rose", row.Evidence);
+        Assert.DoesNotContain("429", row.Evidence);
+    }
+
     // --- R11 ---------------------------------------------------------------------------------
 
     [Fact]
@@ -491,7 +546,9 @@ public class ChatConsistencyAttributionTests
                 ControlEffects = new[] { Control(ChatConsistencyEndpointIds.Quality, false, false, true) }
             },
             Quiet(ChatConsistencyEndpointIds.All.Select(id => Endpoint(id, ConsistencyVerdict.Inconclusive)).ToArray()),
-            Quiet(Endpoint(ChatConsistencyEndpointIds.Cost, ConsistencyVerdict.ChangedDegraded))
+            Quiet(Endpoint(ChatConsistencyEndpointIds.Cost, ConsistencyVerdict.ChangedDegraded)),
+            Quiet(Endpoint(ChatConsistencyEndpointIds.ProviderErrorRate, ConsistencyVerdict.ChangedDegraded)),
+            Quiet(Endpoint(ChatConsistencyEndpointIds.ProviderErrorRate, ConsistencyVerdict.ChangedImproved)) with { Events = new[] { ToolGuidesEvent } }
         };
 
         var texts = scenarios

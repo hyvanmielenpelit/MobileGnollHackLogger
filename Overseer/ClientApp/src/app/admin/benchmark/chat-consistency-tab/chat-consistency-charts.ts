@@ -44,6 +44,11 @@ import type {
 } from 'chart.js';
 
 import { FIGURE_LOGO_GAP, FigureLogo, drawFigureLogo, figureLogoBox } from '../model-comparison/figure-logo';
+import {
+  NOT_RECORDED_TEXT,
+  formatCount,
+  formatPercent as formatSharedPercent
+} from '../shared/provider-availability/provider-availability';
 import type { FigureFontWeight, TimelineFigureStyle } from '../model-comparison/figure-style';
 import type { ResolvedFigureTheme } from '../model-comparison/figure-theme';
 import {
@@ -78,6 +83,7 @@ import {
   formatMs,
   formatTokenRate,
   formatUsd,
+  formatUtcDate,
   formatUtcDateTime,
   MINUS,
   plural,
@@ -233,7 +239,22 @@ export interface CcFigureTable {
   lists?: Readonly<Record<string, readonly (readonly CcDataListItem[])[]>>;
 }
 
-export type CcFigureKey = 'quality' | 'ttfat' | 'rate' | 'work' | 'tools' | 'cost' | 'reliability' | 'timeline';
+export type CcFigureKey = 'quality' | 'ttfat' | 'rate' | 'work' | 'tools' | 'cost' | 'reliability' | 'availability' | 'timeline';
+
+/**
+ * How the provider availability figure draws: `points`, one dot per unit with its interval; `controlChart`,
+ * a Laney p′ chart with control limits; `strip`, one cell per UTC day and measure.
+ */
+export type CcAvailabilityForm = 'points' | 'controlChart' | 'strip';
+
+/** The provider availability figure's forms with their labels, in the settings' order; `points` is the default. */
+export const CC_AVAILABILITY_FORMS: readonly { readonly id: CcAvailabilityForm; readonly label: string }[] = Object.freeze([
+  { id: 'points', label: 'Points with intervals' },
+  { id: 'controlChart', label: 'Control limits (Laney p′ chart)' },
+  { id: 'strip', label: 'Daily strip' }
+] as const);
+
+export const CC_DEFAULT_AVAILABILITY_FORM: CcAvailabilityForm = 'points';
 
 /** The figures that write values: every figure but the overview. */
 export type CcValueFigureKey = Exclude<CcFigureKey, 'timeline'>;
@@ -249,7 +270,8 @@ export const CC_DECIMAL_CHOICES: Readonly<Record<CcValueFigureKey, readonly numb
   work: [0, 1, 2, 3],
   tools: [0, 1, 2, 3],
   cost: [0, 1, 2, 3, 4],
-  reliability: [0, 1, 2, 3]
+  reliability: [0, 1, 2, 3],
+  availability: [0, 1, 2, 3]
 });
 
 /** The label of a chart's automatic precision, as its figure builder writes values without a setting. */
@@ -259,6 +281,7 @@ export function ccAutoDecimalsText(key: CcValueFigureKey, unitKind: CcUnitKind):
     case 'ttfat': return 'Automatic (1, in seconds)';
     case 'work': return 'Automatic (0)';
     case 'cost': return 'Automatic (2–4)';
+    case 'availability': return 'Automatic (2 significant digits)';
     default: return 'Automatic (1)';
   }
 }
@@ -274,6 +297,10 @@ export interface CcFigure {
   config: CcChartConfig | null;
   table: CcFigureTable;
   markers: CcChartMarker[];
+  /** The form drawn, on the provider availability figure only. */
+  availabilityForm?: CcAvailabilityForm;
+  /** The units plotted, where the datasets' points are not units (the strip's days); counted from the points when absent. */
+  plottedUnits?: number;
 }
 
 export interface CcFigureInput {
@@ -344,6 +371,8 @@ export interface CcChartOptions {
   decimals?: CcDecimalPlaces;
   /** The sizes and optional parts; absent draws `CC_CHART_STYLE_DEFAULTS`. */
   style?: CcChartStyle;
+  /** The provider availability figure's form; `CC_DEFAULT_AVAILABILITY_FORM` when absent. */
+  availabilityForm?: CcAvailabilityForm;
   /**
    * The time axis spans the plotted points and the markers near them, padded by 8 % of that span or
    * 45 minutes, whichever is more; the period bands are clipped to it, widening it only where a band
@@ -392,6 +421,7 @@ export const CC_FIGURE_KEYS: readonly { readonly key: CcFigureKey; readonly titl
   { key: 'tools', title: 'Tool calls per answer' },
   { key: 'cost', title: 'Cost per question' },
   { key: 'reliability', title: 'Reliability' },
+  { key: 'availability', title: 'Provider availability' },
   { key: 'timeline', title: 'Runs and events' }
 ] as const);
 
@@ -436,6 +466,15 @@ export const CC_FIGURE_SERIES: Readonly<Record<CcFigureKey, readonly CcFigureSer
     { id: 'cost.cost', label: 'Cost per question (USD)', shortLabel: 'Cost' }
   ],
   reliability: RELIABILITY_RATES.map(rate => ({ id: `reliability.${rate.key}`, label: rate.label, shortLabel: rate.label })),
+  availability: [
+    { id: 'availability.units', label: 'Provider errors (% of valid attempts)', shortLabel: 'Provider errors' },
+    { id: 'availability.onlyUnits', label: 'Failed or canceled run (availability only)', shortLabel: 'Availability only' },
+    { id: 'availability.center', label: 'Center line (baseline pooled rate)', shortLabel: 'Center line' },
+    { id: 'availability.upper', label: 'Upper control limit', shortLabel: 'Upper control limit' },
+    { id: 'availability.lower', label: 'Lower control limit', shortLabel: 'Lower control limit' },
+    { id: 'availability.strict', label: 'Provider errors (strict)', shortLabel: 'Strict' },
+    { id: 'availability.inclusive', label: 'Provider and unattributed errors (inclusive)', shortLabel: 'Inclusive' }
+  ],
   timeline: [
     { id: 'timeline.telemetry', label: 'Run with call telemetry', shortLabel: 'Telemetry run' },
     { id: 'timeline.legacy', label: 'Legacy run', shortLabel: 'Legacy run' }
@@ -460,7 +499,8 @@ export const CC_REPORT_FIGURES: Readonly<Record<CcReportFigureKey, CcFigureKey>>
   'cc1-quality': 'quality',
   'cc2-speed': 'ttfat',
   'cc3-work': 'work',
-  'cc4-timeline': 'timeline'
+  'cc4-timeline': 'timeline',
+  'cc5-availability': 'availability'
 });
 
 /** The analysis endpoint each figure plots; the reliability chart and the overview plot none. */
@@ -469,7 +509,8 @@ export const CC_FIGURE_ENDPOINTS: Readonly<Partial<Record<CcFigureKey, string>>>
   ttfat: 'P2',
   rate: 'P3',
   work: 'P4',
-  cost: 'P5'
+  cost: 'P5',
+  availability: 'P6'
 });
 
 /**
@@ -519,7 +560,8 @@ function membersList(point: CcBatteryTimelinePoint, labels: ReadonlyMap<number, 
 
 /**
  * The points an analysis's charts draw: in a battery analysis the battery points of its units (one
- * per battery run), else the runs of its periods.
+ * per battery run), else the runs of its periods with the availability-only runs P6 read, which only
+ * the provider availability figure draws.
  */
 export function analysisChartPoints(
   result: CcAnalysisResult,
@@ -531,8 +573,17 @@ export function analysisChartPoints(
     const ids = new Set(result.units!.map(unit => unit.unitId));
     return { points: batteryPoints.filter(point => point.setKey === set.key && ids.has(point.runId)), unitKind: 'batteryRun' };
   }
-  const ids = new Set([...result.baseline.runIds, ...result.comparison.runIds]);
+  const availability = result.endpoints.find(endpoint => endpoint.id === 'P6')?.availability;
+  const ids = new Set([
+    ...result.baseline.runIds, ...result.comparison.runIds,
+    ...(availability?.baselineAvailabilityOnlyRunIds ?? []), ...(availability?.comparisonAvailabilityOnlyRunIds ?? [])
+  ]);
   return { points: points.filter(point => ids.has(point.runId)), unitKind: 'run' };
+}
+
+/** The points every figure but provider availability draws: those that are not availability-only. */
+export function ccMeasurePoints(points: readonly CcTimelinePoint[]): CcTimelinePoint[] {
+  return points.filter(point => point.availabilityOnly !== true);
 }
 
 // --- Series ---
@@ -2407,7 +2458,7 @@ function whiskerSentence(points: readonly CcTimelinePoint[], whiskers: readonly 
  */
 export function qualityFigure(input: CcFigureInput, options: CcChartOptions = {}): CcFigure {
   const theme = options.theme ?? CC_SCREEN_THEME;
-  const points = sortedPoints(input.points);
+  const points = sortedPoints(ccMeasurePoints(input.points));
   const markers = markersOf(points, input);
   const battery = unitKindOf(input) === 'batteryRun';
   const noun = nounOf(input);
@@ -2491,7 +2542,7 @@ export function qualityFigure(input: CcFigureInput, options: CcChartOptions = {}
 /** Median time to first answer text per point; legacy points as their model-time proxy, hollow. */
 export function timeToFirstAnswerFigure(input: CcFigureInput, options: CcChartOptions = {}): CcFigure {
   const theme = options.theme ?? CC_SCREEN_THEME;
-  const points = sortedPoints(input.points);
+  const points = sortedPoints(ccMeasurePoints(input.points));
   const markers = markersOf(points, input);
   const noun = nounOf(input);
   const telemetry = seriesOf(points, point => ccNumber(point.medianTimeToFirstAnswerTextMs));
@@ -2540,7 +2591,7 @@ export function timeToFirstAnswerFigure(input: CcFigureInput, options: CcChartOp
 /** Median answer streaming rate per point; an estimated rate is drawn hollow. */
 export function streamingRateFigure(input: CcFigureInput, options: CcChartOptions = {}): CcFigure {
   const theme = options.theme ?? CC_SCREEN_THEME;
-  const points = sortedPoints(input.points);
+  const points = sortedPoints(ccMeasurePoints(input.points));
   const markers = markersOf(points, input);
   const noun = nounOf(input);
   const measured = seriesOf(points, point => point.streamingRateEstimated ? null : ccNumber(point.medianStreamingRate));
@@ -2588,7 +2639,7 @@ export const CC_WORK_ENDPOINT_NOTE =
  */
 export function workFigure(input: CcFigureInput, options: CcChartOptions = {}): CcFigure {
   const theme = options.theme ?? CC_SCREEN_THEME;
-  const points = sortedPoints(input.points);
+  const points = sortedPoints(ccMeasurePoints(input.points));
   const markers = markersOf(points, input);
   const noun = nounOf(input);
   const tokens = seriesOf(points, point => ccNumber(point.outputTokensPerAnswer));
@@ -2626,7 +2677,7 @@ export function workFigure(input: CcFigureInput, options: CcChartOptions = {}): 
 /** Tool calls per answer. */
 export function toolCallsFigure(input: CcFigureInput, options: CcChartOptions = {}): CcFigure {
   const theme = options.theme ?? CC_SCREEN_THEME;
-  const points = sortedPoints(input.points);
+  const points = sortedPoints(ccMeasurePoints(input.points));
   const markers = markersOf(points, input);
   const noun = nounOf(input);
   const calls = seriesOf(points, point => ccNumber(point.toolCallsPerAnswer));
@@ -2660,7 +2711,7 @@ export function toolCallsFigure(input: CcFigureInput, options: CcChartOptions = 
 /** Candidate cost per question. */
 export function costFigure(input: CcFigureInput, options: CcChartOptions = {}): CcFigure {
   const theme = options.theme ?? CC_SCREEN_THEME;
-  const points = sortedPoints(input.points);
+  const points = sortedPoints(ccMeasurePoints(input.points));
   const markers = markersOf(points, input);
   const noun = nounOf(input);
   const cost = seriesOf(points, point => ccNumber(point.costPerQuestionUsd));
@@ -2695,7 +2746,7 @@ export function costFigure(input: CcFigureInput, options: CcChartOptions = {}): 
 /** The five reliability rates per point, as percentages, each with its own point shape. */
 export function reliabilityFigure(input: CcFigureInput, options: CcChartOptions = {}): CcFigure {
   const theme = options.theme ?? CC_SCREEN_THEME;
-  const points = sortedPoints(input.points);
+  const points = sortedPoints(ccMeasurePoints(input.points));
   const markers = markersOf(points, input);
   const noun = nounOf(input);
   const series = RELIABILITY_RATES.map(rate => ({
@@ -2751,7 +2802,7 @@ export function reliabilityFigure(input: CcFigureInput, options: CcChartOptions 
  */
 export function timelineOverviewFigure(input: CcFigureInput, options: CcChartOptions = {}): CcFigure {
   const theme = options.theme ?? CC_SCREEN_THEME;
-  const points = sortedPoints(input.points);
+  const points = sortedPoints(ccMeasurePoints(input.points));
   const markers = markersOf(points, input);
   const noun = nounOf(input);
   const every = input.markerFilter
@@ -2791,6 +2842,524 @@ export function timelineOverviewFigure(input: CcFigureInput, options: CcChartOpt
   };
 }
 
+// --- Provider availability ---
+
+/** One unit's candidate provider attempts, as the provider availability figure reads them. */
+interface AvailabilityUnit {
+  point: CcTimelinePoint;
+  x: number;
+  valid: number;
+  provider: number;
+  unattributed: number;
+  /** Proportions in [0, 1]; the bounds are the server's cluster-adjusted Wilson interval, null where absent. */
+  rate: number;
+  low: number | null;
+  high: number | null;
+  reruns: number;
+  providerReruns: number;
+  /** A failed or canceled run that counts for provider availability only. */
+  only: boolean;
+}
+
+/** The units of `points` that recorded provider attempts, with at least one valid attempt, in time order. */
+function availabilityUnits(points: readonly CcTimelinePoint[]): AvailabilityUnit[] {
+  return points.flatMap(point => {
+    const valid = point.validAttemptCount ?? 0;
+    if (point.availabilityRecorded !== true || valid <= 0) return [];
+    const provider = point.providerErrorCount ?? 0;
+    return [{
+      point,
+      x: utcMillis(point.startedAtUtc),
+      valid,
+      provider,
+      unattributed: point.unattributedErrorCount ?? 0,
+      rate: ccNumber(point.providerErrorRate ?? null) ?? provider / valid,
+      low: ccNumber(point.providerErrorRateLow ?? null),
+      high: ccNumber(point.providerErrorRateHigh ?? null),
+      reruns: point.rerunsNeeded ?? 0,
+      providerReruns: point.providerRerunsNeeded ?? 0,
+      only: point.availabilityOnly === true
+    }];
+  });
+}
+
+/** The control limits of a Laney p′ chart for one unit, as proportions. */
+export interface CcLaneyLimits {
+  /** The baseline's pooled rate p̄. */
+  center: number;
+  /** At least 0. */
+  lower: number;
+  /** At most 1. */
+  upper: number;
+  /** The between-unit factor σ_Z; 1 for a plain p chart. */
+  sigmaZ: number;
+}
+
+/** `d₂` for moving ranges of two. */
+const LANEY_D2 = 1.128;
+
+/**
+ * The control limits of a Laney p′ chart for a unit with `nI` valid attempts, from the baseline units'
+ * `(k, n)` in time order, as `ChatConsistencyStatistics.LaneyPPrimeLimits` computes them: p̄ = Σk ÷ Σn over
+ * the baseline units with attempts; for each, σ_p,i = √(p̄(1 − p̄) ÷ n_i) and z_i = (p_i − p̄) ÷ σ_p,i;
+ * σ_Z = MR̄ ÷ 1.128, MR̄ the mean absolute moving range of consecutive z_i (1 with fewer than two units
+ * or p̄ of 0 or 1); the limits p̄ ± 3 · √(p̄(1 − p̄) ÷ nI) · σ_Z, the lower clipped at 0 and the upper at 1.
+ * Null when the baseline holds no attempt or `nI` is not positive.
+ */
+export function ccLaneyPPrimeLimits(baseline: readonly { k: number; n: number }[], nI: number): CcLaneyLimits | null {
+  if (!(nI > 0)) return null;
+  const units = baseline.filter(unit => unit.n > 0);
+  const totalN = units.reduce((sum, unit) => sum + unit.n, 0);
+  if (totalN === 0) return null;
+  const pBar = units.reduce((sum, unit) => sum + unit.k, 0) / totalN;
+  const variance = pBar * (1 - pBar);
+  let sigmaZ = 1;
+  if (units.length >= 2 && variance > 0) {
+    const z = units.map(unit => (unit.k / unit.n - pBar) / Math.sqrt(variance / unit.n));
+    let movingRange = 0;
+    for (let i = 1; i < z.length; i++) movingRange += Math.abs(z[i] - z[i - 1]);
+    sigmaZ = movingRange / (z.length - 1) / LANEY_D2;
+  }
+  const halfWidth = 3 * Math.sqrt(variance / nI) * sigmaZ;
+  return { center: pBar, lower: Math.max(0, pBar - halfWidth), upper: Math.min(1, pBar + halfWidth), sigmaZ };
+}
+
+/** A short text drawn at a point: the ▲ of a provider-caused re-run, or the id of a unit beyond the control limits. */
+export interface CcPointGlyph {
+  /** Epoch ms and the value axis's value the glyph sits above. */
+  x: number;
+  y: number;
+  text: string;
+  /** From the value's pixel to the glyph's bottom, in px. */
+  offsetPx: number;
+}
+
+/** Draws each glyph above its value, centered, over a halo of the surface; clipped to the plot. */
+function ccGlyphPlugin(glyphs: readonly CcPointGlyph[], theme: CcChartTheme, sizePx: number, weight: FigureFontWeight): Plugin<'line'> {
+  return {
+    id: 'ccGlyphs',
+    afterDatasetsDraw(chart) {
+      const x = chart.scales['x'];
+      const y = chart.scales['y'];
+      const area = chart.chartArea;
+      if (!x || !y || !area || glyphs.length === 0) return;
+      const { ctx } = chart;
+      ctx.save();
+      ctx.font = `${weight} ${sizePx}px ${theme.fontFamily}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = theme.background ?? theme.surface;
+      ctx.fillStyle = theme.text;
+      for (const glyph of glyphs) {
+        const px = x.getPixelForValue(glyph.x);
+        const py = Math.max(area.top + sizePx, y.getPixelForValue(glyph.y) - glyph.offsetPx);
+        if (!Number.isFinite(px) || !Number.isFinite(py) || px < area.left || px > area.right) continue;
+        ctx.strokeText(glyph.text, px, py);
+        ctx.fillText(glyph.text, px, py);
+      }
+      ctx.restore();
+    }
+  };
+}
+
+/** The strip's shares that bound its shades 1 to 3 (as the run report's strip): above the last is shade 4, none shade 0. */
+export const CC_STRIP_SHARE_STEPS: readonly number[] = [0.01, 0.05, 0.2];
+
+/** The strip's legend words per shade, in ramp order. */
+const STRIP_SHADE_LABELS: readonly string[] = ['0 %', 'up to 1 %', 'up to 5 %', 'up to 20 %', 'over 20 %'];
+
+/**
+ * A single-hue sequential ramp ordered by lightness alone, so it reads the same under every color-vision
+ * deficiency: on a dark surface a larger share is lighter, on a light one darker.
+ */
+const STRIP_RAMP_DARK: readonly string[] = ['#23395b', '#3d6a9e', '#6a9fd4', '#a7c9ef', '#e8f1fb'];
+const STRIP_RAMP_LIGHT: readonly string[] = [...STRIP_RAMP_DARK].reverse();
+
+/** A share's shade, 0 to 4. */
+export function ccStripShade(share: number): number {
+  if (share <= 0) return 0;
+  const step = CC_STRIP_SHARE_STEPS.findIndex(bound => share <= bound);
+  return step < 0 ? 4 : step + 1;
+}
+
+/** The surface is light: its relative luminance is above one half. */
+function lightSurface(theme: CcChartTheme): boolean {
+  const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(theme.surface);
+  if (!match) return false;
+  const [r, g, b] = match.slice(1).map(hex => Number.parseInt(hex, 16) / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.5;
+}
+
+/** One cell of the strip: a UTC day of one measure's row. */
+interface StripCell {
+  /** The day's first and last instant, epoch ms. */
+  start: number;
+  end: number;
+  /** 1 for strict, 0 for inclusive: the value axis's row. */
+  row: number;
+  /** The share; null for a day with no recorded attempt. */
+  share: number | null;
+  /** The share as the cell writes it when it has room. */
+  text: string;
+}
+
+/** The strip's day cells, each shaded by its share, and a hatched outline for a day without a recorded attempt. */
+function ccStripPlugin(cells: readonly StripCell[], theme: CcChartTheme, sizePx: number): Plugin<'line'> {
+  const ramp = lightSurface(theme) ? STRIP_RAMP_LIGHT : STRIP_RAMP_DARK;
+  return {
+    id: 'ccStrip',
+    beforeDatasetsDraw(chart) {
+      const x = chart.scales['x'];
+      const y = chart.scales['y'];
+      const area = chart.chartArea;
+      if (!x || !y || !area) return;
+      const { ctx } = chart;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(area.left, area.top, area.right - area.left, area.bottom - area.top);
+      ctx.clip();
+      ctx.font = `${sizePx}px ${theme.fontFamily}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const cell of cells) {
+        const left = Math.max(area.left, x.getPixelForValue(cell.start)) + 0.5;
+        const right = Math.min(area.right, x.getPixelForValue(cell.end)) - 0.5;
+        const top = y.getPixelForValue(cell.row + 0.42);
+        const bottom = y.getPixelForValue(cell.row - 0.42);
+        if (!(right > left) || !Number.isFinite(top) || !Number.isFinite(bottom)) continue;
+        if (cell.share === null) {
+          ctx.strokeStyle = theme.muted;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(left, top, right - left, bottom - top);
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(left, top, right - left, bottom - top);
+          ctx.clip();
+          ctx.beginPath();
+          for (let hatch = left - (bottom - top); hatch < right; hatch += 6) {
+            ctx.moveTo(hatch, bottom);
+            ctx.lineTo(hatch + (bottom - top), top);
+          }
+          ctx.stroke();
+          ctx.restore();
+          continue;
+        }
+        const shade = ccStripShade(cell.share);
+        ctx.fillStyle = ramp[shade];
+        ctx.fillRect(left, top, right - left, bottom - top);
+        if (ctx.measureText(cell.text).width + 4 <= right - left) {
+          const lightCell = lightSurface(theme) ? shade <= 1 : shade >= 3;
+          ctx.fillStyle = lightCell ? '#111827' : '#ffffff';
+          ctx.fillText(cell.text, (left + right) / 2, (top + bottom) / 2);
+        }
+      }
+      ctx.restore();
+    }
+  };
+}
+
+/** The strip's legend: one swatch per shade with its words, and the hatched *No recorded attempts*. */
+function stripLegend(theme: CcChartTheme): (chart: Chart) => LegendItem[] {
+  const ramp = lightSurface(theme) ? STRIP_RAMP_LIGHT : STRIP_RAMP_DARK;
+  return () => [
+    ...STRIP_SHADE_LABELS.map((text, shade): LegendItem => ({
+      text, fillStyle: ramp[shade], strokeStyle: ramp[shade], lineWidth: 1, pointStyle: 'rect', hidden: false, fontColor: theme.text
+    })),
+    { text: 'No recorded attempts', fillStyle: 'rgba(0, 0, 0, 0)', strokeStyle: theme.muted, lineWidth: 1, pointStyle: 'rect', hidden: false, fontColor: theme.text }
+  ];
+}
+
+/** The first instant of the UTC day `at` falls in, epoch ms. */
+function utcDayStart(at: number): number {
+  return Math.floor(at / DAY_MS) * DAY_MS;
+}
+
+/**
+ * Provider availability: the candidate provider-class attempts among the valid attempts of each unit, as
+ * observed in GnollBench runs ([`ai-benchmark-provider-availability.md`]). Failed and canceled runs are
+ * availability-only units, which this figure draws and every other skips. Three forms
+ * (`options.availabilityForm`): `points`, a dot per unit with its interval, its area following its valid
+ * attempts, an availability-only unit hollow and a ▲ over a unit that needed a provider-caused re-run;
+ * `controlChart`, a Laney p′ chart whose control limits come from the baseline period's units (every unit
+ * without periods); `strip`, one row per measure (strict: provider errors; inclusive: unattributed added)
+ * and one cell per UTC day. The rate always comes with its count.
+ */
+export function availabilityFigure(input: CcFigureInput, options: CcChartOptions = {}): CcFigure {
+  const theme = options.theme ?? CC_SCREEN_THEME;
+  const style = options.style ?? CC_CHART_STYLE_DEFAULTS;
+  const form = options.availabilityForm ?? CC_DEFAULT_AVAILABILITY_FORM;
+  const points = sortedPoints(input.points);
+  const markers = markersOf(ccMeasurePoints(points), input);
+  const noun = nounOf(input);
+  const units = availabilityUnits(points);
+  const unrecorded = points.filter(point => point.availabilityRecorded !== true).length;
+  const places = options.decimals?.availability;
+  const percentOf = (proportion: number) => places === undefined ? formatSharedPercent(proportion) : `${formatFixed(proportion * 100, places)} %`;
+  const percentValue = (value: number) => percentOf(value / 100);
+  const intervalOf = (unit: AvailabilityUnit) => unit.low !== null && unit.high !== null
+    ? `${percentOf(unit.low)}–${percentOf(unit.high)}` : '—';
+  const totalValid = units.reduce((sum, unit) => sum + unit.valid, 0);
+  const totalProvider = units.reduce((sum, unit) => sum + unit.provider, 0);
+  const onlyCount = units.filter(unit => unit.only).length;
+  const rerunUnits = units.filter(unit => unit.providerReruns > 0);
+  const unrecordedNote = unrecorded > 0
+    ? ` ${plural(unrecorded, noun)} recorded no provider attempts (before harness 56).`
+    : '';
+  const yAxis: AxisSpec = {
+    title: 'Provider errors (% of valid attempts)',
+    tick: (value, axis) => `${numberTick(value, axis)} %`,
+    format: percentValue,
+    policy: ratioPolicy(2, 100)
+  };
+  const unitColumns = [...leadColumns(input), 'Provider errors', 'Rate', '95 % interval', 'Unattributed', 'Re-runs', 'Availability only'];
+  const unitCells = (point: CcTimelinePoint): string[] => {
+    const unit = units.find(entry => entry.point === point);
+    if (!unit) {
+      const recorded = point.availabilityRecorded === true;
+      return [recorded ? 'No valid attempts' : NOT_RECORDED_TEXT, '—', '—', '—', String(point.rerunsNeeded ?? 0), point.availabilityOnly ? 'Yes' : 'No'];
+    }
+    return [
+      formatCount(unit.provider, unit.valid), percentOf(unit.rate), intervalOf(unit), formatInteger(unit.unattributed),
+      unit.reruns > 0 ? `${formatInteger(unit.reruns)} (${formatInteger(unit.providerReruns)} for provider errors)` : '0',
+      unit.only ? 'Yes' : 'No'
+    ];
+  };
+  const base = { key: 'availability' as const, title: ccFigureTitle('availability'), markers, availabilityForm: form, plottedUnits: units.length };
+  const none = `No ${noun} in this range recorded provider attempts; they are recorded from harness 56.`;
+  const totals = `${formatCount(totalProvider, totalValid)} in all`;
+
+  if (form === 'strip') {
+    const hidden = options.hiddenSeries ?? new Set<string>();
+    const days = new Map<number, { runs: number; valid: number; provider: number; unattributed: number }>();
+    for (const point of points) {
+      const at = utcMillis(point.startedAtUtc);
+      const day = utcDayStart(at);
+      const entry = days.get(day) ?? { runs: 0, valid: 0, provider: 0, unattributed: 0 };
+      entry.runs++;
+      const unit = units.find(candidate => candidate.point === point);
+      if (unit) {
+        entry.valid += unit.valid;
+        entry.provider += unit.provider;
+        entry.unattributed += unit.unattributed;
+      }
+      days.set(day, entry);
+    }
+    const ordered = [...days.keys()].sort((a, b) => a - b);
+    const allDays: number[] = [];
+    if (ordered.length > 0) {
+      for (let day = ordered[0]; day <= ordered[ordered.length - 1]; day += DAY_MS) allDays.push(day);
+    }
+    const rows: readonly { id: string; row: number; k: (day: { provider: number; unattributed: number }) => number }[] = [
+      { id: 'availability.strict', row: 1, k: day => day.provider },
+      { id: 'availability.inclusive', row: 0, k: day => day.provider + day.unattributed }
+    ];
+    const cells: StripCell[] = [];
+    for (const spec of rows) {
+      if (hidden.has(spec.id)) continue;
+      for (const day of allDays) {
+        const entry = days.get(day);
+        const share = entry && entry.valid > 0 ? spec.k(entry) / entry.valid : null;
+        cells.push({ start: day, end: day + DAY_MS, row: spec.row, share, text: share === null ? '' : percentOf(share) });
+      }
+    }
+    // One point per day with recorded attempts and row, at the day's middle: what spans the time axis.
+    const dataOf = (rowValue: number): CcChartPoint[] => allDays.flatMap(day => {
+      const entry = days.get(day);
+      return entry && entry.valid > 0 ? [{ x: day + DAY_MS / 2, y: rowValue, runId: 0 }] : [];
+    });
+    const strictShares = allDays.flatMap(day => {
+      const entry = days.get(day);
+      return entry && entry.valid > 0 ? [entry.provider / entry.valid] : [];
+    });
+    const recordedDays = strictShares.length;
+    const takeaway = (units.length === 0
+      ? none
+      : `Provider errors per UTC day ranged from ${percentOf(Math.min(...strictShares))} to ${percentOf(Math.max(...strictShares))} `
+        + `of valid attempts over ${plural(recordedDays, 'day')} with recorded attempts (${totals}); the inclusive row adds the `
+        + `unattributed errors. A hatched cell is a day without recorded attempts.`) + unrecordedNote;
+    const built = config(rows.map(spec => seriesSpec('availability', spec.id, dataOf(spec.row), theme.series[1])),
+      input, markers, options, { ...yAxis, title: '', tick: () => '' });
+    if (built) {
+      for (const ds of built.data.datasets) {
+        Object.assign(ds, { showLine: false, pointRadius: 0, pointHoverRadius: 0, pointHitRadius: 0, pointBorderWidth: 0 });
+      }
+      // Whole first and last days, whose cells reach half a day beyond the points.
+      const x = built.options.scales?.['x'];
+      if (x && allDays.length > 0) {
+        const first = allDays[0];
+        const last = allDays[allDays.length - 1] + DAY_MS;
+        Object.assign(x, { min: Math.min(Number(x.min ?? first), first), max: Math.max(Number(x.max ?? last), last) });
+      }
+      const y = built.options.scales?.['y'];
+      if (y) {
+        Object.assign(y, {
+          min: -0.5, max: 1.5,
+          grid: { display: false },
+          ticks: { ...(y.ticks ?? {}), stepSize: 1, callback: (value: string | number) => Number(value) === 1 ? 'Strict' : Number(value) === 0 ? 'Inclusive' : '' }
+        });
+      }
+      const legend = built.options.plugins?.legend;
+      if (legend) {
+        legend.display = true;
+        legend.onClick = () => undefined;
+        if (legend.labels) legend.labels.generateLabels = stripLegend(theme);
+      }
+      const tooltip = built.options.plugins?.tooltip;
+      if (tooltip) tooltip.enabled = false;
+      built.plugins.push(ccStripPlugin(cells, theme, style.valueLabelSizePx));
+    }
+    return {
+      ...base,
+      takeaway,
+      altText: `Provider errors per UTC day, strict and inclusive. ${takeaway}`,
+      config: built,
+      table: {
+        columns: ['Day (UTC)', capitalized(`${noun}s`), 'Valid attempts', 'Strict', 'Inclusive'],
+        rows: allDays.map(day => {
+          const entry = days.get(day);
+          if (!entry) return [formatUtcDate(day), '0', '—', 'No runs', 'No runs'];
+          if (entry.valid <= 0) return [formatUtcDate(day), String(entry.runs), '—', NOT_RECORDED_TEXT, NOT_RECORDED_TEXT];
+          return [
+            formatUtcDate(day), String(entry.runs), formatInteger(entry.valid),
+            `${percentOf(entry.provider / entry.valid)} (${formatCount(entry.provider, entry.valid)})`,
+            `${percentOf((entry.provider + entry.unattributed) / entry.valid)} (${formatCount(entry.provider + entry.unattributed, entry.valid)})`
+          ];
+        })
+      }
+    };
+  }
+
+  const unitSeries = (only: boolean) => points.map(point => {
+    const unit = units.find(entry => entry.point === point);
+    return { x: utcMillis(point.startedAtUtc), y: unit && unit.only === only ? unit.rate * 100 : null, runId: point.runId };
+  });
+  const filled = unitSeries(false);
+  const hollow = unitSeries(true);
+  const datasets: DatasetSpec[] = [
+    seriesSpec('availability', 'availability.units', filled, theme.series[1], { format: percentValue }),
+    seriesSpec('availability', 'availability.onlyUnits', hollow, theme.series[1], { hollow: true, format: percentValue })
+  ];
+
+  if (form === 'controlChart') {
+    const baselineBand = input.bands?.find(band => band.name === 'Baseline');
+    const baselineUnits = baselineBand ? units.filter(unit => unit.x >= baselineBand.start && unit.x <= baselineBand.end) : units;
+    const limits = new Map(units.map(unit => [unit, ccLaneyPPrimeLimits(baselineUnits.map(entry => ({ k: entry.provider, n: entry.valid })), unit.valid)]));
+    const limitSeries = (pick: (limit: CcLaneyLimits) => number): CcChartPoint[] => points.map(point => {
+      const unit = units.find(entry => entry.point === point);
+      const limit = unit ? limits.get(unit) ?? null : null;
+      return { x: utcMillis(point.startedAtUtc), y: limit ? pick(limit) * 100 : null, runId: point.runId };
+    });
+    const beyond = units.filter(unit => {
+      const limit = limits.get(unit);
+      return limit !== null && limit !== undefined && (unit.rate > limit.upper || unit.rate < limit.lower);
+    });
+    const first = limits.values().next().value ?? null;
+    const centerText = first
+      ? `The center line is the ${baselineBand ? 'baseline period\'s' : 'plotted units\''} pooled rate, ${percentOf(first.center)} `
+        + `(${formatCount(baselineUnits.reduce((s, u) => s + u.provider, 0), baselineUnits.reduce((s, u) => s + u.valid, 0))}), `
+        + `with Laney's σ_Z ${formatFixed(first.sigmaZ, 2)}.`
+      : `No ${baselineBand ? 'baseline ' : ''}${noun} recorded provider attempts, so no control limits are drawn.`;
+    const beyondText = !first ? '' : beyond.length === 0
+      ? ` Every ${noun} lies within its control limits.`
+      : ` ${plural(beyond.length, noun)} ${beyond.length === 1 ? 'lies' : 'lie'} beyond the control limits: `
+        + `${beyond.map(unit => `#${unit.point.runId} (${percentOf(unit.rate)}, ${formatCount(unit.provider, unit.valid)})`).join(', ')}.`;
+    const takeaway = (units.length === 0 ? none : `${centerText}${beyondText}`) + unrecordedNote + notAnalyzedNote(input, [filled, hollow]);
+    const built = config([
+      ...datasets,
+      seriesSpec('availability', 'availability.center', limitSeries(limit => limit.center), theme.muted, { format: percentValue }),
+      seriesSpec('availability', 'availability.upper', limitSeries(limit => limit.upper), theme.series[2], { format: percentValue }),
+      seriesSpec('availability', 'availability.lower', limitSeries(limit => limit.lower), theme.series[2], { format: percentValue })
+    ], input, markers, options, { ...yAxis, title: 'Provider errors (%), with control limits' }, { breakAt: ccPeriodBreak('availability', input) });
+    if (built) {
+      for (const ds of built.data.datasets) {
+        if (ds.seriesId === 'availability.units' || ds.seriesId === 'availability.onlyUnits') {
+          Object.assign(ds, { showLine: false });
+        } else {
+          Object.assign(ds, {
+            stepped: 'middle', pointRadius: 0, pointHoverRadius: 0, pointHitRadius: 0, borderWidth: 1.5,
+            borderDash: ds.seriesId === 'availability.center' ? [] : [6, 4], spanGaps: true
+          });
+        }
+      }
+      built.plugins.push(ccGlyphPlugin(beyond.map(unit => ({
+        x: unit.x, y: unit.rate * 100, text: `#${unit.point.runId}`, offsetPx: style.pointRadiusPx + POINT_LABEL_CLEARANCE
+      })), theme, style.valueLabelSizePx, style.labelWeight));
+    }
+    return {
+      ...base,
+      takeaway,
+      altText: `Provider errors per ${noun} with Laney p′ control limits. ${takeaway}`,
+      config: built,
+      table: finishTable({
+        columns: [...unitColumns, 'Lower limit', 'Upper limit', 'Beyond the limits'],
+        rows: points.map(point => {
+          const unit = units.find(entry => entry.point === point);
+          const limit = unit ? limits.get(unit) ?? null : null;
+          return row(point, ...unitCells(point),
+            limit ? percentOf(limit.lower) : '—', limit ? percentOf(limit.upper) : '—',
+            unit && limit ? (beyond.includes(unit) ? 'Yes' : 'No') : '—');
+        })
+      }, points, input)
+    };
+  }
+
+  const rates = units.map(unit => unit.rate * 100);
+  let takeaway = units.length === 0
+    ? none
+    : `The provider error rate ${spanPhrase(rates, percentValue, noun)} (${totals}). `
+      + `A dot's area follows its ${noun}'s valid attempts and its bar is the ${noun}'s 95 % interval.`;
+  if (onlyCount > 0) {
+    takeaway += ` ${plural(onlyCount, 'failed or canceled run')} ${onlyCount === 1 ? 'is' : 'are'} drawn hollow: `
+      + `${onlyCount === 1 ? 'its' : 'their'} attempts count for provider availability only.`;
+  }
+  if (rerunUnits.length > 0) {
+    takeaway += ` ▲ marks ${plural(rerunUnits.length, noun)} that needed a re-run for provider errors.`;
+  }
+  takeaway += unrecordedNote + notAnalyzedNote(input, [filled, hollow]);
+  const whiskers: CcWhisker[] = units.flatMap(unit => unit.low === null || unit.high === null ? [] : [{
+    x: unit.x, low: unit.low * 100, high: unit.high * 100, runId: unit.point.runId,
+    seriesId: unit.only ? 'availability.onlyUnits' : 'availability.units'
+  }]);
+  const built = config(datasets, input, markers, options, yAxis,
+    { pointLabels: true, breakAt: ccPeriodBreak('availability', input), whiskers });
+  if (built) {
+    // A dot's area is proportional to its valid attempts: its radius to their square root.
+    const largest = Math.max(1, ...units.map(unit => unit.valid));
+    const maxRadius = style.pointRadiusPx * 2;
+    const crossRadius = scaledRadius(CROSS_RADIUS_PX, style);
+    const notAnalyzed = notAnalyzedOf(input);
+    const radiusOf = (point: CcChartPoint | undefined): number => {
+      if (!point) return style.pointRadiusPx;
+      if (notAnalyzed?.has(point.runId)) return crossRadius;
+      const unit = units.find(entry => entry.point.runId === point.runId && entry.x === point.x);
+      return unit ? Math.max(2, maxRadius * Math.sqrt(unit.valid / largest)) : style.pointRadiusPx;
+    };
+    for (const ds of built.data.datasets) {
+      const radius = (ctx: ScriptableContext<'line'>) => radiusOf(ctx.raw as CcChartPoint | undefined);
+      Object.assign(ds, { showLine: false, pointRadius: radius, pointHoverRadius: radius });
+    }
+    // Above the whisker's cap, or the dot, and above the value label that sits there.
+    const labelRoom = style.valueLabels ? style.valueLabelSizePx + 2 : 0;
+    built.plugins.push(ccGlyphPlugin(rerunUnits.map(unit => ({
+      x: unit.x,
+      y: Math.max(unit.rate, unit.high ?? unit.rate) * 100,
+      text: '▲',
+      offsetPx: labelRoom + (unit.high !== null
+        ? WHISKER_LABEL_GAP_PX
+        : radiusOf({ x: unit.x, y: unit.rate * 100, runId: unit.point.runId }) + 2)
+    })), theme, style.valueLabelSizePx, style.labelWeight));
+  }
+  return {
+    ...base,
+    takeaway,
+    altText: `${altLead('Provider errors', input)} ${takeaway}`,
+    config: built,
+    table: finishTable({ columns: unitColumns, rows: points.map(point => row(point, ...unitCells(point))) }, points, input)
+  };
+}
+
 /** Every figure of the timeline, in the order the tab shows them. */
 export function buildCcFigures(input: CcFigureInput, options: CcChartOptions = {}): CcFigure[] {
   return CC_FIGURE_KEYS.map(entry => buildCcFigure(entry.key, input, options));
@@ -2810,6 +3379,7 @@ function figureOf(key: CcFigureKey, input: CcFigureInput, options: CcChartOption
     case 'tools': return toolCallsFigure(input, options);
     case 'cost': return costFigure(input, options);
     case 'reliability': return reliabilityFigure(input, options);
+    case 'availability': return availabilityFigure(input, options);
     default: return timelineOverviewFigure(input, options);
   }
 }

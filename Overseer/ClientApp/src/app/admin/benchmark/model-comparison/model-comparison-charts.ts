@@ -1,8 +1,9 @@
 /**
  * Chart core for the cross-model benchmark comparison view: the palette and its provider colors, the
  * per-model identity glyphs, the measure definitions, the Pareto-frontier computation, the error-bar,
- * direct-label and profile-tile plugins and the configurations for the six figures (S1-S3 scatters,
- * P1's three linked panels, P2's small-multiples model profiles).
+ * direct-label, profile-tile and provider-error marker plugins and the configurations for the figures
+ * (S1-S3 scatters, P1's linked panels with the optional provider-availability dot plot, P2's
+ * small-multiples model profiles, and A1, the provider-error dot plot on its own).
  *
  * The module is pure TypeScript: it constructs no components, touches no DOM node and imports
  * nothing from Angular, so its spec runs without a TestBed fixture. The one browser API it reaches
@@ -19,7 +20,15 @@ import type { AxisBounds, AxisTickKind, ScaleType, TimeUnit } from './axis-domai
 import { pricingBadge, pricingNote, questionsBadge, runsBadge, visibleBadges } from './figure-chrome';
 import type { FigureBadge, FigureChrome, FigureDirection, FigureKeyItem, FigureNote } from './figure-chrome';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
-import type { AxisTitleBreak, FigureFontWeight, FigureStyle, ScatterFigureStyle } from './figure-style';
+import type {
+  AvailabilityMeasure,
+  AvailabilityScale,
+  AxisTitleBreak,
+  BarFigureStyle,
+  FigureFontWeight,
+  FigureStyle,
+  ScatterFigureStyle,
+} from './figure-style';
 import {
   FADED_MARK_ALPHA,
   providerDisplayName,
@@ -32,6 +41,13 @@ import {
 import type { ProviderKey, ResolvedFigureTheme } from './figure-theme';
 import { DEFAULT_MEASURE_DECIMALS, costNumberMeasure, formatMeasure, speedNumberMeasure } from './measure-format';
 import type { NumberFormatStyle, NumberMeasure, NumberSamples } from './measure-format';
+import {
+  NOT_RECORDED_TEXT,
+  formatInteger,
+  formatPercent,
+  formatRate,
+  wilson95,
+} from '../shared/provider-availability/provider-availability';
 
 // ---------------------------------------------------------------------------------------------
 // Input model
@@ -114,6 +130,34 @@ export interface ModelComparisonEntry {
   readonly excluded: boolean;
   /** Names of the comparability keys that differ, so the table can say why rather than only that. */
   readonly excludedReasonKeys: readonly string[];
+
+  /** Provider availability, pooled with the runs' lineage predecessors. Absent: the payload carries none. */
+  readonly availability?: ModelComparisonAvailability | null;
+}
+
+/**
+ * One entry's provider availability: candidate attempts only, as observed in GnollBench runs. The
+ * bounds are the server's cluster-adjusted Wilson 95 % interval, all as proportions.
+ */
+export interface ModelComparisonAvailability {
+  /** False before the provider attempt ledger (harness 56): the entry has no figure, only "not recorded". */
+  readonly recorded: boolean;
+  /** n: valid candidate attempts. */
+  readonly validAttempts: number;
+  /** k: attempts that failed at the provider. */
+  readonly providerErrors: number;
+  /** Failures that are neither the provider's nor ours on the evidence. */
+  readonly unattributedErrors: number;
+  /** k / n; null without valid attempts. */
+  readonly rate: number | null;
+  readonly low: number | null;
+  readonly high: number | null;
+  /** (k + unattributed) / n: the upper bound that counts the unattributed errors too. */
+  readonly inclusiveRate: number | null;
+  readonly inclusiveLow: number | null;
+  readonly inclusiveHigh: number | null;
+  /** Fewer than 100 valid attempts. */
+  readonly fewAttempts: boolean;
 }
 
 /** Facts shared by every entry in a comparable set, used for figure chrome. */
@@ -1745,6 +1789,134 @@ export const directLabelPlugin: Plugin = {
 };
 
 // ---------------------------------------------------------------------------------------------
+// Provider availability
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * A scatter marks a model only when the lower bound of its provider error rate's 95 % interval is
+ * above this: more than 1 in 50 attempts failing at the provider on the data, not on noise.
+ */
+export const AVAILABILITY_MARKER_THRESHOLD = 0.02;
+
+/** The scatter caption line that states the marker rule. */
+export const AVAILABILITY_MARKER_NOTE =
+  'A dashed ring marks a model whose provider errors exceed 2 % of attempts with the whole 95 % interval above 2 %.';
+
+/** One model's plotted provider error rate under a measure, as proportions. */
+export interface AvailabilityPoint {
+  readonly rate: number;
+  readonly low: number;
+  readonly high: number;
+  /** The errors counted: provider errors, plus the unattributed ones under `inclusive`. */
+  readonly k: number;
+  readonly n: number;
+  readonly fewAttempts: boolean;
+}
+
+/**
+ * The rate, its interval and its count under `measure`, or null where the entry does not record the
+ * ledger or has no valid attempt. A missing bound falls back to the plain Wilson interval.
+ */
+export function availabilityPoint(entry: ModelComparisonEntry, measure: AvailabilityMeasure): AvailabilityPoint | null {
+  const a = entry.availability;
+  if (!a || !a.recorded || a.validAttempts <= 0) {
+    return null;
+  }
+  const strict = measure === 'strict';
+  const k = strict ? a.providerErrors : a.providerErrors + a.unattributedErrors;
+  const n = a.validAttempts;
+  const rate = (strict ? a.rate : a.inclusiveRate) ?? k / n;
+  const plain = wilson95(k, n);
+  const low = (strict ? a.low : a.inclusiveLow) ?? plain?.low ?? rate;
+  const high = (strict ? a.high : a.inclusiveHigh) ?? plain?.high ?? rate;
+  return { rate, low: Math.min(low, rate), high: Math.max(high, rate), k, n, fewAttempts: a.fewAttempts };
+}
+
+/** What a model shows in place of a dot: `not recorded`, or `no valid attempts`; null when it has a dot. */
+export function availabilityGapText(entry: ModelComparisonEntry): string | null {
+  const a = entry.availability;
+  if (!a || !a.recorded) {
+    return NOT_RECORDED_TEXT.toLowerCase();
+  }
+  return a.validAttempts <= 0 ? 'no valid attempts' : null;
+}
+
+/** `0.81 % (12 of 1,480 attempts; 95 % CI 0.46–1.4 %)`, or the gap text. */
+export function availabilityText(entry: ModelComparisonEntry, measure: AvailabilityMeasure): string {
+  const point = availabilityPoint(entry, measure);
+  return point ? formatRate(point.k, point.n, point.low, point.high) : availabilityGapText(entry) ?? '';
+}
+
+/** Whether a scatter marks the entry: its strict provider error rate's lower bound exceeds 2 %. */
+export function availabilityMarked(entry: ModelComparisonEntry): boolean {
+  const point = availabilityPoint(entry, 'strict');
+  return point !== null && point.low > AVAILABILITY_MARKER_THRESHOLD;
+}
+
+/** What the marker plugin reads off the chart options. */
+export interface AvailabilityMarkerPluginOptions {
+  /** One per marked model dataset: its index and its label, `3.1 % provider errors`. */
+  readonly marks: readonly { readonly datasetIndex: number; readonly text: string }[];
+  /** The scatter's mark radius, which the ring keeps clear of. */
+  readonly markRadiusPx: number;
+  readonly fontSizePx: number;
+  readonly fontFamily?: string;
+  readonly ringColor: string;
+  readonly inkColor: string;
+  readonly surfaceColor: string;
+}
+
+const AVAILABILITY_RING_GAP_PX = 4;
+const AVAILABILITY_RING_DASH: readonly number[] = [3, 3];
+
+/**
+ * A dashed ring around each marked scatter mark and its label under the ring, on a surface halo, so
+ * the cue never rests on color alone. Drawn after the datasets and the direct labels.
+ */
+export const availabilityMarkerPlugin: Plugin = {
+  id: 'overseerAvailabilityMarkers',
+  afterDatasetsDraw(chart, _args, pluginOptions): void {
+    const options = pluginOptions as unknown as AvailabilityMarkerPluginOptions | undefined;
+    const ctx = chart.ctx;
+    const area = chart.chartArea;
+    if (!ctx || !area || !options || options.marks.length === 0) {
+      return;
+    }
+    const ring = options.markRadiusPx + AVAILABILITY_RING_GAP_PX;
+    ctx.save();
+    ctx.font = toFont({ size: options.fontSizePx, ...(options.fontFamily ? { family: options.fontFamily } : {}) }).string;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    for (const mark of options.marks) {
+      const meta = chart.getDatasetMeta(mark.datasetIndex);
+      const element = meta.hidden ? undefined : meta.data[0];
+      if (!element || !Number.isFinite(element.x) || !Number.isFinite(element.y)) {
+        continue;
+      }
+      ctx.setLineDash([...AVAILABILITY_RING_DASH]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = options.ringColor;
+      ctx.beginPath();
+      ctx.arc(element.x, element.y, ring, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const width = ctx.measureText(mark.text).width;
+      const x = Math.min(Math.max(element.x, area.left + width / 2), area.right - width / 2);
+      const below = element.y + ring + 2;
+      const y = below + options.fontSizePx > area.bottom ? element.y - ring - 2 - options.fontSizePx : below;
+      ctx.lineJoin = 'round';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = options.surfaceColor;
+      ctx.strokeText(mark.text, x, y);
+      ctx.fillStyle = options.inkColor;
+      ctx.fillText(mark.text, x, y);
+    }
+    ctx.restore();
+  },
+};
+
+// ---------------------------------------------------------------------------------------------
 // S1-S3: the scatters
 // ---------------------------------------------------------------------------------------------
 
@@ -2194,6 +2366,15 @@ function buildScatter(
 
   const highlightedIndex = plotted.findIndex((entry) => entry.key === highlightedKey);
 
+  // A drawn model whose provider errors are clearly above 2 % gets a dashed ring and its rate.
+  const markersOn = (options.style ?? DEFAULT_FIGURE_STYLE).availability.markers === 'on';
+  const marks = markersOn
+    ? plotted.flatMap((entry, datasetIndex) => {
+        const point = isMeasured(entry, xAxis, yAxis) && availabilityMarked(entry) ? availabilityPoint(entry, 'strict') : null;
+        return point ? [{ datasetIndex, text: `${formatPercent(point.rate)} provider errors` }] : [];
+      })
+    : [];
+
   const config: ChartConfiguration<'scatter', ErrorBarPoint[]> = {
     type: 'scatter',
     data: { datasets },
@@ -2270,6 +2451,19 @@ function buildScatter(
               } satisfies DirectLabelPluginOptions,
             }
           : {}),
+        ...(marks.length > 0
+          ? {
+              [availabilityMarkerPlugin.id]: {
+                marks,
+                markRadiusPx: style.markRadiusPx,
+                fontSizePx: style.labelTextSizePx,
+                ...(theme.fonts.chartStack === null ? {} : { fontFamily: theme.fonts.chartStack }),
+                ringColor: theme.chart.accent,
+                inkColor: theme.chart.inkSecondary,
+                surfaceColor: theme.chart.surface,
+              } satisfies AvailabilityMarkerPluginOptions,
+            }
+          : {}),
         ...(style.intervals ? errorBarOptions(theme) : {}),
         ...plotFrameOptions(theme, style.plotFrame),
       },
@@ -2325,6 +2519,10 @@ function buildScatter(
     ...(!style.intervals && style.hiddenIntervalsNote && anyWhisker
       ? [{ text: HIDDEN_INTERVALS_NOTE, tone: 'info' } satisfies FigureNote]
       : []),
+    // The rule is stated wherever it could apply: with the markers on and a drawn model recording errors.
+    ...(markersOn && measured.some((entry) => availabilityPoint(entry, 'strict') !== null)
+      ? [{ text: AVAILABILITY_MARKER_NOTE, tone: 'info' } satisfies FigureNote]
+      : []),
   ];
 
   const chrome: FigureChrome = {
@@ -2340,6 +2538,9 @@ function buildScatter(
   const summary = [
     ...(frontierLabels.length > 0 ? [`Pareto frontier: ${frontierLabels.join(', ')}`] : []),
     ...(faded.length > 0 ? [`Faded: ${faded.map((entry) => entry.label).join(', ')}`] : []),
+    ...(marks.length > 0
+      ? [`Provider errors above 2 %: ${marks.map((mark) => `${plotted[mark.datasetIndex].label}, ${mark.text}`).join('; ')}`]
+      : []),
   ];
 
   return {
@@ -2348,10 +2549,11 @@ function buildScatter(
     chrome,
     preferredCorner,
     config,
-    // A leader line draws over a whisker rather than under it.
+    // A leader line draws over a whisker rather than under it; a marker ring over both.
     plugins: withPlotFrame([
       ...(style.intervals ? [errorBarPlugin] : []),
       ...(annotate ? [directLabelPlugin] : []),
+      ...(marks.length > 0 ? [availabilityMarkerPlugin] : []),
     ], style.plotFrame),
     summary,
   };
@@ -2427,7 +2629,9 @@ export interface SmallMultiplesFigure {
   readonly quality: ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel>;
   readonly speed: ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel>;
   readonly cost: ChartSpec<'bar', ErrorBarPoint[], PanelCategoryLabel>;
-  /** The single model order all three panels share, as entry keys, in drawing order. */
+  /** The provider-error dot plot; the page shows it as a fourth panel while `style.availability.panel` is on. */
+  readonly availability: DotPlotSpec;
+  /** The single model order every panel shares, as entry keys, in drawing order. */
   readonly order: readonly string[];
   readonly notices: readonly string[];
 }
@@ -2702,7 +2906,8 @@ function barSpeedUnit(plotted: readonly ModelComparisonEntry[], speedMeasure: Sp
  * P1 — three aligned bar panels sharing one model order, so a row is one model and a column is one
  * measure. Each panel keeps its own real units and its own axis title; there is no shared y-axis and
  * no second y-axis, because three incommensurable measures on one scale is the worst chart mistake
- * there is.
+ * there is. The provider-error dot plot is built beside them in the same order, as the optional
+ * fourth panel.
  */
 export function buildSmallMultiples(
   plotted: readonly ModelComparisonEntry[],
@@ -2793,16 +2998,7 @@ export function buildSmallMultiples(
         : `Candidate cost per ${context.costUnit ?? 'suite run'} (USD)`
       : 'Total run cost including grading roles (USD)';
 
-  // One label list for all three panels. A two-line tick block on one panel alone would shrink
-  // that panel's plot area and put its bars out of line with the other two, which share a height
-  // and a model order.
-  const categoryLabels: PanelCategoryLabel[] = plotted.map((e) => {
-    const lines = ([] as string[]).concat(modelLabelLines(e, barStyle.thinkingLevelBreak));
-    if (e.runCount === 1 && barStyle.singleRunMarker) {
-      lines.push('n = 1');
-    }
-    return lines.length === 1 ? lines[0] : lines;
-  });
+  const categoryLabels = panelCategoryLabels(plotted, barStyle);
 
   return {
     quality: buildPanel(
@@ -2857,9 +3053,319 @@ export function buildSmallMultiples(
       true,
       costMeasure === 'candidateSuite',
     ),
+    availability: buildAvailabilityDotPlot(P1_AVAILABILITY_ID, P1_AVAILABILITY_TITLE, plotted, categoryLabels, options),
     order: plotted.map((e) => e.key),
     notices: [],
   };
+}
+
+/**
+ * One label list for every panel. A two-line tick block on one panel alone would shrink that
+ * panel's plot area and put its marks out of line with the others, which share a height and a model
+ * order.
+ */
+function panelCategoryLabels(plotted: readonly ModelComparisonEntry[], barStyle: BarFigureStyle): PanelCategoryLabel[] {
+  return plotted.map((e) => {
+    const lines = ([] as string[]).concat(modelLabelLines(e, barStyle.thinkingLevelBreak));
+    if (e.runCount === 1 && barStyle.singleRunMarker) {
+      lines.push('n = 1');
+    }
+    return lines.length === 1 ? lines[0] : lines;
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// The provider-error dot plot: P1's fourth panel and A1
+// ---------------------------------------------------------------------------------------------
+
+/** A dot per model on a value axis, with its interval whisker and its count: a line chart drawn without lines. */
+export type DotPlotSpec = ChartSpec<'line', ErrorBarPoint[], PanelCategoryLabel>;
+
+export const P1_AVAILABILITY_ID = 'p1d-availability';
+export const P1_AVAILABILITY_TITLE = 'Provider availability';
+export const A1_AVAILABILITY_ID = 'a1-availability';
+export const A1_AVAILABILITY_TITLE = 'Provider errors';
+
+/** The figure ids that draw the provider-error dot plot, which takes the bar family's style. */
+export const AVAILABILITY_FIGURE_IDS: readonly string[] = [P1_AVAILABILITY_ID, A1_AVAILABILITY_ID];
+
+/** The definition under the dot plot's badges: the numerator and the denominator, where the number appears. */
+export const AVAILABILITY_DETAIL_STRICT =
+  'Share of valid candidate attempts that failed at the provider, as observed in GnollBench runs; ' +
+  'whiskers are 95 % intervals widened for bursts of errors.';
+export const AVAILABILITY_DETAIL_INCLUSIVE =
+  'Share of valid candidate attempts that failed at the provider or for a reason that could not be ' +
+  'attributed, as observed in GnollBench runs: an upper bound; whiskers are 95 % intervals widened for bursts of errors.';
+
+const DOT_RADIUS = 5;
+const DOT_HOVER_RADIUS = 7;
+const DOT_HIT_RADIUS = 10;
+
+/** The square-root scale's tick candidates, in percent. */
+const SQRT_TICK_CANDIDATES_PCT: readonly number[] = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20, 50, 100];
+
+/**
+ * The square-root axis: its top, the first candidate at or above the largest plotted bound, and the
+ * ticks from 0 to it, each at least 15 % of the axis from the one before so the crowd near zero
+ * stays legible. In percent.
+ */
+export function availabilitySqrtTicks(maxPct: number): { readonly top: number; readonly ticks: readonly number[] } {
+  const top = SQRT_TICK_CANDIDATES_PCT.find((candidate) => candidate >= maxPct) ?? 100;
+  const minGap = 0.15 * Math.sqrt(top);
+  const ticks = [0];
+  for (const candidate of SQRT_TICK_CANDIDATES_PCT) {
+    if (candidate >= top) {
+      break;
+    }
+    if (Math.sqrt(candidate) - Math.sqrt(ticks[ticks.length - 1]) >= minGap) {
+      ticks.push(candidate);
+    }
+  }
+  if (ticks.length > 1 && Math.sqrt(top) - Math.sqrt(ticks[ticks.length - 1]) < minGap) {
+    ticks.pop();
+  }
+  ticks.push(top);
+  return { top, ticks };
+}
+
+/** A percent tick: `0 %`, `0.5 %`, `2 %`. */
+function percentTick(pct: number): string {
+  return `${Number(pct.toPrecision(6))} %`;
+}
+
+/** The dot plot's value-axis title, by measure and scale. */
+function availabilityAxisTitle(measure: AvailabilityMeasure, scale: AvailabilityScale): string {
+  const what = measure === 'strict' ? 'Provider error rate' : 'Provider and unattributed error rate';
+  return scale === 'sqrt' ? `${what} (%, square-root scale)` : `${what} (%)`;
+}
+
+/**
+ * The provider-error dot plot: one dot per model at its error rate, the server's cluster-adjusted
+ * Wilson 95 % interval as its whisker, `k/n` beside it, a hollow dot below 100 valid attempts, and
+ * `not recorded` without a dot for a model whose runs predate the ledger. Strict or inclusive and
+ * square-root or linear, as `style.availability` says; descriptive only, with no ranking or test.
+ * The model order and the category labels are P1's, so the panel lines up with the other three.
+ */
+function buildAvailabilityDotPlot(
+  id: string,
+  title: string,
+  plotted: readonly ModelComparisonEntry[],
+  categoryLabels: readonly PanelCategoryLabel[],
+  options: SmallMultiplesOptions,
+): DotPlotSpec {
+  const { context, reducedMotion, highlightedKey, selectedKeys, orientation } = options;
+  const figureStyle = options.style ?? DEFAULT_FIGURE_STYLE;
+  const style = figureStyle.bar;
+  const { measure, scale } = figureStyle.availability;
+  const theme = themeOf(options);
+  const vertical = orientation === 'vertical';
+  const emphasised = new Set<string>(selectedKeys ?? []);
+  if (highlightedKey) {
+    emphasised.add(highlightedKey);
+  }
+  const hasEmphasis = emphasised.size > 0;
+
+  const points = plotted.map((entry) => availabilityPoint(entry, measure));
+  const toAxis = (proportion: number): number => {
+    const pct = Math.max(0, proportion) * 100;
+    return scale === 'sqrt' ? Math.sqrt(pct) : pct;
+  };
+  const centers = points.map((point) => (point ? toAxis(point.rate) : 0));
+  const errLows = points.map((point, index) =>
+    point && style.intervals ? Math.max(0, centers[index] - toAxis(point.low)) : undefined);
+  const errHighs = points.map((point, index) =>
+    point && style.intervals ? Math.max(0, toAxis(point.high) - centers[index]) : undefined);
+  const data = plotted.map((_entry, index) => barPoint(index, centers[index], errLows[index], errHighs[index], orientation));
+
+  const labels = plotted.map((entry, index) => {
+    const point = points[index];
+    return point ? `${formatInteger(point.k)}/${formatInteger(point.n)}` : availabilityGapText(entry) ?? '';
+  });
+
+  const hue = (entry: ModelComparisonEntry): string => {
+    if (!hasEmphasis) {
+      return providerHue(entry.provider, theme);
+    }
+    return emphasised.has(entry.key) ? theme.chart.accent : theme.chart.deEmphasisStroke;
+  };
+  const radii = points.map((point) => (point ? DOT_RADIUS : 0));
+  const strokes = plotted.map(hue);
+  // A hollow dot: fewer than 100 attempts, the same cue a single run carries on the scatters.
+  const fills = plotted.map((entry, index) => (points[index]?.fewAttempts ? 'transparent' : hue(entry)));
+
+  const maxPct = Math.max(0, ...points.map((point) => (point ? Math.max(0, point.high) * 100 : 0)));
+  const sqrtTicks = availabilitySqrtTicks(maxPct);
+  const titleFont: AxisTitleFont = { theme, weight: style.axisTitleWeight };
+  const directionShown = !style.hiddenBadges.includes('direction');
+  const direction: FigureDirection = vertical ? { y: 'bottom', label: 'Better' } : { x: 'left', label: 'Better' };
+  const axisTitleText = availabilityAxisTitle(measure, scale);
+
+  const categoryScale = {
+    type: 'category' as const,
+    offset: true,
+    title: axisTitle('Model', undefined, style.axisTitleSizePx, titleFont),
+    grid: { display: false },
+    border: { color: theme.chart.baseline },
+    ticks: {
+      ...tickOptions(style.axisTextSizePx, theme),
+      color: theme.chart.inkSecondary,
+      maxRotation: vertical ? 45 : 0,
+    },
+  };
+  const valueScale = {
+    type: 'linear' as const,
+    beginAtZero: true,
+    min: 0,
+    ...(scale === 'sqrt'
+      ? {
+          max: Math.sqrt(sqrtTicks.top),
+          // The square-root positions of round percentages, so a tick reads as the rate itself.
+          afterBuildTicks: (axis: { ticks: { value: number }[] }) => {
+            axis.ticks = sqrtTicks.ticks.map((pct) => ({ value: Math.sqrt(pct) }));
+          },
+        }
+      : { suggestedMax: maxPct > 0 ? maxPct : 1, grace: '8%' }),
+    ...valueAxisTitle(
+      axisTitleText,
+      directionShown ? undefined : 'lower',
+      style.axisTitleBreak,
+      style.axisTitleSizePx,
+      titleFont,
+    ),
+    grid: gridOptions(style.gridlines, theme),
+    border: { color: theme.chart.baseline },
+    ticks: {
+      ...tickOptions(style.axisTextSizePx, theme),
+      callback: (value: string | number) => percentTick(scale === 'sqrt' ? Number(value) ** 2 : Number(value)),
+    },
+  };
+
+  // The label sits past the whisker's far end, as a bar's value label does.
+  const whiskerLength = (ctx: DataLabelCtx): number => {
+    const errHigh = errHighs[ctx.dataIndex];
+    if (errHigh === undefined) {
+      return 0;
+    }
+    const axis = ctx.chart.scales[vertical ? 'y' : 'x'];
+    const center = centers[ctx.dataIndex];
+    return Math.abs(axis.getPixelForValue(center + errHigh) - axis.getPixelForValue(center));
+  };
+  const labelSize = style.valueLabelSizePx;
+  const labelRoom = vertical ? Math.ceil(labelSize * 1.2 + 4) : Math.ceil(widestLabelPx(labels, labelSize, theme) + 4);
+
+  const config: ChartConfiguration<'line', ErrorBarPoint[], PanelCategoryLabel> = {
+    type: 'line',
+    data: {
+      labels: [...categoryLabels],
+      datasets: [
+        {
+          label: title,
+          data,
+          showLine: false,
+          pointStyle: 'circle',
+          pointRadius: radii,
+          pointHoverRadius: points.map((point) => (point ? DOT_HOVER_RADIUS : 0)),
+          pointHitRadius: points.map((point) => (point ? DOT_HIT_RADIUS : 0)),
+          pointBackgroundColor: fills,
+          pointBorderColor: strokes,
+          pointBorderWidth: 2,
+          backgroundColor: 'transparent',
+          borderColor: 'transparent',
+        },
+      ],
+    },
+    options: {
+      ...baseOptions(reducedMotion),
+      indexAxis: vertical ? 'x' : 'y',
+      layout: { padding: vertical ? { top: labelRoom } : { right: labelRoom } },
+      scales: vertical ? { x: categoryScale, y: valueScale } : { x: valueScale, y: categoryScale },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...TOOLTIP_STYLE,
+          callbacks: {
+            title: (items) => plotted[items[0]?.dataIndex ?? 0]?.label ?? '',
+            label: (item) => {
+              const entry = plotted[item.dataIndex];
+              return entry ? `${measure === 'strict' ? 'Provider errors' : 'Provider and unattributed errors'}: ${availabilityText(entry, measure)}` : '';
+            },
+          },
+        },
+        // The count always stands beside the rate it was computed from.
+        datalabels: {
+          display: true,
+          formatter: (_v: unknown, ctx: DataLabelCtx) => labels[ctx.dataIndex] ?? '',
+          anchor: 'center' as const,
+          align: vertical ? ('top' as const) : ('right' as const),
+          clamp: true,
+          offset: (ctx: DataLabelCtx) => whiskerLength(ctx) + (points[ctx.dataIndex] ? DOT_RADIUS : 0) + 4,
+          color: (ctx: DataLabelCtx) => (points[ctx.dataIndex] ? theme.chart.inkSecondary : theme.chart.inkMuted),
+          font: { size: labelSize, ...labelFont(theme) },
+        },
+        ...(style.intervals ? errorBarOptions(theme) : {}),
+        ...plotFrameOptions(theme, style.plotFrame),
+      },
+    },
+  };
+
+  const drawn = plotted.filter((_entry, index) => points[index] !== null);
+  const key: FigureKeyItem[] = [];
+  if (points.some((point) => point?.fewAttempts)) {
+    key.push({ glyph: 'hollow', text: 'Fewer than 100 attempts' });
+  }
+  const whiskered = errHighs.some((err) => drawnWhisker(err) > 0) || errLows.some((err) => drawnWhisker(err) > 0);
+  if (style.intervals && whiskered) {
+    key.push({ glyph: 'interval', text: '95 % interval' });
+  }
+  key.push(...providerKeyItems(drawn, theme));
+
+  const unrecorded = plotted.filter((entry) => !entry.availability?.recorded);
+  const notes: FigureNote[] = [
+    ...(unrecorded.length > 0
+      ? [{
+          text: `Not recorded for ${unrecorded.map((entry) => entry.label).join(', ')}: ` +
+            `${unrecorded.length === 1 ? 'its runs predate' : 'their runs predate'} the provider attempt ledger.`,
+          tone: 'info',
+        } satisfies FigureNote]
+      : []),
+    ...(!style.intervals && style.hiddenIntervalsNote && drawn.length > 0
+      ? [{ text: HIDDEN_INTERVALS_NOTE, tone: 'info' } satisfies FigureNote]
+      : []),
+  ];
+
+  const chrome: FigureChrome = {
+    title,
+    badges: visibleBadges(countBadges(plotted, context), style.hiddenBadges),
+    ...(directionShown ? { direction } : {}),
+    detail: measure === 'strict' ? AVAILABILITY_DETAIL_STRICT : AVAILABILITY_DETAIL_INCLUSIVE,
+    key,
+    highlight: '',
+    notes,
+  };
+
+  return {
+    id,
+    title,
+    chrome,
+    config,
+    plugins: withPlotFrame(style.intervals
+      ? [errorBarPlugin, ChartDataLabels as Plugin]
+      : [ChartDataLabels as Plugin], style.plotFrame),
+    // The text alternative: every model's rate with its count and interval, or why it has none.
+    summary: plotted.map((entry) => `${entry.label}: ${availabilityText(entry, measure)}`),
+  };
+}
+
+/**
+ * A1 — the provider-error dot plot as a figure of its own, in P1's model order and orientation, so a
+ * document can carry it whatever the browser's panel setting says.
+ */
+export function buildAvailabilityFigure(
+  plotted: readonly ModelComparisonEntry[],
+  options: SmallMultiplesOptions,
+): DotPlotSpec {
+  const barStyle = (options.style ?? DEFAULT_FIGURE_STYLE).bar;
+  return buildAvailabilityDotPlot(A1_AVAILABILITY_ID, A1_AVAILABILITY_TITLE, plotted, panelCategoryLabels(plotted, barStyle), options);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -3520,6 +4026,8 @@ export interface ComparisonFigureSet {
   readonly speedCost: ChartSpec<'scatter', ErrorBarPoint[]>;
   readonly smallMultiples: SmallMultiplesFigure;
   readonly profile: ProfileFigure;
+  /** A1: the provider-error dot plot on its own, always built. */
+  readonly availability: DotPlotSpec;
 }
 
 export interface FigureSetOptions {
@@ -3589,6 +4097,7 @@ export function buildComparisonFigures(
     speedCost: buildSpeedCostScatter(selection.plotted, figureOptions),
     smallMultiples: buildSmallMultiples(selection.plotted, smallMultiplesOptions),
     profile: buildProfilePlot(selection.plotted, { ...figureOptions, speedMeasure, costMeasure }),
+    availability: buildAvailabilityFigure(selection.plotted, smallMultiplesOptions),
   };
 }
 

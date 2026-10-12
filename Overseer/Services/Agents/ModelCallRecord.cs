@@ -82,6 +82,9 @@ public sealed class ModelCallRecord
     /// <summary>Why the call failed for good; null on a call that produced a response.</summary>
     public string? ErrorKind { get; set; }
 
+    /// <summary>One record per attempt of this call, in attempt order, governor refusals included.</summary>
+    public List<ProviderAttemptRecord> Attempts { get; set; } = new();
+
     /// <summary>Copies the provider's meta into this record, with marks relative to <paramref name="sendTicks"/>.</summary>
     public void ApplyMeta(ProviderCallMeta meta, long sendTicks)
     {

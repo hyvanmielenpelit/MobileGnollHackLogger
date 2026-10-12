@@ -38,6 +38,7 @@ import { formatThinkingLevel, showReasoningBadge, formatServiceTier } from '../.
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { isFinalModelBatchStatus, modelBatchOwnedReasonText } from '../model-batch/model-batch.models';
+import { NOT_RECORDED_TEXT, cardRateText } from '../shared/provider-availability/provider-availability';
 import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
 
 /**
@@ -921,6 +922,22 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
     return sha ? sha.substring(0, 8) : '-';
   }
 
+  /**
+   * A member's provider errors: `0.81 % (12/1,480)`; null while it is unfinished or recorded without
+   * valid attempts; `Not recorded` for a finished run that predates the ledger.
+   */
+  private memberProviderErrors(member: BenchmarkRunSeriesMemberDto): string | null {
+    const rate = cardRateText(member);
+    if (rate) return rate;
+    if (member.providerAvailabilityRecorded || !member.completedAtUtc || member.status === 'Running') return null;
+    return NOT_RECORDED_TEXT;
+  }
+
+  /** The Provider errors cell: the rate with its count, `—`, or `Not recorded`. */
+  memberProviderErrorsText(member: BenchmarkRunSeriesMemberDto): string {
+    return this.memberProviderErrors(member) ?? '—';
+  }
+
   private describeError(err: any, fallback: string): string {
     const httpStatus = err?.status ? ` (HTTP ${err.status})` : '';
     const msg = typeof err?.error === 'string'
@@ -1042,9 +1059,11 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
       lines.push('none launched yet');
     } else {
       for (const m of members) {
+        const providerErrors = this.memberProviderErrors(m);
         lines.push(
           `${m.index}. run #${m.runId}, status ${m.status}, index ${m.qualityIndex ?? 'n/a'}, `
           + `speed ${m.speedIndex ?? 'n/a'}, cost ${m.estimatedCost != null ? '$' + this.num(m.estimatedCost, 4) : 'n/a'}, `
+          + `provider errors ${providerErrors === NOT_RECORDED_TEXT ? 'not recorded' : providerErrors ?? 'n/a'}, `
           + `duration ${m.durationMs != null ? this.formatDuration(m.durationMs) : 'n/a'}, `
           + `fingerprint ${this.shortFingerprint(m.shortFingerprint)}, `
           + `answered ${m.answeredQuestionCount} of ${m.totalQuestionCount}`);

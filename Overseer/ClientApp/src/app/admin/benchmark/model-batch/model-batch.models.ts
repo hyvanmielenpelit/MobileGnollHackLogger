@@ -15,6 +15,7 @@ import { BATTERY_REPAIRING_LABEL, formatCost } from '../batteries/battery.models
 import { formatCostAmount, formatElapsed, formatModelTime } from '../benchmark-run-format';
 import { MAX_COMPARISON_SOURCES } from '../model-comparison/comparison-source-picker.component';
 import { RunFactBadge, runFactBadges } from '../run-report-frame/run-facts';
+import { NOT_RECORDED_TEXT, formatInteger } from '../shared/provider-availability/provider-availability';
 import type { ComparisonWizardPreset } from '../state/benchmark-shell-bridge.service';
 
 /** Pending, Running and WaitingForCap: the orchestrator may still launch a member. */
@@ -284,7 +285,8 @@ function isFiniteNumber(value: number | null | undefined): value is number {
 /**
  * A finished member's figures in card order, each omitted when missing: *Speed Index*, *Duration*,
  * *Median model time*, *TTFT P50*, *Cost / question*, *Total cost*, *Refuted claims* (whenever there is
- * a result), and *Flagged answers* and *Failed answers* above zero.
+ * a result), *Flagged answers* and *Failed answers* above zero, *Provider errors* (the attributed
+ * provider-class attempts, or *Not recorded*) whenever there is a result, and *Re-runs* when recorded.
  */
 export function modelBatchMemberFigures(member: BenchmarkModelBatchMemberDto): ModelBatchMemberFigure[] {
   const result = member.result ?? null;
@@ -321,6 +323,16 @@ export function modelBatchMemberFigures(member: BenchmarkModelBatchMemberDto): M
   const failed = result.failedAnswers ?? 0;
   if (failed > 0) {
     figures.push({ key: 'failed-answers', label: 'Failed answers', value: String(failed), tone: 'warning' });
+  }
+  const providerErrors = result.providerErrors;
+  figures.push({
+    key: 'provider-errors',
+    label: 'Provider errors',
+    value: isFiniteNumber(providerErrors) ? formatInteger(providerErrors) : NOT_RECORDED_TEXT
+  });
+  const reruns = result.rerunsNeeded;
+  if (isFiniteNumber(reruns)) {
+    figures.push({ key: 'reruns', label: 'Re-runs', value: formatInteger(reruns) });
   }
   return figures;
 }

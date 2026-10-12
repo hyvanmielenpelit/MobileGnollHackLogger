@@ -44,8 +44,17 @@ public sealed record ChatConsistencyAttributionInput
     public bool TimeToFirstAnswerTextHighRunVariance { get; init; }
     public bool StreamingRateHighRunVariance { get; init; }
 
-    /// <summary>The 429 or 5xx rate of candidate calls rose (rejected within the reliability family).</summary>
+    /// <summary>
+    /// The 429 or 5xx rate of candidate calls rose (V1), or an attributed provider attempt rate rose (V2,
+    /// <see cref="ProviderErrorRatesAttributed"/>); rejected within the reliability family.
+    /// </summary>
     public bool RateLimitOrServerErrorIncrease { get; init; }
+
+    /// <summary>The reliability family states attributed provider attempt rates (Protocol V2), so R6 reads those.</summary>
+    public bool ProviderErrorRatesAttributed { get; init; }
+
+    /// <summary>A measurement boundary of kind ProviderErrorAccounting lies inside the compared span.</summary>
+    public bool ProviderErrorAccountingChangedInSpan { get; init; }
     public bool UsBusinessHoursCovered { get; init; }
     public bool OutsideBusinessHoursCovered { get; init; }
 
@@ -89,9 +98,12 @@ public sealed record ChatConsistencyAttributionInput
 /// <item><term>R10 improvement</term><description>P1 improved, Established: with a declared snapshot change, or undeclared.</description></item>
 /// <item><term>R11 undetermined</term><description>Every endpoint is Inconclusive, a changed endpoint fits no row, or rows
 /// of several sides fit one endpoint.</description></item>
+/// <item><term>R12 provider-availability</term><description>P6 changed beyond its margin, it is isolated, and no
+/// ProviderErrorAccounting measurement boundary lies in the span: provider availability changed within the
+/// sampled hours, as observed in GnollBench runs.</description></item>
 /// </list>
 ///
-/// <para>A provider-side row (R5–R7, R9, R10) needs its endpoint isolated: no Overseer event in the span, or a
+/// <para>A provider-side row (R5–R7, R9, R10, R12) needs its endpoint isolated: no Overseer event in the span, or a
 /// control DiD separating the target.</para>
 /// </summary>
 public static class ChatConsistencyAttribution
@@ -112,6 +124,7 @@ public static class ChatConsistencyAttribution
     public const string RuleUndeclaredChange = "R9 undeclared-change";
     public const string RuleImprovement = "R10 improvement";
     public const string RuleUndetermined = "R11 undetermined";
+    public const string RuleProviderAvailability = "R12 provider-availability";
 
     /// <summary>Runs the decision table.</summary>
     public static ChatConsistencyAttributionOutcome Attribute(ChatConsistencyAttributionInput input)
@@ -167,7 +180,7 @@ public static class ChatConsistencyAttribution
                     Rule = RuleOverseerChange,
                     Endpoints = new[] { e.Id },
                     EventRefs = eventRefs,
-                    Evidence = e.Name + " " + e.VerdictLabel + " with " + JoinEvents(eventRefs) + " in the compared span; control "
+                    Evidence = ChangeText(e) + " with " + JoinEvents(eventRefs) + " in the compared span; control "
                         + string.Join(", ", sameWay.Select(c => c.ControlDisplay).Distinct(StringComparer.Ordinal))
                         + " moved the same way and the difference-in-differences interval includes 0."
                 });
@@ -185,7 +198,7 @@ public static class ChatConsistencyAttribution
                     Rule = RuleNotAttributable,
                     Endpoints = new[] { e.Id },
                     EventRefs = eventRefs,
-                    Evidence = e.Name + " " + e.VerdictLabel + ". Candidate causes: " + JoinEvents(eventRefs)
+                    Evidence = ChangeText(e) + ". Candidate causes: " + JoinEvents(eventRefs)
                         + "; the provider (" + ProviderName(input.SubjectProvider) + ")." + missing
                 });
             }
@@ -330,7 +343,12 @@ public static class ChatConsistencyAttribution
             }
 
             if (highVariance) reasons.Add(e.Name + ": the run-to-run variance is high");
-            if (input.RateLimitOrServerErrorIncrease) reasons.Add("the rate of 429 or 5xx responses rose");
+            if (input.RateLimitOrServerErrorIncrease)
+            {
+                reasons.Add(input.ProviderErrorRatesAttributed
+                    ? "the rate of provider errors observed in GnollBench attempts rose"
+                    : "the rate of 429 or 5xx responses rose");
+            }
             if (reasons.Count == 0) return;
 
             loadEndpoints.Add(e.Id);
@@ -407,6 +425,25 @@ public static class ChatConsistencyAttribution
             });
         }
 
+        // --- R12: provider availability changed (P6) ---
+        var p6 = Get(ChatConsistencyEndpointIds.ProviderErrorRate);
+        if (p6 != null && IsChanged(p6) && Isolated(p6.Id) && !input.ProviderErrorAccountingChangedInSpan)
+        {
+            rows.Add(new ChatConsistencyAttributionResult
+            {
+                Label = "Provider availability changed (within the sampled hours)",
+                Side = SideProvider,
+                Grade = p6.Grade,
+                Rule = RuleProviderAvailability,
+                Endpoints = new[] { p6.Id },
+                Evidence = UpperFirst(p6.VerdictLabel) + " observed in GnollBench runs: the provider error rate of valid attempts "
+                    + (p6.Verdict == ConsistencyVerdict.ChangedDegraded ? "rose" : "fell") + " beyond its margin"
+                    + (hasEvents ? ", and a control difference-in-differences isolates the target." : ", and no Overseer event lies in the compared span.")
+                    + " What counts as a provider error did not change in the span. The attempts are classed as GnollBench recorded them; "
+                    + "nothing here says why the errors occurred." + providerCitation
+            });
+        }
+
         // --- R11: undetermined or multiple causes ---
         var computed = input.Endpoints.Where(e => e.Computed).ToList();
         if (computed.Count > 0 && computed.All(e => e.Verdict == ConsistencyVerdict.Inconclusive))
@@ -426,7 +463,8 @@ public static class ChatConsistencyAttribution
             var causeRules = new HashSet<string>(StringComparer.Ordinal)
             {
                 RuleOverseerChange, RuleModelBehavior, RuleLoadRelated, RulePersistentServing,
-                RuleInfrastructure, RuleUndeclaredChange, RuleImprovement, RuleDeclaredSnapshotChange
+                RuleInfrastructure, RuleUndeclaredChange, RuleImprovement, RuleDeclaredSnapshotChange,
+                RuleProviderAvailability
             };
 
             var unexplained = new List<string>();
@@ -481,6 +519,17 @@ public static class ChatConsistencyAttribution
     /// <summary>A decisive change beyond the margin.</summary>
     public static bool IsChanged(ChatConsistencyAttributionEndpoint endpoint)
         => endpoint.Computed && endpoint.Verdict is ConsistencyVerdict.ChangedDegraded or ConsistencyVerdict.ChangedImproved;
+
+    /// <summary>
+    /// An endpoint's change in words: <c>Quality degraded</c>; for P6, <c>Provider error rate: more provider
+    /// errors observed in GnollBench runs</c>.
+    /// </summary>
+    private static string ChangeText(ChatConsistencyAttributionEndpoint e)
+        => e.Id == ChatConsistencyEndpointIds.ProviderErrorRate
+            ? e.Name + ": " + e.VerdictLabel + " observed in GnollBench runs"
+            : e.Name + " " + e.VerdictLabel;
+
+    private static string UpperFirst(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text.Substring(1);
 
     /// <summary>The weaker of two grades.</summary>
     public static ChatConsistencyEvidenceGrade Weaker(ChatConsistencyEvidenceGrade a, ChatConsistencyEvidenceGrade b)

@@ -64,6 +64,9 @@ public class BenchmarkModelBatchOrchestratorTests
 
         public ConcurrentQueue<long> CanceledMembers { get; } = new();
 
+        /// <summary>What each launch was told it replaces, in launch order.</summary>
+        public ConcurrentQueue<(long ConfigId, BenchmarkModelBatchChildReplacement? Replaces)> ReplacesOf { get; } = new();
+
         public int Seed { get; set; } = 12345;
 
         protected override int NewSeed() => Seed;
@@ -78,11 +81,13 @@ public class BenchmarkModelBatchOrchestratorTests
             BenchmarkModelBatchMember member,
             StartBenchmarkRunRequest request,
             string batchOwner,
+            BenchmarkModelBatchChildReplacement? replaces,
             CancellationToken ct)
         {
             long configId = member.TestedModelConfigurationId;
             Launched.Enqueue(configId);
             Requests[configId] = request;
+            ReplacesOf.Enqueue((configId, replaces));
 
             if (RefuseLaunchOf.Contains(configId))
             {
@@ -109,7 +114,9 @@ public class BenchmarkModelBatchOrchestratorTests
                 SourceCodeHeadSha = Fingerprint.SourceCodeHeadSha,
                 HarnessVersion = BenchmarkAssessmentPrompt.HarnessVersion,
                 ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion,
-                ErrorMessage = status == BenchmarkRunStatus.Failed ? "The provider failed." : null
+                ErrorMessage = status == BenchmarkRunStatus.Failed ? "The provider failed." : null,
+                ReplacesRunId = replaces?.Run?.RunId,
+                ReplacementCause = replaces?.Run?.Cause
             });
             db.BenchmarkRuns.Add(run);
             await db.SaveChangesAsync(ct);
@@ -710,6 +717,227 @@ public class BenchmarkModelBatchOrchestratorTests
         Assert.False(batch.InstrumentChangeAcknowledged);
         Assert.NotNull(batch.SupersededMembersJson);
         Assert.Single(JsonDocument.Parse(batch.SupersededMembersJson!).RootElement.EnumerateArray());
+    }
+
+    // --- Replacement lineage ----------------------------------------------------------------------
+
+    /// <summary>
+    /// A single-run member Continue relaunches replaces the run it superseded, with the cause read from
+    /// that run: a recorded run with a terminal answer of provider origin is a provider failure. Members
+    /// launched once replace nothing.
+    /// </summary>
+    [Fact]
+    public async Task Continue_RelaunchedSingleRunMember_ReplacesTheSupersededRun_WithAProviderFailureCause()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var f = await CreateFixtureAsync();
+        int attempts = 0;
+        f.Orchestrator.Outcome = id => id == 2 && Interlocked.Increment(ref attempts) == 1
+            ? BenchmarkRunStatus.Failed
+            : BenchmarkRunStatus.Completed;
+        var result = await f.Orchestrator.StartAsync(Request(f), "admin", ct);
+        long id = result.BatchId!.Value;
+        var stopped = await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Stopped, "the stop");
+        long failedRunId = stopped.Members.Single(m => m.OrderIndex == 1).BenchmarkRunId!.Value;
+        await WaitUntilIdleAsync(f, id);
+
+        using (var db = CreateDbContext(f.DbName))
+        {
+            var failed = await db.BenchmarkRuns.SingleAsync(r => r.Id == failedRunId, ct);
+            failed.ProviderLedgerVersion = 1;
+            failed.Answers.Add(new BenchmarkRunAnswer
+            {
+                OrderIndex = 1,
+                QuestionText = "Q1",
+                AnswerText = string.Empty,
+                Status = BenchmarkAnswerStatus.ProviderError,
+                FailureOrigin = BenchmarkFailureOrigin.Provider
+            });
+            await db.SaveChangesAsync(ct);
+        }
+
+        Assert.Equal(BenchmarkModelBatchOutcome.Ok,
+            (await f.Orchestrator.ResumeAsync(id, BenchmarkModelBatchResumeMode.Continue, ct)).Outcome);
+        await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Completed, "completion");
+
+        var relaunched = await WaitForRunOfAsync(f, 2, nth: 2);
+        Assert.Equal(failedRunId, relaunched.ReplacesRunId);
+        Assert.Equal(BenchmarkReplacementCause.ProviderFailure, relaunched.ReplacementCause);
+
+        Assert.Null((await WaitForRunOfAsync(f, 1)).ReplacesRunId);
+        Assert.Null((await WaitForRunOfAsync(f, 3)).ReplacesRunId);
+        Assert.Equal(new long?[] { null, null, failedRunId, null }, f.Orchestrator.ReplacesOf.Select(r => r.Replaces?.Run?.RunId));
+    }
+
+    /// <summary>Re-running under the current instrument links the relaunched member to its old run as an instrument change.</summary>
+    [Fact]
+    public async Task RerunUnderCurrentInstrument_RelaunchedMember_ReplacesItsRun_AsAnInstrumentChange()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var f = await CreateFixtureAsync();
+        long id = await StopOnAnInstrumentChangeAsync(f);
+        long firstRunId = (await WaitForRunOfAsync(f, 1)).Id;
+        f.Orchestrator.Outcome = _ => BenchmarkRunStatus.Completed;
+
+        Assert.Equal(BenchmarkModelBatchOutcome.Ok,
+            (await f.Orchestrator.ResumeAsync(id, BenchmarkModelBatchResumeMode.RerunUnderCurrentInstrument, ct)).Outcome);
+        var batch = await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Completed, "completion");
+
+        var rerun = await WaitForRunOfAsync(f, 1, nth: 2);
+        Assert.Equal(firstRunId, rerun.ReplacesRunId);
+        Assert.Equal(BenchmarkReplacementCause.InstrumentChange, rerun.ReplacementCause);
+        Assert.Contains("\"instrumentRerun\":true", batch.SupersededMembersJson);
+        Assert.Null((await WaitForRunOfAsync(f, 2)).ReplacesRunId);
+    }
+
+    /// <summary>The batch's superseded record as <c>SupersedeLinks</c> writes it, oldest first.</summary>
+    private static string SupersededLinksJson(
+        params (long MemberId, long? RunId, long? SeriesId, long? BatteryRunId, bool InstrumentRerun)[] links)
+        => JsonSerializer.Serialize(links.Select(l => new
+        {
+            memberId = l.MemberId,
+            orderIndex = 0,
+            testedModelConfigurationId = 1L,
+            status = "Failed",
+            runId = l.RunId,
+            seriesId = l.SeriesId,
+            batteryRunId = l.BatteryRunId,
+            supersededAtUtc = DateTime.UtcNow,
+            instrumentRerun = l.InstrumentRerun
+        }));
+
+    private static BenchmarkRun LineageRun(long suiteId, BenchmarkRunStatus status, bool providerFailure = false)
+    {
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            BenchmarkSuiteId = suiteId,
+            SuiteName = "Suite A",
+            Status = status,
+            StartedAtUtc = DateTime.UtcNow,
+            ProviderLedgerVersion = 1
+        });
+        if (providerFailure)
+        {
+            run.Answers.Add(new BenchmarkRunAnswer
+            {
+                OrderIndex = 1,
+                QuestionText = "Q1",
+                AnswerText = string.Empty,
+                Status = BenchmarkAnswerStatus.ProviderError,
+                FailureOrigin = BenchmarkFailureOrigin.Provider
+            });
+        }
+
+        return run;
+    }
+
+    /// <summary>
+    /// A superseded series child is linked member to member: each index of the new series replaces the
+    /// newest run at that index of the old one, each with its own cause. The member's newest link wins.
+    /// </summary>
+    [Fact]
+    public async Task ChildReplacement_OfASupersededSeries_LinksEachIndexToTheOldSeriesRunAtThatIndex()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var f = await CreateFixtureAsync();
+        using var db = CreateDbContext(f.DbName);
+
+        var series = new BenchmarkRunSeries
+        {
+            BenchmarkSuiteId = f.SuiteId,
+            SuiteName = "Suite A",
+            RequestedRunCount = 3,
+            Status = BenchmarkRunSeriesStatus.Stopped,
+            StartRequestJson = "{}",
+            StartedAtUtc = DateTime.UtcNow
+        };
+        db.BenchmarkRunSeries.Add(series);
+        await db.SaveChangesAsync(ct);
+
+        var one = LineageRun(f.SuiteId, BenchmarkRunStatus.Completed);
+        var two = LineageRun(f.SuiteId, BenchmarkRunStatus.Failed, providerFailure: true);
+        var three = LineageRun(f.SuiteId, BenchmarkRunStatus.Canceled);
+        foreach (var (run, index) in new[] { (one, 1), (two, 2), (three, 3) })
+        {
+            run.RunSeriesId = series.Id;
+            run.RunSeriesIndex = index;
+            db.BenchmarkRuns.Add(run);
+        }
+        await db.SaveChangesAsync(ct);
+
+        var batch = new BenchmarkModelBatchRun
+        {
+            SupersededMembersJson = SupersededLinksJson((7, 4242, null, null, false), (7, null, series.Id, null, false), (8, 4343, null, null, false))
+        };
+
+        var replaces = await BenchmarkModelBatchOrchestrator.ChildReplacementAsync(db, batch, new BenchmarkModelBatchMember { Id = 7 }, ct);
+
+        Assert.NotNull(replaces);
+        Assert.Null(replaces!.Run);
+        Assert.Null(replaces.BatteryMembers);
+        var members = replaces.SeriesMembers!;
+        Assert.Equal(3, members.Count);
+        Assert.Equal(new BenchmarkRunReplacement(one.Id, BenchmarkReplacementCause.OurFailure), members[1]);
+        Assert.Equal(new BenchmarkRunReplacement(two.Id, BenchmarkReplacementCause.ProviderFailure), members[2]);
+        Assert.Equal(new BenchmarkRunReplacement(three.Id, BenchmarkReplacementCause.OperatorRequest), members[3]);
+
+        Assert.Null(await BenchmarkModelBatchOrchestrator.ChildReplacementAsync(db, batch, new BenchmarkModelBatchMember { Id = 9 }, ct));
+    }
+
+    /// <summary>
+    /// A superseded battery child is linked member to member by slot: the slot's live member, else its
+    /// newest superseded one. Under a re-run every link is an instrument change.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ChildReplacement_OfASupersededBatteryRun_LinksEachSlotToItsMemberRun(bool instrumentRerun)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var f = await CreateFixtureAsync();
+        using var db = CreateDbContext(f.DbName);
+
+        var batteryRun = new BenchmarkBatteryRun
+        {
+            BatteryName = "Battery",
+            DefinitionJson = "{}",
+            DefinitionSha256 = "definition-sha",
+            StartRequestJson = "{}",
+            RunsPerSuite = 1,
+            RequestedMemberCount = 2,
+            Status = BenchmarkRunSeriesStatus.Stopped,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-5)
+        };
+        db.BenchmarkBatteryRuns.Add(batteryRun);
+
+        var replacedEarlier = LineageRun(f.SuiteId, BenchmarkRunStatus.Failed);
+        var live = LineageRun(f.SuiteId, BenchmarkRunStatus.Completed);
+        var lastAttempt = LineageRun(f.SuiteId, BenchmarkRunStatus.Failed, providerFailure: true);
+        db.BenchmarkRuns.AddRange(replacedEarlier, live, lastAttempt);
+        await db.SaveChangesAsync(ct);
+
+        var start = DateTime.UtcNow.AddMinutes(-4);
+        db.BenchmarkBatteryRunMembers.AddRange(
+            new BenchmarkBatteryRunMember { BenchmarkBatteryRunId = batteryRun.Id, BenchmarkRunId = replacedEarlier.Id, SuiteIndex = 0, Round = 1, Superseded = true, AddedAtUtc = start },
+            new BenchmarkBatteryRunMember { BenchmarkBatteryRunId = batteryRun.Id, BenchmarkRunId = live.Id, SuiteIndex = 0, Round = 1, AddedAtUtc = start.AddMinutes(1) },
+            new BenchmarkBatteryRunMember { BenchmarkBatteryRunId = batteryRun.Id, BenchmarkRunId = lastAttempt.Id, SuiteIndex = 1, Round = 1, Superseded = true, AddedAtUtc = start.AddMinutes(2) });
+        await db.SaveChangesAsync(ct);
+
+        var batch = new BenchmarkModelBatchRun
+        {
+            SupersededMembersJson = SupersededLinksJson((7, null, null, batteryRun.Id, instrumentRerun))
+        };
+
+        var replaces = await BenchmarkModelBatchOrchestrator.ChildReplacementAsync(db, batch, new BenchmarkModelBatchMember { Id = 7 }, ct);
+
+        var members = replaces!.BatteryMembers!;
+        Assert.Null(replaces.Run);
+        Assert.Null(replaces.SeriesMembers);
+        Assert.Equal(2, members.Count);
+        Assert.Equal(live.Id, members[(0, 1)].RunId);
+        Assert.Equal(lastAttempt.Id, members[(1, 1)].RunId);
+        Assert.Equal(instrumentRerun ? BenchmarkReplacementCause.InstrumentChange : BenchmarkReplacementCause.OurFailure, members[(0, 1)].Cause);
+        Assert.Equal(instrumentRerun ? BenchmarkReplacementCause.InstrumentChange : BenchmarkReplacementCause.ProviderFailure, members[(1, 1)].Cause);
     }
 
     [Fact]

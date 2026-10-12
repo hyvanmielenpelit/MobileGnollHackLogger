@@ -725,6 +725,21 @@ describe('CcResultsViewComponent', () => {
           'Outside the compared set: #106 (comparison)'
         ]);
       });
+
+      it('lists the failed or canceled runs P6 read last, as provider availability only', () => {
+        show(ccAnalysisResult({
+          runSelection: ccRunSelectionView({
+            unanalyzedRuns: [
+              { runId: 107, period: 'comparison', startedAtUtc: '2026-09-21T08:00:00Z', reason: 'availabilityOnly' },
+              { runId: 105, period: 'comparison', startedAtUtc: '2026-09-26T08:00:00Z', reason: 'notSelected' }
+            ]
+          })
+        }));
+        expect(Array.from(section()!.querySelectorAll('.cc-res-unanalyzed li')).map(item => textOf(item))).toEqual([
+          'Not assigned to a period: #105 (comparison)',
+          'Provider availability only (P6): #107 (comparison)'
+        ]);
+      });
     });
   });
 

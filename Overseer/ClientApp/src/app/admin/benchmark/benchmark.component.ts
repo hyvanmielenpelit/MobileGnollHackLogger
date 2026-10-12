@@ -176,6 +176,12 @@ import { BenchmarkSuitesTabComponent } from './suites-tab/benchmark-suites-tab.c
 import { BenchmarkProfilesTabComponent } from './profiles-tab/benchmark-profiles-tab.component';
 import { BenchmarkComparisonTabComponent } from './comparison-tab/benchmark-comparison-tab.component';
 import { ChatConsistencyTabComponent } from './chat-consistency-tab/chat-consistency-tab.component';
+import { answerFailureText } from './shared/provider-availability/provider-availability';
+import {
+  ProviderAvailabilityComponent,
+  ProviderErrorsFigure,
+  providerErrorsFigure
+} from './shared/provider-availability/provider-availability.component';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 export * from './benchmark.models';
@@ -196,7 +202,7 @@ export interface RunRailItem {
   selector: 'app-admin-benchmark',
   standalone: true,
   imports: [
-    CommonModule, DecimalPipe, SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent, BenchmarkBatteriesComponent, BatteryProgressDialogComponent, ModelBatchProgressDialogComponent, BatteryRunReportDialogComponent, RunPairedTestComponent, ModelComparisonComponent, ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent, BenchmarkGraderGuideComponent, RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, RunFactsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent, BenchmarkRunTabComponent, BenchmarkHistoryTabComponent, BenchmarkSuitesTabComponent, BenchmarkProfilesTabComponent, BenchmarkComparisonTabComponent, ChatConsistencyTabComponent
+    CommonModule, DecimalPipe, SnapshotViewerComponent, MultiRunComponent, MultiRunProgressDialogComponent, BenchmarkBatteriesComponent, BatteryProgressDialogComponent, ModelBatchProgressDialogComponent, BatteryRunReportDialogComponent, RunPairedTestComponent, ModelComparisonComponent, ComparisonSourcePickerComponent, BenchmarkCostPanelComponent, BenchmarkSynthesisPanelComponent, ProviderBadgeComponent, ModelPickerComponent, InfoTipComponent, BenchmarkGraderGuideComponent, RunReportFrameComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent, RunFactsComponent, BenchmarkDownloadCenterComponent, RunAiReportsComponent, BenchmarkRunTabComponent, BenchmarkHistoryTabComponent, BenchmarkSuitesTabComponent, BenchmarkProfilesTabComponent, BenchmarkComparisonTabComponent, ChatConsistencyTabComponent, ProviderAvailabilityComponent
   ],
   templateUrl: './benchmark.component.html',
   styleUrls: ['./benchmark.component.scss'],
@@ -3720,8 +3726,18 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     if (this.showAgreementTile) keys.push('agreement');
     keys.push('holistic', 'answer-duration', 'wall-time');
     if (run.estimatedCandidateCost != null) keys.push('model-cost');
-    keys.push('estimated-cost');
+    keys.push('estimated-cost', 'provider-errors');
     return keys;
+  }
+
+  /** The Provider Errors card of the viewed run: its headline rate, or Not recorded before harness 56. */
+  get runProviderErrorsFigure(): ProviderErrorsFigure {
+    return providerErrorsFigure(this.selectedRunDetail?.providerAvailability);
+  }
+
+  /** Whether the viewed run records the provider attempt ledger, so the Integrity tab has its availability figures. */
+  get hasRecordedProviderAvailability(): boolean {
+    return !!this.selectedRunDetail?.providerAvailability?.recorded;
   }
 
   /** Whether the Summary panel shows a key-figure card. */
@@ -4333,6 +4349,30 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   isAnswerFailed(ans: BenchmarkRunAnswerDto): boolean {
     const s = this.formatAnswerStatus(ans.status);
     return s === 'ProviderError' || s === 'Failed' || s === 'Skipped' || s === 'EmptyAnswer' || s === 'Canceled';
+  }
+
+  /**
+   * The heading of a failed answer's error: by its recorded origin and kind (`Provider error:
+   * overloaded (HTTP 529)`, `Failed: our side (question time budget)`), `Answer error` when it
+   * recorded no failure, and `Provider Outage/Error (HTTP n)` on a run before harness 56.
+   */
+  answerFailureHeading(ans: BenchmarkRunAnswerDto): string {
+    const status = ans.httpStatusCode != null ? ` (HTTP ${ans.httpStatusCode})` : '';
+    if (ans.failureOrigin == null) {
+      return `Provider Outage/Error${status}`;
+    }
+    return answerFailureText(ans.failureOrigin, ans.failureKind, ans.httpStatusCode) ?? `Answer error${status}`;
+  }
+
+  /** The Reply line of an answer without text: why it has none, by its recorded origin where there is one. */
+  answerNoTextNote(ans: BenchmarkRunAnswerDto): string {
+    if (ans.failureOrigin == null) {
+      return 'No answer text — the candidate failed at the provider before returning content. See the error above.';
+    }
+    const failure = answerFailureText(ans.failureOrigin, ans.failureKind, ans.httpStatusCode);
+    return failure
+      ? `No answer text — ${failure.charAt(0).toLowerCase()}${failure.slice(1)}. See the error above.`
+      : 'No answer text — the candidate returned no content.';
   }
 
   /**

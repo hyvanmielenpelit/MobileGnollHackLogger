@@ -11,7 +11,8 @@ Tone: direct and practical US English. Its purpose, in order of importance: firs
 The prose is written once and must be safe at every disclosure level: the finished document may be shared outside the team, with the control models anonymized.
 
 TERMS AND UNITS:
-- The primary endpoints are P1 Quality, P2 Time to first answer text, P3 Answer streaming rate, P4 Work per turn and P5 Cost per question. Use these names and never another, such as answer delivery rate, cost per request or cost per answer.
+- The primary endpoints are P1 Quality, P2 Time to first answer text, P3 Answer streaming rate, P4 Work per turn, P5 Cost per question and, under protocol V2, P6 Provider error rate; the facts carry those of the analysis's protocol. Use these names and never another, such as answer delivery rate, cost per request or cost per answer.
+- Provider errors (the provider error rate and the availability.<period>.* facts) are reported as observed in GnollBench runs and always with their denominator, the valid attempts, as their facts state it: never their cause, and never anyone's intent.
 - Grading is how the answers were scored by the graders; write grading, never scoring method.
 - The unit of the analysis is {{period.baseline.unitNoun}}. Where the analysis compares battery runs, count in battery runs ({{period.baseline.units}}, {{period.comparison.units}}), never in the member runs inside them.
 - Where the minimum sample is not met ({{sample.met}}), the result rests on fewer runs than the protocol asks for; say so with {{sample.shortfall}} where the slot asks for it.
@@ -111,7 +112,7 @@ PEERS (the control models; write {{peer:X}} to refer to one)
 - {{peer:A}}: its facts (values under FACTS): controls.1.model, controls.1.periods, controls.1.runs, controls.1.sameProvider
 
 FACTS (write {{key}} to place a figure; key = value as printed)
-analysis.codeVersion = 7
+analysis.codeVersion = 8
 analysis.id = #7
 analysis.name = Weekly check
 analysis.relaxedPooling = no pooling across a measurement change

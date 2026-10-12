@@ -50,7 +50,7 @@ export type KeyFigureTone = 'high' | 'mid' | 'low' | 'na';
  */
 export const KEY_FIGURE_KEYS = [
   'intelligence', 'raw-quality', 'unweighted-mean', 'critical-errors', 'answered', 'speed', 'mean-time',
-  'panel', 'agreement', 'holistic', 'answer-duration', 'wall-time', 'model-cost', 'estimated-cost'
+  'panel', 'agreement', 'holistic', 'answer-duration', 'wall-time', 'model-cost', 'estimated-cost', 'provider-errors'
 ] as const;
 
 export type KeyFigureKey = typeof KEY_FIGURE_KEYS[number];

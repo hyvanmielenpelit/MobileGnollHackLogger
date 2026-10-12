@@ -326,6 +326,7 @@ describe('AdminBenchmarkComponent', () => {
         expect(figureCard('critical-errors')).toBeNull();
         expect(component.shownKeyFigureKeys).not.toContain('critical-errors');
         expect(component.shownKeyFigureKeys).toContain('answered');
+        expect(component.shownKeyFigureKeys).toContain('provider-errors');
       });
 
       describe('from scoring method 13', () => {
@@ -481,7 +482,62 @@ describe('AdminBenchmarkComponent', () => {
         expect(keys.indexOf('critical-errors')).toBe(keys.indexOf('unweighted-mean') + 1);
         expect(keys.indexOf('answered')).toBe(keys.indexOf('critical-errors') + 1);
         expect(keys.indexOf('speed')).toBe(keys.indexOf('answered') + 1);
+        expect(keys.at(-1)).toBe('provider-errors');
         expect(component.shownKeyFigureKeys as string[]).toEqual(keys);
+      });
+
+      function providerAvailability(overrides: any = {}): any {
+        return {
+          recorded: true, recordedRuns: 1, totalRuns: 1, replacedRunsIncluded: 0,
+          validAttempts: 1480, providerErrors: 12, unattributedErrors: 3, ourSideFailures: 4,
+          providerErrorRate: 12 / 1480, providerErrorRateLow: 0.0044, providerErrorRateHigh: 0.015, designEffect: 1,
+          inclusiveRate: 15 / 1480, inclusiveRateLow: 0.006, inclusiveRateHigh: 0.017, fewAttempts: false,
+          overloaded: 12, serverErrors: 0, timeouts: 0, streamFailures: 0, rateLimitedOurs: 0,
+          rateLimitedUnattributed: 3, transportUnattributed: 0, byOutcome: [], questionsLost: 0,
+          calls: 1480, firstAttemptSuccessCalls: 1465, repairPasses: 1, providerRepairPasses: 1,
+          replacementRuns: 1, providerReplacementRuns: 0, rerunsNeeded: 2, providerRerunsNeeded: 1,
+          graderValidAttempts: 200, graderProviderErrors: 0, bins: [], replaces: [],
+          ...overrides
+        };
+      }
+
+      it('should show the provider error rate with its count, interval, unattributed errors and re-runs', () => {
+        component.selectedRunDetail = buildFinishedRun({ answers: [answer(1)], providerAvailability: providerAvailability() });
+        fixture.detectChanges();
+
+        const card = figureCard('provider-errors') as HTMLElement;
+        expect(card.querySelector('.score-label')?.textContent?.trim()).toBe('Provider Errors');
+        expect(figureValue('provider-errors')).toBe('0.81 %');
+        expect(card.querySelector('.score-subvalue')?.classList).not.toContain('text-muted');
+        expect(card.querySelector('.score-subvalue')?.className).not.toMatch(/badge-score-/);
+        expect(figureNotes('provider-errors')).toEqual([
+          '12 of 1,480 attempts',
+          '95 % CI 0.44–1.5 % · 3 unattributed · 2 re-runs (1 provider)'
+        ]);
+      });
+
+      it('should tag a provider error rate over fewer than 100 attempts', () => {
+        component.selectedRunDetail = buildFinishedRun({
+          answers: [answer(1)],
+          providerAvailability: providerAvailability({
+            validAttempts: 99, providerErrors: 3, unattributedErrors: 0, providerErrorRate: 3 / 99,
+            providerErrorRateLow: 0.01, providerErrorRateHigh: 0.085, fewAttempts: true, rerunsNeeded: 0, providerRerunsNeeded: 0
+          })
+        });
+        fixture.detectChanges();
+
+        expect(figureValue('provider-errors')).toBe('3.0 %');
+        expect(figureNotes('provider-errors')).toEqual(['3 of 99 attempts', '95 % CI 1.0–8.5 % · 0 re-runs', 'few attempts']);
+      });
+
+      it('should read Not recorded on a run before harness 56', () => {
+        component.selectedRunDetail = buildFinishedRun({ answers: [answer(1)], providerAvailability: null });
+        fixture.detectChanges();
+
+        expect(figureValue('provider-errors')).toBe('Not recorded');
+        expect(figureCard('provider-errors')?.querySelector('.score-subvalue')?.classList).toContain('text-muted');
+        expect(figureNotes('provider-errors')).toEqual(['runs started before harness 56 record no provider attempts']);
+        expect(component.shownKeyFigureKeys).toContain('provider-errors');
       });
     });
 

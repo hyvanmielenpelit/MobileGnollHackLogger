@@ -118,6 +118,21 @@ public class BenchmarkService
     public const int CurrentCallTelemetryVersion = 1;
 
     /// <summary>
+    /// The <see cref="BenchmarkRun.ProviderLedgerVersion"/> a run stamps when it starts: every candidate
+    /// and grader provider attempt of the run writes a <see cref="BenchmarkProviderAttempt"/> row, every
+    /// answer carries its failure attribution, and the run its candidate attempt rollups. A run started
+    /// without it stays unrecorded when repaired. Not a harness version.
+    /// </summary>
+    public const byte CurrentProviderLedgerVersion = 1;
+
+    /// <summary>The run records the provider attempt ledger, the answers' failure attribution and the rollups.</summary>
+    internal static bool RecordsProviderLedger(BenchmarkRun run)
+        => run.ProviderLedgerVersion == CurrentProviderLedgerVersion;
+
+    /// <summary>The <see cref="BenchmarkRunAnswer.FailureKind"/> of an answer our own per-question time budget ended.</summary>
+    internal const string QuestionBudgetFailureKind = "question_budget";
+
+    /// <summary>
     /// A provider finish reason cut to the width of
     /// <see cref="BenchmarkRunAnswer.ProviderFinishReason"/>. These are short enumerated tokens on
     /// every provider the harness talks to; the cut is here so an unexpected one is stored rather
@@ -145,6 +160,7 @@ public class BenchmarkService
 
         BenchmarkRunFinalizer.ApplyTotals(run, answers);
         await ApplyServedModelIdsAsync(db, run);
+        await ApplyProviderRollupsAsync(db, run);
 
         if (elapsedMs.HasValue)
         {
@@ -177,6 +193,234 @@ public class BenchmarkService
 
         BenchmarkRunFinalizer.ApplyServedModelIds(run, counts.Select(c => (c.ServedModelId, c.CallCount)));
     }
+
+    /// <summary>
+    /// Sets the run's candidate attempt rollups from its saved candidate ledger rows, every pass
+    /// included. Read from the database, so it is the authoritative figure that replaces the live
+    /// increments of <see cref="IncrementCandidateRollupsAsync"/>. Null on an unrecorded run.
+    /// </summary>
+    internal static async Task ApplyProviderRollupsAsync(ApplicationDbContext db, BenchmarkRun run)
+    {
+        if (run.ProviderLedgerVersion == null)
+        {
+            BenchmarkRunFinalizer.ApplyProviderRollups(run, Array.Empty<(ProviderAttemptOutcome, int)>());
+            return;
+        }
+
+        long runId = run.Id;
+        var counts = await db.BenchmarkProviderAttempts
+            .Where(a => a.BenchmarkRunId == runId && a.Source == ModelCallSource.BenchmarkCandidate)
+            .GroupBy(a => a.Outcome)
+            .Select(g => new { Outcome = g.Key, Count = g.Count() })
+            .ToListAsync(CancellationToken.None);
+
+        BenchmarkRunFinalizer.ApplyProviderRollups(run, counts.Select(c => (c.Outcome, c.Count)));
+    }
+
+    /// <summary>
+    /// Adds one answer's candidate attempts to the run's rollups as they are saved, so a running run
+    /// shows its provider errors live. Parallel questions save through their own contexts while
+    /// another context tracks the run, so on a relational database this is one atomic
+    /// <c>UPDATE … SET x = x + delta</c> that never touches a tracked entity; the finalizer's
+    /// <see cref="ApplyProviderRollupsAsync"/> later replaces it with the ledger's own count. A provider
+    /// that cannot translate a set-based update (the in-memory test provider) gets the increment through
+    /// the change tracker when this context tracks the run, and none otherwise: loading a second copy
+    /// of the run into a question's context would put it beside the instance the caller holds, and the
+    /// finalizer's recount makes the figure right either way.
+    /// </summary>
+    internal static async Task IncrementCandidateRollupsAsync(
+        ApplicationDbContext db, long runId, ProviderRollupCounts delta)
+    {
+        if (delta.IsZero) return;
+
+        if (db.Database.IsRelational())
+        {
+            await db.BenchmarkRuns
+                .Where(r => r.Id == runId && r.ProviderLedgerVersion != null)
+                .ExecuteUpdateAsync(s => s
+                    .SetProperty(r => r.CandidateValidAttemptCount, r => (int?)((r.CandidateValidAttemptCount ?? 0) + delta.Valid))
+                    .SetProperty(r => r.CandidateProviderErrorCount, r => (int?)((r.CandidateProviderErrorCount ?? 0) + delta.Provider))
+                    .SetProperty(r => r.CandidateUnattributedErrorCount, r => (int?)((r.CandidateUnattributedErrorCount ?? 0) + delta.Unattributed))
+                    .SetProperty(r => r.CandidateOurSideFailureCount, r => (int?)((r.CandidateOurSideFailureCount ?? 0) + delta.OurSide)),
+                    CancellationToken.None);
+            return;
+        }
+
+        var tracked = db.ChangeTracker.Entries<BenchmarkRun>()
+            .Select(e => e.Entity)
+            .FirstOrDefault(r => r.Id == runId);
+        if (tracked == null || tracked.ProviderLedgerVersion == null) return;
+
+        tracked.CandidateValidAttemptCount = (tracked.CandidateValidAttemptCount ?? 0) + delta.Valid;
+        tracked.CandidateProviderErrorCount = (tracked.CandidateProviderErrorCount ?? 0) + delta.Provider;
+        tracked.CandidateUnattributedErrorCount = (tracked.CandidateUnattributedErrorCount ?? 0) + delta.Unattributed;
+        tracked.CandidateOurSideFailureCount = (tracked.CandidateOurSideFailureCount ?? 0) + delta.OurSide;
+        await db.SaveChangesAsync(CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Adds the ledger rows of one candidate turn's attempts to the context, linked to the saved
+    /// <paramref name="answer"/>, at the run's current pass; the caller saves. Nothing on an unrecorded
+    /// run. Returns the rollup increment the rows make.
+    /// </summary>
+    internal static ProviderRollupCounts AddCandidateAttempts(
+        ApplicationDbContext db, BenchmarkRun run, BenchmarkRunAnswer answer, AgentRunResult runResult, long testedConfigId)
+    {
+        if (!RecordsProviderLedger(run)) return default;
+
+        var rows = ModelCallTelemetryWriter.MapAllAttempts(
+            runResult, ModelCallSource.BenchmarkCandidate,
+            new ProviderAttemptLinks(
+                BenchmarkRunId: run.Id,
+                BenchmarkRunAnswerId: answer.Id > 0 ? answer.Id : null,
+                QuestionId: answer.BenchmarkQuestionIdUsed ?? answer.BenchmarkQuestionId,
+                SystemAiApiConfigurationId: testedConfigId,
+                Pass: run.RepairPassCount));
+        db.BenchmarkProviderAttempts.AddRange(rows);
+
+        return ProviderRollupCounts.Of(rows.Select(r => r.Outcome));
+    }
+
+    /// <summary>
+    /// Adds the ledger rows of one grading role's calls to the context, each at the call index its
+    /// telemetry row was given, at the run's current pass; the caller saves. Nothing on an unrecorded
+    /// run. Grader repairs never remove a ledger row.
+    /// </summary>
+    private static void AddGraderAttempts(
+        ApplicationDbContext db,
+        BenchmarkRun run,
+        BenchmarkRunAnswer? answer,
+        ModelCallGraderRole role,
+        long graderConfigId,
+        IReadOnlyList<ModelCallRecord> calls,
+        int firstCallIndex)
+    {
+        if (!RecordsProviderLedger(run)) return;
+
+        var links = new ProviderAttemptLinks(
+            BenchmarkRunId: run.Id,
+            BenchmarkRunAnswerId: answer != null && answer.Id > 0 ? answer.Id : null,
+            QuestionId: answer == null ? null : answer.BenchmarkQuestionIdUsed ?? answer.BenchmarkQuestionId,
+            SystemAiApiConfigurationId: graderConfigId,
+            GraderRole: role,
+            Pass: run.RepairPassCount);
+        for (int i = 0; i < calls.Count; i++)
+        {
+            db.BenchmarkProviderAttempts.AddRange(
+                ModelCallTelemetryWriter.MapAttempts(calls[i], firstCallIndex + i, ModelCallSource.BenchmarkGrader, links));
+        }
+    }
+
+    /// <summary>
+    /// Opens a repair pass: a "Re-run failed questions" pass or a single-answer re-run. The pass is
+    /// provider-caused when any answer it re-executes last failed at the provider. Counted on every
+    /// run; only a recorded run's answers carry the origin that makes a pass provider-caused.
+    /// </summary>
+    internal static void BeginRepairPass(BenchmarkRun run, IEnumerable<BenchmarkRunAnswer> reExecuted)
+    {
+        run.RepairPassCount++;
+        if (reExecuted.Any(a => a.FailureOrigin == BenchmarkFailureOrigin.Provider))
+        {
+            run.ProviderRepairPassCount++;
+        }
+    }
+
+    /// <summary>A candidate turn's answer status and, on a recorded run, whose fault its failure was.</summary>
+    internal readonly record struct CandidateOutcome(
+        BenchmarkAnswerStatus Status, BenchmarkFailureOrigin? FailureOrigin, string? FailureKind);
+
+    /// <summary>
+    /// The status of a candidate turn and its failure attribution.
+    ///
+    /// <para>An unrecorded run keeps the message classifier's status and carries no attribution. A
+    /// recorded run attributes a terminal failure to the attempt that ended it: a provider or
+    /// unattributed class is <c>ProviderError</c>, an our-side class or our question budget
+    /// <c>Failed</c>. With no failed attempt to read (the turn failed outside a model call, or before
+    /// one), the message classifier decides, and its provider verdict is mapped onto an outcome class
+    /// by the status it found. An operator cancel with no error on record is <c>Canceled</c> on every
+    /// run; one that followed an error keeps that error's attribution, so the attempt the cancel cut
+    /// does not stand in for it.</para>
+    /// </summary>
+    internal static CandidateOutcome AttributeCandidateOutcome(
+        bool recorded,
+        bool canceledByOperator,
+        bool operatorCanceled,
+        bool questionBudgetCanceled,
+        string? terminalError,
+        ProviderErrorClassification classification,
+        bool emptyAnswer,
+        AgentRunResult runResult)
+    {
+        if (canceledByOperator)
+        {
+            return recorded
+                ? new CandidateOutcome(BenchmarkAnswerStatus.Canceled, BenchmarkFailureOrigin.Ours, nameof(ProviderAttemptOutcome.OurCanceled))
+                : new CandidateOutcome(BenchmarkAnswerStatus.Canceled, null, null);
+        }
+
+        bool failed = !string.IsNullOrEmpty(terminalError) || classification.IsProviderError;
+        if (!recorded)
+        {
+            var status = classification.IsProviderError ? BenchmarkAnswerStatus.ProviderError
+                : failed ? BenchmarkAnswerStatus.Failed
+                : emptyAnswer ? BenchmarkAnswerStatus.EmptyAnswer
+                : BenchmarkAnswerStatus.Ok;
+            return new CandidateOutcome(status, null, null);
+        }
+
+        if (!failed)
+        {
+            return new CandidateOutcome(
+                emptyAnswer ? BenchmarkAnswerStatus.EmptyAnswer : BenchmarkAnswerStatus.Ok,
+                BenchmarkFailureOrigin.None,
+                null);
+        }
+
+        if (questionBudgetCanceled || runResult.TerminalQuestionBudgetCanceled)
+        {
+            return new CandidateOutcome(BenchmarkAnswerStatus.Failed, BenchmarkFailureOrigin.Ours, QuestionBudgetFailureKind);
+        }
+
+        ProviderAttemptOutcome? terminal = runResult.TerminalOutcome;
+        if (operatorCanceled && terminal == ProviderAttemptOutcome.OurCanceled)
+        {
+            terminal = runResult.ModelCalls
+                .SelectMany(c => c.Attempts)
+                .Where(a => a.Outcome is not ProviderAttemptOutcome.Ok and not ProviderAttemptOutcome.OurCanceled)
+                .Select(a => (ProviderAttemptOutcome?)a.Outcome)
+                .LastOrDefault();
+        }
+
+        ProviderAttemptOutcome? outcome = terminal is { } failedAttempt && failedAttempt != ProviderAttemptOutcome.Ok
+            ? failedAttempt
+            : classification.IsProviderError ? OutcomeOfProviderStatus(classification.HttpStatus) : null;
+        if (outcome is not { } attributed)
+        {
+            return new CandidateOutcome(BenchmarkAnswerStatus.Failed, BenchmarkFailureOrigin.Ours, null);
+        }
+
+        var origin = ProviderAttemptOutcomes.OriginOf(attributed);
+        return new CandidateOutcome(
+            origin is BenchmarkFailureOrigin.Provider or BenchmarkFailureOrigin.Unattributed
+                ? BenchmarkAnswerStatus.ProviderError
+                : BenchmarkAnswerStatus.Failed,
+            origin,
+            attributed.ToString());
+    }
+
+    /// <summary>
+    /// The outcome class a provider error the message classifier found is given when no attempt
+    /// record says more: an overload or server status is the provider's, a 408 its timeout, and
+    /// anything else, a 429 included, unattributed.
+    /// </summary>
+    private static ProviderAttemptOutcome OutcomeOfProviderStatus(int? httpStatus) => httpStatus switch
+    {
+        503 or 529 => ProviderAttemptOutcome.ProviderOverloaded,
+        408 => ProviderAttemptOutcome.ProviderTimeout,
+        >= 500 and < 600 => ProviderAttemptOutcome.ProviderServerError,
+        429 => ProviderAttemptOutcome.RateLimitUnattributed,
+        _ => ProviderAttemptOutcome.TransportUnattributed,
+    };
 
     /// <summary>
     /// Stamps the candidate turn's wall-clock bounds, its waits and retries, and the model the provider
@@ -225,16 +469,20 @@ public class BenchmarkService
     /// Adds the telemetry rows of one grading role's calls on <paramref name="answer"/> to the context;
     /// the caller saves. With <paramref name="replace"/> the answer's earlier rows of that role are
     /// removed first, for a role whose cost columns a new verdict assigns rather than adds to; without
-    /// it the new rows follow the earlier ones, their call index continuing from them.
+    /// it the new rows follow the earlier ones, their call index continuing from them. On a recorded
+    /// run the calls' provider attempts are added to the ledger too, at the same call indexes, and
+    /// <paramref name="replace"/> never removes a ledger row.
     /// </summary>
     private static async Task AddGraderTelemetryAsync(
         ApplicationDbContext db,
+        BenchmarkRun run,
         BenchmarkRunAnswer answer,
         ModelCallGraderRole role,
         long graderConfigId,
         bool replace,
         IEnumerable<ModelCallRecord> calls)
     {
+        var callList = calls as IReadOnlyList<ModelCallRecord> ?? calls.ToList();
         long answerId = answer.Id;
         int firstCallIndex = 0;
         if (answerId > 0)
@@ -256,7 +504,7 @@ public class BenchmarkService
         // A saved answer takes its rows by key, so they are saved whether or not this context tracks
         // it; an unsaved one takes them through its navigation and saves them with itself.
         var rows = MapGraderCalls(
-            calls, role,
+            callList, role,
             new ModelCallLinks(
                 BenchmarkRunAnswerId: answerId > 0 ? answerId : null,
                 SystemAiApiConfigurationId: graderConfigId));
@@ -273,12 +521,15 @@ public class BenchmarkService
         {
             answer.ModelCalls.AddRange(rows);
         }
+
+        AddGraderAttempts(db, run, answer, role, graderConfigId, callList, firstCallIndex);
     }
 
     /// <summary>
     /// Adds the telemetry rows of one synthesis to the context, linked to the run alone; the caller
     /// saves. <paramref name="replace"/> works as it does in <see cref="AddGraderTelemetryAsync"/>,
-    /// over every synthesis row of the run.
+    /// over every synthesis row of the run, and on a recorded run the calls' provider attempts are
+    /// added to the ledger as they are there.
     /// </summary>
     private static async Task AddSynthesisTelemetryAsync(
         ApplicationDbContext db,
@@ -287,6 +538,7 @@ public class BenchmarkService
         bool replace,
         IEnumerable<ModelCallRecord> calls)
     {
+        var callList = calls as IReadOnlyList<ModelCallRecord> ?? calls.ToList();
         long runId = run.Id;
         var earlier = db.ModelCallTelemetry
             .Where(t => t.BenchmarkRunId == runId
@@ -304,7 +556,7 @@ public class BenchmarkService
         }
 
         var rows = MapGraderCalls(
-            calls, ModelCallGraderRole.Synthesis,
+            callList, ModelCallGraderRole.Synthesis,
             new ModelCallLinks(BenchmarkRunId: runId, SystemAiApiConfigurationId: graderConfigId));
         foreach (var row in rows)
         {
@@ -312,6 +564,8 @@ public class BenchmarkService
         }
 
         db.ModelCallTelemetry.AddRange(rows);
+
+        AddGraderAttempts(db, run, null, ModelCallGraderRole.Synthesis, graderConfigId, callList, firstCallIndex);
     }
 
     /// <summary>
@@ -327,6 +581,7 @@ public class BenchmarkService
             .ToListAsync(CancellationToken.None);
 
         BenchmarkRunFinalizer.Apply(run, answers, preserveCompletedAt: true);
+        await ApplyProviderRollupsAsync(db, run);
         if (reason != null)
         {
             run.ErrorMessage = BenchmarkAssessmentFailure.Truncate(reason);
@@ -640,6 +895,14 @@ public class BenchmarkService
             run.HarnessVersion = BenchmarkAssessmentPrompt.HarnessVersion;
             run.CallTelemetryVersion = CurrentCallTelemetryVersion;
 
+            // Stamped here only, never by a re-run, so a run started without the ledger stays
+            // unrecorded. The rollups start at zero and grow as each answer's attempts are saved.
+            run.ProviderLedgerVersion = CurrentProviderLedgerVersion;
+            run.CandidateValidAttemptCount = 0;
+            run.CandidateProviderErrorCount = 0;
+            run.CandidateUnattributedErrorCount = 0;
+            run.CandidateOurSideFailureCount = 0;
+
             // Snapshotted, not read live: the profile can be edited after the run, and the
             // agreement figures below only mean something alongside the coverage that produced
             // them. A per-run override set in the start dialog is already on the run and wins.
@@ -914,6 +1177,7 @@ public class BenchmarkService
             var allAnswers = await db.BenchmarkRunAnswers.Where(a => a.BenchmarkRunId == run.Id).ToListAsync(CancellationToken.None);
             BenchmarkRunFinalizer.Apply(run, allAnswers);
             await ApplyServedModelIdsAsync(db, run);
+            await ApplyProviderRollupsAsync(db, run);
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
@@ -1155,6 +1419,7 @@ public class BenchmarkService
             var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
 
             BeginRerun(run, systemPrompt);
+            BeginRepairPass(run, failedAnswers);
             await db.SaveChangesAsync(cancellationToken);
 
             var profile = run.ScoringProfileId.HasValue
@@ -1217,6 +1482,7 @@ public class BenchmarkService
             // is in the two Rerun columns.
             BenchmarkRunFinalizer.Apply(run, allAnswers, preserveCompletedAt: true);
             await ApplyServedModelIdsAsync(db, run);
+            await ApplyProviderRollupsAsync(db, run);
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)
@@ -1729,7 +1995,11 @@ public class BenchmarkService
                 MaxCallsPerSession = toolCallBudget,
                 ShowDebugLog = false
             },
-            SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, question.QuestionText)
+            SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, question.QuestionText),
+
+            // The run's own token, not the question's linked one, so the runner can tell an
+            // operator cancel from the question time budget.
+            OperatorCancellation = cancellationToken
         };
 
         int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds(question.Difficulty, question.AssessedDifficulty);
@@ -1767,6 +2037,9 @@ public class BenchmarkService
         // When the agent loop last yielded an event, on the question's stopwatch; a timeout's error
         // text reports how long the stream had been silent.
         TimeSpan lastEventAt = TimeSpan.Zero;
+
+        // Our own per-question time budget, not the operator, ended the turn.
+        bool questionBudgetCanceled = false;
         try
         {
             // The run-level check ran against the first question's seed only. This one runs against
@@ -1801,6 +2074,7 @@ public class BenchmarkService
                 perQuestionTimeoutSec, runRequest.Budget?.TotalModelCalls ?? 0, runResult.ToolCalls.Count,
                 runResult.TimeToFirstTokenMs, (sw.Elapsed - lastEventAt).TotalSeconds);
             terminalException = ex;
+            questionBudgetCanceled = true;
         }
         catch (Exception ex)
         {
@@ -1811,6 +2085,17 @@ public class BenchmarkService
         {
             _runManager.ClearQuestionInFlight(run.Id, question.OrderIndex);
         }
+
+        // The runner can also end without throwing when the budget cuts a send, a backoff or the wait
+        // between attempts; that is the same timeout as the one caught above.
+        if (terminalError == null && !cancellationToken.IsCancellationRequested && questionCts.IsCancellationRequested
+            && (runResult.TerminalQuestionBudgetCanceled || string.IsNullOrWhiteSpace(runResult.FinalText)))
+        {
+            terminalError = BuildQuestionTimeoutError(
+                perQuestionTimeoutSec, runRequest.Budget?.TotalModelCalls ?? 0, runResult.ToolCalls.Count,
+                runResult.TimeToFirstTokenMs, (sw.Elapsed - lastEventAt).TotalSeconds);
+            questionBudgetCanceled = true;
+        }
         sw.Stop();
         DateTime turnCompletedAtUtc = DateTime.UtcNow;
 
@@ -1819,7 +2104,7 @@ public class BenchmarkService
         bool canceledByOperator = cancellationToken.IsCancellationRequested && seenErrorTexts.Count == 0;
 
         var classification = BenchmarkProviderErrorClassifier.Classify(
-            terminalException, terminalError, cancellationToken.IsCancellationRequested);
+            terminalException, terminalError, cancellationToken.IsCancellationRequested, questionBudgetCanceled);
         var sanitized = BenchmarkAnswerSanitizer.Sanitize(runResult.FinalText);
 
         // Bucketed per model call, never from the answer's summed tokens: an agentic answer's sum crosses
@@ -1849,28 +2134,16 @@ public class BenchmarkService
         // down surfaces as a transport exception, which is what the classifier sees, and a transport
         // exception is indistinguishable from a real outage without knowing the cancel was intended.
         // A per-question timeout cancels only its own linked token and is already caught above.
-        BenchmarkAnswerStatus status;
+        // On a recorded run the attempt that ended the turn decides whose fault a failure was.
+        var outcome = AttributeCandidateOutcome(
+            RecordsProviderLedger(run), canceledByOperator, cancellationToken.IsCancellationRequested,
+            questionBudgetCanceled, terminalError, classification,
+            sanitized.Flags.HasFlag(BenchmarkAnswerFlags.Empty), runResult);
+        BenchmarkAnswerStatus status = outcome.Status;
         if (canceledByOperator)
         {
-            status = BenchmarkAnswerStatus.Canceled;
             terminalError = "Canceled by the operator before the answer completed.";
             terminalErrorDetail = null;
-        }
-        else if (classification.IsProviderError)
-        {
-            status = BenchmarkAnswerStatus.ProviderError;
-        }
-        else if (!string.IsNullOrEmpty(terminalError))
-        {
-            status = BenchmarkAnswerStatus.Failed;
-        }
-        else if (sanitized.Flags.HasFlag(BenchmarkAnswerFlags.Empty))
-        {
-            status = BenchmarkAnswerStatus.EmptyAnswer;
-        }
-        else
-        {
-            status = BenchmarkAnswerStatus.Ok;
         }
 
         // Same shape as BenchmarkRunFinalizer.HasTerminalFailure: the provider failed the request
@@ -1906,6 +2179,8 @@ public class BenchmarkService
             AnswerText = isTerminalFailure ? string.Empty : sanitized.AnswerText,
             ThoughtText = isTerminalFailure ? null : sanitized.ThoughtText,
             Status = status,
+            FailureOrigin = outcome.FailureOrigin,
+            FailureKind = outcome.FailureKind,
             AssessmentStatus = BenchmarkAssessmentStatus.Pending,
             CoAssessmentStatus = BenchmarkRunFinalizer.IsPanelRun(run) ? BenchmarkAssessmentStatus.Pending : null,
             ErrorMessage = BenchmarkAssessmentFailure.Truncate(terminalError),
@@ -1953,6 +2228,14 @@ public class BenchmarkService
         db.BenchmarkRunAnswers.Add(answer);
         await db.SaveChangesAsync(CancellationToken.None);
 
+        // The ledger rows name the answer by its key, which exists only once the answer is saved.
+        var rollupDelta = AddCandidateAttempts(db, run, answer, runResult, testedConfig.Id);
+        if (RecordsProviderLedger(run))
+        {
+            await db.SaveChangesAsync(CancellationToken.None);
+            await IncrementCandidateRollupsAsync(db, run.Id, rollupDelta);
+        }
+
         try
         {
             await configService.RecordUsageAsync(
@@ -1973,7 +2256,7 @@ public class BenchmarkService
         return answer;
     }
 
-    private async Task ReExecuteSingleAnswerAsync(
+    internal async Task ReExecuteSingleAnswerAsync(
         ApplicationDbContext db,
         SystemAiConfigService configService,
         BenchmarkRun run,
@@ -2030,7 +2313,10 @@ public class BenchmarkService
                 MaxCallsPerSession = toolCallBudget,
                 ShowDebugLog = false
             },
-            SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, answer.QuestionText)
+            SeedHistory = BuildCandidateSeedHistory(run, systemPrompt, answer.QuestionText),
+
+            // See ExecuteSingleQuestionAsync.
+            OperatorCancellation = cancellationToken
         };
 
         int perQuestionTimeoutSec = ResolveQuestionTimeoutSeconds(answer.Difficulty, answer.AssessedDifficulty);
@@ -2058,6 +2344,7 @@ public class BenchmarkService
 
         // See ExecuteSingleQuestionAsync.
         TimeSpan lastEventAt = TimeSpan.Zero;
+        bool questionBudgetCanceled = false;
         try
         {
             // Per question, on the same contract as ExecuteSingleQuestionAsync.
@@ -2086,6 +2373,7 @@ public class BenchmarkService
                 perQuestionTimeoutSec, runRequest.Budget?.TotalModelCalls ?? 0, runResult.ToolCalls.Count,
                 runResult.TimeToFirstTokenMs, (sw.Elapsed - lastEventAt).TotalSeconds);
             terminalException = ex;
+            questionBudgetCanceled = true;
         }
         catch (Exception ex)
         {
@@ -2096,6 +2384,16 @@ public class BenchmarkService
         {
             _runManager.ClearQuestionInFlight(run.Id, answer.OrderIndex);
         }
+
+        // See ExecuteSingleQuestionAsync: a budget cut the runner did not throw for.
+        if (terminalError == null && !cancellationToken.IsCancellationRequested && questionCts.IsCancellationRequested
+            && (runResult.TerminalQuestionBudgetCanceled || string.IsNullOrWhiteSpace(runResult.FinalText)))
+        {
+            terminalError = BuildQuestionTimeoutError(
+                perQuestionTimeoutSec, runRequest.Budget?.TotalModelCalls ?? 0, runResult.ToolCalls.Count,
+                runResult.TimeToFirstTokenMs, (sw.Elapsed - lastEventAt).TotalSeconds);
+            questionBudgetCanceled = true;
+        }
         sw.Stop();
         DateTime turnCompletedAtUtc = DateTime.UtcNow;
 
@@ -2103,7 +2401,7 @@ public class BenchmarkService
         bool canceledByOperator = cancellationToken.IsCancellationRequested && seenErrorTexts.Count == 0;
 
         var classification = BenchmarkProviderErrorClassifier.Classify(
-            terminalException, terminalError, cancellationToken.IsCancellationRequested);
+            terminalException, terminalError, cancellationToken.IsCancellationRequested, questionBudgetCanceled);
         var sanitized = BenchmarkAnswerSanitizer.Sanitize(runResult.FinalText);
 
         // Bucketed per model call, never from the answer's summed tokens: an agentic answer's sum crosses
@@ -2128,29 +2426,16 @@ public class BenchmarkService
         }
 
         // See ExecuteSingleQuestionAsync for why the operator's cancel is decided ahead of the
-        // classification.
-        BenchmarkAnswerStatus status;
+        // classification, and for the attribution.
+        var outcome = AttributeCandidateOutcome(
+            RecordsProviderLedger(run), canceledByOperator, cancellationToken.IsCancellationRequested,
+            questionBudgetCanceled, terminalError, classification,
+            sanitized.Flags.HasFlag(BenchmarkAnswerFlags.Empty), runResult);
+        BenchmarkAnswerStatus status = outcome.Status;
         if (canceledByOperator)
         {
-            status = BenchmarkAnswerStatus.Canceled;
             terminalError = "Canceled by the operator before the answer completed.";
             terminalErrorDetail = null;
-        }
-        else if (classification.IsProviderError)
-        {
-            status = BenchmarkAnswerStatus.ProviderError;
-        }
-        else if (!string.IsNullOrEmpty(terminalError))
-        {
-            status = BenchmarkAnswerStatus.Failed;
-        }
-        else if (sanitized.Flags.HasFlag(BenchmarkAnswerFlags.Empty))
-        {
-            status = BenchmarkAnswerStatus.EmptyAnswer;
-        }
-        else
-        {
-            status = BenchmarkAnswerStatus.Ok;
         }
 
         // See ExecuteSingleQuestionAsync for the rule this follows, and for why AnswerText clears
@@ -2163,10 +2448,13 @@ public class BenchmarkService
         answer.RerunOfStatus = answer.Status;
         answer.RerunOfErrorMessage = BenchmarkAssessmentFailure.Truncate(answer.ErrorMessage, 512);
         answer.RerunAtUtc = DateTime.UtcNow;
+        answer.ReExecutionCount++;
 
         answer.AnswerText = isTerminalFailure ? string.Empty : sanitized.AnswerText;
         answer.ThoughtText = isTerminalFailure ? null : sanitized.ThoughtText;
         answer.Status = status;
+        answer.FailureOrigin = outcome.FailureOrigin;
+        answer.FailureKind = outcome.FailureKind;
         answer.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
         if (BenchmarkRunFinalizer.IsPanelRun(run))
         {
@@ -2247,7 +2535,12 @@ public class BenchmarkService
             reachedAgentLoop ? turnStartedAtUtc : null,
             reachedAgentLoop ? turnCompletedAtUtc : null);
 
+        // The ledger keeps the replaced attempt's rows, unlike the telemetry above: this turn's rows
+        // are added beside them, at the repair pass that made it.
+        var rollupDelta = AddCandidateAttempts(db, run, answer, runResult, testedConfig.Id);
+
         await db.SaveChangesAsync(CancellationToken.None);
+        await IncrementCandidateRollupsAsync(db, run.Id, rollupDelta);
 
         try
         {
@@ -2761,13 +3054,13 @@ public class BenchmarkService
         if (outcomeA != null)
         {
             await AddGraderTelemetryAsync(
-                db, answer, ModelCallGraderRole.Assessor, assessorConfig.Id, replace: true, outcomeA.ModelCalls);
+                db, run, answer, ModelCallGraderRole.Assessor, assessorConfig.Id, replace: true, outcomeA.ModelCalls);
         }
 
         if (outcomeB != null)
         {
             await AddGraderTelemetryAsync(
-                db, answer, ModelCallGraderRole.CoAssessor, coAssessorConfig!.Id, replace: true, outcomeB.ModelCalls);
+                db, run, answer, ModelCallGraderRole.CoAssessor, coAssessorConfig!.Id, replace: true, outcomeB.ModelCalls);
         }
 
         if (isPanelRun)
@@ -4461,7 +4754,7 @@ public class BenchmarkService
 
         // Replaces the earlier rows of the role, as the verification replaces its cost columns.
         await AddGraderTelemetryAsync(
-            db, answer, ModelCallGraderRole.ClaimVerifier, verifierConfig.Id, replace: true,
+            db, run, answer, ModelCallGraderRole.ClaimVerifier, verifierConfig.Id, replace: true,
             verificationTurns.SelectMany(t => t.ModelCalls));
 
         await db.SaveChangesAsync(CancellationToken.None);
@@ -5196,7 +5489,7 @@ public class BenchmarkService
             // The assessor's role, beside the primary verdict's rows: its cost is pooled into the
             // assessment columns above, added rather than assigned.
             await AddGraderTelemetryAsync(
-                db, answer, ModelCallGraderRole.Assessor, assessorConfig.Id, replace: false, regradeCalls);
+                db, run, answer, ModelCallGraderRole.Assessor, assessorConfig.Id, replace: false, regradeCalls);
 
             try
             {
@@ -6512,7 +6805,7 @@ public class BenchmarkService
         // Recorded under the second-opinion role, where the trial's verdict is stored, beside any
         // earlier second reading's rows.
         await AddGraderTelemetryAsync(
-            db, answer, ModelCallGraderRole.SecondOpinion, assessorConfig.Id, replace: false,
+            db, run, answer, ModelCallGraderRole.SecondOpinion, assessorConfig.Id, replace: false,
             verdict.ModelCalls ?? Array.Empty<ModelCallRecord>());
 
         try
@@ -6841,7 +7134,7 @@ public class BenchmarkService
 
         // Added beside earlier readings' rows, as the cost columns above are.
         await AddGraderTelemetryAsync(
-            db, answer, ModelCallGraderRole.SecondOpinion, secondConfig.Id, replace: false, opinionCalls);
+            db, run, answer, ModelCallGraderRole.SecondOpinion, secondConfig.Id, replace: false, opinionCalls);
 
         if (!parseResult.Success || parseResult.Result == null)
         {
@@ -8134,6 +8427,7 @@ public class BenchmarkService
             var segmentedPrompt = BuildCandidateSegmentedPrompt(promptOptions, testedConfig.ParallelExecutionMode);
 
             BeginRerun(run, systemPrompt);
+            BeginRepairPass(run, new[] { answer });
             await db.SaveChangesAsync(cancellationToken);
 
             ClearForRerun(answer, isPanelRun);
@@ -8180,6 +8474,7 @@ public class BenchmarkService
             // re-run's own span is in the two Rerun columns.
             BenchmarkRunFinalizer.Apply(run, allAnswers, preserveCompletedAt: true);
             await ApplyServedModelIdsAsync(db, run);
+            await ApplyProviderRollupsAsync(db, run);
             await db.SaveChangesAsync(CancellationToken.None);
         }
         catch (OperationCanceledException)

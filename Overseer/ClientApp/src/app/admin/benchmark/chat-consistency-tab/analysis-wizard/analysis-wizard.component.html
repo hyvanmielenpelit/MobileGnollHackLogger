@@ -141,12 +141,15 @@
           </fieldset>
         </div>
 
-        <!-- Protocol: V1's endpoints, α and minimum samples, then the overrides. -->
+        <!-- Protocol: the protocol's endpoints, α and minimum samples, then the overrides. -->
         <div class="gh-fig-side-panel cc-an-side-panel" role="tabpanel" id="cc-an-side-panel-protocol"
              aria-labelledby="cc-an-side-tab-protocol" tabindex="0" [hidden]="sidebarTab !== 'protocol'">
           <fieldset class="gh-fieldset cc-an-group cc-wiz-protocol">
-            <legend>Protocol V1</legend>
-            <dl class="cc-an-endpoints" aria-label="Protocol V1 equivalence margins">
+            <legend>Protocol {{ protocolVersion }}</legend>
+            @if (protocolNote) {
+              <p class="form-hint cc-wiz-protocol-note">{{ protocolNote }}</p>
+            }
+            <dl class="cc-an-endpoints" [attr.aria-label]="'Protocol ' + protocolVersion + ' equivalence margins'">
               @for (endpoint of protocolEndpoints; track endpoint.id) {
                 <div [attr.data-endpoint]="endpoint.id">
                   <dt><span class="cc-an-endpoint-id">{{ endpoint.id }}</span> {{ endpoint.name }}</dt>
@@ -155,20 +158,23 @@
               }
             </dl>
             <dl class="cc-wiz-protocol-facts">
-              <div><dt>α</dt><dd>{{ protocol.alpha }}, Holm-adjusted across P1–P5</dd></div>
+              <div><dt>α</dt><dd>{{ protocol.alpha }}, Holm-adjusted across {{ protocolSpan }}</dd></div>
               <div><dt>Minimum sample (P1, P4, P5)</dt><dd>{{ protocol.minimumRunsPerPeriod }} runs on {{ protocol.minimumDaysPerPeriod }} days per period, {{ protocol.minimumPairedItems }} paired items</dd></div>
               <div><dt>Minimum sample (P2, P3)</dt><dd>{{ protocol.minimumSpeedRunsPerStratum }} runs per period in a common time stratum</dd></div>
+              @if (protocol.minimumAttemptsPerStratum) {
+                <div data-fact="p6"><dt>Minimum sample (P6)</dt><dd>{{ protocol.minimumSpeedRunsPerStratum }} runs per period with attempts in a common time stratum; a stratum is common with {{ protocol.minimumAttemptsPerStratum }} valid attempts in each period</dd></div>
+              }
             </dl>
           </fieldset>
 
           <details class="gh-disclosure cc-wiz-overrides">
             <summary>Override the protocol</summary>
             <div class="gh-disclosure-body">
-              <p class="form-hint">Every override is recorded and labels the result as <em>V1 with overrides</em>. Leave a field empty to keep the published value.</p>
+              <p class="form-hint">Every override is recorded and labels the result as <em>{{ protocolVersion }} with overrides</em>. Leave a field empty to keep the published value.</p>
               <div class="cc-wiz-override-grid">
                 @for (endpoint of protocolEndpoints; track endpoint.id) {
                   <div class="cc-an-field">
-                    <label [for]="'cc-wiz-margin-' + endpoint.id">{{ endpoint.id }} margin ({{ endpoint.unit }})</label>
+                    <label [for]="'cc-wiz-margin-' + endpoint.id">{{ endpoint.id }} margin ({{ overrideUnit(endpoint.unit) }})</label>
                     <input [id]="'cc-wiz-margin-' + endpoint.id" type="number" min="0" step="any" class="gh-input"
                            [attr.placeholder]="endpoint.margin" [value]="marginValue(endpoint.id)"
                            (input)="onMarginInput(endpoint.id, $event)">

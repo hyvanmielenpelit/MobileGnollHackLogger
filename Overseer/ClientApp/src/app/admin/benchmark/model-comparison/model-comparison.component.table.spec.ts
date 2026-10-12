@@ -269,16 +269,16 @@ describe('ModelComparisonComponent', () => {
     expect(header).toContain('TTFT P90 ms');
     expect(header).not.toContain('Timings');
     expect(header).not.toContain('Model id');
-    expect(component.exportStatus).toMatch(/9 columns, written as \d+\./);
-    expect(component.tableScopeLine).toMatch(/^3 entries \(filters applied, current order, all pages\) · 9 columns, written as \d+$/);
+    expect(component.exportStatus).toMatch(/10 columns, written as \d+\./);
+    expect(component.tableScopeLine).toMatch(/^3 entries \(filters applied, current order, all pages\) · 10 columns, written as \d+$/);
 
     chooseTableFormat('md');
     await component.downloadTable();
     const markdown = await saved.blobs[1].text();
     expect(markdown).toContain('Timings');
     expect(markdown).not.toContain('Model time mean ms');
-    expect(component.exportStatus).toContain('9 columns.');
-    expect(component.tableScopeLine).toBe('3 entries (filters applied, current order, all pages) · 9 columns');
+    expect(component.exportStatus).toContain('10 columns.');
+    expect(component.tableScopeLine).toBe('3 entries (filters applied, current order, all pages) · 10 columns');
   });
 
   it('writes the table image in the shared image format at the table image size, naming its pixels', async () => {
@@ -734,13 +734,13 @@ describe('ModelComparisonComponent', () => {
     const info = /^Fit the table: (\d+) × (\d+) px at this text size — the whole table with its (\d+) shown columns and 3 rows\.$/
       .exec(component.tableFitInfo);
     expect(info, component.tableFitInfo).not.toBeNull();
-    expect(info![3]).toBe('9');
+    expect(info![3]).toBe('10');
     expect(textOf('#mc-table-image-fit-info')).toBe(component.tableFitInfo);
 
     component.onTableColumnsChange(columnsWith({ hide: ['notes', 'timings'] }));
     await component.measureTableImageNow();
     const narrower = /^Fit the table: (\d+) × (\d+) px/.exec(component.tableFitInfo)!;
-    expect(component.tableFitInfo).toContain('its 7 shown columns');
+    expect(component.tableFitInfo).toContain('its 8 shown columns');
     expect(Number(narrower[1])).toBeLessThan(Number(info![1]));
 
     // A preset names its minimum in its refusal instead.
@@ -962,20 +962,22 @@ describe('ModelComparisonComponent', () => {
 
     expect(tableHeaders()).toEqual([
       'Model', 'R', 'State', 'Intelligence Index', 'Speed Index', 'Timings', 'Candidate $ / question',
-      'Total $ / run, with grading', 'Notes'
+      'Total $ / run, with grading', 'Provider errors', 'Notes'
     ]);
-    expect(fixture.debugElement.queryAll(By.css('table.mc-table thead th[app-sort-header]')).length).toBe(8);
+    expect(fixture.debugElement.queryAll(By.css('table.mc-table thead th[app-sort-header]')).length).toBe(9);
     expect(textOf('table.mc-table caption')).toContain(
-      'Model, R, State, Intelligence Index, Speed Index, Timings, Candidate $ / question, Total $ / run, with grading, Notes');
+      'Model, R, State, Intelligence Index, Speed Index, Timings, Candidate $ / question, Total $ / run, with grading, '
+      + 'Provider errors, Notes');
 
     const filters = fixture.debugElement.queryAll(By.css('.gh-filter-row td'))
       .map(cell => cell.nativeElement as HTMLElement);
-    expect(filters.length).toBe(9);
+    expect(filters.length).toBe(10);
     expect(filters[0].querySelector('#mc-f-label')).toBeTruthy();
     expect(filters[2].querySelector('#mc-f-state')).toBeTruthy();
 
     const row = tableRowOf('Run 1');
-    expect(row.children.length).toBe(9);
+    expect(row.children.length).toBe(10);
+    expect(row.children[8].textContent?.trim()).toBe('0.81 % (12/1,480)');
     expect(row.children[0].tagName).toBe('TH');
     expect(row.children[1].classList).toContain('col-center');
     expect(row.querySelector('.mc-state')?.getAttribute('interestfor')).toBeTruthy();
@@ -998,10 +1000,10 @@ describe('ModelComparisonComponent', () => {
 
     expect(tableHeaders()).toEqual([
       'Model', 'R', 'State', 'Candidate $ / question', 'Intelligence Index', 'Speed Index', 'Timings',
-      'Total $ / run, with grading', '±'
+      'Total $ / run, with grading', 'Provider errors', '±'
     ]);
     expect(JSON.parse(localStorage.getItem(TABLE_COLUMNS_STORAGE_KEY)!)).toEqual({
-      version: 2, order, shown: component.tableColumns.shown
+      version: 3, order, shown: component.tableColumns.shown
     });
     // The ± is its own column now, so the Intelligence Index cell stops printing it.
     const row = tableRowOf('Run 1');
@@ -1071,7 +1073,7 @@ describe('ModelComparisonComponent', () => {
 
   it('restores the column configuration from storage and repairs it', () => {
     localStorage.setItem(TABLE_COLUMNS_STORAGE_KEY, JSON.stringify({
-      version: 2, order: ['cost', 'bogus', 'model', 'cost'], shown: ['cost', 'bogus']
+      version: 3, order: ['cost', 'bogus', 'model', 'cost'], shown: ['cost', 'bogus']
     }));
     let stored = TestBed.createComponent(ModelComparisonComponent);
     const columns = stored.componentInstance.tableColumns;
@@ -1089,11 +1091,12 @@ describe('ModelComparisonComponent', () => {
     stored.destroy();
   });
 
-  it('shows the total-cost column on load to an admin whose version-1 layout predates it', () => {
+  it('shows the total-cost and provider errors columns on load to an admin whose version-1 layout predates both', () => {
+    const newer = ['totalCost', 'providerErrors', 'rerunsCol', 'providerErrorCount', 'providerAttempts', 'providerReruns'];
     localStorage.setItem(TABLE_COLUMNS_STORAGE_KEY, JSON.stringify({
       version: 1,
-      order: DEFAULT_TABLE_COLUMNS.order.filter(key => key !== 'totalCost'),
-      shown: DEFAULT_TABLE_COLUMNS.shown.filter(key => key !== 'totalCost')
+      order: DEFAULT_TABLE_COLUMNS.order.filter(key => !newer.includes(key)),
+      shown: DEFAULT_TABLE_COLUMNS.shown.filter(key => !newer.includes(key))
     }));
     fixture.destroy();
     fixture = TestBed.createComponent(ModelComparisonComponent);
@@ -1103,6 +1106,35 @@ describe('ModelComparisonComponent', () => {
 
     const headers = tableHeaders();
     expect(headers[headers.indexOf('Candidate $ / question') + 1]).toBe('Total $ / run, with grading');
+    expect(headers[headers.indexOf('Total $ / run, with grading') + 1]).toBe('Provider errors');
+    expect(headers).not.toContain('Re-runs needed');
+  });
+
+  it('shows the provider errors column on load to an admin whose version-2 layout predates it, keeping Re-runs needed hidden', () => {
+    const newer = ['providerErrors', 'rerunsCol', 'providerErrorCount', 'providerAttempts', 'providerReruns'];
+    localStorage.setItem(TABLE_COLUMNS_STORAGE_KEY, JSON.stringify({
+      version: 2,
+      order: DEFAULT_TABLE_COLUMNS.order.filter(key => !newer.includes(key)),
+      shown: ['model', 'runs', 'totalCost', 'notes']
+    }));
+    fixture.destroy();
+    fixture = TestBed.createComponent(ModelComparisonComponent);
+    component = fixture.componentInstance;
+
+    renderTable(buildDto(comparableSet(2)));
+
+    expect(tableHeaders()).toEqual(['Model', 'R', 'Total $ / run, with grading', 'Provider errors', 'Notes']);
+  });
+
+  it('renders Re-runs needed as the count with its provider part once the admin shows it', () => {
+    renderTable(buildDto(comparableSet(2)));
+    component.onTableColumnsChange(columnsWith({ show: ['rerunsCol'] }));
+    refresh();
+
+    const headers = tableHeaders();
+    const at = headers.indexOf('Re-runs needed');
+    expect(at).toBe(headers.indexOf('Provider errors') + 1);
+    expect(tableRowOf('Run 1').children[at].textContent?.trim()).toBe('1 (1 provider)');
   });
 
   it('renders the run total with its SD in the total-cost cell', () => {
@@ -1237,7 +1269,7 @@ describe('ModelComparisonComponent', () => {
     const canvas = fixture.debugElement.query(By.css('#mc-fig-panel-tablePreview canvas.mc-preview-canvas'))
       .nativeElement as HTMLCanvasElement;
     expect(canvas.getAttribute('role')).toBe('img');
-    expect(canvas.getAttribute('aria-label')).toBe('Table preview: 3 entries, 9 columns');
+    expect(canvas.getAttribute('aria-label')).toBe('Table preview: 3 entries, 10 columns');
     expect(canvas.width).toBeGreaterThan(0);
     expect(textOf('.mc-table-preview-notes')).toContain(
       'Previewing the image export. The chosen format, Excel (.xlsx), has no appearance of its own.');
@@ -1296,7 +1328,7 @@ describe('ModelComparisonComponent', () => {
     const chrome = (component as unknown as { exportChrome(card: ComparisonFigureCard): { theme?: unknown } })
       .exportChrome(component.panelCards[0]);
     expect(chrome.theme).toBe(component.figureTheme);
-    expect(fixture.debugElement.queryAll(By.css('.mc-all-canvas.is-transparent-figure')).length).toBe(7);
+    expect(fixture.debugElement.queryAll(By.css('.mc-all-canvas.is-transparent-figure')).length).toBe(9);
     const viewport = fixture.debugElement.query(By.css('.mc-all-viewport')).nativeElement as HTMLElement;
     expect(viewport.getAttribute('style') ?? '').toContain('--gh-fig-backdrop: #123456');
   });

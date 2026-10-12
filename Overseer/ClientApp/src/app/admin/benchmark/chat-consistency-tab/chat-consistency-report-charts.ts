@@ -4,7 +4,8 @@
  * the width it prints at in that document, with its labels at the chosen size in points, in the
  * print theme and with no heading; encoded as PNG and uploaded with the document's chart layout by
  * `PUT report-documents/{id}/charts`, the Report Pack's chart endpoint, keyed `cc1-quality`,
- * `cc2-speed`, `cc3-work` and `cc4-timeline`.
+ * `cc2-speed`, `cc3-work`, `cc4-timeline` and `cc5-availability`, the last in the form chosen on the
+ * Charts step.
  */
 
 import { firstValueFrom } from 'rxjs';
@@ -36,7 +37,15 @@ import {
   documentFigureLayout,
   printFigureAppearance
 } from '../report-pack/report-charts';
-import { CC_PRINT_THEME, CC_REPORT_FIGURES, CcFigureInput, buildCcFigure, ccFigureTitle } from './chat-consistency-charts';
+import {
+  CC_DEFAULT_AVAILABILITY_FORM,
+  CC_PRINT_THEME,
+  CC_REPORT_FIGURES,
+  CcAvailabilityForm,
+  CcFigureInput,
+  buildCcFigure,
+  ccFigureTitle
+} from './chat-consistency-charts';
 import { ccReportEventGroups } from './chat-consistency-events';
 import {
   CcDocumentChartLayout,
@@ -47,12 +56,19 @@ import {
   normalizeCcReportChartSelection
 } from './chat-consistency-report-chart-settings';
 import { CC_REPORT_FIGURE_KEYS, CcReportFigureKey } from './chat-consistency.models';
+import { readStoredTimelineLayout } from './timeline-workspace/timeline-workspace.component';
 
 /** Bumped whenever the drawing changes, so the settings hash tells old charts from new ones. */
 export const CC_REPORT_CHART_VERSION = 8;
 
-/** SHA-256 of the drawing settings, the chart choices and their layout, 64 lowercase hex characters; throws outside a secure context. */
-export async function ccReportChartSettingsHash(settings: CcReportChartSettings): Promise<string> {
+/**
+ * SHA-256 of the drawing settings, the chart choices, their layout and the provider availability form,
+ * 64 lowercase hex characters; throws outside a secure context.
+ */
+export async function ccReportChartSettingsHash(
+  settings: CcReportChartSettings,
+  availabilityForm: CcAvailabilityForm = CC_DEFAULT_AVAILABILITY_FORM
+): Promise<string> {
   const subtle = typeof crypto !== 'undefined' ? crypto.subtle : undefined;
   if (!subtle) {
     throw new Error('SHA-256 is not available: crypto.subtle needs a secure context.');
@@ -67,7 +83,8 @@ export async function ccReportChartSettingsHash(settings: CcReportChartSettings)
     baseLabelPx: BASE_LABEL_PX,
     format: 'png',
     selection: normalizeCcReportChartSelection(settings.selection),
-    layout: normalizeCcReportChartLayout(settings.layout)
+    layout: normalizeCcReportChartLayout(settings.layout),
+    availabilityForm
   };
   const digest = await subtle.digest('SHA-256', new TextEncoder().encode(canonicalJson(input)));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
@@ -137,14 +154,16 @@ export function ccReportFigureInput(input: CcFigureInput): CcFigureInput {
  * One figure as a document of `layout` prints it: at its width of the text column at 300 dpi, its
  * axis labels at the layout's size in points (the charts' 11 px axis text is {@link BASE_LABEL_PX}),
  * the time axis fitted to the plotted points, in the print theme, its event markers tagged as the
- * document's events table tags them ({@link ccReportFigureInput}). Null when the figure has nothing to
- * draw; throws when its width does not fit or it cannot be composed.
+ * document's events table tags them ({@link ccReportFigureInput}), the provider availability figure in
+ * `availabilityForm`. Null when the figure has nothing to draw; throws when its width does not fit or it
+ * cannot be composed.
  */
 export async function composeCcReportChart(
   key: CcReportFigureKey,
   input: CcFigureInput,
   settingsHash: string,
-  layout: CcDocumentChartLayout
+  layout: CcDocumentChartLayout,
+  availabilityForm: CcAvailabilityForm = CC_DEFAULT_AVAILABILITY_FORM
 ): Promise<ReportDocumentChartUpload | null> {
   const title = ccFigureTitle(CC_REPORT_FIGURES[key]);
   const width = documentChartWidth(layout, key);
@@ -157,7 +176,8 @@ export async function composeCcReportChart(
     reducedMotion: true,
     header: { title: null, subject: null },
     logo: null,
-    fitToData: true
+    fitToData: true,
+    availabilityForm
   });
   if (!figure.config) return null;
   const source = ccDocumentChartSource();
@@ -212,19 +232,21 @@ function errorMessage(error: unknown, fallback: string): string {
  * one document at a time. A figure is composed once per width and label size and shared by the
  * documents that print it alike. A figure with nothing to draw is left out; a document whose every
  * figure is left out or fails, or whose upload fails, is recorded as failed and the others go on. A
- * document with no figure chosen gets none, and loses the charts it had.
+ * document with no figure chosen gets none, and loses the charts it had. The provider availability
+ * figure takes the form chosen on the Charts step, as this browser remembers it.
  */
 export async function publishCcReportCharts(
   service: AdminBenchmarkService,
   documents: readonly CcReportChartDocument[],
   input: CcFigureInput,
-  settings: CcReportChartSettings
+  settings: CcReportChartSettings,
+  availabilityForm: CcAvailabilityForm = readStoredTimelineLayout().availabilityForm
 ): Promise<CcChartPublishResult> {
   const result: CcChartPublishResult = { published: [], failed: [], withoutCharts: [] };
   if (documents.length === 0) return result;
   const selection = normalizeCcReportChartSelection(settings.selection);
   const layouts = normalizeCcReportChartLayout(settings.layout);
-  const settingsHash = await ccReportChartSettingsHash({ selection, layout: layouts });
+  const settingsHash = await ccReportChartSettingsHash({ selection, layout: layouts }, availabilityForm);
   const composed = new Map<string, Promise<ReportDocumentChartUpload | null>>();
 
   for (const doc of documents) {
@@ -249,7 +271,7 @@ export async function publishCcReportCharts(
       const cacheKey = `${key}|${documentChartWidth(layout, key)}|${layout.labelPt}`;
       let pending = composed.get(cacheKey);
       if (!pending) {
-        pending = composeCcReportChart(key, input, settingsHash, layout);
+        pending = composeCcReportChart(key, input, settingsHash, layout, availabilityForm);
         composed.set(cacheKey, pending);
       }
       try {

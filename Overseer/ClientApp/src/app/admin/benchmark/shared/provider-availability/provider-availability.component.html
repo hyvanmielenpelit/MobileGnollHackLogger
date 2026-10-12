@@ -1,0 +1,245 @@
+<section class="pa" [attr.aria-labelledby]="uid + '-title'">
+  <h4 class="gh-section-title pa-title" [id]="uid + '-title'">Provider availability</h4>
+  @let a = availability();
+  @if (!a || !a.recorded) {
+    <p class="text-muted pa-not-recorded">Not recorded: runs started before harness 56 record no provider attempts.</p>
+  } @else {
+    <!-- The sentence carries "few attempts" itself, so the tag repeats it for the eye only. -->
+    <p class="pa-summary">
+      {{ summary() }}
+      @if (fewAttempts()) {
+        <span class="gh-tag pa-few" aria-hidden="true">few attempts</span>
+      }
+    </p>
+    @if (scopeLine(); as scope) {
+      <p class="text-muted pa-scope">{{ scope }}</p>
+    }
+
+    <div class="gh-datatable-scroll">
+      <table class="gh-table pa-breakdown">
+        <caption class="visually-hidden">Candidate attempts by outcome class</caption>
+        <thead>
+          <tr>
+            <th scope="col">Class</th>
+            <th scope="col" class="pa-num">Count</th>
+            <th scope="col" class="pa-num">Share of valid attempts</th>
+            <th scope="col">Typical statuses</th>
+          </tr>
+        </thead>
+        @for (group of validGroups(); track group.side) {
+          <tbody [attr.data-side]="group.side">
+            @if (group.label) {
+              <tr class="pa-group-row">
+                <th scope="rowgroup" colspan="4">{{ group.label }}</th>
+              </tr>
+            }
+            @for (row of group.rows; track row.outcome) {
+              <tr [attr.data-outcome]="row.outcome">
+                <th scope="row">{{ row.label }}</th>
+                <td class="pa-num">{{ row.count }}</td>
+                <td class="pa-num">{{ row.share }}</td>
+                <td>{{ row.statuses }}</td>
+              </tr>
+            }
+          </tbody>
+        }
+        <tfoot>
+          <tr>
+            <th scope="row">Valid attempts</th>
+            <td class="pa-num">{{ validAttemptsText() }}</td>
+            <td class="pa-num">{{ a.validAttempts > 0 ? '100 %' : '—' }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <h5 class="pa-subtitle" [id]="uid + '-ours'">Excluded: our side</h5>
+    <p class="text-muted pa-hint" [id]="uid + '-ours-hint'">Our own limits, keys, credits, requests, cancellations and network: never counted against the provider, and left out of the valid attempts.</p>
+    <div class="gh-datatable-scroll">
+      <table class="gh-table pa-ours" [attr.aria-labelledby]="uid + '-ours'" [attr.aria-describedby]="uid + '-ours-hint'">
+        <thead>
+          <tr>
+            <th scope="col">Class</th>
+            <th scope="col" class="pa-num">Count</th>
+            <th scope="col">Typical statuses</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of ourRows(); track row.outcome) {
+            <tr [attr.data-outcome]="row.outcome">
+              <th scope="row">{{ row.label }}</th>
+              <td class="pa-num">{{ row.count }}</td>
+              <td>{{ row.statuses }}</td>
+            </tr>
+          }
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Excluded attempts</th>
+            <td class="pa-num">{{ ourTotal() }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- The two views swap in place, so they are tabs; segmented, as a small fixed set of views. -->
+    <div class="pa-view">
+      <div class="gh-tabs gh-tabs-segmented pa-view-tabs" role="tablist" aria-label="Outcome view">
+        @for (option of views; track option.key; let i = $index) {
+          <button type="button" role="tab" class="gh-tab" [id]="uid + '-tab-' + option.key"
+                  [attr.data-view]="option.key"
+                  [attr.aria-controls]="uid + '-panel'"
+                  [attr.aria-selected]="view() === option.key"
+                  [attr.tabindex]="view() === option.key ? 0 : -1"
+                  (keydown)="onViewKeydown($event, i)"
+                  (click)="selectView(option.key)">{{ option.label }}</button>
+        }
+      </div>
+      <div role="tabpanel" class="pa-view-panel" [id]="uid + '-panel'" [attr.aria-labelledby]="uid + '-tab-' + view()" tabindex="0">
+        @if (view() === 'strip') {
+          @if (stripCells().length === 0) {
+            <p class="text-muted pa-empty">No candidate attempts to show.</p>
+          } @else {
+            <p class="pa-view-caption">Provider-error share of the valid attempts, per 5-minute bin (UTC)</p>
+            <!-- Drawn for the eye; the table after it carries the same data. -->
+            <div class="pa-strip" aria-hidden="true">
+              @for (cell of stripCells(); track cell.startUtc) {
+                <span class="pa-cell" [attr.data-shade]="cell.shade"></span>
+              }
+            </div>
+            @if (stripRange(); as range) {
+              <div class="pa-strip-axis" aria-hidden="true">
+                <span>{{ range.start }}</span>{{ ' ' }}<span>{{ range.end }}</span>
+              </div>
+            }
+            <ul class="pa-legend" aria-hidden="true">
+              @for (item of legend; track item.shade) {
+                <li><span class="pa-cell pa-legend-swatch" [attr.data-shade]="item.shade"></span>{{ item.label }}</li>
+              }
+            </ul>
+            <table class="visually-hidden pa-strip-table">
+              <caption>Candidate attempts per 5-minute bin, UTC</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Bin start</th>
+                  <th scope="col">Valid attempts</th>
+                  <th scope="col">Provider errors</th>
+                  <th scope="col">Unattributed</th>
+                  <th scope="col">Our side</th>
+                  <th scope="col">Provider-error share</th>
+                </tr>
+              </thead>
+              <tbody>
+                @for (cell of stripCells(); track cell.startUtc) {
+                  <tr>
+                    <th scope="row">{{ cell.time }}</th>
+                    <td>{{ cell.valid }}</td>
+                    <td>{{ cell.provider }}</td>
+                    <td>{{ cell.unattributed }}</td>
+                    <td>{{ cell.ours }}</td>
+                    <td>{{ cell.share }}</td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          }
+        } @else {
+          @if (barSegments().length === 0) {
+            <p class="text-muted pa-empty">No candidate attempts to show.</p>
+          } @else {
+            <p class="pa-view-caption">Every candidate attempt by outcome class; our side hatched and excluded</p>
+            <!-- Drawn for the eye; the list after it names every class with its count. -->
+            <div class="pa-bar" aria-hidden="true">
+              @for (segment of barSegments(); track segment.outcome) {
+                <span class="pa-seg" [attr.data-side]="segment.side" [attr.data-outcome]="segment.outcome"
+                      [style.flex-grow]="segment.count">@if (segment.labeled) { {{ segment.countText }} }</span>
+              }
+            </div>
+            <ul class="pa-bar-legend">
+              @for (segment of barSegments(); track segment.outcome) {
+                <li [attr.data-outcome]="segment.outcome">
+                  <span class="pa-seg pa-legend-swatch" [attr.data-side]="segment.side" aria-hidden="true"></span>
+                  {{ segment.label }}: {{ segment.countText }} ({{ segment.share }}){{ segment.side === 'ours' ? ', excluded' : '' }}
+                </li>
+              }
+            </ul>
+          }
+        }
+      </div>
+    </div>
+
+    <dl class="pa-facts">
+      <div class="pa-reruns">
+        <dt>Re-runs needed</dt>
+        <dd>{{ rerunsText() }}</dd>
+      </div>
+      @if (replacements().length > 0) {
+        <div class="pa-replaces">
+          <dt>Replaced runs</dt>
+          <dd>
+            <ul class="pa-replaces-list">
+              @for (line of replacements(); track line.runId + ':' + line.replacedByRunId) {
+                <li>
+                  Run #{{ line.replacedByRunId }} replaces
+                  <button type="button" class="btn-link pa-run-link" [attr.data-run-id]="line.runId"
+                          [attr.aria-label]="'Open run #' + line.runId"
+                          (click)="openRun.emit(line.runId)">run #{{ line.runId }}</button>, {{ line.causeText }}
+                </li>
+              }
+            </ul>
+          </dd>
+        </div>
+      }
+      <div class="pa-first-attempt">
+        <dt>First-attempt success</dt>
+        <dd>{{ firstAttemptText() }}</dd>
+      </div>
+      <div class="pa-lost">
+        <dt>Questions lost to the provider</dt>
+        <dd>{{ a.questionsLost }}</dd>
+      </div>
+      <div class="pa-graders">
+        <dt>Graders</dt>
+        <dd>{{ graderText() }}</dd>
+      </div>
+    </dl>
+  }
+
+  @if (memberRows().length > 0) {
+    <h5 class="pa-subtitle" [id]="uid + '-members'">Members</h5>
+    <div class="gh-datatable-scroll">
+      <table class="gh-table pa-members" [attr.aria-labelledby]="uid + '-members'">
+        <thead>
+          <tr>
+            <th scope="col">Member</th>
+            <th scope="col" class="pa-num">Attempts</th>
+            <th scope="col" class="pa-num">Provider errors</th>
+            <th scope="col" class="pa-num">Rate</th>
+            <th scope="col" class="pa-num">Re-runs</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of memberRows(); track row.memberId) {
+            <tr [attr.data-member-id]="row.memberId" [class.pa-superseded]="row.superseded">
+              <th scope="row">
+                {{ row.label }},
+                <button type="button" class="btn-link pa-run-link" [attr.data-run-id]="row.runId"
+                        [attr.aria-label]="'Open run #' + row.runId"
+                        (click)="openRun.emit(row.runId)">run #{{ row.runId }}</button>
+                @if (row.superseded) {
+                  {{ ' ' }}<span class="gh-tag pa-superseded-tag">superseded</span>
+                }
+              </th>
+              <td class="pa-num" [class.text-muted]="!row.recorded">{{ row.attempts }}</td>
+              <td class="pa-num">{{ row.providerErrors }}</td>
+              <td class="pa-num">{{ row.rate }}</td>
+              <td class="pa-num">{{ row.reruns }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</section>

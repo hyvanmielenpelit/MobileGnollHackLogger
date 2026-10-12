@@ -10,11 +10,15 @@ import {
   ModelComparisonComponent
 } from './model-comparison.component';
 import {
+  AVAILABILITY_MARKER_NOTE,
   FRONTIER_UNCERTAINTY_NOTE,
   MEAN_TIME_NO_INTERVAL_NOTE,
   P1_STACK_BREAKPOINT_PX,
+  availabilityMarkerPlugin,
   errorBarPlugin
 } from './model-comparison-charts';
+import type { AvailabilityMarkerPluginOptions } from './model-comparison-charts';
+import { toChartEntries } from './model-comparison.models';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
 import type { FigureStyle } from './figure-style';
 import type { FigureChrome, FigureFooter } from './figure-chrome';
@@ -24,7 +28,7 @@ import { previewZoomRange, zoomToSlider } from './preview-view';
 import {
   buildExcludedEntry, buildDto, render, showView, refresh, comparableSet, textOf, setUpModelComparisonSpec,
   openSidebarTab, scatterLegendDisplays, scatterBlocks, openStyleFamily, singleTabButton, openSingle, composePreview,
-  withStyleDebounce, expectTabContract, zoomButton, captureSaves, withClipboard, settleAllTab
+  withStyleDebounce, expectTabContract, zoomButton, captureSaves, withClipboard, settleAllTab, buildAvailability, buildEntry
 } from './model-comparison.component.testing';
 
 describe('ModelComparisonComponent', () => {
@@ -301,7 +305,7 @@ describe('ModelComparisonComponent', () => {
     const enabled = fixture.debugElement
       .queryAll(By.css('.mc-all-download-all, .mc-all-tile .mc-all-copy, .mc-all-tile .mc-all-download'))
       .map(button => button.nativeElement as HTMLButtonElement);
-    expect(enabled.length).toBe(1 + 7 * 2);
+    expect(enabled.length).toBe(1 + 9 * 2);
     expect(enabled.every(button => button.getAttribute('aria-disabled') === null)).toBe(true);
   });
 
@@ -327,7 +331,7 @@ describe('ModelComparisonComponent', () => {
   it('opens the Single tab on one tile and steps through the set, wrapping at both ends', () => {
     render(buildDto(comparableSet(3)), 2);
     const cards = component.exportableCards;
-    expect(cards.length).toBe(7);
+    expect(cards.length).toBe(9);
 
     openSingle(cards[2]);
     expect(component.figureTab).toBe('single');
@@ -720,6 +724,58 @@ describe('ModelComparisonComponent', () => {
     expect(styleControl('mc-style-bar-hiddenIntervalsNote').disabled).toBe(false);
     withStyleDebounce(() => setChecked(styleControl('mc-style-bar-hiddenIntervalsNote'), false));
     expect(drawnNotes('panels', 0)).not.toContain(HIDDEN_INTERVALS_NOTE);
+  });
+
+  it('rings a scatter mark whose provider errors are clearly above 2 % once the markers are on, and states the rule', () => {
+    const entries = comparableSet(3);
+    entries[1] = {
+      ...entries[1],
+      availability: buildAvailability({
+        providerErrors: 60, providerErrorRate: 60 / 1480, providerErrorRateLow: 0.031, providerErrorRateHigh: 0.052
+      })
+    };
+    render(buildDto(entries), 2);
+    openStyleTab(component.scatterCards[0]);
+    const pluginIds = (): string[] => component.scatterCards[0].plugins.map(plugin => plugin.id);
+    expect(pluginIds()).not.toContain(availabilityMarkerPlugin.id);
+    expect(exportNotesOf(component.scatterCards[0])).not.toContain(AVAILABILITY_MARKER_NOTE);
+
+    withStyleDebounce(() => setChecked(styleControl('mc-style-scatter-availabilityMarkers'), true));
+
+    expect(component.figureStyle.availability.markers).toBe('on');
+    for (const card of component.scatterCards) {
+      expect(card.plugins.map(plugin => plugin.id), card.id).toContain(availabilityMarkerPlugin.id);
+      const options = (card.options?.plugins as unknown as Record<string, AvailabilityMarkerPluginOptions>)[availabilityMarkerPlugin.id];
+      // Only the model whose whole interval lies above 2 %: 0.81 % with its bound at 0.44 % is never marked.
+      expect(options.marks.map(mark => mark.text), card.id).toEqual(['4.1 % provider errors']);
+      expect(exportNotesOf(card), card.id).toContain(AVAILABILITY_MARKER_NOTE);
+      expect(card.ariaLabel, card.id).toContain('Provider errors above 2 %');
+    }
+  });
+
+  it('shows the provider availability panel in P1 from the bar style, and takes it out when unchecked', () => {
+    render(buildDto(comparableSet(3)), 2);
+    expect(component.panelCards.map(card => card.id)).toContain('p1d-availability');
+    // The dot plot is drawn in the bar family's caption sizes.
+    const panel = component.panelCards[3];
+    expect(drawnChrome(panel).textSizes).toEqual({ titlePx: 18, badgePx: 11, footerPx: 12 });
+    expect(panel.type).toBe('line');
+
+    openStyleTab(component.panelCards[0]);
+    withStyleDebounce(() => setChecked(styleControl('mc-style-bar-availabilityPanel'), false));
+    expect(component.panelCards.map(card => card.id)).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost']);
+    expect(component.exportableCards.map(card => card.id)).toContain('a1-availability');
+  });
+
+  it('carries each entry\'s provider availability into the chart entries, and none where the payload has none', () => {
+    const [entry] = toChartEntries(buildDto([buildEntry()]));
+    expect(entry.availability).toEqual({
+      recorded: true, validAttempts: 1480, providerErrors: 12, unattributedErrors: 3,
+      rate: 12 / 1480, low: 0.0044, high: 0.015,
+      inclusiveRate: 15 / 1480, inclusiveLow: 0.0058, inclusiveHigh: 0.017,
+      fewAttempts: false
+    });
+    expect('availability' in toChartEntries(buildDto([buildEntry({ availability: null })]))[0]).toBe(false);
   });
 
   it('drops the frontier note from the scatter card and its export on request, keeping the set notes', () => {
@@ -1500,12 +1556,12 @@ describe('ModelComparisonComponent', () => {
 
     const opens = (): HTMLButtonElement[] => fixture.debugElement.queryAll(By.css('.mc-all-tile .mc-all-open'))
       .map(button => button.nativeElement as HTMLButtonElement);
-    expect(opens().length).toBe(7);
+    expect(opens().length).toBe(9);
 
-    // Icon-only, so aria-label is the accessible name — and seven of them must not share one.
+    // Icon-only, so aria-label is the accessible name — and nine of them must not share one.
     const names = opens().map(button => button.getAttribute('aria-label') ?? '');
     expect(names.every(name => name.startsWith('Open ') && name.endsWith(' in Single view'))).toBe(true);
-    expect(new Set(names).size).toBe(7);
+    expect(new Set(names).size).toBe(9);
     expect(opens().every(button => button.querySelector('path')?.getAttribute('d')?.startsWith('M1 12s4-8')), 'the eye glyph').toBe(true);
     expect(opens().every(button => !button.disabled && button.getAttribute('aria-disabled') === null)).toBe(true);
     expect(opens().every(button => button.textContent?.trim() === '')).toBe(true);

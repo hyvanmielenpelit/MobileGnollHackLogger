@@ -73,6 +73,7 @@ import {
   ReorderableListItem
 } from '../../../shared/reorderable-list/reorderable-list.component';
 import {
+  AVAILABILITY_FIGURE_IDS,
   BarOrientation,
   ComparisonFigureSet,
   CostMeasure,
@@ -89,6 +90,7 @@ import {
   ReducedMotionWatcher,
   SortDirection,
   SpeedMeasure,
+  availabilityText,
   buildComparisonFigures,
   buildNumberSamples,
   costValue,
@@ -217,6 +219,7 @@ import {
   printFigureAppearance,
   readStoredChartSettings,
   reportChartCoveredKeys,
+  reportChartDrawn,
   reportChartTargetFor,
   reportDocumentChartLayout,
   storeChartSettings
@@ -269,6 +272,7 @@ import {
   panelPairsEmptyText,
   panelRoleText,
   populatedColumnKeys,
+  readingCellText,
   resolveTableImageLayout,
   shownTableColumns,
   tableClipboardPayload,
@@ -2601,10 +2605,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** What shapes the document charts, as the settings hash reads it. */
   chartSettingsInput(): ReportChartSettingsInput {
-    const { bar, scatter, profile, numbers, appearance } = this.figureStyle;
+    const { bar, scatter, profile, numbers, appearance, availability } = this.figureStyle;
     return {
       figureStyle: {
-        bar, scatter, profile, numbers, appearance,
+        bar, scatter, profile, numbers, appearance, availability,
         scatterDirectLabels: this.scatterDirectLabels,
         scatterInlineValues: this.scatterInlineValues
       },
@@ -2649,9 +2653,13 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     });
   }
 
+  /** The figures a document can carry: enough plotted models, and for A1 one of them recording provider errors. */
   private refreshChartsAvailable(): void {
     const plotted = this.plotted.length;
-    const keys = REPORT_CHART_FIGURES.filter(figure => plotted >= Math.max(2, figure.minModels)).map(figure => figure.key);
+    const recorded = this.plotted.some(entry => entry.availability?.recorded === true);
+    const keys = REPORT_CHART_FIGURES
+      .filter(figure => plotted >= Math.max(2, figure.minModels) && (figure.key !== 'a1-availability' || recorded))
+      .map(figure => figure.key);
     if (keys.join(',') !== this.chartsAvailableKeys.join(',')) {
       this.chartsAvailableKeys = keys;
     }
@@ -2788,6 +2796,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (key === 'p1c-cost') {
       return 'Costs are per battery pass (per suite run for a suite); the document\'s tables give the cost per question.';
     }
+    if (key === 'a1-availability' && this.figureStyle.availability.measure === 'inclusive') {
+      return 'Rates include the unattributed errors, an upper bound; the document\'s tables give provider errors alone.';
+    }
     return '';
   }
 
@@ -2806,7 +2817,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     layout: ReportDocumentChartLayout;
   }> {
     const available = new Set(this.chartsAvailableKeys);
-    const keys = (normalizeChartSelection(this.chartSelection)[audience] ?? []).filter(key => available.has(key));
+    const keys = (normalizeChartSelection(this.chartSelection)[audience] ?? [])
+      .filter(key => available.has(key) && reportChartDrawn(audience, key, scope));
     const charts: { key: ReportChartFigureKey; chart: ComposedReportChart }[] = [];
     const failed: { key: ReportChartFigureKey; message: string }[] = [];
     for (const key of keys) {
@@ -2991,7 +3003,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return { figures, setNotes };
   }
 
-  /** One figure of a set as a card, or null where the set plots too few models for it. */
+  /**
+   * One figure of a set as a card, or null where the set plots too few models for it, or for A1 where
+   * no plotted model records provider errors.
+   */
   private documentCard(figures: ComparisonFigureSet, key: ReportChartFigureKey): ComparisonFigureCard | null {
     const plotted = figures.selection.plotted.length;
     if (plotted < 2 || (key === 'p2-profile' && plotted < 3)) {
@@ -3005,6 +3020,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       case 's1-quality-speed': return this.toCard(figures.qualitySpeed);
       case 's2-quality-cost': return this.toCard(figures.qualityCost);
       case 's3-speed-cost': return this.toCard(figures.speedCost);
+      case 'a1-availability':
+        return figures.selection.plotted.some(entry => entry.availability?.recorded === true)
+          ? this.toCard(figures.availability)
+          : null;
     }
   }
 
@@ -3031,6 +3050,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       case 's1-quality-speed': return [quality, speed].join(', ');
       case 's2-quality-cost': return [quality, perQuestion].join(', ');
       case 's3-speed-cost': return [speed, perQuestion].join(', ');
+      case 'a1-availability': {
+        const measure = this.figureStyle.availability.measure;
+        return `${measure === 'strict' ? 'provider errors' : 'provider and unattributed errors'} ${availabilityText(entry, measure)}`;
+      }
     }
   }
 
@@ -3091,18 +3114,31 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   // ---------------------------------------------------------------------------------------------
   // The figures, as cards
   //
-  // Card order is P1, then P2, then the three scatters: P1 answers the primary question and carries
-  // real units, so it is where a reader should land. The order is fixed in the template rather than
+  // Card order is P1, then P2, then the three scatters, then A1: P1 answers the primary question and
+  // carries real units, so it is where a reader should land. The order is fixed in the template rather than
   // in a control, because a reorder would change which figure a skimming reader trusts.
   // ---------------------------------------------------------------------------------------------
 
-  /** P1 — three linked panels sharing one model order, each with its own axis title and unit. */
+  /**
+   * P1 — three linked panels sharing one model order, each with its own axis title and unit, and the
+   * provider-availability dot plot as a fourth while the style's `availability.panel` is on.
+   */
   get panelCards(): ComparisonFigureCard[] {
     const panels = this.figures?.smallMultiples;
     if (!panels || !this.showFigures) {
       return [];
     }
-    return [this.toCard(panels.quality), this.toCard(panels.speed), this.toCard(panels.cost)];
+    return [
+      this.toCard(panels.quality),
+      this.toCard(panels.speed),
+      this.toCard(panels.cost),
+      ...(this.figureStyle.availability.panel === 'on' ? [this.toCard(panels.availability)] : [])
+    ];
+  }
+
+  /** A1 — the provider-error dot plot on its own, after the scatters whatever the panel setting. */
+  get availabilityCard(): ComparisonFigureCard | null {
+    return this.figures && this.showFigures ? this.toCard(this.figures.availability) : null;
   }
 
   /** P2 — the model profiles, one tile per model, suppressed below three entries. */
@@ -3506,7 +3542,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return [];
     }
     const profile = this.profileCard;
-    return [...this.panelCards, ...(profile ? [profile] : []), ...this.scatterCards];
+    const availability = this.availabilityCard;
+    return [...this.panelCards, ...(profile ? [profile] : []), ...this.scatterCards, ...(availability ? [availability] : [])];
   }
 
   get canExport(): boolean {
@@ -3705,8 +3742,14 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     };
   }
 
-  /** Which style family a card draws from: the bar panels, the trade-off scatters or the profile. */
+  /**
+   * Which style family a card draws from: the bar panels, the trade-off scatters or the profile. The
+   * provider-error dot plot, P1's fourth panel and A1, draws from the bar family.
+   */
   private familyOf(card: ComparisonFigureCard | null | undefined): ChartStyleFamily {
+    if (card && AVAILABILITY_FIGURE_IDS.includes(card.id)) {
+      return 'bar';
+    }
     const type = card?.type;
     return type === 'bar' ? 'bar' : type === 'scatter' ? 'scatter' : 'profile';
   }
@@ -5517,6 +5560,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** One part's text as the table prints it, for the single-value columns. */
   cellText(entry: BenchmarkModelComparisonEntryDto, part: string): string {
     return this.tableCell(entry, part)?.text ?? '—';
+  }
+
+  /** A combined column's text as the reading formats write it, leaving out the parts shown on their own. */
+  combinedCellText(entry: BenchmarkModelComparisonEntryDto, column: TableDisplayColumn): string {
+    const cells = this.tableCellsByKey.get(entry.key) ?? comparisonTableCells(entry);
+    return readingCellText(column, cells, this.shownColumnKeys);
   }
 
   /**

@@ -48,7 +48,7 @@ public class BenchmarkRunLimitsDto
     public int MaxModelsPerBatch { get; set; }
 }
 
-public class BenchmarkRunSeriesMemberDto
+public class BenchmarkRunSeriesMemberDto : IProviderAvailabilityCardDto
 {
     public int Index { get; set; }
     public long RunId { get; set; }
@@ -66,6 +66,18 @@ public class BenchmarkRunSeriesMemberDto
 
     /// <summary>First eight hex characters of the candidate system prompt hash.</summary>
     public string? ShortFingerprint { get; set; }
+
+    // The compact provider availability figures (IProviderAvailabilityCardDto) of the member run, from
+    // the rollup columns.
+    public bool? ProviderAvailabilityRecorded { get; set; }
+    public int? ProviderRecordedRunCount { get; set; }
+    public int? ProviderRunCount { get; set; }
+    public int? ProviderValidAttempts { get; set; }
+    public int? ProviderErrorCount { get; set; }
+    public int? ProviderUnattributedErrorCount { get; set; }
+    public double? ProviderErrorRate { get; set; }
+    public int? RerunsNeeded { get; set; }
+    public int? ProviderRerunsNeeded { get; set; }
 }
 
 public class BenchmarkRunSeriesDto
@@ -177,7 +189,7 @@ public class BenchmarkRunGroupMemberDto
     public DateTime AddedAtUtc { get; set; }
 }
 
-public class BenchmarkRunGroupDto
+public class BenchmarkRunGroupDto : IProviderAvailabilityCardDto
 {
     public long Id { get; set; }
     public string Name { get; set; } = string.Empty;
@@ -221,6 +233,18 @@ public class BenchmarkRunGroupDto
     /// different set of runs. Badged rather than discarded: a stale analysis is not wrong.
     /// </summary>
     public bool AnalysisStale { get; set; }
+
+    // The compact provider availability figures (IProviderAvailabilityCardDto), summed over the member
+    // runs and their lineage predecessors, each run once, from the rollup columns.
+    public bool? ProviderAvailabilityRecorded { get; set; }
+    public int? ProviderRecordedRunCount { get; set; }
+    public int? ProviderRunCount { get; set; }
+    public int? ProviderValidAttempts { get; set; }
+    public int? ProviderErrorCount { get; set; }
+    public int? ProviderUnattributedErrorCount { get; set; }
+    public double? ProviderErrorRate { get; set; }
+    public int? RerunsNeeded { get; set; }
+    public int? ProviderRerunsNeeded { get; set; }
 }
 
 public class CreateBenchmarkRunGroupRequest

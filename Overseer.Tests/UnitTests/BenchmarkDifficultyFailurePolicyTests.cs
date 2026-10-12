@@ -42,6 +42,9 @@ public class BenchmarkDifficultyFailurePolicyTests
     [InlineData("API Error: 504 - gateway timeout")]
     [InlineData("API Error: 529 - overloaded_error")]
     [InlineData("The request timed out.")]
+    // Overseer's own governor refusals are not provider errors, but are just as transient.
+    [InlineData("Request throttled: Timed out after 120.0s waiting for concurrent model slot on anthropic:system:7.")]
+    [InlineData("Request throttled: Rate limit cooldown active for openai:system:503 (12.0s remaining), exceeding wait timeout of 5.0s.")]
     public void Decide_WithTransientProviderError_FailsOnlyTheBatch(string terminalError)
     {
         Assert.Equal(

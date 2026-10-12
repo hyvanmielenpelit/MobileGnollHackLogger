@@ -35,6 +35,9 @@ public class GoogleProvider : IAiProvider
 
     private const string OfficialBaseUrl = "https://generativelanguage.googleapis.com";
 
+    /// <summary>The longest raw stream error payload kept on an error event's <c>Detail</c>.</summary>
+    private const int MaxErrorDetailLength = 3500;
+
     public void ConfigureRequest(HttpRequestMessage request, string apiKey, AiEndpointDescriptor endpoint)
     {
         /* The public API takes the key in the query string, so there is nothing to configure
@@ -377,7 +380,13 @@ public class GoogleProvider : IAiProvider
                     {
                         var errMessage = errObj.TryGetProperty("message", out var em) ? em.GetString() : "Unknown error";
                         var errCode = errObj.TryGetProperty("code", out var ec) ? ec.GetInt32().ToString() : "unknown";
-                        errorEvt = new ChatEvent { Type = "error", Data = $"Google stream error: [{errCode}] {errMessage}" };
+                        errorEvt = new ChatEvent
+                        {
+                            Type = "error",
+                            Data = $"Google stream error: [{errCode}] {errMessage}",
+                            // The raw payload keeps error.status and error.details[].@type (QuotaFailure, RetryInfo).
+                            Detail = data.Length <= MaxErrorDetailLength ? data : data.Substring(0, MaxErrorDetailLength)
+                        };
                     }
 
                     // A blocked prompt ends the response without a candidate finish reason; its block

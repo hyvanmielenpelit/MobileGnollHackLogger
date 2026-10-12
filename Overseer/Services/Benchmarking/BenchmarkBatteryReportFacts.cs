@@ -49,6 +49,9 @@ using Overseer.Models;
 //   scoring.*, run.*                         as for a run, over the member runs
 //   peer.X.*                                 index, interval, rank, overlap, speed, cost and runs, as for a run;
 //                                            no paired difference
+//   availability.*                           every key a run sheet carries, pooled over the battery run's member
+//                                            runs, superseded ones included, their lineage predecessors and every
+//                                            repair pass of each; only when the input carries the summary
 //
 // Battery keys:
 //   battery.name, battery.revision, battery.scheme, battery.suiteCount, battery.runsPerSuite,
@@ -96,6 +99,13 @@ public sealed class BenchmarkBatteryReportFactsInput
     public int DetailQuestionsPerSuite { get; init; } = BenchmarkBatteryReportFacts.DefaultDetailQuestionsPerSuite;
 
     public int MaxPromptChars { get; init; } = BenchmarkBatteryReportFacts.DefaultMaxPromptChars;
+
+    /// <summary>
+    /// The battery run's provider availability, pooled over every member run, superseded ones included,
+    /// and their lineage predecessors (<see cref="BenchmarkProviderAvailabilityService.ForBatteryRunAsync"/>);
+    /// null leaves the <c>availability.*</c> facts off the sheet.
+    /// </summary>
+    public ProviderAvailabilitySummary? Availability { get; init; }
 }
 
 /// <summary>A battery subject's fact sheet, its content snapshot and the notes of its preparation, or the reason none can be built.</summary>
@@ -421,6 +431,7 @@ public static class BenchmarkBatteryReportFacts
         AddBatteryFacts(facts, source, result, subjectRuns.Count);
         AddSuiteFacts(facts, suites);
         AddSensitivityFacts(facts, result);
+        BenchmarkReportFacts.AddAvailabilityFacts(facts, input.Availability);
 
         if (peers.Count == 0)
         {
@@ -430,6 +441,7 @@ public static class BenchmarkBatteryReportFacts
         sheet.Facts = facts.Sorted();
         SetToolOutcomes(sheet.Facts, outcomes);
         sheet.Entries = BuildEntries(subject, source, subjectRuns, subjectStats, peers.Select(p => (p.Entry, p.Letter)).ToList(), eligible, sources);
+        BenchmarkReportFacts.SetEntryAvailability(sheet.Entries, comparison, input.Availability);
 
         var names = BenchmarkReportFacts.BuildKnownNames(sheet);
         names.AddRange(suites.Select(s => s.SuiteName));

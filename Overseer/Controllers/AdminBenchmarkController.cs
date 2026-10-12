@@ -46,6 +46,10 @@ public class AdminBenchmarkController : ControllerBase
     private readonly BenchmarkSeriesOrchestrator _seriesOrchestrator;
     private readonly BenchmarkGroupAnalysisService _groupAnalysisService;
     private readonly ModelPricingService? _modelPricingService;
+    private BenchmarkProviderAvailabilityService? _providerAvailability;
+
+    /// <summary>The provider availability loader over this request's context.</summary>
+    private BenchmarkProviderAvailabilityService ProviderAvailability => _providerAvailability ??= new(_dbContext);
 
     public AdminBenchmarkController(
         ApplicationDbContext dbContext,
@@ -3260,6 +3264,9 @@ public class AdminBenchmarkController : ControllerBase
 
         var outcomeSummary = BenchmarkOutcomeSummary.Compute(run, run.Answers.ToList());
 
+        // The answers' failure origin and re-execution count are "not recorded" on a run without the ledger.
+        bool providerLedgerRecorded = run.ProviderLedgerVersion != null;
+
         var dto = new BenchmarkRunDetailDto
         {
             Id = run.Id,
@@ -3698,12 +3705,19 @@ public class AdminBenchmarkController : ControllerBase
                     ReassessmentCount = a.ReassessmentCount,
                     RerunAtUtc = a.RerunAtUtc,
                     RerunOfStatus = a.RerunOfStatus?.ToString(),
-                    RerunOfErrorMessage = a.RerunOfErrorMessage
+                    RerunOfErrorMessage = a.RerunOfErrorMessage,
+                    FailureOrigin = providerLedgerRecorded ? a.FailureOrigin?.ToString() : null,
+                    FailureKind = providerLedgerRecorded ? a.FailureKind : null,
+                    ReExecutionCount = providerLedgerRecorded ? a.ReExecutionCount : null
                 };
             }).ToList()
         };
 
         dto.ModelBatchRunId = await ModelBatchRunIdOfRunAsync(run.Id, run.RunSeriesId);
+
+        var providerAvailability = await ProviderAvailability.ForRunAsync(run.Id);
+        dto.ProviderAvailability = BenchmarkProviderAvailabilityService.ToDto(providerAvailability);
+        BenchmarkProviderAvailabilityService.ApplyCard(dto, await ProviderAvailability.CardForPoolAsync(new[] { run.Id }));
 
         return Ok(dto);
     }
@@ -3921,6 +3935,12 @@ public class AdminBenchmarkController : ControllerBase
         }
 
         await FillBatteryMembershipsAsync(rows.Select(r => r.Summary).ToList());
+
+        var availabilityCards = await ProviderAvailability.LoadCardsAsync(rows.Select(r => r.Summary.Id));
+        foreach (var item in rows)
+        {
+            BenchmarkProviderAvailabilityService.ApplyCard(item.Summary, availabilityCards.ForRun(item.Summary.Id));
+        }
 
         if (_modelPricingService != null)
         {
@@ -5086,7 +5106,9 @@ public class AdminBenchmarkController : ControllerBase
             ? BenchmarkRunBatteryContext.From(batteryMember, batteryMember.BenchmarkBatteryRun)
             : null;
 
-        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), runPricing, battery);
+        // The run's provider availability over its attempt ledger and its lineage predecessors.
+        var availability = (await ProviderAvailability.ForRunAsync(run.Id)).Summary;
+        string markdown = BenchmarkReportBuilder.BuildMarkdownReport(run, GetOverseerVersion(), runPricing, battery, availability);
         string filename = $"{SanitizeFilename(run.SuiteName)}_{SanitizeFilename(run.TestedModelSnapshot.Label()!)}_{run.StartedAtUtc:yyyyMMdd_HHmmss}.md";
 
         return (run, markdown, filename);
@@ -5507,9 +5529,11 @@ public class AdminBenchmarkController : ControllerBase
             dto.AutoCreatedGroupTier = tier?.ToString();
         }
 
+        var memberAvailability = await ProviderAvailability.LoadCardsAsync(members.Select(r => r.Id));
+
         foreach (var run in members)
         {
-            dto.Members.Add(new BenchmarkRunSeriesMemberDto
+            var memberDto = new BenchmarkRunSeriesMemberDto
             {
                 Index = run.RunSeriesIndex ?? 0,
                 RunId = run.Id,
@@ -5526,7 +5550,10 @@ public class AdminBenchmarkController : ControllerBase
                 AnsweredQuestionCount = answeredCounts.TryGetValue(run.Id, out int answered) ? answered : 0,
                 TotalQuestionCount = run.TotalQuestionCount,
                 ShortFingerprint = ShortFingerprint(run.CandidateSystemPromptSha256)
-            });
+            };
+
+            BenchmarkProviderAvailabilityService.ApplyCard(memberDto, memberAvailability.ForRun(run.Id));
+            dto.Members.Add(memberDto);
         }
 
         return dto;
@@ -6013,7 +6040,9 @@ public class AdminBenchmarkController : ControllerBase
             : await SelectGroupNewestRuns(_dbContext.BenchmarkRuns.Where(r => memberRunIds.Contains(r.Id)))
                 .ToDictionaryAsync(r => r.Id);
 
-        return groups
+        var availabilityCards = await ProviderAvailability.LoadCardsAsync(memberRunIds);
+
+        var dtos = groups
             .Select(group => ToGroupDto(
                 group,
                 latestByGroup.TryGetValue(group.Id, out var latest) ? latest : null,
@@ -6024,6 +6053,14 @@ public class AdminBenchmarkController : ControllerBase
                     .ThenByDescending(run => run!.Id)
                     .FirstOrDefault()))
             .ToList();
+
+        foreach (var (group, dto) in groups.Zip(dtos))
+        {
+            BenchmarkProviderAvailabilityService.ApplyCard(
+                dto, availabilityCards.ForPool(group.Members.Select(m => m.BenchmarkRunId)));
+        }
+
+        return dtos;
     }
 
     private async Task<BenchmarkRunGroupDto> BuildGroupDtoAsync(BenchmarkRunGroup group, bool includeMembers)
@@ -6040,6 +6077,7 @@ public class AdminBenchmarkController : ControllerBase
                 .FirstOrDefaultAsync();
 
         var dto = ToGroupDto(group, latest, newest);
+        BenchmarkProviderAvailabilityService.ApplyCard(dto, await ProviderAvailability.CardForPoolAsync(memberRunIds));
 
         if (includeMembers && group.Members.Count > 0)
         {

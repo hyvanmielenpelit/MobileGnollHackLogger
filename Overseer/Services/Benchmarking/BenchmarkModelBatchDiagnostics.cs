@@ -158,7 +158,8 @@ public static class BenchmarkModelBatchDiagnostics
         {
             var result = member.Result;
             sb.AppendLine($"  {Inv(member.OrderIndex + 1)}. {member.Model.DisplayName}: failed answers {Inv(result?.FailedAnswers ?? 0)}, " +
-                          $"provider errors {Inv(result?.ProviderErrors ?? 0)}, retries {Inv(result?.Retries ?? 0)}" +
+                          $"provider errors {(result?.ProviderErrors is int providerErrors ? Inv(providerErrors) : "not recorded")}, " +
+                          $"re-runs {(result?.RerunsNeeded is int reruns ? Inv(reruns) : "not recorded")}, retries {Inv(result?.Retries ?? 0)}" +
                           (string.IsNullOrWhiteSpace(member.ErrorMessage) ? string.Empty : $"; error: {member.ErrorMessage}"));
         }
         sb.AppendLine();

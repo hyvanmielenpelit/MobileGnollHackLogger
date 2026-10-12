@@ -77,6 +77,23 @@ describe('cc-figure-compose', () => {
       expect(direction('work')).toBeUndefined();
       expect(direction('tools')).toBeUndefined();
       expect(direction('timeline')).toBeUndefined();
+      expect(direction('availability')).toEqual({ y: 'bottom', label: 'Better' });
+    });
+
+    it('counts the provider availability figure\'s units, and gives its strip no Better badge', () => {
+      const recorded = input({
+        points: ccEventTimeline().points.map(point => ({ ...point, availabilityRecorded: true, validAttemptCount: 400, providerErrorCount: 2 }))
+      });
+      const strip = context({ availabilityForm: 'strip' });
+      expect(ccComposedChartOptions(strip).availabilityForm).toBe('strip');
+      expect(ccComposedChartOptions(context()).availabilityForm).toBeUndefined();
+      const figure = buildComposedCcFigure('availability', recorded, strip);
+      expect(figure.availabilityForm).toBe('strip');
+      // One badge per run, though the strip draws one point per day.
+      expect(ccFigureChrome(figure, strip).badges[1].text).toBe('6 runs');
+      expect(ccFigureChrome(figure, strip).direction).toBeUndefined();
+      const control = context({ availabilityForm: 'controlChart' });
+      expect(ccFigureChrome(buildComposedCcFigure('availability', recorded, control), control).direction).toEqual({ y: 'bottom', label: 'Better' });
     });
 
     it('leaves out the hidden badge kinds and the Better badge', () => {

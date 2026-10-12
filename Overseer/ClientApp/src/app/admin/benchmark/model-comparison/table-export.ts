@@ -50,6 +50,7 @@ import { DEFAULT_TABLE_IMAGE_STYLE } from './figure-style';
 import type { TableImageStyle } from './figure-style';
 import { resolveFigureTheme, tableBandColor } from './figure-theme';
 import type { ResolvedFigureTheme } from './figure-theme';
+import { NOT_RECORDED_TEXT, formatInteger, formatPercent } from '../shared/provider-availability/provider-availability';
 
 /** The eight offered formats. Each id is also the file extension it is written under. */
 export type TableExportFormat = 'xlsx' | 'csv' | 'tsv' | 'md' | 'json' | 'html' | 'png' | 'webp';
@@ -91,10 +92,10 @@ export interface TableImageLayout {
 /**
  * What a column holds, which is what decides its number format, its alignment and whether the
  * formula guard may touch it. `integer` and `ms` are both whole numbers; they are separate because
- * a millisecond column reads in thousands and a count does not.
+ * a millisecond column reads in thousands and a count does not. A `percent` cell holds a proportion.
  */
 export type ComparisonTableColumnKind =
-  'text' | 'integer' | 'number' | 'money' | 'ms' | 'boolean';
+  'text' | 'integer' | 'number' | 'percent' | 'money' | 'ms' | 'boolean';
 
 export interface ComparisonTableColumn {
   readonly key: string;
@@ -155,7 +156,7 @@ export const XLSX_MEDIA_TYPE =
  * The columns, in reading order: identity first, then the comparability verdict, then the three
  * measured axes with their uncertainty beside them, then everything that qualifies the verdict.
  *
- * Twenty-nine of them — every field the on-screen table renders plus the configuration keys it
+ * Thirty-four of them — every field the on-screen table renders plus the configuration keys it
  * shows only in a tooltip, because an exported table is read away from the tooltips.
  */
 export const COMPARISON_TABLE_COLUMNS: readonly ComparisonTableColumn[] = [
@@ -183,6 +184,11 @@ export const COMPARISON_TABLE_COLUMNS: readonly ComparisonTableColumn[] = [
   { key: 'totalRunCostUnavailable', header: 'Total $/run unavailable because', kind: 'text' },
   { key: 'pricingResolved', header: 'Pricing resolved', kind: 'boolean' },
   { key: 'scheduledChange', header: 'Scheduled price change', kind: 'text' },
+  { key: 'providerErrorRate', header: 'Provider error rate', kind: 'percent' },
+  { key: 'providerErrorCount', header: 'Provider error count', kind: 'integer' },
+  { key: 'providerAttempts', header: 'Valid attempts', kind: 'integer' },
+  { key: 'rerunsNeeded', header: 'Re-runs needed', kind: 'integer' },
+  { key: 'providerReruns', header: 'Re-runs for provider errors', kind: 'integer' },
   { key: 'differsOn', header: 'Differs on', kind: 'text' },
   { key: 'speedDegradedBy', header: 'Speed degraded by', kind: 'text' },
   { key: 'costDegradedBy', header: 'Cost degraded by', kind: 'text' },
@@ -193,14 +199,15 @@ export const COMPARISON_TABLE_COLUMNS: readonly ComparisonTableColumn[] = [
 // ------------------------------------------------------------------------------------------------
 // The display columns
 //
-// What the admin shows, hides and orders: the nine columns of the on-screen table, some of which
-// combine several parts, and the twenty-two remaining parts as columns of their own. Reading formats
+// What the admin shows, hides and orders: the eleven columns of the on-screen table, some of which
+// combine several parts, and the twenty-five remaining parts as columns of their own. Reading formats
 // keep a combined column combined; data formats write its parts as typed columns.
 // ------------------------------------------------------------------------------------------------
 
 /** How the Interactive table renders a display column's cells. */
 export type TableColumnRenderer =
-  'model' | 'runs' | 'state' | 'intelligence' | 'speedIndex' | 'timings' | 'cost' | 'totalCost' | 'notes' | 'text';
+  'model' | 'runs' | 'state' | 'intelligence' | 'speedIndex' | 'timings' | 'cost' | 'totalCost' | 'providerErrors'
+  | 'reruns' | 'notes' | 'text';
 
 export interface TableDisplayColumn {
   /** Equal to the part key for a single-value column. */
@@ -259,6 +266,14 @@ const COMBINED_TABLE_COLUMNS: readonly TableDisplayColumn[] = [
     sortPart: 'totalRunCost'
   },
   {
+    key: 'providerErrors',
+    header: 'Provider errors',
+    renderer: 'providerErrors',
+    parts: ['providerErrorRate', 'providerErrorCount', 'providerAttempts'],
+    sortPart: 'providerErrorRate'
+  },
+  { key: 'rerunsCol', header: 'Re-runs needed', renderer: 'reruns', parts: ['rerunsNeeded', 'providerReruns'], sortPart: 'rerunsNeeded' },
+  {
     key: 'notes',
     header: 'Notes',
     renderer: 'notes',
@@ -268,10 +283,13 @@ const COMBINED_TABLE_COLUMNS: readonly TableDisplayColumn[] = [
 ];
 
 /** Parts that are the primary of a combined column and are never offered on their own. */
-const COMBINED_PRIMARY_PARTS: ReadonlySet<string> = new Set(['label', 'runCount', 'state', 'intelligenceIndex', 'speedIndex', 'costPerQuestion', 'totalRunCost']);
+const COMBINED_PRIMARY_PARTS: ReadonlySet<string> = new Set([
+  'label', 'runCount', 'state', 'intelligenceIndex', 'speedIndex', 'costPerQuestion', 'totalRunCost', 'providerErrorRate',
+  'rerunsNeeded'
+]);
 
 /**
- * The 31 display columns: the nine of the on-screen table in its order, then every other part as a
+ * The 36 display columns: the eleven of the on-screen table in its order, then every other part as a
  * column of its own, in {@link COMPARISON_TABLE_COLUMNS} order.
  */
 export const TABLE_DISPLAY_COLUMNS: readonly TableDisplayColumn[] = [
@@ -293,10 +311,13 @@ const DISPLAY_COLUMNS_BY_KEY: ReadonlyMap<string, TableDisplayColumn> =
 const PART_COLUMNS_BY_KEY: ReadonlyMap<string, ComparisonTableColumn> =
   new Map(COMPARISON_TABLE_COLUMNS.map(column => [column.key, column]));
 
-/** Today's on-screen table: its nine columns shown, in its order, then the rest hidden. */
+/** The combined column offered but hidden until the admin checks it. */
+const HIDDEN_COMBINED_COLUMNS: ReadonlySet<string> = new Set(['rerunsCol']);
+
+/** The on-screen table: its combined columns but Re-runs needed shown, in its order, then the rest hidden. */
 export const DEFAULT_TABLE_COLUMNS: TableColumnConfig = {
   order: TABLE_DISPLAY_COLUMNS.map(column => column.key),
-  shown: COMBINED_TABLE_COLUMNS.map(column => column.key)
+  shown: COMBINED_TABLE_COLUMNS.map(column => column.key).filter(key => !HIDDEN_COMBINED_COLUMNS.has(key))
 };
 
 export function tableDisplayColumn(key: string): TableDisplayColumn | undefined {
@@ -331,31 +352,60 @@ export function normalizeTableColumnConfig(value: unknown): TableColumnConfig {
 }
 
 /** The saved-layout version this build writes. */
-export const TABLE_COLUMN_CONFIG_VERSION = 2;
+export const TABLE_COLUMN_CONFIG_VERSION = 3;
 
 /**
- * A saved layout brought up to the current version, then normalized. Version 2 introduced the
- * total-cost column: a version-1 layout gets it directly after the candidate cost column, shown
- * when that column is shown.
+ * A saved layout brought up to the current version one step at a time, then normalized, so a
+ * version-1 layout takes every step. Version 2 introduced the total-cost column: a version-1 layout
+ * gets it directly after the candidate cost column, shown when that column is shown. Version 3
+ * introduced the provider-availability columns: an older layout gets Provider errors, shown, and
+ * Re-runs needed, hidden, directly after the total cost column.
  */
 export function migrateTableColumnConfig(value: unknown): TableColumnConfig {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     return normalizeTableColumnConfig(value);
   }
-  const record = value as Record<string, unknown>;
+  let record = value as Record<string, unknown>;
   const version = record['version'];
-  const order = record['order'];
-  if ((version === undefined || (typeof version === 'number' && version < 2))
-      && Array.isArray(order) && !order.includes('totalCost')) {
-    const costAt = order.indexOf('cost');
-    const migratedOrder = costAt < 0
-      ? [...order, 'totalCost']
-      : [...order.slice(0, costAt + 1), 'totalCost', ...order.slice(costAt + 1)];
-    const shown = record['shown'];
-    const migratedShown = Array.isArray(shown) && shown.includes('cost') ? [...shown, 'totalCost'] : shown;
-    return normalizeTableColumnConfig({ ...record, order: migratedOrder, shown: migratedShown });
+  const before = (target: number): boolean => version === undefined || (typeof version === 'number' && version < target);
+  if (before(2)) {
+    record = addTotalCostColumn(record);
+  }
+  if (before(3)) {
+    record = addProviderColumns(record);
   }
   return normalizeTableColumnConfig(record);
+}
+
+/** Version 1 → 2: the total-cost column after candidate cost, shown when candidate cost is. */
+function addTotalCostColumn(record: Record<string, unknown>): Record<string, unknown> {
+  const order = record['order'];
+  if (!Array.isArray(order) || order.includes('totalCost')) {
+    return record;
+  }
+  const costAt = order.indexOf('cost');
+  const migratedOrder = costAt < 0
+    ? [...order, 'totalCost']
+    : [...order.slice(0, costAt + 1), 'totalCost', ...order.slice(costAt + 1)];
+  const shown = record['shown'];
+  const migratedShown = Array.isArray(shown) && shown.includes('cost') ? [...shown, 'totalCost'] : shown;
+  return { ...record, order: migratedOrder, shown: migratedShown };
+}
+
+/** Version 2 → 3: Provider errors, shown, then Re-runs needed, hidden, after the total cost column. */
+function addProviderColumns(record: Record<string, unknown>): Record<string, unknown> {
+  const order = record['order'];
+  if (!Array.isArray(order) || order.includes('providerErrors')) {
+    return record;
+  }
+  const added = ['providerErrors', ...(order.includes('rerunsCol') ? [] : ['rerunsCol'])];
+  const anchor = order.includes('totalCost') ? order.indexOf('totalCost') : order.indexOf('cost');
+  const migratedOrder = anchor < 0
+    ? [...order, ...added]
+    : [...order.slice(0, anchor + 1), ...added, ...order.slice(anchor + 1)];
+  const shown = record['shown'];
+  const migratedShown = Array.isArray(shown) ? [...shown, 'providerErrors'] : shown;
+  return { ...record, order: migratedOrder, shown: migratedShown };
 }
 
 /** Whether two configurations show the same columns in the same order. */
@@ -439,6 +489,21 @@ export function readingCellText(
         sd ? `${text('totalRunCost')} ± ${sd.text}` : text('totalRunCost'),
         why ? why.text : null
       ]);
+    }
+    case 'providerErrors': {
+      const count = kept('providerErrorCount');
+      const attempts = kept('providerAttempts');
+      const ratio = count && attempts
+        ? `(${count.text}/${attempts.text})`
+        : count ? `(${count.text} errors)` : attempts ? `(${attempts.text} attempts)` : null;
+      // Without a rate (not recorded, or no valid attempt) the cell says so and carries no count.
+      const rate = cells['providerErrorRate'];
+      return rate && rate.raw !== null && ratio ? `${rate.text} ${ratio}` : text('providerErrorRate');
+    }
+    case 'reruns': {
+      const provider = kept('providerReruns');
+      const reruns = text('rerunsNeeded');
+      return provider && typeof provider.raw === 'number' && provider.raw > 0 ? `${reruns} (${provider.text} provider)` : reruns;
     }
     case 'notes': {
       const differs = kept('differsOn');
@@ -719,12 +784,41 @@ export function comparisonTableCells(entry: BenchmarkModelComparisonEntryDto): R
     totalRunCostUnavailable: textCell(cost?.totalRunCostUnavailableReason),
     pricingResolved: flagCell(cost === null ? null : cost.pricingResolved),
     scheduledChange: textCell(cost?.scheduledChangeEffectiveFrom),
+    ...providerCells(entry),
     differsOn: listCell(entry.excludingKeys),
     speedDegradedBy: listCell(entry.speedDegradingKeys),
     costDegradedBy: listCell(entry.costDegradingKeys),
     unstableItems: countCell(table?.unstableItemCount),
     explanation: textCell(entry.explanation)
   };
+}
+
+/**
+ * The provider-availability parts, from the table's lineage-pooled figures: the rate as a proportion
+ * written `0.81 %`, the counts with thousands separators. An entry whose runs predate the ledger
+ * reads `Not recorded` in place of the rate; every figure is then null.
+ */
+function providerCells(entry: BenchmarkModelComparisonEntryDto): Record<string, ComparisonTableCell> {
+  const table = entry.table ?? null;
+  const notRecorded = entry.availability != null && !entry.availability.recorded;
+  const rate = table?.providerErrorRate;
+  return {
+    providerErrorRate: rate != null && Number.isFinite(rate)
+      ? { raw: rate, text: formatPercent(rate) }
+      : { raw: null, text: notRecorded ? NOT_RECORDED_TEXT : ABSENT_TEXT },
+    providerErrorCount: groupedCountCell(table?.providerErrorCount),
+    providerAttempts: groupedCountCell(table?.providerAttempts),
+    rerunsNeeded: groupedCountCell(table?.rerunsNeeded),
+    providerReruns: groupedCountCell(table?.providerReruns)
+  };
+}
+
+/** A count written with the `,` thousands separator, as every provider-availability figure is. */
+function groupedCountCell(value: number | null | undefined): ComparisonTableCell {
+  if (value == null || !Number.isFinite(value)) {
+    return { raw: null, text: ABSENT_TEXT };
+  }
+  return { raw: value, text: formatInteger(value) };
 }
 
 function textCell(value: string | null | undefined): ComparisonTableCell {
@@ -1169,6 +1263,8 @@ function xlsxFormatOf(kind: ComparisonTableColumnKind): string | undefined {
   switch (kind) {
     case 'number':
       return '0.0';
+    case 'percent':
+      return '0.00%';
     case 'integer':
     case 'ms':
       return '#,##0';

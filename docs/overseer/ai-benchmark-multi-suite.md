@@ -409,6 +409,35 @@ guards after every member (§ 3.4), its analysis and its documents are the same,
 - **Alerts.** While the page follows the batch, the battery run signals nothing of its own; the batch
   signals once at its end (§ 4.3, *Completion signals*).
 
+### 3.10 Provider availability and lineage
+
+From harness 56 every member run records its provider attempts, and a battery run reports how available
+the tested model's provider was across its members: the **provider error rate** with its count and
+interval, the unattributed errors, and the **re-runs** the battery run needed. The method is
+[`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md); this section says
+which runs a battery figure covers.
+
+- **Lineage.** A relaunch links the new run to the run it replaces (`BenchmarkRun.ReplacesRunId` and
+  `ReplacementCause`):
+  - **Continue** and **Re-run under the current instrument**: a member launched into a slot replaces the
+    slot's newest superseded member, with cause `InstrumentChange` under a re-run and otherwise the cause
+    the replaced run's own answers give (`ProviderFailure` when one failed at the provider, `OurFailure`,
+    `OperatorRequest` for a canceled run, `Unknown` for a run started before harness 56);
+  - **Attach** (§ 3.6): the attached run replaces the slot's previous run — its live occupant, else its
+    newest superseded member — with cause `OperatorRequest`, unless it already names a predecessor or the
+    link would close a cycle;
+  - a **battery child of a model batch** relaunched by the batch is linked member to member: each member
+    of the new battery run replaces the same `(SuiteIndex, Round)` member of the superseded battery run
+    ([`ai-benchmark-model-batches.md`](ai-benchmark-model-batches.md) § 5.3).
+- **Which attempts the battery figure pools.** Every member run, **superseded members included**, their
+  lineage predecessors and every repair pass of each, so a member that failed at the provider and was
+  relaunched still counts. Only recorded runs (harness 56 and later) contribute attempts; the figure says
+  *recorded for M of N runs* when some are not, and *Not recorded* when none is. The re-run figure counts
+  the members' repair passes and the replaced members.
+- **Where it appears.** The Battery Run Report's *Key figures* (§ 4.7, the **Provider errors** tile),
+  its *Integrity* tab (§ 4.7), the battery card in Run History (§ 4.6), the leaderboard (§ 4.5), and the
+  battery's documents and Markdown report (§ 7).
+
 ---
 
 ## 4. The Admin UI
@@ -666,9 +695,11 @@ Comparison** and an icon-only **Refresh**.
   intervals are not a ranking. Results of different classes are never placed in one order.
 - **Columns:** *Rank* (the index rank; *≈* marks an interval that overlaps the row above), *Model*
   with its provider and thinking badges, *Overall Index* ± half-width, *95 % interval* with an interval
-  strip on one scale for the whole class, *Speed*, *Pass cost*, *R*, *Analyzed*, and an icon-only
+  strip on one scale for the whole class, *Speed*, *Pass cost*, *R*, *Analyzed*, *Provider errors* (the
+  battery run's provider error rate with its count, or *Not recorded*; § 3.10), and an icon-only
   **View the report of battery run #N**, which opens the Battery Run Report over the dialog. *Model*,
-  *Overall Index*, *Speed*, *Pass cost* and *Analyzed* sort; the rank stays the index rank.
+  *Overall Index*, *Speed*, *Pass cost*, *Analyzed* and *Provider errors* sort; the rank stays the index
+  rank.
 - **Incomplete battery runs (n) — not ranked** is a closed disclosure below.
 - **Open in Model Comparison** opens the Model Comparison wizard with the shown class's results
   selected as battery results, at most `MAX_COMPARISON_SOURCES` (24): beyond that the newest are left
@@ -693,6 +724,8 @@ line counts a battery run as one run and adds *· newest 500 battery runs* when 
   and *Analysis stale* or *Not analyzed*; the model as its title; the battery name, revision,
   assessors, start time and user; the metrics *Intelligence* (the Overall Index ± half-width, or *N/A*
   with *Incomplete (k of K suites)*), *Speed*, *Duration* and *Cost*; and the *DEF* and *CLASS* hashes.
+  The kicker also carries the outlined provider-error badge (*Provider errors 0.81 %*, *2 re-runs*) when
+  the battery run's members had provider errors or re-runs, and never when they had none (§ 3.10).
 - **Its actions:** **View details** opens the Battery Run Report (§ 4.7); **Download Markdown report**
   downloads the deterministic report (§ 7.1), unavailable until there is an analysis; **Show progress**
   appears while the battery run is live or resumable; **Delete battery run** is unavailable while it is
@@ -732,8 +765,8 @@ leaderboard and from the progress dialog's **Open Analysis**.
 
   | Tab | Content |
   |---|---|
-  | **Summary** | *Key figures* with **Choose figures**, **Copy** and **Download** (`battery-run-<id>_…` PNG files), then the recompute callout and the caveats. *Recompute* is called out when the analysis is stale **or** lists an excluded member: a run repaired in place keeps its id, so staleness alone cannot show the repair |
-  | **Integrity** | Excluded members with their reasons, the pooled identity, the composite verdict (M8), stale and incomplete notices; the tab carries a *Notice* tag while any of them holds |
+  | **Summary** | *Key figures* with **Choose figures**, **Copy** and **Download** (`battery-run-<id>_…` PNG files), among them **Provider errors** (§ 3.10), then the recompute callout and the caveats. *Recompute* is called out when the analysis is stale **or** lists an excluded member: a run repaired in place keeps its id, so staleness alone cannot show the repair |
+  | **Integrity** | Excluded members with their reasons, the pooled identity, the composite verdict (M8), stale and incomplete notices; the tab carries a *Notice* tag while any of them holds. Then the **Provider availability** section (§ 3.10): the summary, the breakdown by outcome class, the time strip or bar, the re-run line, the grader line and a per-member table (member, attempts, provider errors, rate, re-runs) |
   | **Suites** | The suite profile as one full-width card per suite: a kicker (*Suite n of K* · weight, with *No usable result* or *Exam incomplete* tags), the suite name, *k of N scored items · R usable runs*, the metrics *Index* (a score badge with its 95 % interval), *Contribution*, *Speed*, *Cost per run* and *Critical errors*, and a *Member runs* zone of gold **Run #N · Round r** buttons, one per non-superseded member in round order, each opening that run's single-run report on top. Above the cards, *Profile unevenness: between-suite SD · range* to two decimals, with the interval method behind an info tip. Without an analysis the cards show `—` and *Not analyzed*. The cards stack below `60rem` and go to one column below `30rem` (an inline-size container) |
   | **Robustness** | Uncertainty (item sampling, reproducibility, combined, ν), weighting sensitivity, leave one suite out |
   | **Members** | The suite × round grid of member runs, each with its status, index and **Open run report** |
@@ -1244,6 +1277,12 @@ cost shows it once the AI-written reports exist."*
 not taken from the persisted analysis: *Tool call outcomes: N failed, M refused by the tool budget*, or
 *not recorded* with the reason when a member predates harness 17, and the claim line adds *refuted answer
 sentences (accused ones included): K* beside the answers' own refuted claims.
+
+From harness 56 the report adds a **Provider availability** subsection (§ 3.10): the pooled provider
+error rate with its count and interval, the unattributed errors, the re-runs and a per-member table
+(member, attempts, provider errors, rate, re-runs). It is a `###` subsection inside an existing numbered
+section, so the numbered sections and their titles do not change, and, like the tool records above, it is
+read when the report is rendered, superseded members included, not from the persisted analysis.
 
 *Method and Limits* (§ 10) names every usable member whose run was repaired after the battery run first
 finished — its run's `RerunCompletedAtUtc` later than the battery run's `CompletedAtUtc` — with *"Run

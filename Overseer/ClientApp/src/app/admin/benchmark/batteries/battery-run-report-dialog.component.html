@@ -262,6 +262,20 @@
                 }
                 <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id"cardLabel="Total Cost" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
+              <!-- Candidate attempts that failed at the provider over every member run; neutral, never a warning tone. -->
+              @let providerFigure = providerErrorsFigure;
+              <div class="score-card" data-figure="provider-errors" [hidden]="!isKeyFigureShown('provider-errors')">
+                <span class="score-label">Provider Errors</span>
+                <span class="score-subvalue" [class.text-muted]="providerFigure.muted">{{ providerFigure.value }}</span>
+                @if (providerFigure.count) {
+                  <span class="score-note">{{ providerFigure.count }}</span>
+                }
+                <span class="score-note">{{ providerFigure.note }}</span>
+                @if (providerFigure.fewAttempts) {
+                  <span class="score-note rr-few-attempts">few attempts</span>
+                }
+                <app-key-figure-card-actions [runId]="detail.id" [subjectLabel]="'battery run ' + detail.id" [subjectKey]="'battery' + detail.id" cardLabel="Provider Errors" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
             </div>
             @if (selectedKeyFigureCount === 0) {
               <p class="rr-figures-empty">No key figures are selected. Use Choose figures to show them.</p>
@@ -385,6 +399,11 @@
             } @else {
               <p class="text-muted brr-none">{{ analysis ? 'No member is left out of the analysis.' : 'No analysis has been computed.' }}</p>
             }
+
+            <app-provider-availability [availability]="detail.providerAvailability"
+                                       [members]="detail.providerAvailabilityMembers"
+                                       [suites]="detail.suites"
+                                       (openRun)="openMemberRun($event)" />
           </div>
 
           <!-- ===================================================================================

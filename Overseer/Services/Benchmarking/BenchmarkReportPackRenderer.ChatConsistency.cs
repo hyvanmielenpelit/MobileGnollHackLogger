@@ -201,6 +201,7 @@ public static partial class BenchmarkReportPackRenderer
                 if (executive) ChatExecutiveVerdictTable(sb, ctx);
                 else ChatVerdictTable(sb, ctx);
                 ChatLevelsTable(sb, ctx);
+                if (!executive) ChatAvailabilityTable(sb, ctx);
                 Figures(sb, ctx, BenchmarkReportChartAnchor.ChatConsistencyResults);
                 break;
             case ChatBlock.Events:
@@ -406,21 +407,36 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// "Where the chat stands": each period's descriptive level of quality, time to first answer text, answer
-    /// streaming rate, work per turn, cost per question and failed answers, a measure not comparable marked so;
-    /// nothing on a sheet without <c>level.*</c> facts.
+    /// Each primary endpoint's row of "Where the chat stands", in protocol order: its name, and the facts that
+    /// hold its period level, the first available of them; <c>{0}</c> is the period.
+    /// </summary>
+    private static IReadOnlyList<(string Id, string Name, string[] Keys)> ChatLevelRows() => new[]
+    {
+        ("P1", "Quality", new[] { "level.{0}.overallIndex", "level.{0}.quality" }),
+        ("P2", "Time to first answer text", new[] { "level.{0}.timeToFirstAnswerText" }),
+        ("P3", "Answer streaming rate", new[] { "level.{0}.streamingRate" }),
+        ("P4", "Work per turn (output tokens per answer)", new[] { "level.{0}.outputTokens" }),
+        ("P5", "Cost per question", new[] { "level.{0}.costPerQuestion" }),
+        ("P6", "Provider error rate", new[] { "availability.{0}.providerErrorRate" })
+    };
+
+    /// <summary>
+    /// "Where the chat stands": each period's descriptive level of Protocol V1's endpoints (quality, time to first
+    /// answer text, answer streaming rate, work per turn, cost per question) and of every later endpoint the sheet
+    /// carries (the provider error rate under Protocol V2), in protocol order, then failed answers; a measure not
+    /// comparable marked so; nothing on a sheet without <c>level.*</c> facts.
     /// </summary>
     private static void ChatLevelsTable(StringBuilder sb, Context ctx)
     {
         bool Any(string measure) => IsAvailable(ctx, "level.baseline." + measure) || IsAvailable(ctx, "level.comparison." + measure);
         if (!new[] { "quality", "overallIndex", "timeToFirstAnswerText", "streamingRate", "outputTokens", "costPerQuestion", "answers" }.Any(Any)) return;
 
-        string Value(string period, params string[] measures)
+        string Value(string period, params string[] keys)
         {
-            foreach (string measure in measures)
+            foreach (string pattern in keys)
             {
-                string key = "level." + period + "." + measure;
-                if (IsAvailable(ctx, key)) return (measure == "overallIndex" ? "Overall Index " : string.Empty) + D(ctx, key);
+                string key = string.Format(CultureInfo.InvariantCulture, pattern, period);
+                if (IsAvailable(ctx, key)) return (key.EndsWith(".overallIndex", StringComparison.Ordinal) ? "Overall Index " : string.Empty) + D(ctx, key);
             }
             return NoValue;
         }
@@ -431,15 +447,14 @@ public static partial class BenchmarkReportPackRenderer
             return kind is "measurementChanged" or "noCommonStratum" ? name + " (not comparable)" : name;
         }
 
-        var rows = new List<(string Measure, string Baseline, string Comparison)>
-        {
-            (Measure("Quality", "P1"), Value("baseline", "overallIndex", "quality"), Value("comparison", "overallIndex", "quality")),
-            (Measure("Time to first answer text", "P2"), Value("baseline", "timeToFirstAnswerText"), Value("comparison", "timeToFirstAnswerText")),
-            (Measure("Answer streaming rate", "P3"), Value("baseline", "streamingRate"), Value("comparison", "streamingRate")),
-            (Measure("Work per turn (output tokens per answer)", "P4"), Value("baseline", "outputTokens"), Value("comparison", "outputTokens")),
-            (Measure("Cost per question", "P5"), Value("baseline", "costPerQuestion"), Value("comparison", "costPerQuestion")),
-            ("Failed answers", Value("baseline", "failedAnswers"), Value("comparison", "failedAnswers"))
-        };
+        // Protocol V1's five rows always; a later protocol's endpoints when the sheet carries them.
+        var endpoints = ChatEndpointIds(ctx);
+        var v1 = global::Overseer.Services.ChatConsistency.ChatConsistencyProtocol.V1;
+        var rows = ChatLevelRows()
+            .Where(r => v1.Has(r.Id) || endpoints.Contains(r.Id, StringComparer.Ordinal))
+            .Select(r => (Measure: Measure(r.Name, r.Id), Baseline: Value("baseline", r.Keys), Comparison: Value("comparison", r.Keys)))
+            .ToList();
+        rows.Add(("Failed answers", Value("baseline", "level.{0}.failedAnswers"), Value("comparison", "level.{0}.failedAnswers")));
 
         Line(sb, "**Where the chat stands**");
         Line(sb);
@@ -451,6 +466,48 @@ public static partial class BenchmarkReportPackRenderer
         }
         Line(sb);
         Line(sb, "*Descriptive levels of each period, not a comparison: the verdicts above say what changed.*");
+        Line(sb);
+    }
+
+    /// <summary>
+    /// "Provider availability", outside the Executive Summary: each period's provider error rate with its count and
+    /// interval, the unattributed errors, our own failures left out of the denominator, the re-runs and the runs
+    /// counted, with a note defining the numerator and the denominator; nothing on a sheet without
+    /// <c>availability.*</c> facts (Protocol V1, and documents written before them).
+    /// </summary>
+    private static void ChatAvailabilityTable(StringBuilder sb, Context ctx)
+    {
+        if (!ctx.Sheet.Facts.Any(f => f.Key.StartsWith("availability.", StringComparison.Ordinal))) return;
+
+        string Value(string period, string measure)
+        {
+            string key = "availability." + period + "." + measure;
+            return IsAvailable(ctx, key) ? D(ctx, key) : NoValue;
+        }
+
+        var rows = new List<(string Measure, string Key)>
+        {
+            ("Provider error rate", "providerErrorRate"),
+            ("Unattributed errors", "unattributedErrors"),
+            ("Our-side failures (excluded)", "ourSideFailures"),
+            ("Re-runs needed", "reruns"),
+            ("Runs counted", "recordedRuns"),
+            ("Availability-only runs", "availabilityOnlyRuns")
+        };
+
+        Line(sb, "**Provider availability**");
+        Line(sb);
+        Line(sb, "| Measure | Baseline | Comparison |");
+        Line(sb, "|---|---|---|");
+        foreach (var (measure, key) in rows)
+        {
+            Line(sb, "| " + Cell(measure) + " | " + Cell(Value("baseline", key)) + " | " + Cell(Value("comparison", key)) + " |");
+        }
+        Line(sb);
+        Line(sb, "*Provider errors are candidate attempts that failed at the provider (overloaded, server errors, timeouts and broken streams) "
+            + "among valid attempts, as observed in GnollBench runs. Attempts that failed on our side are left out of the denominator; "
+            + "unattributed errors, rate limits and transport failures that cannot be told apart, are counted apart and never as the provider's. "
+            + "Failed, canceled and superseded runs of a period count here only. The levels describe each period; the verdict table says whether the rate changed.*");
         Line(sb);
     }
 
@@ -466,6 +523,8 @@ public static partial class BenchmarkReportPackRenderer
             "improved" => "Better than before, beyond the margin" + margin + graded,
             "more work" => "More work per turn than before, beyond the margin" + margin + graded,
             "less work" => "Less work per turn than before, beyond the margin" + margin + graded,
+            "more provider errors" => "More provider errors observed in GnollBench runs than before, beyond the margin" + margin + graded,
+            "fewer provider errors" => "Fewer provider errors observed in GnollBench runs than before, beyond the margin" + margin + graded,
             "equivalent" => "The same as before, within the margin" + margin + graded,
             "changed, negligible" => "A change too small to matter, inside the margin" + margin + graded,
             "inconclusive" => IsAvailable(ctx, "endpoint." + id + ".mde")
@@ -987,14 +1046,18 @@ public static partial class BenchmarkReportPackRenderer
     {
         Heading(sb, "## How to read this");
 
+        bool availability = ChatEndpointIds(ctx).Contains("P6", StringComparer.Ordinal);
         if (ctx.Document.Audience == BenchmarkReportAudience.ExecutiveSummary)
         {
             Line(sb, "- **What was measured.** The Overseer chat with " + ctx.Sheet.SubjectLabel + ": the model together with the chat "
                 + "system prompt, the tools, the knowledge corpora and the agent loop, run on the same benchmark suites in a baseline "
                 + "period and a later comparison period.");
-            Line(sb, "- **The five measures.** *Quality* is the Intelligence Index of the graded answers; *time to first answer text* is how "
+            Line(sb, "- **The " + (availability ? "six" : "five") + " measures.** *Quality* is the Intelligence Index of the graded answers; *time to first answer text* is how "
                 + "long a player waits before the answer starts; *answer streaming rate* is how fast it then appears; *work per turn* is the "
-                + "output tokens per answer; *cost per question* is US dollars per question at one price card.");
+                + "output tokens per answer; *cost per question* is US dollars per question at one price card"
+                + (availability
+                    ? "; *provider error rate* is the share of the model's requests that failed at the provider, as observed in the benchmark runs."
+                    : "."));
             Line(sb, "- **Grades.** *Established* means fit to publish; *Indicated*, a decisive result with a caveat; *Not established*, no finding.");
             Line(sb, "- **Verdicts.** *Equivalent* means the same as before within the endpoint's margin; *degraded* or *improved* a "
                 + "change beyond it; *inconclusive* that these runs cannot tell a change from no change, and the smallest detectable "
@@ -1015,7 +1078,8 @@ public static partial class BenchmarkReportPackRenderer
         }
         Line(sb, "- **Verdicts.** Each verdict is read against the endpoint's equivalence margin, set by the protocol: *equivalent* when "
             + "the 90 % interval lies inside the margin; *degraded* or *improved* (*more work* or *less work* for an endpoint that "
-            + "counts work) when the 95 % interval lies wholly beyond the margin on one side; *changed, negligible* when the 95 % "
+            + "counts work" + (availability ? ", *more provider errors* or *fewer provider errors* for the provider error rate" : string.Empty)
+            + ") when the 95 % interval lies wholly beyond the margin on one side; *changed, negligible* when the 95 % "
             + "interval excludes zero but lies inside the margin; *inconclusive* otherwise, when the runs cannot tell a change from "
             + "no change. The smallest detectable change, ± the minimum detectable effect, is the smallest change these runs could have detected.");
         Line(sb, "- **Evidence grades.** *Established*: a decisive verdict, every robustness check passed, the minimum sample met, "
@@ -1025,6 +1089,12 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb, "- **Hours.** " + ChatHoursSentence(ctx));
         Line(sb, "- **Attribution.** The total change is reported first; the attribution then grades where it came from: our change, "
             + "our infrastructure, the provider's side, or undetermined. An attribution never goes beyond its grade.");
+        if (availability)
+        {
+            Line(sb, "- **Provider availability.** The provider error rate counts the candidate attempts that failed at the provider among "
+                + "valid attempts, as observed in GnollBench runs, in percentage points; attempts that failed on our side are left out, and "
+                + "failed, canceled or superseded runs of a period count for it as well. It says how often errors occurred, never why.");
+        }
         if (ctx.Sheet.Peers.Count > 0)
         {
             Line(sb, "- **Control models.** A change the model under test shares with a control model is told apart from a change "
@@ -1182,7 +1252,8 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// A not-computed reason in plain words, by the endpoint's <c>notComputedKind</c>: a grading change on
-    /// quality, or periods run at different hours; null for any other kind, and on a sheet without kinds.
+    /// quality, periods run at different hours (for the provider error rate, attempts at different hours), or
+    /// attempts not recorded; null for any other kind, and on a sheet without kinds.
     /// </summary>
     private static string? ChatPlainReason(Context ctx, string id)
     {
@@ -1191,6 +1262,15 @@ public static partial class BenchmarkReportPackRenderer
         {
             return "Quality cannot be compared yet: the way answers are graded changed between the periods. "
                 + "Re-grading both periods with one grader makes it comparable.";
+        }
+        if (id == "P6" && kind == "noCommonStratum")
+        {
+            return "Provider errors cannot be compared: the two periods' attempts do not share enough hours of the week, "
+                + "and how often a provider fails varies with the time of day.";
+        }
+        if (kind == "notRecorded")
+        {
+            return "Provider errors cannot be compared: a period's runs were made before Overseer recorded each attempt.";
         }
         if (kind == "noCommonStratum")
         {

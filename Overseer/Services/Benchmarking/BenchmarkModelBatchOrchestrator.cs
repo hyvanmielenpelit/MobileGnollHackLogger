@@ -83,6 +83,17 @@ public sealed record BenchmarkModelBatchLaunch
     public static BenchmarkModelBatchLaunch Refused(BenchmarkModelBatchLaunchKind kind, string? error) => new() { Kind = kind, Error = error };
 }
 
+/// <summary>
+/// What a relaunched member's child replaces, from the member's superseded child: the single run, or
+/// the series' member runs by 1-based index, or the battery run's member runs by slot.
+/// </summary>
+public sealed record BenchmarkModelBatchChildReplacement
+{
+    public BenchmarkRunReplacement? Run { get; init; }
+    public IReadOnlyDictionary<int, BenchmarkRunReplacement>? SeriesMembers { get; init; }
+    public IReadOnlyDictionary<(int SuiteIndex, int Round), BenchmarkRunReplacement>? BatteryMembers { get; init; }
+}
+
 /// <summary>A member's run, series or battery run as the batch reads it.</summary>
 public sealed record BenchmarkModelBatchChildState
 {
@@ -460,13 +471,17 @@ public class BenchmarkModelBatchOrchestrator
     // Child operations, overridable so a test runs a batch without a model
     // ---------------------------------------------------------------------------------------
 
-    /// <summary>Launches a member: a single run, a series or a battery run, under the batch claim.</summary>
+    /// <summary>
+    /// Launches a member: a single run, a series or a battery run, under the batch claim.
+    /// <paramref name="replaces"/> links the new child to the member's superseded one, run to run.
+    /// </summary>
     protected virtual async Task<BenchmarkModelBatchLaunch> LaunchChildAsync(
         IServiceProvider services,
         BenchmarkModelBatchRun batch,
         BenchmarkModelBatchMember member,
         StartBenchmarkRunRequest request,
         string batchOwner,
+        BenchmarkModelBatchChildReplacement? replaces,
         CancellationToken ct)
     {
         string? userId = batch.CreatedByUserId;
@@ -479,7 +494,7 @@ public class BenchmarkModelBatchOrchestrator
                 RunsPerSuite = Math.Max(1, batch.RunsPerModel),
                 AllowCapWait = batch.AllowCapWait,
                 Run = request
-            }, userId, ct, batchOwner);
+            }, userId, ct, batchOwner, replaces?.BatteryMembers);
 
             return result.Started
                 ? new BenchmarkModelBatchLaunch { Kind = BenchmarkModelBatchLaunchKind.Started, BatteryRunId = result.BatteryRunId }
@@ -490,7 +505,7 @@ public class BenchmarkModelBatchOrchestrator
 
         if (batch.RunsPerModel >= 2)
         {
-            var result = await _seriesOrchestrator.StartSeriesAsync(request, userId, ct, batchOwner);
+            var result = await _seriesOrchestrator.StartSeriesAsync(request, userId, ct, batchOwner, replaces?.SeriesMembers);
             return result.Started
                 ? new BenchmarkModelBatchLaunch { Kind = BenchmarkModelBatchLaunchKind.Started, SeriesId = result.SeriesId }
                 : BenchmarkModelBatchLaunch.Refused(
@@ -499,7 +514,8 @@ public class BenchmarkModelBatchOrchestrator
         }
 
         var launcher = services.GetRequiredService<BenchmarkRunLauncher>();
-        var launch = await launcher.CreateAndLaunchRunAsync(request, userId, ct: ct, batchOwner: batchOwner);
+        var launch = await launcher.CreateAndLaunchRunAsync(request, userId, ct: ct, batchOwner: batchOwner,
+            replacesRunId: replaces?.Run?.RunId, replacementCause: replaces?.Run?.Cause);
         return launch.Started
             ? new BenchmarkModelBatchLaunch { Kind = BenchmarkModelBatchLaunchKind.Started, RunId = launch.RunId }
             : BenchmarkModelBatchLaunch.Refused(
@@ -834,7 +850,8 @@ public class BenchmarkModelBatchOrchestrator
                     member.ErrorMessage = null;
                     await db.SaveChangesAsync(ct);
 
-                    var launch = await LaunchChildAsync(scope.ServiceProvider, batch, member, request, owner, ct);
+                    var replaces = await ChildReplacementAsync(db, batch, member, ct);
+                    var launch = await LaunchChildAsync(scope.ServiceProvider, batch, member, request, owner, replaces, ct);
                     if (!launch.Started)
                     {
                         string label = MemberLabel(member);
@@ -1571,7 +1588,7 @@ public class BenchmarkModelBatchOrchestrator
             switch (mode)
             {
                 case BenchmarkModelBatchResumeMode.RerunUnderCurrentInstrument:
-                    SupersedeLinks(batch, batch.Members);
+                    SupersedeLinks(batch, batch.Members, instrumentRerun: true);
                     foreach (var member in batch.Members)
                     {
                         ResetMember(member);
@@ -1703,6 +1720,10 @@ public class BenchmarkModelBatchOrchestrator
         }
     }
 
+    /// <summary>
+    /// One superseded child of a member. <c>InstrumentRerun</c>: superseded by
+    /// <see cref="BenchmarkModelBatchResumeMode.RerunUnderCurrentInstrument"/>.
+    /// </summary>
     private sealed record SupersededLink(
         long MemberId,
         int OrderIndex,
@@ -1711,32 +1732,98 @@ public class BenchmarkModelBatchOrchestrator
         long? RunId,
         long? SeriesId,
         long? BatteryRunId,
-        DateTime SupersededAtUtc);
+        DateTime SupersededAtUtc,
+        bool InstrumentRerun = false);
+
+    private static List<SupersededLink> ReadSupersededLinks(BenchmarkModelBatchRun batch)
+    {
+        if (string.IsNullOrWhiteSpace(batch.SupersededMembersJson)) return new List<SupersededLink>();
+
+        try
+        {
+            return JsonSerializer.Deserialize<List<SupersededLink>>(batch.SupersededMembersJson, JsonOptions) ?? new List<SupersededLink>();
+        }
+        catch (JsonException)
+        {
+            return new List<SupersededLink>();
+        }
+    }
 
     /// <summary>Appends the members' current links to the batch's superseded record.</summary>
-    private static void SupersedeLinks(BenchmarkModelBatchRun batch, IEnumerable<BenchmarkModelBatchMember> members)
+    private static void SupersedeLinks(
+        BenchmarkModelBatchRun batch, IEnumerable<BenchmarkModelBatchMember> members, bool instrumentRerun = false)
     {
-        var record = new List<SupersededLink>();
-        if (!string.IsNullOrWhiteSpace(batch.SupersededMembersJson))
-        {
-            try
-            {
-                record = JsonSerializer.Deserialize<List<SupersededLink>>(batch.SupersededMembersJson, JsonOptions) ?? record;
-            }
-            catch (JsonException)
-            {
-            }
-        }
+        var record = ReadSupersededLinks(batch);
 
         var now = DateTime.UtcNow;
         foreach (var member in members)
         {
             if (member.BenchmarkRunId == null && member.BenchmarkRunSeriesId == null && member.BenchmarkBatteryRunId == null) continue;
             record.Add(new SupersededLink(member.Id, member.OrderIndex, member.TestedModelConfigurationId, member.Status.ToString(),
-                member.BenchmarkRunId, member.BenchmarkRunSeriesId, member.BenchmarkBatteryRunId, now));
+                member.BenchmarkRunId, member.BenchmarkRunSeriesId, member.BenchmarkBatteryRunId, now, instrumentRerun));
         }
 
         batch.SupersededMembersJson = record.Count == 0 ? null : JsonSerializer.Serialize(record, JsonOptions);
+    }
+
+    /// <summary>
+    /// What a member's next child replaces: from the member's newest superseded link, its single run, or
+    /// its series' member run at each index, or its battery run's member run in each slot (the live one,
+    /// else the newest superseded). Null when the member has no superseded child.
+    /// </summary>
+    internal static async Task<BenchmarkModelBatchChildReplacement?> ChildReplacementAsync(
+        ApplicationDbContext db, BenchmarkModelBatchRun batch, BenchmarkModelBatchMember member, CancellationToken ct = default)
+    {
+        var link = ReadSupersededLinks(batch).LastOrDefault(l => l.MemberId == member.Id);
+        if (link == null) return null;
+
+        if (link.RunId is long runId)
+        {
+            return new BenchmarkModelBatchChildReplacement
+            {
+                Run = await BenchmarkReplacementCauses.ReplacementAsync(db, runId, link.InstrumentRerun, ct: ct)
+            };
+        }
+
+        if (link.SeriesId is long seriesId)
+        {
+            var runs = await db.BenchmarkRuns
+                .AsNoTracking()
+                .Where(r => r.RunSeriesId == seriesId && r.RunSeriesIndex != null)
+                .Select(r => new { r.Id, Index = r.RunSeriesIndex!.Value })
+                .ToListAsync(ct);
+
+            var byIndex = runs
+                .GroupBy(r => r.Index)
+                .ToDictionary(g => g.Key, g => g.Max(r => r.Id));
+
+            return new BenchmarkModelBatchChildReplacement
+            {
+                SeriesMembers = await BenchmarkReplacementCauses.ReplacementsAsync(db, byIndex, link.InstrumentRerun, ct)
+            };
+        }
+
+        if (link.BatteryRunId is long batteryRunId)
+        {
+            var members = await db.BenchmarkBatteryRunMembers
+                .AsNoTracking()
+                .Where(m => m.BenchmarkBatteryRunId == batteryRunId)
+                .Select(m => new { m.Id, m.BenchmarkRunId, m.SuiteIndex, m.Round, m.Superseded, m.AddedAtUtc })
+                .ToListAsync(ct);
+
+            var bySlot = members
+                .GroupBy(m => (m.SuiteIndex, m.Round))
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.OrderBy(m => m.Superseded).ThenByDescending(m => m.AddedAtUtc).ThenByDescending(m => m.Id).First().BenchmarkRunId);
+
+            return new BenchmarkModelBatchChildReplacement
+            {
+                BatteryMembers = await BenchmarkReplacementCauses.ReplacementsAsync(db, bySlot, link.InstrumentRerun, ct)
+            };
+        }
+
+        return null;
     }
 
     /// <summary>Sets a member's status and error from its child's; the finish time is the caller's.</summary>

@@ -18,6 +18,7 @@ import {
   ccEventPoints,
   ccEventTimeline,
   ccFlushFreshness,
+  ccProtocol,
   ccRunRow,
   ccRunRows,
   ccTimeline,
@@ -475,19 +476,46 @@ describe('CcAnalysisWizardComponent', () => {
       expect(textOf(el.querySelector('.cc-wiz-overrides-error'))).toBe('α must lie strictly between 0 and 0.5.');
     });
 
-    it('shows Protocol V1 open in its tab, its endpoints as a list, and the overrides in a disclosure', () => {
+    it('shows Protocol V2 for a new analysis open in its tab, its endpoints as a list, and the overrides in a disclosure', () => {
       const panel = el.querySelector<HTMLElement>('#cc-an-side-panel-protocol')!;
       expect(panel.querySelector('table')).toBeNull();
+      expect(textOf(panel.querySelector('legend'))).toBe('Protocol V2');
+      expect(panel.querySelector('.cc-wiz-protocol-note')).toBeNull();
       const rows = Array.from(panel.querySelectorAll('dl.cc-an-endpoints > div'))
         .map(row => [textOf(row.querySelector('dt')), textOf(row.querySelector('dd'))]);
       expect(rows).toEqual([
         ['P1 Quality', '±3 index points'], ['P2 Time to first answer text', '±15 %'], ['P3 Answer streaming rate', '±10 %'],
-        ['P4 Work per turn', '±15 %'], ['P5 Cost per question', '±10 %']
+        ['P4 Work per turn', '±15 %'], ['P5 Cost per question', '±10 %'], ['P6 Provider error rate', '±1.0 percentage point']
       ]);
-      expect(textOf(panel.querySelector('.cc-wiz-protocol-facts'))).toContain('0.05, Holm-adjusted across P1–P5');
+      expect(textOf(panel.querySelector('.cc-wiz-protocol-facts'))).toContain('0.05, Holm-adjusted across P1–P6');
+      expect(textOf(panel.querySelector('.cc-wiz-protocol-facts [data-fact="p6"] dd')))
+        .toBe('3 runs per period with attempts in a common time stratum; a stratum is common with 30 valid attempts in each period');
       const overrides = panel.querySelector<HTMLDetailsElement>('details.gh-disclosure.cc-wiz-overrides')!;
       expect(overrides.open).toBe(false);
       expect(overrides.querySelector('#cc-wiz-alpha')).not.toBeNull();
+      expect(textOf(overrides.querySelector('label[for="cc-wiz-margin-P6"]'))).toBe('P6 margin (percentage points)');
+    });
+
+    it('never makes a run listed for provider availability only a unit of the periods', () => {
+      fixture.componentRef.setInput('rows', [
+        ...ccRunRows(),
+        ccRunRow(107, '2026-09-21T08:00:00Z', {
+          status: 'failed', availabilityOnly: true,
+          eligibility: [{ axis: 'availability', eligible: true, segment: 1, reason: null }]
+        })
+      ]);
+      fixture.detectChanges();
+      expect(component.units.map(unit => unit.id)).not.toContain(107);
+      expect(component.buildRequest()!.comparisonRunIds).toEqual([104, 105, 106]);
+    });
+
+    it('sends a P6 margin override in percentage points', () => {
+      const p6 = el.querySelector<HTMLInputElement>('#cc-wiz-margin-P6')!;
+      p6.value = '1.5';
+      p6.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      expect(component.buildRequest()!.protocolOverrides).toEqual({ margins: { P6: 1.5 } });
+      expect(fact('protocol')).toBe('V2 with overrides: P6 margin 1.5 percentage points');
     });
 
     it('splits before and after a composite Overseer event, with every run on each side', () => {
@@ -711,11 +739,12 @@ describe('CcAnalysisWizardComponent', () => {
       expect(fact('controls')).toBe('4 of 4 matched controls checked');
       expect(fact('grading')).toBe('Native grades');
       expect(fact('pooling')).toBe('Off');
-      expect(fact('protocol')).toBe('V1');
+      expect(fact('protocol')).toBe('V2');
 
-      // Run 103 has no call telemetry, so P2 and P3 have two baseline runs in the common stratum.
+      // Run 103 has no call telemetry, so P2 and P3 have two baseline runs in the common stratum; no run
+      // recorded provider attempts, so P6 is not computable.
       expect(endpointRows()).toEqual([
-        ['P1', 'meets'], ['P2', 'belowMinimum'], ['P3', 'belowMinimum'], ['P4', 'meets'], ['P5', 'meets']
+        ['P1', 'meets'], ['P2', 'belowMinimum'], ['P3', 'belowMinimum'], ['P4', 'meets'], ['P5', 'meets'], ['P6', 'notComputed']
       ]);
       expect(Array.from(el.querySelectorAll<HTMLElement>('li.cc-ap-note')).map(item => item.getAttribute('data-kind')))
         .toEqual(['events', 'controls']);
@@ -733,7 +762,7 @@ describe('CcAnalysisWizardComponent', () => {
       alpha.dispatchEvent(new Event('input'));
       el.querySelector<HTMLInputElement>('#cc-wiz-relaxed')!.click();
       chooseRule('annotation');
-      expect(fact('protocol')).toBe('V1 with overrides: P2 margin 20 %, α 0.1');
+      expect(fact('protocol')).toBe('V2 with overrides: P2 margin 20 %, α 0.1');
       expect(fact('pooling')).toBe('On — grades capped at Indicated');
       expect(fact('rule')).toBe('Before vs after an annotation · A1 (2026-09-20)');
     });
@@ -821,6 +850,8 @@ describe('CcAnalysisWizardComponent', () => {
         relaxedPooling: false,
         controlRunIds: [202, 205, 206],
         protocolOverrides: { margins: { P2: 0.2 } },
+        // A new analysis asks for the latest protocol and repeats none.
+        protocolVersion: 'V2',
         // Every request records the step-1 selection, the default one included.
         runSelection: {
           rangeLabel: 'All dates', rangeFromUtc: null, rangeToUtc: null, firstRunId: null, lastRunId: null, leftOutRunIds: []
@@ -1148,6 +1179,48 @@ describe('CcAnalysisWizardComponent', () => {
       component.showResult(ccAnalysisResult());
       expect(component.marginOverrides).toEqual({});
       expect(component.alphaOverride).toBe('');
+    });
+
+    it('keeps a stored V1 analysis\'s protocol when its settings are analyzed again, and names the analysis it repeats', () => {
+      component.showResult(ccAnalysisResult());
+      fixture.detectChanges();
+      expect(component.protocolVersion).toBe('V1');
+      const panel = el.querySelector<HTMLElement>('#cc-an-side-panel-protocol')!;
+      expect(textOf(panel.querySelector('legend'))).toBe('Protocol V1');
+      expect(Array.from(panel.querySelectorAll('dl.cc-an-endpoints > div')).map(row => row.getAttribute('data-endpoint')))
+        .toEqual(['P1', 'P2', 'P3', 'P4', 'P5']);
+      expect(textOf(panel.querySelector('.cc-wiz-protocol-facts'))).toContain('Holm-adjusted across P1–P5');
+      expect(panel.querySelector('[data-fact="p6"]')).toBeNull();
+      expect(el.querySelector('#cc-wiz-margin-P6')).toBeNull();
+      expect(textOf(panel.querySelector('.cc-wiz-protocol-note')))
+        .toBe('Kept from analysis #7, which Analyze again repeats. Setting the periods anew starts a new analysis under Protocol V2.');
+      expect(Array.from(el.querySelectorAll<HTMLElement>('li.cc-ap-endpoint')).map(row => row.getAttribute('data-endpoint')))
+        .toEqual(['P1', 'P2', 'P3', 'P4', 'P5']);
+
+      const request = component.buildRequest()!;
+      expect(request.protocolVersion).toBe('V1');
+      expect(request.reanalysisOfAnalysisId).toBe(7);
+
+      // Setting the periods anew is a new analysis, under the latest protocol.
+      press(102, 'baselineLastId');
+      fixture.detectChanges();
+      expect(component.protocolVersion).toBe('V2');
+      expect(textOf(panel.querySelector('legend'))).toBe('Protocol V2');
+      const next = component.buildRequest()!;
+      expect(next.protocolVersion).toBe('V2');
+      expect(next.reanalysisOfAnalysisId).toBeUndefined();
+    });
+
+    it('keeps a stored V2 analysis\'s protocol on Analyze again, and asks for none on an unsaved result', () => {
+      component.showResult(ccAnalysisResult({ protocol: { ...ccProtocol(), protocolVersion: 'V2', label: 'V2' } }));
+      fixture.detectChanges();
+      expect(component.buildRequest()).toEqual(expect.objectContaining({ protocolVersion: 'V2', reanalysisOfAnalysisId: 7 }));
+      expect(el.querySelector('.cc-wiz-protocol-note')).toBeNull();
+
+      component.showResult(ccAnalysisResult({ analysisId: null }));
+      fixture.detectChanges();
+      expect(component.reanalysis).toBeNull();
+      expect(component.buildRequest()!.reanalysisOfAnalysisId).toBeUndefined();
     });
 
     it('shows the results without the reports, handing them every loaded run and the tagged annotations', () => {

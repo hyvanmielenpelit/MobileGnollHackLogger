@@ -618,6 +618,115 @@ public class ChatConsistencyStatisticsTests
         Assert.Null(ChatConsistencyStatistics.FlipRate(Array.Empty<(bool, bool)>()));
     }
 
+    // --- Provider availability (P6) ------------------------------------------------------------
+
+    private static IReadOnlyList<StratifiedObservation> Attempts(params (int Stratum, double Value)[] values)
+        => values.Select(v => new StratifiedObservation(v.Stratum, v.Value)).ToList();
+
+    [Fact]
+    public void StratifiedShift_FixedStrata_UsesOnlyThoseStrata()
+    {
+        // Stratum 0: baseline mean 25, comparison 50; stratum 1 (left out): 0 against 50.
+        var baseline = Attempts((0, 0), (0, 100), (0, 0), (0, 0), (1, 0), (1, 0));
+        var comparison = Attempts((0, 100), (0, 0), (1, 100), (1, 0));
+
+        var free = ChatConsistencyStatistics.StratifiedShift(baseline, comparison, BootstrapStatistic.Mean);
+        var fixedStrata = ChatConsistencyStatistics.StratifiedShift(baseline, comparison, BootstrapStatistic.Mean, new[] { 0 });
+
+        Assert.Equal((25.0 + 50.0) / 2.0, free.Shift!.Value, 9);
+        Assert.Equal(25.0, fixedStrata.Shift!.Value, 9);
+        Assert.Equal(new[] { 0 }, fixedStrata.StrataUsed);
+        Assert.Equal(4.0 / 10.0, fixedStrata.ExcludedShare, 9);
+    }
+
+    [Fact]
+    public void StratifiedShift_FixedStratumMissingFromAPeriod_IsUndefined()
+    {
+        var baseline = Attempts((0, 0), (1, 100));
+        var comparison = Attempts((0, 100));
+
+        var result = ChatConsistencyStatistics.StratifiedShift(baseline, comparison, BootstrapStatistic.Mean, new[] { 0, 1 });
+
+        Assert.Null(result.Shift);
+    }
+
+    [Fact]
+    public void StratifiedRunBootstrap_MeanOfZeroHundredAttempts_IsTheRateDifferenceInPercentagePoints_OverFixedStrata()
+    {
+        // Baseline units: 1 of 4 and 0 of 4 provider errors in stratum 0; comparison: 2 of 4. Stratum 1 is not fixed.
+        var baseline = new List<IReadOnlyList<StratifiedObservation>>
+        {
+            Attempts((0, 0), (0, 0), (0, 100), (0, 0), (1, 0)),
+            Attempts((0, 0), (0, 0), (0, 0), (0, 0))
+        };
+        var comparison = new List<IReadOnlyList<StratifiedObservation>>
+        {
+            Attempts((0, 100), (0, 100), (0, 0), (0, 0), (1, 100))
+        };
+
+        var (point, distribution) = ChatConsistencyResampling.StratifiedRunBootstrap(
+            baseline, comparison, BootstrapStatistic.Mean, 500, 7, new[] { 0 });
+
+        Assert.Equal(50.0 - 12.5, point.Shift!.Value, 9);
+        Assert.NotNull(distribution);
+        Assert.Equal(37.5, distribution!.Estimate, 9);
+        Assert.All(distribution.Replicates, v => Assert.InRange(v, 25.0, 50.0));
+    }
+
+    [Fact]
+    public void StratifiedRunBootstrap_HodgesLehmannCallers_KeepTheirStatistic()
+    {
+        var baseline = new List<IReadOnlyList<StratifiedObservation>> { Attempts((0, 1.0), (0, 2.0)), Attempts((0, 3.0)) };
+        var comparison = new List<IReadOnlyList<StratifiedObservation>> { Attempts((0, 4.0), (0, 6.0)) };
+
+        var (point, _) = ChatConsistencyResampling.StratifiedRunBootstrap(baseline, comparison, BootstrapStatistic.HodgesLehmann, 200, 1);
+
+        Assert.Equal(ChatConsistencyStatistics.HodgesLehmannShift(new[] { 1.0, 2.0, 3.0 }, new[] { 4.0, 6.0 })!.Value, point.Shift!.Value, 12);
+    }
+
+    [Fact]
+    public void LaneyPPrimeLimits_KnownValues()
+    {
+        // p̄ = 6/300 = 0.02; σ_p = √(0.02·0.98/100) = 0.014; z = −5/7, 5/7, 0; MR̄ = (10/7 + 5/7)/2 = 15/14;
+        // σ_Z = (15/14)/1.128; limits 0.02 ± 3·0.014·σ_Z, the lower clipped at 0.
+        var limits = ChatConsistencyStatistics.LaneyPPrimeLimits(new[] { (1, 100), (3, 100), (2, 100) }, 100);
+
+        double sigmaZ = 15.0 / 14.0 / 1.128;
+        Assert.NotNull(limits);
+        Assert.Equal(0.02, limits!.Center, 12);
+        Assert.Equal(sigmaZ, limits.SigmaZ, 9);
+        Assert.Equal(0.02 + 3.0 * 0.014 * sigmaZ, limits.Upper, 9);
+        Assert.Equal(0.0, limits.Lower, 12);
+    }
+
+    [Fact]
+    public void LaneyPPrimeLimits_OneBaselineUnitOrNoErrors_IsThePlainPChart()
+    {
+        var one = ChatConsistencyStatistics.LaneyPPrimeLimits(new[] { (10, 100) }, 400);
+        var none = ChatConsistencyStatistics.LaneyPPrimeLimits(new[] { (0, 100), (0, 50) }, 100);
+
+        Assert.Equal(1.0, one!.SigmaZ, 12);
+        Assert.Equal(0.1 + 3.0 * Math.Sqrt(0.1 * 0.9 / 400), one.Upper, 12);
+        Assert.Equal(0.1 - 3.0 * Math.Sqrt(0.1 * 0.9 / 400), one.Lower, 12);
+        Assert.Equal(0.0, none!.Center, 12);
+        Assert.Equal(0.0, none.Upper, 12);
+        Assert.Null(ChatConsistencyStatistics.LaneyPPrimeLimits(Array.Empty<(int, int)>(), 10));
+        Assert.Throws<ArgumentOutOfRangeException>(() => ChatConsistencyStatistics.LaneyPPrimeLimits(new[] { (1, 10) }, 0));
+    }
+
+    [Fact]
+    public void RateDifferenceInDifferences_IsTheChangeOfPooledRatesInPercentagePoints()
+    {
+        var did = ChatConsistencyStatistics.RateDifferenceInDifferences(
+            new[] { (1, 100) }, new[] { (3, 100) }, new[] { (2, 100) }, new[] { (2, 100) }, 300, 3);
+        var own = ChatConsistencyStatistics.RateDifference(new[] { (2, 100) }, new[] { (4, 100) }, 300, 3);
+
+        Assert.Equal(2.0, did!.Estimate, 9);
+        Assert.Equal((2.0, 2.0), (Math.Round(did.Interval95.Lower, 9), Math.Round(did.Interval95.Upper, 9)));
+        Assert.Equal(2.0, own!.Estimate, 9);
+        Assert.Null(ChatConsistencyStatistics.RateDifference(new[] { (0, 0) }, new[] { (1, 10) }));
+    }
+
     // --- Distributions --------------------------------------------------------------------------
 
     [Fact]

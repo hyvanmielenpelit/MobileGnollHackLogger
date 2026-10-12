@@ -25,7 +25,10 @@ public enum ChatConsistencyAxis
     Work = 3,
 
     /// <summary>The candidate's cost.</summary>
-    Cost = 4
+    Cost = 4,
+
+    /// <summary>Provider availability: the outcome classes of the provider attempt ledger (<see cref="BenchmarkRun.ProviderLedgerVersion"/>).</summary>
+    Availability = 5
 }
 
 /// <summary>Why two consecutive runs of one subject were measured differently.</summary>
@@ -47,17 +50,23 @@ public enum MeasurementChangeKind
     CandidateAccounting = 4,
 
     /// <summary>The pricing snapshot differs. Always bridged by repricing with one rate card.</summary>
-    Pricing = 5
+    Pricing = 5,
+
+    /// <summary>The harness changed what counts as a provider error. Breaks availability, never bridged.</summary>
+    ProviderErrorAccounting = 6
 }
 
-/// <summary>Why a run is left out of a speed measure while kept for the others.</summary>
+/// <summary>Why a run is left out of a speed or availability measure while kept for the others.</summary>
 public enum SpeedExclusionReason
 {
     /// <summary>The run answered questions concurrently (<see cref="BenchmarkRun.MaxParallelQuestionsUsed"/> above 1).</summary>
     ParallelQuestions = 0,
 
     /// <summary>The run recorded no per-call telemetry, so it has no telemetry latency.</summary>
-    NoCallTelemetry = 1
+    NoCallTelemetry = 1,
+
+    /// <summary>The run recorded no provider attempt ledger (started before harness 56), so it has no availability.</summary>
+    NoProviderLedger = 2
 }
 
 /// <summary>
@@ -102,7 +111,8 @@ public sealed record RunSegments(
     int? SpeedTelemetry,
     int? SpeedLegacy,
     int? Work,
-    int? Cost)
+    int? Cost,
+    int? Availability)
 {
     /// <summary>The segment on <paramref name="axis"/>, or null when the run is excluded from it.</summary>
     public int? SegmentOf(ChatConsistencyAxis axis) => axis switch
@@ -112,6 +122,7 @@ public sealed record RunSegments(
         ChatConsistencyAxis.SpeedLegacy => SpeedLegacy,
         ChatConsistencyAxis.Work => Work,
         ChatConsistencyAxis.Cost => Cost,
+        ChatConsistencyAxis.Availability => Availability,
         _ => null
     };
 }
@@ -297,6 +308,7 @@ public static class ChatConsistencyComparability
     private static readonly IReadOnlyList<ChatConsistencyAxis> WorkAndCostAxes =
         new[] { ChatConsistencyAxis.Work, ChatConsistencyAxis.Cost };
     private static readonly IReadOnlyList<ChatConsistencyAxis> CostAxes = new[] { ChatConsistencyAxis.Cost };
+    private static readonly IReadOnlyList<ChatConsistencyAxis> AvailabilityAxes = new[] { ChatConsistencyAxis.Availability };
 
     // --- Subject ----------------------------------------------------------------------------
 
@@ -395,14 +407,17 @@ public static class ChatConsistencyComparability
     /// <see cref="HarnessImpact.CandidateAccounting"/>. Breaks work and cost, never bridged.</item>
     /// <item><b>Pricing</b> — the pricing snapshot differs. Reported, always bridged by repricing
     /// with one rate card, never segments.</item>
+    /// <item><b>ProviderErrorAccounting</b> — the ledger carries
+    /// <see cref="HarnessImpact.ProviderErrorAccounting"/>. Breaks availability, never bridged.</item>
     /// </list>
     ///
     /// <para>A run's harness is its <see cref="BenchmarkRun.HarnessVersion"/> together with any
     /// differing <see cref="BenchmarkRun.RerunHarnessVersion"/>; the ledger impact between two runs is
     /// the union over every pair of their versions, and a null or unknown version counts as every
     /// change. A run with <see cref="BenchmarkRun.MaxParallelQuestionsUsed"/> above 1 is excluded from
-    /// both speed axes, and a run with no call telemetry from telemetry speed; both stay on every
-    /// other axis, and an exclusion never moves a segment boundary.</para>
+    /// both speed axes, a run with no call telemetry from telemetry speed, and a run without a provider
+    /// attempt ledger from availability; each stays on every other axis, and an exclusion never moves a
+    /// segment boundary.</para>
     /// </summary>
     /// <param name="runs">The runs to assess, of any number of subjects.</param>
     /// <param name="commonGraderCovers">Ids of runs whose answers one common grader configuration re-graded.</param>
@@ -470,7 +485,8 @@ public static class ChatConsistencyComparability
                     Segment(ChatConsistencyAxis.SpeedTelemetry),
                     Segment(ChatConsistencyAxis.SpeedLegacy),
                     Segment(ChatConsistencyAxis.Work),
-                    Segment(ChatConsistencyAxis.Cost)));
+                    Segment(ChatConsistencyAxis.Cost),
+                    Segment(ChatConsistencyAxis.Availability)));
 
                 previous = run;
             }
@@ -576,6 +592,13 @@ public static class ChatConsistencyComparability
                 false, Sentence(new[] { harnessChange + " changed how candidate tokens or cost are counted" }));
         }
 
+        if (harness.HasFlag(HarnessImpact.ProviderErrorAccounting))
+        {
+            yield return new MeasurementBoundary(
+                subject, previous.Id, run.Id, run.StartedAtUtc, MeasurementChangeKind.ProviderErrorAccounting, AvailabilityAxes,
+                false, Sentence(new[] { harnessChange + " changed what counts as a provider error" }));
+        }
+
         // --- Pricing ---
         if (!SameKey(before, after, BenchmarkComparabilityKey.PricingSnapshotKey))
         {
@@ -600,6 +623,13 @@ public static class ChatConsistencyComparability
             list.Add(new SpeedExclusion(
                 run.Id, SpeedExclusionReason.NoCallTelemetry, TelemetrySpeedAxes,
                 "No per-call telemetry recorded."));
+        }
+
+        if (!run.ProviderLedgerVersion.HasValue)
+        {
+            list.Add(new SpeedExclusion(
+                run.Id, SpeedExclusionReason.NoProviderLedger, AvailabilityAxes,
+                "No provider attempts recorded (the attempt ledger starts with harness 56)."));
         }
 
         return list;

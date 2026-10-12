@@ -402,6 +402,59 @@
           </details>
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'bar', name: 'layout' }"></ng-container>
         </div>
+
+        <!-- Provider availability: the fourth panel, and the measure and scale it and the standalone
+             Provider errors figure draw with. -->
+        <div class="fsp-section">
+          <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('bar', 'availability')"
+                   [open]="isOpen('bar', 'availability')" (toggle)="onSectionToggle('bar', 'availability', $event)">
+            <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'bar', section: section('bar', 'availability') }"></ng-container>
+            <div class="gh-disclosure-body fsp-section-body">
+              <div class="fsp-check">
+                <label class="checkbox-label">
+                  <input type="checkbox" [id]="controlId('bar', 'availabilityPanel')" [checked]="availability.panel === 'on'"
+                         [attr.aria-describedby]="tipId('bar', 'availabilityPanel')"
+                         (change)="setAvailability('panel', checkedOf($event) ? 'on' : 'off')">
+                  Show the provider availability panel
+                </label>
+                <app-info-tip [tipId]="tipId('bar', 'availabilityPanel')" subject="the provider availability panel">A fourth panel beside Intelligence, Speed and Cost: each model's share of attempts that failed at the provider, with its 95 % interval and its count. A model whose runs did not record it is named as not recorded. The Provider errors figure shows the same plot whether or not the panel is shown.</app-info-tip>
+              </div>
+              <fieldset class="gh-choice" [attr.aria-labelledby]="controlId('bar', 'availabilityMeasure-label')"
+                        [attr.aria-describedby]="tipId('bar', 'availabilityMeasure')">
+                <legend>
+                  <span [id]="controlId('bar', 'availabilityMeasure-label')">Errors counted</span>
+                  <app-info-tip [tipId]="tipId('bar', 'availabilityMeasure')" subject="Errors counted">Provider errors only counts the attempts that failed at the provider. Including unattributed errors adds the failures that could be neither the provider's nor ours, which makes it an upper bound.</app-info-tip>
+                </legend>
+                @for (option of availabilityMeasureOptions; track option.value) {
+                  <label class="gh-radio">
+                    <input type="radio" [name]="controlId('bar', 'availabilityMeasure')"
+                           [id]="controlId('bar', 'availabilityMeasure-' + option.value)"
+                           [value]="option.value" [checked]="availability.measure === option.value"
+                           (change)="setAvailability('measure', option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
+              <fieldset class="gh-choice" [attr.aria-labelledby]="controlId('bar', 'availabilityScale-label')"
+                        [attr.aria-describedby]="tipId('bar', 'availabilityScale')">
+                <legend>
+                  <span [id]="controlId('bar', 'availabilityScale-label')">Scale</span>
+                  <app-info-tip [tipId]="tipId('bar', 'availabilityScale')" subject="Scale">Error rates cluster near zero. A square-root scale spreads them apart and still starts at zero; a linear one keeps distances proportional.</app-info-tip>
+                </legend>
+                @for (option of availabilityScaleOptions; track option.value) {
+                  <label class="gh-radio">
+                    <input type="radio" [name]="controlId('bar', 'availabilityScale')"
+                           [id]="controlId('bar', 'availabilityScale-' + option.value)"
+                           [value]="option.value" [checked]="availability.scale === option.value"
+                           (change)="setAvailability('scale', option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
+            </div>
+          </details>
+          <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'bar', name: 'availability' }"></ng-container>
+        </div>
       </div>
 
       <div class="fsp-actions">
@@ -571,6 +624,26 @@
         </div>
 
         <ng-container *ngTemplateOutlet="footerSection; context: { family: 'scatter', section: section('scatter', 'footer') }"></ng-container>
+
+        <!-- Provider availability: the markers on a model whose provider errors are clearly above 2 %. -->
+        <div class="fsp-section">
+          <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('scatter', 'availability')"
+                   [open]="isOpen('scatter', 'availability')" (toggle)="onSectionToggle('scatter', 'availability', $event)">
+            <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'scatter', section: section('scatter', 'availability') }"></ng-container>
+            <div class="gh-disclosure-body fsp-section-body">
+              <div class="fsp-check">
+                <label class="checkbox-label">
+                  <input type="checkbox" [id]="controlId('scatter', 'availabilityMarkers')" [checked]="availability.markers === 'on'"
+                         [attr.aria-describedby]="tipId('scatter', 'availabilityMarkers')"
+                         (change)="setAvailability('markers', checkedOf($event) ? 'on' : 'off')">
+                  Mark models with provider errors above 2 %
+                </label>
+                <app-info-tip [tipId]="tipId('scatter', 'availabilityMarkers')" subject="the provider error markers">A dashed ring and a label such as "3.1 % provider errors" on a model whose 95 % interval lies wholly above 2 %, so noise alone never marks a model. A caption line states the rule.</app-info-tip>
+              </div>
+            </div>
+          </details>
+          <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'scatter', name: 'availability' }"></ng-container>
+        </div>
       </div>
 
       <div class="fsp-actions">

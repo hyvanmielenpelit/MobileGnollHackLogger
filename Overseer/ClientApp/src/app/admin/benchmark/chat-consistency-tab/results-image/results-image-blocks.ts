@@ -14,6 +14,7 @@ import { CC_CHECK_STATUS_TEXT, CC_EP_VISIBLE_NOTES, CcIntervalEnds, intervalEnds
 import { ccNextRunSections, ccNextRunsLeadText } from '../analysis-wizard/next-runs/next-runs.component';
 import { CcEventDay, eventGroupChangesText } from '../chat-consistency-events';
 import {
+  CC_AVAILABILITY_ONLY_LABEL,
   NO_VALUE,
   annotationKindText,
   endpointMdeText,
@@ -73,7 +74,8 @@ export const CC_UNANALYZED_REASONS: readonly { readonly reason: CcUnanalyzedReas
   { reason: 'beforeFirstRun', label: 'Before the first run' },
   { reason: 'afterLastRun', label: 'After the last run' },
   { reason: 'notSelected', label: 'Not assigned to a period' },
-  { reason: 'outsideComparisonSet', label: 'Outside the compared set' }
+  { reason: 'outsideComparisonSet', label: 'Outside the compared set' },
+  { reason: 'availabilityOnly', label: CC_AVAILABILITY_ONLY_LABEL }
 ];
 
 /** A decisive change the attribution explains. */

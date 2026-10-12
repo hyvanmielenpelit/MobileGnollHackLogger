@@ -52,7 +52,8 @@ public class AdminBenchmarkModelBatchesControllerTests
 
         protected override async Task<BenchmarkModelBatchLaunch> LaunchChildAsync(
             IServiceProvider services, BenchmarkModelBatchRun batch, BenchmarkModelBatchMember member,
-            StartBenchmarkRunRequest request, string batchOwner, CancellationToken ct)
+            StartBenchmarkRunRequest request, string batchOwner, BenchmarkModelBatchChildReplacement? replaces,
+            CancellationToken ct)
         {
             var db = services.GetRequiredService<ApplicationDbContext>();
             var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun
@@ -65,7 +66,9 @@ public class AdminBenchmarkModelBatchesControllerTests
                 CompletedAtUtc = DateTime.UtcNow,
                 QualityIndex = 70,
                 HarnessVersion = BenchmarkAssessmentPrompt.HarnessVersion,
-                ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion
+                ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion,
+                ReplacesRunId = replaces?.Run?.RunId,
+                ReplacementCause = replaces?.Run?.Cause
             });
             db.BenchmarkRuns.Add(run);
             await db.SaveChangesAsync(ct);
@@ -303,6 +306,34 @@ public class AdminBenchmarkModelBatchesControllerTests
             dto.ResumeOptions.Select(o => o.Mode).ToArray());
     }
 
+    /// <summary>
+    /// Continue relaunches a failed member, and the new run names the run it replaces; a predecessor
+    /// without a provider ledger gives the cause Unknown.
+    /// </summary>
+    [Fact]
+    public async Task ResumeContinue_RelaunchedMembersRun_ReplacesTheFailedRun_WithAnUnknownCause()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var f = await CreateFixtureAsync();
+        var batch = await SeedBatchAsync(f, BenchmarkRunSeriesStatus.Stopped, BenchmarkModelBatchStopReason.MemberStopped, null,
+            BenchmarkModelBatchMemberStatus.Failed, BenchmarkModelBatchMemberStatus.Pending);
+        long failedRunId = batch.Members.Single(m => m.OrderIndex == 0).BenchmarkRunId!.Value;
+        var failedRun = await f.Db.BenchmarkRuns.SingleAsync(r => r.Id == failedRunId, ct);
+        failedRun.Status = BenchmarkRunStatus.Failed;
+        batch.InstrumentChangeAcknowledged = true;
+        await f.Db.SaveChangesAsync(ct);
+
+        var resumed = await f.Orchestrator.ResumeAsync(batch.Id, BenchmarkModelBatchResumeMode.Continue, ct);
+        Assert.Equal(BenchmarkModelBatchOutcome.Ok, resumed.Outcome);
+        await WaitForStatusAsync(f, batch.Id, BenchmarkRunSeriesStatus.Completed);
+
+        using var db = CreateDbContext(f.DbName);
+        var relaunched = await db.BenchmarkRuns.AsNoTracking().SingleAsync(r => r.ReplacesRunId == failedRunId, ct);
+        Assert.Equal(1L, relaunched.TestedModelConfigurationId);
+        Assert.Equal(BenchmarkReplacementCause.Unknown, relaunched.ReplacementCause);
+        Assert.Equal(1, await db.BenchmarkRuns.CountAsync(r => r.ReplacesRunId != null, ct));
+    }
+
     [Fact]
     public async Task GetBatch_CarriesEachMembersResult_Instrument_AndTheBatchsSettings()
     {
@@ -336,7 +367,8 @@ public class AdminBenchmarkModelBatchesControllerTests
         Assert.Equal(3000d, result.MedianModelTimeMs!.Value);
         Assert.Equal(1, result.RefutedClaims);
         Assert.Equal(1, result.FailedAnswers);
-        Assert.Equal(1, result.ProviderErrors);
+        Assert.Null(result.ProviderErrors);
+        Assert.Null(result.RerunsNeeded);
 
         Assert.IsType<NotFoundResult>(await f.Controller.GetBatch(4242, TestContext.Current.CancellationToken));
     }

@@ -161,6 +161,13 @@ public sealed record ItemDifferenceInDifferencesResult
     public required BootstrapDistribution Distribution { get; init; }
 }
 
+/// <summary>The control limits of a Laney p′ chart for one unit, as proportions.</summary>
+/// <param name="Center">The baseline's pooled rate p̄.</param>
+/// <param name="Lower">The lower control limit, at least 0.</param>
+/// <param name="Upper">The upper control limit, at most 1.</param>
+/// <param name="SigmaZ">The between-unit factor σ_Z; 1 for a plain p chart.</param>
+public sealed record LaneyLimits(double Center, double Lower, double Upper, double SigmaZ);
+
 /// <summary>A minimum detectable effect and the noise it was computed from.</summary>
 public sealed record MinimumDetectableEffectResult
 {
@@ -379,11 +386,15 @@ public static class ChatConsistencyStatistics
     /// reported (post-stratification, Cochran 1977, § 5A.9; common support, Heckman, Ichimura &amp;
     /// Todd 1997). Equal weights keep the comparison from tracking a change in when the traffic
     /// came.
+    /// <para>With <paramref name="fixedStrata"/> the strata are those, not the ones both samples happen to
+    /// hold: observations elsewhere are excluded, and the shift is undefined (null) when a fixed stratum
+    /// is missing from either sample, so a bootstrap replicate keeps the strata of its point estimate.</para>
     /// </summary>
     public static StratifiedShiftResult StratifiedShift(
         IReadOnlyList<StratifiedObservation> baseline,
         IReadOnlyList<StratifiedObservation> treatment,
-        BootstrapStatistic statistic = BootstrapStatistic.HodgesLehmann)
+        BootstrapStatistic statistic = BootstrapStatistic.HodgesLehmann,
+        IReadOnlyCollection<int>? fixedStrata = null)
     {
         ArgumentNullException.ThrowIfNull(baseline);
         ArgumentNullException.ThrowIfNull(treatment);
@@ -392,9 +403,25 @@ public static class ChatConsistencyStatistics
 
         var b = baseline.GroupBy(o => o.Stratum).ToDictionary(g => g.Key, g => g.Select(o => o.Value).ToArray());
         var t = treatment.GroupBy(o => o.Stratum).ToDictionary(g => g.Key, g => g.Select(o => o.Value).ToArray());
-        var common = b.Keys.Intersect(t.Keys).OrderBy(k => k).ToList();
+        var common = fixedStrata == null
+            ? b.Keys.Intersect(t.Keys).OrderBy(k => k).ToList()
+            : fixedStrata.Distinct().OrderBy(k => k).ToList();
+        bool complete = common.All(s => b.ContainsKey(s) && t.ContainsKey(s));
 
         int total = baseline.Count + treatment.Count;
+        if (!complete)
+        {
+            int present = common.Where(b.ContainsKey).Sum(s => b[s].Length) + common.Where(t.ContainsKey).Sum(s => t[s].Length);
+            return new StratifiedShiftResult
+            {
+                Shift = null,
+                StrataUsed = common,
+                TotalObservationCount = total,
+                ExcludedObservationCount = total - present,
+                ExcludedShare = total > 0 ? (total - present) / (double)total : 0.0
+            };
+        }
+
         int included = common.Sum(s => b[s].Length + t[s].Length);
 
         var shifts = new Dictionary<int, double>();
@@ -803,6 +830,127 @@ public static class ChatConsistencyStatistics
             Items = rows,
             Distribution = new BootstrapDistribution(estimate, values, replicates, cells.Select(c => c.Length).ToArray())
         };
+    }
+
+    // --- Rates of clustered attempts ------------------------------------------------------------
+
+    /// <summary>
+    /// The difference in pooled rates, after minus before, in percentage points: <c>100 · (Σk/Σn after −
+    /// Σk/Σn before)</c> over clusters (runs) of <c>(k, n)</c>. The interval is a cluster bootstrap that
+    /// resamples each period's clusters with replacement and keeps each drawn cluster whole (Davison &amp;
+    /// Hinkley 1997, § 3.8); a replicate whose period draws no attempt is dropped. Null when a period has
+    /// no attempt.
+    /// </summary>
+    public static BootstrapDistribution? RateDifference(
+        IReadOnlyList<(int K, int N)> before,
+        IReadOnlyList<(int K, int N)> after,
+        int replicates = DefaultBootstrapReplicates,
+        int seed = DefaultSeed)
+        => RateBootstrap(new[] { before, after }, r => r[1] - r[0], replicates, seed);
+
+    /// <summary>
+    /// The run-level difference in differences of pooled rates, in percentage points: <c>(target after −
+    /// target before) − (control after − control before)</c>, each a <c>100 · Σk/Σn</c> over its cell's
+    /// clusters (Angrist &amp; Pischke 2009, ch. 5). The interval resamples each of the four cells' clusters
+    /// independently, keeping each drawn cluster whole (Cameron, Gelbach &amp; Miller 2008). Null when a cell
+    /// has no attempt.
+    /// </summary>
+    public static BootstrapDistribution? RateDifferenceInDifferences(
+        IReadOnlyList<(int K, int N)> targetBefore,
+        IReadOnlyList<(int K, int N)> targetAfter,
+        IReadOnlyList<(int K, int N)> controlBefore,
+        IReadOnlyList<(int K, int N)> controlAfter,
+        int replicates = DefaultBootstrapReplicates,
+        int seed = DefaultSeed)
+        => RateBootstrap(new[] { targetBefore, targetAfter, controlBefore, controlAfter }, r => (r[1] - r[0]) - (r[3] - r[2]), replicates, seed);
+
+    /// <summary>
+    /// The control limits of a Laney p′ chart (Laney 2002) for one unit with <paramref name="nI"/> valid
+    /// attempts, from the baseline units' <c>(k, n)</c> in their time order:
+    /// <list type="number">
+    /// <item>the center line <c>p̄ = Σk / Σn</c> over the baseline units with attempts;</item>
+    /// <item>for each such unit <c>σ_p,i = √(p̄(1 − p̄) / n_i)</c> and the standardized rate
+    /// <c>z_i = (p_i − p̄) / σ_p,i</c>;</item>
+    /// <item><c>σ_Z = MR̄ / 1.128</c>, where <c>MR̄</c> is the mean absolute moving range
+    /// <c>|z_i − z_{i−1}|</c> of consecutive baseline units and 1.128 is <c>d₂</c> for ranges of two;</item>
+    /// <item>the limits <c>p̄ ± 3 · σ_p,I · σ_Z</c> with <c>σ_p,I = √(p̄(1 − p̄) / nI)</c>, the lower limit
+    /// clipped at 0 and the upper at 1.</item>
+    /// </list>
+    /// <c>σ_Z</c> corrects the overdispersion that makes plain p-chart limits raise false alarms at large
+    /// <c>n</c>; with fewer than two baseline units, or <c>p̄</c> of 0 or 1, it is 1 (the plain p chart).
+    /// Proportions in [0, 1]. Null when the baseline holds no attempt.
+    /// </summary>
+    public static LaneyLimits? LaneyPPrimeLimits(IReadOnlyList<(int k, int n)> baseline, int nI)
+    {
+        ArgumentNullException.ThrowIfNull(baseline);
+        if (nI <= 0) throw new ArgumentOutOfRangeException(nameof(nI), nI, "The unit's attempt count must be positive.");
+        foreach (var (k, n) in baseline)
+        {
+            if (n < 0 || k < 0 || k > n) throw new ArgumentOutOfRangeException(nameof(baseline), "Each unit needs 0 ≤ k ≤ n.");
+        }
+
+        var units = baseline.Where(u => u.n > 0).ToList();
+        long totalN = units.Sum(u => (long)u.n);
+        if (totalN == 0) return null;
+
+        double pBar = units.Sum(u => (long)u.k) / (double)totalN;
+        double variance = pBar * (1.0 - pBar);
+        double sigmaZ = 1.0;
+        if (units.Count >= 2 && variance > 0.0)
+        {
+            var z = units.Select(u => (u.k / (double)u.n - pBar) / Math.Sqrt(variance / u.n)).ToList();
+            double movingRange = 0.0;
+            for (int i = 1; i < z.Count; i++) movingRange += Math.Abs(z[i] - z[i - 1]);
+            sigmaZ = movingRange / (z.Count - 1) / LaneyD2;
+        }
+
+        double halfWidth = 3.0 * Math.Sqrt(variance / nI) * sigmaZ;
+        return new LaneyLimits(pBar, Math.Max(0.0, pBar - halfWidth), Math.Min(1.0, pBar + halfWidth), sigmaZ);
+    }
+
+    /// <summary><c>d₂</c> for moving ranges of two.</summary>
+    private const double LaneyD2 = 1.128;
+
+    private static BootstrapDistribution? RateBootstrap(
+        IReadOnlyList<IReadOnlyList<(int K, int N)>> cells, Func<double[], double> combine, int replicates, int seed)
+    {
+        RequireReplicates(replicates);
+        var data = cells.Select(c => (c ?? throw new ArgumentException("A cell cannot be null.")).Where(u => u.N > 0).ToArray()).ToArray();
+        foreach (var cell in data)
+        {
+            foreach (var (k, n) in cell)
+            {
+                if (k < 0 || k > n) throw new ArgumentOutOfRangeException(nameof(cells), "Each cluster needs 0 ≤ k ≤ n.");
+            }
+        }
+
+        if (data.Any(c => c.Length == 0)) return null;
+
+        var rates = new double[data.Length];
+        for (int c = 0; c < data.Length; c++) rates[c] = 100.0 * data[c].Sum(u => (long)u.K) / data[c].Sum(u => (long)u.N);
+        double estimate = combine(rates);
+
+        var rng = new Random(seed);
+        var values = new double[replicates];
+        for (int b = 0; b < replicates; b++)
+        {
+            for (int c = 0; c < data.Length; c++)
+            {
+                long k = 0, n = 0;
+                for (int j = 0; j < data[c].Length; j++)
+                {
+                    var drawn = data[c][rng.Next(data[c].Length)];
+                    k += drawn.K;
+                    n += drawn.N;
+                }
+
+                rates[c] = n > 0 ? 100.0 * k / n : double.NaN;
+            }
+
+            values[b] = combine(rates);
+        }
+
+        return new BootstrapDistribution(estimate, values, replicates, data.Select(c => c.Length).ToArray());
     }
 
     // --- Change points ---------------------------------------------------------------------------

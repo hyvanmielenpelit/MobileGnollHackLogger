@@ -21,10 +21,12 @@ import {
 import {
   BatteryRunReportHarness,
   analysis,
+  availabilityMember,
   batteryRun,
   completeResult,
   configureBatteryRunReport,
   member,
+  providerAvailability,
   slot,
   tearDownBatteryRunReport
 } from './battery-run-report-dialog.testing';
@@ -412,7 +414,7 @@ describe('BatteryRunReportDialogComponent', () => {
       vi.spyOn(keyFiguresImageIo, 'now').mockReturnValue(NOW);
     });
 
-    it('renders the eight battery cards, each with its card actions', () => {
+    it('renders the nine battery cards, each with its card actions', () => {
       h.open();
       const panel = h.el().querySelector('#brr-panel-summary') as HTMLElement;
       expect(panel.querySelector('.rr-figures-head > h4.gh-section-title#brrFiguresTitle')?.textContent?.trim()).toBe('Key figures');
@@ -429,7 +431,22 @@ describe('BatteryRunReportDialogComponent', () => {
       expect(h.text('[data-figure="model-cost"] .score-note')).toBe('29 % of the total cost');
       expect(h.text('[data-figure="estimated-cost"] .score-subvalue')).toBe('$3.50');
       expect(h.text('[data-figure="wall-time"] .score-subvalue')).toBe('1 h 00 min');
+      expect(h.text('[data-figure="provider-errors"] .score-subvalue')).toBe('Not recorded');
       expect(h.text('.bb-caveats')).toContain('Fewer than three complete battery rounds');
+    });
+
+    it('gives the provider error rate over every member run, neutral, tagged below 100 attempts', () => {
+      h.service.getBatteryRun.mockReturnValue(of(batteryRun({ providerAvailability: providerAvailability() })));
+      h.open();
+
+      const card = h.el().querySelector('[data-figure="provider-errors"]') as HTMLElement;
+      expect(h.text('[data-figure="provider-errors"] .score-label')).toBe('Provider Errors');
+      const value = card.querySelector('.score-subvalue') as HTMLElement;
+      expect(value.textContent?.trim()).toBe('2.0 %');
+      expect(value.className).not.toMatch(/badge-score-|text-muted/);
+      expect(Array.from(card.querySelectorAll('.score-note')).map(n => (n.textContent ?? '').replace(/\s+/g, ' ').trim()))
+        .toEqual(['2 of 99 attempts', '95 % CI 0.56–7.1 % · 1 re-run (1 provider)', 'few attempts']);
+      expect(card.querySelector('button.kfc-copy')?.getAttribute('aria-label')).toBe('Copy Provider Errors of battery run 7 as an image');
     });
 
     it('names the battery run in every card action and keys its tooltips by it', () => {
@@ -576,7 +593,7 @@ describe('BatteryRunReportDialogComponent', () => {
       expect((h.el().querySelector('[data-figure="speed"]') as HTMLElement).hidden).toBe(true);
       expect((h.el().querySelector('[data-figure="intelligence"]') as HTMLElement).hidden).toBe(false);
       expect(JSON.parse(localStorage.getItem(BATTERY_RUN_REPORT_KEY_FIGURES_STORAGE_KEY)!)).toEqual({ version: 1, excluded: ['speed', 'mean-time'] });
-      expect(h.text('#brr-figures-choose-btn')).toBe('Choose figures (6 of 8)');
+      expect(h.text('#brr-figures-choose-btn')).toBe('Choose figures (7 of 9)');
 
       h.component.onKeyFigureSelectionChange([...BATTERY_RUN_KEY_FIGURES]);
       h.fixture.detectChanges();
@@ -604,6 +621,43 @@ describe('BatteryRunReportDialogComponent', () => {
       expect(h.el().querySelector('#brr-tab-integrity .rr-tab-flag')).toBeNull();
       expect(h.el().querySelector('.brr-integrity-notice')).toBeNull();
       expect(h.text('#brr-panel-integrity')).toContain('Holds');
+    });
+
+    it('reads Not recorded under Provider availability for a battery run before harness 56', () => {
+      h.open();
+      expect(h.text('#brr-panel-integrity app-provider-availability .pa-title')).toBe('Provider availability');
+      expect(h.text('#brr-panel-integrity app-provider-availability .pa-not-recorded'))
+        .toBe('Not recorded: runs started before harness 56 record no provider attempts.');
+      expect(h.el().querySelector('#brr-panel-integrity app-provider-availability .pa-members')).toBeNull();
+    });
+
+    it('shows the battery run\'s provider availability with one row per member run, and opens a member\'s report', () => {
+      h.service.getBatteryRun.mockReturnValue(of(batteryRun({
+        providerAvailability: providerAvailability(),
+        providerAvailabilityMembers: [
+          availabilityMember(),
+          availabilityMember({ memberId: 2, runId: 102, suiteIndex: 1, validAttempts: 49, providerErrors: 0, providerErrorRate: 0, rerunsNeeded: 0, providerRerunsNeeded: 0 }),
+          availabilityMember({ memberId: 3, runId: 98, suiteIndex: 1, superseded: true, recorded: false, validAttempts: null, providerErrors: null, unattributedErrors: null, providerErrorRate: null, rerunsNeeded: null, providerRerunsNeeded: null })
+        ]
+      })));
+      const opened = vi.fn().mockName('openRunReport');
+      h.component.openRunReport.subscribe(opened);
+      h.open();
+
+      const section = h.el().querySelector('#brr-panel-integrity app-provider-availability') as HTMLElement;
+      expect(accessibleText(section.querySelector('.pa-summary') as HTMLElement))
+        .toBe('Provider errors observed: 2.0 % (2 of 99 attempts; 95 % CI 0.56–7.1 %; few attempts).');
+      expect(section.querySelector('.pa-summary .pa-few')?.getAttribute('aria-hidden')).toBe('true');
+      const rows = Array.from(section.querySelectorAll('.pa-members tbody tr')).map(row =>
+        Array.from((row as HTMLTableRowElement).cells).map(cell => (cell.textContent ?? '').replace(/\s+/g, ' ').trim()));
+      expect(rows).toEqual([
+        ['Gameplay Help, round 1, run #101', '50', '2', '4.0 %', '1 re-run (1 provider)'],
+        ['Board Reading, round 1, run #102', '49', '0', '0 %', '0 re-runs'],
+        ['Board Reading, round 1, run #98 superseded', 'Not recorded', '—', '—', '—']
+      ]);
+
+      (section.querySelector('.pa-members button[data-run-id="98"]') as HTMLButtonElement).click();
+      expect(opened).toHaveBeenCalledWith(98);
     });
 
     it('flags a stale analysis and a degraded speed comparison', () => {

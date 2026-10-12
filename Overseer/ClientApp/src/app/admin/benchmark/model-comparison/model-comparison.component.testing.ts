@@ -24,7 +24,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { BehaviorSubject } from 'rxjs';
 import { AdminAlertService, SystemAlert } from '../../../services/admin-alert.service';
-import { BenchmarkReportPackDocumentProgressDto } from '../../../services/admin-benchmark.service';
+import { BenchmarkReportPackDocumentProgressDto, ProviderAvailabilityDto } from '../../../services/admin-benchmark.service';
 import { REPORT_PACK_STORAGE_KEY, ReportPackPanelComponent } from '../report-pack/report-pack-panel.component';
 import { REPORT_CHART_STORAGE_KEY } from '../report-pack/report-charts';
 
@@ -167,10 +167,83 @@ export function buildEntry(overrides: Partial<BenchmarkModelComparisonEntryDto> 
       speedIndexScoredAnswerCount: 54,
       costPerIndexPointUsd: 0.0032,
       meanStoredQualityIndex: 67.4,
-      unstableItemCount: 0
+      unstableItemCount: 0,
+      providerErrorRate: 12 / 1480,
+      providerErrorCount: 12,
+      providerAttempts: 1480,
+      rerunsNeeded: 1,
+      providerReruns: 1
     },
+    availability: buildAvailability(),
     ...overrides
   };
+}
+
+/**
+ * A recorded provider availability: 12 provider errors in 1,480 valid attempts, with 3 unattributed
+ * ones, and one re-run for provider errors. Every field the server declares is populated.
+ */
+export function buildAvailability(overrides: Partial<ProviderAvailabilityDto> = {}): ProviderAvailabilityDto {
+  return {
+    recorded: true,
+    recordedRuns: 3,
+    totalRuns: 3,
+    replacedRunsIncluded: 0,
+    validAttempts: 1480,
+    providerErrors: 12,
+    unattributedErrors: 3,
+    ourSideFailures: 2,
+    providerErrorRate: 12 / 1480,
+    providerErrorRateLow: 0.0044,
+    providerErrorRateHigh: 0.015,
+    designEffect: 1.3,
+    inclusiveRate: 15 / 1480,
+    inclusiveRateLow: 0.0058,
+    inclusiveRateHigh: 0.017,
+    fewAttempts: false,
+    overloaded: 8,
+    serverErrors: 3,
+    timeouts: 0,
+    streamFailures: 1,
+    rateLimitedOurs: 2,
+    rateLimitedUnattributed: 2,
+    transportUnattributed: 1,
+    byOutcome: [],
+    questionsLost: 0,
+    calls: 1460,
+    firstAttemptSuccessCalls: 1448,
+    repairPasses: 1,
+    providerRepairPasses: 1,
+    replacementRuns: 0,
+    providerReplacementRuns: 0,
+    rerunsNeeded: 1,
+    providerRerunsNeeded: 1,
+    graderValidAttempts: 2900,
+    graderProviderErrors: 4,
+    bins: [],
+    replaces: [],
+    ...overrides
+  };
+}
+
+/** An availability whose runs predate the provider attempt ledger: no figure, only "not recorded". */
+export function buildUnrecordedAvailability(): ProviderAvailabilityDto {
+  return buildAvailability({
+    recorded: false,
+    recordedRuns: 0,
+    validAttempts: 0,
+    providerErrors: 0,
+    unattributedErrors: 0,
+    ourSideFailures: 0,
+    providerErrorRate: null,
+    providerErrorRateLow: null,
+    providerErrorRateHigh: null,
+    inclusiveRate: null,
+    inclusiveRateLow: null,
+    inclusiveRateHigh: null,
+    rerunsNeeded: 0,
+    providerRerunsNeeded: 0
+  });
 }
 
 /**

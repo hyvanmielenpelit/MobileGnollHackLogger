@@ -10,6 +10,7 @@ import {
   ComparisonTableModel,
   ComparisonTableProvenance,
   DEFAULT_TABLE_COLUMNS,
+  TABLE_COLUMN_CONFIG_VERSION,
   TABLE_DISPLAY_COLUMNS,
   TABLE_IMAGE_SCALE,
   TableColumnConfig,
@@ -129,7 +130,12 @@ describe('table-export', () => {
         speedIndexScoredAnswerCount: 54,
         costPerIndexPointUsd: 0.0032,
         meanStoredQualityIndex: 67.4,
-        unstableItemCount: 2
+        unstableItemCount: 2,
+        providerErrorRate: 0.0081,
+        providerErrorCount: 12,
+        providerAttempts: 1480,
+        rerunsNeeded: 3,
+        providerReruns: 2
       },
       ...overrides
     };
@@ -149,7 +155,7 @@ describe('table-export', () => {
     };
   }
 
-  /** Every display column shown, in catalogue order: in the data flavour, all twenty-nine parts. */
+  /** Every display column shown, in catalogue order: in the data flavour, all thirty-four parts. */
   const ALL_COLUMNS: TableColumnConfig = {
     order: TABLE_DISPLAY_COLUMNS.map(column => column.key),
     shown: TABLE_DISPLAY_COLUMNS.map(column => column.key)
@@ -194,10 +200,10 @@ describe('table-export', () => {
   // The model
   // -------------------------------------------------------------------------------------------
 
-  it('declares twenty-nine columns, and a cell for every one of them on every row', () => {
+  it('declares thirty-four columns, and a cell for every one of them on every row', () => {
     const built = model([buildEntry(), buildEntry({ key: 'run:2', sourceId: 44 })]);
 
-    expect(built.columns.length).toBe(29);
+    expect(built.columns.length).toBe(34);
     expect(new Set(built.columns.map(column => column.key)))
       .toEqual(new Set(COMPARISON_TABLE_COLUMNS.map(column => column.key)));
     expect(built.rows.length).toBe(2);
@@ -297,11 +303,11 @@ describe('table-export', () => {
   // The display columns and the two flavours
   // -------------------------------------------------------------------------------------------
 
-  it('catalogues 31 display columns that cover every part, each primary once and each other part as its own column', () => {
-    expect(TABLE_DISPLAY_COLUMNS.length).toBe(31);
-    expect(new Set(TABLE_DISPLAY_COLUMNS.map(column => column.key)).size).toBe(31);
+  it('catalogues 36 display columns that cover every part, each primary once and each other part as its own column', () => {
+    expect(TABLE_DISPLAY_COLUMNS.length).toBe(36);
+    expect(new Set(TABLE_DISPLAY_COLUMNS.map(column => column.key)).size).toBe(36);
     const singles = TABLE_DISPLAY_COLUMNS.filter(column => column.renderer === 'text');
-    expect(singles.length).toBe(22);
+    expect(singles.length).toBe(25);
     expect(singles.every(column => column.parts.length === 1 && column.parts[0] === column.key && column.sortPart === column.key)).toBe(true);
     const primaries = TABLE_DISPLAY_COLUMNS.filter(column => column.renderer !== 'text').map(column => column.parts[0]);
     const covered = new Set([...singles.map(column => column.key), ...primaries.filter(part => !singles.some(s => s.key === part))]);
@@ -309,20 +315,24 @@ describe('table-export', () => {
     expect(TABLE_DISPLAY_COLUMNS.find(column => column.key === 'notes')!.sortPart).toBeNull();
   });
 
-  it('defaults to the nine on-screen columns in today\'s order, the rest hidden', () => {
+  it('defaults to the ten on-screen columns in today\'s order, the rest hidden', () => {
     expect(shownTableColumns(DEFAULT_TABLE_COLUMNS).map(column => column.header))
       .toEqual([
         'Model', 'R', 'State', 'Intelligence Index', 'Speed Index', 'Timings', 'Candidate $ / question',
-        'Total $ / run, with grading', 'Notes'
+        'Total $ / run, with grading', 'Provider errors', 'Notes'
       ]);
-    expect(DEFAULT_TABLE_COLUMNS.order.length).toBe(31);
+    expect(DEFAULT_TABLE_COLUMNS.order.length).toBe(36);
+    // Re-runs needed is offered, after Provider errors, but hidden.
+    expect(DEFAULT_TABLE_COLUMNS.order.indexOf('rerunsCol')).toBe(DEFAULT_TABLE_COLUMNS.order.indexOf('providerErrors') + 1);
+    expect(DEFAULT_TABLE_COLUMNS.shown).not.toContain('rerunsCol');
   });
 
   it('combines a column\'s parts in the reading flavour, worded as on screen', () => {
     const built = buildComparisonTableModel([buildEntry({ runCount: 1, reasoningMode: 'extended' })], provenance(), DEFAULT_TABLE_COLUMNS, 'reading');
     const cells = built.rows[0].cells;
 
-    expect(built.columns.length).toBe(9);
+    expect(built.columns.length).toBe(10);
+    expect(cells['providerErrors'].text).toBe('0.81 % (12/1,480)');
     expect(cells['model'].text).toBe('Gemini 2.5 Flash · medium · extended · Google · Run 43');
     expect(cells['runs'].text).toBe('1 · n = 1');
     expect(cells['stateCol'].text).toBe('Comparable · Comparable with the baseline on every must-match key.');
@@ -404,7 +414,45 @@ describe('table-export', () => {
     // ± is shown before Intelligence Index, so it is written there, and not again inside the index's parts.
     expect(keys.indexOf('intervalHalfWidth')).toBeLessThan(keys.indexOf('intelligenceIndex'));
     expect(keys.slice(0, 4)).toEqual(['label', 'thinkingLevel', 'provider', 'source']);
-    expect(buildComparisonTableModel([buildEntry()], provenance(), DEFAULT_TABLE_COLUMNS, 'data').columns.length).toBe(26);
+    expect(buildComparisonTableModel([buildEntry()], provenance(), DEFAULT_TABLE_COLUMNS, 'data').columns.length).toBe(29);
+  });
+
+  it('carries provider errors and re-runs as typed parts, and words their combined cells as on screen', () => {
+    const [row] = model().rows;
+    expect(row.cells['providerErrorRate']).toEqual({ raw: 0.0081, text: '0.81 %' });
+    expect(row.cells['providerErrorCount']).toEqual({ raw: 12, text: '12' });
+    expect(row.cells['providerAttempts']).toEqual({ raw: 1480, text: '1,480' });
+    expect(row.cells['rerunsNeeded']).toEqual({ raw: 3, text: '3' });
+    expect(row.cells['providerReruns']).toEqual({ raw: 2, text: '2' });
+    const kinds = new Map(COMPARISON_TABLE_COLUMNS.map(column => [column.key, column.kind]));
+    expect(kinds.get('providerErrorRate')).toBe('percent');
+    expect(kinds.get('providerAttempts')).toBe('integer');
+
+    const reading = (shown: string[], entry = buildEntry()) =>
+      buildComparisonTableModel([entry], provenance(), { order: DEFAULT_TABLE_COLUMNS.order, shown }, 'reading').rows[0].cells;
+    expect(reading(['model', 'providerErrors', 'rerunsCol'])['rerunsCol'].text).toBe('3 (2 provider)');
+    expect(reading(['model', 'rerunsCol'], buildEntry({ table: { ...buildEntry().table!, providerReruns: 0 } }))['rerunsCol'].text).toBe('3');
+    // A part shown as its own column is left out of the combined cell.
+    expect(reading(['model', 'providerErrors', 'providerAttempts'])['providerErrors'].text).toBe('0.81 % (12 errors)');
+    expect(reading(['model', 'rerunsCol', 'providerReruns'])['rerunsCol'].text).toBe('3');
+
+    // Not recorded: the figures are null and the rate says why, with no count after it.
+    const legacy = buildEntry({
+      table: { ...buildEntry().table!, providerErrorRate: null, providerErrorCount: null, providerAttempts: null, rerunsNeeded: null, providerReruns: null },
+      availability: { recorded: false } as unknown as BenchmarkModelComparisonEntryDto['availability']
+    });
+    expect(reading(['model', 'providerErrors'], legacy)['providerErrors'].text).toBe('Not recorded');
+    expect(comparisonTableCells(legacy)['providerErrorRate'].raw).toBeNull();
+    expect(comparisonTableCells(buildEntry({ table: null }))['providerErrorRate'].text).toBe('—');
+  });
+
+  it('writes the provider error rate to the spreadsheet as a percentage of its proportion', async () => {
+    const captured = captureXlsx();
+    const built = model();
+    await toXlsx(built);
+    const cell = captured.sheets[0].data[1][columnIndex(built, 'providerErrorRate')];
+    expect(cell.value).toBe(0.0081);
+    expect(cell.format).toBe('0.00%');
   });
 
   it('repairs a stored configuration: unknown keys dropped, missing ones appended hidden, the model always shown', () => {
@@ -413,7 +461,7 @@ describe('table-export', () => {
       shown: ['notes', 'nope']
     });
     expect(repaired.order.slice(0, 2)).toEqual(['notes', 'model']);
-    expect(repaired.order.length).toBe(31);
+    expect(repaired.order.length).toBe(36);
     expect(repaired.shown).toEqual(['notes', 'model']);
     expect(normalizeTableColumnConfig(null)).toEqual({ order: DEFAULT_TABLE_COLUMNS.order, shown: DEFAULT_TABLE_COLUMNS.shown });
     expect(sameTableColumnConfig(normalizeTableColumnConfig('x'), DEFAULT_TABLE_COLUMNS)).toBe(true);
@@ -421,17 +469,25 @@ describe('table-export', () => {
   });
 
   describe('migrating a saved layout', () => {
-    /** A version-1 layout as the previous build saved it: every then-known key, no total-cost column. */
+    /** The keys version 3 introduced: the two provider-availability columns and their three own parts. */
+    const VERSION_3_KEYS = ['providerErrors', 'rerunsCol', 'providerErrorCount', 'providerAttempts', 'providerReruns'];
+
+    /** A version-2 layout as that build saved it: every then-known key, no provider-availability column. */
+    function versionTwo(shown: string[]): Record<string, unknown> {
+      return { version: 2, order: DEFAULT_TABLE_COLUMNS.order.filter(key => !VERSION_3_KEYS.includes(key)), shown };
+    }
+
+    /** A version-1 layout as the build before saved it: no total-cost column either. */
     function versionOne(shown: string[]): Record<string, unknown> {
-      return { version: 1, order: DEFAULT_TABLE_COLUMNS.order.filter(key => key !== 'totalCost'), shown };
+      return { version: 1, order: (versionTwo(shown)['order'] as string[]).filter(key => key !== 'totalCost'), shown };
     }
 
     it('puts the total-cost column right after candidate cost, shown, when candidate cost is shown', () => {
       const migrated = migrateTableColumnConfig(versionOne(['model', 'runs', 'cost', 'notes']));
 
       expect(migrated.order[migrated.order.indexOf('cost') + 1]).toBe('totalCost');
-      expect(migrated.shown).toEqual(['model', 'runs', 'cost', 'totalCost', 'notes']);
-      expect(migrated.order.length).toBe(31);
+      expect(migrated.shown).toEqual(['model', 'runs', 'cost', 'totalCost', 'providerErrors', 'notes']);
+      expect(migrated.order.length).toBe(36);
     });
 
     it('adds it hidden when candidate cost is hidden', () => {
@@ -443,12 +499,34 @@ describe('table-export', () => {
 
     it('treats a layout with no version as version 1', () => {
       const { version: _version, ...unversioned } = versionOne(['model', 'cost']);
-      expect(migrateTableColumnConfig(unversioned).shown).toEqual(['model', 'cost', 'totalCost']);
+      expect(migrateTableColumnConfig(unversioned).shown).toEqual(['model', 'cost', 'totalCost', 'providerErrors']);
     });
 
-    it('leaves a version-2 layout as saved, so a column the admin hid stays hidden', () => {
-      const saved = { version: 2, order: DEFAULT_TABLE_COLUMNS.order, shown: ['model', 'cost'] };
+    it('takes a version-1 layout through both steps: total cost after candidate cost, then the provider columns after it', () => {
+      const migrated = migrateTableColumnConfig(versionOne(['model', 'cost']));
+      const at = migrated.order.indexOf('cost');
+
+      expect(migrated.order.slice(at, at + 4)).toEqual(['cost', 'totalCost', 'providerErrors', 'rerunsCol']);
+      // Shown as the new default is, rather than appended hidden by the normalization.
+      expect(migrated.shown).toEqual(['model', 'cost', 'totalCost', 'providerErrors']);
+      expect(migrated.order.length).toBe(36);
+    });
+
+    it('puts Provider errors, shown, and Re-runs needed, hidden, after the total cost in a version-2 layout', () => {
+      const migrated = migrateTableColumnConfig(versionTwo(['model', 'cost']));
+      const at = migrated.order.indexOf('totalCost');
+
+      expect(migrated.order.slice(at, at + 3)).toEqual(['totalCost', 'providerErrors', 'rerunsCol']);
+      expect(migrated.shown).toEqual(['model', 'cost', 'providerErrors']);
+      // The three new parts are offered at the end, hidden.
+      expect(migrated.order.slice(-3)).toEqual(['providerErrorCount', 'providerAttempts', 'providerReruns']);
+      expect(migrated.order.length).toBe(36);
+    });
+
+    it('leaves a version-3 layout as saved, so a column the admin hid stays hidden', () => {
+      const saved = { version: 3, order: DEFAULT_TABLE_COLUMNS.order, shown: ['model', 'cost'] };
       expect(migrateTableColumnConfig(saved)).toEqual({ order: DEFAULT_TABLE_COLUMNS.order, shown: ['model', 'cost'] });
+      expect(TABLE_COLUMN_CONFIG_VERSION).toBe(3);
     });
 
     it('falls back to the defaults for a missing or garbage value', () => {
@@ -510,7 +588,7 @@ describe('table-export', () => {
 
     expect(text.startsWith('\uFEFF')).toBe(true);
     const columns = dataLines(text)[0].split('\t');
-    expect(columns.length).toBe(29);
+    expect(columns.length).toBe(34);
     expect(columns[columnIndex(built, 'explanation')]).toBe('before after');
   });
 
@@ -525,7 +603,7 @@ describe('table-export', () => {
     expect(text).toContain('Flash \\| medium');
     // Header, separator and one body row, each with the same number of cells.
     expect(rows.length).toBe(3);
-    expect(rows.map(row => row.split(' | ').length)).toEqual([29, 29, 29]);
+    expect(rows.map(row => row.split(' | ').length)).toEqual([34, 34, 34]);
   });
 
   it('carries the provenance as a caption and the notices as a list', () => {
@@ -543,7 +621,7 @@ describe('table-export', () => {
       rows: Record<string, unknown>[];
     };
 
-    expect(parsed.columns.length).toBe(29);
+    expect(parsed.columns.length).toBe(34);
     expect(parsed.columns.map(column => column.key))
       .toEqual(model().columns.map(column => column.key));
     // Numbers, not the strings the human formats carry.
@@ -579,17 +657,17 @@ describe('table-export', () => {
   // The spreadsheet
   // -------------------------------------------------------------------------------------------
 
-  it('writes one sheet of twenty-nine columns and a header row, and a second of provenance', async () => {
+  it('writes one sheet of thirty-four columns and a header row, and a second of provenance', async () => {
     const captured = captureXlsx();
 
     const blob = await toXlsx(model([buildEntry(), buildEntry({ key: 'run:2', sourceId: 44 })]));
 
     expect(captured.sheets.length).toBe(2);
     expect(captured.sheets[0].sheet).toBe('Comparison');
-    // A frozen header, so twenty-nine columns stay identifiable after a scroll.
+    // A frozen header, so thirty-four columns stay identifiable after a scroll.
     expect(captured.sheets[0].stickyRowsCount).toBe(1);
     expect(captured.sheets[0].data.length).toBe(3);
-    expect(captured.sheets[0].data.every((row: unknown[]) => row.length === 29)).toBe(true);
+    expect(captured.sheets[0].data.every((row: unknown[]) => row.length === 34)).toBe(true);
     expect(captured.sheets[1].sheet).toBe('Provenance');
 
     expect(blob.size).toBeGreaterThan(0);
@@ -658,7 +736,7 @@ describe('table-export', () => {
   });
 
   describe('image size, theme and row style', () => {
-    /** The image's own model: today's nine columns, combined as on screen. */
+    /** The image's own model: today's ten columns, combined as on screen. */
     function readingModel(count = 3): ComparisonTableModel {
       const entries = Array.from({ length: count }, (_unused, index) =>
         buildEntry({ key: `run:${index + 1}`, sourceId: 43 + index }));
@@ -711,7 +789,7 @@ describe('table-export', () => {
       expect(TABLE_IMAGE_SCALE).toBe(2);
       expect(refusal).toBeNull();
       expect(layout!.scale).toBe(2);
-      expect(layout!.columnCount).toBe(9);
+      expect(layout!.columnCount).toBe(10);
       expect(layout!.rowCount).toBe(3);
       expect(implicit.width).toBe(layout!.pixelWidth);
       expect(implicit.height).toBe(layout!.pixelHeight);
@@ -796,7 +874,7 @@ describe('table-export', () => {
       const { layout, refusal } = resolveTableImageLayout(built, { size: box(320, 4000) });
 
       expect(layout).toBeNull();
-      const named = /^The 9 selected columns need at least (\d+) px of width at this text size\. Choose fewer columns in the Table tab, a width of (\d+) px or more, or a smaller text size\.$/.exec(refusal!);
+      const named = /^The 10 selected columns need at least (\d+) px of width at this text size\. Choose fewer columns in the Table tab, a width of (\d+) px or more, or a smaller text size\.$/.exec(refusal!);
       expect(named).not.toBeNull();
       const minimum = Number(named![1]);
       expect(Number(named![2])).toBe(minimum);
@@ -1188,14 +1266,14 @@ describe('table-export', () => {
       const plain = model();
       const attached = withDiagnostics(plain, diagnostics());
 
-      expect(attached.columns.length).toBe(29);
+      expect(attached.columns.length).toBe(34);
       expect(toCsv(attached)).toBe(toCsv(plain));
       expect(toTsv(attached)).toBe(toTsv(plain));
       expect(toJson(attached)).toBe(toJson(plain));
       expect(toHtml(attached)).toBe(toHtml(plain));
-      // The comparison table's own rows keep their twenty-nine cells.
+      // The comparison table's own rows keep their thirty-four cells.
       const tableRows = toMarkdown(attached).split('\n').filter(line => line.startsWith('|')).slice(0, 3);
-      expect(tableRows.map(line => line.split(' | ').length)).toEqual([29, 29, 29]);
+      expect(tableRows.map(line => line.split(' | ').length)).toEqual([34, 34, 34]);
       expect(tableClipboardPayload(attached, 'md').text).toContain('## Assessor Panel Diagnostics');
     });
 

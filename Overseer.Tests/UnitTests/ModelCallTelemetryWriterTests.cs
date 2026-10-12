@@ -128,6 +128,138 @@ public class ModelCallTelemetryWriterTests
         Assert.All(answer.ModelCalls, r => Assert.Null(r.BenchmarkRunAnswerId));
     }
 
+    private static ModelCallRecord WithAttempts(ModelCallRecord record)
+    {
+        var start = new DateTime(2026, 10, 7, 9, 30, 0, DateTimeKind.Utc);
+        record.Attempts.Add(new ProviderAttemptRecord
+        {
+            AttemptIndex = 0, StartedAtUtc = start, DurationMs = 900, Outcome = ProviderAttemptOutcome.ProviderOverloaded,
+            HttpStatus = 529, ProviderErrorCode = "overloaded_error", EndpointKind = BenchmarkEndpointKind.Official,
+            Retried = true, RetryAfterMs = 2000
+        });
+        record.Attempts.Add(new ProviderAttemptRecord
+        {
+            AttemptIndex = 1, StartedAtUtc = start.AddSeconds(3), DurationMs = 5200, Outcome = ProviderAttemptOutcome.Ok,
+            HttpStatus = 200, EndpointKind = BenchmarkEndpointKind.Official
+        });
+        return record;
+    }
+
+    [Fact]
+    public void MapAttempts_WritesOneLedgerRowPerAttempt_InAttemptOrder_WithItsLinks()
+    {
+        var rows = ModelCallTelemetryWriter.MapAttempts(
+            WithAttempts(Record()), callIndex: 4, ModelCallSource.BenchmarkCandidate,
+            new ProviderAttemptLinks(
+                BenchmarkRunId: 70, BenchmarkRunAnswerId: 5, QuestionId: 11, SystemAiApiConfigurationId: 31,
+                GraderRole: ModelCallGraderRole.Assessor, Pass: 2));
+
+        Assert.Equal(2, rows.Count);
+        Assert.Equal(new byte[] { 0, 1 }, rows.ConvertAll(r => r.AttemptIndex));
+        Assert.All(rows, r =>
+        {
+            Assert.Equal(70L, r.BenchmarkRunId);
+            Assert.Equal(5L, r.BenchmarkRunAnswerId);
+            Assert.Equal(11L, r.QuestionId);
+            Assert.Equal(31L, r.SystemAiApiConfigurationId);
+            Assert.Equal(ModelCallSource.BenchmarkCandidate, r.Source);
+            Assert.Null(r.GraderRole);
+            Assert.Equal("OpenAI", r.Provider);
+            Assert.Equal("gpt-6.1-sol", r.RequestedModelId);
+            Assert.Equal(BenchmarkEndpointKind.Official, r.EndpointKind);
+            Assert.Equal(2, r.Pass);
+            Assert.Equal(4, r.CallIndex);
+            Assert.Null(r.BenchmarkRun);
+        });
+
+        var failed = rows[0];
+        Assert.Equal(ProviderAttemptOutcome.ProviderOverloaded, failed.Outcome);
+        Assert.Equal((short)529, failed.HttpStatus);
+        Assert.Equal("overloaded_error", failed.ProviderErrorCode);
+        Assert.True(failed.Retried);
+        Assert.Equal(2000, failed.RetryAfterMs);
+        Assert.Equal(900, failed.DurationMs);
+
+        var ok = rows[1];
+        Assert.Equal(ProviderAttemptOutcome.Ok, ok.Outcome);
+        Assert.False(ok.Retried);
+        Assert.Null(ok.ProviderErrorCode);
+        Assert.Equal(new DateTime(2026, 10, 7, 9, 30, 3, DateTimeKind.Utc), ok.StartedAtUtc);
+    }
+
+    [Fact]
+    public void MapAttempts_KeepsTheGraderRole_ForAGraderRow()
+    {
+        var rows = ModelCallTelemetryWriter.MapAttempts(
+            WithAttempts(Record()), callIndex: 0, ModelCallSource.BenchmarkGrader,
+            new ProviderAttemptLinks(BenchmarkRunId: 70, GraderRole: ModelCallGraderRole.Synthesis));
+
+        Assert.All(rows, r =>
+        {
+            Assert.Equal(ModelCallGraderRole.Synthesis, r.GraderRole);
+            Assert.Null(r.BenchmarkRunAnswerId);
+            Assert.Null(r.QuestionId);
+            Assert.Equal(0, r.Pass);
+        });
+    }
+
+    [Fact]
+    public void MapAttempts_CutsStringsToTheirColumns_AndClampsOutOfRangeValues()
+    {
+        var record = Record();
+        record.Provider = new string('p', 40);
+        record.RequestedModelId = new string('m', 200);
+        record.Attempts.Add(new ProviderAttemptRecord
+        {
+            AttemptIndex = 300, DurationMs = -5, HttpStatus = 70000, Outcome = ProviderAttemptOutcome.TransportUnattributed,
+            ProviderErrorCode = "bad code!\n<script>" + new string('x', 100), RetryAfterMs = -1
+        });
+
+        var row = Assert.Single(ModelCallTelemetryWriter.MapAttempts(record, 0, ModelCallSource.BenchmarkCandidate, new ProviderAttemptLinks(1)));
+
+        Assert.Equal(32, row.Provider.Length);
+        Assert.Equal(128, row.RequestedModelId.Length);
+        Assert.Equal(byte.MaxValue, row.AttemptIndex);
+        Assert.Equal(0, row.DurationMs);
+        Assert.Null(row.HttpStatus);
+        Assert.Equal(0, row.RetryAfterMs);
+        Assert.NotNull(row.ProviderErrorCode);
+        Assert.Equal(64, row.ProviderErrorCode!.Length);
+        Assert.StartsWith("badcodescript", row.ProviderErrorCode);
+        Assert.Matches("^[A-Za-z0-9_.-]+$", row.ProviderErrorCode);
+    }
+
+    [Fact]
+    public void MapAllAttempts_PlacesEachCallsAttemptsAtItsOwnCallIndex()
+    {
+        var result = new AgentRunResult();
+        var first = WithAttempts(Record());
+        first.CallIndex = 0;
+        var second = Record();
+        second.CallIndex = 1;
+        second.Attempts.Add(new ProviderAttemptRecord { Outcome = ProviderAttemptOutcome.OurThrottle });
+        var third = Record();
+        third.CallIndex = 2;
+        result.ModelCalls.AddRange(new[] { first, second, third });
+
+        var rows = ModelCallTelemetryWriter.MapAllAttempts(result, ModelCallSource.BenchmarkCandidate, new ProviderAttemptLinks(70));
+
+        Assert.Equal(new[] { 0, 0, 1 }, rows.ConvertAll(r => r.CallIndex));
+        Assert.Equal(ProviderAttemptOutcome.OurThrottle, rows[2].Outcome);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData("", null)]
+    [InlineData("!!!", null)]
+    [InlineData("rate_limit_exceeded", "rate_limit_exceeded")]
+    [InlineData("google.rpc.QuotaFailure", "google.rpc.QuotaFailure")]
+    [InlineData("RESOURCE EXHAUSTED", "RESOURCEEXHAUSTED")]
+    public void SanitizeErrorCode_KeepsOnlyTheAllowedCharacters(string? code, string? expected)
+    {
+        Assert.Equal(expected, ModelCallTelemetryWriter.SanitizeErrorCode(code));
+    }
+
     [Theory]
     [InlineData(new[] { "a", "a" }, "a")]
     [InlineData(new[] { "a", "b" }, null)]

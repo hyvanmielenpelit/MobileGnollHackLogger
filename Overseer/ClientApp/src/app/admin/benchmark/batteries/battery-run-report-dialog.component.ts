@@ -65,6 +65,11 @@ import {
 import { RunReportFrameComponent } from '../run-report-frame/run-report-frame.component';
 import { VerdictShape, findPair, pairedErrorText, verdictShape, verdictText } from '../shared/paired-test/paired-test-format';
 import { PairedTestResultComponent } from '../shared/paired-test/paired-test-result.component';
+import {
+  ProviderAvailabilityComponent,
+  ProviderErrorsFigure,
+  providerErrorsFigure
+} from '../shared/provider-availability/provider-availability.component';
 import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
 import { BatteryAiReportsComponent, BatteryReportStatusChange } from './battery-ai-reports.component';
 import { BATTERY_SLOT_STATE_LABELS, BatterySlotState, batterySlotState } from './battery-progress-dialog.component';
@@ -118,7 +123,8 @@ export const BATTERY_RUN_REPORT_IMAGE_DETAILS_STORAGE_KEY = 'overseer.benchmark.
 
 /** The key figures a battery run shows, in display order; every card is always rendered. */
 export const BATTERY_RUN_KEY_FIGURES: readonly KeyFigureKey[] = [
-  'intelligence', 'critical-errors', 'answered', 'speed', 'mean-time', 'wall-time', 'model-cost', 'estimated-cost'
+  'intelligence', 'critical-errors', 'answered', 'speed', 'mean-time', 'wall-time', 'model-cost', 'estimated-cost',
+  'provider-errors'
 ];
 
 /** The cost role of the model under test in `totalCostByRole`. */
@@ -364,7 +370,8 @@ export function batteryRunDiagnosticsText(
   standalone: true,
   imports: [
     RunReportFrameComponent, RunFactsComponent, KeyFigureCardActionsComponent, KeyFiguresChooserComponent,
-    BenchmarkDownloadCenterComponent, BatteryAiReportsComponent, PairedTestResultComponent, InfoTipComponent
+    BenchmarkDownloadCenterComponent, BatteryAiReportsComponent, PairedTestResultComponent, InfoTipComponent,
+    ProviderAvailabilityComponent
   ],
   templateUrl: './battery-run-report-dialog.component.html',
   styleUrls: ['./battery-run-report-dialog.component.scss'],
@@ -1158,6 +1165,11 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
       return null;
     }
     return `${Math.round((candidate / total) * 100)} % of the total cost`;
+  }
+
+  /** The Provider Errors card: every member run, superseded ones and their predecessors included. */
+  get providerErrorsFigure(): ProviderErrorsFigure {
+    return providerErrorsFigure(this.detail?.providerAvailability);
   }
 
   // =============================================================================================

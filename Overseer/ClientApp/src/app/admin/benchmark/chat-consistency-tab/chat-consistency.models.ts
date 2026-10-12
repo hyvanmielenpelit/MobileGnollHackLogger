@@ -19,13 +19,15 @@ export type CcNumber = number | string;
 
 // --- Enums, as the server's camelCase names ---
 
-export type CcAxis = 'quality' | 'speedTelemetry' | 'speedLegacy' | 'work' | 'cost';
+export type CcAxis = 'quality' | 'speedTelemetry' | 'speedLegacy' | 'work' | 'cost' | 'availability';
 export type CcVerdict = 'changedDegraded' | 'changedImproved' | 'changedNegligible' | 'equivalent' | 'inconclusive';
 export type CcGrade = 'established' | 'indicated' | 'notEstablished';
 export type CcCheckStatus = 'passed' | 'failed' | 'notAssessable';
 export type CcEffectScale = 'difference' | 'logRatio';
 export type CcMeasurementChangeKind =
-  'grading' | 'scoring' | 'candidateTiming' | 'callTelemetry' | 'candidateAccounting' | 'pricing';
+  'grading' | 'scoring' | 'candidateTiming' | 'callTelemetry' | 'candidateAccounting' | 'pricing' | 'providerErrorAccounting';
+/** Why a run is left out of a speed or availability measure while kept for the others (`SpeedExclusionReason`). */
+export type CcSpeedExclusionReason = 'parallelQuestions' | 'noCallTelemetry' | 'noProviderLedger';
 export type CcAnnotationKind =
   'modelRelease' | 'providerStatement' | 'providerConfirmedCause' | 'priceChange' | 'ourChange' | 'other';
 export type CcRunStatus =
@@ -43,12 +45,16 @@ export type CcUnitKind = 'run' | 'batteryRun';
 export const CC_BATTERY_SET_PREFIX = 'battery:';
 export const CC_SUITE_SET_PREFIX = 'suite:';
 
-/** The primary endpoints, in protocol order. */
-export const CC_ENDPOINT_IDS = ['P1', 'P2', 'P3', 'P4', 'P5'] as const;
+/** Every primary endpoint, in protocol order: Protocol V1 has P1–P5, Protocol V2 adds P6. */
+export const CC_ENDPOINT_IDS = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'] as const;
 export type CcEndpointId = typeof CC_ENDPOINT_IDS[number];
 
+/** The published protocol versions; a new analysis uses {@link CC_LATEST_PROTOCOL_VERSION}. */
+export type CcProtocolVersion = 'V1' | 'V2';
+export const CC_LATEST_PROTOCOL_VERSION: CcProtocolVersion = 'V2';
+
 /** The axes a run's eligibility is given for, in the run table's column order. */
-export const CC_AXES: readonly CcAxis[] = ['quality', 'speedTelemetry', 'speedLegacy', 'work', 'cost'];
+export const CC_AXES: readonly CcAxis[] = ['quality', 'speedTelemetry', 'speedLegacy', 'work', 'cost', 'availability'];
 
 /** Every annotation kind with its plain-language label, in the add form's order. */
 export const CC_ANNOTATION_KINDS: readonly { readonly kind: CcAnnotationKind; readonly label: string }[] = [
@@ -77,6 +83,8 @@ export interface CcModelAxis {
   suiteNames: string[];
   /** Distinct battery runs with a member on this axis. */
   batteryRunCount: number;
+  /** Failed or canceled runs that recorded provider attempts: provider availability only, not in `runCount`. */
+  availabilityOnlyRunCount?: number;
 }
 
 export interface CcSubject {
@@ -134,6 +142,21 @@ export interface CcTimelinePoint {
   strataEstimated: boolean;
   answerCount: number;
   maxParallelQuestions: number;
+  // Provider availability, candidate attempts only; absent from an older server. Rates are proportions in [0, 1].
+  /** The run (a member, on a battery point) recorded provider attempts. */
+  availabilityRecorded?: boolean;
+  validAttemptCount?: number | null;
+  providerErrorCount?: number | null;
+  unattributedErrorCount?: number | null;
+  providerErrorRate?: CcNumber | null;
+  /** The cluster-adjusted Wilson 95 % interval of `providerErrorRate`. */
+  providerErrorRateLow?: CcNumber | null;
+  providerErrorRateHigh?: CcNumber | null;
+  /** Repair passes plus replaced runs through the lineage, and the provider-caused part. */
+  rerunsNeeded?: number | null;
+  providerRerunsNeeded?: number | null;
+  /** A failed or canceled run: it carries only identity, status and availability, and every other series skips it. */
+  availabilityOnly?: boolean;
 }
 
 /**
@@ -247,6 +270,17 @@ export interface CcRunRow {
   /** The 1-based position of the run's suite in that battery run. */
   batterySuitePosition: number | null;
   batterySuiteCount: number | null;
+  /** A failed or canceled run: listed for provider availability only, never selectable for an analysis. */
+  availabilityOnly?: boolean;
+  // Provider availability from the run's candidate rollups; null when the run did not record attempts.
+  availabilityRecorded?: boolean;
+  validAttemptCount?: number | null;
+  providerErrorCount?: number | null;
+  unattributedErrorCount?: number | null;
+  /** A proportion in [0, 1]. */
+  providerErrorRate?: CcNumber | null;
+  rerunsNeeded?: number | null;
+  providerRerunsNeeded?: number | null;
 }
 
 /** A battery or suite the subject can be compared within, over the step-1 dates. */
@@ -298,6 +332,15 @@ export interface CcBatteryRunRow {
   members: CcRunRow[];
   /** Per axis: eligible when every member is, else the members' reasons, each prefixed `#<run id>: `. */
   eligibility: CcAxisEligibility[];
+  // Provider availability over the usable members and the failed or superseded members; null when none recorded attempts.
+  availabilityRecorded?: boolean;
+  validAttemptCount?: number | null;
+  providerErrorCount?: number | null;
+  unattributedErrorCount?: number | null;
+  /** A proportion in [0, 1]. */
+  providerErrorRate?: CcNumber | null;
+  rerunsNeeded?: number | null;
+  providerRerunsNeeded?: number | null;
 }
 
 export interface CcEndpointProtocol {
@@ -332,6 +375,8 @@ export interface CcProtocol {
   minimumDaysPerPeriod: number;
   minimumPairedItems: number;
   minimumSpeedRunsPerStratum: number;
+  /** V2 (P6): a time stratum is common when each period has at least this many valid attempts in it; absent under V1. */
+  minimumAttemptsPerStratum?: number | null;
   minimumRunsPerStratumForSignCheck: number;
   ownWaitShareMaterialChange: CcNumber;
   flipPassThreshold: number;
@@ -345,8 +390,9 @@ export interface CcProtocol {
 }
 
 /**
- * The overrides a request may apply. Margins are keyed by endpoint id: index points for a difference
- * endpoint, a fraction (0.15 = ±15 %) for a log-ratio one.
+ * The overrides a request may apply. Margins are keyed by endpoint id: the endpoint's own unit for a
+ * difference endpoint (index points, or percentage points for P6), a fraction (0.15 = ±15 %) for a
+ * log-ratio one.
  */
 export interface CcProtocolOverrides {
   margins?: Record<string, number>;
@@ -382,6 +428,10 @@ export interface CcAnalysisRequest {
   /** With a battery set, the battery runs of each period; the run ids are then not sent. */
   baselineBatteryRunIds?: number[] | null;
   comparisonBatteryRunIds?: number[] | null;
+  /** `V1` or `V2`; without it the server uses V2 for a new analysis and the stored analysis's version for a re-analysis. */
+  protocolVersion?: CcProtocolVersion | string | null;
+  /** *Analyze again*: the saved analysis this one repeats. */
+  reanalysisOfAnalysisId?: number | null;
 }
 
 /** The step-1 run selection as the request carries it. */
@@ -400,9 +450,12 @@ export interface CcRunSelection {
   leftOutBatteryRunIds?: number[];
 }
 
-/** Why a usable run of the subject inside a period was not analyzed. */
+/**
+ * Why a run of the subject inside a period was not analyzed; `availabilityOnly` is a failed or canceled
+ * run, a failed or superseded battery member or a lineage predecessor that P6 reads and no other endpoint.
+ */
 export type CcUnanalyzedReason =
-  'leftOut' | 'outsideDateRange' | 'beforeFirstRun' | 'afterLastRun' | 'notSelected' | 'outsideComparisonSet';
+  'leftOut' | 'outsideDateRange' | 'beforeFirstRun' | 'afterLastRun' | 'notSelected' | 'outsideComparisonSet' | 'availabilityOnly';
 
 export interface CcUnanalyzedRun {
   runId: number;
@@ -529,6 +582,29 @@ export interface CcEndpointResult {
   strataUsed: string[];
   stratumExcludedShare: CcNumber | null;
   robustnessChecks: CcCheck[];
+  /** P6's attempt counts and rates; null or absent for every other endpoint. */
+  availability?: CcEndpointAvailability | null;
+}
+
+/**
+ * The provider attempts behind P6, candidate attempts only, over the endpoint's units (the analyzed units
+ * with their availability-only runs). Rates in percentage points.
+ */
+export interface CcEndpointAvailability {
+  baselineValidAttempts: number;
+  baselineProviderErrors: number;
+  baselineUnattributedErrors: number;
+  baselineOurSideFailures: number;
+  comparisonValidAttempts: number;
+  comparisonProviderErrors: number;
+  comparisonUnattributedErrors: number;
+  comparisonOurSideFailures: number;
+  /** The equal-weight mean of the per-stratum rates over the common strata, percentage points; null when none. */
+  baselineRate?: CcNumber | null;
+  comparisonRate?: CcNumber | null;
+  minimumAttemptsPerStratum: number;
+  baselineAvailabilityOnlyRunIds: number[];
+  comparisonAvailabilityOnlyRunIds: number[];
 }
 
 export interface CcSecondaryResult {
@@ -558,6 +634,12 @@ export interface CcFamilyResult {
 export interface CcRateResult {
   id: string;
   name: string;
+  /**
+   * `answers` or `calls` (V1); `answers`, `valid attempts`, `attempts`, `runs` or `battery runs` (V2, whose
+   * attempt-level ids are `providerOverloaded`, `providerServerErrors`, `providerTimeouts`,
+   * `providerStreamFailures`, `rateLimitOurs`, `rateLimitUnattributed`, `transportUnattributed`,
+   * `ourSideFailures` and the unit-level `providerRerunUnits`; `http429` and `http5xx` are V1's).
+   */
   denominator: string;
   baselineCount: number;
   baselineTotal: number;
@@ -568,6 +650,8 @@ export interface CcRateResult {
   comparisonRate: CcNumber | null;
   comparisonCi95: CcInterval | null;
   pValue: CcNumber | null;
+  /** The test behind `pValue`; null or absent for Fisher's exact test. */
+  method?: string | null;
   adjustedPValue: CcNumber | null;
   increased: boolean;
   establishedIncrease: boolean;
@@ -594,6 +678,8 @@ export interface CcSegmentView {
   speedLegacy: number | null;
   work: number | null;
   cost: number | null;
+  /** Absent from an older server. */
+  availability?: number | null;
 }
 
 export interface CcControlMatch {
@@ -798,9 +884,9 @@ export interface CcAnalysisResult {
   analysisCodeVersion: number;
 }
 
-/** Why an endpoint was not computed. */
+/** Why an endpoint was not computed; `notRecorded`: no unit of a period recorded provider attempts (P6). */
 export type CcNotComputedKind =
-  'measurementChanged' | 'noCommonStratum' | 'noTelemetry' | 'noPricing' | 'tooFewPairs' | 'other';
+  'measurementChanged' | 'noCommonStratum' | 'notRecorded' | 'noTelemetry' | 'noPricing' | 'tooFewPairs' | 'other';
 
 /** The hours one period's analyzed answers started in. */
 export interface CcPeriodHours {
@@ -826,6 +912,25 @@ export interface CcPeriodLevels {
   meanOutputTokensPerAnswer: CcNumber | null;
   meanCostPerQuestionUsd: CcNumber | null;
   failedAnswerCount: number;
+  // Provider availability (Protocol V2) over the period's analyzed units and availability-only runs; null or
+  // absent under V1. Rates are proportions in [0, 1].
+  /** At least one of the period's runs recorded provider attempts. */
+  availabilityRecorded?: boolean | null;
+  /** Runs counted: the units' members and availability-only runs; and how many of them recorded attempts. */
+  availabilityRunCount?: number | null;
+  availabilityRecordedRunCount?: number | null;
+  availabilityOnlyRunCount?: number | null;
+  validAttemptCount?: number | null;
+  providerErrorCount?: number | null;
+  unattributedErrorCount?: number | null;
+  ourSideFailureCount?: number | null;
+  providerErrorRate?: CcNumber | null;
+  /** The cluster-adjusted Wilson 95 % interval of `providerErrorRate`. */
+  providerErrorRateLow?: CcNumber | null;
+  providerErrorRateHigh?: CcNumber | null;
+  /** Repair passes plus replaced runs of the counted runs and their lineage, and the provider-caused part. */
+  rerunsNeeded?: number | null;
+  providerRerunsNeeded?: number | null;
 }
 
 /** Whether a saved analysis is out of date, and why (`GET analyses/{id}/freshness`). */
@@ -865,7 +970,7 @@ export interface CcEndpointBrief {
  * The analysis code version the server analyzes under now (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`).
  * A saved analysis below it was analyzed by earlier code.
  */
-export const CC_CURRENT_ANALYSIS_CODE_VERSION = 7;
+export const CC_CURRENT_ANALYSIS_CODE_VERSION = 8;
 
 export interface CcAnalysisSummary {
   id: number;
@@ -985,5 +1090,5 @@ export interface CcReportEstimate extends BenchmarkRunReportEstimateDto {
 }
 
 /** The chat consistency report figures uploaded with every written document, in document order. */
-export const CC_REPORT_FIGURE_KEYS = ['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline'] as const;
+export const CC_REPORT_FIGURE_KEYS = ['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline', 'cc5-availability'] as const;
 export type CcReportFigureKey = typeof CC_REPORT_FIGURE_KEYS[number];

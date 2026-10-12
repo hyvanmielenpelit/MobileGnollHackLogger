@@ -18,6 +18,7 @@ import {
   formatUtcDate,
   formatUtcDateTime,
   plural,
+  providerErrorsText,
   regradeCoverageText,
   runStatusText,
   segmentText,
@@ -109,6 +110,8 @@ export interface CcPeriodUnitCard {
   /** The run's matched controls, or the battery run's members' together. */
   controls: string;
   strata: string;
+  /** The rate with its count and re-runs, or `Not recorded` before harness 56. */
+  providerErrors: string;
   /** A battery run's usable members, in suite order; empty for a run. */
   members: { runId: number; text: string }[];
   membersLabel: string;
@@ -287,6 +290,7 @@ export function runUnitCard(unit: CcPeriodUnit, row: CcRunRow, point: CcTimeline
     regrade: regradeCoverageText(row),
     controls: controlRunsText(row),
     strata: strataText(point),
+    providerErrors: providerErrorsText(row),
     members: [],
     membersLabel: ''
   };
@@ -336,6 +340,7 @@ export function batteryUnitCard(
     regrade: '',
     controls: controls.length === 0 ? 'None' : controls.map(control => `#${control}`).join(', '),
     strata: '',
+    providerErrors: providerErrorsText(battery),
     members: battery.members.map(member => ({
       runId: member.runId,
       text: `#${member.runId} · ${member.suiteName} · ${runStatusText(member.status)} · harness ${member.harnessVersion ?? '—'}`

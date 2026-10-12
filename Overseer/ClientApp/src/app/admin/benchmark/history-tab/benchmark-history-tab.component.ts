@@ -11,6 +11,8 @@ import { CardListChip, CardListFacet } from '../../../shared/data-table/card-lis
 import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
+import { ProviderErrorBadgeComponent } from '../shared/provider-availability/provider-error-badge.component';
+import { cardHasProviderTrouble } from '../shared/provider-availability/provider-availability';
 import {
   RunFactBadge,
   runFactBadges
@@ -79,7 +81,7 @@ export interface BatteryFingerprintEntry {
   selector: 'app-benchmark-history-tab',
   standalone: true,
   imports: [
-    CommonModule, FilterFacetComponent, ProviderBadgeComponent, InfoTipComponent
+    CommonModule, FilterFacetComponent, ProviderBadgeComponent, ProviderErrorBadgeComponent, InfoTipComponent
   ],
   templateUrl: './benchmark-history-tab.component.html',
   styleUrls: ['./benchmark-history-tab.component.scss']
@@ -112,6 +114,8 @@ export class BenchmarkHistoryTabComponent implements OnInit {
   readonly modelBatchLaunchedRunCount = modelBatchLaunchedRunCount;
   readonly canCompareModelBatch = canCompareModelBatch;
   readonly modelBatchCompareReason = MODEL_BATCH_COMPARE_REASON;
+  /** Whether a card's kicker carries the provider-error badge (and its separator). */
+  readonly cardHasProviderTrouble = cardHasProviderTrouble;
 
   /** The batch whose Open in Model Comparison is gathering its results; every such button waits for it. */
   comparingModelBatchId: number | null = null;

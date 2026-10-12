@@ -252,6 +252,67 @@ describe('AdminBenchmarkComponent: Run History battery runs', () => {
       .map(chip => chip.getAttribute('aria-label'))).toEqual(['Remove filter Kind: Battery run']);
   });
 
+  it('should offer the battery-run flags in the Flags facet and filter by them', () => {
+    openHistoryWith([buildHistoryRun({ id: 3, startedAtUtc: '2026-09-03T00:00:00Z' })], [
+      finishedBattery({ id: 9 }),
+      finishedBattery({
+        id: 8, startedAtUtc: '2026-09-01T00:00:00Z', latestAnalysisId: 3, latestAnalysisComplete: false, analysisStale: true
+      }),
+      finishedBattery({ id: 7, startedAtUtc: '2026-08-31T00:00:00Z', latestAnalysisId: 2, latestAnalysisComplete: true })
+    ]);
+
+    const flags = ctx.historyTab().historyFacets.find(f => f.column === 'flags')!;
+    const batteryFlags = ['Not analyzed', 'Analysis stale', 'Incomplete'];
+    expect(flags.options.filter(o => batteryFlags.includes(o.value)).map(o => [o.value, o.count])).toEqual([
+      ['Not analyzed', 1], ['Analysis stale', 1], ['Incomplete', 1]
+    ]);
+    expect(flags.options.map(o => o.value).at(-1)).toBe('None');
+
+    ctx.historyTab().onHistoryFacetChange('flags', ['Not analyzed']);
+    expect(shownKeys()).toEqual(['battery:9']);
+    ctx.historyTab().onHistoryFacetChange('flags', ['Analysis stale', 'Incomplete']);
+    expect(shownKeys()).toEqual(['battery:8']);
+  });
+
+  it('should badge, flag and sort a battery run by its pooled provider errors', () => {
+    const pooled = (k: number, n: number, reruns = 0): Partial<BenchmarkBatteryRunDto> => ({
+      providerAvailabilityRecorded: true, providerRecordedRunCount: 2, providerRunCount: 2,
+      providerValidAttempts: n, providerErrorCount: k, providerUnattributedErrorCount: 1,
+      providerErrorRate: k / n, rerunsNeeded: reruns, providerRerunsNeeded: reruns
+    });
+    openHistoryWith(
+      [buildHistoryRun({
+        id: 3, startedAtUtc: '2026-09-03T00:00:00Z', providerAvailabilityRecorded: true, providerValidAttempts: 200,
+        providerErrorCount: 1, providerErrorRate: 0.005, rerunsNeeded: 0, providerRerunsNeeded: 0
+      })],
+      [
+        finishedBattery({ id: 9, ...pooled(12, 1480, 1) }),
+        finishedBattery({ id: 8, startedAtUtc: '2026-09-01T00:00:00Z', ...pooled(0, 900) }),
+        finishedBattery({ id: 7, startedAtUtc: '2026-08-31T00:00:00Z' })
+      ]
+    );
+
+    const badge = batteryCard(9).querySelector('.rh-card-kicker > app-provider-error-badge') as HTMLElement;
+    expect(badge).toBeTruthy();
+    expect(badge.previousElementSibling?.classList.contains('rh-sep')).toBe(true);
+    expect(text(badge)).toContain('Provider errors');
+    // All well, or not recorded: nothing at all.
+    expect(batteryCard(8).querySelector('app-provider-error-badge')).toBeNull();
+    expect(batteryCard(7).querySelector('app-provider-error-badge')).toBeNull();
+
+    const flags = ctx.historyTab().historyFacets.find(f => f.column === 'flags')!;
+    expect(flags.options.find(o => o.value === 'Provider errors')?.count).toBe(2);
+    ctx.historyTab().onHistoryFacetChange('flags', ['Provider errors']);
+    expect(shownKeys()).toEqual(['run:3', 'battery:9']);
+    ctx.historyTab().onHistoryFacetChange('flags', []);
+
+    const sort = fixture.nativeElement.querySelector('#rh-sort') as HTMLSelectElement;
+    sort.value = 'provider-errors-desc';
+    sort.dispatchEvent(new Event('change'));
+    // 0.81 %, 0.50 %, 0 %, then the battery run that records nothing.
+    expect(shownKeys()).toEqual(['battery:9', 'run:3', 'battery:8', 'battery:7']);
+  });
+
   it('should find a battery run by its battery name and by the name of one of its suites', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     openHistoryWith(

@@ -1,8 +1,8 @@
 ---
 name: server-chat-consistency
 description: >-
-  GnollBench Chat Consistency in Overseer: whether the Overseer chat stays as good, fast and cheap over
-  time with a given model, judged from GnollBench runs. Read before running or interpreting a chat
+  GnollBench Chat Consistency in Overseer: whether the Overseer chat stays as good, fast, cheap and
+  available over time with a given model, judged from GnollBench runs. Read before running or interpreting a chat
   consistency analysis, writing about the chat or a model getting slower, faster, worse or better,
   planning checkpoint or control runs, or classifying a new HarnessVersion in HarnessImpactLedger.
 ---

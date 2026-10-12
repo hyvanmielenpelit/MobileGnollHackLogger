@@ -884,9 +884,128 @@ export interface BenchmarkToolCallDto {
   resultLengthChars: number;
 }
 
+/**
+ * Compact provider availability figures on a card or table row, read from the runs' rollup columns
+ * and pooled with their lineage predecessors (`IProviderAvailabilityCardDto` on the server). When no
+ * run of the pool records the ledger, `providerAvailabilityRecorded` is false and the figures are null.
+ * `providerErrorRate` is a proportion in [0, 1].
+ */
+export interface ProviderAvailabilityCardFields {
+  providerAvailabilityRecorded?: boolean | null;
+  providerRecordedRunCount?: number | null;
+  providerRunCount?: number | null;
+  providerValidAttempts?: number | null;
+  providerErrorCount?: number | null;
+  providerUnattributedErrorCount?: number | null;
+  providerErrorRate?: number | null;
+  rerunsNeeded?: number | null;
+  providerRerunsNeeded?: number | null;
+}
+
+/** Whose side an outcome class is on. */
+export type ProviderAttemptSide = 'ok' | 'provider' | 'unattributed' | 'ours';
+
+/** One outcome class of the breakdown: every class, in value order. */
+export interface ProviderAvailabilityOutcomeDto {
+  /** The class name, e.g. `ProviderOverloaded`. */
+  outcome: string;
+  /** The stored class value (0, 10–13, 20–21, 30–36). */
+  code: number;
+  side: ProviderAttemptSide;
+  count: number;
+  /** Up to three HTTP statuses seen in the class, most frequent first. */
+  httpStatuses: number[];
+}
+
+/** One 5-minute UTC bin of candidate attempts. */
+export interface ProviderAvailabilityBinDto {
+  startUtc: string;
+  valid: number;
+  provider: number;
+  unattributed: number;
+  ours: number;
+}
+
+/** A replacement link in the pool: `replacedByRunId` replaced `runId`. */
+export interface ProviderAvailabilityLinkDto {
+  runId: number;
+  replacedByRunId: number;
+  /** `ProviderFailure`, `OurFailure`, `InstrumentChange`, `OperatorRequest`, `Unknown`, or null. */
+  cause: string | null;
+}
+
+/**
+ * The full provider availability of a run, a battery run or a comparison entry, candidate-only and
+ * lineage-pooled. Rates are proportions in [0, 1], null without valid attempts.
+ */
+export interface ProviderAvailabilityDto {
+  recorded: boolean;
+  recordedRuns: number;
+  totalRuns: number;
+  replacedRunsIncluded: number;
+  validAttempts: number;
+  providerErrors: number;
+  unattributedErrors: number;
+  ourSideFailures: number;
+  providerErrorRate: number | null;
+  providerErrorRateLow: number | null;
+  providerErrorRateHigh: number | null;
+  designEffect: number;
+  inclusiveRate: number | null;
+  inclusiveRateLow: number | null;
+  inclusiveRateHigh: number | null;
+  fewAttempts: boolean;
+  overloaded: number;
+  serverErrors: number;
+  timeouts: number;
+  streamFailures: number;
+  rateLimitedOurs: number;
+  rateLimitedUnattributed: number;
+  transportUnattributed: number;
+  byOutcome: ProviderAvailabilityOutcomeDto[];
+  questionsLost: number;
+  calls: number;
+  firstAttemptSuccessCalls: number;
+  repairPasses: number;
+  providerRepairPasses: number;
+  replacementRuns: number;
+  providerReplacementRuns: number;
+  rerunsNeeded: number;
+  providerRerunsNeeded: number;
+  graderValidAttempts: number;
+  graderProviderErrors: number;
+  bins: ProviderAvailabilityBinDto[];
+  replaces: ProviderAvailabilityLinkDto[];
+}
+
+/** One member row of a battery run's availability table: the member run's own ledger figures. */
+export interface BenchmarkBatteryMemberAvailabilityDto {
+  memberId: number;
+  runId: number;
+  suiteIndex: number;
+  round: number;
+  superseded: boolean;
+  recorded: boolean;
+  validAttempts: number | null;
+  providerErrors: number | null;
+  unattributedErrors: number | null;
+  providerErrorRate: number | null;
+  rerunsNeeded: number | null;
+  providerRerunsNeeded: number | null;
+}
+
 export interface BenchmarkRunAnswerDto {
   id: number;
   benchmarkRunId: number;
+  /**
+   * Whose fault the answer's terminal failure was: 'None', 'Provider', 'Unattributed' or 'Ours'.
+   * Null on a run that does not record the provider attempt ledger (before harness 56).
+   */
+  failureOrigin?: 'None' | 'Provider' | 'Unattributed' | 'Ours' | null;
+  /** The outcome class of the attempt that ended the answer, or `question_budget`; null when it did not fail or was not recorded. */
+  failureKind?: string | null;
+  /** How many times a re-run re-executed this answer; null when not recorded. */
+  reExecutionCount?: number | null;
   /**
    * This answer's input tokens as a share of the run total, 0-100. Computed server-side from the
    * stored per-answer tokens and the run total, never a stored column. Input-token cost is driven
@@ -1147,8 +1266,10 @@ export interface BenchmarkSynthesisConvergenceRowDto {
   memberBText: string | null;
 }
 
-export interface BenchmarkRunDetailDto {
+export interface BenchmarkRunDetailDto extends ProviderAvailabilityCardFields {
   id: number;
+  /** The run's provider availability, pooled with its lineage predecessors; `recorded` is false before harness 56. */
+  providerAvailability?: ProviderAvailabilityDto | null;
   /** The run stopped before finishing its suite. Decided by the server (BenchmarkRunFinalizer.IsAbortedRun). */
   isAborted?: boolean;
   benchmarkSuiteId?: number | null;
@@ -1823,7 +1944,7 @@ export interface BenchmarkCoverageReportDto {
   errorMessage?: string | null;
 }
 
-export interface BenchmarkRunSummaryDto {
+export interface BenchmarkRunSummaryDto extends ProviderAvailabilityCardFields {
   id: number;
   /** The run stopped before finishing its suite. Decided by the server (BenchmarkRunFinalizer.IsAbortedRun). */
   isAborted?: boolean;
@@ -1942,7 +2063,7 @@ export type BenchmarkRunSeriesStatus =
 
 export type BenchmarkRunSeriesStopReason = 'MemberFailed' | 'RunCapReached' | 'SpendDenied';
 
-export interface BenchmarkRunSeriesMemberDto {
+export interface BenchmarkRunSeriesMemberDto extends ProviderAvailabilityCardFields {
   index: number;
   runId: number;
   status: string;
@@ -2179,7 +2300,7 @@ export interface BenchmarkBatteryRunSuiteDto {
 }
 
 /** One run in one (suite, round) slot of a battery run. */
-export interface BenchmarkBatteryMemberDto {
+export interface BenchmarkBatteryMemberDto extends ProviderAvailabilityCardFields {
   memberId: number;
   /** 0-based position of the suite in the definition snapshot. */
   suiteIndex: number;
@@ -2274,8 +2395,12 @@ export interface BenchmarkBatterySlotDto {
 /** `BenchmarkBatteryRunDto.postRunWork`'s wire values. */
 export type BenchmarkBatteryPostRunWork = 'None' | 'Repairing' | 'Analysing' | 'WritingReports';
 
-export interface BenchmarkBatteryRunDto {
+export interface BenchmarkBatteryRunDto extends ProviderAvailabilityCardFields {
   id: number;
+  /** The battery run's provider availability, superseded members included; set on the single-run endpoints only. */
+  providerAvailability?: ProviderAvailabilityDto | null;
+  /** One row per member run, superseded members included; set on the single-run endpoints only. */
+  providerAvailabilityMembers?: BenchmarkBatteryMemberAvailabilityDto[] | null;
   /** Null when the battery has been deleted; the run keeps its own snapshot. */
   batteryId?: number | null;
   batteryName: string;
@@ -2432,6 +2557,10 @@ export interface BenchmarkBatteryAnalysisDto {
 /** The latest analysis of one battery run, as a leaderboard row. */
 export interface BenchmarkBatteryLeaderboardRowDto {
   batteryRunId: number;
+  /** Provider error rate (proportion), count and valid attempts of the battery run; null when not recorded. */
+  providerErrorRate?: number | null;
+  providerErrorCount?: number | null;
+  providerValidAttempts?: number | null;
   batteryId?: number | null;
   batteryName: string;
   definitionRevision: number;
@@ -2703,7 +2832,10 @@ export interface BenchmarkModelBatchMemberResultDto {
   /** The share of model time spent waiting on the provider; null without timing. */
   ownWaitShare?: number | null;
   failedAnswers: number;
-  providerErrors: number;
+  /** Candidate attempts that failed at the provider, from the run rollups; null when not recorded. */
+  providerErrors?: number | null;
+  /** Repair passes plus replacement runs; null when not recorded. */
+  rerunsNeeded?: number | null;
   retries: number;
   /** The run's Speed Index, the series' mean or the battery run's Overall Speed Index; null when withheld. */
   speedIndex?: number | null;
@@ -2880,7 +3012,7 @@ export interface BenchmarkRunGroupMemberDto {
   addedAtUtc: string;
 }
 
-export interface BenchmarkRunGroupDto {
+export interface BenchmarkRunGroupDto extends ProviderAvailabilityCardFields {
   id: number;
   name: string;
   benchmarkSuiteId?: number | null;

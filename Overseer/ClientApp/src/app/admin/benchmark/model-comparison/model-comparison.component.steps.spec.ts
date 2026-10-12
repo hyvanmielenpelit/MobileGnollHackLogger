@@ -29,7 +29,7 @@ import type { FigureChrome } from './figure-chrome';
 import { DownloadCenterPanelComponent } from '../download-center/download-center-panel.component';
 import {
   ReportPackPanelStubComponent, buildEntry, buildExcludedEntry, buildDto, render, comparableSet, textOf,
-  setUpModelComparisonSpec
+  setUpModelComparisonSpec, buildUnrecordedAvailability
 } from './model-comparison.component.testing';
 
 describe('ModelComparisonComponent', () => {
@@ -281,7 +281,9 @@ describe('ModelComparisonComponent', () => {
       fixture.detectChanges();
       expect(panel.context).toBe(context);
       expect(panel.chartSelection).toEqual(DEFAULT_CHART_SELECTION);
-      expect(panel.chartsAvailable).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost', 'p2-profile', 's1-quality-speed', 's2-quality-cost', 's3-speed-cost']);
+      expect(panel.chartsAvailable).toEqual([
+        'p1a-quality', 'p1b-speed', 'p1c-cost', 'p2-profile', 's1-quality-speed', 's2-quality-cost', 's3-speed-cost', 'a1-availability'
+      ]);
       // The documents draw Light, for print by default, so step 2's dark default theme never reaches them.
       expect(panel.chartAdvisory).toBeNull();
       // A document type whose charts take step 2's theme prints the dark one badly: the advisory says so.
@@ -295,6 +297,12 @@ describe('ModelComparisonComponent', () => {
 
       render(buildDto(comparableSet(2)), 3);
       expect(reportPanel()!.chartsAvailable).not.toContain('p2-profile');
+      expect(reportPanel()!.chartsAvailable).toContain('a1-availability');
+
+      // A1 needs a plotted model that records provider errors.
+      render(buildDto(comparableSet(3).map(entry => ({ ...entry, availability: buildUnrecordedAvailability() }))), 3);
+      expect(reportPanel()!.chartsAvailable).not.toContain('a1-availability');
+      expect(reportPanel()!.chartsAvailable).toContain('p2-profile');
     });
 
     it('says the chart advisory only for a dark theme, or light text on a transparent background', () => {

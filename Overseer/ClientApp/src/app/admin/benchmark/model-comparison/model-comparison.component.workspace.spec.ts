@@ -98,7 +98,8 @@ describe('ModelComparisonComponent', () => {
       timeline: DEFAULT_FIGURE_STYLE.timeline,
       numbers: DEFAULT_FIGURE_STYLE.numbers,
       appearance: DEFAULT_FIGURE_STYLE.appearance,
-      table: DEFAULT_FIGURE_STYLE.table
+      table: DEFAULT_FIGURE_STYLE.table,
+      availability: DEFAULT_FIGURE_STYLE.availability
     };
 
     const bar = exportChrome(component.panelCards[1]);

@@ -1,6 +1,7 @@
 namespace Overseer.Services.Benchmarking;
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json;
@@ -12,6 +13,82 @@ using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Privacy;
 using Sentry;
+
+/// <summary>The run a launch replaces, and why it was replaced (<see cref="BenchmarkRun.ReplacesRunId"/>).</summary>
+public sealed record BenchmarkRunReplacement(long RunId, BenchmarkReplacementCause Cause);
+
+/// <summary>What <see cref="BenchmarkReplacementCauses.Decide"/> reads from a replaced run.</summary>
+/// <param name="Status">The replaced run's status.</param>
+/// <param name="Recorded">The replaced run kept a provider ledger (<see cref="BenchmarkRun.ProviderLedgerVersion"/> set).</param>
+/// <param name="AnyProviderFailure">A terminal answer of the replaced run failed with origin <see cref="BenchmarkFailureOrigin.Provider"/>.</param>
+public sealed record BenchmarkReplacedRunFacts(BenchmarkRunStatus Status, bool Recorded, bool AnyProviderFailure);
+
+/// <summary>
+/// Decides <see cref="BenchmarkRun.ReplacementCause"/> from the replaced run, for every orchestrator that
+/// launches or attaches a replacement.
+/// </summary>
+public static class BenchmarkReplacementCauses
+{
+    /// <summary>
+    /// The first that applies: <c>InstrumentChange</c> when the run was replaced under the current
+    /// instrument; <c>OperatorRequest</c> when an attach replaced it or it was canceled; <c>ProviderFailure</c>
+    /// when a terminal answer failed with provider origin; <c>OurFailure</c> for any other recorded run;
+    /// <c>Unknown</c> for a run without a provider ledger, or one no longer stored (<paramref name="replaced"/> null).
+    /// </summary>
+    public static BenchmarkReplacementCause Decide(
+        BenchmarkReplacedRunFacts? replaced, bool instrumentChange = false, bool attached = false)
+    {
+        if (instrumentChange) return BenchmarkReplacementCause.InstrumentChange;
+        if (attached || replaced?.Status == BenchmarkRunStatus.Canceled) return BenchmarkReplacementCause.OperatorRequest;
+        if (replaced == null) return BenchmarkReplacementCause.Unknown;
+        if (replaced.AnyProviderFailure) return BenchmarkReplacementCause.ProviderFailure;
+        return replaced.Recorded ? BenchmarkReplacementCause.OurFailure : BenchmarkReplacementCause.Unknown;
+    }
+
+    /// <summary>The facts <see cref="Decide"/> reads, per stored run id; a run no longer stored is absent.</summary>
+    public static async Task<IReadOnlyDictionary<long, BenchmarkReplacedRunFacts>> LoadFactsAsync(
+        ApplicationDbContext db, IEnumerable<long> runIds, CancellationToken ct = default)
+    {
+        var ids = runIds.Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<long, BenchmarkReplacedRunFacts>();
+
+        var rows = await db.BenchmarkRuns
+            .AsNoTracking()
+            .Where(r => ids.Contains(r.Id))
+            .Select(r => new
+            {
+                r.Id,
+                r.Status,
+                Recorded = r.ProviderLedgerVersion != null,
+                AnyProviderFailure = r.Answers.Any(a =>
+                    (a.Status == BenchmarkAnswerStatus.ProviderError || a.Status == BenchmarkAnswerStatus.Failed)
+                    && a.FailureOrigin == BenchmarkFailureOrigin.Provider)
+            })
+            .ToListAsync(ct);
+
+        return rows.ToDictionary(r => r.Id, r => new BenchmarkReplacedRunFacts(r.Status, r.Recorded, r.AnyProviderFailure));
+    }
+
+    /// <summary>The replacement of one run, its cause decided from the stored run.</summary>
+    public static async Task<BenchmarkRunReplacement> ReplacementAsync(
+        ApplicationDbContext db, long replacedRunId, bool instrumentChange = false, bool attached = false, CancellationToken ct = default)
+    {
+        var facts = await LoadFactsAsync(db, new[] { replacedRunId }, ct);
+        return new BenchmarkRunReplacement(
+            replacedRunId, Decide(facts.GetValueOrDefault(replacedRunId), instrumentChange, attached));
+    }
+
+    /// <summary>The replacement of each run in <paramref name="replacedRunIds"/>, under the same key.</summary>
+    public static async Task<IReadOnlyDictionary<TKey, BenchmarkRunReplacement>> ReplacementsAsync<TKey>(
+        ApplicationDbContext db, IReadOnlyDictionary<TKey, long> replacedRunIds, bool instrumentChange = false, CancellationToken ct = default)
+        where TKey : notnull
+    {
+        var facts = await LoadFactsAsync(db, replacedRunIds.Values, ct);
+        return replacedRunIds.ToDictionary(
+            p => p.Key,
+            p => new BenchmarkRunReplacement(p.Value, Decide(facts.GetValueOrDefault(p.Value), instrumentChange)));
+    }
+}
 
 /// <summary>
 /// Why a launch was refused. The controller maps these onto HTTP status codes and the series
@@ -427,6 +504,8 @@ public class BenchmarkRunLauncher
     }
 
     /// <param name="batchOwner">The model batch claim the launch runs under; null outside a batch.</param>
+    /// <param name="replacesRunId">The run this launch replaces, stamped as <see cref="BenchmarkRun.ReplacesRunId"/>.</param>
+    /// <param name="replacementCause">Why that run was replaced; stamped only with <paramref name="replacesRunId"/>.</param>
     public async Task<BenchmarkRunLaunchResult> CreateAndLaunchRunAsync(
         StartBenchmarkRunRequest request,
         string? userId,
@@ -434,7 +513,9 @@ public class BenchmarkRunLauncher
         int? seriesIndex = null,
         CancellationToken ct = default,
         BenchmarkBatteryRunMember? batteryMember = null,
-        string? batchOwner = null)
+        string? batchOwner = null,
+        long? replacesRunId = null,
+        BenchmarkReplacementCause? replacementCause = null)
     {
         if (_runManager.CurrentRunId.HasValue)
         {
@@ -551,7 +632,10 @@ public class BenchmarkRunLauncher
             PricingSnapshotJson = pricingSnapshotJson,
 
             RunSeriesId = seriesId,
-            RunSeriesIndex = seriesIndex
+            RunSeriesIndex = seriesIndex,
+
+            ReplacesRunId = replacesRunId,
+            ReplacementCause = replacesRunId.HasValue ? replacementCause ?? BenchmarkReplacementCause.Unknown : null
         };
 
         _dbContext.BenchmarkRuns.Add(run);

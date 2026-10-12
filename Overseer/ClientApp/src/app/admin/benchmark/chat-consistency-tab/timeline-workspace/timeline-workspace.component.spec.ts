@@ -496,14 +496,15 @@ describe('CcTimelineWorkspaceComponent', () => {
     openSideTab('charts');
     expect(q('#cc-tl-side-panel-charts .cc-tl-decimals legend')).not.toBeNull();
     expect(textOf(q('#cc-tl-side-panel-charts .cc-tl-decimals legend'))).toBe('Number format');
-    const keys = ['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'reliability'];
+    const keys = ['quality', 'ttfat', 'rate', 'work', 'tools', 'cost', 'reliability', 'availability'];
     const selects = qa<HTMLSelectElement>('select[id^="cc-tl-decimals-"]');
     expect(selects.map(select => select.id)).toEqual(keys.map(key => `cc-tl-decimals-${key}`));
     // Each select is named by its label, the chart's title.
     expect(selects.map(select => textOf(select.labels?.[0] ?? null)))
       .toEqual(FIGURE_ORDER.filter(key => key !== 'timeline').map(key => CC_FIGURE_KEYS.find(entry => entry.key === key)!.title));
     expect(selects.map(select => textOf(select.options[0]))).toEqual([
-      'Automatic (0)', 'Automatic (1, in seconds)', 'Automatic (1)', 'Automatic (0)', 'Automatic (1)', 'Automatic (2–4)', 'Automatic (1)'
+      'Automatic (0)', 'Automatic (1, in seconds)', 'Automatic (1)', 'Automatic (0)', 'Automatic (1)', 'Automatic (2–4)', 'Automatic (1)',
+      'Automatic (2 significant digits)'
     ]);
     expect(selects.map(select => select.value)).toEqual(keys.map(() => ''));
     const offers = (key: string) => Array.from(q<HTMLSelectElement>(`#cc-tl-decimals-${key}`)!.options).map(option => option.value);
@@ -582,11 +583,33 @@ describe('CcTimelineWorkspaceComponent', () => {
 
   it('reads a version-1 layout that shows Work per answer as showing both of its charts, and drops work.tools', () => {
     const old = parseTimelineLayout({ version: 1, figures: ['quality', 'work'], hiddenSeries: ['work.tools', 'ttfat.proxy'] });
-    expect(old.figures).toEqual(['quality', 'work', 'tools']);
+    expect(old.figures).toEqual(['quality', 'work', 'tools', 'availability']);
     expect(old.hiddenSeries).toEqual(['ttfat.proxy']);
-    expect(parseTimelineLayout({ version: 1, figures: ['quality'] }).figures).toEqual(['quality']);
-    // A version-2 layout means what it says.
-    expect(parseTimelineLayout({ version: 2, figures: ['work'] }).figures).toEqual(['work']);
+    expect(parseTimelineLayout({ version: 1, figures: ['quality'] }).figures).toEqual(['quality', 'availability']);
+    // A version-2 layout keeps its charts and gains Provider availability; it shows no chart it left out.
+    expect(parseTimelineLayout({ version: 2, figures: ['work'] }).figures).toEqual(['work', 'availability']);
+    // A version-3 layout means what it says.
+    expect(parseTimelineLayout({ version: 3, figures: ['work'] }).figures).toEqual(['work']);
+    expect(parseTimelineLayout({ version: 3, figures: [] }).figures).toEqual([]);
+  });
+
+  it('reads and writes the provider availability form, points by default', async () => {
+    expect(parseTimelineLayout({ version: 3 }).availabilityForm).toBe('points');
+    expect(parseTimelineLayout({ version: 3, availabilityForm: 'strip' }).availabilityForm).toBe('strip');
+    expect(parseTimelineLayout({ version: 3, availabilityForm: 'heatmap' }).availabilityForm).toBe('points');
+
+    await create();
+    const radios = qa<HTMLInputElement>('input[name="cc-tl-availability-form"]');
+    expect(radios.map(radio => radio.value)).toEqual(['points', 'controlChart', 'strip']);
+    expect(radios.map(radio => textOf(radio.closest('label')))).toEqual(['Points with intervals', 'Control limits (Laney p′ chart)', 'Daily strip']);
+    expect(radios[0].checked).toBe(true);
+    expect(figure('availability').availabilityForm).toBe('points');
+
+    clickOn('#cc-tl-availability-form-controlChart');
+    await settle();
+    expect(figure('availability').availabilityForm).toBe('controlChart');
+    expect(storedLayout()['availabilityForm']).toBe('controlChart');
+    expect(storedLayout()['version']).toBe(3);
   });
 
   it('reads a stored layout\'s legacy image theme and logo, each null where absent or of the wrong kind', () => {
@@ -595,10 +618,10 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(parseLegacyImageSettings(null)).toEqual({ imageTheme: null, logo: null });
   });
 
-  it('writes the layout as version 2, without the image theme and logo the figure style holds', async () => {
+  it('writes the layout as version 3, without the image theme and logo the figure style holds', async () => {
     await create();
     clickOn('#cc-tl-zero-baseline');
-    expect(storedLayout()['version']).toBe(2);
+    expect(storedLayout()['version']).toBe(3);
     expect(storedLayout()['logo']).toBeUndefined();
     expect(storedLayout()['imageTheme']).toBeUndefined();
   });
@@ -1118,7 +1141,8 @@ describe('CcTimelineWorkspaceComponent', () => {
     expect(ws.sidebarTab).toBe('download');
     expect(ws.view).toBe('single');
     const select = q<HTMLSelectElement>('#cc-tl-single-figure')!;
-    expect(Array.from(select.options).map(option => option.value)).toEqual(['quality', 'cost']);
+    // A layout before version 3 gains Provider availability.
+    expect(Array.from(select.options).map(option => option.value)).toEqual(['quality', 'cost', 'availability']);
     expect(select.value).toBe('cost');
     // The retired `work.tools` series is dropped with the unknown one.
     expect([...ws.hiddenSeries]).toEqual(['ttfat.proxy']);

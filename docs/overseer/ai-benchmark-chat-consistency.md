@@ -2,8 +2,8 @@
 
 GnollBench is the Overseer AI benchmark (Admin → GnollBench). **Chat Consistency** is its eighth
 sub-tab and the method behind it: from GnollBench runs made over time, it judges whether the Overseer
-chat with one model has stayed as good, as fast and as cheap as it was, and which side a change fits —
-ours, the provider's, or our infrastructure.
+chat with one model has stayed as good, as fast, as cheap and as available as it was, and which side a
+change fits — ours, the provider's, or our infrastructure.
 
 This document specifies the method as the code implements it. The code is in
 `Overseer/Services/ChatConsistency/` (analysis, statistics, comparability, attribution, ledger),
@@ -44,6 +44,17 @@ and no grader, so it can show that a chat got slower or more expensive, but neve
 answering. A GnollBench run answers the same items under the production system prompt and tools and
 grades every answer, so quality, speed, work and cost are measured on the same turns.
 
+**Availability-only runs (code version 8).** Provider availability (P6, § 9) must not lose the runs an
+outage produces, so a Protocol V2 analysis also reads, for P6 alone, every `Failed` or `Canceled` run of
+the same model and the same suite or battery whose start lies **inside a period's run range** — at or
+after the period's first unit's start and at or before its last unit's, by start then id — and the
+lineage predecessors (`ReplacesRunId`) of the period's units. The range is the period's run range, not
+a date window (§ 17.2), so the selection is too. In a battery comparison they are the failed or
+superseded **member runs** of the battery runs in the set; a whole battery run that is incomplete or
+failed is not pulled in. They are chosen automatically, never by the operator, and are listed in the run
+selection with the unanalyzed reason `availabilityOnly` (§ 18). No other endpoint reads them. The method
+behind the figure is [`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md).
+
 ## 3. Operating Mode
 
 GnollBench runs on the **development computer**: Overseer is started from Visual Studio for a session,
@@ -79,13 +90,30 @@ Every mark is milliseconds from the send of the **successful** attempt (the last
 succeeded); the waits are the time before it. A call that failed for good still writes a row, with
 `ErrorKind` set. Null means "not recorded", never zero.
 
+| Group | Fields of each attempt (`BenchmarkProviderAttempt`, from harness 56) |
+|-------|--------|
+| Whose attempt | `BenchmarkRunId`, `BenchmarkRunAnswerId`, `QuestionId`, `Source`, `GraderRole`, `Provider`, `RequestedModelId`, `SystemAiApiConfigurationId`, `EndpointKind` |
+| Where | `Pass` (0 initial, *n* the *n*-th repair pass), `CallIndex`, `AttemptIndex` |
+| When and what | `StartedAtUtc`, `DurationMs`, `Outcome` (the outcome class), `HttpStatus`, `ProviderErrorCode`, `Retried`, `RetryAfterMs` |
+
+A call row counts its failed attempts (`AttemptCount`, `Http429Count`, `Http5xxCount`) and keeps the last
+attempt's status; the **provider attempt ledger** keeps every attempt, with whose failure it was, and is
+append-only: no re-run, re-assessment or re-synthesis deletes a row. Only a recorded run
+(`ProviderLedgerVersion = 1`) writes it. The classes and their rules are in
+[`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md) § 3; P6 reads the
+candidate rows.
+
 ### 4.2 Per answer and per run
 
 - **`BenchmarkRunAnswer`**: `StartedAtUtc`, `CompletedAtUtc` (the candidate turn's wall-clock bounds),
   `PermitWaitMs`, `BackoffWaitMs` (Overseer's own waits inside `DurationMs`), `RetryAttemptCount`,
   `ServedModelId` (the id every reporting call agrees on; null when they disagree) and `ModelCalls`.
 - **`BenchmarkRun`**: `CallTelemetryVersion`, `ServedModelIdsJson` (served model id → candidate call
-  count) and `IsConsistencyAnchor` (§ 7).
+  count) and `IsConsistencyAnchor` (§ 7); from harness 56 `ProviderLedgerVersion`, the candidate rollups
+  (`CandidateValidAttemptCount`, `CandidateProviderErrorCount`, `CandidateUnattributedErrorCount`,
+  `CandidateOurSideFailureCount`), `RepairPassCount`, `ProviderRepairPassCount`, `ReplacesRunId` and
+  `ReplacementCause`.
+- **`BenchmarkRunAnswer`** from harness 56: `FailureOrigin`, `FailureKind` and `ReExecutionCount`.
 
 ### 4.3 Where each mark comes from: ours and the provider's
 
@@ -96,12 +124,20 @@ succeeded); the waits are the time before it. A call that failed for good still 
 | Attempt, HTTP 429, HTTP 5xx and stream-error retry counts; final status and HTTP version | `FinishReason`, `IsRefusal`, `FallbackModelId` |
 | `HeadersMs`, `StreamEndMs`, and the stream milestones stamped by `ProviderCallMeta` | `ServerProcessingMs` (`openai-processing-ms`), `RateLimitJson` |
 | `OutputDeltaCount`, `VisibleOutputChars`, the last-80 % decode span | All token counts |
+| Each attempt's `StartedAtUtc`, `DurationMs`, `Retried`, a governor refusal (`OurThrottle`) and a cancel (`OurCanceled`) | Each attempt's HTTP status, `ProviderErrorCode` and `RetryAfterMs` |
+| The outcome class of each attempt, which Overseer decides from both columns | — |
 
 The milestones (`FirstEventMs` … `CompletedMs`, and the visible-text deltas behind the decode span) are
 Overseer's `Stopwatch` stamps, taken right after the provider adapter reads each stream line and before
 any sanitizer; the events they mark are the provider's. `ProviderResponseHeaders` reads only the request
 id (`x-request-id`, `request-id`, `x-goog-request-id`), `openai-processing-ms`, and the
 `x-ratelimit-*`, `anthropic-ratelimit-*` and `retry-after` headers.
+
+The outcome class is a judgment Overseer makes, not a mark the provider sends: the provider reports a
+status and an error code, and the classifier decides from them, our own evidence and the provider's
+documented meaning whose failure the attempt was. A 429 that the provider documents as our own limit is
+**ours**, and one no rule explains is **unattributed**, never the provider's. P6 counts only the
+provider's classes.
 
 ### 4.4 Derived measures
 
@@ -143,7 +179,7 @@ Two runs of one subject can differ in two opposite ways, and the analysis treats
 ### 5.1 Axes and segments
 
 Each measure is segmented on its own **axis**: `Quality`, `SpeedTelemetry`, `SpeedLegacy`, `Work`,
-`Cost`. Walking a subject's runs in start order, every unbridged boundary starts a new segment on the
+`Cost` and, from code version 8, `Availability` (P6). Walking a subject's runs in start order, every unbridged boundary starts a new segment on the
 axes it breaks; two runs are comparable on an axis when they share its segment.
 
 | Change (`MeasurementChangeKind`) | Detected when | Breaks | Bridged by |
@@ -154,6 +190,7 @@ axes it breaks; two runs are comparable on an axis when they share its segment.
 | `CandidateTiming` | the ledger carries `CandidateTiming` | legacy speed | never |
 | `CallTelemetry` | two telemetry runs differ in `CallTelemetryVersion` | telemetry speed | never |
 | `CandidateAccounting` | the ledger carries `CandidateAccounting` | work, cost | never |
+| `ProviderErrorAccounting` | the ledger carries `ProviderErrorAccounting`: what counts as a provider error changed (the attempt classifier, the retry policy, the request governor, or timeouts that change attribution) | availability | never |
 | `Pricing` | the pricing snapshot key differs | cost | always: every run is costed at one price card |
 
 A run's harness is its `HarnessVersion` together with a differing `RerunHarnessVersion`; the ledger
@@ -162,7 +199,10 @@ as every change (§ 14).
 
 **Speed exclusions** never move a boundary. A run that answered questions in parallel
 (`MaxParallelQuestionsUsed` > 1) is left out of both speed axes; a run without call telemetry is left
-out of telemetry speed. Both stay on every other axis.
+out of telemetry speed. Both stay on every other axis. Likewise a run without a provider attempt ledger
+(started before harness 56) is left out of the availability axis and stays on every other; when no unit
+of a period is recorded, P6 is not computed (`notRecorded`, § 10). Harness 56 itself is the first
+`ProviderErrorAccounting` version, so a legacy run is never compared with a recorded one on this axis.
 
 **Choosing runs.** For each endpoint the analysis keeps the latest segment both periods share and lists
 the runs it left out as a data-quality note. When the periods share no segment, the endpoint is not
@@ -312,10 +352,23 @@ Provider latency depends on load, and load on the hour. The analysis therefore c
   change is called **load-independent** only when the common strata include at least one block of each
   kind.
 
-## 9. Protocol V1
+## 9. Protocol V1 and Protocol V2
 
-The method is pre-declared (`ChatConsistencyProtocol.V1`) and immutable: any change of a default is a
-new protocol version. The protocol is stored with every analysis (`ProtocolJson`).
+The method is pre-declared and immutable: any change of a default is a new protocol version. The
+protocol is stored with every analysis (`ProtocolJson`). There are two:
+
+- **Protocol V1** (`ChatConsistencyProtocol.V1`): the five endpoints P1–P5, with Holm across them.
+- **Protocol V2** (`ChatConsistencyProtocol.V2`, from analysis code version 8): P1–P6, with Holm across
+  **six**, the field `MinimumAttemptsPerStratum` (30), and the V2 reliability family (§ 12). Adding a
+  primary endpoint changes Holm's adjustment of P1–P5, so it had to be a new version. Both protocols are
+  built explicitly, each with its own endpoint list, and the protocol defaults stay V1.
+
+**V1 and V2 verdicts are not interchangeable.** The same P1–P5 data can earn a different Holm-adjusted p,
+and so a different verdict, under the two protocols. Compare a verdict only with one under the same
+protocol, and always cite the protocol (§ 22). New analyses use V2; **Analyze again** keeps the stored
+analysis's protocol (§ 16.1). Every place that walks the endpoints — Holm, the headline, the checks, the
+attribution, the freshness check, the report documents, the wizard and the verdict banner — iterates the
+analysis's own protocol endpoints, so nothing asks a V1 protocol for P6.
 
 | Id | Endpoint | Scale | Margin | Direction | Pairing and statistic |
 |----|----------|-------|--------|-----------|-----------------------|
@@ -324,9 +377,39 @@ new protocol version. The protocol is stored with every analysis (`ProtocolJson`
 | P3 | Answer streaming rate | log ratio | ±10 % | higher is better | final candidate call's visible decode rate; as P2 |
 | P4 | Work per turn | log ratio | ±15 % | reported as *more work* / *less work*, never better or worse | total candidate output tokens per item; Hodges–Lehmann of per-item log differences; two-level bootstrap |
 | P5 | Cost per question | log ratio | ±10 % | lower is better | candidate cost per item at **one price card** for every compared run; as P4 |
+| P6 (V2 only) | Provider error rate | difference, **percentage points** | ±1.0 pp | lower is better | candidate provider-class attempts ÷ valid attempts ([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md)); per common time stratum Σk ÷ Σn over each period's units, equal-weight mean of the per-stratum differences; run-cluster bootstrap of the mean |
 
-- **Multiplicity**: α = 0.05 with **Holm's** adjustment across the primary endpoints that produced a
-  p-value; **Benjamini–Hochberg** at a false discovery rate of 0.05 within each secondary family.
+**P6 in detail.**
+
+- **Scale.** A difference in percentage points, stored and transported in percentage points (the
+  endpoint's unit is `pp`), so the ±1.0 margin, its text, the one-decimal difference formatting and a
+  margin override all agree. A shift from 0.5 % to 1.5 % is a practically relevant availability change
+  for choosing a chat model.
+- **Strata.** Each valid candidate attempt is assigned to one of the twelve time-of-week strata (§ 8) by
+  its own `StartedAtUtc`, because availability depends strongly on the time of day. A stratum is common
+  when **each period has at least `MinimumAttemptsPerStratum` (30) valid attempts** in it. **The common
+  strata are fixed at the point estimate** and kept for every bootstrap replicate, so the per-stratum
+  minimum, an attempt count, stays stable.
+- **Statistic.** Per common stratum and period the rate is Σk ÷ Σn over the period's units, and the effect
+  is the equal-weight mean of the per-stratum differences. Each attempt is a 0/1 observation, so the
+  rate is a mean, and the 95 % and 90 % percentile intervals come from the run-cluster bootstrap that
+  resamples units within each period (`StratifiedRunBootstrap` with the mean as its statistic); p comes
+  from the bootstrap p of P2 and P3, and the verdict from the same distribution path as every endpoint.
+  P6 has its own minimum detectable effect.
+- **The units** are the period's units plus its availability-only runs (§ 2). The figure is
+  candidate-only; our-side attempts are not in the denominator and unattributed errors not in the
+  numerator.
+- **Minimum sample.** An Established grade needs at least `MinimumSpeedRunsPerStratum` (3) units per
+  period with attempts in one common stratum, and the *runs on separate days* check applies as to every
+  endpoint; with fewer, at most Indicated. With no common stratum P6 is not computed (`noCommonStratum`),
+  and when no unit of a period is recorded, it is not computed with the new kind `notRecorded`.
+- **Scope.** P6's scope is built from the attempts' strata, not from the delivered answers', and its
+  headline ends *"within \<scope\>"* as P2 and P3 do.
+- **Words.** The verdict reads *more provider errors observed in GnollBench runs* or *fewer …*, never
+  *the provider throttled*, never a mechanism or an intent (§ 13).
+
+- **Multiplicity**: α = 0.05 with **Holm's** adjustment across the primary endpoints of the analysis's
+  protocol (P1–P5 under V1, P1–P6 under V2) that produced a p-value; **Benjamini–Hochberg** at a false discovery rate of 0.05 within each secondary family.
 - **p-values**: P1, P4 and P5 use the Wilcoxon signed-rank test on the per-item differences of the
   period means; P2 and P3 a run-cluster bootstrap p (twice the smaller tail share, each with one added
   to numerator and denominator, capped at 1). Intervals are bootstrap percentile intervals: 10,000
@@ -375,8 +458,8 @@ Each endpoint gets one of **Lakens' four outcomes** against its margin, checked 
 | Inconclusive | none of the above | *inconclusive* |
 
 An endpoint the data cannot compute is *not computable*, with its reason and, from code version 6, its
-`notComputedKind`: `measurementChanged`, `noCommonStratum`, `noTelemetry`, `noPricing`, `tooFewPairs` or
-`other`.
+`notComputedKind`: `measurementChanged`, `noCommonStratum`, `noTelemetry`, `noPricing`, `tooFewPairs`,
+from code version 8 `notRecorded` (P6: no unit of a period has a provider attempt ledger), or `other`.
 
 Each decisive verdict carries an **evidence grade**:
 
@@ -395,7 +478,9 @@ run-to-run spread. With fewer, an item-paired endpoint (P1, P4, P5) reports the 
 run-to-run noise is not included."*; the speed endpoints (P2, P3) fall back to their item-centered
 values, noted *one run per period: run-to-run noise not estimable*. The **headline** leads every result:
 *"Overseer chat with \<model\>: quality \<verdict\> (\<grade\>); speed …; work …; cost … within
-\<scope\>"*, with any established reliability increase appended.
+\<scope\>"*, with any established reliability increase appended. Under Protocol V2 the headline gains an
+availability clause for P6, and its *reliability* clause leaves out the attributed provider rates, which
+P6 already states.
 
 ## 11. Robustness Checks
 
@@ -405,11 +490,17 @@ Indicated.
 | Check | Endpoints | Passes when |
 |-------|-----------|-------------|
 | Leave-one-run-out stability | all | the verdict holds without any one run (Equivalent: inside the margin; a change: the same sign) |
-| Across sampled strata | P2, P3 | the verdict holds in every common stratum with at least 2 runs per period (needs two such strata) |
+| Across sampled strata | P2, P3, P6 | the verdict holds in every common stratum with at least 2 runs per period (needs two such strata) |
 | No unexamined own-side explanation | all | restricted to answers without retries the verdict holds; for speed, the own-wait share did not move materially (or the measure is net of it) and parallel runs are excluded |
 | Grader stability | P1 | a common grader covers every run, or the anchor's drift is within ±3 points (§ 7) |
 | Runs on separate days | all | each period has the minimum runs on the minimum distinct days |
 | Served-tier match | all | every answer was served at the requested tier, or the verdict holds restricted to those that were |
+
+**P6 and the checks.** P6 is stratified like P2 and P3 but is not a speed measure, so the checks keyed on
+stratification are handled by endpoint id: P6 gets no own-wait check, no *runs answering questions in
+parallel are excluded* text, and no *no answer was retried* sentence — retried attempts are exactly what
+it counts. Leave-one-run-out, across sampled strata and runs on separate days apply to it as written, and
+a `noCommonStratum` P6 gets its own next-run advice, worded for availability.
 
 ## 12. Secondary Families and Reliability
 
@@ -417,10 +508,21 @@ Secondary results are descriptive and adjusted within their family (Benjamini–
 
 - **Quality detail** — the four dimension levels, the critical-error rate (Fisher), and per-item flips
   against the **null flip rate** between baseline replicates.
-- **Reliability** — terminal failures, timeouts, empty answers, refusals, tool-budget exhaustion
+- **Reliability** (Protocol V1) — terminal failures, timeouts, empty answers, refusals, tool-budget exhaustion
   (answers), and HTTP 429 and 5xx responses (calls), each with Wilson intervals and Fisher's exact test.
   An increase is **established** when it is rejected, higher in the comparison and the run minimum is
   met in both periods; it is added to the headline.
+- **Reliability, Protocol V2.** The call-level HTTP 429 and 5xx Fisher rates, which counted our own
+  429s as the provider's and ignored run and time clustering, are replaced by attributed attempt rates
+  from the provider attempt ledger: `providerOverloaded`, `providerServerErrors`, `providerTimeouts`,
+  `rateLimitOurs`, `rateLimitUnattributed`, `transportUnattributed` and `ourSideFailures`. They are
+  tested with the cluster bootstrap of a pooled ratio of sums (`ClusterBootstrapTwoSample` with the mean,
+  units resampled, attempts as 0/1 observations), which is correct under clustering. `providerRerunUnits`
+  — did a unit need a provider-caused re-run? — is a per-unit binary tested with Fisher's exact test, the
+  units being independent. The answer-level rates (terminal failures, timeouts, empty answers, refusals,
+  tool-budget exhaustion) are unchanged. The family's method names each measure's test, and
+  Benjamini–Hochberg applies within it as before. A change in `ourSideFailures` is a **data-quality
+  note** naming the governor, network and budget counts, never an attribution to the provider.
 - **Tool use** — tool calls and model calls per answer, and the share of the eight most used tools.
 - **Reasoning tokens**, **answer length**, **net model time** (with P2 measured gross, own waits left
   in), the **shift function** (Harrell–Davis deciles, pointwise intervals), the **time-of-day contrast**
@@ -486,21 +588,32 @@ statement.
 | R3 declared-snapshot-change | provider | the served model ids differ between the periods |
 | R4 served-configuration | provider | calls were served at another tier than requested, or by a fallback model |
 | R5 model-behavior | provider | work, reasoning tokens, model calls or the tool mix changed, the streaming rate is Equivalent, and the change is isolated |
-| R6 load-related | provider | P2 or P3 changed and the effect differs between strata, or a same-provider control moved with it, or the run-to-run variance exceeds the margin, or 429 / 5xx rates rose |
+| R6 load-related | provider | P2 or P3 changed and the effect differs between strata, or a same-provider control moved with it, or the run-to-run variance exceeds the margin, or 429 / 5xx rates rose (under Protocol V2: the attributed provider rates rose) |
 | R7 persistent-serving | provider | P3 changed at every decile and in every common stratum with one sign; *provider-wide* when a same-provider control moved too, else *model-specific*; *load-independent* only when the strata cover US business hours and outside them |
 | R8 infrastructure | infrastructure | Overseer's own waits or retries account for the speed change (gross P2 changed and net did not, the own-wait share moved materially, or the change vanishes without retries) |
 | R9 undeclared-change | provider | quality degraded or work changed for the target alone (a DiD separates it), the served model id did not change, and neither our infrastructure nor an Overseer change explains it — *flagged for review* |
 | R10 improvement | provider | quality improved, Established: with a new snapshot, or undeclared |
 | R11 undetermined | undetermined | every endpoint is Inconclusive, a changed endpoint fits no row, or rows of several sides fit one endpoint (*Multiple causes*) |
+| R12 provider-availability | provider | *Provider availability changed (within the sampled hours)*: P6 is decisive, P6 is isolated, and no measurement boundary of kind `ProviderErrorAccounting` lies inside the span (Protocol V2) |
 
-A provider-side row (R5–R7, R9, R10) needs its endpoint **isolated**: no Overseer event in the span,
+R11 counts R12 among the rows that can explain a change, so a P6 change explained by R12 alone is never
+*Undetermined*. P6 joins the control machinery: its difference in differences is a **run-level**
+difference of rates between the target and each control, with the same unit bootstrap, the control runs'
+ledger rows loaded with them; R1 (*ours*) and R2 (*not attributable*) then apply to P6 as to the other
+endpoints. Overseer events carry no impact flags, so R12's guard is the measurement boundary, not an
+event.
+
+A provider-side row (R5–R7, R9, R10, R12) needs its endpoint **isolated**: no Overseer event in the span,
 or a control DiD separating the target. Without control runs, a change in a span holding an Overseer
 event stays R2 — which is why control runs matter.
 
 **What "deliberately slower" cannot be.** No row, and no report, can say that a provider slowed a model
 on purpose, or why it got slower. The strongest speed finding is R7: a persistent serving change
 **within the sampled hours**, provider-wide or model-specific, and load-independent only when both
-kinds of hours were sampled. A mechanism appears only as a quoted ProviderConfirmedCause annotation.
+kinds of hours were sampled. A mechanism appears only as a quoted ProviderConfirmedCause annotation. The
+same holds for availability: the strongest finding is R12, more (or fewer) provider errors observed in
+GnollBench runs within the sampled hours — never that the provider throttled, rationed or deprioritized
+anyone.
 
 ## 14. The Harness Impact Ledger
 
@@ -514,6 +627,7 @@ kinds of hours were sampled. A mechanism appears only as a quoted ProviderConfir
 | `Grading` (G) | how answers are graded | breaks native quality; a common grader bridges it |
 | `Scoring` (S) | how grades become scores | breaks native scores; a rescore under one profile bridges it |
 | `CandidateAccounting` (CA) | how candidate tokens or cost are counted from what the provider reported | breaks work and cost; repricing does not resolve it |
+| `ProviderErrorAccounting` (PA, value 64) | what counts as a provider error: the attempt classifier, the retry policy, the request governor, or timeouts that change attribution | breaks availability (P6); never bridged |
 | `ReportingOnly` (R) | reports, UI and storage only | breaks nothing |
 
 `ImpactBetween(a, b)` is the union of the impacts of every version after the lower up to the higher,
@@ -580,6 +694,8 @@ version the changelog cannot tell apart is marked conservative.
 | 52 | CI, G | nethack_wiki_view headings notice for an over-cap article; forced-final instruction when the tools run out; one-line macro bodies count in citation liveness. |
 | 53 | G | A member whose charge the verifier upheld is never verification-cleared; the synthesis is told the verdicts on its charges; report fixes. |
 | 54 | CI, G | Graders told when source references are disallowed; get_constants reads brace-on-next-line enums and the source miss probe is whole-word; streaming-rate bounds and report fixes. |
+| 55 | G | Source-location grading rule names files and paths; claim verifier retries a provider error once; 'inverts' counts as a stated defect and a charge. |
+| 56 | PA | Provider attempt ledger and failure attribution; answers ended by our time budget, governor or network are Failed, which the synthesis lists as excluded like ProviderError and which never carry text to grade. |
 
 **Same-stamp cases.** Harness 12 carries a same-stamp impact of CI, CA, G and S, and harness 18 of
 CA: runs stamped with one of those versions may still differ in those respects, so even two runs with
@@ -588,6 +704,13 @@ equal stamps are segmented there.
 **The CandidateAccounting flag** marks versions that changed how the candidate's tokens or cost are
 counted from what the provider reported (13, 18, 34). Work and cost are segmented across them, and no
 repricing removes the break, because the counts themselves differ.
+
+**The ProviderErrorAccounting flag** marks versions that changed what counts as a provider error (56,
+the first). P6 is segmented across them, and nothing bridges the break, because the attempts were
+classified by different rules. Harness 56 carries this flag **alone**: it also made the synthesis prompt
+list `Failed` answers as excluded, as it lists `ProviderError` answers, but the only answers that
+changes are `Failed` answers, which never carry text to grade, so it is not a `Grading` change and the
+quality axis does not break at 56.
 
 **Classifying a new version.** `HarnessImpactLedgerTests` fails until every version up to the current
 `HarnessVersion` has an entry and the last entry is the current version. The `server_chat_consistency`
@@ -608,7 +731,7 @@ An analysis is computed once and saved as one immutable `ChatConsistencyAnalysis
 periods, the target and control run ids (by id, without foreign keys, so deleting a run keeps the
 analysis), `ProtocolVersion` and `ProtocolJson`, `RelaxedPooling`, `CommonGraderSnapshotId`, the
 `ResultJson`, `InputSha256` and `AnalysisCodeVersion` (`ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion`,
-currently 7; version 2 records the run selection, § 17.2; version 3, from harness 54, reads the
+currently 8; version 2 records the run selection, § 17.2; version 3, from harness 54, reads the
 streaming rate with its measurability bounds (§ 4.4), and the streaming-rate caveat counts the delivered
 answers with no measurable rate: *"k delivered answers have no rate: the visible text arrived in one
 burst after thinking (a decode span under 500 ms or a rate over 1,000 tokens/s)."*; version 4 compares
@@ -630,7 +753,12 @@ structured fields and the grading sentence from the `HarnessImpactLedger` flags 
 comparison harness and the current one (§ 12), and writes the minimum-sample detail of an item-paired
 endpoint with each part stated as met or missed (*1 battery run per period on 1 day, below the minimum
 of 2 battery runs on 2 days per period; paired items 32, above the minimum of 20*,
-`ChatConsistencyAnalysisService.MinimumSampleText`, which the report documents' `sample.shortfall` shares)).
+`ChatConsistencyAnalysisService.MinimumSampleText`, which the report documents' `sample.shortfall` shares);
+version 8 adds Protocol V2 with primary endpoint P6, the provider error rate (§ 9), the `Availability`
+axis and its `ProviderErrorAccounting` boundary (§ 5.1), the availability-only runs and their
+`availabilityOnly` reason (§§ 2, 18), the `notRecorded` kind (§ 10), the V2 reliability family (§ 12),
+attribution row R12 (§ 13), the timeline's availability fields and availability-only points (§ 17.3), and
+iterates every endpoint loop over the analysis's own protocol).
 A stored analysis keeps the
 version it was computed under; its fingerprint and result do not change. **Run-mode invariance:** in a
 suite comparison, or with no compared set, every number of a version-4 analysis equals version 3's on
@@ -642,7 +770,9 @@ pins it.
   sorted left-out run ids, and the battery fields), the compared set and the battery run ids, the
   protocol, the unit kind and each unit's member run ids, each run with the fields and per-answer values the analysis
   reads (its call telemetry included), the unanalyzed runs (id, period, reason), the calibrations and
-  anchor calibrations, the annotations and the price card, all in id order. Two analyses that differ
+  anchor calibrations, the annotations and the price card, all in id order. From code version 8 it also
+  covers the protocol version, the provider-ledger rollups, the repair counts and `ReplacesRunId` of each
+  run, and the availability-only runs. Two analyses that differ
   only in the recorded selection have different fingerprints. Analyses saved under code version 1 keep
   their fingerprint and open with no selection record.
 - Fixed inputs give fixed results: every resampling is seeded from the protocol, every collection is
@@ -683,6 +813,11 @@ analysis of last month stays valid as a statement about last month.
 - **Do not edit or delete it to refresh it.** Press **Analyze again** on the out-of-date notice of the
   Results and Write steps: it opens step 3 with the same model, runs, periods, controls, pooling and
   protocol, and *Analyze* saves a new, current analysis. Write new documents from the new one.
+  **The protocol version is kept too**: the analyze request carries it, defaulting to the stored
+  analysis's for a re-analysis and to V2 for a new analysis, so a V1 analysis analyzed again is a V1
+  analysis under the current code, comparable with the old one, and never silently becomes V2. The
+  freshness check uses the stored analysis's protocol for the same reason. To judge availability on the
+  same periods, start a **new** analysis, which is V2.
 - **Keep the old one** when its documents were shared or quoted anywhere: it is the record behind them,
   and its documents print the out-of-date box when downloaded again (`ai-benchmark-report-pack.md` § 16).
 - **Delete it only if you no longer need it at all** (a test, for example): delete its documents first,
@@ -853,8 +988,10 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      with none matched, the analysis looks for controls among other models' runs itself. Then the
      common-grader **re-grade** of the runs in the periods (estimate dialog first; nothing spends until
      *Re-grade* is pressed) and *Pool across measurement segment boundaries*.
-   - **Protocol** — Protocol V1's five primary endpoints with their margins (*P1 Quality — ±3 index
-     points*), α and the minimum samples (§ 9), then *Override the protocol* for the margins and α.
+   - **Protocol** — the protocol's primary endpoints with their margins (*P1 Quality — ±3 index
+     points*; under Protocol V2 also *P6 Provider error rate — ±1.0 percentage point*), α and the minimum
+     samples (§ 9), then *Override the protocol* for the margins and α. A new analysis uses Protocol V2;
+     *Analyze again* keeps the stored analysis's protocol (§ 16.1).
 
    The **Periods** view shows, top to bottom:
    - **The summary strip**, which stays at the top while the cards scroll (on a narrow screen it
@@ -862,7 +999,7 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      color and always named by the word: the range as two links (*#11 → #12*, each moving to that run's
      card; *Not set* for a bound not chosen), the count (*3 runs on 2 days · 2026-10-01 to
      2026-10-03*), the window the request will carry (*The period windows*, below), and the sample
-     against Protocol V1's minimum: *Meets the minimum sample*, or *Below the minimum sample* with
+     against the protocol's minimum: *Meets the minimum sample*, or *Below the minimum sample* with
      *P1, P4 and P5 need at least 2 on 2 days to be Established.* Under the two cards, *Not used: 2
      runs outside the periods* (when any), and *Preview: 3 notes* or *Preview: ready*, which opens the
      Preview. A refusal of the periods (below) shows here.
@@ -895,8 +1032,9 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      change), *Baseline* and *Comparison* (range, units, days, window), *Not used*, *Left out in step
      1* (*#45, #51*, left-out runs inside either window, when any), *Control runs* (*3 of 3 matched
      controls checked*, or none matched), *Grading* (*Native grades* or *Re-graded by …: 4 of 6
-     runs*), *Pooling* and *Protocol* (*V1*, or *V1 with overrides: …*).
-   - **Endpoint readiness** — one row per primary endpoint, P1 to P5, with its margin, a status and
+     runs*), *Pooling* and *Protocol* (*V2*, *V1*, or either *with overrides: …*).
+   - **Endpoint readiness** — one row per primary endpoint of the protocol, P1 to P5 and under V2 P6,
+     with its margin, a status and
      one fact: *Meets the minimum sample* (*Baseline 3 runs on 2 days · Comparison 2 runs on 2 days*);
      **At most Indicated** — below the minimum sample (*Fewer than 2 runs on 2 days in the baseline: …*,
      or *per period* when both are short; for P2 and P3 *No common stratum has 3 runs in each period*
@@ -1143,16 +1281,18 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      written earlier, whose prose is still wanted, gets the current charts.
    - **Charts in PDF and Word** — which charts each document type carries, in Model Comparison's chart
      picker: one segment per document type (*Executive*, *Researchers*, *Internal*, *Provider*), each
-     listing the four figures *Intelligence per run* (`cc1-quality`), *Time to first answer text*
-     (`cc2-speed`), *Output tokens per answer* (`cc3-work`) and *Runs and events* (`cc4-timeline`), each
+     listing the five figures *Intelligence per run* (`cc1-quality`), *Time to first answer text*
+     (`cc2-speed`), *Output tokens per answer* (`cc3-work`), *Runs and events* (`cc4-timeline`) and
+     *Provider availability* (`cc5-availability`, drawn in the form chosen on the Charts step, § 17.3;
+     it has nothing to draw without recorded provider attempts), each
      with the section it prints in (*Results*, after the verdict table; *Events*, after the events
      table, for cc4 outside the Executive Summary) and its width (*Full*, *Two-thirds* or *Half
      column*), and a *Layout* disclosure with the label size and the maximum height. A figure whose
      endpoint the analysis could not compute carries a note (*P1 was not computable in this analysis;
      the chart's caption says it is not comparable.*). A document type neither checked nor written
      cannot be changed (*Not chosen in New reports.*). The defaults: Executive Summary cc1 and cc2;
-     Researcher Report all four; Internal Brief cc1 and cc3; Provider Issue Report cc2 and cc4; cc1–cc3
-     half column, so two in a row at one place share it, cc4 two-thirds; 8 pt labels; at most 50 % of
+     Researcher Report all five; Internal Brief cc1 and cc3; Provider Issue Report cc2 and cc4; cc1–cc3
+     and cc5 half column, so two in a row at one place share it, cc4 two-thirds; 8 pt labels; at most 50 % of
      the page tall. The charts always use the light print theme, no heading inside the image and no
      logo. The choices are remembered in this browser
      (`localStorage['overseer.benchmark.chatConsistency.reportCharts']`, `{ version: 1, selection,
@@ -1229,6 +1369,35 @@ question, reliability, and *Runs and events*. Output tokens and tool calls are t
 which would suggest a relation between two arbitrary scales. Each chart draws its markers — composite
 Overseer events `E<n>`, annotations `A<n>` and served-model changes `S<n>`, their tags staggered in a
 band above the plot — names them in a note on the image, and has a *Show data* list of data cards.
+
+**Provider availability** (code version 8). One more chart, the provider error rate of each unit
+([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md)), from the timeline's
+`AvailabilityRecorded`, `ValidAttemptCount`, `ProviderErrorCount`, `UnattributedErrorCount`,
+`ProviderErrorRate` with `ProviderErrorRateLow` and `ProviderErrorRateHigh` (the cluster-adjusted 95 %
+interval), `RerunsNeeded`, `ProviderRerunsNeeded` and `AvailabilityOnly`. Failed and canceled runs appear
+on the timeline as **availability-only points**, which this chart draws and every other chart skips. Its
+form is chosen in the step's settings and remembered per browser with the workspace's other settings
+(`availabilityForm`); stored timeline
+layouts move to version 3, which appends the figure to a stored figure list:
+
+1. **`points`** (the default): one dot per unit with its interval as a whisker, the dot's area scaled by
+   its valid attempts, availability-only units hollow, a ▲ above a unit that needed a provider-caused
+   re-run, and the period shading and Overseer-change markers of the other charts.
+2. **`controlChart`**: a **Laney p′ chart**, labeled *control limits*. The center line is the baseline
+   period's pooled rate p̄. For unit *i* with *n*<sub>i</sub> valid attempts, σ<sub>p,i</sub> =
+   √(p̄ (1 − p̄) ÷ *n*<sub>i</sub>); the standardized rates *z*<sub>i</sub> = (*p*<sub>i</sub> − p̄) ÷
+   σ<sub>p,i</sub> over the baseline units give σ<sub>Z</sub> = MR̄ ÷ 1.128, where MR̄ is the mean absolute
+   moving range of consecutive *z*<sub>i</sub> and 1.128 is d₂ for ranges of two. The limits are p̄ ± 3 ·
+   σ<sub>p,i</sub> · σ<sub>Z</sub>, the lower one clipped at 0. Laney's correction keeps the overdispersion
+   of bursty errors from making plain p-chart limits raise false alarms at large *n*. Points beyond the
+   limits are labeled. `ChatConsistencyStatistics.LaneyPPrimeLimits` holds the same formula for the
+   documents and the tests.
+3. **`strip`**: one row per measure (`strict`, provider errors only, and `inclusive`, unattributed added),
+   one cell per UTC day, shaded on a color-blind-safe sequential ramp, gray for a day with no runs.
+
+The chart's color does not judge: there is no red or green, and a rate is always shown with its count.
+The Results step shows P6's endpoint card and its chip in the verdict banner like any endpoint's, and a
+*Provider errors* key-figure card: baseline against comparison, *k of n* each, and the re-runs.
 
 **Battery runs.** With a battery compared in step 1, the charts draw **one point per battery run** of
 the set, as the analysis counts it: the timeline's `batteryPoints`
@@ -1446,6 +1615,15 @@ run #K and was left out."* In a suite comparison a run of another suite is left 
 `excludedRun` note *"Run #N answered another suite and was left out."* An analysis with no compared set
 whose runs span several suites carries a `mixedSuites` note naming them.
 
+**Availability-only runs (code version 8)** carry the reason `availabilityOnly`: the failed or canceled
+runs, failed or superseded battery members and lineage predecessors that P6 reads inside a period's run
+range (§ 2). They are added by the server, never chosen, so the rule that leaving runs out after looking
+is detection is untouched: the operator cannot pick which failed runs count. They are listed in the run
+selection with their period, and no endpoint other than P6 reads them. On the wizard's model step their
+cards are tagged *Provider availability only (P6)*, their checkbox and first/last marks are unavailable
+with that reason, and the *In the analysis* filter has a value of its own for them; they never count as
+the model's runs in the wizard's subtitle.
+
 A first or last run of the selection that no longer exists is ignored, with the `runSelection` note
 *"The first run of the selection, #21, was not found."* (for a battery run, *"The first battery run of
 the selection, #N, was not found."*) The runs are classified only when the request
@@ -1532,7 +1710,10 @@ The client calls them through `AdminChatConsistencyService`
 A saved analysis can be written up as AI-written report documents, through the report-pack machinery
 (origin `ChatConsistencyReport`, scope `ChatConsistency`, subject key `chat-consistency:<id>`, column
 `ChatConsistencyAnalysisId`). The details — slots, facts, validator rules, figures and file names — are
-in `ai-benchmark-report-pack.md` § 16.
+in `ai-benchmark-report-pack.md` § 16. The documents are at report format **3**
+(`ChatConsistencyReportFormatVersion`): a Protocol V2 analysis's documents carry P6 through the generic
+endpoint block, the `availability.<period>.*` facts and the figure **`cc5-availability`**, the provider
+availability chart of § 17.3; a V1 analysis's documents render its five endpoints as before.
 
 | Audience | For |
 |----------|-----|
@@ -1595,6 +1776,9 @@ The analysis records these in every result:
 - When usable runs of the model inside the periods were not analyzed, the operator chose the runs:
   the verdicts hold for the analyzed runs, and leaving runs out after looking at the timeline can bias
   them (§ 18).
+- P6 counts provider errors observed in GnollBench runs only; unattributed errors are not in it, our
+  per-question time budget makes most provider stalls count as ours, and runs started before harness 56
+  are not recorded ([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md) § 11).
 
 And of the implementation:
 
@@ -1612,6 +1796,11 @@ Cite a finding with **its hour scope, its grade and its protocol version**, and 
 
 > Overseer chat with \<model\>: time to first answer text degraded by 22 % (95 % CI 14 % to 31 %),
 > **Indicated**, within weekdays 08–16 UTC; Protocol V1; analysis #12.
+
+A P6 finding is cited the same way, in percentage points and as an observation: *"provider error rate
+up 1.4 percentage points (95 % CI …), more provider errors observed in GnollBench runs, Indicated, within
+weekdays 08–16 UTC; Protocol V2; analysis #15"*. A verdict under Protocol V1 and one under Protocol V2 are
+never set side by side as if comparable (§ 9).
 
 Never drop the scope (*"slower"* without *"within the sampled hours"*), never upgrade an Indicated
 grade to *established*, never cite an Inconclusive endpoint as *no change* — cite its minimum

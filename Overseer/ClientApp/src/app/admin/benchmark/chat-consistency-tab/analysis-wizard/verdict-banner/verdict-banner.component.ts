@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Out
 
 import { InfoTipComponent } from '../../../../../shared/info-tip/info-tip.component';
 import { ccNumber, formatFractionPercent, plural } from '../../chat-consistency-format';
-import { CC_PROTOCOL_V1_ENDPOINTS } from '../../chat-consistency-readiness';
+import { CC_PROTOCOL_V2, ccProtocolEndpoints } from '../../chat-consistency-readiness';
 import {
   CcEndpointStatus,
   CcOverallOutcome,
@@ -113,6 +113,13 @@ export class CcVerdictBannerComponent implements OnChanges {
     }
   }
 
+  /** What needs a common time block: speed, and under Protocol V2 provider availability too. */
+  get noCommonBlockText(): string {
+    return this.result.endpoints.some(endpoint => endpoint.id === 'P6')
+      ? 'Speed (P2, P3) and provider availability (P6) need runs at the same hours in both periods.'
+      : 'Speed (P2, P3) needs runs at the same hours in both periods.';
+  }
+
   get protocolTitle(): string {
     return `About Protocol ${this.result.protocolLabel}`;
   }
@@ -163,9 +170,15 @@ export class CcVerdictBannerComponent implements OnChanges {
     });
 
     const unit = result.unitKind === 'batteryRun' ? 'battery run' : 'run';
-    const stratified = new Set(CC_PROTOCOL_V1_ENDPOINTS.filter(entry => entry.stratified).map(entry => entry.id));
+    // The stored protocol's own endpoints, or the published list of its version where it stores none.
+    const published: readonly { id: string; axis: string; stratified: boolean }[] = protocol.endpoints?.length
+      ? protocol.endpoints
+      : ccProtocolEndpoints(protocol.protocolVersion);
+    const stratified = new Set(published.filter(entry => entry.stratified).map(entry => entry.id));
+    const availability = new Set(published.filter(entry => entry.axis === 'availability').map(entry => entry.id));
     const pooledIds = endpoints.filter(endpoint => !stratified.has(endpoint.id)).map(endpoint => endpoint.id);
-    const speedIds = endpoints.filter(endpoint => stratified.has(endpoint.id)).map(endpoint => endpoint.id);
+    const speedIds = endpoints.filter(endpoint => stratified.has(endpoint.id) && !availability.has(endpoint.id)).map(endpoint => endpoint.id);
+    const availabilityIds = endpoints.filter(endpoint => availability.has(endpoint.id)).map(endpoint => endpoint.id);
     const lines: string[] = [];
     if (pooledIds.length > 0) {
       lines.push(`${pooledIds.join(', ')}: at least ${plural(protocol.minimumRunsPerPeriod, unit)} per period on at least `
@@ -173,6 +186,11 @@ export class CcVerdictBannerComponent implements OnChanges {
     }
     if (speedIds.length > 0) {
       lines.push(`${speedIds.join(', ')}: at least ${plural(protocol.minimumSpeedRunsPerStratum, unit)} per period in one common time block.`);
+    }
+    if (availabilityIds.length > 0) {
+      const attempts = protocol.minimumAttemptsPerStratum ?? CC_PROTOCOL_V2.minimumAttemptsPerStratum;
+      lines.push(`${availabilityIds.join(', ')}: at least ${plural(protocol.minimumSpeedRunsPerStratum, unit)} per period with attempts `
+        + `in one common time block, a block common with ${plural(attempts, 'valid attempt')} in each period.`);
     }
     facts.push({ key: 'sample', term: 'Minimum sample', value: lines.join(' '), note: 'With fewer, an endpoint is at most Indicated.' });
     return facts;

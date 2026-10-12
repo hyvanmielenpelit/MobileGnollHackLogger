@@ -371,7 +371,8 @@ public sealed class ChatConsistencyEvidence
     /// then id. Empty unless the request gave both periods' runs (in a battery set, battery runs) explicitly.
     /// In a battery set every usable member of an unanalyzed battery run of the set is listed with its
     /// <see cref="ChatConsistencyUnanalyzedRun.BatteryRunId"/> and the battery run's reason, the members of
-    /// one battery run together, ordered by the battery run's start, then its id, then suite order.
+    /// one battery run together, ordered by the battery run's start, then its id, then suite order. The
+    /// availability-only runs follow, ordered by start, then id, with reason <c>availabilityOnly</c>.
     /// </summary>
     public IReadOnlyList<ChatConsistencyUnanalyzedRun> UnanalyzedRuns { get; init; } = Array.Empty<ChatConsistencyUnanalyzedRun>();
 
@@ -390,6 +391,23 @@ public sealed class ChatConsistencyEvidence
     /// <summary>In a battery set, analyzed battery run id → its Overall Index; empty otherwise. Descriptive; not part of the input fingerprint.</summary>
     public IReadOnlyDictionary<long, ChatConsistencyUnitOverallIndex> UnitOverallIndexes { get; init; } = new Dictionary<long, ChatConsistencyUnitOverallIndex>();
 
+    /// <summary>The request's protocol has provider availability (P6): the fields below are loaded.</summary>
+    public bool IncludesAvailability { get; init; }
+
+    /// <summary>
+    /// The runs read for provider availability only, recorded ones: failed or canceled runs of the subject on
+    /// the target suites inside a period's run range and lineage predecessors there (a run-by-run or suite
+    /// analysis), or the failed and superseded members of the compared battery runs and their predecessors
+    /// (a battery set). Ordered by start, then id. Empty without <see cref="IncludesAvailability"/>.
+    /// </summary>
+    public IReadOnlyList<ChatConsistencyAvailabilityRun> AvailabilityRuns { get; init; } = Array.Empty<ChatConsistencyAvailabilityRun>();
+
+    /// <summary>The candidate ledger rows of every recorded target, availability-only and control run, by run id.</summary>
+    public IReadOnlyDictionary<long, IReadOnlyList<ProviderAttemptRow>> Attempts { get; init; } = new Dictionary<long, IReadOnlyList<ProviderAttemptRow>>();
+
+    /// <summary>The target and availability-only runs with their lineage predecessors (headers), by id.</summary>
+    public IReadOnlyDictionary<long, BenchmarkRun> Lineage { get; init; } = new Dictionary<long, BenchmarkRun>();
+
     public IEnumerable<BenchmarkRun> TargetRuns => BaselineRuns.Concat(ComparisonRuns);
 
     /// <summary>The unit a target run belongs to; the run itself when <see cref="UnitOf"/> has no entry.</summary>
@@ -398,6 +416,10 @@ public sealed class ChatConsistencyEvidence
     /// <summary>The measurement segmentation of target and control runs, with grading bridged for <paramref name="commonGraderCovers"/>.</summary>
     public ComparabilityAssessment Assess(IEnumerable<long>? commonGraderCovers)
         => ChatConsistencyComparability.AssessMeasurement(TargetRuns.Concat(ControlRuns), commonGraderCovers);
+
+    /// <summary>The segmentation P6 reads on the availability axis: the target runs with the availability-only runs.</summary>
+    public ComparabilityAssessment AssessAvailability()
+        => ChatConsistencyComparability.AssessMeasurement(TargetRuns.Concat(AvailabilityRuns.Select(a => a.Run)));
 }
 
 /// <summary>
@@ -424,8 +446,11 @@ public class ChatConsistencyEvidenceBuilder
     /// runs of that suite. In a battery set the targets are the usable members, on the subject's axis, of
     /// the set's complete battery runs started inside each period, or of exactly the explicit battery runs.
     /// Candidate controls are the explicit control ids, or every other subject's usable run on a target
-    /// suite in either period. Refuses, with <see cref="ChatConsistencyRequestException"/>, a malformed
-    /// comparison set, run ids with a battery set and battery run ids without one.
+    /// suite in either period. When the request's protocol has P6 (Protocol V2), the availability-only runs,
+    /// the candidate ledger rows of every recorded run and the lineage are loaded too, and each
+    /// availability-only run is listed as not analyzed with reason <c>availabilityOnly</c>. Refuses, with
+    /// <see cref="ChatConsistencyRequestException"/>, a malformed comparison set, run ids with a battery set
+    /// and battery run ids without one.
     /// </summary>
     public async Task<ChatConsistencyEvidence> LoadAsync(ChatConsistencyAnalysisRequest request, CancellationToken ct = default)
     {
@@ -575,6 +600,7 @@ public class ChatConsistencyEvidenceBuilder
         var unitOf = new Dictionary<long, long>();
         var unitStarts = new Dictionary<long, DateTime>();
         var keptBatteries = new HashSet<long>();
+        var batteryPeriods = new List<(BatteryRunState Battery, string Period)>();
         if (batterySet)
         {
             var baselineBatteries = PickBatteries(explicitBaselineBatteries, bs, be);
@@ -598,11 +624,12 @@ public class ChatConsistencyEvidenceBuilder
                 unitStarts[battery.Row.Id] = ChatConsistencyMeasures.AsUtc(battery.Row.StartedAtUtc);
             }
 
-            List<long> Members(IEnumerable<BatteryRunState> picked)
+            List<long> Members(IEnumerable<BatteryRunState> picked, string period)
             {
                 var members = new List<long>();
                 foreach (var battery in picked.Where(b => keptBatteries.Contains(b.Row.Id)).OrderBy(b => b.Row.StartedAtUtc).ThenBy(b => b.Row.Id))
                 {
+                    batteryPeriods.Add((battery, period));
                     foreach (long runId in battery.MemberRunIds)
                     {
                         unitOf[runId] = battery.Row.Id;
@@ -613,8 +640,8 @@ public class ChatConsistencyEvidenceBuilder
                 return members;
             }
 
-            baselineIds = Members(baselineBatteries);
-            comparisonIds = Members(comparisonBatteries);
+            baselineIds = Members(baselineBatteries, "baseline");
+            comparisonIds = Members(comparisonBatteries, "comparison");
         }
         else
         {
@@ -694,11 +721,56 @@ public class ChatConsistencyEvidenceBuilder
             unanalyzed = new List<ChatConsistencyUnanalyzedRun>();
         }
 
+        // Provider availability: the availability-only runs, chosen automatically so that leaving runs out stays visible.
+        bool availability = ChatConsistencyProtocol.VersionHas(request.ProtocolVersion, ChatConsistencyEndpointIds.ProviderErrorRate);
+        var lineage = availability
+            ? await LoadLineageAsync(headers.Where(r => targetIds.Contains(r.Id)).Concat(batteryPeriods.SelectMany(b => b.Battery.AvailabilityMembers)), ct)
+            : new Dictionary<long, BenchmarkRun>();
+        var availabilityPicks = !availability
+            ? new List<(long RunId, string Period, long UnitId, long? BatteryRunId)>()
+            : batterySet
+                ? BatteryAvailabilityPicks(batteryPeriods, targetIds, lineage)
+                : await RunAvailabilityPicksAsync(request.SubjectModelKey, headers, baselineIds, comparisonIds, targetSuites, targetIds, lineage, ct);
+
         var full = await LoadFullAsync(targetIds.Concat(controlIds).ToList(), includeTelemetry: true, ct);
         var byId = full.ToDictionary(r => r.Id);
         var baseline = Ordered(baselineIds.Where(byId.ContainsKey).Select(id => byId[id]));
         var comparison = Ordered(comparisonIds.Where(byId.ContainsKey).Select(id => byId[id]));
         var controls = Ordered(controlIds.Where(byId.ContainsKey).Select(id => byId[id]));
+
+        var availabilityRuns = new List<ChatConsistencyAvailabilityRun>();
+        var attempts = new Dictionary<long, IReadOnlyList<ProviderAttemptRow>>();
+        if (availability)
+        {
+            var availabilityFull = (await LoadFullAsync(availabilityPicks.Select(p => p.RunId).Distinct().ToList(), includeTelemetry: false, ct))
+                .ToDictionary(r => r.Id);
+            availabilityRuns = availabilityPicks
+                .Where(p => availabilityFull.ContainsKey(p.RunId))
+                .Select(p => new ChatConsistencyAvailabilityRun(availabilityFull[p.RunId], p.Period, p.UnitId, p.BatteryRunId))
+                .OrderBy(a => a.Run.StartedAtUtc)
+                .ThenBy(a => a.Run.Id)
+                .ToList();
+            foreach (var pair in await LoadLineageAsync(availabilityRuns.Select(a => a.Run).Concat(baseline).Concat(comparison), ct))
+            {
+                lineage[pair.Key] = pair.Value;
+            }
+
+            attempts = await LoadAttemptsAsync(baseline.Concat(comparison).Concat(controls).Concat(availabilityRuns.Select(a => a.Run)), ct);
+
+            // An availability-only run is listed with that reason only, after the runs not analyzed.
+            var availabilityIds = availabilityRuns.Select(a => a.Run.Id).ToHashSet();
+            unanalyzed = unanalyzed
+                .Where(u => !availabilityIds.Contains(u.RunId))
+                .Concat(availabilityRuns.Select(a => new ChatConsistencyUnanalyzedRun
+                {
+                    RunId = a.Run.Id,
+                    Period = a.Period,
+                    StartedAtUtc = ChatConsistencyMeasures.AsUtc(a.Run.StartedAtUtc),
+                    Reason = ChatConsistencyUnanalyzedReasons.AvailabilityOnly,
+                    BatteryRunId = a.BatteryRunId
+                }))
+                .ToList();
+        }
 
         var allRunIds = byId.Keys.ToList();
         var calibrations = await LoadCalibrationsAsync(allRunIds, ct);
@@ -768,9 +840,207 @@ public class ChatConsistencyEvidenceBuilder
             UnitKind = batterySet ? ChatConsistencyComparisonSetKinds.BatteryRunUnit : ChatConsistencyComparisonSetKinds.RunUnit,
             UnitOf = analyzedUnitOf,
             UnitStartedAtUtc = unitStarts.Where(p => analyzedUnits.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value),
-            UnitOverallIndexes = unitOverallIndexes
+            UnitOverallIndexes = unitOverallIndexes,
+            IncludesAvailability = availability,
+            AvailabilityRuns = availabilityRuns,
+            Attempts = attempts,
+            Lineage = lineage
         };
     }
+
+    // --- Provider availability -------------------------------------------------------------------
+
+    /// <summary>
+    /// The availability-only runs of a run-by-run or suite analysis, per period: the subject's recorded failed
+    /// or canceled runs on <paramref name="targetSuites"/> whose start lies inside the period's run range, from
+    /// its first target run to its last by start, then id, as <c>beforeFirstRun</c> and <c>afterLastRun</c>
+    /// order runs; and, on the same range, the recorded failed or canceled lineage predecessors of its target
+    /// runs, of any suite. Each is its own unit.
+    /// </summary>
+    private async Task<List<(long RunId, string Period, long UnitId, long? BatteryRunId)>> RunAvailabilityPicksAsync(
+        string modelKey, IReadOnlyList<BenchmarkRun> headers, IReadOnlyList<long> baselineIds, IReadOnlyList<long> comparisonIds,
+        IReadOnlySet<string> targetSuites, IReadOnlySet<long> targetIds, IReadOnlyDictionary<long, BenchmarkRun> lineage, CancellationToken ct)
+    {
+        var picks = new List<(long RunId, string Period, long UnitId, long? BatteryRunId)>();
+        var picked = new HashSet<long>();
+        var statuses = ChatConsistencyAvailability.AvailabilityOnlyStatuses.ToList();
+        foreach (var (period, ids) in new[] { ("baseline", baselineIds), ("comparison", comparisonIds) })
+        {
+            var idSet = ids.ToHashSet();
+            var units = Ordered(headers.Where(r => idSet.Contains(r.Id)));
+            if (units.Count == 0) continue;
+
+            var first = (units[0].StartedAtUtc, units[0].Id);
+            var last = (units[^1].StartedAtUtc, units[^1].Id);
+            bool InRange(BenchmarkRun r) => CompareStart((r.StartedAtUtc, r.Id), first) >= 0 && CompareStart((r.StartedAtUtc, r.Id), last) <= 0;
+            bool Candidate(BenchmarkRun r)
+                => statuses.Contains(r.Status) && ChatConsistencyAvailability.IsRecorded(r) && !targetIds.Contains(r.Id) && InRange(r);
+
+            DateTime from = first.StartedAtUtc, to = last.StartedAtUtc;
+            var failed = await _db.BenchmarkRuns.AsNoTracking()
+                .Where(r => statuses.Contains(r.Status) && r.ProviderLedgerVersion != null && r.StartedAtUtc >= from && r.StartedAtUtc <= to)
+                .ToListAsync(ct);
+            var chosen = failed
+                .Where(r => Candidate(r)
+                            && ChatConsistencyComparability.ModelAxisKey(r) == modelKey
+                            && targetSuites.Contains(ChatConsistencyMeasures.SuiteIdentity(r)))
+                .Concat(ChatConsistencyAvailability.Predecessors(units, lineage).Where(Candidate));
+            foreach (var run in Ordered(chosen))
+            {
+                if (picked.Add(run.Id)) picks.Add((run.Id, period, run.Id, null));
+            }
+        }
+
+        return picks;
+    }
+
+    /// <summary>
+    /// The availability-only runs of a battery set: the recorded failed or superseded members, on the subject's
+    /// axis, of each compared battery run, and the recorded failed or canceled lineage predecessors of its
+    /// members; each joins its battery run's unit. A whole battery run that is incomplete is never pulled in.
+    /// </summary>
+    private static List<(long RunId, string Period, long UnitId, long? BatteryRunId)> BatteryAvailabilityPicks(
+        IReadOnlyList<(BatteryRunState Battery, string Period)> batteries, IReadOnlySet<long> targetIds, IReadOnlyDictionary<long, BenchmarkRun> lineage)
+    {
+        var picks = new List<(long RunId, string Period, long UnitId, long? BatteryRunId)>();
+        var picked = new HashSet<long>();
+        foreach (var (battery, period) in batteries)
+        {
+            var members = battery.Usable.Select(u => u.Run).Concat(battery.AvailabilityMembers).ToList();
+            var predecessors = ChatConsistencyAvailability.Predecessors(members, lineage)
+                .Where(r => ChatConsistencyAvailability.IsAvailabilityOnlyStatus(r.Status));
+            foreach (var run in battery.AvailabilityMembers.Concat(predecessors))
+            {
+                if (!ChatConsistencyAvailability.IsRecorded(run) || targetIds.Contains(run.Id) || !picked.Add(run.Id)) continue;
+                picks.Add((run.Id, period, battery.Row.Id, battery.Row.Id));
+            }
+        }
+
+        return picks;
+    }
+
+    private static int CompareStart((DateTime Start, long Id) a, (DateTime Start, long Id) b)
+    {
+        int byStart = a.Start.CompareTo(b.Start);
+        return byStart != 0 ? byStart : a.Id.CompareTo(b.Id);
+    }
+
+    /// <summary>
+    /// <paramref name="runs"/> with every lineage predecessor reachable through <see cref="BenchmarkRun.ReplacesRunId"/>
+    /// (headers), by id; a deleted predecessor ends its chain.
+    /// </summary>
+    private async Task<Dictionary<long, BenchmarkRun>> LoadLineageAsync(IEnumerable<BenchmarkRun> runs, CancellationToken ct)
+    {
+        const int MaxDepth = 32;
+        var known = new Dictionary<long, BenchmarkRun>();
+        foreach (var run in runs) known.TryAdd(run.Id, run);
+
+        var asked = new HashSet<long>();
+        for (int depth = 0; depth < MaxDepth; depth++)
+        {
+            var missing = known.Values
+                .Where(r => r.ReplacesRunId is long id && !known.ContainsKey(id) && !asked.Contains(id))
+                .Select(r => r.ReplacesRunId!.Value)
+                .Distinct()
+                .ToList();
+            if (missing.Count == 0) break;
+
+            asked.UnionWith(missing);
+            foreach (var run in await _db.BenchmarkRuns.AsNoTracking().Where(r => missing.Contains(r.Id)).ToListAsync(ct))
+            {
+                known.TryAdd(run.Id, run);
+            }
+        }
+
+        return known;
+    }
+
+    /// <summary>The candidate ledger rows of the recorded <paramref name="runs"/>, by run, each ordered by start, then id.</summary>
+    private async Task<Dictionary<long, IReadOnlyList<ProviderAttemptRow>>> LoadAttemptsAsync(IEnumerable<BenchmarkRun> runs, CancellationToken ct)
+    {
+        var ids = runs.Where(ChatConsistencyAvailability.IsRecorded).Select(r => r.Id).Distinct().ToList();
+        if (ids.Count == 0) return new Dictionary<long, IReadOnlyList<ProviderAttemptRow>>();
+
+        var rows = await _db.BenchmarkProviderAttempts.AsNoTracking()
+            .Where(p => ids.Contains(p.BenchmarkRunId) && p.Source == ModelCallSource.BenchmarkCandidate)
+            .OrderBy(p => p.BenchmarkRunId).ThenBy(p => p.StartedAtUtc).ThenBy(p => p.Id)
+            .Select(p => new
+            {
+                p.BenchmarkRunId, p.BenchmarkRunAnswerId, p.Source, p.Pass, p.CallIndex, p.AttemptIndex,
+                p.StartedAtUtc, p.DurationMs, p.Outcome, p.HttpStatus, p.ProviderErrorCode, p.Retried
+            })
+            .ToListAsync(ct);
+
+        return rows
+            .GroupBy(p => p.BenchmarkRunId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<ProviderAttemptRow>)g.Select(p => new ProviderAttemptRow(
+                    p.BenchmarkRunId, p.BenchmarkRunAnswerId, p.Source, p.Pass, p.CallIndex, p.AttemptIndex,
+                    ChatConsistencyMeasures.AsUtc(p.StartedAtUtc), p.DurationMs, p.Outcome, p.HttpStatus, p.ProviderErrorCode, p.Retried)).ToList());
+    }
+
+    /// <summary>The subject's recorded failed or canceled runs between the bounds (inclusive, either may be null), headers in a stable order.</summary>
+    private async Task<List<BenchmarkRun>> LoadAvailabilityOnlyHeadersAsync(string modelKey, DateTime? fromUtc, DateTime? toUtc, CancellationToken ct)
+    {
+        var statuses = ChatConsistencyAvailability.AvailabilityOnlyStatuses.ToList();
+        var query = _db.BenchmarkRuns.AsNoTracking().Where(r => statuses.Contains(r.Status) && r.ProviderLedgerVersion != null);
+        if (fromUtc.HasValue)
+        {
+            DateTime from = fromUtc.Value;
+            query = query.Where(r => r.StartedAtUtc >= from);
+        }
+
+        if (toUtc.HasValue)
+        {
+            DateTime to = toUtc.Value;
+            query = query.Where(r => r.StartedAtUtc <= to);
+        }
+
+        return Ordered((await query.ToListAsync(ct)).Where(r => ChatConsistencyComparability.ModelAxisKey(r) == modelKey));
+    }
+
+    /// <summary>
+    /// <paramref name="point"/> with the availability of <paramref name="members"/>: their candidate attempts
+    /// with the cluster-adjusted interval, and the re-runs through their lineage.
+    /// </summary>
+    private static T WithAvailability<T>(
+        T point, IReadOnlyList<BenchmarkRun> members,
+        IReadOnlyDictionary<long, IReadOnlyList<ProviderAttemptRow>> attempts, IReadOnlyDictionary<long, BenchmarkRun> lineage)
+        where T : ChatConsistencyTimelinePoint
+    {
+        bool recorded = members.Any(ChatConsistencyAvailability.IsRecorded);
+        var summary = ChatConsistencyAvailability.Summary(members, attempts, lineage);
+        ChatConsistencyTimelinePoint measured = point;
+        return (T)(measured with
+        {
+            AvailabilityRecorded = recorded,
+            ValidAttemptCount = recorded ? summary.ValidAttempts : null,
+            ProviderErrorCount = recorded ? summary.ProviderErrors : null,
+            UnattributedErrorCount = recorded ? summary.UnattributedErrors : null,
+            ProviderErrorRate = recorded ? summary.ProviderErrorRate : null,
+            ProviderErrorRateLow = recorded ? summary.ProviderErrorRateLow : null,
+            ProviderErrorRateHigh = recorded ? summary.ProviderErrorRateHigh : null,
+            RerunsNeeded = summary.RerunsNeeded,
+            ProviderRerunsNeeded = summary.ProviderRerunsNeeded
+        });
+    }
+
+    /// <summary>The timeline point of a failed or canceled run: its identity, status and availability only.</summary>
+    private static ChatConsistencyTimelinePoint AvailabilityOnlyPoint(
+        BenchmarkRun run, IReadOnlyDictionary<long, IReadOnlyList<ProviderAttemptRow>> attempts, IReadOnlyDictionary<long, BenchmarkRun> lineage)
+        => WithAvailability(new ChatConsistencyTimelinePoint
+        {
+            RunId = run.Id,
+            StartedAtUtc = ChatConsistencyMeasures.AsUtc(run.StartedAtUtc),
+            SuiteName = run.SuiteName ?? string.Empty,
+            SuiteId = run.BenchmarkSuiteIdUsed ?? run.BenchmarkSuiteId,
+            HarnessVersion = run.HarnessVersion,
+            Status = run.Status,
+            IsLegacy = !run.CallTelemetryVersion.HasValue,
+            MaxParallelQuestions = run.MaxParallelQuestionsUsed,
+            AvailabilityOnly = true
+        }, new[] { run }, attempts, lineage);
 
     // --- Comparison sets -------------------------------------------------------------------------
 
@@ -873,6 +1143,12 @@ public class ChatConsistencyEvidenceBuilder
 
         /// <summary>The usable members' run ids, distinct, in suite order.</summary>
         public IEnumerable<long> MemberRunIds => Usable.Select(u => u.Run.Id).Distinct();
+
+        /// <summary>
+        /// The members on the axis, superseded ones included, that are not usable and are superseded or failed
+        /// or canceled (headers, in suite order, then round): provider availability only.
+        /// </summary>
+        public IReadOnlyList<BenchmarkRun> AvailabilityMembers { get; init; } = Array.Empty<BenchmarkRun>();
     }
 
     /// <summary>
@@ -883,14 +1159,16 @@ public class ChatConsistencyEvidenceBuilder
         string modelKey, Func<IQueryable<BenchmarkBatteryRun>, IQueryable<BenchmarkBatteryRun>> filter, CancellationToken ct)
     {
         var rows = await filter(_db.BenchmarkBatteryRuns.AsNoTracking().Include(b => b.Members)).ToListAsync(ct);
-        var runIds = rows.SelectMany(b => b.Members).Where(m => !m.Superseded).Select(m => m.BenchmarkRunId).Distinct().ToList();
-        var memberRuns = runIds.Count == 0
+        var runIds = rows.SelectMany(b => b.Members).Select(m => m.BenchmarkRunId).Distinct().ToList();
+        var allRuns = runIds.Count == 0
             ? new Dictionary<long, BenchmarkRun>()
             : (await _db.BenchmarkRuns.AsNoTracking().Where(r => runIds.Contains(r.Id)).ToListAsync(ct)).ToDictionary(r => r.Id);
-        var axisOf = memberRuns.Values.ToDictionary(r => r.Id, ChatConsistencyComparability.ModelAxisKey);
+        var current = rows.SelectMany(b => b.Members).Where(m => !m.Superseded).Select(m => m.BenchmarkRunId).ToHashSet();
+        var memberRuns = allRuns.Where(p => current.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value);
+        var axisOf = allRuns.Values.ToDictionary(r => r.Id, ChatConsistencyComparability.ModelAxisKey);
 
         var states = rows
-            .Select(b => BatteryState(b, memberRuns, axisOf, modelKey))
+            .Select(b => BatteryState(b, allRuns, axisOf, modelKey))
             .OrderBy(s => s.Row.StartedAtUtc)
             .ThenBy(s => s.Row.Id)
             .ToList();
@@ -939,6 +1217,20 @@ public class ChatConsistencyEvidenceBuilder
             .Select(m => (Member: m, Run: runs[m.BenchmarkRunId]))
             .ToList();
 
+        var usableIds = usable.Select(u => u.Run.Id).ToHashSet();
+        var availabilityMembers = (row.Members ?? new List<BenchmarkBatteryRunMember>())
+            .Where(m => runs.ContainsKey(m.BenchmarkRunId) && axisOf.TryGetValue(m.BenchmarkRunId, out var key) && key == modelKey)
+            .Select(m => (Member: m, Run: runs[m.BenchmarkRunId]))
+            .Where(x => !usableIds.Contains(x.Run.Id)
+                        && x.Run.Status != BenchmarkRunStatus.Running
+                        && (x.Member.Superseded || ChatConsistencyAvailability.IsAvailabilityOnlyStatus(x.Run.Status)))
+            .OrderBy(x => x.Member.SuiteIndex)
+            .ThenBy(x => x.Member.Round)
+            .ThenBy(x => x.Member.Id)
+            .Select(x => x.Run)
+            .DistinctBy(r => r.Id)
+            .ToList();
+
         string? reason;
         if (suiteCount == 0)
         {
@@ -965,7 +1257,8 @@ public class ChatConsistencyEvidenceBuilder
             OnAxis = onAxis.Count > 0,
             Usable = usable,
             Complete = reason == null,
-            IncompleteReason = reason
+            IncompleteReason = reason,
+            AvailabilityMembers = availabilityMembers
         };
     }
 
@@ -1246,12 +1539,22 @@ public class ChatConsistencyEvidenceBuilder
 
     // --- API queries -----------------------------------------------------------------------------
 
-    /// <summary>Every model axis with usable runs, newest activity first.</summary>
+    /// <summary>
+    /// Every model axis with usable runs, newest activity first, each with its count of recorded failed or
+    /// canceled runs, which enter provider availability only.
+    /// </summary>
     public async Task<IReadOnlyList<ChatConsistencyModelAxis>> ListModelAxesAsync(CancellationToken ct = default)
     {
         var statuses = ChatConsistencyMeasures.UsableStatuses.ToList();
         var runs = await _db.BenchmarkRuns.AsNoTracking().Where(r => statuses.Contains(r.Status)).ToListAsync(ct);
         var axisOf = runs.ToDictionary(r => r.Id, ChatConsistencyComparability.ModelAxisKey);
+
+        var failedStatuses = ChatConsistencyAvailability.AvailabilityOnlyStatuses.ToList();
+        var availabilityOnlyCounts = (await _db.BenchmarkRuns.AsNoTracking()
+                .Where(r => failedStatuses.Contains(r.Status) && r.ProviderLedgerVersion != null)
+                .ToListAsync(ct))
+            .GroupBy(ChatConsistencyComparability.ModelAxisKey, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
 
         // Battery runs per axis: those with a non-superseded member on it, whatever the member run's status.
         var memberships = await _db.BenchmarkBatteryRunMembers.AsNoTracking()
@@ -1293,7 +1596,8 @@ public class ChatConsistencyEvidenceBuilder
                     LastRunAtUtc = ChatConsistencyMeasures.AsUtc(latest.StartedAtUtc),
                     LatestRunId = latest.Id,
                     SuiteNames = ordered.Select(r => r.SuiteName ?? string.Empty).Distinct(StringComparer.Ordinal).OrderBy(s => s, StringComparer.Ordinal).ToList(),
-                    BatteryRunCount = batteryRunCounts.TryGetValue(g.Key, out int batteryRuns) ? batteryRuns : 0
+                    BatteryRunCount = batteryRunCounts.TryGetValue(g.Key, out int batteryRuns) ? batteryRuns : 0,
+                    AvailabilityOnlyRunCount = availabilityOnlyCounts.TryGetValue(g.Key, out int availabilityOnly) ? availabilityOnly : 0
                 };
             })
             .OrderByDescending(a => a.LastRunAtUtc)
@@ -1302,14 +1606,16 @@ public class ChatConsistencyEvidenceBuilder
     }
 
     /// <summary>
-    /// One point per usable run of the subject between the bounds (inclusive, either may be null), and one
-    /// per battery run of any definition started between them with a non-superseded member on the subject's
-    /// axis, with the subject's events and annotations.
+    /// One point per usable run of the subject between the bounds (inclusive, either may be null), one
+    /// availability-only point per recorded failed or canceled run there, and one per battery run of any
+    /// definition started between them with a non-superseded member on the subject's axis, with the subject's
+    /// events and annotations. Every point carries its provider availability.
     /// </summary>
     public async Task<ChatConsistencyTimeline> GetTimelineAsync(string modelKey, DateTime? fromUtc, DateTime? toUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelKey);
         var runs = await LoadSubjectRunsAsync(modelKey, fromUtc, toUtc, includeTelemetry: true, ct);
+        var availabilityOnly = await LoadAvailabilityOnlyHeadersAsync(modelKey, fromUtc, toUtc, ct);
         var latest = runs.LastOrDefault();
         var subject = ChatConsistencyMeasures.SubjectOf(modelKey, latest);
 
@@ -1322,14 +1628,27 @@ public class ChatConsistencyEvidenceBuilder
         var runById = runs.Concat(later).ToDictionary(r => r.Id);
         var calibrations = await LoadCalibrationsAsync(runById.Keys.ToList(), ct);
 
+        var availabilityRuns = runById.Values.Concat(availabilityOnly).Concat(batteryStates.SelectMany(s => s.AvailabilityMembers)).DistinctBy(r => r.Id).ToList();
+        var lineage = await LoadLineageAsync(availabilityRuns, ct);
+        var attempts = await LoadAttemptsAsync(availabilityRuns, ct);
+
         var (priceCard, pricing) = latest == null
             ? (new ChatConsistencyPriceCard { Available = false, Source = "none" }, (ModelPricing?)null)
             : await ResolvePriceCardAsync(latest);
 
-        var points = runs.Select(run => TimelinePoint(run, calibrations.Where(c => c.BenchmarkRunId == run.Id).ToList(), pricing)).ToList();
+        var points = runs
+            .Select(run => WithAvailability(TimelinePoint(run, calibrations.Where(c => c.BenchmarkRunId == run.Id).ToList(), pricing), new[] { run }, attempts, lineage))
+            .Concat(availabilityOnly.Select(run => AvailabilityOnlyPoint(run, attempts, lineage)))
+            .OrderBy(p => p.StartedAtUtc)
+            .ThenBy(p => p.RunId)
+            .ToList();
         var overallIndexes = await BatteryOverallIndexesAsync(batteryStates, ct);
         var batteryPoints = batteryStates
-            .Select(s => BatteryTimelinePoint(s, modelKey, runById, memberHeaders, calibrations, pricing, overallIndexes[s.Row.Id]))
+            .Select(s => WithAvailability(
+                BatteryTimelinePoint(s, modelKey, runById, memberHeaders, calibrations, pricing, overallIndexes[s.Row.Id]),
+                s.MemberRunIds.Where(runById.ContainsKey).Select(id => runById[id]).Concat(s.AvailabilityMembers).ToList(),
+                attempts,
+                lineage))
             .ToList();
 
         var events = runs.Count == 0
@@ -1364,13 +1683,16 @@ public class ChatConsistencyEvidenceBuilder
 
     /// <summary>
     /// One row per usable run of the subject between the bounds: eligibility and segment per axis, re-grade
-    /// coverage, controls, served model, suite, and the run's battery.
+    /// coverage, controls, served model, suite, the run's battery and its provider availability; and, when
+    /// there is a usable run, one availability-only row per recorded failed or canceled run there. Ordered by
+    /// start, then id.
     /// </summary>
     public async Task<IReadOnlyList<ChatConsistencyRunRow>> GetRunTableAsync(string modelKey, DateTime? fromUtc, DateTime? toUtc, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelKey);
         var runs = await LoadSubjectRunsAsync(modelKey, fromUtc, toUtc, includeTelemetry: false, ct);
-        return await BuildRunRowsAsync(modelKey, runs, fromUtc, toUtc, ct);
+        var availabilityOnly = await LoadAvailabilityOnlyHeadersAsync(modelKey, fromUtc, toUtc, ct);
+        return await BuildRunRowsAsync(modelKey, runs, fromUtc, toUtc, ct, availabilityOnly);
     }
 
     /// <summary>
@@ -1391,11 +1713,12 @@ public class ChatConsistencyEvidenceBuilder
         var loaded = runs.Select(r => r.Id).ToHashSet();
         var later = await LoadFullAsync(states.SelectMany(s => s.MemberRunIds).Where(id => !loaded.Contains(id)).Distinct().ToList(), includeTelemetry: false, ct);
         var rowOf = (await BuildRunRowsAsync(modelKey, Ordered(runs.Concat(later)), fromUtc, toUtc, ct)).ToDictionary(r => r.RunId);
+        var lineage = await LoadLineageAsync(states.SelectMany(s => s.Usable.Select(u => u.Run).Concat(s.AvailabilityMembers)), ct);
 
         return states
             .OrderByDescending(s => s.Row.StartedAtUtc)
             .ThenByDescending(s => s.Row.Id)
-            .Select(s => BatteryRunRow(s, rowOf))
+            .Select(s => BatteryRunRow(s, rowOf, lineage))
             .ToList();
     }
 
@@ -1459,11 +1782,16 @@ public class ChatConsistencyEvidenceBuilder
 
     /// <summary>
     /// The battery-run row of <paramref name="state"/>: its members' rows from <paramref name="rowOf"/> with
-    /// this battery run's position, and per axis eligible when every member is, otherwise the ineligible
-    /// members' reasons, each prefixed <c>#&lt;run id&gt;: </c>.
+    /// this battery run's position, per axis eligible when every member is, otherwise the ineligible
+    /// members' reasons, each prefixed <c>#&lt;run id&gt;: </c>; and the provider availability of its usable
+    /// and its failed or superseded members from their rollups, with their re-runs.
     /// </summary>
-    private static ChatConsistencyBatteryRunRow BatteryRunRow(BatteryRunState state, IReadOnlyDictionary<long, ChatConsistencyRunRow> rowOf)
+    private static ChatConsistencyBatteryRunRow BatteryRunRow(
+        BatteryRunState state, IReadOnlyDictionary<long, ChatConsistencyRunRow> rowOf, IReadOnlyDictionary<long, BenchmarkRun> lineage)
     {
+        var availabilityRuns = state.Usable.Select(u => u.Run).Concat(state.AvailabilityMembers).DistinctBy(r => r.Id).ToList();
+        var rollups = ChatConsistencyAvailability.Rollups(availabilityRuns);
+        var reruns = ChatConsistencyAvailability.Reruns(availabilityRuns, lineage);
         var row = state.Row;
         int suiteCount = state.Definition?.Suites.Count ?? 0;
         var members = state.Usable
@@ -1516,7 +1844,14 @@ public class ChatConsistencyEvidenceBuilder
                 .OrderBy(v => v, StringComparer.Ordinal)
                 .ToList(),
             Members = members,
-            Eligibility = eligibility
+            Eligibility = eligibility,
+            AvailabilityRecorded = rollups.Recorded,
+            ValidAttemptCount = rollups.Valid,
+            ProviderErrorCount = rollups.Provider,
+            UnattributedErrorCount = rollups.Unattributed,
+            ProviderErrorRate = rollups.Rate,
+            RerunsNeeded = reruns.RerunsNeeded,
+            ProviderRerunsNeeded = reruns.ProviderRerunsNeeded
         };
     }
 
@@ -1639,17 +1974,23 @@ public class ChatConsistencyEvidenceBuilder
     }
 
     /// <summary>
-    /// The run-table rows of <paramref name="runs"/> (the subject's, ordered): segments assessed over these
-    /// runs, controls of other subjects on their suites between the bounds widened to the runs, and each
-    /// run's battery.
+    /// The run-table rows of <paramref name="runs"/> (the subject's usable runs, ordered): segments assessed over
+    /// these runs, the availability axis over them with <paramref name="availabilityOnly"/>, controls of other
+    /// subjects on their suites between the bounds widened to the runs, each run's battery and its provider
+    /// availability from its rollups; then the rows of <paramref name="availabilityOnly"/>, eligible on the
+    /// availability axis alone. Ordered by start, then id.
     /// </summary>
     private async Task<List<ChatConsistencyRunRow>> BuildRunRowsAsync(
-        string modelKey, List<BenchmarkRun> runs, DateTime? fromUtc, DateTime? toUtc, CancellationToken ct)
+        string modelKey, List<BenchmarkRun> runs, DateTime? fromUtc, DateTime? toUtc, CancellationToken ct,
+        IReadOnlyList<BenchmarkRun>? availabilityOnly = null)
     {
         if (runs.Count == 0) return new List<ChatConsistencyRunRow>();
 
+        availabilityOnly ??= Array.Empty<BenchmarkRun>();
         var calibrations = await LoadCalibrationsAsync(runs.Select(r => r.Id).ToList(), ct);
-        var batteryOf = await BatteryOfRunsAsync(runs.Select(r => r.Id).ToList(), ct);
+        var batteryOf = await BatteryOfRunsAsync(runs.Concat(availabilityOnly).Select(r => r.Id).ToList(), ct);
+        var lineage = await LoadLineageAsync(runs.Concat(availabilityOnly), ct);
+        var availabilityAssessment = ChatConsistencyComparability.AssessMeasurement(runs.Concat(availabilityOnly));
 
         DateTime from = fromUtc.HasValue && fromUtc.Value < runs[0].StartedAtUtc ? fromUtc.Value : runs[0].StartedAtUtc;
         DateTime to = toUtc.HasValue && toUtc.Value > runs[^1].StartedAtUtc ? toUtc.Value : runs[^1].StartedAtUtc;
@@ -1667,24 +2008,69 @@ public class ChatConsistencyEvidenceBuilder
         var matching = ChatConsistencyComparability.MatchControlRuns(
             new[] { new ChatConsistencyPeriod("all", runs) }, controls);
 
+        ChatConsistencyAxisEligibility Eligibility(BenchmarkRun run, ChatConsistencyAxis axis, ComparabilityAssessment assessed)
+        {
+            int? segment = assessed.RunOf(run.Id)?.SegmentOf(axis);
+            string? reason = segment.HasValue
+                ? null
+                : string.Join(" ", assessed.SpeedExclusions.Where(x => x.RunId == run.Id && x.Axes.Contains(axis)).Select(x => x.Detail));
+            return new ChatConsistencyAxisEligibility
+            {
+                Axis = axis,
+                Eligible = segment.HasValue,
+                Segment = segment,
+                Reason = string.IsNullOrEmpty(reason) ? null : reason
+            };
+        }
+
+        ChatConsistencyRunRow WithRollups(ChatConsistencyRunRow row, BenchmarkRun run)
+        {
+            var rollups = ChatConsistencyAvailability.Rollups(new[] { run });
+            var reruns = ChatConsistencyAvailability.Reruns(new[] { run }, lineage);
+            return row with
+            {
+                AvailabilityRecorded = rollups.Recorded,
+                ValidAttemptCount = rollups.Valid,
+                ProviderErrorCount = rollups.Provider,
+                UnattributedErrorCount = rollups.Unattributed,
+                ProviderErrorRate = rollups.Rate,
+                RerunsNeeded = reruns.RerunsNeeded,
+                ProviderRerunsNeeded = reruns.ProviderRerunsNeeded
+            };
+        }
+
+        var availabilityRows = availabilityOnly.Select(run =>
+        {
+            var battery = batteryOf.GetValueOrDefault(run.Id);
+            return WithRollups(new ChatConsistencyRunRow
+            {
+                RunId = run.Id,
+                StartedAtUtc = ChatConsistencyMeasures.AsUtc(run.StartedAtUtc),
+                SuiteName = run.SuiteName ?? string.Empty,
+                HarnessVersion = run.HarnessVersion,
+                ScoringMethodVersion = run.ScoringMethodVersion,
+                Status = run.Status,
+                IsLegacy = !run.CallTelemetryVersion.HasValue,
+                IsAnchor = run.IsConsistencyAnchor,
+                Eligibility = Enum.GetValues<ChatConsistencyAxis>().Select(axis => axis == ChatConsistencyAxis.Availability
+                    ? Eligibility(run, axis, availabilityAssessment)
+                    : new ChatConsistencyAxisEligibility { Axis = axis, Eligible = false, Reason = AvailabilityOnlyReason }).ToList(),
+                ServedModelIds = ChatConsistencyMeasures.ServedModels(run),
+                SuiteId = run.BenchmarkSuiteIdUsed ?? run.BenchmarkSuiteId,
+                SuiteKey = ChatConsistencyMeasures.SuiteIdentity(run),
+                BatteryRunId = battery?.BatteryRunId,
+                BatteryName = battery?.BatteryName,
+                BatterySuitePosition = battery?.Position,
+                BatterySuiteCount = battery?.SuiteCount,
+                AvailabilityOnly = true
+            }, run);
+        }).ToList();
+
         return runs.Select(run =>
         {
-            var segments = assessment.RunOf(run.Id);
-            var exclusions = assessment.SpeedExclusions.Where(x => x.RunId == run.Id).ToList();
-            var eligibility = Enum.GetValues<ChatConsistencyAxis>().Select(axis =>
-            {
-                int? segment = segments?.SegmentOf(axis);
-                string? reason = segment.HasValue
-                    ? null
-                    : string.Join(" ", exclusions.Where(x => x.Axes.Contains(axis)).Select(x => x.Detail));
-                return new ChatConsistencyAxisEligibility
-                {
-                    Axis = axis,
-                    Eligible = segment.HasValue,
-                    Segment = segment,
-                    Reason = string.IsNullOrEmpty(reason) ? null : reason
-                };
-            }).ToList();
+            var eligibility = Enum.GetValues<ChatConsistencyAxis>()
+                .Select(axis => Eligibility(run, axis, axis == ChatConsistencyAxis.Availability ? availabilityAssessment : assessment))
+                .ToList();
 
             var coverage = calibrations
                 .Where(c => c.BenchmarkRunId == run.Id && c.AssessorModelSnapshotId.HasValue && c.ErrorMessage == null)
@@ -1700,7 +2086,7 @@ public class ChatConsistencyEvidenceBuilder
                 .ToList();
 
             var battery = batteryOf.GetValueOrDefault(run.Id);
-            return new ChatConsistencyRunRow
+            return WithRollups(new ChatConsistencyRunRow
             {
                 RunId = run.Id,
                 StartedAtUtc = ChatConsistencyMeasures.AsUtc(run.StartedAtUtc),
@@ -1720,9 +2106,16 @@ public class ChatConsistencyEvidenceBuilder
                 BatteryName = battery?.BatteryName,
                 BatterySuitePosition = battery?.Position,
                 BatterySuiteCount = battery?.SuiteCount
-            };
-        }).ToList();
+            }, run);
+        })
+            .Concat(availabilityRows)
+            .OrderBy(r => r.StartedAtUtc)
+            .ThenBy(r => r.RunId)
+            .ToList();
     }
+
+    /// <summary>Why an availability-only run's row is not eligible on an axis other than availability.</summary>
+    public const string AvailabilityOnlyReason = "Failed or canceled: counted for provider availability only.";
 
     /// <summary>A run's battery: the battery run, its name, the run's 1-based suite position and the definition's suite count.</summary>
     private sealed record RunBattery(long BatteryRunId, string BatteryName, int Position, int? SuiteCount);

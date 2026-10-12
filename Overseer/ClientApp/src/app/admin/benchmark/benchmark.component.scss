@@ -964,3 +964,11 @@ p.repair-reason { margin: 6px 0 0; }
   dt { color: #888; }
   dd { margin: 0; overflow-wrap: anywhere; }
 }
+// The Provider Errors card's "few attempts" tag: outlined and neutral, the words carry it.
+.score-card .rr-few-attempts {
+  align-self: flex-start;
+  width: fit-content;
+  padding: 0 6px;
+  border: 1px solid #555;
+  border-radius: 999px;
+}

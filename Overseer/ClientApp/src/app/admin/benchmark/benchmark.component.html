@@ -570,6 +570,20 @@
                 <span class="score-note">{{ totalCostNote(selectedRunDetail) }}</span>
                 <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Total Cost" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
               </div>
+              <!-- Candidate attempts that failed at the provider, as observed in this run and the runs it replaced; neutral, never a warning tone. -->
+              @let providerFigure = runProviderErrorsFigure;
+              <div class="score-card" data-figure="provider-errors" [hidden]="!isKeyFigureShown('provider-errors')">
+                <span class="score-label">Provider Errors</span>
+                <span class="score-subvalue" [class.text-muted]="providerFigure.muted">{{ providerFigure.value }}</span>
+                @if (providerFigure.count) {
+                  <span class="score-note">{{ providerFigure.count }}</span>
+                }
+                <span class="score-note">{{ providerFigure.note }}</span>
+                @if (providerFigure.fewAttempts) {
+                  <span class="score-note rr-few-attempts">few attempts</span>
+                }
+                <app-key-figure-card-actions [runId]="selectedRunDetail.id" cardLabel="Provider Errors" [busy]="keyFiguresExporting" [formatLabel]="keyFiguresDownloadFormat" (exportRequested)="exportKeyFigureCard($event)" />
+              </div>
             </div>
             @if (selectedKeyFigureCount === 0) {
               <p class="rr-figures-empty">No key figures are selected. Use Choose figures to show them.</p>
@@ -843,9 +857,12 @@
               </div>
             }
 
-            @if (!hasRunIntegrityNotice && !hasInstrumentMeasurements) {
+            @if (!hasRunIntegrityNotice && !hasInstrumentMeasurements && !hasRecordedProviderAvailability) {
               <p class="text-muted">No integrity notices for this run.</p>
             }
+
+            <app-provider-availability [availability]="selectedRunDetail.providerAvailability"
+                                       (openRun)="viewRunDetail($event)" />
           </div>
 
           <div role="tabpanel" class="rr-panel" id="rr-panel-synthesis" aria-labelledby="rr-tab-synthesis" tabindex="0"
@@ -983,7 +1000,7 @@
                             <line x1="12" y1="16" x2="12.01" y2="16"></line>
                           </svg>
                           <div class="alert-content">
-                            <div class="alert-heading"><strong>Provider Outage/Error@if (ans.httpStatusCode != null) { (HTTP {{ ans.httpStatusCode }}) }</strong></div>
+                            <div class="alert-heading"><strong>{{ answerFailureHeading(ans) }}</strong></div>
                             <div class="alert-body">
                               {{ ans.errorMessage }}
                               @if (ans.providerErrorDetail) {
@@ -1258,7 +1275,7 @@
                       @if (ans.answerText) {
                         <div class="answer-box mb-15">{{ ans.answerText }}</div>
                       } @else {
-                        <div class="answer-box mb-15 text-muted">No answer text — the candidate failed at the provider before returning content. See the error above.</div>
+                        <div class="answer-box mb-15 text-muted">{{ answerNoTextNote(ans) }}</div>
                       }
 
                       @if (ans.thoughtText) {

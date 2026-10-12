@@ -49,6 +49,14 @@ public enum BenchmarkReportChartAnchor
 
     /// <summary>Chat consistency documents: Overseer events, after the events table.</summary>
     ChatConsistencyEvents = 14,
+
+    /// <summary>
+    /// Provider availability: in the Executive Summary after the Key figures, in the Report for AI
+    /// Researchers and Developers and the Internal Improvement Brief after the Provider availability
+    /// subsection; in a comparison-scope Report for AI Researchers and Developers after the per-model
+    /// availability table.
+    /// </summary>
+    ProviderAvailability = 15,
 }
 
 /// <summary>
@@ -66,12 +74,14 @@ public static class BenchmarkReportChartPlacement
     public const string QualitySpeedKey = "s1-quality-speed";
     public const string QualityCostKey = "s2-quality-cost";
     public const string SpeedCostKey = "s3-speed-cost";
+    public const string AvailabilityKey = "a1-availability";
 
     // The chat consistency figures: the model under test over the two periods, drawn by the analysis wizard.
     public const string ChatQualityKey = "cc1-quality";
     public const string ChatSpeedKey = "cc2-speed";
     public const string ChatWorkKey = "cc3-work";
     public const string ChatTimelineKey = "cc4-timeline";
+    public const string ChatAvailabilityKey = "cc5-availability";
 
     public const string MarkerPrefix = "[[figure:";
     public const string MarkerSuffix = "]]";
@@ -79,23 +89,25 @@ public static class BenchmarkReportChartPlacement
     /// <summary>The model comparison's figure keys, in placement order.</summary>
     public static readonly IReadOnlyList<string> FigureKeys = new[]
     {
-        QualityKey, SpeedKey, CostKey, ProfileKey, QualitySpeedKey, QualityCostKey, SpeedCostKey
+        QualityKey, SpeedKey, CostKey, ProfileKey, QualitySpeedKey, QualityCostKey, SpeedCostKey, AvailabilityKey
     };
 
     /// <summary>The chat consistency figure keys, in placement order.</summary>
     public static readonly IReadOnlyList<string> ChatConsistencyFigureKeys = new[]
     {
-        ChatQualityKey, ChatSpeedKey, ChatWorkKey, ChatTimelineKey
+        ChatQualityKey, ChatSpeedKey, ChatWorkKey, ChatTimelineKey, ChatAvailabilityKey
     };
 
     /// <summary>Every known figure key: <see cref="FigureKeys"/>, then <see cref="ChatConsistencyFigureKeys"/>.</summary>
     public static readonly IReadOnlyList<string> AllFigureKeys = FigureKeys.Concat(ChatConsistencyFigureKeys).ToArray();
 
-    // The anchor of each figure per audience, in the order of FigureKeys.
+    // The anchor of each figure per audience, in the order of FigureKeys. Every audience draws every
+    // figure, provider availability included.
     private static readonly IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor[]> Anchors =
         new Dictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor[]>
         {
-            [BenchmarkReportAudience.ExecutiveSummary] = Enumerable.Repeat(BenchmarkReportChartAnchor.HowItCompares, 7).ToArray(),
+            [BenchmarkReportAudience.ExecutiveSummary] = Enumerable.Repeat(BenchmarkReportChartAnchor.HowItCompares, 7)
+                .Append(BenchmarkReportChartAnchor.ProviderAvailability).ToArray(),
             [BenchmarkReportAudience.TechnicalReport] = new[]
             {
                 BenchmarkReportChartAnchor.QualityResults,
@@ -104,17 +116,21 @@ public static class BenchmarkReportChartPlacement
                 BenchmarkReportChartAnchor.ResultsAgainstPeersEnd,
                 BenchmarkReportChartAnchor.SpeedAndCost,
                 BenchmarkReportChartAnchor.SpeedAndCost,
-                BenchmarkReportChartAnchor.SpeedAndCost
+                BenchmarkReportChartAnchor.SpeedAndCost,
+                BenchmarkReportChartAnchor.ProviderAvailability
             },
-            [BenchmarkReportAudience.InternalBrief] = Enumerable.Repeat(BenchmarkReportChartAnchor.ModelResult, 7).ToArray(),
+            [BenchmarkReportAudience.InternalBrief] = Enumerable.Repeat(BenchmarkReportChartAnchor.ModelResult, 7)
+                .Append(BenchmarkReportChartAnchor.ProviderAvailability).ToArray(),
         };
 
     // The anchor of each figure per audience in a comparison-scope document, in the order of FigureKeys.
-    private static readonly IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor[]> ComparisonAnchors =
-        new Dictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor[]>
+    // Null where the audience does not draw the figure: the Executive Summary has no availability block.
+    private static readonly IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]> ComparisonAnchors =
+        new Dictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]>
         {
-            [BenchmarkReportAudience.ExecutiveSummary] = Enumerable.Repeat(BenchmarkReportChartAnchor.HowTheyCompare, 7).ToArray(),
-            [BenchmarkReportAudience.TechnicalReport] = new[]
+            [BenchmarkReportAudience.ExecutiveSummary] = Enumerable.Repeat((BenchmarkReportChartAnchor?)BenchmarkReportChartAnchor.HowTheyCompare, 7)
+                .Append(null).ToArray(),
+            [BenchmarkReportAudience.TechnicalReport] = new BenchmarkReportChartAnchor?[]
             {
                 BenchmarkReportChartAnchor.ComparisonResults,
                 BenchmarkReportChartAnchor.SpeedAndCostFrontier,
@@ -122,22 +138,24 @@ public static class BenchmarkReportChartPlacement
                 BenchmarkReportChartAnchor.DimensionProfiles,
                 BenchmarkReportChartAnchor.SpeedAndCostFrontier,
                 BenchmarkReportChartAnchor.SpeedAndCostFrontier,
-                BenchmarkReportChartAnchor.SpeedAndCostFrontier
+                BenchmarkReportChartAnchor.SpeedAndCostFrontier,
+                BenchmarkReportChartAnchor.ProviderAvailability
             },
-            [BenchmarkReportAudience.InternalBrief] = Enumerable.Repeat(BenchmarkReportChartAnchor.ModelsCompared, 7).ToArray(),
+            [BenchmarkReportAudience.InternalBrief] = Enumerable.Repeat((BenchmarkReportChartAnchor?)BenchmarkReportChartAnchor.ModelsCompared, 8).ToArray(),
         };
 
     // The anchor of each chat consistency figure per audience, in the order of ChatConsistencyFigureKeys.
-    // Every audience may draw every figure the client chose for it: the first three after the verdict
-    // table, the timeline after the events table, and in the Executive Summary, which prints no events
-    // table, after the verdict table too.
+    // Every audience may draw every figure the client chose for it: quality, speed, work and provider
+    // availability after the verdict table, the timeline after the events table, and in the Executive
+    // Summary, which prints no events table, after the verdict table too.
     private static readonly IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]> ChatConsistencyAnchors =
         new Dictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]>
         {
             [BenchmarkReportAudience.ExecutiveSummary] = new BenchmarkReportChartAnchor?[]
             {
                 BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyResults,
-                BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyResults
+                BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyResults,
+                BenchmarkReportChartAnchor.ChatConsistencyResults
             },
             [BenchmarkReportAudience.TechnicalReport] = ChatResultsThenEvents(),
             [BenchmarkReportAudience.InternalBrief] = ChatResultsThenEvents(),
@@ -146,33 +164,34 @@ public static class BenchmarkReportChartPlacement
 
     // The per-audience placement of a chat consistency document whose stored chart set has no layout:
     // every chart set uploaded before the client chose figures per document. Null where the audience
-    // does not draw the figure.
+    // does not draw the figure; no legacy chart set holds the provider availability figure.
     private static readonly IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]> LegacyChatConsistencyAnchors =
         new Dictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]>
         {
             [BenchmarkReportAudience.ExecutiveSummary] = new BenchmarkReportChartAnchor?[]
             {
-                BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyResults, null, null
+                BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyResults, null, null, null
             },
             [BenchmarkReportAudience.TechnicalReport] = new BenchmarkReportChartAnchor?[]
             {
                 BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyResults,
-                BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyEvents
+                BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyEvents, null
             },
             [BenchmarkReportAudience.InternalBrief] = new BenchmarkReportChartAnchor?[]
             {
-                BenchmarkReportChartAnchor.ChatConsistencyResults, null, BenchmarkReportChartAnchor.ChatConsistencyResults, null
+                BenchmarkReportChartAnchor.ChatConsistencyResults, null, BenchmarkReportChartAnchor.ChatConsistencyResults, null, null
             },
             [BenchmarkReportAudience.ProviderIssueReport] = new BenchmarkReportChartAnchor?[]
             {
-                null, BenchmarkReportChartAnchor.ChatConsistencyResults, null, BenchmarkReportChartAnchor.ChatConsistencyEvents
+                null, BenchmarkReportChartAnchor.ChatConsistencyResults, null, BenchmarkReportChartAnchor.ChatConsistencyEvents, null
             },
         };
 
     private static BenchmarkReportChartAnchor?[] ChatResultsThenEvents() => new BenchmarkReportChartAnchor?[]
     {
         BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyResults,
-        BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyEvents
+        BenchmarkReportChartAnchor.ChatConsistencyResults, BenchmarkReportChartAnchor.ChatConsistencyEvents,
+        BenchmarkReportChartAnchor.ChatConsistencyResults
     };
 
     /// <summary>Whether <paramref name="figureKey"/> is one of <see cref="AllFigureKeys"/>, compared ordinally.</summary>
@@ -221,12 +240,11 @@ public static class BenchmarkReportChartPlacement
         => scope switch
         {
             BenchmarkReportScope.ChatConsistency => (ChatConsistencyFigureKeys, legacy ? LegacyChatConsistencyAnchors : ChatConsistencyAnchors),
-            BenchmarkReportScope.Comparison => (FigureKeys, NullableComparisonAnchors),
+            BenchmarkReportScope.Comparison => (FigureKeys, ComparisonAnchors),
             _ => (FigureKeys, NullableAnchors)
         };
 
     private static readonly IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]> NullableAnchors = Nullable(Anchors);
-    private static readonly IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]> NullableComparisonAnchors = Nullable(ComparisonAnchors);
 
     private static IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor?[]> Nullable(
         IReadOnlyDictionary<BenchmarkReportAudience, BenchmarkReportChartAnchor[]> table)

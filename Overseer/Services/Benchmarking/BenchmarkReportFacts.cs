@@ -102,8 +102,26 @@ using Overseer.Models;
 //   peer.X.pairedExcludesZero                                            boolean: the printed paired interval lies on one
 //                                                                        side of zero; unavailable with the paired difference
 //
+// Provider availability (the candidate's attempts over the subject's runs and their lineage predecessors,
+// docs/overseer/ai-benchmark-provider-availability.md; only when the input carries the summary)
+//   availability.attempts                               valid attempts, the denominator: "1,480 attempts"
+//   availability.providerErrors                         "12 of 1,480 attempts"
+//   availability.providerErrorRate, .providerErrorRateCi95Low, .providerErrorRateCi95High
+//                                                       "0.81 %" and its cluster-adjusted Wilson 95 % bounds
+//   availability.unattributedErrors                     "3 of 1,480 attempts"
+//   availability.inclusiveRate, .inclusiveRateCi95Low, .inclusiveRateCi95High
+//                                                       the upper bound including unattributed errors
+//   availability.overloaded, .serverErrors, .timeouts, .streamFailures   provider classes
+//   availability.rateLimitedOurs, .rateLimitedUnattributed, .transportUnattributed
+//   availability.ourSideFailures                        excluded from the denominator
+//   availability.questionsLost                          answers ended by a provider error after every pass
+//   availability.reruns, .providerReruns, .replacedRuns re-runs needed, the provider-caused part, replaced runs
+//   availability.oneIn                                  "about 1 in 123", prose only; unavailable at 0 and from 1 %
+//   A pool with no recorded run (started before harness 56) marks every key unavailable.
+//
 // Each entry's Extra facts (BenchmarkReportEntryFigures.Extra) reuse dimension.<d>,
-// tools.callsPerQuestion and errors.critical for that entry alone.
+// tools.callsPerQuestion and errors.critical for that entry alone; its provider availability fields
+// come from the input's summary for the subject and from each peer's comparison entry.
 //
 // A comparison with no peers is a stand-alone report: every fact that compares the subject with
 // peers (the .peerMean and .difference facts, quality.peerMedian, quality.peerBest,
@@ -124,6 +142,13 @@ public sealed class BenchmarkReportFactsInput
 
     /// <summary>Every run behind every non-excluded entry, with answers and their tool calls, keyed by run id.</summary>
     public IReadOnlyDictionary<long, BenchmarkRun> Runs { get; init; } = default!;
+
+    /// <summary>
+    /// The subject's provider availability, pooled over its runs and their lineage predecessors
+    /// (<see cref="BenchmarkProviderAvailabilityService.ForRunsAsync"/>); null leaves the
+    /// <c>availability.*</c> facts off the sheet.
+    /// </summary>
+    public ProviderAvailabilitySummary? Availability { get; init; }
 }
 
 /// <summary>A fact sheet, or the reason none can be built.</summary>
@@ -346,6 +371,7 @@ public static class BenchmarkReportFacts
         AddStyleFact(facts, subjectRuns, subjectStats);
         AddScoringAndProvenanceFacts(facts, subjectRuns);
         AddPeerFacts(facts, subject, peers, eligible);
+        AddAvailabilityFacts(facts, input.Availability);
 
         sheet.Questions = BuildQuestions(slots, subjectStats, peers.Select(p => p.Stats).ToList());
         sheet.PairedDifferences = AddPairedDifferences(
@@ -359,6 +385,7 @@ public static class BenchmarkReportFacts
         sheet.Facts = facts.Sorted();
         sheet.Rows = BuildRows(subjectRuns, numberByItem, subject.Provider);
         sheet.Entries = BuildEntries(subject, subjectStats, peers, eligible, runsById);
+        SetEntryAvailability(sheet.Entries, comparison, input.Availability);
         sheet.KnownNames = BuildKnownNames(sheet);
 
         return new BenchmarkReportFactsResult { Sheet = sheet };
@@ -1760,6 +1787,190 @@ public static class BenchmarkReportFacts
         entries.AddRange(peers.Select(p => Figures(p.Entry, p.Letter, p.Stats)));
         return entries;
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Provider availability
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>The prefix of the provider availability facts.</summary>
+    public const string AvailabilityPrefix = "availability.";
+
+    /// <summary>Why every <c>availability.*</c> fact of a pool without a recorded run is unavailable.</summary>
+    public const string AvailabilityNotRecordedReason = "not recorded before harness 56";
+
+    /// <summary>Why a rate is unavailable when the recorded runs have no valid attempt.</summary>
+    public const string NoValidAttemptsReason = "The recorded runs have no valid attempt.";
+
+    /// <summary>Why <c>availability.oneIn</c> is unavailable: a natural frequency is stated only for a rate above 0 and below 1 %.</summary>
+    public const string OneInReason = "A natural frequency is stated only for a provider error rate above 0 and below 1 %.";
+
+    /// <summary>Every <c>availability.*</c> key of a run or battery sheet, in key order.</summary>
+    public static readonly IReadOnlyList<string> AvailabilityKeys = new[]
+    {
+        "availability.attempts",
+        "availability.inclusiveRate",
+        "availability.inclusiveRateCi95High",
+        "availability.inclusiveRateCi95Low",
+        "availability.oneIn",
+        "availability.ourSideFailures",
+        "availability.overloaded",
+        "availability.providerErrorRate",
+        "availability.providerErrorRateCi95High",
+        "availability.providerErrorRateCi95Low",
+        "availability.providerErrors",
+        "availability.providerReruns",
+        "availability.questionsLost",
+        "availability.rateLimitedOurs",
+        "availability.rateLimitedUnattributed",
+        "availability.replacedRuns",
+        "availability.reruns",
+        "availability.serverErrors",
+        "availability.streamFailures",
+        "availability.timeouts",
+        "availability.transportUnattributed",
+        "availability.unattributedErrors",
+    };
+
+    /// <summary>The headline keys, the only availability facts a comparison-scope sheet carries per model.</summary>
+    public static readonly IReadOnlyList<string> AvailabilityHeadlineKeys = new[]
+    {
+        "availability.attempts",
+        "availability.providerErrorRate",
+        "availability.providerErrorRateCi95High",
+        "availability.providerErrorRateCi95Low",
+        "availability.providerErrors",
+        "availability.providerReruns",
+        "availability.reruns",
+        "availability.unattributedErrors",
+    };
+
+    /// <summary>Whether <paramref name="key"/> is one of <see cref="AvailabilityHeadlineKeys"/>.</summary>
+    public static bool IsAvailabilityHeadlineKey(string key) => AvailabilityHeadlineKeys.Contains(key, StringComparer.Ordinal);
+
+    /// <summary>
+    /// The <c>availability.*</c> facts of <paramref name="summary"/>: nothing when it is null, every key
+    /// unavailable with <see cref="AvailabilityNotRecordedReason"/> when no run of the pool is recorded.
+    /// Every number is written by <see cref="BenchmarkProviderAvailability"/>'s formatting, as the UI writes it.
+    /// </summary>
+    internal static void AddAvailabilityFacts(FactList facts, ProviderAvailabilitySummary? summary)
+    {
+        if (summary == null) return;
+        if (!summary.Recorded)
+        {
+            foreach (string key in AvailabilityKeys)
+            {
+                facts.Unavailable(key, AvailabilityNotRecordedReason);
+            }
+            return;
+        }
+
+        int valid = summary.ValidAttempts;
+        string attempts = Thousands(valid) + (valid == 1 ? " attempt" : " attempts");
+        if (summary.RecordedRuns < summary.TotalRuns)
+        {
+            attempts += "; recorded for " + Inv(summary.RecordedRuns) + " of " + Inv(summary.TotalRuns) + " runs";
+        }
+        facts.Add("availability.attempts", valid, attempts);
+        facts.Add("availability.providerErrors", summary.ProviderErrors, BenchmarkProviderAvailability.FormatCount(summary.ProviderErrors, valid));
+        AddAvailabilityRate(facts, "availability.providerErrorRate", summary.ProviderErrorRate, summary.ProviderErrorRateLow, summary.ProviderErrorRateHigh);
+        facts.Add("availability.unattributedErrors", summary.UnattributedErrors, BenchmarkProviderAvailability.FormatCount(summary.UnattributedErrors, valid));
+        AddAvailabilityRate(facts, "availability.inclusiveRate", summary.InclusiveRate, summary.InclusiveRateLow, summary.InclusiveRateHigh);
+
+        facts.Add("availability.overloaded", summary.Overloaded, Thousands(summary.Overloaded));
+        facts.Add("availability.serverErrors", summary.ServerErrors, Thousands(summary.ServerErrors));
+        facts.Add("availability.timeouts", summary.Timeouts, Thousands(summary.Timeouts));
+        facts.Add("availability.streamFailures", summary.StreamFailures, Thousands(summary.StreamFailures));
+        facts.Add("availability.rateLimitedOurs", summary.RateLimitedOurs, Thousands(summary.RateLimitedOurs));
+        facts.Add("availability.rateLimitedUnattributed", summary.RateLimitedUnattributed, Thousands(summary.RateLimitedUnattributed));
+        facts.Add("availability.transportUnattributed", summary.TransportUnattributed, Thousands(summary.TransportUnattributed));
+        facts.Add("availability.ourSideFailures", summary.OurSideFailures, Thousands(summary.OurSideFailures));
+
+        facts.Add("availability.questionsLost", summary.QuestionsLost,
+            Thousands(summary.QuestionsLost) + (summary.QuestionsLost == 1 ? " question" : " questions"));
+        facts.Add("availability.reruns", summary.RerunsNeeded, RerunsText(summary.RerunsNeeded));
+        facts.Add("availability.providerReruns", summary.ProviderRerunsNeeded, RerunsText(summary.ProviderRerunsNeeded));
+        facts.Add("availability.replacedRuns", summary.ReplacementRuns,
+            Thousands(summary.ReplacementRuns) + (summary.ReplacementRuns == 1 ? " replaced run" : " replaced runs"));
+
+        if (BenchmarkProviderAvailability.FormatOneIn(summary.ProviderErrors, valid) is string oneIn)
+        {
+            long n = (long)Math.Floor((double)valid / summary.ProviderErrors + 0.5);
+            facts.Add("availability.oneIn", (JsonNode)JsonValue.Create(n), oneIn);
+        }
+        else
+        {
+            facts.Unavailable("availability.oneIn", OneInReason);
+        }
+    }
+
+    /// <summary><c>3 re-runs</c>, <c>1 re-run</c>.</summary>
+    public static string RerunsText(int count) => Thousands(count) + (count == 1 ? " re-run" : " re-runs");
+
+    private static void AddAvailabilityRate(FactList facts, string key, double? rate, double? low, double? high)
+    {
+        if (rate is not double value)
+        {
+            facts.Unavailable(key, NoValidAttemptsReason);
+            facts.Unavailable(key + "Ci95Low", NoValidAttemptsReason);
+            facts.Unavailable(key + "Ci95High", NoValidAttemptsReason);
+            return;
+        }
+
+        facts.Add(key, value, BenchmarkProviderAvailability.FormatPercent(value));
+        if (low is double l && high is double h)
+        {
+            facts.Add(key + "Ci95Low", l, BenchmarkProviderAvailability.FormatPercent(l));
+            facts.Add(key + "Ci95High", h, BenchmarkProviderAvailability.FormatPercent(h));
+        }
+        else
+        {
+            facts.Unavailable(key + "Ci95Low", NoValidAttemptsReason);
+            facts.Unavailable(key + "Ci95High", NoValidAttemptsReason);
+        }
+    }
+
+    /// <summary>
+    /// Each entry's provider availability: the subject's from <paramref name="subjectSummary"/> where it is
+    /// given, otherwise, and every peer's, from its comparison entry; left null where neither was computed.
+    /// </summary>
+    internal static void SetEntryAvailability(
+        IEnumerable<BenchmarkReportEntryFigures> entries, BenchmarkModelComparisonDto comparison, ProviderAvailabilitySummary? subjectSummary)
+    {
+        foreach (var figures in entries)
+        {
+            if (figures.IsSubject && subjectSummary != null)
+            {
+                figures.ProviderAvailabilityRecorded = subjectSummary.Recorded;
+                if (!subjectSummary.Recorded) continue;
+                figures.ProviderAttempts = subjectSummary.ValidAttempts;
+                figures.ProviderErrors = subjectSummary.ProviderErrors;
+                figures.ProviderErrorRate = subjectSummary.ProviderErrorRate;
+                figures.ProviderErrorRateLow = subjectSummary.ProviderErrorRateLow;
+                figures.ProviderErrorRateHigh = subjectSummary.ProviderErrorRateHigh;
+                figures.ProviderUnattributedErrors = subjectSummary.UnattributedErrors;
+                figures.RerunsNeeded = subjectSummary.RerunsNeeded;
+                figures.ProviderRerunsNeeded = subjectSummary.ProviderRerunsNeeded;
+                continue;
+            }
+
+            var dto = comparison.Entries.FirstOrDefault(e => string.Equals(e.Key, figures.EntryKey, StringComparison.Ordinal))?.Availability;
+            if (dto == null) continue;
+
+            figures.ProviderAvailabilityRecorded = dto.Recorded;
+            if (!dto.Recorded) continue;
+            figures.ProviderAttempts = dto.ValidAttempts;
+            figures.ProviderErrors = dto.ProviderErrors;
+            figures.ProviderErrorRate = dto.ProviderErrorRate;
+            figures.ProviderErrorRateLow = dto.ProviderErrorRateLow;
+            figures.ProviderErrorRateHigh = dto.ProviderErrorRateHigh;
+            figures.ProviderUnattributedErrors = dto.UnattributedErrors;
+            figures.RerunsNeeded = dto.RerunsNeeded;
+            figures.ProviderRerunsNeeded = dto.ProviderRerunsNeeded;
+        }
+    }
+
+    /// <summary>A count with the "," thousands separator, as <see cref="BenchmarkProviderAvailability.FormatCount"/> writes it.</summary>
+    internal static string Thousands(long value) => value.ToString("#,0", CultureInfo.InvariantCulture);
 
     /// <summary>The runs' harness version, <see cref="MixedHarnessVersion"/> when they differ; null without runs.</summary>
     internal static string? EntryHarnessVersion(IReadOnlyList<BenchmarkRun> runs)

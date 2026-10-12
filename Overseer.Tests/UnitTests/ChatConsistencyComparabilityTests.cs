@@ -25,7 +25,8 @@ public class ChatConsistencyComparabilityTests
 
     /// <summary>
     /// One run of the shared condition: suite 7, the current harness, one assessor, sequential
-    /// questions with call telemetry, and four questions at revision 1 unless items are given.
+    /// questions with call telemetry and the provider attempt ledger, and four questions at revision 1
+    /// unless items are given.
     /// </summary>
     private static BenchmarkRun Run(
         long id,
@@ -47,6 +48,7 @@ public class ChatConsistencyComparabilityTests
             ScoringMethodVersion = 14,
             MaxParallelQuestionsUsed = 1,
             CallTelemetryVersion = 1,
+            ProviderLedgerVersion = 1,
             CandidatePromptOptionsJson = "{\"verboseMode\":false}",
             CandidateSystemPromptSha256 = PromptSha,
             ToolGuidesSha256 = GuidesSha,
@@ -316,6 +318,60 @@ public class ChatConsistencyComparabilityTests
         Assert.Equal(SpeedExclusionReason.NoCallTelemetry, Assert.Single(assessment.SpeedExclusions).Reason);
         Assert.Null(assessment.RunOf(2)!.SpeedTelemetry);
         Assert.True(assessment.AreComparable(1, 2, ChatConsistencyAxis.SpeedLegacy));
+    }
+
+    [Fact]
+    public void ARunWithoutTheProviderLedgerIsExcludedFromAvailabilityOnly()
+    {
+        var first = Run(1);
+        var second = Run(2);
+        second.ProviderLedgerVersion = null;
+
+        var assessment = ChatConsistencyComparability.AssessMeasurement(new[] { first, second });
+
+        var exclusion = Assert.Single(assessment.SpeedExclusions);
+        Assert.Equal(SpeedExclusionReason.NoProviderLedger, exclusion.Reason);
+        Assert.Equal(new[] { ChatConsistencyAxis.Availability }, exclusion.Axes);
+        Assert.Null(assessment.RunOf(2)!.Availability);
+        Assert.Equal(0, assessment.RunOf(1)!.Availability);
+        foreach (var axis in Enum.GetValues<ChatConsistencyAxis>().Where(a => a != ChatConsistencyAxis.Availability))
+        {
+            Assert.True(assessment.AreComparable(1, 2, axis), $"Runs 1 and 2 split on {axis}.");
+        }
+    }
+
+    [Fact]
+    public void AProviderErrorAccountingHarnessBumpSegmentsAvailabilityAlone_NeverBridged()
+    {
+        var first = Run(1);
+        var second = Run(2);
+        first.HarnessVersion = "55";
+        second.HarnessVersion = "56";
+
+        var assessment = ChatConsistencyComparability.AssessMeasurement(new[] { first, second }, commonGraderCovers: new long[] { 1, 2 });
+
+        var boundary = Assert.Single(assessment.Boundaries);
+        Assert.Equal(MeasurementChangeKind.ProviderErrorAccounting, boundary.Kind);
+        Assert.Equal(new[] { ChatConsistencyAxis.Availability }, boundary.Axes);
+        Assert.False(boundary.Bridged);
+        Assert.Contains("provider error", boundary.Reason);
+        Assert.False(assessment.AreComparable(1, 2, ChatConsistencyAxis.Availability));
+        foreach (var axis in Enum.GetValues<ChatConsistencyAxis>().Where(a => a != ChatConsistencyAxis.Availability))
+        {
+            Assert.True(assessment.AreComparable(1, 2, axis), $"Runs 1 and 2 split on {axis}.");
+        }
+
+        Assert.Empty(ChatConsistencyComparability.DetectOverseerEvents(new[] { first, second }));
+    }
+
+    [Fact]
+    public void RunSegmentsReadEveryAxis()
+    {
+        var segments = new RunSegments(1, "subject", T0, 0, 1, 2, 3, 4, 5);
+
+        Assert.Equal(
+            new int?[] { 0, 1, 2, 3, 4, 5 },
+            Enum.GetValues<ChatConsistencyAxis>().Select(segments.SegmentOf).ToArray());
     }
 
     [Fact]

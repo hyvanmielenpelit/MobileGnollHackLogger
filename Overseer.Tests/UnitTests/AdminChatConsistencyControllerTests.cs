@@ -589,6 +589,35 @@ public class AdminChatConsistencyControllerTests
     }
 
     [Fact]
+    public async Task ANewAnalysisIsV2_AndAnalyzingAgainKeepsTheStoredProtocol()
+    {
+        using var h = new Harness();
+        string key = Seed(h.Db);
+        var ct = CancellationToken.None;
+
+        var fresh = ValueOf<ChatConsistencyAnalysisResult>(await h.Controller.Analyze(Request(key), ct));
+        Assert.Equal(ChatConsistencyProtocol.V2Version, fresh.Protocol.ProtocolVersion);
+        Assert.Contains(fresh.Endpoints, e => e.Id == ChatConsistencyEndpointIds.ProviderErrorRate);
+
+        var v1 = ValueOf<ChatConsistencyAnalysisResult>(await h.Controller.Analyze(Request(key) with { ProtocolVersion = ChatConsistencyProtocol.V1Version }, ct));
+        var again = ValueOf<ChatConsistencyAnalysisResult>(await h.Controller.Analyze(Request(key) with { ReanalysisOfAnalysisId = v1.AnalysisId }, ct));
+
+        Assert.Equal(ChatConsistencyProtocol.V1Version, again.Protocol.ProtocolVersion);
+        Assert.Equal(ChatConsistencyProtocol.V1Version, again.Request!.ProtocolVersion);
+        Assert.DoesNotContain(again.Endpoints, e => e.Id == ChatConsistencyEndpointIds.ProviderErrorRate);
+        Assert.Equal(
+            new[] { ChatConsistencyProtocol.V2Version, ChatConsistencyProtocol.V1Version, ChatConsistencyProtocol.V1Version },
+            h.Db.ChatConsistencyAnalyses.OrderBy(a => a.Id).Select(a => a.ProtocolVersion).ToList());
+
+        // The stored V1 analysis is checked for changed inputs under its own protocol.
+        var freshness = ValueOf<ChatConsistencyFreshness>(await h.Controller.GetFreshness(again.AnalysisId!.Value, ct));
+        Assert.False(freshness.InputsChanged);
+
+        Assert.StartsWith("Unknown chat consistency protocol version", ErrorOf(await h.Controller.Analyze(Request(key) with { ProtocolVersion = "V3" }, ct)));
+        Assert.StartsWith("Analysis #999", ErrorOf(await h.Controller.Analyze(Request(key) with { ReanalysisOfAnalysisId = 999 }, ct)));
+    }
+
+    [Fact]
     public async Task DeletingAnAnalysisIsAConflictWhileAReportDocumentReferencesIt()
     {
         using var h = new Harness();

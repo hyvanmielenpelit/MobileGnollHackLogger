@@ -27,7 +27,7 @@ public class HarnessImpactLedgerTests
             "Harness version(s) " + string.Join(", ", missing) + " are not classified. Classify each new "
             + "harness version in HarnessImpactLedger (Overseer/Services/ChatConsistency/HarnessImpactLedger.cs) "
             + "from its changelog entry on BenchmarkAssessmentPrompt.HarnessVersion: which of CandidateInput, "
-            + "CandidateTiming, Grading, Scoring, CandidateAccounting or ReportingOnly it changed.");
+            + "CandidateTiming, Grading, Scoring, CandidateAccounting, ProviderErrorAccounting or ReportingOnly it changed.");
     }
 
     [Fact]
@@ -198,7 +198,19 @@ public class HarnessImpactLedgerTests
         Assert.True(all.HasFlag(HarnessImpact.Grading));
         Assert.True(all.HasFlag(HarnessImpact.Scoring));
         Assert.True(all.HasFlag(HarnessImpact.CandidateAccounting));
+        Assert.True(all.HasFlag(HarnessImpact.ProviderErrorAccounting));
         Assert.False(all.HasFlag(HarnessImpact.ReportingOnly));
+    }
+
+    [Fact]
+    public void Harness56ChangedProviderErrorAccountingAlone()
+    {
+        // The synthesis prompt lists a Failed answer exactly as a ProviderError answer, and a Failed
+        // answer carries no text to grade, so the reclassified budget timeouts leave grading intact.
+        Assert.Equal(HarnessImpact.ProviderErrorAccounting, HarnessImpactLedger.ImpactOf("56"));
+        Assert.Equal(HarnessImpact.ProviderErrorAccounting, HarnessImpactLedger.ImpactBetween("55", "56"));
+        Assert.False(HarnessImpactLedger.ImpactBetween("55", "56").HasFlag(HarnessImpact.Grading));
+        Assert.False(HarnessImpactLedger.ImpactBetween("55", "56").HasFlag(HarnessImpact.CandidateInput));
     }
 
     [Fact]

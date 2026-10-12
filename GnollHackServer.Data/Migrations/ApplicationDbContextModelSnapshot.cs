@@ -999,6 +999,87 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("BenchmarkModelBatchRuns");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkProviderAttempt", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<byte>("AttemptIndex")
+                        .HasColumnType("tinyint");
+
+                    b.Property<long?>("BenchmarkRunAnswerId")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("BenchmarkRunId")
+                        .HasColumnType("bigint");
+
+                    b.Property<int>("CallIndex")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DurationMs")
+                        .HasColumnType("int");
+
+                    b.Property<byte>("EndpointKind")
+                        .HasColumnType("tinyint");
+
+                    b.Property<int?>("GraderRole")
+                        .HasColumnType("int");
+
+                    b.Property<short?>("HttpStatus")
+                        .HasColumnType("smallint");
+
+                    b.Property<byte>("Outcome")
+                        .HasColumnType("tinyint");
+
+                    b.Property<int>("Pass")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ProviderErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<long?>("QuestionId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("RequestedModelId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("Retried")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("RetryAfterMs")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long?>("SystemAiApiConfigurationId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BenchmarkRunAnswerId");
+
+                    b.HasIndex("StartedAtUtc");
+
+                    b.HasIndex("BenchmarkRunId", "Source");
+
+                    b.ToTable("BenchmarkProviderAttempts");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkQuestion", b =>
                 {
                     b.Property<long>("Id")
@@ -1388,6 +1469,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<DateTime?>("CandidateDeliveryVerifiedAtUtc")
                         .HasColumnType("datetime2");
 
+                    b.Property<int?>("CandidateOurSideFailureCount")
+                        .HasColumnType("int");
+
                     b.Property<string>("CandidatePromptOptionsJson")
                         .HasColumnType("nvarchar(max)");
 
@@ -1395,12 +1479,21 @@ namespace GnollHackServer.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<int?>("CandidateProviderErrorCount")
+                        .HasColumnType("int");
+
                     b.Property<string>("CandidateSystemPromptSha256")
                         .HasMaxLength(64)
                         .HasColumnType("nvarchar(64)");
 
                     b.Property<string>("CandidateSystemPromptText")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("CandidateUnattributedErrorCount")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CandidateValidAttemptCount")
+                        .HasColumnType("int");
 
                     b.Property<int>("ClaimVerifiedAnswerCount")
                         .HasColumnType("int");
@@ -1550,6 +1643,12 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("PricingSnapshotJson")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<byte?>("ProviderLedgerVersion")
+                        .HasColumnType("tinyint");
+
+                    b.Property<int>("ProviderRepairPassCount")
+                        .HasColumnType("int");
+
                     b.Property<string>("PurposeStatementUsed")
                         .HasMaxLength(2048)
                         .HasColumnType("nvarchar(2048)");
@@ -1572,6 +1671,15 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<int>("RefutedClaimAnswerCount")
                         .HasColumnType("int");
+
+                    b.Property<int>("RepairPassCount")
+                        .HasColumnType("int");
+
+                    b.Property<byte?>("ReplacementCause")
+                        .HasColumnType("tinyint");
+
+                    b.Property<long?>("ReplacesRunId")
+                        .HasColumnType("bigint");
 
                     b.Property<string>("ReportDocumentsMessage")
                         .HasMaxLength(1000)
@@ -1880,6 +1988,8 @@ namespace GnollHackServer.Data.Migrations
 
                     b.HasIndex("CoAssessorModelSnapshotId");
 
+                    b.HasIndex("ReplacesRunId");
+
                     b.HasIndex("ScoringProfileId");
 
                     b.HasIndex("SecondOpinionAssessorModelSnapshotId");
@@ -2150,6 +2260,13 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("ExpectedPointsUsed")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("FailureKind")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<byte?>("FailureOrigin")
+                        .HasColumnType("tinyint");
+
                     b.Property<int?>("HttpStatusCode")
                         .HasColumnType("int");
 
@@ -2214,6 +2331,9 @@ namespace GnollHackServer.Data.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<int?>("RawQualityScore")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ReExecutionCount")
                         .HasColumnType("int");
 
                     b.Property<bool>("ReadabilityFormOnly")
@@ -5233,6 +5353,17 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("BenchmarkRun");
 
                     b.Navigation("BenchmarkRunSeries");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkProviderAttempt", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.BenchmarkRun", "BenchmarkRun")
+                        .WithMany()
+                        .HasForeignKey("BenchmarkRunId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("BenchmarkRun");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkQuestion", b =>

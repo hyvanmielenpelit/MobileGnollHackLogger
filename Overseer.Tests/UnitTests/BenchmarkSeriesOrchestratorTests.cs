@@ -883,4 +883,83 @@ public class BenchmarkSeriesOrchestratorTests
 
         Assert.Equal(BenchmarkSeriesStartOutcome.Started, result.Outcome);
     }
+
+    // --- Replacement lineage ----------------------------------------------------------------------
+
+    /// <summary>
+    /// A series started with a replaces map (a model batch's series child) applies an index's entry only
+    /// at that index's first launch: once a run holds the index, the entry is never stamped again. Index 3
+    /// is read because the drive loop cannot reach it: member 1 cannot finish without a model.
+    /// </summary>
+    [Fact]
+    public async Task StartSeries_WithAReplacesMap_AppliesAnIndexsEntry_OnlyAtItsFirstLaunch()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+
+        var entry = new BenchmarkRunReplacement(4242, BenchmarkReplacementCause.InstrumentChange);
+        var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
+        var result = await orchestrator.StartSeriesAsync(
+            Request(suite.Id, runCount: 3), "user", ct, batchOwner: null,
+            replaces: new Dictionary<int, BenchmarkRunReplacement> { [3] = entry });
+        Assert.True(result.Started);
+        long seriesId = result.SeriesId!.Value;
+
+        try
+        {
+            Assert.Equal(entry, await orchestrator.MemberReplacementAsync(db, seriesId, 3, ct));
+            Assert.Null(await orchestrator.MemberReplacementAsync(db, seriesId, 2, ct));
+
+            var member = SeriesMember(suite, await db.BenchmarkRunSeries.SingleAsync(s => s.Id == seriesId, ct), BenchmarkAssessmentPrompt.ScoringMethodVersion);
+            member.RunSeriesIndex = 3;
+            db.BenchmarkRuns.Add(member);
+            await db.SaveChangesAsync(ct);
+
+            Assert.Null(await orchestrator.MemberReplacementAsync(db, seriesId, 3, ct));
+        }
+        finally
+        {
+            await orchestrator.CancelSeriesAsync(seriesId, ct);
+        }
+    }
+
+    /// <summary>
+    /// A series resume continues at the next index and skips the failed member rather than replacing it,
+    /// so the member it launches replaces nothing (decision R10).
+    /// </summary>
+    [Fact]
+    public async Task Resume_RecordsNoReplacementLineage()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var config = CreateConfig();
+        var (factory, dbName) = CreateScopeFactory(config);
+        using var db = CreateDbContext(dbName);
+        var suite = await SeedSuiteAndConfigsAsync(db);
+        var series = await SeedSeriesAsync(db, suite, BenchmarkRunSeriesStatus.Stopped, requested: 3, completed: 1);
+        var completed = SeriesMember(suite, series, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        var failed = SeriesMember(suite, series, BenchmarkAssessmentPrompt.ScoringMethodVersion);
+        failed.RunSeriesIndex = 2;
+        failed.Status = BenchmarkRunStatus.Failed;
+        db.BenchmarkRuns.AddRange(completed, failed);
+        series.FailedRunCount = 1;
+        await db.SaveChangesAsync(ct);
+
+        var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
+        var result = await orchestrator.ResumeSeriesAsync(series.Id, acknowledgeInstrumentChange: false, ct);
+        Assert.Equal(BenchmarkSeriesStartOutcome.Started, result.Outcome);
+
+        try
+        {
+            Assert.Null(await orchestrator.MemberReplacementAsync(db, series.Id, 3, ct));
+            Assert.Null(await orchestrator.MemberReplacementAsync(db, series.Id, 2, ct));
+            Assert.False(await db.BenchmarkRuns.AnyAsync(r => r.RunSeriesId == series.Id && r.ReplacesRunId != null, ct));
+        }
+        finally
+        {
+            await orchestrator.CancelSeriesAsync(series.Id, ct);
+        }
+    }
 }

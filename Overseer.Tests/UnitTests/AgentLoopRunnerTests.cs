@@ -1058,6 +1058,13 @@ public class AgentLoopRunnerTests
     private static async Task<(List<ChatEvent> Events, List<ApiKeyFailureReport> Reports, int Calls, int ErrorLogs)> RunAgainstStatusAsync(
         System.Net.HttpStatusCode status, string body, long? systemModelId, ApiKeyAlertContext? alertContext, string providerName = "OpenAI")
     {
+        var (events, reports, calls, errorLogs, _) = await RunAgainstStatusWithResultAsync(status, body, systemModelId, alertContext, providerName);
+        return (events, reports, calls, errorLogs);
+    }
+
+    private static async Task<(List<ChatEvent> Events, List<ApiKeyFailureReport> Reports, int Calls, int ErrorLogs, AgentRunResult Result)> RunAgainstStatusWithResultAsync(
+        System.Net.HttpStatusCode status, string body, long? systemModelId, ApiKeyAlertContext? alertContext, string providerName = "OpenAI")
+    {
         var services = new ServiceCollection();
         services.AddLogging();
         string dbName = Guid.NewGuid().ToString();
@@ -1115,7 +1122,8 @@ public class AgentLoopRunnerTests
         };
 
         var events = new List<ChatEvent>();
-        await foreach (var evt in runner.RunAsync(request, null, new AgentRunResult(), TestContext.Current.CancellationToken))
+        var result = new AgentRunResult();
+        await foreach (var evt in runner.RunAsync(request, null, result, TestContext.Current.CancellationToken))
         {
             events.Add(evt);
         }
@@ -1131,7 +1139,7 @@ public class AgentLoopRunnerTests
                 .SystemAiErrorLogs.CountAsync(TestContext.Current.CancellationToken);
         }
 
-        return (events, reports, handler.CallCount, errorLogs);
+        return (events, reports, handler.CallCount, errorLogs, result);
     }
 
     private const string OpenAiInvalidKeyBody =
@@ -1231,5 +1239,66 @@ public class AgentLoopRunnerTests
         Assert.Equal("Google no longer serves the model mock-model. Choose another model; an administrator can update this configuration.", error.Data);
         Assert.Empty(reports);
         Assert.Equal(1, errorLogs);
+    }
+
+    // --- Provider attempts of the key, billing, rate-limit and missing-model paths ---
+
+    [Fact]
+    public async Task RunAsync_OpenAi429InsufficientQuota_RecordsOneOurBillingAttempt()
+    {
+        var (_, _, calls, _, result) = await RunAgainstStatusWithResultAsync(
+            System.Net.HttpStatusCode.TooManyRequests, OpenAiInsufficientQuotaBody, AlertTestConfigId, alertContext: null);
+
+        Assert.Equal(1, calls);
+        var call = Assert.Single(result.ModelCalls);
+        Assert.Equal(1, call.Http429Count);
+        var attempt = Assert.Single(call.Attempts);
+        Assert.Equal(ProviderAttemptOutcome.OurBilling, attempt.Outcome);
+        Assert.Equal("insufficient_quota", attempt.ProviderErrorCode);
+        Assert.False(attempt.Retried);
+        Assert.Equal(ProviderAttemptOutcome.OurBilling, result.TerminalOutcome);
+    }
+
+    [Fact]
+    public async Task RunAsync_RejectedKey_RecordsOneOurKeyAttempt()
+    {
+        var (_, _, _, _, result) = await RunAgainstStatusWithResultAsync(
+            System.Net.HttpStatusCode.Unauthorized, OpenAiInvalidKeyBody, systemModelId: null, alertContext: null);
+
+        var attempt = Assert.Single(Assert.Single(result.ModelCalls).Attempts);
+        Assert.Equal(ProviderAttemptOutcome.OurKey, attempt.Outcome);
+        Assert.Equal(401, attempt.HttpStatus);
+        Assert.Equal("invalid_api_key", attempt.ProviderErrorCode);
+        Assert.Equal(ProviderAttemptOutcome.OurKey, result.TerminalOutcome);
+        Assert.Equal("invalid_api_key", result.TerminalErrorCode);
+    }
+
+    [Fact]
+    public async Task RunAsync_OpenAi429RateLimit_RetriesExhausted_RecordsOneOurRateLimitAttempt()
+    {
+        // The helper's configuration allows no 429 retries, so the one 429 ends the call.
+        var (events, _, calls, _, result) = await RunAgainstStatusWithResultAsync(
+            System.Net.HttpStatusCode.TooManyRequests, OpenAiRateLimitBody, AlertTestConfigId, alertContext: null);
+
+        Assert.Equal(1, calls);
+        var attempt = Assert.Single(Assert.Single(result.ModelCalls).Attempts);
+        Assert.Equal(ProviderAttemptOutcome.OurRateLimit, attempt.Outcome);
+        Assert.Equal("rate_limit_exceeded", attempt.ProviderErrorCode);
+        Assert.Equal(ProviderAttemptOutcome.OurRateLimit, result.TerminalOutcome);
+        Assert.Contains(events, e => e.Type == "error" && e.Data != null && e.Data.StartsWith("429 Rate Limited"));
+    }
+
+    [Fact]
+    public async Task RunAsync_Google404ModelNotFound_RecordsOneOurRequestAttempt()
+    {
+        var (_, _, _, _, result) = await RunAgainstStatusWithResultAsync(
+            System.Net.HttpStatusCode.NotFound, GoogleModelNotFoundBody, systemModelId: null, alertContext: null, providerName: "Google");
+
+        var call = Assert.Single(result.ModelCalls);
+        Assert.Equal("model_not_found", call.ErrorKind);
+        var attempt = Assert.Single(call.Attempts);
+        Assert.Equal(ProviderAttemptOutcome.OurRequest, attempt.Outcome);
+        Assert.Equal("NOT_FOUND", attempt.ProviderErrorCode);
+        Assert.Equal(ProviderAttemptOutcome.OurRequest, result.TerminalOutcome);
     }
 }

@@ -31,6 +31,22 @@ public class AgentRunResult
     public string? ProviderFinishReason { get; set; }
 
     public string? ActualServiceTier { get; set; }
+
+    /// <summary>
+    /// The outcome class of the attempt that ended the run when it ended on a failed model call (one
+    /// with a <see cref="ModelCallRecord.ErrorKind"/>, or one whose last attempt our cancel cut);
+    /// <c>OurCanceled</c> when a cancel ended that call between attempts. Null when the run's last call
+    /// produced a response or no call was made. Refreshed after every attempt, so it is already set when
+    /// a cancellation exception leaves the runner. A delegated run keeps its own.
+    /// </summary>
+    public ProviderAttemptOutcome? TerminalOutcome { get; set; }
+
+    /// <summary>The sanitized provider error code of that attempt, when there was one.</summary>
+    public string? TerminalErrorCode { get; set; }
+
+    /// <summary>The run's terminal failure was cut by the caller's question time budget.</summary>
+    public bool TerminalQuestionBudgetCanceled { get; set; }
+
     public bool ToolBudgetExhausted { get; set; }
     public int ToolCallsBlocked { get; set; }
     public int ModelCallCount { get; set; }

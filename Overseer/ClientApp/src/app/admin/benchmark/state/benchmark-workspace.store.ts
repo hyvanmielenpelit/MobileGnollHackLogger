@@ -35,7 +35,8 @@ import {
   RUN_HISTORY_KINDS,
   BATTERY_RUN_HISTORY_LIMIT,
   MODEL_BATCH_HISTORY_LIMIT,
-  HistoryItem
+  HistoryItem,
+  providerErrorSortKey
 } from '../benchmark.models';
 import { formatStatusLabel, instrumentChangeOf, runDurationMs } from '../benchmark-run-format';
 import { batteryRunStatusLabel } from '../batteries/battery.models';
@@ -230,6 +231,11 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
         : item.kind === 'battery' ? batteryRunDurationMs(item.battery) : modelBatchDurationMs(item.batch),
       estimatedCost: item => item.kind === 'run' ? item.run.estimatedCandidateCost ?? item.run.estimatedCost
         : item.kind === 'battery' ? item.battery.totalCost : item.batch.liveTotalCostUsd ?? null,
+      // Rate, then count; null for a run that does not record the ledger and for a batch, so they sort last.
+      providerErrors: item => item.kind === 'batch' ? null
+        : providerErrorSortKey(
+          item.kind === 'run' ? item.run.providerErrorRate : item.battery.providerErrorRate,
+          item.kind === 'run' ? item.run.providerErrorCount : item.battery.providerErrorCount),
       startedAtUtc: item => new Date(this.historyStartedText(item))
     },
     {
@@ -369,12 +375,14 @@ export class BenchmarkWorkspaceStore implements OnDestroy {
         if (battery.analysisStale) flags.push('Analysis stale');
         if (battery.latestAnalysisComplete === false) flags.push('Incomplete');
       }
+      if (battery.providerAvailabilityRecorded && (battery.providerErrorCount ?? 0) > 0) flags.push('Provider errors');
       return flags.length > 0 ? flags : ['None'];
     }
     const run = item.run;
     if ((run.degradedAnswerCount ?? 0) > 0) flags.push('Degraded answers');
     if ((run.unansweredQuestionCount ?? 0) > 0) flags.push('Unanswered questions');
     if ((run.terminalFailureAnswerCount ?? 0) > 0) flags.push('Failed at the provider');
+    if (run.providerAvailabilityRecorded && (run.providerErrorCount ?? 0) > 0) flags.push('Provider errors');
     if (run.speedMeasurementDegraded) flags.push('Advisory timing');
     if (run.pricingIncomplete) flags.push('Pricing incomplete');
     return flags.length > 0 ? flags : ['None'];

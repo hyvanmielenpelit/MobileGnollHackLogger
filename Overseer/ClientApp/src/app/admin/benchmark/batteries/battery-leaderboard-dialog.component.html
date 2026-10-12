@@ -155,6 +155,7 @@
                       <th scope="col" class="bl-interval-col">95 % interval</th>
                       <th app-sort-header class="bl-num" [state]="table" column="speed" label="Speed" (changed)="onTableChanged()"></th>
                       <th app-sort-header class="bl-num" [state]="table" column="passCost" label="Pass cost" (changed)="onTableChanged()"></th>
+                      <th app-sort-header class="bl-num" [state]="table" column="providerErrors" label="Provider errors" (changed)="onTableChanged()"></th>
                       <th scope="col" class="bl-num">R</th>
                       <th app-sort-header [state]="table" column="analyzed" label="Analyzed" (changed)="onTableChanged()"></th>
                       <th scope="col"><span class="visually-hidden">Actions</span></th>
@@ -209,6 +210,7 @@
                         </td>
                         <td class="bl-num bl-speed">{{ formatNumber(r.row.overallSpeedIndex) }}</td>
                         <td class="bl-num bl-cost">{{ formatCost(r.row.passCost) }}</td>
+                        <td class="bl-num bl-provider-errors">{{ providerErrorsText(r.row) }}</td>
                         <td class="bl-num bl-r">{{ r.row.runsPerSuite }}</td>
                         <td class="bl-analyzed">
                           @if (r.analyzedIso) {

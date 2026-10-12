@@ -49,7 +49,9 @@ public static class BenchmarkDifficultyFailurePolicy
         // 429 / 500 / 502 / 503 / 504 / 529 / 408. The agent loop has already exhausted its
         // own retry ladder for these, so retrying here adds calls without adding a chance of
         // success — but the next batch may well succeed, so the job continues.
-        if (classification.IsProviderError)
+        // Overseer's own transient refusals (the request governor's throttle and cooldown) are not
+        // provider errors, but the next batch may get a permit just the same.
+        if (classification.IsProviderError || BenchmarkProviderErrorClassifier.IsOwnFailure(terminalError))
         {
             return BenchmarkDifficultyFailureAction.FailBatch;
         }

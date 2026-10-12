@@ -817,7 +817,7 @@
                     }
                   </div>
 
-                  <!-- Card order is fixed: P1, then P2, then the three scatters. P1 answers the primary
+                  <!-- Card order is fixed: P1, then P2, then the three scatters, then A1. P1 answers the primary
                        question and carries real units, so it is where a reader lands. Each tile is the
                        composed figure at the chart size; its box is that size at the All zoom. The
                        viewport carries the transparent-background backdrop colour, which the canvases
@@ -1390,6 +1390,14 @@
                                             }
                                           </div>
                                         </td>
+                                      }
+                                      @case ('providerErrors') {
+                                        <!-- `0.81 % (12/1,480)`, or Not recorded; a count shown as a column of its own is left out. -->
+                                        <td><span class="mc-nowrap">{{ combinedCellText(entry, column) }}</span></td>
+                                      }
+                                      @case ('reruns') {
+                                        <!-- `3 (2 provider)`; the provider part is left out while it is a column of its own. -->
+                                        <td><span class="mc-nowrap">{{ combinedCellText(entry, column) }}</span></td>
                                       }
                                       @case ('notes') {
                                         <td class="mc-notes">

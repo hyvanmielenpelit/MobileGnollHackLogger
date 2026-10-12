@@ -141,6 +141,99 @@ describe('AdminBenchmarkComponent', () => {
       expect(fixture.nativeElement.querySelector('.disputed-badge')).toBeTruthy();
     });
 
+    /** A recorded run's availability with no provider error: 400 valid attempts, one replaced run. */
+    function recordedAvailability(overrides: any = {}): any {
+      return {
+        recorded: true, recordedRuns: 1, totalRuns: 1, replacedRunsIncluded: 0,
+        validAttempts: 400, providerErrors: 0, unattributedErrors: 0, ourSideFailures: 0,
+        providerErrorRate: 0, providerErrorRateLow: 0, providerErrorRateHigh: 0.0095, designEffect: 1,
+        inclusiveRate: 0, inclusiveRateLow: 0, inclusiveRateHigh: 0.0095, fewAttempts: false,
+        overloaded: 0, serverErrors: 0, timeouts: 0, streamFailures: 0, rateLimitedOurs: 0,
+        rateLimitedUnattributed: 0, transportUnattributed: 0,
+        byOutcome: [{ outcome: 'Ok', code: 0, side: 'ok', count: 400, httpStatuses: [200] }],
+        questionsLost: 0, calls: 400, firstAttemptSuccessCalls: 400, repairPasses: 0, providerRepairPasses: 0,
+        replacementRuns: 1, providerReplacementRuns: 1, rerunsNeeded: 1, providerRerunsNeeded: 1,
+        graderValidAttempts: 100, graderProviderErrors: 0,
+        bins: [{ startUtc: '2026-09-03T06:50:00Z', valid: 400, provider: 0, unattributed: 0, ours: 0 }],
+        replaces: [{ runId: 41, replacedByRunId: 55, cause: 'ProviderFailure' }],
+        ...overrides
+      };
+    }
+
+    function integrityPanel(): HTMLElement {
+      return fixture.nativeElement.querySelector('#rr-panel-integrity') as HTMLElement;
+    }
+
+    it('should keep the empty-state line on a legacy run, which reads Not recorded under Provider availability', () => {
+      component.selectedRunDetail = buildCompletedRun();
+      fixture.detectChanges();
+
+      expect(component.hasRunIntegrityNotice).toBe(false);
+      expect(component.hasRecordedProviderAvailability).toBe(false);
+      const text = integrityPanel().textContent!.replace(/\s+/g, ' ');
+      expect(text).toContain('No integrity notices for this run.');
+      expect(integrityPanel().querySelector('app-provider-availability .pa-title')?.textContent?.trim()).toBe('Provider availability');
+      expect(text).toContain('Not recorded: runs started before harness 56 record no provider attempts.');
+    });
+
+    it('should drop the empty-state line on a recorded run and show its provider availability', () => {
+      component.selectedRunDetail = buildCompletedRun({ providerAvailability: recordedAvailability() });
+      fixture.detectChanges();
+
+      expect(component.hasRunIntegrityNotice).toBe(false);
+      expect(component.hasRecordedProviderAvailability).toBe(true);
+      const text = integrityPanel().textContent!.replace(/\s+/g, ' ');
+      expect(text).not.toContain('No integrity notices for this run.');
+      expect(integrityPanel().querySelector('app-provider-availability .pa-summary')?.textContent?.replace(/\s+/g, ' ').trim())
+        .toBe('Provider errors observed: 0 % (0 of 400 attempts; 95 % CI 0–0.95 %).');
+    });
+
+    it('should open a replaced run from the Integrity tab as the dialog opens runs', () => {
+      component.selectedRunDetail = buildCompletedRun({ providerAvailability: recordedAvailability() });
+      fixture.detectChanges();
+      const open = vi.spyOn(component, 'viewRunDetail').mockImplementation(() => undefined);
+
+      const link = integrityPanel().querySelector('app-provider-availability .pa-replaces-list button.pa-run-link') as HTMLButtonElement;
+      expect(link.textContent?.trim()).toBe('run #41');
+      link.click();
+
+      expect(open).toHaveBeenCalledWith(41);
+    });
+
+    it('should head a recorded failed answer by its origin and kind, and keep the old wording on a legacy answer', () => {
+      component.selectedRunDetail = buildCompletedRun({
+        answers: [
+          buildScoredAnswer(1, {
+            status: 'ProviderError', answerText: null, errorMessage: '529 Overloaded', httpStatusCode: 529,
+            failureOrigin: 'Provider', failureKind: 'ProviderOverloaded'
+          }),
+          buildScoredAnswer(2, {
+            status: 'Failed', answerText: null, errorMessage: 'Per-question timeout exceeded (420 s)',
+            failureOrigin: 'Ours', failureKind: 'question_budget'
+          }),
+          buildScoredAnswer(3, {
+            status: 'ProviderError', answerText: null, errorMessage: '503 Unavailable', httpStatusCode: 503
+          })
+        ]
+      });
+      [1, 2, 3].forEach(i => component.expandedQuestions.add(i));
+      fixture.detectChanges();
+
+      const heading = (i: number): string =>
+        (questionCard(i)?.querySelector('.question-card-body .alert-danger .alert-heading')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+      const noText = (i: number): string =>
+        (Array.from(questionCard(i)?.querySelectorAll('.answer-box') ?? []) as HTMLElement[])
+          .map(box => (box.textContent ?? '').replace(/\s+/g, ' ').trim())
+          .find(t => t.startsWith('No answer text')) ?? '';
+
+      expect(heading(1)).toBe('Provider error: overloaded (HTTP 529)');
+      expect(noText(1)).toBe('No answer text — provider error: overloaded (HTTP 529). See the error above.');
+      expect(heading(2)).toBe('Failed: our side (question time budget)');
+      expect(noText(2)).toBe('No answer text — failed: our side (question time budget). See the error above.');
+      expect(heading(3)).toBe('Provider Outage/Error (HTTP 503)');
+      expect(noText(3)).toBe('No answer text — the candidate failed at the provider before returning content. See the error above.');
+    });
+
     function questionCard(orderIndex: number): HTMLElement | undefined {
       return (Array.from(fixture.nativeElement.querySelectorAll('.question-detail-card')) as HTMLElement[])
         .find(card => card.querySelector('.q-number')?.textContent?.trim() === `Q${orderIndex}`);

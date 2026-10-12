@@ -381,10 +381,19 @@ public class BenchmarkBatteryReportFactsTests
     public async Task ABatterySheet_SuppliesEveryKeyARunSheetCarries()
     {
         var run = BenchmarkBatteryTestData.SuiteARun(1);
-        var runSheet = BenchmarkReportFacts.Build(BenchmarkReportPackFixture.Input(
+        var input = BenchmarkReportPackFixture.Input(
             BenchmarkReportPackFixture.Comparison(BenchmarkReportPackFixture.Entry("run:1", new long[] { 1 }, "gpt-5.6-luna", "OpenAI", 70, 60, 80)),
             "run:1",
-            run)).Sheet!;
+            run);
+        // A run sheet with its provider availability carries the whole availability.* family.
+        var runSheet = BenchmarkReportFacts.Build(new BenchmarkReportFactsInput
+        {
+            Comparison = input.Comparison,
+            SubjectKey = input.SubjectKey,
+            Runs = input.Runs,
+            Availability = BenchmarkReportFactsTests.RecordedAvailability()
+        }).Sheet!;
+        Assert.Contains(runSheet.Facts, f => f.Key == "availability.providerErrorRate");
 
         await using var db = BenchmarkBatteryTestData.NewDb();
         long id = await SeedThreeRoundsAsync(db);
@@ -392,6 +401,46 @@ public class BenchmarkBatteryReportFactsTests
 
         var missing = runSheet.Facts.Select(f => f.Key).Where(k => !batteryKeys.Contains(k)).ToList();
         Assert.Empty(missing);
+    }
+
+    [Fact]
+    public async Task ABatteryOfLegacyMembers_MarksEveryAvailabilityFactNotRecorded()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        long id = await SeedThreeRoundsAsync(db);
+
+        var sheet = (await PrepareAsync(db, id)).Sheet;
+
+        var facts = sheet.Facts.Where(f => f.Key.StartsWith("availability.", StringComparison.Ordinal)).ToList();
+        Assert.Equal(BenchmarkReportFacts.AvailabilityKeys.Count, facts.Count);
+        Assert.All(facts, f => Assert.Equal(BenchmarkReportFacts.AvailabilityNotRecordedReason, f.UnavailableReason));
+        Assert.False(Assert.Single(sheet.Entries, e => e.IsSubject).ProviderAvailabilityRecorded);
+    }
+
+    [Fact]
+    public async Task ABatterySheet_StatesTheBatteryRunsPooledAvailability_WhenItIsGiven()
+    {
+        await using var db = BenchmarkBatteryTestData.NewDb();
+        long id = await SeedThreeRoundsAsync(db);
+        var prep = await PrepareAsync(db, id);
+        var subjectRuns = prep.SubjectRuns.ToDictionary(r => r.Id);
+
+        var built = BenchmarkBatteryReportFacts.Build(new BenchmarkBatteryReportFactsInput
+        {
+            Comparison = prep.Comparison,
+            SubjectKey = prep.Subject.Key,
+            Sources = (await BenchmarkBatteryModelComparison.LoadAsync(db, new[] { id }, Ct)).Sources!,
+            Runs = subjectRuns,
+            Availability = BenchmarkReportFactsTests.RecordedAvailability()
+        });
+
+        var sheet = Assert.IsType<BenchmarkReportFactSheet>(built.Sheet);
+        Assert.Equal("12 of 1,480 attempts", Fact(sheet, "availability.providerErrors").Display);
+        Assert.Equal("0.81 %", Fact(sheet, "availability.providerErrorRate").Display);
+        Assert.Equal("1 replaced run", Fact(sheet, "availability.replacedRuns").Display);
+        var subject = Assert.Single(sheet.Entries, e => e.IsSubject);
+        Assert.True(subject.ProviderAvailabilityRecorded);
+        Assert.Equal(12, subject.ProviderErrors);
     }
 
     [Fact]

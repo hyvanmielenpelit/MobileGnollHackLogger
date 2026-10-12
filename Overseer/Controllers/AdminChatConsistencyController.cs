@@ -70,9 +70,9 @@ public class AdminChatConsistencyController : ControllerBase
 
     /// <summary>
     /// One point per usable run of <paramref name="modelKey"/> between <paramref name="from"/> and
-    /// <paramref name="to"/> (inclusive, either optional, UTC), with the subject's events and
-    /// annotations. 400 without a model key or when <paramref name="from"/> is after <paramref name="to"/>;
-    /// 499 when the client aborts.
+    /// <paramref name="to"/> (inclusive, either optional, UTC), one availability-only point per recorded
+    /// failed or canceled run there, with the subject's events and annotations. 400 without a model key or
+    /// when <paramref name="from"/> is after <paramref name="to"/>; 499 when the client aborts.
     /// </summary>
     [HttpGet("timeline")]
     public async Task<IActionResult> Timeline([FromQuery] string? modelKey, [FromQuery] DateTime? from, [FromQuery] DateTime? to, CancellationToken ct)
@@ -151,8 +151,11 @@ public class AdminChatConsistencyController : ControllerBase
 
     /// <summary>
     /// Runs and saves an analysis; 200 with the saved result, its <c>analysisId</c> set. The periods'
-    /// bounds are taken as UTC. 400 with the refusal for malformed or overlapping periods and for a
-    /// period without a usable run; 499 when the client aborts.
+    /// bounds are taken as UTC. The protocol is the request's <c>protocolVersion</c> (<c>V1</c> or <c>V2</c>);
+    /// without one, a re-analysis (<c>reanalysisOfAnalysisId</c>) keeps the stored analysis's protocol and a
+    /// new analysis uses V2. 400 with the refusal for malformed or overlapping periods, for a period without a
+    /// usable run, for an unknown protocol version and for a re-analysis of an unknown analysis; 499 when the
+    /// client aborts.
     /// </summary>
     [HttpPost("analyses")]
     public async Task<IActionResult> Analyze([FromBody] ChatConsistencyAnalysisRequest? request, CancellationToken ct)

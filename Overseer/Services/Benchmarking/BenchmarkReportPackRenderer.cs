@@ -113,13 +113,13 @@ public static class BenchmarkReportJson
 /// </summary>
 public static partial class BenchmarkReportPackRenderer
 {
-    public const int ReportFormatVersion = 11;
+    public const int ReportFormatVersion = 12;
 
     /// <summary>The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>).</summary>
-    public const int ComparisonReportFormatVersion = 12;
+    public const int ComparisonReportFormatVersion = 13;
 
     /// <summary>The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.</summary>
-    public const int ChatConsistencyReportFormatVersion = 2;
+    public const int ChatConsistencyReportFormatVersion = 3;
 
     /// <summary>The format version a document of <paramref name="scope"/> is written and rendered under now.</summary>
     public static int CurrentFormatVersion(BenchmarkReportScope scope) => scope switch
@@ -306,6 +306,7 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
 
         KeyFigures(sb, ctx, "## Key figures");
+        Figures(sb, ctx, BenchmarkReportChartAnchor.ProviderAvailability);
         if (ctx.Battery)
         {
             BatterySuites(sb, ctx, "## The suites of this battery");
@@ -348,6 +349,8 @@ public static partial class BenchmarkReportPackRenderer
         Slot(sb, ctx, BenchmarkReportSlots.Abstract);
 
         KeyFigures(sb, ctx, "## Key figures");
+        ProviderAvailabilitySection(sb, ctx);
+        Figures(sb, ctx, BenchmarkReportChartAnchor.ProviderAvailability);
         SetupAndMethod(sb, ctx);
         if (ctx.Battery)
         {
@@ -407,6 +410,8 @@ public static partial class BenchmarkReportPackRenderer
         Slot(sb, ctx, BenchmarkReportSlots.ModelResult);
         KeyFigures(sb, ctx, "### Key figures");
         IntervalSpanLine(sb, ctx);
+        ProviderAvailabilitySection(sb, ctx);
+        Figures(sb, ctx, BenchmarkReportChartAnchor.ProviderAvailability);
         if (ctx.Battery)
         {
             BatterySuites(sb, ctx, "### The suites of this battery");
@@ -519,7 +524,7 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// The key figures: intelligence with its interval, rank and overlap, speed as the median and mean
-    /// answer time with its rank, cost and critical errors.
+    /// answer time with its rank, cost, critical errors, and provider availability where the sheet carries it.
     /// </summary>
     private static void KeyFigures(StringBuilder sb, Context ctx, string heading)
     {
@@ -571,6 +576,10 @@ public static partial class BenchmarkReportPackRenderer
 
         var errors = Fact(ctx, "errors.critical");
         Line(sb, "- **" + Label("errors.critical") + ":** " + (errors == null || !errors.Available ? NotAvailableText(errors) : errors.Display + "."));
+        if (AvailabilityBullet(ctx, string.Empty) is string availability)
+        {
+            Line(sb, "- **Provider availability:** " + availability);
+        }
         Line(sb);
     }
 
@@ -653,6 +662,194 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb, "The 95 % interval is " + D(ctx, "quality.interval") + ", a span of " + D(ctx, "quality.intervalSpan")
             + ", and rests on " + scored + " with a scored answer.");
         Line(sb);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Provider availability (format version 12; comparison format version 13)
+    // ---------------------------------------------------------------------------------------------
+
+    private const string AvailabilityFootnoteClasses = "Provider errors are the attempts the provider answered with an overload "
+        + "(HTTP 503 or 529), a server error (HTTP 5xx), no response headers within the request timeout, or a stream that broke "
+        + "after it started. Unattributed errors are rate limits (HTTP 429) and transport failures that no rule attributes to "
+        + "either side; they stay in the denominator and out of the provider error rate. Our-side failures are counted but left "
+        + "out of the denominator: our own rate limits, billing, a rejected key or request, Overseer's request governor, our "
+        + "cancellations and per-question time budget, and our network. These are provider errors observed in GnollBench runs, "
+        + "counted over every pass of every run and every run they replaced.";
+
+    /// <summary>
+    /// The Key figures bullet of the availability facts under <paramref name="prefix"/> (empty, or a
+    /// model's <c>model.A.</c>): <c>0.81 % of attempts failed at the provider (12 of 1,480 attempts; 95 % CI
+    /// 0.46–1.4 %), plus 3 re-runs (2 for provider errors).</c>; the reason on a pool not recorded; null when
+    /// the sheet carries no availability facts.
+    /// </summary>
+    private static string? AvailabilityBullet(Context ctx, string prefix)
+    {
+        var attempts = Fact(ctx, prefix + "availability.attempts");
+        if (attempts == null) return null;
+        if (!attempts.Available) return NotRecordedText(attempts) + ".";
+
+        string text;
+        if (Fact(ctx, prefix + "availability.providerErrorRate") is { Available: true } rate)
+        {
+            var parts = new List<string> { D(ctx, prefix + "availability.providerErrors") };
+            string interval = AvailabilityInterval(ctx, prefix + "availability.providerErrorRate");
+            if (interval.Length > 0) parts.Add(interval);
+            if (NumberOf(attempts) is double valid && valid < BenchmarkProviderAvailability.FewAttemptsThreshold) parts.Add("few attempts");
+            text = rate.Display + " of attempts failed at the provider (" + string.Join("; ", parts) + ")";
+        }
+        else
+        {
+            text = "no valid attempts were recorded";
+        }
+
+        return text + ", plus " + AvailabilityRerunsText(ctx, prefix) + ".";
+    }
+
+    /// <summary><c>3 re-runs (2 for provider errors)</c>: the provider-caused part only when above zero.</summary>
+    private static string AvailabilityRerunsText(Context ctx, string prefix)
+    {
+        string text = D(ctx, prefix + "availability.reruns");
+        if (NumberOf(Fact(ctx, prefix + "availability.providerReruns")) is double provider && provider > 0)
+        {
+            text += " (" + BenchmarkReportFacts.Thousands((long)provider) + " for provider errors)";
+        }
+        return text;
+    }
+
+    /// <summary><c>95 % CI 0.46–1.4 %</c> from the values of a rate's two bound facts; empty when either is missing.</summary>
+    private static string AvailabilityInterval(Context ctx, string rateKey)
+        => BenchmarkProviderAvailability.FormatInterval(NumberOf(Fact(ctx, rateKey + "Ci95Low")), NumberOf(Fact(ctx, rateKey + "Ci95High")));
+
+    /// <summary>
+    /// The upper bound including unattributed errors: its fact with its interval where the sheet carries it,
+    /// otherwise (a comparison-scope sheet) computed from the headline counts, without an interval.
+    /// </summary>
+    private static string? AvailabilityUpperBound(Context ctx, string prefix)
+    {
+        if (Fact(ctx, prefix + "availability.inclusiveRate") is { Available: true } inclusive)
+        {
+            string interval = AvailabilityInterval(ctx, prefix + "availability.inclusiveRate");
+            return inclusive.Display + (interval.Length > 0 ? " (" + interval + ")" : string.Empty);
+        }
+
+        double? valid = NumberOf(Fact(ctx, prefix + "availability.attempts"));
+        double? provider = NumberOf(Fact(ctx, prefix + "availability.providerErrors"));
+        double? unattributed = NumberOf(Fact(ctx, prefix + "availability.unattributedErrors"));
+        return valid is double n && n > 0 && provider is double k && unattributed is double u
+            ? BenchmarkProviderAvailability.FormatPercent((k + u) / n)
+            : null;
+    }
+
+    /// <summary>A not-recorded availability fact's reason, or <c>not recorded</c>.</summary>
+    private static string NotRecordedText(BenchmarkReportFact fact)
+    {
+        string reason = fact.UnavailableReason?.Trim() ?? string.Empty;
+        return reason.Length == 0 ? "not recorded" : reason.TrimEnd('.');
+    }
+
+    /// <summary>A fact's numeric value; null when it is unavailable or holds no number.</summary>
+    private static double? NumberOf(BenchmarkReportFact? fact)
+    {
+        if (fact is not { Available: true } || fact.Value is not JsonValue value) return null;
+        if (value.TryGetValue(out double d)) return d;
+        if (value.TryGetValue(out long l)) return l;
+        if (value.TryGetValue(out int i)) return i;
+        return null;
+    }
+
+    /// <summary>
+    /// The Provider availability subsection of a per-model document: the attempts by class with each
+    /// class's share of the valid attempts, the footnote that defines the classes and the denominator, the
+    /// upper bound including unattributed errors, the questions lost and the re-runs; one sentence for a
+    /// pool not recorded; nothing on a sheet without the availability facts.
+    /// </summary>
+    private static void ProviderAvailabilitySection(StringBuilder sb, Context ctx)
+    {
+        var attempts = Fact(ctx, "availability.attempts");
+        if (attempts == null) return;
+
+        Heading(sb, "### Provider availability");
+        if (!attempts.Available)
+        {
+            Line(sb, "Provider availability was " + NotRecordedText(attempts) + ": these runs kept no record of their API attempts, "
+                + "so provider errors cannot be told apart from failures on Overseer's side.");
+            Line(sb);
+            return;
+        }
+
+        double? valid = NumberOf(attempts);
+        string Count(string key) => NumberOf(Fact(ctx, key)) is double count ? BenchmarkReportFacts.Thousands((long)count) : NoValue;
+        string Share(string key) => NumberOf(Fact(ctx, key)) is double count && valid is double n && n > 0
+            ? BenchmarkProviderAvailability.FormatPercent(count / n)
+            : NoValue;
+
+        Line(sb, "| Class | Count | Share of valid attempts |");
+        Line(sb, "|---|---|---|");
+        foreach (string key in new[] { "availability.overloaded", "availability.serverErrors", "availability.timeouts", "availability.streamFailures" })
+        {
+            Line(sb, "| " + Label(key) + " | " + Count(key) + " | " + Share(key) + " |");
+        }
+        Line(sb, "| Provider errors, total | " + Count("availability.providerErrors") + " | " + Share("availability.providerErrors") + " |");
+        foreach (string key in new[] { "availability.rateLimitedUnattributed", "availability.transportUnattributed" })
+        {
+            Line(sb, "| " + Label(key) + " | " + Count(key) + " | " + Share(key) + " |");
+        }
+        Line(sb, "| Unattributed errors, total | " + Count("availability.unattributedErrors") + " | " + Share("availability.unattributedErrors") + " |");
+        foreach (string key in new[] { "availability.rateLimitedOurs", "availability.ourSideFailures" })
+        {
+            Line(sb, "| " + Label(key) + " | " + Count(key) + " | excluded |");
+        }
+        Line(sb);
+        Line(sb, "*Valid attempts: " + D(ctx, "availability.attempts") + " of the model under test, the denominator of every share. "
+            + AvailabilityFootnoteClasses + "*");
+        Line(sb);
+
+        if (AvailabilityUpperBound(ctx, string.Empty) is string upper)
+        {
+            Line(sb, "- **Upper bound including unattributed errors:** " + upper);
+        }
+        LabeledLine(sb, ctx, "availability.questionsLost");
+        string reruns = AvailabilityRerunsText(ctx, string.Empty);
+        if (NumberOf(Fact(ctx, "availability.replacedRuns")) is double replaced && replaced > 0)
+        {
+            reruns += ", including " + D(ctx, "availability.replacedRuns");
+        }
+        Line(sb, "- **" + Label("availability.reruns") + ":** " + reruns);
+        Line(sb);
+    }
+
+    /// <summary>
+    /// The threats-to-validity sentences of the availability facts under <paramref name="prefix"/>: errors
+    /// that could not be attributed, re-runs, and a pool not recorded; none on a sheet without the
+    /// availability facts.
+    /// </summary>
+    private static List<string> AvailabilityThreats(Context ctx, string prefix)
+    {
+        var lines = new List<string>();
+        var attempts = Fact(ctx, prefix + "availability.attempts");
+        if (attempts == null) return lines;
+
+        if (!attempts.Available)
+        {
+            lines.Add(NotRecordedText(attempts) + ", so provider errors cannot be separated from failures on Overseer's side.");
+            return lines;
+        }
+
+        if (NumberOf(Fact(ctx, prefix + "availability.unattributedErrors")) is double unattributed && unattributed > 0)
+        {
+            string count = BenchmarkReportFacts.Thousands((long)unattributed) + (unattributed == 1 ? " error" : " errors");
+            string? upper = AvailabilityUpperBound(ctx, prefix);
+            lines.Add(count + " could not be attributed to the provider or to Overseer"
+                + (upper != null ? "; the upper bound including them is " + upper : string.Empty) + ".");
+        }
+
+        if (NumberOf(Fact(ctx, prefix + "availability.reruns")) is double reruns && reruns > 0)
+        {
+            lines.Add(AvailabilityRerunsText(ctx, prefix) + (reruns == 1 ? " was" : " were")
+                + " needed before the benchmarking was complete; the attempts of every pass and of every replaced run are counted.");
+        }
+
+        return lines;
     }
 
     /// <summary>
@@ -1727,6 +1924,10 @@ public static partial class BenchmarkReportPackRenderer
             {
                 Line(sb, "- Battery analysis: " + OneLine(fact.Display));
             }
+        }
+        foreach (string threat in AvailabilityThreats(ctx, string.Empty))
+        {
+            Line(sb, "- Provider availability: " + threat);
         }
         if (WriterIndependenceCaveat(ctx) is string caveat)
         {

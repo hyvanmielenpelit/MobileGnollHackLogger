@@ -816,8 +816,13 @@ public static class BenchmarkAssessmentPrompt
     ///     repeat a lost claim verification (A5); "inverts", "reverses" and "opposite" count as a
     ///     stated defect and a charge, and only a negated "adjudicate" reads as unverifiability (A6).
     ///     ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
+    /// v56: provider attempt ledger and failure attribution: every candidate and grader attempt is
+    ///     recorded with its outcome class; answers ended by our own time budget, governor or network
+    ///     are Failed rather than ProviderError; the synthesis prompt lists Failed answers as excluded
+    ///     exactly as ProviderError answers; re-run passes and replacement lineage are recorded.
+    ///     ScoringMethodVersion stays 14; CandidateSystemPromptSha256 and ToolGuidesSha256 do not move.
     /// </summary>
-    public const string HarnessVersion = "55";
+    public const string HarnessVersion = "56";
 
     /// <summary>
     /// The complete per-question assessor prompt in the order a grader reads it:
@@ -1638,7 +1643,9 @@ public static class BenchmarkAssessmentPrompt
                 sb.AppendLine("--- END RUBRIC ---");
             }
 
-            if (v.Status == BenchmarkAnswerStatus.ProviderError)
+            // A Failed answer prints the ProviderError line verbatim, as the assessor prompt does, so
+            // an answer whose status moved between the two reaches the synthesis unchanged.
+            if (v.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed)
             {
                 sb.AppendLine("Status: ProviderError (Excluded from scoring)");
             }

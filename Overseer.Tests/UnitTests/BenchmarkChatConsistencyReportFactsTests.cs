@@ -803,6 +803,7 @@ public class BenchmarkChatConsistencyReportFactsTests
 
     [Theory]
     [InlineData(new[] { "degraded", "equivalent" }, "The chat changed")]
+    [InlineData(new[] { "equivalent", "more provider errors" }, "The chat changed")]
     [InlineData(new[] { "equivalent", "changed, negligible" }, "No meaningful change")]
     [InlineData(new[] { "equivalent", "not computable" }, "No change on the computed endpoints")]
     [InlineData(new[] { "inconclusive", "equivalent" }, "Not enough evidence yet")]
@@ -1110,6 +1111,88 @@ public class BenchmarkChatConsistencyReportFactsTests
         Assert.Equal("2026-10-01 00:00 UTC until 2026-10-08 00:00 UTC",
             BenchmarkChatConsistencyReportFacts.WindowText("baseline", day.AddDays(-7), day.AddMilliseconds(-1), day));
         Assert.Equal("2026-09-01 00:00 UTC to 2026-09-08 00:00 UTC", Fact(BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary), "period.baseline.window").Display);
+    }
+
+    // --- Provider availability (Protocol V2) ---------------------------------------------------------
+
+    /// <summary><see cref="Result"/> under Protocol V2: P6 degraded, and each period's provider availability levels.</summary>
+    private static ChatConsistencyAnalysisResult V2Result()
+    {
+        var p6 = new ChatConsistencyEndpointResult
+        {
+            Id = "P6", Name = "Provider error rate", Unit = "pp", Scale = ChatConsistencyEffectScale.Difference,
+            Margin = 1.0, MarginText = "±1 pp", Direction = "lowerIsBetter", Computed = true,
+            Estimate = 2.4, Ci95 = new ChatConsistencyInterval(1.3, 3.6), Ci90 = new ChatConsistencyInterval(1.5, 3.4),
+            PValue = 0.001, AdjustedPValue = 0.006, Verdict = ConsistencyVerdict.ChangedDegraded,
+            VerdictLabel = ChatConsistencyAnalysisService.MoreProviderErrors, Grade = ChatConsistencyEvidenceGrade.Indicated,
+            MinimumDetectableEffect = 0.9, MinimumSampleMet = false, BaselineRunCount = 2, ComparisonRunCount = 3, ItemCount = 1480,
+            StrataUsed = new[] { "Weekday 08–12 UTC" }
+        };
+
+        return Result() with
+        {
+            Protocol = ChatConsistencyProtocol.V2,
+            ProtocolLabel = "V2",
+            Endpoints = Result().Endpoints.Append(p6).ToList(),
+            PeriodLevels = new[]
+            {
+                new ChatConsistencyPeriodLevels
+                {
+                    Period = "baseline", AnswerCount = 40, AvailabilityRecorded = true, AvailabilityRunCount = 2, AvailabilityRecordedRunCount = 2,
+                    AvailabilityOnlyRunCount = 0, ValidAttemptCount = 1480, ProviderErrorCount = 12, UnattributedErrorCount = 3, OurSideFailureCount = 4,
+                    ProviderErrorRate = 12.0 / 1480.0, ProviderErrorRateLow = 0.0046, ProviderErrorRateHigh = 0.014, RerunsNeeded = 1, ProviderRerunsNeeded = 1
+                },
+                new ChatConsistencyPeriodLevels { Period = "comparison", AnswerCount = 40, AvailabilityRecorded = false, AvailabilityRunCount = 2, AvailabilityRecordedRunCount = 0 }
+            }
+        };
+    }
+
+    [Fact]
+    public void AV2Analysis_StatesEachPeriodsAvailability_WithItsDenominator_AndP6InPercentagePoints()
+    {
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(V2Result(), BenchmarkReportAudience.TechnicalReport);
+
+        Assert.Equal("0.81 % (12 of 1,480 attempts; 95 % CI 0.46–1.4 %)", Fact(sheet, "availability.baseline.providerErrorRate").Display);
+        Assert.Equal("12 of 1,480 attempts", Fact(sheet, "availability.baseline.providerErrors").Display);
+        Assert.Equal("1,480 valid attempts", Fact(sheet, "availability.baseline.attempts").Display);
+        Assert.Equal("3 of 1,480 attempts", Fact(sheet, "availability.baseline.unattributedErrors").Display);
+        Assert.Equal("1 re-run (1 for provider errors)", Fact(sheet, "availability.baseline.reruns").Display);
+        Assert.Equal("recorded for 2 of 2 runs", Fact(sheet, "availability.baseline.recordedRuns").Display);
+        foreach (string measure in BenchmarkChatConsistencyReportFacts.AvailabilityMeasures)
+        {
+            var fact = Fact(sheet, "availability.comparison." + measure);
+            Assert.False(fact.Available);
+            Assert.Equal(BenchmarkChatConsistencyReportFacts.AvailabilityNotRecordedReason, fact.UnavailableReason);
+        }
+
+        Assert.Equal("+2.4 pp", Fact(sheet, "endpoint.P6.estimate").Display);
+        Assert.Equal("1,480 valid attempts in the common strata", Fact(sheet, "endpoint.P6.items").Display);
+        Assert.Equal("±1 pp", Fact(sheet, "protocol.margin.P6").Display);
+        Assert.Equal("degraded", Fact(sheet, "verdict.overall").Value!.GetValue<string>());
+    }
+
+    [Fact]
+    public void AV1Analysis_HasNoAvailabilityFacts()
+    {
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.TechnicalReport);
+
+        Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("availability.", StringComparison.Ordinal));
+        Assert.DoesNotContain(sheet.Facts, f => f.Key == "protocol.margin.P6");
+    }
+
+    [Fact]
+    public void EveryEmittedKeyOfAV2Analysis_HasALabel()
+    {
+        var keys = BenchmarkReportSlots.ChatConsistencyAudiences
+            .SelectMany(a => BenchmarkChatConsistencyReportFacts.Build(V2Result(), a, RequestIds()).Facts)
+            .Select(f => f.Key)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Contains("availability.baseline.providerErrorRate", keys);
+        Assert.Contains("endpoint.P6.ci95", keys);
+        Assert.Empty(keys.Where(k => !BenchmarkReportFactLabels.TryLabel(k, out _)));
+        Assert.All(keys, k => Assert.DoesNotContain(".", BenchmarkReportFactLabels.Label(k)));
     }
 
     /// <summary>The event-group fixture the client's report-chart spec reads too, from the repository root.</summary>

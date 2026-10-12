@@ -3,10 +3,12 @@ import { NgTemplateOutlet } from '@angular/common';
 
 import type { FigureBadgeKind } from './figure-chrome';
 import {
+  AvailabilityFigureStyle,
   BadgeControl,
   BarFigureStyle,
   BetterBadgePlacement,
   DEFAULT_APPEARANCE_STYLE,
+  DEFAULT_AVAILABILITY_STYLE,
   DEFAULT_FIGURE_STYLE,
   FIGURE_BACKGROUND_MODES,
   FIGURE_FONT_WEIGHTS,
@@ -66,18 +68,26 @@ type StyleFamily = 'bar' | 'scatter' | 'profile' | 'timeline';
 /** Every kind the generic section, range and reset methods operate over. */
 type PanelFamily = StyleFamily | 'appearance';
 
+/** A style group a family section can edit in place of the family's own fields. */
+export type FigureStyleGroup = 'availability';
+
 /**
  * One collapsible section: its key within the family, its summary title and the style fields it
- * edits. A shared section edits the number formats every family shares, not family fields.
+ * edits. A shared section edits the number formats every family shares, not family fields. A
+ * section with a `group` edits that group's fields; each of them is claimed by one family's section.
  */
 export interface FigureStyleSection {
   readonly name: string;
   readonly title: string;
   readonly keys: readonly string[];
   readonly shared?: boolean;
+  readonly group?: FigureStyleGroup;
 }
 
 const NUMBERS_SECTION: FigureStyleSection = { name: 'numbers', title: 'Number format', keys: [], shared: true };
+
+/** The provider-availability options, split between the bar and the scatter families. */
+const AVAILABILITY_SECTION_TITLE = 'Provider availability';
 
 const HEADING_KEYS = ['titleSizePx', 'badgeTextSizePx', 'hiddenBadges'] as const;
 /** The bar and trade-off heading sections also place the Better badge, which the profile lacks. */
@@ -86,7 +96,8 @@ const FOOTER_KEYS = ['footer', 'footerTextSizePx'] as const;
 
 /**
  * Each family's sections, in the order the panel stacks them. Together a family's sections claim
- * every one of its style fields once; the shared Number format section edits `numbers`.
+ * every one of its style fields once; the shared Number format section edits `numbers`, and the bar
+ * and scatter Provider availability sections together claim every field of `availability` once.
  */
 export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly FigureStyleSection[]>> = {
   bar: [
@@ -103,7 +114,8 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly Figure
     NUMBERS_SECTION,
     { name: 'uncertainty', title: 'Uncertainty', keys: ['intervals', 'hiddenIntervalsNote', 'meanTimeNoIntervalNote'] },
     { name: 'footer', title: 'Footer', keys: FOOTER_KEYS },
-    { name: 'layout', title: 'Layout', keys: ['orientation', 'gridlines', 'plotFrame'] }
+    { name: 'layout', title: 'Layout', keys: ['orientation', 'gridlines', 'plotFrame'] },
+    { name: 'availability', title: AVAILABILITY_SECTION_TITLE, keys: ['panel', 'measure', 'scale'], group: 'availability' }
   ],
   scatter: [
     { name: 'heading', title: 'Heading and badges', keys: DIRECTED_HEADING_KEYS },
@@ -112,7 +124,8 @@ export const FIGURE_STYLE_SECTIONS: Readonly<Record<PanelFamily, readonly Figure
     NUMBERS_SECTION,
     { name: 'axes', title: 'Axes', keys: ['axisTextSizePx', 'axisTitleSizePx', 'gridlines', 'axisTitleWeight', 'plotFrame'] },
     { name: 'uncertainty', title: 'Uncertainty', keys: ['intervals', 'hiddenIntervalsNote', 'frontierIntervalsNote'] },
-    { name: 'footer', title: 'Footer', keys: FOOTER_KEYS }
+    { name: 'footer', title: 'Footer', keys: FOOTER_KEYS },
+    { name: 'availability', title: AVAILABILITY_SECTION_TITLE, keys: ['markers'], group: 'availability' }
   ],
   profile: [
     { name: 'heading', title: 'Heading and badges', keys: HEADING_KEYS },
@@ -310,6 +323,16 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
     { value: 'square', label: 'Square emblem' }
   ] as const;
 
+  readonly availabilityMeasureOptions = [
+    { value: 'strict', label: 'Provider errors only' },
+    { value: 'inclusive', label: 'Including unattributed errors' }
+  ] as const;
+
+  readonly availabilityScaleOptions = [
+    { value: 'sqrt', label: 'Square root' },
+    { value: 'linear', label: 'Linear' }
+  ] as const;
+
   /** Regular / Medium / Semibold / Bold: shared by the appearance weights and each family's axis title weight. */
   readonly fontWeightOptions = FIGURE_FONT_WEIGHTS.map((value) => ({ value, label: FONT_WEIGHT_LABELS[value] }));
 
@@ -375,6 +398,10 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
 
   get appearance(): FigureAppearanceStyle {
     return this.figureStyle.appearance;
+  }
+
+  get availability(): AvailabilityFigureStyle {
+    return this.figureStyle.availability;
   }
 
   /** The *Filled bars* tip, which mentions the `n = 1` marker only while it is off. */
@@ -508,6 +535,12 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
 
   setAppearance<K extends keyof FigureAppearanceStyle>(key: K, value: FigureAppearanceStyle[K]): void {
     this.setFamily('appearance', key, value);
+  }
+
+  /** Emits the style with one provider-availability option replaced. */
+  setAvailability<K extends keyof AvailabilityFigureStyle>(key: K, value: AvailabilityFigureStyle[K]): void {
+    this.resetStatus = '';
+    this.figureStyleChange.emit({ ...this.figureStyle, availability: { ...this.availability, [key]: value } });
   }
 
   badgeControlId(family: StyleFamily, kind: FigureBadgeKind): string {
@@ -704,16 +737,33 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
     this.inlineValuesChange.emit(on);
   }
 
+  /** Every bar section, the bar family's provider-availability options included. */
   resetBar(): void {
     this.lastBarWidthPx = DEFAULT_FIGURE_STYLE.bar.maxBarWidthPx ?? 24;
-    this.figureStyleChange.emit({ ...this.figureStyle, bar: DEFAULT_FIGURE_STYLE.bar });
+    this.figureStyleChange.emit({
+      ...this.figureStyle,
+      bar: DEFAULT_FIGURE_STYLE.bar,
+      availability: this.availabilityWithDefaults('bar')
+    });
     this.resetStatus = 'Bar style reset to defaults.';
   }
 
+  /** Every trade-off section, the scatter markers included. */
   resetScatter(): void {
-    this.figureStyleChange.emit({ ...this.figureStyle, scatter: DEFAULT_FIGURE_STYLE.scatter });
+    this.figureStyleChange.emit({
+      ...this.figureStyle,
+      scatter: DEFAULT_FIGURE_STYLE.scatter,
+      availability: this.availabilityWithDefaults('scatter')
+    });
     this.resetPageToggles();
     this.resetStatus = 'Trade-off style reset to defaults.';
+  }
+
+  /** The provider-availability options with those a family's section claims back at their defaults. */
+  private availabilityWithDefaults(family: 'bar' | 'scatter'): AvailabilityFigureStyle {
+    const keys = this.sections[family].filter((section) => section.group === 'availability').flatMap((section) => section.keys);
+    const reset = Object.fromEntries(keys.map((key) => [key, DEFAULT_AVAILABILITY_STYLE[key as keyof AvailabilityFigureStyle]]));
+    return { ...this.availability, ...reset };
   }
 
   resetProfile(): void {
@@ -752,12 +802,13 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
       return;
     }
     if (!this.sectionFieldsDefault(family, name)) {
-      const defaults = DEFAULT_FIGURE_STYLE[family] as unknown as Record<string, unknown>;
+      const group = section.group ?? family;
+      const defaults = DEFAULT_FIGURE_STYLE[group] as unknown as Record<string, unknown>;
       const reset = Object.fromEntries(section.keys.map((key) => [key, defaults[key]]));
       if (family === 'bar' && name === 'bars') {
         this.lastBarWidthPx = DEFAULT_FIGURE_STYLE.bar.maxBarWidthPx ?? 24;
       }
-      this.figureStyleChange.emit({ ...this.figureStyle, [family]: { ...this.figureStyle[family], ...reset } });
+      this.figureStyleChange.emit({ ...this.figureStyle, [group]: { ...this.figureStyle[group], ...reset } });
     }
     if (family === 'scatter' && name === 'labels') {
       this.resetPageToggles();
@@ -780,8 +831,9 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
     if (this.section(family, name).shared) {
       return this.numberRows(family as StyleFamily).every((measure) => this.figureStyle.numbers[measure] === DEFAULT_MEASURE_DECIMALS[measure]);
     }
-    const current = this.figureStyle[family] as unknown as Record<string, unknown>;
-    const defaults = DEFAULT_FIGURE_STYLE[family] as unknown as Record<string, unknown>;
+    const group = this.section(family, name).group ?? family;
+    const current = this.figureStyle[group] as unknown as Record<string, unknown>;
+    const defaults = DEFAULT_FIGURE_STYLE[group] as unknown as Record<string, unknown>;
     return this.section(family, name).keys.every((key) => sameStyleValue(current[key], defaults[key]));
   }
 
@@ -856,6 +908,9 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
     if (family === 'appearance') {
       return this.appearanceReadout(name);
     }
+    if (this.section(family, name).group === 'availability') {
+      return this.availabilityReadout(family);
+    }
     const style = this.figureStyle[family];
     switch (name) {
       case 'heading': {
@@ -883,6 +938,19 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
           : family === 'timeline' ? this.timelineReadout(name)
             : this.scatterReadout(name);
     }
+  }
+
+  /** The bar family's panel, measure and scale; the scatter family's markers. */
+  private availabilityReadout(family: PanelFamily): string {
+    const a = this.availability;
+    if (family === 'scatter') {
+      return a.markers === 'on' ? 'markers above 2 %' : 'no markers';
+    }
+    return [
+      a.panel === 'on' ? 'panel shown' : 'panel hidden',
+      a.measure === 'strict' ? 'provider errors only' : 'with unattributed',
+      a.scale === 'sqrt' ? 'square-root scale' : 'linear scale'
+    ].join(' · ');
   }
 
   private timelineReadout(name: string): string {

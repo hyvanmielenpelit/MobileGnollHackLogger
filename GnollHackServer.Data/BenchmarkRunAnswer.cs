@@ -118,6 +118,19 @@ public class BenchmarkRunAnswer
     [MaxLength(512)]
     public string? RerunOfErrorMessage { get; set; }
 
+    /// <summary>How many times this answer was re-executed by a re-run pass.</summary>
+    public int ReExecutionCount { get; set; }
+
+    /// <summary>
+    /// Whose fault the answer's terminal failure was: <see cref="BenchmarkFailureOrigin.None"/> on an
+    /// answer that did not fail. Null on runs that do not record the provider attempt ledger ("not recorded").
+    /// </summary>
+    public BenchmarkFailureOrigin? FailureOrigin { get; set; }
+
+    /// <summary>The outcome class name of the attempt that ended the answer, or <c>question_budget</c>. Null when the answer did not fail or was not recorded.</summary>
+    [MaxLength(32)]
+    public string? FailureKind { get; set; }
+
     // Superseded by QualityScore and dimensional level scoring
     public int? Score { get; set; }
 

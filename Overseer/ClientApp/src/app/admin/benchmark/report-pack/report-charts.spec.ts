@@ -29,6 +29,7 @@ import {
   DOCUMENT_MIN_PLOT_HEIGHT,
   DOCUMENT_TEXT_COLUMN_PT,
   REPORT_CHART_FIGURES,
+  REPORT_CHART_NOT_DRAWN,
   REPORT_CHART_STORAGE_KEY,
   ReportChartDocumentLayout,
   ReportChartFigureKey,
@@ -56,6 +57,7 @@ import {
   readStoredChartSelection,
   readStoredChartSettings,
   reportChartCoveredKeys,
+  reportChartDrawn,
   reportChartPlacementLabel,
   reportChartTargetFor,
   reportDocumentChartLayout,
@@ -69,21 +71,23 @@ const HASH = 'a'.repeat(64);
 
 describe('report-charts', () => {
   describe('figures and placements', () => {
-    it('lists the seven figures in placement order, the profile needing three models', () => {
+    it('lists the eight figures in placement order, the profile needing three models', () => {
       expect(REPORT_CHART_FIGURES.map(figure => figure.key)).toEqual([
-        'p1a-quality', 'p1b-speed', 'p1c-cost', 'p2-profile', 's1-quality-speed', 's2-quality-cost', 's3-speed-cost'
+        'p1a-quality', 'p1b-speed', 'p1c-cost', 'p2-profile', 's1-quality-speed', 's2-quality-cost', 's3-speed-cost',
+        'a1-availability'
       ]);
       expect(REPORT_CHART_FIGURES.map(figure => figure.title)).toEqual([
         'Intelligence', 'Speed', 'Cost', 'Model profiles',
-        'Intelligence against speed', 'Intelligence against cost', 'Speed against cost'
+        'Intelligence against speed', 'Intelligence against cost', 'Speed against cost', 'Provider errors'
       ]);
-      expect(REPORT_CHART_FIGURES.map(figure => figure.minModels)).toEqual([2, 2, 2, 3, 2, 2, 2]);
+      expect(REPORT_CHART_FIGURES.map(figure => figure.minModels)).toEqual([2, 2, 2, 3, 2, 2, 2, 2]);
+      expect(isReportChartFigureKey('a1-availability')).toBe(true);
       expect(isReportChartFigureKey('p2-profile')).toBe(true);
       expect(isReportChartFigureKey('p9-nothing')).toBe(false);
     });
 
     it('knows the chat consistency figures as document figures, apart from the Report Pack\'s', () => {
-      expect(CHAT_CONSISTENCY_CHART_FIGURE_KEYS).toEqual(['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline']);
+      expect(CHAT_CONSISTENCY_CHART_FIGURE_KEYS).toEqual(['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline', 'cc5-availability']);
       for (const key of CHAT_CONSISTENCY_CHART_FIGURE_KEYS) {
         expect(isDocumentChartFigureKey(key), key).toBe(true);
         expect(isReportChartFigureKey(key), key).toBe(false);
@@ -105,8 +109,13 @@ describe('report-charts', () => {
         ['How it compares', 'Results against peers', '§3 Key figures'],
         ['How it compares', 'Speed and cost', '§3 Key figures'],
         ['How it compares', 'Speed and cost', '§3 Key figures'],
-        ['How it compares', 'Speed and cost', '§3 Key figures']
+        ['How it compares', 'Speed and cost', '§3 Key figures'],
+        ['Key figures', 'Key figures → Provider availability', '§3 Provider availability']
       ]);
+      // A1 is drawn in every model-scope document type.
+      for (const audience of [ExecutiveSummary, TechnicalReport, InternalBrief]) {
+        expect(reportChartDrawn(audience, 'a1-availability'), String(audience)).toBe(true);
+      }
     });
 
     it('places a comparison-scope figure by the comparison-scope table, falling back to the model-scope section', () => {
@@ -133,13 +142,20 @@ describe('report-charts', () => {
         ['How they compare', 'Dimension profiles', 'Models compared'],
         ['How they compare', 'Speed and cost frontier', 'Models compared'],
         ['How they compare', 'Speed and cost frontier', 'Models compared'],
-        ['How they compare', 'Speed and cost frontier', 'Models compared']
+        ['How they compare', 'Speed and cost frontier', 'Models compared'],
+        [REPORT_CHART_NOT_DRAWN, 'Results → Provider availability', 'Models compared']
       ]);
+      // The comparison-scope Executive Summary does not place A1, with no fallback to its model-scope section.
+      expect(reportChartDrawn(ExecutiveSummary, 'a1-availability', 'comparison')).toBe(false);
+      expect(reportChartDrawn(TechnicalReport, 'a1-availability', 'comparison')).toBe(true);
+      expect(reportChartDrawn(InternalBrief, 'a1-availability', 'comparison')).toBe(true);
+      expect(reportChartDrawn(ExecutiveSummary, 'p1a-quality', 'comparison')).toBe(true);
     });
 
-    it('defaults to two charts in the Executive Summary, all seven in the researchers\' report and the three bars in the brief', () => {
+    it('defaults to two charts in the Executive Summary, all eight in the researchers\' report and the three bars in the brief', () => {
       expect(DEFAULT_CHART_SELECTION[ExecutiveSummary]).toEqual(['p1a-quality', 's2-quality-cost']);
       expect(DEFAULT_CHART_SELECTION[TechnicalReport]).toEqual(REPORT_CHART_FIGURES.map(figure => figure.key));
+      expect(DEFAULT_CHART_SELECTION[TechnicalReport]).toContain('a1-availability');
       expect(DEFAULT_CHART_SELECTION[InternalBrief]).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost']);
     });
 
@@ -682,6 +698,19 @@ describe('report-charts', () => {
 
       expect(result.skipped).toEqual([11]);
       expect(puts.map(put => put.id)).toEqual([12]);
+    });
+
+    it('neither composes nor uploads A1 for a comparison-scope Executive Summary, which does not place it', async () => {
+      const publisher = new ReportChartPublisher(service);
+      const comparisonSummary: ReportChartTarget = {
+        documentId: 21, audience: ExecutiveSummary, subjectKey: 'comparison:3', peerLetters: { 'run:5': 'A', 'run:6': 'B' }, label: 'x'
+      };
+      await publisher.publish([comparisonSummary, target(22, ExecutiveSummary, {})],
+        { [ExecutiveSummary]: ['p1a-quality', 'a1-availability'] }, compose, HASH);
+
+      expect(composed).toEqual(['p1a-quality/named', 'p1a-quality/anonymized', 'p1a-quality/named', 'a1-availability/named']);
+      expect(puts.map(put => put.id)).toEqual([21, 22]);
+      expect(puts[0].charts.map(chart => chart.figureKey)).not.toContain('a1-availability');
     });
 
     it('stops after the document in flight when canceled', async () => {

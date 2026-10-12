@@ -96,14 +96,19 @@ describe('FigureStylePanelComponent', () => {
     render('bar');
     expect(host().querySelector('#mc-style-bar-heading')?.textContent).toContain('Bar charts — Intelligence, Speed and Cost');
     expect(host().querySelector('#mc-style-scatter-heading')).toBeNull();
-    expect(sectionTitles()).toEqual(['Heading and badges', 'Bars', 'Values and axes', 'Number format', 'Uncertainty', 'Footer', 'Layout']);
+    expect(sectionTitles()).toEqual([
+      'Heading and badges', 'Bars', 'Values and axes', 'Number format', 'Uncertainty', 'Footer', 'Layout', 'Provider availability'
+    ]);
   });
 
   it('renders the trade-off set for a scatter and not the bar set', () => {
     render('scatter');
     expect(host().querySelector('#mc-style-scatter-heading')?.textContent?.trim()).toBe('Trade-off charts');
     expect(host().querySelector('#mc-style-bar-heading')).toBeNull();
-    expect(sectionTitles()).toEqual(['Heading and badges', 'Marks and frontier', 'Labels and legend', 'Number format', 'Axes', 'Uncertainty', 'Footer']);
+    expect(sectionTitles()).toEqual([
+      'Heading and badges', 'Marks and frontier', 'Labels and legend', 'Number format', 'Axes', 'Uncertainty', 'Footer',
+      'Provider availability'
+    ]);
   });
 
   it('renders the caption sections, the note and a reset button for the profile', () => {
@@ -222,7 +227,8 @@ describe('FigureStylePanelComponent', () => {
       timeline: DEFAULT_FIGURE_STYLE.timeline,
       numbers: DEFAULT_FIGURE_STYLE.numbers,
       appearance: DEFAULT_FIGURE_STYLE.appearance,
-      table: DEFAULT_FIGURE_STYLE.table
+      table: DEFAULT_FIGURE_STYLE.table,
+      availability: DEFAULT_FIGURE_STYLE.availability
     };
     render('profile', changed);
     (host().querySelector('#mc-style-profile-reset') as HTMLButtonElement).click();
@@ -373,12 +379,15 @@ describe('FigureStylePanelComponent', () => {
       timeline: DEFAULT_FIGURE_STYLE.timeline,
       numbers: DEFAULT_FIGURE_STYLE.numbers,
       appearance: DEFAULT_FIGURE_STYLE.appearance,
-      table: DEFAULT_FIGURE_STYLE.table
+      table: DEFAULT_FIGURE_STYLE.table,
+      availability: { panel: 'off', measure: 'inclusive', scale: 'linear', markers: 'on' }
     };
     render('bar', changed);
     (host().querySelector('#mc-style-bar-reset') as HTMLButtonElement).click();
     expect(emitted[0].bar).toEqual(DEFAULT_FIGURE_STYLE.bar);
     expect(emitted[0].scatter).toEqual(changed.scatter);
+    // The bar family's provider-availability options reset with it; the scatter markers stay.
+    expect(emitted[0].availability).toEqual({ panel: 'on', measure: 'strict', scale: 'sqrt', markers: 'on' });
 
     render('scatter', changed);
     const reset = host().querySelector('#mc-style-scatter-reset') as HTMLButtonElement;
@@ -386,6 +395,7 @@ describe('FigureStylePanelComponent', () => {
     reset.click();
     expect(emitted[1].scatter).toEqual(DEFAULT_FIGURE_STYLE.scatter);
     expect(emitted[1].bar).toEqual(changed.bar);
+    expect(emitted[1].availability).toEqual({ panel: 'off', measure: 'inclusive', scale: 'linear', markers: 'off' });
   });
 
   it('emits the two trade-off toggles through their own outputs and disables the legend under direct labels', () => {
@@ -489,7 +499,7 @@ describe('FigureStylePanelComponent', () => {
     fixture.detectChanges();
     const sections = (): HTMLDetailsElement[] => Array.from(host().querySelectorAll<HTMLDetailsElement>('details.gh-disclosure--section'));
     expect(sections().every(details => details.open)).toBe(true);
-    expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY)!).scatter.length).toBe(7);
+    expect(JSON.parse(localStorage.getItem(FIGURE_STYLE_PANEL_OPEN_KEY)!).scatter.length).toBe(8);
 
     (host().querySelector('#mc-style-scatter-collapse') as HTMLButtonElement).click();
     fixture.detectChanges();
@@ -669,10 +679,74 @@ describe('FigureStylePanelComponent', () => {
 
   it('claims every style field of each family in exactly one section', () => {
     for (const kind of ['bar', 'scatter', 'profile', 'timeline', 'appearance'] as const) {
-      const keys = FIGURE_STYLE_SECTIONS[kind].filter(section => !section.shared).flatMap(section => [...section.keys]);
+      const keys = FIGURE_STYLE_SECTIONS[kind].filter(section => !section.shared && !section.group).flatMap(section => [...section.keys]);
       expect(new Set(keys).size, `${kind} duplicates`).toBe(keys.length);
       expect([...keys].sort(), kind).toEqual(Object.keys(DEFAULT_FIGURE_STYLE[kind]).sort());
     }
+  });
+
+  it('claims every provider-availability field in exactly one family section, the panel options in bar and the markers in scatter', () => {
+    const grouped = (['bar', 'scatter', 'profile', 'timeline', 'appearance'] as const)
+      .flatMap(kind => FIGURE_STYLE_SECTIONS[kind].filter(section => section.group === 'availability')
+        .map(section => ({ kind, keys: [...section.keys] })));
+    const keys = grouped.flatMap(section => section.keys);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect([...keys].sort()).toEqual(Object.keys(DEFAULT_FIGURE_STYLE.availability).sort());
+    expect(grouped).toEqual([
+      { kind: 'bar', keys: ['panel', 'measure', 'scale'] },
+      { kind: 'scatter', keys: ['markers'] }
+    ]);
+  });
+
+  it('switches the provider-availability panel, measure and scale in the bar family, and reads them out', () => {
+    const readout = (): string =>
+      host().querySelector('#mc-style-bar-section-availability > summary .gh-disclosure-summary-value')!.textContent!.trim();
+    render('bar');
+    expect(readout()).toBe('panel shown · provider errors only · square-root scale');
+    const panel = control('mc-style-bar-availabilityPanel');
+    expect(panel.checked).toBe(true);
+    expect(hintOf(panel)).toContain('fourth panel');
+    expect(resetButton('mc-style-bar-section-availability-reset').getAttribute('aria-disabled')).toBe('true');
+
+    setChecked(panel, false);
+    expect(emitted[0].availability).toEqual({ ...DEFAULT_FIGURE_STYLE.availability, panel: 'off' });
+    expect(emitted[0].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
+    acceptLast();
+
+    setChecked(control('mc-style-bar-availabilityMeasure-inclusive'), true);
+    expect(emitted[1].availability.measure).toBe('inclusive');
+    acceptLast();
+    setChecked(control('mc-style-bar-availabilityScale-linear'), true);
+    expect(emitted[2].availability).toEqual({ panel: 'off', measure: 'inclusive', scale: 'linear', markers: 'off' });
+    acceptLast();
+    expect(readout()).toBe('panel hidden · with unattributed · linear scale');
+
+    const reset = resetButton('mc-style-bar-section-availability-reset');
+    expect(reset.getAttribute('aria-disabled')).toBeNull();
+    reset.click();
+    fixture.detectChanges();
+    expect(emitted[3].availability).toEqual(DEFAULT_FIGURE_STYLE.availability);
+    expect(statusText()).toBe('Provider availability reset to defaults.');
+  });
+
+  it('switches the provider-error markers in the scatter family alone', () => {
+    const readout = (): string =>
+      host().querySelector('#mc-style-scatter-section-availability > summary .gh-disclosure-summary-value')!.textContent!.trim();
+    render('scatter');
+    expect(readout()).toBe('no markers');
+    const markers = control('mc-style-scatter-availabilityMarkers');
+    expect(markers.checked).toBe(false);
+    expect(hintOf(markers)).toContain('wholly above 2 %');
+
+    setChecked(markers, true);
+    expect(emitted[0].availability).toEqual({ ...DEFAULT_FIGURE_STYLE.availability, markers: 'on' });
+    expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
+    acceptLast();
+    expect(readout()).toBe('markers above 2 %');
+    expect(host().querySelector('#mc-style-scatter-availabilityPanel')).toBeNull();
+
+    resetButton('mc-style-scatter-section-availability-reset').click();
+    expect(emitted[1].availability.markers).toBe('off');
   });
 
   it('gives every section a named reset button with a tooltip, disabled at defaults', () => {

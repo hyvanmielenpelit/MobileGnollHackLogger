@@ -1232,6 +1232,24 @@ public class BenchmarkReportPackPromptTests
 
     [Theory]
     [MemberData(nameof(Audiences))]
+    public void BothWriterPrompts_AskForProviderErrorsAsObserved_WithTheirDenominator_NeverACause(BenchmarkReportAudience audience)
+    {
+        string run = BenchmarkReportPackPrompt.BuildSystemPrompt(audience);
+        string comparison = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(audience);
+
+        Assert.Contains("- Report provider errors (the availability facts) only as provider errors observed in GnollBench runs, always with "
+            + "their denominator through {{availability.providerErrors}}", run);
+        Assert.Contains("- Report provider errors (a model's availability facts) only as provider errors observed in GnollBench runs, always with "
+            + "their denominator through that model's model.X.availability.providerErrors fact", comparison);
+        foreach (string system in new[] { run, comparison })
+        {
+            Assert.Contains("never with a cause or an intent", system);
+            Assert.Single(System.Text.RegularExpressions.Regex.Matches(system, "observed in GnollBench runs"));
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
     public void AComparisonPrompt_NamesNoModel_WholeOrSubset(BenchmarkReportAudience audience)
     {
         foreach (bool subset in new[] { false, true })
@@ -1459,7 +1477,7 @@ public class BenchmarkReportPackPromptTests
     {
         string system = BenchmarkReportPackPrompt.BuildChatConsistencySystemPrompt(audience);
 
-        Assert.Contains("P1 Quality, P2 Time to first answer text, P3 Answer streaming rate, P4 Work per turn and P5 Cost per question", system);
+        Assert.Contains("P1 Quality, P2 Time to first answer text, P3 Answer streaming rate, P4 Work per turn, P5 Cost per question and, under protocol V2, P6 Provider error rate", system);
         Assert.Contains("count in battery runs", system);
         Assert.Contains("GnollBench runs are made by hand", system);
         Assert.Contains("Printed before every slot: the overall verdict", system);

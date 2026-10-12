@@ -474,6 +474,34 @@ describe('MultiRunProgressDialogComponent', () => {
     expect(capture).toContain('42');
   });
 
+  it('should show each member\'s provider errors after Cost, and put the figure on its capture line', () => {
+    open(buildSeries({
+      status: 'Completed', completedRunCount: 3,
+      members: [
+        buildMember({
+          providerAvailabilityRecorded: true, providerValidAttempts: 1480, providerErrorCount: 12,
+          providerUnattributedErrorCount: 3, providerErrorRate: 12 / 1480, rerunsNeeded: 0, providerRerunsNeeded: 0
+        }),
+        buildMember({ index: 2, runId: 42 }),
+        buildMember({ index: 3, runId: 43, status: 'Running', completedAtUtc: null })
+      ]
+    }));
+
+    const headers = Array.from(fixture.nativeElement.querySelectorAll('.series-member-table thead th'))
+      .map(th => ((th as HTMLElement).textContent || '').trim());
+    expect(headers).toEqual(['#', 'Run', 'Status', 'Intelligence', 'Speed', 'Duration', 'Cost', 'Provider errors', 'Instrument', 'Actions']);
+
+    const cells = Array.from(fixture.nativeElement.querySelectorAll('.series-member-table tbody td.member-provider-errors'))
+      .map(td => ((td as HTMLElement).textContent || '').trim());
+    // Recorded; finished before the ledger; still running.
+    expect(cells).toEqual(['0.81 % (12/1,480)', 'Not recorded', '—']);
+
+    const capture = component.seriesDiagnosticsText;
+    expect(capture).toContain('1. run #41, status Completed, index 71, speed 55, cost $2.5300, provider errors 0.81 % (12/1,480), ');
+    expect(capture).toContain('2. run #42, status Completed, index 71, speed 55, cost $2.5300, provider errors not recorded, ');
+    expect(capture).toContain('provider errors n/a, ');
+  });
+
   it('should say so plainly when no series detail has arrived yet', () => {
     const consoleError = vi.spyOn(console, 'error').mockReturnValue(undefined);
     serviceMock.getRunSeries.mockReturnValue(throwError(() => ({ status: 500 })));

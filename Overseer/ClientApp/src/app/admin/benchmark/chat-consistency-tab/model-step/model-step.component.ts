@@ -22,6 +22,7 @@ import { DateFieldComponent } from '../../../../shared/date-field/date-field.com
 import { ModelPickerComponent, ModelPickerOption } from '../../../../shared/model-picker/model-picker.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../../utils/polyfills.util';
 import {
+  CC_AVAILABILITY_ONLY_LABEL,
   axisText,
   batteryRunStatusText,
   controlRunsText,
@@ -29,6 +30,7 @@ import {
   formatUtcDateTime,
   isUtcDateInput,
   plural,
+  providerErrorsText,
   regradeCoverageText,
   runStatusText,
   segmentText,
@@ -119,17 +121,29 @@ export const CC_BATTERY_RUN_SORTS: readonly CardListSort[] = [
   { id: 'harness', label: 'Harness', column: 'harness', direction: 'desc' }
 ];
 
-/** The *In the analysis* facet's values, in order. */
-const INCLUSION_ORDER: readonly CcRunInclusion[] = ['included', 'leftOut', 'beforeSpan', 'afterSpan', 'incomplete'];
+/**
+ * A failed or canceled run the server lists for provider availability (P6) only: never a unit of the
+ * selection, and in the *In the analysis* facet a value of its own.
+ */
+export const CC_AVAILABILITY_ONLY_INCLUSION = 'availabilityOnly';
 
-const INCLUSION_LABELS: Readonly<Record<CcRunInclusion, string>> = {
+/** The *In the analysis* facet's values, in order. */
+const INCLUSION_ORDER: readonly string[] = ['included', 'leftOut', 'beforeSpan', 'afterSpan', 'incomplete', CC_AVAILABILITY_ONLY_INCLUSION];
+
+const INCLUSION_LABELS: Readonly<Record<CcRunInclusion | typeof CC_AVAILABILITY_ONLY_INCLUSION, string>> = {
   included: 'Included',
   leftOut: 'Left out',
   beforeSpan: 'Before the first run',
   afterSpan: 'After the last run',
   incomplete: 'Incomplete',
-  outsideSet: 'Outside the compared set'
+  outsideSet: 'Outside the compared set',
+  availabilityOnly: CC_AVAILABILITY_ONLY_LABEL
 };
+
+/** The run is listed for provider availability only. */
+function isAvailabilityOnly(row: CcScopeUnit): boolean {
+  return !isBatteryRunRow(row) && row.availabilityOnly === true;
+}
 
 /** The *Origin* facet's values, in order: a run of its own, or a member of a battery run. */
 const ORIGIN_STANDALONE = 'Standalone';
@@ -247,6 +261,7 @@ export class CcModelStepComponent implements OnInit, OnChanges, OnDestroy {
   @Output() readonly openBatteryRunReport = new EventEmitter<number>();
 
   readonly axisOrder = CC_AXES;
+  readonly availabilityOnlyLabel = CC_AVAILABILITY_ONLY_LABEL;
   readonly rangePresets = CC_RANGE_PRESETS;
   readonly sorts = CC_RUN_SORTS;
   readonly optionLabel = compareOptionLabel;
@@ -273,7 +288,7 @@ export class CcModelStepComponent implements OnInit, OnChanges, OnDestroy {
       origin: anyOfFilter(row => originOf(row)),
       harness: anyOfFilter(row => row.harnessVersion ?? ''),
       telemetry: anyOfFilter(row => (row.isLegacy ? 'Legacy' : 'Recorded')),
-      inclusion: anyOfFilter(row => this.inclusionOf(row)),
+      inclusion: anyOfFilter(row => this.inclusionValue(row)),
       eligibility: anyOfFilter(row => row.eligibility.filter(entry => entry.eligible).map(entry => entry.axis))
     }
   );
@@ -295,7 +310,7 @@ export class CcModelStepComponent implements OnInit, OnChanges, OnDestroy {
       { column: 'harness', label: 'Harness', values: row => row.harnessVersion ?? '', order: (a, b) => Number(b) - Number(a) || a.localeCompare(b) },
       { column: 'telemetry', label: 'Telemetry', values: row => (row.isLegacy ? 'Legacy' : 'Recorded'), order: ['Recorded', 'Legacy'] },
       {
-        column: 'inclusion', label: 'In the analysis', values: row => this.inclusionOf(row), order: INCLUSION_ORDER,
+        column: 'inclusion', label: 'In the analysis', values: row => this.inclusionValue(row), order: INCLUSION_ORDER,
         labelOf: value => INCLUSION_LABELS[value as CcRunInclusion] ?? value
       },
       {
@@ -362,6 +377,9 @@ export class CcModelStepComponent implements OnInit, OnChanges, OnDestroy {
     listRows: readonly CcRunRow[];
     batteryListRows: readonly CcBatteryRunRow[];
   } | null = null;
+
+  /** The listed runs the selection counts, kept until the listed runs change. */
+  private selectableMemo: { rows: readonly CcRunRow[]; units: readonly CcRunRow[] } | null = null;
 
   ngOnInit(): void {
     ensureOverlayPolyfills();
@@ -557,9 +575,14 @@ export class CcModelStepComponent implements OnInit, OnChanges, OnDestroy {
     return this.setState().batteryListRows;
   }
 
-  /** The units the selection counts. */
+  /** The units the selection counts: never a run listed for provider availability only. */
   get unitRows(): readonly CcScopeUnit[] {
-    return this.batteryMode ? this.batteryListRows : this.listRows;
+    if (this.batteryMode) return this.batteryListRows;
+    const memo = this.selectableMemo;
+    if (memo && memo.rows === this.listRows) return memo.units;
+    const rows = this.listRows;
+    this.selectableMemo = { rows, units: rows.some(isAvailabilityOnly) ? rows.filter(row => !isAvailabilityOnly(row)) : rows };
+    return this.selectableMemo.units;
   }
 
   // --- The selection ---
@@ -603,6 +626,16 @@ export class CcModelStepComponent implements OnInit, OnChanges, OnDestroy {
 
   inclusionOf(row: CcScopeUnit): CcRunInclusion {
     return this.scopeState().inclusion.get(unitIdOf(row)) ?? 'included';
+  }
+
+  /** The *In the analysis* value of a card: its inclusion, or `availabilityOnly` for a run listed for provider availability only. */
+  inclusionValue(row: CcScopeUnit): string {
+    return isAvailabilityOnly(row) ? CC_AVAILABILITY_ONLY_INCLUSION : this.inclusionOf(row);
+  }
+
+  /** The run is listed for provider availability only: P6 reads its attempts, no other endpoint uses it. */
+  availabilityOnly(row: CcScopeUnit): boolean {
+    return isAvailabilityOnly(row);
   }
 
   get scopedRows(): readonly CcScopeUnit[] {
@@ -674,6 +707,7 @@ export class CcModelStepComponent implements OnInit, OnChanges, OnDestroy {
    * `Incomplete: 1 of 2 suites usable`; empty for a unit inside the span.
    */
   outReason(row: CcScopeUnit): string {
+    if (isAvailabilityOnly(row)) return `${CC_AVAILABILITY_ONLY_LABEL}: failed or canceled, its provider attempts still count`;
     switch (this.inclusionOf(row)) {
       case 'beforeSpan': return `Before the first ${this.noun} (#${this.scope.firstRunId})`;
       case 'afterSpan': return `After the last ${this.noun} (#${this.scope.lastRunId})`;
@@ -682,9 +716,12 @@ export class CcModelStepComponent implements OnInit, OnChanges, OnDestroy {
     }
   }
 
-  /** An incomplete battery run is never analyzed, so it cannot bound the analysis either. */
+  /**
+   * An incomplete battery run is never analyzed, so it cannot bound the analysis either; nor can a run
+   * listed for provider availability only.
+   */
   markRefused(row: CcScopeUnit): boolean {
-    return isBatteryRunRow(row) && !row.complete;
+    return (isBatteryRunRow(row) && !row.complete) || isAvailabilityOnly(row);
   }
 
   /** The include checkbox: a unit before or after the span, or incomplete, refuses the click; any other toggles left out. */
@@ -955,6 +992,11 @@ export class CcModelStepComponent implements OnInit, OnChanges, OnDestroy {
 
   served(row: CcRunRow): string {
     return servedModelsText(row.servedModelIds);
+  }
+
+  /** The *Provider errors* fact of a run or a battery run: the rate with its count, or `Not recorded`. */
+  providerErrors(row: CcScopeUnit): string {
+    return providerErrorsText(row);
   }
 
   inclusionText(row: CcScopeUnit): string {

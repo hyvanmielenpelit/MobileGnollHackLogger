@@ -250,6 +250,12 @@
                         <span class="csp-card-suite">{{ run.suiteName }}</span>
                         <span class="csp-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                         <span>Started <time [attr.datetime]="run.startedAtUtc">{{ formatDate(run.startedAtUtc) }}</time></span>
+                        @if (cardHasProviderTrouble(run)) {
+                          <span class="csp-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                          <app-provider-error-badge [recorded]="run.providerAvailabilityRecorded" [valid]="run.providerValidAttempts"
+                                                    [providerErrors]="run.providerErrorCount" [unattributed]="run.providerUnattributedErrorCount"
+                                                    [rerunsNeeded]="run.rerunsNeeded" [providerReruns]="run.providerRerunsNeeded" />
+                        }
                       </p>
                     </div>
 
@@ -346,6 +352,12 @@
                         <span>Created <time [attr.datetime]="group.createdAtUtc">{{ formatDate(group.createdAtUtc) }}</time></span>
                         <span class="csp-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
                         <span>{{ analysisState(group) }}</span>
+                        @if (cardHasProviderTrouble(group)) {
+                          <span class="csp-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                          <app-provider-error-badge [recorded]="group.providerAvailabilityRecorded" [valid]="group.providerValidAttempts"
+                                                    [providerErrors]="group.providerErrorCount" [unattributed]="group.providerUnattributedErrorCount"
+                                                    [rerunsNeeded]="group.rerunsNeeded" [providerReruns]="group.providerRerunsNeeded" />
+                        }
                       </p>
                     </div>
 
@@ -438,6 +450,12 @@
                           <span>Analyzed <time [attr.datetime]="battery.latestAnalysisAtUtc">{{ formatDate(battery.latestAnalysisAtUtc) }}</time></span>
                         } @else {
                           <span>Not analyzed</span>
+                        }
+                        @if (cardHasProviderTrouble(battery)) {
+                          <span class="csp-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                          <app-provider-error-badge [recorded]="battery.providerAvailabilityRecorded" [valid]="battery.providerValidAttempts"
+                                                    [providerErrors]="battery.providerErrorCount" [unattributed]="battery.providerUnattributedErrorCount"
+                                                    [rerunsNeeded]="battery.rerunsNeeded" [providerReruns]="battery.providerRerunsNeeded" />
                         }
                       </p>
                     </div>

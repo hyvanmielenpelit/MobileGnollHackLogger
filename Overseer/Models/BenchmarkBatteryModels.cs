@@ -273,7 +273,7 @@ public class BenchmarkBatteryRunSuiteDto
 }
 
 /// <summary>One run in one (suite, round) slot of a battery run.</summary>
-public class BenchmarkBatteryMemberDto
+public class BenchmarkBatteryMemberDto : IProviderAvailabilityCardDto
 {
     public long MemberId { get; set; }
 
@@ -343,6 +343,44 @@ public class BenchmarkBatteryMemberDto
     /// Null on the battery-run list, on a superseded member, and while no answer is Ok.
     /// </summary>
     public double? MeanModelTimeMs { get; set; }
+
+    // The compact provider availability figures (IProviderAvailabilityCardDto) of the member run and its
+    // lineage predecessors, from the rollup columns.
+    public bool? ProviderAvailabilityRecorded { get; set; }
+    public int? ProviderRecordedRunCount { get; set; }
+    public int? ProviderRunCount { get; set; }
+    public int? ProviderValidAttempts { get; set; }
+    public int? ProviderErrorCount { get; set; }
+    public int? ProviderUnattributedErrorCount { get; set; }
+    public double? ProviderErrorRate { get; set; }
+    public int? RerunsNeeded { get; set; }
+    public int? ProviderRerunsNeeded { get; set; }
+}
+
+/// <summary>
+/// One member row of a battery run's provider availability, read from the attempt ledger: the member
+/// run's own figures. Re-runs are the run's own repair passes plus one when it replaced a run, so the
+/// rows sum to the battery's re-runs needed. The figures are null when the run is not recorded.
+/// </summary>
+public class BenchmarkBatteryMemberAvailabilityDto
+{
+    public long MemberId { get; set; }
+    public long RunId { get; set; }
+
+    /// <summary>0-based position of the suite in the definition snapshot.</summary>
+    public int SuiteIndex { get; set; }
+
+    /// <summary>1-based replicate round.</summary>
+    public int Round { get; set; }
+
+    public bool Superseded { get; set; }
+    public bool Recorded { get; set; }
+    public int? ValidAttempts { get; set; }
+    public int? ProviderErrors { get; set; }
+    public int? UnattributedErrors { get; set; }
+    public double? ProviderErrorRate { get; set; }
+    public int? RerunsNeeded { get; set; }
+    public int? ProviderRerunsNeeded { get; set; }
 }
 
 /// <summary>
@@ -407,7 +445,7 @@ public static class BenchmarkBatteryPostRunWork
     public const string WritingReports = "WritingReports";
 }
 
-public class BenchmarkBatteryRunDto
+public class BenchmarkBatteryRunDto : IProviderAvailabilityCardDto
 {
     public long Id { get; set; }
 
@@ -578,6 +616,27 @@ public class BenchmarkBatteryRunDto
 
     /// <summary>The latest analysis lists an excluded member, so a recompute may change it.</summary>
     public bool AnalysisHasExcludedMembers { get; set; }
+
+    // The compact provider availability figures (IProviderAvailabilityCardDto) over every member run,
+    // superseded ones included, and their lineage predecessors, each run once, from the rollup columns.
+    public bool? ProviderAvailabilityRecorded { get; set; }
+    public int? ProviderRecordedRunCount { get; set; }
+    public int? ProviderRunCount { get; set; }
+    public int? ProviderValidAttempts { get; set; }
+    public int? ProviderErrorCount { get; set; }
+    public int? ProviderUnattributedErrorCount { get; set; }
+    public double? ProviderErrorRate { get; set; }
+    public int? RerunsNeeded { get; set; }
+    public int? ProviderRerunsNeeded { get; set; }
+
+    /// <summary>
+    /// The battery run's provider availability from the attempt ledger, over the same runs as the
+    /// compact figures. Null on the battery-run list; set where the dialogs load one battery run.
+    /// </summary>
+    public ProviderAvailabilityDto? ProviderAvailability { get; set; }
+
+    /// <summary>One row per member, superseded ones included, in suite, round and insertion order. Null where <see cref="ProviderAvailability"/> is.</summary>
+    public List<BenchmarkBatteryMemberAvailabilityDto>? ProviderAvailabilityMembers { get; set; }
 }
 
 // --- Analyses ------------------------------------------------------------------------------------
@@ -666,6 +725,15 @@ public class BenchmarkBatteryLeaderboardRowDto
     public double? OverallSpeedIndex { get; set; }
     public double? TotalCost { get; set; }
     public double? PassCost { get; set; }
+
+    /// <summary>
+    /// The battery run's provider errors over valid candidate attempts, a proportion, and the counts
+    /// behind it, from the rollup columns of every member run and their lineage predecessors. All null
+    /// when no run records the provider ledger.
+    /// </summary>
+    public double? ProviderErrorRate { get; set; }
+    public int? ProviderErrorCount { get; set; }
+    public int? ProviderValidAttempts { get; set; }
 }
 
 /// <summary>

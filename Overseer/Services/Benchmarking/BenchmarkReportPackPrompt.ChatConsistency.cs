@@ -85,7 +85,8 @@ public static partial class BenchmarkReportPackPrompt
     private static void AppendChatConsistencyTerms(StringBuilder sb, BenchmarkReportAudienceSpec spec)
     {
         Line(sb, "TERMS AND UNITS:");
-        Line(sb, "- The primary endpoints are P1 Quality, P2 Time to first answer text, P3 Answer streaming rate, P4 Work per turn and P5 Cost per question. Use these names and never another, such as answer delivery rate, cost per request or cost per answer.");
+        Line(sb, "- " + ChatEndpointSentence() + " Use these names and never another, such as answer delivery rate, cost per request or cost per answer.");
+        Line(sb, "- Provider errors (the provider error rate and the availability.<period>.* facts) are reported as observed in GnollBench runs and always with their denominator, the valid attempts, as their facts state it: never their cause, and never anyone's intent.");
         Line(sb, "- Grading is how the answers were scored by the graders; write grading, never scoring method.");
         Line(sb, "- The unit of the analysis is {{period.baseline.unitNoun}}. Where the analysis compares battery runs, count in battery runs ({{period.baseline.units}}, {{period.comparison.units}}), never in the member runs inside them.");
         Line(sb, "- Where the minimum sample is not met ({{sample.met}}), the result rests on fewer runs than the protocol asks for; say so with {{sample.shortfall}} where the slot asks for it.");
@@ -97,6 +98,23 @@ public static partial class BenchmarkReportPackPrompt
             Line(sb, "- This Executive Summary never cites a run id, a rule id or a hash: no events.<n>.run, events.<n>.previousRun, eventGroups.<n>.run, attribution.<n>.rule, nextRuns.<n>.repeatRun or analysis.id tokens. Where an Overseer update made an endpoint not computable, name the update in plain words, such as a new harness version or a re-indexed wiki.");
         }
         Line(sb);
+    }
+
+    /// <summary>
+    /// The primary endpoints by protocol: Protocol V1's, then those a later protocol adds, named with it:
+    /// <c>The primary endpoints are P1 Quality, …, P5 Cost per question and, under protocol V2, P6 Provider error rate; the facts carry those of the analysis's protocol.</c>
+    /// </summary>
+    internal static string ChatEndpointSentence()
+    {
+        var v1Protocol = global::Overseer.Services.ChatConsistency.ChatConsistencyProtocol.V1;
+        var latest = global::Overseer.Services.ChatConsistency.ChatConsistencyProtocol.Latest;
+        var v1 = v1Protocol.Endpoints.Select(e => e.Id + " " + e.Name).ToList();
+        var added = latest.Endpoints.Where(e => !v1Protocol.Has(e.Id)).Select(e => e.Id + " " + e.Name).ToList();
+        string first = string.Join(", ", v1.Take(v1.Count - 1)) + (added.Count == 0 ? " and " : ", ") + v1[^1];
+        return added.Count == 0
+            ? "The primary endpoints are " + first + "."
+            : "The primary endpoints are " + first + " and, under protocol " + latest.ProtocolVersion + ", "
+              + string.Join(", ", added) + "; the facts carry those of the analysis's protocol.";
     }
 
     private static void AppendChatConsistencyDocument(StringBuilder sb, BenchmarkReportAudienceSpec spec)

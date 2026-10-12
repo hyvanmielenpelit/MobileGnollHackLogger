@@ -22,7 +22,7 @@ The benchmark framework consists of:
 - **Critical Error Ceiling**: If an answer contains critical hallucinations, dangerous commands, or complete fabrications, its overall Quality Score is hard-capped at the critical error ceiling (default: 25).
 - **Logarithmic Speed Decay**: Response speed is graded relative to a target latency (default: 5,000 ms) using $Speed = \text{clamp}(100 - k \cdot \log_2(\text{DurationMs} / \text{TargetMs}), 1, 100)$.
 - **Pipelined Evaluation & Concurrency Control**: Assessments are pipelined concurrently with candidate answer generation when candidate and assessor models use separate API keys, while safely serializing when sharing a rate-limit semaphore permit.
-- **Provider Error Isolation**: Distinguishes between genuine model errors (wrong answers, hallucinations) and transient API infrastructure failures (HTTP 429 rate limits, 503 service unavailable, 529 overload). Provider errors are excluded from scores and denominators.
+- **Provider Error Isolation**: Distinguishes between genuine model errors (wrong answers, hallucinations) and failures of the API call, and among the latter between the provider's and our own. From harness 56 every candidate and grader attempt is recorded in an append-only attempt ledger with an outcome class: overload (503, 529), server errors, provider timeouts and broken streams are **provider errors**; most HTTP 429 responses are our own rate limit as the providers document it, and an unexplained 429 is **unattributed**, never the provider's; our billing, key, request, governor, network and per-question time budget failures are **ours** and never count against the provider. A terminal answer ending on a provider or unattributed class is `ProviderError`, one ending on our side `Failed`; both are excluded from scores and denominators. The provider error rate, its count and the re-runs a model needed are reported per run, per battery run, in Model Comparison and in Chat Consistency. See [`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md).
 - **Configurable Scoring Profiles**: Entities defining weights, level-to-score mappings, critical error ceilings, speed target latencies, decay factors, and maximum parallel questions.
 - **Exportable Markdown Reports**: Generates comprehensive 7-section Markdown reports containing run manifests, results summaries with Intelligence and Speed indices, question replies, tool traces, scoring methodology, and final qualitative synthesis.
 - **Multi-Suite Batteries**: A battery is a named, fixed set of two or more suites with declared weights. A battery run tests one model on every suite of the battery, one suite after another, *R* times each, and combines the per-suite results into an **Overall Intelligence Index** with an uncertainty interval, a suite profile, weighting-sensitivity figures, speed and cost composites, a leaderboard per comparability class and a paired comparison of two results. See [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md).
@@ -7630,6 +7630,97 @@ tables.
   [`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md) and
   [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
 
+### Harness Version 56 Updates
+
+GnollBench Provider Availability (2026-10-12): every provider attempt is recorded with whose failure it
+was, answers our own side ended are no longer provider errors, and re-runs are counted and linked.
+`HarnessVersion` moves to **"56"**; `ScoringMethodVersion` stays **14**. Migration
+`ProviderAvailabilityLedger` adds the `BenchmarkProviderAttempts` table and the run and answer columns of
+§ 5. Nothing the candidate is sent changes: `ToolGuidesSha256` stays `733b710f7524`,
+`CandidateSystemPromptSha256` does not move, and `CallTelemetryVersion` stays **1**. `HarnessImpactLedger`
+classifies 56 as `ProviderErrorAccounting` alone, a new flag. The method is
+[`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md); this section lists what
+changed.
+
+#### What was wrong
+
+- **Failed attempts left no trace.** Retries inside one model call survived only as counters on the
+  call; `FinalHttpStatus` and `RateLimitJson` described the last attempt only, and the provider's error
+  type was kept nowhere.
+- **`ProviderError` absorbed our own failures.** Our per-question time budget cancels a linked token, and
+  the classifier's typed overload turned the resulting `OperationCanceledException` into a provider
+  **408**; the governor's slot timeout read as 408 and its cooldown refusal as provider **429**.
+- **Digits anywhere were statuses.** The message fallback matched `500` inside *"prompt is too long:
+  205000 tokens > 200000"*, and a configuration id inside a governor message could change the class.
+- **Most 429s are ours.** Anthropic's 429 is the account's limit and its capacity signal is 529; OpenAI's
+  429 is a rate limit or `insufficient_quota`; Gemini's 429 with `QuotaFailure` details is a project
+  quota. `Http429Count` counted all of them, our billing 429s included.
+- **Re-runs destroyed the evidence**: a re-run deleted the replaced attempt's telemetry, and no re-run
+  counter or lineage existed.
+
+#### The attempt ledger
+
+`AgentLoopRunner.ExecuteApiWithRetriesAsync` keeps one `ProviderAttemptRecord` per loop iteration in
+every path — the governor refusal, the request exception, every status branch, the stream-error retry,
+a mid-stream failure and the success, which is `Ok` only when no error event was yielded and the
+completion event was seen. `ProviderAttemptClassifier` gives each one an outcome class from structured
+evidence: the status, the error `type`/`code`/`status` of the JSON body or the stream event (Google's
+stream errors now keep `error.status` and `error.details[].@type`), the attempt's own rate-limit headers,
+the endpoint kind and the exception. A recorded run (`ProviderLedgerVersion = 1`, stamped at launch)
+writes the records as `BenchmarkProviderAttempt` rows with its candidate and grader telemetry, and never
+deletes one; a run started under harness 55 or earlier is never recorded, even when repaired. Retry
+behavior, backoffs and `ErrorKind` are unchanged.
+
+#### Answer attribution
+
+A recorded run's answers carry `FailureOrigin`, `FailureKind` and `ReExecutionCount`. A terminal answer
+that ended on a provider or unattributed class stays `ProviderError`; one that ended on our side — our
+billing, key, request, governor, network, an operator cancel after an error, or our **question time
+budget** — is **`Failed`**. A question-budget cut that ends the agent loop without an exception (during
+the send, a backoff or between attempts) is the same question-budget failure, never an empty answer.
+`AgentRunRequest.OperatorCancellation` tells the runner the operator's cancel from the budget's.
+`BenchmarkProviderErrorClassifier` recognizes Overseer's own messages first (`Request throttled:`, `Rate
+limit cooldown active`, `Per-question timeout exceeded (`), reads statuses only in anchored forms
+(including a leading `NNN `, the runner's own terminal texts), and no longer turns a question-budget
+cancel into 408. The governor's refusals are never provider errors, but the difficulty-assessment job
+still treats them as transient: it fails the batch and continues.
+
+#### The synthesis prompt
+
+The synthesis prompt prints its *excluded from scoring* line for `ProviderError` **or** `Failed`, as the
+assessor prompt already did. The only answers whose listing changes are `Failed` answers, which never
+carry text to grade, so 56 is not a `Grading` change. The assessor prompt's wording is unchanged.
+
+#### Re-runs and lineage
+
+`RepairPassCount` and `ProviderRepairPassCount` count *Re-run failed questions* passes and single-answer
+re-runs; `ReplacesRunId` and `ReplacementCause` link a run relaunched by a battery resume or attach, or by
+a model batch resume (member to member for a series or battery child), to the run it replaced. A series
+resume replaces nothing.
+
+#### Where the figures appear
+
+The run and battery run dialogs (a *Provider errors* key figure and a *Provider availability* section on
+the Integrity tab), Run History and Model Comparison source cards (a badge, only when non-zero), the
+model batch, multi-run and battery leaderboard tables, Model Comparison (a fourth P1 panel, figure A1,
+optional scatter markers, a *Provider errors* table column), the documents (`ReportFormatVersion` 12,
+comparison format 13, chat consistency format 3), and Chat Consistency, where the provider error rate is
+primary endpoint **P6** of the new **Protocol V2** and the analysis code version moves to 8
+([`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md)). The run report's *Run Integrity*
+replaces the mislabeled *Provider Errors* and *Terminal provider failures* lines with *Terminal failures:
+N (provider P · unattributed U · our side O)* and a *Provider availability* subsection.
+
+**Comparability.** `HarnessVersion` (an Instrument key) moves 55 → 56, because the meaning of a stored
+`ProviderError` status changes between the two. Runs at 55 and 56 show *instrument changed* in Model
+Comparison and battery agreement, and a battery run started under harness 55 refuses to launch members
+under 56 (`HarnessVersionRefusal`): finish battery runs in progress before deploying, or resume them with
+*Re-run under the current instrument* ([`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) § 3.5);
+a model batch stopped across the bump offers *Continue — accept the change* as well.
+
+**Not changed.** The retry policy: HTTP-level 504, 529 and 408 are still not retried. The ledger measures
+the current policy; changing it would be a candidate-input and timing change of its own
+([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md) § 11).
+
 ---
 
 ## 3. Assessor Strategy
@@ -8479,6 +8570,9 @@ BenchmarkSuite (1) ────┴───< (N) BenchmarkQuestion
 - **`BenchmarkRun` call telemetry**: `CallTelemetryVersion` (int, null) — the version of the per-call telemetry the run recorded, stamped at launch with `BenchmarkService.CurrentCallTelemetryVersion` (currently 1); null means the run recorded none. It is **not a harness version**: nothing any model is sent depends on it, so a run with and a run without it can share one `HarnessVersion`. `ServedModelIdsJson` (nvarchar(1024), null) — the model ids the provider reported serving the candidate's calls, as a JSON object of id to call count, recomputed from the saved candidate rows when the run finishes or is aborted and after failed or single questions are re-run (a rescore leaves it as it is); null without telemetry or when no call reported a model. `IsConsistencyAnchor` (bit) — the run is a chat consistency grader anchor (see [`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md)).
 - **`BenchmarkRunAnswer` turn timing** (null on a run without call telemetry, meaning "not recorded"): `StartedAtUtc` and `CompletedAtUtc`, the wall-clock bounds of the candidate's turn; `PermitWaitMs` and `BackoffWaitMs`, the time inside `DurationMs` spent waiting for Overseer's own request-governor permit (its cooldown included) and sleeping between retries — Overseer's waits, never the provider's; `RetryAttemptCount`, failed attempts retried across the turn's model calls; `ServedModelId`, the model id the provider reported serving, null when the calls disagree or none reported one; and `ModelCalls`, the answer's `ModelCallTelemetry` rows.
 - **`ModelCallTelemetry`**: One row per model call of an answer, candidate (`Source = BenchmarkCandidate`) or grader (`BenchmarkGrader`, with `GraderRole` `Assessor`, `CoAssessor`, `SecondOpinion`, `ClaimVerifier` or `Synthesis`), cascade-deleted with its answer; a synthesis call has no answer and carries only `BenchmarkRunId`. It records what was requested (`Provider`, `RequestedModelId`, `ThinkingLevelSent`, `ReasoningSummarySent`, `ServiceTierRequested`, `MaxOutputTokensSent`, `EndpointKind`), what the provider reported serving (`ServedModelId`, `ResponseId`, `RequestId`, `ServedServiceTier`, `ServedSpeed`, `FinishReason`, `IsRefusal`, `FallbackModelId`, `HttpVersion`), the waits and attempts before the successful send (`PermitWaitMs`, `BackoffWaitMs`, `FailedAttemptMs`, `AttemptCount`, `Http429Count`, `Http5xxCount`, `StreamErrorRetryCount`, `FinalHttpStatus`), the stream marks relative to that send (`HeadersMs`, `ServerProcessingMs`, `FirstEventMs`, `FirstReasoningMs`, `FirstOutputMs`, `FirstToolCallMs`, `LastDeltaMs`, `CompletedMs`, `StreamEndMs`), the visible output (`OutputDeltaCount`, `VisibleOutputChars`, `Last80DecodeSpanMs`, `Last80VisibleChars`), the call's usage (`InputTokens`, `CachedInputTokens`, `CacheWriteTokens`, `OutputTokens`, `ReasoningTokens`), the successful attempt's rate-limit headers (`RateLimitJson`) and, for a call that failed for good, `ErrorKind`. Indexed on `BenchmarkRunAnswerId` and on `(Source, Provider, RequestedModelId, StartedAtUtc)`. See **Per-Call Telemetry and the Timing Decomposition** below.
+- **`BenchmarkProviderAttempt`** (from harness 56, recorded runs only): the append-only provider attempt ledger, one row per provider attempt of a candidate or grader call — `BenchmarkRunId` (FK, cascade), `BenchmarkRunAnswerId` (plain and indexed, no FK), `QuestionId`, `Source`, `GraderRole`, `Provider`, `RequestedModelId`, `SystemAiApiConfigurationId` (plain), `EndpointKind`, `Pass`, `CallIndex`, `AttemptIndex`, `StartedAtUtc`, `DurationMs`, `Outcome` (`ProviderAttemptOutcome`), `HttpStatus`, `ProviderErrorCode`, `Retried`, `RetryAfterMs`. Indexed on `(BenchmarkRunId, Source)`, `BenchmarkRunAnswerId` and `StartedAtUtc`. No message text, header or secret is stored. See **Per-Call Telemetry and the Timing Decomposition** below and [`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md).
+- **`BenchmarkRun` provider availability** (from harness 56; null on an earlier run, meaning "not recorded"): `ProviderLedgerVersion` (`byte`, 1 on a recorded run, stamped at launch; a run started before harness 56 never gets one, even when repaired), the candidate rollups `CandidateValidAttemptCount`, `CandidateProviderErrorCount`, `CandidateUnattributedErrorCount` and `CandidateOurSideFailureCount`, the repair counters `RepairPassCount` and `ProviderRepairPassCount`, and the lineage `ReplacesRunId` (a plain indexed `long?`, no FK) with its `ReplacementCause` (`Unknown`, `ProviderFailure`, `OurFailure`, `InstrumentChange`, `OperatorRequest`).
+- **`BenchmarkRunAnswer` failure attribution** (from harness 56; null on an earlier answer): `FailureOrigin` (`None`, `Provider`, `Unattributed`, `Ours`), `FailureKind` (the outcome class of the attempt that ended the answer, or `question_budget`, at most 32 characters) and `ReExecutionCount`.
 - **`ChatConsistencyAnalysis`** and **`ChatConsistencyAnnotation`**: a saved chat consistency analysis (immutable; runs referenced by id without foreign keys) and a dated admin note on its timeline. Both are specified in [`ai-benchmark-chat-consistency.md`](ai-benchmark-chat-consistency.md).
 
 ### Per-Call Telemetry and the Timing Decomposition
@@ -8510,6 +8604,19 @@ candidate and grader, before its new candidate rows are written. An answer re-ex
 started without telemetry records its rows, but the run's `CallTelemetryVersion` stays null, so such a
 run is never read as one whose every answer carries them. An assessor calibration — and with it the
 chat consistency common-grader re-grade, which runs one — writes no telemetry rows.
+
+**The provider attempt ledger** (from harness 56). Beside each call's telemetry row, a recorded run
+(`ProviderLedgerVersion = 1`) writes one `BenchmarkProviderAttempt` row per attempt of the call —
+including the failed attempts the telemetry row only counts, and a governor refusal that sent nothing —
+in the same `SaveChanges`. Unlike the telemetry rows, the ledger is **append-only**: a re-executed
+answer, a re-assessment and a re-synthesis replace telemetry rows as above but delete no ledger row, so
+every attempt of every pass stays on record; each row carries its `Pass` (0 for the initial execution,
+*n* for the *n*-th repair pass). Each attempt's `Outcome` says whose failure it was — the provider's,
+unattributed or ours — and only the candidate rows feed the reported figures. The classes, the 429 rule,
+the statistics and every place the figures appear are in
+[`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md). The Timing
+Decomposition's **Own Waits** line splits the HTTP 429 count into our own rate limit and unattributed
+429s on a recorded run.
 
 **Derived measures** (`Overseer/Services/Telemetry/CallTelemetryMeasures.cs`, read alike by the run
 report and the chat consistency analysis; each is null when a mark it needs was not recorded):
@@ -8950,7 +9057,7 @@ All benchmark endpoints require the `AdminOnly` authorization policy:
 - `GET /api/admin/benchmark/runs/{id}/calibrations`: List prior calibrations for a run, newest first.
 - `GET /api/admin/benchmark/suites/{id}/last-assessor`: The assessor of the suite's most recent completed run, for the start dialog's assessor-change advisory. Returns an empty object for a suite with no completed run.
 - `POST /api/admin/benchmark/runs/{id}/cancel`: Cancel an active run. The live run's own abort path records what it consumed — the totals over the answers that completed, and the wall clock up to the stop — and publishes no index. When there is no live run to cancel the row is orphaned and its abort path will never run, so the endpoint records those totals itself, deriving the elapsed figure from the two timestamps. When the row's answer rows already cover its suite — a cancelled retry of a finished run — it is restored to the status those answers describe rather than set to `Canceled`, with `Canceled by operator.` as the reason, so the cancel does not lock the run out of later re-runs.
-- `POST /api/admin/benchmark/runs/{id}/rerun-failed`: Re-run every question whose answer failed, hit a provider error, or came back empty (`BenchmarkRunFinalizer.NeedsReExecution`) (gated by spend caps). Cancelling it restores the run to the status its answers describe. After this and every other run-level repair (rerun answer, retry failed assessments, retry claim verification, rerun synthesis, reassess without `trial`, rescore), each `Stopped` or `CompletedWithErrors` battery run holding the run as a member is reconciled, and finished when every slot is then usable (§ *Harness Version 52 Updates*).
+- `POST /api/admin/benchmark/runs/{id}/rerun-failed`: Re-run every question whose answer failed, hit a provider error, or came back empty (`BenchmarkRunFinalizer.NeedsReExecution`) (gated by spend caps). On a recorded run (harness 56 and later) each such re-run, and each single-answer re-run, is one **repair pass**: it increments `RepairPassCount`, and `ProviderRepairPassCount` when a re-executed answer had failed at the provider, and every re-executed answer's `ReExecutionCount`. The provider attempt ledger keeps every attempt of the replaced answers; only their `ModelCallTelemetry` rows are replaced ([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md) §§ 2 and 7). Cancelling it restores the run to the status its answers describe. After this and every other run-level repair (rerun answer, retry failed assessments, retry claim verification, rerun synthesis, reassess without `trial`, rescore), each `Stopped` or `CompletedWithErrors` battery run holding the run as a member is reconciled, and finished when every slot is then usable (§ *Harness Version 52 Updates*).
 
 > A run that stopped before finishing its suite is refused by **rescore**, **rerun-failed**, **reassess**, **rerun answer**, **rerun synthesis**, **retry failed assessments** and **retry claim verification**: each ends in a full finalisation, which would publish an Intelligence Index and a Speed Index computed over only the questions that completed, into the same columns a complete run uses. The test is `BenchmarkRunFinalizer.IsAbortedRun` — `Canceled` or `Failed` **and** fewer answer rows than `TotalQuestionCount` — so a `Canceled` run whose answers cover its suite is accepted, and its re-run is finalised over the whole suite. Reading, reporting, calibrating, cancelling and deleting such a run are unaffected, and a `CompletedWithErrors` run — which did reach the end of its suite — is not refused. The run summary and detail DTOs carry the verdict as `isAborted`.
 - `GET /api/admin/benchmark/runs/{id}/report`: Download server-rendered Markdown report with compliance manifest.

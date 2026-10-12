@@ -972,5 +972,38 @@ public class BenchmarkRun
     /// </summary>
     public bool IsConsistencyAnchor { get; set; }
 
+    // --- Provider availability --------------------------------------------------------------------
+
+    /// <summary>
+    /// The version of the provider attempt ledger (<see cref="BenchmarkProviderAttempt"/>) this run
+    /// records: 1 from harness 56. Null on a run that does not record it ("not recorded"), which stays
+    /// so when the run is repaired later; ledger rows and the rollups below are written only when set.
+    /// </summary>
+    public byte? ProviderLedgerVersion { get; set; }
+
+    /// <summary>Re-run passes made on this run: each "Re-run failed questions" pass and each single-answer re-run.</summary>
+    public int RepairPassCount { get; set; }
+
+    /// <summary>The part of <see cref="RepairPassCount"/> that re-executed an answer whose prior failure origin was the provider.</summary>
+    public int ProviderRepairPassCount { get; set; }
+
+    /// <summary>The run this run replaced (a superseded battery member, a superseded model-batch child). Indexed; not a foreign key.</summary>
+    public long? ReplacesRunId { get; set; }
+
+    /// <summary>Why the run named by <see cref="ReplacesRunId"/> was replaced. Null when this run replaces nothing.</summary>
+    public BenchmarkReplacementCause? ReplacementCause { get; set; }
+
+    /// <summary>Candidate attempts in the denominator (outcome classes 0–21). Null = not recorded.</summary>
+    public int? CandidateValidAttemptCount { get; set; }
+
+    /// <summary>Candidate attempts that failed at the provider (classes 10–13). Null = not recorded.</summary>
+    public int? CandidateProviderErrorCount { get; set; }
+
+    /// <summary>Candidate attempts whose failure could not be attributed (classes 20–21). Null = not recorded.</summary>
+    public int? CandidateUnattributedErrorCount { get; set; }
+
+    /// <summary>Candidate attempts that failed on our side (classes 30–36), excluded from the denominator. Null = not recorded.</summary>
+    public int? CandidateOurSideFailureCount { get; set; }
+
     public List<BenchmarkRunAnswer> Answers { get; set; } = new();
 }
