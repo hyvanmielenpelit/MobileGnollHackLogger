@@ -390,9 +390,10 @@ guards after every member (§ 3.4), its analysis and its documents are the same,
 - **How it ends the member.** `Completed` and `CompletedWithErrors` let the batch go on (a
   `CompletedWithErrors` battery run makes the batch end `CompletedWithErrors`); `Stopped`, `Failed` and
   `Cancelled` stop the batch, with `RunCapReached` or `SpendDenied` when the battery run stopped for that
-  reason. The batch's **Continue** resumes a stopped battery run with its own *Continue* under the
-  batch claim (a failed or canceled one is launched afresh, the old one recorded as superseded on the
-  batch); **Skip this model** leaves it as it is.
+  reason. The batch's **Continue** keeps a battery run that has since ended `Completed` or
+  `CompletedWithErrors` (after *Re-run failed questions* or its own *Continue*), resumes a stopped one
+  with its own *Continue* under the batch claim, and launches a failed or canceled one afresh, the old
+  one recorded as superseded on the batch; **Skip this model** leaves it as it is.
 - **The battery's definition** is recorded at the batch's start (`BatteryRevision`,
   `BatteryDefinitionSha256`); a battery edited mid-batch so that its hash moves stops the batch before
   the next model with `InstrumentChanged` (`BatteryDefinitionSha256`).
@@ -400,7 +401,9 @@ guards after every member (§ 3.4), its analysis and its documents are the same,
   `CompletedWithErrors`, `Cancelled` or `Failed`, `POST runs/{id}/resume` on the battery run is refused
   with **409**, *"Part of model batch #N; continue it from the batch's progress dialog."*, and the battery
   progress dialog shows the batch-owned notice (§ 4.3). Repairs of its member runs work as for any
-  stopped battery run, since a stopped batch holds no claim.
+  stopped battery run, since a stopped batch holds no claim; after the battery reconciliation (§ 3.4)
+  the model batch's own reconciliation refreshes a finished member from the battery run's stored status
+  ([`ai-benchmark-model-batches.md`](ai-benchmark-model-batches.md) § 6).
 - **Its record.** The battery run DTO carries `modelBatchRunId`, the newest batch it belongs to, and the
   run detail of a member run carries the same id through its battery run.
 - **Alerts.** While the page follows the batch, the battery run signals nothing of its own; the batch
@@ -471,7 +474,11 @@ round grid of status chips — *Pending*, *Running*, *Completed with index*, *In
 *Instrument changed*, *Failed*, *Superseded* — with a link to each member's own run progress and a
 marker on attached members. An *Index withheld* cell says what to do: *Re-run failed questions on this
 run; the battery run follows the re-run when it finishes.* A cell whose member run is being re-run
-(`repairingRunIds`) shows the chip *Re-run in progress* and is marked current. Empty, superseded and
+(`repairingRunIds`) shows the chip *Re-run in progress* and is marked current; while that is a re-run
+of failed questions (the member's `rerunStartedAtUtc` with no `rerunCompletedAtUtc` after it), the
+cell hides the question bar, whose count would read complete, and shows *Re-running n failed
+questions* (`rerunQuestionCount`) and *Re-run elapsed*, timed from the re-run's start, and the elapsed
+ticker keeps running though the battery run is not live. Empty, superseded and
 index-withheld cells offer **Attach existing run**, which lists the candidate runs for that slot, newest
 first, each eligible or with the reason it is not. The footer holds **Run in Background** (or
 **Close**), **Cancel Battery**, **Re-run under current instrument**, **Continue** and, once finished,
@@ -603,8 +610,8 @@ on it when the battery moves on to its next member; the banner keeps showing the
 **A model batch's battery run** (§ 3.9). While its batch is not final, the dialog says *Part of model
 batch #N.* under the heading, with **Open model batch #N**, which closes this dialog and opens the batch's
 progress dialog. **Cancel Battery**, **Re-run under current instrument** and **Continue** stay visible but
-`aria-disabled`, with the reason beside them, *Use the model batch's progress dialog.*, as the server
-refuses that resume (**409**). Whether the batch still owns the battery run is read from the batch the
+`aria-disabled`, described by a note first in the footer, *Model batch #N controls this battery run.
+Cancel, continue or re-run it from the batch.*, as the server refuses that resume (**409**). Whether the batch still owns the battery run is read from the batch the
 page follows when it is that one, else from the batch fetched once; until it answers, the batch is taken
 to own it. Opened from the batch's progress dialog, which it replaces, the dismissal reads **Back to
 Batch** and returns there. The completion chime and notification of § *Completion signals* are the

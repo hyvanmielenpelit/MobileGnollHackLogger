@@ -61,12 +61,12 @@
           <tr>
             <th scope="row" class="bm-summary-model">
               <span class="bm-summary-model-row">
-                <span class="bm-summary-model-name">{{ entry.label || entry.modelDisplayName }}</span>
+                <span class="bm-summary-model-name">{{ entry.modelDisplayName || entry.label }}</span>
+                @if (entry.thinkingLevel) {
+                  <span class="thinking-badge"><span class="visually-hidden">thinking level </span>{{ entry.thinkingLevel }}</span>
+                }
                 @if (entry.provider) {
                   <app-provider-badge [provider]="entry.provider"></app-provider-badge>
-                }
-                @if (entry.thinkingLevel) {
-                  <span class="thinking-badge">{{ entry.thinkingLevel }}</span>
                 }
               </span>
             </th>

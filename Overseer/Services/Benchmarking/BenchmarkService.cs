@@ -973,40 +973,59 @@ public class BenchmarkService
 
     /// <summary>
     /// Hands a run that a repair (re-run, retry, re-assessment, re-synthesis, re-score) has just
-    /// changed to <see cref="BenchmarkBatteryOrchestrator.ReconcileAfterMemberChangeAsync"/>, fire
-    /// and forget, after the repair has released the run slot. The orchestrator is a singleton
-    /// resolved from a scope of its own; with none registered nothing happens, and a run in no
-    /// battery is the orchestrator's no-op. Nothing it throws reaches the repair: it is logged.
+    /// changed to <see cref="BenchmarkBatteryOrchestrator.ReconcileAfterMemberChangeAsync"/> and then
+    /// to <see cref="BenchmarkModelBatchOrchestrator.ReconcileAfterRepairAsync"/>, fire and forget,
+    /// after the repair has released the run slot. The battery reconcile goes first, so a model batch
+    /// member reads its battery run's reconciled status. Both orchestrators are singletons resolved
+    /// from a scope of their own; either one missing is skipped, and a run in no battery or batch is
+    /// a no-op. Nothing they throw reaches the repair: it is logged.
     /// </summary>
-    private void ScheduleBatteryReconcile(long runId)
+    private void ScheduleReconcileAfterRepair(long runId)
     {
-        BenchmarkBatteryOrchestrator? orchestrator;
+        BenchmarkBatteryOrchestrator? batteries;
+        BenchmarkModelBatchOrchestrator? batches;
         try
         {
             using var scope = _scopeFactory.CreateScope();
-            orchestrator = scope.ServiceProvider.GetService<BenchmarkBatteryOrchestrator>();
+            batteries = scope.ServiceProvider.GetService<BenchmarkBatteryOrchestrator>();
+            batches = scope.ServiceProvider.GetService<BenchmarkModelBatchOrchestrator>();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Resolving the battery orchestrator to reconcile run {RunId} failed.", runId);
+            _logger.LogWarning(ex, "Resolving the battery and model batch orchestrators to reconcile run {RunId} failed.", runId);
             return;
         }
 
-        if (orchestrator != null)
+        if (batteries != null || batches != null)
         {
-            _ = ReconcileBatteriesAsync(orchestrator, runId);
+            _ = ReconcileAfterRepairAsync(batteries, batches, runId);
         }
     }
 
-    private async Task ReconcileBatteriesAsync(BenchmarkBatteryOrchestrator orchestrator, long runId)
+    private async Task ReconcileAfterRepairAsync(BenchmarkBatteryOrchestrator? batteries, BenchmarkModelBatchOrchestrator? batches, long runId)
     {
-        try
+        if (batteries != null)
         {
-            await orchestrator.ReconcileAfterMemberChangeAsync(runId);
+            try
+            {
+                await batteries.ReconcileAfterMemberChangeAsync(runId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Reconciling the batteries of run {RunId} after a repair failed.", runId);
+            }
         }
-        catch (Exception ex)
+
+        if (batches != null)
         {
-            _logger.LogWarning(ex, "Reconciling the batteries of run {RunId} after a repair failed.", runId);
+            try
+            {
+                await batches.ReconcileAfterRepairAsync(runId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Reconciling the model batches of run {RunId} after a repair failed.", runId);
+            }
         }
     }
 
@@ -1233,7 +1252,7 @@ public class BenchmarkService
         {
             _runManager.Complete(runId);
             ScheduleRunReportDocuments(runId);
-            ScheduleBatteryReconcile(runId);
+            ScheduleReconcileAfterRepair(runId);
         }
     }
 
@@ -7996,7 +8015,7 @@ public class BenchmarkService
 
         await db.SaveChangesAsync();
         _logger.LogInformation("Successfully re-scored benchmark run {RunId} using profile '{ProfileName}'.", runId, profile.Name);
-        ScheduleBatteryReconcile(runId);
+        ScheduleReconcileAfterRepair(runId);
         return (true, null);
     }
 
@@ -8166,7 +8185,7 @@ public class BenchmarkService
         finally
         {
             _runManager.Complete(run.Id);
-            ScheduleBatteryReconcile(run.Id);
+            ScheduleReconcileAfterRepair(run.Id);
         }
     }
 
@@ -8400,7 +8419,7 @@ public class BenchmarkService
             // A trial changes no score, so no battery reading it has anything to reconcile.
             if (!trial)
             {
-                ScheduleBatteryReconcile(run.Id);
+                ScheduleReconcileAfterRepair(run.Id);
             }
         }
     }
@@ -8504,7 +8523,7 @@ public class BenchmarkService
         finally
         {
             _runManager.Complete(run.Id);
-            ScheduleBatteryReconcile(run.Id);
+            ScheduleReconcileAfterRepair(run.Id);
         }
     }
 
@@ -8630,7 +8649,7 @@ public class BenchmarkService
         finally
         {
             _runManager.Complete(run.Id);
-            ScheduleBatteryReconcile(run.Id);
+            ScheduleReconcileAfterRepair(run.Id);
         }
     }
 
@@ -8738,7 +8757,7 @@ public class BenchmarkService
         finally
         {
             _runManager.Complete(run.Id);
-            ScheduleBatteryReconcile(run.Id);
+            ScheduleReconcileAfterRepair(run.Id);
         }
     }
 

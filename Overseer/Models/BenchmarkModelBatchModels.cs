@@ -197,7 +197,7 @@ public class BenchmarkModelBatchRefusalDto
 [JsonConverter(typeof(JsonStringEnumConverter))]
 public enum BenchmarkModelBatchResumeMode
 {
-    /// <summary>Resumes the stopped member's run, series or battery run, or launches the next member.</summary>
+    /// <summary>Takes up the stopped member — awaiting, keeping or resuming its run, series or battery run — or launches the next member.</summary>
     Continue = 0,
 
     /// <summary>Marks the stopped member Skipped and goes on with the next one.</summary>
@@ -301,6 +301,15 @@ public class BenchmarkModelBatchMemberResultDto
 
     /// <summary>Candidate call attempts beyond the first, summed.</summary>
     public int Retries { get; set; }
+
+    /// <summary>The run's Speed Index, the series' mean, or the battery run's Overall Speed Index; null when withheld.</summary>
+    public double? SpeedIndex { get; set; }
+
+    /// <summary>Answers carrying an advisory flag, summed over the completed runs.</summary>
+    public int FlaggedAnswers { get; set; }
+
+    /// <summary>Questions, summed over the completed runs.</summary>
+    public int QuestionCount { get; set; }
 }
 
 public class BenchmarkModelBatchMemberDto
@@ -336,6 +345,15 @@ public class BenchmarkModelBatchMemberDto
 
     public int AnsweredQuestionCount { get; set; }
     public int TotalQuestionCount { get; set; }
+
+    /// <summary>A member run running in place (a re-run, re-assessment, re-synthesis or retry) while the batch is not live.</summary>
+    public long? RepairingRunId { get; set; }
+
+    /// <summary>When the repairing run's re-run of failed questions began; null for any other repair.</summary>
+    public DateTime? RerunStartedAtUtc { get; set; }
+
+    /// <summary>The questions that re-run covers; null without a re-run or once the run manager no longer holds its scope.</summary>
+    public int? RerunQuestionCount { get; set; }
 
     /// <summary>Null until the member has a finished run.</summary>
     public BenchmarkModelBatchMemberResultDto? Result { get; set; }

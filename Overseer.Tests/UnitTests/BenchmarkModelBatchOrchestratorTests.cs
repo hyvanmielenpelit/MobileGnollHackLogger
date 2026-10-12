@@ -422,6 +422,162 @@ public class BenchmarkModelBatchOrchestratorTests
     }
 
     [Fact]
+    public async Task Continue_AdoptsASingleRunMemberWhoseRunHasSinceCompleted()
+    {
+        var f = await CreateFixtureAsync();
+        f.Orchestrator.Outcome = id => id == 2 ? BenchmarkRunStatus.Failed : BenchmarkRunStatus.Completed;
+        var result = await f.Orchestrator.StartAsync(Request(f), "admin", TestContext.Current.CancellationToken);
+        long id = result.BatchId!.Value;
+        var stopped = await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Stopped, "the stop");
+        long runId = stopped.Members.Single(m => m.OrderIndex == 1).BenchmarkRunId!.Value;
+        await WaitUntilIdleAsync(f, id);
+
+        await FinishRunAsync(f, runId, BenchmarkRunStatus.Completed);
+
+        Assert.Equal(BenchmarkModelBatchOutcome.Ok,
+            (await f.Orchestrator.ResumeAsync(id, BenchmarkModelBatchResumeMode.Continue, TestContext.Current.CancellationToken)).Outcome);
+
+        var batch = await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Completed, "completion");
+        Assert.Equal(new long[] { 1, 2, 3 }, f.Orchestrator.Launched.ToArray());
+        var member = batch.Members.Single(m => m.OrderIndex == 1);
+        Assert.Equal(BenchmarkModelBatchMemberStatus.Completed, member.Status);
+        Assert.Equal(runId, member.BenchmarkRunId);
+        Assert.Null(member.ErrorMessage);
+        using (var db = CreateDbContext(f.DbName))
+        {
+            var run = await db.BenchmarkRuns.AsNoTracking().SingleAsync(r => r.Id == runId, TestContext.Current.CancellationToken);
+            Assert.Equal(run.CompletedAtUtc, member.CompletedAtUtc);
+        }
+
+        Assert.Null(batch.SupersededMembersJson);
+        Assert.Equal(3, batch.CompletedMemberCount);
+        Assert.Equal(0, batch.FailedMemberCount);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkRunSeriesStatus.Completed, BenchmarkModelBatchMemberStatus.Completed, BenchmarkRunSeriesStatus.Completed)]
+    [InlineData(BenchmarkRunSeriesStatus.CompletedWithErrors, BenchmarkModelBatchMemberStatus.CompletedWithErrors, BenchmarkRunSeriesStatus.CompletedWithErrors)]
+    public async Task Continue_AdoptsABatteryMemberWhoseBatteryRunHasSinceFinished(
+        BenchmarkRunSeriesStatus batteryStatus,
+        BenchmarkModelBatchMemberStatus expectedMember,
+        BenchmarkRunSeriesStatus expectedBatch)
+    {
+        var f = await CreateFixtureAsync();
+        f.Orchestrator.Outcome = id => id == 2 ? BenchmarkRunStatus.Failed : BenchmarkRunStatus.Completed;
+        var result = await f.Orchestrator.StartAsync(Request(f), "admin", TestContext.Current.CancellationToken);
+        long id = result.BatchId!.Value;
+        await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Stopped, "the stop");
+        await WaitUntilIdleAsync(f, id);
+
+        bool withErrors = batteryStatus == BenchmarkRunSeriesStatus.CompletedWithErrors;
+        long batteryRunId;
+        using (var db = CreateDbContext(f.DbName))
+        {
+            var batteryRun = new BenchmarkBatteryRun
+            {
+                BatteryName = "Battery",
+                DefinitionJson = "{}",
+                DefinitionSha256 = "definition-sha",
+                StartRequestJson = "{}",
+                RunsPerSuite = 1,
+                RequestedMemberCount = 1,
+                CompletedMemberCount = 1,
+                Status = batteryStatus,
+                StartedAtUtc = DateTime.UtcNow.AddMinutes(-5),
+                CompletedAtUtc = DateTime.UtcNow,
+                ErrorMessage = withErrors ? "One slot is unusable." : null
+            };
+            db.BenchmarkBatteryRuns.Add(batteryRun);
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+            batteryRunId = batteryRun.Id;
+
+            var member = await db.BenchmarkModelBatchMembers.SingleAsync(m => m.BenchmarkModelBatchRunId == id && m.OrderIndex == 1, TestContext.Current.CancellationToken);
+            member.BenchmarkRunId = null;
+            member.BenchmarkBatteryRunId = batteryRunId;
+            member.Status = BenchmarkModelBatchMemberStatus.Stopped;
+            await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(BenchmarkModelBatchOutcome.Ok,
+            (await f.Orchestrator.ResumeAsync(id, BenchmarkModelBatchResumeMode.Continue, TestContext.Current.CancellationToken)).Outcome);
+
+        var batch = await WaitForAsync(f, id, b => b.Status == expectedBatch, "completion");
+        await WaitUntilIdleAsync(f, id);
+        Assert.Equal(new long[] { 1, 2, 3 }, f.Orchestrator.Launched.ToArray());
+        var adopted = batch.Members.Single(m => m.OrderIndex == 1);
+        Assert.Equal(batteryRunId, adopted.BenchmarkBatteryRunId);
+        Assert.Equal(expectedMember, adopted.Status);
+        if (withErrors) Assert.Equal("One slot is unusable.", adopted.ErrorMessage);
+        else Assert.Null(adopted.ErrorMessage);
+        Assert.Null(batch.SupersededMembersJson);
+    }
+
+    // --- Reconcile after a repair -----------------------------------------------------------------
+
+    [Fact]
+    public async Task ReconcileAfterRepair_CompletesAMemberWhoseRunWasRepaired()
+    {
+        var f = await CreateFixtureAsync();
+        f.Orchestrator.Outcome = id => id == 2 ? BenchmarkRunStatus.CompletedWithErrors : BenchmarkRunStatus.Completed;
+        var result = await f.Orchestrator.StartAsync(Request(f), "admin", TestContext.Current.CancellationToken);
+        long id = result.BatchId!.Value;
+        var finished = await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.CompletedWithErrors, "completion");
+        await WaitUntilIdleAsync(f, id);
+        Assert.NotNull(finished.StopDetail);
+        long runId = finished.Members.Single(m => m.OrderIndex == 1).BenchmarkRunId!.Value;
+
+        await FinishRunAsync(f, runId, BenchmarkRunStatus.Completed);
+        await f.Orchestrator.ReconcileAfterRepairAsync(runId, TestContext.Current.CancellationToken);
+
+        var batch = await WaitForAsync(f, id, _ => true, "the batch");
+        var member = batch.Members.Single(m => m.OrderIndex == 1);
+        Assert.Equal(BenchmarkModelBatchMemberStatus.Completed, member.Status);
+        Assert.Null(member.ErrorMessage);
+        Assert.Equal(BenchmarkRunSeriesStatus.Completed, batch.Status);
+        Assert.Null(batch.StopDetail);
+        Assert.Equal(3, batch.CompletedMemberCount);
+    }
+
+    [Fact]
+    public async Task ReconcileAfterRepair_LeavesAStoppedMemberToContinue()
+    {
+        var f = await CreateFixtureAsync();
+        f.Orchestrator.Outcome = id => id == 2 ? BenchmarkRunStatus.Failed : BenchmarkRunStatus.Completed;
+        var result = await f.Orchestrator.StartAsync(Request(f), "admin", TestContext.Current.CancellationToken);
+        long id = result.BatchId!.Value;
+        var stopped = await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Stopped, "the stop");
+        await WaitUntilIdleAsync(f, id);
+        long runId = stopped.Members.Single(m => m.OrderIndex == 1).BenchmarkRunId!.Value;
+        var before = stopped.Members.Single(m => m.OrderIndex == 1).Status;
+
+        await FinishRunAsync(f, runId, BenchmarkRunStatus.Completed);
+        await f.Orchestrator.ReconcileAfterRepairAsync(runId, TestContext.Current.CancellationToken);
+
+        var batch = await WaitForAsync(f, id, _ => true, "the batch");
+        Assert.Equal(before, batch.Members.Single(m => m.OrderIndex == 1).Status);
+        Assert.Equal(BenchmarkRunSeriesStatus.Stopped, batch.Status);
+    }
+
+    [Fact]
+    public async Task ReconcileAfterRepair_LeavesALiveBatchAlone()
+    {
+        var f = await CreateFixtureAsync();
+        f.Orchestrator.Outcome = id => id == 1 ? BenchmarkRunStatus.Running : BenchmarkRunStatus.Completed;
+        var result = await f.Orchestrator.StartAsync(Request(f), "admin", TestContext.Current.CancellationToken);
+        long id = result.BatchId!.Value;
+        var run = await WaitForRunOfAsync(f, 1);
+        await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Running, "the start");
+
+        await f.Orchestrator.ReconcileAfterRepairAsync(run.Id, TestContext.Current.CancellationToken);
+
+        var batch = await WaitForAsync(f, id, _ => true, "the batch");
+        Assert.Equal(BenchmarkModelBatchMemberStatus.Running, batch.Members.Single(m => m.OrderIndex == 0).Status);
+
+        await f.Orchestrator.CancelAsync(id, TestContext.Current.CancellationToken);
+        await WaitUntilIdleAsync(f, id);
+    }
+
+    [Fact]
     public async Task ARefusedLaunch_StopsTheBatch_WithTheMemberFailed()
     {
         var f = await CreateFixtureAsync();

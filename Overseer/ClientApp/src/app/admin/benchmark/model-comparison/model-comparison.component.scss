@@ -732,13 +732,15 @@
   padding: 0;
 }
 
-/* One selected source: its detail, its label, an optional provider badge and a remove button.
-   The left accent on a group chip is what distinguishes it from a run chip at a glance, next to
-   the provider badge a run chip carries and a group chip does not. */
+/* One selected source: its detail, its model identity (the name, then its thinking level,
+   reasoning mode and provider badges) and a remove button. The left accent on a group chip is what
+   distinguishes it from a run chip at a glance, next to the provider badge a run chip carries and a
+   group chip does not. */
 .mc-selection-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  max-inline-size: 100%;
   padding: 2px 4px 2px 8px;
   border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.12));
   border-radius: 999px;
@@ -747,17 +749,37 @@
   &.mc-selection-chip--group {
     border-left: 3px solid var(--primary-color);
   }
+
+  /* One line, so the chip stays the height of its remove button: a long name truncates. */
+  app-model-identity {
+    flex-wrap: nowrap;
+    min-width: 0;
+    font-size: 12px;
+  }
+
+  /* The identity's name and badges belong to its own template; scaled here to the chip's 12 px. */
+  ::ng-deep {
+    .model-identity-name {
+      max-inline-size: 16rem;
+      overflow: hidden;
+      color: #e6e6e6;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+
+    .thinking-badge,
+    .reasoning-badge,
+    app-provider-badge {
+      font-size: 10px;
+      padding: 0 5px;
+    }
+  }
 }
 
 .mc-selection-chip-detail {
   font-size: 11px;
   color: #898781;
-}
-
-.mc-selection-chip-label {
-  font-size: 12px;
-  color: #e6e6e6;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
 }
 
 /* The notices below the chip row, unchanged from what the band used to render on its own. */

@@ -160,13 +160,6 @@
   font-size: var(--text-secondary);
 }
 
-/* The reason the footer's Continue, Re-run and Cancel wait while the model batch drives the battery run. */
-.bp-batch-owned-reason {
-  align-self: center;
-  font-size: var(--text-secondary);
-  color: #bbb;
-}
-
 .bp-state-block {
   margin: 0 0 16px;
   padding: 10px 14px;

@@ -494,8 +494,23 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
                 memberDto.CurrentStepIndex = member.BenchmarkRunSeriesId != null && running.RunSeriesIndex.HasValue
                     ? running.RunSeriesIndex
                     : runs.Count(r => r.Id <= running.Id);
-                memberDto.AnsweredQuestionCount = await _db.BenchmarkRunAnswers.CountAsync(a => a.BenchmarkRunId == running.Id, ct);
-                memberDto.TotalQuestionCount = running.TotalQuestionCount;
+
+                bool batchLive = batch.Status is BenchmarkRunSeriesStatus.Pending or BenchmarkRunSeriesStatus.Running or BenchmarkRunSeriesStatus.WaitingForCap;
+                if (batchLive)
+                {
+                    memberDto.AnsweredQuestionCount = await _db.BenchmarkRunAnswers.CountAsync(a => a.BenchmarkRunId == running.Id, ct);
+                    memberDto.TotalQuestionCount = running.TotalQuestionCount;
+                }
+                else
+                {
+                    // A repair in place: every answer row exists, so the question counts would read complete.
+                    memberDto.RepairingRunId = running.Id;
+                    if (running.RerunStartedAtUtc != null && running.RerunCompletedAtUtc == null)
+                    {
+                        memberDto.RerunStartedAtUtc = running.RerunStartedAtUtc;
+                        memberDto.RerunQuestionCount = _runManager.GetRerunScope(running.Id) is { Count: > 0 } scope ? scope.Count : null;
+                    }
+                }
             }
 
             // Live cost over every run so far: a running run from its answer rows, others from their columns.
@@ -573,21 +588,29 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
         BenchmarkRunCostEstimator estimator,
         CancellationToken ct)
     {
-        string key = string.Join(",", completed.Select(r => $"{r.Id}:{r.Status}:{r.CompletedAtUtc?.Ticks}:{r.QualityIndex}"))
-                     + $"|{member.Status}";
+        long? batteryAnalysisId = member.BenchmarkBatteryRunId is long keyBatteryRunId
+            ? await _db.BenchmarkBatteryAnalyses
+                .AsNoTracking()
+                .Where(a => a.BenchmarkBatteryRunId == keyBatteryRunId)
+                .OrderByDescending(a => a.ComputedAtUtc)
+                .ThenByDescending(a => a.Id)
+                .Select(a => (long?)a.Id)
+                .FirstOrDefaultAsync(ct)
+            : null;
+
+        string key = string.Join(",", completed.Select(r =>
+                         $"{r.Id}:{r.Status}:{r.CompletedAtUtc?.Ticks}:{r.QualityIndex}:{r.SpeedIndex}:{r.AdvisoryFlagAnswerCount}:{r.RerunCompletedAtUtc?.Ticks}"))
+                     + $"|{member.Status}|{batteryAnalysisId}";
         if (ResultCache.TryGetValue(member.Id, out var cached) && cached.Key == key) return cached.Result;
 
         var result = new BenchmarkModelBatchMemberResultDto();
         var runIds = completed.Select(r => r.Id).ToList();
 
-        if (member.BenchmarkBatteryRunId is long batteryRunId)
+        if (member.BenchmarkBatteryRunId != null)
         {
-            var analysis = await _db.BenchmarkBatteryAnalyses
-                .AsNoTracking()
-                .Where(a => a.BenchmarkBatteryRunId == batteryRunId)
-                .OrderByDescending(a => a.ComputedAtUtc)
-                .ThenByDescending(a => a.Id)
-                .FirstOrDefaultAsync(ct);
+            var analysis = batteryAnalysisId == null
+                ? null
+                : await _db.BenchmarkBatteryAnalyses.AsNoTracking().FirstOrDefaultAsync(a => a.Id == batteryAnalysisId.Value, ct);
             var statistics = analysis == null ? null : BenchmarkBatteryAnalysisService.DeserializeResult(analysis);
             if (statistics?.OverallIndex != null)
             {
@@ -595,6 +618,8 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
                 result.IndexHalfWidth = statistics.OverallIndex.CombinedHalfWidth;
                 result.IndexSource = "batteryAnalysis";
             }
+
+            result.SpeedIndex = statistics?.Speed?.OverallSpeedIndex;
         }
         else if (member.BenchmarkRunSeriesId is long seriesId)
         {
@@ -623,6 +648,9 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
                     result.IndexSource = "runMean";
                 }
             }
+
+            result.SpeedIndex = statistics?.Speed.MeanSpeedIndex
+                                ?? (completed.All(r => r.SpeedIndex.HasValue) ? completed.Average(r => (double)r.SpeedIndex!.Value) : null);
         }
         else
         {
@@ -633,6 +661,8 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
                 result.IndexHalfWidth = run.QualityIndexStandardError is double se ? 1.96 * se : null;
                 result.IndexSource = "run";
             }
+
+            result.SpeedIndex = run.SpeedIndex;
         }
 
         var answers = await _db.BenchmarkRunAnswers
@@ -665,6 +695,8 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             answered += run.AnsweredQuestionCount;
 
             result.RefutedClaims += run.ClaimsRefutedCount;
+            result.FlaggedAnswers += run.AdvisoryFlagAnswerCount;
+            result.QuestionCount += run.TotalQuestionCount;
             result.ConfirmedCriticalErrors += BenchmarkOutcomeSummary.Compute(run, runAnswers)?.ConfirmedCriticalErrorCount ?? 0;
         }
 

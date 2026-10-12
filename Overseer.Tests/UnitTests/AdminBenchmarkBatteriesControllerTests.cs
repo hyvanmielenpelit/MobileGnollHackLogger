@@ -1087,10 +1087,13 @@ public class AdminBenchmarkBatteriesControllerTests
         finished.CompletedAtUtc = finished.StartedAtUtc.AddMinutes(13).AddSeconds(40);
         finished.ClaimsRefutedCount = 2;
         finished.AdvisoryFlagAnswerCount = 3;
+        finished.RerunStartedAtUtc = finished.StartedAtUtc.AddHours(1);
+        finished.RerunCompletedAtUtc = finished.StartedAtUtc.AddHours(1).AddMinutes(4);
 
         var running = await SeedMemberAsync(f, batteryRun, suiteIndex: 1, status: BenchmarkRunStatus.Running, qualityIndex: null);
         running.TotalQuestionCount = 2;
         running.QualityIndexStandardError = 4.0;
+        running.RerunStartedAtUtc = DateTime.UtcNow.AddMinutes(-3);
         running.Answers.Add(new BenchmarkRunAnswer
         {
             OrderIndex = 1,
@@ -1105,6 +1108,7 @@ public class AdminBenchmarkBatteriesControllerTests
         try
         {
             f.RunManager.MarkStage(running.Id, BenchmarkRunStage.Verifying);
+            f.RunManager.SetRerunScope(running.Id, new[] { 1 });
 
             var dto = Assert.IsType<BenchmarkBatteryRunDto>(
                 Assert.IsType<OkObjectResult>(await f.Controller.GetBatteryRun(batteryRun.Id, ct)).Value);
@@ -1117,6 +1121,9 @@ public class AdminBenchmarkBatteriesControllerTests
             Assert.Equal(820_000L, done.DurationMs);
             Assert.Equal(2, done.ClaimsRefutedCount);
             Assert.Equal(3, done.AdvisoryFlagAnswerCount);
+            Assert.Equal(finished.RerunStartedAtUtc, done.RerunStartedAtUtc);
+            Assert.Equal(finished.RerunCompletedAtUtc, done.RerunCompletedAtUtc);
+            Assert.Null(done.RerunQuestionCount);
 
             // Running: the run manager's stage and the answer rows so far; no index, so no half-width.
             var live = dto.Members.Single(m => m.RunId == running.Id);
@@ -1125,6 +1132,11 @@ public class AdminBenchmarkBatteriesControllerTests
             Assert.Equal(2, live.TotalQuestionCount);
             Assert.Null(live.QualityIndexHalfWidth);
             Assert.Null(live.DurationMs);
+
+            // A re-run in flight: its stamps and the run manager's scope size.
+            Assert.Equal(running.RerunStartedAtUtc, live.RerunStartedAtUtc);
+            Assert.Null(live.RerunCompletedAtUtc);
+            Assert.Equal(1, live.RerunQuestionCount);
         }
         finally
         {

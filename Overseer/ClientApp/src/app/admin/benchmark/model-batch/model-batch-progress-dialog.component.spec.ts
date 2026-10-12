@@ -1,4 +1,5 @@
 import type { Mock, MockedObject } from 'vitest';
+import { DatePipe } from '@angular/common';
 import { ComponentFixture, TestBed, discardPeriodicTasks, fakeAsync, tick } from '@angular/core/testing';
 import { NEVER, of, throwError } from 'rxjs';
 
@@ -271,13 +272,33 @@ describe('ModelBatchProgressDialogComponent', () => {
     expect(openBattery).toHaveBeenCalledWith({ batteryRunId: 9, modelBatchRunId: 21 });
   });
 
-  it('shows a completed member\'s index and facts, and opens its report over the dialog', () => {
+  it('lays the body out as the overview, then the models with their count', () => {
+    open(batch());
+    const sections = Array.from(el().querySelectorAll('.mb-body > section'));
+    expect(sections.map(section => section.className)).toEqual(['mb-overview', 'mb-models']);
+    expect(el().querySelector('.dialog-content')?.classList).toContain('mb-content');
+
+    const [overview, models] = sections;
+    expect(overview.getAttribute('aria-label')).toBe('Batch overview');
+    expect(overview.querySelector('[role="status"]')).not.toBeNull();
+    expect(overview.querySelector('.mb-stats')).not.toBeNull();
+    expect(overview.querySelector('details.mb-diagnostics')).not.toBeNull();
+    expect(models.getAttribute('tabindex')).toBe('0');
+    expect(models.getAttribute('aria-labelledby')).toBe('mbMembersTitle');
+    expect(models.querySelector('h4#mbMembersTitle')).not.toBeNull();
+    expect(text('.mb-models-count', models)).toBe('0 of 2 finished');
+    expect(models.querySelector('ol.mb-members')).not.toBeNull();
+  });
+
+  it('shows a completed member\'s index and figures, and opens its report over the dialog', () => {
     open(batch({ status: 'Completed', isDriving: false, currentMemberIndex: null, members: [completed(0, 61), completed(1, 62)], completedMemberCount: 2 }));
     const done = card(100);
-    expect(done.querySelector('app-index-badge')).not.toBeNull();
-    expect(Array.from(done.querySelectorAll('.mb-member-facts dt')).map(dt => dt.textContent?.trim()))
-      .toEqual(['Median model time', 'TTFT P50', 'Cost per question']);
-    expect(text('.mb-member-facts', done)).toContain('$0.0042');
+    expect(done.querySelector('app-index-badge .index-badge-md')).not.toBeNull();
+    expect(text('.mb-member-score-label', done)).toBe('Intelligence Index');
+    expect(Array.from(done.querySelectorAll('.mb-member-figures dt')).map(dt => dt.textContent?.trim()))
+      .toEqual(['Median model time', 'TTFT P50', 'Cost / question', 'Total cost', 'Refuted claims']);
+    expect(text('.mb-member-figures', done)).toContain('$0.0042');
+    expect(done.querySelector('.mb-member-index-withheld')).toBeNull();
     expect(text('.mb-member-ref', done)).toBe('Run #61');
 
     const report = vi.fn();
@@ -287,6 +308,110 @@ describe('ModelBatchProgressDialogComponent', () => {
     button('.mb-view-report', done)!.click();
     expect(report).toHaveBeenCalledWith(61);
     expect(closed).not.toHaveBeenCalled();
+  });
+
+  it('lists every figure in order, the failed answers marked, and the finish time on the reference line', () => {
+    const finishedAt = new Date();
+    const startedAt = new Date(finishedAt.getTime() - (13 * 60 + 40) * 1000);
+    open(batch({
+      status: 'CompletedWithErrors', isDriving: false, currentMemberIndex: null, completedMemberCount: 1,
+      members: [completed(0, 61, {
+        status: 'CompletedWithErrors', startedAtUtc: startedAt.toISOString(), completedAtUtc: finishedAt.toISOString(),
+        result: {
+          intelligenceIndex: 64, speedIndex: 71.4, medianModelTimeMs: 17200, ttftP50Ms: 1800,
+          candidateCostPerQuestionUsd: 0.0042, totalCostUsd: 1.2, refutedClaims: 1, confirmedCriticalErrors: 0,
+          flaggedAnswers: 3, failedAnswers: 2, providerErrors: 0, retries: 0
+        }
+      })]
+    }));
+    const done = card(100);
+    expect(Array.from(done.querySelectorAll('.mb-member-figures dt')).map(dt => dt.textContent?.trim())).toEqual([
+      'Speed Index', 'Duration', 'Median model time', 'TTFT P50', 'Cost / question', 'Total cost',
+      'Refuted claims', 'Flagged answers', 'Failed answers'
+    ]);
+    expect(text('[data-figure="speed-index"] dd', done)).toBe('71');
+    expect(text('[data-figure="duration"] dd', done)).toBe('13m 40s');
+    const failed = done.querySelector('[data-figure="failed-answers"] dd') as HTMLElement;
+    expect(failed.classList).toContain('mb-figure-warning');
+    expect(text('.visually-hidden', failed)).toBe('(needs attention)');
+    expect(text('[data-figure="flagged-answers"] dd', done)).toBe('3');
+    const time = new DatePipe('en-US').transform(finishedAt, 'HH:mm');
+    expect(text('.mb-member-ref', done)).toBe(`Run #61 · finished ${time}`);
+  });
+
+  it('says why a finished member has no index', () => {
+    open(batch({
+      status: 'CompletedWithErrors', isDriving: false, currentMemberIndex: null, completedMemberCount: 1,
+      members: [completed(0, 61, {
+        status: 'CompletedWithErrors',
+        result: { intelligenceIndex: null, refutedClaims: 0, confirmedCriticalErrors: 0, failedAnswers: 3, providerErrors: 0, retries: 0 }
+      })]
+    }));
+    const done = card(100);
+    expect(done.querySelector('app-index-badge')).toBeNull();
+    expect(done.querySelector('.mb-member-index-withheld')?.classList).toContain('gh-field-warning');
+    expect(text('.mb-member-index-withheld', done))
+      .toBe('No index — 3 answers failed. Open the run progress to re-run failed questions.');
+    expect(text('[data-figure="failed-answers"] dd', done)).toBe('3 (needs attention)');
+  });
+
+  describe('a member repairing on a final batch', () => {
+    function repairing(overrides: Partial<BenchmarkModelBatchMemberDto> = {}): BenchmarkModelBatchRunDto {
+      return batch({
+        status: 'Completed', isDriving: false, currentMemberIndex: null, completedMemberCount: 2,
+        members: [
+          completed(0, 61, { repairingRunId: 61, currentRunId: 61, currentStage: 'Answering', ...overrides }),
+          completed(1, 62)
+        ]
+      });
+    }
+
+    it('shows the re-run chip, the stage, the question count and the re-run elapsed time over its figures', () => {
+      open(repairing({ rerunStartedAtUtc: new Date(Date.now() - 125_000).toISOString(), rerunQuestionCount: 2 }));
+      const fixing = card(100);
+      expect(fixing.classList).toContain('is-current');
+      expect(fixing.getAttribute('data-repairing')).toBe('true');
+      const chip = fixing.querySelector('.job-status-chip') as HTMLElement;
+      expect(chip.textContent?.trim()).toBe('Re-run in progress');
+      expect(chip.classList).toContain('status-answering');
+      expect(text('.mb-member-stage', fixing)).toBe('Run #61 · Stage 1 of 3 — Answering and grading');
+      expect(text('.mb-member-repair', fixing)).toBe('Re-running 2 failed questions');
+      expect(text('.mb-member-rerun-elapsed', fixing)).toMatch(/^Re-run elapsed 2m 0[5-9]s$/);
+      expect(fixing.querySelector('progress.mb-member-progress')).toBeNull();
+      expect(fixing.querySelector('.mb-member-figures')).not.toBeNull();
+      expect(text('.mb-stage-line')).toBe('Re-running failed questions of Model 1');
+    });
+
+    it('reads Repair in progress for a repair that is not a re-run', () => {
+      open(repairing());
+      const fixing = card(100);
+      expect(text('.job-status-chip', fixing)).toBe('Repair in progress');
+      expect(fixing.querySelector('.mb-member-repair')).toBeNull();
+      expect(fixing.querySelector('.mb-member-rerun-elapsed')).toBeNull();
+      expect(text('.mb-stage-line')).toBe('Repairing Model 1');
+    });
+
+    it('keeps polling while the repair runs, and stops once it ends', fakeAsync(() => {
+      open(repairing({ rerunStartedAtUtc: new Date().toISOString(), rerunQuestionCount: 1 }));
+      expect(service.getModelBatch).toHaveBeenCalledTimes(1);
+
+      tick(ModelBatchProgressDialogComponent.POLL_INTERVAL_MS);
+      expect(service.getModelBatch).toHaveBeenCalledTimes(2);
+
+      service.getModelBatch.mockReturnValue(of(batch({
+        status: 'Completed', isDriving: false, currentMemberIndex: null, completedMemberCount: 2,
+        members: [completed(0, 61), completed(1, 62)]
+      })));
+      tick(ModelBatchProgressDialogComponent.POLL_INTERVAL_MS);
+      expect(service.getModelBatch).toHaveBeenCalledTimes(3);
+      fixture.detectChanges();
+      expect(text('.job-status-chip', card(100))).toBe('Completed');
+
+      tick(ModelBatchProgressDialogComponent.POLL_INTERVAL_MS * 3);
+      expect(service.getModelBatch).toHaveBeenCalledTimes(3);
+      close();
+      discardPeriodicTasks();
+    }));
   });
 
   it('opens a battery member\'s Battery Run Report', () => {
@@ -335,10 +460,16 @@ describe('ModelBatchProgressDialogComponent', () => {
       button('.mb-resume[data-mode="SkipCurrent"]')!.click();
       fixture.detectChanges();
 
-      expect(text('#mbActionReason')).toBe('Waiting for the server to resume the batch.');
-      for (const selector of ['.mb-resume[data-mode="Continue"]', '.mb-resume[data-mode="SkipCurrent"]', '.mb-cancel-batch']) {
+      const note = el().querySelector('#mbFooterNote') as HTMLElement;
+      expect(note.classList).toContain('gh-footer-note');
+      expect(text('#mbFooterNote')).toBe('Waiting for the server to resume the batch.');
+      expect(el().querySelector('.dialog-footer')?.firstElementChild).toBe(note);
+      expect(note.hasAttribute('tabindex')).toBe(false);
+      expect(note.hasAttribute('aria-live')).toBe(false);
+      expect(el().querySelectorAll('[role="status"]').length).toBe(1);
+      for (const selector of ['.mb-resume[data-mode="Continue"]', '.mb-resume[data-mode="SkipCurrent"]', '.mb-cancel-batch', '.mb-open-comparison', '.mb-skip']) {
         expect(button(selector)?.getAttribute('aria-disabled')).toBe('true');
-        expect(button(selector)?.getAttribute('aria-describedby')).toBe('mbActionReason');
+        expect(button(selector)?.getAttribute('aria-describedby')).toBe('mbFooterNote');
       }
       button('.mb-resume[data-mode="Continue"]')!.click();
       expect(service.resumeModelBatch).toHaveBeenCalledTimes(1);
@@ -396,8 +527,11 @@ describe('ModelBatchProgressDialogComponent', () => {
       open(batch());
       const compare = button('.mb-open-comparison')!;
       expect(compare.getAttribute('aria-disabled')).toBe('true');
-      expect(compare.getAttribute('aria-describedby')).toBe('mbCompareReason');
-      expect(text('#mbCompareReason')).toBe(MODEL_BATCH_COMPARE_REASON);
+      expect(compare.getAttribute('aria-describedby')).toBe('mbFooterNote');
+      expect(text('#mbFooterNote')).toBe(MODEL_BATCH_COMPARE_REASON);
+      const footer = Array.from(el().querySelector('.dialog-footer')!.children);
+      expect(footer.map(child => child.id || child.classList[child.classList.length - 1]))
+        .toEqual(['mbFooterNote', 'mb-close', 'mb-cancel-batch', 'mb-open-comparison']);
 
       const preset = vi.fn();
       component.openComparison.subscribe(preset);
@@ -411,6 +545,8 @@ describe('ModelBatchProgressDialogComponent', () => {
       const closed = vi.fn();
       component.openComparison.subscribe(preset);
       component.closed.subscribe(closed);
+      expect(el().querySelector('#mbFooterNote')).toBeNull();
+      expect(button('.mb-open-comparison')?.hasAttribute('aria-describedby')).toBe(false);
 
       button('.mb-open-comparison')!.click();
 

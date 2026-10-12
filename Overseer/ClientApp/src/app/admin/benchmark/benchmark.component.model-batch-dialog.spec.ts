@@ -178,7 +178,7 @@ describe('AdminBenchmarkComponent: model batch progress', () => {
 
       expect(text(query('.bp-batch-notice'))).toContain('Part of model batch #21.');
       const reason = query('#bpBatchOwnedReason');
-      expect(text(reason)).toBe('Use the model batch\'s progress dialog.');
+      expect(text(reason)).toBe('Model batch #21 controls this battery run. Cancel, continue or re-run it from the batch.');
       for (const selector of ['.bp-continue', '.bp-cancel-battery']) {
         const button = query<HTMLButtonElement>(selector)!;
         expect(button.getAttribute('aria-disabled')).toBe('true');

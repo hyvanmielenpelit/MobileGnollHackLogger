@@ -307,6 +307,13 @@ public class BenchmarkBatteryMemberDto
     public DateTime? RunStartedAtUtc { get; set; }
     public DateTime? RunCompletedAtUtc { get; set; }
 
+    /// <summary>When the run's latest re-run of failed questions began and ended; null when it has none.</summary>
+    public DateTime? RerunStartedAtUtc { get; set; }
+    public DateTime? RerunCompletedAtUtc { get; set; }
+
+    /// <summary>The questions a re-run in flight covers; null otherwise, or once the run manager no longer holds its scope.</summary>
+    public int? RerunQuestionCount { get; set; }
+
     /// <summary>
     /// Answered questions / questions in the run: for a running member the answer rows written so
     /// far, for any other the run's own answered count.

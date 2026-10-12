@@ -542,7 +542,11 @@ export interface ComparisonSelectedSource {
   readonly label: string;
   /** Run and battery result: the tested model's provider. Groups carry none. */
   readonly provider: string | null;
-  /** Run: "#48". Group: "3 runs". Battery result: "Battery run 4". */
+  /** The tested (run, battery result) or shared (group) thinking level; absent when there is none. */
+  readonly thinkingLevel?: string | null;
+  /** The tested or shared reasoning mode; absent when there is none. */
+  readonly reasoningMode?: string | null;
+  /** Run: "#48". Group: "3 runs". Battery result: "#4". */
   readonly detail: string;
 }
 

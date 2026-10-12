@@ -276,14 +276,19 @@
                               {{ memberStageCaption(member) }}
                               @if (member.origin === 'Attached') { · attached }
                             </p>
-                            @if (member.totalQuestionCount > 0) {
-                              <progress class="job-progress bp-member-progress"
-                                        [max]="member.totalQuestionCount" [value]="member.answeredQuestionCount"
-                                        [attr.aria-labelledby]="'bp-member-progress-' + member.memberId"></progress>
+                            <!-- A re-run of failed questions keeps every answer row, so the question count would read complete. -->
+                            @if (memberRerunning(member, cell.repairing)) {
+                              <p class="bp-cell-meta bp-member-rerun">{{ memberRerunLine(member) }}</p>
+                            } @else {
+                              @if (member.totalQuestionCount > 0) {
+                                <progress class="job-progress bp-member-progress"
+                                          [max]="member.totalQuestionCount" [value]="member.answeredQuestionCount"
+                                          [attr.aria-labelledby]="'bp-member-progress-' + member.memberId"></progress>
+                              }
+                              <p class="bp-cell-meta" [id]="'bp-member-progress-' + member.memberId">{{ member.answeredQuestionCount }} of {{ member.totalQuestionCount }} questions answered</p>
                             }
-                            <p class="bp-cell-meta" [id]="'bp-member-progress-' + member.memberId">{{ member.answeredQuestionCount }} of {{ member.totalQuestionCount }} questions answered</p>
-                            @if (memberElapsedLabel(member); as elapsed) {
-                              <p class="bp-cell-meta bp-member-elapsed">Elapsed {{ elapsed }}</p>
+                            @if (memberElapsedLabel(member, cell.repairing); as elapsed) {
+                              <p class="bp-cell-meta bp-member-elapsed">{{ elapsed }}</p>
                             }
                           }
                           @case ('completed') {
@@ -441,15 +446,23 @@
     </div>
 
     <div class="dialog-footer">
+      @if (modelBatchOwnerId != null && (canCancel || canRerun || canContinue)) {
+        <p class="gh-footer-note bp-footer-note" id="bpBatchOwnedReason">
+          <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <span>{{ modelBatchOwnedReason }}</span>
+        </p>
+      }
       @if (returnsToModelBatch) {
         <button type="button" class="btn-gh btn-gh-cancel bp-back-to-batch" (click)="requestClose()">Back to Batch</button>
       } @else if (isLive) {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Run in Background</button>
       } @else {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Close</button>
-      }
-      @if (modelBatchOwnerId != null && (canCancel || canRerun || canContinue)) {
-        <span class="bp-batch-owned-reason" id="bpBatchOwnedReason">{{ modelBatchOwnedReason }}</span>
       }
       @if (canCancel) {
         <button type="button" class="btn-gh btn-gh-delete bp-cancel-battery" [disabled]="cancelInFlight"

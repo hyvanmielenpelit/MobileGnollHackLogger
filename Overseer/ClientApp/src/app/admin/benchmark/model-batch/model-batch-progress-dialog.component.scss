@@ -1,7 +1,7 @@
 /* Model batch progress dialog: layout and component-local presentation only. The dialog frame
  * (.gh-dialog-fullscreen), the buttons, .job-status-chip, .run-stat-strip, .run-stage-rail,
- * .job-progress-block, .job-diagnostics, .rr-identity, .gh-field-warning and .gh-tooltip come from
- * styles.scss. */
+ * .job-progress-block, .job-diagnostics, .rr-identity, .gh-field-warning, .gh-footer-note and
+ * .gh-tooltip come from styles.scss. */
 
 .model-batch-progress-dialog {
   .dialog-content {
@@ -10,6 +10,12 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
+  }
+
+  /* The size container is the content column around the body, because a container query styles
+     only the container's descendants and the body itself is what becomes the grid. */
+  .mb-content {
+    container: mb / inline-size;
   }
 
   .dialog-header {
@@ -69,6 +75,30 @@
     }
   }
 
+  /* From 64 rem of dialog width the overview and the models sit side by side, each scrolling on
+     its own; narrower, they stack and the body scrolls as one. */
+  @container mb (inline-size >= 64rem) {
+    .mb-body {
+      display: grid;
+      grid-template-columns: minmax(22rem, 2fr) minmax(0, 3fr);
+      grid-template-rows: minmax(0, 1fr);
+      gap: 24px;
+      overflow: hidden;
+    }
+
+    .mb-overview,
+    .mb-models {
+      overflow-y: auto;
+      min-block-size: 0;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+    }
+
+    .mb-members-title {
+      margin-block-start: 0;
+    }
+  }
+
   @media (max-width: 600px) {
     .dialog-header,
     .dialog-body,
@@ -85,9 +115,22 @@
 
 /* --- Body ------------------------------------------------------------------------------- */
 
-.mb-body {
-  container-type: inline-size;
-  container-name: mb-body;
+/* Each section is its own inline-size container: the rail stacks and the cards narrow by the
+   width of the section they sit in. */
+.mb-overview {
+  container: mb-overview / inline-size;
+  min-inline-size: 0;
+}
+
+.mb-models {
+  container: mb-models / inline-size;
+  min-inline-size: 0;
+  border-radius: 6px;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+  }
 }
 
 .mb-rail {
@@ -95,7 +138,7 @@
 }
 
 /* Below 40 rem the stages stack, one per line, so their notes are never cut short. */
-@container mb-body (max-width: 40rem) {
+@container mb-overview (max-width: 40rem) {
   .mb-rail {
     flex-direction: column;
   }
@@ -198,8 +241,27 @@
   margin: 8px 0 0;
 }
 
+/* The type and rule come from the global .gh-section-title; this is the layout only. */
 .mb-members-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
   margin: 20px 0 8px;
+}
+
+/* A neutral pill in the body font, not the heading's Cinzel capitals. */
+.mb-models-count {
+  padding: 1px 8px;
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+  font-family: "Lato", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--nav-color);
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- Members ---------------------------------------------------------------------------- */
@@ -213,6 +275,8 @@
   list-style: none;
 }
 
+/* A finished, running or repairing card carries a 3 px start edge in its status color; the status
+   chip names the status, so the color is never its only carrier. */
 .mb-member {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -225,14 +289,38 @@
   border-radius: 6px;
   background: rgba(0, 0, 0, 0.2);
 
+  &[data-status='Completed'],
+  &[data-status='CompletedWithErrors'],
+  &.is-current {
+    border-inline-start-width: 3px;
+    padding-inline-start: 12px;
+  }
+
+  &[data-status='Completed'] {
+    border-inline-start-color: var(--color-success);
+  }
+
+  &[data-status='CompletedWithErrors'] {
+    border-inline-start-color: var(--color-warning);
+  }
+
   &.is-current {
     border-color: rgba(212, 160, 23, 0.45);
+    border-inline-start-color: rgb(212, 160, 23);
     background: rgba(212, 160, 23, 0.07);
   }
 }
 
+@media (forced-colors: active) {
+  .mb-member[data-status='Completed'],
+  .mb-member[data-status='CompletedWithErrors'],
+  .mb-member.is-current {
+    border-inline-start-color: CanvasText;
+  }
+}
+
 /* Below 36 rem the actions go under the card's text. */
-@container mb-body (max-width: 36rem) {
+@container mb-models (max-width: 36rem) {
   .mb-member {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
@@ -304,30 +392,71 @@
   margin-block-start: 6px;
 }
 
-.mb-member-index {
-  margin-block-start: 4px;
+/* A finished member's index on the start side and its figures beside it. */
+.mb-member-result {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px 20px;
+  margin-block-start: 8px;
 }
 
-.mb-member-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem 1.25rem;
-  margin: 6px 0 0;
-  font-size: var(--text-secondary);
-
-  > div {
-    display: flex;
-    gap: 0.375rem;
+/* Below 30 rem the figures go under the index. */
+@container mb-models (max-width: 30rem) {
+  .mb-member-result {
+    grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.mb-member-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.mb-member-score-label {
+  font-size: var(--text-xs);
+  color: #aaa;
+  text-align: center;
+}
+
+.mb-member-index-withheld {
+  margin: 0;
+  max-inline-size: 16rem;
+}
+
+.mb-member-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: 8px 16px;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+.mb-figure {
+  min-inline-size: 0;
 
   dt {
-    color: #aaa;
+    font-size: var(--text-xs);
     font-weight: 400;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #999;
   }
 
   dd {
     margin: 0;
+    font-size: var(--text-body);
+    font-family: var(--font-mono);
     font-variant-numeric: tabular-nums;
+    color: #e6e6e6;
+    overflow-wrap: anywhere;
+
+    &.mb-figure-warning {
+      color: var(--color-warning);
+    }
   }
 }
 
@@ -336,6 +465,10 @@
   font-size: var(--text-secondary);
   color: #e8d9a8;
   max-inline-size: 40rem;
+}
+
+.mb-member-ref {
+  margin-block-start: 6px;
 }
 
 .mb-member-actions {
@@ -357,12 +490,6 @@
 
 .mb-diagnostics-status {
   margin: 0;
-  font-size: var(--text-secondary);
-  color: #bbb;
-}
-
-/* The reason the footer's actions wait, beside them. */
-.mb-action-reason {
   font-size: var(--text-secondary);
   color: #bbb;
 }

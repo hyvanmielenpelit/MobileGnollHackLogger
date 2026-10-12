@@ -1987,6 +1987,26 @@ input[type="number"] {
   }
 }
 
+// A footer's status note: why an action waits. Start of the footer, buttons at its end.
+.gh-footer-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  flex: 1 1 16rem;
+  min-inline-size: 0;
+  margin: 0;
+  margin-inline-end: auto;
+  font-size: var(--text-secondary);
+  line-height: var(--leading-body);
+  color: #aaa;
+
+  .gh-footer-note-icon {
+    flex-shrink: 0;
+    margin-block-start: 0.15em;
+    color: var(--primary-color);
+  }
+}
+
 /* .gh-dialog insets its own content; the wrapper's 20px is for .settings-dialog, which does not. */
 .gh-dialog .dialog-content {
   padding: 0;

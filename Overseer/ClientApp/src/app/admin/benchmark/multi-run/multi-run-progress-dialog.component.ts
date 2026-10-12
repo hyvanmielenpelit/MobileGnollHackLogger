@@ -37,7 +37,7 @@ import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { formatThinkingLevel, showReasoningBadge, formatServiceTier } from '../../../utils/model-badge-format.util';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
-import { MODEL_BATCH_OWNED_REASON, isFinalModelBatchStatus } from '../model-batch/model-batch.models';
+import { isFinalModelBatchStatus, modelBatchOwnedReasonText } from '../model-batch/model-batch.models';
 import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
 
 /**
@@ -231,7 +231,11 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
   /** The batch whose status was read for `modelBatchOwnerId`. */
   private modelBatchOwnerCheckedId: number | null = null;
   private modelBatchOwnerSubscription: Subscription | null = null;
-  readonly modelBatchOwnedReason = MODEL_BATCH_OWNED_REASON;
+
+  /** The footer note's reason; shown only while `modelBatchOwnerId` is set. */
+  get modelBatchOwnedReason(): string {
+    return modelBatchOwnedReasonText(this.modelBatchOwnerId ?? 0, 'series');
+  }
 
   /** The 409 body of a refused resume. Non-null puts the instrument-change choice on screen. */
   instrumentChange: BenchmarkInstrumentChangedDto | null = null;

@@ -302,7 +302,8 @@ describe('BatteryProgressDialogComponent', () => {
 
       expect(getModelBatch).toHaveBeenCalledWith(21);
       expect(text('.bp-batch-notice')).toBe('Part of model batch #21. Open model batch #21');
-      expect(text('#bpBatchOwnedReason')).toBe('Use the model batch\'s progress dialog.');
+      expect(text('#bpBatchOwnedReason'))
+        .toBe('Model batch #21 controls this battery run. Cancel, continue or re-run it from the batch.');
       for (const selector of ['.bp-continue', '.bp-cancel-battery']) {
         expect(button(selector)!.getAttribute('aria-disabled')).toBe('true');
         expect(button(selector)!.getAttribute('aria-describedby')).toBe('bpBatchOwnedReason');
@@ -313,6 +314,25 @@ describe('BatteryProgressDialogComponent', () => {
       expect(service.resumeBatteryRun).not.toHaveBeenCalled();
       expect(service.cancelBatteryRun).not.toHaveBeenCalled();
       expect(monitor.armCompletionSignalsFromGesture).not.toHaveBeenCalled();
+    });
+
+    it('puts the reason first in the footer as a footer note, before the dismissal and the actions', () => {
+      open(owned());
+
+      const footer = el().querySelector('.dialog-footer') as HTMLElement;
+      const note = el().querySelector('#bpBatchOwnedReason') as HTMLElement;
+      expect(note.tagName).toBe('P');
+      expect(note.classList).toContain('gh-footer-note');
+      expect(note.classList).toContain('bp-footer-note');
+      expect(footer.firstElementChild).toBe(note);
+      expect(note.querySelector('svg.gh-footer-note-icon')?.getAttribute('aria-hidden')).toBe('true');
+      expect(note.hasAttribute('tabindex')).toBe(false);
+      expect(note.hasAttribute('aria-live')).toBe(false);
+      expect(note.getAttribute('role')).toBeNull();
+
+      const order = Array.from(footer.children).map(child => (child.textContent ?? '').replace(/\s+/g, ' ').trim());
+      expect(order[1]).toBe('Close');
+      expect(order.slice(2)).toEqual(['Cancel Battery', 'Continue — A member run failed.']);
     });
 
     it('opens the batch from the notice, closing first', () => {
@@ -844,6 +864,97 @@ describe('BatteryProgressDialogComponent', () => {
       expect(repaired.classList).toContain('is-current');
       expect(cell(0, 1).querySelector('.job-status-chip')?.textContent?.trim()).toBe('Completed with index');
       expect(cell(0, 1).getAttribute('data-repairing')).toBeNull();
+      // Without re-run stamps the repairing cell keeps its question bar and its run's elapsed time.
+      expect(repaired.querySelector('progress.bp-member-progress')).not.toBeNull();
+      expect(repaired.textContent).toContain('4 of 10 questions answered');
+      expect(repaired.querySelector('.bp-member-rerun')).toBeNull();
+      expect((repaired.querySelector('.bp-member-elapsed')?.textContent ?? '').trim()).toMatch(/^Elapsed /);
+    });
+
+    describe('a member re-running its failed questions', () => {
+      const FIVE_HOURS_MS = 5 * 3600_000;
+
+      const rerunning = (overrides: Partial<BenchmarkBatteryMemberDto> = {}): BenchmarkBatteryMemberDto => member({
+        memberId: 3, suiteIndex: 0, round: 2, runId: 103, runStatus: 'Running', qualityIndex: null, usable: false,
+        answeredQuestionCount: 10, totalQuestionCount: 10,
+        runStartedAtUtc: new Date(Date.now() - FIVE_HOURS_MS).toISOString(), runCompletedAtUtc: null,
+        rerunStartedAtUtc: new Date(Date.now() - 372_000).toISOString(), rerunCompletedAtUtc: null,
+        rerunQuestionCount: 3,
+        ...overrides
+      });
+
+      const repairingRun = (occupant: BenchmarkBatteryMemberDto): BenchmarkBatteryRunDto => {
+        const base = batteryRun();
+        return batteryRun({
+          status: 'CompletedWithErrors', isDriving: false, currentRunId: null, currentSuiteIndex: null, currentRound: null,
+          completedAtUtc: '2026-10-01T12:00:00Z', postRunWork: 'Repairing', repairingRunIds: [103],
+          slots: [base.slots[0], base.slots[1], slot(0, 2, occupant), base.slots[3]],
+          members: [base.members[0], base.members[1], occupant]
+        });
+      };
+
+      it('measures the re-run\'s elapsed time from its own start, not the run\'s', () => {
+        open(repairingRun(rerunning()));
+
+        const elapsed = (cell(0, 2).querySelector('.bp-member-elapsed')?.textContent ?? '').trim();
+        expect(elapsed).toBe('Re-run elapsed 6m 12s');
+        expect(elapsed).not.toContain('5h');
+      });
+
+      it('replaces the question bar with the questions it re-runs', () => {
+        open(repairingRun(rerunning()));
+
+        const repaired = cell(0, 2);
+        expect(repaired.querySelector('progress.bp-member-progress')).toBeNull();
+        expect(repaired.textContent).not.toContain('questions answered');
+        expect((repaired.querySelector('.bp-member-rerun')?.textContent ?? '').trim()).toBe('Re-running 3 failed questions');
+        expect(repaired.querySelector('.job-status-chip')?.textContent?.trim()).toBe('Re-run in progress');
+      });
+
+      it('says one failed question, or no count while the server does not know it', () => {
+        open(repairingRun(rerunning({ rerunQuestionCount: 1 })));
+        expect((cell(0, 2).querySelector('.bp-member-rerun')?.textContent ?? '').trim()).toBe('Re-running 1 failed question');
+
+        close();
+        open({ ...repairingRun(rerunning({ rerunQuestionCount: null })), id: 8 });
+        expect((cell(0, 2).querySelector('.bp-member-rerun')?.textContent ?? '').trim()).toBe('Re-running failed questions');
+      });
+
+      it('treats a finished earlier re-run as no re-run', () => {
+        const earlier = rerunning({
+          rerunStartedAtUtc: new Date(Date.now() - 2 * 3600_000).toISOString(),
+          rerunCompletedAtUtc: new Date(Date.now() - 3600_000).toISOString()
+        });
+        open(repairingRun(earlier));
+
+        const repaired = cell(0, 2);
+        expect(repaired.querySelector('.bp-member-rerun')).toBeNull();
+        expect(repaired.querySelector('progress.bp-member-progress')).not.toBeNull();
+        expect((repaired.querySelector('.bp-member-elapsed')?.textContent ?? '').trim()).toMatch(/^Elapsed 5h /);
+      });
+
+      it('advances the re-run clock by one second per tick while the battery run is not live', fakeAsync(() => {
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => false });
+        try {
+          open(repairingRun(rerunning({ rerunStartedAtUtc: new Date(Date.now() - 400).toISOString() })));
+          const elapsed = (): string => (cell(0, 2).querySelector('.bp-member-elapsed')?.textContent ?? '').trim();
+          expect(elapsed()).toBe('Re-run elapsed 0s');
+
+          tick(620);
+          fixture.detectChanges();
+          expect(elapsed()).toBe('Re-run elapsed 1s');
+
+          for (let second = 2; second <= 5; second++) {
+            tick(1000);
+            fixture.detectChanges();
+            expect(elapsed()).toBe(`Re-run elapsed ${second}s`);
+          }
+          close();
+          discardPeriodicTasks();
+        } finally {
+          delete (document as unknown as { hidden?: boolean }).hidden;
+        }
+      }));
     });
 
     it('says what a pending slot of a live battery run waits for', () => {

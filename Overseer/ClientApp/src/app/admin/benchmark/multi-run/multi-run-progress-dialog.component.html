@@ -387,7 +387,15 @@
 
     <div class="dialog-footer">
       @if (modelBatchOwnerId != null && (seriesIsLive || canContinue || instrumentChange)) {
-        <span class="series-batch-owned-reason" id="seriesBatchOwnedReason">{{ modelBatchOwnedReason }}</span>
+        <p class="gh-footer-note" id="seriesBatchOwnedReason">
+          <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="16" x2="12" y2="12"></line>
+            <line x1="12" y1="8" x2="12.01" y2="8"></line>
+          </svg>
+          <span>{{ modelBatchOwnedReason }}</span>
+        </p>
       }
       @if (seriesIsLive) {
         <button type="button" class="btn-gh btn-gh-cancel" (click)="requestClose()">Run in Background</button>

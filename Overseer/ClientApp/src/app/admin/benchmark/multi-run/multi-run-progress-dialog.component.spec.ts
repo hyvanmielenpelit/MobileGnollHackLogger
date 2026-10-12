@@ -342,7 +342,15 @@ describe('MultiRunProgressDialogComponent', () => {
 
     expect(getModelBatch).toHaveBeenCalledWith(21);
     expect(text('.series-batch-notice')).toBe('Part of model batch #21. Open model batch #21');
-    expect(text('#seriesBatchOwnedReason')).toBe('Use the model batch\'s progress dialog.');
+    expect(text('#seriesBatchOwnedReason'))
+      .toBe('Model batch #21 controls this series. Cancel, continue or re-run it from the batch.');
+    const note = fixture.nativeElement.querySelector('#seriesBatchOwnedReason') as HTMLElement;
+    expect(note.tagName).toBe('P');
+    expect(note.classList).toContain('gh-footer-note');
+    expect(note.querySelector('svg.gh-footer-note-icon')?.getAttribute('aria-hidden')).toBe('true');
+    expect(note.hasAttribute('tabindex')).toBe(false);
+    expect(note.hasAttribute('aria-live')).toBe(false);
+    expect(fixture.nativeElement.querySelector('.dialog-footer')?.firstElementChild).toBe(note);
     const continueButton = fixture.nativeElement.querySelector('.series-continue') as HTMLButtonElement;
     expect(continueButton.getAttribute('aria-disabled')).toBe('true');
     expect(continueButton.getAttribute('aria-describedby')).toBe('seriesBatchOwnedReason');

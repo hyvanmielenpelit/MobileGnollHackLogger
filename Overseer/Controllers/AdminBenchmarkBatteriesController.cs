@@ -852,6 +852,8 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         public int AdvisoryFlagAnswerCount { get; set; }
         public DateTime StartedAtUtc { get; set; }
         public DateTime? CompletedAtUtc { get; set; }
+        public DateTime? RerunStartedAtUtc { get; set; }
+        public DateTime? RerunCompletedAtUtc { get; set; }
         public long TestedModelSnapshotId { get; set; }
 
         /// <summary>A stand-in carrying exactly what <see cref="BenchmarkBatteryPlanner.UnusableReason"/> reads.</summary>
@@ -874,6 +876,9 @@ public class AdminBenchmarkBatteriesController : ControllerBase
 
         /// <summary>The run manager's stage of each running member run this process drives.</summary>
         public Dictionary<long, string> Stages { get; init; } = new();
+
+        /// <summary>The question count of each running member run's re-run in flight, from the run manager.</summary>
+        public Dictionary<long, int> RerunScopes { get; init; } = new();
 
         public IEnumerable<BenchmarkBatteryRunMember> Of(long batteryRunId)
             => Members.Where(m => m.BenchmarkBatteryRunId == batteryRunId);
@@ -912,6 +917,8 @@ public class AdminBenchmarkBatteriesController : ControllerBase
                 AdvisoryFlagAnswerCount = r.AdvisoryFlagAnswerCount,
                 StartedAtUtc = r.StartedAtUtc,
                 CompletedAtUtc = r.CompletedAtUtc,
+                RerunStartedAtUtc = r.RerunStartedAtUtc,
+                RerunCompletedAtUtc = r.RerunCompletedAtUtc,
                 TestedModelSnapshotId = r.TestedModelSnapshotId
             })
             .ToDictionaryAsync(r => r.Id, ct);
@@ -920,9 +927,17 @@ public class AdminBenchmarkBatteriesController : ControllerBase
         var runningIds = runs.Values.Where(r => r.Status == BenchmarkRunStatus.Running).Select(r => r.Id).ToList();
 
         var stages = new Dictionary<long, string>();
+        var rerunScopes = new Dictionary<long, int>();
         foreach (long runningId in runningIds)
         {
             if (_runManager.GetStage(runningId) is BenchmarkRunStage stage) stages[runningId] = stage.ToString();
+
+            var running = runs[runningId];
+            if (running.RerunStartedAtUtc != null && running.RerunCompletedAtUtc == null
+                && _runManager.GetRerunScope(runningId) is { Count: > 0 } scope)
+            {
+                rerunScopes[runningId] = scope.Count;
+            }
         }
         var answered = runningIds.Count == 0
             ? new Dictionary<long, int>()
@@ -945,6 +960,7 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             Runs = runs,
             AnsweredCounts = answered,
             Stages = stages,
+            RerunScopes = rerunScopes,
             ModelLabels = runs.Values.ToDictionary(
                 r => r.Id,
                 r => snapshotLabels.TryGetValue(r.TestedModelSnapshotId, out var label) ? label : null)
@@ -1590,6 +1606,9 @@ public class AdminBenchmarkBatteriesController : ControllerBase
             AddedAtUtc = member.AddedAtUtc,
             RunStartedAtUtc = run?.StartedAtUtc,
             RunCompletedAtUtc = run?.CompletedAtUtc,
+            RerunStartedAtUtc = run?.RerunStartedAtUtc,
+            RerunCompletedAtUtc = run?.RerunCompletedAtUtc,
+            RerunQuestionCount = running && state.RerunScopes.TryGetValue(member.BenchmarkRunId, out int rerunCount) ? rerunCount : null,
             AnsweredQuestionCount = running
                 ? (state.AnsweredCounts.TryGetValue(member.BenchmarkRunId, out int answered) ? answered : 0)
                 : run?.AnsweredQuestionCount ?? 0,

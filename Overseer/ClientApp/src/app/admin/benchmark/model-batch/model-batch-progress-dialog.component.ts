@@ -13,7 +13,7 @@ import {
   ViewChild,
   inject
 } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
+import { DatePipe, NgTemplateOutlet } from '@angular/common';
 
 import { Subscription } from 'rxjs';
 
@@ -30,7 +30,7 @@ import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
 import { downloadTextFile } from '../../../utils/download.util';
 import { startElapsedTicker } from '../../../utils/elapsed-ticker';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
-import { formatCostAmount, formatElapsed, formatModelTime } from '../benchmark-run-format';
+import { formatElapsed } from '../benchmark-run-format';
 import { formatCost, httpErrorText } from '../batteries/battery.models';
 import { RunFactBadge, RunFactModel, RunFactRow } from '../run-report-frame/run-facts';
 import { RunFactsComponent } from '../run-report-frame/run-facts.component';
@@ -42,19 +42,26 @@ import {
   MODEL_BATCH_COMPARE_REASON,
   MODEL_BATCH_CORPUS_QUIET_TEXT,
   MODEL_BATCH_RESUME_ORDER,
+  ModelBatchMemberFigure,
   canCompareModelBatch,
   isLiveModelBatchStatus,
+  isModelBatchMemberRepairing,
   modelBatchCurrentMember,
   modelBatchDiagnosticsFileName,
   modelBatchFinishedMemberCount,
+  modelBatchIndexWithheldText,
   modelBatchLaunchedRunCount,
   modelBatchMemberBadges,
   modelBatchMemberChipClass,
+  modelBatchMemberFigures,
   modelBatchMemberName,
+  modelBatchMemberRepairLabel,
+  modelBatchMemberRepairText,
   modelBatchMemberStatusLabel,
   modelBatchOrderText,
   modelBatchPlanText,
   modelBatchPlannedRunCount,
+  modelBatchRepairingMember,
   modelBatchResumeLabel,
   modelBatchStatusLabel,
   modelBatchStopReasonLabel,
@@ -90,14 +97,26 @@ export interface ModelBatchMemberView {
   readonly badges: RunFactBadge[];
   readonly chipClass: string;
   readonly statusLabel: string;
+  /** Running or repairing: the card is marked current. */
+  readonly current: boolean;
+  /** A member run running in place while the batch is not live. */
+  readonly repairing: boolean;
+  /** The chip text while repairing; null otherwise. */
+  readonly repairLabel: string | null;
+  /** *Re-running 2 failed questions*; null unless the repair is a re-run of failed questions. */
+  readonly repairText: string | null;
   /** *Run #79 · Stage 1 of 3 — Answering and grading*, or null when the member runs nothing. */
   readonly stageCaption: string | null;
   /** *Suite 2 of 3 · round 1: Board Suite* for a battery member, *Run 2 of 3* for a series member. */
   readonly stepText: string | null;
+  /** Completed or completed with errors: the card shows its index and figures. */
+  readonly finished: boolean;
   readonly indexValue: number | null;
   readonly indexLabel: string;
-  readonly facts: { readonly label: string; readonly value: string }[];
-  /** *Run #55*, *Series #8* or *Battery run #12*; null before the member launched anything. */
+  /** Why a finished member has no index; null when it has one or is not finished. */
+  readonly indexWithheldText: string | null;
+  readonly figures: ModelBatchMemberFigure[];
+  /** *Run #55*, *Series #8* or *Battery run #12*, then *· finished 22:41* once finished; null before the member launched anything. */
   readonly refText: string | null;
   /** Why a skipped, failed, stopped or canceled member ended; null otherwise. */
   readonly reason: string | null;
@@ -110,11 +129,11 @@ export interface ModelBatchMemberView {
 type ModelBatchBusy = 'resume' | 'skip' | 'cancel' | 'compare';
 
 /**
- * Progress of one model batch: a stage rail (the model runs, then the comparison they make ready),
- * the stop reason and the resume options in words, a stat strip, one card per model in run order and
- * the batch diagnostics. It loads the batch itself and polls it while it is visible and live or
- * resumable, one request at a time, backing off on failures and pausing while the tab is hidden; the
- * host owns `visible`.
+ * Progress of one model batch in two sections: the overview (a stage rail of the model runs and the
+ * comparison they make ready, the stop reason and the resume options in words, a stat strip and the
+ * batch diagnostics) and one card per model in run order. It loads the batch itself and polls it while
+ * it is visible and live, resumable or repairing a member's run, one request at a time, backing off on
+ * failures and pausing while the tab is hidden; the host owns `visible`.
  *
  * It never embeds a member's run or battery progress: two modal dialogs in the top layer trap focus
  * between them, so *Open run progress* and *Open battery progress* close this dialog and hand the id
@@ -142,6 +161,7 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
   /** Poll delays after consecutive failures; the last repeats. */
   static readonly POLL_BACKOFF_MS = [4000, 8000, 16000, 30000] as const;
   private static readonly COPIED_RESET_MS = 2000;
+  private static readonly datePipe = new DatePipe('en-US');
 
   @Input() modelBatchRunId: number | null = null;
   @Input() visible = false;
@@ -186,7 +206,6 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
   private copiedTimer: ReturnType<typeof setTimeout> | null = null;
 
   readonly corpusQuietText = MODEL_BATCH_CORPUS_QUIET_TEXT;
-  readonly compareReason = MODEL_BATCH_COMPARE_REASON;
   readonly statusLabel = modelBatchStatusLabel;
 
   private isOpen = false;
@@ -373,13 +392,17 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
     });
   }
 
-  /** Keeps polling while the batch is live or resumable, and the elapsed ticker while it is live. */
+  /**
+   * Keeps polling while the batch is live or resumable or a member's run is being repaired, and the
+   * elapsed ticker while it is live or a member's run is being repaired.
+   */
   private afterPoll(batch: BenchmarkModelBatchRunDto): void {
     const live = isLiveModelBatchStatus(batch.status);
-    if (this.isOpen && (live || batch.resumable)) {
+    const repairing = modelBatchRepairingMember(batch) != null;
+    if (this.isOpen && (live || batch.resumable || repairing)) {
       this.schedulePoll(ModelBatchProgressDialogComponent.POLL_INTERVAL_MS);
     }
-    if (!live) {
+    if (!live && !repairing) {
       this.stopElapsedTicker();
     } else if (this.isOpen && this.elapsedTimer === null) {
       this.startElapsedTicker();
@@ -391,7 +414,12 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
 
   private startElapsedTicker(): void {
     this.stopElapsedTicker();
-    this.elapsedTimer = startElapsedTicker(() => this.batch?.startedAtUtc, () => this.cdr.markForCheck());
+    this.elapsedTimer = startElapsedTicker(() => this.elapsedAnchor, () => this.cdr.markForCheck());
+  }
+
+  /** The ticker's whole-second anchor: a repairing member's re-run start, else the batch's start. */
+  private get elapsedAnchor(): string | null | undefined {
+    return modelBatchRepairingMember(this.batch)?.rerunStartedAtUtc || this.batch?.startedAtUtc;
   }
 
   private stopElapsedTicker(): void {
@@ -514,6 +542,12 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
       return this.loadError ? 'Could not load the model batch.' : 'Loading the model batch…';
     }
     const total = this.requestedCount;
+    const repairing = this.isLive ? null : modelBatchRepairingMember(batch);
+    if (repairing) {
+      return repairing.rerunStartedAtUtc
+        ? `Re-running failed questions of ${modelBatchMemberName(repairing)}`
+        : `Repairing ${modelBatchMemberName(repairing)}`;
+    }
     const current = modelBatchCurrentMember(batch);
     switch (batch.status) {
       case 'Pending':
@@ -593,6 +627,17 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
     return canCompareModelBatch(this.batch);
   }
 
+  /** *3 of 10 finished*, for the models section's count pill. */
+  get membersCountText(): string {
+    return `${this.finishedCount} of ${this.requestedCount} finished`;
+  }
+
+  /** The footer's note: why the actions wait while a request is in flight, else why comparing waits. */
+  get footerNote(): string {
+    if (this.busy) return this.busyReason;
+    return this.canCompare ? '' : MODEL_BATCH_COMPARE_REASON;
+  }
+
   /** Why the footer's actions wait; empty while no request is in flight. */
   get busyReason(): string {
     switch (this.busy) {
@@ -609,13 +654,9 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
   private memberView(batch: BenchmarkModelBatchRunDto, member: BenchmarkModelBatchMemberDto): ModelBatchMemberView {
     const battery = batch.targetKind === 'Battery';
     const running = member.status === 'Running';
+    const repairing = isModelBatchMemberRepairing(member);
+    const repairLabel = modelBatchMemberRepairLabel(member);
     const result = member.result ?? null;
-    const facts: { label: string; value: string }[] = [];
-    if (result?.medianModelTimeMs != null) facts.push({ label: 'Median model time', value: formatModelTime(result.medianModelTimeMs) });
-    if (result?.ttftP50Ms != null) facts.push({ label: 'TTFT P50', value: formatModelTime(result.ttftP50Ms) });
-    if (result?.candidateCostPerQuestionUsd != null) {
-      facts.push({ label: 'Cost per question', value: formatCostAmount(result.candidateCostPerQuestionUsd) });
-    }
     const index = battery ? result?.overallIndex ?? null : result?.intelligenceIndex ?? null;
     const lastRunId = member.runIds?.length ? member.runIds[member.runIds.length - 1] : member.runId ?? null;
     const finished = member.status === 'Completed' || member.status === 'CompletedWithErrors';
@@ -625,23 +666,36 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
       if (!battery && lastRunId != null) report = { kind: 'run', id: lastRunId };
     }
     const ended = ['Skipped', 'Failed', 'Stopped', 'Canceled'].includes(member.status);
+    const indexValue = finished && index != null && Number.isFinite(index) ? index : null;
+    const ref = battery
+      ? (member.batteryRunId != null ? `Battery run #${member.batteryRunId}` : null)
+      : member.seriesId != null ? `Series #${member.seriesId}` : member.runId != null ? `Run #${member.runId}` : null;
+    const finishedAt = finished ? this.finishedAtText(member.completedAtUtc) : null;
+    let stageCaption: string | null = null;
+    if (repairing) {
+      stageCaption = `Run #${member.repairingRunId}` + this.stageSuffix(member);
+    } else if (running && member.currentRunId != null) {
+      stageCaption = `Run #${member.currentRunId}` + this.stageSuffix(member);
+    }
     return {
       member,
       position: member.orderIndex + 1,
       name: modelBatchMemberName(member),
       badges: modelBatchMemberBadges(member),
-      chipClass: modelBatchMemberChipClass(member.status),
-      statusLabel: modelBatchMemberStatusLabel(member.status),
-      stageCaption: running && member.currentRunId != null
-        ? `Run #${member.currentRunId}` + this.stageSuffix(member)
-        : null,
-      stepText: running ? this.stepText(batch, member) : null,
-      indexValue: finished && index != null && Number.isFinite(index) ? index : null,
+      chipClass: repairing ? 'job-status-chip status-answering' : modelBatchMemberChipClass(member.status),
+      statusLabel: repairLabel ?? modelBatchMemberStatusLabel(member.status),
+      current: running || repairing,
+      repairing,
+      repairLabel,
+      repairText: modelBatchMemberRepairText(member),
+      stageCaption,
+      stepText: running && !repairing ? this.stepText(batch, member) : null,
+      finished,
+      indexValue,
       indexLabel: battery ? 'Overall Index' : 'Intelligence Index',
-      facts: finished ? facts : [],
-      refText: battery
-        ? (member.batteryRunId != null ? `Battery run #${member.batteryRunId}` : null)
-        : member.seriesId != null ? `Series #${member.seriesId}` : member.runId != null ? `Run #${member.runId}` : null,
+      indexWithheldText: finished && indexValue == null ? modelBatchIndexWithheldText(member, batch.targetKind) : null,
+      figures: finished ? modelBatchMemberFigures(member) : [],
+      refText: ref && finishedAt ? `${ref} · finished ${finishedAt}` : ref,
       reason: ended ? (member.errorMessage?.trim() || this.endedReason(member.status)) : null,
       canSkip: member.status === 'Pending' && (this.isLive || batch.status === 'Stopped'),
       report
@@ -676,9 +730,26 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
     }
   }
 
+  /** *22:41* local time, with the date before it when that is not today; null without a valid time. */
+  private finishedAtText(completedAtUtc: string | null | undefined): string | null {
+    if (!completedAtUtc) return null;
+    const date = parseServerUtcDate(completedAtUtc);
+    if (Number.isNaN(date.getTime())) return null;
+    const now = new Date();
+    const today = date.getFullYear() === now.getFullYear() && date.getMonth() === now.getMonth() && date.getDate() === now.getDate();
+    return ModelBatchProgressDialogComponent.datePipe.transform(date, today ? 'HH:mm' : 'MMM d, y, HH:mm');
+  }
+
   /** A running member's elapsed time from its own start; null without one. */
   memberElapsedLabel(member: BenchmarkModelBatchMemberDto): string | null {
     return member.startedAtUtc ? formatElapsed(elapsedMsBetween(member.startedAtUtc, null)) : null;
+  }
+
+  /** A repairing member's elapsed time from its re-run's start; null for a repair that is not a re-run. */
+  rerunElapsedLabel(member: BenchmarkModelBatchMemberDto): string | null {
+    return member.repairingRunId != null && member.rerunStartedAtUtc
+      ? formatElapsed(elapsedMsBetween(member.rerunStartedAtUtc, null))
+      : null;
   }
 
   // --- Actions ---------------------------------------------------------------------------------

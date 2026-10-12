@@ -85,6 +85,15 @@ Harness-neutral, and the floor for any Overseer frontend work.
   blocker under it as `.gh-field-error` and else its first warning as `.gh-field-warning`, linked by the
   field's `aria-describedby`; the model batch progress dialog uses it for its corpus-quiet and stall
   lines. Global; never copied into a component.
+- **`.gh-footer-note`** (since 2026-10-12) is a dialog footer's status note: why an action waits or
+  is unavailable. One per footer, its **first** child, so it takes the start and the buttons stay at
+  the end (`margin-inline-end: auto`, `flex: 1 1 16rem`, secondary text in muted gray), with a leading
+  16 px Feather *info* SVG `.gh-footer-note-icon` (`aria-hidden`, in `--primary-color`). It has an id,
+  and every button it explains points at it with `aria-describedby`; it is neither focusable nor a
+  live region. Users: the model batch progress dialog (`#mbFooterNote`: the busy reason, else why
+  comparing waits), and the battery and series progress dialogs' batch-owned reason
+  (`#bpBatchOwnedReason`, `#seriesBatchOwnedReason`). Global; never copied into a component. Contract:
+  [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 2, dialog footer.
 - **`.gh-readiness*`** (since 2026-10-10) — the readiness card, global in `styles.scss`, first used by
   the model batch launcher's *Batch Readiness* (`app-model-batch-readiness`): `.gh-readiness` (with
   `[data-state]` `blocked`, `review` or `ready` on the card, which colors its start edge), the summary
@@ -1123,8 +1132,10 @@ To find specific popups, look in the corresponding component's `.html` template:
     `localStorage['overseer.benchmark.modelComparison.last']` (`comparison-tab/last-comparison.ts`, record
     version 1, at most 64 entries; every access in try/catch): *Comparison #N · <name>*, the facts
     *Charted*, *Pricing* and *Report documents* (counted from `listComparisons()`, refreshed on tab
-    entry and after the wizard closes, omitted while unknown or failed), an entries table (*Model*,
-    *Intelligence Index* with interval, *Median model time*, *TTFT P50*, *Candidate cost / question*,
+    entry and after the wizard closes, omitted while unknown or failed), an entries table (*Model* —
+    the entry's `modelDisplayName`, falling back to its `label`, so the name carries no *(medium)*
+    suffix, then the thinking-level badge with a visually hidden *thinking level* prefix, then the
+    provider badge: the launcher picker's order — *Intelligence Index* with interval, *Median model time*, *TTFT P50*, *Candidate cost / question*,
     *Status*), and **Open in wizard** (`BenchmarkComparisonState.applyComparisonEntries`, then
     `openComparisonWizard()`). The wizard's `comparisonIdentified` output feeds
     `BenchmarkComparisonState.recordLastComparison` after `identify` answers, on a rename and on a
@@ -1711,7 +1722,13 @@ To find specific popups, look in the corresponding component's `.html` template:
     an `app-index-badge`, a facts line (*Speed 71 · 13m 40s · 0 refuted claims · 3 flagged answers ·
     est. $0.42*, flagged omitted at 0, the estimate omitted when `estimatedCost` is null) and *Run #N*; an empty pending slot of a live run *Waiting for suite …*.
     A cell whose member run is in `repairingRunIds` shows the chip *Re-run in progress*
-    (`BATTERY_REPAIRING_LABEL`, `data-repairing`) and is marked current; an *Index withheld* cell's hint
+    (`BATTERY_REPAIRING_LABEL`, `data-repairing`) and is marked current; while that repair is a re-run
+    of failed questions (`memberRerunning`: the member's `rerunStartedAtUtc` with no
+    `rerunCompletedAtUtc` at or after it) the cell hides the question bar and its count, which would
+    read complete, and shows *Re-running N failed questions* (`rerunQuestionCount`, *Re-running failed
+    questions* while unknown) and *Re-run elapsed …* from the re-run's start instead of *Elapsed …*. The
+    elapsed ticker runs while the battery run is live and also while a member is repaired, aligned to
+    that re-run's start; an *Index withheld* cell's hint
     is `INDEX_WITHHELD_HINT`, *"Re-run failed questions on this run; the battery run follows the re-run
     when it finishes."* Elapsed times and durations are `formatElapsed`. The dialog polls while the
     battery run is live and, after it, while `batteryAwaitsPostRun` holds — the server's `postRunWork`
@@ -1733,36 +1750,71 @@ To find specific popups, look in the corresponding component's `.html` template:
     the shell's `onOpenBatteryAnalysis` opens the Battery Run Report. **A model batch's battery run**:
     while its batch (`modelBatchRunId`) is not final, a `.bp-batch-notice` under the heading reads *Part of
     model batch #N.* with **Open model batch #N** (`openModelBatch`), and Cancel Battery, Re-run under
-    current instrument and Continue are `aria-disabled` with `MODEL_BATCH_OWNED_REASON` beside them
-    (`#bpBatchOwnedReason`); opened from the batch dialog (`returnsToModelBatch`), its dismissal reads
-    **Back to Batch**. The multi-run progress dialog does the same for a batch's series
-    (`.series-batch-notice`, `#seriesBatchOwnedReason`), and the run progress dialog's dismissal reads
-    **Back to Batch** for a member run opened from the batch.
+    current instrument and Continue are `aria-disabled` and described by the footer's first child, a
+    `.gh-footer-note` `#bpBatchOwnedReason` (shown while any of them is) reading
+    `modelBatchOwnedReasonText(N, 'battery')`, *"Model batch #N controls this battery run. Cancel,
+    continue or re-run it from the batch."*; opened from the batch dialog (`returnsToModelBatch`), its
+    dismissal reads **Back to Batch**. The multi-run progress dialog does the same for a batch's series
+    (`.series-batch-notice`, `#seriesBatchOwnedReason`, *"…controls this series. …"*), and the run
+    progress dialog's dismissal reads **Back to Batch** for a member run opened from the batch.
   - `app-model-batch-progress-dialog` (`model-batch/model-batch-progress-dialog.component.*`, `mb`
     ids, pure helpers in `model-batch/model-batch.models.ts`; method in
     `docs/overseer/ai-benchmark-model-batches.md`): **full-screen** progress of one model batch, hosted
     by the shell (`benchmark.component.html`) and shown by `BenchmarkActiveRunMonitor`
     (`modelBatchDialogVisible`, `modelBatchDialogId`). Header *Model Batch #N* with the GnollBench
     emblem, the subtitle *target · n models × K suites × R runs · order and seed* and the scoring graders
-    as `app-run-facts`; then the shared `.run-stage-rail` (*Model runs*, *Ready to compare*), the *Models
-    finished* bar with the dialog's **only** `role="status"` line, a state block for a stopped or waiting
+    as `app-run-facts`. The body has **two sections** in the `mb` inline-size container (on
+    `.mb-content`, the content column around the body, because a container query styles only the
+    container's descendants): `section.mb-overview` (`aria-label="Batch overview"`) and
+    `section.mb-models` (labelled by its heading, `tabindex="0"` so a keyboard user can scroll it). From
+    64 rem of dialog width they sit side by side (`minmax(22rem, 2fr)` and `3fr`), each scrolling on its
+    own; narrower, they stack and the body scrolls as one. Each section is also its own inline-size
+    container (`mb-overview`, `mb-models`), so the rail stacks and the cards narrow with the section.
+    **The overview**: the shared `.run-stage-rail` (*Model runs*, *Ready to compare*), the *Models
+    finished* bar with the dialog's **only** `role="status"` line (`stageLine`: it changes with the
+    stage, never with the clock; while the batch is not live and a member's run is repaired, *Re-running
+    failed questions of <model>* or *Repairing <model>*), a state block for a stopped or waiting
     batch (the stop reason and detail, and each resume option with what it does), a `.run-stat-strip`
     (*Status*, *Elapsed*, *Models done*, *Runs*, *Failed*, *Candidate cost*, *Total cost*), the shared
     instrument line or the *Instrument changed before …* alert (tagged *Not comparable across the
-    change* once accepted), the MB-T04 and stall lines as `.gh-field-warning`, and **Models in run
-    order**: an `ol` of `article.mb-member` cards (position, name, `runFactBadges` badges, a
-    `.job-status-chip`; a running member's step, stage, `progress.job-progress` and elapsed time; a
-    finished member's `app-index-badge` and facts; an ended member's reason; **Skip model** on a pending
-    one; icon-only *Open run progress* per run or *Open battery progress*, and *View report*), then
-    *Batch diagnostics* with icon-only **Copy** and **Download** (`model-batch-<id>-diagnostics.txt`). The
-    footer: **Run in Background** / **Close**, **Cancel Batch** and **Re-run under current instrument**
-    (each behind the shell's confirmation, `BenchmarkShellBridge.openConfirmDialog`), the other resume
-    options (*Continue* behind the *play* glyph), and **Open in Model Comparison** (emits the comparison
-    preset; `aria-disabled` with *Two models with a completed result are needed to compare.* until two
-    members have a result). While a request is in flight the other actions are `aria-disabled` with the
-    reason beside them, and each resume arms the end signals under the click. It loads and polls the
+    change* once accepted), the MB-T04 and stall lines as `.gh-field-warning`, the load and action
+    errors, then *Batch diagnostics* with icon-only **Copy** and **Download**
+    (`model-batch-<id>-diagnostics.txt`). **The models**: the heading **Models in run order** with a
+    *k of M finished* count, and an `ol` of `article.mb-member` cards (position, name, `runFactBadges`
+    badges, a `.job-status-chip`; a running member's step, stage, `progress.job-progress` and elapsed
+    time; a pending one *Waiting* with **Skip model**; an ended member's reason; icon-only *Open run
+    progress* per run or *Open battery progress*, and *View report*). A **finished** card
+    (`Completed`, `CompletedWithErrors`) shows on its start side an `app-index-badge size="md"` with
+    its label (*Intelligence Index* or *Overall Index*; the label is `aria-hidden`, the badge names
+    it), or, without an index, `modelBatchIndexWithheldText` as a `.gh-field-warning` (*No index — 2
+    answers failed. Open the battery progress to re-run failed questions.*, *the run progress* for a
+    suite member, or *No index for this result.*), and beside it a `dl.mb-member-figures`
+    (`modelBatchMemberFigures`, each omitted when missing): *Speed Index*, *Duration*, *Median model
+    time*, *TTFT P50*, *Cost / question*, *Total cost*, *Refuted claims* (whenever there is a result),
+    *Flagged answers* above zero and *Failed answers* above zero (warning-toned, with a visually hidden
+    *(needs attention)*); under 30 rem of the models section the figures go below the index. Its
+    reference line reads *Run #55*, *Series #8* or *Battery run #12* with *· finished HH:mm* (the date
+    before it when not today), and a 3 px start edge in the status color (success, or warning for
+    `CompletedWithErrors`; gold for the current card). **Repair visibility**: a member whose
+    `repairingRunId` is set (a run running in place under a batch that is not live — a re-run of
+    failed questions, a re-assessment, re-synthesis or retry) is marked current (`data-repairing`) and
+    shows the chip *Re-run in progress* (`BATTERY_REPAIRING_LABEL`) while `rerunStartedAtUtc` is set,
+    else *Repair in progress* (`MODEL_BATCH_REPAIR_LABEL`), the stage caption *Run #N · <stage>*,
+    *Re-running N failed questions* (`rerunQuestionCount`; *Re-running failed questions* without one)
+    and *Re-run elapsed …* from the re-run's start; the step, question bar and count, which would read
+    complete, are not shown. The footer opens with one `.gh-footer-note#mbFooterNote` at its start
+    (`footerNote`: while a request is in flight its busy reason — *Waiting for the server to resume the
+    batch.* and the like — else, until two members have a result, `MODEL_BATCH_COMPARE_REASON`, *Two
+    models with a completed result are needed to compare.*), then **Run in Background** / **Close**,
+    **Cancel Batch** and **Re-run under current instrument** (each behind the shell's confirmation,
+    `BenchmarkShellBridge.openConfirmDialog`), the other resume options (*Continue* behind the *play*
+    glyph), and **Open in Model Comparison** (emits the comparison preset). An `aria-disabled` action
+    (and a card's **Skip model** while busy) points at the note with `aria-describedby`; no reason text
+    sits between the buttons. Each resume arms the end signals under the click. It loads and polls the
     batch itself (`GET model-batches/runs/{id}`, 2 s, one request at a time, backing off 4 → 8 → 16 →
-    30 s, paused while the tab is hidden). **It never embeds a member's dialog**: *Open run progress* and
+    30 s, paused while the tab is hidden) while it is visible and the batch is live, resumable or
+    repairing a member's run; the elapsed ticker runs while the batch is live or a member is repaired,
+    aligned to the repair's re-run start when there is one. **It never embeds a member's dialog**: *Open run progress* and
     *Open battery progress* close it and emit the id; the shell opens that dialog with **Back to Batch**,
     and `reopenModelBatchAfterClose()` reopens the batch dialog when it closes. Opened on Start, from the
     run tab's batch banner (**Show Batch Progress**) and from a Run History batch card (**View
@@ -1951,9 +2003,16 @@ To find specific popups, look in the corresponding component's `.html` template:
     until you do.* — no hint line beside it — and the footer's and Compare's disabled reason, and the
     state error, read *Select at least one run, analysis group or battery result.* Once something is
     selected, **Clear selection (N)** (`btn-gh btn-gh-cancel btn-gh-small`) leads the chip row; after it
-    focus moves to the label. Each chip's remove button is a 32 × 32 `.action-btn` named *Remove
-    {detail} {label} from the selection*; removing one moves focus to the next chip's remove button,
-    else to Clear selection, else to the label.
+    focus moves to the label. Each chip (`li.mc-selection-chip`, from
+    `BenchmarkComparisonState.comparisonSelectedSources`) holds its detail — a run's or a battery
+    run's *#13*, the battery one with a visually hidden *Battery run* prefix, a group's *N runs* — then
+    an `app-model-identity` (`shared/model-identity/`) with the source's name, thinking level,
+    reasoning mode and provider (a group has no provider badge; its 3 px `--primary-color` left border marks it),
+    kept on one line: the name truncates with an ellipsis at 16 rem and the badges are compact
+    (10 px), scaled to the chip's 12 px through `::ng-deep`. Each chip's remove button is a 32 × 32
+    `.action-btn` named *Remove {detail} {label} from the selection* (*Remove Battery run 13 {label}
+    from the selection* for a battery run, `sourceRemoveName`); removing one moves focus to the next
+    chip's remove button, else to Clear selection, else to the label.
   - No preview dialog: step 2 is a workspace with five view tabs — **All charts** (grid), **Single
     chart** (eye), **Interactive table** (table), **Table preview** (image) and **Paired tests**
     (*columns*; `aria-disabled` while fewer than two entries are comparable, its reason as a visually

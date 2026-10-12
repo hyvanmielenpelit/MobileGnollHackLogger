@@ -167,6 +167,7 @@ import {
   zoomToSlider
 } from './preview-view';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { ModelIdentityComponent } from '../../../shared/model-identity/model-identity.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { PaneResizerComponent } from '../../../shared/pane-resizer/pane-resizer.component';
 import { ToastComponent, ToastNotice } from '../../../shared/toast/toast.component';
@@ -660,7 +661,7 @@ export interface ComparisonFigureCard {
     CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent, ProviderBadgeComponent, ToastComponent,
     FigureStylePanelComponent, ExportSizeSectionComponent, TableSettingsPanelComponent, ReorderableListComponent,
     InfoTipComponent, PaneResizerComponent, ReportPackPanelComponent, DownloadCenterPanelComponent,
-    PairedTestsViewComponent, ComparisonRenameDialogComponent
+    PairedTestsViewComponent, ComparisonRenameDialogComponent, ModelIdentityComponent
   ],
   templateUrl: './model-comparison.component.html',
   styleUrls: ['./model-comparison.component.scss']
@@ -1322,6 +1323,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** One chip's tooltip anchor id, for its remove button's `interestfor` / `position-anchor` pair. */
   sourceChipId(source: ComparisonSelectedSource): string {
     return `mc-sel-${source.kind}-${source.id}`;
+  }
+
+  /** The source as its remove button names it: a battery chip's bare `#13` reads "Battery run 13". */
+  sourceRemoveName(source: ComparisonSelectedSource): string {
+    return source.kind === 'battery' ? `Battery run ${source.id}` : source.detail;
   }
 
   /**

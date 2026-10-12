@@ -196,6 +196,61 @@ describe('ModelComparisonComponent', () => {
     expect(chips[1].nativeElement.classList).toContain('mc-selection-chip--group');
   });
 
+  it('shows a battery chip as #13, then the name, the thinking badge and the provider badge', () => {
+    const source: ComparisonSelectedSource = {
+      kind: 'battery', id: 13, label: 'Claude Opus', provider: 'Anthropic', thinkingLevel: 'high', detail: '#13'
+    };
+    band({ runs: 1, sources: [source], notices: [] });
+
+    const chip = fixture.debugElement.query(By.css('.mc-selection-chip'));
+    const detail = chip.query(By.css('.mc-selection-chip-detail')).nativeElement as HTMLElement;
+    expect(detail.querySelector('.visually-hidden')?.textContent).toBe('Battery run ');
+    expect(detail.textContent).toBe('Battery run #13');
+
+    const identity = chip.query(By.css('app-model-identity')).nativeElement as HTMLElement;
+    const thinking = chip.query(By.css('.thinking-badge')).nativeElement as HTMLElement;
+    const provider = chip.query(By.css('app-provider-badge')).nativeElement as HTMLElement;
+    expect(identity.querySelector('.model-identity-name')?.textContent).toBe('Claude Opus');
+    expect(thinking.textContent).toContain('high');
+    expect(detail.compareDocumentPosition(identity) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(thinking.compareDocumentPosition(provider) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+
+    const remove = chip.query(By.css('.mc-selection-remove')).nativeElement as HTMLButtonElement;
+    expect(remove.getAttribute('aria-label')).toBe('Remove Battery run 13 Claude Opus from the selection');
+  });
+
+  it('gives a group chip its thinking badge and no provider badge', () => {
+    const source: ComparisonSelectedSource = {
+      kind: 'group', id: 3, label: 'Nightly regression', provider: null, thinkingLevel: 'medium', detail: '4 runs'
+    };
+    band({ groups: 1, sources: [source], notices: [] });
+
+    const chip = fixture.debugElement.query(By.css('.mc-selection-chip'));
+    expect(chip.query(By.css('.thinking-badge'))).toBeTruthy();
+    expect(chip.query(By.css('app-provider-badge'))).toBeNull();
+    expect(chip.query(By.css('.mc-selection-chip-detail .visually-hidden'))).toBeNull();
+    expect((chip.query(By.css('.mc-selection-remove')).nativeElement as HTMLElement).getAttribute('aria-label'))
+      .toBe('Remove 4 runs Nightly regression from the selection');
+  });
+
+  it('keeps a chip with a long name and every badge to the height of its remove button', () => {
+    const source: ComparisonSelectedSource = {
+      kind: 'run', id: 48, label: 'A very long custom model identifier that would otherwise wrap '.repeat(3),
+      provider: 'OpenAI', thinkingLevel: 'xhigh', reasoningMode: 'pro', detail: '#48'
+    };
+    band({ runs: 1, sources: [source], notices: [] });
+
+    const chip = fixture.debugElement.query(By.css('.mc-selection-chip'));
+    const identity = chip.query(By.css('app-model-identity')).nativeElement as HTMLElement;
+    const remove = chip.query(By.css('.mc-selection-remove')).nativeElement as HTMLElement;
+    const name = identity.querySelector('.model-identity-name') as HTMLElement;
+    expect(getComputedStyle(identity).flexWrap).toBe('nowrap');
+    expect(getComputedStyle(name).textOverflow).toBe('ellipsis');
+    expect(getComputedStyle(chip.query(By.css('.thinking-badge')).nativeElement).fontSize).toBe('10px');
+    expect(getComputedStyle(chip.query(By.css('app-provider-badge')).nativeElement).fontSize).toBe('10px');
+    expect(identity.getBoundingClientRect().height).toBeLessThanOrEqual(remove.getBoundingClientRect().height);
+  });
+
   it('emits the chip through removeSource when its remove button is clicked', () => {
     const source: ComparisonSelectedSource =
       { kind: 'run', id: 1, label: 'Gemini 2.5 Flash', provider: 'Google', detail: '#1' };

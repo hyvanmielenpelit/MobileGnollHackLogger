@@ -7,8 +7,12 @@ import type {
   BenchmarkModelBatchResumeMode,
   BenchmarkModelBatchResumeOptionDto,
   BenchmarkModelBatchRunDto,
-  BenchmarkModelBatchStopReason
+  BenchmarkModelBatchStopReason,
+  BenchmarkModelBatchTargetKind
 } from '../../../services/admin-benchmark.service';
+import { elapsedMsBetween } from '../../../utils/date.util';
+import { BATTERY_REPAIRING_LABEL, formatCost } from '../batteries/battery.models';
+import { formatCostAmount, formatElapsed, formatModelTime } from '../benchmark-run-format';
 import { MAX_COMPARISON_SOURCES } from '../model-comparison/comparison-source-picker.component';
 import { RunFactBadge, runFactBadges } from '../run-report-frame/run-facts';
 import type { ComparisonWizardPreset } from '../state/benchmark-shell-bridge.service';
@@ -85,7 +89,7 @@ export function canCompareModelBatch(batch: BenchmarkModelBatchRunDto | null | u
   return !!batch && comparableModelBatchMembers(batch).length >= 2;
 }
 
-/** The reason Open in Model Comparison waits, shown beside the button while it is unavailable. */
+/** The reason Open in Model Comparison waits while it is unavailable. */
 export const MODEL_BATCH_COMPARE_REASON = 'Two models with a completed result are needed to compare.';
 
 /** A member's model as its badges show it: thinking level, reasoning mode, provider, tier, custom endpoint. */
@@ -232,4 +236,104 @@ export const MODEL_BATCH_CORPUS_QUIET_TEXT =
   'Do not push the wiki, source or knowledge base until the batch ends; a change stops it.';
 
 /** The batch-owned notice's reason for a gated action in the battery and series progress dialogs. */
-export const MODEL_BATCH_OWNED_REASON = 'Use the model batch\'s progress dialog.';
+export function modelBatchOwnedReasonText(batchId: number, kind: 'battery' | 'series'): string {
+  const child = kind === 'battery' ? 'battery run' : 'series';
+  return `Model batch #${batchId} controls this ${child}. Cancel, continue or re-run it from the batch.`;
+}
+
+/** A member card's chip text while a repair that is not a re-run of failed questions runs on its run. */
+export const MODEL_BATCH_REPAIR_LABEL = 'Repair in progress';
+
+/** A member run running in place (a re-run, re-assessment, re-synthesis or retry) while the batch is not live. */
+export function isModelBatchMemberRepairing(member: BenchmarkModelBatchMemberDto): boolean {
+  return member.repairingRunId != null;
+}
+
+/** The first member whose run is being repaired; null when none is. */
+export function modelBatchRepairingMember(batch: BenchmarkModelBatchRunDto | null | undefined): BenchmarkModelBatchMemberDto | null {
+  return batch?.members.find(isModelBatchMemberRepairing) ?? null;
+}
+
+/** A repairing member's chip text: *Re-run in progress* for a re-run of failed questions, else *Repair in progress*. */
+export function modelBatchMemberRepairLabel(member: BenchmarkModelBatchMemberDto): string | null {
+  if (!isModelBatchMemberRepairing(member)) return null;
+  return member.rerunStartedAtUtc ? BATTERY_REPAIRING_LABEL : MODEL_BATCH_REPAIR_LABEL;
+}
+
+/** *Re-running 2 failed questions*, or *Re-running failed questions* without a count; null for any other repair. */
+export function modelBatchMemberRepairText(member: BenchmarkModelBatchMemberDto): string | null {
+  if (!isModelBatchMemberRepairing(member) || !member.rerunStartedAtUtc) return null;
+  const count = member.rerunQuestionCount;
+  if (count == null || !Number.isFinite(count) || count <= 0) return 'Re-running failed questions';
+  return `Re-running ${count} failed ${count === 1 ? 'question' : 'questions'}`;
+}
+
+/** One figure of a finished member's card. */
+export interface ModelBatchMemberFigure {
+  readonly key: string;
+  readonly label: string;
+  readonly value: string;
+  /** A count that needs attention. */
+  readonly tone?: 'warning';
+}
+
+function isFiniteNumber(value: number | null | undefined): value is number {
+  return value != null && Number.isFinite(value);
+}
+
+/**
+ * A finished member's figures in card order, each omitted when missing: *Speed Index*, *Duration*,
+ * *Median model time*, *TTFT P50*, *Cost / question*, *Total cost*, *Refuted claims* (whenever there is
+ * a result), and *Flagged answers* and *Failed answers* above zero.
+ */
+export function modelBatchMemberFigures(member: BenchmarkModelBatchMemberDto): ModelBatchMemberFigure[] {
+  const result = member.result ?? null;
+  const figures: ModelBatchMemberFigure[] = [];
+  const speedIndex = result?.speedIndex;
+  if (isFiniteNumber(speedIndex)) {
+    figures.push({ key: 'speed-index', label: 'Speed Index', value: String(Math.round(speedIndex)) });
+  }
+  if (member.startedAtUtc && member.completedAtUtc) {
+    figures.push({ key: 'duration', label: 'Duration', value: formatElapsed(elapsedMsBetween(member.startedAtUtc, member.completedAtUtc)) });
+  }
+  const medianModelTime = result?.medianModelTimeMs;
+  if (isFiniteNumber(medianModelTime)) {
+    figures.push({ key: 'median-model-time', label: 'Median model time', value: formatModelTime(medianModelTime) });
+  }
+  const ttft = result?.ttftP50Ms;
+  if (isFiniteNumber(ttft)) {
+    figures.push({ key: 'ttft-p50', label: 'TTFT P50', value: formatModelTime(ttft) });
+  }
+  const costPerQuestion = result?.candidateCostPerQuestionUsd;
+  if (isFiniteNumber(costPerQuestion)) {
+    figures.push({ key: 'cost-per-question', label: 'Cost / question', value: formatCostAmount(costPerQuestion) });
+  }
+  const totalCost = result?.totalCostUsd;
+  if (isFiniteNumber(totalCost)) {
+    figures.push({ key: 'total-cost', label: 'Total cost', value: formatCost(totalCost) });
+  }
+  if (!result) return figures;
+  figures.push({ key: 'refuted-claims', label: 'Refuted claims', value: String(result.refutedClaims ?? 0) });
+  const flagged = result.flaggedAnswers ?? 0;
+  if (flagged > 0) {
+    figures.push({ key: 'flagged-answers', label: 'Flagged answers', value: String(flagged) });
+  }
+  const failed = result.failedAnswers ?? 0;
+  if (failed > 0) {
+    figures.push({ key: 'failed-answers', label: 'Failed answers', value: String(failed), tone: 'warning' });
+  }
+  return figures;
+}
+
+/**
+ * Why a finished member shows no index: *No index — 2 answers failed. Open the battery progress to
+ * re-run failed questions.* (*the run progress* for a suite member), or *No index for this result.*
+ * when no answer failed.
+ */
+export function modelBatchIndexWithheldText(member: BenchmarkModelBatchMemberDto, targetKind: BenchmarkModelBatchTargetKind): string {
+  const failed = member.result?.failedAnswers ?? 0;
+  if (!(failed > 0)) return 'No index for this result.';
+  const answers = failed === 1 ? '1 answer failed' : `${failed} answers failed`;
+  const progress = targetKind === 'Battery' ? 'the battery progress' : 'the run progress';
+  return `No index — ${answers}. Open ${progress} to re-run failed questions.`;
+}

@@ -341,6 +341,224 @@ public class AdminBenchmarkModelBatchesControllerTests
         Assert.IsType<NotFoundResult>(await f.Controller.GetBatch(4242, TestContext.Current.CancellationToken));
     }
 
+    /// <summary>A second run of the batch's first member, written Running, as a repair in place leaves it.</summary>
+    private static async Task<BenchmarkRun> AddRunningRunAsync(Fixture f, BenchmarkModelBatchRun batch, bool rerun)
+    {
+        var member = batch.Members.Single(m => m.OrderIndex == 0);
+        var run = await f.Db.BenchmarkRuns.SingleAsync(r => r.Id == member.BenchmarkRunId, TestContext.Current.CancellationToken);
+        run.Status = BenchmarkRunStatus.Running;
+        run.TotalQuestionCount = 18;
+        run.RerunStartedAtUtc = rerun ? DateTime.UtcNow.AddMinutes(-2) : null;
+        run.RerunCompletedAtUtc = null;
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        return run;
+    }
+
+    private static async Task<BenchmarkModelBatchMemberDto> FirstMemberAsync(Fixture f, long batchId)
+    {
+        var dto = Assert.IsType<BenchmarkModelBatchRunDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetBatch(batchId, TestContext.Current.CancellationToken)).Value);
+        return dto.Members.Single(m => m.OrderIndex == 0);
+    }
+
+    [Fact]
+    public async Task GetBatch_ARunRepairedUnderAFinishedBatch_CarriesTheRepairFields_AndNoQuestionCounts()
+    {
+        var f = await CreateFixtureAsync();
+        var batch = await SeedBatchAsync(f, BenchmarkRunSeriesStatus.Completed);
+        var run = await AddRunningRunAsync(f, batch, rerun: true);
+        using var cts = new CancellationTokenSource();
+        Assert.True(f.RunManager.TryStart(run.Id, cts, out _));
+        f.RunManager.SetRerunScope(run.Id, new[] { 2, 5 });
+
+        var member = await FirstMemberAsync(f, batch.Id);
+        Assert.Equal(run.Id, member.RepairingRunId);
+        Assert.Equal(run.RerunStartedAtUtc, member.RerunStartedAtUtc);
+        Assert.Equal(2, member.RerunQuestionCount);
+        Assert.Equal(run.Id, member.CurrentRunId);
+        Assert.Equal(0, member.AnsweredQuestionCount);
+        Assert.Equal(0, member.TotalQuestionCount);
+    }
+
+    [Fact]
+    public async Task GetBatch_ARepairThatIsNotAReRun_CarriesOnlyTheRepairingRunId()
+    {
+        var f = await CreateFixtureAsync();
+        var batch = await SeedBatchAsync(f, BenchmarkRunSeriesStatus.CompletedWithErrors);
+        var run = await AddRunningRunAsync(f, batch, rerun: false);
+
+        var member = await FirstMemberAsync(f, batch.Id);
+        Assert.Equal(run.Id, member.RepairingRunId);
+        Assert.Null(member.RerunStartedAtUtc);
+        Assert.Null(member.RerunQuestionCount);
+    }
+
+    [Fact]
+    public async Task GetBatch_ARunningRunUnderALiveBatch_IsNoRepair()
+    {
+        var f = await CreateFixtureAsync();
+        var batch = await SeedBatchAsync(f, BenchmarkRunSeriesStatus.Running, null, null, BenchmarkModelBatchMemberStatus.Running);
+        var run = await AddRunningRunAsync(f, batch, rerun: true);
+
+        var member = await FirstMemberAsync(f, batch.Id);
+        Assert.Null(member.RepairingRunId);
+        Assert.Null(member.RerunStartedAtUtc);
+        Assert.Null(member.RerunQuestionCount);
+        Assert.Equal(run.Id, member.CurrentRunId);
+        Assert.Equal(2, member.AnsweredQuestionCount);
+        Assert.Equal(18, member.TotalQuestionCount);
+    }
+
+    [Fact]
+    public async Task GetBatch_ASingleRunResult_CarriesSpeedIndexFlaggedAnswersAndQuestionCount_AndARepairMissesTheCache()
+    {
+        var f = await CreateFixtureAsync();
+        var batch = await SeedBatchAsync(f, BenchmarkRunSeriesStatus.Completed);
+        var run = await f.Db.BenchmarkRuns.SingleAsync(r => r.Id == batch.Members.Single().BenchmarkRunId, TestContext.Current.CancellationToken);
+        run.SpeedIndex = 64;
+        run.AdvisoryFlagAnswerCount = 3;
+        run.TotalQuestionCount = 18;
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = (await FirstMemberAsync(f, batch.Id)).Result!;
+        Assert.Equal(64d, result.SpeedIndex);
+        Assert.Equal(3, result.FlaggedAnswers);
+        Assert.Equal(18, result.QuestionCount);
+
+        run.RerunStartedAtUtc = DateTime.UtcNow.AddMinutes(-1);
+        run.RerunCompletedAtUtc = DateTime.UtcNow;
+        run.SpeedIndex = 66;
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(66d, (await FirstMemberAsync(f, batch.Id)).Result!.SpeedIndex);
+    }
+
+    [Fact]
+    public async Task GetBatch_ASeriesResult_TakesTheRunMeanSpeedIndex_WithoutAGroupAnalysis()
+    {
+        var f = await CreateFixtureAsync();
+        var batch = await SeedBatchAsync(f, BenchmarkRunSeriesStatus.Completed);
+        var member = await f.Db.BenchmarkModelBatchMembers.SingleAsync(m => m.BenchmarkModelBatchRunId == batch.Id, TestContext.Current.CancellationToken);
+        var first = await f.Db.BenchmarkRuns.SingleAsync(r => r.Id == member.BenchmarkRunId, TestContext.Current.CancellationToken);
+
+        var series = new BenchmarkRunSeries { SuiteName = "Suite A", StartRequestJson = "{}", RequestedRunCount = 2, CompletedRunCount = 2, Status = BenchmarkRunSeriesStatus.Completed };
+        f.Db.BenchmarkRunSeries.Add(series);
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var second = BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            BenchmarkSuiteId = f.SuiteId,
+            SuiteName = "Suite A",
+            TestedModelConfigurationId = 1,
+            Status = BenchmarkRunStatus.Completed,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-20),
+            CompletedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            QualityIndex = 60,
+            SpeedIndex = 50,
+            AdvisoryFlagAnswerCount = 1,
+            TotalQuestionCount = 10,
+            RunSeriesId = series.Id,
+            RunSeriesIndex = 2
+        });
+        f.Db.BenchmarkRuns.Add(second);
+        first.RunSeriesId = series.Id;
+        first.RunSeriesIndex = 1;
+        first.SpeedIndex = 70;
+        first.AdvisoryFlagAnswerCount = 2;
+        first.TotalQuestionCount = 10;
+        member.BenchmarkRunId = null;
+        member.BenchmarkRunSeriesId = series.Id;
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = (await FirstMemberAsync(f, batch.Id)).Result!;
+        Assert.Equal("runMean", result.IndexSource);
+        Assert.Equal(60d, result.SpeedIndex);
+        Assert.Equal(3, result.FlaggedAnswers);
+        Assert.Equal(20, result.QuestionCount);
+    }
+
+    [Fact]
+    public async Task GetBatch_ASeriesResult_TakesTheGroupAnalysisSpeedIndex()
+    {
+        var f = await CreateFixtureAsync();
+        var batch = await SeedBatchAsync(f, BenchmarkRunSeriesStatus.Completed);
+        var member = await f.Db.BenchmarkModelBatchMembers.SingleAsync(m => m.BenchmarkModelBatchRunId == batch.Id, TestContext.Current.CancellationToken);
+        var run = await f.Db.BenchmarkRuns.SingleAsync(r => r.Id == member.BenchmarkRunId, TestContext.Current.CancellationToken);
+
+        var series = new BenchmarkRunSeries { SuiteName = "Suite A", StartRequestJson = "{}", RequestedRunCount = 1, CompletedRunCount = 1, Status = BenchmarkRunSeriesStatus.Completed, AutoCreatedGroupId = 77 };
+        f.Db.BenchmarkRunSeries.Add(series);
+        f.Db.BenchmarkGroupAnalyses.Add(new BenchmarkGroupAnalysis
+        {
+            BenchmarkRunGroupId = 77,
+            MemberRunIdsJson = "[]",
+            ResultJson = "{\"Speed\":{\"MeanSpeedIndex\":61.5}}"
+        });
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        run.RunSeriesId = series.Id;
+        run.RunSeriesIndex = 1;
+        run.SpeedIndex = 40;
+        member.BenchmarkRunId = null;
+        member.BenchmarkRunSeriesId = series.Id;
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        Assert.Equal(61.5, (await FirstMemberAsync(f, batch.Id)).Result!.SpeedIndex);
+    }
+
+    [Fact]
+    public async Task GetBatch_ABatteryResult_TakesTheLatestAnalysisSpeedIndex_AndANewerAnalysisMissesTheCache()
+    {
+        var f = await CreateFixtureAsync();
+        var batch = await SeedBatchAsync(f, BenchmarkRunSeriesStatus.Completed);
+        var member = await f.Db.BenchmarkModelBatchMembers.SingleAsync(m => m.BenchmarkModelBatchRunId == batch.Id, TestContext.Current.CancellationToken);
+        long runId = member.BenchmarkRunId!.Value;
+
+        var batteryRun = new BenchmarkBatteryRun
+        {
+            BatteryName = "Battery",
+            DefinitionJson = "{}",
+            DefinitionSha256 = "definition-sha",
+            StartRequestJson = "{}",
+            RunsPerSuite = 1,
+            RequestedMemberCount = 1,
+            CompletedMemberCount = 1,
+            Status = BenchmarkRunSeriesStatus.Completed,
+            CompletedAtUtc = DateTime.UtcNow
+        };
+        f.Db.BenchmarkBatteryRuns.Add(batteryRun);
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        f.Db.BenchmarkBatteryRunMembers.Add(new BenchmarkBatteryRunMember
+        {
+            BenchmarkBatteryRunId = batteryRun.Id, SuiteIndex = 0, Round = 1, BenchmarkRunId = runId, AddedAtUtc = DateTime.UtcNow
+        });
+        member.BenchmarkRunId = null;
+        member.BenchmarkBatteryRunId = batteryRun.Id;
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        async Task AddAnalysisAsync(double speedIndex, DateTime computedAtUtc)
+        {
+            f.Db.BenchmarkBatteryAnalyses.Add(new BenchmarkBatteryAnalysis
+            {
+                BenchmarkBatteryRunId = batteryRun.Id,
+                ComputedAtUtc = computedAtUtc,
+                MemberRunIdsJson = "[]",
+                ResultJson = JsonSerializer.Serialize(new BenchmarkBatteryStatisticsResult
+                {
+                    Speed = new BenchmarkBatterySpeedStatistics { OverallSpeedIndex = speedIndex }
+                }),
+                DefinitionSha256 = batteryRun.DefinitionSha256,
+                HarnessVersion = BenchmarkAssessmentPrompt.HarnessVersion,
+                ScoringMethodVersion = BenchmarkAssessmentPrompt.ScoringMethodVersion
+            });
+            await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        await AddAnalysisAsync(55, DateTime.UtcNow.AddMinutes(-5));
+        Assert.Equal(55d, (await FirstMemberAsync(f, batch.Id)).Result!.SpeedIndex);
+
+        await AddAnalysisAsync(58, DateTime.UtcNow);
+        Assert.Equal(58d, (await FirstMemberAsync(f, batch.Id)).Result!.SpeedIndex);
+    }
+
     [Fact]
     public async Task GetBatches_ListsNewestFirst_WithoutResults_AndPages()
     {

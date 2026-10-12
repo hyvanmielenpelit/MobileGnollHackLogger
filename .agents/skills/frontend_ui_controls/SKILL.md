@@ -83,6 +83,14 @@ That is the whole list. A dialog footer is `.btn-gh-cancel` on the left and plai
 on the right — the gold/blue contrast *is* the primary/secondary distinction, so a separate
 "primary" class would be redundant.
 
+**A disabled action's reason in a footer is one `.gh-footer-note` at the footer's start, linked by
+the buttons' `aria-describedby`; never text between buttons.** The note (global in `styles.scss`, with
+a leading 16 px *info* glyph `.gh-footer-note-icon`, `aria-hidden`) is the footer's first child and
+takes the free space, so the buttons stay at the end; it has an id, is neither focusable nor a live
+region, and is rendered only while some action needs it. Every `aria-disabled` button it explains
+points at it. The model batch progress dialog (`#mbFooterNote`: the in-flight reason, else why
+comparing waits) and the battery and series progress dialogs' batch-owned reason are the users.
+
 ```html
 <div class="dialog-actions">
   <button type="button" class="btn-gh btn-gh-cancel" (click)="dialog.close()">Cancel</button>
@@ -2230,6 +2238,10 @@ drop it without scrolling back: the Model Comparison wizard's step 1 band (`.mc-
 - **Each chip's remove button** is a 32 × 32 `.action-btn` with the *x* glyph, named for its subject
   (*Remove {detail} {label} from the selection*) with a hint tooltip (§4). Removing a chip moves
   focus to the **next chip's** remove button, else to **Clear selection**, else to the label.
+- **A chip names its model as everywhere else**: after its detail (*#13*, a battery run's with a
+  visually hidden *Battery run* prefix), an `app-model-identity` with the name and the thinking-level,
+  reasoning-mode and provider badges, never a bare name. The chip stays one line: the name truncates
+  (16 rem in the reference) and the badges are compact.
 - **One visible empty-state message.** With nothing selected the band shows one alert — *Nothing is
   selected yet* / *Select at least one completed run, analysis group or battery result in the tables
   above. Compare stays unavailable until you do.* — and no second hint line repeating it. The step's
@@ -2279,6 +2291,8 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] **No row mixes `.btn-gh` with `.btn-gh-small`** — same height and text size throughout a row.
 - [ ] The label clears the end ornaments; `.btn-gh`'s horizontal padding was not reduced.
 - [ ] A row with more than three labelled actions has one `.btn-gh` and the rest `.btn-ghost`.
+- [ ] A disabled footer action's reason is one `.gh-footer-note` at the footer's start, linked by the
+      buttons' `aria-describedby`; no reason text sits between buttons (§2).
 
 **Icon-only buttons**
 - [ ] Every one has an `aria-label` that names its **subject**, unique among its siblings.
@@ -2397,6 +2411,8 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] Exactly one polite live region: the list's status line.
 - [ ] A selection band (§8i) leads its chip row with **Clear selection (N)**, moves focus to its
       `tabindex="-1"` label after it, and shows one visible empty-state message.
+- [ ] Each selection chip renders its model through `app-model-identity` (name, thinking, reasoning,
+      provider), kept on one line (§8i).
 - [ ] Where the cards carry a choice that is not a filter (the Chat Consistency runs), the search and
       the facets never change it, the band says so, and a facet that counts by that choice has it in
       `memoDeps`.

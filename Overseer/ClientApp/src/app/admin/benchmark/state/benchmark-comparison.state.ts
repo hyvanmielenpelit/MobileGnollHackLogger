@@ -40,6 +40,17 @@ export const MAX_COMPARABILITY_INDEX_GROUPS = 500;
 /** The stored selection. A record written before battery results has no `batteryRunIds`. */
 type StoredComparisonSelection = BenchmarkComparisonSelection & { batteryRunIds?: number[] };
 
+/** A chip's thinking level and reasoning mode, each key present only when it has a value. */
+function sourceLevels(
+  thinkingLevel: string | null | undefined,
+  reasoningMode: string | null | undefined
+): Pick<ComparisonSelectedSource, 'thinkingLevel' | 'reasoningMode'> {
+  return {
+    ...(thinkingLevel ? { thinkingLevel } : {}),
+    ...(reasoningMode ? { reasoningMode } : {})
+  };
+}
+
 /** The Model Comparison selection, its comparison and comparability index, and their persistence. */
 @Injectable()
 export class BenchmarkComparisonState implements OnDestroy {
@@ -199,6 +210,7 @@ export class BenchmarkComparisonState implements OnDestroy {
         id: run.id,
         label: run.testedModelDisplayNameUsed,
         provider: run.testedModelProviderUsed,
+        ...sourceLevels(run.testedModelThinkingLevelUsed, run.testedModelReasoningModeUsed),
         detail: `#${run.id}`
       }));
     const groups: ComparisonSelectedSource[] = this.comparisonGroupIds
@@ -209,6 +221,7 @@ export class BenchmarkComparisonState implements OnDestroy {
         id: group.id,
         label: group.name,
         provider: null,
+        ...sourceLevels(group.testedModelThinkingLevel, group.testedModelReasoningMode),
         detail: group.runCount === 1 ? '1 run' : `${group.runCount} runs`
       }));
     const batteries: ComparisonSelectedSource[] = this.comparisonBatteryRunIds
@@ -219,7 +232,8 @@ export class BenchmarkComparisonState implements OnDestroy {
         id: battery.id,
         label: battery.testedModelLabel?.trim() || battery.batteryName,
         provider: battery.testedProvider ?? null,
-        detail: `Battery run ${battery.id}`
+        ...sourceLevels(battery.testedThinkingLevel, battery.testedReasoningMode),
+        detail: `#${battery.id}`
       }));
     return [...runs, ...groups, ...batteries];
   }

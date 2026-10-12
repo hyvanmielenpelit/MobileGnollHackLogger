@@ -2201,6 +2201,11 @@ export interface BenchmarkBatteryMemberDto {
   addedAtUtc: string;
   runStartedAtUtc?: string | null;
   runCompletedAtUtc?: string | null;
+  /** When the run's latest re-run of failed questions began and ended; null when it has none. */
+  rerunStartedAtUtc?: string | null;
+  rerunCompletedAtUtc?: string | null;
+  /** The questions a re-run in flight covers; null otherwise. */
+  rerunQuestionCount?: number | null;
   /** The live count for a running member, the run's own column for a finished one. */
   answeredQuestionCount: number;
   totalQuestionCount: number;
@@ -2700,6 +2705,12 @@ export interface BenchmarkModelBatchMemberResultDto {
   failedAnswers: number;
   providerErrors: number;
   retries: number;
+  /** The run's Speed Index, the series' mean or the battery run's Overall Speed Index; null when withheld. */
+  speedIndex?: number | null;
+  /** Answers carrying an advisory flag, over the completed runs. */
+  flaggedAnswers?: number;
+  /** Questions, over the completed runs. */
+  questionCount?: number;
 }
 
 /** The instrument a member ran under. */
@@ -2741,6 +2752,12 @@ export interface BenchmarkModelBatchMemberDto {
   /** The answers given so far in the run in flight, and the questions it asks. */
   answeredQuestionCount: number;
   totalQuestionCount: number;
+  /** A member run running in place (a re-run, re-assessment, re-synthesis or retry) while the batch is not live. */
+  repairingRunId?: number | null;
+  /** When the repairing run's re-run of failed questions began; null for any other repair. */
+  rerunStartedAtUtc?: string | null;
+  /** The questions that re-run covers; null when unknown. */
+  rerunQuestionCount?: number | null;
   result?: BenchmarkModelBatchMemberResultDto | null;
   instrument?: BenchmarkModelBatchInstrumentDto | null;
   /** The instrument keys that moved since the first member; empty when none did. */

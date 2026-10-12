@@ -1740,11 +1740,12 @@
             <ul class="mc-selection-chips" aria-label="Selected sources">
               @for (source of selectedSources; track source.kind + source.id) {
                 <li class="mc-selection-chip" [class.mc-selection-chip--group]="source.kind === 'group'">
-                  <span class="mc-selection-chip-detail">{{ source.detail }}</span>
-                  <span class="mc-selection-chip-label">{{ source.label }}</span>
-                  @if (source.provider) { <app-provider-badge [provider]="source.provider"></app-provider-badge> }
+                  <span class="mc-selection-chip-detail">@if (source.kind === 'battery') {<span class="visually-hidden">Battery run </span>}{{ source.detail }}</span>
+                  <app-model-identity [name]="source.label" [provider]="source.provider"
+                                      [thinkingLevel]="source.thinkingLevel"
+                                      [reasoningMode]="source.reasoningMode"></app-model-identity>
                   <button type="button" class="action-btn mc-selection-remove" #chipRemoveButton
-                          [attr.aria-label]="'Remove ' + source.detail + ' ' + source.label + ' from the selection'"
+                          [attr.aria-label]="'Remove ' + sourceRemoveName(source) + ' ' + source.label + ' from the selection'"
                           [attr.interestfor]="sourceChipId(source)"
                           [attr.style]="'anchor-name: --' + sourceChipId(source)"
                           (click)="onRemoveSource(source, $index)">

@@ -1108,8 +1108,8 @@ describe('AdminBenchmarkComponent', () => {
         pricingBasis: 'Current'
       });
       expect(ctx.comparison.comparisonSelectedSources).toEqual([
-        { kind: 'battery', id: 4, label: 'Battery model 4', provider: 'Anthropic', detail: 'Battery run 4' },
-        { kind: 'battery', id: 9, label: 'Battery model 9', provider: 'Anthropic', detail: 'Battery run 9' }
+        { kind: 'battery', id: 4, label: 'Battery model 4', provider: 'Anthropic', detail: '#4' },
+        { kind: 'battery', id: 9, label: 'Battery model 9', provider: 'Anthropic', detail: '#9' }
       ]);
       // The comparability index does not cover battery results, so it has nothing to say about them.
       ctx.comparison.comparabilityIndexError = 'The index could not be built.';
@@ -1135,7 +1135,7 @@ describe('AdminBenchmarkComponent', () => {
       ctx.comparison.onComparisonSelectionChange({ runIds: [], groupIds: [], batteryRunIds: [4, 9] });
 
       ctx.comparison.onComparisonRemoveSource(
-        { kind: 'battery', id: 4, label: 'Battery model 4', provider: 'Anthropic', detail: 'Battery run 4' });
+        { kind: 'battery', id: 4, label: 'Battery model 4', provider: 'Anthropic', detail: '#4' });
       expect(ctx.comparison.comparisonBatteryRunIds).toEqual([9]);
 
       ctx.comparison.clearComparisonSelection();

@@ -92,6 +92,12 @@ public sealed record BenchmarkModelBatchChildState
     /// <summary>What the member's status becomes; meaningful only when <see cref="Terminal"/>.</summary>
     public BenchmarkModelBatchMemberStatus Status { get; init; } = BenchmarkModelBatchMemberStatus.Running;
 
+    /// <summary>The child row's own status as a member status, whether or not the child is terminal.</summary>
+    public BenchmarkModelBatchMemberStatus StoredStatus { get; init; } = BenchmarkModelBatchMemberStatus.Running;
+
+    /// <summary>When the child row says it finished.</summary>
+    public DateTime? CompletedAtUtc { get; init; }
+
     public string? Error { get; init; }
 
     /// <summary>A stopped series or battery run that its own Continue would resume.</summary>
@@ -541,7 +547,7 @@ public class BenchmarkModelBatchOrchestrator
             var row = await db.BenchmarkBatteryRuns
                 .AsNoTracking()
                 .Where(b => b.Id == batteryRunId)
-                .Select(b => new { b.Status, b.StopReason, b.ErrorMessage, b.ReportDocumentsStatus, b.CompletedMemberCount, b.LastProgressAtUtc, b.RequestedMemberCount })
+                .Select(b => new { b.Status, b.StopReason, b.ErrorMessage, b.ReportDocumentsStatus, b.CompletedMemberCount, b.LastProgressAtUtc, b.RequestedMemberCount, b.CompletedAtUtc })
                 .FirstOrDefaultAsync(ct);
             if (row == null) return Ended(BenchmarkModelBatchMemberStatus.Failed, "The battery run was deleted.");
 
@@ -558,12 +564,21 @@ public class BenchmarkModelBatchOrchestrator
                 .Select(r => r.Answers.Count())
                 .FirstOrDefaultAsync(ct);
             string marker = $"{row.Status}:{row.CompletedMemberCount}:{row.LastProgressAtUtc?.Ticks}:{answering}";
-            if (live) return new BenchmarkModelBatchChildState { Terminal = false, ProgressMarker = marker };
+            var stored = MemberStatusOf(row.Status);
+            if (live)
+            {
+                return new BenchmarkModelBatchChildState
+                {
+                    Terminal = false, StoredStatus = stored, CompletedAtUtc = row.CompletedAtUtc, Error = row.ErrorMessage, ProgressMarker = marker
+                };
+            }
 
             return new BenchmarkModelBatchChildState
             {
                 Terminal = true,
-                Status = MemberStatusOf(row.Status),
+                Status = stored,
+                StoredStatus = stored,
+                CompletedAtUtc = row.CompletedAtUtc,
                 Error = row.ErrorMessage,
                 Resumable = row.Status is BenchmarkRunSeriesStatus.Stopped or BenchmarkRunSeriesStatus.CompletedWithErrors,
                 StopReason = row.StopReason,
@@ -576,7 +591,7 @@ public class BenchmarkModelBatchOrchestrator
             var row = await db.BenchmarkRunSeries
                 .AsNoTracking()
                 .Where(s => s.Id == seriesId)
-                .Select(s => new { s.Status, s.StopReason, s.ErrorMessage, s.CompletedRunCount, s.RequestedRunCount, s.LastProgressAtUtc })
+                .Select(s => new { s.Status, s.StopReason, s.ErrorMessage, s.CompletedRunCount, s.RequestedRunCount, s.LastProgressAtUtc, s.CompletedAtUtc })
                 .FirstOrDefaultAsync(ct);
             if (row == null) return Ended(BenchmarkModelBatchMemberStatus.Failed, "The series was deleted.");
 
@@ -588,12 +603,21 @@ public class BenchmarkModelBatchOrchestrator
                 .Select(r => r.Answers.Count())
                 .FirstOrDefaultAsync(ct);
             string marker = $"{row.Status}:{row.CompletedRunCount}:{row.LastProgressAtUtc?.Ticks}:{answering}";
-            if (live) return new BenchmarkModelBatchChildState { Terminal = false, ProgressMarker = marker };
+            var stored = MemberStatusOf(row.Status);
+            if (live)
+            {
+                return new BenchmarkModelBatchChildState
+                {
+                    Terminal = false, StoredStatus = stored, CompletedAtUtc = row.CompletedAtUtc, Error = row.ErrorMessage, ProgressMarker = marker
+                };
+            }
 
             return new BenchmarkModelBatchChildState
             {
                 Terminal = true,
-                Status = MemberStatusOf(row.Status),
+                Status = stored,
+                StoredStatus = stored,
+                CompletedAtUtc = row.CompletedAtUtc,
                 Error = row.ErrorMessage,
                 Resumable = row.Status is BenchmarkRunSeriesStatus.Stopped or BenchmarkRunSeriesStatus.CompletedWithErrors
                             && row.CompletedRunCount < row.RequestedRunCount,
@@ -607,20 +631,26 @@ public class BenchmarkModelBatchOrchestrator
             var row = await db.BenchmarkRuns
                 .AsNoTracking()
                 .Where(r => r.Id == runId)
-                .Select(r => new { r.Status, r.ErrorMessage, Answered = r.Answers.Count() })
+                .Select(r => new { r.Status, r.ErrorMessage, r.CompletedAtUtc, Answered = r.Answers.Count() })
                 .FirstOrDefaultAsync(ct);
             if (row == null) return Ended(BenchmarkModelBatchMemberStatus.Failed, "The run was deleted.");
 
             string marker = $"{row.Status}:{row.Answered}";
+            var stored = MemberStatusOf(row.Status);
             if (row.Status == BenchmarkRunStatus.Running || _runManager.CurrentRunId == runId)
             {
-                return new BenchmarkModelBatchChildState { Terminal = false, ProgressMarker = marker };
+                return new BenchmarkModelBatchChildState
+                {
+                    Terminal = false, StoredStatus = stored, CompletedAtUtc = row.CompletedAtUtc, Error = row.ErrorMessage, ProgressMarker = marker
+                };
             }
 
             return new BenchmarkModelBatchChildState
             {
                 Terminal = true,
-                Status = MemberStatusOf(row.Status),
+                Status = stored,
+                StoredStatus = stored,
+                CompletedAtUtc = row.CompletedAtUtc,
                 Error = row.ErrorMessage,
                 ProgressMarker = marker
             };
@@ -666,7 +696,7 @@ public class BenchmarkModelBatchOrchestrator
     }
 
     private static BenchmarkModelBatchChildState Ended(BenchmarkModelBatchMemberStatus status, string error)
-        => new() { Terminal = true, Status = status, Error = error };
+        => new() { Terminal = true, Status = status, StoredStatus = status, Error = error };
 
     /// <summary>A run's terminal status as a member status.</summary>
     public static BenchmarkModelBatchMemberStatus MemberStatusOf(BenchmarkRunStatus status) => status switch
@@ -853,11 +883,8 @@ public class BenchmarkModelBatchOrchestrator
                 if (member == null) return;
 
                 var now = DateTime.UtcNow;
-                member.Status = state.Status;
+                ApplyChildStatus(member, state.Status, state.Error);
                 member.CompletedAtUtc = now;
-                member.ErrorMessage = state.Status == BenchmarkModelBatchMemberStatus.Completed
-                    ? null
-                    : Truncate(state.Error, ErrorMessageMaxLength);
                 batch.LastProgressAtUtc = now;
 
                 await RecordFirstMemberAsync(db, batch, ct);
@@ -1466,7 +1493,7 @@ public class BenchmarkModelBatchOrchestrator
                 ? new[]
                 {
                     Option(BenchmarkModelBatchResumeMode.Continue, "Continue",
-                        "Resumes the stopped member, re-checking the instrument and the graders first."),
+                        "Takes up the stopped member again — keeping a run, series or battery run that has since finished — re-checking the instrument and the graders first."),
                     Option(BenchmarkModelBatchResumeMode.SkipCurrent, "Skip this model",
                         "Marks the stopped member Skipped and goes on with the next one.")
                 }
@@ -1593,8 +1620,8 @@ public class BenchmarkModelBatchOrchestrator
                         }
                     }
 
-                    // The stopped member: a child still live is awaited again, a stopped series or
-                    // battery run is resumed, anything else is launched afresh.
+                    // The stopped member: a child still live is awaited again, a child that has since finished
+                    // successfully is kept, a stopped series or battery run is resumed, anything else is launched afresh.
                     var current = CurrentStoppedMember(batch);
                     if (current != null)
                     {
@@ -1603,6 +1630,12 @@ public class BenchmarkModelBatchOrchestrator
                         if (state != null && !state.Terminal)
                         {
                             current.Status = BenchmarkModelBatchMemberStatus.Running;
+                        }
+                        else if (state != null && IsSuccessful(state.Status))
+                        {
+                            ApplyChildStatus(current, state.Status, state.Error);
+                            current.CompletedAtUtc = state.CompletedAtUtc ?? now;
+                            await RecordFirstMemberAsync(db, batch, ct);
                         }
                         else if (state != null && state.Resumable
                                  && (current.BenchmarkRunSeriesId != null || current.BenchmarkBatteryRunId != null))
@@ -1706,6 +1739,13 @@ public class BenchmarkModelBatchOrchestrator
         batch.SupersededMembersJson = record.Count == 0 ? null : JsonSerializer.Serialize(record, JsonOptions);
     }
 
+    /// <summary>Sets a member's status and error from its child's; the finish time is the caller's.</summary>
+    private static void ApplyChildStatus(BenchmarkModelBatchMember member, BenchmarkModelBatchMemberStatus status, string? error)
+    {
+        member.Status = status;
+        member.ErrorMessage = status == BenchmarkModelBatchMemberStatus.Completed ? null : Truncate(error, ErrorMessageMaxLength);
+    }
+
     private static void ResetMember(BenchmarkModelBatchMember member)
     {
         member.Status = BenchmarkModelBatchMemberStatus.Pending;
@@ -1726,6 +1766,91 @@ public class BenchmarkModelBatchOrchestrator
         batch.FirstMemberSourceCodeHeadSha = null;
         batch.FirstMemberHarnessVersion = null;
         batch.FirstMemberScoringMethodVersion = null;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Post-repair reconciliation
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// After an in-place repair of a run, refreshes the status of every finished model batch member the
+    /// run belongs to, from the stored status of the member's run, series or battery run. A live batch's
+    /// members are the drive loop's; a Stopped, Failed, Skipped or Canceled member is Continue's.
+    /// </summary>
+    public async Task ReconcileAfterRepairAsync(long runId, CancellationToken ct = default)
+    {
+        using var scope = _scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+        long? seriesId = await db.BenchmarkRuns.AsNoTracking()
+            .Where(r => r.Id == runId)
+            .Select(r => r.RunSeriesId)
+            .FirstOrDefaultAsync(ct);
+        var batteryRunIds = await db.BenchmarkBatteryRunMembers.AsNoTracking()
+            .Where(m => m.BenchmarkRunId == runId && !m.Superseded)
+            .Select(m => m.BenchmarkBatteryRunId)
+            .Distinct()
+            .ToListAsync(ct);
+
+        var batchIds = await db.BenchmarkModelBatchMembers.AsNoTracking()
+            .Where(m => m.BenchmarkRunId == runId
+                        || (seriesId != null && m.BenchmarkRunSeriesId == seriesId)
+                        || (m.BenchmarkBatteryRunId != null && batteryRunIds.Contains(m.BenchmarkBatteryRunId.Value)))
+            .Select(m => m.BenchmarkModelBatchRunId)
+            .Distinct()
+            .ToListAsync(ct);
+        if (batchIds.Count == 0) return;
+
+        var batches = await db.BenchmarkModelBatchRuns
+            .Include(b => b.Members)
+            .Where(b => batchIds.Contains(b.Id)
+                        && b.Status != BenchmarkRunSeriesStatus.Pending
+                        && b.Status != BenchmarkRunSeriesStatus.Running
+                        && b.Status != BenchmarkRunSeriesStatus.WaitingForCap)
+            .ToListAsync(ct);
+
+        foreach (var batch in batches)
+        {
+            if (IsDriving(batch.Id)) continue;
+
+            bool changed = false;
+            foreach (var member in batch.Members.OrderBy(m => m.OrderIndex))
+            {
+                if (!IsSuccessful(member.Status)) continue;
+                bool owns = member.BenchmarkRunId == runId
+                            || (seriesId != null && member.BenchmarkRunSeriesId == seriesId)
+                            || (member.BenchmarkBatteryRunId is long b && batteryRunIds.Contains(b));
+                if (!owns) continue;
+
+                // The stored status, not liveness: battery documents still writing keep the child non-terminal.
+                var state = await GetChildStateAsync(scope.ServiceProvider, member, ct);
+                if (!IsSuccessful(state.StoredStatus) || state.StoredStatus == member.Status) continue;
+
+                var old = member.Status;
+                ApplyChildStatus(member, state.StoredStatus, state.Error);
+                changed = true;
+                _logger.LogInformation("Model batch {BatchId} member {MemberId} reconciled after a repair: {Old} -> {New}.",
+                    batch.Id, member.Id, old, member.Status);
+            }
+
+            if (!changed) continue;
+
+            RefreshCounts(batch);
+            if (batch.Status is BenchmarkRunSeriesStatus.Completed or BenchmarkRunSeriesStatus.CompletedWithErrors)
+            {
+                var oldStatus = batch.Status;
+                bool clean = batch.Members.All(m => m.Status == BenchmarkModelBatchMemberStatus.Completed);
+                batch.Status = clean ? BenchmarkRunSeriesStatus.Completed : BenchmarkRunSeriesStatus.CompletedWithErrors;
+                batch.StopDetail = clean ? null : Truncate(UnfinishedMembersText(batch), StopDetailMaxLength);
+                if (batch.Status != oldStatus)
+                {
+                    _logger.LogInformation("Model batch {BatchId} reconciled after a repair: {Old} -> {New}.", batch.Id, oldStatus, batch.Status);
+                }
+            }
+
+            batch.LastProgressAtUtc = DateTime.UtcNow;
+            await db.SaveChangesAsync(ct);
+        }
     }
 
     // ---------------------------------------------------------------------------------------
@@ -1760,7 +1885,7 @@ public class BenchmarkModelBatchOrchestrator
             batch.Status = BenchmarkRunSeriesStatus.Stopped;
             batch.StopReason = BenchmarkModelBatchStopReason.RestartReconciled;
             batch.StopDetail = "The Overseer service restarted while this batch was running. Finished members are intact; " +
-                               "Continue re-checks the instrument and the graders, then resumes the stopped member.";
+                               "Continue re-checks the instrument and the graders, then takes up the stopped member.";
             batch.LastProgressAtUtc = now;
             RefreshCounts(batch);
         }

@@ -139,9 +139,18 @@ describe('ComparisonSummaryCardComponent', () => {
     expect(rows().length).toBe(3);
 
     const first = rows()[0];
-    expect(text(first.querySelector('th[scope="row"] .bm-summary-model-name'))).toBe('Model A (high)');
+    expect(text(first.querySelector('th[scope="row"] .bm-summary-model-name'))).toBe('Model A');
     expect(text(first.querySelector('app-provider-badge'))).toBe('Anthropic');
-    expect(text(first.querySelector('.thinking-badge'))).toBe('high');
+    const thinking = first.querySelector('.thinking-badge')!;
+    expect(text(thinking)).toBe('thinking level high');
+    expect(thinking.firstElementChild?.classList.contains('visually-hidden')).toBe(true);
+    expect(text(thinking.firstElementChild)).toBe('thinking level');
+    // Name, thinking level, then provider: the order of runFactBadges and the model pickers.
+    const badgeRow = Array.from(first.querySelector('.bm-summary-model-row')!.children);
+    expect(badgeRow.map(child => child.matches('.bm-summary-model-name') ? 'name'
+      : child.matches('.thinking-badge') ? 'thinking'
+      : child.tagName === 'APP-PROVIDER-BADGE' ? 'provider' : child.tagName)).toEqual(['name', 'thinking', 'provider']);
+    expect(thinking.compareDocumentPosition(first.querySelector('app-provider-badge')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     const cells = Array.from(first.querySelectorAll('td'));
     expect(text(cells[0])).toBe('71.2 66.5–76.0');
     expect(text(cells[0].querySelector('.bm-summary-interval'))).toBe('66.5–76.0');

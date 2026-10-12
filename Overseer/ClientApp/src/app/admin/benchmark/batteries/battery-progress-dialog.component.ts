@@ -35,10 +35,11 @@ import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { formatElapsed, formatModelTime } from '../benchmark-run-format';
 import { RunFactBadge, RunFactModel, runFactBadges } from '../run-report-frame/run-facts';
 import { runStageCaption } from '../run-stage-labels';
-import { MODEL_BATCH_OWNED_REASON, isFinalModelBatchStatus } from '../model-batch/model-batch.models';
+import { isFinalModelBatchStatus, modelBatchOwnedReasonText } from '../model-batch/model-batch.models';
 import { BenchmarkActiveRunMonitor } from '../state/benchmark-active-run.monitor';
 import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
 import {
+  BATTERY_REPAIRING_LABEL,
   INDEX_WITHHELD_HINT,
   batteryAnalysisPending,
   batteryAwaitsPostRun,
@@ -140,8 +141,7 @@ interface GridCell {
   readonly repairing: boolean;
 }
 
-/** A member cell's chip text while its run is being re-run. */
-export const BATTERY_REPAIRING_LABEL = 'Re-run in progress';
+export { BATTERY_REPAIRING_LABEL };
 
 /** The slot whose attach candidates the panel lists. */
 interface AttachSlot {
@@ -238,7 +238,11 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
   /** The batch whose status was read for `modelBatchOwnerId`. */
   private modelBatchOwnerCheckedId: number | null = null;
   private modelBatchOwnerSubscription: Subscription | null = null;
-  readonly modelBatchOwnedReason = MODEL_BATCH_OWNED_REASON;
+
+  /** The footer note's reason; shown only while `modelBatchOwnerId` is set. */
+  get modelBatchOwnedReason(): string {
+    return modelBatchOwnedReasonText(this.modelBatchOwnerId ?? 0, 'battery');
+  }
 
   readonly slotLabels = BATTERY_SLOT_STATE_LABELS;
   readonly repairingLabel = BATTERY_REPAIRING_LABEL;
@@ -430,8 +434,9 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
         if (this.isOpen && (live || batteryAwaitsPostRun(run))) {
           this.schedulePoll(BatteryProgressDialogComponent.POLL_INTERVAL_MS);
         }
-        // The ticker runs while the battery run is live, aligned to its start once that is known.
-        if (!live) {
+        // The ticker runs while the battery run is live or a member is being repaired, aligned to
+        // the start it measures once that is known.
+        if (!live && !this.repairStageCurrent) {
           this.stopElapsedTicker();
         } else if (this.isOpen && this.elapsedTimer === null) {
           this.startElapsedTicker();
@@ -473,10 +478,24 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     });
   }
 
-  /** Refreshes the elapsed times once per whole second of the battery run's own elapsed time. */
+  /**
+   * Refreshes the elapsed times once per whole second of the battery run's own elapsed time, or,
+   * while the battery run is not live, of a member's re-run in flight.
+   */
   private startElapsedTicker(): void {
     this.stopElapsedTicker();
-    this.elapsedTimer = startElapsedTicker(() => this.batteryRun?.startedAtUtc, () => this.cdr.markForCheck());
+    this.elapsedTimer = startElapsedTicker(() => this.elapsedTickerStartUtc, () => this.cdr.markForCheck());
+  }
+
+  /** The start the elapsed ticker aligns to. */
+  private get elapsedTickerStartUtc(): string | null | undefined {
+    const run = this.batteryRun;
+    if (!run || isLiveBatteryRunStatus(run.status)) {
+      return run?.startedAtUtc;
+    }
+    const repairing = new Set(run.repairingRunIds ?? []);
+    const rerun = (run.members ?? []).find(m => !m.superseded && this.memberRerunning(m, repairing.has(m.runId)));
+    return rerun?.rerunStartedAtUtc ?? null;
   }
 
   private stopElapsedTicker(): void {
@@ -1064,9 +1083,33 @@ export class BatteryProgressDialogComponent implements OnInit, OnChanges, OnDest
     return stage ? `Run #${member.runId} · ${stage}` : `Run #${member.runId}`;
   }
 
-  /** A running member's elapsed time from its own start; null without one. */
-  memberElapsedLabel(member: BenchmarkBatteryMemberDto): string | null {
-    return member.runStartedAtUtc ? formatElapsed(elapsedMsBetween(member.runStartedAtUtc, null)) : null;
+  /**
+   * A repairing member's run is re-running its failed questions: a re-run start without an end at
+   * or after it.
+   */
+  memberRerunning(member: BenchmarkBatteryMemberDto, repairing: boolean): boolean {
+    const started = member.rerunStartedAtUtc;
+    if (!repairing || !started) return false;
+    const completed = member.rerunCompletedAtUtc;
+    return !completed || parseServerUtcDate(completed).getTime() < parseServerUtcDate(started).getTime();
+  }
+
+  /** *Re-running 3 failed questions*, or *Re-running failed questions* while the count is unknown. */
+  memberRerunLine(member: BenchmarkBatteryMemberDto): string {
+    const count = member.rerunQuestionCount;
+    if (count == null) return 'Re-running failed questions';
+    return `Re-running ${count} failed ${count === 1 ? 'question' : 'questions'}`;
+  }
+
+  /**
+   * A running member's *Elapsed 6m 12s* from its own start, or *Re-run elapsed 2m 05s* from its
+   * re-run's start while it re-runs; null without a start.
+   */
+  memberElapsedLabel(member: BenchmarkBatteryMemberDto, repairing = false): string | null {
+    if (this.memberRerunning(member, repairing)) {
+      return `Re-run elapsed ${formatElapsed(elapsedMsBetween(member.rerunStartedAtUtc, null))}`;
+    }
+    return member.runStartedAtUtc ? `Elapsed ${formatElapsed(elapsedMsBetween(member.runStartedAtUtc, null))}` : null;
   }
 
   /**

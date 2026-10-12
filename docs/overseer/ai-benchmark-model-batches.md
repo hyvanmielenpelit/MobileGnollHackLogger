@@ -350,11 +350,14 @@ batch is driven, a run is in flight or another claim is held.
 - **Continue** first re-checks MB-R1 and MB-R2 (unless a change was accepted). When the instrument moved,
   the batch stays `Stopped` with the new stop reason and the resume is refused with **409** `{
   instrumentChanged: true, batchId, changedKeys, message }`, which offers the two instrument options.
-  Otherwise the member the stop left unfinished is taken up again: a child still live is awaited, a
-  stopped series or battery run its own Continue would resume is resumed under the batch claim (a series
-  with the batch's instrument-change acknowledgment), and anything else — a failed single run, a
-  canceled member — is launched afresh, its earlier run, series or battery run recorded as superseded.
-  After a cap or spend stop the next member is launched once the spend guard allows it.
+  Otherwise the member the stop left unfinished is taken up again: a child still live is awaited; a
+  child that has since ended `Completed` or `CompletedWithErrors` — a battery run that *Re-run failed
+  questions* and the battery reconciliation finished, or a series or battery run finished by its own
+  *Continue* — is kept, the member taking its status and the child's finish time, and the batch goes on
+  with the next member; a stopped series or battery run its own Continue would resume is resumed under
+  the batch claim (a series with the batch's instrument-change acknowledgment); and anything else — a
+  failed single run, a canceled member — is launched afresh, its earlier run, series or battery run
+  recorded as superseded. After a cap or spend stop the next member is launched once the spend guard allows it.
 - **Skip this model** marks the unfinished member `Skipped` and goes on with the next.
 - **Continue — accept the change** records `InstrumentChangeAcknowledged`, skips MB-R1 and MB-R2 from then
   on, and goes on with the remaining members. The batch is then **not comparable across the change**: the
@@ -376,7 +379,8 @@ members keep their results. **400** for a final batch.
 **MB-R4 RestartReconciled.** At startup, after the series and battery reconciliations, every batch left
 `Running`, `Pending` or `WaitingForCap` is set `Stopped` with `RestartReconciled` and its running member
 `Stopped` (*"The Overseer service restarted while this member was running."*); finished members are
-intact, and **Continue** re-checks the instrument and the graders, then resumes the stopped member.
+intact, and **Continue** re-checks the instrument and the graders, then takes up the stopped member as
+Continue does.
 
 **Delete** (`DELETE runs/{id}`) removes a final batch's record (`Completed`, `CompletedWithErrors`,
 `Cancelled` or `Failed`); its member runs, series and battery runs are kept. **409** while it is driven,
@@ -391,24 +395,55 @@ canceled.
 ## 6. Results of a Member
 
 `GET runs/{id}` reads each finished member's result (`BenchmarkModelBatchMemberResultDto`), cached per
-member until the runs it covers, their completion or the member's status change:
+member. The cache key is every completed run's id, status, completion time, index, `SpeedIndex`,
+`AdvisoryFlagAnswerCount` and `RerunCompletedAtUtc`, the member's status and, for a battery member, the
+id of its battery run's latest analysis, so a repair in place — a re-run of failed questions, a
+re-score, a new battery analysis — refreshes the result without a status change:
 
 - **Index** — a battery member's **Overall Index** and its combined half-width from its battery run's
   latest analysis (`batteryAnalysis`); a series member's pooled **Intelligence Index** from its run group's
   latest analysis (`groupAnalysis`), else the mean of its runs' indices (`runMean`); a single run's index
   with 1.96 × its standard error (`run`).
-- **Speed** — the median model time over the Ok answers of the member's completed runs, and the median
-  time to first answer text over those with call telemetry (`TtftP50Ms`).
+- **Speed** — `SpeedIndex`: a single run's own, a series member's `Speed.MeanSpeedIndex` from its run
+  group's latest analysis, else the mean of its runs' indices when every run has one, a battery member's
+  `Speed.OverallSpeedIndex` from its battery run's latest analysis; null when withheld. Then the median
+  model time over the Ok answers of the member's completed runs, and the median time to first answer
+  text over those with call telemetry (`TtftP50Ms`).
 - **Cost** — candidate and total cost summed over the completed runs, each on its own pricing snapshot,
   and the candidate cost per answered question; null when any run cannot be priced.
 - **Errors** — refuted claims, confirmed critical errors, the own-wait share, failed answers, provider
-  errors and retries.
+  errors and retries, and `FlaggedAnswers`, the answers carrying an advisory flag.
+- **Size** — `QuestionCount`, the questions summed over the completed runs.
 
 The batch carries the live candidate and total cost of every member run so far (a running run's from its
 answers), null when any is unknown, and per member its run ids, the run in flight with its stage, its
 1-based step (*Run k of R*, or a battery's slot), the questions answered, the instrument its first run
 recorded, and the instrument keys on which that differs from the batch's first member
 (`InstrumentDriftKeys`; the prompt hash only between members of one parallel mode).
+
+**A repair in place.** A member run that is `Running` while the batch is not `Pending`, `Running` or
+`WaitingForCap` is being repaired — a re-run of failed questions, a re-assessment, a re-synthesis or a
+retry from the run's own actions. Its member then carries `RepairingRunId`, and the question counts stay
+0, since every answer row exists and the counts would read complete. While that repair is a re-run of
+failed questions (a `RerunStartedAtUtc` with no `RerunCompletedAtUtc`), the member also carries
+`RerunStartedAtUtc` and `RerunQuestionCount`, the questions the re-run covers (null once the run
+manager no longer holds its scope).
+
+**Reconciliation after a repair.** Every in-place repair of a run — a re-run of failed questions, a
+re-score, a single-question re-run, a re-assessment, a re-synthesis, an assessment retry or a
+claim-verification retry — ends in `BenchmarkService.ScheduleReconcileAfterRepair`, which runs, fire and
+forget, first the battery reconciliation and then `BenchmarkModelBatchOrchestrator.ReconcileAfterRepairAsync`,
+so a batch member reads its battery run's reconciled status; an orchestrator that is not registered is
+skipped, and nothing either throws reaches the repair. The batch reconcile looks at every batch that is
+not live and not driven and owns the run — directly, through its series, or through a battery run of
+which the run is a non-superseded member — and refreshes each of its **finished** (`Completed` or
+`CompletedWithErrors`) members that owns the run from the child's **stored** status. It ignores
+liveness, so a battery run whose documents are still writing does not hold it back, and it only ever
+moves a member to a successful status (a `CompletedWithErrors` member to `Completed`, or back). A
+`Completed` or `CompletedWithErrors` batch then has its status and `StopDetail` re-derived as
+`FinishAsync` does; a batch in any other state, `Stopped` among them, keeps its status. A `Stopped`,
+`Failed`, `Skipped` or `Canceled` member is never touched: it is left to **Continue** (§ 5.3). Each
+change is logged.
 
 ## 7. The Launcher
 
@@ -510,11 +545,15 @@ run poller follows it.
 **The Model Batch Progress dialog** (`app-model-batch-progress-dialog`), full-screen, opened on Start, from
 the banner and from a Run History batch card. Its header is *Model Batch #N* with the GnollBench emblem, the
 subtitle *\<target\> · \<n models × K suites × R runs\> · \<order and seed\>* and the scoring graders. The
-body holds:
+body has two sections: the **batch overview** and the **models**. From 64 rem of dialog width they sit
+side by side, the overview narrower, each scrolling on its own; narrower, they stack and the body scrolls
+as one. The overview holds:
 
 - a stage rail, *Model runs* (*k of M models*) then *Ready to compare*;
 - the *Models finished* progress bar and the dialog's one `role="status"` line (*Running model k of M:
-  \<model\>*, *Waiting for the run cap*, *Stopped: \<reason\>*, *Completed: k of M models* …);
+  \<model\>*, *Waiting for the run cap*, *Stopped: \<reason\>*, *Completed: k of M models* …; while the
+  batch is not live and a member's run is repaired, *Re-running failed questions of \<model\>* or
+  *Repairing \<model\>*);
 - for a stopped or waiting batch, a state block with the stop reason, its detail and each resume option
   with what it does;
 - a stat strip: *Status*, *Elapsed*, *Models done*, *Runs* (launched of planned), *Failed*, *Candidate
@@ -522,28 +561,46 @@ body holds:
 - *All members share one instrument*, or *Instrument changed before \<model\>: \<keys\>*, tagged *Not
   comparable across the change* once a change was accepted;
 - the MB-T04 line, and the stall line (MB-R5);
-- **Models in run order**: one card per member with its position, name and badges and its status chip.
-  A running member shows its step (*Run k of R*, or *Suite s of K · round r: \<suite\>*), its run and stage,
-  the questions answered and its elapsed time; a pending one *Waiting*, with **Skip model**; a finished
-  one its index badge (*Intelligence Index* or *Overall Index*), median model time, TTFT P50 and cost per
-  question; a skipped, failed, stopped or canceled one its reason. Each card links to the member's
-  **run progress** per run, or its **battery progress**, and to its report;
-- **Batch diagnostics**, a disclosure with **Copy** and **Download** (§ 9).
+- **Batch diagnostics**, a disclosure with **Copy** and **Download** (§ 10).
+
+The models section is **Models in run order**, with a *k of M finished* count: one card per member with
+its position, name and badges and its status chip. A running member shows its step (*Run k of R*, or
+*Suite s of K · round r: \<suite\>*), its run and stage, the questions answered and its elapsed time; a
+pending one *Waiting*, with **Skip model**; a skipped, failed, stopped or canceled one its reason. A
+**finished** one (`Completed` or `CompletedWithErrors`) has a 3 px start edge in its status color and
+shows its index badge with its label (*Intelligence Index* or *Overall Index*) — or, with no index, why:
+*No index — n answers failed. Open the battery progress to re-run failed questions.* (*the run progress*
+for a suite member), else *No index for this result.* — and beside it the figures, each left out when it
+is missing: *Speed Index*, *Duration*, *Median model time*, *TTFT P50*, *Cost / question*, *Total cost*,
+*Refuted claims*, and *Flagged answers* and *Failed answers* when above zero, the failed count marked as
+needing attention; on a narrow models section the figures go under the index. Its reference line reads
+*Run #N*, *Series #N* or *Battery run #N*, then *· finished HH:mm* (with the date when not today). Each
+card links to the member's **run progress** per run, or its **battery progress**, and to its report.
+
+**A repair in place** (§ 6) shows on the member's card while the batch is not live: the card is marked
+current, its chip reads *Re-run in progress* for a re-run of failed questions and *Repair in progress*
+for any other repair, under it the stage caption (*Run #N · \<stage\>*), and for a re-run *Re-running n
+failed questions* and *Re-run elapsed*, timed from the re-run's start; the question bar, which would read
+complete, is not shown.
 
 The footer has **Run in Background** (or **Close**), **Cancel Batch** (confirmed first) while the batch is
 live or stopped, one button per resume option, and **Open in Model Comparison**, available once two members
 have a result: it closes the dialog and opens the comparison wizard with the members' battery runs, runs
-or (for a series) run groups selected, at most 24 sources. While a request is in flight the other actions
-are `aria-disabled` with the reason beside them. The dialog polls `GET runs/{id}` every 2 seconds while the
-batch is live or resumable, one request at a time, backing off 4, 8, 16 and 30 seconds on failures and
-pausing while the tab is hidden.
+or (for a series) run groups selected, at most 24 sources. A note at the footer's start says why an action
+waits: while a request is in flight, its reason (*Waiting for the server to resume the batch.* and the
+like), and the other actions are `aria-disabled`; otherwise, until two members have a result, *Two models
+with a completed result are needed to compare.* The disabled buttons are described by that note. The
+dialog polls `GET runs/{id}` every 2 seconds while it is open and the batch is live or resumable or a
+member's run is being repaired, one request at a time, backing off 4, 8, 16 and 30 seconds on failures and
+pausing while the tab is hidden; its elapsed times tick while the batch is live or a member is repaired.
 
 **Members' own dialogs.** A member's run or battery progress dialog **replaces** the batch dialog (two
 modal dialogs would trap focus between them); its dismissal then reads **Back to Batch** and returns to
 the batch dialog. While the batch is not final, the battery and series progress dialogs of its members
 say *Part of model batch #N.* with **Open model batch #N**, and their Continue, Re-run under current
-instrument and Cancel are `aria-disabled` with *Use the model batch's progress dialog.*, as the server
-refuses those resumes (§ 5.1).
+instrument and Cancel are `aria-disabled`, described by a note at the footer's start, *Model batch #N
+controls this battery run. Cancel, continue or re-run it from the batch.* (*… this series. …*), as the
+server refuses those resumes (§ 5.1).
 
 **Run History.** The newest 200 batches (`GET runs?take=200`) are listed beside runs and battery runs as
 *Model batch* cards (the Kind facet's third value): *Model batch #N · status · k of M models*, the target,

@@ -471,6 +471,9 @@ export function batteryWeightMix(
 export const INDEX_WITHHELD_HINT =
   'Re-run failed questions on this run; the battery run follows the re-run when it finishes.';
 
+/** A member cell's chip text while its run is being re-run. */
+export const BATTERY_REPAIRING_LABEL = 'Re-run in progress';
+
 // --- Number formatting -----------------------------------------------------------------------
 
 const DASH = '—';
