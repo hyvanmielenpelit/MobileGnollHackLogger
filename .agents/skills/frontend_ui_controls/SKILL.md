@@ -235,7 +235,7 @@ you already read the label, it is noise; drop it.
 | chevron-left / chevron-right (Feather *chevron-left* `<polyline points="15 18 9 12 15 6">`, *chevron-right* `<polyline points="9 18 15 12 9 6">`) | **Previous figure** / **Next figure** (icon-only, Model Comparison's *Single chart* toolbar), **Previous chart** / **Next chart** (icon-only, the Chat Consistency Charts step's *Single chart* toolbar), **Previous month** / **Next month** (icon-only, the header of `app-date-field`'s calendar, §4h) | **Previous / next** in a sequence: the item before or after this one, of the same kind. Never a state indicator — that is the down/up *chevron* above |
 | calendar (Feather *calendar*: a rounded rectangle, two rings and a rule) | **Choose {label} on a calendar** (icon-only `.action-btn` at the end of every `app-date-field`, §4h) | "Choose a date on a calendar" — the one glyph that opens a date picker, and nothing else |
 | search (a magnifier) | The leading glyph of a search field (the Download Center's *Search documents*) | Decorative, `aria-hidden`, never a button: the field's label names it, and the glyph says only "type to find" |
-| x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}* |
+| x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar), **Clear selection** (`.btn-ghost`, the Model Comparison wizard's step-1 selection bar, §8i) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}*. Clear selection drops every selected source as removing one selection chip drops one, and deletes nothing |
 | arrow-right (Feather: a line and a chevron head, `<line x1="5" y1="12" x2="19" y2="12">`, `<polyline points="12 5 19 12 12 19">`) | The admin alert's call-to-action link (trailing, `aria-hidden`; the one glyph that ends a label rather than leading it) | "Go there": the link opens the page where the alert is dealt with |
 
 *Changed 2026-09-12 (harness 24 round): Import Default Suite(s) moved from `upload` to `download` —
@@ -555,6 +555,12 @@ uses for an error — a status icon beside a word, not a button glyph. No glyph 
 its count uses the shared `.dc-ring` while the check runs, and the status glyphs alert-circle,
 alert-triangle and check-circle after it — status icons beside words, not button glyphs. No glyph is
 new.*
+
+*Changed 2026-10-12 (comparison sources card lists): the Model Comparison wizard's step-1 **Clear
+selection** became a compact `.btn-ghost` with the* x *glyph, in a one-line selection bar (§8i). Its
+meaning is the selection chips' own remove button, done to every chip at once: it drops the selection
+and deletes nothing. Its visible text is *Clear selection*; the count is visually hidden, so the
+accessible name *Clear selection (9)* begins with the visible text. No glyph is new.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -1658,9 +1664,10 @@ concerns.
 ## 8. Data tables
 
 The benchmark tables — **Runs in this group** and **Analysis groups** (`multi-run.component`), and
-the Model Comparison's source and entry tables — share one implementation of paging, column sorting and
+the Model Comparison's entry table — share one implementation of paging, column sorting and
 column filtering. Hand-rolled copies in one tab would be several places for the same bug. **Run
-History** was the first of these tables; it is now a card list (§8h).
+History** was the first of these tables, and the Model Comparison wizard's step-1 source tables were
+three more; all are now card lists (§8h).
 
 The layer is deliberately **headless plus presentational**, not a generic `<app-data-table>`.
 These tables' cells carry tier badges, score badges, instrument fingerprints, tooltips and
@@ -1876,7 +1883,8 @@ History** (`history-tab/`, `#bm-panel-history`) is the second; the **Multi-Suite
 definitions (`app-benchmark-batteries`) are the third; the **Chat Consistency wizard's step 1 runs**
 (`app-cc-model-step`, 2026-10-07) are the fourth; the **Chat Consistency wizard's step 3 period
 cards** (`app-cc-period-units`, 2026-10-09) are the fifth; the **Chat Consistency Analysis History
-dialog** (`app-cc-analysis-history-dialog`, 2026-10-10) is the sixth. Use one **when every row is a
+dialog** (`app-cc-analysis-history-dialog`, 2026-10-10) is the sixth; the **Model Comparison wizard's
+step 1 sources** (`app-comparison-source-picker`, 2026-10-12) are the seventh. Use one **when every row is a
 small form** — two selects, a group of checkboxes, several actions — rather than values to compare
 down a column, **or when a row is a record too rich for one table line**: Run History's runs carry a
 kicker of badges, a badged model name, four metrics with visible qualifier lines, four actions and five
@@ -1956,7 +1964,9 @@ because its `idPrefix` is an input), Run History as `historyList`, the batteries
 fifth, step 3's period cards, has no filter bar, sort or batching, so the class has nothing to hold
 there and is not used (below). The sixth, the Chat Consistency Analysis History, uses it as `list`
 (`idPrefix: 'cc-hist'`, batch 10, `overseer.benchmark.chatConsistency.history.view`, facets *Model*,
-*Provider*, *Compared* and *Reports*). **A further card list that filters uses it too, rather than
+*Provider*, *Compared* and *Reports*). The seventh, the Model Comparison sources, uses three:
+`runList`, `groupList` and `batteryList` (`idPrefix` `csp-runs` / `csp-groups` / `csp-batteries`, batch
+20, `overseer.benchmark.comparisonSources.{runs|groups|batteries}.view`). **A further card list that filters uses it too, rather than
 copying a host**; if it needs something the class lacks, extend the class and its spec. Like `TableState` it is plain TypeScript with no Angular dependency, touches no DOM
 beyond the event it is handed and emits nothing, so a component owns it as an ordinary field and it
 unit-tests on its own (`card-list-state.spec.ts`). It wraps a caller-supplied `TableState`, which keeps
@@ -2213,6 +2223,51 @@ needs its own confirmation:
   it, and focus goes to the title of the card now in the deleted one's place, else the previous card,
   else the dialog title.
 
+**The Model Comparison wizard's step 1 sources** are the seventh list (2026-10-12,
+`app-comparison-source-picker`): three paged 8- and 9-column tables (*Single runs*, *Analysis groups*,
+*Battery results*) became **three card lists, one per kind tab**, each with its own filter bar. It shows
+how a card list **fills a wizard step** and carries **sources that cannot be selected**:
+
+- **Everything that is not the list leaves the vertical axis.** The kind tabs share one row
+  (`.csp-source-bar`, an inline-size container) with **About conditions** and, on the run and group tabs
+  only, the **Suite** scope, pushed to the end; below 48 rem of the row they wrap under the tabs. There is
+  no visible heading (the wizard's step tab says it) and no pager. Each kind's note is an `app-info-tip`
+  (*About Analysis groups*, *About Battery results*) at the end of its filter bar, and the Battery
+  results tab has no Suite control rather than a caveat that it does not apply.
+- **One filter bar row**: search, **Sort by**, the facets in their `.gh-facet-row`, the view toggles
+  **Show selected only** (while the kind has a selection) and **Show comparable only** (runs and groups),
+  then the status line and the info button at the end. The chips get a second row only while a facet or
+  the search is active. *Show comparable only* filters its own `comparable` column, so it and the
+  *Condition* facet can both be active; neither toggle is a chip, and **Clear all** keeps both. The
+  nothing-matches state's **Clear all filters** clears them too, because they may be what hides every
+  card.
+- **Facets**: runs *Model*, *Provider*, *Status*, *Condition* (in condition order), *Suite*; groups
+  *Model*, *Provider*, *Suite*, *Tier*, *Condition*; battery results *Battery*, *Model*, *Provider*,
+  *Status*, *Analysis* (*Current*, *Stale*, *Incomplete*, *Not analyzed*). The condition values and the
+  view toggles depend on the comparability index and the selection, so **both go in `memoDeps`**.
+- **The status line counts the selection too**: *Showing 20 of 119 runs · filtered from 140 · 3
+  selected, 1 not shown* — the §8f rule for a selection the filters or the batch hide.
+- **The list is the step's scroller.** The step panel (`.mc-step--sources`) and every flex level under it
+  pass the height on with `min-height: 0`, down to `.csp-cards-scroll` (`overflow-y: auto`, a 16 rem
+  floor); the picker sets its own `:host` to fill, because it is projected into the wizard and the
+  wizard's styles do not reach it. The tab row and the filter bar stay in view without
+  `position: sticky`; in a window too short for the floor the step scrolls as before.
+- **Batch 20**, not 10: at this step's height ten compact cards fit with nothing left to scroll.
+- **The card** is `"select head metrics"`: the checkbox (ids, names and handlers of the old table rows
+  unchanged, *Compare run 21*), a two-line head — the title `h5#csp-run-21-title[tabindex=-1]` holding a
+  `<label for>` around the `app-model-identity`, then a meta line (*#21 · Completed · suite · Started …*)
+  — and a `dl` of fixed-width metrics, 7.5 rem each and *Class* 10 rem so a short hash and a *Stale* tag
+  share a line (*Intelligence Index* and *Condition*; *Runs* and *Condition*; *Overall Index*, *Class*
+  and *Runs per suite*). Metrics go under the head below 48 rem of the list; below 30 rem everything is
+  one column and the metrics wrap rather than scroll sideways.
+- **A source that cannot be compared** (a run not completed; a battery result unfinished, unanalyzed,
+  incomplete or stale) keeps its card and its name: its checkbox is `aria-disabled`, focusable, its click
+  refused, and described by a reason line on the card (*Run 2 is failed — only a completed run can be
+  compared*), with a dashed border and a muted title — never `disabled` with the reason as its name. A
+  card the no-mix rule blocks looks unchanged, its checkbox described by the panel's mix note.
+- **No Select all.** A comparison is capped at `MAX_COMPARISON_SOURCES`, and a set built with one click
+  over a filtered list is exactly what §8f warns against.
+
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with
 scroll snapping), `.gh-facet-btn` / `.gh-facet-count` / `.gh-facet-chevron`, `.gh-facet-popover` /
@@ -2223,18 +2278,32 @@ scroll snapping), `.gh-facet-btn` / `.gh-facet-count` / `.gh-facet-chevron`, `.g
 
 ### 8i. Clear selection in a selection band
 
-A **selection band** sums up what the operator picked in tables elsewhere on the step and lets them
-drop it without scrolling back: the Model Comparison wizard's step 1 band (`.mc-wizard-selection`,
-`role="region"` labelled by `#mc-selection-label`) is the reference.
+A **selection band** sums up what the operator picked in lists elsewhere on the step and lets them
+drop it without scrolling back. The reference is the Model Comparison wizard's step 1 **one-line
+selection bar** (`.mc-selection-bar`, `role="region"` labelled by `#mc-selection-label`, 2026-10-12): a
+flex item between the step panel and the footer, one line of 32 px controls, so the cards above it get
+the height.
 
-- **The label is the band's one `role="status"`** — *Your selection — 3 runs and 1 group
-  selected* — and its programmatic focus target, `tabindex="-1"`. It stays rendered when nothing is
-  selected, its text then visually hidden (*Your selection — nothing selected yet*), so a screen
-  reader still hears the state.
-- **Clear selection (N)** is `btn-gh btn-gh-cancel btn-gh-small` — a dismissal in a tight row, so blue,
-  small and text-only (§2, §3a) — labelled with the count, and **first in the chip row**, so it is seen
-  and reached by keyboard before the chips. It exists only while something is selected. After it,
-  **focus moves to the band's label**, because the button that held focus is gone.
+- **The label is the bar's one `role="status"`** and its programmatic focus target, `tabindex="-1"`.
+  Its visible text is the summary alone (*9 battery results selected*, *2 runs and 1 group
+  selected*), with the prefix *Your selection —* visually hidden, so the accessible text is
+  *Your selection — 9 battery results selected*. It stays rendered when nothing is selected, clipped
+  out of view (*Your selection — nothing selected yet*), so a screen reader still hears the state. It
+  cannot carry `.visually-hidden` itself: that class reveals an element holding focus, and the label is
+  focused after Clear selection.
+- **Clear selection** is a compact `.btn-ghost` with the *x* glyph (§3a) and the visible text *Clear
+  selection*; the count is visually hidden, so its accessible name *Clear selection (9)* begins with
+  the visible text (WCAG 2.5.3). It comes **before the chips**, so it is seen and reached by keyboard
+  first, and exists only while something is selected. After it, **focus moves to the label**, because
+  the button that held focus is gone.
+- **The chips are one row** (`ul#mc-selection-chips`, *Selected sources*) that scrolls sideways
+  (`flex-wrap: nowrap`, scroll snapping, a thin scrollbar), with an end fade (`mask-image`) only while
+  more are out of view; a focused remove button scrolls itself into view. While they overflow the line, a
+  `.btn-link` **Show all N** follows the row (`aria-controls` the row, `aria-expanded`), which wraps them
+  in a box of their own up to 30 dvh that scrolls, and reads **Show fewer** while expanded. Overflow is
+  measured by a `ResizeObserver` on the row, followed in and out of the DOM from `ngAfterViewChecked`,
+  plus a measurement after every change of the selection, since a new chip grows the row's scroll width
+  without resizing it. Clearing the selection drops the expanded state.
 - **Each chip's remove button** is a 32 × 32 `.action-btn` with the *x* glyph, named for its subject
   (*Remove {detail} {label} from the selection*) with a hint tooltip (§4). Removing a chip moves
   focus to the **next chip's** remove button, else to **Clear selection**, else to the label.
@@ -2242,17 +2311,25 @@ drop it without scrolling back: the Model Comparison wizard's step 1 band (`.mc-
   visually hidden *Battery run* prefix), an `app-model-identity` with the name and the thinking-level,
   reasoning-mode and provider badges, never a bare name. The chip stays one line: the name truncates
   (16 rem in the reference) and the badges are compact.
-- **One visible empty-state message.** With nothing selected the band shows one alert — *Nothing is
-  selected yet* / *Select at least one completed run, analysis group or battery result in the tables
-  above. Compare stays unavailable until you do.* — and no second hint line repeating it. The step's
-  disabled **Compare** and the footer state the same fact once, in their own words (*Select at least
-  one run, analysis group or battery result.*), as a disabled reason (§6).
-- Notices about the selection sit under the chips in a sibling `aria-live="polite"` list, never inside
-  the `role="status"` label, which would double-announce.
+- **One visible empty-state message, one line.** With nothing selected the bar shows one
+  `.gh-field-warning` line with the *alert-triangle* glyph — **Nothing is selected yet.** *Select at
+  least one completed run, analysis group or battery result. Compare stays unavailable until you do.* —
+  not an alert box, and no second hint repeating it. The step's disabled **Compare** and the footer
+  state the same fact once, in their own words (*Select at least one run, analysis group or battery
+  result.*), as a disabled reason (§6).
+- **Notices about the selection** (the host's index notices, the plot cap) sit under the line as
+  `.alert.alert-compact`s in a sibling `aria-live="polite"` list, never inside the `role="status"`
+  label, which would double-announce. They appear only when something is wrong, so they keep their full
+  wording: a warning stays visible, never behind a popup. The bar keeps a 44 dvh cap with a contained
+  scroll for when several stack.
+- **On a phone** the line wraps: the chip row has a 12 rem basis, so it shares the line wherever the
+  label, Clear selection and Show all leave it that much, and takes a line of its own below that.
 
 **The second band: the Chat Consistency wizard's step 1** (`.cc-scope-band`, 2026-10-07), above its
-run cards' filter bar (§8h), `role="region"` labeled by `#cc-scope-label`. It sums up which runs the
-analysis uses rather than a pick from tables, and so differs from the reference in three ways:
+run cards' filter bar (§8h), `role="region"` labeled by `#cc-scope-label`. It is **still on the older,
+taller layout**: a full-size `btn-gh btn-gh-cancel btn-gh-small` **Clear selection (N)** leading a
+wrapping chip row, and its empty state an alert box. It sums up which runs the analysis uses rather
+than a pick from lists, and so differs from the reference in three further ways:
 
 - **The label is never empty**: by default *Runs in the analysis — all 19 runs in these dates*, and
   with a selection *Runs in the analysis — 15 of 19 runs in these dates · from #21 (2026-09-20) to #93
@@ -2411,6 +2488,8 @@ Diff this against your markup before calling button, tab or table work finished.
 - [ ] Exactly one polite live region: the list's status line.
 - [ ] A selection band (§8i) leads its chip row with **Clear selection (N)**, moves focus to its
       `tabindex="-1"` label after it, and shows one visible empty-state message.
+- [ ] A selection bar stays one line: overflowing chips scroll sideways and expand only on request
+      (**Show all N**, `aria-expanded`), and the empty state is one warning line, not an alert box.
 - [ ] Each selection chip renders its model through `app-model-identity` (name, thinking, reasoning,
       provider), kept on one line (§8i).
 - [ ] Where the cards carry a choice that is not a filter (the Chat Consistency runs), the search and

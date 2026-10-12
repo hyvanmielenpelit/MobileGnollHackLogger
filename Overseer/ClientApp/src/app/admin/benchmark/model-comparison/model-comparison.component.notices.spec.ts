@@ -106,7 +106,7 @@ describe('ModelComparisonComponent', () => {
   }
 
   function bandAlerts(): HTMLElement[] {
-    return fixture.debugElement.queryAll(By.css('.mc-wizard-notice .alert'))
+    return fixture.debugElement.queryAll(By.css('.mc-selection-bar .alert'))
       .map(element => element.nativeElement as HTMLElement);
   }
 
@@ -119,21 +119,21 @@ describe('ModelComparisonComponent', () => {
   it('states the run count in the band label when only runs are selected', () => {
     band({ runs: 3, sources: runSources(3) });
 
-    const label = textOf('.mc-wizard-notice-label');
+    const label = textOf('.mc-selection-label');
     expect(label).toContain('3 runs selected');
   });
 
   it('states the group count in the band label when only groups are selected', () => {
     band({ groups: 2, sources: groupSources(2) });
 
-    const label = textOf('.mc-wizard-notice-label');
+    const label = textOf('.mc-selection-label');
     expect(label).toContain('2 groups selected');
   });
 
   it('states both counts when the selection spans runs and groups', () => {
     band({ runs: 2, groups: 1, sources: [...runSources(2), ...groupSources(1)] });
 
-    const label = textOf('.mc-wizard-notice-label');
+    const label = textOf('.mc-selection-label');
     expect(label).toContain('2 runs and 1 group selected');
   });
 
@@ -169,10 +169,10 @@ describe('ModelComparisonComponent', () => {
   it('labels the band for assistive technology', () => {
     band({ runs: 2, sources: runSources(2) });
 
-    const strip = fixture.debugElement.query(By.css('.mc-wizard-notice')).nativeElement as HTMLElement;
+    const strip = fixture.debugElement.query(By.css('.mc-selection-bar')).nativeElement as HTMLElement;
     expect(strip.getAttribute('role')).toBe('region');
     const labelId = strip.getAttribute('aria-labelledby')!;
-    expect((fixture.debugElement.query(By.css('.mc-wizard-notice-label'))
+    expect((fixture.debugElement.query(By.css('.mc-selection-label'))
       .nativeElement as HTMLElement).id).toBe(labelId);
   });
 
@@ -264,27 +264,30 @@ describe('ModelComparisonComponent', () => {
     expect(removed).toEqual([source]);
   });
 
-  it('renders on step 1 with nothing selected, its summary visually hidden and no hint', () => {
+  it('renders on step 1 with nothing selected, its summary clipped and one warning line', () => {
     band({ notices: [] });
 
-    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
-    // Still read to a screen reader, but the alert is the one visible message.
-    expect(textOf('.mc-wizard-notice-label')).toContain('Your selection — nothing selected yet');
-    const summary = fixture.debugElement.query(By.css('#mc-selection-label > span'))
-      .nativeElement as HTMLElement;
-    expect(summary.classList).toContain('visually-hidden');
-    expect(summary.getBoundingClientRect().width).toBeLessThanOrEqual(1);
-    expect(fixture.debugElement.query(By.css('.mc-wizard-selection-hint'))).toBeNull();
-    expect(textOf('.mc-wizard-selection')).not.toContain('Select runs or groups above');
+    expect(fixture.debugElement.query(By.css('.mc-selection-bar'))).toBeTruthy();
+    // Still read to a screen reader, but the warning line is the one visible message.
+    expect(textOf('.mc-selection-label')).toContain('Your selection — nothing selected yet');
+    const label = fixture.debugElement.query(By.css('#mc-selection-label')).nativeElement as HTMLElement;
+    expect(label.getBoundingClientRect().width).toBeLessThanOrEqual(1);
+    const empty = fixture.debugElement.query(By.css('.mc-selection-empty')).nativeElement as HTMLElement;
+    expect(empty.classList).toContain('gh-field-warning');
+    expect(empty.closest('.alert')).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-selection-bar .alert'))).toBeNull();
     expect(fixture.debugElement.query(By.css('.mc-selection-chips'))).toBeNull();
   });
 
-  it('shows the summary text once something is selected', () => {
+  it('shows the summary text once something is selected, its prefix visually hidden', () => {
     band({ runs: 2, sources: runSources(2), notices: [] });
 
-    const summary = fixture.debugElement.query(By.css('#mc-selection-label > span'))
-      .nativeElement as HTMLElement;
-    expect(summary.classList).not.toContain('visually-hidden');
+    const label = fixture.debugElement.query(By.css('#mc-selection-label')).nativeElement as HTMLElement;
+    expect(label.getBoundingClientRect().width).toBeGreaterThan(1);
+    expect(label.textContent?.replace(/\s+/g, ' ').trim()).toBe('Your selection — 2 runs selected');
+    const prefix = label.querySelector('.visually-hidden') as HTMLElement;
+    expect(prefix.textContent?.trim()).toBe('Your selection —');
+    expect(fixture.debugElement.query(By.css('.mc-selection-empty'))).toBeNull();
   });
 
   it('offers Clear selection only when something is selected, first in the chip row, and emits clearSelection', () => {
@@ -298,11 +301,17 @@ describe('ModelComparisonComponent', () => {
 
     const button = fixture.debugElement.query(By.css('.mc-selection-clear'))
       .nativeElement as HTMLButtonElement;
-    expect(button.textContent?.trim()).toBe('Clear selection (2)');
-    expect(button.classList).toContain('btn-gh');
-    expect(button.classList).toContain('btn-gh-cancel');
-    expect(button.classList).toContain('btn-gh-small');
-    expect(button.classList).not.toContain('btn-ghost');
+    // The accessible name begins with the visible text (WCAG 2.5.3); the count is for assistive
+    // technology only.
+    expect(button.textContent?.replace(/\s+/g, ' ').trim()).toBe('Clear selection (2)');
+    const hidden = button.querySelector('.visually-hidden') as HTMLElement;
+    expect(hidden.textContent?.trim()).toBe('(2)');
+    expect(button.classList).toContain('btn-ghost');
+    expect(button.classList).not.toContain('btn-gh');
+    const glyph = button.querySelector('svg.btn-icon') as SVGElement;
+    expect(glyph.getAttribute('aria-hidden')).toBe('true');
+    expect(glyph.querySelectorAll('line').length).toBe(2);
+    expect(getComputedStyle(button).minHeight).toBe('32px');
     // Before the chips, so it is reached first by keyboard.
     const chips = fixture.debugElement.query(By.css('.mc-selection-chips')).nativeElement as HTMLElement;
     expect(button.compareDocumentPosition(chips) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
@@ -399,7 +408,7 @@ describe('ModelComparisonComponent', () => {
       { kind: 'run', id: 1, label: 'Gemini 2.5 Flash', provider: 'Google', detail: '#1' };
     band({ runs: 1, sources: [source], notices: [crossCondition] });
 
-    const head = fixture.debugElement.query(By.css('.mc-selection-head')).nativeElement as HTMLElement;
+    const head = fixture.debugElement.query(By.css('.mc-selection-line')).nativeElement as HTMLElement;
     const notices = fixture.debugElement.query(By.css('.mc-wizard-notices')).nativeElement as HTMLElement;
     expect(head.nextElementSibling).toBe(notices);
   });
@@ -407,7 +416,7 @@ describe('ModelComparisonComponent', () => {
   it('announces through one polite live region around the notices, apart from the summary status', () => {
     band({ runs: 3, notices: [indexFailure, crossCondition, stillComputing] });
 
-    const strip = fixture.debugElement.query(By.css('.mc-wizard-notice')).nativeElement as HTMLElement;
+    const strip = fixture.debugElement.query(By.css('.mc-selection-bar')).nativeElement as HTMLElement;
     expect(strip.hasAttribute('aria-live')).toBe(false);
 
     const list = fixture.debugElement.query(By.css('.mc-wizard-notices')).nativeElement as HTMLElement;
@@ -417,7 +426,7 @@ describe('ModelComparisonComponent', () => {
 
     // The summary line carries the band's one role="status"; a role nested inside the aria-live
     // region above would double-announce in several screen readers, so no notice carries one.
-    const statuses = fixture.debugElement.queryAll(By.css('.mc-wizard-notice [role="status"]'));
+    const statuses = fixture.debugElement.queryAll(By.css('.mc-selection-bar [role="status"]'));
     expect(statuses.length).toBe(1);
     expect((statuses[0].nativeElement as HTMLElement).id).toBe('mc-selection-label');
     expect(bandAlerts().map(alert => alert.getAttribute('role'))).toEqual([null, null, null]);
@@ -455,8 +464,8 @@ describe('ModelComparisonComponent', () => {
   it('bands the notices above the footer on step 1, under one label', () => {
     band({ runs: 3, notices: [indexFailure, crossCondition] });
 
-    expect(fixture.debugElement.queryAll(By.css('.mc-wizard-notice-label')).length).toBe(1);
-    const strip = fixture.debugElement.query(By.css('.mc-wizard-notice')).nativeElement as HTMLElement;
+    expect(fixture.debugElement.queryAll(By.css('.mc-selection-label')).length).toBe(1);
+    const strip = fixture.debugElement.query(By.css('.mc-selection-bar')).nativeElement as HTMLElement;
     expect(strip.nextElementSibling?.classList).toContain('mc-wizard-nav');
   });
 
@@ -482,7 +491,7 @@ describe('ModelComparisonComponent', () => {
     band({ runs: component.maxSources + 1, notices: [] });
 
     expect(component.plotCapNotice).toBeNull();
-    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
+    expect(fixture.debugElement.query(By.css('.mc-selection-bar'))).toBeTruthy();
     expect(fixture.debugElement.query(By.css('.mc-wizard-notices'))).toBeNull();
   });
 
@@ -497,38 +506,106 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)), 2);
     fixture.detectChanges();
 
-    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeNull();
+    expect(fixture.debugElement.query(By.css('.mc-selection-bar'))).toBeNull();
   });
 
   it('renders the band with no notice list when the selection is within both caps and has nothing to report', () => {
     band({ runs: 2, sources: runSources(2), notices: [] });
 
-    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
+    expect(fixture.debugElement.query(By.css('.mc-selection-bar'))).toBeTruthy();
     expect(fixture.debugElement.query(By.css('.mc-wizard-notices'))).toBeNull();
   });
 
-  it('says in the band that nothing is selected yet, and stops as soon as something is', () => {
+  it('says on the bar\'s line that nothing is selected yet, and stops as soon as something is', () => {
     band({ runs: 0, notices: [] });
 
-    expect(component.bandNotices.map(notice => notice.id)).toEqual(['nothing-selected']);
-    const alerts = bandAlerts();
-    expect(alerts.length).toBe(1);
+    // Not a notice: the bar's own line states it, so the notice list stays empty.
+    expect(component.bandNotices).toEqual([]);
+    expect(fixture.debugElement.query(By.css('.mc-wizard-notices'))).toBeNull();
     // A warning: Compare is blocked, but nothing is wrong with the view or the index.
-    expect(alerts[0].classList).toContain('alert-warning');
-    expect(alerts[0].querySelector('.alert-heading')?.textContent).toContain('Nothing is selected yet');
-    expect(alerts[0].querySelector('.alert-body')?.textContent).toContain(
-      'Select at least one completed run, analysis group or battery result in the tables above. '
+    const line = textOf('.mc-selection-empty').replace(/\s+/g, ' ').trim();
+    expect(line).toBe('Nothing is selected yet. Select at least one completed run, analysis group or battery result. '
       + 'Compare stays unavailable until you do.');
-    // The band explains; the footer names the blocked control, and neither repeats the other.
+    expect(line).not.toContain('in the tables above');
+    expect(fixture.debugElement.query(By.css('.mc-selection-empty svg')).nativeElement
+      .getAttribute('aria-hidden')).toBe('true');
+    // The bar explains; the footer names the blocked control, and neither repeats the other.
     expect(textOf('.mc-wizard-blocked')).toContain('Select at least one run, analysis group or battery result.');
 
     fixture.componentRef.setInput('selectedRunCount', 1);
     fixture.detectChanges();
 
     expect(component.nothingSelectedNotice).toBeNull();
-    // The band itself stays on screen; only its notice list, now with nothing to report, is gone.
-    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
+    // The bar itself stays on screen; only its warning line is gone.
+    expect(fixture.debugElement.query(By.css('.mc-selection-bar'))).toBeTruthy();
+    expect(fixture.debugElement.query(By.css('.mc-selection-empty'))).toBeNull();
     expect(fixture.debugElement.query(By.css('.mc-wizard-notices'))).toBeNull();
+  });
+
+  describe('the chip row', () => {
+    /** Lets the queued overflow measurement run, then renders what it decided. */
+    async function settle(): Promise<void> {
+      await Promise.resolve();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    function moreButton(): HTMLButtonElement | null {
+      return fixture.debugElement.query(By.css('.mc-selection-more'))?.nativeElement as HTMLButtonElement ?? null;
+    }
+
+    it('keeps the bar one line tall with a row of chips', async () => {
+      band({ runs: 3, sources: runSources(3), notices: [] });
+      await settle();
+
+      const bar = fixture.debugElement.query(By.css('.mc-selection-bar')).nativeElement as HTMLElement;
+      expect(bar.getBoundingClientRect().height).toBeLessThanOrEqual(56);
+      const chips = fixture.debugElement.query(By.css('.mc-selection-chips')).nativeElement as HTMLElement;
+      expect(getComputedStyle(chips).flexWrap).toBe('nowrap');
+    });
+
+    it('offers Show all N only while the chips overflow, and toggles aria-expanded', async () => {
+      band({ runs: 2, sources: runSources(2), notices: [] });
+      await settle();
+      expect(component.chipsOverflow).toBe(false);
+      expect(moreButton()).toBeNull();
+
+      band({ runs: 20, sources: runSources(20), notices: [] });
+      await settle();
+      expect(component.chipsOverflow).toBe(true);
+      const more = moreButton()!;
+      expect(more.textContent?.trim()).toBe('Show all 20');
+      expect(more.getAttribute('aria-controls')).toBe('mc-selection-chips');
+      expect(more.getAttribute('aria-expanded')).toBe('false');
+      const chips = fixture.debugElement.query(By.css('#mc-selection-chips')).nativeElement as HTMLElement;
+      expect(chips.classList).toContain('is-overflowing');
+
+      more.click();
+      fixture.detectChanges();
+      expect(more.getAttribute('aria-expanded')).toBe('true');
+      expect(more.textContent?.trim()).toBe('Show fewer');
+      expect(getComputedStyle(chips).flexWrap).toBe('wrap');
+
+      more.click();
+      fixture.detectChanges();
+      expect(more.getAttribute('aria-expanded')).toBe('false');
+      expect(getComputedStyle(chips).flexWrap).toBe('nowrap');
+    });
+
+    it('drops Show all and the expanded state when the selection is cleared', async () => {
+      band({ runs: 20, sources: runSources(20), notices: [] });
+      await settle();
+      moreButton()!.click();
+      fixture.detectChanges();
+      expect(component.chipsExpanded).toBe(true);
+
+      band({ runs: 0, sources: [], notices: [] });
+      await settle();
+
+      expect(component.chipsExpanded).toBe(false);
+      expect(component.chipsOverflow).toBe(false);
+      expect(moreButton()).toBeNull();
+    });
   });
 
   it('drops the nothing-selected notice while a comparison is being computed', () => {
@@ -537,7 +614,7 @@ describe('ModelComparisonComponent', () => {
     fixture.detectChanges();
 
     expect(component.nothingSelectedNotice).toBeNull();
-    expect(fixture.debugElement.query(By.css('.mc-wizard-notice'))).toBeTruthy();
+    expect(fixture.debugElement.query(By.css('.mc-selection-bar'))).toBeTruthy();
     expect(fixture.debugElement.query(By.css('.mc-wizard-notices'))).toBeNull();
   });
 

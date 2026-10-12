@@ -19,9 +19,16 @@ import { copyToClipboard } from '../../../utils/clipboard.util';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { saveFigureBlob } from './figure-export';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
-import { exactFilter, TableState } from '../../../shared/data-table/table-state';
-import { SortHeaderComponent } from '../../../shared/data-table/sort-header.component';
-import { TablePagerComponent } from '../../../shared/data-table/table-pager.component';
+import { anyOfFilter, customFilter, TableState } from '../../../shared/data-table/table-state';
+import {
+  CardListChip,
+  CardListFacet,
+  CardListNoun,
+  CardListSort,
+  CardListState
+} from '../../../shared/data-table/card-list-state';
+import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
+import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { ModelIdentityComponent } from '../../../shared/model-identity/model-identity.component';
 import type {
   BenchmarkBatteryRunDto,
@@ -83,6 +90,9 @@ export interface ModelComparisonSelection {
 /** The kinds of source the picker's tabs offer, in display order. */
 export type ComparisonSourceTab = 'runs' | 'groups' | 'batteries';
 
+/** A row of any of the three source lists. */
+type SourceRow = BenchmarkRunSummaryDto | BenchmarkRunGroupDto | BenchmarkBatteryRunDto;
+
 /**
  * The most sources one request may carry.
  *
@@ -95,7 +105,7 @@ export const MAX_COMPARISON_SOURCES = 24;
 /**
  * The source sections' titles.
  *
- * Exported because the wizard's notice band names the table its notices report on, and a second
+ * Exported because the wizard's notice band names the list its notices report on, and a second
  * copy of any of them would go stale the first time one is renamed. The kind tabs bind to these,
  * so the tab and the label are the same value.
  */
@@ -109,6 +119,53 @@ export const SOURCE_MIX_NOTE =
 
 /** The canonical rendering of an absent value, as `BenchmarkComparabilityKey.NoValue` writes it. */
 const NO_VALUE = '(none)';
+
+/** How many cards each source list shows at first, and how many more Show more adds. */
+export const SOURCE_LIST_BATCH = 20;
+
+/** Where each source list's Sort by choice is kept, per browser. */
+export const SOURCE_RUNS_VIEW_STORAGE_KEY = 'overseer.benchmark.comparisonSources.runs.view';
+export const SOURCE_GROUPS_VIEW_STORAGE_KEY = 'overseer.benchmark.comparisonSources.groups.view';
+export const SOURCE_BATTERIES_VIEW_STORAGE_KEY = 'overseer.benchmark.comparisonSources.batteries.view';
+
+/** The orders Sort by offers for the single runs. */
+export const SOURCE_RUN_SORTS: readonly CardListSort[] = [
+  { id: 'newest', label: 'Newest first', column: 'id', direction: 'desc' },
+  { id: 'oldest', label: 'Oldest first', column: 'id', direction: 'asc' },
+  { id: 'index', label: 'Intelligence Index (high–low)', column: 'qualityIndex', direction: 'desc' },
+  { id: 'model', label: 'Model (A–Z)', column: 'testedModel', direction: 'asc' },
+  { id: 'condition', label: 'Condition', column: 'condition', direction: 'asc' }
+];
+
+/** The orders Sort by offers for the analysis groups. */
+export const SOURCE_GROUP_SORTS: readonly CardListSort[] = [
+  { id: 'newest', label: 'Newest first', column: 'createdAtUtc', direction: 'desc' },
+  { id: 'oldest', label: 'Oldest first', column: 'createdAtUtc', direction: 'asc' },
+  { id: 'model', label: 'Model (A–Z)', column: 'testedModel', direction: 'asc' },
+  { id: 'runs', label: 'Most runs', column: 'runCount', direction: 'desc' }
+];
+
+/** The orders Sort by offers for the battery results. */
+export const SOURCE_BATTERY_SORTS: readonly CardListSort[] = [
+  { id: 'newest', label: 'Newest first', column: 'id', direction: 'desc' },
+  { id: 'oldest', label: 'Oldest first', column: 'id', direction: 'asc' },
+  { id: 'index', label: 'Overall Index (high–low)', column: 'overallIndex', direction: 'desc' },
+  { id: 'model', label: 'Model (A–Z)', column: 'testedModel', direction: 'asc' },
+  { id: 'analyzed', label: 'Recently analyzed', column: 'analyzedAtUtc', direction: 'desc' }
+];
+
+/** The noun each list's status line and facets count in. */
+const SOURCE_NOUNS: Readonly<Record<ComparisonSourceTab, CardListNoun>> = {
+  runs: { one: 'run', many: 'runs' },
+  groups: { one: 'group', many: 'groups' },
+  batteries: { one: 'battery result', many: 'battery results' }
+};
+
+/** The tier facet's values, in tier order. */
+const TIER_ORDER: readonly string[] = ['Replicate', 'QualityComparable', 'CrossCondition'];
+
+/** The battery Analysis facet's values, in order. */
+const BATTERY_ANALYSIS_ORDER: readonly string[] = ['Current', 'Stale', 'Incomplete', 'Not analyzed'];
 
 /** Other conditions the legend adds per Show more; the charted one is always shown besides. */
 export const CONDITION_PAGE_SIZE = 5;
@@ -225,26 +282,26 @@ function conditionHueClass(ordinal: number | null): string {
  * results at one point each, which the suite scope does not narrow and which are never mixed with
  * runs or groups.
  *
- * Presentational, like the view it feeds: it owns no fetching and mutates nothing but its own table
+ * Presentational, like the view it feeds: it owns no fetching and mutates nothing but its own list
  * state. The host holds the selection and issues the request, so the two panels of this sub-tab
  * cannot disagree about what is selected.
  *
  * The division of labour with `ModelComparisonComponent` is by **stage**, not by kind of control.
  * Everything that decides which sources are in the request at all belongs here; everything that
  * decides how the returned set is drawn belongs in that component's filter row. Suite scope is a
- * selection-stage control — its whole effect is visible in the two tables below it — so it sits
- * here, next to what it governs, rather than in a row otherwise made of chart options.
+ * selection-stage control — its whole effect is visible in the run and group lists below it — so it
+ * sits here, next to what it governs, rather than in a row otherwise made of chart options.
  */
 @Component({
   selector: 'app-comparison-source-picker',
   standalone: true,
-  imports: [CommonModule, FormsModule, SortHeaderComponent, TablePagerComponent, ModelIdentityComponent],
+  imports: [CommonModule, FormsModule, FilterFacetComponent, InfoTipComponent, ModelIdentityComponent],
   templateUrl: './comparison-source-picker.component.html',
   styleUrls: ['./comparison-source-picker.component.scss']
 })
 export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDestroy {
-  /** Protected rather than private: the filter rows call it directly after a `TableState` mutation. */
   protected cdr = inject(ChangeDetectorRef);
+  private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
 
   /** Runs offered as R = 1 points. Already scoped to `suiteId` by the host. */
   @Input() runs: readonly BenchmarkRunSummaryDto[] = [];
@@ -295,7 +352,8 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
       selected: r => (this.isRunSelected(r.id) ? 1 : 0),
       id: r => r.id,
       suiteName: r => r.suiteName,
-      testedModel: r => this.runModelText(r),
+      // A source with no model sorts last.
+      testedModel: r => this.runModelText(r) || null,
       status: r => this.runStatus(r),
       qualityIndex: r => r.qualityIndex ?? r.finalScore,
       startedAtUtc: r => parseServerUtcDate(r.startedAtUtc),
@@ -303,19 +361,44 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
       condition: r => this.conditionOrdinal(runKey(r)) ?? Number.MAX_SAFE_INTEGER
     },
     {
-      suiteName: r => r.suiteName,
-      testedModel: r => this.runModelText(r),
-      status: exactFilter(r => this.runStatus(r)),
-      selected: exactFilter(r => (this.isRunSelected(r.id) ? 'yes' : 'no')),
-      condition: exactFilter(r => this.conditionLabel(runKey(r)))
+      search: customFilter((r, value) => this.runSearchText(r).includes(value.toLowerCase())),
+      model: anyOfFilter(r => this.runModelText(r)),
+      provider: anyOfFilter(r => r.testedModelProviderUsed),
+      status: anyOfFilter(r => this.runStatus(r)),
+      condition: anyOfFilter(r => this.conditionFacetValue(runKey(r))),
+      suite: anyOfFilter(r => r.suiteName),
+      selected: customFilter((r, value) => value !== 'yes' || this.isRunSelected(r.id)),
+      comparable: customFilter((r, value) => this.conditionLabel(runKey(r)) === value)
     }
   );
+
+  /** The single-run cards over `runTable`: the search, Sort by, the facets, the chips and the batch. */
+  readonly runList = new CardListState<BenchmarkRunSummaryDto>(this.runTable, {
+    idPrefix: 'csp-runs',
+    batch: SOURCE_LIST_BATCH,
+    sorts: SOURCE_RUN_SORTS,
+    defaultSort: 'newest',
+    storageKey: SOURCE_RUNS_VIEW_STORAGE_KEY,
+    facets: [
+      { column: 'model', label: 'Model', values: r => this.runModelText(r) },
+      { column: 'provider', label: 'Provider', values: r => r.testedModelProviderUsed },
+      { column: 'status', label: 'Status', values: r => this.runStatus(r) },
+      {
+        column: 'condition', label: 'Condition', values: r => this.conditionFacetValue(runKey(r)),
+        order: (a, b) => this.compareConditionLabels(a, b)
+      },
+      { column: 'suite', label: 'Suite', values: r => r.suiteName }
+    ],
+    memoDeps: () => [this.comparabilityIndex, this.indexLoading, this.selectedRunIds],
+    onChange: () => this.cdr.markForCheck()
+  });
 
   readonly groupTable = new TableState<BenchmarkRunGroupDto>('createdAtUtc', 'desc').registerAccessors(
     {
       selected: g => (this.isGroupSelected(g.id) ? 1 : 0),
       id: g => g.id,
-      testedModel: g => this.groupModelText(g),
+      // A source with no model sorts last.
+      testedModel: g => this.groupModelText(g) || null,
       suiteName: g => g.suiteName,
       tier: g => g.tierLabel || String(g.tier),
       runCount: g => g.runCount,
@@ -325,21 +408,49 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
       condition: g => this.conditionOrdinal(groupKey(g)) ?? Number.MAX_SAFE_INTEGER
     },
     {
-      // The name stays searchable here even where the row does not render it.
-      testedModel: g => `${this.groupModelText(g)} ${g.name}`,
-      suiteName: g => g.suiteName,
-      tier: exactFilter(g => String(g.tier)),
-      selected: exactFilter(g => (this.isGroupSelected(g.id) ? 'yes' : 'no')),
-      condition: exactFilter(g => this.conditionLabel(groupKey(g)))
+      // The name stays searchable even where the card does not render it.
+      search: customFilter((g, value) => this.groupSearchText(g).includes(value.toLowerCase())),
+      model: anyOfFilter(g => this.groupModelText(g)),
+      provider: anyOfFilter(g => g.testedModelProvider),
+      suite: anyOfFilter(g => g.suiteName),
+      tier: anyOfFilter(g => (g.tier == null ? null : String(g.tier))),
+      condition: anyOfFilter(g => this.conditionFacetValue(groupKey(g))),
+      selected: customFilter((g, value) => value !== 'yes' || this.isGroupSelected(g.id)),
+      comparable: customFilter((g, value) => this.conditionLabel(groupKey(g)) === value)
     }
   );
+
+  /** The analysis-group cards over `groupTable`. */
+  readonly groupList = new CardListState<BenchmarkRunGroupDto>(this.groupTable, {
+    idPrefix: 'csp-groups',
+    batch: SOURCE_LIST_BATCH,
+    sorts: SOURCE_GROUP_SORTS,
+    defaultSort: 'newest',
+    storageKey: SOURCE_GROUPS_VIEW_STORAGE_KEY,
+    facets: [
+      { column: 'model', label: 'Model', values: g => this.groupModelText(g) },
+      { column: 'provider', label: 'Provider', values: g => g.testedModelProvider },
+      { column: 'suite', label: 'Suite', values: g => g.suiteName },
+      {
+        column: 'tier', label: 'Tier', values: g => (g.tier == null ? null : String(g.tier)),
+        order: TIER_ORDER, labelOf: value => this.tierName(value)
+      },
+      {
+        column: 'condition', label: 'Condition', values: g => this.conditionFacetValue(groupKey(g)),
+        order: (a, b) => this.compareConditionLabels(a, b)
+      }
+    ],
+    memoDeps: () => [this.comparabilityIndex, this.indexLoading, this.selectedGroupIds],
+    onChange: () => this.cdr.markForCheck()
+  });
 
   readonly batteryTable = new TableState<BenchmarkBatteryRunDto>('id', 'desc').registerAccessors(
     {
       selected: b => (this.isBatterySelected(b.id) ? 1 : 0),
       id: b => b.id,
       batteryName: b => b.batteryName,
-      testedModel: b => this.batteryModelText(b),
+      // A source with no model sorts last.
+      testedModel: b => this.batteryModelText(b) || null,
       status: b => this.batteryStatus(b),
       comparabilityClass: b => this.batteryClassText(b),
       overallIndex: b => b.overallIndex,
@@ -347,12 +458,33 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
       analyzedAtUtc: b => (b.latestAnalysisAtUtc ? parseServerUtcDate(b.latestAnalysisAtUtc) : null)
     },
     {
-      batteryName: exactFilter(b => b.batteryName),
-      testedModel: b => this.batteryModelText(b),
-      status: exactFilter(b => this.batteryStatus(b)),
-      selected: exactFilter(b => (this.isBatterySelected(b.id) ? 'yes' : 'no'))
+      search: customFilter((b, value) => this.batterySearchText(b).includes(value.toLowerCase())),
+      battery: anyOfFilter(b => b.batteryName),
+      model: anyOfFilter(b => this.batteryModelText(b)),
+      provider: anyOfFilter(b => b.testedProvider),
+      status: anyOfFilter(b => this.batteryStatus(b)),
+      analysis: anyOfFilter(b => this.batteryAnalysisState(b)),
+      selected: customFilter((b, value) => value !== 'yes' || this.isBatterySelected(b.id))
     }
   );
+
+  /** The battery-result cards over `batteryTable`. */
+  readonly batteryList = new CardListState<BenchmarkBatteryRunDto>(this.batteryTable, {
+    idPrefix: 'csp-batteries',
+    batch: SOURCE_LIST_BATCH,
+    sorts: SOURCE_BATTERY_SORTS,
+    defaultSort: 'newest',
+    storageKey: SOURCE_BATTERIES_VIEW_STORAGE_KEY,
+    facets: [
+      { column: 'battery', label: 'Battery', values: b => b.batteryName },
+      { column: 'model', label: 'Model', values: b => this.batteryModelText(b) },
+      { column: 'provider', label: 'Provider', values: b => b.testedProvider },
+      { column: 'status', label: 'Status', values: b => this.batteryStatus(b) },
+      { column: 'analysis', label: 'Analysis', values: b => this.batteryAnalysisState(b), order: BATTERY_ANALYSIS_ORDER }
+    ],
+    memoDeps: () => [this.selectedBatteryRunIds],
+    onChange: () => this.cdr.markForCheck()
+  });
 
   ngOnInit(): void {
     // Every icon-only control below carries an interestfor tooltip, and the primitives behind those
@@ -364,8 +496,24 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
    * Shows the Battery results tab when battery results become the selection from outside it — a
    * restored selection, or the leaderboard's Open in Model Comparison — so they are not left
    * selected behind another tab.
+   *
+   * A replaced source list marks its facets stale; a new suite scope starts the run and group
+   * lists from their first batch, while a reload of the same scope keeps the batch.
    */
   ngOnChanges(changes: SimpleChanges): void {
+    if (changes['runs']) {
+      this.runList.invalidate();
+    }
+    if (changes['groups']) {
+      this.groupList.invalidate();
+    }
+    if (changes['batteryRuns']) {
+      this.batteryList.invalidate();
+    }
+    if (changes['suiteId'] && !changes['suiteId'].firstChange) {
+      this.runList.resetBatch();
+      this.groupList.resetBatch();
+    }
     const batteries = changes['selectedBatteryRunIds'];
     if (batteries
       && (batteries.previousValue?.length ?? 0) === 0
@@ -376,6 +524,9 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
   }
 
   ngOnDestroy(): void {
+    this.runList.dispose();
+    this.groupList.dispose();
+    this.batteryList.dispose();
     this.clearCopyStateTimer();
     this.clearConditionCopyTimer();
   }
@@ -422,7 +573,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
     }
   }
 
-  /** The tab's row count — what its table actually lists, unselectable rows included. */
+  /** The tab's row count — what its list holds, unselectable sources included. */
   sourceTabRowCount(tab: ComparisonSourceTab): number {
     switch (tab) {
       case 'runs': return this.runs.length;
@@ -510,7 +661,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
   // ---------------------------------------------------------------------------------------------
   // Selection
   //
-  // Held by id throughout, so a tick survives paging, filtering and a suite change that keeps the
+  // Held by id throughout, so a tick survives batching, filtering and a suite change that keeps the
   // row in scope. Every mutation emits the whole selection: the host is the owner, and a picker
   // that kept a private copy would drift from it the first time the host dropped an id.
   // ---------------------------------------------------------------------------------------------
@@ -561,22 +712,22 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
     return this.selectedRunIds.length + this.selectedGroupIds.length + this.selectedBatteryRunIds.length;
   }
 
-  /** Selected runs the current page of the run table does not show. */
-  get offPageRunCount(): number {
-    const onPage = new Set(this.runTable.view(this.runs).map(run => run.id));
-    return this.selectedRunIds.filter(id => !onPage.has(id)).length;
+  /** The kind's selected ids, in selection order. */
+  selectedIdsOf(kind: ComparisonSourceTab): readonly number[] {
+    switch (kind) {
+      case 'runs': return this.selectedRunIds;
+      case 'groups': return this.selectedGroupIds;
+      default: return this.selectedBatteryRunIds;
+    }
   }
 
-  /** Selected groups the current page of the group table does not show. */
-  get offPageGroupCount(): number {
-    const onPage = new Set(this.groupTable.view(this.groups).map(group => group.id));
-    return this.selectedGroupIds.filter(id => !onPage.has(id)).length;
-  }
-
-  /** Selected battery results the current page of the battery table does not show. */
-  get offPageBatteryCount(): number {
-    const onPage = new Set(this.batteryTable.view(this.batteryRuns).map(battery => battery.id));
-    return this.selectedBatteryRunIds.filter(id => !onPage.has(id)).length;
+  /**
+   * Selected sources of the kind that its list does not show: hidden by a filter or beyond the
+   * batch. Counted against the source list, so a selection the list has never loaded counts too.
+   */
+  hiddenSelectedCount(kind: ComparisonSourceTab): number {
+    const shown = new Set(this.cardsOf(kind).map(row => row.id));
+    return this.selectedIdsOf(kind).filter(id => !shown.has(id)).length;
   }
 
   get showSelectedRunsOnly(): boolean {
@@ -592,17 +743,26 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
   }
 
   toggleShowSelectedBatteriesOnly(): void {
-    this.batteryTable.setFilter('selected', this.showSelectedBatteriesOnly ? '' : 'yes');
-    this.cdr.detectChanges();
+    this.setViewFilter('batteries', 'selected', this.showSelectedBatteriesOnly ? '' : 'yes');
   }
 
   toggleShowSelectedRunsOnly(): void {
-    this.runTable.setFilter('selected', this.showSelectedRunsOnly ? '' : 'yes');
-    this.cdr.detectChanges();
+    this.setViewFilter('runs', 'selected', this.showSelectedRunsOnly ? '' : 'yes');
   }
 
   toggleShowSelectedGroupsOnly(): void {
-    this.groupTable.setFilter('selected', this.showSelectedGroupsOnly ? '' : 'yes');
+    this.setViewFilter('groups', 'selected', this.showSelectedGroupsOnly ? '' : 'yes');
+  }
+
+  /**
+   * Sets one of the view settings that are not chips — Show selected only, Show comparable only —
+   * and, like any filter change, starts the list from its first batch.
+   */
+  private setViewFilter(kind: ComparisonSourceTab, column: 'selected' | 'comparable', value: string): void {
+    const list = this.listOf(kind);
+    list.table.setFilter(column, value);
+    list.resetBatch();
+    list.invalidate();
     this.cdr.detectChanges();
   }
 
@@ -905,8 +1065,8 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
       trigger.focus();
       return;
     }
-    // The row has been paged, filtered or refreshed away; the kind tab it was opened from is the
-    // nearest place a reader can carry on from.
+    // The card has been filtered or refreshed away; the kind tab it was opened from is the nearest
+    // place a reader can carry on from.
     const tabId = this.conditionDetail?.sourceKind === 'Group'
       ? 'csp-src-tab-groups'
       : 'csp-src-tab-runs';
@@ -1252,7 +1412,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
     return `csp-cond-summary-${item.condition.ordinal}`;
   }
 
-  /** The item's badge, in the same hue its rows carry in the two source tables. */
+  /** The item's badge, in the same hue its sources carry on the run and group cards. */
   conditionItemBadgeClass(item: ConditionLegendItem): string {
     return conditionHueClass(item.condition.ordinal);
   }
@@ -1308,20 +1468,6 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
     }
   }
 
-  /** Every condition label offered by the index, in whatever order they arrive plus any extras. */
-  get conditionFilterOptions(): string[] {
-    const options = new Set<string>();
-    for (const condition of this.comparabilityIndex?.conditions ?? []) {
-      options.add(condition.label);
-    }
-    for (const entry of this.comparabilityIndex?.entries ?? []) {
-      if (entry.conditionOrdinal === 0) {
-        options.add(entry.conditionLabel);
-      }
-    }
-    return Array.from(options).sort((a, b) => a.localeCompare(b));
-  }
-
   /** The largest condition's label, or the selection's own once it touches exactly one condition. */
   private compatibleConditionLabel(): string {
     const conditions = this.comparabilityIndex?.conditions ?? [];
@@ -1335,12 +1481,12 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
 
   get showCompatibleRunsOnly(): boolean {
     const label = this.compatibleConditionLabel();
-    return label !== '' && this.runTable.filters['condition'] === label;
+    return label !== '' && this.runTable.filters['comparable'] === label;
   }
 
   get showCompatibleGroupsOnly(): boolean {
     const label = this.compatibleConditionLabel();
-    return label !== '' && this.groupTable.filters['condition'] === label;
+    return label !== '' && this.groupTable.filters['comparable'] === label;
   }
 
   toggleShowCompatibleRunsOnly(): void {
@@ -1348,8 +1494,7 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
     if (label === '') {
       return;
     }
-    this.runTable.setFilter('condition', this.showCompatibleRunsOnly ? '' : label);
-    this.cdr.detectChanges();
+    this.setViewFilter('runs', 'comparable', this.showCompatibleRunsOnly ? '' : label);
   }
 
   toggleShowCompatibleGroupsOnly(): void {
@@ -1357,8 +1502,21 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
     if (label === '') {
       return;
     }
-    this.groupTable.setFilter('condition', this.showCompatibleGroupsOnly ? '' : label);
-    this.cdr.detectChanges();
+    this.setViewFilter('groups', 'comparable', this.showCompatibleGroupsOnly ? '' : label);
+  }
+
+  /** The row's condition as the Condition facet lists it; none while the index is missing or loading. */
+  private conditionFacetValue(key: string): string | null {
+    const label = this.conditionLabel(key);
+    return label === '—' ? null : label;
+  }
+
+  /** Condition labels in ordinal order, unassigned and self-inconsistent ones last. */
+  private compareConditionLabels(a: string, b: string): number {
+    const rank = (label: string): number =>
+      this.comparabilityIndex?.conditions.find(condition => condition.label === label)?.ordinal
+      ?? Number.MAX_SAFE_INTEGER;
+    return rank(a) - rank(b) || a.localeCompare(b);
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -1368,9 +1526,10 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
   /**
    * Only a completed run carries the scored answers a point is computed from.
    *
-   * A run that is still executing, was cancelled or failed stays in the table, disabled and with
-   * the reason as its accessible name: an operator who started a benchmark should be able to see
-   * why it cannot be charted rather than hunt for a row that was silently filtered away.
+   * A run that is still executing, was cancelled or failed stays in the list, its checkbox
+   * aria-disabled and described by a visible reason line: an operator who started a benchmark
+   * should be able to see why it cannot be charted rather than hunt for a card that was silently
+   * filtered away.
    */
   isRunSelectable(run: BenchmarkRunSummaryDto): boolean {
     const status = this.runStatus(run);
@@ -1399,15 +1558,6 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
     if (status === 5 || status === 'Canceled') return 'Canceled';
     if (status === 6 || status === 'CompletedWithLimits') return 'Completed with limits';
     return String(status);
-  }
-
-  /** The statuses actually present in the offered runs, so a retired one drops out on its own. */
-  get runStatusOptions(): string[] {
-    const seen = new Set<string>();
-    for (const run of this.runs) {
-      seen.add(this.runStatus(run));
-    }
-    return Array.from(seen).sort();
   }
 
   /** The tested model with its thinking level and reasoning mode, so `max` or `pro` filters too. */
@@ -1499,8 +1649,8 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
 
   /**
    * A battery result is one point only once it is finished and its latest analysis is complete
-   * and current: the server excludes anything else. Such a row stays in the table, disabled, with
-   * the reason as its accessible name, as a run that is not completed does.
+   * and current: the server excludes anything else. Such a card stays in the list, aria-disabled
+   * and described by its reason, as a run that is not completed does.
    */
   isBatterySelectable(battery: BenchmarkBatteryRunDto): boolean {
     return this.batteryUnselectableReason(battery) === null;
@@ -1526,17 +1676,6 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
 
   batteryStatus(battery: BenchmarkBatteryRunDto): string {
     return batteryRunStatusLabel(battery.status);
-  }
-
-  /** The statuses actually present in the offered battery runs. */
-  get batteryStatusOptions(): string[] {
-    return Array.from(new Set(this.batteryRuns.map(battery => this.batteryStatus(battery)))).sort();
-  }
-
-  /** The battery names actually present, for the Battery filter. */
-  get batteryNameOptions(): string[] {
-    return Array.from(new Set(this.batteryRuns.map(battery => battery.batteryName)))
-      .sort((a, b) => a.localeCompare(b));
   }
 
   /** The tested model with its thinking level and reasoning mode, as the run table has it. */
@@ -1565,8 +1704,268 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
     return battery.analysisStale ? `${hash} Stale` : hash;
   }
 
-  onTableChanged(): void {
+  /** `Current`, `Stale`, `Incomplete` or `Not analyzed`: the battery result's analysis, for its facet and card. */
+  batteryAnalysisState(battery: BenchmarkBatteryRunDto): string {
+    if (battery.latestAnalysisId == null) {
+      return 'Not analyzed';
+    }
+    if (battery.latestAnalysisComplete === false) {
+      return 'Incomplete';
+    }
+    return battery.analysisStale ? 'Stale' : 'Current';
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The card lists
+  //
+  // One list per kind, each over its own TableState: the search, Sort by, the facets, the chips and
+  // the batch. The lists live on the component, so a kind keeps its filters, order and batch while
+  // another kind's tab is shown. Focus after a chip, Clear all or Show more is moved here.
+  // ---------------------------------------------------------------------------------------------
+
+  get runCards(): BenchmarkRunSummaryDto[] {
+    return this.runList.view(this.runs);
+  }
+
+  get groupCards(): BenchmarkRunGroupDto[] {
+    return this.groupList.view(this.groups);
+  }
+
+  get batteryCards(): BenchmarkBatteryRunDto[] {
+    return this.batteryList.view(this.batteryRuns);
+  }
+
+  /** The kind's list, typed over every kind of row so one handler serves the three filter bars. */
+  listOf(kind: ComparisonSourceTab): CardListState<SourceRow> {
+    switch (kind) {
+      case 'runs': return this.runList as unknown as CardListState<SourceRow>;
+      case 'groups': return this.groupList as unknown as CardListState<SourceRow>;
+      default: return this.batteryList as unknown as CardListState<SourceRow>;
+    }
+  }
+
+  /** The kind's source rows, in the host's order. */
+  rowsOf(kind: ComparisonSourceTab): readonly SourceRow[] {
+    switch (kind) {
+      case 'runs': return this.runs;
+      case 'groups': return this.groups;
+      default: return this.batteryRuns;
+    }
+  }
+
+  private cardsOf(kind: ComparisonSourceTab): SourceRow[] {
+    return this.listOf(kind).view(this.rowsOf(kind));
+  }
+
+  sortsOf(kind: ComparisonSourceTab): readonly CardListSort[] {
+    return this.listOf(kind).sorts;
+  }
+
+  facetsOf(kind: ComparisonSourceTab): CardListFacet[] {
+    return this.listOf(kind).facets(this.rowsOf(kind));
+  }
+
+  chipsOf(kind: ComparisonSourceTab): CardListChip[] {
+    return this.listOf(kind).chips(this.rowsOf(kind));
+  }
+
+  /** The noun the kind's facets count in. */
+  facetNoun(kind: ComparisonSourceTab): string {
+    return SOURCE_NOUNS[kind].many;
+  }
+
+  /** What the kind's search field matches, as its placeholder says. */
+  searchPlaceholder(kind: ComparisonSourceTab): string {
+    switch (kind) {
+      case 'runs': return 'Search #id, suite, model, status or condition';
+      case 'groups': return 'Search #id, name, model, suite or tier';
+      default: return 'Search #id, battery, model, status or class';
+    }
+  }
+
+  isShowSelectedOnly(kind: ComparisonSourceTab): boolean {
+    return this.listOf(kind).table.filters['selected'] === 'yes';
+  }
+
+  toggleShowSelectedOnly(kind: ComparisonSourceTab): void {
+    this.setViewFilter(kind, 'selected', this.isShowSelectedOnly(kind) ? '' : 'yes');
+  }
+
+  /** Show comparable only, which battery results do not offer: the index does not cover them. */
+  isShowComparableOnly(kind: ComparisonSourceTab): boolean {
+    return kind === 'runs' ? this.showCompatibleRunsOnly : kind === 'groups' && this.showCompatibleGroupsOnly;
+  }
+
+  toggleShowComparableOnly(kind: ComparisonSourceTab): void {
+    if (kind === 'runs') {
+      this.toggleShowCompatibleRunsOnly();
+    } else if (kind === 'groups') {
+      this.toggleShowCompatibleGroupsOnly();
+    }
+  }
+
+  /**
+   * What describes a card's checkbox: the card's own reason line when the source cannot be
+   * compared, else the panel's mixing note while the kind is blocked, else nothing.
+   */
+  checkboxDescribedBy(kind: ComparisonSourceTab, id: number, selectable: boolean, blocked: boolean): string | null {
+    if (!selectable) {
+      return `${this.checkboxId(kind, id)}-reason`;
+    }
+    return blocked ? `csp-mix-note-${kind}` : null;
+  }
+
+  /** Rows exist, but the filters hide every one of them. */
+  noMatches(kind: ComparisonSourceTab): boolean {
+    return this.listOf(kind).table.noMatches(this.rowsOf(kind));
+  }
+
+  remainingCount(kind: ComparisonSourceTab): number {
+    return this.listOf(kind).remainingCount(this.rowsOf(kind));
+  }
+
+  nextBatchCount(kind: ComparisonSourceTab): number {
+    return this.listOf(kind).nextBatchCount(this.rowsOf(kind));
+  }
+
+  matchingCount(kind: ComparisonSourceTab): number {
+    return this.listOf(kind).matching(this.rowsOf(kind)).length;
+  }
+
+  /**
+   * `Showing 20 of 119 runs`, `· filtered from 140` while a filter is active, and `· 3 selected,
+   * 1 not shown` while the filters or the batch hide part of the kind's selection.
+   */
+  statusLine(kind: ComparisonSourceTab): string {
+    const text = this.listOf(kind).statusText(this.rowsOf(kind), SOURCE_NOUNS[kind]);
+    const selected = this.selectedIdsOf(kind).length;
+    if (text === '' || selected === 0) {
+      return text;
+    }
+    const hidden = this.hiddenSelectedCount(kind);
+    return hidden > 0 ? `${text} · ${selected} selected, ${hidden} not shown` : `${text} · ${selected} selected`;
+  }
+
+  onSearchInput(kind: ComparisonSourceTab, event: Event): void {
+    this.listOf(kind).setSearchInput((event.target as HTMLInputElement).value);
+  }
+
+  /** Escape with text clears the search at once; in an empty field it passes through to the wizard. */
+  onSearchKeydown(kind: ComparisonSourceTab, event: KeyboardEvent): void {
+    if (this.listOf(kind).clearSearchOnEscape(event)) {
+      this.cdr.detectChanges();
+    }
+  }
+
+  onSortChange(kind: ComparisonSourceTab, event: Event): void {
+    if (this.listOf(kind).setSort((event.target as HTMLSelectElement).value)) {
+      this.cdr.detectChanges();
+    }
+  }
+
+  onFacetChange(kind: ComparisonSourceTab, column: string, values: string[]): void {
+    this.listOf(kind).setFacet(column, values);
     this.cdr.detectChanges();
+  }
+
+  /** Removes a filter chip, then focuses the chip now in its place, else the previous one, else the search. */
+  removeChip(kind: ComparisonSourceTab, chip: CardListChip): void {
+    const index = this.listOf(kind).removeChip(chip, this.rowsOf(kind));
+    this.cdr.detectChanges();
+    const chips = Array.from(this.host.nativeElement.querySelectorAll<HTMLButtonElement>(
+      `#csp-${kind}-chips .gh-filter-chip`));
+    const target = index >= 0 ? chips[index] ?? chips[index - 1] : undefined;
+    (target ?? this.element(`#csp-${kind}-search`))?.focus();
+  }
+
+  /**
+   * Clears the search and every facet, then focuses the search. Show selected only and Show
+   * comparable only are view settings with their own controls, and stay.
+   */
+  clearFilters(kind: ComparisonSourceTab): void {
+    this.listOf(kind).clearFilters(['selected', 'comparable']);
+    this.cdr.detectChanges();
+    this.element(`#csp-${kind}-search`)?.focus();
+  }
+
+  /**
+   * The nothing-matches state's Clear all filters: the view settings go too, since they may be
+   * what hides every card, and Show selected only has no control of its own once the kind has no
+   * selection.
+   */
+  clearAllFilters(kind: ComparisonSourceTab): void {
+    this.listOf(kind).clearFilters();
+    this.cdr.detectChanges();
+    this.element(`#csp-${kind}-search`)?.focus();
+  }
+
+  showMore(kind: ComparisonSourceTab): void {
+    this.focusCard(kind, this.listOf(kind).showMore(this.rowsOf(kind)));
+  }
+
+  showAll(kind: ComparisonSourceTab): void {
+    this.focusCard(kind, this.listOf(kind).showAll(this.rowsOf(kind)));
+  }
+
+  /** The DOM id of a card's title, which Show more focuses: `csp-run-21-title`. */
+  cardTitleId(kind: ComparisonSourceTab, id: number): string {
+    return `${this.checkboxId(kind, id)}-title`;
+  }
+
+  /** The DOM id of a card's checkbox, unchanged from the table rows: `csp-run-21`. */
+  checkboxId(kind: ComparisonSourceTab, id: number): string {
+    const prefix = kind === 'runs' ? 'csp-run-' : kind === 'groups' ? 'csp-group-' : 'csp-battery-';
+    return prefix + id;
+  }
+
+  /** Renders, then focuses the title of the card at `index` in the view, if there is one. */
+  private focusCard(kind: ComparisonSourceTab, index: number): void {
+    this.cdr.detectChanges();
+    const row = this.cardsOf(kind)[index];
+    if (row) {
+      this.element(`#${this.cardTitleId(kind, row.id)}`)?.focus();
+    }
+  }
+
+  private element(selector: string): HTMLElement | null {
+    return this.host.nativeElement.querySelector<HTMLElement>(selector);
+  }
+
+  /** What the run search matches: `#id`, the suite, the model, the status and the condition. */
+  private runSearchText(run: BenchmarkRunSummaryDto): string {
+    return [
+      `#${run.id}`,
+      run.suiteName,
+      this.runModelText(run),
+      run.testedModelProviderUsed ?? '',
+      this.runStatus(run),
+      this.conditionLabel(runKey(run))
+    ].join('\n').toLowerCase();
+  }
+
+  /** What the group search matches: `#id`, the name, the model, the suite and the tier. */
+  private groupSearchText(group: BenchmarkRunGroupDto): string {
+    return [
+      `#${group.id}`,
+      group.name,
+      this.groupModelText(group),
+      group.testedModelProvider ?? '',
+      group.suiteName,
+      group.tierLabel || this.tierName(group.tier)
+    ].join('\n').toLowerCase();
+  }
+
+  /** What the battery search matches: `#id`, the battery, the model, the status and the class. */
+  private batterySearchText(battery: BenchmarkBatteryRunDto): string {
+    return [
+      `#${battery.id}`,
+      battery.batteryName,
+      this.batteryModelText(battery),
+      battery.testedProvider ?? '',
+      this.batteryStatus(battery),
+      battery.comparabilityClassSha256 ?? '',
+      this.batteryAnalysisState(battery)
+    ].join('\n').toLowerCase();
   }
 
   private emitSelection(runIds: number[], groupIds: number[], batteryRunIds: number[]): void {

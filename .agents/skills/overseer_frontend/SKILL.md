@@ -1935,14 +1935,31 @@ To find specific popups, look in the corresponding component's `.html` template:
 - **Comparison Source Picker (`comparison-source-picker.component.html`, Admin → GnollBench →
   Run History → Cross-model comparison, step 1)** — single runs, analysis groups and battery results
   on three kind tabs (`csp-src-tab-runs` / `csp-src-tab-groups` / `csp-src-tab-batteries`, *Single
-  runs*, *Analysis groups*, *Battery results*), one table per tab, with a pager above and below it. The
-  battery table (`csp-src-panel-batteries`, rows from the workspace store's `batteryRuns`) has *Compare*
-  (*Include battery run N in the comparison*), *ID*, *Battery* (name and revision, with an
-  `exactFilter`), *Tested Model*, *Status*, *Class* (short hash, or *Incomplete* / *Stale*), *Overall
-  Index*, *R* and *Analyzed*. **No mixing:** while runs or groups are selected the battery checkboxes are
-  `aria-disabled`, and the other way round, with the visible line *A comparison holds either battery
-  results or runs and groups. Clear the selection to switch.*; the suite scope select says it does not
-  apply to battery results. `ModelComparisonSelection` and `BenchmarkComparisonSelection` carry
+  runs*, *Analysis groups*, *Battery results*), **one full-width card list per tab** (the
+  `frontend_ui_controls` §8h pattern, the seventh card list). The tab row (`.csp-source-bar`) also holds
+  **About conditions** and, on the run and group tabs only, the **Suite** scope; there is no visible
+  heading, no pager and no per-tab note paragraph (the group and battery notes are `app-info-tip`s,
+  `csp-groups-about` / `csp-batteries-about`). Each list has one filter bar row — search
+  (`#csp-{kind}-search`), **Sort by** (`#csp-{kind}-sort`), facets, **Show selected only**, **Show
+  comparable only** (runs and groups, its own `comparable` column) and the status line
+  (`#csp-{kind}-status`, *Showing 20 of 119 runs · 3 selected, 1 not shown*) — over a `CardListState`
+  (`runList` / `groupList` / `batteryList`, batch 20, idPrefix `csp-{kind}`), the sort stored under
+  `overseer.benchmark.comparisonSources.{runs|groups|batteries}.view`. Facets: runs *Model*, *Provider*,
+  *Status*, *Condition*, *Suite*; groups *Model*, *Provider*, *Suite*, *Tier*, *Condition*; battery results
+  *Battery*, *Model*, *Provider*, *Status*, *Analysis*. **The list fills the step:** the step panel is
+  `.mc-step--sources`, the picker's own `:host` and every level down to `.csp-cards-scroll` pass the
+  height on, and the scroller (16 rem floor) is the only thing that scrolls. A card
+  (`article.csp-card[data-kind]`) is the checkbox (`#csp-run-{id}` / `#csp-group-{id}` /
+  `#csp-battery-{id}`, names unchanged: *Compare run 21*, *Include battery run N in the comparison*), a
+  title `h5#{checkbox id}-title` whose `<label>` holds the `app-model-identity` (a group with no model shows
+  its name, a battery result with none *Model not recorded*), a meta line (*#id · status · suite ·
+  Started …*; a group's tier tag, caption, *Created* and analysis state; a battery result's name, *rev N*
+  and *Analyzed …*), and fixed-width metrics (*Intelligence Index*, *Condition*; *Runs*, *Condition*;
+  *Overall Index*, *Class*, *Runs per suite*). A source that cannot be compared keeps its card with an
+  `aria-disabled` checkbox described by its reason line (`#{checkbox id}-reason`). **No mixing:** while runs
+  or groups are selected the battery checkboxes are `aria-disabled`, and the other way round, with the
+  visible line *A comparison holds either battery results or runs and groups. Clear the selection to
+  switch.* above the filter bar. `ModelComparisonSelection` and `BenchmarkComparisonSelection` carry
   `batteryRunIds` (an older stored blob restores `[]`), and the comparability index is requested with
   `POST model-comparison/comparability`.
   - `#legendDialog`: About conditions — full-screen: what a condition is, which one the charts
@@ -1954,7 +1971,7 @@ To find specific popups, look in the corresponding component's `.html` template:
   - `#conditionDetailDialog`: Comparability detail for one source — one row per key it differs
     from the reference condition on, with this source's value beside the reference's, a
     `key=value;` configuration split into fields with the changed ones marked, and a copy-as-
-    Markdown control. Opened by the info button beside a row's *Condition X* badge, and offered
+    Markdown control. Opened by the info button beside a card's *Condition X* badge, and offered
     only where that source actually differs.
 
 - **Model Comparison (`model-comparison.component.html`, Admin → GnollBench → Run History →
@@ -1994,16 +2011,21 @@ To find specific popups, look in the corresponding component's `.html` template:
     added. `BenchmarkShellBridge.openComparisonWizard(preset?)` opens the wizard on step 1 with a preset's
     `batteryRunIds` selected (the leaderboard's **Open in Model Comparison**). The charts plot at most
     `MAX_PLOTTED_ENTRIES` (12) models.
-  - **Step 1's selection band** (`.mc-wizard-selection`, `role="region"` labelled by
-    `#mc-selection-label`; the pattern is `frontend_ui_controls` §8i): the label is the band's one
-    `role="status"` and a `tabindex="-1"` focus target, *Your selection — 2 runs and 1 group selected*,
-    its text visually hidden while nothing is selected (*Your selection — nothing selected yet*). With
-    nothing selected the one visible message is the alert *Nothing is selected yet* / *Select at least
-    one completed run, analysis group or battery result in the tables above. Compare stays unavailable
-    until you do.* — no hint line beside it — and the footer's and Compare's disabled reason, and the
-    state error, read *Select at least one run, analysis group or battery result.* Once something is
-    selected, **Clear selection (N)** (`btn-gh btn-gh-cancel btn-gh-small`) leads the chip row; after it
-    focus moves to the label. Each chip (`li.mc-selection-chip`, from
+  - **Step 1's selection bar** (`.mc-selection-bar`, `role="region"` labelled by
+    `#mc-selection-label`; the pattern is `frontend_ui_controls` §8i), one line between the step panel and
+    the footer: the label is the bar's one `role="status"` and a `tabindex="-1"` focus target, its visible
+    text the summary (*2 runs and 1 group selected*) after a visually hidden *Your selection —*, clipped
+    out of view while nothing is selected (*Your selection — nothing selected yet*). With nothing selected
+    the one visible message is the warning line `.gh-field-warning.mc-selection-empty` — **Nothing is
+    selected yet.** *Select at least one completed run, analysis group or battery result. Compare stays
+    unavailable until you do.* — not part of `bandNotices`, and the footer's and Compare's disabled
+    reason, and the state error, read *Select at least one run, analysis group or battery result.* Once
+    something is selected, **Clear selection** (`.btn-ghost` with the *x* glyph, accessible name *Clear
+    selection (N)*) comes before the chips; after it focus moves to the label. The chips
+    (`ul#mc-selection-chips`) are one row that scrolls sideways; while they overflow it (`chipsOverflow`,
+    from a `ResizeObserver`) a `.btn-link` **Show all N** / **Show fewer** (`chipsExpanded`,
+    `aria-expanded`) wraps them in a box of up to 30 dvh. The other notices stay below the line as
+    `.alert-compact`s. Each chip (`li.mc-selection-chip`, from
     `BenchmarkComparisonState.comparisonSelectedSources`) holds its detail — a run's or a battery
     run's *#13*, the battery one with a visually hidden *Battery run* prefix, a group's *N runs* — then
     an `app-model-identity` (`shared/model-identity/`) with the source's name, thinking level,

@@ -7,7 +7,10 @@ import {
   GROUP_SECTION_TITLE,
   ModelComparisonSelection,
   RUN_SECTION_TITLE,
-  SOURCE_MIX_NOTE
+  SOURCE_BATTERIES_VIEW_STORAGE_KEY,
+  SOURCE_GROUPS_VIEW_STORAGE_KEY,
+  SOURCE_MIX_NOTE,
+  SOURCE_RUNS_VIEW_STORAGE_KEY
 } from './comparison-source-picker.component';
 import type {
   BenchmarkBatteryRunDto,
@@ -292,7 +295,15 @@ describe('ComparisonSourcePickerComponent', () => {
     fixture.detectChanges();
   }
 
+  /** Every list's stored Sort by choice, cleared so one spec's order never leaks into the next. */
+  function clearStoredViews(): void {
+    for (const key of [SOURCE_RUNS_VIEW_STORAGE_KEY, SOURCE_GROUPS_VIEW_STORAGE_KEY, SOURCE_BATTERIES_VIEW_STORAGE_KEY]) {
+      localStorage.removeItem(key);
+    }
+  }
+
   beforeEach(async () => {
+    clearStoredViews();
     await TestBed.configureTestingModule({
       imports: [ComparisonSourcePickerComponent]
     }).compileComponents();
@@ -305,45 +316,59 @@ describe('ComparisonSourcePickerComponent', () => {
   // Selection
   // -------------------------------------------------------------------------------------------
 
-  it('counts the whole selection, not the page, and says what is off-screen', () => {
-    // Fifteen runs at the default page size of ten, with one selection on each page.
-    render({ runs: runs(15), selectedRunIds: [1, 15] });
+  it('counts the whole selection, not the batch, and says on the status line what is not shown', () => {
+    // Twenty-five runs, newest first in batches of twenty: run 1 is beyond the first batch.
+    render({ runs: runs(25), selectedRunIds: [1, 25] });
 
     expect(component.selectedCount).toBe(2);
-    expect(fixture.debugElement.queryAll(By.css('tbody tr')).length).toBeLessThan(15);
-    expect(component.offPageRunCount).toBeGreaterThan(0);
-    const summary = (fixture.debugElement.query(By.css('.csp-selection-count'))
-      .nativeElement as HTMLElement).textContent ?? '';
-    expect(summary).toContain('2 runs selected');
-    expect(summary).toContain('not on this page');
+    expect(cards().length).toBe(20);
+    expect(component.hiddenSelectedCount('runs')).toBe(1);
+    const status = fixture.nativeElement.querySelector('#csp-runs-status') as HTMLElement;
+    expect(status.textContent?.trim()).toBe('Showing 20 of 25 runs · 2 selected, 1 not shown');
   });
 
-  it('keeps a selected id selected when the table is filtered or paged', () => {
-    render({ runs: runs(15), selectedRunIds: [15] });
+  it('keeps a selected id selected through a facet and a batch change', () => {
+    render({ runs: runs(25), selectedRunIds: [25] });
 
-    component.runTable.setFilter('testedModel', 'Model 1');
+    component.onFacetChange('runs', 'model', ['Model 1']);
     fixture.detectChanges();
-    expect(component.isRunSelected(15)).toBe(true);
+    expect(component.isRunSelected(25)).toBe(true);
+    expect(component.hiddenSelectedCount('runs')).toBe(1);
 
-    component.runTable.setPage(2, component.runs);
+    component.clearFilters('runs');
+    component.showMore('runs');
     fixture.detectChanges();
     expect(component.selectedCount).toBe(1);
+    expect(component.hiddenSelectedCount('runs')).toBe(0);
   });
 
-  it('offers a run that is not completed disabled, with the reason as its accessible name', () => {
+  it('offers a run that is not completed aria-disabled, described by a visible reason line', () => {
     render({
       runs: [buildRun({ id: 1 }), buildRun({ id: 2, status: 'Failed' })]
     });
+    const emitted: ModelComparisonSelection[] = [];
+    component.selectionChange.subscribe(value => emitted.push(value));
 
-    const boxes = fixture.debugElement.queryAll(By.css('tbody input[id^="csp-run-"]'));
-    // Both rows are present: an operator who ran a benchmark should see why it cannot be charted.
-    expect(boxes.length).toBe(2);
+    // Both cards are present: an operator who ran a benchmark should see why it cannot be charted.
+    expect(cards().length).toBe(2);
 
-    const failed = boxes
-      .map(element => element.nativeElement as HTMLInputElement)
-      .find(element => element.disabled)!;
-    expect(failed, 'the failed run must be disabled, not hidden').toBeTruthy();
-    expect(failed.getAttribute('aria-label')).toContain('only a completed run can be compared');
+    const failed = fixture.nativeElement.querySelector('#csp-run-2') as HTMLInputElement;
+    // aria-disabled, not disabled: it stays focusable and keeps its name.
+    expect(failed.disabled).toBe(false);
+    expect(failed.getAttribute('aria-disabled')).toBe('true');
+    expect(failed.getAttribute('aria-label')).toBe('Compare run 2');
+    const reason = fixture.nativeElement.querySelector('#csp-run-2-reason') as HTMLElement;
+    expect(failed.getAttribute('aria-describedby')).toBe('csp-run-2-reason');
+    expect(reason.textContent).toContain('only a completed run can be compared');
+    expect(reason.closest('.csp-card')?.classList).toContain('is-unselectable');
+
+    failed.click();
+    expect(failed.checked).toBe(false);
+    expect(emitted).toEqual([]);
+
+    const completed = fixture.nativeElement.querySelector('#csp-run-1') as HTMLInputElement;
+    expect(completed.getAttribute('aria-disabled')).toBeNull();
+    expect(completed.getAttribute('aria-describedby')).toBeNull();
   });
 
   it('refuses to select an unselectable run even if its handler is called directly', () => {
@@ -376,11 +401,8 @@ describe('ComparisonSourcePickerComponent', () => {
   it('offers neither a Compare nor a Clear selection button of its own', () => {
     render({ selectedRunIds: [1] });
 
-    // The table's first sortable header is also labelled Compare; only actions count here.
     const texts = fixture.debugElement.queryAll(By.css('button'))
-      .map(el => el.nativeElement as HTMLElement)
-      .filter(el => el.closest('th') === null)
-      .map(el => (el.textContent ?? '').trim());
+      .map(el => ((el.nativeElement as HTMLElement).textContent ?? '').trim());
 
     expect(texts).not.toContain('Compare');
     expect(texts).not.toContain('Clear selection');
@@ -408,22 +430,47 @@ describe('ComparisonSourcePickerComponent', () => {
   it('renders both empty states naming the fix rather than a bare "nothing here"', () => {
     render({ runs: [], groups: [] });
 
-    const runsText = (fixture.debugElement.query(By.css('.text-muted'))
+    const runsText = (fixture.debugElement.query(By.css('.csp-empty'))
       .nativeElement as HTMLElement).textContent ?? '';
     expect(runsText).toContain('Choose another suite');
     expect(runsText).toContain('run a benchmark');
+    expect(fixture.debugElement.query(By.css('.csp-filter-bar'))).toBeNull();
 
     component.selectSourceTab('groups');
     fixture.detectChanges();
-    const groupsText = (fixture.debugElement.query(By.css('.text-muted'))
+    const groupsText = (fixture.debugElement.query(By.css('.csp-empty'))
       .nativeElement as HTMLElement).textContent ?? '';
     expect(groupsText).toContain('Choose another suite');
     expect(groupsText).toContain('build a group');
   });
 
+  it('says when the filters hide everything, and clears them all from there', () => {
+    render({ runs: runs(3), selectedRunIds: [1] });
+    component.toggleShowSelectedOnly('runs');
+    component.onFacetChange('runs', 'model', ['Model 2']);
+    fixture.detectChanges();
+
+    const note = fixture.nativeElement.querySelector('.csp-no-matches') as HTMLElement;
+    expect(note.textContent).toContain('No runs match these filters.');
+    expect(fixture.nativeElement.querySelector('.csp-cards')).toBeNull();
+
+    (note.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    // The view settings go too, since they may be what hides every card.
+    expect(component.isShowSelectedOnly('runs')).toBe(false);
+    expect(cards().length).toBe(3);
+    expect(document.activeElement?.id).toBe('csp-runs-search');
+  });
+
   // -------------------------------------------------------------------------------------------
   // Model identity
   // -------------------------------------------------------------------------------------------
+
+  /** The active list's cards, in display order. */
+  function cards(): HTMLElement[] {
+    return Array.from(fixture.nativeElement.querySelectorAll('article.csp-card')) as HTMLElement[];
+  }
 
   /** A group the series orchestrator named, carrying its tested model. */
   function buildModelGroup(overrides: Partial<BenchmarkRunGroupDto> = {}): BenchmarkRunGroupDto {
@@ -438,11 +485,6 @@ describe('ComparisonSourcePickerComponent', () => {
     });
   }
 
-  function bodyRows(): HTMLElement[] {
-    return fixture.debugElement.queryAll(By.css('.csp-table tbody tr'))
-      .map(row => row.nativeElement as HTMLElement);
-  }
-
   it('badges each run with its thinking level and a non-baseline reasoning mode', () => {
     render({
       runs: [
@@ -451,17 +493,35 @@ describe('ComparisonSourcePickerComponent', () => {
       ]
     });
 
-    const [first, second] = [...bodyRows()].sort((a, b) =>
-      (a.querySelector('.col-id')?.textContent ?? '').localeCompare(b.querySelector('.col-id')?.textContent ?? ''));
-    expect(first.querySelector('app-model-identity .model-identity-name')?.textContent?.trim()).toBe('Model 1');
-    expect(first.querySelector('app-model-identity .provider-badge')?.textContent?.trim()).toBe('Google');
+    // Newest first: run 2, then run 1.
+    const [second, first] = cards();
+    const title = first.querySelector('.csp-card-title') as HTMLElement;
+    expect(title.id).toBe('csp-run-1-title');
+    expect(title.querySelector('label')?.getAttribute('for')).toBe('csp-run-1');
+    expect(title.querySelector('app-model-identity .model-identity-name')?.textContent?.trim()).toBe('Model 1');
+    expect(title.querySelector('app-model-identity .provider-badge')?.textContent?.trim()).toBe('Google');
     expect(first.querySelector('.thinking-badge')?.textContent).toContain('max');
     expect(first.querySelector('.reasoning-badge')?.textContent).toContain('pro');
     expect(second.querySelector('.thinking-badge')?.textContent).toContain('high');
     expect(second.querySelector('.reasoning-badge')).toBeNull();
+    expect(first.querySelector('.csp-card-meta')?.textContent).toContain('#1');
+    expect(first.querySelector('.csp-card-meta')?.textContent).toContain('Completed');
   });
 
-  it('filters runs by reasoning mode through the tested model filter', () => {
+  it('selects a card from a click on its title, never from the card itself', () => {
+    render({ runs: runs(2) });
+    const emitted: ModelComparisonSelection[] = [];
+    component.selectionChange.subscribe(value => emitted.push(value));
+
+    (fixture.nativeElement.querySelector('#csp-run-1-title label') as HTMLLabelElement).click();
+    expect(emitted).toEqual([{ runIds: [1], groupIds: [], batteryRunIds: [] }]);
+
+    (fixture.nativeElement.querySelector('[data-source-id="2"] .csp-card-meta') as HTMLElement).click();
+    expect(emitted.length).toBe(1);
+    expect(fixture.nativeElement.querySelector('label.csp-card')).toBeNull();
+  });
+
+  it('finds runs by reasoning mode through the search', () => {
     render({
       runs: [
         buildRun({ id: 1, testedModelReasoningModeUsed: 'pro' }),
@@ -469,49 +529,52 @@ describe('ComparisonSourcePickerComponent', () => {
       ]
     });
 
-    component.runTable.setFilter('testedModel', 'pro');
+    component.runTable.setFilter('search', 'pro');
     fixture.detectChanges();
 
-    expect(component.runTable.view(component.runs).map(r => r.id)).toEqual([1]);
+    expect(component.runList.view(component.runs).map(r => r.id)).toEqual([1]);
   });
 
-  it('leads a group row with its model and badges, and hides a generated name', () => {
+  it('leads a group card with its model and badges, and hides a generated name', () => {
     render({ groups: [buildModelGroup({ id: 12 })] });
     component.selectSourceTab('groups');
     fixture.detectChanges();
 
-    const row = bodyRows()[0];
-    expect(row.querySelector('.col-id')?.textContent?.trim()).toBe('#12');
-    const header = row.querySelector('th[scope="row"]') as HTMLElement;
-    expect(header.querySelector('.model-identity-name')?.textContent?.trim()).toBe('GPT-5.6 Luna');
-    expect(header.querySelector('.provider-badge')?.textContent?.trim()).toBe('OpenAI');
-    expect(header.querySelector('.thinking-badge')?.textContent).toContain('max');
-    expect(header.querySelector('.reasoning-badge')?.textContent).toContain('pro');
-    expect(header.querySelector('.csp-group-caption')).toBeNull();
-    expect(row.textContent).toContain('GnollHack Player Assistance Benchmark Suite');
+    const card = cards()[0];
+    expect(card.querySelector('.csp-card-id')?.textContent?.trim()).toBe('#12');
+    const title = card.querySelector('.csp-card-title') as HTMLElement;
+    expect(title.querySelector('.model-identity-name')?.textContent?.trim()).toBe('GPT-5.6 Luna');
+    expect(title.querySelector('.provider-badge')?.textContent?.trim()).toBe('OpenAI');
+    expect(title.querySelector('.thinking-badge')?.textContent).toContain('max');
+    expect(title.querySelector('.reasoning-badge')?.textContent).toContain('pro');
+    expect(card.querySelector('.csp-group-caption')).toBeNull();
+    expect(card.querySelector('.csp-tier')?.textContent?.trim()).toBe('Tier A — Replicate');
+    expect(card.textContent).toContain('GnollHack Player Assistance Benchmark Suite');
   });
 
-  it('shows a renamed group\'s name as a caption under its model', () => {
+  it('shows a renamed group\'s name as a caption on its meta line', () => {
     render({ groups: [buildModelGroup({ name: 'Luna baseline after the prompt fix' })] });
     component.selectSourceTab('groups');
     fixture.detectChanges();
 
-    const header = bodyRows()[0].querySelector('th[scope="row"]') as HTMLElement;
-    expect(header.querySelector('.model-identity-name')?.textContent?.trim()).toBe('GPT-5.6 Luna');
-    expect(header.querySelector('.csp-group-caption')?.textContent?.trim()).toBe('Luna baseline after the prompt fix');
+    const card = cards()[0];
+    expect(card.querySelector('.csp-card-title .model-identity-name')?.textContent?.trim()).toBe('GPT-5.6 Luna');
+    expect(card.querySelector('.csp-card-meta .csp-group-caption')?.textContent?.trim())
+      .toBe('Luna baseline after the prompt fix');
   });
 
-  it('shows an empty group\'s name as its only line', () => {
+  it('shows an empty group\'s name as its title', () => {
     render({ groups: [buildGroup({ name: 'Suite · R=0', runCount: 0 })] });
     component.selectSourceTab('groups');
     fixture.detectChanges();
 
-    const header = bodyRows()[0].querySelector('th[scope="row"]') as HTMLElement;
-    expect(header.querySelector('app-model-identity')).toBeNull();
-    expect(header.querySelector('.csp-group-caption')?.textContent?.trim()).toBe('Suite · R=0');
+    const card = cards()[0];
+    expect(card.querySelector('app-model-identity')).toBeNull();
+    expect(card.querySelector('.csp-card-title')?.textContent?.trim()).toBe('Suite · R=0');
+    expect(card.querySelector('.csp-group-caption')).toBeNull();
   });
 
-  it('matches the group model filter against the model name and the group name', () => {
+  it('matches the group search against the model name and the group name', () => {
     const groups = [
       buildModelGroup({ id: 1 }),
       buildModelGroup({
@@ -525,11 +588,11 @@ describe('ComparisonSourcePickerComponent', () => {
     ];
     render({ groups });
 
-    component.groupTable.setFilter('testedModel', 'luna');
-    expect(component.groupTable.view(component.groups).map(g => g.id)).toEqual([1]);
+    component.groupTable.setFilter('search', 'luna');
+    expect(component.groupList.view(component.groups).map(g => g.id)).toEqual([1]);
 
-    component.groupTable.setFilter('testedModel', 'comparison set');
-    expect(component.groupTable.view(component.groups).map(g => g.id)).toEqual([2]);
+    component.groupTable.setFilter('search', 'comparison set');
+    expect(component.groupList.view(component.groups).map(g => g.id)).toEqual([2]);
   });
 
   it('names a group checkbox by its id and model', () => {
@@ -541,18 +604,20 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(box.getAttribute('aria-label')).toBe('Compare analysis group 12, GPT-5.6 Luna');
   });
 
-  it('lays the group table out in nine columns, the no-matches row included', () => {
-    render({ groups: [buildModelGroup()] });
+  it('labels each kind\'s card metrics with visible terms', () => {
+    render({ runs: runs(1), groups: [buildModelGroup()], batteryRuns: [buildBattery()] });
+    const labels = (): string[] => Array.from(cards()[0].querySelectorAll('.csp-card-metrics dt'))
+      .map(term => (term.textContent ?? '').trim());
+
+    expect(labels()).toEqual(['Intelligence Index', 'Condition']);
+
     component.selectSourceTab('groups');
     fixture.detectChanges();
+    expect(labels()).toEqual(['Runs', 'Condition']);
 
-    expect(fixture.debugElement.queryAll(By.css('.csp-table thead tr:first-child th')).length).toBe(9);
-    expect(fixture.debugElement.queryAll(By.css('.csp-table thead tr.gh-filter-row td')).length).toBe(9);
-
-    component.groupTable.setFilter('testedModel', 'no such model');
-    component.onTableChanged();
-    const empty = fixture.debugElement.query(By.css('.csp-table tbody td')).nativeElement as HTMLTableCellElement;
-    expect(empty.colSpan).toBe(9);
+    component.selectSourceTab('batteries');
+    fixture.detectChanges();
+    expect(labels()).toEqual(['Overall Index', 'Class', 'Runs per suite']);
   });
 
   // -------------------------------------------------------------------------------------------
@@ -566,26 +631,30 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(component.conditionLabel('run:3')).toBe('Condition B');
     expect(component.conditionLabel('group:1')).toBe('Condition A');
 
-    const runBadges = fixture.debugElement.queryAll(By.css('.csp-table .csp-condition'))
+    const runBadges = fixture.debugElement.queryAll(By.css('.csp-card [data-metric="condition"] .csp-condition'))
       .map(el => (el.nativeElement as HTMLElement).textContent?.trim());
     expect(runBadges).toContain('Condition A');
 
     component.selectSourceTab('groups');
     fixture.detectChanges();
-    const groupBadges = fixture.debugElement.queryAll(By.css('.csp-table .csp-condition'))
+    const groupBadges = fixture.debugElement.queryAll(By.css('.csp-card [data-metric="condition"] .csp-condition'))
       .map(el => (el.nativeElement as HTMLElement).textContent?.trim());
     expect(groupBadges).toContain('Condition A');
   });
 
-  it('narrows both tables through the condition filter', () => {
+  it('narrows both lists through the Condition facet, listing the conditions in ordinal order', () => {
     render({ runs: runs(3), groups: [buildGroup({ id: 1 })], comparabilityIndex: buildIndex() });
 
-    component.runTable.setFilter('condition', 'Condition B');
-    component.groupTable.setFilter('condition', 'Condition B');
+    const facet = component.facetsOf('runs').find(candidate => candidate.column === 'condition')!;
+    expect(facet.options.map(option => option.value)).toEqual(['Condition A', 'Condition B']);
+    expect(facet.facetId).toBe('csp-runs-facet-condition');
+
+    component.onFacetChange('runs', 'condition', ['Condition B']);
+    component.onFacetChange('groups', 'condition', ['Condition B']);
     fixture.detectChanges();
 
-    expect(component.runTable.view(component.runs).map(r => r.id)).toEqual([3]);
-    expect(component.groupTable.view(component.groups).length).toBe(0);
+    expect(component.runList.view(component.runs).map(r => r.id)).toEqual([3]);
+    expect(component.groupList.view(component.groups).length).toBe(0);
   });
 
   it('renders a muted dash and blocks nothing while the index is null', () => {
@@ -606,7 +675,7 @@ describe('ComparisonSourcePickerComponent', () => {
     expect(component.conditionLabel('run:1')).toBe('—');
   });
 
-  it('filters the run table to the largest condition when showCompatibleRunsOnly is toggled on', () => {
+  it('narrows the runs to the largest condition with Show comparable only, which Clear all keeps', () => {
     render({ runs: runs(3), comparabilityIndex: buildIndex() });
 
     expect(component.showCompatibleRunsOnly).toBe(false);
@@ -614,8 +683,139 @@ describe('ComparisonSourcePickerComponent', () => {
     fixture.detectChanges();
 
     expect(component.showCompatibleRunsOnly).toBe(true);
-    // The run table sorts by id descending by default, so the surviving rows come back 2 then 1.
-    expect(component.runTable.view(component.runs).map(r => r.id)).toEqual([2, 1]);
+    const toggle = fixture.nativeElement.querySelector('.csp-comparable-only') as HTMLButtonElement;
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    // Newest first, so the surviving cards come back 2 then 1.
+    expect(component.runList.view(component.runs).map(r => r.id)).toEqual([2, 1]);
+
+    // Its own column, so the Condition facet can narrow at the same time.
+    component.onFacetChange('runs', 'condition', ['Condition A']);
+    fixture.detectChanges();
+    expect(component.runList.view(component.runs).map(r => r.id)).toEqual([2, 1]);
+    expect(component.showCompatibleRunsOnly).toBe(true);
+    // A view setting, not a filter: it has no chip.
+    expect(component.chipsOf('runs').map(chip => chip.column)).toEqual(['condition']);
+
+    component.clearFilters('runs');
+    fixture.detectChanges();
+    expect(component.showCompatibleRunsOnly).toBe(true);
+    expect(component.chipsOf('runs')).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The card lists
+  // -------------------------------------------------------------------------------------------
+
+  describe('the card lists', () => {
+    it('clears the search on Escape without letting the key reach an enclosing dialog', () => {
+      render({ runs: runs(3) });
+      const reached: string[] = [];
+      const listener = (event: KeyboardEvent): void => {
+        reached.push(event.key);
+      };
+      document.addEventListener('keydown', listener);
+      try {
+        const input = fixture.nativeElement.querySelector('#csp-runs-search') as HTMLInputElement;
+        input.value = 'Model 2';
+        input.dispatchEvent(new Event('input'));
+        expect(component.runList.searchText).toBe('Model 2');
+
+        const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+        input.dispatchEvent(escape);
+        fixture.detectChanges();
+
+        expect(input.value).toBe('');
+        expect(component.runList.searchText).toBe('');
+        expect(escape.defaultPrevented).toBe(true);
+        expect(reached).toEqual([]);
+
+        // In an empty field Escape is left alone, for the dialog to close on.
+        const again = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+        input.dispatchEvent(again);
+        expect(again.defaultPrevented).toBe(false);
+        expect(reached).toEqual(['Escape']);
+      } finally {
+        document.removeEventListener('keydown', listener);
+      }
+    });
+
+    it('moves focus to the next chip, else the previous, else the search, as chips are removed', () => {
+      render({ runs: [buildRun({ id: 1 }), buildRun({ id: 2, status: 'Failed' }), buildRun({ id: 3 })] });
+      component.onFacetChange('runs', 'model', ['Model 1']);
+      component.onFacetChange('runs', 'status', ['Completed']);
+      fixture.detectChanges();
+
+      const chipButtons = (): HTMLButtonElement[] =>
+        Array.from(fixture.nativeElement.querySelectorAll('#csp-runs-chips .gh-filter-chip'));
+      expect(chipButtons().map(chip => chip.getAttribute('aria-label')))
+        .toEqual(['Remove filter Model: Model 1', 'Remove filter Status: Completed']);
+
+      chipButtons()[0].click();
+      expect(chipButtons().length).toBe(1);
+      expect(document.activeElement).toBe(chipButtons()[0]);
+
+      chipButtons()[0].click();
+      expect(fixture.nativeElement.querySelector('#csp-runs-chips')).toBeNull();
+      expect(document.activeElement?.id).toBe('csp-runs-search');
+    });
+
+    it('recounts the facets when the selection changes', () => {
+      render({ runs: runs(3), selectedRunIds: [1] });
+      component.toggleShowSelectedOnly('runs');
+      fixture.detectChanges();
+      const counts = (): Record<string, number> => Object.fromEntries(
+        component.facetsOf('runs').find(facet => facet.column === 'model')!.options
+          .map(option => [option.value, option.count]));
+
+      expect(counts()).toEqual({ 'Model 1': 1, 'Model 2': 0, 'Model 3': 0 });
+
+      fixture.componentRef.setInput('selectedRunIds', [1, 2]);
+      fixture.detectChanges();
+
+      expect(counts()).toEqual({ 'Model 1': 1, 'Model 2': 1, 'Model 3': 0 });
+    });
+
+    it('remembers each list\'s Sort by choice, and falls back to Newest first when storage fails', () => {
+      render({ runs: runs(3) });
+      const sort = fixture.nativeElement.querySelector('#csp-runs-sort') as HTMLSelectElement;
+      expect(Array.from(sort.options).map(option => option.textContent?.trim()))
+        .toEqual(['Newest first', 'Oldest first', 'Intelligence Index (high–low)', 'Model (A–Z)', 'Condition']);
+      sort.value = 'index';
+      sort.dispatchEvent(new Event('change'));
+
+      expect(JSON.parse(localStorage.getItem(SOURCE_RUNS_VIEW_STORAGE_KEY)!)).toEqual({ version: 1, sort: 'index' });
+
+      const restored = TestBed.createComponent(ComparisonSourcePickerComponent).componentInstance;
+      expect(restored.runList.sortId).toBe('index');
+      expect(restored.groupList.sortId).toBe('newest');
+
+      const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+        throw new Error('Storage is disabled');
+      });
+      try {
+        expect(TestBed.createComponent(ComparisonSourcePickerComponent).componentInstance.runList.sortId)
+          .toBe('newest');
+      } finally {
+        getItem.mockRestore();
+      }
+    });
+
+    it('makes the card list the scroller of a picker given a height', () => {
+      // As the wizard's step panel gives it: a fixed box, not a flex item growing into the test root.
+      fixture.nativeElement.style.flex = 'none';
+      fixture.nativeElement.style.height = '480px';
+      render({ runs: runs(40) });
+      component.showAll('runs');
+      fixture.detectChanges();
+
+      const scroller = fixture.nativeElement.querySelector('.csp-cards-scroll') as HTMLElement;
+      expect(getComputedStyle(scroller).overflowY).toBe('auto');
+      expect(scroller.clientHeight).toBeGreaterThan(0);
+      expect(scroller.clientHeight).toBeLessThan(scroller.scrollHeight);
+      // The tab row and the filter bar stay in place above it.
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.getBoundingClientRect().height).toBeLessThanOrEqual(481);
+    });
   });
 
   // -------------------------------------------------------------------------------------------
@@ -737,7 +937,7 @@ describe('ComparisonSourcePickerComponent', () => {
       });
       render({ runs: [...runs(3), buildRun({ id: 46 })], comparabilityIndex: index });
       vi.spyOn(conditionDialog(), 'showModal').mockReturnValue(undefined);
-      // The run table sorts by id descending by default, so run 46 renders — and opens — first.
+      // The run list shows the newest first by default, so run 46 renders — and opens — first.
       detailButtons()[0].click();
       fixture.detectChanges();
       const saved = captureSaves();
@@ -1271,54 +1471,66 @@ describe('ComparisonSourcePickerComponent', () => {
       expect(batteriesTab.getAttribute('aria-controls')).toBe('csp-src-panel-batteries');
     });
 
-    it("renders only the active kind's table, and keeps each table's own page across a tab switch", () => {
-      render({ runs: runs(15), groups: [buildGroup({ id: 1 })] });
+    it("renders only the active kind's list, and keeps each list's sort and batch across a tab switch", () => {
+      render({ runs: runs(45), groups: [buildGroup({ id: 1 })] });
 
-      expect(fixture.debugElement.queryAll(By.css('table.csp-table')).length).toBe(1);
+      expect(fixture.debugElement.queryAll(By.css('ul.csp-cards')).length).toBe(1);
       expect(fixture.debugElement.query(By.css('#csp-src-panel-runs'))).toBeTruthy();
       expect(fixture.debugElement.query(By.css('#csp-src-panel-groups'))).toBeFalsy();
 
-      component.runTable.setPage(2, component.runs);
+      const sort = fixture.nativeElement.querySelector('#csp-runs-sort') as HTMLSelectElement;
+      sort.value = 'oldest';
+      sort.dispatchEvent(new Event('change'));
+      component.showMore('runs');
       fixture.detectChanges();
+      expect(cards().length).toBe(40);
 
       tabButtons()[1].click();
       fixture.detectChanges();
 
-      expect(fixture.debugElement.queryAll(By.css('table.csp-table')).length).toBe(1);
+      expect(fixture.debugElement.queryAll(By.css('ul.csp-cards')).length).toBe(1);
       expect(fixture.debugElement.query(By.css('#csp-src-panel-groups'))).toBeTruthy();
       expect(fixture.debugElement.query(By.css('#csp-src-panel-runs'))).toBeFalsy();
 
       tabButtons()[0].click();
       fixture.detectChanges();
 
-      // The TableState lives on the component, not the template, so it survives the panel
-      // being removed from the DOM and rendered again.
-      expect(component.runTable.page).toBe(2);
+      // The list states live on the component, not the template, so they survive the panel being
+      // removed from the DOM and rendered again.
+      expect(component.runList.sortId).toBe('oldest');
+      expect((fixture.nativeElement.querySelector('#csp-runs-sort') as HTMLSelectElement).value).toBe('oldest');
+      expect(cards().length).toBe(40);
+      expect(cards()[0].getAttribute('data-source-id')).toBe('1');
     });
 
-    it('puts a pager above and below each kind table, and only one of them announces', () => {
-      render({ runs: runs(15), groups: [buildGroup({ id: 1 })] });
+    it('gives each list one polite status line, and focuses the first new card after Show more', () => {
+      render({ runs: runs(45), groups: [buildGroup({ id: 1 })] });
 
-      const expectPagerPair = (): void => {
-        const pagers = fixture.debugElement.queryAll(By.css('app-table-pager'));
-        expect(pagers.length).toBe(2);
-        const statuses = pagers.map(pager =>
-          pager.query(By.css('.gh-pager-status')).nativeElement as HTMLElement);
-        expect(statuses.filter(status => status.getAttribute('role') === 'status').length).toBe(1);
-        expect(statuses.filter(status => status.getAttribute('aria-hidden') === 'true').length).toBe(1);
-      };
+      const statuses = (): HTMLElement[] => Array.from(fixture.nativeElement.querySelectorAll('.csp-panel [role="status"]'));
+      expect(statuses().length).toBe(1);
+      expect(statuses()[0].id).toBe('csp-runs-status');
+      expect(statuses()[0].textContent?.trim()).toBe('Showing 20 of 45 runs');
+      expect(fixture.nativeElement.querySelector('app-table-pager')).toBeNull();
 
-      expectPagerPair();
+      const more = fixture.nativeElement.querySelector('.csp-show-more') as HTMLButtonElement;
+      expect(more.textContent?.trim()).toBe('Show 20 more');
+      expect((fixture.nativeElement.querySelector('.csp-show-all') as HTMLButtonElement).textContent?.trim())
+        .toBe('Show all 45');
+      more.click();
+      fixture.detectChanges();
+
+      // Newest first: runs 45 to 26 were shown, so run 25 is the first new card.
+      expect(document.activeElement?.id).toBe('csp-run-25-title');
+      expect(statuses()[0].textContent?.trim()).toBe('Showing 40 of 45 runs');
+
+      (fixture.nativeElement.querySelector('.csp-show-more') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(document.activeElement?.id).toBe('csp-run-5-title');
+      expect(fixture.nativeElement.querySelector('.csp-load-more')).toBeNull();
 
       tabButtons()[1].click();
       fixture.detectChanges();
-
-      expectPagerPair();
-
-      tabButtons()[2].click();
-      fixture.detectChanges();
-
-      expectPagerPair();
+      expect(statuses().map(status => status.id)).toEqual(['csp-groups-status']);
     });
 
     it('moves between the kind tabs with the arrow keys, wrapping, and focus follows', () => {
@@ -1407,7 +1619,7 @@ describe('ComparisonSourcePickerComponent', () => {
     const box = (selector: string): HTMLInputElement =>
       fixture.nativeElement.querySelector(selector) as HTMLInputElement;
 
-    it('lists battery results in their own table, with pagers and no Condition column', () => {
+    it('lists battery results as their own cards, newest first, with no Condition metric', () => {
       render({
         batteryRuns: [
           buildBattery({ id: 4 }),
@@ -1419,24 +1631,34 @@ describe('ComparisonSourcePickerComponent', () => {
 
       const panel = fixture.nativeElement.querySelector('#csp-src-panel-batteries') as HTMLElement;
       expect(panel.getAttribute('aria-labelledby')).toBe('csp-src-tab-batteries');
-      const headers = Array.from(panel.querySelectorAll('thead .gh-th-label'))
-        .map(label => (label.textContent ?? '').trim());
-      expect(headers).toEqual(['Compare', 'ID', 'Battery', 'Tested Model', 'Status', 'Class', 'Overall Index', 'R', 'Analyzed']);
-      expect(panel.querySelectorAll('app-table-pager').length).toBe(2);
+      const list = panel.querySelector('ul.csp-cards') as HTMLElement;
+      expect(list.getAttribute('role')).toBe('list');
+      const heading = panel.querySelector('#' + list.getAttribute('aria-labelledby')) as HTMLElement;
+      expect(heading.tagName).toBe('H4');
+      expect(heading.textContent?.trim()).toBe(BATTERY_SECTION_TITLE);
+      expect(panel.querySelector('[data-metric="condition"]')).toBeNull();
 
       // Newest first by id; the class is a short hash, or a tag while the analysis cannot be used.
-      const rows = Array.from(panel.querySelectorAll('tbody tr')) as HTMLElement[];
-      expect(rows.map(row => row.querySelector('.col-id')?.textContent?.trim())).toEqual(['#6', '#5', '#4']);
-      expect(rows[0].textContent).toContain('Incomplete');
+      const rows = cards();
+      expect(rows.map(row => row.querySelector('.csp-card-id')?.textContent?.trim())).toEqual(['#6', '#5', '#4']);
+      expect(rows[0].querySelector('[data-metric="class"]')?.textContent).toContain('Incomplete');
       expect(rows[1].querySelector('.gh-tag-changed')?.textContent?.trim()).toBe('Stale');
       expect(rows[2].querySelector('.csp-class-hash')?.textContent?.trim()).toBe('c1a55'.repeat(13).slice(0, 12));
       expect(rows[2].textContent).toContain('Core Battery');
       expect(rows[2].textContent).toContain('rev 3');
-      expect(rows[2].textContent).toContain('71.3');
+      expect(rows[2].querySelector('[data-metric="index"] dd')?.textContent?.trim()).toBe('71.3');
+      expect(rows[2].querySelector('[data-metric="runs-per-suite"] dd')?.textContent?.trim()).toBe('2');
       expect(box('#csp-battery-4').getAttribute('aria-label')).toBe('Include battery run 4 in the comparison');
     });
 
-    it('offers a battery result the server would exclude disabled, with the reason as its name', () => {
+    it('names a battery result with no model as such', () => {
+      render({ batteryRuns: [buildBattery({ id: 4, testedModelLabel: null, testedModelId: null })] });
+      showBatteries();
+
+      expect(cards()[0].querySelector('.csp-card-title')?.textContent?.trim()).toBe('Model not recorded');
+    });
+
+    it('offers a battery result the server would exclude aria-disabled, described by its reason', () => {
       render({
         batteryRuns: [
           buildBattery({ id: 4 }),
@@ -1447,16 +1669,26 @@ describe('ComparisonSourcePickerComponent', () => {
         ]
       });
       showBatteries();
+      const reason = (id: number): string =>
+        (fixture.nativeElement.querySelector(`#csp-battery-${id}-reason`) as HTMLElement).textContent ?? '';
 
-      expect(box('#csp-battery-4').disabled).toBe(false);
-      expect(box('#csp-battery-5').disabled).toBe(true);
-      expect(box('#csp-battery-5').getAttribute('aria-label')).toContain('only a finished battery run can be compared');
-      expect(box('#csp-battery-6').getAttribute('aria-label')).toContain('has no analysis');
-      expect(box('#csp-battery-7').getAttribute('aria-label')).toContain('incomplete analysis');
-      expect(box('#csp-battery-8').getAttribute('aria-label')).toContain('stale analysis');
+      expect(box('#csp-battery-4').getAttribute('aria-disabled')).toBeNull();
+      expect(fixture.nativeElement.querySelector('#csp-battery-4-reason')).toBeNull();
+      for (const id of [5, 6, 7, 8]) {
+        expect(box(`#csp-battery-${id}`).disabled).toBe(false);
+        expect(box(`#csp-battery-${id}`).getAttribute('aria-disabled')).toBe('true');
+        expect(box(`#csp-battery-${id}`).getAttribute('aria-describedby')).toBe(`csp-battery-${id}-reason`);
+        expect(box(`#csp-battery-${id}`).getAttribute('aria-label')).toBe(`Include battery run ${id} in the comparison`);
+      }
+      expect(reason(5)).toContain('only a finished battery run can be compared');
+      expect(reason(6)).toContain('has no analysis');
+      expect(reason(7)).toContain('incomplete analysis');
+      expect(reason(8)).toContain('stale analysis');
 
       let emitted = 0;
       component.selectionChange.subscribe(() => emitted++);
+      box('#csp-battery-5').click();
+      expect(box('#csp-battery-5').checked).toBe(false);
       component.toggleBattery(component.batteryRuns[1]);
       expect(emitted).toBe(0);
     });
@@ -1473,7 +1705,7 @@ describe('ComparisonSourcePickerComponent', () => {
       expect(badge.textContent?.trim()).toBe('1 selected');
     });
 
-    it('filters by battery on the exact name', () => {
+    it('narrows by battery on the exact name through the Battery facet', () => {
       render({
         batteryRuns: [
           buildBattery({ id: 4, batteryName: 'Core' }),
@@ -1482,12 +1714,12 @@ describe('ComparisonSourcePickerComponent', () => {
       });
       showBatteries();
 
-      const select = fixture.nativeElement.querySelector('#csp-f-battery-name') as HTMLSelectElement;
-      expect(Array.from(select.options).map(option => option.textContent?.trim())).toEqual(['All batteries', 'Core', 'Core Plus']);
-      component.batteryTable.setFilter('batteryName', 'Core');
+      const facet = component.facetsOf('batteries').find(candidate => candidate.column === 'battery')!;
+      expect(facet.options.map(option => option.label)).toEqual(['Core', 'Core Plus']);
+      component.onFacetChange('batteries', 'battery', ['Core']);
       fixture.detectChanges();
 
-      expect(component.batteryTable.view(component.batteryRuns).map(battery => battery.id)).toEqual([4]);
+      expect(component.batteryList.view(component.batteryRuns).map(battery => battery.id)).toEqual([4]);
     });
 
     it('keeps battery results apart from runs and groups, saying why in a visible line', () => {
@@ -1554,7 +1786,7 @@ describe('ComparisonSourcePickerComponent', () => {
       expect(fixture.nativeElement.querySelector('#csp-src-panel-batteries')).toBeTruthy();
     });
 
-    it('sorts Analyzed by the instant, reading a server timestamp without a zone as UTC', () => {
+    it('sorts Recently analyzed by the instant, reading a server timestamp without a zone as UTC', () => {
       render({
         batteryRuns: [
           // 15:00 UTC: no zone, as System.Text.Json writes an unspecified DateTime.
@@ -1565,23 +1797,31 @@ describe('ComparisonSourcePickerComponent', () => {
         ]
       });
 
-      component.batteryTable.setSort('analyzedAtUtc', 'desc');
-      expect(component.batteryTable.view(component.batteryRuns).map(battery => battery.id)).toEqual([6, 4, 5]);
+      expect(component.batteryList.setSort('analyzed')).toBe(true);
+      expect(component.batteryList.view(component.batteryRuns).map(battery => battery.id)).toEqual([6, 4, 5]);
       component.batteryTable.setSort('analyzedAtUtc', 'asc');
-      expect(component.batteryTable.view(component.batteryRuns).map(battery => battery.id)).toEqual([5, 4, 6]);
+      expect(component.batteryList.view(component.batteryRuns).map(battery => battery.id)).toEqual([5, 4, 6]);
 
       // Shown in the browser's own time zone, from the UTC instant.
       expect(component.formatDate('2026-10-01T15:00:00')).toBe(new Date(Date.UTC(2026, 9, 1, 15, 0, 0)).toLocaleString());
       expect(component.formatDate('2026-10-01T15:00:00Z')).toBe(new Date(Date.UTC(2026, 9, 1, 15, 0, 0)).toLocaleString());
     });
 
-    it('says the suite scope does not apply to battery results', () => {
+    it('offers the suite scope on the run and group tabs only, with no caveat line', () => {
       render();
-      const select = fixture.nativeElement.querySelector('#csp-suite') as HTMLSelectElement;
-      const hint = fixture.nativeElement.querySelector('#csp-suite-hint') as HTMLElement;
+      const select = (): HTMLSelectElement | null => fixture.nativeElement.querySelector('#csp-suite');
 
-      expect(select.getAttribute('aria-describedby')).toBe('csp-suite-hint');
-      expect(hint.textContent?.trim()).toBe('Does not apply to battery results');
+      expect(select()).toBeTruthy();
+      expect(select()!.hasAttribute('aria-describedby')).toBe(false);
+      expect(fixture.nativeElement.querySelector('#csp-suite-hint')).toBeNull();
+
+      component.selectSourceTab('groups');
+      fixture.detectChanges();
+      expect(select()).toBeTruthy();
+
+      showBatteries();
+      expect(select()).toBeNull();
+      expect(fixture.nativeElement.querySelector('#csp-legend-trigger')).toBeTruthy();
     });
   });
 });

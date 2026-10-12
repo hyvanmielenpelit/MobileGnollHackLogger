@@ -1,44 +1,65 @@
 /*
  * Layout for the comparison source picker.
  *
- * View-specific only: the button, input, table, pager and alert treatments all come from
+ * View-specific only: the button, input, filter-bar, tab and alert treatments all come from
  * `styles.scss` and are never redefined here — an emulated-encapsulation override would apply to
  * this one component and to nothing else, which is an invisible divergence rather than a visible
  * bug.
  */
 
+/* The picker fills the wizard's step panel (`.mc-step--sources`, a flex column), and every flex
+   level down to the card list's scroller passes the height on with `min-height: 0`, so the list is
+   the one thing that scrolls. Set here rather than in the wizard: the picker is projected into the
+   step, and the wizard's own styles do not reach a projected element. */
+:host {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .csp {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
+  min-height: 0;
 }
 
-.csp-intro {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* --- The kind tabs, with About conditions and the Suite scope at the end of their row --- */
 
-  h3 {
-    margin: 0;
-    font-family: "Cinzel", serif;
-    font-size: 20px;
-    color: var(--primary-color);
+.csp-source-bar {
+  container: csp-source-bar / inline-size;
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* The row carries the underline, so the tabs' own would stop short of the tools. */
+.csp-source-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  border-bottom: none;
+}
+
+.csp-source-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-inline-start: auto;
+  padding-block: 4px;
+}
+
+/* Narrow: the tools take their own line under the tabs. */
+@container csp-source-bar (max-width: 48rem) {
+  .csp-source-tools {
+    flex-basis: 100%;
+    margin-inline-start: 0;
   }
-}
-
-.csp-intro-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-}
-
-.csp-intro-tools {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 16px;
 }
 
 /* --- Suite scope --- */
@@ -60,12 +81,6 @@
     min-width: 12rem;
     max-width: 18rem;
   }
-}
-
-/* The scope's one-line caveat: battery results span suites, so it leaves them alone. */
-.csp-scope-hint {
-  font-size: 0.75rem;
-  color: #8b8b90;
 }
 
 /* --- The kind-of-source tabs --- */
@@ -93,9 +108,11 @@
 
 .csp-panel {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 12px;
+  gap: 8px;
+  min-height: 0;
+  padding-top: 4px;
 
   &:focus-visible {
     outline: 2px solid var(--primary-color);
@@ -103,36 +120,290 @@
   }
 }
 
-.csp-panel-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-}
-
-.csp-panel-note {
+/* Why this kind cannot join the selection: visible, since it explains aria-disabled checkboxes. */
+.csp-mix-note {
+  flex: none;
   margin: 0;
-  font-size: 13px;
-  color: #c3c2b7;
+  padding: 4px 10px;
+  border-inline-start: 3px solid var(--primary-color);
+  background: rgba(224, 186, 109, 0.08);
+  font-size: var(--text-secondary);
+  color: #d8d6cb;
 }
 
-.csp-panel-actions {
+/* --- The filter bar --- */
+
+.csp-filter-bar {
+  flex: none;
+}
+
+.csp-search {
+  flex: 1 1 14rem;
+}
+
+.csp-sort {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 8px 10px;
+  gap: 8px;
+}
+
+.csp-sort-label {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  white-space: nowrap;
+}
+
+.csp-sort-select {
+  min-block-size: 32px;
+  padding-block: 4px;
+  font-size: var(--text-secondary);
+}
+
+.csp-facet-row {
+  min-width: 0;
+}
+
+/* The status line and the kind's info button, pushed to the end of the row. */
+.csp-status-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-inline-start: auto;
 }
 
-/* Why this kind cannot join the selection: visible, since it explains aria-disabled checkboxes. */
-.csp-mix-note {
+.csp-clear-filters {
+  margin-inline-start: 4px;
+}
+
+.csp-empty {
   margin: 0;
-  padding: 8px 12px;
-  border-inline-start: 3px solid var(--primary-color);
-  background: rgba(224, 186, 109, 0.08);
-  font-size: 0.8125rem;
-  color: #d8d6cb;
+  color: var(--nav-color);
+}
+
+.csp-muted {
+  color: #8b8b90;
+}
+
+/* --- The card list --- */
+
+/* The step's one scroller while the dialog is tall enough; the 16 rem floor overflows a short
+   panel instead, which then scrolls as a whole, so no card is ever out of reach. The padding gives
+   the cards' focus rings room inside the scroll box. */
+.csp-cards-scroll {
+  flex: 1 1 auto;
+  min-block-size: 16rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  margin-inline: -4px;
+  padding: 4px 4px 12px;
+}
+
+.csp-cards {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: csp-cards / inline-size;
+}
+
+.csp-card-item {
+  min-inline-size: 0;
+}
+
+/* The checkbox, the two-line head and the metrics on one row. A selected card has the tick, a gold
+   border and a tint together; a card that cannot be compared has a dashed border, a muted title and
+   its reason in words. */
+.csp-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "select head   metrics"
+    "select reason reason";
+  align-items: center;
+  column-gap: 16px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    border-color: rgba(255, 255, 255, 0.28);
+  }
+
+  &:has(.csp-card-check:checked) {
+    border-color: var(--primary-color);
+    background: rgba(224, 186, 109, 0.06);
+  }
+
+  &.is-unselectable {
+    border-style: dashed;
+
+    .csp-card-title {
+      opacity: 0.65;
+    }
+
+    .csp-card-check {
+      opacity: 0.55;
+    }
+  }
+}
+
+.csp-card-select {
+  grid-area: select;
+  display: flex;
+  align-items: center;
+}
+
+.csp-card-check {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  margin: 0;
+  accent-color: var(--primary-color);
+  cursor: pointer;
+
+  &[aria-disabled="true"] {
+    cursor: not-allowed;
+  }
+}
+
+.csp-card-head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+
+.csp-card-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 600;
+  line-height: 1.35;
+
+  label {
+    display: inline-flex;
+    max-inline-size: 100%;
+    cursor: pointer;
+  }
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+}
+
+.csp-card-name {
+  color: var(--primary-color);
+  overflow-wrap: anywhere;
+}
+
+/* `#21 · Completed · suite · Started …`: one line where it fits, wrapping where it does not. */
+.csp-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+
+.csp-sep {
+  color: #6b6b70;
+}
+
+.csp-card-id {
+  color: #c3c2b7;
+}
+
+/* Fixed widths, so each metric lines up down the list. Class is wider, to hold the short hash and a
+   Stale tag on one line. */
+.csp-card-metrics {
+  grid-area: metrics;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  gap: 12px;
+  margin: 0;
+
+  > .csp-card-metric {
+    inline-size: 7.5rem;
+  }
+
+  > [data-metric="class"] {
+    inline-size: 10rem;
+  }
+
+  dt {
+    font-size: var(--text-xs);
+    font-weight: 400;
+    color: #8b8b90;
+  }
+
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+.csp-card-reason {
+  grid-area: reason;
+  margin: 4px 0 0;
+  font-size: var(--text-xs);
+  color: #c3c2b7;
+}
+
+/* The metrics under the head below 48 rem of the list, and everything in one column below 30 rem. */
+@container csp-cards (max-width: 48rem) {
+  .csp-card {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "select head"
+      "select metrics"
+      "select reason";
+    row-gap: 6px;
+  }
+}
+
+@container csp-cards (max-width: 30rem) {
+  .csp-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "select"
+      "head"
+      "metrics"
+      "reason";
+  }
+
+  /* No fixed columns to line up in one column: the metrics wrap rather than scroll sideways. */
+  .csp-card-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 16px;
+
+    > .csp-card-metric {
+      inline-size: auto;
+    }
+  }
+}
+
+.csp-load-more {
+  padding-block-start: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csp-card {
+    transition: none;
+  }
 }
 
 /* --- About conditions --- */
@@ -693,91 +964,11 @@
   color: #c3c2b7;
 }
 
-/* --- The two tables --- */
-
-.csp-table {
-  .col-center {
-    text-align: center;
-  }
-
-  .col-selected {
-    width: 92px;
-  }
-
-  .col-id {
-    width: 80px;
-  }
-
-  /* A cell keeps its table-cell display: a flex `<th>` drops out of the column grid entirely. */
-  .col-name {
-    text-align: left;
-    min-width: 220px;
-  }
-
-  /* Body rows only: the header's padding sits on its sort button, and the filter row sets its own. */
-  tbody > tr > td,
-  tbody > tr > th {
-    padding-block: 6px;
-  }
-}
-
-/* A group's model and badges, with its name as a caption beneath: the same stacking as the
-   Interactive table's model cell and source line on step 2. */
-.csp-model-cell {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-}
+/* --- On the cards --- */
 
 /* Wrapped, never truncated, so the whole name is always readable. */
 .csp-group-caption {
-  font-size: 11px;
-  color: #898781;
-  letter-spacing: 0.02em;
   overflow-wrap: anywhere;
-}
-
-.csp-row-selected > * {
-  background: rgba(224, 186, 109, 0.12);
-}
-
-.csp-row-selected > :first-child {
-  box-shadow: inset 3px 0 0 var(--primary-color);
-}
-
-/* Dimmed, but still readable: the row is present so its status can be read. */
-.csp-row-unselectable {
-  opacity: 0.62;
-}
-
-/* The whole cell is the hit target: the label wraps the checkbox rather than sitting beside it. */
-.csp-check {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 32px;
-  cursor: pointer;
-
-  &:has(input:disabled) {
-    cursor: default;
-  }
-
-  &:has(input[aria-disabled="true"]) {
-    cursor: not-allowed;
-  }
-}
-
-/* --- Battery results --- */
-
-.csp-battery-name {
-  display: block;
-}
-
-.csp-battery-revision {
-  font-size: 11px;
-  color: #898781;
-  letter-spacing: 0.02em;
 }
 
 .csp-class-cell {
@@ -790,14 +981,6 @@
 .csp-class-hash {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: #c3c2b7;
-}
-
-/* --- Selection summary --- */
-
-.csp-selection-count {
-  margin: 0;
-  font-size: 13px;
   color: #c3c2b7;
 }
 
@@ -881,13 +1064,12 @@
   }
 }
 
-/* Centres the badge and the info button as a unit, and gives the wrapped case a vertical gap
-   without the horizontal offset a margin would leave on the one-line case. */
+/* The badge and the info button as a unit, with a vertical gap for the wrapped case and no
+   horizontal offset a margin would leave on the one-line case. */
 .csp-condition-cell {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
   gap: 6px;
 }
 

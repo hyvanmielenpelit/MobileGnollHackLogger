@@ -622,6 +622,14 @@
   container: mc-fig gh-fig / inline-size;
 }
 
+/* Step 1: the source picker fills the step, and its card list is the one scroller (the picker
+   sets its own host to fill, since it is projected here). The panel keeps `.gh-wizard-step`'s
+   scrolling for a window too short for the list's floor. */
+.mc-step--sources {
+  gap: 0;
+  padding: 8px 24px 0;
+}
+
 /* Step 3: the Report Pack panel fills the step, which scrolls whatever the panel does not. */
 .mc-step--reports > app-report-pack-panel {
   flex: 1 1 auto;
@@ -641,46 +649,56 @@
   }
 }
 
-/* The step-1 notices, in their own labelled strip between the step panel and the navigation.
-   Not sticky: as a flex item of the wizard column it is already pinned, and the step panel
-   above it shrinks by exactly its height, which is what keeps it from covering a row.
+/* The step-1 selection bar, in its own labelled strip between the step panel and the navigation.
+   Not sticky: as a flex item of the wizard column it is already pinned, and the step panel above it
+   shrinks by exactly its height, which is what keeps it from covering a card.
 
    It keeps its own top border and leaves `.mc-wizard-nav`'s in place, so the two read as two
-   regions. Merging them would say these notices belong to Previous and Compare; they belong to
-   the selection above. */
-.mc-wizard-notice {
+   regions. Merging them would say the selection belongs to Previous and Compare; it belongs to the
+   lists above. */
+.mc-selection-bar {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 24px 12px;
+  gap: 6px;
+  padding: 6px 24px;
   border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
   background: rgba(16, 16, 16, 0.98);
 
-  /* Holds the summary line, the chip row and up to five notices at once — a failed index over a
-     stale selection that crosses conditions, carries a self-inconsistent group and exceeds the
-     plot cap. Bounded with its own contained scroller so the band never eats the step panel it
-     sits above, and so a scroll gesture inside it does not carry on into that panel. */
+  /* One line, until several notices stack under it or Show all expands the chips. Bounded with its
+     own contained scroller so the bar never eats the step panel it sits above, and so a scroll
+     gesture inside it does not carry on into that panel. */
   max-height: 44dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
 
-  /* The global callout carries a bottom margin for stacked prose; in a flex column with its
-     own gap it would add a second, uneven one. */
+  /* The global callout carries a bottom margin for stacked prose; in a flex column with its own gap
+     it would add a second, uneven one. */
   .alert {
     margin-bottom: 0;
   }
 }
 
-/* Names the table the notices report on and how much is selected in it. Sentence case rather
-   than a tracked uppercase eyebrow: the string runs to about sixty characters, and that much
-   tracked uppercase outweighs the notices it introduces. Labels the band for assistive
+/* The summary, Clear selection, the chips and Show all, on one line of 32 px controls; on a phone,
+   where they cannot share it, the chips take a line of their own. */
+.mc-selection-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-block-size: 32px;
+  min-width: 0;
+}
+
+/* Sentence case rather than a tracked uppercase eyebrow, and the bar's label for assistive
    technology through `aria-labelledby`. */
-.mc-wizard-notice-label {
+.mc-selection-label {
+  flex: none;
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: #8b8b90;
+  color: #c3c2b7;
+  white-space: nowrap;
 
   /* A programmatic focus target only (tabindex="-1"), ringed like the other ones. */
   &:focus-visible {
@@ -689,47 +707,67 @@
   }
 }
 
-/* The summary line, and below it the chip row. */
-.mc-selection-head {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.mc-selection-clear {
+  flex: none;
 }
 
-/* Nothing selected: the head shows nothing, so it takes no room in the band. The label, whose
-   text is visually hidden, leaves the flow (an absolutely positioned flex item gets no gap) and
-   is clipped like `.visually-hidden`, which cannot be put on the label itself: that class reveals
-   an element holding focus, and the label is focused after Clear selection. */
-.mc-selection-head--empty {
-  display: contents;
+/* Nothing selected: the warning line is the one visible message. The label, whose visible text
+   would repeat it, is clipped like `.visually-hidden`, which cannot be put on the label itself:
+   that class reveals an element holding focus, and the label is focused after Clear selection. */
+.mc-selection-line--empty .mc-selection-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
-  .mc-wizard-notice-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+.mc-selection-empty {
+  align-items: center;
+}
+
+/* Collapsed, the chips are one row that scrolls sideways, fading at its end while more are out of
+   view; expanded, they wrap in a box of their own. */
+.mc-selection-chips {
+  display: flex;
+  flex: 1 1 12rem;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  list-style: none;
+  margin-inline: 0;
+  /* Room for the remove buttons' focus rings inside the scroll box, taken back from the line's
+     height so the bar is no taller than one row of chips. */
+  padding: 3px;
+  margin-block: -3px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+
+  > li {
+    flex: none;
+    scroll-snap-align: start;
+  }
+
+  &.is-overflowing {
+    mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent);
+  }
+
+  &.is-expanded {
+    flex-wrap: wrap;
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-block-size: 30dvh;
   }
 }
 
-/* Clear selection first, then the chips, wrapping together. */
-.mc-selection-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-}
-
-.mc-selection-chips {
-  display: flex;
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  gap: 6px;
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.mc-selection-more {
+  flex: none;
+  white-space: nowrap;
 }
 
 /* One selected source: its detail, its model identity (the name, then its thinking level,
@@ -782,7 +820,7 @@
   white-space: nowrap;
 }
 
-/* The notices below the chip row, unchanged from what the band used to render on its own. */
+/* The notices under the bar's line, compact alerts in severity order. */
 .mc-wizard-notices {
   display: flex;
   flex-direction: column;

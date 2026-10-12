@@ -721,6 +721,21 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** The chips' remove buttons, in chip order. */
   @ViewChildren('chipRemoveButton') private chipRemoveButtons?: QueryList<ElementRef<HTMLButtonElement>>;
 
+  /** The selection bar's chip row, present on step 1 while something is selected. */
+  @ViewChild('selectionChips') private selectionChips?: ElementRef<HTMLElement>;
+
+  /** The chips do not fit the bar's one line, so Show all is offered. */
+  chipsOverflow = false;
+
+  /** Show all is on: the chips wrap, in a box of their own that scrolls past a third of the window. */
+  chipsExpanded = false;
+
+  private chipsObserver: ResizeObserver | null = null;
+  private observedChips: HTMLElement | null = null;
+  /** The selection the chip row was last measured with, so a changed selection is measured again. */
+  private measuredSources: readonly ComparisonSelectedSource[] | null = null;
+  private chipsMeasureQueued = false;
+
   /** The selection counts together, which is what both caps and Next are judged on. */
   get selectedSourceCount(): number {
     return this.selectedRunCount + this.selectedGroupCount + this.selectedBatteryCount;
@@ -1013,6 +1028,11 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       this.onLoadingChange(!!loadingChange.previousValue, this.loading);
     }
 
+    if (changes['selectedSources'] && this.selectedSources.length === 0) {
+      this.chipsExpanded = false;
+      this.chipsOverflow = false;
+    }
+
     const change = changes['comparison'];
     if (!change) {
       return;
@@ -1071,6 +1091,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (host !== null && host !== this.observedChartsHost) {
       this.observeContainerWidth();
     }
+    this.watchSelectionChips();
     if (this.restoreFocusToNext) {
       this.restoreFocusToNext = false;
       this.nextButton?.nativeElement.focus();
@@ -1117,6 +1138,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.observedChartsHost = null;
+    this.chipsObserver?.disconnect();
+    this.chipsObserver = null;
+    this.observedChips = null;
     this.disconnectStageObserver();
     this.cancelScheduledPreview();
     this.cancelScheduledStyle();
@@ -1355,6 +1379,58 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     (target?.isConnected ? target : label)?.focus();
   }
 
+  /** Show all N / Show fewer: the chips wrap and scroll in their own box, or go back to one line. */
+  toggleChipsExpanded(): void {
+    this.chipsExpanded = !this.chipsExpanded;
+    this.cdr.detectChanges();
+    this.measureChipsOverflow();
+  }
+
+  /** A chip's remove button scrolls itself into view in the one-line row when it takes focus. */
+  revealChip(event: FocusEvent): void {
+    (event.target as HTMLElement | null)?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }
+
+  /**
+   * Keeps the chip row's overflow state current. The row exists only while something is selected,
+   * so the observer follows it in and out of the DOM; and adding a chip grows the row's scroll width
+   * without resizing the row itself, so a changed selection is measured again as well.
+   */
+  private watchSelectionChips(): void {
+    const chips = this.selectionChips?.nativeElement ?? null;
+    if (chips !== this.observedChips) {
+      this.chipsObserver?.disconnect();
+      this.chipsObserver = null;
+      this.observedChips = chips;
+      if (chips !== null && typeof ResizeObserver !== 'undefined') {
+        this.chipsObserver = new ResizeObserver(() => this.zone.run(() => this.measureChipsOverflow()));
+        this.chipsObserver.observe(chips);
+      }
+    }
+    if (chips !== null && this.measuredSources !== this.selectedSources && !this.chipsMeasureQueued) {
+      // Outside the check pass: a bound field changed inside this hook faults the check.
+      this.chipsMeasureQueued = true;
+      queueMicrotask(() => {
+        this.chipsMeasureQueued = false;
+        this.measureChipsOverflow();
+      });
+    }
+  }
+
+  /** Whether the collapsed chip row overflows its one line. Kept as it was while expanded. */
+  private measureChipsOverflow(): void {
+    const chips = this.selectionChips?.nativeElement ?? null;
+    this.measuredSources = this.selectedSources;
+    if (chips === null || this.chipsExpanded) {
+      return;
+    }
+    const overflow = chips.scrollWidth > chips.clientWidth + 1;
+    if (overflow !== this.chipsOverflow) {
+      this.chipsOverflow = overflow;
+      this.cdr.markForCheck();
+    }
+  }
+
   /**
    * That the selection exceeds what the figures draw, or null below the cap.
    *
@@ -1379,9 +1455,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /**
    * That nothing is ticked yet, or null once something is.
    *
-   * The band explains; the footer's `nextBlockedReason` names the control. Silent while a
-   * comparison is being computed, where an empty selection is a transient state of the request
-   * rather than something the reader has to act on.
+   * The bar explains, on its own line; the footer's `nextBlockedReason` names the control. Silent
+   * while a comparison is being computed, where an empty selection is a transient state of the
+   * request rather than something the reader has to act on.
    */
   get nothingSelectedNotice(): ComparisonSelectionNotice | null {
     if (this.loading || this.selectedSourceCount > 0) {
@@ -1391,20 +1467,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       id: 'nothing-selected',
       severity: 'warning',
       heading: 'Nothing is selected yet',
-      body: 'Select at least one completed run, analysis group or battery result in the tables above. '
+      body: 'Select at least one completed run, analysis group or battery result. '
         + 'Compare stays unavailable until you do.'
     };
   }
 
   /**
-   * Everything the band renders: the host's index-derived notices plus this component's own
-   * empty-selection and plot-cap notices, re-ordered so nothing that blocks a figure sits below
-   * something that only shrinks one.
+   * The notices under the bar's line: the host's index-derived notices plus this component's
+   * plot-cap notice, re-ordered so nothing that blocks a figure sits below something that only
+   * shrinks one. The empty selection is not among them: the bar's line states it.
    */
   get bandNotices(): ComparisonSelectionNotice[] {
-    const own = [this.nothingSelectedNotice, this.plotCapNotice]
-      .filter((notice): notice is ComparisonSelectionNotice => notice !== null);
-    return orderedNotices(own.length === 0 ? this.selectionNotices : [...this.selectionNotices, ...own]);
+    const own = this.plotCapNotice;
+    return orderedNotices(own === null ? this.selectionNotices : [...this.selectionNotices, own]);
   }
 
   goToStep(step: ComparisonWizardStep): void {
