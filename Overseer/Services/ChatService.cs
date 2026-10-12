@@ -1308,8 +1308,13 @@ public class ChatService
             
             // Truncation logic (prefix-stable)
             var meta = _modelMetadataService.GetMetadata(provider ?? "", model);
-            int effectiveInputLimit = maxInputTokens ?? meta.MaxInputTokens;
-            if (effectiveInputLimit <= 0) effectiveInputLimit = 100000;
+            var inputLimit = ChatHistoryBudget.Resolve(
+                maxInputTokens,
+                meta,
+                _configuration.GetValue<bool>("LongContextChatSettings:KeepHistoryBelowThreshold", true),
+                _configuration.GetValue<int>("LongContextChatSettings:TurnHeadroomTokens", 40000),
+                _configuration.GetValue<decimal>("LongContextChatSettings:TokenEstimateFactor", 1.3m));
+            int effectiveInputLimit = inputLimit.Tokens;
 
             contextWindowTokens = meta.ContextWindowSize > 0 ? meta.ContextWindowSize : null;
             contextInputLimitTokens = effectiveInputLimit;
@@ -1333,7 +1338,7 @@ public class ChatService
             if (_showDebugLog) yield return new ChatEvent 
             { 
                 Type = "debug", 
-                Data = $"[Model Configuration]\nProvider: {provider}\nModel: {model}\nDisplay Name: {(string.IsNullOrEmpty(modelDisplayName) ? "None" : modelDisplayName)}\nThinking Level: {(string.IsNullOrEmpty(thinkingLevel) ? "None" : thinkingLevel)}\nService Tier: {(string.IsNullOrEmpty(serviceTier) ? "None" : serviceTier)}\nParallel Execution: {parallelMode}\nMax Input Tokens (Limit): {effectiveInputLimit}\nMax Output Tokens: {(maxOutputTokens.HasValue ? maxOutputTokens.Value.ToString() : "Default")}\nEstimated Request Input Tokens: ~{totalTokens}" 
+                Data = $"[Model Configuration]\nProvider: {provider}\nModel: {model}\nDisplay Name: {(string.IsNullOrEmpty(modelDisplayName) ? "None" : modelDisplayName)}\nThinking Level: {(string.IsNullOrEmpty(thinkingLevel) ? "None" : thinkingLevel)}\nService Tier: {(string.IsNullOrEmpty(serviceTier) ? "None" : serviceTier)}\nParallel Execution: {parallelMode}\nMax Input Tokens (Limit): {effectiveInputLimit}\nInput Limit Source: {inputLimit.Source}\nMax Output Tokens: {(maxOutputTokens.HasValue ? maxOutputTokens.Value.ToString() : "Default")}\nEstimated Request Input Tokens: ~{totalTokens}" 
             };
         }
 

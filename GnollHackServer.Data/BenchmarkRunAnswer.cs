@@ -429,6 +429,17 @@ public class BenchmarkRunAnswer
     public int? ClaimVerificationOutputTokens { get; set; }
     public int? ClaimVerificationCacheReadTokens { get; set; }
     public int? ClaimVerificationCacheCreationTokens { get; set; }
+
+    /// <summary>
+    /// The subset of the four claim-verification token columns above that came from verifier calls
+    /// over the verifier card's long-context threshold. Not additional tokens — a portion of the same
+    /// ones. Zero for a flat-rate verifier; null on answers recorded before these columns existed.
+    /// </summary>
+    public int? ClaimVerificationLongContextInputTokens { get; set; }
+    public int? ClaimVerificationLongContextOutputTokens { get; set; }
+    public int? ClaimVerificationLongContextCacheReadTokens { get; set; }
+    public int? ClaimVerificationLongContextCacheCreationTokens { get; set; }
+
     public long? ClaimVerificationDurationMs { get; set; }
     public int? ClaimVerificationToolCallCount { get; set; }
 

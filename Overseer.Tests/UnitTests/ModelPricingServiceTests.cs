@@ -923,4 +923,78 @@ public class ModelPricingServiceTests
         Assert.Equal(1.40m, noMultipliers.ClaimVerifier);
         Assert.Equal(1.40m, noMultipliers.Assessor);
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // Claude Haiku 5.5: the one Anthropic model priced by prompt length.
+    // ---------------------------------------------------------------------------------------------
+
+    private static ModelPricing HaikuCard() => new(
+        InputPerMillion: 0.10m,
+        OutputPerMillion: 0.50m,
+        CachedInputPerMillion: 0.01m,
+        CacheWritePerMillion: 0.125m,
+        LongContext: new LongContextPricing(100_000, 0.50m, 2.50m, 0.05m, 0.625m));
+
+    [Fact]
+    public void ResolveDefault_ClaudeHaiku55_CarriesThePublishedLongContextCard()
+    {
+        // Pinned to Anthropic's pricing page (read 2026-10-12): prompts over 100,000 tokens bill at 5x on
+        // every rate.
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(_metadataService, db);
+
+        var pricing = service.ResolveDefault("Anthropic", "claude-haiku-5-5");
+
+        Assert.NotNull(pricing);
+        Assert.Equal(0.10m, pricing.InputPerMillion);
+        Assert.Equal(0.50m, pricing.OutputPerMillion);
+        Assert.Equal(0.01m, pricing.CachedInputPerMillion);
+        Assert.Equal(0.125m, pricing.CacheWritePerMillion);
+        Assert.NotNull(pricing.LongContext);
+        Assert.Equal(100_000, pricing.LongContext.ThresholdInputTokens);
+        Assert.Equal(0.50m, pricing.LongContext.InputPerMillion);
+        Assert.Equal(2.50m, pricing.LongContext.OutputPerMillion);
+        Assert.Equal(0.05m, pricing.LongContext.CachedInputPerMillion);
+        Assert.Equal(0.625m, pricing.LongContext.CacheWritePerMillion);
+    }
+
+    [Fact]
+    public void ComputeCost_ClaudeHaiku55_OneHundredThousandIsBase_OneMoreIsLongContext()
+    {
+        var pricing = HaikuCard();
+
+        decimal atThreshold = ModelPricingService.ComputeCost(
+            pricing, new List<TokenUsageReport> { Call(100_000, outputTokens: 1_000) });
+        decimal oneOver = ModelPricingService.ComputeCost(
+            pricing, new List<TokenUsageReport> { Call(100_001, outputTokens: 1_000) });
+
+        Assert.Equal((100_000 / 1_000_000m * 0.10m) + (1_000 / 1_000_000m * 0.50m), atThreshold);
+        Assert.Equal((100_001 / 1_000_000m * 0.50m) + (1_000 / 1_000_000m * 2.50m), oneOver);
+    }
+
+    [Fact]
+    public void EstimateSingleRequestCost_BelowTheThreshold_IsTheBaseCard()
+    {
+        decimal cost = ModelPricingService.EstimateSingleRequestCost(HaikuCard(), 80_000, 4_000);
+
+        Assert.Equal((80_000 / 1_000_000m * 0.10m) + (4_000 / 1_000_000m * 0.50m), cost);
+    }
+
+    [Fact]
+    public void EstimateSingleRequestCost_AboveTheThreshold_IsTheLongContextCard()
+    {
+        decimal cost = ModelPricingService.EstimateSingleRequestCost(HaikuCard(), 150_000, 4_000);
+
+        Assert.Equal((150_000 / 1_000_000m * 0.50m) + (4_000 / 1_000_000m * 2.50m), cost);
+    }
+
+    [Fact]
+    public void EstimateSingleRequestCost_FlatCard_EqualsTheFlatOverload()
+    {
+        var flat = HaikuCard() with { LongContext = null };
+
+        Assert.Equal(
+            ModelPricingService.ComputeCost(flat, 150_000, 4_000, 0, 0),
+            ModelPricingService.EstimateSingleRequestCost(flat, 150_000, 4_000));
+    }
 }

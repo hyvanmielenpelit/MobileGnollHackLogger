@@ -294,13 +294,15 @@ Three optional blocks inside `pricing` describe rates that are not flat. Each is
 
 Composition order is: **base card → scheduled card if its date has passed → long-context card if this request crossed the threshold → × the served tier's multiplier.**
 
-**Per-provider findings, verified 2026-09-06:**
+**Per-provider findings, verified 2026-09-06 (Anthropic re-verified 2026-10-12):**
 
 | Provider | Long context | Service tiers | Scheduled changes |
 |---|---|---|---|
 | **OpenAI** | >272 K at 2× input and 1.5× output for the full request, on `gpt-5.4`, `gpt-5.4-pro`, `gpt-5.5`, the three GPT-5.6 models and `gpt-6-astra`. **Not** on `gpt-5.4-mini` or `gpt-5.4-nano`, whose 400 K windows cap input at 272 K so the threshold is unreachable, and **not** on `gpt-5.5-pro`, whose page states none. `gpt-6-astra` alone surcharges cache rates too ("2x input **and cache rates**"); everywhere else the long-context card omits the cache rates and they fall back to the base card. | Batch and Flex 0.5×, Fast mode (formerly Priority) 2.0× | none |
 | **Google** | Pro models only, >200 K at $4.00 / $18.00 / $0.40. Of the Flash models the page says "No threshold pricing tiers." | Batch and Flex 0.5×, Priority 1.8× | Gemini 3.6 / 3.7 / 3.8 Flash run at half price through 2026-12-31, returning to $1.50 / $7.50 on 2027-01-01 |
-| **Anthropic** | none — "Claude 4.6 and later models … include the full 1M token context window at standard pricing" | **none declared, deliberately.** Overseer sends neither `speed: "fast"` nor Batch API requests, and Anthropic's served `service_tier: priority` is the Priority Tier *capacity* product, not Fast mode and not a price change; declaring `"priority": 2.0` there would double every Claude cost | none |
+| **Anthropic** | `claude-haiku-5-5` only: >100 K at 5× on every rate ($0.50 / $2.50 / $0.05 / $0.625) for the full request, prompt length counting cache reads and writes; every other Claude 4.6+ model is flat across the full 1M window | **none declared, deliberately.** Overseer sends neither `speed: "fast"` nor Batch API requests, and Anthropic's served `service_tier: priority` is the Priority Tier *capacity* product, not Fast mode and not a price change; declaring `"priority": 2.0` there would double every Claude cost | none |
+
+**Chat history budget.** For a model with a long-context card and no Max Input Tokens of its own, chat starts each turn with at most `(threshold − TurnHeadroomTokens) / TokenEstimateFactor` estimated tokens of system prompt and history — 46,153 for Claude Haiku 5.5, about 178,000 for the GPT-5.x models and 123,000 for Gemini Pro — and drops its oldest messages above that. The three keys live in `Overseer/appsettings.json` under `LongContextChatSettings`: `KeepHistoryBelowThreshold` (default `true`), `TurnHeadroomTokens` (default `40000`) and `TokenEstimateFactor` (default `1.3`). The headroom exists because history is truncated only at the start of a turn, and the turn's own tool loop then grows the prompt by up to ~57 K tokens; the factor corrects the `characters / 4` estimator for tokenizers that count more densely, such as Claude Haiku 5.5's. The threshold is read from the catalog, so a custom price override does not switch it off. Setting **Max Input Tokens** on the system configuration or user model overrides the budget.
 
 #### Custom Deployment Overrides
 

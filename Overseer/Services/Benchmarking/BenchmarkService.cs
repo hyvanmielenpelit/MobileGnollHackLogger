@@ -1392,23 +1392,25 @@ public class BenchmarkService
     };
 
     /// <summary>
-    /// The candidate's pricing card, needed only for its long-context threshold when bucketing an answer's
-    /// model calls. Resolved per answer from its own scope because ModelPricingService is scoped and this
-    /// method runs on both the sequential and the parallel answer paths; the cost is negligible beside the
-    /// model call it accompanies. Null — an unpriced model — buckets to all zeros.
+    /// A model's pricing card — the candidate's or the claim verifier's — needed only for its
+    /// long-context threshold when bucketing an answer's model calls. Resolved per answer from its own
+    /// scope because ModelPricingService is scoped and this method runs on both the sequential and the
+    /// parallel answer paths; the cost is negligible beside the model call it accompanies. Null — an
+    /// unpriced model — buckets to all zeros.
     /// </summary>
-    private ModelPricing? ResolveCandidatePricing(SystemAiApiConfiguration testedConfig)
+    private ModelPricing? ResolveBucketingPricing(SystemAiApiConfiguration config)
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var pricingService = scope.ServiceProvider.GetRequiredService<ModelPricingService>();
-            return pricingService.Resolve(testedConfig);
+            return pricingService.Resolve(config);
         }
         catch (Exception ex)
         {
             // Bucketing is a costing refinement, never a reason to lose an answer that has already run.
-            _logger.LogWarning(ex, "Failed to resolve candidate pricing for long-context bucketing.");
+            _logger.LogWarning(ex, "Failed to resolve pricing for long-context bucketing of {ModelId}.",
+                config.ModelId);
             return null;
         }
     }
@@ -1824,7 +1826,7 @@ public class BenchmarkService
         // any published threshold routinely while no single request comes close. All zero for a flat-rate
         // candidate, which is what makes storing them unconditional safe.
         var longContextBuckets = ModelPricingService.ComputeLongContextBuckets(
-            ResolveCandidatePricing(testedConfig), runResult.ModelCallUsages);
+            ResolveBucketingPricing(testedConfig), runResult.ModelCallUsages);
 
         var succeededCalls = runResult.ToolCalls
             .Where(tc => tc.Status == "completed" && string.IsNullOrEmpty(tc.Error) && !string.IsNullOrEmpty(tc.Name))
@@ -2108,7 +2110,7 @@ public class BenchmarkService
         // any published threshold routinely while no single request comes close. All zero for a flat-rate
         // candidate, which is what makes storing them unconditional safe.
         var longContextBuckets = ModelPricingService.ComputeLongContextBuckets(
-            ResolveCandidatePricing(testedConfig), runResult.ModelCallUsages);
+            ResolveBucketingPricing(testedConfig), runResult.ModelCallUsages);
 
         var succeededCalls = runResult.ToolCalls
             .Where(tc => tc.Status == "completed" && string.IsNullOrEmpty(tc.Error) && !string.IsNullOrEmpty(tc.Name))
@@ -3946,8 +3948,9 @@ public class BenchmarkService
     private const int ClaimVerificationServiceTierMaxLength = 32;
 
     /// <summary>
-    /// Stores the claim verifier's model-call count, its per-call usage and the tier the provider
-    /// reported serving on <paramref name="answer"/>. The usage is a compact JSON array, one
+    /// Stores the claim verifier's model-call count, its per-call usage, the tier the provider
+    /// reported serving, and the long-context subset of its calls under <paramref name="verifierPricing"/>
+    /// (zeros for a flat or null card) on <paramref name="answer"/>. The usage is a compact JSON array, one
     /// <c>{"p","c","o"}</c> entry (prompt, cache-read and output tokens) per call in order, at most
     /// <see cref="ClaimVerificationCallUsageMaxEntries"/> entries. When a parse retry ran,
     /// <paramref name="retryCallStart"/> is the index in <paramref name="callUsages"/> where its calls
@@ -3969,9 +3972,17 @@ public class BenchmarkService
         string? servedServiceTier,
         int? retryCallStart = null,
         string? firstAttemptEnd = null,
-        IReadOnlyList<ClaimVerificationProviderErrorRetry>? providerErrorRetries = null)
+        IReadOnlyList<ClaimVerificationProviderErrorRetry>? providerErrorRetries = null,
+        ModelPricing? verifierPricing = null)
     {
         answer.ClaimVerificationModelCallCount = modelCallCount;
+
+        var longContext = ModelPricingService.ComputeLongContextBuckets(verifierPricing, callUsages);
+        answer.ClaimVerificationLongContextInputTokens = longContext.InputTokens;
+        answer.ClaimVerificationLongContextOutputTokens = longContext.OutputTokens;
+        answer.ClaimVerificationLongContextCacheReadTokens = longContext.CacheReadTokens;
+        answer.ClaimVerificationLongContextCacheCreationTokens = longContext.CacheCreationTokens;
+
         answer.ClaimVerificationCallUsageJson = SerializeClaimVerificationCallUsage(callUsages, retryCallStart, firstAttemptEnd, providerErrorRetries);
         answer.ClaimVerificationServiceTierUsed = string.IsNullOrWhiteSpace(servedServiceTier)
             ? null
@@ -4291,6 +4302,7 @@ public class BenchmarkService
         int modelCallCount = totals.ModelCallCount;
         var callUsages = new List<TokenUsageReport>(totals.CallUsages);
         string? servedServiceTier = totals.ServedServiceTier;
+        var verifierPricing = ResolveBucketingPricing(verifierConfig);
         bool verdictsPersisted = false;
 
         if (!string.IsNullOrWhiteSpace(terminalError))
@@ -4303,7 +4315,8 @@ public class BenchmarkService
             answer.ClaimVerificationDurationMs = sw.ElapsedMilliseconds;
             answer.ClaimVerificationToolCallCount = toolCallsCount;
             RecordClaimVerificationModelCalls(
-                answer, modelCallCount, callUsages, servedServiceTier, providerErrorRetries: totals.ProviderErrorRetries);
+                answer, modelCallCount, callUsages, servedServiceTier, providerErrorRetries: totals.ProviderErrorRetries,
+                verifierPricing: verifierPricing);
             answer.ClaimVerificationByModelSnapshot = await GraderSnapshotAsync(db, verifierConfig, CancellationToken.None);
             answer.ClaimVerificationError = BenchmarkAssessmentFailure.Truncate(terminalError, BenchmarkAssessmentFailure.MaxClaimVerificationErrorLength);
             answer.ClaimVerificationRawText = null;
@@ -4396,7 +4409,7 @@ public class BenchmarkService
             answer.ClaimVerificationToolCallCount = toolCallsCount;
             RecordClaimVerificationModelCalls(
                 answer, modelCallCount, callUsages, servedServiceTier, retryCallStart, DescribeVerificationEnd(firstResult),
-                totals.ProviderErrorRetries);
+                totals.ProviderErrorRetries, verifierPricing);
             answer.ClaimVerificationByModelSnapshot = await GraderSnapshotAsync(db, verifierConfig, CancellationToken.None);
 
             if (!string.IsNullOrWhiteSpace(terminalError))

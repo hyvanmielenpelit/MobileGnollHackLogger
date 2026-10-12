@@ -363,7 +363,7 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
                 PromptChars = chars,
                 EstimatedInputTokens = input,
                 EstimatedOutputTokens = output,
-                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.ComputeCost(pricing, input, output, 0, 0)
+                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.EstimateSingleRequestCost(pricing, input, output)
             };
         }).ToArray();
     }

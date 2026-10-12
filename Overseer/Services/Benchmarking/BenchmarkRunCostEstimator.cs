@@ -185,6 +185,7 @@ public class BenchmarkRunCostEstimator
         var candidate = BenchmarkRunFinalizer.ComputeCandidateTotals(run.Answers);
         var longContext = BenchmarkRunFinalizer.ComputeCandidateLongContextTotals(run.Answers);
         var grading = BenchmarkRunFinalizer.SumGradingTotals(run.Answers);
+        var verifierLongContext = BenchmarkRunFinalizer.ComputeClaimVerificationLongContextTotals(run.Answers);
 
         return new BenchmarkRun
         {
@@ -220,6 +221,11 @@ public class BenchmarkRunCostEstimator
             TotalClaimVerificationCacheReadTokens = grading.TotalClaimVerificationCacheReadTokens,
             TotalClaimVerificationCacheCreationTokens = grading.TotalClaimVerificationCacheCreationTokens,
             TotalClaimVerificationDurationMs = grading.TotalClaimVerificationDurationMs,
+
+            TotalClaimVerificationLongContextInputTokens = verifierLongContext.TotalClaimVerificationLongContextInputTokens,
+            TotalClaimVerificationLongContextOutputTokens = verifierLongContext.TotalClaimVerificationLongContextOutputTokens,
+            TotalClaimVerificationLongContextCacheReadTokens = verifierLongContext.TotalClaimVerificationLongContextCacheReadTokens,
+            TotalClaimVerificationLongContextCacheCreationTokens = verifierLongContext.TotalClaimVerificationLongContextCacheCreationTokens,
 
             TotalSynthesisInputTokens = run.TotalSynthesisInputTokens,
             TotalSynthesisOutputTokens = run.TotalSynthesisOutputTokens,

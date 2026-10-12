@@ -332,6 +332,21 @@ public static class BenchmarkRunFinalizer
     }
 
     /// <summary>
+    /// Run-level sums of the per-answer claim-verifier long-context buckets — a subset of the
+    /// claim-verification totals, not tokens in addition to them. All zero for a flat-rate verifier and
+    /// for answers recorded before the columns existed, whose values are null.
+    /// </summary>
+    public static (long TotalClaimVerificationLongContextInputTokens, long TotalClaimVerificationLongContextOutputTokens, long TotalClaimVerificationLongContextCacheReadTokens, long TotalClaimVerificationLongContextCacheCreationTokens) ComputeClaimVerificationLongContextTotals(IEnumerable<BenchmarkRunAnswer> answers)
+    {
+        return (
+            answers.Sum(a => (long)(a.ClaimVerificationLongContextInputTokens ?? 0)),
+            answers.Sum(a => (long)(a.ClaimVerificationLongContextOutputTokens ?? 0)),
+            answers.Sum(a => (long)(a.ClaimVerificationLongContextCacheReadTokens ?? 0)),
+            answers.Sum(a => (long)(a.ClaimVerificationLongContextCacheCreationTokens ?? 0))
+        );
+    }
+
+    /// <summary>
     /// The service tier the provider actually served for this run's candidate answers — the most common
     /// non-null ActualServiceTierUsed. Costing needs the served tier, not the requested one: OpenAI
     /// requests "auto"/"fast" and serves "default"/"priority", and a priority request that was served
@@ -476,6 +491,12 @@ public static class BenchmarkRunFinalizer
         run.TotalLongContextOutputTokens = longContextTotals.TotalLongContextOutputTokens;
         run.TotalLongContextCacheReadTokens = longContextTotals.TotalLongContextCacheReadTokens;
         run.TotalLongContextCacheCreationTokens = longContextTotals.TotalLongContextCacheCreationTokens;
+
+        var verifierLongContextTotals = ComputeClaimVerificationLongContextTotals(answers);
+        run.TotalClaimVerificationLongContextInputTokens = verifierLongContextTotals.TotalClaimVerificationLongContextInputTokens;
+        run.TotalClaimVerificationLongContextOutputTokens = verifierLongContextTotals.TotalClaimVerificationLongContextOutputTokens;
+        run.TotalClaimVerificationLongContextCacheReadTokens = verifierLongContextTotals.TotalClaimVerificationLongContextCacheReadTokens;
+        run.TotalClaimVerificationLongContextCacheCreationTokens = verifierLongContextTotals.TotalClaimVerificationLongContextCacheCreationTokens;
 
         // Assessor, co-assessor, second-opinion and claim-verifier sides, kept separate from the
         // candidate totals above: the run's cost is all of these together, and the model under test

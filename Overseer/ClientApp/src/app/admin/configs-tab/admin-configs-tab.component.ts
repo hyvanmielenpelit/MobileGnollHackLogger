@@ -591,7 +591,8 @@ export class AdminConfigsTabComponent implements OnInit, OnDestroy, AfterViewIni
 
   /**
    * The model's long-prompt rate card, shown beside the base price. Empty for a flat-rate model — which
-   * is every Anthropic model, every Gemini Flash model, and every custom price override.
+   * is every Anthropic model except Claude Haiku 5.5, every Gemini Flash model, and every custom price
+   * override.
    */
   formatLongContextPrice(config: SystemAiConfigDto): string {
     const threshold = config.effectiveLongContextThresholdTokens;

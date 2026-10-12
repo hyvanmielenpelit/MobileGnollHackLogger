@@ -19,8 +19,8 @@ public class ModelCatalogEntry
 
 /// <summary>
 /// The second rate card a provider applies to a request whose prompt exceeds a threshold. Null where
-/// the provider publishes a single flat rate — which is every Anthropic model and every Gemini Flash
-/// model, so this is genuinely optional and is never inferred.
+/// the provider publishes a single flat rate — every Anthropic model except Claude Haiku 5.5, and
+/// every Gemini Flash model — so this is genuinely optional and is never inferred.
 ///
 /// One step, deliberately: no provider publishes more than one.
 /// </summary>

@@ -162,6 +162,58 @@ public class BenchmarkPerRoleCostTests
         Assert.Equal("catalog", costs.Source);
     }
 
+    private static readonly ModelPricing HaikuVerifierCard =
+        new(0.10m, 0.50m, CachedInputPerMillion: 0.01m, CacheWritePerMillion: 0.125m,
+            LongContext: new LongContextPricing(100_000, 0.50m, 2.50m, 0.05m, 0.625m));
+
+    private static BenchmarkRun VerifierLongContextRun(long longContextInput, long longContextOutput,
+        long longContextCacheRead, long longContextCacheCreation) => BenchmarkModelSnapshots.Attach(new BenchmarkRun
+    {
+        TotalInputTokens = 1_000_000,
+        TotalOutputTokens = 100_000,
+        TotalClaimVerificationInputTokens = 800_000,
+        TotalClaimVerificationOutputTokens = 20_000,
+        TotalClaimVerificationCacheReadTokens = 500_000,
+        TotalClaimVerificationCacheCreationTokens = 40_000,
+        TotalClaimVerificationLongContextInputTokens = longContextInput,
+        TotalClaimVerificationLongContextOutputTokens = longContextOutput,
+        TotalClaimVerificationLongContextCacheReadTokens = longContextCacheRead,
+        TotalClaimVerificationLongContextCacheCreationTokens = longContextCacheCreation
+    });
+
+    [Fact]
+    public void ComputeRunRoleCosts_ClaimVerifierLongContextSubset_IsChargedAtTheLongContextCard()
+    {
+        var pricing = Pricing() with { ClaimVerifier = HaikuVerifierCard };
+        var run = VerifierLongContextRun(300_000, 6_000, 200_000, 10_000);
+
+        var costs = ModelPricingService.ComputeRunRoleCosts(run, pricing);
+
+        // Standard portion: 500,000 prompt (300,000 cache read, 30,000 cache write, 170,000 base) and
+        // 14,000 output at base. Long-context portion: 300,000 prompt (200,000 cache read, 10,000 cache
+        // write, 90,000 base) and 6,000 output at 5x.
+        decimal standard = (170_000 / 1_000_000m * 0.10m) + (14_000 / 1_000_000m * 0.50m)
+            + (300_000 / 1_000_000m * 0.01m) + (30_000 / 1_000_000m * 0.125m);
+        decimal longContext = (90_000 / 1_000_000m * 0.50m) + (6_000 / 1_000_000m * 2.50m)
+            + (200_000 / 1_000_000m * 0.05m) + (10_000 / 1_000_000m * 0.625m);
+        Assert.Equal(standard + longContext, costs.ClaimVerifier);
+        Assert.Equal(longContext,
+            ModelPricingService.ComputeRunRoleCostBreakdowns(run, pricing).ClaimVerifier.LongContextPortion);
+    }
+
+    [Fact]
+    public void ComputeRunRoleCosts_ClaimVerifierWithNoLongContextSubset_CostsTheFlatFigure()
+    {
+        var pricing = Pricing() with { ClaimVerifier = HaikuVerifierCard };
+        var run = VerifierLongContextRun(0, 0, 0, 0);
+
+        var costs = ModelPricingService.ComputeRunRoleCosts(run, pricing);
+
+        Assert.Equal(
+            ModelPricingService.ComputeCost(HaikuVerifierCard, 800_000 - 500_000 - 40_000, 20_000, 500_000, 40_000),
+            costs.ClaimVerifier);
+    }
+
     [Fact]
     public void ComputeRunRoleCosts_GradingRoleTokens_AreChargedOnceEach()
     {

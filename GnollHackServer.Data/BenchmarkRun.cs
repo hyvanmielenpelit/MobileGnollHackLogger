@@ -908,6 +908,17 @@ public class BenchmarkRun
     public long TotalClaimVerificationOutputTokens { get; set; }
     public long TotalClaimVerificationCacheReadTokens { get; set; }
     public long TotalClaimVerificationCacheCreationTokens { get; set; }
+
+    /// <summary>
+    /// Run-level sums of the per-answer ClaimVerificationLongContext* columns — the subset of the
+    /// claim-verifier totals above that was billed at the verifier's long-context rate. Zero for a
+    /// flat-rate verifier and for every run recorded before these columns existed.
+    /// </summary>
+    public long TotalClaimVerificationLongContextInputTokens { get; set; }
+    public long TotalClaimVerificationLongContextOutputTokens { get; set; }
+    public long TotalClaimVerificationLongContextCacheReadTokens { get; set; }
+    public long TotalClaimVerificationLongContextCacheCreationTokens { get; set; }
+
     public long TotalClaimVerificationDurationMs { get; set; }
 
     /// <summary>

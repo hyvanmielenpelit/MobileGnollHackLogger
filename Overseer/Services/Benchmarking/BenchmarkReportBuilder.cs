@@ -3293,8 +3293,8 @@ public static class BenchmarkReportBuilder
                     sb.AppendLine($"  - **Grading subtotal:** ${Inv(gradingTotalCost, "F2")} ({Inv(gradingShare, "F0")}% of total)");
                 }
 
-                // Both lines are printed only when they apply. An absent tier is omitted entirely rather
-                // than shown as 1.0x, and a run with no long-context tokens prints no surcharge line — a
+                // These lines are printed only when they apply. An absent tier is omitted entirely rather
+                // than shown as 1.0x, and a role with no long-context tokens prints no surcharge line — a
                 // reader must not have to tell "no surcharge" from "surcharge of zero".
                 if (run.TotalLongContextInputTokens > 0 && candidateCard.LongContext != null)
                 {
@@ -3307,6 +3307,20 @@ public static class BenchmarkReportBuilder
                         $"${Inv(candidateCard.InputPerMillion, "F2")}/M). " +
                         $"${Inv(roleParts.Candidate.LongContextPortion, "F2")} of the candidate's " +
                         $"${Inv(candidateTotalCost, "F2")} was billed at that card.");
+                }
+
+                if (run.TotalClaimVerificationLongContextInputTokens > 0 && verifierPricing?.LongContext != null)
+                {
+                    int verifierLongContextAnswerCount =
+                        run.Answers.Count(a => (a.ClaimVerificationLongContextInputTokens ?? 0) > 0);
+                    sb.AppendLine(
+                        $"- **Claim verifier long-context surcharge:** applied to {Inv(verifierLongContextAnswerCount, "N0")} answer(s) — " +
+                        $"{Inv(run.TotalClaimVerificationLongContextInputTokens, "N0")} input token(s) billed at the " +
+                        $">{Inv(verifierPricing.LongContext.ThresholdInputTokens, "N0")} rate " +
+                        $"(${Inv(verifierPricing.LongContext.InputPerMillion, "F2")}/M input vs " +
+                        $"${Inv(verifierPricing.InputPerMillion, "F2")}/M). " +
+                        $"${Inv(roleParts.ClaimVerifier.LongContextPortion, "F2")} of the claim verifier's " +
+                        $"${Inv(verifierTotalCost, "F2")} was billed at that card.");
                 }
 
                 decimal servedTierMultiplier = ModelPricingService.ResolveServiceTierMultiplier(

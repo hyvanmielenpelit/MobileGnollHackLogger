@@ -1749,6 +1749,18 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<long>("TotalClaimVerificationInputTokens")
                         .HasColumnType("bigint");
 
+                    b.Property<long>("TotalClaimVerificationLongContextCacheCreationTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("TotalClaimVerificationLongContextCacheReadTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("TotalClaimVerificationLongContextInputTokens")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("TotalClaimVerificationLongContextOutputTokens")
+                        .HasColumnType("bigint");
+
                     b.Property<long>("TotalClaimVerificationOutputTokens")
                         .HasColumnType("bigint");
 
@@ -1994,6 +2006,18 @@ namespace GnollHackServer.Data.Migrations
 
                     b.Property<string>("ClaimVerificationJson")
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("ClaimVerificationLongContextCacheCreationTokens")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ClaimVerificationLongContextCacheReadTokens")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ClaimVerificationLongContextInputTokens")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ClaimVerificationLongContextOutputTokens")
+                        .HasColumnType("int");
 
                     b.Property<int?>("ClaimVerificationModelCallCount")
                         .HasColumnType("int");

@@ -681,7 +681,8 @@ export class ModelsComponent implements OnInit {
 
   /**
    * The model's long-prompt rate card, shown beside the base price. Empty for a flat-rate model — which
-   * is every Anthropic model, every Gemini Flash model, and every custom price override.
+   * is every Anthropic model except Claude Haiku 5.5, every Gemini Flash model, and every custom price
+   * override.
    */
   formatLongContextPrice(model: UserAiModel): string {
     const threshold = model.effectiveLongContextThresholdTokens;

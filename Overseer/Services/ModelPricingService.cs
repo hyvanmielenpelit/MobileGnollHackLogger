@@ -427,8 +427,7 @@ public class ModelPricingService
 
     /// <summary>
     /// Flat-rate costing. Ignores any long-context card and any service-tier multiplier — see the
-    /// per-call overload. Correct for roles costed from aggregate totals only (assessor, second
-    /// opinion, claim verifier).
+    /// per-call overload, and <see cref="EstimateSingleRequestCost"/> for one prospective request.
     /// </summary>
     public static decimal ComputeCost(
         ModelPricing pricing,
@@ -527,6 +526,25 @@ public class ModelPricingService
         // "stacks with other pricing modifiers", and OpenAI's gpt-5.4 page applies the long-context
         // surcharge "for standard, batch, and flex" — i.e. within whichever tier is in force.
         return total * tierMultiplier;
+    }
+
+    /// <summary>
+    /// Estimates one prospective request with no cache reads or writes, priced through the per-call
+    /// overload so a prompt over the card's long-context threshold is estimated at that card. Token
+    /// counts beyond <see cref="int.MaxValue"/> are clamped.
+    /// </summary>
+    public static decimal EstimateSingleRequestCost(ModelPricing pricing, long promptTokens, long outputTokens)
+    {
+        if (pricing == null) return 0m;
+
+        int prompt = (int)Math.Clamp(promptTokens, 0, int.MaxValue);
+        var call = new TokenUsageReport
+        {
+            TotalPromptTokens = prompt,
+            UncachedInputTokens = prompt,
+            OutputTokens = (int)Math.Clamp(outputTokens, 0, int.MaxValue)
+        };
+        return ComputeCost(pricing, new[] { call });
     }
 
     /// <summary>
@@ -690,10 +708,11 @@ public class ModelPricingService
     ///
     /// <para>The candidate is costed from totals with its long-context subsets and the service tier the
     /// provider actually served, because its per-call evidence was bucketed at answer time and
-    /// persisted. The grading roles are costed flat from aggregate totals, each with its own cache
-    /// read and cache creation figures and its own service tier: the tier its model snapshot
-    /// requested, and for the claim verifier the tier the provider reported serving. No long-context
-    /// subset is recorded for them.</para>
+    /// persisted. The claim verifier, whose tool loop can push single calls past a threshold, is
+    /// bucketed the same way at verification time and costed with its subset. The other grading roles
+    /// are single, tool-free calls costed flat from aggregate totals. Each grading role uses its own
+    /// cache read and cache creation figures and its own service tier: the tier its model snapshot
+    /// requested, and for the claim verifier the tier the provider reported serving.</para>
     ///
     /// <para>The final synthesis is priced on <see cref="BenchmarkRunPricing.Assessor"/>: it runs on the
     /// assessor's configuration, which is why <see cref="BenchmarkRunPricing"/> carries no synthesis
@@ -710,8 +729,9 @@ public class ModelPricingService
     /// a provider bills. <see cref="ComputeRunRoleCosts"/> reads its role totals from here, so a surface
     /// printing the parts beside the totals is printing one costing rather than two.
     ///
-    /// <para>The candidate carries its long-context subsets and served tier; the grading roles are flat
-    /// and carry their own tiers — the same asymmetry <see cref="ComputeRunRoleCosts"/> documents.</para>
+    /// <para>The candidate and the claim verifier carry long-context subsets bucketed per call; the
+    /// other grading roles are single, tool-free calls priced flat. Each role carries its own tier, as
+    /// <see cref="ComputeRunRoleCosts"/> documents.</para>
     /// </summary>
     public static BenchmarkRoleCostBreakdowns ComputeRunRoleCostBreakdowns(
         BenchmarkRun run, BenchmarkRunPricing pricing, string? servedServiceTier = null)
@@ -738,10 +758,12 @@ public class ModelPricingService
             : default;
 
         // Every stored Total*InputTokens column is a *total* prompt figure that already contains the
-        // cache reads and cache writes beside it — the shape ComputeCostBreakdownFromTotals takes. No
-        // grading role records a long-context subset, so each is priced flat over the four disjoint
-        // buckets and scaled by its own service tier: the tier its model snapshot requested, and for
-        // the claim verifier the tier the provider reported serving, which wins when present. A
+        // cache reads and cache writes beside it — the shape ComputeCostBreakdownFromTotals takes. The
+        // claim verifier runs a tool loop whose single calls can cross a long-context threshold, so its
+        // per-call subset is recorded and priced at that card. The other grading roles are single,
+        // tool-free calls with no subset, priced flat over the four disjoint buckets. Each role is
+        // scaled by its own service tier: the tier its model snapshot requested, and for the claim
+        // verifier the tier the provider reported serving, which wins when present. A
         // synthesis runs on its member's configuration and takes that member's tier. With no tier, or
         // a card without multipliers, the multiplier is 1.
         string? assessorTier = run.AssessorModelSnapshot?.ServiceTier;
@@ -774,6 +796,9 @@ public class ModelPricingService
                 verifierCard,
                 run.TotalClaimVerificationInputTokens, run.TotalClaimVerificationOutputTokens,
                 run.TotalClaimVerificationCacheReadTokens, run.TotalClaimVerificationCacheCreationTokens,
+                run.TotalClaimVerificationLongContextInputTokens, run.TotalClaimVerificationLongContextOutputTokens,
+                run.TotalClaimVerificationLongContextCacheReadTokens,
+                run.TotalClaimVerificationLongContextCacheCreationTokens,
                 actualServiceTier: ResolveServedClaimVerifierServiceTier(run.Answers),
                 requestedServiceTier: run.ClaimVerifierModelSnapshot?.ServiceTier)
             : default;

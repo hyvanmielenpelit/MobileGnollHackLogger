@@ -1337,7 +1337,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 PromptChars = chars,
                 EstimatedInputTokens = input,
                 EstimatedOutputTokens = output,
-                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.ComputeCost(pricing, input, output, 0, 0),
+                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.EstimateSingleRequestCost(pricing, input, output),
                 ContextWindowShare = window is int size ? (double)input / size : null
             };
         }).ToArray();

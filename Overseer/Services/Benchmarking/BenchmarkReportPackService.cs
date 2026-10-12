@@ -1497,7 +1497,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 PromptChars = chars,
                 EstimatedInputTokens = input,
                 EstimatedOutputTokens = output,
-                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.ComputeCost(pricing, input, output, 0, 0)
+                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.EstimateSingleRequestCost(pricing, input, output)
             });
         }
         estimate.EstimatedTotalCostUsd = estimate.Estimates.Count == 0 || estimate.Estimates.Any(e => e.EstimatedCostUsd == null)

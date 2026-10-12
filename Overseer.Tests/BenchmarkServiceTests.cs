@@ -2527,6 +2527,79 @@ public class BenchmarkServiceTests
         Assert.Contains("95% CI over 3 items", report);
         Assert.DoesNotContain("The interval is inflated by", report);
     }
+
+    // --- Claim-verifier long-context buckets ---
+
+    private static readonly ModelPricing HaikuVerifierCard =
+        new(0.10m, 0.50m, CachedInputPerMillion: 0.01m, CacheWritePerMillion: 0.125m,
+            LongContext: new LongContextPricing(100_000, 0.50m, 2.50m, 0.05m, 0.625m));
+
+    private static List<Overseer.Services.Providers.TokenUsageReport> VerifierCalls() => new()
+    {
+        new() { TotalPromptTokens = 50_000, CacheReadTokens = 30_000, CacheCreationTokens = 2_000, UncachedInputTokens = 20_000, OutputTokens = 800 },
+        new() { TotalPromptTokens = 120_000, CacheReadTokens = 90_000, CacheCreationTokens = 5_000, UncachedInputTokens = 30_000, OutputTokens = 1_500 }
+    };
+
+    [Fact]
+    public void RecordClaimVerificationModelCalls_LongContextCard_BucketsOnlyTheCallOverTheThreshold()
+    {
+        var answer = new BenchmarkRunAnswer();
+
+        BenchmarkService.RecordClaimVerificationModelCalls(
+            answer, 2, VerifierCalls(), null, verifierPricing: HaikuVerifierCard);
+
+        Assert.Equal(120_000, answer.ClaimVerificationLongContextInputTokens);
+        Assert.Equal(1_500, answer.ClaimVerificationLongContextOutputTokens);
+        Assert.Equal(90_000, answer.ClaimVerificationLongContextCacheReadTokens);
+        Assert.Equal(5_000, answer.ClaimVerificationLongContextCacheCreationTokens);
+    }
+
+    [Fact]
+    public void RecordClaimVerificationModelCalls_NullOrFlatCard_SetsZeros()
+    {
+        foreach (var card in new[] { null, HaikuVerifierCard with { LongContext = null } })
+        {
+            var answer = new BenchmarkRunAnswer();
+
+            BenchmarkService.RecordClaimVerificationModelCalls(answer, 2, VerifierCalls(), null, verifierPricing: card);
+
+            Assert.Equal(0, answer.ClaimVerificationLongContextInputTokens);
+            Assert.Equal(0, answer.ClaimVerificationLongContextOutputTokens);
+            Assert.Equal(0, answer.ClaimVerificationLongContextCacheReadTokens);
+            Assert.Equal(0, answer.ClaimVerificationLongContextCacheCreationTokens);
+        }
+    }
+
+    [Fact]
+    public void ApplyTotals_SumsTheClaimVerifierLongContextColumnsAcrossAnswers()
+    {
+        var run = BenchmarkModelSnapshots.Attach(new BenchmarkRun { Id = 1, TotalQuestionCount = 3 });
+        var answers = new List<BenchmarkRunAnswer>
+        {
+            new() { OrderIndex = 1, ClaimVerificationLongContextInputTokens = 120_000, ClaimVerificationLongContextOutputTokens = 1_500,
+                ClaimVerificationLongContextCacheReadTokens = 90_000, ClaimVerificationLongContextCacheCreationTokens = 5_000 },
+            new() { OrderIndex = 2, ClaimVerificationLongContextInputTokens = 110_000, ClaimVerificationLongContextOutputTokens = 700,
+                ClaimVerificationLongContextCacheReadTokens = 80_000, ClaimVerificationLongContextCacheCreationTokens = 1_000 },
+            // Recorded before the columns existed.
+            new() { OrderIndex = 3 }
+        };
+
+        BenchmarkRunFinalizer.ApplyTotals(run, answers);
+
+        Assert.Equal(230_000, run.TotalClaimVerificationLongContextInputTokens);
+        Assert.Equal(2_200, run.TotalClaimVerificationLongContextOutputTokens);
+        Assert.Equal(170_000, run.TotalClaimVerificationLongContextCacheReadTokens);
+        Assert.Equal(6_000, run.TotalClaimVerificationLongContextCacheCreationTokens);
+
+        var live = BenchmarkRunCostEstimator.BuildLiveTotals(new BenchmarkRun
+        {
+            Id = 1,
+            TestedModelSnapshot = run.TestedModelSnapshot,
+            Answers = answers
+        });
+        Assert.Equal(230_000, live.TotalClaimVerificationLongContextInputTokens);
+        Assert.Equal(6_000, live.TotalClaimVerificationLongContextCacheCreationTokens);
+    }
 }
 
 
