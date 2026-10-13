@@ -90,13 +90,15 @@ turns all record. Title generation builds its records with `TitleAttemptEvidence
 (governor refusals, cancels, exceptions, error responses with their bodies and rate-limit headers, and
 the 2xx response once read).
 
-The Chat Provider Availability card shows the provider error rate (provider errors ÷ valid attempts, the
-denominator GnollBench uses: `Ok`, the provider classes and the unattributed classes), its
-cluster-adjusted Wilson 95% interval over 10-minute blocks (`BenchmarkProviderAvailability`), the counts
-per class, the unattributed classes with the inclusive rate, our own failures (excluded), first-attempt
-success, failed calls, chat turns ended by a provider error, and a *Title generation: k of n attempts*
-line. *Not recorded* until the ledger has a row. Benchmark-role cards show *In GnollBench*: GnollBench
-reports its own availability.
+Two summary cards show the chat's availability. The Provider Availability card shows the provider error
+rate (provider errors ÷ valid attempts, the denominator GnollBench uses: `Ok`, the provider classes and
+the unattributed classes), under it the count and its cluster-adjusted Wilson 95% interval over
+10-minute blocks (`BenchmarkProviderAvailability`), marked *few attempts* below 100, then first-attempt
+success, chat turns ended by a provider error, title generation (*k of n attempts*), and *Recorded since*
+when the range starts earlier. *Not recorded* until the ledger has a row. Once it has one, the Provider
+Errors by Class card shows the provider error count, the counts per class, the unattributed classes with
+the inclusive rate, and our own failures (excluded from the rate). Benchmark-role cards show *In
+GnollBench*: GnollBench reports its own availability.
 
 **Server-key sub-agent runs** (`AI:*` keys) are operator-funded but belong to no configuration: they write
 no usage row, and their attempt rows are *System* with no configuration id.

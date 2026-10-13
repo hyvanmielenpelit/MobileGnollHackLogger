@@ -114,9 +114,9 @@
     </div>
   </div>
 
-  <!-- Chat Provider Availability Card -->
+  <!-- Provider Availability Card -->
   <div class="telemetry-card telemetry-availability-card">
-    <div class="telemetry-card-title">Chat Provider Availability</div>
+    <div class="telemetry-card-title">Provider Availability</div>
     <div class="telemetry-stat-value telemetry-availability-rate">
       {{ availabilityHeadline }}
       @if (telemetrySummary?.chatAvailability?.recorded) {
@@ -124,26 +124,61 @@
       }
     </div>
     @if (telemetrySummary?.chatAvailability?.recorded) {
-      <div class="telemetry-details-list mt-10">
-        @for (line of availabilityLines; track line.label) {
+      <div class="telemetry-availability-count">{{ availabilityCountText }}</div>
+      <dl class="telemetry-dl">
+        @for (line of availabilityRows; track line.label) {
           <div>
-            {{ line.label }}: <span class="telemetry-value">{{ line.value }}</span>
-            @if (line.note) {
-              <span class="text-muted"> ({{ line.note }})</span>
-            }
+            <dt>{{ line.label }}</dt>
+            <dd>
+              {{ line.value }}
+              @if (line.note) {
+                <span class="telemetry-dd-note">{{ line.note }}</span>
+              }
+            </dd>
           </div>
         }
-        <div class="telemetry-title-availability">{{ titleAvailabilityText }}</div>
-        @if (startsBefore(telemetrySummary?.chatAvailability?.recordedSinceUtc)) {
-          <div class="text-muted">Recorded since {{ utcDay(telemetrySummary?.chatAvailability?.recordedSinceUtc) }}</div>
-        }
-      </div>
+      </dl>
+      @if (startsBefore(telemetrySummary?.chatAvailability?.recordedSinceUtc)) {
+        <div class="telemetry-card-foot">Recorded since {{ utcDay(telemetrySummary?.chatAvailability?.recordedSinceUtc) }}</div>
+      }
     } @else {
       <div class="telemetry-details-list text-muted mt-10">
         <div>Provider attempts are not recorded yet.</div>
       </div>
     }
   </div>
+
+  <!-- Provider Errors by Class Card: only once provider attempts are recorded. -->
+  @if (telemetrySummary?.chatAvailability?.recorded) {
+    <div class="telemetry-card telemetry-error-classes-card">
+      <div class="telemetry-card-title">Provider Errors by Class</div>
+      <div class="telemetry-stat-value telemetry-error-total">
+        {{ formatInteger(telemetrySummary?.chatAvailability?.providerErrors ?? 0) }}
+        <span class="telemetry-stat-unit">provider errors</span>
+      </div>
+      <dl class="telemetry-dl telemetry-dl-grid">
+        @for (line of errorClassRows; track line.label) {
+          <div>
+            <dt>{{ line.label }}</dt>
+            <dd>{{ line.value }}</dd>
+          </div>
+        }
+      </dl>
+      <dl class="telemetry-dl telemetry-dl-ruled">
+        @for (line of errorAttributionRows; track line.label) {
+          <div>
+            <dt>{{ line.label }}</dt>
+            <dd>
+              {{ line.value }}
+              @if (line.note) {
+                <span class="telemetry-dd-note">{{ line.note }}</span>
+              }
+            </dd>
+          </div>
+        }
+      </dl>
+    </div>
+  }
 
   <!-- Overseer Activity Card: independent of the Keys filter. -->
   <div class="telemetry-card telemetry-activity-card">

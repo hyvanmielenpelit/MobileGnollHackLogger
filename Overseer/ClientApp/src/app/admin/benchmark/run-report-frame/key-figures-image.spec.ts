@@ -42,6 +42,7 @@ import {
   statusImageTone,
   storeImageDetailExclusions,
   storeKeyFigureExclusions,
+  splitImageHeading,
   stripFootnotes,
   toImageFactRows
 } from './key-figures-image';
@@ -200,6 +201,9 @@ const CARD_TEXT: CardImageText = {
   footnotes: [],
   footer: 'GnollBench'
 };
+
+/** The fixtures' Model row as `toImageFactRows` emits it: keyed, its name strong. */
+const KEYED_MODEL_ROW: ImageFactRow = { label: 'Model', runs: [{ kind: 'text', text: 'M', strong: true }], primary: true, key: 'model' };
 
 const CONTEXT: ImageContext = {
   title: 'Run #72 · Snapshot: Tommi2 2026-09-17',
@@ -501,6 +505,20 @@ describe('key figures image', () => {
       expect(layout.facts.stacked).toBe(false);
     });
 
+    it('draws the model as the heading and the title as a subtitle above the other facts', () => {
+      const header = splitImageHeading(STRIP_TEXT.title, [KEYED_MODEL_ROW, STRIP_TEXT.facts[1]]);
+      const layout = chooseStripLayout(cellsOf(7), { ...STRIP_TEXT, ...header }, noWrap, 36, estimateTextWidth);
+
+      expect(layout.heading).not.toBeNull();
+      expect(layout.heading!.valueX).toBe(0);
+      expect(layout.titleLines).toEqual([]);
+      expect(layout.subtitleLines).toEqual(['Run #72 · Default Suite']);
+      expect(layout.facts.rows.map(row => row.label)).toEqual(['STARTED']);
+      // 48 (logo and gap) + 31 (heading at 22 px) + 4 + 18 (subtitle at 13 px) + 4 + 18 (Started).
+      const above = Math.floor((layout.height - layout.naturalHeight) / 2);
+      expect(layout.gridTop - above).toBe(24 + 123 + 16);
+    });
+
     it('draws a headline value at the main card size without the main card', () => {
       const speed = measureStripCard(cell('Speed Index', false, ['note'], true), 300, noWrap);
       const intelligence = measureStripCard(cell('Intelligence Index', true), 300, noWrap);
@@ -571,6 +589,19 @@ describe('key figures image', () => {
       const none = chooseCardImageLayout(cell('Speed Index'), { ...CARD_TEXT, facts: [textRow('Started', 'x')] }, noWrap);
       expect(none.facts.height).toBe(0);
       expect(none.headerHeight).toBe(40);
+    });
+
+    it('carries the model as the heading and the title as a subtitle in its header', () => {
+      const header = splitImageHeading(CARD_TEXT.title, [KEYED_MODEL_ROW, CARD_TEXT.facts[1]]);
+      const layout = chooseCardImageLayout(cell('Speed Index'), { ...CARD_TEXT, ...header }, noWrap);
+
+      expect(layout.heading?.rows.map(row => row.label)).toEqual(['']);
+      expect(layout.titleLines).toEqual([]);
+      expect(layout.subtitleLines).toEqual(['Run #72 · Default Suite']);
+      expect(layout.facts.height).toBe(0);
+      // 31 (heading at 22 px) + 4 + 20 (subtitle at 14 px); Started is not primary.
+      expect(layout.headerTextHeight).toBe(55);
+      expect(layout.headerHeight).toBe(55);
     });
   });
 
@@ -653,6 +684,42 @@ describe('key figures image', () => {
       expect([layout.height, layout.rows.length, layout.labelWidth]).toEqual([0, 0, 0]);
     });
 
+    it('gives rows without labels the whole width, unstacked', () => {
+      const layout = layoutFactRows([textRow('', 'Name')], 20, halfWidth, SIZES);
+      expect([layout.labelWidth, layout.valueX, layout.stacked]).toEqual([0, 0, false]);
+      expect(layout.height).toBe(18);
+    });
+
+    it('promotes the Model row to the heading and keeps the title as the subtitle', () => {
+      const facts: ImageFactRow[] = [
+        { label: 'Assessor', runs: [{ kind: 'text', text: 'Gemini', strong: true }], primary: true, key: 'assessor' },
+        {
+          label: 'Model',
+          runs: [{ kind: 'text', text: 'GPT 5.5', strong: true }, { kind: 'badge', text: 'High', tone: 'thinking' }],
+          primary: true,
+          key: 'model'
+        },
+        { label: 'Started', runs: [{ kind: 'text', text: 'x' }], primary: false, key: 'started' }
+      ];
+      const split = splitImageHeading('Run #72 · Default Suite', facts);
+
+      expect(split.heading).toEqual({
+        label: '',
+        runs: [{ kind: 'text', text: 'GPT 5.5', strong: true, heading: true }, { kind: 'badge', text: 'High', tone: 'thinking' }],
+        primary: true,
+        key: 'model'
+      });
+      expect(split.subtitle).toBe('Run #72 · Default Suite');
+      expect(split.title).toBe('');
+      expect(split.facts).toEqual([facts[0], facts[2]]);
+    });
+
+    it('leaves the title and the facts as they are without a Model row', () => {
+      const facts = [textRow('Assessor', 'Gemini', true), textRow('Started', 'x')];
+      const split = splitImageHeading('Run #72', facts);
+      expect(split).toEqual({ heading: null, subtitle: '', title: 'Run #72', facts });
+    });
+
     it('starts a warning on its own line', () => {
       const layout = layoutFactRows([{
         label: 'Board',
@@ -731,6 +798,7 @@ describe('key figures image', () => {
 
       expect(facts.map(row => row.label)).toEqual(['Model', 'Assessors', 'Prompt', 'Started', 'Board']);
       expect(facts.map(row => row.primary)).toEqual([true, true, false, false, false]);
+      expect(facts.map(row => row.key)).toEqual(['model', 'assessor', 'prompt', 'started', 'board']);
       expect(facts[0].runs).toEqual([
         { kind: 'text', text: 'GPT-6.1 Sol', strong: true, lineBreak: undefined },
         { kind: 'badge', text: 'High', tone: 'thinking' },

@@ -8,7 +8,7 @@
      alongside these. Only the admin-specific scroll-edge indicators below are
      local. */
   .admin-tabs {
-    margin-bottom: 20px;
+    margin-bottom: 1rem;
   }
 }
 
@@ -199,19 +199,24 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 15px;
-    padding: 15px 0;
-    margin-bottom: 15px;
+    gap: 0.75rem 1rem;
+    min-block-size: 4rem;
+    padding: 0.5rem 1rem;
+    margin-bottom: 1rem;
     background-color: rgba(17, 17, 17, 0.9);
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
-    border-bottom: 1px solid var(--border-glass, rgba(212, 160, 23, 0.3));
+    border: 1px solid var(--border-glass, rgba(212, 160, 23, 0.3));
+    border-radius: 8px;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-    
+
     h3 {
       margin: 0;
       margin-inline-end: auto;
+      font-size: 1.25rem;
       line-height: 1.2;
+      letter-spacing: 0.02em;
+      text-wrap: balance;
       text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
     }
 

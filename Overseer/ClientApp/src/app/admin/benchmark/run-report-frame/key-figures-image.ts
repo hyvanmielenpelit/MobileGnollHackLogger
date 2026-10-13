@@ -87,6 +87,8 @@ export type ImageFactRun =
     readonly strong?: boolean;
     readonly warning?: boolean;
     readonly muted?: boolean;
+    /** The image's heading: bold, in the title color. */
+    readonly heading?: boolean;
     /** Starts a new line. */
     readonly lineBreak?: boolean;
     /** The gap before this run on its line, instead of the default. */
@@ -107,6 +109,8 @@ export interface ImageFactRow {
   readonly runs: readonly ImageFactRun[];
   /** Drawn in the card image too. */
   readonly primary: boolean;
+  /** The run fact's key (`model`, `assessor`, …), where the row comes from one. */
+  readonly key?: string;
 }
 
 /** What the image says about the run besides its figures. */
@@ -466,16 +470,49 @@ export function toImageFactRows(rows: readonly RunFactRow[], status: { text: str
         }
         break;
     }
-    return { label: row.label, runs, primary: row.key === 'model' || row.key === 'assessor' };
+    return { label: row.label, runs, primary: row.key === 'model' || row.key === 'assessor', key: row.key };
   });
+}
+
+/** An image header split by {@link splitImageHeading}. */
+export interface ImageHeading {
+  /** The Model row as the heading, without its label; null when the facts have no Model row. */
+  readonly heading: ImageFactRow | null;
+  /** The run's title under the heading; empty without a heading. */
+  readonly subtitle: string;
+  /** The title drawn as before; empty with a heading. */
+  readonly title: string;
+  /** The rows under the heading and subtitle, in order. */
+  readonly facts: ImageFactRow[];
+}
+
+/**
+ * The model as the image's title: the row keyed `model` becomes the heading, its label dropped and its
+ * strong text marked `heading`, and `title` moves under it as the subtitle. Without a Model row the
+ * title and facts are returned unchanged.
+ */
+export function splitImageHeading(title: string, facts: readonly ImageFactRow[]): ImageHeading {
+  const index = facts.findIndex(row => row.key === 'model');
+  if (index < 0) {
+    return { heading: null, subtitle: '', title, facts: [...facts] };
+  }
+  const model = facts[index];
+  const heading: ImageFactRow = {
+    ...model,
+    label: '',
+    runs: model.runs.map(run => (run.kind === 'text' && run.strong ? { ...run, heading: true } : run))
+  };
+  return { heading, subtitle: title, title: '', facts: facts.filter((_, i) => i !== index) };
 }
 
 /** The sizes a fact block is laid out at. */
 export interface FactLayoutSizes {
   /** The label's size; drawn upper-case at weight 600. */
   readonly labelPx: number;
-  /** The value text's size; badge text is 2 px smaller. */
+  /** The value text's size; badge text is 2 px smaller unless `badgePx` is given. */
   readonly textPx: number;
+  /** The badge text's size, where it is not `textPx - 2`. */
+  readonly badgePx?: number;
 }
 
 /** One placed piece of a value: a text run (or a part of one), or a badge. `x` is from the value column. */
@@ -523,7 +560,7 @@ const FACT_LABEL_WEIGHT = '600';
 const ELLIPSIS = '…';
 
 function factBadgePx(sizes: FactLayoutSizes): number {
-  return sizes.textPx - 2;
+  return sizes.badgePx ?? sizes.textPx - 2;
 }
 
 /** A badge's box height: its text, padding and border. */
@@ -532,7 +569,10 @@ export function factBadgeHeight(sizes: FactLayoutSizes): number {
 }
 
 function factTextWeight(run: ImageFactRun): string {
-  return run.kind === 'text' && run.strong ? '600' : '400';
+  if (run.kind !== 'text') {
+    return '400';
+  }
+  return run.heading ? '700' : run.strong ? '600' : '400';
 }
 
 function badgeDisplayText(run: ImageFactRun & { kind: 'badge' }): string {
@@ -555,7 +595,8 @@ function fitText(text: string, maxWidth: number, measure: TextMeasurer, sizePx: 
  * Lays out fact rows in two columns, label and value, at `width`: values flow left to right, text
  * breaking at spaces and a badge never splitting; a word or badge wider than the value column is cut
  * with an ellipsis on a line of its own. Where the value column would be under 60 % of `width`, labels
- * go above their values. No rows is a block of height 0.
+ * go above their values. Rows whose labels are all empty take the whole width. No rows is a block of
+ * height 0.
  */
 export function layoutFactRows(
   rows: readonly ImageFactRow[],
@@ -567,8 +608,9 @@ export function layoutFactRows(
     return { labelWidth: 0, stacked: false, valueX: 0, sizes, rows: [], height: 0 };
   }
   const labelWidth = Math.max(...rows.map(row => measure(row.label.toUpperCase(), sizes.labelPx, FACT_LABEL_WEIGHT)));
-  const stacked = width - labelWidth - FACT_LABEL_GUTTER < width * FACT_STACK_RATIO;
-  const valueX = stacked ? 0 : labelWidth + FACT_LABEL_GUTTER;
+  const labeled = labelWidth > 0;
+  const stacked = labeled && width - labelWidth - FACT_LABEL_GUTTER < width * FACT_STACK_RATIO;
+  const valueX = stacked || !labeled ? 0 : labelWidth + FACT_LABEL_GUTTER;
   const valueWidth = Math.max(1, width - valueX);
   const badgePx = factBadgePx(sizes);
   const badgeHeight = factBadgeHeight(sizes);
@@ -740,10 +782,15 @@ export const STRIP_SQUARE_TOLERANCE = 1.1;
 /** The widest card a single row widens to when no layout in the range is landscape. */
 const STRIP_FALLBACK_MAX_CARD_WIDTH = 1200;
 const STRIP_FACT_SIZES: FactLayoutSizes = { labelPx: STRIP_LABEL_PX, textPx: STRIP_LINE_PX };
+const STRIP_HEADING_SIZES: FactLayoutSizes = { labelPx: STRIP_LABEL_PX, textPx: 22, badgePx: 13 };
 
 /** The texts the strip image carries besides its cards. */
 export interface StripText {
   readonly title: string;
+  /** The model as the heading, drawn instead of the title (see {@link splitImageHeading}). */
+  readonly heading?: ImageFactRow | null;
+  /** The muted line under the heading. */
+  readonly subtitle?: string;
   readonly facts: readonly ImageFactRow[];
   readonly footnotes: readonly string[];
   readonly footer: string;
@@ -783,7 +830,9 @@ export interface StripLayout {
   readonly naturalHeight: number;
   readonly square: boolean;
   readonly logoHeight: number;
+  readonly heading: FactLayout | null;
   readonly titleLines: readonly string[];
+  readonly subtitleLines: readonly string[];
   readonly facts: FactLayout;
   readonly footnoteLines: readonly (readonly string[])[];
   readonly footerLines: readonly string[];
@@ -827,7 +876,9 @@ interface StripCandidate {
   readonly mainSpans: boolean;
   readonly width: number;
   readonly naturalHeight: number;
+  readonly heading: FactLayout | null;
   readonly titleLines: readonly string[];
+  readonly subtitleLines: readonly string[];
   readonly facts: FactLayout;
   readonly footnoteLines: readonly (readonly string[])[];
   readonly footerLines: readonly string[];
@@ -846,7 +897,8 @@ interface StripCandidate {
  * above and below the grid. Where no candidate is landscape, a single row widens its cards until it
  * is, and past {@link STRIP_FALLBACK_MAX_CARD_WIDTH} the width is padded to the height, so the result
  * is never portrait. `cells` may be any selection of the cards, with or without the main card. The
- * run facts under the title are laid out at the grid's width by {@link layoutFactRows}.
+ * heading (or the title), the subtitle and the run facts are stacked at the grid's width, the heading
+ * and the facts laid out by {@link layoutFactRows}.
  *
  * Given a `targetAspect` (width over height), the candidate closest to it by `|ln(aspect / target)|`
  * is chosen instead — among the landscape ones unless the target is portrait — with the same ties, and
@@ -868,6 +920,18 @@ export function chooseStripLayout(
       factCache.set(gridWidth, facts);
     }
     return facts;
+  };
+  const headingCache = new Map<number, FactLayout | null>();
+  const headingAt = (gridWidth: number): FactLayout | null => {
+    if (!text.heading) {
+      return null;
+    }
+    let heading = headingCache.get(gridWidth);
+    if (!heading) {
+      heading = layoutFactRows([text.heading], gridWidth, measure, STRIP_HEADING_SIZES);
+      headingCache.set(gridWidth, heading);
+    }
+    return heading;
   };
   const cache = new Map<string, MeasuredKeyFigureCard>();
   const measureCard = (index: number, width: number): MeasuredKeyFigureCard => {
@@ -922,11 +986,15 @@ export function chooseStripLayout(
     });
     const gridHeight = y;
 
-    const titleLines = wrap(text.title, gridWidth, STRIP_TITLE_PX, '700');
+    const heading = headingAt(gridWidth);
+    const titleLines = heading ? [] : wrap(text.title, gridWidth, STRIP_TITLE_PX, '700');
+    const subtitleLines = text.subtitle ? wrap(text.subtitle, gridWidth, STRIP_LINE_PX, '400') : [];
     const facts = factsAt(gridWidth);
-    const headerHeight = (logoHeight > 0 ? logoHeight + STRIP_LOGO_GAP : 0)
-      + blockHeight(titleLines, STRIP_TITLE_PX)
-      + (facts.height > 0 ? STRIP_LINE_GAP + facts.height : 0);
+    const headerHeight = (logoHeight > 0 ? logoHeight + STRIP_LOGO_GAP : 0) + stackHeight([
+      heading ? heading.height : blockHeight(titleLines, STRIP_TITLE_PX),
+      blockHeight(subtitleLines, STRIP_LINE_PX),
+      facts.height
+    ], STRIP_LINE_GAP);
     const footnoteLines = text.footnotes.map(footnote => wrap(footnote, gridWidth, STRIP_FOOTNOTE_PX, '400'));
     const footnotesHeight = footnoteLines.length > 0
       ? STRIP_FOOTNOTE_GAP + stackHeight(footnoteLines.map(lines => blockHeight(lines, STRIP_FOOTNOTE_PX)), 2)
@@ -941,7 +1009,9 @@ export function chooseStripLayout(
       width: gridWidth + STRIP_PAD * 2,
       naturalHeight: STRIP_PAD * 2 + headerHeight + (cells.length > 0 ? STRIP_HEADER_GAP + gridHeight : 0)
         + footnotesHeight + footerHeight,
+      heading,
       titleLines,
+      subtitleLines,
       facts,
       footnoteLines,
       footerLines,
@@ -1015,7 +1085,9 @@ function paddedStripLayout(chosen: StripCandidate, width: number, height: number
     naturalHeight: chosen.naturalHeight,
     square: width === height,
     logoHeight,
+    heading: chosen.heading,
     titleLines: chosen.titleLines,
+    subtitleLines: chosen.subtitleLines,
     facts: chosen.facts,
     footnoteLines: chosen.footnoteLines,
     footerLines: chosen.footerLines,
@@ -1088,10 +1160,16 @@ const CARD_IMAGE_FOOTNOTE_GAP = 16;
 const CARD_IMAGE_FOOTER_PX = 14;
 const CARD_IMAGE_RULE_GAP = 16;
 const CARD_IMAGE_FACT_SIZES: FactLayoutSizes = { labelPx: 12, textPx: CARD_IMAGE_LINE_PX };
+const CARD_IMAGE_HEADING_SIZES: FactLayoutSizes = { labelPx: 12, textPx: 22, badgePx: 14 };
+const CARD_IMAGE_HEADER_LINE_GAP = 4;
 
 /** The texts the card image carries besides its card. */
 export interface CardImageText {
   readonly title: string;
+  /** The model as the heading, drawn instead of the title (see {@link splitImageHeading}). */
+  readonly heading?: ImageFactRow | null;
+  /** The muted line under the heading. */
+  readonly subtitle?: string;
   /** Only the primary rows are drawn. */
   readonly facts: readonly ImageFactRow[];
   readonly footnotes: readonly string[];
@@ -1106,8 +1184,12 @@ export interface CardImageLayout {
   /** False when the card overflows even at 4 : 3 with the smaller notes. */
   readonly fits: boolean;
   readonly headerTextX: number;
+  readonly heading: FactLayout | null;
   readonly titleLines: readonly string[];
+  readonly subtitleLines: readonly string[];
   readonly facts: FactLayout;
+  /** The header's text block: heading or title, subtitle and primary facts. */
+  readonly headerTextHeight: number;
   readonly headerHeight: number;
   readonly cardWidth: number;
   readonly card: MeasuredKeyFigureCard;
@@ -1147,12 +1229,16 @@ function cardImageLayoutAt(
   const contentWidth = width - CARD_IMAGE_PAD * 2;
   const headerTextX = CARD_IMAGE_PAD + (hasEmblem ? CARD_IMAGE_EMBLEM + CARD_IMAGE_EMBLEM_GAP : 0);
   const headerTextWidth = width - CARD_IMAGE_PAD - headerTextX;
-  const titleLines = wrap(text.title, headerTextWidth, CARD_IMAGE_TITLE_PX, '700');
+  const heading = text.heading ? layoutFactRows([text.heading], headerTextWidth, measure, CARD_IMAGE_HEADING_SIZES) : null;
+  const titleLines = heading ? [] : wrap(text.title, headerTextWidth, CARD_IMAGE_TITLE_PX, '700');
+  const subtitleLines = text.subtitle ? wrap(text.subtitle, headerTextWidth, CARD_IMAGE_LINE_PX, '400') : [];
   const facts = layoutFactRows(text.facts.filter(row => row.primary), headerTextWidth, measure, CARD_IMAGE_FACT_SIZES);
-  const headerHeight = Math.max(
-    hasEmblem ? CARD_IMAGE_EMBLEM : 0,
-    stackHeight([blockHeight(titleLines, CARD_IMAGE_TITLE_PX), facts.height], 4)
-  );
+  const headerTextHeight = stackHeight([
+    heading ? heading.height : blockHeight(titleLines, CARD_IMAGE_TITLE_PX),
+    blockHeight(subtitleLines, CARD_IMAGE_LINE_PX),
+    facts.height
+  ], CARD_IMAGE_HEADER_LINE_GAP);
+  const headerHeight = Math.max(hasEmblem ? CARD_IMAGE_EMBLEM : 0, headerTextHeight);
   const card = measureImageCard(cell, contentWidth, notePx, wrap);
   const footnoteLines = text.footnotes.map(footnote => wrap(footnote, contentWidth, CARD_IMAGE_FOOTNOTE_PX, '400'));
   const footerLines = wrap(text.footer, contentWidth, CARD_IMAGE_FOOTER_PX, '400');
@@ -1168,8 +1254,11 @@ function cardImageLayoutAt(
     notePx,
     fits: needed <= height,
     headerTextX,
+    heading,
     titleLines,
+    subtitleLines,
     facts,
+    headerTextHeight,
     headerHeight,
     cardWidth: contentWidth,
     card,
@@ -1184,7 +1273,8 @@ function cardImageLayoutAt(
  * {@link CARD_IMAGE_WIDTH_STEP} steps, the text column widening with it, up to
  * {@link CARD_IMAGE_MAX_WIDTH} (4 : 3); a card that still does not fit is laid out at 4 : 3 with its
  * notes at {@link CARD_IMAGE_SMALL_NOTE_PX}. The height never changes, so the image is never portrait.
- * The header carries the primary run facts, laid out beside the emblem.
+ * The header carries the heading (or the title), the subtitle and the primary run facts, laid out
+ * beside the emblem.
  *
  * Given a `targetAspect` (width over height), every size that fits — the widths above at
  * {@link CARD_IMAGE_SIZE} tall, and, for a portrait target, the same steps in height at
@@ -1374,13 +1464,53 @@ function drawFactRows(context: CanvasRenderingContext2D, layout: FactLayout, x: 
         } else {
           const run = item.run;
           context.font = fontOf(textPx, factTextWeight(run));
-          context.fillStyle = run.warning ? WARNING_COLOR : run.muted ? NOTE_COLOR : run.strong ? VALUE_COLOR : FIGURE_MUTED_COLOR;
+          context.fillStyle = run.warning ? WARNING_COLOR
+            : run.muted ? NOTE_COLOR
+              : run.heading ? FIGURE_TITLE_COLOR
+                : run.strong ? VALUE_COLOR
+                  : FIGURE_MUTED_COLOR;
           context.fillText(item.text, left, lineTop + (height - textPx) / 2);
         }
       }
       lineTop += height;
     });
   }
+}
+
+/** An image header's text: the heading or the title, the subtitle and the facts, each one present. */
+interface HeaderTextBlocks {
+  readonly heading: FactLayout | null;
+  readonly titleLines: readonly string[];
+  readonly titlePx: number;
+  readonly subtitleLines: readonly string[];
+  readonly subtitlePx: number;
+  readonly facts: FactLayout;
+}
+
+/** Draws the header text from `y`, `gap` between each two present blocks. */
+function drawHeaderText(context: CanvasRenderingContext2D, blocks: HeaderTextBlocks, x: number, y: number, gap: number): void {
+  const draws: ((top: number) => number)[] = [];
+  const heading = blocks.heading;
+  if (heading) {
+    draws.push(top => {
+      drawFactRows(context, heading, x, top);
+      return top + heading.height;
+    });
+  } else if (blocks.titleLines.length > 0) {
+    draws.push(top => drawLines(context, blocks.titleLines, x, top, blocks.titlePx, '700', FIGURE_TITLE_COLOR));
+  }
+  if (blocks.subtitleLines.length > 0) {
+    draws.push(top => drawLines(context, blocks.subtitleLines, x, top, blocks.subtitlePx, '400', FIGURE_MUTED_COLOR));
+  }
+  if (blocks.facts.height > 0) {
+    draws.push(top => {
+      drawFactRows(context, blocks.facts, x, top);
+      return top + blocks.facts.height;
+    });
+  }
+  draws.forEach((draw, index) => {
+    y = draw(y + (index > 0 ? gap : 0));
+  });
 }
 
 /**
@@ -1492,9 +1622,12 @@ function stripLayoutFor(
 ): StripLayout {
   const measure = measuringContext();
   const wrap: TextWrapper = measure ? canvasTextWrapper(measure) : text => (text.trim() ? [text] : []);
+  const header = splitImageHeading(context.title, context.facts);
   return chooseStripLayout(cells, {
-    title: context.title,
-    facts: context.facts,
+    title: header.title,
+    heading: header.heading,
+    subtitle: header.subtitle,
+    facts: header.facts,
     footnotes: stripFootnotes(cells),
     footer: keyFiguresFooterText(context.overseerVersion, now)
   }, wrap, hasWideLogo ? STRIP_LOGO_HEIGHT : 0, measure ? canvasTextMeasurer(measure) : estimateTextWidth,
@@ -1526,10 +1659,14 @@ export async function composeStripImage(
     drawLogo(draw, logos.wide, left, y, layout.logoHeight);
     y += layout.logoHeight + STRIP_LOGO_GAP;
   }
-  y = drawLines(draw, layout.titleLines, left, y, STRIP_TITLE_PX, '700', FIGURE_TITLE_COLOR);
-  if (layout.facts.height > 0) {
-    drawFactRows(draw, layout.facts, left, y + STRIP_LINE_GAP);
-  }
+  drawHeaderText(draw, {
+    heading: layout.heading,
+    titleLines: layout.titleLines,
+    titlePx: STRIP_TITLE_PX,
+    subtitleLines: layout.subtitleLines,
+    subtitlePx: STRIP_LINE_PX,
+    facts: layout.facts
+  }, left, y, STRIP_LINE_GAP);
 
   for (const placement of layout.placements) {
     const x = left + placement.x;
@@ -1564,9 +1701,12 @@ export async function composeCardImage(
   await loadKeyFigureFonts();
   const measure = measuringContext();
   const wrap: TextWrapper = measure ? canvasTextWrapper(measure) : text => (text.trim() ? [text] : []);
+  const header = splitImageHeading(context.title, context.facts);
   const layout = chooseCardImageLayout(cell, {
-    title: context.title,
-    facts: context.facts,
+    title: header.title,
+    heading: header.heading,
+    subtitle: header.subtitle,
+    facts: header.facts,
     footnotes: cell.footnotes,
     footer: keyFiguresFooterText(context.overseerVersion, now)
   }, wrap, logos.emblem !== null, measure ? canvasTextMeasurer(measure) : estimateTextWidth, targetAspectOf(settings));
@@ -1580,12 +1720,14 @@ export async function composeCardImage(
   if (logos.emblem) {
     drawLogo(draw, logos.emblem, CARD_IMAGE_PAD, top, CARD_IMAGE_EMBLEM);
   }
-  const textHeight = stackHeight([blockHeight(layout.titleLines, CARD_IMAGE_TITLE_PX), layout.facts.height], 4);
-  let y = top + Math.max(0, (layout.headerHeight - textHeight) / 2);
-  y = drawLines(draw, layout.titleLines, layout.headerTextX, y, CARD_IMAGE_TITLE_PX, '700', FIGURE_TITLE_COLOR);
-  if (layout.facts.height > 0) {
-    drawFactRows(draw, layout.facts, layout.headerTextX, y + 4);
-  }
+  drawHeaderText(draw, {
+    heading: layout.heading,
+    titleLines: layout.titleLines,
+    titlePx: CARD_IMAGE_TITLE_PX,
+    subtitleLines: layout.subtitleLines,
+    subtitlePx: CARD_IMAGE_LINE_PX,
+    facts: layout.facts
+  }, layout.headerTextX, top + Math.max(0, (layout.headerHeight - layout.headerTextHeight) / 2), CARD_IMAGE_HEADER_LINE_GAP);
 
   // The card is centered in the space between the header and the footnotes and footer.
   const regionTop = top + layout.headerHeight + CARD_IMAGE_HEADER_GAP;
@@ -1598,7 +1740,7 @@ export async function composeCardImage(
     CARD_IMAGE_LABEL_PX, CARD_IMAGE_BLOCK_GAP, CARD_IMAGE_NOTE_GAP);
   draw.textAlign = 'left';
 
-  y = bottomTop;
+  let y = bottomTop;
   if (layout.footnoteLines.length > 0) {
     y += CARD_IMAGE_FOOTNOTE_GAP;
     layout.footnoteLines.forEach((lines, index) => {

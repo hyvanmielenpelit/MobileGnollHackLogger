@@ -148,6 +148,11 @@ describe('AdminTelemetryTabComponent', () => {
 
     const status = () => host().querySelector('.tl-breakdown-status')?.textContent?.trim() ?? '';
 
+    /** Each `dt`/`dd` pair of a summary card's term lists, whitespace collapsed. */
+    const termValues = (cardSelector: string): string[][] =>
+      Array.from(host().querySelectorAll(`${cardSelector} dl > div`)).map(pair =>
+        ['dt', 'dd'].map(tag => (pair.querySelector(tag)?.textContent ?? '').replace(/\s+/g, ' ').trim()));
+
     const chartsDialog = (): ChartsDialogStub =>
       fixture.debugElement.query(By.directive(ChartsDialogStub)).componentInstance;
 
@@ -494,6 +499,7 @@ describe('AdminTelemetryTabComponent', () => {
       openTab();
       const rate = () => host().querySelector('.telemetry-availability-rate')?.textContent ?? '';
       expect(rate()).toContain('Not recorded');
+      expect(host().querySelector('.telemetry-error-classes-card')).toBeNull();
 
       component.telemetrySummary = summary({
         chatAvailability: availability({
@@ -504,9 +510,33 @@ describe('AdminTelemetryTabComponent', () => {
       fixture.detectChanges();
 
       expect(rate()).toContain('0.81 %');
-      const card = host().querySelector('.telemetry-availability-card')?.textContent ?? '';
-      expect(card).toContain('12 of 1,480 attempts');
-      expect(card).toContain('Title generation: 2 of 140 attempts');
+      expect(host().querySelector('.telemetry-availability-count')?.textContent).toContain('12 of 1,480 attempts');
+      expect(termValues('.telemetry-availability-card')).toContainEqual(['Title generation', '2 of 140 attempts']);
+      expect(host().querySelector('.telemetry-error-classes-card')).not.toBeNull();
+    });
+
+    it('shows the error classes and the unattributed and our-side counts on their own card', () => {
+      summarySpy.mockReturnValue(of(summary({
+        chatAvailability: availability({
+          recorded: true, validAttempts: 300, providerErrors: 6, providerErrorRate: 6 / 300,
+          overloaded: 3, serverErrors: 2, timeouts: 1, streamFailures: 0,
+          unattributedErrors: 4, rateLimitedUnattributed: 3, transportUnattributed: 1, inclusiveRate: 0.02, ourSideFailures: 5
+        })
+      })));
+      openTab();
+
+      const card = '.telemetry-error-classes-card';
+      expect(host().querySelector(`${card} .telemetry-error-total`)?.textContent).toContain('6');
+      expect(termValues(card)).toEqual([
+        ['Overloaded', '3'],
+        ['Server errors', '2'],
+        ['Timeouts', '1'],
+        ['Stream failures', '0'],
+        ['Unattributed', '4 rate limited 3 · transport 1 · 2.0 % with them'],
+        ['Our side', '5 excluded from the rate']
+      ]);
+      const notes = Array.from(host().querySelectorAll(`${card} .telemetry-dd-note`)).map(n => n.textContent?.trim());
+      expect(notes).toEqual(['rate limited 3 · transport 1 · 2.0 % with them', 'excluded from the rate']);
     });
 
     it('shows the estimated cost with the unpriced requests and when cost recording began', () => {

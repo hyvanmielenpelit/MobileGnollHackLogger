@@ -7721,6 +7721,27 @@ a model batch stopped across the bump offers *Continue — accept the change* as
 the current policy; changing it would be a candidate-input and timing change of its own
 ([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md) § 11).
 
+### Key-Figures Images: The Model as the Title (2026-10-13) — No Harness Version Bump
+
+Presentation only: nothing is graded differently, and neither the harness version nor the scoring method
+version changes.
+
+The key-figures images (`run-report-frame/key-figures-image.ts`) now lead with the model under test. Under
+the wordmark (the strip) or beside the emblem (a single card), the header reads:
+
+1. **The heading**: the model name in gold at weight 700, followed by its badges (thinking level,
+   reasoning mode, provider, service tier) in their usual colors, without the *MODEL* label.
+2. **The subtitle**: the run's name, the old title (*Run #72 · Default Suite*, *Battery Run #23 · Two
+   initial suites*), in gray at the fact text size.
+3. **The remaining rows**, as before: in the strip Assessor(s), Prompt, Scoring profile, Started, and for
+   a battery run Battery and Suites; in the card image the remaining primary rows (Assessor(s)).
+
+This applies to the single-run and battery-run images alike, both the whole strip and a single card,
+downloaded or copied. `splitImageHeading` makes the split from the run fact row keyed `model`. When
+*Model* is unchecked under *Choose key figures → Image details*, there is no row to promote: the old gold
+title is drawn and there is no subtitle, so the choice of rows is honored. The file names, the footer and
+the Chat Consistency results images are unchanged; the size chooser's read-out measures the new header.
+
 ---
 
 ## 3. Assessor Strategy

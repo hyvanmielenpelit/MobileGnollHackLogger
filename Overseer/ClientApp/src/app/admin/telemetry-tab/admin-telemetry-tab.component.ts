@@ -14,12 +14,13 @@ import {
 import { ProviderBadgeComponent } from '../../shared/provider-badge/provider-badge.component';
 import { formatCost } from '../benchmark/batteries/battery.models';
 import {
+  FEW_ATTEMPTS_THRESHOLD,
   NOT_RECORDED_TEXT,
   formatCount,
   formatInteger,
+  formatInterval,
   formatOneIn,
-  formatPercent,
-  formatRate
+  formatPercent
 } from '../benchmark/shared/provider-availability/provider-availability';
 import { AdminPageStore, TelemetryTimeSpan } from '../admin-page.store';
 import { TelemetryChartsDialogComponent } from './charts/telemetry-charts-dialog.component';
@@ -458,25 +459,33 @@ export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
     return a.providerErrorRate != null ? formatPercent(a.providerErrorRate) : 'No attempts';
   }
 
-  /** The availability card's lines, empty while not recorded. */
-  get availabilityLines(): TelemetrySummaryLine[] {
+  /** `12 of 1,480 attempts · 95 % CI 0.42–1.4 %`, with `· few attempts` below the threshold; empty while not recorded. */
+  get availabilityCountText(): string {
+    const a = this.telemetrySummary?.chatAvailability;
+    if (!a || !a.recorded) {
+      return '';
+    }
+    if (a.validAttempts <= 0) {
+      return 'No valid attempts';
+    }
+    const parts = [formatCount(a.providerErrors, a.validAttempts)];
+    const interval = formatInterval(a.low, a.high);
+    if (interval) {
+      parts.push(interval);
+    }
+    if (a.validAttempts < FEW_ATTEMPTS_THRESHOLD) {
+      parts.push('few attempts');
+    }
+    return parts.join(' · ');
+  }
+
+  /** The availability card's term list: first-attempt success, turns ended, title generation. */
+  get availabilityRows(): TelemetrySummaryLine[] {
     const a = this.telemetrySummary?.chatAvailability;
     if (!a || !a.recorded) {
       return [];
     }
-    const lines: TelemetrySummaryLine[] = [
-      { label: 'Provider errors', value: formatRate(a.providerErrors, a.validAttempts, a.low, a.high) },
-      {
-        label: 'Classes',
-        value: `overloaded ${formatInteger(a.overloaded)} · server errors ${formatInteger(a.serverErrors)} · timeouts ${formatInteger(a.timeouts)} · stream failures ${formatInteger(a.streamFailures)}`
-      },
-      {
-        label: 'Unattributed',
-        value: formatInteger(a.unattributedErrors),
-        note: `rate limited ${formatInteger(a.rateLimitedUnattributed)} · transport ${formatInteger(a.transportUnattributed)}`
-          + (a.inclusiveRate != null ? `; ${formatPercent(a.inclusiveRate)} with them` : '')
-      },
-      { label: 'Our side', value: formatInteger(a.ourSideFailures), note: 'excluded from the rate' },
+    return [
       {
         label: 'First-attempt success',
         value: a.calls > 0 ? formatPercent(a.firstAttemptSuccessCalls / a.calls) : 'No calls',
@@ -485,20 +494,43 @@ export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
       {
         label: 'Turns ended by a provider error',
         value: `${formatInteger(a.chatTurnsEndedByProviderError)} of ${formatInteger(a.chatTurns)}`
+      },
+      {
+        label: 'Title generation',
+        value: a.titleValidAttempts > 0 ? formatCount(a.titleProviderErrors, a.titleValidAttempts) : 'No attempts'
       }
     ];
-    return lines;
   }
 
-  /** `Title generation: 2 of 140 attempts`, the title attempts with a provider error. */
-  get titleAvailabilityText(): string {
+  /** The four provider error classes, empty while not recorded. */
+  get errorClassRows(): TelemetrySummaryLine[] {
     const a = this.telemetrySummary?.chatAvailability;
     if (!a || !a.recorded) {
-      return '';
+      return [];
     }
-    return a.titleValidAttempts > 0
-      ? `Title generation: ${formatCount(a.titleProviderErrors, a.titleValidAttempts)}`
-      : 'Title generation: no attempts';
+    return [
+      { label: 'Overloaded', value: formatInteger(a.overloaded) },
+      { label: 'Server errors', value: formatInteger(a.serverErrors) },
+      { label: 'Timeouts', value: formatInteger(a.timeouts) },
+      { label: 'Stream failures', value: formatInteger(a.streamFailures) }
+    ];
+  }
+
+  /** The unattributed and our-side failures, outside the rate; empty while not recorded. */
+  get errorAttributionRows(): TelemetrySummaryLine[] {
+    const a = this.telemetrySummary?.chatAvailability;
+    if (!a || !a.recorded) {
+      return [];
+    }
+    return [
+      {
+        label: 'Unattributed',
+        value: formatInteger(a.unattributedErrors),
+        note: `rate limited ${formatInteger(a.rateLimitedUnattributed)} · transport ${formatInteger(a.transportUnattributed)}`
+          + (a.inclusiveRate != null ? ` · ${formatPercent(a.inclusiveRate)} with them` : '')
+      },
+      { label: 'Our side', value: formatInteger(a.ourSideFailures), note: 'excluded from the rate' }
+    ];
   }
 
   // --- Breakdown ---
