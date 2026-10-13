@@ -187,7 +187,9 @@ public class BenchmarkBatteryReportDocumentServiceTests
 
         h.Writer.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         running.SetStatus(BenchmarkReportPackJobStatus.Completed);
-        await BatteryReportHarness.WaitUntilAsync(() => h.Service.TryGetJob(h.BatteryRunId)!.Phase == "Writing");
+        // The service calls the writer only after it has saved Writing; the phase alone can lead the row.
+        await h.Writer.Entered.Task.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+        Assert.Equal("Writing", h.Service.TryGetJob(h.BatteryRunId)!.Phase);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Writing, await h.StatusAsync());
 
         h.Writer.Gate.SetResult();
@@ -422,9 +424,10 @@ public class BenchmarkBatteryReportDocumentServiceTests
 /// <summary>
 /// Stores a fixture battery-completion document for each audience on the job, except
 /// <see cref="FailAudience"/>, which it fails as a writer's reply that could not be parsed. Like the
-/// real writer, it replaces the job's request with the battery run's. <see cref="Gate"/> holds the
-/// job before its first document; <see cref="BlockAfterFirst"/> holds it after the first document is
-/// stored until it is canceled. A cancellation settles the job as the real writer does.
+/// real writer, it replaces the job's request with the battery run's. <see cref="Entered"/> is set when
+/// the job reaches the writer; <see cref="Gate"/> holds the job before its first document;
+/// <see cref="BlockAfterFirst"/> holds it after the first document is stored until it is canceled. A
+/// cancellation settles the job as the real writer does.
 /// </summary>
 internal sealed class BatteryReportFakeWriter : IBenchmarkRunReportWriter
 {
@@ -437,6 +440,7 @@ internal sealed class BatteryReportFakeWriter : IBenchmarkRunReportWriter
     public BenchmarkReportAudience? WarnAudience { get; set; }
     public TaskCompletionSource? Gate { get; set; }
     public bool BlockAfterFirst { get; set; }
+    public TaskCompletionSource Entered { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public TaskCompletionSource FirstStored { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
     public int JobCalls => _jobCalls;
     public long? LastBatteryRunId { get; private set; }
@@ -454,6 +458,7 @@ internal sealed class BatteryReportFakeWriter : IBenchmarkRunReportWriter
         LastAudiences = job.Documents.Select(d => d.Audience).ToList();
         job.Request = BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, LastAudiences, job.WriterConfigId);
         job.SubjectKey = job.Request.SubjectKey;
+        Entered.TrySetResult();
 
         try
         {
