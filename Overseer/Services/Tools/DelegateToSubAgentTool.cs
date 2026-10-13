@@ -152,6 +152,21 @@ public class DelegateToSubAgentTool : IToolHandler
             };
         }
 
+        // A block placed mid-turn stops the next sub-agent.
+        if (!string.IsNullOrEmpty(context.UserId))
+        {
+            using var accessScope = _scopeFactory.CreateScope();
+            var access = accessScope.ServiceProvider.GetService<Overseer.Services.Security.OverseerAccessService>();
+            if (access != null && await access.GetBlockAsync(context.UserId, cancellationToken) != null)
+            {
+                return new ToolResult
+                {
+                    Success = false,
+                    ErrorMessage = Overseer.Services.Security.OverseerAccessService.BlockedMessage
+                };
+            }
+        }
+
         // Budget check
         if (context.Budget != null && !context.Budget.TryStartSubAgent(context.ShowDebugLog, out string? budgetError))
         {
@@ -170,6 +185,7 @@ public class DelegateToSubAgentTool : IToolHandler
         ResolvedSubAgentModel? resolved = null;
         ModelPricing? pricing = null;
         string? resolvedServiceTier = null;
+        string? resolvedThinkingLevel = null;
 
         try
         {
@@ -201,7 +217,7 @@ public class DelegateToSubAgentTool : IToolHandler
 
             // 2. Resolve Output Tokens & Reasoning Parameters with precedence & validation
             int? resolvedMaxOutputTokens = subAgentDef.MaxOutputTokens ?? resolved.MaxOutputTokens;
-            string? resolvedThinkingLevel = subAgentDef.ThinkingLevel ?? resolved.ThinkingLevel;
+            resolvedThinkingLevel = subAgentDef.ThinkingLevel ?? resolved.ThinkingLevel;
             string? resolvedReasoningMode = resolved.ReasoningMode;
             string? resolvedReasoningSummary = resolved.ReasoningSummary;
             resolvedServiceTier = resolved.ServiceTier;
@@ -381,6 +397,10 @@ public class DelegateToSubAgentTool : IToolHandler
                 EnableGameActions = false,
                 ToolExecutionContext = subAgentExecContext,
                 SystemModelId = resolved.SystemModelId,
+                // Operator-funded runs only: a system configuration or an AI:* server key.
+                SafetyIdentifier = resolved.IsOperatorFunded && !string.IsNullOrEmpty(context.UserId)
+                    ? scope.ServiceProvider.GetService<Overseer.Services.Security.SafetyIdentifierService>()?.For(context.UserId)
+                    : null,
                 ApiKeyAlert = context.ApiKeyAlert?.ForSubAgent(subAgentDef.Name),
                 AgentName = subAgentDef.Name,
                 AgentDepth = context.AgentDepth + 1,
@@ -434,29 +454,6 @@ public class DelegateToSubAgentTool : IToolHandler
                 content = $"[PARTIAL RESULT — subagent '{agentName}' terminated early: {status}. " +
                           $"Findings below are incomplete and must not be presented as a complete answer.]\n\n"
                           + content;
-            }
-
-            if (resolved.SystemModelId.HasValue && !string.IsNullOrEmpty(context.UserId))
-            {
-                try
-                {
-                    var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                    int inputTokens = subAgentResult.TotalPromptTokens > 0 ? subAgentResult.UncachedInputTokens : subAgentResult.EstimatedInputTokens;
-                    int outputTokens = subAgentResult.OutputTokens > 0 ? subAgentResult.OutputTokens : subAgentResult.EstimatedOutputTokens;
-                    await systemAiConfigService.RecordUsageAsync(
-                        resolved.SystemModelId.Value,
-                        context.UserId,
-                        inputTokens,
-                        outputTokens,
-                        roleContext: 1,
-                        cacheReadTokens: subAgentResult.CacheReadTokens,
-                        cacheCreationTokens: subAgentResult.CacheCreationTokens,
-                        totalDurationMs: subAgentResult.TotalDurationMs);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to record subagent usage for SystemModelId {SystemModelId}", resolved.SystemModelId.Value);
-                }
             }
 
             return new ToolResult
@@ -520,6 +517,81 @@ public class DelegateToSubAgentTool : IToolHandler
             {
                 context.Budget.EndSubAgent();
             }
+
+            // Refusals and policy rejections on the operator's keys; a server-key run has no configuration id.
+            if (resolved?.IsOperatorFunded == true && subAgentResult.ModelCalls.Count > 0)
+            {
+                using var eventScope = _scopeFactory.CreateScope();
+                Overseer.Services.Security.ProviderRefusalEvents.Record(
+                    eventScope.ServiceProvider.GetService<Overseer.Services.Security.ISecurityEventRecorder>(),
+                    subAgentResult, context.UserId, resolved.SystemModelId);
+            }
+
+            /* Usage and attempts are recorded here so a canceled or failed run, whose cost the parent turn
+               already counts, writes its rows too. */
+            if (resolved != null && subAgentResult.ModelCalls.Count > 0)
+            {
+                await RecordRunTelemetryAsync(subAgentDef, toolCallId, resolved, pricing, resolvedServiceTier,
+                    resolvedThinkingLevel, subAgentResult, context);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The run's usage row and provider attempt rows. A system configuration writes a usage row; a user's own key
+    /// writes a user-key row unless the session is incognito; an AI:* server key writes no usage row (there is no
+    /// configuration to attribute it to) and attempt rows as System with no configuration id. Never throws.
+    /// </summary>
+    private async Task RecordRunTelemetryAsync(SubAgentDefinition def, string toolCallId, ResolvedSubAgentModel resolved,
+        ModelPricing? pricing, string? serviceTier, string? thinkingLevel, AgentRunResult run, ToolExecutionContext context)
+    {
+        string? userId = context.UserId;
+        bool userFunded = !resolved.IsOperatorFunded;
+        bool incognito = context.SessionId.IsEphemeral;
+        var own = BuildRunCost(def, toolCallId, resolved, pricing, serviceTier, run);
+        int inputTokens = run.TotalPromptTokens > 0 ? run.UncachedInputTokens : run.EstimatedInputTokens;
+        int outputTokens = run.OutputTokens > 0 ? run.OutputTokens : run.EstimatedOutputTokens;
+
+        if (resolved.SystemModelId.HasValue && !string.IsNullOrEmpty(userId))
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                await systemAiConfigService.RecordUsageAsync(
+                    resolved.SystemModelId.Value,
+                    userId,
+                    inputTokens,
+                    outputTokens,
+                    roleContext: 1,
+                    cacheReadTokens: run.CacheReadTokens,
+                    cacheCreationTokens: run.CacheCreationTokens,
+                    totalDurationMs: run.TotalDurationMs,
+                    thinkingLevel: new UsageThinkingLevel(thinkingLevel),
+                    estimatedCost: own?.EstimatedCost,
+                    pricingSource: own?.PricingSource);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to record subagent usage for SystemModelId {SystemModelId}", resolved.SystemModelId.Value);
+            }
+        }
+        else if (userFunded && !incognito && !string.IsNullOrEmpty(userId))
+        {
+            await Overseer.Services.Telemetry.UserKeyUsageRecorder.TryRecordAsync(_scopeFactory, _logger,
+                new Overseer.Services.Telemetry.UserKeyUsageEntry(
+                    userId, resolved.UserModelId, resolved.Provider, resolved.ModelId, ModelDisplayName: null, thinkingLevel,
+                    inputTokens, outputTokens, run.CacheReadTokens, run.CacheCreationTokens, run.TotalDurationMs,
+                    RoleContext: 1, own?.EstimatedCost, own?.PricingSource));
+        }
+
+        if (!(userFunded && incognito))
+        {
+            await Overseer.Services.Telemetry.ChatProviderAttemptRecorder.TryRecordAsync(_scopeFactory, _logger, run,
+                new Overseer.Services.Telemetry.ChatAttemptLinks(
+                    Guid.NewGuid(), RoleContext: 1, AgentDepth: context.AgentDepth + 1,
+                    userFunded ? AiKeySource.UserKey : AiKeySource.System,
+                    resolved.SystemModelId, userFunded ? userId : null, thinkingLevel));
         }
     }
 
@@ -615,6 +687,9 @@ public class DelegateToSubAgentTool : IToolHandler
                 .FirstOrDefaultAsync(cancellationToken)
             : context.UserId;
 
+        // System configurations the limits refused in this resolution; never tried again in a later branch.
+        var refusedConfigIds = new HashSet<long>();
+
         // Step 1: Check if definition specifies a preferred model
         if (definition.ModelPreference != null &&
             !string.IsNullOrWhiteSpace(definition.ModelPreference.Provider) &&
@@ -631,6 +706,17 @@ public class DelegateToSubAgentTool : IToolHandler
                 var matchingSys = sysModels.FirstOrDefault(c =>
                     string.Equals(c.Config.Provider, prefProvider, StringComparison.OrdinalIgnoreCase) &&
                     string.Equals(c.Config.ModelId, prefModelId, StringComparison.OrdinalIgnoreCase)).Config;
+
+                if (matchingSys != null)
+                {
+                    var (allowedSys, refusal) = await systemAiConfigService.GetAndCheckSystemConfigAsync(matchingSys.Id, userId, requiredRoleFilter: 1);
+                    if (allowedSys == null)
+                    {
+                        refusedConfigIds.Add(matchingSys.Id);
+                        _logger.LogDebug("Subagent could not use preferred system configuration {ConfigId}: {ErrorMessage}", matchingSys.Id, refusal);
+                        matchingSys = null;
+                    }
+                }
 
                 if (matchingSys != null && !string.IsNullOrWhiteSpace(matchingSys.EncryptedApiKey) &&
                     !string.IsNullOrWhiteSpace(matchingSys.ApiKeyNonce) && !string.IsNullOrWhiteSpace(matchingSys.ApiKeyTag))
@@ -755,6 +841,7 @@ public class DelegateToSubAgentTool : IToolHandler
             }
             else if (errorMessage != null)
             {
+                refusedConfigIds.Add(context.ActiveSystemModelId.Value);
                 _logger.LogDebug("Subagent could not use ActiveSystemModelId {ConfigId}: {ErrorMessage}", context.ActiveSystemModelId.Value, errorMessage);
             }
         }
@@ -868,7 +955,18 @@ public class DelegateToSubAgentTool : IToolHandler
         if (!string.IsNullOrEmpty(userId))
         {
             var sysModels = await settingsService.GetResolvedSystemModelsAsync(userId, roleFilter: 1);
-            var firstSys = sysModels.FirstOrDefault(c => c.Config != null && IsEligible(c.Config.Provider, c.Config.ModelId)).Config;
+            SystemAiApiConfiguration? firstSys = null;
+            foreach (var candidate in sysModels.Where(c => c.Config != null && !refusedConfigIds.Contains(c.Config.Id) && IsEligible(c.Config.Provider, c.Config.ModelId)))
+            {
+                var (allowedSys, refusal) = await systemAiConfigService.GetAndCheckSystemConfigAsync(candidate.Config.Id, userId, requiredRoleFilter: 1);
+                if (allowedSys != null)
+                {
+                    firstSys = allowedSys;
+                    break;
+                }
+                refusedConfigIds.Add(candidate.Config.Id);
+                _logger.LogDebug("Subagent could not use system configuration {ConfigId}: {ErrorMessage}", candidate.Config.Id, refusal);
+            }
             if (firstSys != null && !string.IsNullOrWhiteSpace(firstSys.EncryptedApiKey) &&
                 !string.IsNullOrWhiteSpace(firstSys.ApiKeyNonce) && !string.IsNullOrWhiteSpace(firstSys.ApiKeyTag))
             {

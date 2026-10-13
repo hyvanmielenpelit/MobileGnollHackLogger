@@ -1380,15 +1380,29 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 
         try
         {
-            await _configService.RecordUsageAsync(
-                config.Id,
-                job.StartedByUserId,
-                inputTokens,
-                outputTokens,
-                roleContext: UsageRoleContext,
-                cacheReadTokens: runResult.CacheReadTokens,
-                cacheCreationTokens: runResult.CacheCreationTokens,
-                totalDurationMs: (int)Math.Min(int.MaxValue, durationMs));
+            if (runResult.ModelCallUsages.Count > 0)
+            {
+                await _configService.RecordCallsUsageAsync(
+                    config.Id,
+                    job.StartedByUserId,
+                    roleContext: UsageRoleContext,
+                    runResult.ModelCallUsages,
+                    runResult.ActualServiceTier,
+                    totalDurationMs: (int)Math.Min(int.MaxValue, durationMs));
+            }
+            else
+            {
+                // No call reported usage: the tokens are estimates.
+                await _configService.RecordUsageAsync(
+                    config.Id,
+                    job.StartedByUserId,
+                    inputTokens,
+                    outputTokens,
+                    roleContext: UsageRoleContext,
+                    cacheReadTokens: runResult.CacheReadTokens,
+                    cacheCreationTokens: runResult.CacheCreationTokens,
+                    totalDurationMs: (int)Math.Min(int.MaxValue, durationMs));
+            }
         }
         catch (Exception ex)
         {

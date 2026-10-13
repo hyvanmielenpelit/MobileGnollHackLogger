@@ -26,6 +26,17 @@ public class SystemAiUsageLog
     [MaxLength(256)]
     public string? ModelDisplayName { get; set; }
 
+    /// <summary>The thinking level sent; "" when the request carried none. Null on rows written before the column existed.</summary>
+    [MaxLength(32)]
+    public string? ThinkingLevel { get; set; }
+
+    /// <summary>Estimated cost in USD of exactly the calls this row records; null when unpriced.</summary>
+    public decimal? EstimatedCost { get; set; }
+
+    /// <summary>"catalog", "custom" or "mixed"; null when unpriced.</summary>
+    [MaxLength(16)]
+    public string? PricingSource { get; set; }
+
     public int? InputTokens { get; set; }
     public int? OutputTokens { get; set; }
     public int? CacheReadInputTokens { get; set; }

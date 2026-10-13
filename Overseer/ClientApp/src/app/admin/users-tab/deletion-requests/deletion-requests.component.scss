@@ -1,0 +1,267 @@
+/* The filter bar, the facet, the chips, the status line and Load more are the global card-list
+   classes in styles.scss; `.action-btn`, `.btn-ghost` and `.gh-tag` are global too. */
+
+:host {
+  display: block;
+}
+
+.del-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.del-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+
+  h4 {
+    margin: 0;
+  }
+
+  h4:focus {
+    outline: none;
+  }
+
+  h4:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  .gh-list-status:empty {
+    display: none;
+  }
+}
+
+.del-erasure-warning,
+.del-empty,
+.del-error {
+  margin: 0;
+}
+
+.del-empty {
+  color: var(--nav-color);
+}
+
+.del-search {
+  flex: 1 1 16rem;
+}
+
+.del-clear-filters {
+  margin-inline-start: 4px;
+}
+
+/* --- Cards ----------------------------------------------------------------------------------- */
+
+.del-cards {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: del-cards / inline-size;
+}
+
+.del-item {
+  min-inline-size: 0;
+}
+
+/* Kicker, title and meta beside the actions, the reasons and the decision below; one column below 30 rem of the list. */
+.del-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "kicker   actions"
+    "title    actions"
+    "meta     actions"
+    "why      why"
+    "decision decision";
+  gap: 0.375rem 1.5rem;
+  padding: 0.75rem 1rem 0.875rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+}
+
+@container del-cards (max-width: 30rem) {
+  .del-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "kicker"
+      "title"
+      "meta"
+      "why"
+      "decision"
+      "actions";
+  }
+
+  .del-actions {
+    justify-content: flex-start;
+  }
+}
+
+.del-kicker {
+  grid-area: kicker;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  .gh-tag {
+    display: inline-flex;
+    margin: 0;
+  }
+}
+
+.del-status-word {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.del-sep {
+  color: #71717a;
+}
+
+.del-age,
+time {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The words carry each state; the outlines reinforce them. */
+.del-overdue-tag {
+  border-color: rgba(245, 158, 11, 0.6);
+  color: #fcd34d;
+}
+
+.del-hold-tag,
+.del-rule-tag {
+  border-color: var(--border-glass);
+  color: #d4d4d8;
+}
+
+.del-rule-tag {
+  border-style: dashed;
+}
+
+.del-card-title {
+  grid-area: title;
+  margin: 0;
+  font-size: 1.0625rem;
+  color: #e4e4e7;
+  overflow-wrap: anywhere;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.del-meta {
+  grid-area: meta;
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+.del-why {
+  grid-area: why;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-glass);
+}
+
+.del-why-title {
+  margin: 0 0 0.25rem;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: var(--nav-color);
+}
+
+/* Stored reasons and notes keep their line breaks. */
+.del-reasons {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.del-now {
+  margin-top: 0.375rem;
+}
+
+.del-decision {
+  grid-area: decision;
+
+  p {
+    margin: 0;
+  }
+}
+
+.del-decision-text {
+  font-size: var(--text-secondary);
+  color: #c4c4c8;
+}
+
+.del-note {
+  margin-top: 0.25rem;
+}
+
+.del-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+/* --- Approve dialog -------------------------------------------------------------------------- */
+
+.del-approve-dialog {
+  width: min(34rem, calc(100vw - 2rem));
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 12px;
+
+  label {
+    font-size: 0.9em;
+    color: #ccc;
+  }
+
+  .gh-input {
+    width: 100%;
+  }
+}
+
+.del-approve-hint {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.del-approve-error {
+  margin: 8px 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .del-card {
+    transition: none;
+  }
+}

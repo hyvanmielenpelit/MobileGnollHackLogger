@@ -416,14 +416,24 @@ public class BenchmarkRubricGapAuthorService
         int outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
         job.AddUsage(promptTokens, outputTokens);
 
-        await configService.RecordUsageAsync(
-            config.Id,
-            job.StartedByUserId,
-            promptTokens,
-            outputTokens,
-            roleContext: 6,
-            cacheReadTokens: runResult.CacheReadTokens,
-            cacheCreationTokens: runResult.CacheCreationTokens);
+        if (runResult.ModelCallUsages.Count > 0)
+        {
+            await configService.RecordCallsUsageAsync(
+                config.Id, job.StartedByUserId, roleContext: 6,
+                runResult.ModelCallUsages, runResult.ActualServiceTier, totalDurationMs: null);
+        }
+        else
+        {
+            // No call reported usage: the tokens are estimates.
+            await configService.RecordUsageAsync(
+                config.Id,
+                job.StartedByUserId,
+                promptTokens,
+                outputTokens,
+                roleContext: 6,
+                cacheReadTokens: runResult.CacheReadTokens,
+                cacheCreationTokens: runResult.CacheCreationTokens);
+        }
     }
 
     private async Task<(AgentRunResult Result, string? TerminalError)> ExecuteModelCallAsync(

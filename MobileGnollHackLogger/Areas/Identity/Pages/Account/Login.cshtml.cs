@@ -18,15 +18,18 @@ using MobileGnollHackLogger.Data;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 {
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(MobileGnollHackLogger.Areas.API.GameApiRateLimits.AccountPages)]
     public class LoginModel : PageModel
     {
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly ILogger<LoginModel> _logger;
+        private readonly ApplicationDbContext _dbContext;
 
-        public LoginModel(SignInManager<ApplicationUser> signInManager, ILogger<LoginModel> logger)
+        public LoginModel(SignInManager<ApplicationUser> signInManager, ILogger<LoginModel> logger, ApplicationDbContext dbContext)
         {
             _signInManager = signInManager;
             _logger = logger;
+            _dbContext = dbContext;
         }
 
         /// <summary>
@@ -116,9 +119,9 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 
             if (ModelState.IsValid)
             {
-                // This doesn't count login failures towards account lockout
-                // To enable password failures to trigger account lockout, set lockoutOnFailure: true
-                var result = await _signInManager.PasswordSignInAsync(Input.UserName, Input.Password, Input.RememberMe, lockoutOnFailure: false);
+                // Failures count toward account lockout (IdentityLockout settings, shared with Overseer).
+                // The game APIs answer a locked-out account with 403, so a lockout never sends a game client into a retry loop.
+                var result = await _signInManager.PasswordSignInAsync(Input.UserName, Input.Password, Input.RememberMe, lockoutOnFailure: true);
                 if (result.Succeeded)
                 {
                     _logger.LogInformation("User logged in.");
@@ -128,13 +131,21 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
                 {
                     return RedirectToPage("./LoginWith2fa", new { ReturnUrl = returnUrl, RememberMe = Input.RememberMe });
                 }
+
+                // The attempted user name is never stored; the user id only when an account matched.
+                var matchedUser = await _signInManager.UserManager.FindByNameAsync(Input.UserName);
+                string ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
                 if (result.IsLockedOut)
                 {
                     _logger.LogWarning("User account locked out.");
+                    await GnollHackServer.Data.Security.SecurityEventWriter.RecordAsync(_dbContext, SecurityEventKind.LoginLockedOut,
+                        matchedUser?.Id, ipAddress, code: "website-login");
                     return RedirectToPage("./Lockout");
                 }
                 else
                 {
+                    await GnollHackServer.Data.Security.SecurityEventWriter.RecordAsync(_dbContext, SecurityEventKind.LoginFailed,
+                        matchedUser?.Id, ipAddress, code: "website-login", detail: matchedUser == null ? "unknown-user" : null);
                     ModelState.AddModelError(string.Empty, "Invalid login attempt.");
                     return Page();
                 }

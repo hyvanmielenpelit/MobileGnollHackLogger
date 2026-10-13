@@ -31,6 +31,12 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
        than tightened. Existing passwords are unaffected: this is checked on set, not on
        sign-in. */
     options.Password.RequiredLength = 12;
+
+    /* The website signs in against the same accounts and their shared lockout fields, so both
+       apps read these from an identical IdentityLockout section. */
+    options.Lockout.MaxFailedAccessAttempts = builder.Configuration.GetValue("IdentityLockout:MaxFailedAccessAttempts", 10);
+    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(builder.Configuration.GetValue("IdentityLockout:LockoutMinutes", 15));
+    options.Lockout.AllowedForNewUsers = true;
 })
 .AddEntityFrameworkStores<ApplicationDbContext>()
 /* Required for the TOTP sign-in step. AddIdentityCore registers no token providers, so
@@ -266,6 +272,22 @@ builder.Services.AddScoped<ChatService>();
 builder.Services.AddSingleton<Overseer.Services.ParallelExecutionResolver>();
 builder.Services.AddScoped<Overseer.Services.Agents.AgentLoopRunner>();
 builder.Services.AddScoped<SystemAiConfigService>();
+
+// Security: the event recorder drains its queue on a background loop and opens its own scopes.
+builder.Services.AddSingleton<Overseer.Services.Security.SecurityEventRecorder>();
+builder.Services.AddSingleton<Overseer.Services.Security.ISecurityEventRecorder>(
+    sp => sp.GetRequiredService<Overseer.Services.Security.SecurityEventRecorder>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Overseer.Services.Security.SecurityEventRecorder>());
+builder.Services.AddSingleton<Overseer.Services.Security.OverseerAccessService>();
+builder.Services.AddSingleton<Overseer.Services.Security.SafetyIdentifierService>();
+builder.Services.AddScoped<Overseer.Services.Security.SecurityQueryService>();
+builder.Services.AddScoped<Overseer.Services.Security.AccountDeletionReviewService>();
+builder.Services.AddSingleton(sp => builder.Configuration.GetSection("AccountHold").Get<GnollHackServer.Data.Security.AccountHoldOptions>()
+    ?? new GnollHackServer.Data.Security.AccountHoldOptions());
+
+// AI telemetry: activity counts write in their own scopes; the summary queries are per request.
+builder.Services.AddSingleton<Overseer.Services.Telemetry.IActivityCounter, Overseer.Services.Telemetry.ActivityCounter>();
+builder.Services.AddScoped<Overseer.Services.Telemetry.AiTelemetrySummaryService>();
 builder.Services.AddSingleton<OngoingChatManager>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkRunManager>();
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkDifficultyJobManager>();
@@ -461,6 +483,21 @@ builder.Services.AddRateLimiter(options =>
         });
     });
 
+    /* Sign-in attempts are limited per remote IP: the user is not known yet. Behind a proxy that
+       hides client addresses every request shares one partition, so forwarded headers must be
+       configured before tightening this (docs/overseer/security-monitoring.md). */
+    options.AddPolicy(RateLimitPolicies.Login, context =>
+    {
+        var ip = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(ip, partition => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+        {
+            AutoReplenishment = true,
+            PermitLimit = builder.Configuration.GetValue("PrivacySettings:RateLimits:LoginPermitsPerMinute", 10),
+            QueueLimit = 0,
+            Window = TimeSpan.FromMinutes(1)
+        });
+    });
+
     /* OnRejected is global, so it dispatches on the policy that actually rejected. It used to
        answer every rejection with the tunnel's "Too many log events", which was written when
        the tunnel was the only limited route and is actively misleading on a throttled chat
@@ -468,7 +505,13 @@ builder.Services.AddRateLimiter(options =>
        available here. */
     options.OnRejected = async (context, token) =>
     {
-        context.HttpContext.Response.StatusCode = 429;
+        string? policy = context.HttpContext.GetEndpoint()?.Metadata
+            .GetMetadata<Microsoft.AspNetCore.RateLimiting.EnableRateLimitingAttribute>()?.PolicyName;
+
+        /* The GnollHack handoff retries every status but 404, 400 and 401 seven times, and
+           stops on 401 and shows the message; a 429 there would multiply the attempts. */
+        bool isSessionCreate = context.HttpContext.Request.Path.StartsWithSegments("/api/session/create", StringComparison.OrdinalIgnoreCase);
+        context.HttpContext.Response.StatusCode = isSessionCreate ? 401 : 429;
 
         var window = context.Lease.TryGetMetadata(
             System.Threading.RateLimiting.MetadataName.RetryAfter, out var retryAfter)
@@ -477,8 +520,12 @@ builder.Services.AddRateLimiter(options =>
         context.HttpContext.Response.Headers.RetryAfter =
             ((int)Math.Ceiling(window.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
 
-        string? policy = context.HttpContext.GetEndpoint()?.Metadata
-            .GetMetadata<Microsoft.AspNetCore.RateLimiting.EnableRateLimitingAttribute>()?.PolicyName;
+        context.HttpContext.RequestServices.GetService<Overseer.Services.Security.ISecurityEventRecorder>()?.Record(
+            new Overseer.Services.Security.SecurityEventEntry(
+                MobileGnollHackLogger.Data.SecurityEventKind.RateLimitRejected,
+                UserId: context.HttpContext.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value,
+                IpAddress: context.HttpContext.Connection.RemoteIpAddress?.ToString(),
+                Code: policy ?? "unknown"));
 
         await context.HttpContext.Response.WriteAsync(RateLimitPolicies.RejectionMessage(policy), token);
     };

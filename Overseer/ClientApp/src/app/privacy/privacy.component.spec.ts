@@ -82,9 +82,65 @@ describe('PrivacyComponent', () => {
 
     const text = textOf(map);
     for (const label of ['The message you type', 'Documents and images you attach',
-      'The call to the AI provider', 'Error telemetry', 'Cost and token accounting']) {
+      'The call to the AI provider', 'Error telemetry', 'Cost and token accounting',
+      'Activity counts', 'Security events', 'Provider safety identifier']) {
       expect(text, label).toContain(label);
     }
+  });
+
+  it('should say security events hold no message content and which providers get the safety identifier', () => {
+    const rows = Array.from(host.querySelectorAll<HTMLElement>('#conversation-data-map tbody tr'));
+    const row = (title: string) => rows.find(r => textOf(r.querySelector('th') as HTMLElement) === title);
+
+    const security = textOf(row('Security events')!);
+    expect(security).toContain('identifiers and codes only, never message content');
+    expect(security).toContain('An IP address is recorded only on sign-in and rate-limit events.');
+    expect(security).toContain('180 days by default.');
+
+    const safety = textOf(row('Provider safety identifier')!);
+    expect(safety).toContain('OpenAI and Anthropic');
+    expect(safety).toContain('not sent on your own API key or to a custom endpoint');
+    expect(safety).toContain('Google receives none');
+  });
+
+  it('should say who sees the usage records and that activity counts carry no content', () => {
+    const rows = Array.from(host.querySelectorAll<HTMLElement>('#conversation-data-map tbody tr'));
+    const row = (title: string) => rows.find(r => textOf(r.querySelector('th') as HTMLElement) === title);
+
+    const cost = textOf(row('Cost and token accounting')!);
+    expect(cost).toContain('including for calls on your own API key');
+    expect(cost).toContain('Administrators can see both with your user name.');
+    expect(cost).toContain('The attempt records are kept 400 days.');
+    expect(cost).toContain('deleted with your account');
+
+    const activity = textOf(row('Activity counts')!);
+    expect(activity).toContain('never their content');
+    expect(activity).toContain('a daily total that names nobody');
+    expect(activity).toContain('Until your account is deleted.');
+  });
+
+  it('should state acceptable use, link each provider policy and mention the deletion review', () => {
+    const section = host.querySelector('#acceptable-use') as HTMLElement;
+    expect(section).toBeTruthy();
+
+    const text = textOf(section);
+    expect(text).toContain('Overseer is for questions about GnollHack and NetHack.');
+    expect(text).toContain('Misuse can lead to limits on your AI use or to a block of your access to the AI chat.');
+
+    const hrefs = Array.from(section.querySelectorAll<HTMLAnchorElement>('a[href]')).map(a => a.getAttribute('href'));
+    expect(hrefs).toEqual([
+      'https://openai.com/policies/usage-policies/',
+      'https://www.anthropic.com/legal/aup',
+      'https://policies.google.com/terms/generative-ai/use-policy'
+    ]);
+    for (const link of Array.from(section.querySelectorAll<HTMLAnchorElement>('a[target="_blank"]'))) {
+      expect(link.rel).toContain('noopener');
+    }
+
+    const review = section.querySelector('.account-deletion-review') as HTMLElement;
+    expect(textOf(review)).toBe('A request to delete your account may be held for review by an administrator when there is ' +
+      'evidence of misuse that may be illegal. You are told that it is under review, and you are e-mailed when the ' +
+      'deletion is completed or declined.');
   });
 
   it('should render every limitation and overstate none of them', () => {
@@ -182,7 +238,8 @@ describe('PrivacyComponent', () => {
       'Whether a data processing agreement is offered, and on what terms',
       'How a personal-data breach is assessed and notified, and within what time',
       'Where data is stored and processed, and in which regions inference runs',
-      'How long error telemetry is kept'
+      'How long error telemetry is kept',
+      'The operator’s own acceptable-use terms'
     ]) {
       expect(text, expected).toContain(expected);
     }

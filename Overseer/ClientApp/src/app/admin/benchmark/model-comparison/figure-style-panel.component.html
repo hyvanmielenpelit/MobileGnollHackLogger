@@ -39,6 +39,7 @@
      `<output>` is hidden from assistive technology: the range already announces its value text,
      and a live output would speak on every step of a drag. -->
 <ng-template #range let-family="family" let-control="control">
+  @if (!isHidden(control.key)) {
   <div class="fsp-range" [class.fsp-disabled]="rangeDisabled(family, control.key)">
     <div class="fsp-range-head">
       <label [for]="controlId(family, control.key)">{{ control.label }}</label>
@@ -64,6 +65,7 @@
            [attr.aria-describedby]="rangeHint(family, control) ? tipId(family, control.key) : null"
            (input)="onRange(family, control, $event)">
   </div>
+  }
 </ng-template>
 
 <!-- One collapsible section. The summary holds text only: the title and a read-out of the values,
@@ -97,8 +99,9 @@
 </ng-template>
 
 <!-- Heading and badges: the two caption sizes, then every badge the family offers, then, for every
-     family but the profile, where the Better badge goes. -->
+     family but the profile, where the Better badge goes. Controls the host hides are left out. -->
 <ng-template #headingSection let-family="family">
+  @if (!sectionHidden(family, 'heading')) {
   <div class="fsp-section">
     <details class="gh-disclosure gh-disclosure--section" [id]="sectionId(family, 'heading')"
              [open]="isOpen(family, 'heading')" (toggle)="onSectionToggle(family, 'heading', $event)">
@@ -107,6 +110,7 @@
         @for (control of headingControls; track control.key) {
           <ng-container *ngTemplateOutlet="range; context: { family: family, control: control }"></ng-container>
         }
+        @if (!isHidden('hiddenBadges') && badgeControlsOf(family).length > 0) {
         <div class="fsp-show" role="group" [attr.aria-labelledby]="controlId(family, 'badges-label')"
              [attr.aria-describedby]="tipId(family, 'badges')">
           <div class="fsp-show-head">
@@ -130,7 +134,8 @@
             }
           </div>
         </div>
-        @if (family !== 'profile') {
+        }
+        @if (family !== 'profile' && !isHidden('betterBadgePlacement')) {
           <fieldset class="gh-choice" [attr.aria-labelledby]="controlId(family, 'betterBadgePlacement-label')"
                     [attr.aria-describedby]="tipId(family, 'betterBadgePlacement')">
             <legend>
@@ -152,15 +157,18 @@
     </details>
     <ng-container *ngTemplateOutlet="sectionReset; context: { family: family, name: 'heading' }"></ng-container>
   </div>
+  }
 </ng-template>
 
 <!-- Footer: whether the figure carries it, and its size. -->
 <ng-template #footerSection let-family="family" let-section="section">
+  @if (!sectionHidden(family, 'footer')) {
   <div class="fsp-section">
     <details class="gh-disclosure gh-disclosure--section" [id]="sectionId(family, 'footer')"
              [open]="isOpen(family, 'footer')" (toggle)="onSectionToggle(family, 'footer', $event)">
       <ng-container *ngTemplateOutlet="sectionSummary; context: { family: family, section: section }"></ng-container>
       <div class="gh-disclosure-body fsp-section-body">
+        @if (!isHidden('footer')) {
         <div class="fsp-check">
           <label class="checkbox-label">
             <input type="checkbox" [id]="controlId(family, 'footer')" [checked]="footerShown(family)"
@@ -170,11 +178,13 @@
           </label>
           <app-info-tip [tipId]="tipId(family, 'footer')" subject="Show footer">The suite and computation time under the figure, on the page, in the preview and in downloads.</app-info-tip>
         </div>
+        }
         <ng-container *ngTemplateOutlet="range; context: { family: family, control: footerControl }"></ng-container>
       </div>
     </details>
     <ng-container *ngTemplateOutlet="sectionReset; context: { family: family, name: 'footer' }"></ng-container>
   </div>
+  }
 </ng-template>
 
 <!-- Number format: decimals for the three measures the family shows, shared with every family that
@@ -861,6 +871,7 @@
       <div class="fsp-section-stack">
         <ng-container *ngTemplateOutlet="headingSection; context: { family: 'timeline' }"></ng-container>
 
+        @if (!sectionHidden('timeline', 'lines')) {
         <div class="fsp-section">
           <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('timeline', 'lines')"
                    [open]="isOpen('timeline', 'lines')" (toggle)="onSectionToggle('timeline', 'lines', $event)">
@@ -869,6 +880,7 @@
               @for (control of timelineLineControls; track control.key) {
                 <ng-container *ngTemplateOutlet="range; context: { family: 'timeline', control: control }"></ng-container>
               }
+              @if (!isHidden('areaWash')) {
               <div class="fsp-check">
                 <label class="checkbox-label">
                   <input type="checkbox" [id]="controlId('timeline', 'areaWash')" [checked]="timeline.areaWash"
@@ -876,16 +888,20 @@
                   Wash the area under a single line
                 </label>
               </div>
+              }
             </div>
           </details>
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'timeline', name: 'lines' }"></ng-container>
         </div>
+        }
 
+        @if (!sectionHidden('timeline', 'values')) {
         <div class="fsp-section">
           <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('timeline', 'values')"
                    [open]="isOpen('timeline', 'values')" (toggle)="onSectionToggle('timeline', 'values', $event)">
             <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'timeline', section: section('timeline', 'values') }"></ng-container>
             <div class="gh-disclosure-body fsp-section-body">
+              @if (!isHidden('valueLabels')) {
               <div class="fsp-check">
                 <label class="checkbox-label">
                   <input type="checkbox" [id]="controlId('timeline', 'valueLabels')" [checked]="timeline.valueLabels"
@@ -893,10 +909,12 @@
                   Show values at the points
                 </label>
               </div>
+              }
               <ng-container *ngTemplateOutlet="range; context: { family: 'timeline', control: timelineValueControl }"></ng-container>
               @for (control of timelineAxisControls; track control.key) {
                 <ng-container *ngTemplateOutlet="range; context: { family: 'timeline', control: control }"></ng-container>
               }
+              @if (!isHidden('axisTitleWeight')) {
               <fieldset class="gh-choice" [attr.aria-labelledby]="controlId('timeline', 'axisTitleWeight-label')">
                 <legend><span [id]="controlId('timeline', 'axisTitleWeight-label')">Axis title weight</span></legend>
                 @for (option of fontWeightOptions; track option.value) {
@@ -909,6 +927,8 @@
                   </label>
                 }
               </fieldset>
+              }
+              @if (!isHidden('gridlines')) {
               <div class="fsp-check">
                 <label class="checkbox-label">
                   <input type="checkbox" [id]="controlId('timeline', 'gridlines')" [checked]="timeline.gridlines"
@@ -916,6 +936,8 @@
                   Gridlines
                 </label>
               </div>
+              }
+              @if (!isHidden('plotFrame')) {
               <div class="fsp-check">
                 <label class="checkbox-label">
                   <input type="checkbox" [id]="controlId('timeline', 'plotFrame')" [checked]="timeline.plotFrame"
@@ -923,11 +945,14 @@
                   Frame the plot area
                 </label>
               </div>
+              }
             </div>
           </details>
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'timeline', name: 'values' }"></ng-container>
         </div>
+        }
 
+        @if (!sectionHidden('timeline', 'markers')) {
         <div class="fsp-section">
           <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('timeline', 'markers')"
                    [open]="isOpen('timeline', 'markers')" (toggle)="onSectionToggle('timeline', 'markers', $event)">
@@ -940,12 +965,15 @@
           </details>
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'timeline', name: 'markers' }"></ng-container>
         </div>
+        }
 
+        @if (!sectionHidden('timeline', 'notes')) {
         <div class="fsp-section">
           <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('timeline', 'notes')"
                    [open]="isOpen('timeline', 'notes')" (toggle)="onSectionToggle('timeline', 'notes', $event)">
             <ng-container *ngTemplateOutlet="sectionSummary; context: { family: 'timeline', section: section('timeline', 'notes') }"></ng-container>
             <div class="gh-disclosure-body fsp-section-body">
+              @if (!isHidden('markerNote')) {
               <div class="fsp-check">
                 <label class="checkbox-label">
                   <input type="checkbox" [id]="controlId('timeline', 'markerNote')" [checked]="timeline.markerNote"
@@ -955,6 +983,8 @@
                 </label>
                 <app-info-tip [tipId]="tipId('timeline', 'markerNote')" subject="the marker note">Adds a caption line naming the Overseer changes the markers stand for.</app-info-tip>
               </div>
+              }
+              @if (!isHidden('notAnalyzedNote')) {
               <div class="fsp-check">
                 <label class="checkbox-label">
                   <input type="checkbox" [id]="controlId('timeline', 'notAnalyzedNote')" [checked]="timeline.notAnalyzedNote"
@@ -964,10 +994,12 @@
                 </label>
                 <app-info-tip [tipId]="tipId('timeline', 'notAnalyzedNote')" subject="the gray crosses note">Adds a caption line saying that the runs not in the analysis are drawn as gray crosses.</app-info-tip>
               </div>
+              }
             </div>
           </details>
           <ng-container *ngTemplateOutlet="sectionReset; context: { family: 'timeline', name: 'notes' }"></ng-container>
         </div>
+        }
 
         <ng-container *ngTemplateOutlet="footerSection; context: { family: 'timeline', section: section('timeline', 'footer') }"></ng-container>
       </div>

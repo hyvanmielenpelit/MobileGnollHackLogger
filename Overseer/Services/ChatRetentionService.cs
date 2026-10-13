@@ -515,6 +515,59 @@ public class ChatRetentionService
     }
 
     /// <summary>
+    /// The security events a prune with <paramref name="cutoff"/> removes: runs last seen before it, except the
+    /// events of a user with an active account hold or a pending deletion request, which are the evidence an
+    /// administrator is deciding on. Shared by the prune and the metrics' prunable count.
+    /// </summary>
+    public static IQueryable<SecurityEvent> PrunableSecurityEvents(ApplicationDbContext db, DateTime cutoff)
+    {
+        var heldUserIds = GnollHackServer.Data.Security.AccountHoldQueries.HeldUserIds(db);
+        return db.SecurityEvents.Where(e => e.LastOccurredUtc < cutoff
+            && (e.AspNetUserId == null || !heldUserIds.Contains(e.AspNetUserId)));
+    }
+
+    /// <summary>
+    /// Deletes security events last seen more than <paramref name="daysOld"/> days ago, or only counts them on a
+    /// dry run; events of held users are kept. Zero or negative days returns zero.
+    /// </summary>
+    public async Task<int> PruneSecurityEventsAsync(int daysOld, bool isDryRun = false, CancellationToken cancellationToken = default)
+    {
+        if (daysOld <= 0)
+            return 0;
+
+        var query = PrunableSecurityEvents(_dbContext, DateTime.UtcNow.AddDays(-daysOld));
+
+        int count = await query.CountAsync(cancellationToken);
+        if (count > 0 && !isDryRun)
+        {
+            await query.ExecuteDeleteAsync(cancellationToken);
+            _logger.LogInformation("Pruned {Count} security events last seen over {Days} days ago", count, daysOld);
+        }
+        return count;
+    }
+
+    /// <summary>
+    /// Deletes chat provider attempt rows started more than <paramref name="daysOld"/> days ago, or only counts
+    /// them on a dry run. Zero or negative days returns zero.
+    /// </summary>
+    public async Task<int> PruneChatProviderAttemptsAsync(int daysOld, bool isDryRun = false, CancellationToken cancellationToken = default)
+    {
+        if (daysOld <= 0)
+            return 0;
+
+        var cutoff = DateTime.UtcNow.AddDays(-daysOld);
+        var query = _dbContext.ChatProviderAttempts.Where(a => a.StartedAtUtc < cutoff);
+
+        int count = await query.CountAsync(cancellationToken);
+        if (count > 0 && !isDryRun)
+        {
+            await query.ExecuteDeleteAsync(cancellationToken);
+            _logger.LogInformation("Pruned {Count} chat provider attempts older than {Days} days", count, daysOld);
+        }
+        return count;
+    }
+
+    /// <summary>
     /// Deletes maintenance history rows started more than <paramref name="daysOld"/> days ago, or
     /// only counts them on a dry run. Zero or negative days returns zero.
     /// </summary>
@@ -561,6 +614,8 @@ public class ChatRetentionService
             PrunedBenchmarkToolResultCount = result.PrunedBenchmarkToolResultCount,
             PrunedAuditLogCount = result.PrunedAuditLogCount,
             PrunedAiErrorLogCount = result.PrunedAiErrorLogCount,
+            PrunedSecurityEventCount = result.PrunedSecurityEventCount,
+            PrunedChatProviderAttemptCount = result.PrunedChatProviderAttemptCount,
             DeletedDiskFolderCount = result.DeletedDiskFolderCount,
             DeletedDiskFileCount = result.DeletedDiskFileCount,
             SweptOrphanFolderCount = result.SweptOrphanFolderCount,
@@ -721,7 +776,31 @@ public class ChatRetentionService
                 result.Logs.Add("Dismissed AI error log pruning is disabled; no rows were pruned.");
             }
 
-            // 9. Prune maintenance history
+            // 9. Prune security events; events of users with an active hold or a pending deletion request are kept
+            int securityEventDays = _settings.PruneSecurityEventDays;
+            if (securityEventDays > 0)
+            {
+                result.PrunedSecurityEventCount = await PruneSecurityEventsAsync(securityEventDays, isDryRun, cancellationToken);
+                result.Logs.Add($"Security events pruned (> {securityEventDays}d since last seen): {result.PrunedSecurityEventCount}");
+            }
+            else
+            {
+                result.Logs.Add("Security event pruning is disabled; no rows were pruned.");
+            }
+
+            // 10. Prune chat provider attempts
+            int providerAttemptDays = _settings.PruneChatProviderAttemptDays;
+            if (providerAttemptDays > 0)
+            {
+                result.PrunedChatProviderAttemptCount = await PruneChatProviderAttemptsAsync(providerAttemptDays, isDryRun, cancellationToken);
+                result.Logs.Add($"Chat provider attempts pruned (> {providerAttemptDays}d): {result.PrunedChatProviderAttemptCount}");
+            }
+            else
+            {
+                result.Logs.Add("Chat provider attempt pruning is disabled; no rows were pruned.");
+            }
+
+            // 11. Prune maintenance history
             int historyDays = _settings.MaintenanceHistoryRetentionDays;
             if (historyDays > 0)
             {

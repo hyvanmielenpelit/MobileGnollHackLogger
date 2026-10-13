@@ -14,17 +14,18 @@ import { AdminConfigsTabComponent } from './configs-tab/admin-configs-tab.compon
 import { AdminDatabaseTabComponent } from './database-tab/admin-database-tab.component';
 import { AdminTelemetryTabComponent } from './telemetry-tab/admin-telemetry-tab.component';
 import { AdminDevtoolsTabComponent } from './devtools-tab/admin-devtools-tab.component';
+import { AdminSecurityTabComponent } from './security-tab/admin-security-tab.component';
 
 /** The admin dashboard's top-level tabs, in display order. */
 export type AdminTabId =
-  'users' | 'groups' | 'apikeys' | 'configs' | 'database' | 'devtools' | 'telemetry' | 'benchmark';
+  'users' | 'groups' | 'apikeys' | 'configs' | 'database' | 'devtools' | 'telemetry' | 'security' | 'benchmark';
 
 @Component({
     selector: 'app-admin',
     imports: [
       CommonModule, RouterModule, AdminApiKeysComponent, AdminBenchmarkComponent,
       AdminUsersTabComponent, AdminGroupsTabComponent, AdminConfigsTabComponent, AdminDatabaseTabComponent,
-      AdminTelemetryTabComponent, AdminDevtoolsTabComponent
+      AdminTelemetryTabComponent, AdminSecurityTabComponent, AdminDevtoolsTabComponent
     ],
     templateUrl: './admin.component.html',
     changeDetection: ChangeDetectionStrategy.Eager,
@@ -46,6 +47,7 @@ export class AdminComponent implements OnInit, OnDestroy {
     { id: 'configs',   label: 'System Configs' },
     { id: 'database',  label: 'Database' },
     { id: 'telemetry', label: 'AI Telemetry' },
+    { id: 'security',  label: 'Security' },
     { id: 'benchmark', label: 'GnollBench' },
     { id: 'devtools',  label: 'Developer Tools' }
   ];
@@ -61,11 +63,13 @@ export class AdminComponent implements OnInit, OnDestroy {
 
   private queryParamSub?: Subscription;
   private toastSub?: Subscription;
+  private tabRequestSub?: Subscription;
 
   /**
    * Applies the `tab`, `subtab`, `suiteId` and `resolveConfig` query parameters a link carries, then
-   * removes them from the address, so a reload or Back does not apply them again. A valid
-   * `resolveConfig` selects the System Configs tab, which opens that configuration's resolution dialog.
+   * removes them from the address, so a reload or Back does not apply them again. `subtab` goes to
+   * the Benchmark tab, or to the Users tab (`users` or `deletions`). A valid `resolveConfig` selects
+   * the System Configs tab, which opens that configuration's resolution dialog.
    */
   applyNavigationParams(params: ParamMap): void {
     if (!params.has('tab') && !params.has('subtab') && !params.has('suiteId') && !params.has('resolveConfig')) {
@@ -76,6 +80,11 @@ export class AdminComponent implements OnInit, OnDestroy {
       if (tab === 'benchmark') {
         const suiteId = AdminComponent.positiveId(params.get('suiteId'));
         this.pendingBenchmarkNavigation = { subTab: params.get('subtab'), suiteId };
+      } else if (tab === 'users') {
+        const subTab = params.get('subtab');
+        if (subTab === 'users' || subTab === 'deletions') {
+          this.store.usersSubTab = subTab;
+        }
       }
       this.selectTab(tab);
     }
@@ -100,6 +109,12 @@ export class AdminComponent implements OnInit, OnDestroy {
   ngOnInit() {
     ensureOverlayPolyfills();
     this.toastSub = this.store.toast$.subscribe(t => this.showAdminToast(t.message, t.type, t.title));
+    this.tabRequestSub = this.store.tabRequested$.subscribe(requested => {
+      const tab = this.tabs.find(t => t.id === requested)?.id;
+      if (tab) {
+        this.selectTab(tab);
+      }
+    });
 
     this.loadData();
 
@@ -156,6 +171,7 @@ export class AdminComponent implements OnInit, OnDestroy {
   ngOnDestroy() {
     this.queryParamSub?.unsubscribe();
     this.toastSub?.unsubscribe();
+    this.tabRequestSub?.unsubscribe();
     if (this.adminToastTimeout) {
       clearTimeout(this.adminToastTimeout);
     }

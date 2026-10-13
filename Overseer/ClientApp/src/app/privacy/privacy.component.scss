@@ -104,6 +104,25 @@
   }
 }
 
+/* ---- Acceptable use ---- */
+
+/* Underlined, so the links do not rely on color alone inside running text. */
+.provider-policy-list a {
+  color: var(--link-color);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+
+  &:hover {
+    color: #fce6a8;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 3px;
+    border-radius: 2px;
+  }
+}
+
 /* ---- The sensitivity ladder ---- */
 
 .ladder {

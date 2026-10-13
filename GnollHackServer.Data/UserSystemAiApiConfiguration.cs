@@ -20,7 +20,7 @@ public class UserSystemAiApiConfiguration : IRateLimitedEntity
 
     public int? OrderIndex { get; set; }
 
-    // Rate limits (null means use system defaults)
+    // Null, or 0: no per-user limit for this configuration.
     public int? MaxDailyChatRequests { get; set; }
     public int? MaxMonthlyChatRequests { get; set; }
     public int? MaxTotalChatRequests { get; set; }

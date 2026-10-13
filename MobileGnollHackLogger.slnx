@@ -17,6 +17,7 @@
     <File Path="docs/overseer/ai-benchmark-provider-availability.md" />
     <File Path="docs/overseer/ai-benchmark-report-pack.md" />
     <File Path="docs/overseer/ai-changelog.md" />
+    <File Path="docs/overseer/ai-telemetry.md" />
     <File Path="docs/overseer/anthropic-model-latency-measurements.md" />
     <File Path="docs/overseer/api-key-alerts.md" />
     <File Path="docs/overseer/changelog-guide.md" />
@@ -26,6 +27,7 @@
     <File Path="docs/overseer/data-privacy-framework.md" />
     <File Path="docs/overseer/gemini-service-tier-measurements.md" />
     <File Path="docs/overseer/release-checklist.md" />
+    <File Path="docs/overseer/security-monitoring.md" />
     <File Path="docs/overseer/sentry-logging-architecture.md" />
     <File Path="docs/overseer/sentry-sourcemaps.md" />
     <File Path="docs/overseer/subagents.md" />

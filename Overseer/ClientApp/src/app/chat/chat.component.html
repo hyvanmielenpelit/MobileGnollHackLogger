@@ -609,6 +609,20 @@
         }
       </div>
       <div class="input-area-container">
+        <!-- Stays for the page's life once the server says an administrator blocked the user. -->
+        @if (overseerBlock) {
+          <div class="alert alert-danger alert-compact overseer-blocked-banner" role="alert">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+            <div class="alert-content">
+              <div class="alert-body">
+                <p class="overseer-blocked-message">{{ overseerBlock.message }}</p>
+                @if (overseerBlock.reason) {
+                  <p class="overseer-blocked-reason">Reason: {{ overseerBlock.reason }}</p>
+                }
+              </div>
+            </div>
+          </div>
+        }
         @if (privacyNotice) {
           <div class="ephemeral-notice" role="status" aria-live="polite">
             <span class="ephemeral-notice-text">{{ privacyNotice }}</span>
@@ -885,9 +899,20 @@
             <div class="auto-resize-wrapper" [attr.data-replicated-value]="currentInput">
               <textarea #promptInput [(ngModel)]="currentInput" (ngModelChange)="saveDraft()" (keydown.enter)="onEnter($event)" (paste)="onPaste($event)" placeholder="Ask the Overseer" autofocus class="transparent-textarea"></textarea>
             </div>
-            <button class="icon-btn send-icon" (click)="sendMessage()" [disabled]="isStreaming || (!currentInput.trim() && pendingAttachments.length === 0)" title="Send message">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+            <!-- While blocked: aria-disabled rather than disabled, so the button stays focusable and its tooltip says why. -->
+            <button type="button" class="icon-btn send-icon" (click)="sendMessage()"
+                    [disabled]="!overseerBlock && (isStreaming || (!currentInput.trim() && pendingAttachments.length === 0))"
+                    [attr.aria-disabled]="overseerBlock ? 'true' : null"
+                    aria-label="Send message"
+                    [attr.title]="overseerBlock ? null : 'Send message'"
+                    [attr.interestfor]="overseerBlock ? 'tip-send-blocked' : null"
+                    [attr.style]="'anchor-name: --tip-send-blocked'">
+              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
             </button>
+            @if (overseerBlock) {
+              <div popover="hint" id="tip-send-blocked" class="gh-tooltip gh-tooltip-multiline"
+                   [attr.style]="'position-anchor: --tip-send-blocked'">{{ overseerBlock.message }}</div>
+            }
           </div>
         </div>
       </div>

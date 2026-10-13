@@ -48,6 +48,24 @@ when it was not.
 | `Overseer/Services/Agents/AgentLoopRunner.cs` | The third masking site, on tool results re-entering `messageHistory`. **Never sees a key** | § 3.2 |
 | `Overseer/Hubs/ChatHub.cs`, `Overseer/Controllers/ChatController.cs` | Parse a `SessionRef` at the boundary and authorise through one helper | § 3.5 |
 | `GnollHackServer.Data/Privacy/CryptoShred.cs` | Nulling a session's wrapped content key, and a user's API-key material | See below |
+| `GnollHackServer.Data/Privacy/AccountErasure.cs` | The account erasure steps, run by the website's self-service deletion **and** by an administrator's approved deletion in Overseer | The same reason as `CryptoShred`: both web projects need it |
+| `Overseer/Services/Security/`, `GnollHackServer.Data/Security/` | The security event recorder and writer, the Overseer block, provider safety identifiers, account-deletion holds, the game API sign-in throttle | `security-monitoring.md` |
+
+**Two outbound flows and two rules added by the security round** (`docs/overseer/security-monitoring.md`):
+
+- **The provider safety identifier is an outbound field.** It goes to OpenAI and Anthropic with
+  operator-funded calls to official endpoints only — never on a user's own key, never to a custom
+  endpoint. Do not widen it without saying so in the privacy notice.
+- **The account-deletion review email** leaves the website for the operator mailbox. It carries the user
+  name, the request time and the hold type, **never the hold reasons**, which can name policy categories
+  about a person and stay behind the admin sign-in.
+- **No content in events.** `SecurityEvent` holds identifiers and codes — never message text, attempted
+  user names, passwords or headers — and an IP address only on authentication and rate-limit events. A
+  new event kind obeys the same rule.
+- **Telemetry rows outside the four chat tables hold no content either.** `UserKeyAiUsageLog`,
+  `ChatProviderAttempt` and `OverseerDailyActivity` (`ai-telemetry.md`) are not written for an incognito
+  turn on a user's own key, and incognito activity is counted only on an anonymous daily row; each is
+  disclosed in the privacy notice.
 
 **Why `GnollHackServer.Data/Privacy/` exists at all.** `MobileGnollHackLogger` and `Overseer`
 each reference only `GnollHackServer.Data`, and **neither references the other**. Account

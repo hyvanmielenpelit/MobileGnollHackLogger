@@ -213,7 +213,9 @@ public class AgentLoopRunner
                 segmentedPrompt: request.SegmentedPrompt,
                 promptCacheKey: request.PromptCacheKey,
                 cacheConversationTail: request.CacheConversationTail,
-                disablePromptCache: request.DisableProviderPromptCache);
+                disablePromptCache: request.DisableProviderPromptCache,
+                // A custom endpoint may reject a field it does not know.
+                safetyIdentifier: request.Endpoint.IsCustom ? null : request.SafetyIdentifier);
 
             var jsonRequest = JsonSerializer.Serialize(requestBody);
             if (request.ShowDebugLog)
@@ -1440,7 +1442,7 @@ public class AgentLoopRunner
         var keyFailure = ApiKeyAlerts.ApiKeyFailureClassifier.Classify(providerName, null, text);
         draft.ApiKeyBilling = keyFailure == ApiKeyAlerts.ApiKeyFailureKind.InsufficientBalance;
         draft.ApiKeyRejected = keyFailure == ApiKeyAlerts.ApiKeyFailureKind.KeyRejected;
-        draft.RateLimitHeaders = ReadRateLimitHeaders(response);
+        draft.RateLimitHeaders = ProviderResponseEvidence.ReadRateLimitHeaders(response);
     }
 
     /// <summary>Records a non-2xx response's error fields, rate-limit headers and Retry-After as the attempt's evidence.</summary>
@@ -1449,44 +1451,8 @@ public class AgentLoopRunner
         draft.EndTicks = ProviderCallMeta.Now();
         draft.Error = ProviderAttemptClassifier.ParseErrorBody(errorBody);
         draft.BodyExcerpt = ProviderAttemptClassifier.Excerpt(errorBody);
-        draft.RateLimitHeaders = ReadRateLimitHeaders(response);
-        draft.RetryAfterMs = ReadRetryAfterMs(response);
-    }
-
-    /// <summary>The response's rate-limit headers, lower-case names; null when it sent none.</summary>
-    private static Dictionary<string, string>? ReadRateLimitHeaders(HttpResponseMessage response)
-    {
-        Dictionary<string, string>? limits = null;
-        foreach (var header in response.Headers)
-        {
-            string key = header.Key.ToLowerInvariant();
-            if (key.StartsWith("x-ratelimit-", StringComparison.Ordinal)
-                || key.StartsWith("anthropic-ratelimit-", StringComparison.Ordinal)
-                || key == "retry-after"
-                || key == "retry-after-ms")
-            {
-                limits ??= new Dictionary<string, string>(StringComparer.Ordinal);
-                limits[key] = string.Join(",", header.Value);
-            }
-        }
-        return limits;
-    }
-
-    /// <summary>The wait the provider asked for, from <c>retry-after-ms</c> or <c>Retry-After</c>; null when it named none.</summary>
-    private static int? ReadRetryAfterMs(HttpResponseMessage response)
-    {
-        if (response.Headers.TryGetValues("retry-after-ms", out var msValues)
-            && int.TryParse(msValues.FirstOrDefault(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int ms)
-            && ms >= 0)
-        {
-            return ms;
-        }
-
-        var retryAfter = response.Headers.RetryAfter;
-        double? wait = retryAfter?.Delta is TimeSpan delta ? (double?)delta.TotalMilliseconds
-            : retryAfter?.Date is DateTimeOffset date ? Math.Max(0, (date - DateTimeOffset.UtcNow).TotalMilliseconds)
-            : (double?)null;
-        return wait == null ? null : (int)Math.Min(int.MaxValue, Math.Round(wait.Value));
+        draft.RateLimitHeaders = ProviderResponseEvidence.ReadRateLimitHeaders(response);
+        draft.RetryAfterMs = ProviderResponseEvidence.ReadRetryAfterMs(response);
     }
 
     /// <summary>What one loop iteration has seen so far, from which its <see cref="ProviderAttemptRecord"/> is built.</summary>

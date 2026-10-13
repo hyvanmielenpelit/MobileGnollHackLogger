@@ -15,13 +15,21 @@ public class AuthController : ControllerBase
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly ApplicationDbContext _dbContext;
+    private readonly Overseer.Services.Security.ISecurityEventRecorder? _securityEvents;
 
-    public AuthController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager, ApplicationDbContext dbContext)
+    public AuthController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager, ApplicationDbContext dbContext,
+        Overseer.Services.Security.ISecurityEventRecorder? securityEvents = null)
     {
         _signInManager = signInManager;
         _userManager = userManager;
         _dbContext = dbContext;
+        _securityEvents = securityEvents;
     }
+
+    /// <summary>Records a sign-in event with the caller's IP; the attempted user name is never stored.</summary>
+    private void RecordSignInEvent(SecurityEventKind kind, string? userId, string code, string? detail = null) =>
+        _securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(kind, UserId: userId,
+            IpAddress: HttpContext?.Connection.RemoteIpAddress?.ToString(), Code: code, Detail: detail));
 
     /* Every failure below answers with exactly this object. An unknown user and a wrong
        password must be indistinguishable, so nothing about the account -- not its existence,
@@ -33,6 +41,7 @@ public class AuthController : ControllerBase
         => Unauthorized(new { message = "Invalid credentials." });
 
     [HttpPost("login")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Overseer.Security.RateLimitPolicies.Login)]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.UserName) || string.IsNullOrWhiteSpace(request.Password))
@@ -40,7 +49,10 @@ public class AuthController : ControllerBase
 
         var user = await _userManager.FindByNameAsync(request.UserName);
         if (user == null)
+        {
+            RecordSignInEvent(SecurityEventKind.LoginFailed, null, "login", "unknown-user");
             return InvalidCredentials();
+        }
 
         var result = await _signInManager.PasswordSignInAsync(user.UserName!, request.Password, isPersistent: true, lockoutOnFailure: true);
 
@@ -66,6 +78,7 @@ public class AuthController : ControllerBase
 
         if (result.IsLockedOut)
         {
+            RecordSignInEvent(SecurityEventKind.LoginLockedOut, user.Id, "login");
             return Unauthorized(new
             {
                 message = "This account is temporarily locked after too many failed sign-in attempts. Try again later.",
@@ -82,6 +95,7 @@ public class AuthController : ControllerBase
             });
         }
 
+        RecordSignInEvent(SecurityEventKind.LoginFailed, user.Id, "login");
         return InvalidCredentials();
     }
 
@@ -90,6 +104,7 @@ public class AuthController : ControllerBase
     /// <see cref="Login"/> using a TOTP code from the user's authenticator app.
     /// </summary>
     [HttpPost("login/2fa")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Overseer.Security.RateLimitPolicies.Login)]
     public async Task<IActionResult> LoginTwoFactor([FromBody] TwoFactorLoginRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Code))
@@ -112,6 +127,7 @@ public class AuthController : ControllerBase
 
         if (result.IsLockedOut)
         {
+            RecordSignInEvent(SecurityEventKind.LoginLockedOut, user.Id, "login-2fa");
             return Unauthorized(new
             {
                 message = "This account is temporarily locked after too many failed sign-in attempts. Try again later.",
@@ -119,6 +135,7 @@ public class AuthController : ControllerBase
             });
         }
 
+        RecordSignInEvent(SecurityEventKind.TwoFactorFailed, user.Id, "login-2fa");
         return Unauthorized(new { message = "Invalid verification code." });
     }
 

@@ -3340,3 +3340,110 @@ describe('ChatComponent attachment excerpt notices', () => {
     });
   });
 });
+
+describe('ChatComponent Overseer AI chat block', () => {
+  let component: ChatComponent;
+  let fixture: ComponentFixture<ChatComponent>;
+  let chatService: ChatService;
+  let settingsService: SettingsService;
+
+  const BLOCKED_TEXT = 'Your access to the Overseer AI chat has been suspended by an administrator.';
+  const host = () => fixture.nativeElement as HTMLElement;
+  const banner = () => host().querySelector<HTMLElement>('.overseer-blocked-banner');
+  const sendButton = () => host().querySelector<HTMLButtonElement>('.send-icon')!;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ChatComponent],
+      providers: [
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting()
+      ]
+    }).compileComponents();
+
+    stubSignalRConnection();
+    fixture = TestBed.createComponent(ChatComponent);
+    component = fixture.componentInstance;
+    chatService = TestBed.inject(ChatService);
+    settingsService = TestBed.inject(SettingsService);
+    (component as any).hubConnection = null;
+    (component as any).hubStartPromise = null;
+    vi.spyOn(component, 'loadSessions').mockReturnValue(undefined);
+    vi.spyOn(settingsService, 'getSettings').mockReturnValue(of({} as UserAiSettings));
+    vi.spyOn(settingsService, 'getSettingsResponse').mockReturnValue(
+      of(new HttpResponse({ body: { hasApiKey: true, hasModel: true, spoilerFreeMode: false } as UserAiSettings })));
+    vi.spyOn(settingsService, 'getUserModels').mockReturnValue(of([]));
+    vi.spyOn(console, 'error').mockReturnValue(undefined);
+    fixture.detectChanges();
+  });
+
+  function expectBlocked(reason: string | null): void {
+    const alert = banner();
+    expect(alert).toBeTruthy();
+    expect(alert!.getAttribute('role')).toBe('alert');
+    expect(alert!.querySelector('.overseer-blocked-message')?.textContent?.trim()).toBe(BLOCKED_TEXT);
+    if (reason) {
+      expect(alert!.querySelector('.overseer-blocked-reason')?.textContent?.trim()).toBe(`Reason: ${reason}`);
+    } else {
+      expect(alert!.querySelector('.overseer-blocked-reason')).toBeNull();
+    }
+    expect(sendButton().getAttribute('aria-disabled')).toBe('true');
+    expect(host().querySelector('#tip-send-blocked')?.textContent?.trim()).toBe(BLOCKED_TEXT);
+  }
+
+  it('shows the banner and disables sending on a 403 overseer_blocked send', async () => {
+    const sendSpy = vi.spyOn(chatService, 'sendMessage').mockReturnValue(throwError(() => ({
+      status: 403,
+      error: { code: 'overseer_blocked', message: BLOCKED_TEXT, reason: 'Repeated abusive prompts' }
+    })));
+    component.currentInput = 'Hello';
+
+    await component.sendMessage();
+    fixture.detectChanges();
+
+    expectBlocked('Repeated abusive prompts');
+    expect(component.isStreaming).toBe(false);
+
+    component.currentInput = 'Hello again';
+    await component.sendMessage();
+    sendButton().click();
+    expect(sendSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the banner and disables sending on an overseer_blocked error event from any chat', () => {
+    component.processChatEvent({
+      type: 'error',
+      sessionId: '99',
+      errorCode: 'overseer_blocked',
+      data: BLOCKED_TEXT,
+      detail: 'Repeated abusive prompts'
+    });
+    fixture.detectChanges();
+
+    expectBlocked('Repeated abusive prompts');
+  });
+
+  it('omits the reason line when the block carries none', () => {
+    component.processChatEvent({ type: 'error', errorCode: 'overseer_blocked', data: BLOCKED_TEXT });
+    fixture.detectChanges();
+
+    expectBlocked(null);
+  });
+
+  it('shows no banner for other errors', async () => {
+    vi.spyOn(chatService, 'sendMessage').mockReturnValue(throwError(() => ({
+      status: 403,
+      error: { code: 'quota_exceeded', message: 'Your daily limit is used up.' }
+    })));
+    component.currentInput = 'Hello';
+    await component.sendMessage();
+    component.processChatEvent({ type: 'error', errorCode: 'model_unavailable', data: 'This model is not available.' });
+    component.processChatEvent({ type: 'error', data: 'Something went wrong.' });
+    fixture.detectChanges();
+
+    expect(banner()).toBeNull();
+    expect(component.overseerBlock).toBeNull();
+    expect(sendButton().hasAttribute('aria-disabled')).toBe(false);
+  });
+});

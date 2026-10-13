@@ -20,7 +20,11 @@ namespace MobileGnollHackLogger.Data
         public Guid? LastRequestId { get; set; }
         public string? RequestPath { get; set; }
         public string? RequestUserName { get; set; }
-        public string? RequestAntiForgeryToken { get; set; }
+        /// <summary>
+        /// Whether the request's antiforgery token matched; stored in the RequestAntiForgeryToken column as "match" or
+        /// "mismatch", never as the value, which on a valid request is the server's secret.
+        /// </summary>
+        public bool? AntiForgeryTokenMatched { get; set; }
         public bool? LoginSucceeded { get; set; }
         public bool? DecryptionSucceeded { get; set; }
 
@@ -193,7 +197,7 @@ namespace MobileGnollHackLogger.Data
             req.RequestMethod = RequestMethod;
             req.RequestPath = RequestPath;
             req.RequestUserName = RequestUserName;
-            req.RequestAntiForgeryToken = RequestAntiForgeryToken;
+            req.RequestAntiForgeryToken = AntiForgeryTokenMatched switch { true => "match", false => "mismatch", null => null };
             req.Type = LogType;
             req.SubType = LogSubType;
             req.LastRequestId = LastRequestId;

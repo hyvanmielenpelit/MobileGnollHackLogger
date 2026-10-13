@@ -442,4 +442,163 @@ public class ChatRetentionServiceTests
         Assert.Equal(0, await service.PruneDismissedAiErrorLogsAsync(0, isDryRun: false, ct));
         Assert.Equal(1, await db.SystemAiErrorLogs.CountAsync(ct));
     }
+
+    private static SecurityEvent SecurityEventSeenDaysAgo(int firstSeenDaysAgo, int lastSeenDaysAgo, string? userId = null) => new()
+    {
+        OccurredUtc = DateTime.UtcNow.AddDays(-firstSeenDaysAgo),
+        LastOccurredUtc = DateTime.UtcNow.AddDays(-lastSeenDaysAgo),
+        Kind = SecurityEventKind.LoginFailed,
+        Count = 1,
+        AspNetUserId = userId,
+        IpAddress = "203.0.113.7"
+    };
+
+    private static ChatProviderAttempt ProviderAttemptStartedDaysAgo(int daysAgo) => new()
+    {
+        StartedAtUtc = DateTime.UtcNow.AddDays(-daysAgo),
+        AgentRunId = Guid.NewGuid(),
+        RoleContext = 1,
+        KeySource = AiKeySource.System,
+        SystemAiApiConfigurationId = 1,
+        Provider = "Anthropic",
+        RequestedModelId = "claude-test",
+        Outcome = ProviderAttemptOutcome.Ok,
+        HttpStatus = 200
+    };
+
+    [Fact]
+    public async Task PruneSecurityEventsAsync_DryRun_CountsOnlyRunsLastSeenBeforeTheWindow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var service = new ChatRetentionService(db, CreateTestConfiguration(), NullLogger<ChatRetentionService>.Instance);
+
+        // Last seen long ago: the only prunable row.
+        db.SecurityEvents.Add(SecurityEventSeenDaysAgo(300, 200));
+        // First seen long ago but still recurring: the window counts from the last occurrence.
+        db.SecurityEvents.Add(SecurityEventSeenDaysAgo(300, 10));
+        db.SecurityEvents.Add(SecurityEventSeenDaysAgo(5, 5));
+        await db.SaveChangesAsync(ct);
+
+        int count = await service.PruneSecurityEventsAsync(180, isDryRun: true, ct);
+
+        Assert.Equal(1, count);
+        Assert.Equal(3, await db.SecurityEvents.CountAsync(ct));
+    }
+
+    [Fact]
+    public async Task PruneSecurityEventsAsync_ZeroDays_ReturnsZero()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var service = new ChatRetentionService(db, CreateTestConfiguration(), NullLogger<ChatRetentionService>.Instance);
+
+        db.SecurityEvents.Add(SecurityEventSeenDaysAgo(500, 400));
+        await db.SaveChangesAsync(ct);
+
+        Assert.Equal(0, await service.PruneSecurityEventsAsync(0, isDryRun: false, ct));
+        Assert.Equal(0, await service.PruneSecurityEventsAsync(-1, isDryRun: false, ct));
+        Assert.Equal(1, await db.SecurityEvents.CountAsync(ct));
+    }
+
+    [Fact]
+    public async Task PruneChatProviderAttemptsAsync_DryRun_CountsOnlyRowsOlderThanTheWindow()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var service = new ChatRetentionService(db, CreateTestConfiguration(), NullLogger<ChatRetentionService>.Instance);
+
+        db.ChatProviderAttempts.Add(ProviderAttemptStartedDaysAgo(500));
+        db.ChatProviderAttempts.Add(ProviderAttemptStartedDaysAgo(401));
+        db.ChatProviderAttempts.Add(ProviderAttemptStartedDaysAgo(399));
+        await db.SaveChangesAsync(ct);
+
+        int count = await service.PruneChatProviderAttemptsAsync(400, isDryRun: true, ct);
+
+        Assert.Equal(2, count);
+        Assert.Equal(3, await db.ChatProviderAttempts.CountAsync(ct));
+    }
+
+    [Fact]
+    public async Task PruneChatProviderAttemptsAsync_ZeroDays_ReturnsZero()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var service = new ChatRetentionService(db, CreateTestConfiguration(), NullLogger<ChatRetentionService>.Instance);
+
+        db.ChatProviderAttempts.Add(ProviderAttemptStartedDaysAgo(900));
+        await db.SaveChangesAsync(ct);
+
+        Assert.Equal(0, await service.PruneChatProviderAttemptsAsync(0, isDryRun: false, ct));
+        Assert.Equal(0, await service.PruneChatProviderAttemptsAsync(-1, isDryRun: false, ct));
+        Assert.Equal(1, await db.ChatProviderAttempts.CountAsync(ct));
+    }
+
+    [Fact]
+    public async Task RunFullMaintenanceAsync_DryRun_ReportsAndRecordsSecurityEventAndProviderAttemptCounts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var service = new ChatRetentionService(db, CreateTestConfiguration(), NullLogger<ChatRetentionService>.Instance);
+
+        // Default windows: 180 days for security events, 400 for provider attempts.
+        db.SecurityEvents.Add(SecurityEventSeenDaysAgo(300, 250));
+        db.SecurityEvents.Add(SecurityEventSeenDaysAgo(200, 190));
+        db.SecurityEvents.Add(SecurityEventSeenDaysAgo(20, 10));
+        db.ChatProviderAttempts.Add(ProviderAttemptStartedDaysAgo(800));
+        db.ChatProviderAttempts.Add(ProviderAttemptStartedDaysAgo(600));
+        db.ChatProviderAttempts.Add(ProviderAttemptStartedDaysAgo(401));
+        db.ChatProviderAttempts.Add(ProviderAttemptStartedDaysAgo(30));
+        await db.SaveChangesAsync(ct);
+
+        var result = await service.RunFullMaintenanceAsync(new MaintenanceRequestDto { DryRun = true }, cancellationToken: ct);
+
+        Assert.True(result.Success);
+        Assert.True(result.IsDryRun);
+        Assert.Equal(2, result.PrunedSecurityEventCount);
+        Assert.Equal(3, result.PrunedChatProviderAttemptCount);
+        Assert.Contains("Security events pruned (> 180d since last seen): 2", result.Logs);
+        Assert.Contains("Chat provider attempts pruned (> 400d): 3", result.Logs);
+        Assert.Equal(3, await db.SecurityEvents.CountAsync(ct));
+        Assert.Equal(4, await db.ChatProviderAttempts.CountAsync(ct));
+
+        var recorded = Assert.Single(await db.MaintenanceRunLogs.ToListAsync(ct));
+        Assert.Equal(MaintenanceTriggers.Manual, recorded.Trigger);
+        Assert.True(recorded.IsDryRun);
+        Assert.True(recorded.Success);
+        Assert.Equal(2, recorded.PrunedSecurityEventCount);
+        Assert.Equal(3, recorded.PrunedChatProviderAttemptCount);
+        Assert.NotNull(recorded.LogText);
+        Assert.Contains("Security events pruned (> 180d since last seen): 2", recorded.LogText);
+        Assert.Contains("Chat provider attempts pruned (> 400d): 3", recorded.LogText);
+    }
+
+    [Fact]
+    public async Task RunFullMaintenanceAsync_DisabledWindows_SkipsSecurityEventAndProviderAttemptPruning()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        var config = CreateTestConfiguration(new Dictionary<string, string?>
+        {
+            { "ChatRetentionSettings:PruneSecurityEventDays", "0" },
+            { "ChatRetentionSettings:PruneChatProviderAttemptDays", "0" }
+        });
+        var service = new ChatRetentionService(db, config, NullLogger<ChatRetentionService>.Instance);
+
+        db.SecurityEvents.Add(SecurityEventSeenDaysAgo(900, 800));
+        db.ChatProviderAttempts.Add(ProviderAttemptStartedDaysAgo(900));
+        await db.SaveChangesAsync(ct);
+
+        var result = await service.RunFullMaintenanceAsync(new MaintenanceRequestDto { DryRun = true }, cancellationToken: ct);
+
+        Assert.True(result.Success);
+        Assert.Equal(0, result.PrunedSecurityEventCount);
+        Assert.Equal(0, result.PrunedChatProviderAttemptCount);
+        Assert.Contains("Security event pruning is disabled; no rows were pruned.", result.Logs);
+        Assert.Contains("Chat provider attempt pruning is disabled; no rows were pruned.", result.Logs);
+
+        var recorded = Assert.Single(await db.MaintenanceRunLogs.ToListAsync(ct));
+        Assert.Equal(0, recorded.PrunedSecurityEventCount);
+        Assert.Equal(0, recorded.PrunedChatProviderAttemptCount);
+    }
 }

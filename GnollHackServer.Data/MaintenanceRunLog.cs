@@ -40,6 +40,10 @@ public class MaintenanceRunLog
 
     public int PrunedAiErrorLogCount { get; set; }
 
+    public int PrunedSecurityEventCount { get; set; }
+
+    public int PrunedChatProviderAttemptCount { get; set; }
+
     public int DeletedDiskFolderCount { get; set; }
 
     public int DeletedDiskFileCount { get; set; }

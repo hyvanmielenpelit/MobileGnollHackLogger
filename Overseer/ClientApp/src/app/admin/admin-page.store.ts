@@ -22,6 +22,9 @@ export interface AdminUsersQuery {
   usernameFilter: string;
 }
 
+/** The Users tab's sub-tabs. */
+export type AdminUsersSubTab = 'users' | 'deletions';
+
 export type TelemetryTimeSpan = '7d' | '28d' | '30d' | '90d' | '180d' | '1y' | 'custom';
 
 /** The AI Telemetry date range, kept while the tab is closed. Empty dates mean no range yet. */
@@ -67,6 +70,32 @@ export class AdminPageStore {
 
   /** Emits when `pendingResolveConfigId` is set. */
   readonly resolveConfigRequested$ = new Subject<void>();
+
+  /** The Users tab's selected sub-tab, kept while the tab is closed. */
+  usersSubTab: AdminUsersSubTab = 'users';
+
+  /** Emits a top-level tab id (`AdminTabId`) a tab asks the Admin page to select. */
+  readonly tabRequested$ = new Subject<string>();
+
+  /** A user whose AI usage a link asked the AI Telemetry tab to show; cleared once the tab has read it. */
+  pendingTelemetryUserId: string | null = null;
+  pendingTelemetryUserName: string | null = null;
+
+  /** Emits when `pendingTelemetryUserId` is set. */
+  readonly telemetryUserRequested$ = new Subject<void>();
+
+  /** A user whose security events a link asked the Security tab to show; cleared once the tab has read it. */
+  pendingSecurityUserId: string | null = null;
+  pendingSecurityUserName: string | null = null;
+
+  /** Emits when `pendingSecurityUserId` is set. */
+  readonly securityUserRequested$ = new Subject<void>();
+
+  /** A user whose configuration limits a link asked the Users tab to manage; cleared once the tab has read it. */
+  pendingManageUser: { userId: string; userName: string } | null = null;
+
+  /** Emits when `pendingManageUser` is set. */
+  readonly manageUserRequested$ = new Subject<void>();
 
   showToast(message: string, type: AdminToastType = 'success', title?: string): void {
     this.toast$.next({ message, type, title });
@@ -114,6 +143,34 @@ export class AdminPageStore {
   requestResolveConfig(id: number): void {
     this.pendingResolveConfigId = id;
     this.resolveConfigRequested$.next();
+  }
+
+  /** Asks the Admin page to select a top-level tab. */
+  requestTab(tab: string): void {
+    this.tabRequested$.next(tab);
+  }
+
+  /** Asks the AI Telemetry tab to show one user's usage, and selects it. */
+  requestTelemetryUser(userId: string, userName: string): void {
+    this.pendingTelemetryUserId = userId;
+    this.pendingTelemetryUserName = userName;
+    this.telemetryUserRequested$.next();
+    this.requestTab('telemetry');
+  }
+
+  /** Asks the Security tab to show one user's events, and selects it. */
+  requestSecurityUser(userId: string, userName: string): void {
+    this.pendingSecurityUserId = userId;
+    this.pendingSecurityUserName = userName;
+    this.securityUserRequested$.next();
+    this.requestTab('security');
+  }
+
+  /** Asks the Users tab to open its Manage User Configs dialog for one user, and selects it. */
+  requestManageUser(userId: string, userName: string): void {
+    this.pendingManageUser = { userId, userName };
+    this.manageUserRequested$.next();
+    this.requestTab('users');
   }
 
   /** A failed load keeps the keys already shown. */

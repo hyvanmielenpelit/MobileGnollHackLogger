@@ -28,6 +28,7 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 {
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(MobileGnollHackLogger.Areas.API.GameApiRateLimits.AccountPages)]
     public class RegisterModel : PageModel
     {
         private readonly SignInManager<ApplicationUser> _signInManager;

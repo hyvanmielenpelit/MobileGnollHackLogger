@@ -203,8 +203,33 @@
       </p>
     </section>
 
+    <section id="acceptable-use" class="privacy-section">
+      <h2>6. Acceptable use</h2>
+      <p>
+        Overseer is for questions about GnollHack and NetHack. Every message you send goes to an AI
+        provider, and that provider&rsquo;s own usage policy applies to it as well as anything stated here:
+      </p>
+      <ul class="provider-policy-list">
+        @for (policy of providerPolicies; track policy.url) {
+          <li>
+            <a [href]="policy.url" target="_blank" rel="noopener noreferrer">{{ policy.name }}<span class="visually-hidden"> (opens in a new tab)</span></a>
+          </li>
+        }
+      </ul>
+      <p>
+        Misuse can lead to limits on your AI use or to a block of your access to the AI chat. A block stops
+        new AI work only: you can still sign in, read and export your chats, change your settings and delete
+        your account, and the administrator&rsquo;s reason is shown to you.
+      </p>
+      <p class="account-deletion-review">
+        A request to delete your account may be held for review by an administrator when there is evidence
+        of misuse that may be illegal. You are told that it is under review, and you are e-mailed when the
+        deletion is completed or declined.
+      </p>
+    </section>
+
     <section id="operator-gaps" class="privacy-section">
-      <h2>6. Still to be supplied by the operator</h2>
+      <h2>7. Still to be supplied by the operator</h2>
       <p>
         The items below cannot be answered by the software. They are statements only the operator of this
         deployment can make, and they have not been made yet &mdash; so this notice is incomplete rather than

@@ -117,14 +117,24 @@ public class BenchmarkRubricCheckService
                 int outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
                 job.AddUsage(promptTokens, outputTokens);
 
-                await configService.RecordUsageAsync(
-                    config.Id,
-                    job.StartedByUserId,
-                    promptTokens,
-                    outputTokens,
-                    roleContext: 6,
-                    cacheReadTokens: runResult.CacheReadTokens,
-                    cacheCreationTokens: runResult.CacheCreationTokens);
+                if (runResult.ModelCallUsages.Count > 0)
+                {
+                    await configService.RecordCallsUsageAsync(
+                        config.Id, job.StartedByUserId, roleContext: 6,
+                        runResult.ModelCallUsages, runResult.ActualServiceTier, totalDurationMs: null);
+                }
+                else
+                {
+                    // No call reported usage: the tokens are estimates.
+                    await configService.RecordUsageAsync(
+                        config.Id,
+                        job.StartedByUserId,
+                        promptTokens,
+                        outputTokens,
+                        roleContext: 6,
+                        cacheReadTokens: runResult.CacheReadTokens,
+                        cacheCreationTokens: runResult.CacheCreationTokens);
+                }
 
                 if (terminalError != null)
                 {
@@ -152,14 +162,24 @@ public class BenchmarkRubricCheckService
                     int repairOutputTokens = repairResult.OutputTokens > 0 ? repairResult.OutputTokens : repairResult.EstimatedOutputTokens;
                     job.AddUsage(repairPromptTokens, repairOutputTokens);
 
-                    await configService.RecordUsageAsync(
-                        config.Id,
-                        job.StartedByUserId,
-                        repairPromptTokens,
-                        repairOutputTokens,
-                        roleContext: 6,
-                        cacheReadTokens: repairResult.CacheReadTokens,
-                        cacheCreationTokens: repairResult.CacheCreationTokens);
+                    if (repairResult.ModelCallUsages.Count > 0)
+                    {
+                        await configService.RecordCallsUsageAsync(
+                            config.Id, job.StartedByUserId, roleContext: 6,
+                            repairResult.ModelCallUsages, repairResult.ActualServiceTier, totalDurationMs: null);
+                    }
+                    else
+                    {
+                        // No call reported usage: the tokens are estimates.
+                        await configService.RecordUsageAsync(
+                            config.Id,
+                            job.StartedByUserId,
+                            repairPromptTokens,
+                            repairOutputTokens,
+                            roleContext: 6,
+                            cacheReadTokens: repairResult.CacheReadTokens,
+                            cacheCreationTokens: repairResult.CacheCreationTokens);
+                    }
 
                     if (repairError != null)
                     {

@@ -1182,7 +1182,39 @@ configuration's rows. What the delete removes is the configuration's user and gr
 and every `UserSystemModelConfidentialTrust` decision for it; benchmark history is unaffected
 (`ai-benchmark.md`, *Model Configuration Snapshots*). Usage logs have **no retention sweep**:
 dismissed error logs are pruned after 90 days, usage logs are kept until a retention setting is
-added for them.
+added for them. Usage rows now also carry an **estimated cost** and the thinking level sent
+(`ai-telemetry.md`).
+
+**AI telemetry tables outside the four chat tables** (`ai-telemetry.md`). None holds content:
+
+| Table | Personal data | Incognito | Retention |
+|---|---|---|---|
+| `UserKeyAiUsageLog` | user id, model, tokens, estimated cost of a call on the user's own key | **not written** for an incognito turn on the user's own key | cascades with the account |
+| `ChatProviderAttempt` | outcome class, HTTP status and a sanitized error code per provider attempt; a user id **only on user-key rows** | not written for an incognito turn on the user's own key; system-configuration incognito turns record as other operator-funded calls do | pruned after 400 days (`PruneChatProviderAttemptDays`); user-key rows cascade with the account |
+| `OverseerDailyActivity` | per user per UTC day: chats created and messages sent and received | incognito chats and messages are counted **only on an anonymous daily row** that names nobody | cascades with the account (a deletion held for review keeps it until approved) |
+
+The incognito promise covers the four chat tables; these rows are outside them, hold no content, and
+are disclosed in the privacy notice (*Cost and token accounting*, *Activity counts*).
+
+**Security events, the block and account-deletion holds** (`security-monitoring.md`):
+
+- `SecurityEvent` holds identifiers and codes only — never message text, attempted user names,
+  passwords or headers; the IP address only on authentication and rate-limit events. Kept 180 days
+  (`PruneSecurityEventDays`), except the events of a user with an active hold or a pending deletion
+  request, which are kept until it is decided; cascades with the account.
+- **The provider safety identifier is a new outbound field.** A pseudonym derived by HMAC from the
+  user id with a key derived from `AesEncryptionKey`, sent to OpenAI (`safety_identifier`) and Anthropic
+  (`metadata.user_id`) with operator-funded calls to official endpoints, incognito and confidential
+  turns included, so that a provider can act on one user instead of the operator's whole key. Never on a
+  user's own key or to a custom endpoint; Google receives none.
+- **The Overseer block** (`ApplicationUser.OverseerBlockedUtc`, reason, blocking admin) stops a user
+  starting AI work and is shown to them with the admin's reason.
+- **Account-deletion holds.** `AccountHold` (an admin's hold and reason, never shown to the user;
+  cascades) and `AccountDeletionRequest` (a held request: the hold reasons, the user id, name and email
+  snapshots, the decision). A held request deletes nothing until an administrator approves it; on
+  approval the account is erased through the same code as self-service deletion and the request keeps
+  only the decision — its user id, name and email are cleared. It has no foreign key to the user, so
+  the decision record survives the deletion.
 
 ### 5.7 The encryption half
 

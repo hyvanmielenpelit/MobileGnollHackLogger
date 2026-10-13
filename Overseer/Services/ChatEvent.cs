@@ -15,7 +15,8 @@ public class ChatEvent
     public int? SeqNo { get; set; }
     // Bounded raw provider failure payload; set only on "error" events, null otherwise.
     public string? Detail { get; set; }
-    // Machine-readable failure code; set only on "error" events. "model_unavailable" is the only value.
+    // Machine-readable failure code; set only on "error" events: "model_unavailable" or "overseer_blocked"
+    // (Detail then carries the administrator's block reason).
     public string? ErrorCode { get; set; }
     public TokenUsageReport? UsageReport { get; set; }
     // Set only on "call_meta" events, which the agent loop consumes and never yields onward.

@@ -1,0 +1,262 @@
+/* The filter bar, the status line and Load more are the global card-list classes in styles.scss;
+   `.action-btn`, `.btn-ghost` and `.gh-tag` are global too. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.tl-users-note,
+.tl-users-filter,
+.tl-users-empty,
+.tl-users-error {
+  margin: 0;
+}
+
+.tl-users-note,
+.tl-users-empty {
+  color: var(--nav-color);
+}
+
+.tl-users-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.tl-users-search {
+  flex: 1 1 16rem;
+}
+
+.tl-users-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  label {
+    font-size: var(--text-secondary);
+    font-weight: 600;
+    color: #aaa;
+    white-space: nowrap;
+  }
+}
+
+.tl-users-status {
+  margin-inline-start: auto;
+
+  &:empty {
+    display: none;
+  }
+}
+
+/* --- Cards ----------------------------------------------------------------------------------- */
+
+.tl-user-cards {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: tl-user-cards / inline-size;
+}
+
+.tl-user-item {
+  min-inline-size: 0;
+}
+
+/* Head and metrics beside the actions, the configurations below; the metrics go under the head
+   below 60 rem of the list and everything is one column below 30 rem. */
+.tl-user-card {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(0, auto) auto;
+  grid-template-areas:
+    "head    metrics actions"
+    "configs configs configs";
+  gap: 0.5rem 1.5rem;
+  padding: 0.75rem 1rem 0.875rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+}
+
+@container tl-user-cards (max-width: 60rem) {
+  .tl-user-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "head    actions"
+      "metrics metrics"
+      "configs configs";
+  }
+}
+
+@container tl-user-cards (max-width: 30rem) {
+  .tl-user-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "actions"
+      "metrics"
+      "configs";
+  }
+
+  .tl-user-actions {
+    justify-content: flex-start;
+  }
+}
+
+.tl-user-head {
+  grid-area: head;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}
+
+.tl-user-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  .gh-tag {
+    margin: 0;
+  }
+}
+
+.tl-sep {
+  color: #71717a;
+}
+
+/* The words carry each state; the outlines reinforce them. */
+.tl-user-blocked {
+  border-color: rgba(239, 83, 80, 0.6);
+  color: #fca5a5;
+}
+
+.tl-user-hold {
+  border-color: var(--border-glass);
+  color: #d4d4d8;
+}
+
+time {
+  font-variant-numeric: tabular-nums;
+}
+
+.tl-user-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  color: #e4e4e7;
+  overflow-wrap: anywhere;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.tl-user-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.tl-user-metrics {
+  grid-area: metrics;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 7.5rem);
+  gap: 0.5rem 0.75rem;
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-glass);
+}
+
+.tl-metric {
+  min-inline-size: 0;
+
+  dt {
+    font-size: var(--text-secondary);
+    font-weight: 600;
+    color: var(--nav-color);
+  }
+
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    color: #e4e4e7;
+    overflow-wrap: anywhere;
+  }
+
+  .tl-metric-note {
+    font-size: var(--text-secondary);
+    color: #a1a1aa;
+  }
+}
+
+.tl-user-configs {
+  grid-area: configs;
+  overflow-x: auto;
+}
+
+.tl-user-config-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+
+  th,
+  td {
+    padding: 4px 8px;
+    border-bottom: 1px solid var(--border-glass);
+    text-align: start;
+    vertical-align: baseline;
+  }
+
+  thead th {
+    font-weight: 600;
+    color: var(--nav-color);
+    white-space: nowrap;
+  }
+
+  tbody th {
+    font-weight: 400;
+    color: #e4e4e7;
+  }
+
+  .num {
+    text-align: end;
+    white-space: nowrap;
+  }
+
+  tbody tr:last-child > * {
+    border-bottom: none;
+  }
+}
+
+.tl-config-disabled {
+  margin-inline-start: 6px;
+  border-color: var(--border-glass);
+  border-style: dashed;
+  color: #a1a1aa;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tl-user-card {
+    transition: none;
+  }
+}

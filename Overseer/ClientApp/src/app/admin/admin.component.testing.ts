@@ -56,12 +56,18 @@ export function buildSystemConfig(overrides: Partial<SystemAiConfigDto> = {}): S
   };
 }
 
-/** The empty responses every Admin spec starts from: no users, groups, configurations or default keys. */
+/**
+ * The empty responses every Admin spec starts from: no users, groups, configurations, default keys or deletion
+ * requests.
+ */
 export function spyAdminService(adminService: AdminService): void {
   vi.spyOn(adminService, 'getUsers').mockReturnValue(of({ rows: [], totalCount: 0 }));
   vi.spyOn(adminService, 'getGroups').mockReturnValue(of([]));
   vi.spyOn(adminService, 'getSystemConfigs').mockReturnValue(of([]));
   vi.spyOn(adminService, 'getDefaultApiKeys').mockReturnValue(of([]));
+  vi.spyOn(adminService, 'getAccountDeletionRequests').mockReturnValue(of({
+    totalCount: 0, pendingCount: 0, overdueCount: 0, erasurePathsConfigured: true, rows: []
+  }));
 }
 
 /**

@@ -1,0 +1,380 @@
+@use '../admin-shared' as shared;
+
+/* The filter bar, the facet, the chips, the status line and Load more are the global card-list
+   classes in styles.scss; `.action-btn`, `.btn-ghost` and `.gh-tag` are global too. */
+
+:host {
+  display: block;
+}
+
+@include shared.tab-header-row;
+@include shared.d-flex;
+
+/* --- Date range ------------------------------------------------------------------------------ */
+
+.sec-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-end;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 25px;
+}
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+
+  label {
+    font-size: 0.85em;
+    font-weight: 600;
+    color: #aaa;
+    letter-spacing: 0.3px;
+  }
+}
+
+.sec-toolbar .gh-input {
+  min-width: 180px;
+}
+
+.sec-summary-error {
+  margin-bottom: 1rem;
+}
+
+/* --- Summary cards --------------------------------------------------------------------------- */
+
+.sec-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 15px;
+  margin: 0 0 25px;
+  padding: 0;
+  list-style: none;
+}
+
+.sec-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+}
+
+.sec-stat-title {
+  margin: 0;
+  font-size: 0.85em;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #aaa;
+  letter-spacing: 0.5px;
+}
+
+.sec-stat-value {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.sec-stat-unit {
+  font-size: 0.5em;
+  font-weight: 600;
+  color: #aaa;
+}
+
+.sec-stat-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.85em;
+  color: #c4c4c8;
+}
+
+.sec-review-deletions {
+  align-self: flex-start;
+  margin-top: 8px;
+}
+
+/* --- Sections -------------------------------------------------------------------------------- */
+
+.sec-section {
+  margin-bottom: 25px;
+  padding: 1.25rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+
+  h4 {
+    margin: 0 0 12px;
+  }
+}
+
+.sec-lookup-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+
+  .control-group {
+    flex: 1 1 18rem;
+    max-width: 32rem;
+  }
+}
+
+.sec-lookup-result {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 8px;
+
+  .sec-lookup-status:empty {
+    display: none;
+  }
+}
+
+.sec-lookup-status {
+  margin: 0;
+}
+
+/* --- Events list ----------------------------------------------------------------------------- */
+
+.sec-events {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+
+  h4 {
+    margin: 0;
+  }
+}
+
+.sec-events-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+
+  h4:focus {
+    outline: none;
+  }
+
+  h4:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  .gh-list-status:empty {
+    display: none;
+  }
+}
+
+.sec-user-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0;
+}
+
+.sec-search {
+  flex: 1 1 16rem;
+}
+
+.sec-clear-filters {
+  margin-inline-start: 4px;
+}
+
+.sec-empty,
+.sec-events-error {
+  margin: 0;
+}
+
+.sec-empty {
+  color: var(--nav-color);
+}
+
+.sec-cards {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: sec-cards / inline-size;
+}
+
+.sec-item {
+  min-inline-size: 0;
+}
+
+/* Kicker, title and facts beside the actions; one column below 30 rem of the list. */
+.sec-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "kicker actions"
+    "title  actions"
+    "facts  facts";
+  gap: 0.375rem 1.5rem;
+  padding: 0.75rem 1rem 0.875rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+}
+
+@container sec-cards (max-width: 30rem) {
+  .sec-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "kicker"
+      "title"
+      "facts"
+      "actions";
+  }
+
+  .sec-actions {
+    justify-content: flex-start;
+  }
+}
+
+.sec-kicker {
+  grid-area: kicker;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+
+  .gh-tag {
+    display: inline-flex;
+    margin: 0;
+  }
+}
+
+.sec-kind {
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.sec-sep {
+  color: #71717a;
+}
+
+time,
+.sec-run {
+  font-variant-numeric: tabular-nums;
+}
+
+.sec-blocked-tag {
+  border-style: dashed;
+  border-color: rgba(239, 83, 80, 0.55);
+  color: #fca5a5;
+}
+
+.sec-title {
+  grid-area: title;
+  margin: 0;
+  font-size: 1.0625rem;
+  color: #e4e4e7;
+  overflow-wrap: anywhere;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.sec-facts {
+  grid-area: facts;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  gap: 0.25rem 1.5rem;
+  margin: 0;
+  font-size: var(--text-secondary);
+
+  > div {
+    display: flex;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  dt {
+    flex: none;
+    color: var(--nav-color);
+  }
+
+  dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.sec-fact-detail {
+  grid-column: 1 / -1;
+}
+
+.sec-mono {
+  font-family: var(--font-mono, monospace);
+}
+
+.sec-actions {
+  grid-area: actions;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+/* --- Block dialog ---------------------------------------------------------------------------- */
+
+.sec-block-dialog {
+  width: min(34rem, calc(100vw - 2rem));
+}
+
+.sec-block-field {
+  margin-top: 12px;
+}
+
+.sec-block-reason {
+  width: 100%;
+  resize: vertical;
+}
+
+.sec-block-count {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  text-align: end;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sec-card {
+    transition: none;
+  }
+}

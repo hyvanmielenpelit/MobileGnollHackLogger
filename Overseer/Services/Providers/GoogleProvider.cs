@@ -798,6 +798,34 @@ public class GoogleProvider : IAiProvider
         return req;
     }
 
+    /// <summary>
+    /// Reads <c>usageMetadata</c> as the streaming loop does: the prompt includes
+    /// <c>toolUsePromptTokenCount</c>, and output includes <c>thoughtsTokenCount</c>.
+    /// </summary>
+    public TokenUsageReport? ParseTitleUsage(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("usageMetadata", out var usage) || usage.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        int prompt = ReadInt(usage, "promptTokenCount") + ReadInt(usage, "toolUsePromptTokenCount");
+        int candidates = ReadInt(usage, "candidatesTokenCount");
+        int cached = ReadInt(usage, "cachedContentTokenCount");
+        int thoughts = ReadInt(usage, "thoughtsTokenCount");
+        return new TokenUsageReport
+        {
+            TotalPromptTokens = prompt,
+            CacheReadTokens = cached,
+            CacheCreationTokens = 0,
+            UncachedInputTokens = Math.Max(0, prompt - cached),
+            OutputTokens = candidates + thoughts,
+            ReasoningTokens = thoughts
+        };
+
+        static int ReadInt(JsonElement obj, string name) =>
+            obj.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int n) ? n : 0;
+    }
 
     public string? ParseTitleResponse(JsonElement root)
     {

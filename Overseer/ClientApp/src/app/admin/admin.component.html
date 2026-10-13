@@ -76,6 +76,13 @@
           </div>
         }
 
+        <!-- SECURITY TAB -->
+        @if (activeTab === 'security') {
+          <div role="tabpanel" id="admin-panel-security" aria-labelledby="admin-tab-security" tabindex="0">
+            <app-admin-security-tab></app-admin-security-tab>
+          </div>
+        }
+
         <!-- GNOLLBENCH TAB -->
         @if (activeTab === 'benchmark') {
           <div role="tabpanel" id="admin-panel-benchmark" aria-labelledby="admin-tab-benchmark" tabindex="0">

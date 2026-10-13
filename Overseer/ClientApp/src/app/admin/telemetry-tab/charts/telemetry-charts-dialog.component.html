@@ -1,0 +1,500 @@
+<!-- One chart's image box: the composed download rasterized for the screen, the pending ring before
+     the first composition, or why there is nothing to show. -->
+<ng-template #figureImage let-figure>
+  @if (sizeError) {
+    <p class="tl-charts-figure-note">{{ sizeError }}</p>
+  } @else if (!figure.config) {
+    <p class="tl-charts-figure-note">{{ figure.title }}: nothing to draw in this range.</p>
+  } @else if (imageFor(figure.key); as image) {
+    @if (image.canvas) {
+      <canvas class="gh-fig-canvas tl-charts-canvas" role="img" [attr.data-figure]="figure.key"
+              [class.is-transparent-figure]="isTransparentFigure" [attr.aria-label]="imageLabel(figure)"></canvas>
+    } @else {
+      <p class="tl-charts-figure-note">{{ image.refusal }}</p>
+    }
+  } @else {
+    <span class="tl-charts-pending">
+      <svg class="dc-ring" xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+        <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+        <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+      </svg>
+      <span class="visually-hidden">Drawing {{ figure.title }}…</span>
+    </span>
+  }
+</ng-template>
+
+<!-- AI TELEMETRY CHARTS: header / figure workspace. Its own close and cancel events stop here, so the
+     tab and the page never hear them. No light dismiss, and no close at all while an export runs. -->
+<dialog #dialog class="gh-dialog gh-dialog-fullscreen tl-charts-dialog" aria-labelledby="tl-charts-title"
+        [attr.closedby]="exporting ? 'none' : null"
+        (cancel)="onCancel($event)" (close)="onDialogClose($event)">
+  <div class="dialog-content gh-wizard">
+    <div class="dialog-header gh-wizard-header">
+      <div class="dialog-title-group">
+        <!-- The focus target on open, so the Close button's tooltip does not open by itself. -->
+        <h3 #title id="tl-charts-title" tabindex="-1">{{ dialogTitle }}</h3>
+        <p class="dialog-subtitle tl-charts-range">{{ rangeLabel }}</p>
+      </div>
+      <button type="button" class="btn-icon-action tl-charts-close" aria-label="Close AI Telemetry Charts"
+              [attr.aria-disabled]="exporting ? 'true' : null"
+              interestfor="tl-charts-tip-close" [attr.style]="'anchor-name: --tl-charts-tip-close'"
+              (click)="close()">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="tl-charts-tip-close"
+           [attr.style]="'position-anchor: --tl-charts-tip-close'">{{ exporting ? 'An export is running; close when it ends.' : 'Close' }}</div>
+    </div>
+
+    <div class="gh-wizard-body">
+      <div class="gh-wizard-step gh-fig-host">
+        <div #workspace class="gh-fig-workspace tl-charts-workspace" [class.is-collapsed]="sidebarCollapsed"
+             [style.--gh-fig-sidebar-width]="sidebarWidth + 'px'">
+
+          <!-- THE SETTINGS SIDEBAR: Data · Theme · Charts · Download. Collapsed by its toggle in the view bar,
+               which stays rendered outside it; resized by the handle on its right edge. -->
+          <aside id="tl-charts-sidebar" class="gh-fig-sidebar tl-charts-sidebar" aria-label="Chart settings" [hidden]="sidebarCollapsed">
+            <div class="gh-tabs gh-tabs-secondary gh-tabs-wrap gh-fig-sidebar-tabs" role="tablist" aria-label="Settings sections">
+              @for (tab of sidebarTabs; track tab.id; let i = $index) {
+                <button type="button" role="tab" class="gh-tab"
+                        [id]="'tl-charts-side-tab-' + tab.id"
+                        [attr.aria-controls]="'tl-charts-side-panel-' + tab.id"
+                        [attr.aria-selected]="sidebarTab === tab.id"
+                        [attr.tabindex]="sidebarTab === tab.id ? 0 : -1"
+                        (keydown)="onSidebarTabKeydown($event, i)"
+                        (click)="selectSidebarTab(tab.id)">{{ tab.label }}</button>
+              }
+            </div>
+
+            @switch (sidebarTab) {
+              @case ('data') {
+                <div class="gh-fig-side-panel" role="tabpanel" id="tl-charts-side-panel-data"
+                     aria-labelledby="tl-charts-side-tab-data" tabindex="0">
+                  @if (user; as filtered) {
+                    <ul class="gh-filter-chips tl-charts-user-chips" role="list" aria-label="User filter">
+                      <li>
+                        <button type="button" class="gh-filter-chip tl-charts-user-chip"
+                                [attr.aria-label]="'Remove user filter: ' + filtered.name + ', and show every user'"
+                                (click)="removeUserFilter()">
+                          <span class="gh-filter-chip-facet">User:</span>
+                          <span class="gh-filter-chip-value">{{ filtered.name }}</span>
+                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                      </li>
+                    </ul>
+                  }
+
+                  @for (section of dataSections; track section.name) {
+                    <details class="gh-disclosure gh-disclosure--section" [id]="'tl-charts-data-section-' + section.name"
+                             [open]="isDataSectionOpen(section.name)" (toggle)="onDataSectionToggle(section.name, $event)">
+                      <summary>
+                        <span class="gh-disclosure-summary-title">{{ section.title }}</span>
+                        <span class="gh-disclosure-summary-value" aria-hidden="true">{{ dataReadout(section.name) }}</span>
+                      </summary>
+                      <div class="gh-disclosure-body tl-charts-section-body">
+                        @switch (section.name) {
+                          @case ('scope') {
+                            <div class="tl-charts-field">
+                              <label for="tl-charts-keys">Keys</label>
+                              <select id="tl-charts-keys" class="gh-input" (change)="setKeys($any($event.target).value)">
+                                @for (option of keyOptions; track option.value) {
+                                  <option [value]="option.value" [selected]="option.value === keys">{{ option.label }}</option>
+                                }
+                              </select>
+                            </div>
+                            <fieldset class="gh-fieldset tl-charts-roles" aria-describedby="tl-charts-roles-hint">
+                              <legend>Roles</legend>
+                              <p id="tl-charts-roles-hint" class="gh-fieldset-hint">The usage charts count these roles; at least one stays selected.</p>
+                              @for (option of roleOptions; track option.value) {
+                                <label class="checkbox-label">
+                                  <input type="checkbox" [id]="'tl-charts-role-' + option.value" [checked]="isRoleSelected(option.value)"
+                                         (change)="setRole(option.value, $any($event.target).checked, $any($event.target))">
+                                  {{ option.label }}
+                                </label>
+                              }
+                            </fieldset>
+                          }
+                          @case ('lines') {
+                            <div class="tl-charts-field">
+                              <label for="tl-charts-bucket">Bucket</label>
+                              <select id="tl-charts-bucket" class="gh-input"
+                                      [attr.aria-invalid]="bucketError ? 'true' : null"
+                                      [attr.aria-describedby]="bucketError ? 'tl-charts-bucket-error' : null"
+                                      (change)="setBucket($any($event.target).value)">
+                                @for (option of bucketOptions; track option.value) {
+                                  <option [value]="option.value" [selected]="option.value === bucket">{{ option.label }}</option>
+                                }
+                              </select>
+                              @if (bucketError) {
+                                <p id="tl-charts-bucket-error" class="gh-field-error">
+                                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                                  <span>{{ bucketError }}</span>
+                                </p>
+                              }
+                            </div>
+                            <div class="tl-charts-field">
+                              <label for="tl-charts-split">Split by</label>
+                              <select id="tl-charts-split" class="gh-input" aria-describedby="tl-charts-split-hint"
+                                      (change)="setSplitBy($any($event.target).value)">
+                                @for (option of splitOptions; track option.value) {
+                                  <option [value]="option.value" [selected]="option.value === splitBy">{{ option.label }}</option>
+                                }
+                              </select>
+                              <p id="tl-charts-split-hint" class="tl-charts-hint">{{ splitHint }}</p>
+                            </div>
+                          }
+                          @case ('cost') {
+                            <label class="checkbox-label align-start">
+                              <input type="checkbox" id="tl-charts-cumulative" [checked]="cumulative"
+                                     aria-describedby="tl-charts-cumulative-hint"
+                                     (change)="setCumulative($any($event.target).checked)">
+                              <span>
+                                Cumulative cost
+                                <span id="tl-charts-cumulative-hint" class="form-hint">Each line of the cost chart adds up its cost from the first bucket on.</span>
+                              </span>
+                            </label>
+                          }
+                        }
+                      </div>
+                    </details>
+                  }
+                </div>
+              }
+
+              @case ('theme') {
+                <div class="gh-fig-side-panel tl-charts-style-panel" role="tabpanel" id="tl-charts-side-panel-theme"
+                     aria-labelledby="tl-charts-side-tab-theme" tabindex="0">
+                  <app-figure-style-panel kind="appearance" idPrefix="tl-style" [openStorageKey]="figureStylePanelOpenKey"
+                                          [figureStyle]="figureStyle" [fontLoadStatus]="fontLoadStatus"
+                                          (figureStyleChange)="onFigureStyleChange($event)"></app-figure-style-panel>
+                </div>
+              }
+
+              @case ('charts') {
+                <div class="gh-fig-side-panel tl-charts-style-panel" role="tabpanel" id="tl-charts-side-panel-charts"
+                     aria-labelledby="tl-charts-side-tab-charts" tabindex="0">
+                  <app-figure-style-panel kind="timeline" idPrefix="tl-style" [openStorageKey]="figureStylePanelOpenKey"
+                                          [hiddenKeys]="hiddenStyleKeys" [figureStyle]="figureStyle"
+                                          (figureStyleChange)="onFigureStyleChange($event)"></app-figure-style-panel>
+                </div>
+              }
+
+              @case ('download') {
+                <!-- Settings only: each chart downloads from its tile or from Single chart, all of them from either view. -->
+                <div class="gh-fig-side-panel" role="tabpanel" id="tl-charts-side-panel-download"
+                     aria-labelledby="tl-charts-side-tab-download" tabindex="0">
+                  <!-- The title is bound as a property so the host carries no `title` attribute. -->
+                  <app-export-size-section [title]="'Chart size'" idPrefix="tl-export"
+                                           [settings]="chartSize" [defaults]="defaultChartSize"
+                                           [displayDensity]="displayDensity" [open]="chartSizeOpen"
+                                           [textSizeHint]="textSizeHint" errorNoun="chart"
+                                           (settingsChange)="onChartSizeChange($event)"
+                                           (openChange)="onChartSizeOpenChange($event)"
+                                           (reset)="resetChartSize()"></app-export-size-section>
+
+                  <app-export-format-section idPrefix="tl-image-format"
+                                             [format]="imageFormat" [webpQuality]="webpQuality"
+                                             [defaultQuality]="defaultWebpQuality"
+                                             [open]="imageFormatOpen" [note]="formatNote"
+                                             (formatChange)="onImageFormatChange($event)"
+                                             (qualityChange)="onWebpQualityChange($event)"
+                                             (openChange)="onImageFormatOpenChange($event)"
+                                             (reset)="resetImageFormat()"></app-export-format-section>
+
+                  <p class="tl-charts-hint">The image is the chart as shown: its heading, badges, notes and footer. Download one chart from its tile or from Single chart, or every chart at once with Download all.</p>
+
+                  @if (sizeError) {
+                    <p class="gh-field-error" role="alert">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                      <span>{{ sizeError }}</span>
+                    </p>
+                  }
+                </div>
+              }
+            }
+          </aside>
+
+          <!-- In its own grid column between the sidebar and the main area; its line is the only divider. -->
+          @if (!sidebarCollapsed) {
+            <app-pane-resizer class="gh-fig-resizer" controls="tl-charts-sidebar" label="Resize chart settings sidebar"
+                              [value]="sidebarWidth" [min]="SIDEBAR_WIDTH_MIN" [max]="sidebarWidthMax"
+                              [defaultValue]="SIDEBAR_WIDTH_DEFAULT"
+                              (pointerdown)="measureSidebarWidthMax()" (focusin)="measureSidebarWidthMax()"
+                              (valueChange)="onSidebarWidthChange($event)"
+                              (valueCommit)="onSidebarWidthCommit($event)"></app-pane-resizer>
+          }
+
+          <div class="gh-fig-main">
+            <div class="gh-fig-bar">
+              <!-- A disclosure: the name stays constant and aria-expanded carries the state. -->
+              <button type="button" class="action-btn tl-charts-sidebar-toggle" aria-label="Chart settings"
+                      [attr.aria-expanded]="!sidebarCollapsed" aria-controls="tl-charts-sidebar"
+                      interestfor="tl-charts-tip-sidebar" [attr.style]="'anchor-name: --tl-charts-tip-sidebar'"
+                      (click)="toggleSidebar()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  <line x1="9" y1="3" x2="9" y2="21"></line>
+                </svg>
+              </button>
+              <div popover="hint" class="gh-tooltip" id="tl-charts-tip-sidebar"
+                   [attr.style]="'position-anchor: --tl-charts-tip-sidebar'">{{ sidebarCollapsed ? 'Show settings' : 'Hide settings' }}</div>
+
+              <div class="gh-tabs gh-tabs-secondary gh-fig-tabs" role="tablist" aria-label="Chart views">
+                @for (tab of viewTabs; track tab.id; let i = $index) {
+                  <button type="button" role="tab" class="gh-tab"
+                          [id]="'tl-charts-view-tab-' + tab.id"
+                          [attr.aria-controls]="'tl-charts-view-panel-' + tab.id"
+                          [attr.aria-selected]="view === tab.id"
+                          [attr.tabindex]="view === tab.id ? 0 : -1"
+                          (keydown)="onViewTabKeydown($event, i)"
+                          (click)="selectView(tab.id)">
+                    @if (tab.id === 'all') {
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                      </svg>
+                    } @else {
+                      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    }
+                    {{ tab.label }}
+                  </button>
+                }
+              </div>
+            </div>
+
+            @if (error) {
+              <p class="gh-field-error tl-charts-state" role="alert">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                <span>{{ error }}</span>
+              </p>
+            } @else if (loading) {
+              <p class="tl-charts-state tl-charts-loading" role="status">
+                <span class="gh-spinner-small" aria-hidden="true"></span>
+                Loading the AI usage series…
+              </p>
+            } @else if (usageEmpty) {
+              <p class="tl-charts-state tl-charts-empty" role="status">No AI usage in this range for the selected keys and roles.</p>
+            }
+
+            <!-- The outcome of the last copy or download. -->
+            <p class="tl-charts-status" role="status">{{ exportStatus }}</p>
+
+            <div class="gh-fig-panels">
+              @if (view === 'all') {
+                <div class="gh-fig-panel tl-charts-panel" role="tabpanel" tabindex="0"
+                     id="tl-charts-view-panel-all" aria-labelledby="tl-charts-view-tab-all" aria-describedby="tl-charts-all-hint">
+                  <div class="gh-fig-toolbar gh-fig-all-toolbar">
+                    <p class="tl-charts-toolbar-note">{{ exportSummary }}</p>
+                    <!-- aria-disabled, not disabled, so the tooltip naming the reason stays reachable;
+                         downloadAllCharts() refuses on its own. -->
+                    <div class="gh-fig-toolbar-group gh-fig-toolbar-export">
+                      <button type="button" class="action-btn tl-charts-download-all" aria-label="Download all charts"
+                              [attr.aria-disabled]="downloadAllBlockReason ? 'true' : null"
+                              interestfor="tl-charts-tip-all-download-all" [attr.style]="'anchor-name: --tl-charts-tip-all-download-all'"
+                              (click)="downloadAllCharts()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <line x1="8" y1="3" x2="8" y2="13"></line>
+                          <polyline points="5 10 8 13 11 10"></polyline>
+                          <line x1="16" y1="3" x2="16" y2="13"></line>
+                          <polyline points="13 10 16 13 19 10"></polyline>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div popover="hint" class="gh-tooltip" id="tl-charts-tip-all-download-all"
+                       [attr.style]="'position-anchor: --tl-charts-tip-all-download-all'">{{ downloadAllTooltip }}</div>
+
+                  <!-- The nine charts, each its download composed for the screen. Only tiles near the view are
+                       composed; the rest keep their reserved box. -->
+                  <div #viewport class="gh-fig-viewport tl-charts-viewport" [attr.style]="figureBackdropStyle">
+                    @if (dto) {
+                      <div class="tl-charts-tiles">
+                        @for (figure of figures; track figure.key) {
+                          <div #tile class="gh-fig-tile tl-charts-tile" [attr.data-figure]="figure.key">
+                            <div class="tl-charts-image-box" [style.aspect-ratio]="aspectRatio">
+                              <ng-container *ngTemplateOutlet="figureImage; context: { $implicit: figure }"></ng-container>
+                            </div>
+                            <!-- Over the tile's top end, shown on hover or focus; the handlers refuse on their own
+                                 while the buttons are aria-disabled. -->
+                            <div class="gh-fig-tile-actions" role="group" [attr.aria-label]="'Actions for ' + figure.title">
+                              <button type="button" class="action-btn tl-charts-open"
+                                      [attr.aria-label]="'Open ' + figure.title + ' in Single view'"
+                                      [attr.interestfor]="tipId('single', figure.key)"
+                                      [attr.style]="'anchor-name: --' + tipId('single', figure.key)"
+                                      (click)="openInSingle(figure.key)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                  <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                              </button>
+                              <button type="button" class="action-btn tl-charts-copy"
+                                      [attr.aria-label]="'Copy ' + figure.title + ' to the clipboard'"
+                                      [attr.aria-disabled]="chartBlockReason(figure) ? 'true' : null"
+                                      [attr.interestfor]="tipId('copy', figure.key)"
+                                      [attr.style]="'anchor-name: --' + tipId('copy', figure.key)"
+                                      (click)="copyChart(figure)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                                </svg>
+                              </button>
+                              <button type="button" class="action-btn tl-charts-download"
+                                      [attr.aria-label]="'Download ' + figure.title"
+                                      [attr.aria-disabled]="chartBlockReason(figure) ? 'true' : null"
+                                      [attr.interestfor]="tipId('download', figure.key)"
+                                      [attr.style]="'anchor-name: --' + tipId('download', figure.key)"
+                                      (click)="downloadChart(figure)">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                  <polyline points="7 10 12 15 17 10"></polyline>
+                                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                                </svg>
+                              </button>
+                            </div>
+                            <div popover="hint" class="gh-tooltip" [id]="tipId('single', figure.key)"
+                                 [attr.style]="'position-anchor: --' + tipId('single', figure.key)">Open in Single view</div>
+                            <div popover="hint" class="gh-tooltip" [id]="tipId('copy', figure.key)"
+                                 [attr.style]="'position-anchor: --' + tipId('copy', figure.key)">{{ copyTooltip(figure) }}</div>
+                            <div popover="hint" class="gh-tooltip" [id]="tipId('download', figure.key)"
+                                 [attr.style]="'position-anchor: --' + tipId('download', figure.key)">{{ downloadTooltip(figure) }}</div>
+                          </div>
+                        }
+                      </div>
+                    }
+                  </div>
+                  <p id="tl-charts-all-hint" class="visually-hidden">Every chart in a grid, each as its download shows it.
+                    Each tile has Open in Single view, Copy and Download; Download all saves every chart as one ZIP.</p>
+                </div>
+              } @else {
+                <div class="gh-fig-panel tl-charts-panel" role="tabpanel" tabindex="0"
+                     id="tl-charts-view-panel-single" aria-labelledby="tl-charts-view-tab-single" aria-describedby="tl-charts-single-hint">
+                  <!-- Groups, not role="toolbar": every action is its own Tab stop. -->
+                  <div class="gh-fig-toolbar">
+                    <div class="gh-fig-toolbar-group gh-fig-toolbar-figure-group" role="group" aria-label="Chart">
+                      <button type="button" class="action-btn tl-charts-prev" aria-label="Previous chart"
+                              [attr.aria-disabled]="figures.length > 1 ? null : 'true'"
+                              interestfor="tl-charts-tip-single-prev" [attr.style]="'anchor-name: --tl-charts-tip-single-prev'"
+                              (click)="stepSingleFigure(-1)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                      </button>
+                      <label class="visually-hidden" for="tl-charts-single-figure">Chart</label>
+                      <select id="tl-charts-single-figure" class="gh-input gh-fig-figure-select"
+                              (change)="selectSingleFigure($any($event.target).value)">
+                        @for (figure of figures; track figure.key) {
+                          <option [value]="figure.key" [selected]="figure.key === singleFigure?.key">{{ figure.title }}</option>
+                        }
+                      </select>
+                      <button type="button" class="action-btn tl-charts-next" aria-label="Next chart"
+                              [attr.aria-disabled]="figures.length > 1 ? null : 'true'"
+                              interestfor="tl-charts-tip-single-next" [attr.style]="'anchor-name: --tl-charts-tip-single-next'"
+                              (click)="stepSingleFigure(1)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                      </button>
+                    </div>
+
+                    <div class="gh-fig-toolbar-group gh-fig-toolbar-zoom" role="group" aria-label="Zoom of the chart">
+                      <button type="button" class="action-btn tl-charts-fit-width" aria-label="Fit width"
+                              [attr.aria-pressed]="singleZoom === 'fitWidth'"
+                              interestfor="tl-charts-tip-single-fit-width" [attr.style]="'anchor-name: --tl-charts-tip-single-fit-width'"
+                              (click)="setSingleZoom('fitWidth')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <polyline points="7 8 3 12 7 16"></polyline>
+                          <polyline points="17 8 21 12 17 16"></polyline>
+                          <line x1="3" y1="12" x2="21" y2="12"></line>
+                        </svg>
+                      </button>
+                      <button type="button" class="action-btn tl-charts-fit-screen" aria-label="Fit to screen"
+                              [attr.aria-pressed]="singleZoom === 'fitScreen'"
+                              interestfor="tl-charts-tip-single-fit-screen" [attr.style]="'anchor-name: --tl-charts-tip-single-fit-screen'"
+                              (click)="setSingleZoom('fitScreen')">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                        </svg>
+                      </button>
+                    </div>
+
+                    <!-- aria-disabled, not disabled, so each stays focusable; the handlers refuse on their own. -->
+                    <div class="gh-fig-toolbar-group gh-fig-toolbar-export" role="group" aria-label="Export">
+                      <button type="button" class="action-btn tl-charts-copy"
+                              [attr.aria-label]="'Copy ' + (singleFigure?.title ?? 'chart') + ' to the clipboard'"
+                              [attr.aria-disabled]="chartBlockReason(singleFigure) ? 'true' : null"
+                              interestfor="tl-charts-tip-single-copy" [attr.style]="'anchor-name: --tl-charts-tip-single-copy'"
+                              (click)="copyChart(singleFigure)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                        </svg>
+                      </button>
+                      <button type="button" class="action-btn tl-charts-download"
+                              [attr.aria-label]="'Download ' + (singleFigure?.title ?? 'chart')"
+                              [attr.aria-disabled]="chartBlockReason(singleFigure) ? 'true' : null"
+                              interestfor="tl-charts-tip-single-download" [attr.style]="'anchor-name: --tl-charts-tip-single-download'"
+                              (click)="downloadChart(singleFigure)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <polyline points="7 10 12 15 17 10"></polyline>
+                          <line x1="12" y1="15" x2="12" y2="3"></line>
+                        </svg>
+                      </button>
+                      <button type="button" class="action-btn tl-charts-download-all" aria-label="Download all charts"
+                              [attr.aria-disabled]="downloadAllBlockReason ? 'true' : null"
+                              interestfor="tl-charts-tip-single-download-all" [attr.style]="'anchor-name: --tl-charts-tip-single-download-all'"
+                              (click)="downloadAllCharts()">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                          <line x1="8" y1="3" x2="8" y2="13"></line>
+                          <polyline points="5 10 8 13 11 10"></polyline>
+                          <line x1="16" y1="3" x2="16" y2="13"></line>
+                          <polyline points="13 10 16 13 19 10"></polyline>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div popover="hint" class="gh-tooltip" id="tl-charts-tip-single-prev"
+                       [attr.style]="'position-anchor: --tl-charts-tip-single-prev'">{{ figures.length > 1 ? 'Previous chart' : 'There is no other chart.' }}</div>
+                  <div popover="hint" class="gh-tooltip" id="tl-charts-tip-single-next"
+                       [attr.style]="'position-anchor: --tl-charts-tip-single-next'">{{ figures.length > 1 ? 'Next chart' : 'There is no other chart.' }}</div>
+                  <div popover="hint" class="gh-tooltip" id="tl-charts-tip-single-fit-width"
+                       [attr.style]="'position-anchor: --tl-charts-tip-single-fit-width'">Fit the chart to the width</div>
+                  <div popover="hint" class="gh-tooltip" id="tl-charts-tip-single-fit-screen"
+                       [attr.style]="'position-anchor: --tl-charts-tip-single-fit-screen'">Fit the whole chart to the view</div>
+                  <div popover="hint" class="gh-tooltip" id="tl-charts-tip-single-copy"
+                       [attr.style]="'position-anchor: --tl-charts-tip-single-copy'">{{ copyTooltip(singleFigure) }}</div>
+                  <div popover="hint" class="gh-tooltip" id="tl-charts-tip-single-download"
+                       [attr.style]="'position-anchor: --tl-charts-tip-single-download'">{{ downloadTooltip(singleFigure) }}</div>
+                  <div popover="hint" class="gh-tooltip" id="tl-charts-tip-single-download-all"
+                       [attr.style]="'position-anchor: --tl-charts-tip-single-download-all'">{{ downloadAllTooltip }}</div>
+
+                  <div #viewport class="gh-fig-viewport tl-charts-viewport" [attr.style]="figureBackdropStyle">
+                    @if (dto && singleFigure; as figure) {
+                      <div class="tl-charts-single" [attr.data-figure]="figure.key">
+                        <div class="tl-charts-image-box tl-charts-single-box" [style.aspect-ratio]="aspectRatio"
+                             [style.width.px]="singleBox?.cssWidth" [style.height.px]="singleBox?.cssHeight">
+                          <ng-container *ngTemplateOutlet="figureImage; context: { $implicit: figure }"></ng-container>
+                        </div>
+                      </div>
+                    }
+                  </div>
+                  <p id="tl-charts-single-hint" class="visually-hidden">One chart, as its download shows it. Fit width and
+                    Fit to screen change only this view; the downloads keep the chart size.</p>
+                </div>
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</dialog>

@@ -158,4 +158,42 @@ public class AdminMaintenanceHistoryTests
 
         Assert.IsType<NotFoundResult>(await controller.GetMaintenanceRunLog(9999));
     }
+
+    [Fact]
+    public async Task GetMaintenanceHistory_ReturnsTheSecurityEventAndProviderAttemptCounts()
+    {
+        var (controller, db) = CreateTestController();
+        db.MaintenanceRunLogs.Add(new MaintenanceRunLog
+        {
+            Id = 1,
+            StartedUtc = new DateTime(2026, 10, 1, 3, 0, 0, DateTimeKind.Unspecified),
+            CompletedUtc = new DateTime(2026, 10, 1, 3, 0, 2, DateTimeKind.Unspecified),
+            Trigger = MaintenanceTriggers.PruneSecurityEvents,
+            Success = true,
+            PrunedSecurityEventCount = 17,
+            PrunedChatProviderAttemptCount = 0
+        });
+        db.MaintenanceRunLogs.Add(new MaintenanceRunLog
+        {
+            Id = 2,
+            StartedUtc = new DateTime(2026, 10, 2, 3, 0, 0, DateTimeKind.Unspecified),
+            CompletedUtc = new DateTime(2026, 10, 2, 3, 0, 2, DateTimeKind.Unspecified),
+            Trigger = MaintenanceTriggers.Scheduled,
+            Success = true,
+            PrunedSecurityEventCount = 5,
+            PrunedChatProviderAttemptCount = 23
+        });
+        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var page = PageOf(await controller.GetMaintenanceHistory());
+
+        Assert.Equal(2, page.TotalCount);
+        var scheduled = page.Rows.Single(r => r.Id == 2);
+        Assert.Equal(5, scheduled.PrunedSecurityEventCount);
+        Assert.Equal(23, scheduled.PrunedChatProviderAttemptCount);
+        var manual = page.Rows.Single(r => r.Id == 1);
+        Assert.Equal(MaintenanceTriggers.PruneSecurityEvents, manual.Trigger);
+        Assert.Equal(17, manual.PrunedSecurityEventCount);
+        Assert.Equal(0, manual.PrunedChatProviderAttemptCount);
+    }
 }

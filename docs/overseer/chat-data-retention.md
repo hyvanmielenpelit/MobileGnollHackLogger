@@ -55,6 +55,8 @@ All retention policies are configured under `"ChatRetentionSettings"` in `appset
   "PruneBenchmarkToolCallResultsDays": 90,
   "AuditLogRetentionDays": 365,
   "PruneDismissedAiErrorLogDays": 90,
+  "PruneSecurityEventDays": 180,
+  "PruneChatProviderAttemptDays": 400,
   "MaintenanceHistoryRetentionDays": 180,
   "MaintenanceRunHourUtc": 3,
   "DatabaseMaxSizeMbOverride": 0,
@@ -76,6 +78,8 @@ All retention policies are configured under `"ChatRetentionSettings"` in `appset
 | **Benchmark Payload Pruning** | `PruneBenchmarkToolCallResultsDays` | `90` | `BenchmarkRunAnswerToolCall.Result` and `ArgsText` are set to `NULL` once the run's `StartedAtUtc` is older than this. Names, statuses and timings are kept. |
 | **Access Journal Retention** | `AuditLogRetentionDays` | `365` | `ChatAccessAuditLog` rows older than this are deleted. `0` disables pruning. The only setting that removes an audit row; the Admin **Prune Access Journal** button applies the same window on demand. |
 | **Dismissed AI Error Pruning** | `PruneDismissedAiErrorLogDays` | `90` | `SystemAiErrorLog` rows dismissed more than this many days ago are deleted. `0` disables pruning. **Undismissed errors are never pruned**: an alert nobody acknowledged is not expired silently, and the Database tab shows their count instead. |
+| **Security Event Retention** | `PruneSecurityEventDays` | `180` | `SecurityEvent` runs last seen more than this many days ago are deleted. `0` disables pruning. **Events of a user with an active `AccountHold` or a pending `AccountDeletionRequest` are kept** until it is decided: they are the evidence an administrator is reviewing (see `security-monitoring.md`). |
+| **Chat Provider Attempt Retention** | `PruneChatProviderAttemptDays` | `400` | `ChatProviderAttempt` rows (one provider attempt of a chat or title-generation call) older than this are deleted. `0` disables pruning. See `ai-telemetry.md`. |
 | **Maintenance History Retention** | `MaintenanceHistoryRetentionDays` | `180` | `MaintenanceRunLog` rows older than this are deleted. `0` disables pruning. |
 | **Daily Schedule** | `MaintenanceRunHourUtc` | `3` (03:00 UTC) | Automated maintenance pass runs daily at 03:00 UTC (and 60 seconds after server startup). |
 | **Size Limit Override** | `DatabaseMaxSizeMbOverride` | `0` (auto-detect) | Forces the capacity ceiling in MB, overriding detection. Use it to pre-configure a limit before an upgrade, or to budget Overseer to less than the engine allows on a shared instance. The panel labels an overridden ceiling as a *Budget* rather than a *Limit*. |
@@ -179,7 +183,7 @@ delete dialogs can say which chats are destroyed at once instead of going to the
 - **Error Handling**: Wrapped in resilient try-catch logic with automatic 1-hour retry on unexpected database failures.
 
 ### 2. Full Maintenance Pass (`RunFullMaintenanceAsync`)
-When executed (either automatically by the background service or manually from the Admin dashboard), the maintenance engine carries out 9 phases in sequence, all in `ChatRetentionService`:
+When executed (either automatically by the background service or manually from the Admin dashboard), the maintenance engine carries out 11 phases in sequence, all in `ChatRetentionService`:
 
 1. **Expire Inactive Chats** (`SoftDeleteInactiveSessionsAsync`):
    - Queries `ChatSession` where `!IsDeleted && !IsPinned && LastMessageUtc < (Now - InactivityTtlDays) && EffectiveRetentionDays == null`.
@@ -205,7 +209,11 @@ When executed (either automatically by the background service or manually from t
    - Deletes `ChatAccessAuditLog` rows older than `AuditLogRetentionDays`. The predicate lives in `GnollHackServer.Data.Privacy.ChatAccessAudit`, whose `CountPrunableAsync` backs the dry run and the tab's preview, so the count and the deletion cannot disagree.
 8. **Prune Dismissed AI Errors** (`PruneDismissedAiErrorLogsAsync`):
    - Deletes `SystemAiErrorLog` rows where `IsDismissed && DismissedAtUtc < (Now - PruneDismissedAiErrorLogDays)`. Undismissed rows are never touched.
-9. **Prune Maintenance History** (`PruneMaintenanceHistoryAsync`):
+9. **Prune Security Events** (`PruneSecurityEventsAsync`):
+   - Deletes `SecurityEvent` rows where `LastOccurredUtc < (Now - PruneSecurityEventDays)`, except those of a user with an active `AccountHold` or a pending `AccountDeletionRequest`. The predicate is `ChatRetentionService.PrunableSecurityEvents`, which the dry run and the tab's preview count with, so the count and the deletion cannot disagree.
+10. **Prune Chat Provider Attempts** (`PruneChatProviderAttemptsAsync`):
+   - Deletes `ChatProviderAttempt` rows where `StartedAtUtc < (Now - PruneChatProviderAttemptDays)`.
+11. **Prune Maintenance History** (`PruneMaintenanceHistoryAsync`):
    - Deletes `MaintenanceRunLog` rows older than `MaintenanceHistoryRetentionDays`.
 
 Every phase honours `DryRun`: it counts what it would change and changes nothing. A failure sets `Success = false` and `ErrorMessage` on the result, and the exception is rethrown to the caller.
@@ -227,10 +235,12 @@ Every full pass and every granular Admin action writes one `MaintenanceRunLog` r
 
 ### Account deletion
 
-`DeletePersonalData` reaches the data project only through `GnollHackServer.Data.Privacy.CryptoShred`,
+Account erasure lives in the data project, in `GnollHackServer.Data.Privacy.AccountErasure.EraseAsync`,
 because `MobileGnollHackLogger` and `Overseer` reference `GnollHackServer.Data` and never each
-other, so `ChatRetentionService` is unreachable from the Razor page. Three helpers run there before
-anything is removed:
+other, so `ChatRetentionService` is unreachable from the Razor page. Both the website's
+`DeletePersonalData` page and an administrator's approved deletion in Overseer (`security-monitoring.md`,
+account-deletion holds) run it. It reaches `GnollHackServer.Data.Privacy.CryptoShred`, whose three
+helpers run before anything is removed:
 
 | Helper | What it reaches |
 |---|---|
@@ -262,6 +272,8 @@ Each query, and each counter group below, has its own `try`/`catch`, so one fail
 - **Content key ring**: the active version, and per `ContentKeyVersion` the number of sessions naming it and whether the ring still holds it. A session naming a version not in the ring is unreadable; a rotation is complete when no session names a retired version.
 - **Access journal**: row count, oldest row, and rows past `AuditLogRetentionDays`.
 - **AI error log**: undismissed, dismissed, and prunable dismissed counts.
+- **Security events**: row count, oldest row, and rows past `PruneSecurityEventDays` (held users excluded, the prune's own predicate).
+- **Chat provider attempts**: row count, oldest row, and rows past `PruneChatProviderAttemptDays`.
 - **Next-pass preview**: expired trash sessions and prunable chat and benchmark payloads, using the same predicates as the pass, plus the next scheduled run time.
 - **Schema**: applied migration count, last applied migration, and pending migrations. Overseer does not migrate at startup, so a database behind its binaries shows here first.
 - **Policy echo**: the effective `ChatRetentionSettings`, the report address, and whether an email sender is configured.
@@ -286,12 +298,14 @@ The Admin **Database** tab exposes:
 | `POST` | `/api/admin/maintenance/prune-benchmark-tool-results` | Phase 5 with a chosen day count |
 | `POST` | `/api/admin/maintenance/prune-audit-log` | Phase 7; a window of zero or less is refused with 400 |
 | `POST` | `/api/admin/maintenance/prune-ai-error-log` | Phase 8; a window of zero or less is refused with 400 |
+| `POST` | `/api/admin/maintenance/prune-security-events` | Phase 9; a window of zero or less is refused with 400 |
+| `POST` | `/api/admin/maintenance/prune-chat-provider-attempts` | Phase 10; a window of zero or less is refused with 400 |
 | `POST` | `/api/admin/maintenance/sweep-orphans` | Phase 6 |
 | `POST` | `/api/admin/maintenance/clear-report-charts` | Clear Report Chart Files (not a phase of the full pass); 400 when chart storage is not configured |
 | `GET` | `/api/admin/maintenance/history` | Maintenance history, newest first |
 | `POST` | `/api/admin/maintenance/send-report-email` | On-demand storage report email |
 
-Every `POST` takes an optional `MaintenanceRequestDto` with `DryRun` and returns a `MaintenanceResultDto`. Granular day counts default to the configured setting; the full pass always uses the configured audit and AI error windows.
+Every `POST` takes an optional `MaintenanceRequestDto` with `DryRun` and returns a `MaintenanceResultDto`. Granular day counts default to the configured setting; the full pass always uses the configured audit, AI error, security event and chat provider attempt windows.
 
 ---
 
@@ -304,10 +318,11 @@ Unit tests in `Overseer.Tests/UnitTests/ChatRetentionServiceTests.cs` validate a
 - Restoring sessions under quota constraints.
 - Cascade deletion order and disk folder cleanup.
 - Tool call result pruning without altering chat transcripts.
-- Dry-run verification (no data modified when `DryRun = true`), including the access journal count and the dismissed-AI-error selection.
+- Dry-run verification (no data modified when `DryRun = true`), including the access journal count, the dismissed-AI-error selection, and the security event and chat provider attempt selections.
 - The trigger, orphan sweep count and history row a full pass records.
 
-Three further files cover the rest:
+Further files cover the rest:
 - `Overseer.Tests/UnitTests/ConfidentialRetentionTests.cs`: per-session TTL and immediate purge across the four deletion paths.
 - `Overseer.Tests/UnitTests/DatabaseStorageMetricsServiceTests.cs`: edition detection, caching, the failure path of every metric group, and the next-run computation.
-- `Overseer/ClientApp/src/app/admin/admin.component.spec.ts`: the day-count selects send numbers, and granular actions honour the shared dry-run switch.
+- `Overseer.Tests/UnitTests/SecurityEventMaintenanceTests.cs` and `ChatProviderAttemptMaintenanceTests.cs`: the two granular endpoints (dry run, trigger, refused windows), and a held user's events kept.
+- `Overseer/ClientApp/src/app/admin/database-tab/admin-database-tab.component.spec.ts`: the day-count selects send numbers, and granular actions honour the shared dry-run switch.

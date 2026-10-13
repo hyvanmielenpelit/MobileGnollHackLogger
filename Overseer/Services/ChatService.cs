@@ -48,6 +48,8 @@ public class ChatService
     private readonly SubAgentCatalogService? _subAgentCatalogService;
     private readonly ILogger<ChatService>? _logger;
     private readonly AiRequestGovernor? _governor;
+    // Null counts nothing: a hand-built container without the registration.
+    private readonly Overseer.Services.Telemetry.IActivityCounter? _activityCounter;
     private bool _showDebugLog = false;
 
     public ChatService(
@@ -78,8 +80,10 @@ public class ChatService
         Overseer.Services.Rag.RagSidecarStore ragSidecars,
         SubAgentCatalogService? subAgentCatalogService = null,
         ILogger<ChatService>? logger = null,
-        AiRequestGovernor? governor = null)
+        AiRequestGovernor? governor = null,
+        Overseer.Services.Telemetry.IActivityCounter? activityCounter = null)
     {
+        _activityCounter = activityCounter;
         _scopeFactory = scopeFactory;
         _wikiService = wikiService;
         _cryptoService = cryptoService;
@@ -288,6 +292,23 @@ public class ChatService
         {
             try
             {
+                /* Both ways a turn starts -- the chat's send and the GnollHack handoff's background
+                   turn -- arrive here, and the handoff can report a block only through a chat event. */
+                var block = await GetOverseerBlockAsync(userId);
+                if (block != null)
+                {
+                    var blockedEvt = new ChatEvent
+                    {
+                        Type = "error",
+                        Data = Overseer.Services.Security.OverseerAccessService.BlockedMessage,
+                        ErrorCode = Overseer.Services.Security.OverseerAccessService.BlockedCode,
+                        Detail = block.Reason,
+                        SessionId = wireRef
+                    };
+                    _ongoingChatManager.ProcessEvent(sessionRef, blockedEvt);
+                    await _hubContext.Clients.Group(groupName).SendAsync("ReceiveChatEvent", blockedEvt, CancellationToken.None);
+                }
+                else
                 await foreach (var evt in StreamMessageAsync(sessionRef, message, attachments, userId, isHidden, cancellationToken, userModelId, systemModelId, hasGreeted))
                 {
                     evt.SessionId = wireRef;
@@ -347,6 +368,39 @@ public class ChatService
             /* Reported from inside the suppression scope: an escape observed after this method
                returns is raised on the finalizer thread, where the scope no longer applies. */
             _logger?.LogError(ex, "Generation for session {SessionId} failed while reporting its own completion.", wireRef);
+        }
+    }
+
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, object?> _optionalSingletons = new();
+
+    /// <summary>
+    /// A singleton the turn uses when it is registered: the security services. Null in a hand-built test
+    /// container that does not register it.
+    /// </summary>
+    private T? OptionalSingleton<T>() where T : class =>
+        (T?)_optionalSingletons.GetOrAdd(typeof(T), _ =>
+        {
+            using var scope = _scopeFactory.CreateScope();
+            return scope.ServiceProvider.GetService<T>();
+        });
+
+    /// <summary>
+    /// The user's Overseer block, or null. Null as well when the access service is not registered (a
+    /// hand-built test container) or cannot be read: a failed lookup never stops a turn.
+    /// </summary>
+    internal async Task<Overseer.Services.Security.OverseerBlock?> GetOverseerBlockAsync(string userId)
+    {
+        var access = OptionalSingleton<Overseer.Services.Security.OverseerAccessService>();
+        if (access == null) return null;
+
+        try
+        {
+            return await access.GetBlockAsync(userId);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "Could not read the Overseer block state of a user.");
+            return null;
         }
     }
 
@@ -548,12 +602,33 @@ public class ChatService
                 }
                 else
                 {
+                    /* The first resolved system model the limits allow. The GnollHack handoff
+                       arrives here, without a model id. */
                     var settingsService = scope.ServiceProvider.GetRequiredService<SettingsService>();
+                    var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
                     var sysModels = await settingsService.GetResolvedSystemModelsAsync(userId, 1);
-                    var firstSys = sysModels.FirstOrDefault();
-                    if (firstSys.Config != null)
+                    SystemAiApiConfiguration? allowedConfig = null;
+                    string? lastRefusal = null;
+                    foreach (var candidate in sysModels)
                     {
-                        var config = firstSys.Config;
+                        var (checkedConfig, refusal) = await systemAiConfigService.GetAndCheckSystemConfigAsync(candidate.Config.Id, userId, requiredRoleFilter: 1);
+                        if (checkedConfig != null)
+                        {
+                            allowedConfig = checkedConfig;
+                            break;
+                        }
+                        lastRefusal = refusal;
+                    }
+
+                    if (allowedConfig == null && lastRefusal != null)
+                    {
+                        yield return new ChatEvent { Type = "error", Data = $"Error: {lastRefusal}" };
+                        yield break;
+                    }
+
+                    if (allowedConfig != null)
+                    {
+                        var config = allowedConfig;
                         provider = config.Provider;
                         model = config.ModelId;
                         modelDisplayName = !string.IsNullOrEmpty(config.DisplayName) ? config.DisplayName : config.ModelId;
@@ -992,7 +1067,18 @@ public class ChatService
                 dbContext.ChatMessage.Add(userMsg);
                 await dbContext.SaveChangesAsync(CancellationToken.None);
             }
-            
+
+            // A visible message the user sent; an incognito one only on the anonymous daily row.
+            if (!isHidden && _activityCounter != null)
+            {
+                await _activityCounter.TryAddAsync(
+                    isEphemeralSession ? null : userId,
+                    isEphemeralSession
+                        ? new Overseer.Services.Telemetry.ActivityDelta(IncognitoUserMessages: 1)
+                        : new Overseer.Services.Telemetry.ActivityDelta(UserMessages: 1),
+                    DateTime.UtcNow);
+            }
+
             var textAttachmentsContent = new StringBuilder();
             List<SendMessageAttachment> imageAttachments = new();
             var savedDbAttachments = new List<ChatMessageAttachment>();
@@ -1026,11 +1112,17 @@ public class ChatService
 
                     /* The picker's five-file limit is a client convenience; this is the
                        enforcement. MaxRequestBodySize bounds the aggregate, not the count. */
+                    var attachmentEvents = OptionalSingleton<Overseer.Services.Security.ISecurityEventRecorder>();
+                    void RecordAttachmentRejected(string verdict) =>
+                        attachmentEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
+                            SecurityEventKind.AttachmentRejected, UserId: userId, Code: verdict));
+
                     var acceptedAttachments = attachments;
                     var countCheck = _attachmentValidator.ValidateCount(attachments.Count);
                     if (!countCheck.IsValid)
                     {
                         attachmentErrors.Add(countCheck.Error!);
+                        RecordAttachmentRejected("count");
                         acceptedAttachments = attachments.Take(_attachmentValidator.MaxCount).ToList();
                     }
 
@@ -1048,6 +1140,7 @@ public class ChatService
                             if (!preCheck.IsValid)
                             {
                                 attachmentErrors.Add(preCheck.Error!);
+                                RecordAttachmentRejected("validation");
                                 continue;
                             }
 
@@ -1057,6 +1150,7 @@ public class ChatService
                             if (!byteCheck.IsValid)
                             {
                                 attachmentErrors.Add(byteCheck.Error!);
+                                RecordAttachmentRejected("content");
                                 continue;
                             }
 
@@ -1067,6 +1161,7 @@ public class ChatService
                                     "Attachment {FileName} in session {SessionId} was refused by {Scanner}: {Detail}",
                                     displayName, wireRef, _malwareScanner.Name, scan.Detail);
                                 attachmentErrors.Add($"\"{displayName}\" was refused by the malware scanner.");
+                                RecordAttachmentRejected("malware");
                                 continue;
                             }
 
@@ -1077,6 +1172,7 @@ public class ChatService
                                     "Attachment {FileName} in session {SessionId} could not be scanned by {Scanner}: {Detail}",
                                     displayName, wireRef, _malwareScanner.Name, scan.Detail);
                                 attachmentErrors.Add($"\"{displayName}\" could not be scanned for malware and was not accepted.");
+                                RecordAttachmentRejected("scan-failed");
                                 continue;
                             }
 
@@ -1451,6 +1547,9 @@ public class ChatService
             ToolExecutionContext = execContext,
             DlpVault = dlpVault,
             SystemModelId = systemModelId,
+            SafetyIdentifier = systemModelId.HasValue
+                ? OptionalSingleton<Overseer.Services.Security.SafetyIdentifierService>()?.For(userId)
+                : null,
             ApiKeyAlert = apiKeyAlertContext,
             ShowDebugLog = _showDebugLog,
             AiProvider = aiProvider,
@@ -1482,26 +1581,51 @@ public class ChatService
         var visibleUnmasker = dlpVault != null ? new Overseer.Services.Privacy.Dlp.DlpStreamUnmasker(dlpVault) : null;
         var thinkingUnmasker = dlpVault != null ? new Overseer.Services.Privacy.Dlp.DlpStreamUnmasker(dlpVault) : null;
 
-        await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runBudget, runResult, cancellationToken))
+        /* The finally runs for completed, errored, thrown and abandoned turns alike, so what the
+           providers reported is recorded however the turn ended. */
+        try
         {
-            /* Unmasked on the way to the browser, so the user sees their own value and never
-               learns a placeholder existed. A token can arrive split across chunks
-               ("[REDACTED_" then "API_KEY_1]"), which is why this is a windowed reader rather
-               than a per-chunk replace. */
-            if (visibleUnmasker != null && evt.Type == "chunk")
+            await foreach (var evt in _agentLoopRunner.RunAsync(runRequest, runBudget, runResult, cancellationToken))
             {
-                string emit = visibleUnmasker.Push(evt.Data);
-                if (emit.Length == 0) continue;
-                evt.Data = emit;
+                /* Unmasked on the way to the browser, so the user sees their own value and never
+                   learns a placeholder existed. A token can arrive split across chunks
+                   ("[REDACTED_" then "API_KEY_1]"), which is why this is a windowed reader rather
+                   than a per-chunk replace. */
+                if (visibleUnmasker != null && evt.Type == "chunk")
+                {
+                    string emit = visibleUnmasker.Push(evt.Data);
+                    if (emit.Length == 0) continue;
+                    evt.Data = emit;
+                }
+                else if (thinkingUnmasker != null && evt.Type == "thinking_chunk")
+                {
+                    string emit = thinkingUnmasker.Push(evt.Data);
+                    if (emit.Length == 0) continue;
+                    evt.Data = emit;
+                }
+
+                yield return evt;
             }
-            else if (thinkingUnmasker != null && evt.Type == "thinking_chunk")
+        }
+        finally
+        {
+            // Refusals and policy rejections on the operator's keys, incognito turns included.
+            if (systemModelId.HasValue)
             {
-                string emit = thinkingUnmasker.Push(evt.Data);
-                if (emit.Length == 0) continue;
-                evt.Data = emit;
+                Overseer.Services.Security.ProviderRefusalEvents.Record(
+                    OptionalSingleton<Overseer.Services.Security.ISecurityEventRecorder>(), runResult, userId, systemModelId);
             }
 
-            yield return evt;
+            // Every attempt of the turn, however it ended; an incognito turn on the user's own key writes nothing.
+            if (systemModelId.HasValue || !isEphemeralSession)
+            {
+                await Overseer.Services.Telemetry.ChatProviderAttemptRecorder.TryRecordAsync(
+                    _scopeFactory, (ILogger?)_logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ChatService>.Instance, runResult,
+                    new Overseer.Services.Telemetry.ChatAttemptLinks(
+                        Guid.NewGuid(), RoleContext: 1, AgentDepth: 0,
+                        systemModelId.HasValue ? AiKeySource.System : AiKeySource.UserKey,
+                        systemModelId, systemModelId.HasValue ? null : userId, thinkingLevel));
+            }
         }
 
         /* The flush is not optional. At the end of a turn each window still holds whatever
@@ -1754,7 +1878,21 @@ public class ChatService
                         roleContext: 1,
                         cacheReadTokens: runResult.CacheReadTokens,
                         cacheCreationTokens: runResult.CacheCreationTokens,
-                        totalDurationMs: runResult.TotalDurationMs);
+                        totalDurationMs: runResult.TotalDurationMs,
+                        thinkingLevel: new UsageThinkingLevel(thinkingLevel),
+                        // The main model's own cost: sub-agents write usage rows of their own.
+                        estimatedCost: mainCost,
+                        pricingSource: pricingSource);
+                }
+                else if (!isEphemeralSession)
+                {
+                    // The user's own key: a usage record without content. An incognito turn writes none.
+                    await Overseer.Services.Telemetry.UserKeyUsageRecorder.TryRecordAsync(
+                        _scopeFactory, (ILogger?)_logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ChatService>.Instance,
+                        new Overseer.Services.Telemetry.UserKeyUsageEntry(
+                            userId, userModelId, provider ?? string.Empty, model ?? string.Empty, modelDisplayName, thinkingLevel,
+                            wholeTurnInputTokens, wholeTurnOutputTokens, runResult.CacheReadTokens, runResult.CacheCreationTokens,
+                            runResult.TotalDurationMs, RoleContext: 1, mainCost, pricingSource));
                 }
 
                 if (isEphemeralSession)
@@ -1769,6 +1907,12 @@ public class ChatService
                 {
                     dbContext.ChatMessage.Add(asstMsg);
                     await dbContext.SaveChangesAsync(CancellationToken.None);
+
+                    // A saved reply; an incognito reply is not counted.
+                    if (_activityCounter != null)
+                    {
+                        await _activityCounter.TryAddAsync(userId, new Overseer.Services.Telemetry.ActivityDelta(AssistantMessages: 1), DateTime.UtcNow);
+                    }
                 }
 
                 var ongoingState = _ongoingChatManager.TryGet(sessionRef);
@@ -2492,6 +2636,11 @@ public class ChatService
                 return;
             }
 
+            if (await GetOverseerBlockAsync(userId) != null)
+            {
+                return;
+            }
+
             var titleUserName = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.FirstOrDefaultAsync(System.Linq.Queryable.Select(System.Linq.Queryable.Where(startDbContext.Users, u => u.Id == userId), u => u.UserName), cancellationToken);
             _showDebugLog = _configuration.ShouldShowDebugLog(titleUserName);
 
@@ -2518,14 +2667,17 @@ public class ChatService
             var titleEndpoint = Overseer.Services.Providers.AiEndpointDescriptor.Official;
 
             long? usedSystemModelId = settings?.TitleGenerationSystemModelId;
+            // The system configuration that funds the title, kept for pricing; null on the user's own key.
+            SystemAiApiConfiguration? titleConfig = null;
 
             if (settings?.TitleGenerationSystemModelId != null)
             {
                 var systemAiConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
                 var (config, errorMessage) = await systemAiConfigService.GetAndCheckSystemConfigAsync(settings.TitleGenerationSystemModelId.Value, userId, requiredRoleFilter: 2);
-                
+
                 if (config != null && !string.IsNullOrEmpty(config.EncryptedApiKey) && !string.IsNullOrEmpty(config.ApiKeyNonce) && !string.IsNullOrEmpty(config.ApiKeyTag))
                 {
+                    titleConfig = config;
                     provider = config.Provider;
                     modelId = config.ModelId;
                     serviceTier = config.ServiceTier;
@@ -2570,13 +2722,27 @@ public class ChatService
                 if (string.IsNullOrEmpty(provider) || string.IsNullOrEmpty(apiKey))
                 {
                     var settingsService = scope.ServiceProvider.GetRequiredService<SettingsService>();
+                    int titleRoleFilter = 2;
                     var resolvedSystemModels = await settingsService.GetResolvedSystemModelsAsync(userId, roleFilter: 2);
                     if (!resolvedSystemModels.Any())
                     {
+                        titleRoleFilter = 1;
                         resolvedSystemModels = await settingsService.GetResolvedSystemModelsAsync(userId, roleFilter: 1);
                     }
                     var firstSystemModel = resolvedSystemModels.FirstOrDefault();
-                    if (firstSystemModel.Config != null && !string.IsNullOrEmpty(firstSystemModel.Config.EncryptedApiKey) && !string.IsNullOrEmpty(firstSystemModel.Config.ApiKeyNonce) && !string.IsNullOrEmpty(firstSystemModel.Config.ApiKeyTag))
+
+                    /* Checked against the role the list was built with: a role-1 fallback would be
+                       refused by a fixed role-2 check. A refused model means no title. */
+                    bool fallbackAllowed = false;
+                    if (firstSystemModel.Config != null)
+                    {
+                        var fallbackConfigService = scope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                        var (allowedConfig, refusal) = await fallbackConfigService.GetAndCheckSystemConfigAsync(firstSystemModel.Config.Id, userId, requiredRoleFilter: titleRoleFilter);
+                        fallbackAllowed = allowedConfig != null;
+                        if (!fallbackAllowed && _showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen] Aborted: {refusal}" }, CancellationToken.None);
+                    }
+
+                    if (fallbackAllowed && !string.IsNullOrEmpty(firstSystemModel.Config!.EncryptedApiKey) && !string.IsNullOrEmpty(firstSystemModel.Config.ApiKeyNonce) && !string.IsNullOrEmpty(firstSystemModel.Config.ApiKeyTag))
                     {
                         provider = firstSystemModel.Config.Provider;
                         modelId = firstSystemModel.Config.ModelId;
@@ -2584,6 +2750,7 @@ public class ChatService
                         apiKey = cryptoService.Decrypt(firstSystemModel.Config.EncryptedApiKey, firstSystemModel.Config.ApiKeyNonce, firstSystemModel.Config.ApiKeyTag, "SYSTEM_API_KEY");
                         titleEndpoint = _endpointPolicy.Resolve(firstSystemModel.Config);
                         usedSystemModelId = firstSystemModel.Config.Id;
+                        titleConfig = firstSystemModel.Config;
                     }
                 }
             }
@@ -2606,7 +2773,11 @@ public class ChatService
             
             var client = _httpClientFactory.CreateClient();
             
-            var titleReqBody = aiProvider.BuildTitleRequestBody(modelId, prompt, userMessage, maxTokens, serviceTier);
+            // The safety identifier goes only with an operator-funded title to an official endpoint.
+            string? titleSafetyIdentifier = usedSystemModelId != null && !titleEndpoint.IsCustom
+                ? OptionalSingleton<Overseer.Services.Security.SafetyIdentifierService>()?.For(userId)
+                : null;
+            var titleReqBody = aiProvider.BuildTitleRequestBody(modelId, prompt, userMessage, maxTokens, serviceTier, titleSafetyIdentifier);
             string reqBodyStr = System.Text.Json.JsonSerializer.Serialize(titleReqBody);
             string titleUrl = aiProvider.GetTitleUrl(modelId, apiKey, titleEndpoint);
 
@@ -2614,15 +2785,36 @@ public class ChatService
             int titleWaitSec = _configuration.GetValue<int>("AiRateLimitSettings:TitleGenerationPermitWaitSeconds", 5);
             if (titleWaitSec <= 0) titleWaitSec = 5;
 
+            /* One attempt record per request, a governor refusal included, saved however the title
+               ends. A title is generated only for a persisted session, so there is no incognito case. */
+            var titleAttempts = new List<Overseer.Services.Agents.ProviderAttemptRecord>();
+            var titleEndpointKind = titleEndpoint.IsCustom ? BenchmarkEndpointKind.Custom : BenchmarkEndpointKind.Official;
+            var titleAttemptLinks = new Overseer.Services.Telemetry.ChatAttemptLinks(
+                Guid.NewGuid(), RoleContext: 2, AgentDepth: 0,
+                usedSystemModelId != null ? AiKeySource.System : AiKeySource.UserKey,
+                usedSystemModelId, usedSystemModelId != null ? null : userId, ThinkingLevel: null);
+            ILogger titleLogger = (ILogger?)_logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<ChatService>.Instance;
+            Task RecordTitleAttemptsAsync() => Overseer.Services.Telemetry.ChatProviderAttemptRecorder.TryRecordAsync(
+                _scopeFactory, titleLogger,
+                titleAttempts.Select(a => Overseer.Services.Telemetry.ModelCallTelemetryWriter.MapTitleAttempt(provider, modelId, a, titleAttemptLinks)).ToList());
+
             IDisposable? titlePermit = null;
             if (_governor != null)
             {
+                var permitStartUtc = DateTime.UtcNow;
+                var permitWatch = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
                     titlePermit = await _governor.AcquirePermitAsync(titleCredentialKey, TimeSpan.FromSeconds(titleWaitSec), cancellationToken);
                 }
                 catch (Exception tex)
                 {
+                    // A permit timeout is our governor's refusal; a cancel is the caller's.
+                    titleAttempts.Add(Overseer.Services.Telemetry.TitleAttemptEvidence.BeforeSend(
+                        provider, titleEndpointKind, governorRefused: tex is not OperationCanceledException,
+                        attemptIndex: 0, permitStartUtc, (int)permitWatch.ElapsedMilliseconds));
+                    await RecordTitleAttemptsAsync();
+
                     if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Skipped title generation due to rate limit/concurrency backpressure: {tex.Message}" }, CancellationToken.None);
                     return;
                 }
@@ -2638,10 +2830,16 @@ public class ChatService
 
                 int[] retryDelays = { 1000, 3000, 5000, 10000, 15000 };
                 int titleAttempt = 0;
+                // The body of the last error response, read once for its attempt record and reused below.
+                string? lastErrorBody = null;
+                var attemptStartUtc = DateTime.UtcNow;
+                var attemptWatch = System.Diagnostics.Stopwatch.StartNew();
 
                 for (int i = 0; i <= retryDelays.Length; i++)
                 {
                     titleAttempt = i + 1;
+                    attemptStartUtc = DateTime.UtcNow;
+                    attemptWatch.Restart();
                     try
                     {
                         var reqClone = new HttpRequestMessage(HttpMethod.Post, titleUrl)
@@ -2680,6 +2878,18 @@ public class ChatService
                             _governor.UpdateLimitsFromHeaders(titleCredentialKey, response!);
                         }
 
+                        // Only a 503 goes round again; a 2xx is recorded once its body has been read.
+                        if (!response!.IsSuccessStatusCode)
+                        {
+                            lastErrorBody = await response.Content.ReadAsStringAsync(CancellationToken.None);
+                            bool willRetry = response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable && i < retryDelays.Length;
+                            titleAttempts.Add(Overseer.Services.Telemetry.TitleAttemptEvidence.FromErrorResponse(
+                                provider, titleEndpointKind, (int)response.StatusCode, lastErrorBody,
+                                Overseer.Services.Agents.ProviderResponseEvidence.ReadRateLimitHeaders(response),
+                                Overseer.Services.Agents.ProviderResponseEvidence.ReadRetryAfterMs(response),
+                                modelId, titleAttempts.Count, attemptStartUtc, (int)attemptWatch.ElapsedMilliseconds, willRetry));
+                        }
+
                         if (response!.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
                         {
                             _governor?.RecordRateLimit(titleCredentialKey, TimeSpan.FromSeconds(15));
@@ -2691,9 +2901,19 @@ public class ChatService
                             break;
                         }
                     }
-                    catch (OperationCanceledException) { throw; }
+                    catch (OperationCanceledException oce)
+                    {
+                        // Appended before the rethrow leaves the loop.
+                        titleAttempts.Add(Overseer.Services.Telemetry.TitleAttemptEvidence.FromException(
+                            provider, titleEndpointKind, oce, callerCanceled: cancellationToken.IsCancellationRequested,
+                            titleAttempts.Count, attemptStartUtc, (int)attemptWatch.ElapsedMilliseconds, retried: false));
+                        throw;
+                    }
                     catch (Exception ex)
                     {
+                        titleAttempts.Add(Overseer.Services.Telemetry.TitleAttemptEvidence.FromException(
+                            provider, titleEndpointKind, ex, callerCanceled: false,
+                            titleAttempts.Count, attemptStartUtc, (int)attemptWatch.ElapsedMilliseconds, retried: i < retryDelays.Length));
                         if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Request failed: {ex.Message} (Attempt {i + 1})" }, CancellationToken.None);
                         if (i == retryDelays.Length) throw;
                     }
@@ -2706,6 +2926,9 @@ public class ChatService
                 if (response != null && response.IsSuccessStatusCode)
                 {
                     var json = await response.Content.ReadAsStringAsync(cancellationToken);
+                    titleAttempts.Add(Overseer.Services.Telemetry.TitleAttemptEvidence.Success(
+                        provider, titleEndpointKind, (int)response.StatusCode,
+                        titleAttempts.Count, attemptStartUtc, (int)attemptWatch.ElapsedMilliseconds));
                     var root = System.Text.Json.JsonDocument.Parse(json).RootElement;
                     var bodyTier = aiProvider.ExtractServiceTierFromBody(root);
                     var headerTier = aiProvider.ExtractServiceTierFromHeaders(response);
@@ -2735,19 +2958,54 @@ public class ChatService
                     else
                     {
                         if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] Generated Title: \"{generatedTitle}\"" }, CancellationToken.None);
+                    }
 
-                        if (usedSystemModelId != null)
-                        {
-                            var systemAiConfigService = startScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
-                            int estimatedInputTokens = (prompt.Length + userMessage.Length) / 4;
-                            int outputTokens = generatedTitle.Length / 4;
-                            await systemAiConfigService.RecordUsageAsync(usedSystemModelId.Value, userId, estimatedInputTokens, outputTokens, roleContext: 2);
-                        }
+                    // An empty title was paid for too. Real usage when the response reports it, else a chars/4 estimate.
+                    var titleUsage = aiProvider.ParseTitleUsage(root);
+                    int titleInputTokens = titleUsage?.TotalPromptTokens ?? (prompt.Length + userMessage.Length) / 4;
+                    int titleOutputTokens = titleUsage?.OutputTokens ?? generatedTitle.Length / 4;
+
+                    ModelPricing? titlePricing = null;
+                    try
+                    {
+                        var titlePricingService = startScope.ServiceProvider.GetService<ModelPricingService>();
+                        titlePricing = titlePricingService == null ? null
+                            : titleConfig != null ? titlePricingService.Resolve(titleConfig)
+                            : model != null ? titlePricingService.Resolve(model)
+                            : titlePricingService.ResolveDefault(provider, modelId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to resolve pricing for title model {Provider}/{ModelId}; the title is unpriced.", provider, modelId);
+                    }
+
+                    decimal? titleCost = titlePricing == null ? null
+                        : titleUsage != null
+                            ? ModelPricingService.ComputeCost(titlePricing, new[] { titleUsage }, actualTier, serviceTier)
+                            : ModelPricingService.EstimateSingleRequestCost(titlePricing, titleInputTokens, titleOutputTokens);
+                    string? titlePricingSource = titlePricing == null ? null
+                        : titlePricing.Source == ModelPricingSource.Custom ? "custom" : "catalog";
+
+                    if (usedSystemModelId != null)
+                    {
+                        var systemAiConfigService = startScope.ServiceProvider.GetRequiredService<SystemAiConfigService>();
+                        await systemAiConfigService.RecordUsageAsync(usedSystemModelId.Value, userId, titleInputTokens, titleOutputTokens, roleContext: 2,
+                            cacheReadTokens: titleUsage?.CacheReadTokens, cacheCreationTokens: titleUsage?.CacheCreationTokens,
+                            totalDurationMs: (int)sw.ElapsedMilliseconds,
+                            thinkingLevel: new UsageThinkingLevel(null), estimatedCost: titleCost, pricingSource: titlePricingSource);
+                    }
+                    else
+                    {
+                        await Overseer.Services.Telemetry.UserKeyUsageRecorder.TryRecordAsync(_scopeFactory, titleLogger,
+                            new Overseer.Services.Telemetry.UserKeyUsageEntry(
+                                userId, model?.Id, provider, modelId, model?.DisplayName, ThinkingLevel: null,
+                                titleInputTokens, titleOutputTokens, titleUsage?.CacheReadTokens, titleUsage?.CacheCreationTokens,
+                                (int)sw.ElapsedMilliseconds, RoleContext: 2, titleCost, titlePricingSource));
                     }
                 }
                 else if (response != null)
                 {
-                    var errorStr = await response.Content.ReadAsStringAsync(CancellationToken.None);
+                    var errorStr = lastErrorBody ?? await response.Content.ReadAsStringAsync(CancellationToken.None);
                     if (_showDebugLog) await _hubContext.Clients.Group(sessionId.ToString()).SendAsync("ReceiveChatEvent", new ChatEvent { Type = "debug", Data = $"[Title Gen - {provider}] API Error: {errorStr}" }, CancellationToken.None);
 
                     /* Only an operator key funds a title model with usedSystemModelId set; a user's
@@ -2785,6 +3043,7 @@ public class ChatService
             finally
             {
                 titlePermit?.Dispose();
+                await RecordTitleAttemptsAsync();
             }
 
             if (!string.IsNullOrWhiteSpace(generatedTitle))

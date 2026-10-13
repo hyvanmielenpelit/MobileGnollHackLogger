@@ -2238,15 +2238,29 @@ public class BenchmarkService
 
         try
         {
-            await configService.RecordUsageAsync(
-                testedConfig.Id,
-                run.StartedByUserId,
-                answer.InputTokens ?? 0,
-                answer.OutputTokens ?? 0,
-                roleContext: 4,
-                cacheReadTokens: answer.CacheReadInputTokens,
-                cacheCreationTokens: answer.CacheCreationInputTokens,
-                totalDurationMs: (int)answer.DurationMs);
+            if (runResult.ModelCallUsages.Count > 0)
+            {
+                await configService.RecordCallsUsageAsync(
+                    testedConfig.Id,
+                    run.StartedByUserId,
+                    roleContext: 4,
+                    runResult.ModelCallUsages,
+                    runResult.ActualServiceTier,
+                    totalDurationMs: (int)answer.DurationMs);
+            }
+            else
+            {
+                // No call reported usage: the answer's tokens are estimates.
+                await configService.RecordUsageAsync(
+                    testedConfig.Id,
+                    run.StartedByUserId,
+                    answer.InputTokens ?? 0,
+                    answer.OutputTokens ?? 0,
+                    roleContext: 4,
+                    cacheReadTokens: answer.CacheReadInputTokens,
+                    cacheCreationTokens: answer.CacheCreationInputTokens,
+                    totalDurationMs: (int)answer.DurationMs);
+            }
         }
         catch (Exception ex)
         {
@@ -2544,15 +2558,29 @@ public class BenchmarkService
 
         try
         {
-            await configService.RecordUsageAsync(
-                testedConfig.Id,
-                run.StartedByUserId,
-                answer.InputTokens ?? 0,
-                answer.OutputTokens ?? 0,
-                roleContext: 4,
-                cacheReadTokens: answer.CacheReadInputTokens,
-                cacheCreationTokens: answer.CacheCreationInputTokens,
-                totalDurationMs: (int)answer.DurationMs);
+            if (runResult.ModelCallUsages.Count > 0)
+            {
+                await configService.RecordCallsUsageAsync(
+                    testedConfig.Id,
+                    run.StartedByUserId,
+                    roleContext: 4,
+                    runResult.ModelCallUsages,
+                    runResult.ActualServiceTier,
+                    totalDurationMs: (int)answer.DurationMs);
+            }
+            else
+            {
+                // No call reported usage: the answer's tokens are estimates.
+                await configService.RecordUsageAsync(
+                    testedConfig.Id,
+                    run.StartedByUserId,
+                    answer.InputTokens ?? 0,
+                    answer.OutputTokens ?? 0,
+                    roleContext: 4,
+                    cacheReadTokens: answer.CacheReadInputTokens,
+                    cacheCreationTokens: answer.CacheCreationInputTokens,
+                    totalDurationMs: (int)answer.DurationMs);
+            }
         }
         catch (Exception ex)
         {
@@ -3074,15 +3102,29 @@ public class BenchmarkService
         {
             try
             {
-                await configService.RecordUsageAsync(
-                    assessorConfig.Id,
-                    run.StartedByUserId,
-                    runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
-                    runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
-                    roleContext: 4,
-                    cacheReadTokens: runResult.CacheReadTokens,
-                    cacheCreationTokens: runResult.CacheCreationTokens,
-                    totalDurationMs: (int)outcomeA.DurationMs);
+                // Both turns' calls; with none reporting usage, the outcome's estimated totals.
+                if (outcomeA.ModelCalls.Any(c => c.Usage != null))
+                {
+                    await configService.RecordCallsUsageAsync(
+                        assessorConfig.Id,
+                        run.StartedByUserId,
+                        roleContext: 4,
+                        outcomeA.ModelCalls,
+                        outcomeA.LastResult.ActualServiceTier,
+                        totalDurationMs: (int)outcomeA.DurationMs);
+                }
+                else
+                {
+                    await configService.RecordUsageAsync(
+                        assessorConfig.Id,
+                        run.StartedByUserId,
+                        outcomeA.InputTokens,
+                        outcomeA.OutputTokens,
+                        roleContext: 4,
+                        cacheReadTokens: outcomeA.CacheReadTokens,
+                        cacheCreationTokens: outcomeA.CacheCreationTokens,
+                        totalDurationMs: (int)outcomeA.DurationMs);
+                }
             }
             catch (Exception ex)
             {
@@ -3092,18 +3134,30 @@ public class BenchmarkService
 
         if (outcomeB != null)
         {
-            var coResult = outcomeB.LastResult;
             try
             {
-                await configService.RecordUsageAsync(
-                    coAssessorConfig!.Id,
-                    run.StartedByUserId,
-                    coResult.TotalPromptTokens > 0 ? coResult.TotalPromptTokens : coResult.EstimatedInputTokens,
-                    coResult.OutputTokens > 0 ? coResult.OutputTokens : coResult.EstimatedOutputTokens,
-                    roleContext: 4,
-                    cacheReadTokens: coResult.CacheReadTokens,
-                    cacheCreationTokens: coResult.CacheCreationTokens,
-                    totalDurationMs: (int)outcomeB.DurationMs);
+                if (outcomeB.ModelCalls.Any(c => c.Usage != null))
+                {
+                    await configService.RecordCallsUsageAsync(
+                        coAssessorConfig!.Id,
+                        run.StartedByUserId,
+                        roleContext: 4,
+                        outcomeB.ModelCalls,
+                        outcomeB.LastResult.ActualServiceTier,
+                        totalDurationMs: (int)outcomeB.DurationMs);
+                }
+                else
+                {
+                    await configService.RecordUsageAsync(
+                        coAssessorConfig!.Id,
+                        run.StartedByUserId,
+                        outcomeB.InputTokens,
+                        outcomeB.OutputTokens,
+                        roleContext: 4,
+                        cacheReadTokens: outcomeB.CacheReadTokens,
+                        cacheCreationTokens: outcomeB.CacheCreationTokens,
+                        totalDurationMs: (int)outcomeB.DurationMs);
+                }
             }
             catch (Exception ex)
             {
@@ -3149,8 +3203,8 @@ public class BenchmarkService
 
     /// <summary>
     /// One member's per-question grading turn, its repair turn included: the parse, the terminal
-    /// error, the result whose usage is recorded, what both turns consumed together, and both turns'
-    /// model calls in call order.
+    /// error, the result whose text is kept, what both turns consumed together, and both turns'
+    /// model calls in call order, whose usage is recorded.
     /// </summary>
     private sealed record PerQuestionGradingOutcome(
         PerQuestionAssessmentParseResult Parse,
@@ -4761,15 +4815,29 @@ public class BenchmarkService
 
         try
         {
-            await configService.RecordUsageAsync(
-                verifierConfig.Id,
-                run.StartedByUserId,
-                inputTokens,
-                outputTokens,
-                roleContext: 4,
-                cacheReadTokens: runResult.CacheReadTokens,
-                cacheCreationTokens: runResult.CacheCreationTokens,
-                totalDurationMs: (int)sw.ElapsedMilliseconds);
+            // Every attempt's calls and the parse retry's; with none reporting usage, the estimated totals.
+            if (callUsages.Count > 0)
+            {
+                await configService.RecordCallsUsageAsync(
+                    verifierConfig.Id,
+                    run.StartedByUserId,
+                    roleContext: 4,
+                    callUsages,
+                    servedServiceTier,
+                    totalDurationMs: (int)sw.ElapsedMilliseconds);
+            }
+            else
+            {
+                await configService.RecordUsageAsync(
+                    verifierConfig.Id,
+                    run.StartedByUserId,
+                    inputTokens,
+                    outputTokens,
+                    roleContext: 4,
+                    cacheReadTokens: cacheReadTokens,
+                    cacheCreationTokens: cacheCreationTokens,
+                    totalDurationMs: (int)sw.ElapsedMilliseconds);
+            }
         }
         catch (Exception ex)
         {
@@ -5493,12 +5561,23 @@ public class BenchmarkService
 
             try
             {
-                await configService.RecordUsageAsync(
-                    assessorConfig.Id, run.StartedByUserId, verdict.InputTokens, verdict.OutputTokens,
-                    roleContext: 4,
-                    cacheReadTokens: verdict.CacheReadTokens,
-                    cacheCreationTokens: verdict.CacheCreationTokens,
-                    totalDurationMs: (int)verdict.DurationMs);
+                if (regradeCalls.Any(c => c.Usage != null))
+                {
+                    await configService.RecordCallsUsageAsync(
+                        assessorConfig.Id, run.StartedByUserId, roleContext: 4,
+                        regradeCalls, ServedServiceTierOf(regradeCalls),
+                        totalDurationMs: (int)verdict.DurationMs);
+                }
+                else
+                {
+                    // No call reported usage: the verdict's tokens are estimates.
+                    await configService.RecordUsageAsync(
+                        assessorConfig.Id, run.StartedByUserId, verdict.InputTokens, verdict.OutputTokens,
+                        roleContext: 4,
+                        cacheReadTokens: verdict.CacheReadTokens,
+                        cacheCreationTokens: verdict.CacheCreationTokens,
+                        totalDurationMs: (int)verdict.DurationMs);
+                }
             }
             catch (Exception ex)
             {
@@ -6245,6 +6324,8 @@ public class BenchmarkService
         int disagreements = 0;
         var sw = Stopwatch.StartNew();
         int unrecordedRubricCount = 0;
+        // Every verdict's model calls, the ones whose tokens the calibration's totals sum.
+        var calibrationCalls = new List<ModelCallRecord>();
 
         foreach (var answer in answers)
         {
@@ -6292,6 +6373,7 @@ public class BenchmarkService
 
             calibration.InputTokens += verdict.InputTokens;
             calibration.OutputTokens += verdict.OutputTokens;
+            if (verdict.ModelCalls != null) calibrationCalls.AddRange(verdict.ModelCalls);
 
             if (verdict.Result == null)
             {
@@ -6356,9 +6438,20 @@ public class BenchmarkService
 
         try
         {
-            await configService.RecordUsageAsync(
-                assessorConfig.Id, run.StartedByUserId, calibration.InputTokens, calibration.OutputTokens,
-                roleContext: 4, totalDurationMs: (int)calibration.DurationMs);
+            if (calibrationCalls.Any(c => c.Usage != null))
+            {
+                await configService.RecordCallsUsageAsync(
+                    assessorConfig.Id, run.StartedByUserId, roleContext: 4,
+                    calibrationCalls, ServedServiceTierOf(calibrationCalls),
+                    totalDurationMs: (int)calibration.DurationMs);
+            }
+            else
+            {
+                // No call reported usage: the calibration's tokens are estimates.
+                await configService.RecordUsageAsync(
+                    assessorConfig.Id, run.StartedByUserId, calibration.InputTokens, calibration.OutputTokens,
+                    roleContext: 4, totalDurationMs: (int)calibration.DurationMs);
+            }
         }
         catch (Exception ex)
         {
@@ -6415,6 +6508,11 @@ public class BenchmarkService
         int CacheReadTokens = 0,
         int CacheCreationTokens = 0,
         IReadOnlyList<ModelCallRecord>? ModelCalls = null);
+
+    /// <summary>The service tier the provider reported last among <paramref name="calls"/>, as
+    /// <see cref="AgentRunResult.ActualServiceTier"/> keeps it; null when none reported one.</summary>
+    private static string? ServedServiceTierOf(IEnumerable<ModelCallRecord>? calls)
+        => calls?.LastOrDefault(c => c.ServedServiceTier != null)?.ServedServiceTier;
 
     /// <summary>
     /// Runs the per-question assessor prompt against a stored answer and parses the verdict,
@@ -6810,9 +6908,20 @@ public class BenchmarkService
 
         try
         {
-            await configService.RecordUsageAsync(
-                assessorConfig.Id, run.StartedByUserId, verdict.InputTokens, verdict.OutputTokens,
-                roleContext: 4, totalDurationMs: (int)verdict.DurationMs);
+            if (verdict.ModelCalls?.Any(c => c.Usage != null) == true)
+            {
+                await configService.RecordCallsUsageAsync(
+                    assessorConfig.Id, run.StartedByUserId, roleContext: 4,
+                    verdict.ModelCalls, ServedServiceTierOf(verdict.ModelCalls),
+                    totalDurationMs: (int)verdict.DurationMs);
+            }
+            else
+            {
+                // No call reported usage: the verdict's tokens are estimates.
+                await configService.RecordUsageAsync(
+                    assessorConfig.Id, run.StartedByUserId, verdict.InputTokens, verdict.OutputTokens,
+                    roleContext: 4, totalDurationMs: (int)verdict.DurationMs);
+            }
         }
         catch (Exception ex)
         {
@@ -7193,15 +7302,29 @@ public class BenchmarkService
 
         try
         {
-            await configService.RecordUsageAsync(
-                secondConfig.Id,
-                run.StartedByUserId,
-                opinionInputTokens,
-                opinionOutputTokens,
-                roleContext: 4,
-                cacheReadTokens: opinionCacheReadTokens,
-                cacheCreationTokens: opinionCacheCreationTokens,
-                totalDurationMs: (int)sw.ElapsedMilliseconds);
+            if (opinionCalls.Any(c => c.Usage != null))
+            {
+                await configService.RecordCallsUsageAsync(
+                    secondConfig.Id,
+                    run.StartedByUserId,
+                    roleContext: 4,
+                    opinionCalls,
+                    ServedServiceTierOf(opinionCalls),
+                    totalDurationMs: (int)sw.ElapsedMilliseconds);
+            }
+            else
+            {
+                // No call reported usage: the opinion's tokens are estimates.
+                await configService.RecordUsageAsync(
+                    secondConfig.Id,
+                    run.StartedByUserId,
+                    opinionInputTokens,
+                    opinionOutputTokens,
+                    roleContext: 4,
+                    cacheReadTokens: opinionCacheReadTokens,
+                    cacheCreationTokens: opinionCacheCreationTokens,
+                    totalDurationMs: (int)sw.ElapsedMilliseconds);
+            }
         }
         catch (Exception ex)
         {
@@ -7329,15 +7452,29 @@ public class BenchmarkService
 
         try
         {
-            await configService.RecordUsageAsync(
-                assessorConfig.Id,
-                run.StartedByUserId,
-                runResult.TotalPromptTokens > 0 ? runResult.TotalPromptTokens : runResult.EstimatedInputTokens,
-                runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens,
-                roleContext: 4,
-                cacheReadTokens: runResult.CacheReadTokens,
-                cacheCreationTokens: runResult.CacheCreationTokens,
-                totalDurationMs: (int)outcome.DurationMs);
+            // Both turns' calls; with none reporting usage, the outcome's estimated totals.
+            if (outcome.ModelCalls.Any(c => c.Usage != null))
+            {
+                await configService.RecordCallsUsageAsync(
+                    assessorConfig.Id,
+                    run.StartedByUserId,
+                    roleContext: 4,
+                    outcome.ModelCalls,
+                    runResult.ActualServiceTier,
+                    totalDurationMs: (int)outcome.DurationMs);
+            }
+            else
+            {
+                await configService.RecordUsageAsync(
+                    assessorConfig.Id,
+                    run.StartedByUserId,
+                    outcome.InputTokens,
+                    outcome.OutputTokens,
+                    roleContext: 4,
+                    cacheReadTokens: outcome.CacheReadTokens,
+                    cacheCreationTokens: outcome.CacheCreationTokens,
+                    totalDurationMs: (int)outcome.DurationMs);
+            }
         }
         catch (Exception ex)
         {
@@ -7394,15 +7531,28 @@ public class BenchmarkService
 
         try
         {
-            await configService.RecordUsageAsync(
-                coAssessorConfig.Id,
-                run.StartedByUserId,
-                coResult.TotalPromptTokens > 0 ? coResult.TotalPromptTokens : coResult.EstimatedInputTokens,
-                coResult.OutputTokens > 0 ? coResult.OutputTokens : coResult.EstimatedOutputTokens,
-                roleContext: 4,
-                cacheReadTokens: coResult.CacheReadTokens,
-                cacheCreationTokens: coResult.CacheCreationTokens,
-                totalDurationMs: (int)coOutcome.DurationMs);
+            if (coOutcome.ModelCalls.Any(c => c.Usage != null))
+            {
+                await configService.RecordCallsUsageAsync(
+                    coAssessorConfig.Id,
+                    run.StartedByUserId,
+                    roleContext: 4,
+                    coOutcome.ModelCalls,
+                    coResult.ActualServiceTier,
+                    totalDurationMs: (int)coOutcome.DurationMs);
+            }
+            else
+            {
+                await configService.RecordUsageAsync(
+                    coAssessorConfig.Id,
+                    run.StartedByUserId,
+                    coOutcome.InputTokens,
+                    coOutcome.OutputTokens,
+                    roleContext: 4,
+                    cacheReadTokens: coOutcome.CacheReadTokens,
+                    cacheCreationTokens: coOutcome.CacheCreationTokens,
+                    totalDurationMs: (int)coOutcome.DurationMs);
+            }
         }
         catch (Exception ex)
         {
@@ -7412,8 +7562,8 @@ public class BenchmarkService
 
     /// <summary>
     /// One synthesis call and, when its reply does not parse, one repair turn: the parse, the result
-    /// whose usage is recorded, the tokens of both turns together, the first turn's duration, and both
-    /// turns' model calls in call order.
+    /// whose text is kept, the tokens of both turns together, the first turn's duration, and both
+    /// turns' model calls in call order, whose usage is recorded.
     /// </summary>
     private sealed record SynthesisOutcome(
         SynthesisParseResult Parse,
@@ -8171,15 +8321,29 @@ public class BenchmarkService
 
         try
         {
-            await configService.RecordUsageAsync(
-                assessorConfig.Id,
-                job.StartedByUserId,
-                promptTokens,
-                outputTokens,
-                roleContext: 4,
-                cacheReadTokens: runResult.CacheReadTokens,
-                cacheCreationTokens: runResult.CacheCreationTokens,
-                totalDurationMs: (int)sw.ElapsedMilliseconds);
+            if (runResult.ModelCallUsages.Count > 0)
+            {
+                await configService.RecordCallsUsageAsync(
+                    assessorConfig.Id,
+                    job.StartedByUserId,
+                    roleContext: 4,
+                    runResult.ModelCallUsages,
+                    runResult.ActualServiceTier,
+                    totalDurationMs: (int)sw.ElapsedMilliseconds);
+            }
+            else
+            {
+                // No call reported usage: the tokens are estimates.
+                await configService.RecordUsageAsync(
+                    assessorConfig.Id,
+                    job.StartedByUserId,
+                    promptTokens,
+                    outputTokens,
+                    roleContext: 4,
+                    cacheReadTokens: runResult.CacheReadTokens,
+                    cacheCreationTokens: runResult.CacheCreationTokens,
+                    totalDurationMs: (int)sw.ElapsedMilliseconds);
+            }
         }
         catch (Exception ex)
         {

@@ -66,6 +66,13 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkProviderAttempt> BenchmarkProviderAttempts { get; set; } = null!;
         public DbSet<ChatConsistencyAnalysis> ChatConsistencyAnalyses { get; set; } = null!;
         public DbSet<ChatConsistencyAnnotation> ChatConsistencyAnnotations { get; set; } = null!;
+        public DbSet<SecurityEvent> SecurityEvents { get; set; } = null!;
+        public DbSet<UserSystemModelOrder> UserSystemModelOrders { get; set; } = null!;
+        public DbSet<AccountHold> AccountHolds { get; set; } = null!;
+        public DbSet<AccountDeletionRequest> AccountDeletionRequests { get; set; } = null!;
+        public DbSet<UserKeyAiUsageLog> UserKeyAiUsageLogs { get; set; } = null!;
+        public DbSet<ChatProviderAttempt> ChatProviderAttempts { get; set; } = null!;
+        public DbSet<OverseerDailyActivity> OverseerDailyActivities { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -133,6 +140,34 @@ namespace MobileGnollHackLogger.Data
                 .HasIndex(l => new { l.SystemAiApiConfigurationId, l.TimestampUtc })
                 .IncludeProperties(l => new { l.AspNetUserId, l.RoleContext, l.InputTokens, l.OutputTokens });
 
+            // Per-user usage queries; also serves the user foreign key.
+            modelBuilder.Entity<SystemAiUsageLog>()
+                .HasIndex(l => new { l.AspNetUserId, l.TimestampUtc })
+                .IncludeProperties(l => new { l.SystemAiApiConfigurationId, l.RoleContext, l.InputTokens, l.OutputTokens, l.EstimatedCost });
+
+            modelBuilder.Entity<UserKeyAiUsageLog>(e =>
+            {
+                e.HasOne(l => l.AspNetUser).WithMany(u => u.UserKeyAiUsageLogs).HasForeignKey(l => l.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
+                e.HasIndex(l => l.TimestampUtc);
+                e.HasIndex(l => new { l.AspNetUserId, l.TimestampUtc });
+            });
+
+            // Explicit cascade: an optional foreign key would otherwise default to ClientSetNull.
+            modelBuilder.Entity<ChatProviderAttempt>(e =>
+            {
+                e.HasOne(a => a.AspNetUser).WithMany(u => u.ChatProviderAttempts).HasForeignKey(a => a.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
+                e.HasIndex(a => a.StartedAtUtc);
+                e.HasIndex(a => new { a.Provider, a.RequestedModelId, a.StartedAtUtc });
+            });
+
+            // One row per user per day, and one anonymous row per day: without HasFilter(null) EF filters NULLs out
+            // of a unique index on SQL Server, which would allow several anonymous rows.
+            modelBuilder.Entity<OverseerDailyActivity>(e =>
+            {
+                e.HasOne(a => a.AspNetUser).WithMany(u => u.DailyActivities).HasForeignKey(a => a.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
+                e.HasIndex(a => new { a.DateUtc, a.AspNetUserId }).IsUnique().HasFilter(null);
+            });
+
             modelBuilder.Entity<SystemAiErrorLog>()
                 .HasOne(l => l.DismissedByUser)
                 .WithMany()
@@ -141,6 +176,37 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<SystemAiErrorLog>()
                 .HasIndex(l => new { l.SystemAiApiConfigurationId, l.TimestampUtc });
+
+            // --- Security ---
+
+            // Explicit cascade: an optional foreign key would otherwise default to ClientSetNull.
+            modelBuilder.Entity<SecurityEvent>(e =>
+            {
+                e.HasOne(s => s.AspNetUser).WithMany(u => u.SecurityEvents).HasForeignKey(s => s.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
+                e.HasIndex(s => s.OccurredUtc);
+                e.HasIndex(s => new { s.AspNetUserId, s.OccurredUtc });
+                e.HasIndex(s => new { s.Kind, s.OccurredUtc });
+            });
+
+            modelBuilder.Entity<UserSystemModelOrder>(e =>
+            {
+                e.HasOne(o => o.AspNetUser).WithMany(u => u.SystemModelOrders).HasForeignKey(o => o.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
+                e.HasIndex(o => new { o.AspNetUserId, o.SystemAiApiConfigurationId }).IsUnique();
+            });
+
+            // A hold disappears only with an approved deletion.
+            modelBuilder.Entity<AccountHold>(e =>
+            {
+                e.HasOne(h => h.AspNetUser).WithMany().HasForeignKey(h => h.AspNetUserId).HasPrincipalKey(u => u.Id).OnDelete(DeleteBehavior.Cascade);
+                e.HasIndex(h => new { h.AspNetUserId, h.ReleasedUtc });
+            });
+
+            // No foreign key to the user: the decision outlives the deleted account.
+            modelBuilder.Entity<AccountDeletionRequest>(e =>
+            {
+                e.HasIndex(r => new { r.Status, r.RequestedUtc });
+                e.HasIndex(r => new { r.AspNetUserId, r.Status });
+            });
 
             /* Benchmark history references the settings it ran with through these append-only,
                content-addressed snapshots, never through the mutable configuration. Restrict keeps
@@ -728,6 +794,12 @@ namespace MobileGnollHackLogger.Data
 
             modelBuilder.Entity<ChatSession>()
                 .Property(s => s.TotalUserEstimatedCost).HasPrecision(18, 8);
+
+            modelBuilder.Entity<SystemAiUsageLog>()
+                .Property(l => l.EstimatedCost).HasPrecision(18, 8);
+
+            modelBuilder.Entity<UserKeyAiUsageLog>()
+                .Property(l => l.EstimatedCost).HasPrecision(18, 8);
         }
 
         public async Task<TopScoreNumberData> GetTopScoreNumberAsync(long databaseId, string? mode, string? death = null)

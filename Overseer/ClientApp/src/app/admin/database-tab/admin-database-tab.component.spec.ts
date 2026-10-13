@@ -27,13 +27,16 @@ describe('AdminDatabaseTabComponent', () => {
       confidentialSessionCount: 0, ownTtlSessionCount: 0, immediatePurgeSessionCount: 0, ephemeralSessionCount: 0,
       contentKeyVersions: [], sessionsWithUnknownKeyVersionCount: 0, auditLogRowCount: 0, auditLogPrunableCount: 0,
       aiErrorLogUndismissedCount: 0, aiErrorLogDismissedCount: 0, aiErrorLogPrunableCount: 0,
+      securityEventRowCount: 0, securityEventPrunableCount: 0,
+      chatProviderAttemptRowCount: 0, chatProviderAttemptPrunableCount: 0,
       expiredTrashSessionCount: 0, prunableToolCallCount: 0, prunableBenchmarkToolCallCount: 0,
       serviceStartedUtc: '2026-09-15T00:00:00Z', appliedMigrationCount: 0, pendingMigrations: [],
       schemaStatusAvailable: true,
       policy: {
         maxActiveSessionsPerUser: 50, maxPinnedSessionsPerUser: 5, inactivityTtlDays: 90,
         softDeleteGracePeriodDays: 30, pruneToolCallResultsDays: 30, pruneBenchmarkToolCallResultsDays: 90,
-        auditLogRetentionDays: 365, pruneDismissedAiErrorLogDays: 90, maintenanceHistoryRetentionDays: 180,
+        auditLogRetentionDays: 365, pruneDismissedAiErrorLogDays: 90, pruneSecurityEventDays: 180,
+        pruneChatProviderAttemptDays: 400, maintenanceHistoryRetentionDays: 180,
         maintenanceRunHourUtc: 3,
         enableStorageWarningEmails: true, emailSenderConfigured: false
       }
@@ -43,7 +46,9 @@ describe('AdminDatabaseTabComponent', () => {
       success: true, isDryRun, softDeletedCount: 0, purgedSessionCount: 0, purgedMessageCount: 0,
       purgedToolCallCount: 0, prunedToolResultCount: 0, prunedBenchmarkToolResultCount: 0,
       deletedDiskFolderCount: 0, deletedDiskFileCount: 0, reclaimedDiskBytes: 0, sweptOrphanFolderCount: 0,
-      prunedAuditLogCount: 0, prunedAiErrorLogCount: 0, elapsedMilliseconds: 1, trigger: 'Manual', logs: []
+      prunedAuditLogCount: 0, prunedAiErrorLogCount: 0, prunedSecurityEventCount: 0,
+      prunedChatProviderAttemptCount: 0, elapsedMilliseconds: 1,
+      trigger: 'Manual', logs: []
     });
 
     beforeEach(() => {
@@ -57,7 +62,8 @@ describe('AdminDatabaseTabComponent', () => {
       id, startedUtc: '2026-09-15T03:00:00Z', trigger: 'Scheduled', isDryRun: false, success: true,
       elapsedMilliseconds: 10, softDeletedCount: 0, purgedSessionCount: 0, purgedMessageCount: 0,
       purgedToolCallCount: 0, prunedToolResultCount: 0, prunedBenchmarkToolResultCount: 0,
-      prunedAuditLogCount: 0, prunedAiErrorLogCount: 0, deletedDiskFolderCount: 0, deletedDiskFileCount: 0,
+      prunedAuditLogCount: 0, prunedAiErrorLogCount: 0, prunedSecurityEventCount: 0,
+      prunedChatProviderAttemptCount: 0, deletedDiskFolderCount: 0, deletedDiskFileCount: 0,
       sweptOrphanFolderCount: 0, reclaimedDiskBytes: 0, errorMessage: null, hasLog
     });
 
@@ -208,6 +214,123 @@ describe('AdminDatabaseTabComponent', () => {
       expect(confirmSpy).not.toHaveBeenCalled();
       expect(purgeSpy).toHaveBeenCalledWith(expect.objectContaining({ dryRun: true }));
       expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
+    });
+
+    it('prunes security events as a dry run at the chosen age without confirmation', () => {
+      const pruneSpy = vi.spyOn(adminService, 'pruneSecurityEvents').mockReturnValue(
+        of({ ...result(true), prunedSecurityEventCount: 4 }));
+      const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
+
+      component.maintenanceDryRun = true;
+      component.securityEventPruneDays = 90;
+      component.pruneSecurityEventsNow();
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(pruneSpy).toHaveBeenCalledWith({ securityEventPruneDays: 90, dryRun: true });
+      expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
+      expect(component.maintenanceResultCounts(component.lastMaintenanceResult!))
+        .toContainEqual({ label: 'Security events pruned', value: '4' });
+      component.closeMaintenanceRunDialog();
+    });
+
+    it('takes the security event age from the policy and shows it in the template', async () => {
+      (adminService.getStorageMetrics as Mock).mockReturnValue(of({
+        ...metrics(),
+        securityEventRowCount: 40, securityEventPrunableCount: 7, securityEventOldestUtc: '2026-01-02T00:00:00Z',
+        policy: { ...metrics().policy, pruneSecurityEventDays: 365 }
+      }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.securityEventPruneDays).toBe(365);
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('#maintenance-security-event-days')).not.toBeNull();
+      const policyRow = Array.from(host.querySelectorAll('.policy-list dt'))
+        .find(dt => dt.textContent?.trim() === 'Security events kept');
+      expect(policyRow?.nextElementSibling?.textContent?.trim()).toBe('365 days');
+      const text = (host.textContent ?? '').replace(/\s+/g, ' ');
+      expect(text).toContain('7 of 40, oldest 2026-01-02');
+      fixture.destroy();
+    });
+
+    it('prunes chat provider attempts as a dry run at the chosen age without confirmation', () => {
+      const pruneSpy = vi.spyOn(adminService, 'pruneChatProviderAttempts').mockReturnValue(
+        of({ ...result(true), prunedChatProviderAttemptCount: 6 }));
+      const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
+
+      component.maintenanceDryRun = true;
+      component.chatProviderAttemptPruneDays = 180;
+      component.pruneChatProviderAttemptsNow();
+
+      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(pruneSpy).toHaveBeenCalledWith({ chatProviderAttemptPruneDays: 180, dryRun: true });
+      expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
+      expect(component.maintenanceResultCounts(component.lastMaintenanceResult!))
+        .toContainEqual({ label: 'Chat provider attempts pruned', value: '6' });
+      component.closeMaintenanceRunDialog();
+    });
+
+    it('takes the chat provider attempt age from the policy and shows it in the template', async () => {
+      (adminService.getStorageMetrics as Mock).mockReturnValue(of({
+        ...metrics(),
+        chatProviderAttemptRowCount: 500, chatProviderAttemptPrunableCount: 12,
+        chatProviderAttemptOldestUtc: '2025-08-03T00:00:00Z',
+        policy: { ...metrics().policy, pruneChatProviderAttemptDays: 365 }
+      }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.chatProviderAttemptPruneDays).toBe(365);
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('#maintenance-provider-attempt-days')).not.toBeNull();
+      const policyRow = Array.from(host.querySelectorAll('.policy-list dt'))
+        .find(dt => dt.textContent?.trim() === 'Chat provider attempts kept');
+      expect(policyRow?.nextElementSibling?.textContent?.trim()).toBe('365 days');
+      const statBox = Array.from(host.querySelectorAll('.preview-grid .stat-box'))
+        .find(box => box.querySelector('.stat-label')?.textContent?.trim() === 'Prunable provider attempts');
+      expect((statBox?.querySelector('.stat-value')?.textContent ?? '').replace(/\s+/g, ' ').trim())
+        .toBe('12 of 500, oldest 2025-08-03');
+      fixture.destroy();
+    });
+
+    it('defaults the chat provider attempt age to the configured 400 days', async () => {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.chatProviderAttemptPruneDays).toBe(400);
+      const select: HTMLSelectElement = fixture.nativeElement.querySelector('#maintenance-provider-attempt-days');
+      expect(Array.from(select.options).map(o => (o.textContent ?? '').trim()))
+        .toEqual(['Older than 90d', 'Older than 180d', 'Older than 365d', 'Older than 400d']);
+      fixture.destroy();
+    });
+
+    it('shows the AI error, security event and provider attempt counts in the history and spans the log row across every column', async () => {
+      vi.spyOn(adminService, 'getMaintenanceRunLog').mockReturnValue(of({ logText: 'line 1', errorMessage: null }));
+      (adminService.getMaintenanceHistory as Mock).mockReturnValue(of({
+        totalCount: 1,
+        rows: [{ ...historyRun(9, true), prunedAiErrorLogCount: 3, prunedSecurityEventCount: 11, prunedChatProviderAttemptCount: 25 }]
+      }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      const headers = Array.from(host.querySelectorAll('.history-table thead th')).map(th => th.textContent?.trim());
+      expect(headers).toContain('AI Errors');
+      expect(headers).toContain('Security Events');
+      expect(headers.indexOf('Provider Attempts')).toBe(headers.indexOf('Security Events') + 1);
+      const cells = Array.from(host.querySelectorAll('.history-table tbody tr:first-child td')).map(td => td.textContent?.trim());
+      expect(cells[headers.indexOf('AI Errors')]).toBe('3');
+      expect(cells[headers.indexOf('Security Events')]).toBe('11');
+      expect(cells[headers.indexOf('Provider Attempts')]).toBe('25');
+
+      (host.querySelector('.history-log-toggle') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(host.querySelector('.history-log-row td')?.getAttribute('colspan')).toBe(String(headers.length));
+      fixture.destroy();
     });
 
     describe('report chart files', () => {

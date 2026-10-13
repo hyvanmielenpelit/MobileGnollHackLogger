@@ -70,7 +70,70 @@ builder.Services.AddDefaultIdentity<ApplicationUser>(options =>
 {
     options.SignIn.RequireConfirmedAccount = true;
     options.User.RequireUniqueEmail = true;
+
+    // Overseer signs in against the same accounts and their shared lockout fields; both apps read an identical IdentityLockout section.
+    options.Lockout.MaxFailedAccessAttempts = builder.Configuration.GetValue("IdentityLockout:MaxFailedAccessAttempts", 10);
+    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(builder.Configuration.GetValue("IdentityLockout:LockoutMinutes", 15));
+    options.Lockout.AllowedForNewUsers = true;
 }).AddEntityFrameworkStores<ApplicationDbContext>();
+
+// Game API sign-in throttle: in memory and per process, separate from Identity lockout.
+builder.Services.AddSingleton(new GnollHackServer.Data.Security.GameApiSignInThrottle(new GnollHackServer.Data.Security.GameApiSignInThrottleOptions(
+    AccountFailureLimit: builder.Configuration.GetValue("GameApiSecurity:AccountFailureLimit", 10),
+    AccountWindow: TimeSpan.FromMinutes(builder.Configuration.GetValue("GameApiSecurity:AccountWindowMinutes", 15)),
+    AccountBlock: TimeSpan.FromMinutes(builder.Configuration.GetValue("GameApiSecurity:AccountBlockMinutes", 15)),
+    IpFailureLimit: builder.Configuration.GetValue("GameApiSecurity:IpFailureLimit", 100),
+    IpWindow: TimeSpan.FromMinutes(builder.Configuration.GetValue("GameApiSecurity:IpWindowMinutes", 15)),
+    IpBlock: TimeSpan.FromMinutes(builder.Configuration.GetValue("GameApiSecurity:IpBlockMinutes", 15)),
+    PerIpLimitsEnabled: builder.Configuration.GetValue("GameApiSecurity:PerIpLimitsEnabled", true))));
+builder.Services.AddScoped<MobileGnollHackLogger.Areas.API.GameApiAuthenticator>();
+builder.Services.AddSingleton(sp => builder.Configuration.GetSection("AccountHold").Get<GnollHackServer.Data.Security.AccountHoldOptions>()
+    ?? new GnollHackServer.Data.Security.AccountHoldOptions());
+
+// Per remote IP: the callers are not signed in. A 429 here is never a sign-in failure, and always carries a body.
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddPolicy(MobileGnollHackLogger.Areas.API.GameApiRateLimits.GameApiFlood, context =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = builder.Configuration.GetValue("GameApiSecurity:FloodRequestsPerMinute", 600),
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1)
+            }));
+
+    options.AddPolicy(MobileGnollHackLogger.Areas.API.GameApiRateLimits.AccountPages, context =>
+        System.Threading.RateLimiting.RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new System.Threading.RateLimiting.FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = builder.Configuration.GetValue("GameApiSecurity:AccountPagePermitsPerMinute", 20),
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1)
+            }));
+
+    options.OnRejected = async (context, token) =>
+    {
+        var http = context.HttpContext;
+        http.Response.StatusCode = 429;
+        var window = context.Lease.TryGetMetadata(System.Threading.RateLimiting.MetadataName.RetryAfter, out var retryAfter)
+            ? retryAfter
+            : TimeSpan.FromMinutes(1);
+        http.Response.Headers.RetryAfter = ((int)Math.Ceiling(window.TotalSeconds)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        http.Response.ContentType = "text/plain; charset=utf-8";
+
+        string? policy = http.GetEndpoint()?.Metadata
+            .GetMetadata<Microsoft.AspNetCore.RateLimiting.EnableRateLimitingAttribute>()?.PolicyName;
+        var db = http.RequestServices.GetRequiredService<ApplicationDbContext>();
+        await GnollHackServer.Data.Security.SecurityEventWriter.RecordAsync(db, SecurityEventKind.RateLimitRejected,
+            ipAddress: http.Connection.RemoteIpAddress?.ToString(), code: policy ?? "unknown", ct: token);
+
+        await http.Response.WriteAsync("Too many requests. Please wait a minute and try again.", token);
+    };
+});
 
 builder.Services.AddRazorPages()
     .ConfigureApiBehaviorOptions(options =>
@@ -133,6 +196,8 @@ app.UseHttpsRedirection();
 app.UseStaticFiles();
 
 app.UseRouting();
+
+app.UseRateLimiter();
 
 app.UseAuthorization();
 

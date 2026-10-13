@@ -20,9 +20,13 @@ public static class RateLimitPolicies
     /// <summary>Attachment downloads, the enumeration path.</summary>
     public const string Attachment = "AttachmentRateLimit";
 
+    /// <summary>Sign-in attempts, per remote IP: the password, 2FA and GnollHack session-create routes.</summary>
+    public const string Login = "LoginRateLimit";
+
     public static string RejectionMessage(string? policyName) => policyName switch
     {
         SentryTunnel => "Too many log events. Please try again later.",
+        Login => "Too many sign-in attempts. Please wait a minute and try again.",
         Attachment => "Too many attachment requests. Please wait a moment and try again.",
         Chat => "Too many chat requests. Please wait a moment and try again.",
         _ => "Too many requests. Please wait a moment and try again."

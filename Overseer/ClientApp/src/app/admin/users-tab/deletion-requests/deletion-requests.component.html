@@ -1,0 +1,187 @@
+<section class="del-section" aria-labelledby="del-title">
+  <div class="del-head">
+    <h4 id="del-title" tabindex="-1">Deletion requests</h4>
+    <!-- The list's one polite live region. -->
+    <p class="gh-list-status del-status" id="del-status" role="status">{{ listStatus }}</p>
+  </div>
+
+  @if (loaded && !erasurePathsConfigured) {
+    <p class="gh-field-warning del-erasure-warning">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+      <span>{{ erasureBlockedText }} Requests cannot be approved until it is fixed.</span>
+    </p>
+  }
+
+  <!-- Search, the Status facet and the active filters. -->
+  <div class="gh-filter-bar del-filter-bar">
+    <div class="gh-filter-bar-row">
+      <div class="gh-search-field del-search">
+        <label class="visually-hidden" for="del-search">Search deletion requests by user name</label>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="search" class="gh-input" id="del-search" autocomplete="off" placeholder="Search user name"
+               [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+      </div>
+      <div class="gh-facet-row del-facet-row">
+        <app-filter-facet facetId="del-facet-status" label="Status" noun="requests" mode="single" anyLabel="Any status"
+                          [options]="statusOptions" [selected]="selectedStatuses"
+                          (selectedChange)="onStatusChange($event)"></app-filter-facet>
+      </div>
+    </div>
+
+    @if (chips.length > 0) {
+      <div class="gh-filter-bar-row del-chips-row">
+        <ul class="gh-filter-chips del-chips" role="list" aria-label="Active filters">
+          @for (chip of chips; track chip.key) {
+            <li>
+              <button type="button" class="gh-filter-chip"
+                      [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                      (click)="removeChip(chip)">
+                <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </li>
+          }
+        </ul>
+        <button type="button" class="gh-filter-clear del-clear-filters" (click)="clearFilters()">Clear all</button>
+      </div>
+    }
+  </div>
+
+  @if (error) {
+    <p class="gh-field-error del-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ error }}</span>
+    </p>
+  } @else if (loaded && rows.length === 0) {
+    @if (searchTerm) {
+      <p class="del-empty">No deletion requests match these filters.
+        <button type="button" class="gh-filter-clear" (click)="clearFilters()">Clear all filters</button>
+      </p>
+    } @else {
+      <p class="del-empty">{{ emptyText }}</p>
+    }
+  } @else if (rows.length > 0) {
+    <ul class="del-cards" role="list" aria-labelledby="del-title">
+      @for (request of rows; track request.id) {
+        <li class="del-item">
+          <article class="del-card" [attr.data-request-id]="request.id" [attr.data-status]="request.status"
+                   [attr.aria-labelledby]="'del-' + request.id + '-title'">
+            <!-- A dot on screen between the parts, a comma for assistive technology. Every state is a word. -->
+            <div class="del-kicker">
+              <span class="del-status-word">{{ request.status }}</span>
+              <span class="del-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+              <span class="del-age">{{ ageText(request) }}</span>
+              @if (request.isOverdue) {
+                <span class="gh-tag del-overdue-tag">Overdue</span>
+              }
+              @if (request.manualHold) {
+                <span class="gh-tag del-hold-tag">Manual hold</span>
+              }
+              @if (request.automaticRule) {
+                <span class="gh-tag del-rule-tag">Automatic rule</span>
+              }
+            </div>
+
+            <!-- Focused after Show more. -->
+            <h5 class="del-card-title" [id]="'del-' + request.id + '-title'" tabindex="-1">{{ userLabel(request) }}</h5>
+            <p class="del-meta">Requested <time [attr.datetime]="request.requestedUtc">{{ dateText(request.requestedUtc) }}</time></p>
+
+            <div class="del-why">
+              <h6 class="del-why-title">Why it was held</h6>
+              <p class="del-reasons">{{ request.holdReasons }}</p>
+              @if (showCurrentReasons(request)) {
+                <p class="del-reasons del-now"><strong>Now:</strong> {{ request.currentReasons }}</p>
+              }
+            </div>
+
+            @if (request.status !== 'Pending') {
+              <div class="del-decision">
+                <p class="del-decision-text">{{ decisionText(request) }}</p>
+                @if (request.status === 'Declined' && request.decisionNote) {
+                  <p class="del-reasons del-note"><strong>Note:</strong> {{ request.decisionNote }}</p>
+                }
+              </div>
+            }
+
+            @if (request.userId || request.status === 'Pending') {
+              <div class="del-actions" role="group" [attr.aria-label]="'Actions for ' + userLabel(request)">
+                @if (request.userId) {
+                  <button type="button" class="action-btn del-security"
+                          [attr.aria-label]="'Show the security events of ' + userLabel(request)"
+                          [attr.interestfor]="'del-' + request.id + '-security-tip'"
+                          [attr.style]="'anchor-name: --del-' + request.id + '-security-tip'"
+                          (click)="showSecurityEvents(request)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'del-' + request.id + '-security-tip'"
+                       [attr.style]="'position-anchor: --del-' + request.id + '-security-tip'">Security events</div>
+                }
+                @if (request.status === 'Pending') {
+                  <button #approveButton type="button" class="action-btn action-btn-danger del-approve"
+                          [attr.aria-label]="'Approve and delete the account ' + userLabel(request)"
+                          [attr.aria-disabled]="erasurePathsConfigured ? null : 'true'"
+                          [attr.interestfor]="'del-' + request.id + '-approve-tip'"
+                          [attr.style]="'anchor-name: --del-' + request.id + '-approve-tip'"
+                          (click)="requestApprove(request, approveButton)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'del-' + request.id + '-approve-tip'"
+                       [attr.style]="'position-anchor: --del-' + request.id + '-approve-tip'">{{ erasurePathsConfigured ? 'Approve and delete' : erasureBlockedText }}</div>
+
+                  <button type="button" class="action-btn del-decline"
+                          [attr.aria-label]="'Decline the deletion request of ' + userLabel(request)"
+                          [attr.aria-busy]="decliningId === request.id ? 'true' : null"
+                          [attr.interestfor]="'del-' + request.id + '-decline-tip'"
+                          [attr.style]="'anchor-name: --del-' + request.id + '-decline-tip'"
+                          (click)="openDecline(request)">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="'del-' + request.id + '-decline-tip'"
+                       [attr.style]="'position-anchor: --del-' + request.id + '-decline-tip'">Decline and keep the account</div>
+                }
+              </div>
+            }
+          </article>
+        </li>
+      }
+    </ul>
+
+    @if (remainingCount > 0) {
+      <div class="gh-load-more del-load-more">
+        <button type="button" class="btn-ghost del-show-more" [attr.aria-busy]="loading ? 'true' : null"
+                (click)="showMore()">Show {{ nextBatchCount }} more</button>
+      </div>
+    }
+  }
+</section>
+
+<!-- Approve and delete: the user name must be typed exactly. -->
+<dialog #approveDialog class="gh-dialog del-approve-dialog" aria-labelledby="del-approve-title" (close)="onApproveDialogClose()">
+  <h3 id="del-approve-title">Approve and delete {{ approveTarget ? userLabel(approveTarget) : 'the account' }}?</h3>
+  <p class="mt-20 del-approve-message">The account {{ approveTarget ? userLabel(approveTarget) : '' }} and its data are erased, and the user is emailed that the deletion is complete. This cannot be undone.</p>
+  <div class="control-group del-approve-field">
+    <label for="del-approve-name">Type the user name <strong>{{ approveTarget?.userName }}</strong> to confirm</label>
+    <input id="del-approve-name" type="text" class="gh-input" autocomplete="off" spellcheck="false"
+           [attr.aria-describedby]="approveError ? 'del-approve-error' : null"
+           [attr.aria-invalid]="approveError ? 'true' : null"
+           (input)="onApproveNameInput($event)">
+    <p class="del-approve-hint" id="del-approve-hint" [hidden]="approveNameMatches">Approve and Delete is enabled once the typed name matches exactly.</p>
+  </div>
+  @if (approveError) {
+    <p class="gh-field-error del-approve-error" id="del-approve-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ approveError }}</span>
+    </p>
+  }
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh btn-gh-cancel del-approve-cancel" (click)="cancelApprove()">Cancel</button>
+    <button type="button" class="btn-gh btn-gh-delete del-approve-confirm"
+            [attr.aria-disabled]="approveNameMatches && !approving ? null : 'true'"
+            [attr.aria-describedby]="approveNameMatches ? null : 'del-approve-hint'"
+            [attr.aria-busy]="approving ? 'true' : null"
+            (click)="confirmApprove()">Approve and Delete</button>
+  </div>
+</dialog>
+
+<app-admin-reason-dialog />

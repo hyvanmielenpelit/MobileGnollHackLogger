@@ -385,14 +385,24 @@ public class BenchmarkGenerationService
         int outputTokens = runResult.OutputTokens > 0 ? runResult.OutputTokens : runResult.EstimatedOutputTokens;
         job.SetItemUsage(item, promptTokens, outputTokens);
 
-        await configService.RecordUsageAsync(
-            config.Id,
-            job.StartedByUserId,
-            promptTokens,
-            outputTokens,
-            roleContext: 5,
-            cacheReadTokens: runResult.CacheReadTokens,
-            cacheCreationTokens: runResult.CacheCreationTokens);
+        if (runResult.ModelCallUsages.Count > 0)
+        {
+            await configService.RecordCallsUsageAsync(
+                config.Id, job.StartedByUserId, roleContext: 5,
+                runResult.ModelCallUsages, runResult.ActualServiceTier, totalDurationMs: null);
+        }
+        else
+        {
+            // No call reported usage: the tokens are estimates.
+            await configService.RecordUsageAsync(
+                config.Id,
+                job.StartedByUserId,
+                promptTokens,
+                outputTokens,
+                roleContext: 5,
+                cacheReadTokens: runResult.CacheReadTokens,
+                cacheCreationTokens: runResult.CacheCreationTokens);
+        }
 
         if (terminalError != null)
         {
@@ -418,14 +428,24 @@ public class BenchmarkGenerationService
             int repairOutputTokens = repairResult.OutputTokens > 0 ? repairResult.OutputTokens : repairResult.EstimatedOutputTokens;
             job.SetItemUsage(item, repairPromptTokens, repairOutputTokens);
 
-            await configService.RecordUsageAsync(
-                config.Id,
-                job.StartedByUserId,
-                repairPromptTokens,
-                repairOutputTokens,
-                roleContext: 5,
-                cacheReadTokens: repairResult.CacheReadTokens,
-                cacheCreationTokens: repairResult.CacheCreationTokens);
+            if (repairResult.ModelCallUsages.Count > 0)
+            {
+                await configService.RecordCallsUsageAsync(
+                    config.Id, job.StartedByUserId, roleContext: 5,
+                    repairResult.ModelCallUsages, repairResult.ActualServiceTier, totalDurationMs: null);
+            }
+            else
+            {
+                // No call reported usage: the tokens are estimates.
+                await configService.RecordUsageAsync(
+                    config.Id,
+                    job.StartedByUserId,
+                    repairPromptTokens,
+                    repairOutputTokens,
+                    roleContext: 5,
+                    cacheReadTokens: repairResult.CacheReadTokens,
+                    cacheCreationTokens: repairResult.CacheCreationTokens);
+            }
 
             if (repairError != null)
             {

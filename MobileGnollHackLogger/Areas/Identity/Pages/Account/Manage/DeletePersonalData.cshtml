@@ -13,26 +13,36 @@
                 <div class="ornament"></div>
             </div>
 
-            <p class="text-danger mb-4">
-                <i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Deleting this data will permanently remove your account, and this cannot be recovered.</strong>
-            </p>
-
-            <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
-
-            @if (Model.RequirePassword)
+            @if (Model.ReviewMessage != null)
             {
-                <div class="input-group mb-4 login-input-group">
-                    <span class="input-group-text" title="Password"><i class="bi bi-key-fill"></i></span>
-                    <input asp-for="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="Password" title="Password" />
-                </div>
-                <span asp-validation-for="Input.Password" class="text-danger mb-3 d-block text-start"></span>
+                <p class="mb-4" role="status">
+                    <i class="bi bi-hourglass-split me-2"></i>@Model.ReviewMessage
+                </p>
             }
+            else
+            {
+                <p class="text-danger mb-4">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Deleting this data will permanently remove your account, and this cannot be recovered.</strong>
+                    In some cases a deletion must be reviewed by an administrator before it is completed.
+                </p>
 
-            <div class="login-button-container mt-4">
-                <button class="btn btn-fantasy-danger w-100" type="submit">
-                    <span>DELETE ACCOUNT</span>
-                </button>
-            </div>
+                <div asp-validation-summary="ModelOnly" class="text-danger" role="alert"></div>
+
+                @if (Model.RequirePassword)
+                {
+                    <div class="input-group mb-4 login-input-group">
+                        <span class="input-group-text" title="Password"><i class="bi bi-key-fill"></i></span>
+                        <input asp-for="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="Password" title="Password" />
+                    </div>
+                    <span asp-validation-for="Input.Password" class="text-danger mb-3 d-block text-start"></span>
+                }
+
+                <div class="login-button-container mt-4">
+                    <button class="btn btn-fantasy-danger w-100" type="submit">
+                        <span>DELETE ACCOUNT</span>
+                    </button>
+                </div>
+            }
         </div>
     </form>
 </div>

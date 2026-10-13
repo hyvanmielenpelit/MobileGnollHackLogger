@@ -1,16 +1,26 @@
 import { Component, OnInit, OnDestroy, inject, ViewChild, ElementRef, ChangeDetectionStrategy } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { AdminService, UserDto, GroupDto, SystemAiConfigDto } from '../../services/admin.service';
-import { AdminPageStore } from '../admin-page.store';
+import { AdminPageStore, AdminUsersSubTab } from '../admin-page.store';
 import { AdminRateLimitsDialogComponent } from '../admin-dialogs/admin-rate-limits-dialog.component';
 import { AdminConfigOverrideDialogComponent, formatModelRole } from '../admin-dialogs/admin-config-override-dialog.component';
+import { AdminConfirmDialogComponent } from '../admin-dialogs/admin-confirm-dialog.component';
+import { AdminReasonDialogComponent } from '../admin-dialogs/admin-reason-dialog.component';
+import { DeletionRequestsComponent } from './deletion-requests/deletion-requests.component';
+import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { Subject, Subscription } from 'rxjs';
 import { debounceTime } from 'rxjs/operators';
 
-/** The Admin page's Users tab: the paged user list, and each user's groups and configuration assignments. */
+/** The longest deletion hold reason the server accepts. */
+export const ACCOUNT_HOLD_REASON_MAX = 512;
+
+/**
+ * The Admin page's Users tab: two sub-tabs, the paged user list with each user's groups,
+ * configuration assignments, AI chat block and deletion hold, and the deletion requests.
+ */
 @Component({
   selector: 'app-admin-users-tab',
-  imports: [FormsModule, AdminRateLimitsDialogComponent, AdminConfigOverrideDialogComponent],
+  imports: [FormsModule, AdminRateLimitsDialogComponent, AdminConfigOverrideDialogComponent, AdminConfirmDialogComponent, AdminReasonDialogComponent, DeletionRequestsComponent],
   templateUrl: './admin-users-tab.component.html',
   changeDetection: ChangeDetectionStrategy.Eager,   // matches every other component here
   styleUrl: './admin-users-tab.component.scss'
@@ -21,6 +31,14 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
 
   @ViewChild(AdminRateLimitsDialogComponent, { static: true }) rateLimitsDialog!: AdminRateLimitsDialogComponent;
   @ViewChild(AdminConfigOverrideDialogComponent, { static: true }) overrideDialog!: AdminConfigOverrideDialogComponent;
+  @ViewChild(AdminConfirmDialogComponent, { static: true }) confirmDialog!: AdminConfirmDialogComponent;
+  @ViewChild(AdminReasonDialogComponent, { static: true }) reasonDialog!: AdminReasonDialogComponent;
+
+  /** The sub-tabs, in display order. */
+  readonly subTabs: readonly AdminUsersSubTab[] = ['users', 'deletions'];
+
+  /** Pending deletion requests, for the Deletion requests label; null until counted. */
+  pendingDeletionCount: number | null = null;
 
   usersLoading = false;
 
@@ -57,6 +75,8 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
 
   private filterSubject = new Subject<string>();
   private filterSub?: Subscription;
+  private pendingCountSub?: Subscription;
+  private manageUserSub?: Subscription;
 
   get totalPages(): number {
     return Math.max(1, Math.ceil(this.totalCount / this.pageSize));
@@ -126,7 +146,7 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
   @ViewChild('manageGroupsDialog') manageGroupsDialog!: ElementRef<HTMLDialogElement>;
   selectedUser: UserDto | null = null;
 
-  @ViewChild('manageUserConfigsDialog') manageUserConfigsDialog!: ElementRef<HTMLDialogElement>;
+  @ViewChild('manageUserConfigsDialog', { static: true }) manageUserConfigsDialog!: ElementRef<HTMLDialogElement>;
 
   // Config Assignment State
   selectedUserForConfigs: UserDto | null = null;
@@ -135,6 +155,8 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
   processingConfigs: number[] = [];
 
   ngOnInit() {
+    ensureOverlayPolyfills();
+
     this.filterSub = this.filterSubject.pipe(
       debounceTime(400)
     ).subscribe(val => {
@@ -143,11 +165,91 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
       this.loadUsers();
     });
 
-    this.loadUsers();
+    if (this.subTab === 'users') {
+      this.loadUsers();
+    }
+    this.loadPendingDeletionCount();
+
+    this.takePendingManageUser();
+    this.manageUserSub = this.store.manageUserRequested$.subscribe(() => this.takePendingManageUser());
   }
 
   ngOnDestroy() {
     this.filterSub?.unsubscribe();
+    this.pendingCountSub?.unsubscribe();
+    this.manageUserSub?.unsubscribe();
+  }
+
+  /**
+   * Reads and clears the page store's pending manage request: selects the Users sub-tab and opens
+   * Manage User Configs for that user, which needs only the id and the name.
+   */
+  private takePendingManageUser(): void {
+    const pending = this.store.pendingManageUser;
+    if (!pending) {
+      return;
+    }
+    this.store.pendingManageUser = null;
+    this.selectSubTab('users');
+    this.openManageUserConfigs({ id: pending.userId, userName: pending.userName, email: '', groups: [] });
+  }
+
+  // --- Sub-tabs ---
+
+  /** The selected sub-tab, kept in the page store so a link can choose it before the tab exists. */
+  get subTab(): AdminUsersSubTab {
+    return this.store.usersSubTab;
+  }
+
+  /** `Users`; `Deletion requests (2 pending)` while requests are pending. */
+  subTabLabel(tab: AdminUsersSubTab): string {
+    if (tab === 'users') {
+      return 'Users';
+    }
+    const pending = this.pendingDeletionCount ?? 0;
+    return pending > 0 ? `Deletion requests (${pending} pending)` : 'Deletion requests';
+  }
+
+  /** Selects a sub-tab; the user list reloads on its return, the deletion requests load as they appear. */
+  selectSubTab(tab: AdminUsersSubTab): void {
+    if (tab === this.subTab) {
+      return;
+    }
+    this.store.usersSubTab = tab;
+    if (tab === 'users') {
+      this.loadUsers();
+    }
+  }
+
+  /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
+  onSubTabKeydown(event: KeyboardEvent, index: number): void {
+    const targets: Record<string, number> = {
+      ArrowRight: index + 1,
+      ArrowLeft: index - 1,
+      Home: 0,
+      End: this.subTabs.length - 1
+    };
+    const requested = targets[event.key];
+    if (requested === undefined) {
+      return;
+    }
+    event.preventDefault();
+    const next = (requested + this.subTabs.length) % this.subTabs.length;
+    const tab = this.subTabs[next];
+    this.selectSubTab(tab);
+    document.getElementById(`users-subtab-${tab}`)?.focus();
+  }
+
+  onPendingCountChange(count: number): void {
+    this.pendingDeletionCount = count;
+  }
+
+  private loadPendingDeletionCount(): void {
+    this.pendingCountSub?.unsubscribe();
+    this.pendingCountSub = this.adminService.getAccountDeletionRequests({ status: 'Pending', take: 1 }).subscribe({
+      next: page => this.pendingDeletionCount = page.pendingCount,
+      error: () => {}
+    });
   }
 
   loadUsers() {
@@ -201,6 +303,114 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
         }
       });
     }
+  }
+
+  // --- Overseer AI chat block ---
+
+  /** The block's tooltip: the action, and the stored reason while blocked. */
+  blockTooltip(user: UserDto): string {
+    if (!user.isOverseerBlocked) {
+      return 'Block from the AI chat';
+    }
+    return user.overseerBlockReason ? `Unblock from the AI chat. Reason: ${user.overseerBlockReason}` : 'Unblock from the AI chat';
+  }
+
+  openBlockUser(user: UserDto) {
+    this.reasonDialog.open({
+      title: 'Block from the Overseer AI chat',
+      message: `${user.userName} keeps signing in, reading their chats, exporting their data, deleting their account and changing their settings, but cannot start any AI work in Overseer. The reason is shown to them.`,
+      label: 'Reason',
+      maxLength: 256,
+      confirmText: 'Block',
+      confirmClass: 'btn-gh btn-gh-delete'
+    }, reason => this.blockUser(user, reason));
+  }
+
+  private blockUser(user: UserDto, reason: string) {
+    this.adminService.blockUser(user.id, reason).subscribe({
+      next: () => {
+        this.store.showToast(`${user.userName} is blocked from the Overseer AI chat.`, 'success', 'User Blocked');
+        this.loadUsers();
+      },
+      error: (err) => {
+        this.store.showToast(err?.error?.message || `Could not block ${user.userName}.`, 'error', 'Error');
+      }
+    });
+  }
+
+  openUnblockUser(user: UserDto) {
+    this.confirmDialog.open({
+      title: 'Unblock from the Overseer AI chat',
+      message: `${user.userName} can start AI work in Overseer again.`,
+      buttonText: 'Unblock',
+      buttonClass: 'btn-gh'
+    }, () => this.unblockUser(user));
+  }
+
+  private unblockUser(user: UserDto) {
+    this.adminService.unblockUser(user.id).subscribe({
+      next: () => {
+        this.store.showToast(`${user.userName} can use the Overseer AI chat again.`, 'success', 'User Unblocked');
+        this.loadUsers();
+      },
+      error: (err) => {
+        this.store.showToast(err?.error?.message || `Could not unblock ${user.userName}.`, 'error', 'Error');
+      }
+    });
+  }
+
+  // --- Deletion hold ---
+
+  /** The hold's tooltip: the action, and the stored reason while held. */
+  holdTooltip(user: UserDto): string {
+    if (!user.hasAccountHold) {
+      return 'Place deletion hold';
+    }
+    return user.accountHoldReason ? `Release deletion hold. Reason: ${user.accountHoldReason}` : 'Release deletion hold';
+  }
+
+  openPlaceHold(user: UserDto) {
+    this.reasonDialog.open({
+      title: 'Place a deletion hold',
+      message: `Deleting ${user.userName}'s account will be held for administrator review. The reason is never shown to the user.`,
+      label: 'Reason',
+      maxLength: ACCOUNT_HOLD_REASON_MAX,
+      confirmText: 'Place Hold',
+      confirmClass: 'btn-gh'
+    }, reason => this.placeHold(user, reason));
+  }
+
+  private placeHold(user: UserDto, reason: string) {
+    this.adminService.placeAccountHold(user.id, reason).subscribe({
+      next: () => {
+        this.store.showToast(`Deleting ${user.userName}'s account is now held for review.`, 'success', 'Deletion Hold Placed');
+        this.loadUsers();
+      },
+      error: (err) => {
+        this.store.showToast(err?.error?.message || `Could not place a deletion hold on ${user.userName}.`, 'error', 'Error');
+      }
+    });
+  }
+
+  openReleaseHold(user: UserDto) {
+    this.confirmDialog.open({
+      title: 'Release the deletion hold',
+      message: `${user.userName}'s account is no longer held by an administrator. Releasing the hold does not approve a pending deletion request; decide it in Deletion requests.`,
+      buttonText: 'Release Hold',
+      buttonClass: 'btn-gh'
+    }, () => this.releaseHold(user));
+  }
+
+  private releaseHold(user: UserDto) {
+    this.adminService.releaseAccountHold(user.id).subscribe({
+      next: () => {
+        this.store.showToast(`The deletion hold on ${user.userName} is released.`, 'success', 'Deletion Hold Released');
+        this.loadUsers();
+      },
+      error: (err) => {
+        this.store.showToast(err?.error?.message || `Could not release the deletion hold on ${user.userName}.`, 'error', 'Error');
+      }
+    });
   }
 
   // --- Config Assignments ---

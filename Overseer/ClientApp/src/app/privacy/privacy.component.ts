@@ -47,6 +47,12 @@ export interface Subprocessor {
   when: string;
 }
 
+/** An AI provider's own usage policy, which applies to every message sent to that provider. */
+export interface ProviderPolicy {
+  name: string;
+  url: string;
+}
+
 /** A statement only the deployment's operator can make, rendered as visibly unfilled. */
 export interface OperatorGap {
   title: string;
@@ -68,6 +74,7 @@ export class PrivacyComponent {
     { id: 'limitations', title: 'What these protections do not reach' },
     { id: 'readable-metadata', title: 'What stays readable even in a confidential chat' },
     { id: 'subprocessors', title: 'Subprocessors' },
+    { id: 'acceptable-use', title: 'Acceptable use' },
     { id: 'operator-gaps', title: 'Still to be supplied by the operator' }
   ];
 
@@ -125,9 +132,27 @@ export class PrivacyComponent {
     },
     {
       what: 'Cost and token accounting',
-      storedWhere: 'Plain text beside the chat in every mode: token counts, an estimated cost and the pricing source it came from for each message, and a running total for the chat.',
-      howLong: 'As long as the chat row. An incognito turn writes no message row, but it does record its token usage against the AI configuration that paid for it — a record that names no chat and no message, and is kept against that configuration rather than against your chat.',
+      storedWhere: 'Plain text beside the chat in every mode: token counts, an estimated cost and the pricing source it came from for each message, and a running total for the chat. Overseer also keeps a usage record of each AI call (the model, the token counts and the estimated cost) and a record of the outcome of each attempt to reach the provider, including for calls on your own API key. Administrators can see both with your user name.',
+      howLong: 'As long as the chat row. An incognito turn writes no message row, but it does record its token usage against the AI configuration that paid for it — a record that names no chat and no message, and is kept against that configuration rather than against your chat. An incognito turn on your own API key writes neither the usage record nor the attempt record. The attempt records are kept 400 days. Your usage and attempt records are deleted with your account.',
       sharedWith: 'Nobody outside Overseer.'
+    },
+    {
+      what: 'Activity counts',
+      storedWhere: 'A count per day of how many chats you created and how many messages you sent and received — never their content. Incognito chats are counted only in a daily total that names nobody.',
+      howLong: 'Until your account is deleted.',
+      sharedWith: 'Nobody outside Overseer.'
+    },
+    {
+      what: 'Security events',
+      storedWhere: 'A row in Overseer’s database for each sign-in failure and lockout, rate-limit and quota refusal, provider refusal and policy rejection, rejected attachment, report, and administrator block or hold. It holds identifiers and codes only, never message content. An IP address is recorded only on sign-in and rate-limit events.',
+      howLong: '180 days by default. Deleting your account deletes them, except that the events behind a pending account-deletion review are kept until the review is decided.',
+      sharedWith: 'Nobody outside Overseer.'
+    },
+    {
+      what: 'Provider safety identifier',
+      storedWhere: 'Not kept as a record of its own. It is a pseudonym derived from your user id, not your name, e-mail address or the id itself.',
+      howLong: 'How long a provider keeps it is the provider’s own term, as with the rest of the call.',
+      sharedWith: 'OpenAI and Anthropic, with the requests the operator pays for (system AI configurations), so that a provider can act on one user instead of everyone. It is not sent on your own API key or to a custom endpoint. Google receives none: its API has no such field.'
     }
   ];
 
@@ -284,6 +309,12 @@ export class PrivacyComponent {
     }
   ];
 
+  readonly providerPolicies: readonly ProviderPolicy[] = [
+    { name: 'OpenAI usage policies', url: 'https://openai.com/policies/usage-policies/' },
+    { name: 'Anthropic Usage Policy', url: 'https://www.anthropic.com/legal/aup' },
+    { name: 'Google Generative AI Prohibited Use Policy', url: 'https://policies.google.com/terms/generative-ai/use-policy' }
+  ];
+
   readonly operatorGaps: readonly OperatorGap[] = [
     {
       title: 'The legal entity responsible for this deployment',
@@ -308,6 +339,10 @@ export class PrivacyComponent {
     {
       title: 'How long error telemetry is kept',
       detail: 'Retention for the telemetry described in the data map above is set outside Overseer.'
+    },
+    {
+      title: 'The operator’s own acceptable-use terms',
+      detail: 'Any rules for using this deployment beyond the AI providers’ own policies, and what happens when they are broken.'
     }
   ];
 }

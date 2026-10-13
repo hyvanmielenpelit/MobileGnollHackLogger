@@ -1571,6 +1571,46 @@ describe('FigureStylePanelComponent', () => {
       expect(emitted[1].bar).toBe(DEFAULT_FIGURE_STYLE.bar);
       expect(statusText()).toBe('Timeline style reset to defaults.');
     });
+
+    it('leaves out the hidden keys\' controls and badge toggles, and a section whose keys are all hidden', () => {
+      fixture.componentRef.setInput('hiddenKeys', [
+        'markerNote', 'notAnalyzedNote', 'markerTagSizePx', 'betterBadgePlacement', 'badge:better', 'badge:model', 'badge:runs'
+      ]);
+      render('timeline');
+
+      // Every key of Notes is hidden: no section.
+      expect(host().querySelector('#mc-style-timeline-section-notes')).toBeNull();
+      expect(host().querySelector('#mc-style-timeline-markerNote')).toBeNull();
+      expect(host().querySelector('#mc-style-timeline-notAnalyzedNote')).toBeNull();
+      // A mixed section keeps the rest.
+      expect(host().querySelector('#mc-style-timeline-section-markers')).not.toBeNull();
+      expect(host().querySelector('#mc-style-timeline-markerTagSizePx')).toBeNull();
+      expect(control('mc-style-timeline-legendTextSizePx')).toBeTruthy();
+      expect(readout('markers')).toBe('legend 12 px');
+      // The Better badge's placement and three badge toggles are gone; the dates toggle stays.
+      expect(host().querySelector('#mc-style-timeline-betterBadgePlacement-fit')).toBeNull();
+      const badges = Array.from(host().querySelectorAll<HTMLInputElement>('#mc-style-timeline-section-heading .fsp-show-grid input[type="checkbox"]'));
+      expect(badges.map(input => input.id)).toEqual(['mc-style-timeline-badge-dates']);
+      expect(readout('heading')).toBe('18 px · badges 11 px · dates');
+      // Everything else renders.
+      for (const id of ['titleSizePx', 'badgeTextSizePx', 'lineWidthPx', 'pointRadiusPx', 'areaWash', 'valueLabels',
+        'valueLabelSizePx', 'axisTextSizePx', 'axisTitleSizePx', 'gridlines', 'plotFrame', 'footer', 'footerTextSizePx']) {
+        expect(control(`mc-style-timeline-${id}`)).toBeTruthy();
+      }
+      expect(host().querySelector('#mc-style-timeline-section-lines')).not.toBeNull();
+      expect(host().querySelector('#mc-style-timeline-section-footer')).not.toBeNull();
+
+      setChecked(control('mc-style-timeline-badge-dates'), false);
+      expect(emitted[0].timeline.hiddenBadges).toEqual(['dates']);
+    });
+
+    it('renders every timeline control without hidden keys', () => {
+      render('timeline');
+      expect(host().querySelector('#mc-style-timeline-section-notes')).not.toBeNull();
+      expect(control('mc-style-timeline-markerTagSizePx')).toBeTruthy();
+      expect(control('mc-style-timeline-betterBadgePlacement-fit')).toBeTruthy();
+      expect(host().querySelectorAll('#mc-style-timeline-section-heading .fsp-show-grid input[type="checkbox"]').length).toBe(4);
+    });
   });
 
   describe('the id prefix', () => {

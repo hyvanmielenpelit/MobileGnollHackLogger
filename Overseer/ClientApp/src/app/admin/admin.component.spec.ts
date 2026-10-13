@@ -190,6 +190,56 @@ describe('AdminComponent', () => {
     });
   });
 
+  describe('Security tab', () => {
+    beforeEach(() => {
+      vi.spyOn(adminService, 'getSecuritySummary').mockReturnValue(of({ kinds: [], pendingDeletionRequests: 0, activeAccountHolds: 0 }));
+      vi.spyOn(adminService, 'getSecurityEvents').mockReturnValue(of({ totalCount: 0, rows: [] }));
+    });
+
+    it('places Security right after AI Telemetry', () => {
+      const ids = component.tabs.map(t => t.id);
+      expect(ids.indexOf('security')).toBe(ids.indexOf('telemetry') + 1);
+      expect(component.tabs.find(t => t.id === 'security')!.label).toBe('Security');
+      expect(component.tabs.length).toBe(9);
+    });
+
+    it('renders the Security tab panel when the tab is chosen', () => {
+      fixture.detectChanges();
+      (fixture.nativeElement.querySelector('#admin-tab-security') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const panel = fixture.nativeElement.querySelector('#admin-panel-security') as HTMLElement;
+      expect(panel.getAttribute('role')).toBe('tabpanel');
+      expect(panel.getAttribute('aria-labelledby')).toBe('admin-tab-security');
+      expect(panel.querySelector('app-admin-security-tab')).not.toBeNull();
+    });
+  });
+
+  describe('tab requests from the tabs', () => {
+    beforeEach(() => fixture.detectChanges());
+
+    it('selects the tab a tabRequested$ emission names', () => {
+      component.store.requestTab('database');
+
+      expect(component.activeTab).toBe('database');
+    });
+
+    it('ignores a tabRequested$ emission naming no tab', () => {
+      component.selectTab('groups');
+      component.store.requestTab('bogus');
+
+      expect(component.activeTab).toBe('groups');
+    });
+
+    it('stops following tab requests once destroyed', () => {
+      fixture.destroy();
+      component.activeTab = 'users';
+      component.store.requestTab('database');
+
+      expect(component.activeTab).toBe('users');
+    });
+  });
+
   describe('Configs tab hand-off', () => {
     it('selects the Benchmark tab and hands it the run the Configs tab asks to open', () => {
       fixture.detectChanges();
@@ -305,6 +355,32 @@ describe('AdminComponent', () => {
       expect(component.pendingBenchmarkNavigation).toBeNull();
     });
 
+    it('selects the Security tab for ?tab=security', () => {
+      component.applyNavigationParams(convertToParamMap({ tab: 'security' }));
+
+      expect(component.activeTab).toBe('security');
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(removal));
+    });
+
+    it('selects the Users tab on its deletion requests for ?tab=users&subtab=deletions', () => {
+      component.applyNavigationParams(convertToParamMap({ tab: 'users', subtab: 'deletions' }));
+
+      expect(component.activeTab).toBe('users');
+      expect(component.store.usersSubTab).toBe('deletions');
+      expect(component.pendingBenchmarkNavigation).toBeNull();
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(removal));
+    });
+
+    it('selects the Users sub-tab for ?tab=users&subtab=users and ignores an unknown one', () => {
+      component.store.usersSubTab = 'deletions';
+      component.applyNavigationParams(convertToParamMap({ tab: 'users', subtab: 'users' }));
+      expect(component.store.usersSubTab).toBe('users');
+
+      component.store.usersSubTab = 'deletions';
+      component.applyNavigationParams(convertToParamMap({ tab: 'users', subtab: 'bogus' }));
+      expect(component.store.usersSubTab).toBe('deletions');
+    });
+
     it('hands the System Configs tab the configuration to resolve and removes both parameters', () => {
       component.applyNavigationParams(convertToParamMap({ tab: 'configs', resolveConfig: '7' }));
 
@@ -347,10 +423,24 @@ describe('AdminComponent', () => {
       spyAdminService(service);
       // The Telemetry tab loads its summary and governor status when it is created.
       vi.spyOn(service, 'getAiTelemetrySummary').mockReturnValue(of({
+        keySource: 'system',
         totalRequests: 0, totalChatRequests: 0, totalTitleRequests: 0, totalBenchmarkRequests: 0,
-        totalInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0, totalCacheCreationTokens: 0,
-        cacheHitRatio: 0, avgDurationMs: 0, models: []
+        totalPromptTokens: 0, totalUncachedInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0,
+        totalCacheCreationTokens: 0, cacheHitRatio: 0, avgDurationMs: 0,
+        totalEstimatedCost: 0, pricedRequests: 0, costRecordedSinceUtc: null, rows: [],
+        chatAvailability: {
+          recorded: false, validAttempts: 0, providerErrors: 0, unattributedErrors: 0, ourSideFailures: 0,
+          overloaded: 0, serverErrors: 0, timeouts: 0, streamFailures: 0, rateLimitedUnattributed: 0,
+          transportUnattributed: 0, calls: 0, firstAttemptSuccessCalls: 0, failedCalls: 0, chatTurns: 0,
+          chatTurnsEndedByProviderError: 0, titleValidAttempts: 0, titleProviderErrors: 0, titleRequests: 0,
+          titleRequestsFailed: 0
+        },
+        activity: {
+          activeUsers: 0, newUsers: 0, chatsCreated: 0, confidentialChatsCreated: 0, gnollHackChatsCreated: 0,
+          userMessages: 0, assistantMessages: 0, incognitoChatsCreated: 0, incognitoUserMessages: 0
+        }
       }));
+      vi.spyOn(service, 'getAiTelemetryUsers').mockReturnValue(of({ users: [], totalUsers: 0, securityEventsAvailable: true }));
       vi.spyOn(service, 'getGovernorStatus').mockReturnValue(of({ maxConcurrentCalls: 4, maxRetryAfterSeconds: 90, activeKeys: [] }));
       vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 

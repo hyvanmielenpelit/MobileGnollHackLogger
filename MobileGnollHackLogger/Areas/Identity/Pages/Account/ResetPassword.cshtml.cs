@@ -14,6 +14,7 @@ using MobileGnollHackLogger.Data;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account;
 
+[Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(MobileGnollHackLogger.Areas.API.GameApiRateLimits.AccountPages)]
 public class ResetPasswordModel : PageModel
 {
     private readonly UserManager<ApplicationUser> _userManager;

@@ -34,6 +34,19 @@ public class ChatRetentionSettings
     /// </summary>
     public int PruneDismissedAiErrorLogDays { get; set; } = 90;
 
+    /// <summary>
+    /// Days a <c>SecurityEvent</c> run is kept after its last occurrence. Events of a user with an
+    /// active account hold or a pending deletion request are kept until that is decided. Zero or
+    /// negative disables pruning.
+    /// </summary>
+    public int PruneSecurityEventDays { get; set; } = 180;
+
+    /// <summary>
+    /// Days a <c>ChatProviderAttempt</c> row (one provider attempt of a chat or title-generation call)
+    /// is kept. Zero or negative disables pruning.
+    /// </summary>
+    public int PruneChatProviderAttemptDays { get; set; } = 400;
+
     /// <summary>Days a <c>MaintenanceRunLog</c> row is kept. Zero or negative disables pruning.</summary>
     public int MaintenanceHistoryRetentionDays { get; set; } = 180;
 
@@ -100,6 +113,8 @@ public class RetentionPolicyDto
     public int PruneBenchmarkToolCallResultsDays { get; set; }
     public int AuditLogRetentionDays { get; set; }
     public int PruneDismissedAiErrorLogDays { get; set; }
+    public int PruneSecurityEventDays { get; set; }
+    public int PruneChatProviderAttemptDays { get; set; }
     public int MaintenanceHistoryRetentionDays { get; set; }
     public int MaintenanceRunHourUtc { get; set; }
     public bool EnableStorageWarningEmails { get; set; }
@@ -189,6 +204,16 @@ public class DatabaseStorageMetricsDto
     public int AiErrorLogDismissedCount { get; set; }
     public int AiErrorLogPrunableCount { get; set; }
 
+    // Security events
+    public long SecurityEventRowCount { get; set; }
+    public DateTime? SecurityEventOldestUtc { get; set; }
+    public int SecurityEventPrunableCount { get; set; }
+
+    // Chat provider attempts
+    public long ChatProviderAttemptRowCount { get; set; }
+    public DateTime? ChatProviderAttemptOldestUtc { get; set; }
+    public int ChatProviderAttemptPrunableCount { get; set; }
+
     // Next-pass preview
     public int ExpiredTrashSessionCount { get; set; }
     public int PrunableToolCallCount { get; set; }
@@ -219,6 +244,12 @@ public class MaintenanceRequestDto
 
     /// <summary>Granular prune only; the full pass always reads the configured window.</summary>
     public int? AiErrorLogPruneDays { get; set; }
+
+    /// <summary>Granular prune only; the full pass always reads the configured window.</summary>
+    public int? SecurityEventPruneDays { get; set; }
+
+    /// <summary>Granular prune only; the full pass always reads the configured window.</summary>
+    public int? ChatProviderAttemptPruneDays { get; set; }
 }
 
 public static class MaintenanceTriggers
@@ -232,6 +263,8 @@ public static class MaintenanceTriggers
     public const string PruneBenchmarkToolResults = "Manual:PruneBenchmarkToolResults";
     public const string PruneAuditLog = "Manual:PruneAuditLog";
     public const string PruneAiErrorLog = "Manual:PruneAiErrorLog";
+    public const string PruneSecurityEvents = "Manual:PruneSecurityEvents";
+    public const string PruneChatProviderAttempts = "Manual:PruneChatProviderAttempts";
     public const string SweepOrphans = "Manual:SweepOrphans";
     public const string ClearReportCharts = "Manual:ClearReportCharts";
 }
@@ -252,6 +285,8 @@ public class MaintenanceResultDto
     public int SweptOrphanFolderCount { get; set; }
     public int PrunedAuditLogCount { get; set; }
     public int PrunedAiErrorLogCount { get; set; }
+    public int PrunedSecurityEventCount { get; set; }
+    public int PrunedChatProviderAttemptCount { get; set; }
     public long ElapsedMilliseconds { get; set; }
 
     /// <summary>One of <see cref="MaintenanceTriggers"/>.</summary>
@@ -278,6 +313,8 @@ public class MaintenanceRunLogDto
     public int PrunedBenchmarkToolResultCount { get; set; }
     public int PrunedAuditLogCount { get; set; }
     public int PrunedAiErrorLogCount { get; set; }
+    public int PrunedSecurityEventCount { get; set; }
+    public int PrunedChatProviderAttemptCount { get; set; }
     public int DeletedDiskFolderCount { get; set; }
     public int DeletedDiskFileCount { get; set; }
     public int SweptOrphanFolderCount { get; set; }

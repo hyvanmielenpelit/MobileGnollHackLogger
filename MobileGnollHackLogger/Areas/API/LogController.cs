@@ -24,10 +24,12 @@ namespace MobileGnollHackLogger.Areas.API
         private readonly string _dumplogBasePath = "";
         private readonly DbLogger _dbLogger;
         private readonly string _newLine = "\n"; //Use Unix line endings, the same as what Hardfought.org does
+        private readonly GameApiAuthenticator _authenticator;
 
-        public LogController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager, 
-            IConfiguration configuration, ApplicationDbContext dbContext)
+        public LogController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager,
+            IConfiguration configuration, ApplicationDbContext dbContext, GameApiAuthenticator authenticator)
         {
+            _authenticator = authenticator;
             _signInManager = signInManager;
             _userManager = userManager;
             _configuration = configuration;
@@ -399,6 +401,7 @@ namespace MobileGnollHackLogger.Areas.API
         /// </returns>
         [Route("xlogfile")]
         [HttpPost]
+        [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(GameApiRateLimits.GameApiFlood)]
         public async Task<IActionResult> Post([FromForm] LogModel model)
         {
             try
@@ -439,22 +442,14 @@ namespace MobileGnollHackLogger.Areas.API
                     return StatusCode(responseCode); //Bad Request
                 }
 
-                _dbLogger.RequestAntiForgeryToken = model.AntiForgeryToken;
-
-                var antiForgeryToken = _configuration["AntiForgeryToken"];
-                if (antiForgeryToken != model.AntiForgeryToken)
+                var auth = await _authenticator.AuthenticateAsync(HttpContext, _dbLogger, model.UserName, model.Password, model.AntiForgeryToken, "xlogfile");
+                if (!auth.Succeeded)
                 {
-                    int responseCode = 401;
-                    await _dbLogger.LogRequestAsync($"AntiForgeryToken is invalid. Request: '{model.AntiForgeryToken}'. Server: '{antiForgeryToken}'.",
-                        Data.LogLevel.Warning, responseCode);
-                    return StatusCode(responseCode); //Not Authorized
+                    return auth.Response!;
                 }
-                
-                var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
-                if (result.Succeeded)
+
                 {
                     //Sign in succeedeed
-                    _dbLogger.LoginSucceeded = true;
 
                     //Check next whether the user is not banned
                     try
@@ -610,27 +605,6 @@ namespace MobileGnollHackLogger.Areas.API
                         await _dbLogger.LogRequestAsync("Login succeeded but there is missing data: " + logMsg, Data.LogLevel.Error, responseCode);
                         return StatusCode(responseCode); //Bad Request
                     }
-                }
-                if (result.RequiresTwoFactor)
-                {
-                    _dbLogger.LoginSucceeded = false;
-                    int responseCode = 412;
-                    await _dbLogger.LogRequestAsync("Login requires two factor authentication. Error.", Data.LogLevel.Error, responseCode);
-                    return StatusCode(responseCode);
-                }
-                if (result.IsLockedOut)
-                {
-                    _dbLogger.LoginSucceeded = false;
-                    int responseCode = 423;
-                    await _dbLogger.LogRequestAsync("User is locked out.", Data.LogLevel.Warning, responseCode);
-                    return StatusCode(responseCode);
-                }
-                else
-                {
-                    _dbLogger.LoginSucceeded = false;
-                    int responseCode = 403;
-                    await _dbLogger.LogRequestAsync($"Login failed for user '{model.UserName}'.", Data.LogLevel.Warning, responseCode);
-                    return StatusCode(responseCode);
                 }
             }
             catch (Exception ex) 

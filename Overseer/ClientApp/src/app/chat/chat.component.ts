@@ -473,6 +473,12 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   restoredModelNote: string | null = null;
   /** The friendly text of a `model_unavailable` error and the key of the model the turn was sent with. */
   modelUnavailableNotice: { modelKey: string; message: string } | null = null;
+  /**
+   * Set once the server refuses AI work because an administrator blocked the user, from a 403
+   * `overseer_blocked` send or an `overseer_blocked` error event. Kept for the page's life; a
+   * reload asks the server again.
+   */
+  overseerBlock: { message: string; reason: string | null } | null = null;
   /** The model key the turn in progress was sent with. */
   private turnModelKey: string | null = null;
   /** Whether the turn in progress reported an error; a turn that finishes without one clears `modelUnavailableNotice`. */
@@ -1836,6 +1842,11 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   processChatEvent(evt: any) {
+    /* A block applies to the user rather than to one chat, so it is taken from any chat's turn. */
+    if (evt?.type === 'error' && evt.errorCode === 'overseer_blocked') {
+      this.applyOverseerBlock(evt.data, evt.detail);
+    }
+
     /* The hub carries a session reference, which is a decimal id for a persisted chat and
        "eph_<guid>" for an ephemeral one. Both arrive as strings once compared. */
     const evtRef = (typeof evt.sessionId === 'number' || typeof evt.sessionId === 'string')
@@ -3717,6 +3728,7 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
   }
 
   async sendMessage() {
+    if (this.overseerBlock) return;
     const message = this.sanitizeInput(this.currentInput).trim();
     if (!message && this.pendingAttachments.length === 0) return;
     
@@ -3867,6 +3879,16 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
         return;
       }
 
+      const blocked = this.readOverseerBlockedRefusal(e);
+      if (blocked) {
+        this.applyOverseerBlock(blocked.message, blocked.reason);
+        this.currentStatusText = `Error: ${this.overseerBlock!.message}`;
+        this.messages.push({ role: 'assistant', content: `**Error:** ${this.overseerBlock!.message}`, timestampUtc: new Date().toISOString() });
+        this.isStreaming = false;
+        this.showSpinner = false;
+        return;
+      }
+
       let errorDisplay = e.message || 'Unknown error';
       if (e.name === 'HttpErrorResponse') {
          errorDisplay = `Network error: ${e.message} (Status: ${e.status} ${e.statusText})`;
@@ -3899,6 +3921,29 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
       this.isStreaming = false;
       this.showSpinner = false;
     }
+  }
+
+  /** The `{ code, message, reason }` body of a 403 `overseer_blocked` refusal, or null for any other error. */
+  private readOverseerBlockedRefusal(e: any): { message?: unknown; reason?: unknown } | null {
+    if (e?.status !== 403) return null;
+    let body = e.error;
+    if (typeof body === 'string') {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        return null;
+      }
+    }
+    return body && typeof body === 'object' && body.code === 'overseer_blocked' ? body : null;
+  }
+
+  private applyOverseerBlock(message: unknown, reason: unknown): void {
+    this.overseerBlock = {
+      message: typeof message === 'string' && message.trim()
+        ? message.trim()
+        : 'Your access to the Overseer AI chat has been suspended by an administrator.',
+      reason: typeof reason === 'string' && reason.trim() ? reason.trim() : null
+    };
   }
 
   confirmLogout(event: Event) {

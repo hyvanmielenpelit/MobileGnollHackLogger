@@ -38,7 +38,12 @@ public class SessionController : ControllerBase
 
     [HttpPost("create")]
     [IgnoreAntiforgeryToken] // CRITICAL: Called by a native client without standard CSRF tokens
-    public async Task<IActionResult> Create([FromForm] CreateSessionRequest request)
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Overseer.Security.RateLimitPolicies.Login)]
+    public async Task<IActionResult> Create(
+        [FromForm] CreateSessionRequest request,
+        [FromServices] Overseer.Services.Security.OverseerAccessService? overseerAccess = null,
+        [FromServices] Overseer.Services.Security.ISecurityEventRecorder? securityEvents = null,
+        [FromServices] Overseer.Services.Telemetry.IActivityCounter? activityCounter = null)
     {
         var expectedSecret = _configuration["AntiForgeryToken"];
         if (string.IsNullOrEmpty(expectedSecret) || request.AntiForgeryToken != expectedSecret)
@@ -51,16 +56,31 @@ public class SessionController : ControllerBase
             return BadRequest("Invalid credentials.");
         }
 
+        string? remoteIp = HttpContext?.Connection.RemoteIpAddress?.ToString();
+
         var user = await _signInManager.UserManager.FindByNameAsync(request.UserName);
         if (user == null)
         {
+            // The attempted name is never stored.
+            securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
+                SecurityEventKind.LoginFailed, IpAddress: remoteIp, Code: "session-create", Detail: "unknown-user"));
             return Unauthorized();
         }
 
         var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
         if (!result.Succeeded)
         {
+            securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
+                result.IsLockedOut ? SecurityEventKind.LoginLockedOut : SecurityEventKind.LoginFailed,
+                UserId: user.Id, IpAddress: remoteIp, Code: "session-create"));
             return Unauthorized();
+        }
+
+        // Anonymous until the password passes, so the block is checked here rather than by a filter.
+        var block = overseerAccess == null ? null : await overseerAccess.GetBlockAsync(user.Id);
+        if (block != null)
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, Overseer.Services.Security.OverseerAccessService.BlockedBody(block));
         }
 
         var session = new ChatSession
@@ -93,6 +113,12 @@ public class SessionController : ControllerBase
 
         _dbContext.ChatSession.Add(session);
         await _dbContext.SaveChangesAsync();
+
+        if (activityCounter != null)
+            await activityCounter.TryAddAsync(user.Id, new Overseer.Services.Telemetry.ActivityDelta(
+                Chats: 1,
+                GnollHackChats: request.IsGnollHackSession ? 1 : 0,
+                ConfidentialChats: request.IsConfidential ? 1 : 0), DateTime.UtcNow);
 
         /* The DEK is created after the session has its identity value, because the id is the
            envelope's associated data: a key wrapped onto an unsaved session produces rows

@@ -757,13 +757,17 @@
     transform: translate(-1px, 1px); /* Optically center the paper airplane */
   }
 }
-.send-icon:hover:not(:disabled) {
+.send-icon:hover:not(:disabled):not([aria-disabled="true"]) {
   background: #fce6a8;
   color: #000;
 }
-.send-icon:disabled {
+.send-icon:disabled,
+.send-icon[aria-disabled="true"] {
   background: rgba(255, 255, 255, 0.1);
   color: #555;
+}
+.send-icon[aria-disabled="true"] {
+  cursor: not-allowed;
 }
 
 /* Auto-resizing textarea grid wrapper (active only if field-sizing is not supported) */
@@ -2165,6 +2169,24 @@ $privacy-incognito-fill: rgba(0, 0, 0, 0.72);
   font-size: 0.78rem;
   line-height: 1.4;
   color: #e0e0e0;
+}
+
+/* The administrator's block above the composer: the sentence, then the reason on its own line. */
+.alert.alert-compact.overseer-blocked-banner {
+  margin-bottom: 8px;
+
+  .alert-body p {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .alert-body p + p {
+    margin-top: 2px;
+  }
+
+  .overseer-blocked-message {
+    color: #f3f4f6;
+  }
 }
 
 /* The composer's notice when the provider refused a model the catalog does not flag; the flagged

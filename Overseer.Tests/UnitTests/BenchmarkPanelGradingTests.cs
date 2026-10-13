@@ -1170,12 +1170,12 @@ public class BenchmarkPanelGradingTests
         Assert.Equal(PanelGraderProvider.PromptTokens, answer.CoAssessmentInputTokens);
         Assert.Equal(PanelGraderProvider.OutputTokens, answer.CoAssessmentOutputTokens);
 
-        // One model call per member, and usage recorded once against each member's configuration.
+        // One model call per member; GnollBench grading consumes no chat quota on either configuration.
         Assert.Equal(new[] { "judge-a", "judge-b" }, provider.ModelsCalled.OrderBy(m => m, StringComparer.Ordinal));
-        Assert.Equal(1, configA.TotalChatRequestsCount);
-        Assert.Equal(1, configB.TotalChatRequestsCount);
-        Assert.Equal(PanelGraderProvider.PromptTokens + PanelGraderProvider.OutputTokens, configA.TotalChatTokensCount);
-        Assert.Equal(PanelGraderProvider.PromptTokens + PanelGraderProvider.OutputTokens, configB.TotalChatTokensCount);
+        Assert.Equal(0, configA.TotalChatRequestsCount);
+        Assert.Equal(0, configB.TotalChatRequestsCount);
+        Assert.Equal(0, configA.TotalChatTokensCount);
+        Assert.Equal(0, configB.TotalChatTokensCount);
     }
 
     // --- Fixtures ----------------------------------------------------------------------------------

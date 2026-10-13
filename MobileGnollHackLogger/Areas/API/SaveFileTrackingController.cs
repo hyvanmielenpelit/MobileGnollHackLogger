@@ -25,10 +25,12 @@ namespace MobileGnollHackLogger.Areas.API
         private readonly ApplicationDbContext _dbContext;
         private readonly DbLogger _dbLogger;
         private ApplicationUser? _user = null;
+        private readonly GameApiAuthenticator _authenticator;
 
         public SaveFileTrackingController(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager,
-            IConfiguration configuration, ApplicationDbContext dbContext)
+            IConfiguration configuration, ApplicationDbContext dbContext, GameApiAuthenticator authenticator)
         {
+            _authenticator = authenticator;
             _signInManager = signInManager;
             _userManager = userManager;
             _configuration = configuration;
@@ -40,6 +42,7 @@ namespace MobileGnollHackLogger.Areas.API
 
         [Route("create")]
         [HttpPost]
+        [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(GameApiRateLimits.GameApiFlood)]
         public async Task<IActionResult> Create([FromForm] SaveFileTrackingCreateModel model)
         {
             SetDbLoggerInfo();
@@ -117,6 +120,7 @@ namespace MobileGnollHackLogger.Areas.API
 
         [Route("use")]
         [HttpPost]
+        [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(GameApiRateLimits.GameApiFlood)]
         public async Task<IActionResult> Use([FromForm] SaveFileTrackingUseModel model)
         {
             SetDbLoggerInfo();
@@ -252,22 +256,14 @@ namespace MobileGnollHackLogger.Areas.API
                 {
                     return await LogAndReturnErrorAsync(400, "AntiForgeryToken is missing.");
                 }
-                else
+
+                var auth = await _authenticator.AuthenticateAsync(HttpContext, _dbLogger, model.UserName, model.Password, model.AntiForgeryToken, "savefiletracking");
+                if (!auth.Succeeded)
                 {
-                    _dbLogger.RequestAntiForgeryToken = model.AntiForgeryToken;
+                    return auth.Response;
                 }
 
-                var antiForgeryToken = _configuration["AntiForgeryToken"];
-                if (antiForgeryToken != model.AntiForgeryToken)
                 {
-                    return await LogAndReturnErrorAsync(401, "AntiForgeryToken is wrong.");
-                }
-
-                var result = await _signInManager.PasswordSignInAsync(model.UserName, model.Password, false, lockoutOnFailure: false);
-                if (result.Succeeded)
-                {
-                    _dbLogger.LoginSucceeded = true;
-
                     //Sign in succeedeed
                     //Check next whether the user is not banned
                     try
@@ -292,18 +288,6 @@ namespace MobileGnollHackLogger.Areas.API
 
                     //Everything OK
                     return null;
-                }
-                if (result.RequiresTwoFactor)
-                {
-                    return await LogAndReturnErrorAsync(412, $"User '{model.UserName}' requires two factor authentication.");
-                }
-                if (result.IsLockedOut)
-                {
-                    return await LogAndReturnErrorAsync(423, $"User '{model.UserName}' requires is locked out.");
-                }
-                else
-                {
-                    return await LogAndReturnErrorAsync(403, $"Login failed for user '{model.UserName}'.");
                 }
             }
             catch (Exception ex)

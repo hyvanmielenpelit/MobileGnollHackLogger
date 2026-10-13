@@ -1,0 +1,26 @@
+<dialog #reasonDialog class="gh-dialog" [attr.aria-labelledby]="idPrefix + '-title'" (cancel)="close()">
+  <h3 [id]="idPrefix + '-title'">{{ activeTitle }}</h3>
+  @if (activeMessage) {
+    <p class="mt-20 reason-message">{{ activeMessage }}</p>
+  }
+  <div class="form-group mt-15">
+    <label [for]="idPrefix + '-field'">{{ activeLabel }}</label>
+    <textarea #reasonField [id]="idPrefix + '-field'" class="gh-input gh-textarea-autosize reason-field" rows="3"
+              required [attr.maxlength]="activeMaxLength"
+              [attr.aria-describedby]="idPrefix + '-count'"
+              (input)="onReasonInput($event)"></textarea>
+    <span class="form-hint" [id]="idPrefix + '-count'">{{ reason.length }} of {{ activeMaxLength }} characters</span>
+  </div>
+  <div class="dialog-actions">
+    <button type="button" class="btn-gh btn-gh-cancel" (click)="close()">Cancel</button>
+    <button type="button" [class]="activeConfirmClass + ' reason-confirm'"
+            [attr.aria-disabled]="canConfirm ? null : 'true'"
+            [attr.interestfor]="canConfirm ? null : idPrefix + '-tip'"
+            [attr.style]="'anchor-name: --' + idPrefix + '-tip'"
+            (click)="confirm()">{{ activeConfirmText }}</button>
+    @if (!canConfirm) {
+      <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-tip'"
+           [attr.style]="'position-anchor: --' + idPrefix + '-tip'">A {{ activeLabel.toLowerCase() }} is required.</div>
+    }
+  </div>
+</dialog>

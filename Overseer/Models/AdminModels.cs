@@ -22,6 +22,12 @@ public class AdminUserDto
     public string UserName { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public List<AdminGroupDto> Groups { get; set; } = new List<AdminGroupDto>();
+    public bool IsOverseerBlocked { get; set; }
+    public DateTime? OverseerBlockedUtc { get; set; }
+    public string? OverseerBlockReason { get; set; }
+    public bool HasAccountHold { get; set; }
+    public string? AccountHoldReason { get; set; }
+    public long? PendingDeletionRequestId { get; set; }
 }
 
 public class AssignGroupRequest
@@ -336,32 +342,289 @@ public class AnalyticsResponse
     public int TotalCount { get; set; }
 }
 
+/// <summary>The AI Telemetry tab's figures for a date range. Token figures are normalized: see AiUsageRoles.</summary>
 public class AiTelemetrySummaryDto
 {
+    /// <summary>The key-source filter applied: system | user | both.</summary>
+    public string KeySource { get; set; } = "system";
     public long TotalRequests { get; set; }
     public long TotalChatRequests { get; set; }
     public long TotalTitleRequests { get; set; }
     public long TotalBenchmarkRequests { get; set; }
-    public long TotalInputTokens { get; set; }
+    public long TotalPromptTokens { get; set; }
+    public long TotalUncachedInputTokens { get; set; }
     public long TotalOutputTokens { get; set; }
     public long TotalCacheReadTokens { get; set; }
     public long TotalCacheCreationTokens { get; set; }
+
+    /// <summary>Cache read ÷ prompt.</summary>
     public double CacheHitRatio { get; set; }
     public int AvgDurationMs { get; set; }
-    public List<AiModelUsageBreakdownDto> Models { get; set; } = new();
+
+    /// <summary>Over priced rows only.</summary>
+    public decimal TotalEstimatedCost { get; set; }
+    public long PricedRequests { get; set; }
+
+    /// <summary>The earliest priced row in the selected logs.</summary>
+    public DateTime? CostRecordedSinceUtc { get; set; }
+    public List<AiUsageBreakdownRowDto> Rows { get; set; } = new();
+    public ChatProviderAvailabilityDto ChatAvailability { get; set; } = new();
+
+    /// <summary>Independent of the key-source filter.</summary>
+    public OverseerActivityDto Activity { get; set; } = new();
 }
 
-public class AiModelUsageBreakdownDto
+/// <summary>One breakdown row: a key source, user, model, role context and thinking level.</summary>
+public class AiUsageBreakdownRowDto
 {
+    /// <summary>system | user.</summary>
+    public string KeySource { get; set; } = "system";
+
+    /// <summary>User-key rows only.</summary>
+    public string? UserId { get; set; }
+
+    /// <summary>The user's current name; user-key rows only.</summary>
+    public string? UserName { get; set; }
     public string Provider { get; set; } = string.Empty;
     public string ModelId { get; set; } = string.Empty;
+
+    /// <summary>The catalog name, else the retired entry's, else null.</summary>
+    public string? ModelName { get; set; }
+    public int RoleContext { get; set; }
+
+    /// <summary>chat | title | benchmark | other.</summary>
+    public string RoleGroup { get; set; } = string.Empty;
+
+    /// <summary>"" when none was sent, null when not recorded.</summary>
+    public string? ThinkingLevel { get; set; }
     public long Requests { get; set; }
-    public long InputTokens { get; set; }
-    public long OutputTokens { get; set; }
+    public long PromptTokens { get; set; }
+    public long UncachedInputTokens { get; set; }
     public long CacheReadTokens { get; set; }
     public long CacheCreationTokens { get; set; }
-    public double CacheHitRatio { get; set; }
-    public int AvgDurationMs { get; set; }
+    public long OutputTokens { get; set; }
+    public long DurationSumMs { get; set; }
+    public long DurationCount { get; set; }
+    public decimal EstimatedCost { get; set; }
+    public long PricedRequests { get; set; }
+    public int ValidAttempts { get; set; }
+    public int ProviderErrors { get; set; }
+    public int UnattributedErrors { get; set; }
+    public int OurSideFailures { get; set; }
+}
+
+/// <summary>
+/// Provider availability of the Overseer chat and title generation, from the provider-attempt ledger, with the
+/// same outcome classes, denominator and 10-minute cluster interval as GnollBench.
+/// </summary>
+public class ChatProviderAvailabilityDto
+{
+    /// <summary>The ledger has any row at all.</summary>
+    public bool Recorded { get; set; }
+    public DateTime? RecordedSinceUtc { get; set; }
+    public int ValidAttempts { get; set; }
+    public int ProviderErrors { get; set; }
+    public int UnattributedErrors { get; set; }
+    public int OurSideFailures { get; set; }
+
+    /// <summary>Provider errors ÷ valid attempts; null at no valid attempt.</summary>
+    public double? ProviderErrorRate { get; set; }
+
+    /// <summary>The cluster-adjusted Wilson 95% interval of the rate.</summary>
+    public double? Low { get; set; }
+    public double? High { get; set; }
+
+    /// <summary>(Provider + unattributed) ÷ valid attempts; null at no valid attempt.</summary>
+    public double? InclusiveRate { get; set; }
+    public int Overloaded { get; set; }
+    public int ServerErrors { get; set; }
+    public int Timeouts { get; set; }
+    public int StreamFailures { get; set; }
+    public int RateLimitedUnattributed { get; set; }
+    public int TransportUnattributed { get; set; }
+
+    /// <summary>Model calls: attempt 0 rows.</summary>
+    public int Calls { get; set; }
+    public int FirstAttemptSuccessCalls { get; set; }
+
+    /// <summary>Calls whose final attempt failed.</summary>
+    public int FailedCalls { get; set; }
+
+    /// <summary>Chat turns: distinct agent runs at depth 0.</summary>
+    public int ChatTurns { get; set; }
+    public int ChatTurnsEndedByProviderError { get; set; }
+    public int TitleValidAttempts { get; set; }
+    public int TitleProviderErrors { get; set; }
+
+    /// <summary>Title calls.</summary>
+    public int TitleRequests { get; set; }
+
+    /// <summary>Title calls whose final attempt failed.</summary>
+    public int TitleRequestsFailed { get; set; }
+}
+
+/// <summary>How many users use Overseer and how many chats and messages they create.</summary>
+public class OverseerActivityDto
+{
+    /// <summary>Distinct users with a chat or a visible message in the range.</summary>
+    public int ActiveUsers { get; set; }
+
+    /// <summary>Active users whose first activity day ever falls in the range.</summary>
+    public int NewUsers { get; set; }
+    public int ChatsCreated { get; set; }
+    public int ConfidentialChatsCreated { get; set; }
+    public int GnollHackChatsCreated { get; set; }
+    public int UserMessages { get; set; }
+    public int AssistantMessages { get; set; }
+
+    /// <summary>From the anonymous rows.</summary>
+    public int IncognitoChatsCreated { get; set; }
+    public int IncognitoUserMessages { get; set; }
+
+    /// <summary>The earliest activity row (the deployment day).</summary>
+    public DateOnly? CountedSinceUtc { get; set; }
+}
+
+/// <summary>One page of per-user usage of system AI configurations.</summary>
+public class AiTelemetryUsersPageDto
+{
+    public List<AiTelemetryUserRowDto> Users { get; set; } = new();
+
+    /// <summary>Users with system-configuration usage in the range (matching the search).</summary>
+    public int TotalUsers { get; set; }
+
+    /// <summary>The security event log exists, so the refusal counts are meaningful.</summary>
+    public bool SecurityEventsAvailable { get; set; }
+}
+
+public class AiTelemetryUserRowDto
+{
+    public string UserId { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+
+    /// <summary>All system-configuration rows.</summary>
+    public long Requests { get; set; }
+    public long ChatRequests { get; set; }
+    public long TitleRequests { get; set; }
+    public long BenchmarkRequests { get; set; }
+    public long PromptTokens { get; set; }
+    public long OutputTokens { get; set; }
+    public decimal EstimatedCost { get; set; }
+    public long PricedRequests { get; set; }
+
+    /// <summary>Most requests in one UTC clock hour; information for setting limits, never a misuse signal.</summary>
+    public int PeakHourRequests { get; set; }
+    public DateTime? PeakHourStartUtc { get; set; }
+
+    /// <summary>Mean over hours with at least one request.</summary>
+    public double RequestsPerActiveHour { get; set; }
+
+    /// <summary>Days with any system-configuration request.</summary>
+    public int ActiveDays { get; set; }
+    public DateTime? LastRequestUtc { get; set; }
+    public int ChatsCreated { get; set; }
+    public int UserMessages { get; set; }
+
+    /// <summary>Quota and per-minute refusals in the range.</summary>
+    public int LimitRefusals { get; set; }
+
+    /// <summary>Provider refusals, safety blocks and policy rejections in the range.</summary>
+    public int ProviderRefusals { get; set; }
+    public bool IsOverseerBlocked { get; set; }
+
+    /// <summary>An active deletion hold or a pending deletion request.</summary>
+    public bool HasAccountHold { get; set; }
+    public List<AiTelemetryUserConfigDto> Configs { get; set; } = new();
+}
+
+public class AiTelemetryUserConfigDto
+{
+    public long ConfigId { get; set; }
+
+    /// <summary>The current display name, else the usage rows' ModelDisplayName.</summary>
+    public string ConfigName { get; set; } = string.Empty;
+    public long Requests { get; set; }
+    public decimal EstimatedCost { get; set; }
+
+    /// <summary>The user's UserSystemAiApiConfiguration, if any.</summary>
+    public long? AssignmentId { get; set; }
+    public bool? AssignmentEnabled { get; set; }
+
+    /// <summary>Effective (lazily reset) counter.</summary>
+    public int? DailyChatRequests { get; set; }
+    public int? MaxDailyChatRequests { get; set; }
+    public int? MonthlyChatRequests { get; set; }
+    public int? MaxMonthlyChatRequests { get; set; }
+    public long? DailyChatTokens { get; set; }
+    public long? MaxDailyChatTokens { get; set; }
+
+    /// <summary>user | group | systemWide | none.</summary>
+    public string LimitSource { get; set; } = "none";
+}
+
+/// <summary>Telemetry over time, one line per series key, aligned with <see cref="BucketStartsUtc"/>.</summary>
+public class AiTelemetrySeriesDto
+{
+    /// <summary>day | week | month.</summary>
+    public string Bucket { get; set; } = "day";
+    public string SplitBy { get; set; } = "none";
+    public List<DateTime> BucketStartsUtc { get; set; } = new();
+    public List<AiTelemetrySeriesLineDto> Series { get; set; } = new();
+    public DateTime? CostRecordedSinceUtc { get; set; }
+    public DateTime? AttemptsRecordedSinceUtc { get; set; }
+
+    /// <summary>The user filter applied, if any.</summary>
+    public string? UserId { get; set; }
+    public string? UserName { get; set; }
+
+    /// <summary>Activity per bucket, aligned with BucketStartsUtc.</summary>
+    public List<AiTelemetryActivityPointDto>? Activity { get; set; }
+
+    /// <summary>Buckets before it have no activity data.</summary>
+    public DateOnly? ActivityCountedSinceUtc { get; set; }
+}
+
+public class AiTelemetryActivityPointDto
+{
+    /// <summary>Distinct in the bucket, not a sum of days.</summary>
+    public int ActiveUsers { get; set; }
+    public int NewUsers { get; set; }
+    public int ChatsCreated { get; set; }
+    public int ConfidentialChatsCreated { get; set; }
+    public int GnollHackChatsCreated { get; set; }
+    public int IncognitoChatsCreated { get; set; }
+    public int UserMessages { get; set; }
+    public int AssistantMessages { get; set; }
+    public int IncognitoUserMessages { get; set; }
+}
+
+public class AiTelemetrySeriesLineDto
+{
+    public string Key { get; set; } = string.Empty;
+
+    /// <summary>A model name, role, provider, key source or user name.</summary>
+    public string Label { get; set; } = string.Empty;
+
+    /// <summary>For provider colors.</summary>
+    public string? Provider { get; set; }
+    public bool IsOther { get; set; }
+
+    /// <summary>Aligned with BucketStartsUtc, zeros filled.</summary>
+    public List<AiTelemetryPointDto> Points { get; set; } = new();
+}
+
+public class AiTelemetryPointDto
+{
+    public long Requests { get; set; }
+    public long PromptTokens { get; set; }
+    public long CacheReadTokens { get; set; }
+    public long OutputTokens { get; set; }
+    public decimal EstimatedCost { get; set; }
+    public long PricedRequests { get; set; }
+    public long DurationSumMs { get; set; }
+    public long DurationCount { get; set; }
+    public int ValidAttempts { get; set; }
+    public int ProviderErrors { get; set; }
 }
 
 public class AiGovernorStatusDto

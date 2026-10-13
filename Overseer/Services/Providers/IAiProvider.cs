@@ -28,6 +28,30 @@ public interface IAiProvider
         bool cacheConversationTail = true,
         bool disablePromptCache = false);
 
+    /// <summary>
+    /// The chat request body carrying the end user's safety identifier, for providers whose API has a field
+    /// for one. The default ignores the identifier; a caller passes null for a user's own key or a custom
+    /// endpoint.
+    /// </summary>
+    Dictionary<string, object> BuildChatRequestBody(
+        string modelId,
+        List<object> messageHistory,
+        int? maxOutputTokens,
+        string? thinkingLevel,
+        ToolsForRequest requestTools,
+        string? reasoningMode,
+        string? reasoningSummary,
+        string? serviceTier,
+        bool? parallelToolCalls,
+        SegmentedPrompt? segmentedPrompt,
+        string? promptCacheKey,
+        bool cacheConversationTail,
+        bool disablePromptCache,
+        string? safetyIdentifier)
+        => BuildChatRequestBody(modelId, messageHistory, maxOutputTokens, thinkingLevel, requestTools, reasoningMode,
+            reasoningSummary, serviceTier, parallelToolCalls, segmentedPrompt, promptCacheKey, cacheConversationTail,
+            disablePromptCache);
+
     /// <param name="endpoint">
     /// Where the request goes and how it authenticates. Pass
     /// <see cref="AiEndpointDescriptor.Official"/> for the provider's public API.
@@ -79,9 +103,17 @@ public interface IAiProvider
     Dictionary<string, object> BuildTitleRequestBody(
         string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier = null);
 
+    /// <summary>The title request body carrying the end user's safety identifier; the default ignores it.</summary>
+    Dictionary<string, object> BuildTitleRequestBody(
+        string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier, string? safetyIdentifier)
+        => BuildTitleRequestBody(modelId, systemPrompt, userMessage, maxTokens, serviceTier);
+
     string GetTitleUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint);
 
     string? ParseTitleResponse(JsonElement root);
+
+    /// <summary>The usage a non-streaming title response reports; null when it carries no usage object.</summary>
+    TokenUsageReport? ParseTitleUsage(JsonElement root) => null;
 
     // Tool declarations
     object? BuildWebSearchTool();

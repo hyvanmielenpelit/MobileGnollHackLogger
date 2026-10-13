@@ -158,6 +158,16 @@ public class AdminController : ControllerBase
         var users = await query.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync();
         var dtos = new List<AdminUserDto>();
 
+        var pageUserIds = users.Select(u => u.Id).ToList();
+        var activeHolds = await _dbContext.AccountHolds
+            .Where(h => pageUserIds.Contains(h.AspNetUserId) && h.ReleasedUtc == null)
+            .Select(h => new { h.AspNetUserId, h.Reason })
+            .ToListAsync();
+        var pendingRequests = await _dbContext.AccountDeletionRequests
+            .Where(r => r.AspNetUserId != null && pageUserIds.Contains(r.AspNetUserId) && r.Status == AccountDeletionRequestStatus.Pending)
+            .Select(r => new { r.AspNetUserId, r.Id })
+            .ToListAsync();
+
         foreach(var u in users)
         {
             var userGroups = await _dbContext.UserGroups
@@ -166,16 +176,104 @@ public class AdminController : ControllerBase
                 .Select(ug => new AdminGroupDto { Id = ug.GroupId, DisplayName = ug.Group.DisplayName })
                 .ToListAsync();
 
+            var hold = activeHolds.FirstOrDefault(h => h.AspNetUserId == u.Id);
             dtos.Add(new AdminUserDto
             {
                 Id = u.Id,
                 UserName = u.UserName ?? "",
                 Email = u.Email ?? "",
-                Groups = userGroups
+                Groups = userGroups,
+                IsOverseerBlocked = u.OverseerBlockedUtc != null,
+                OverseerBlockedUtc = u.OverseerBlockedUtc,
+                OverseerBlockReason = u.OverseerBlockReason,
+                HasAccountHold = hold != null,
+                AccountHoldReason = hold?.Reason,
+                PendingDeletionRequestId = pendingRequests.Where(r => r.AspNetUserId == u.Id).Select(r => (long?)r.Id).FirstOrDefault()
             });
         }
 
         return Ok(new { TotalCount = totalCount, Rows = dtos });
+    }
+
+    private string? AdminUserId => User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+    /// <summary>Blocks the user from starting AI work in Overseer; the reason (1–256 characters) is shown to them.</summary>
+    [HttpPost("users/{userId}/overseer-block")]
+    public async Task<IActionResult> BlockUser(string userId, [FromBody] AdminReasonRequest request,
+        [FromServices] Overseer.Services.Security.OverseerAccessService access)
+    {
+        string? error = await access.BlockAsync(userId, request?.Reason ?? string.Empty, AdminUserId ?? string.Empty);
+        if (error == "User not found.") return NotFound(new { message = error });
+        return error == null ? Ok() : BadRequest(new { message = error });
+    }
+
+    [HttpDelete("users/{userId}/overseer-block")]
+    public async Task<IActionResult> UnblockUser(string userId, [FromServices] Overseer.Services.Security.OverseerAccessService access)
+    {
+        string? error = await access.UnblockAsync(userId, AdminUserId ?? string.Empty);
+        return error == null ? Ok() : NotFound(new { message = error });
+    }
+
+    /// <summary>Holds any deletion of the account for review; the reason (1–512 characters) is never shown to the user.</summary>
+    [HttpPost("users/{userId}/account-hold")]
+    public async Task<IActionResult> PlaceAccountHold(string userId, [FromBody] AdminReasonRequest request,
+        [FromServices] Overseer.Services.Security.AccountDeletionReviewService review)
+        => ToActionResult(await review.PlaceHoldAsync(userId, request?.Reason, AdminUserId ?? string.Empty));
+
+    /// <summary>Releases the hold; a pending deletion request still needs an explicit decision.</summary>
+    [HttpDelete("users/{userId}/account-hold")]
+    public async Task<IActionResult> ReleaseAccountHold(string userId,
+        [FromServices] Overseer.Services.Security.AccountDeletionReviewService review)
+        => ToActionResult(await review.ReleaseHoldAsync(userId, AdminUserId ?? string.Empty));
+
+    private IActionResult ToActionResult(Overseer.Services.Security.ReviewActionResult result) => result.Status switch
+    {
+        Overseer.Services.Security.ReviewActionStatus.Ok => result.Decision != null ? Ok(result.Decision) : Ok(),
+        Overseer.Services.Security.ReviewActionStatus.NotFound => NotFound(new { message = result.Message }),
+        Overseer.Services.Security.ReviewActionStatus.Conflict => Conflict(new { message = result.Message }),
+        _ => BadRequest(new { message = result.Message })
+    };
+
+    // --- Account deletion requests ---
+
+    [HttpGet("account-deletion-requests")]
+    public async Task<IActionResult> GetAccountDeletionRequests([FromQuery] string? status, [FromQuery] string? search,
+        [FromQuery] int skip, [FromQuery] int take, [FromServices] Overseer.Services.Security.AccountDeletionReviewService review)
+        => Ok(await review.ListAsync(status, search, skip, take));
+
+    /// <summary>Erases the account; 400 when the typed name does not match, 409 while the erasure paths are missing.</summary>
+    [HttpPost("account-deletion-requests/{id:long}/approve")]
+    public async Task<IActionResult> ApproveAccountDeletion(long id, [FromBody] ApproveAccountDeletionRequest request,
+        [FromServices] Overseer.Services.Security.AccountDeletionReviewService review)
+        => ToActionResult(await review.ApproveAsync(id, request?.ConfirmUserName, AdminUserId ?? string.Empty));
+
+    [HttpPost("account-deletion-requests/{id:long}/decline")]
+    public async Task<IActionResult> DeclineAccountDeletion(long id, [FromBody] DeclineAccountDeletionRequest request,
+        [FromServices] Overseer.Services.Security.AccountDeletionReviewService review)
+        => ToActionResult(await review.DeclineAsync(id, request?.Note, AdminUserId ?? string.Empty));
+
+    // --- Security events ---
+
+    [HttpGet("security/summary")]
+    public async Task<IActionResult> GetSecuritySummary([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromServices] Overseer.Services.Security.SecurityQueryService security)
+        => Ok(await security.GetSummaryAsync(startDate, endDate));
+
+    [HttpGet("security/events")]
+    public async Task<IActionResult> GetSecurityEvents([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? kinds, [FromQuery] string? userId, [FromQuery] string? search, [FromQuery] int skip, [FromQuery] int take,
+        [FromServices] Overseer.Services.Security.SecurityQueryService security)
+        => Ok(await security.GetEventsAsync(startDate, endDate, kinds, userId, search, skip, take));
+
+    /// <summary>The user a provider safety identifier belongs to; 404 when none.</summary>
+    [HttpGet("security/safety-identifier/{identifier}")]
+    public async Task<IActionResult> LookupSafetyIdentifier(string identifier,
+        [FromServices] Overseer.Services.Security.SafetyIdentifierService safetyIdentifiers)
+    {
+        string? userId = await safetyIdentifiers.FindUserIdAsync(identifier);
+        if (userId == null) return NotFound(new { message = "No user has this identifier." });
+        string? userName = await _dbContext.Users.Where(u => u.Id == userId).Select(u => u.UserName).FirstOrDefaultAsync();
+        return Ok(new SafetyIdentifierLookupDto { UserId = userId, UserName = userName ?? string.Empty });
     }
 
     [HttpPost("users/{userId}/groups")]
@@ -759,14 +857,16 @@ public class AdminController : ControllerBase
     {
         var assignments = await _dbContext.UserSystemAiApiConfigurations
             .Where(a => a.AspNetUserId == userId)
-            .OrderBy(a => a.OrderIndex)
             .Select(a => new UserSystemAiConfigDto
             {
                 Id = a.Id,
                 UserId = a.AspNetUserId,
                 SystemAiApiConfigurationId = a.SystemAiApiConfigurationId,
                 IsEnabled = a.IsEnabled,
-                OrderIndex = a.OrderIndex,
+                OrderIndex = _dbContext.UserSystemModelOrders
+                    .Where(o => o.AspNetUserId == userId && o.SystemAiApiConfigurationId == a.SystemAiApiConfigurationId)
+                    .Select(o => (int?)o.OrderIndex)
+                    .FirstOrDefault() ?? a.OrderIndex,
                 MaxDailyChatRequests = a.MaxDailyChatRequests,
                 MaxMonthlyChatRequests = a.MaxMonthlyChatRequests,
                 MaxTotalChatRequests = a.MaxTotalChatRequests,
@@ -794,6 +894,8 @@ public class AdminController : ControllerBase
                 ModelRole = a.ModelRole
             })
             .ToListAsync();
+
+        assignments = assignments.OrderBy(a => a.OrderIndex).ToList();
 
         return Ok(assignments);
     }
@@ -951,21 +1053,20 @@ public class AdminController : ControllerBase
         return Ok();
     }
     
+    /// <summary>Orders the user's assignments (by assignment id) through the user's model order, the one source of order.</summary>
     [HttpPut("users/{userId}/systemconfigs/reorder")]
     public async Task<IActionResult> ReorderUserSystemConfigs(string userId, [FromBody] ReorderRequest request)
     {
-        var configs = await _dbContext.UserSystemAiApiConfigurations.Where(a => a.AspNetUserId == userId).ToListAsync();
-        var idDict = configs.ToDictionary(c => c.Id);
+        var configIdByAssignment = await _dbContext.UserSystemAiApiConfigurations
+            .Where(a => a.AspNetUserId == userId)
+            .ToDictionaryAsync(a => a.Id, a => a.SystemAiApiConfigurationId);
 
-        for (int i = 0; i < request.OrderedIds.Length; i++)
-        {
-            if (idDict.TryGetValue(request.OrderedIds[i], out var config))
-            {
-                config.OrderIndex = i;
-            }
-        }
+        var orderedConfigIds = request.OrderedIds
+            .Where(configIdByAssignment.ContainsKey)
+            .Select(id => configIdByAssignment[id])
+            .ToArray();
 
-        await _dbContext.SaveChangesAsync();
+        await SettingsService.UpsertSystemModelOrderAsync(_dbContext, userId, orderedConfigIds);
         return Ok();
     }
 
@@ -1336,77 +1437,43 @@ public class AdminController : ControllerBase
         return Ok();
     }
 
+    /// <param name="keys">system (default) | user | both.</param>
     [HttpGet("ai-telemetry/summary")]
-    public async Task<IActionResult> GetAiTelemetrySummary([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
+    public async Task<IActionResult> GetAiTelemetrySummary([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? keys, [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
+        => Ok(await summaryService.GetSummaryAsync(startDate, endDate, keys));
+
+    /// <summary>Telemetry over time; refused with 400 when the range has more than 1,100 buckets.</summary>
+    /// <param name="roles">Comma-separated role groups: chat, title, benchmark, other.</param>
+    /// <param name="bucket">auto | day | week | month.</param>
+    /// <param name="splitBy">none | role | provider | model | keySource | user.</param>
+    [HttpGet("ai-telemetry/series")]
+    public async Task<IActionResult> GetAiTelemetrySeries([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? keys, [FromQuery] string? roles, [FromQuery] string? bucket, [FromQuery] string? splitBy,
+        [FromQuery] string? userId, [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
     {
-        var query = _dbContext.SystemAiUsageLogs.AsQueryable();
-        if (startDate.HasValue) query = query.Where(l => l.TimestampUtc >= startDate.Value);
-        if (endDate.HasValue) query = query.Where(l => l.TimestampUtc < endDate.Value.AddDays(1));
-
-        var modelsData = await query
-            .GroupBy(l => new { l.Provider, l.ModelId })
-            .Select(g => new
-            {
-                Provider = g.Key.Provider,
-                ModelId = g.Key.ModelId,
-                Requests = g.LongCount(),
-                InputTokens = g.Sum(x => (long)(x.InputTokens ?? 0)),
-                OutputTokens = g.Sum(x => (long)(x.OutputTokens ?? 0)),
-                CacheReadTokens = g.Sum(x => (long)(x.CacheReadInputTokens ?? 0)),
-                CacheCreationTokens = g.Sum(x => (long)(x.CacheCreationInputTokens ?? 0)),
-                AvgDurationMs = (int)(g.Average(x => x.TotalDurationMs) ?? 0)
-            })
-            .ToListAsync();
-
-        var modelDtos = modelsData.Select(m =>
+        var (rangeStart, rangeEnd) = Overseer.Services.Telemetry.AiTelemetrySummaryService.SeriesRange(startDate, endDate);
+        if (Overseer.Services.Telemetry.AiTelemetrySummaryService.BucketCount(rangeStart, rangeEnd, bucket)
+            > Overseer.Services.Telemetry.AiTelemetrySummaryService.MaxSeriesBuckets)
         {
-            // InputTokens is the uncached remainder, so the whole prompt is the sum of all three.
-            long promptTotal = m.InputTokens + m.CacheReadTokens + m.CacheCreationTokens;
-            double hitRatio = promptTotal > 0 ? (double)m.CacheReadTokens / promptTotal : 0.0;
-            return new AiModelUsageBreakdownDto
-            {
-                Provider = m.Provider,
-                ModelId = m.ModelId,
-                Requests = m.Requests,
-                InputTokens = m.InputTokens,
-                OutputTokens = m.OutputTokens,
-                CacheReadTokens = m.CacheReadTokens,
-                CacheCreationTokens = m.CacheCreationTokens,
-                CacheHitRatio = Math.Round(hitRatio, 4),
-                AvgDurationMs = m.AvgDurationMs
-            };
-        }).OrderByDescending(m => m.Requests).ToList();
+            return BadRequest(new { message = "The range has too many buckets; choose a coarser bucket." });
+        }
 
-        long totalReqs = modelDtos.Sum(m => m.Requests);
-        long totalIn = modelDtos.Sum(m => m.InputTokens);
-        long totalOut = modelDtos.Sum(m => m.OutputTokens);
-        long totalRead = modelDtos.Sum(m => m.CacheReadTokens);
-        long totalCreate = modelDtos.Sum(m => m.CacheCreationTokens);
-        long overallPromptTotal = totalIn + totalRead + totalCreate;
-        double overallHitRatio = overallPromptTotal > 0 ? (double)totalRead / overallPromptTotal : 0.0;
-        int overallAvgDuration = totalReqs > 0 ? (int)(modelDtos.Sum(m => (long)m.AvgDurationMs * m.Requests) / totalReqs) : 0;
-
-        var chatReqs = await query.CountAsync(l => l.RoleContext == 1);
-        var titleReqs = await query.CountAsync(l => l.RoleContext == 2);
-        var benchmarkReqs = await query.CountAsync(l => l.RoleContext == 4);
-
-        var summary = new AiTelemetrySummaryDto
-        {
-            TotalRequests = totalReqs,
-            TotalChatRequests = chatReqs,
-            TotalTitleRequests = titleReqs,
-            TotalBenchmarkRequests = benchmarkReqs,
-            TotalInputTokens = totalIn,
-            TotalOutputTokens = totalOut,
-            TotalCacheReadTokens = totalRead,
-            TotalCacheCreationTokens = totalCreate,
-            CacheHitRatio = Math.Round(overallHitRatio, 4),
-            AvgDurationMs = overallAvgDuration,
-            Models = modelDtos
-        };
-
-        return Ok(summary);
+        var roleList = (roles ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToList();
+        return Ok(await summaryService.GetSeriesAsync(startDate, endDate, keys, roleList, bucket, splitBy,
+            string.IsNullOrWhiteSpace(userId) ? null : userId));
     }
+
+    /// <summary>Per-user usage of system AI configurations, sorted by aggregate and paged on the server.</summary>
+    /// <param name="sort">cost (default) | requests | tokens | peakHour | refusals | lastActive.</param>
+    [HttpGet("ai-telemetry/users")]
+    public async Task<IActionResult> GetAiTelemetryUsers([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
+        [FromQuery] string? search, [FromQuery] string? userId, [FromQuery] string? sort, [FromQuery] int skip, [FromQuery] int take,
+        [FromServices] Overseer.Services.Telemetry.AiTelemetrySummaryService summaryService)
+        => Ok(await summaryService.GetUsersAsync(startDate, endDate, search,
+            string.IsNullOrWhiteSpace(userId) ? null : userId, sort, skip, take));
 
     // --- Helper Methods ---
 
@@ -1518,6 +1585,8 @@ public class AdminController : ControllerBase
                 PrunedBenchmarkToolResultCount = r.PrunedBenchmarkToolResultCount,
                 PrunedAuditLogCount = r.PrunedAuditLogCount,
                 PrunedAiErrorLogCount = r.PrunedAiErrorLogCount,
+                PrunedSecurityEventCount = r.PrunedSecurityEventCount,
+                PrunedChatProviderAttemptCount = r.PrunedChatProviderAttemptCount,
                 DeletedDiskFolderCount = r.DeletedDiskFolderCount,
                 DeletedDiskFileCount = r.DeletedDiskFileCount,
                 SweptOrphanFolderCount = r.SweptOrphanFolderCount,
@@ -1636,6 +1705,38 @@ public class AdminController : ControllerBase
         {
             result.PrunedAiErrorLogCount = await retentionService.PruneDismissedAiErrorLogsAsync(days, isDryRun);
             result.Logs.Add($"{DryRunPrefix(isDryRun)}Pruned {result.PrunedAiErrorLogCount} dismissed AI error rows dismissed over {days} days ago. Undismissed rows are never pruned.");
+        });
+    }
+
+    [HttpPost("maintenance/prune-security-events")]
+    public async Task<IActionResult> PruneSecurityEvents([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+        var days = request?.SecurityEventPruneDays ?? retentionService.Settings.PruneSecurityEventDays;
+
+        if (days <= 0)
+            return BadRequest(new { message = "The security event window must be a positive number of days." });
+
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.PruneSecurityEvents, isDryRun, async result =>
+        {
+            result.PrunedSecurityEventCount = await retentionService.PruneSecurityEventsAsync(days, isDryRun);
+            result.Logs.Add($"{DryRunPrefix(isDryRun)}Pruned {result.PrunedSecurityEventCount} security events last seen over {days} days ago. Events of users with an active account hold or a pending deletion request are kept.");
+        });
+    }
+
+    [HttpPost("maintenance/prune-chat-provider-attempts")]
+    public async Task<IActionResult> PruneChatProviderAttempts([FromBody] MaintenanceRequestDto? request, [FromServices] ChatRetentionService retentionService)
+    {
+        var isDryRun = request?.DryRun ?? false;
+        var days = request?.ChatProviderAttemptPruneDays ?? retentionService.Settings.PruneChatProviderAttemptDays;
+
+        if (days <= 0)
+            return BadRequest(new { message = "The chat provider attempt window must be a positive number of days." });
+
+        return await RunGranularMaintenanceAsync(retentionService, MaintenanceTriggers.PruneChatProviderAttempts, isDryRun, async result =>
+        {
+            result.PrunedChatProviderAttemptCount = await retentionService.PruneChatProviderAttemptsAsync(days, isDryRun);
+            result.Logs.Add($"{DryRunPrefix(isDryRun)}Pruned {result.PrunedChatProviderAttemptCount} chat provider attempts older than {days} days.");
         });
     }
 

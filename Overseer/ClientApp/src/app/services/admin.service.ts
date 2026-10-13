@@ -14,6 +14,124 @@ export interface UserDto {
   userName: string;
   email: string;
   groups: GroupDto[];
+  /** Blocked from starting any AI work in Overseer. */
+  isOverseerBlocked?: boolean;
+  overseerBlockedUtc?: string | null;
+  /** The administrator's reason, shown to the user while blocked. */
+  overseerBlockReason?: string | null;
+  /** An administrator's active hold on deleting the account. */
+  hasAccountHold?: boolean;
+  accountHoldReason?: string | null;
+  /** The account's pending deletion request, when one is waiting for review. */
+  pendingDeletionRequestId?: number | null;
+}
+
+/** Counts of one security event kind in a range; `count` sums the runs' repeat counts. */
+export interface SecurityKindCount {
+  /** A `SecurityEventKind` name, e.g. "LoginFailed". */
+  kind: string;
+  count: number;
+  distinctUsers: number;
+  distinctIps: number;
+}
+
+export interface SecuritySummary {
+  kinds: SecurityKindCount[];
+  pendingDeletionRequests: number;
+  activeAccountHolds: number;
+}
+
+/** One security event, or a run of identical ones within ten minutes (`count`). Identifiers and codes only. */
+export interface SecurityEvent {
+  id: number;
+  occurredUtc: string;
+  lastOccurredUtc: string;
+  kind: string;
+  count: number;
+  userId?: string | null;
+  userName?: string | null;
+  userIsOverseerBlocked: boolean;
+  ipAddress?: string | null;
+  systemAiApiConfigurationId?: number | null;
+  provider?: string | null;
+  modelId?: string | null;
+  code?: string | null;
+  detail?: string | null;
+}
+
+export interface SecurityEventsPage {
+  totalCount: number;
+  rows: SecurityEvent[];
+}
+
+export interface SecurityEventsQuery {
+  startDate?: string;
+  endDate?: string;
+  /** `SecurityEventKind` names. */
+  kinds?: string[];
+  userId?: string;
+  /** Matches user names. */
+  search?: string;
+  skip?: number;
+  /** Clamped to 1–100 by the server. */
+  take?: number;
+}
+
+export interface SafetyIdentifierLookup {
+  userId: string;
+  userName: string;
+}
+
+export type AccountDeletionRequestStatus = 'Pending' | 'Completed' | 'Declined';
+
+/** A held account deletion waiting for, or decided by, an administrator. */
+export interface AccountDeletionRequest {
+  id: number;
+  /** Null once completed. */
+  userId?: string | null;
+  /** Null once completed (shown as "Deleted account"). */
+  userName?: string | null;
+  requestedUtc: string;
+  ageDays: number;
+  /** Pending and at least AccountHold:ReviewHighlightDays old. */
+  isOverdue: boolean;
+  status: AccountDeletionRequestStatus;
+  /** Why it was held, as stored when the request was made. */
+  holdReasons: string;
+  /** The reasons as evaluated now; null once decided or when the account is gone. */
+  currentReasons?: string | null;
+  manualHold: boolean;
+  automaticRule: boolean;
+  decidedByUserName?: string | null;
+  decidedUtc?: string | null;
+  decisionNote?: string | null;
+}
+
+export interface AccountDeletionRequestsPage {
+  totalCount: number;
+  pendingCount: number;
+  overdueCount: number;
+  /** False while DumpLogPath or ConversationsDataLocation is missing; Approve is refused then. */
+  erasurePathsConfigured: boolean;
+  erasurePathsMessage?: string | null;
+  rows: AccountDeletionRequest[];
+}
+
+export interface AccountDeletionRequestsQuery {
+  /** Omitted: every status. */
+  status?: AccountDeletionRequestStatus;
+  search?: string;
+  skip?: number;
+  take?: number;
+}
+
+export interface AccountDeletionDecisionResult {
+  emailSent: boolean;
+  emailError?: string | null;
+  /** Approve only: bones files not found on disk. */
+  bonesFilesMissing: number;
+  /** Approve only: dumplog and attachment folders not found on disk. */
+  foldersMissing: number;
 }
 
 export interface UsersResponse {
@@ -305,30 +423,253 @@ export interface AnalyticsResponse {
   totalCount: number;
 }
 
-export interface AiModelUsageBreakdownDto {
+/** The AI Telemetry key-source filter. */
+export type AiTelemetryKeySource = 'system' | 'user' | 'both';
+
+/** Usage-log role groups: Chat = RoleContext 1 and 3, Title Generation = 2, Benchmark = 4–8, Other = anything else. */
+export type AiUsageRoleGroup = 'chat' | 'title' | 'benchmark' | 'other';
+
+/**
+ * One breakdown row: a key source, user, model, role context and thinking level. Token figures are normalized:
+ * `promptTokens` is the whole prompt and `uncachedInputTokens` the part neither read from nor written to the cache.
+ */
+export interface AiUsageBreakdownRowDto {
+  keySource: 'system' | 'user';
+  /** User-key rows only. */
+  userId?: string | null;
+  /** The user's current name; user-key rows only. */
+  userName?: string | null;
   provider: string;
   modelId: string;
+  /** The catalog name, else the retired entry's, else null. */
+  modelName?: string | null;
+  roleContext: number;
+  roleGroup: AiUsageRoleGroup;
+  /** "" when none was sent, null when not recorded. */
+  thinkingLevel?: string | null;
   requests: number;
-  inputTokens: number;
-  outputTokens: number;
+  promptTokens: number;
+  uncachedInputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
-  cacheHitRatio: number;
-  avgDurationMs: number;
+  outputTokens: number;
+  durationSumMs: number;
+  durationCount: number;
+  estimatedCost: number;
+  pricedRequests: number;
+  validAttempts: number;
+  providerErrors: number;
+  unattributedErrors: number;
+  ourSideFailures: number;
+}
+
+/** Provider availability of the Overseer chat and title generation, with GnollBench's classes and interval. */
+export interface ChatProviderAvailabilityDto {
+  /** The ledger has any row at all. */
+  recorded: boolean;
+  recordedSinceUtc?: string | null;
+  validAttempts: number;
+  providerErrors: number;
+  unattributedErrors: number;
+  ourSideFailures: number;
+  /** Provider errors ÷ valid attempts; null at no valid attempt. */
+  providerErrorRate?: number | null;
+  /** The cluster-adjusted Wilson 95% interval. */
+  low?: number | null;
+  high?: number | null;
+  /** (Provider + unattributed) ÷ valid attempts. */
+  inclusiveRate?: number | null;
+  overloaded: number;
+  serverErrors: number;
+  timeouts: number;
+  streamFailures: number;
+  rateLimitedUnattributed: number;
+  transportUnattributed: number;
+  calls: number;
+  firstAttemptSuccessCalls: number;
+  failedCalls: number;
+  chatTurns: number;
+  chatTurnsEndedByProviderError: number;
+  titleValidAttempts: number;
+  titleProviderErrors: number;
+  titleRequests: number;
+  titleRequestsFailed: number;
+}
+
+/** Users, chats and messages; independent of the key-source filter. */
+export interface OverseerActivityDto {
+  /** Distinct users with a chat or a visible message in the range. */
+  activeUsers: number;
+  /** Active users whose first activity day ever falls in the range. */
+  newUsers: number;
+  chatsCreated: number;
+  confidentialChatsCreated: number;
+  gnollHackChatsCreated: number;
+  userMessages: number;
+  assistantMessages: number;
+  /** Counted only anonymously. */
+  incognitoChatsCreated: number;
+  incognitoUserMessages: number;
+  /** The first counted day (the deployment day), "YYYY-MM-DD"; null before anything was counted. */
+  countedSinceUtc?: string | null;
 }
 
 export interface AiTelemetrySummaryDto {
+  keySource: AiTelemetryKeySource;
   totalRequests: number;
   totalChatRequests: number;
   totalTitleRequests: number;
   totalBenchmarkRequests: number;
-  totalInputTokens: number;
+  totalPromptTokens: number;
+  totalUncachedInputTokens: number;
   totalOutputTokens: number;
   totalCacheReadTokens: number;
   totalCacheCreationTokens: number;
+  /** Cache read ÷ prompt. */
   cacheHitRatio: number;
   avgDurationMs: number;
-  models: AiModelUsageBreakdownDto[];
+  /** Over priced rows only. */
+  totalEstimatedCost: number;
+  pricedRequests: number;
+  /** The earliest priced row in the selected logs. */
+  costRecordedSinceUtc?: string | null;
+  rows: AiUsageBreakdownRowDto[];
+  chatAvailability: ChatProviderAvailabilityDto;
+  activity: OverseerActivityDto;
+}
+
+/** One system configuration a user used in the range, with that user's limits on it. */
+export interface AiTelemetryUserConfigDto {
+  configId: number;
+  configName: string;
+  requests: number;
+  estimatedCost: number;
+  /** The user's own assignment, if any. */
+  assignmentId?: number | null;
+  assignmentEnabled?: boolean | null;
+  /** Effective (lazily reset) counters. */
+  dailyChatRequests?: number | null;
+  maxDailyChatRequests?: number | null;
+  monthlyChatRequests?: number | null;
+  maxMonthlyChatRequests?: number | null;
+  dailyChatTokens?: number | null;
+  maxDailyChatTokens?: number | null;
+  limitSource: 'user' | 'group' | 'systemWide' | 'none';
+}
+
+/** One user's usage of system AI configurations. Busiest-hour figures are information for limits, never a misuse signal. */
+export interface AiTelemetryUserRowDto {
+  userId: string;
+  userName: string;
+  requests: number;
+  chatRequests: number;
+  titleRequests: number;
+  benchmarkRequests: number;
+  promptTokens: number;
+  outputTokens: number;
+  estimatedCost: number;
+  pricedRequests: number;
+  peakHourRequests: number;
+  peakHourStartUtc?: string | null;
+  requestsPerActiveHour: number;
+  activeDays: number;
+  lastRequestUtc?: string | null;
+  chatsCreated: number;
+  userMessages: number;
+  limitRefusals: number;
+  providerRefusals: number;
+  isOverseerBlocked: boolean;
+  /** An active deletion hold or a pending deletion request. */
+  hasAccountHold: boolean;
+  configs: AiTelemetryUserConfigDto[];
+}
+
+export interface AiTelemetryUsersPage {
+  users: AiTelemetryUserRowDto[];
+  totalUsers: number;
+  securityEventsAvailable: boolean;
+}
+
+export type AiTelemetryUsersSort = 'cost' | 'requests' | 'tokens' | 'peakHour' | 'refusals' | 'lastActive';
+
+export interface AiTelemetryUsersQuery {
+  startDate?: string;
+  endDate?: string;
+  /** Matches user name or email. */
+  search?: string;
+  /** Restricts the page to one user. */
+  userId?: string;
+  sort?: AiTelemetryUsersSort;
+  skip?: number;
+  /** Clamped to 1–100 by the server. */
+  take?: number;
+}
+
+export type AiTelemetryBucket = 'auto' | 'day' | 'week' | 'month';
+export type AiTelemetrySplitBy = 'none' | 'role' | 'provider' | 'model' | 'keySource' | 'user';
+
+export interface AiTelemetryPointDto {
+  requests: number;
+  promptTokens: number;
+  cacheReadTokens: number;
+  outputTokens: number;
+  estimatedCost: number;
+  pricedRequests: number;
+  durationSumMs: number;
+  durationCount: number;
+  validAttempts: number;
+  providerErrors: number;
+}
+
+export interface AiTelemetrySeriesLineDto {
+  key: string;
+  label: string;
+  /** For provider colors (split by provider or model). */
+  provider?: string | null;
+  isOther: boolean;
+  /** Aligned with bucketStartsUtc, zeros filled. */
+  points: AiTelemetryPointDto[];
+}
+
+export interface AiTelemetryActivityPointDto {
+  /** Distinct in the bucket, not a sum of days. */
+  activeUsers: number;
+  newUsers: number;
+  chatsCreated: number;
+  confidentialChatsCreated: number;
+  gnollHackChatsCreated: number;
+  incognitoChatsCreated: number;
+  userMessages: number;
+  assistantMessages: number;
+  incognitoUserMessages: number;
+}
+
+export interface AiTelemetrySeriesDto {
+  /** The resolved bucket. */
+  bucket: 'day' | 'week' | 'month';
+  splitBy: AiTelemetrySplitBy;
+  bucketStartsUtc: string[];
+  /** At most 8 lines plus one "Other" line. */
+  series: AiTelemetrySeriesLineDto[];
+  costRecordedSinceUtc?: string | null;
+  attemptsRecordedSinceUtc?: string | null;
+  userId?: string | null;
+  userName?: string | null;
+  /** Aligned with bucketStartsUtc. */
+  activity?: AiTelemetryActivityPointDto[] | null;
+  /** Buckets before it have no activity data ("YYYY-MM-DD"). */
+  activityCountedSinceUtc?: string | null;
+}
+
+export interface AiTelemetrySeriesQuery {
+  startDate?: string;
+  endDate?: string;
+  keys?: AiTelemetryKeySource;
+  /** Role groups; empty: the three named groups. */
+  roles?: AiUsageRoleGroup[];
+  bucket?: AiTelemetryBucket;
+  splitBy?: AiTelemetrySplitBy;
+  userId?: string;
 }
 
 export interface AiGovernorKeyStatusDto {
@@ -371,6 +712,8 @@ export interface RetentionPolicy {
   pruneBenchmarkToolCallResultsDays: number;
   auditLogRetentionDays: number;
   pruneDismissedAiErrorLogDays: number;
+  pruneSecurityEventDays: number;
+  pruneChatProviderAttemptDays: number;
   maintenanceHistoryRetentionDays: number;
   maintenanceRunHourUtc: number;
   enableStorageWarningEmails: boolean;
@@ -436,6 +779,15 @@ export interface DatabaseStorageMetrics {
   aiErrorLogDismissedCount: number;
   aiErrorLogPrunableCount: number;
 
+  securityEventRowCount: number;
+  securityEventOldestUtc?: string;
+  /** Excludes events of users with an active account hold or a pending deletion request. */
+  securityEventPrunableCount: number;
+
+  chatProviderAttemptRowCount: number;
+  chatProviderAttemptOldestUtc?: string;
+  chatProviderAttemptPrunableCount: number;
+
   expiredTrashSessionCount: number;
   prunableToolCallCount: number;
   prunableBenchmarkToolCallCount: number;
@@ -460,6 +812,10 @@ export interface MaintenanceRequest {
   auditLogRetentionDays?: number;
   /** Granular prune only; the full pass reads the configured window. */
   aiErrorLogPruneDays?: number;
+  /** Granular prune only; the full pass reads the configured window. */
+  securityEventPruneDays?: number;
+  /** Granular prune only; the full pass reads the configured window. */
+  chatProviderAttemptPruneDays?: number;
 }
 
 export interface MaintenanceResult {
@@ -477,6 +833,8 @@ export interface MaintenanceResult {
   sweptOrphanFolderCount: number;
   prunedAuditLogCount: number;
   prunedAiErrorLogCount: number;
+  prunedSecurityEventCount: number;
+  prunedChatProviderAttemptCount: number;
   elapsedMilliseconds: number;
   /** "Scheduled", "Startup", "Manual", or "Manual:<Action>". */
   trigger: string;
@@ -501,6 +859,8 @@ export interface MaintenanceRunLog {
   prunedBenchmarkToolResultCount: number;
   prunedAuditLogCount: number;
   prunedAiErrorLogCount: number;
+  prunedSecurityEventCount: number;
+  prunedChatProviderAttemptCount: number;
   deletedDiskFolderCount: number;
   deletedDiskFileCount: number;
   sweptOrphanFolderCount: number;
@@ -559,6 +919,74 @@ export class AdminService {
       params.usernameFilter = usernameFilter;
     }
     return this.http.get<UsersResponse>('/api/admin/users', { params });
+  }
+
+  /** Blocks the user from starting AI work in Overseer; `reason` (1–256 characters) is shown to them. 400 for the admin's own id. */
+  blockUser(userId: string, reason: string): Observable<void> {
+    return this.http.post<void>(`/api/admin/users/${encodeURIComponent(userId)}/overseer-block`, { reason });
+  }
+
+  unblockUser(userId: string): Observable<void> {
+    return this.http.delete<void>(`/api/admin/users/${encodeURIComponent(userId)}/overseer-block`);
+  }
+
+  /** Holds any deletion of the account for review; `reason` (1–512 characters) is never shown to the user. */
+  placeAccountHold(userId: string, reason: string): Observable<void> {
+    return this.http.post<void>(`/api/admin/users/${encodeURIComponent(userId)}/account-hold`, { reason });
+  }
+
+  /** Releases the hold; a pending deletion request still needs an explicit decision. */
+  releaseAccountHold(userId: string): Observable<void> {
+    return this.http.delete<void>(`/api/admin/users/${encodeURIComponent(userId)}/account-hold`);
+  }
+
+  // Security
+  getSecuritySummary(startDate?: string, endDate?: string): Observable<SecuritySummary> {
+    const params: any = {};
+    if (startDate) params.startDate = startDate;
+    if (endDate) params.endDate = endDate;
+    return this.http.get<SecuritySummary>('/api/admin/security/summary', { params });
+  }
+
+  /** Newest first. */
+  getSecurityEvents(query: SecurityEventsQuery): Observable<SecurityEventsPage> {
+    const params: any = {};
+    if (query.startDate) params.startDate = query.startDate;
+    if (query.endDate) params.endDate = query.endDate;
+    if (query.kinds?.length) params.kinds = query.kinds.join(',');
+    if (query.userId) params.userId = query.userId;
+    if (query.search) params.search = query.search;
+    if (query.skip) params.skip = query.skip;
+    if (query.take) params.take = query.take;
+    return this.http.get<SecurityEventsPage>('/api/admin/security/events', { params });
+  }
+
+  /** 404 when no user has the identifier. */
+  lookupSafetyIdentifier(identifier: string): Observable<SafetyIdentifierLookup> {
+    return this.http.get<SafetyIdentifierLookup>(`/api/admin/security/safety-identifier/${encodeURIComponent(identifier)}`);
+  }
+
+  // Account deletion requests
+  getAccountDeletionRequests(query: AccountDeletionRequestsQuery): Observable<AccountDeletionRequestsPage> {
+    const params: any = {};
+    if (query.status) params.status = query.status;
+    if (query.search) params.search = query.search;
+    if (query.skip) params.skip = query.skip;
+    if (query.take) params.take = query.take;
+    return this.http.get<AccountDeletionRequestsPage>('/api/admin/account-deletion-requests', { params });
+  }
+
+  /**
+   * Erases the account. `confirmUserName` must equal the request's user name (400 otherwise); 409 while
+   * the erasure paths are not configured.
+   */
+  approveAccountDeletion(id: number, confirmUserName: string): Observable<AccountDeletionDecisionResult> {
+    return this.http.post<AccountDeletionDecisionResult>(`/api/admin/account-deletion-requests/${id}/approve`, { confirmUserName });
+  }
+
+  /** Keeps the account; `note` (1–512 characters) is for administrators and is not emailed. */
+  declineAccountDeletion(id: number, note: string): Observable<AccountDeletionDecisionResult> {
+    return this.http.post<AccountDeletionDecisionResult>(`/api/admin/account-deletion-requests/${id}/decline`, { note });
   }
 
   // Groups
@@ -740,6 +1168,14 @@ export class AdminService {
     return this.http.post<MaintenanceResult>('/api/admin/maintenance/prune-ai-error-log', request || {});
   }
 
+  pruneSecurityEvents(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/prune-security-events', request || {});
+  }
+
+  pruneChatProviderAttempts(request?: MaintenanceRequest): Observable<MaintenanceResult> {
+    return this.http.post<MaintenanceResult>('/api/admin/maintenance/prune-chat-provider-attempts', request || {});
+  }
+
   sweepOrphans(request?: MaintenanceRequest): Observable<MaintenanceResult> {
     return this.http.post<MaintenanceResult>('/api/admin/maintenance/sweep-orphans', request || {});
   }
@@ -775,10 +1211,37 @@ export class AdminService {
     return this.http.get<EndpointPolicySummaryDto>('/api/admin/endpoint-policy');
   }
 
-  getAiTelemetrySummary(startDate?: string, endDate?: string): Observable<AiTelemetrySummaryDto> {
+  getAiTelemetrySummary(startDate?: string, endDate?: string, keys?: AiTelemetryKeySource): Observable<AiTelemetrySummaryDto> {
     let params: any = {};
     if (startDate) params.startDate = startDate;
     if (endDate) params.endDate = endDate;
+    if (keys) params.keys = keys;
     return this.http.get<AiTelemetrySummaryDto>('/api/Admin/ai-telemetry/summary', { params });
+  }
+
+  /** 400 with `{ message }` when the range has more than 1,100 buckets. */
+  getAiTelemetrySeries(query: AiTelemetrySeriesQuery): Observable<AiTelemetrySeriesDto> {
+    const params: any = {};
+    if (query.startDate) params.startDate = query.startDate;
+    if (query.endDate) params.endDate = query.endDate;
+    if (query.keys) params.keys = query.keys;
+    if (query.roles?.length) params.roles = query.roles.join(',');
+    if (query.bucket) params.bucket = query.bucket;
+    if (query.splitBy) params.splitBy = query.splitBy;
+    if (query.userId) params.userId = query.userId;
+    return this.http.get<AiTelemetrySeriesDto>('/api/Admin/ai-telemetry/series', { params });
+  }
+
+  /** Per-user usage of system AI configurations, sorted and paged on the server. */
+  getAiTelemetryUsers(query: AiTelemetryUsersQuery): Observable<AiTelemetryUsersPage> {
+    const params: any = {};
+    if (query.startDate) params.startDate = query.startDate;
+    if (query.endDate) params.endDate = query.endDate;
+    if (query.search) params.search = query.search;
+    if (query.userId) params.userId = query.userId;
+    if (query.sort) params.sort = query.sort;
+    if (query.skip) params.skip = query.skip;
+    if (query.take) params.take = query.take;
+    return this.http.get<AiTelemetryUsersPage>('/api/Admin/ai-telemetry/users', { params });
   }
 }

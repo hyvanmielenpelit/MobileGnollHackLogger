@@ -258,6 +258,13 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
   /** The bundled font's load state, shown only by the appearance kind. */
   @Input() fontLoadStatus = '';
 
+  /**
+   * Style keys whose controls the host leaves out, and `badge:<kind>` entries for single badge
+   * checkboxes (`badge:better` names the Better badge). A section whose keys are all listed is not
+   * rendered. Empty by default, which renders every control.
+   */
+  @Input() hiddenKeys: readonly string[] = [];
+
   @Output() figureStyleChange = new EventEmitter<FigureStyle>();
   @Output() directLabelsChange = new EventEmitter<boolean>();
   @Output() inlineValuesChange = new EventEmitter<boolean>();
@@ -854,8 +861,41 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
     return this.sections[family].find((section) => section.name === name)!;
   }
 
+  /** The family's badge checkboxes less the hidden ones; the same array while `hiddenKeys` is unchanged. */
   badgeControlsOf(family: StyleFamily): readonly BadgeControl[] {
-    return this.badgeControls[family];
+    if (this.hiddenKeys.length === 0) {
+      return this.badgeControls[family];
+    }
+    if (this.visibleBadgeMemo?.hidden !== this.hiddenKeys) {
+      const visible = (controls: readonly BadgeControl[]) => controls.filter((control) => !this.badgeHidden(control.kind));
+      this.visibleBadgeMemo = {
+        hidden: this.hiddenKeys,
+        controls: {
+          bar: visible(this.badgeControls.bar),
+          scatter: visible(this.badgeControls.scatter),
+          profile: visible(this.badgeControls.profile),
+          timeline: visible(this.badgeControls.timeline)
+        }
+      };
+    }
+    return this.visibleBadgeMemo.controls[family];
+  }
+
+  private visibleBadgeMemo: { hidden: readonly string[]; controls: Readonly<Record<StyleFamily, readonly BadgeControl[]>> } | null = null;
+
+  /** The host leaves this style key's control out. */
+  isHidden(key: string): boolean {
+    return this.hiddenKeys.includes(key);
+  }
+
+  /** Every key of the section is hidden, so the section is not rendered. */
+  sectionHidden(family: PanelFamily, name: string): boolean {
+    const keys = this.section(family, name).keys;
+    return keys.length > 0 && keys.every((key) => this.isHidden(key));
+  }
+
+  private badgeHidden(kind: FigureBadgeKind): boolean {
+    return this.isHidden(`badge:${kind}`) || (kind === 'direction' && this.isHidden('badge:better'));
   }
 
   footerShown(family: StyleFamily): boolean {
@@ -914,8 +954,8 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
     const style = this.figureStyle[family];
     switch (name) {
       case 'heading': {
-        const alwaysUnderLogo = this.betterBadgePlacementOf(family) === 'always';
-        const shown = this.badgeControls[family]
+        const alwaysUnderLogo = this.betterBadgePlacementOf(family) === 'always' && !this.isHidden('betterBadgePlacement');
+        const shown = this.badgeControlsOf(family)
           .filter((control) => !style.hiddenBadges.includes(control.kind))
           .map((control) => control.kind === 'direction' && alwaysUnderLogo
             ? `${BADGE_READOUT_NAMES.direction} (always under logo)`
@@ -969,7 +1009,10 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
           timeline.gridlines ? 'gridlines' : 'no gridlines'
         ].join(' · ');
       case 'markers':
-        return [`tags ${timeline.markerTagSizePx} px`, `legend ${timeline.legendTextSizePx} px`].join(' · ');
+        return [
+          ...(this.isHidden('markerTagSizePx') ? [] : [`tags ${timeline.markerTagSizePx} px`]),
+          `legend ${timeline.legendTextSizePx} px`
+        ].join(' · ');
       case 'notes': {
         const notes = [...(timeline.markerNote ? ['markers'] : []), ...(timeline.notAnalyzedNote ? ['gray crosses'] : [])];
         return notes.length > 0 ? notes.join(', ') : 'none';

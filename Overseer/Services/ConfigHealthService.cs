@@ -214,6 +214,53 @@ public class ConfigHealthService
             }
         }
 
+        /* An approved account deletion erases files under both paths, which must equal the website's;
+           Approve is refused while either is missing. */
+        var missingErasurePaths = new[] { "DumpLogPath", "ConversationsDataLocation" }
+            .Where(key => string.IsNullOrWhiteSpace(_configuration[key]))
+            .ToList();
+        if (missingErasurePaths.Count > 0)
+        {
+            alerts.Add(new SystemAlert
+            {
+                Id = "account-erasure-paths-missing",
+                Type = "warning",
+                Message = $"{string.Join(" and ", missingErasurePaths)} {(missingErasurePaths.Count == 1 ? "is" : "are")} not configured. Account deletions held for review cannot be approved until Overseer has the same value as the website."
+            });
+        }
+
+        // Held account deletions wait for an administrator's decision.
+        if (_scopeFactory != null)
+        {
+            try
+            {
+                using var holdScope = _scopeFactory.CreateScope();
+                var dbContext = holdScope.ServiceProvider.GetRequiredService<MobileGnollHackLogger.Data.ApplicationDbContext>();
+                var holdOptions = holdScope.ServiceProvider.GetService<GnollHackServer.Data.Security.AccountHoldOptions>()
+                    ?? new GnollHackServer.Data.Security.AccountHoldOptions();
+                var (pending, overdue, newestId) = Security.AccountDeletionReviewService
+                    .CountPendingAsync(dbContext, holdOptions, DateTime.UtcNow).GetAwaiter().GetResult();
+
+                if (pending > 0)
+                {
+                    string subject = pending == 1 ? "1 account deletion awaits review" : $"{pending} account deletions await review";
+                    alerts.Add(new SystemAlert
+                    {
+                        // The newest request's id is in the id, so a dismissed alert reappears for a new request.
+                        Id = $"account-deletion-review:{newestId}",
+                        Type = overdue > 0 ? "error" : "warning",
+                        Message = overdue > 0 ? $"{subject} ({overdue} overdue)." : $"{subject}.",
+                        LinkUrl = "/admin?tab=users&subtab=deletions",
+                        LinkText = "Review"
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to evaluate account deletion review alerts in ConfigHealthService");
+            }
+        }
+
         // Database Storage Health Alert
         if (_scopeFactory != null)
         {

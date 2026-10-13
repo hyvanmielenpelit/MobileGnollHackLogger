@@ -11,7 +11,9 @@ using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
-using System.IO;
+using GnollHackServer.Data.Privacy;
+using GnollHackServer.Data.Security;
+using Microsoft.AspNetCore.Identity.UI.Services;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account.Manage;
 
@@ -22,20 +24,32 @@ public class DeletePersonalDataModel : PageModel
     private readonly ILogger<DeletePersonalDataModel> _logger;
     private readonly ApplicationDbContext _dbContext;
     private readonly IConfiguration _configuration;
+    private readonly AccountHoldOptions _holdOptions;
+    private readonly IEmailSender _emailSender;
 
     public DeletePersonalDataModel(
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
         ILogger<DeletePersonalDataModel> logger,
         ApplicationDbContext dbContext,
-        IConfiguration configuration)
+        IConfiguration configuration,
+        AccountHoldOptions holdOptions,
+        IEmailSender emailSender)
     {
         _userManager = userManager;
         _signInManager = signInManager;
         _logger = logger;
         _dbContext = dbContext;
         _configuration = configuration;
+        _holdOptions = holdOptions;
+        _emailSender = emailSender;
     }
+
+    /// <summary>Shown instead of the form when the deletion is held for, or already waiting for, administrator review.</summary>
+    public string? ReviewMessage { get; set; }
+
+    private void LogReviewEmailFailure(Exception ex) =>
+        _logger.LogError(ex, "The account deletion review email could not be sent.");
 
     /// <summary>
     ///     This API supports the ASP.NET Core Identity default UI infrastructure and is not intended to be used
@@ -101,124 +115,52 @@ public class DeletePersonalDataModel : PageModel
         }
 
         var userId = user.Id;
-        var userName = user.UserName;
+        var now = DateTime.UtcNow;
 
-        // 1. Scrub GameLog rows (preserve Id, CreatedDate, ByteStart, ByteEnd, ByteLength)
-        var gameLogs = await _dbContext.GameLog
-            .Where(gl => gl.AspNetUserId == userId)
-            .ToListAsync();
-
-        foreach (var gl in gameLogs)
+        // A request already waiting for review: nothing else happens, and the review email is repeated only when due.
+        var pending = await _dbContext.AccountDeletionRequests
+            .FirstOrDefaultAsync(r => r.AspNetUserId == userId && r.Status == AccountDeletionRequestStatus.Pending);
+        if (pending != null)
         {
-            gl.AspNetUserId = null;
-            // String fields → null
-            gl.Version = null; gl.Platform = null; gl.PlatformVersion = null;
-            gl.Port = null; gl.PortVersion = null; gl.PortBuild = null;
-            gl.DeathDateText = null; gl.BirthDateText = null;
-            gl.Role = null; gl.Race = null; gl.Gender = null; gl.Alignment = null;
-            gl.Name = null; gl.CharacterName = null;
-            gl.DeathText = null; gl.WhileText = null;
-            gl.ConductsBinary = null; gl.AchievementsBinary = null;
-            gl.AchievementsText = null; gl.ConductsText = null;
-            gl.StartingGender = null; gl.StartingAlignment = null;
-            gl.FlagsBinary = null; gl.Mode = null; gl.Scoring = null;
-            gl.Tournament = null; gl.Store = null;
-            // Int/long fields → 0
-            gl.EditLevel = 0; gl.Points = 0;
-            gl.DeathDungeonNumber = 0; gl.DeathLevel = 0; gl.MaxLevel = 0;
-            gl.HitPoints = 0; gl.MaxHitPoints = 0; gl.Deaths = 0;
-            gl.ProcessUserID = 0; gl.Turns = 0;
-            gl.RealTime = 0; gl.StartTime = 0; gl.StartTimeUTC = 0;
-            gl.EndTime = 0; gl.EndTimeUTC = 0;
-            gl.Difficulty = 0; gl.DungeonCollapses = 0;
-            // Nullable int fields → null
-            gl.SecurityLevel = null; gl.PortSecurityLevel = null;
-            gl.ExperienceLevel = null;
+            var currentVerdict = await AccountHoldQueries.EvaluateAsync(_dbContext, userId, _holdOptions, now);
+            await AccountDeletionReviewEmail.SendIfDueAsync(_dbContext, pending, _emailSender, _holdOptions,
+                currentVerdict.Manual, currentVerdict.Automatic, now, LogReviewEmailFailure);
+            ReviewMessage = $"Your request to delete your account is being reviewed by an administrator (since {pending.RequestedUtc:yyyy-MM-dd}). You will receive an email when it is done.";
+            return Page();
         }
 
-        // 2. Delete dumplog files from disk
-        var dumpLogBasePath = _configuration["DumpLogPath"];
-        if (!string.IsNullOrEmpty(dumpLogBasePath) && !string.IsNullOrEmpty(userName))
+        // Held for review: nothing is deleted and the user stays signed in. The user is not told why.
+        var verdict = await AccountHoldQueries.EvaluateAsync(_dbContext, userId, _holdOptions, now);
+        if (verdict.IsHeld)
         {
-            var userDumpDir = Path.Combine(dumpLogBasePath, userName);
-            if (Directory.Exists(userDumpDir))
-                Directory.Delete(userDumpDir, recursive: true);
-        }
-
-        // 3. Delete chat attachment files from disk
-        var baseDir = _configuration["ConversationsDataLocation"];
-        if (!string.IsNullOrEmpty(baseDir))
-        {
-            var sessionIds = await _dbContext.ChatSession
-                .Where(s => s.AspNetUserId == userId)
-                .Select(s => s.Id)
-                .ToListAsync();
-
-            foreach (var sid in sessionIds)
+            var request = new AccountDeletionRequest
             {
-                var sessionDir = Path.Combine(baseDir, sid.ToString());
-                if (Directory.Exists(sessionDir))
-                    Directory.Delete(sessionDir, recursive: true);
-            }
+                AspNetUserId = userId,
+                UserNameSnapshot = user.UserName,
+                EmailSnapshot = user.Email,
+                RequestedUtc = now,
+                Status = AccountDeletionRequestStatus.Pending,
+                HoldReasons = verdict.Reasons.Length <= 2048 ? verdict.Reasons : verdict.Reasons[..2048]
+            };
+            _dbContext.AccountDeletionRequests.Add(request);
+            await _dbContext.SaveChangesAsync();
+
+            await SecurityEventWriter.RecordAsync(_dbContext, SecurityEventKind.AccountDeletionHeld, userId,
+                code: verdict.Manual ? "manual" : "automatic");
+            await AccountDeletionReviewEmail.SendIfDueAsync(_dbContext, request, _emailSender, _holdOptions,
+                verdict.Manual, verdict.Automatic, now, LogReviewEmailFailure);
+
+            _logger.LogInformation("Deletion of user with ID '{UserId}' is held for administrator review.", userId);
+            ReviewMessage = "Your request to delete your account has been received. It needs to be reviewed by an administrator before it can be completed. You will receive an email when it is done.";
+            return Page();
         }
 
-        /* 3a. Crypto-shred before removing anything.
-
-               RemoveRange does cascade-delete the row that carries the wrapped content key, so
-               shredding happens incidentally on the happy path -- but only on the happy path.
-               Doing it explicitly first means a failure between here and the RemoveRange below
-               leaves unreadable rows instead of readable ones, and it gives future retention
-               work one code path to find rather than two behaviours to reconcile.
-
-               The API-key material needs its own call: a different master key protects it
-               (AesEncryptionKey, which does not rotate), so nulling session content keys does
-               not reach it. */
-        await GnollHackServer.Data.Privacy.CryptoShred.NullAllSessionKeysForUserAsync(_dbContext, userId);
-        await GnollHackServer.Data.Privacy.CryptoShred.NullUserApiKeyMaterialAsync(_dbContext, userId);
-        await GnollHackServer.Data.Privacy.CryptoShred.DeleteSystemModelTrustForUserAsync(_dbContext, userId);
-
-        // 4. Delete all chat sessions (cascades to messages, attachments, tool calls)
-        _dbContext.ChatSession.RemoveRange(
-            _dbContext.ChatSession.Where(s => s.AspNetUserId == userId));
-
-        // 5. Null out DismissedByUserId on system error logs
-        await _dbContext.SystemAiErrorLogs
-            .Where(e => e.DismissedByUserId == userId)
-            .ExecuteUpdateAsync(e => e.SetProperty(x => x.DismissedByUserId, (string?)null));
-
-        // 6. Delete bones files from disk and remove bones records
-        var bonesRecords = await _dbContext.Bones
-            .Where(b => b.AspNetUserId == userId)
-            .ToListAsync();
-        foreach (var bone in bonesRecords)
+        var erased = await AccountErasure.EraseAsync(_dbContext, _userManager, user,
+            new AccountErasurePaths(_configuration["DumpLogPath"], _configuration["ConversationsDataLocation"]));
+        if (erased.BonesFilesMissing > 0 || erased.FoldersMissing > 0)
         {
-            if (!string.IsNullOrEmpty(bone.BonesFilePath) && System.IO.File.Exists(bone.BonesFilePath))
-                System.IO.File.Delete(bone.BonesFilePath);
-        }
-        _dbContext.Bones.RemoveRange(bonesRecords);
-
-        // 7. Delete bones transactions
-        _dbContext.BonesTransactions.RemoveRange(
-            _dbContext.BonesTransactions.Where(bt => bt.AspNetUserId == userId));
-
-        // 8. Delete save file tracking
-        _dbContext.SaveFileTrackings.RemoveRange(
-            _dbContext.SaveFileTrackings.Where(s => s.AspNetUserId == userId));
-
-        // 9. Disassociate request logs (preserve logs, remove user links and usernames)
-        await _dbContext.RequestLogs
-            .Where(r => r.AspNetUserId == userId || r.RequestUserName == userName)
-            .ExecuteUpdateAsync(r => r
-                .SetProperty(x => x.AspNetUserId, (string?)null)
-                .SetProperty(x => x.RequestUserName, (string?)null));
-
-        await _dbContext.SaveChangesAsync();
-
-        var result = await _userManager.DeleteAsync(user);
-        userId = await _userManager.GetUserIdAsync(user);
-        if (!result.Succeeded)
-        {
-            throw new InvalidOperationException($"Unexpected error occurred deleting user.");
+            _logger.LogWarning("Account erasure did not find {BonesFiles} bones file(s) and {Folders} folder(s) on disk.",
+                erased.BonesFilesMissing, erased.FoldersMissing);
         }
 
         await _signInManager.SignOutAsync();

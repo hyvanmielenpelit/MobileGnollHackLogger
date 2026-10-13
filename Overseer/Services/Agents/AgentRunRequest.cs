@@ -63,6 +63,12 @@ public class AgentRunRequest
     public ToolExecutionContext ToolExecutionContext { get; set; } = new();
     public long? SystemModelId { get; set; }
 
+    /// <summary>
+    /// The end user's provider safety identifier, set only for operator-funded runs. Sent only to an official
+    /// endpoint.
+    /// </summary>
+    public string? SafetyIdentifier { get; set; }
+
     /// <summary>Present only for runs started by a user's chat turn; enables API key failure alerts.</summary>
     public ApiKeyAlerts.ApiKeyAlertContext? ApiKeyAlert { get; set; }
     public string? AgentName { get; set; }

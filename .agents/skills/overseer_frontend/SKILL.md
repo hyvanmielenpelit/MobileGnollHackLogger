@@ -178,9 +178,18 @@ Harness-neutral, and the floor for any Overseer frontend work.
     with `.gh-fig-canvas.is-transparent-figure`, the preview backdrop behind a transparent figure as the
     canvas's own CSS background, never in a written file: the color is `--gh-fig-backdrop`, inherited
     from the scroller (each wizard's `figureBackdropStyle`), the checkerboard without it;
-    shared by Model Comparison step 2 and the Chat Consistency Charts step; the Chat Consistency
-    Analyze step uses the workspace, sidebar, bar and panels without tiles or canvas. Model Comparison
-    keeps its `mc-` classes beside them, which its specs query.
+    shared by Model Comparison step 2, the Chat Consistency Charts step and the **AI Telemetry charts
+    dialog** (`admin/telemetry-tab/charts/telemetry-charts-dialog.component.*`, since 2026-10-13, the
+    third full consumer: nine tiles and the single view, in a single-step `gh-wizard` frame without
+    step tabs — `.gh-wizard-body` → one `.gh-wizard-step.gh-fig-host` — inside a
+    `.gh-dialog-fullscreen`, so the wizard's flex and `min-height: 0` chain and the
+    `@container gh-fig` stacking rule still apply; storage `overseer.admin.telemetry.charts` and its
+    `.chartSize`, `.figureStyle`, `.figureStylePanel.open` and `.download` keys; its Charts tab passes
+    `hiddenKeys` to `app-figure-style-panel`, which accepts style keys and `badge:<kind>` entries to
+    hide Chat-Consistency-only controls; its Download tab uses two id prefixes, `tl-export` and
+    `tl-image-format`, because each export section emits `-section`, `-reset` and `-reset-tip` ids);
+    the Chat Consistency Analyze step uses the workspace, sidebar, bar and panels without tiles or
+    canvas. Model Comparison keeps its `mc-` classes beside them, which its specs query.
   - **`bm-launcher*`** — the launcher page of a benchmark sub-tab whose task is a full-screen wizard
     (`.bm-launcher`, `-hero`, `-lead`, `-actions`, `-howto`, `-steps`, `-step-number`, `-library`),
     shared by the Model Comparison and Chat Consistency launchers.

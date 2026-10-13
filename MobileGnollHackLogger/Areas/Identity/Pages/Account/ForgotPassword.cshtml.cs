@@ -18,6 +18,7 @@ using GnollHackServer.Data;
 
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 {
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(MobileGnollHackLogger.Areas.API.GameApiRateLimits.AccountPages)]
     public class ForgotPasswordModel : PageModel
     {
         private readonly UserManager<ApplicationUser> _userManager;

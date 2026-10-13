@@ -519,7 +519,45 @@ public class DatabaseStorageMetricsService
             _logger.LogError(ex, "Failed to query AI error log counts");
         }
 
-        // 3e. Next-pass preview. Predicates match the corresponding ChatRetentionService steps.
+        // 3e. Security events. The prunable predicate is ChatRetentionService.PrunableSecurityEvents, held users excluded.
+        try
+        {
+            dto.SecurityEventRowCount = await _dbContext.SecurityEvents.LongCountAsync(cancellationToken);
+            var oldestEvent = await _dbContext.SecurityEvents.MinAsync(e => (DateTime?)e.OccurredUtc, cancellationToken);
+            dto.SecurityEventOldestUtc = oldestEvent.HasValue ? DateTime.SpecifyKind(oldestEvent.Value, DateTimeKind.Utc) : null;
+
+            if (_settings.PruneSecurityEventDays > 0)
+            {
+                dto.SecurityEventPrunableCount = await ChatRetentionService
+                    .PrunableSecurityEvents(_dbContext, DateTime.UtcNow.AddDays(-_settings.PruneSecurityEventDays))
+                    .CountAsync(cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to query security event counts");
+        }
+
+        // 3f. Chat provider attempts. The prunable predicate matches ChatRetentionService.PruneChatProviderAttemptsAsync.
+        try
+        {
+            dto.ChatProviderAttemptRowCount = await _dbContext.ChatProviderAttempts.LongCountAsync(cancellationToken);
+            var oldestAttempt = await _dbContext.ChatProviderAttempts.MinAsync(a => (DateTime?)a.StartedAtUtc, cancellationToken);
+            dto.ChatProviderAttemptOldestUtc = oldestAttempt.HasValue ? DateTime.SpecifyKind(oldestAttempt.Value, DateTimeKind.Utc) : null;
+
+            if (_settings.PruneChatProviderAttemptDays > 0)
+            {
+                var attemptCutoff = DateTime.UtcNow.AddDays(-_settings.PruneChatProviderAttemptDays);
+                dto.ChatProviderAttemptPrunableCount = await _dbContext.ChatProviderAttempts
+                    .CountAsync(a => a.StartedAtUtc < attemptCutoff, cancellationToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to query chat provider attempt counts");
+        }
+
+        // 3g. Next-pass preview. Predicates match the corresponding ChatRetentionService steps.
         try
         {
             var trashCutoff = DateTime.UtcNow.AddDays(-_settings.SoftDeleteGracePeriodDays);
@@ -541,7 +579,7 @@ public class DatabaseStorageMetricsService
             _logger.LogError(ex, "Failed to query next maintenance pass preview counts");
         }
 
-        // 3f. Schema status. Overseer does not migrate at startup, so a database behind its binaries shows here.
+        // 3h. Schema status. Overseer does not migrate at startup, so a database behind its binaries shows here.
         try
         {
             var applied = (await _dbContext.Database.GetAppliedMigrationsAsync(cancellationToken)).ToList();
@@ -662,6 +700,8 @@ public class DatabaseStorageMetricsService
         PruneBenchmarkToolCallResultsDays = _settings.PruneBenchmarkToolCallResultsDays,
         AuditLogRetentionDays = _settings.AuditLogRetentionDays,
         PruneDismissedAiErrorLogDays = _settings.PruneDismissedAiErrorLogDays,
+        PruneSecurityEventDays = _settings.PruneSecurityEventDays,
+        PruneChatProviderAttemptDays = _settings.PruneChatProviderAttemptDays,
         MaintenanceHistoryRetentionDays = _settings.MaintenanceHistoryRetentionDays,
         MaintenanceRunHourUtc = _settings.MaintenanceRunHourUtc,
         EnableStorageWarningEmails = _settings.EnableStorageWarningEmails,

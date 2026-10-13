@@ -233,6 +233,100 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.AccountDeletionRequest", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AspNetUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("DecidedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("DecidedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DecisionNote")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("EmailSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("HoldReasons")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("nvarchar(2048)");
+
+                    b.Property<DateTime?>("LastReviewEmailUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("RequestedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<byte>("Status")
+                        .HasColumnType("tinyint");
+
+                    b.Property<string>("UserNameSnapshot")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AspNetUserId", "Status");
+
+                    b.HasIndex("Status", "RequestedUtc");
+
+                    b.ToTable("AccountDeletionRequests");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.AccountHold", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AspNetUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("PlacedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime>("PlacedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("ReleasedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("ReleasedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AspNetUserId", "ReleasedUtc");
+
+                    b.ToTable("AccountHolds");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.ApiKeyFailureAlertState", b =>
                 {
                     b.Property<long>("Id")
@@ -3420,6 +3514,90 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("ChatMessageToolCall");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.ChatProviderAttempt", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<byte>("AgentDepth")
+                        .HasColumnType("tinyint");
+
+                    b.Property<Guid>("AgentRunId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AspNetUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<byte>("AttemptIndex")
+                        .HasColumnType("tinyint");
+
+                    b.Property<int>("CallIndex")
+                        .HasColumnType("int");
+
+                    b.Property<int>("DurationMs")
+                        .HasColumnType("int");
+
+                    b.Property<byte>("EndpointKind")
+                        .HasColumnType("tinyint");
+
+                    b.Property<short?>("HttpStatus")
+                        .HasColumnType("smallint");
+
+                    b.Property<byte>("KeySource")
+                        .HasColumnType("tinyint");
+
+                    b.Property<byte>("Outcome")
+                        .HasColumnType("tinyint");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ProviderErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("RequestedModelId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<bool>("Retried")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("RetryAfterMs")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RoleContext")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("StartedAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<long?>("SystemAiApiConfigurationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("ThinkingLevel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AspNetUserId");
+
+                    b.HasIndex("StartedAtUtc");
+
+                    b.HasIndex("Provider", "RequestedModelId", "StartedAtUtc");
+
+                    b.ToTable("ChatProviderAttempts");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.ChatSession", b =>
                 {
                     b.Property<long>("Id")
@@ -3880,6 +4058,12 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int>("PrunedBenchmarkToolResultCount")
                         .HasColumnType("int");
 
+                    b.Property<int>("PrunedChatProviderAttemptCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("PrunedSecurityEventCount")
+                        .HasColumnType("int");
+
                     b.Property<int>("PrunedToolResultCount")
                         .HasColumnType("int");
 
@@ -4107,6 +4291,52 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("ModelCallTelemetry");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.OverseerDailyActivity", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AspNetUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("AssistantMessages")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ChatsCreated")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ConfidentialChatsCreated")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("DateUtc")
+                        .HasColumnType("date");
+
+                    b.Property<int>("GnollHackChatsCreated")
+                        .HasColumnType("int");
+
+                    b.Property<int>("IncognitoChatsCreated")
+                        .HasColumnType("int");
+
+                    b.Property<int>("IncognitoUserMessages")
+                        .HasColumnType("int");
+
+                    b.Property<int>("UserMessages")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AspNetUserId");
+
+                    b.HasIndex("DateUtc", "AspNetUserId")
+                        .IsUnique();
+
+                    b.ToTable("OverseerDailyActivities");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.RequestInfo", b =>
                 {
                     b.Property<long>("Id")
@@ -4221,6 +4451,64 @@ namespace GnollHackServer.Data.Migrations
                         .HasFilter("[AspNetUserId] IS NOT NULL");
 
                     b.ToTable("SaveFileTrackings");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.SecurityEvent", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AspNetUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Code")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("Count")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("nvarchar(45)");
+
+                    b.Property<short>("Kind")
+                        .HasColumnType("smallint");
+
+                    b.Property<DateTime>("LastOccurredUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ModelId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<DateTime>("OccurredUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Provider")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<long?>("SystemAiApiConfigurationId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OccurredUtc");
+
+                    b.HasIndex("AspNetUserId", "OccurredUtc");
+
+                    b.HasIndex("Kind", "OccurredUtc");
+
+                    b.ToTable("SecurityEvents");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.SystemAiApiConfiguration", b =>
@@ -4589,6 +4877,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int?>("CacheReadInputTokens")
                         .HasColumnType("int");
 
+                    b.Property<decimal?>("EstimatedCost")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("decimal(18,8)");
+
                     b.Property<int?>("InputTokens")
                         .HasColumnType("int");
 
@@ -4604,6 +4896,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<int?>("OutputTokens")
                         .HasColumnType("int");
 
+                    b.Property<string>("PricingSource")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
                     b.Property<string>("Provider")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -4615,6 +4911,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<long>("SystemAiApiConfigurationId")
                         .HasColumnType("bigint");
 
+                    b.Property<string>("ThinkingLevel")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
                     b.Property<DateTime>("TimestampUtc")
                         .HasColumnType("datetime2");
 
@@ -4623,7 +4923,9 @@ namespace GnollHackServer.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AspNetUserId");
+                    b.HasIndex("AspNetUserId", "TimestampUtc");
+
+                    SqlServerIndexBuilderExtensions.IncludeProperties(b.HasIndex("AspNetUserId", "TimestampUtc"), new[] { "SystemAiApiConfigurationId", "RoleContext", "InputTokens", "OutputTokens", "EstimatedCost" });
 
                     b.HasIndex("SystemAiApiConfigurationId", "TimestampUtc");
 
@@ -4988,6 +5290,79 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("UserGroups");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.UserKeyAiUsageLog", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AspNetUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int?>("CacheCreationInputTokens")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CacheReadInputTokens")
+                        .HasColumnType("int");
+
+                    b.Property<decimal?>("EstimatedCost")
+                        .HasPrecision(18, 8)
+                        .HasColumnType("decimal(18,8)");
+
+                    b.Property<int?>("InputTokens")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ModelDisplayName")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("ModelId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int?>("OutputTokens")
+                        .HasColumnType("int");
+
+                    b.Property<string>("PricingSource")
+                        .HasMaxLength(16)
+                        .HasColumnType("nvarchar(16)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("RoleContext")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ThinkingLevel")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTime>("TimestampUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("TotalDurationMs")
+                        .HasColumnType("int");
+
+                    b.Property<long?>("UserAiModelId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TimestampUtc");
+
+                    b.HasIndex("AspNetUserId", "TimestampUtc");
+
+                    b.ToTable("UserKeyAiUsageLogs");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.UserSystemAiApiConfiguration", b =>
                 {
                     b.Property<long>("Id")
@@ -5132,6 +5507,33 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("UserSystemModelConfidentialTrusts");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.UserSystemModelOrder", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AspNetUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int>("OrderIndex")
+                        .HasColumnType("int");
+
+                    b.Property<long>("SystemAiApiConfigurationId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AspNetUserId", "SystemAiApiConfigurationId")
+                        .IsUnique();
+
+                    b.ToTable("UserSystemModelOrders");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.ApplicationUser", b =>
                 {
                     b.HasBaseType("Microsoft.AspNetCore.Identity.IdentityUser");
@@ -5148,6 +5550,17 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("JunetHackUserName")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
+
+                    b.Property<string>("OverseerBlockReason")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("OverseerBlockedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("OverseerBlockedUtc")
+                        .HasColumnType("datetime2");
 
                     b.HasDiscriminator().HasValue("ApplicationUser");
                 });
@@ -5201,6 +5614,17 @@ namespace GnollHackServer.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.AccountHold", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
+                        .WithMany()
+                        .HasForeignKey("AspNetUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AspNetUser");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkAssessorCalibration", b =>
@@ -5689,6 +6113,16 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("ChatMessage");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.ChatProviderAttempt", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
+                        .WithMany("ChatProviderAttempts")
+                        .HasForeignKey("AspNetUserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("AspNetUser");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.ChatSession", b =>
                 {
                     b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
@@ -5736,6 +6170,16 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("BenchmarkRunAnswer");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.OverseerDailyActivity", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
+                        .WithMany("DailyActivities")
+                        .HasForeignKey("AspNetUserId")
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.Navigation("AspNetUser");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.RequestInfo", b =>
                 {
                     b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
@@ -5750,6 +6194,16 @@ namespace GnollHackServer.Data.Migrations
                     b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
                         .WithMany()
                         .HasForeignKey("AspNetUserId");
+
+                    b.Navigation("AspNetUser");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.SecurityEvent", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
+                        .WithMany("SecurityEvents")
+                        .HasForeignKey("AspNetUserId")
+                        .OnDelete(DeleteBehavior.Cascade);
 
                     b.Navigation("AspNetUser");
                 });
@@ -5826,6 +6280,17 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("Group");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.UserKeyAiUsageLog", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
+                        .WithMany("UserKeyAiUsageLogs")
+                        .HasForeignKey("AspNetUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AspNetUser");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.UserSystemAiApiConfiguration", b =>
                 {
                     b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
@@ -5862,6 +6327,17 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("AspNetUser");
 
                     b.Navigation("SystemAiApiConfiguration");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.UserSystemModelOrder", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.ApplicationUser", "AspNetUser")
+                        .WithMany("SystemModelOrders")
+                        .HasForeignKey("AspNetUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AspNetUser");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBattery", b =>
@@ -5934,11 +6410,21 @@ namespace GnollHackServer.Data.Migrations
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.ApplicationUser", b =>
                 {
+                    b.Navigation("ChatProviderAttempts");
+
+                    b.Navigation("DailyActivities");
+
                     b.Navigation("GameLogs");
+
+                    b.Navigation("SecurityEvents");
 
                     b.Navigation("SystemAiUsageLogs");
 
+                    b.Navigation("SystemModelOrders");
+
                     b.Navigation("UserGroups");
+
+                    b.Navigation("UserKeyAiUsageLogs");
 
                     b.Navigation("UserSystemAiApiConfigurations");
                 });

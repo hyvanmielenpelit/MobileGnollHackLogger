@@ -237,6 +237,8 @@ you already read the label, it is noise; drop it.
 | search (a magnifier) | The leading glyph of a search field (the Download Center's *Search documents*) | Decorative, `aria-hidden`, never a button: the field's label names it, and the glyph says only "type to find" |
 | x | Removes an active-filter chip (`.gh-filter-chip`, the Download Center's filter bar), **Clear selection** (`.btn-ghost`, the Model Comparison wizard's step-1 selection bar, §8i) | A dismissal that deletes nothing — the meaning Close already has; the chip's name is *Remove filter {facet}: {value}*. Clear selection drops every selected source as removing one selection chip drops one, and deletes nothing |
 | arrow-right (Feather: a line and a chevron head, `<line x1="5" y1="12" x2="19" y2="12">`, `<polyline points="12 5 19 12 12 19">`) | The admin alert's call-to-action link (trailing, `aria-hidden`; the one glyph that ends a label rather than leading it) | "Go there": the link opens the page where the alert is dealt with |
+| bar-chart-2 (Feather: three vertical lines of different heights) | **Charts** (`.btn-gh`, the AI Telemetry tab's header; opens the charts dialog), **Usage charts** (icon-only, each card of the AI Telemetry Users view; the dialog for that user) | "Show it over time as charts" |
+| sliders (Feather *sliders*: three vertical lines with a knob each) | **Manage limits** (icon-only, each card of the AI Telemetry Users view; opens the user's *Manage User Configs* dialog in the Users tab) | "Adjust settings" — the limits are tuned there, not here |
 
 *Changed 2026-09-12 (harness 24 round): Import Default Suite(s) moved from `upload` to `download` —
 importing brings suites from the server's catalog into the application, which is the same
@@ -1884,7 +1886,11 @@ definitions (`app-benchmark-batteries`) are the third; the **Chat Consistency wi
 (`app-cc-model-step`, 2026-10-07) are the fourth; the **Chat Consistency wizard's step 3 period
 cards** (`app-cc-period-units`, 2026-10-09) are the fifth; the **Chat Consistency Analysis History
 dialog** (`app-cc-analysis-history-dialog`, 2026-10-10) is the sixth; the **Model Comparison wizard's
-step 1 sources** (`app-comparison-source-picker`, 2026-10-12) are the seventh. Use one **when every row is a
+step 1 sources** (`app-comparison-source-picker`, 2026-10-12) are the seventh; the **AI Telemetry
+breakdown** (`admin/telemetry-tab/`, 2026-10-13) is the eighth; the **AI Telemetry Users view**
+(`app-telemetry-users`, 2026-10-13) is the ninth; the **Security tab's events**
+(`app-admin-security-tab`, 2026-10-13) are the tenth; the **Users tab's deletion requests**
+(`app-deletion-requests`, 2026-10-13) are the eleventh. Use one **when every row is a
 small form** — two selects, a group of checkboxes, several actions — rather than values to compare
 down a column, **or when a row is a record too rich for one table line**: Run History's runs carry a
 kicker of badges, a badged model name, four metrics with visible qualifier lines, four actions and five
@@ -1979,7 +1985,18 @@ there and is not used (below). The sixth, the Chat Consistency Analysis History,
 (`idPrefix: 'cc-hist'`, batch 10, `overseer.benchmark.chatConsistency.history.view`, facets *Model*,
 *Provider*, *Compared* and *Reports*). The seventh, the Model Comparison sources, uses three:
 `runList`, `groupList` and `batteryList` (`idPrefix` `csp-runs` / `csp-groups` / `csp-batteries`, batch
-20, `overseer.benchmark.comparisonSources.{runs|groups|batteries}.view`). **A further card list that filters uses it too, rather than
+20, `overseer.benchmark.comparisonSources.{runs|groups|batteries}.view`). The eighth, the AI Telemetry
+breakdown, does **not** use it, and that is a recorded exception, not an oversight: its cards are
+read-only (no actions, no selection), it neither searches, facets, pages nor selects, it holds tens of
+groups at most, and its two controls — a *Roles* checkbox fieldset and a thinking-level *Group together* /
+*Show separately* select — are **view settings** stored with the tab's view record
+(`overseer.admin.telemetry.breakdown`), not list filters. The ninth, the AI Telemetry Users view, uses it
+with **server-side paging** (`idPrefix: 'tl-users'`, batch 20, `overseer.admin.telemetry.users.view`;
+search and Sort by refetch page 1, *Show N more* fetches the next page, a `userId` filter set by the
+Security tab's *Usage* action shows one user with a *Clear* button). The tenth, the Security tab's events
+(`idPrefix: 'sec'`, `overseer.admin.security.events.view`, a *Kind* facet whose options come from the
+summary), and the eleventh, the deletion requests (`idPrefix: 'del'`, `overseer.admin.users.deletions.view`,
+a single-select *Status* facet defaulting to *Pending*), page on the server the same way. **A further card list that filters uses it too, rather than
 copying a host**; if it needs something the class lacks, extend the class and its spec. Like `TableState` it is plain TypeScript with no Angular dependency, touches no DOM
 beyond the event it is handed and emits nothing, so a component owns it as an ordinary field and it
 unit-tests on its own (`card-list-state.spec.ts`). It wraps a caller-supplied `TableState`, which keeps

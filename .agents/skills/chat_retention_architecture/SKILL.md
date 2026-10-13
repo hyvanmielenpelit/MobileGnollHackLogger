@@ -200,6 +200,8 @@ sequenceDiagram
     Retention->>Disk: Sweep orphaned disk directories
     Retention->>DB: Prune ChatAccessAuditLog rows older than AuditLogRetentionDays
     Retention->>DB: Prune SystemAiErrorLog rows dismissed > 90d ago
+    Retention->>DB: Prune SecurityEvent runs last seen > 180d ago (held users kept)
+    Retention->>DB: Prune ChatProviderAttempt rows older than 400d
     Retention->>DB: Prune MaintenanceRunLog rows older than 180d
     Retention->>Storage: RecordMaintenanceRun()
     Retention->>DB: RecordRunAsync() writes one MaintenanceRunLog row
@@ -227,6 +229,8 @@ Administrators can inspect live database storage metrics and trigger granular or
 | `POST` | `/api/admin/maintenance/prune-benchmark-tool-results` | Prunes benchmark tool call payloads for runs older than specified days. |
 | `POST` | `/api/admin/maintenance/prune-audit-log` | Deletes access journal rows older than `AuditLogRetentionDays` (or the request's value); `<= 0` returns 400. |
 | `POST` | `/api/admin/maintenance/prune-ai-error-log` | Deletes AI error rows dismissed more than the window ago; `<= 0` returns 400. Undismissed rows are never touched. |
+| `POST` | `/api/admin/maintenance/prune-security-events` | Deletes security events last seen more than `PruneSecurityEventDays` (or the request's value) ago, except those of a user with an active account hold or a pending deletion request; `<= 0` returns 400. |
+| `POST` | `/api/admin/maintenance/prune-chat-provider-attempts` | Deletes chat provider attempts older than `PruneChatProviderAttemptDays` (or the request's value); `<= 0` returns 400. |
 | `POST` | `/api/admin/maintenance/sweep-orphans` | Scans and deletes unreferenced disk folders in `ConversationsDataLocation`. |
 | `POST` | `/api/admin/maintenance/clear-report-charts` | Deletes every report chart image under `Benchmark:ReportPack:ChartsDataLocation` (numeric document folders and `.staging`; anything else is left alone and listed), trigger `Manual:ClearReportCharts`; the documents are kept. 400 when chart storage is not configured. Not part of the full pass. |
 | `GET` | `/api/admin/maintenance/history?take=20` | Recent `MaintenanceRunLog` rows, newest first; `take` clamped to 1..100. |
@@ -244,7 +248,7 @@ Every `POST` except `send-report-email` honours `DryRun`, returns a `Maintenance
   - **Warning**: Allocated DB size >= `DatabaseWarningThresholdMb` (7,680 MB / 75%).
   - **Critical**: Allocated DB size >= `DatabaseCriticalThresholdMb` (8,704 MB / 85%).
 - **Email Throttling**: Alert emails are sent via `EmailSender` to `ReportEmailAddress` and throttled using `IMemoryCache` to a maximum of **one alert email per 24 hours** for each status level.
-- **Admin Database Tab Panels**: capacity (with transaction log, last and next run), retention counters (including confidential, own-TTL, immediate-purge and ephemeral), Retention Policy, Content Key Ring (a version not in the ring is flagged unreadable), Schema (pending migrations with the update command), table storage (top 12, index column, other and total rows), Next Pass Preview (including undismissed AI errors, which are never pruned), maintenance actions under one Dry Run switch, the result console, and Recent Maintenance Runs.
+- **Admin Database Tab Panels**: capacity (with transaction log, last and next run), retention counters (including confidential, own-TTL, immediate-purge and ephemeral), Retention Policy, Content Key Ring (a version not in the ring is flagged unreadable), Schema (pending migrations with the update command), table storage (top 12, index column, other and total rows), Next Pass Preview (including undismissed AI errors, which are never pruned, prunable security events and prunable chat provider attempts), maintenance actions under one Dry Run switch (granular cards include *Prune Security Events* and *Prune Provider Attempts*), the result console, and Recent Maintenance Runs (with *AI Errors*, *Security Events* and *Provider Attempts* columns).
 
 ---
 

@@ -1167,7 +1167,8 @@ public class ChatController : ControllerBase
     }
 
     [HttpPost("sessions/attach-snapshot")]
-    public async Task<IActionResult> AttachSnapshot([FromBody] AttachGameSnapshotRequest request)
+    public async Task<IActionResult> AttachSnapshot([FromBody] AttachGameSnapshotRequest request,
+        [FromServices] Overseer.Services.Telemetry.IActivityCounter? activityCounter = null)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
@@ -1224,6 +1225,10 @@ public class ChatController : ControllerBase
             template.ImmediatePurgeOnDelete = true;
 
             sessionRef = _ephemeralSessions.Create(userId, template).Ref;
+
+            // Counted only on the anonymous daily row.
+            if (activityCounter != null)
+                await activityCounter.TryAddAsync(null, new Overseer.Services.Telemetry.ActivityDelta(IncognitoChats: 1), DateTime.UtcNow);
         }
         else
         {
@@ -1251,6 +1256,10 @@ public class ChatController : ControllerBase
             _dbContext.ChatSession.Add(created);
             await _dbContext.SaveChangesAsync();
             sessionRef = Overseer.Services.Privacy.SessionRef.Persistent(created.Id);
+
+            if (activityCounter != null)
+                await activityCounter.TryAddAsync(userId, new Overseer.Services.Telemetry.ActivityDelta(
+                    Chats: 1, GnollHackChats: 1, ConfidentialChats: request.IsConfidential ? 1 : 0), DateTime.UtcNow);
 
             await _chatRetentionService.EnforceUserSessionQuotaAsync(userId);
         }
@@ -1358,11 +1367,13 @@ public class ChatController : ControllerBase
 
     [HttpPost("send")]
     [EnableRateLimiting(RateLimitPolicies.Chat)]
+    [RequireOverseerAccess]
     /* The aggregate body bound. AttachmentValidator caps each attachment and their number;
        this caps the whole request, base64 expansion included, so an oversized send is
        refused by Kestrel before the controller allocates anything. */
     [RequestSizeLimit(SendRequestBodyByteLimit)]
-    public async Task<IActionResult> Send([FromBody] SendMessageRequest request)
+    public async Task<IActionResult> Send([FromBody] SendMessageRequest request,
+        [FromServices] Overseer.Services.Telemetry.IActivityCounter? activityCounter = null)
     {
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         if (string.IsNullOrEmpty(userId)) return Unauthorized();
@@ -1427,6 +1438,10 @@ public class ChatController : ControllerBase
             template.ImmediatePurgeOnDelete = true;
 
             sessionRef = _ephemeralSessions.Create(userId, template).Ref;
+
+            // Counted only on the anonymous daily row.
+            if (activityCounter != null)
+                await activityCounter.TryAddAsync(null, new Overseer.Services.Telemetry.ActivityDelta(IncognitoChats: 1), DateTime.UtcNow);
         }
         else
         {
@@ -1460,6 +1475,10 @@ public class ChatController : ControllerBase
             _dbContext.ChatSession.Add(session);
             await _dbContext.SaveChangesAsync();
             sessionRef = Overseer.Services.Privacy.SessionRef.Persistent(session.Id);
+
+            if (activityCounter != null)
+                await activityCounter.TryAddAsync(userId,
+                    new Overseer.Services.Telemetry.ActivityDelta(Chats: 1, ConfidentialChats: request.IsConfidential ? 1 : 0), DateTime.UtcNow);
 
             if (encryptTitle)
             {
@@ -1712,6 +1731,11 @@ public class ChatController : ControllerBase
                 .SetAbsoluteExpiration(TimeSpan.FromDays(1))
                 .SetSize(1);
             _memoryCache.Set(cacheKey, reportCount + 1, cacheEntryOptions);
+
+            // The report itself is not stored: the event names the reporter, never the conversation.
+            HttpContext?.RequestServices.GetService<Overseer.Services.Security.ISecurityEventRecorder>()?.Record(
+                new Overseer.Services.Security.SecurityEventEntry(SecurityEventKind.ChatReported, UserId: userId,
+                    Provider: message.ProviderUsed, ModelId: message.ModelUsed));
             return Ok(showDebugLog ? (object)new { debugLogs } : new { });
         }
         catch (Exception ex)

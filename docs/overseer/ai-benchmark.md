@@ -2322,8 +2322,8 @@ alone, and only step 4 is gated on a chartable entry.
   `ScatterController` being a `LineController` subclass does not register `'line'` — so the
   directive threw *"line" is not a registered controller* and the canvas stayed blank, on screen and
   in the offscreen export path alike. The registrable list now lives in one module,
-  `model-comparison/chart-registrables.ts`, imported by both `app.config.ts` and the component spec
-  so the two cannot drift apart again, and a spec asserts the profile card renders three line
+  `app/chart-registrables.ts` (`APP_CHART_REGISTRABLES`, provided by `AdminComponent` through
+  `provideCharts`), imported by the component spec as well so the two cannot drift apart again, and a spec asserts the profile card renders three line
   datasets rather than asserting a configuration object.
 
 `write-excel-file` is the one new client dependency. It is reached through a dynamic import inside

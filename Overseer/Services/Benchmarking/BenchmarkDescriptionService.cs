@@ -278,15 +278,29 @@ public class BenchmarkDescriptionService
 
         AddLog(result, $"Model call finished in {sw.ElapsedMilliseconds} ms: {promptTokens} input and {outputTokens} output tokens{(estimated ? " (estimated)" : string.Empty)}.");
 
-        await _configService.RecordUsageAsync(
-            config.Id,
-            userId,
-            promptTokens,
-            outputTokens,
-            roleContext: UsageRoleContext,
-            cacheReadTokens: runResult.CacheReadTokens,
-            cacheCreationTokens: runResult.CacheCreationTokens,
-            totalDurationMs: (int)sw.ElapsedMilliseconds);
+        if (runResult.ModelCallUsages.Count > 0)
+        {
+            await _configService.RecordCallsUsageAsync(
+                config.Id,
+                userId,
+                roleContext: UsageRoleContext,
+                runResult.ModelCallUsages,
+                runResult.ActualServiceTier,
+                totalDurationMs: (int)sw.ElapsedMilliseconds);
+        }
+        else
+        {
+            // No call reported usage: the tokens are estimates.
+            await _configService.RecordUsageAsync(
+                config.Id,
+                userId,
+                promptTokens,
+                outputTokens,
+                roleContext: UsageRoleContext,
+                cacheReadTokens: runResult.CacheReadTokens,
+                cacheCreationTokens: runResult.CacheCreationTokens,
+                totalDurationMs: (int)sw.ElapsedMilliseconds);
+        }
 
         var pricing = _pricingService.Resolve(config);
         if (pricing != null)

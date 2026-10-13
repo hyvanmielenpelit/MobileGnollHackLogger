@@ -19,6 +19,7 @@ using GnollHackServer.Data;
 namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
 {
     [AllowAnonymous]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(MobileGnollHackLogger.Areas.API.GameApiRateLimits.AccountPages)]
     public class ResendEmailConfirmationModel : PageModel
     {
         private readonly UserManager<ApplicationUser> _userManager;

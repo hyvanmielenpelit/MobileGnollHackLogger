@@ -761,8 +761,67 @@ public class OpenAiResponsesProvider : IAiProvider
         return req;
     }
 
+    public Dictionary<string, object> BuildTitleRequestBody(
+        string modelId, string systemPrompt, string userMessage, int maxTokens, string? serviceTier, string? safetyIdentifier)
+        => WithSafetyIdentifier(BuildTitleRequestBody(modelId, systemPrompt, userMessage, maxTokens, serviceTier), safetyIdentifier);
+
+    public Dictionary<string, object> BuildChatRequestBody(
+        string modelId,
+        List<object> messageHistory,
+        int? maxOutputTokens,
+        string? thinkingLevel,
+        ToolsForRequest requestTools,
+        string? reasoningMode,
+        string? reasoningSummary,
+        string? serviceTier,
+        bool? parallelToolCalls,
+        SegmentedPrompt? segmentedPrompt,
+        string? promptCacheKey,
+        bool cacheConversationTail,
+        bool disablePromptCache,
+        string? safetyIdentifier)
+        => WithSafetyIdentifier(BuildChatRequestBody(modelId, messageHistory, maxOutputTokens, thinkingLevel, requestTools,
+            reasoningMode, reasoningSummary, serviceTier, parallelToolCalls, segmentedPrompt, promptCacheKey,
+            cacheConversationTail, disablePromptCache), safetyIdentifier);
+
+    /// <summary>Adds <c>safety_identifier</c>, OpenAI's end-user identifier, when one is given.</summary>
+    private static Dictionary<string, object> WithSafetyIdentifier(Dictionary<string, object> body, string? safetyIdentifier)
+    {
+        if (!string.IsNullOrEmpty(safetyIdentifier))
+        {
+            body["safety_identifier"] = safetyIdentifier;
+        }
+        return body;
+    }
+
     public string GetTitleUrl(string modelId, string apiKey, AiEndpointDescriptor endpoint)
         => ComposeResponsesUrl(endpoint);
+
+    /// <summary>Reads <c>usage</c> as the streaming loop does from <c>response.completed</c>.</summary>
+    public TokenUsageReport? ParseTitleUsage(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        int input = ReadInt(usage, "input_tokens");
+        int output = ReadInt(usage, "output_tokens");
+        int cached = usage.TryGetProperty("input_tokens_details", out var itd) && itd.ValueKind == JsonValueKind.Object ? ReadInt(itd, "cached_tokens") : 0;
+        int reasoning = usage.TryGetProperty("output_tokens_details", out var otd) && otd.ValueKind == JsonValueKind.Object ? ReadInt(otd, "reasoning_tokens") : 0;
+        return new TokenUsageReport
+        {
+            TotalPromptTokens = input,
+            CacheReadTokens = cached,
+            CacheCreationTokens = 0,
+            UncachedInputTokens = Math.Max(0, input - cached),
+            OutputTokens = output,
+            ReasoningTokens = reasoning
+        };
+
+        static int ReadInt(JsonElement obj, string name) =>
+            obj.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out int n) ? n : 0;
+    }
 
     public string? ParseTitleResponse(JsonElement root)
     {

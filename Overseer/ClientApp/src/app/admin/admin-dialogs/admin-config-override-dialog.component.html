@@ -3,7 +3,7 @@
     <div class="dialog-content flex-col">
       <h3>Edit Overrides ({{ overrideContext === 'user' ? 'User' : 'Group' }})</h3>
       <p class="text-muted" style="font-size: 0.85em; margin-top: 5px; margin-bottom: 20px;">
-        Leave empty to use base system config values.
+        Turn the assignment off to deny this {{ overrideContext === 'user' ? 'user' : 'group' }} the model.
       </p>
       <div class="form-group">
         <label class="gh-switch-wrapper d-flex align-items-center m-0">

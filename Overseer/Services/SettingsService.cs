@@ -509,8 +509,11 @@ public class SettingsService
             .Select(ug => ug.GroupId)
             .ToListAsync();
 
+        /* A disabled user assignment denies the model outright (SystemAiConfigService), so the
+           configuration is not offered even when it is system-wide or granted through a group. */
         var query = from c in _dbContext.SystemAiApiConfigurations
                     where c.IsEnabled
+                    where !_dbContext.UserSystemAiApiConfigurations.Any(u => u.SystemAiApiConfigurationId == c.Id && u.AspNetUserId == userId && !u.IsEnabled)
                     let userAssignment = _dbContext.UserSystemAiApiConfigurations.FirstOrDefault(u => u.SystemAiApiConfigurationId == c.Id && u.AspNetUserId == userId && u.IsEnabled)
                     let groupAssignment = _dbContext.GroupSystemAiApiConfigurations.Where(g => g.SystemAiApiConfigurationId == c.Id && userGroupIds.Contains(g.GroupId) && g.IsEnabled).OrderBy(g => g.OrderIndex).FirstOrDefault()
                     where c.IsSystemWide || userAssignment != null || groupAssignment != null
@@ -518,15 +521,20 @@ public class SettingsService
                         Config = c,
                         ResolvedRole = userAssignment != null ? userAssignment.ModelRole :
                                        (groupAssignment != null ? groupAssignment.ModelRole : c.ModelRole),
-                        UserOrder = userAssignment != null ? userAssignment.OrderIndex : (int?)null
+                        UserOrder = _dbContext.UserSystemModelOrders
+                            .Where(o => o.AspNetUserId == userId && o.SystemAiApiConfigurationId == c.Id)
+                            .Select(o => (int?)o.OrderIndex)
+                            .FirstOrDefault(),
+                        LegacyOrder = userAssignment != null ? userAssignment.OrderIndex : (int?)null
                     };
 
         var rawList = await query.ToListAsync();
-        
+
+        // The user's own order first, then the legacy assignment order, then the configuration's.
         var resultList = rawList
             .Where(x => roleFilter == null || (x.ResolvedRole & roleFilter.Value) == roleFilter.Value)
-            .OrderBy(x => x.UserOrder.HasValue ? 0 : 1)
-            .ThenBy(x => x.UserOrder ?? x.Config.OrderIndex)
+            .OrderBy(x => x.UserOrder.HasValue ? 0 : x.LegacyOrder.HasValue ? 1 : 2)
+            .ThenBy(x => x.UserOrder ?? x.LegacyOrder ?? x.Config.OrderIndex)
             .Select(x => (x.Config, x.ResolvedRole))
             .ToList();
 
@@ -650,42 +658,49 @@ public class SettingsService
         await _dbContext.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Stores the user's order of the system models they can see. Ids of models the user cannot see are
+    /// ignored; ordering never creates or changes an assignment, so it can never grant access.
+    /// </summary>
     public async Task ReorderUserSystemModelsAsync(string userId, long[] orderedConfigIds)
     {
-        var existingConfigs = await _dbContext.SystemAiApiConfigurations
-            .Where(c => orderedConfigIds.Contains(c.Id))
-            .ToDictionaryAsync(c => c.Id);
+        var visibleIds = (await GetResolvedSystemModelsAsync(userId))
+            .Select(m => m.Config.Id)
+            .ToHashSet();
 
-        var existingAssignments = await _dbContext.UserSystemAiApiConfigurations
-            .Where(u => u.AspNetUserId == userId && orderedConfigIds.Contains(u.SystemAiApiConfigurationId))
-            .ToDictionaryAsync(u => u.SystemAiApiConfigurationId);
+        await UpsertSystemModelOrderAsync(_dbContext, userId, orderedConfigIds.Where(visibleIds.Contains).ToArray());
+    }
+
+    /// <summary>Writes <paramref name="orderedConfigIds"/>' positions to the user's order rows and saves.</summary>
+    internal static async Task UpsertSystemModelOrderAsync(ApplicationDbContext db, string userId, long[] orderedConfigIds)
+    {
+        var existing = await db.UserSystemModelOrders
+            .Where(o => o.AspNetUserId == userId && orderedConfigIds.Contains(o.SystemAiApiConfigurationId))
+            .ToDictionaryAsync(o => o.SystemAiApiConfigurationId);
 
         for (int i = 0; i < orderedConfigIds.Length; i++)
         {
-            var configId = orderedConfigIds[i];
-            if (!existingConfigs.TryGetValue(configId, out var config)) continue;
-
-            if (existingAssignments.TryGetValue(configId, out var assignment))
+            long configId = orderedConfigIds[i];
+            if (existing.TryGetValue(configId, out var row))
             {
-                assignment.OrderIndex = i;
+                row.OrderIndex = i;
             }
             else
             {
-                _dbContext.UserSystemAiApiConfigurations.Add(new UserSystemAiApiConfiguration
-                {
-                    AspNetUserId = userId,
-                    SystemAiApiConfigurationId = configId,
-                    OrderIndex = i,
-                    IsEnabled = config.IsEnabled,
-                    ModelRole = config.ModelRole
-                });
+                row = new UserSystemModelOrder { AspNetUserId = userId, SystemAiApiConfigurationId = configId, OrderIndex = i };
+                db.UserSystemModelOrders.Add(row);
+                existing[configId] = row;
             }
         }
-        await _dbContext.SaveChangesAsync();
+        await db.SaveChangesAsync();
     }
 
     public async Task ResetSystemModelsOrderAsync(string userId)
     {
+        await _dbContext.UserSystemModelOrders
+            .Where(o => o.AspNetUserId == userId)
+            .ExecuteDeleteAsync();
+
         await _dbContext.UserSystemAiApiConfigurations
             .Where(u => u.AspNetUserId == userId && u.OrderIndex != null)
             .ExecuteUpdateAsync(s => s.SetProperty(u => u.OrderIndex, (int?)null));

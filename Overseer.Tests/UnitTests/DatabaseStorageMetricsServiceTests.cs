@@ -255,6 +255,134 @@ public class DatabaseStorageMetricsServiceTests
         Assert.Equal(90, metrics.Policy.InactivityTtlDays);
         Assert.Equal(90, metrics.Policy.PruneDismissedAiErrorLogDays);
         Assert.False(metrics.Policy.EmailSenderConfigured);
+
+        Assert.Equal(0, metrics.SecurityEventRowCount);
+        Assert.Null(metrics.SecurityEventOldestUtc);
+        Assert.Equal(0, metrics.SecurityEventPrunableCount);
+        Assert.Equal(0, metrics.ChatProviderAttemptRowCount);
+        Assert.Null(metrics.ChatProviderAttemptOldestUtc);
+        Assert.Equal(0, metrics.ChatProviderAttemptPrunableCount);
+    }
+
+    [Fact]
+    public async Task GetStorageMetricsAsync_PolicyEchoesTheSecurityEventAndProviderAttemptWindows()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var db = CreateInMemoryDbContext();
+        using var cache = (MemoryCache)CreateSizeLimitedCache();
+
+        var defaults = await CreateService(db, cache).GetStorageMetricsAsync(ct);
+
+        Assert.Equal(180, defaults.Policy.PruneSecurityEventDays);
+        Assert.Equal(400, defaults.Policy.PruneChatProviderAttemptDays);
+
+        var configured = await CreateService(db, cache, CreateConfiguration(new Dictionary<string, string?>
+        {
+            { "ChatRetentionSettings:PruneSecurityEventDays", "30" },
+            { "ChatRetentionSettings:PruneChatProviderAttemptDays", "60" }
+        })).GetStorageMetricsAsync(ct);
+
+        Assert.Equal(30, configured.Policy.PruneSecurityEventDays);
+        Assert.Equal(60, configured.Policy.PruneChatProviderAttemptDays);
+    }
+
+    /// <summary>
+    /// A disposed context fails every query. The security event and provider attempt blocks have their own
+    /// guards, so their counts stay at zero and the policy is still echoed.
+    /// </summary>
+    [Fact]
+    public async Task GetStorageMetricsAsync_WhenSecurityEventAndProviderAttemptQueriesFail_ReportsZeroCounts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var db = CreateInMemoryDbContext();
+        using var cache = (MemoryCache)CreateSizeLimitedCache();
+        db.SecurityEvents.Add(new SecurityEvent
+        {
+            OccurredUtc = DateTime.UtcNow.AddDays(-500),
+            LastOccurredUtc = DateTime.UtcNow.AddDays(-400),
+            Kind = SecurityEventKind.LoginFailed,
+            IpAddress = "203.0.113.7"
+        });
+        db.ChatProviderAttempts.Add(new ChatProviderAttempt
+        {
+            StartedAtUtc = DateTime.UtcNow.AddDays(-900),
+            AgentRunId = Guid.NewGuid(),
+            RoleContext = 1,
+            Provider = "Anthropic",
+            RequestedModelId = "claude-test"
+        });
+        await db.SaveChangesAsync(ct);
+        var service = CreateService(db, cache);
+        db.Dispose();
+
+        var metrics = await service.GetStorageMetricsAsync(ct);
+
+        Assert.Equal(0, metrics.SecurityEventRowCount);
+        Assert.Null(metrics.SecurityEventOldestUtc);
+        Assert.Equal(0, metrics.SecurityEventPrunableCount);
+        Assert.Equal(0, metrics.ChatProviderAttemptRowCount);
+        Assert.Null(metrics.ChatProviderAttemptOldestUtc);
+        Assert.Equal(0, metrics.ChatProviderAttemptPrunableCount);
+        Assert.Equal(180, metrics.Policy.PruneSecurityEventDays);
+        Assert.Equal(400, metrics.Policy.PruneChatProviderAttemptDays);
+    }
+
+    /// <summary>
+    /// SQLite in memory, so the held-user subquery of the prunable security event count is translated as a
+    /// relational provider translates it. The SQL Server DMV queries fail there and are skipped by their guards.
+    /// </summary>
+    [Fact]
+    public async Task GetStorageMetricsAsync_CountsPrunableSecurityEventsAndProviderAttempts_ExcludingHeldUsers()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
+        connection.Open();
+        using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseSqlite(connection).Options);
+        db.Database.EnsureCreated();
+        using var cache = (MemoryCache)CreateSizeLimitedCache();
+
+        db.Users.Add(new ApplicationUser { Id = "held-user", UserName = "held-user" });
+        db.Users.Add(new ApplicationUser { Id = "other-user", UserName = "other-user" });
+        db.AccountHolds.Add(new AccountHold
+        {
+            AspNetUserId = "held-user",
+            Reason = "Under review",
+            PlacedByUserId = "admin-user",
+            PlacedUtc = DateTime.UtcNow.AddDays(-300)
+        });
+        foreach (var (userId, lastSeenDaysAgo) in new (string?, int)[] { ("held-user", 400), ("other-user", 400), (null, 200), (null, 10) })
+        {
+            db.SecurityEvents.Add(new SecurityEvent
+            {
+                OccurredUtc = DateTime.UtcNow.AddDays(-lastSeenDaysAgo - 1),
+                LastOccurredUtc = DateTime.UtcNow.AddDays(-lastSeenDaysAgo),
+                Kind = SecurityEventKind.ProviderSafetyBlock,
+                AspNetUserId = userId
+            });
+        }
+        foreach (var daysAgo in new[] { 900, 401, 30 })
+        {
+            db.ChatProviderAttempts.Add(new ChatProviderAttempt
+            {
+                StartedAtUtc = DateTime.UtcNow.AddDays(-daysAgo),
+                AgentRunId = Guid.NewGuid(),
+                RoleContext = 1,
+                Provider = "Anthropic",
+                RequestedModelId = "claude-test"
+            });
+        }
+        await db.SaveChangesAsync(ct);
+
+        var metrics = await CreateService(db, cache).GetStorageMetricsAsync(ct);
+
+        Assert.Equal(4, metrics.SecurityEventRowCount);
+        Assert.NotNull(metrics.SecurityEventOldestUtc);
+        Assert.Equal(DateTimeKind.Utc, metrics.SecurityEventOldestUtc!.Value.Kind);
+        Assert.Equal(2, metrics.SecurityEventPrunableCount);
+        Assert.Equal(3, metrics.ChatProviderAttemptRowCount);
+        Assert.NotNull(metrics.ChatProviderAttemptOldestUtc);
+        Assert.Equal(2, metrics.ChatProviderAttemptPrunableCount);
     }
 
     [Fact]

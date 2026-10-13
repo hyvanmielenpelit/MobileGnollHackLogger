@@ -1,6 +1,10 @@
 <div class="tab-header-row d-flex justify-content-between align-items-center mb-15">
   <h3 class="m-0">AI Telemetry & Request Governor</h3>
-  <div class="d-flex align-items-center">
+  <div class="d-flex align-items-center telemetry-header-actions">
+    <button type="button" class="btn-gh telemetry-charts-btn" (click)="openCharts()">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+      Charts
+    </button>
     <button type="button" class="btn-gh" (click)="refreshTelemetryTab(true)" [disabled]="telemetryLoading || governorLoading">
       @if (telemetryLoading || governorLoading) {
         <span class="gh-spinner-small"></span>
@@ -34,6 +38,14 @@
       <input id="telemetryEndDateInput" type="date" class="gh-input" [(ngModel)]="telemetryEndDate" (ngModelChange)="onCustomDateChange()" [min]="telemetryStartDate" [max]="todayDate">
     </div>
   }
+  <div class="control-group">
+    <label for="telemetryKeysSelect">Keys</label>
+    <select id="telemetryKeysSelect" class="gh-input" [ngModel]="keys" (ngModelChange)="onKeysChange($event)">
+      @for (source of keySources; track source) {
+        <option [value]="source">{{ keySourceLabels[source] }}</option>
+      }
+    </select>
+  </div>
 </div>
 
 <!-- Telemetry Summary Cards -->
@@ -47,20 +59,22 @@
     <progress class="telemetry-progress-bar mt-10" aria-label="Cache Hit Efficiency" [value]="(telemetrySummary?.cacheHitRatio || 0) * 100" max="100"></progress>
     <div class="telemetry-details-list text-muted mt-10">
       <div>Share of prompt tokens read from cache</div>
-      <div>Prompt Cache Read: {{ (telemetrySummary?.totalCacheReadTokens || 0) | number }} tokens</div>
+      <div>Prompt Cache Read: {{ formatInteger(telemetrySummary?.totalCacheReadTokens || 0) }} tokens</div>
     </div>
   </div>
 
-  <!-- Total Tokens Card -->
-  <div class="telemetry-card">
+  <!-- Total Tokens Card: the prompt is the whole input, of which uncached, cache read and cache created are parts. -->
+  <div class="telemetry-card telemetry-tokens-card">
     <div class="telemetry-card-title">Token Accounting</div>
     <div class="telemetry-stat-value">
-      {{ ((telemetrySummary?.totalInputTokens || 0) + (telemetrySummary?.totalOutputTokens || 0)) | number }}
+      {{ formatInteger(totalTokens) }}
     </div>
     <div class="telemetry-details-list mt-10">
-      <div>Input: <span class="telemetry-value">{{ (telemetrySummary?.totalInputTokens || 0) | number }}</span></div>
-      <div>Output: <span class="telemetry-value">{{ (telemetrySummary?.totalOutputTokens || 0) | number }}</span></div>
-      <div>Cache Created: <span class="telemetry-value">{{ (telemetrySummary?.totalCacheCreationTokens || 0) | number }}</span></div>
+      <div>Prompt: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalPromptTokens || 0) }}</span></div>
+      <div class="telemetry-sub-line">Uncached: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalUncachedInputTokens || 0) }}</span></div>
+      <div class="telemetry-sub-line">Cache Read: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalCacheReadTokens || 0) }}</span></div>
+      <div class="telemetry-sub-line">Cache Created: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalCacheCreationTokens || 0) }}</span></div>
+      <div>Output: <span class="telemetry-value">{{ formatInteger(telemetrySummary?.totalOutputTokens || 0) }}</span></div>
     </div>
   </div>
 
@@ -71,14 +85,86 @@
       {{ (telemetrySummary?.totalRequests || 0) | number }}
     </div>
     <div class="telemetry-details-list mt-10">
-      <div>Chat Turns: <span class="telemetry-value">{{ (telemetrySummary?.totalChatRequests || 0) | number }}</span></div>
+      <div>Chat: <span class="telemetry-value">{{ (telemetrySummary?.totalChatRequests || 0) | number }}</span></div>
       <div>Title Generation: <span class="telemetry-value">{{ (telemetrySummary?.totalTitleRequests || 0) | number }}</span></div>
-      <div>Benchmark Runs: <span class="telemetry-value">{{ (telemetrySummary?.totalBenchmarkRequests || 0) | number }}</span></div>
+      <div>Benchmark: <span class="telemetry-value">{{ (telemetrySummary?.totalBenchmarkRequests || 0) | number }}</span></div>
       @if (telemetryOtherRequests > 0) {
         <div class="telemetry-other-requests">Other: <span class="telemetry-value">{{ telemetryOtherRequests | number }}</span></div>
       }
       <div>Avg Duration: <span class="telemetry-value">{{ (telemetrySummary?.avgDurationMs || 0) | number }} ms</span></div>
     </div>
+  </div>
+
+  <!-- Estimated Cost Card -->
+  <div class="telemetry-card telemetry-cost-card">
+    <div class="telemetry-card-title">Estimated Cost</div>
+    <div class="telemetry-stat-value highlight-gold telemetry-cost-total">
+      {{ formatCost(telemetrySummary?.totalEstimatedCost ?? 0) }}
+    </div>
+    <div class="telemetry-details-list mt-10">
+      @for (line of costLines; track line.label) {
+        <div>{{ line.label }}: <span class="telemetry-value">{{ line.value }}</span></div>
+      }
+      @if (unpricedRequests > 0) {
+        <div class="telemetry-unpriced">{{ unpricedText }}</div>
+      }
+      @if (startsBefore(telemetrySummary?.costRecordedSinceUtc)) {
+        <div class="text-muted telemetry-cost-since">Cost recorded since {{ utcDay(telemetrySummary?.costRecordedSinceUtc) }}</div>
+      }
+    </div>
+  </div>
+
+  <!-- Chat Provider Availability Card -->
+  <div class="telemetry-card telemetry-availability-card">
+    <div class="telemetry-card-title">Chat Provider Availability</div>
+    <div class="telemetry-stat-value telemetry-availability-rate">
+      {{ availabilityHeadline }}
+      @if (telemetrySummary?.chatAvailability?.recorded) {
+        <span class="telemetry-stat-unit">provider errors</span>
+      }
+    </div>
+    @if (telemetrySummary?.chatAvailability?.recorded) {
+      <div class="telemetry-details-list mt-10">
+        @for (line of availabilityLines; track line.label) {
+          <div>
+            {{ line.label }}: <span class="telemetry-value">{{ line.value }}</span>
+            @if (line.note) {
+              <span class="text-muted"> ({{ line.note }})</span>
+            }
+          </div>
+        }
+        <div class="telemetry-title-availability">{{ titleAvailabilityText }}</div>
+        @if (startsBefore(telemetrySummary?.chatAvailability?.recordedSinceUtc)) {
+          <div class="text-muted">Recorded since {{ utcDay(telemetrySummary?.chatAvailability?.recordedSinceUtc) }}</div>
+        }
+      </div>
+    } @else {
+      <div class="telemetry-details-list text-muted mt-10">
+        <div>Provider attempts are not recorded yet.</div>
+      </div>
+    }
+  </div>
+
+  <!-- Overseer Activity Card: independent of the Keys filter. -->
+  <div class="telemetry-card telemetry-activity-card">
+    <div class="telemetry-card-title">Overseer Activity <span class="telemetry-card-scope">all keys</span></div>
+    <div class="telemetry-stat-value highlight-teal telemetry-active-users">
+      {{ formatInteger(telemetrySummary?.activity?.activeUsers ?? 0) }} <span class="telemetry-stat-unit">Active users</span>
+    </div>
+    @if (telemetrySummary?.activity; as activity) {
+      <div class="telemetry-details-list mt-10">
+        <div>New users: <span class="telemetry-value">{{ formatInteger(activity.newUsers) }}</span></div>
+        <div class="telemetry-activity-chats">Chats: <span class="telemetry-value">{{ formatInteger(activity.chatsCreated) }}</span>
+          <span class="text-muted"> (confidential {{ formatInteger(activity.confidentialChatsCreated) }} · GnollHack {{ formatInteger(activity.gnollHackChatsCreated) }})</span></div>
+        <div class="telemetry-activity-messages">Messages: <span class="telemetry-value">{{ formatInteger(activity.userMessages + activity.assistantMessages) }}</span>
+          <span class="text-muted"> (sent {{ formatInteger(activity.userMessages) }} · replies {{ formatInteger(activity.assistantMessages) }})</span></div>
+        <div class="telemetry-activity-incognito">Incognito chats {{ formatInteger(activity.incognitoChatsCreated) }} · messages {{ formatInteger(activity.incognitoUserMessages) }}
+          <span class="text-muted"> (not attributed to users)</span></div>
+        @if (startsBefore(activity.countedSinceUtc)) {
+          <div class="text-muted telemetry-activity-since">Counted since {{ utcDay(activity.countedSinceUtc) }}</div>
+        }
+      </div>
+    }
   </div>
 
   <!-- Governor Health Card -->
@@ -161,60 +247,120 @@
   }
 </div>
 
-<!-- Per-Model Telemetry Breakdown -->
-<div class="telemetry-section-card">
-  <h4 class="mb-15">Model Usage & Cache Performance Breakdown</h4>
-  @if (!telemetrySummary || telemetrySummary.models.length === 0) {
-    <div class="text-muted telemetry-empty">No AI usage logged for the selected date range.</div>
-  } @else {
-    <div class="table-responsive mb-0">
-      <table class="modern-table">
-        <thead>
-          <tr>
-            <th>Provider</th>
-            <th>Model ID</th>
-            <th class="text-center">Requests</th>
-            <th class="text-center">Input Tokens</th>
-            <th class="text-center">Output Tokens</th>
-            <th class="text-center">Cache Read</th>
-            <th class="text-center">Cache Created</th>
-            <th class="text-center">Cache Hit %</th>
-            <th class="text-center">Avg Duration</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (m of telemetrySummary.models; track m.provider + m.modelId) {
-            <tr>
-              <td>
-                <app-provider-badge [provider]="m.provider"></app-provider-badge>
-              </td>
-              <td><span class="model-id-chip">{{ m.modelId }}</span></td>
-              <td class="text-center num-col">{{ m.requests | number }}</td>
-              <td class="text-center num-col">{{ m.inputTokens | number }}</td>
-              <td class="text-center num-col">{{ m.outputTokens | number }}</td>
-              <td class="text-center num-col num-cache-read">{{ m.cacheReadTokens | number }}</td>
-              <td class="text-center num-col num-cache-create">{{ m.cacheCreationTokens | number }}</td>
-              <td class="text-center num-col">
-                <strong>{{ (m.cacheHitRatio * 100) | number:'1.1-1' }}%</strong>
-              </td>
-              <td class="text-center num-col">{{ m.avgDurationMs | number }} ms</td>
-            </tr>
-          }
-        </tbody>
-        <tfoot>
-          <tr>
-            <td><strong>Total / Overall</strong></td>
-            <td><span class="text-muted">{{ telemetrySummary?.models?.length || 0 }} models</span></td>
-            <td class="text-center num-col"><strong>{{ (telemetrySummary?.totalRequests || 0) | number }}</strong></td>
-            <td class="text-center num-col"><strong>{{ (telemetrySummary?.totalInputTokens || 0) | number }}</strong></td>
-            <td class="text-center num-col"><strong>{{ (telemetrySummary?.totalOutputTokens || 0) | number }}</strong></td>
-            <td class="text-center num-col num-cache-read"><strong>{{ (telemetrySummary?.totalCacheReadTokens || 0) | number }}</strong></td>
-            <td class="text-center num-col num-cache-create"><strong>{{ (telemetrySummary?.totalCacheCreationTokens || 0) | number }}</strong></td>
-            <td class="text-center num-col"><strong>{{ ((telemetrySummary?.cacheHitRatio || 0) * 100) | number:'1.1-1' }}%</strong></td>
-            <td class="text-center num-col"><strong>{{ (telemetrySummary?.avgDurationMs || 0) | number }} ms</strong></td>
-          </tr>
-        </tfoot>
-      </table>
+<!-- Usage breakdown by key source, user, model, role and (optionally) thinking level -->
+<section class="telemetry-section-card tl-breakdown" aria-labelledby="tl-breakdown-heading">
+  <div class="tl-section-head">
+    <h4 id="tl-breakdown-heading">Usage by Model and Role</h4>
+    <!-- The list's one polite live region. -->
+    <p class="gh-list-status tl-breakdown-status" role="status">{{ breakdownStatus }}</p>
+  </div>
+
+  @if (hasBreakdownRows) {
+    <div class="tl-breakdown-filters">
+      <fieldset class="tl-roles">
+        <legend>Roles</legend>
+        @for (group of roleOptions; track group) {
+          <label class="checkbox-label tl-role-option" [for]="'tl-role-' + group">
+            <input type="checkbox" [id]="'tl-role-' + group" [checked]="isRoleSelected(group)" (change)="toggleRole(group, $event)">
+            <span>{{ roleGroupLabel(group) }}</span>
+            <span class="tl-role-count">{{ formatInteger(roleRequestCounts[group]) }}<span class="visually-hidden"> requests</span></span>
+          </label>
+        }
+      </fieldset>
+      <div class="control-group tl-thinking">
+        <label for="tl-thinking-select">Thinking levels</label>
+        <select id="tl-thinking-select" class="gh-input" (change)="onThinkingChange($event)">
+          <option value="grouped" [selected]="!view.separateThinkingLevels">Group together</option>
+          <option value="separate" [selected]="view.separateThinkingLevels">Show separately</option>
+        </select>
+      </div>
     </div>
   }
-</div>
+
+  @if (!hasBreakdownRows) {
+    <p class="text-muted telemetry-empty tl-empty">No AI usage logged for the selected date range.</p>
+  } @else if (view.roles.length === 0) {
+    <p class="text-muted telemetry-empty tl-empty">No role is selected. Select a role above to show its usage.</p>
+  } @else if (breakdown.cards.length === 0) {
+    <p class="text-muted telemetry-empty tl-empty">No usage for the selected roles in this range.</p>
+  } @else {
+    <ul role="list" class="tl-cards" aria-labelledby="tl-breakdown-heading">
+      @for (card of breakdown.cards; track card.key; let i = $index) {
+        <li class="tl-item">
+          <article class="tl-card" [attr.aria-labelledby]="'tl-card-' + i + '-title'">
+            <div class="tl-card-head">
+              <!-- A dot on screen between the parts, a comma for assistive technology. -->
+              <div class="tl-card-kicker">
+                <app-provider-badge [provider]="card.provider"></app-provider-badge>
+                <span class="tl-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                <span class="tl-card-role">{{ roleGroupLabel(card.roleGroup) }}</span>
+                @if (keyLabel(card); as keyText) {
+                  <span class="tl-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="tl-card-key">{{ keyText }}</span>
+                }
+                @if (view.separateThinkingLevels) {
+                  <span class="tl-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+                  <span class="tl-card-thinking">Thinking: {{ thinkingLevelLabel(card.thinkingLevel) }}</span>
+                }
+              </div>
+              <h5 class="tl-card-title" [id]="'tl-card-' + i + '-title'">{{ cardTitle(card) }}</h5>
+              @if (card.modelName) {
+                <p class="tl-card-meta"><span class="model-id-chip">{{ card.modelId }}</span></p>
+              }
+            </div>
+            <ng-container *ngTemplateOutlet="metrics; context: { $implicit: card, role: card.roleGroup }"></ng-container>
+          </article>
+        </li>
+      }
+      <li class="tl-item">
+        <article class="tl-card tl-card-total" aria-labelledby="tl-card-total-title">
+          <div class="tl-card-head">
+            <h5 class="tl-card-title" id="tl-card-total-title">All shown</h5>
+            <p class="tl-card-meta">{{ breakdown.cards.length === 1 ? '1 entry' : breakdown.cards.length + ' entries' }}</p>
+          </div>
+          <ng-container *ngTemplateOutlet="metrics; context: { $implicit: breakdown.total, role: 'total' }"></ng-container>
+        </article>
+      </li>
+    </ul>
+  }
+</section>
+
+<!-- One card's figures: fixed-width columns that line up down the list. -->
+<ng-template #metrics let-m let-role="role">
+  <dl class="tl-metrics">
+    <div class="tl-metric"><dt>Requests</dt><dd>{{ formatInteger(m.requests) }}</dd></div>
+    <div class="tl-metric"><dt>Input (uncached)</dt><dd>{{ formatInteger(m.uncachedInputTokens) }}</dd></div>
+    <div class="tl-metric"><dt>Cache read</dt><dd>{{ formatInteger(m.cacheReadTokens) }}</dd></div>
+    <div class="tl-metric"><dt>Cache created</dt><dd>{{ formatInteger(m.cacheCreationTokens) }}</dd></div>
+    <div class="tl-metric"><dt>Output</dt><dd>{{ formatInteger(m.outputTokens) }}</dd></div>
+    <div class="tl-metric"><dt>Cache hit</dt><dd>{{ cacheHitText(m) }}</dd></div>
+    <div class="tl-metric"><dt>Avg duration</dt><dd>{{ durationText(m) }}</dd></div>
+    @if (costMetric(m); as cost) {
+      <div class="tl-metric tl-metric-cost">
+        <dt>Est. cost</dt>
+        <dd>{{ cost.value }}</dd>
+        @if (cost.note) {
+          <dd class="tl-metric-note">{{ cost.note }}</dd>
+        }
+      </div>
+    }
+    @if (providerErrorsMetric(m, role); as errors) {
+      <div class="tl-metric tl-metric-errors">
+        <dt>Provider errors</dt>
+        <dd>{{ errors.value }}</dd>
+        @if (errors.note) {
+          <dd class="tl-metric-note">{{ errors.note }}</dd>
+        }
+      </div>
+    }
+  </dl>
+</ng-template>
+
+<!-- Usage of system AI configurations by user -->
+<section class="telemetry-section-card tl-users" aria-labelledby="tl-users-heading">
+  <h4 id="tl-users-heading" tabindex="-1">System AI usage by user</h4>
+  <p class="text-muted tl-users-scope">System AI configurations only: requests on users' own keys are not counted here, and the Keys filter does not apply.</p>
+  <app-telemetry-users [startDate]="telemetryStartDate" [endDate]="telemetryEndDate" (usageCharts)="openUserCharts($event)" />
+</section>
+
+<app-telemetry-charts-dialog #chartsDialog />

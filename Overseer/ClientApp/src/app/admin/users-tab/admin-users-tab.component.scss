@@ -39,6 +39,43 @@
   box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 
+/* Blocked from the AI chat: the word carries the meaning; the outline and color reinforce it. */
+.user-blocked-badge {
+  display: inline-block;
+  margin-left: 6px;
+  border: 1px solid currentColor;
+  vertical-align: middle;
+}
+
+/* A deletion hold and a pending deletion: outlined words, like the Blocked badge. */
+.user-hold-badge,
+.user-pending-deletion-badge {
+  display: inline-block;
+  margin-left: 6px;
+  border: 1px solid currentColor;
+  vertical-align: middle;
+}
+
+.user-pending-deletion-badge {
+  border-style: dashed;
+  color: #d4d4d8;
+}
+
+/* Sub-tabs */
+.users-subtabs {
+  margin-top: 1rem;
+}
+
+.users-subpanel {
+  padding-top: 0.5rem;
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
 /* Chart Toolbar from Analytics */
 .chart-toolbar {
   display: flex;

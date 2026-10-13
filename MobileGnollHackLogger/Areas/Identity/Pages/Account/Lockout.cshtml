@@ -1,10 +1,12 @@
 @page
 @model LockoutModel
+@inject Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Identity.IdentityOptions> IdentityOptions
 @{
     ViewData["Title"] = "Locked out";
+    int lockoutMinutes = (int)Math.Ceiling(IdentityOptions.Value.Lockout.DefaultLockoutTimeSpan.TotalMinutes);
 }
 
 <header>
     <h1 class="text-danger">@ViewData["Title"]</h1>
-    <p class="text-danger">This account has been locked out, please try again later.</p>
+    <p class="text-danger">This account has been locked out for @lockoutMinutes minutes after too many failed sign-in attempts. Try again later, or reset your password.</p>
 </header>

@@ -29,6 +29,16 @@ public readonly record struct ProviderAttemptLinks(
     ModelCallGraderRole? GraderRole = null,
     int Pass = 0);
 
+/// <summary>Where a chat or title run's provider attempt rows belong.</summary>
+/// <param name="AgentRunId">One id per agent run or title request; random, linked to nothing.</param>
+/// <param name="RoleContext">1 chat (turns and sub-agents), 2 title generation.</param>
+/// <param name="AgentDepth">0 for a turn's own loop or a title; 1 and up for a sub-agent.</param>
+/// <param name="AspNetUserId">The user; written on user-key rows only.</param>
+/// <param name="ThinkingLevel">The thinking level sent; null for none.</param>
+public readonly record struct ChatAttemptLinks(
+    Guid AgentRunId, int RoleContext, int AgentDepth, AiKeySource KeySource,
+    long? SystemAiApiConfigurationId, string? AspNetUserId, string? ThinkingLevel);
+
 /// <summary>
 /// Turns the in-memory <see cref="ModelCallRecord"/>s of an agent run into
 /// <see cref="ModelCallTelemetry"/> rows, cutting every string to its column and every count to its
@@ -167,6 +177,46 @@ public static class ModelCallTelemetryWriter
     public static List<BenchmarkProviderAttempt> MapAllAttempts(
         AgentRunResult result, ModelCallSource source, ProviderAttemptLinks links) =>
         result.ModelCalls.SelectMany(r => MapAttempts(r, r.CallIndex, source, links)).ToList();
+
+    /// <summary>
+    /// One <see cref="ChatProviderAttempt"/> row per attempt of every call of <paramref name="result"/>, each at
+    /// its call's <see cref="ModelCallRecord.CallIndex"/>. The user id is written on user-key rows only.
+    /// </summary>
+    public static List<ChatProviderAttempt> MapChatAttempts(AgentRunResult result, ChatAttemptLinks links) =>
+        result.ModelCalls
+            .SelectMany(call => call.Attempts.Select(attempt =>
+                MapChatAttempt(call.Provider, call.RequestedModelId, call.CallIndex, attempt, links)))
+            .ToList();
+
+    /// <summary>The row of one title-generation attempt; a title request is call 0.</summary>
+    public static ChatProviderAttempt MapTitleAttempt(string provider, string modelId, ProviderAttemptRecord attempt, ChatAttemptLinks links) =>
+        MapChatAttempt(provider, modelId, 0, attempt, links);
+
+    private static ChatProviderAttempt MapChatAttempt(string provider, string modelId, int callIndex,
+        ProviderAttemptRecord attempt, ChatAttemptLinks links) => new()
+    {
+        StartedAtUtc = attempt.StartedAtUtc,
+        AgentRunId = links.AgentRunId,
+        RoleContext = links.RoleContext,
+        AgentDepth = ToByte(links.AgentDepth),
+        KeySource = links.KeySource,
+        SystemAiApiConfigurationId = links.SystemAiApiConfigurationId,
+        AspNetUserId = links.KeySource == AiKeySource.UserKey ? Cut(links.AspNetUserId, 450) : null,
+        Provider = Cut(provider, 32) ?? string.Empty,
+        RequestedModelId = Cut(modelId, 128) ?? string.Empty,
+        ThinkingLevel = Cut(links.ThinkingLevel, 32) ?? string.Empty,
+        EndpointKind = attempt.EndpointKind,
+        CallIndex = callIndex,
+        AttemptIndex = ToByte(attempt.AttemptIndex),
+        DurationMs = Math.Max(0, attempt.DurationMs),
+        Outcome = attempt.Outcome,
+        HttpStatus = attempt.HttpStatus is int status && status >= short.MinValue && status <= short.MaxValue
+            ? (short)status
+            : null,
+        ProviderErrorCode = SanitizeErrorCode(attempt.ProviderErrorCode),
+        Retried = attempt.Retried,
+        RetryAfterMs = attempt.RetryAfterMs is int retryAfter ? Math.Max(0, retryAfter) : null,
+    };
 
     /// <summary>
     /// The model id every call that reported one agrees on; null when none reported one or two

@@ -1,0 +1,135 @@
+// The dialog lives in the top layer, so the host takes no box of its own. The `gh-wizard*`, `gh-fig-*`
+// and `.gh-dialog-fullscreen` rules are global.
+:host {
+  display: contents;
+}
+
+// This template's own labels only; the size, format and style sections style theirs.
+.tl-charts-sidebar {
+  .tl-charts-field > label,
+  .checkbox-label {
+    font-size: var(--text-secondary);
+    color: #c3c2b7;
+  }
+
+  // A checkbox and its text are one row; the column gap already separates it from the fields.
+  .checkbox-label {
+    margin: 0;
+  }
+}
+
+.tl-charts-section-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tl-charts-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  > .gh-input {
+    inline-size: 100%;
+  }
+}
+
+.tl-charts-roles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tl-charts-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: #898781;
+}
+
+.tl-charts-user-chips {
+  margin-block: 4px;
+}
+
+.tl-charts-state {
+  margin: 12px 24px 0;
+}
+
+.tl-charts-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--nav-color);
+}
+
+.tl-charts-empty {
+  color: var(--nav-color);
+}
+
+.tl-charts-status {
+  margin: 8px 24px 0;
+  font-size: var(--text-secondary);
+  color: #c3c2b7;
+
+  // Collapsed but rendered while empty, so the live region is in the accessibility tree before its
+  // first message.
+  &:empty {
+    margin: 0;
+  }
+}
+
+.tl-charts-toolbar-note {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+// No reserved scrollbar gutter: a chart that fits shows none, and Fit width leaves room for a
+// scrollbar only where one will show.
+.tl-charts-viewport {
+  scrollbar-gutter: auto;
+}
+
+// The nine charts in as many columns as fit at 26 rem, each its download scaled to the column.
+.tl-charts-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 26rem), 1fr));
+  align-items: start;
+  gap: 16px;
+}
+
+// The reserved box of one image: the file's aspect ratio at the column's width, or the Single
+// chart's fitted size.
+.tl-charts-image-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 100%;
+  // The aspect ratio alone sets the height; the bitmap never stretches it.
+  min-block-size: 0;
+  overflow: hidden;
+}
+
+.tl-charts-single-box {
+  flex: none;
+}
+
+.tl-charts-canvas {
+  inline-size: 100%;
+  block-size: 100%;
+}
+
+.tl-charts-figure-note {
+  margin: 0;
+  padding: 16px;
+  color: var(--nav-color);
+  font-style: italic;
+  text-align: center;
+}
+
+.tl-charts-pending {
+  display: inline-flex;
+  color: var(--primary-color);
+}
