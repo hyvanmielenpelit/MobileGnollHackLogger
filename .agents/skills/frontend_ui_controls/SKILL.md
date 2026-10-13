@@ -1931,6 +1931,15 @@ and below some breakpoint has to fake cards anyway. A list of few values to scan
 table. Where a card list still has to scan like a table, give its metrics fixed-width columns so they
 line up down the list at a wide width, as Run History's `.rh-metrics` does.
 
+**A metrics grid gets a definite track count.** `repeat(auto-fill, …)` inside a grid item that sits
+in an `auto` (content-sized) track repeats only once, because the item has no definite width, so
+every metric stacks in one column. The AI Telemetry cards shipped that way on 2026-10-13. Either
+give the metrics area a `minmax(0, 1fr)` track and an explicit count (`repeat(var(--cols),
+minmax(0, 1fr))`, set by container queries — the AI Telemetry breakdown and Users cards, sharing
+`admin/telemetry-tab/_telemetry-cards.scss`), or fix the column widths (`repeat(4, 7.5rem)`, Run
+History). Choose counts that divide the metrics without a lone item on the last row: nine metrics
+go 9, 5 + 4, 3 × 3, then 2.
+
 **Markup.**
 
 - A `<ul role="list">` (the explicit role, because Safari drops list semantics under `display: grid`

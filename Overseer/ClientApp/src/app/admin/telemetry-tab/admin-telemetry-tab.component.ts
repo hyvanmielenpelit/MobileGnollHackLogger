@@ -46,6 +46,8 @@ import { TelemetryUserRef, TelemetryUsersComponent } from './users/telemetry-use
 export interface TelemetryMetricText {
   value: string;
   note: string | null;
+  /** The value is a placeholder rather than a figure. */
+  muted: boolean;
 }
 
 /** A labeled line of a summary card. */
@@ -592,9 +594,13 @@ export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
   /** The estimated cost, with `3 unpriced` while part of the requests has no price. */
   costMetric(m: BreakdownMetrics): TelemetryMetricText {
     if (m.requests > 0 && m.pricedRequests === 0) {
-      return { value: '—', note: `${formatInteger(m.unpricedRequests)} unpriced` };
+      return { value: '—', note: `${formatInteger(m.unpricedRequests)} unpriced`, muted: true };
     }
-    return { value: formatCost(m.estimatedCost), note: m.unpricedRequests > 0 ? `${formatInteger(m.unpricedRequests)} unpriced` : null };
+    return {
+      value: formatCost(m.estimatedCost),
+      note: m.unpricedRequests > 0 ? `${formatInteger(m.unpricedRequests)} unpriced` : null,
+      muted: false
+    };
   }
 
   /**
@@ -603,14 +609,14 @@ export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
    */
   providerErrorsMetric(m: BreakdownMetrics, role: AiUsageRoleGroup | 'total'): TelemetryMetricText {
     if (role === 'benchmark' || (role === 'total' && this.breakdown.cards.every(c => c.roleGroup === 'benchmark'))) {
-      return { value: 'In GnollBench', note: null };
+      return { value: 'In GnollBench', note: null, muted: true };
     }
     if (m.validAttempts <= 0) {
-      return { value: 'No attempts', note: null };
+      return { value: 'No attempts', note: null, muted: true };
     }
     const oneIn = formatOneIn(m.providerErrors, m.validAttempts);
     const count = formatCount(m.providerErrors, m.validAttempts);
-    return { value: formatPercent(m.providerErrors / m.validAttempts), note: oneIn ? `${count} · ${oneIn}` : count };
+    return { value: formatPercent(m.providerErrors / m.validAttempts), note: oneIn ? `${count} · ${oneIn}` : count, muted: false };
   }
 
   private saveView(view: TelemetryBreakdownView) {

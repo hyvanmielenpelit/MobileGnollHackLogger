@@ -1,5 +1,6 @@
 /* The filter bar, the status line and Load more are the global card-list classes in styles.scss;
    `.action-btn`, `.btn-ghost` and `.gh-tag` are global too. */
+@use '../telemetry-cards' as cards;
 
 :host {
   display: flex;
@@ -66,19 +67,19 @@
   min-inline-size: 0;
 }
 
-/* Head and metrics beside the actions, the configurations below; the metrics go under the head
-   below 60 rem of the list and everything is one column below 30 rem. */
+/* Nine metrics by the list's width, each breakpoint 8 rem wider than the breakdown cards' for the
+   actions: 9 beside the head from 108 rem, 5 + 4 beside it from 76 rem, 5 + 4 under it, 3 × 3
+   below 44 rem, and one column with 2 metrics per row below 28 rem. The configurations go below. */
 .tl-user-card {
-  display: grid;
-  grid-template-columns: minmax(12rem, 1fr) minmax(0, auto) auto;
+  @include cards.card-surface;
+  --tl-metric-cols: 5;
+
+  grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
-    "head    metrics actions"
-    "configs configs configs";
-  gap: 0.5rem 1.5rem;
-  padding: 0.75rem 1rem 0.875rem;
-  border: 1px solid var(--border-glass);
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.18);
+    "head    actions"
+    "metrics metrics"
+    "configs configs";
+  gap: var(--tl-row-gap) var(--tl-zone-gap);
   transition: border-color 0.15s ease;
 
   &:hover {
@@ -86,33 +87,9 @@
   }
 }
 
-@container tl-user-cards (max-width: 60rem) {
-  .tl-user-card {
-    grid-template-columns: minmax(0, 1fr) auto;
-    grid-template-areas:
-      "head    actions"
-      "metrics metrics"
-      "configs configs";
-  }
-}
-
-@container tl-user-cards (max-width: 30rem) {
-  .tl-user-card {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "head"
-      "actions"
-      "metrics"
-      "configs";
-  }
-
-  .tl-user-actions {
-    justify-content: flex-start;
-  }
-}
-
 .tl-user-head {
   grid-area: head;
+  align-self: center;
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
@@ -132,9 +109,7 @@
   }
 }
 
-.tl-sep {
-  color: #71717a;
-}
+@include cards.separator;
 
 /* The words carry each state; the outlines reinforce them. */
 .tl-user-blocked {
@@ -178,35 +153,52 @@ time {
 
 .tl-user-metrics {
   grid-area: metrics;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, 7.5rem);
-  gap: 0.5rem 0.75rem;
-  margin: 0;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--border-glass);
+  @include cards.metrics-grid;
 }
 
-.tl-metric {
-  min-inline-size: 0;
-
-  dt {
-    font-size: var(--text-secondary);
-    font-weight: 600;
-    color: var(--nav-color);
+@container tl-user-cards (inline-size >= 76rem) {
+  .tl-user-card {
+    grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr) auto;
+    grid-template-areas:
+      "head    metrics actions"
+      "configs configs configs";
   }
 
-  dd {
-    margin: 0;
-    font-variant-numeric: tabular-nums;
-    color: #e4e4e7;
-    overflow-wrap: anywhere;
-  }
-
-  .tl-metric-note {
-    font-size: var(--text-secondary);
-    color: #a1a1aa;
+  .tl-user-metrics {
+    @include cards.metrics-beside;
   }
 }
+
+@container tl-user-cards (inline-size >= 108rem) {
+  .tl-user-card {
+    --tl-metric-cols: 9;
+  }
+}
+
+@container tl-user-cards (inline-size < 44rem) {
+  .tl-user-card {
+    --tl-metric-cols: 3;
+  }
+}
+
+@container tl-user-cards (inline-size < 28rem) {
+  .tl-user-card {
+    --tl-metric-cols: 2;
+
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "actions"
+      "metrics"
+      "configs";
+  }
+
+  .tl-user-actions {
+    justify-content: flex-start;
+  }
+}
+
+@include cards.metric;
 
 .tl-user-configs {
   grid-area: configs;

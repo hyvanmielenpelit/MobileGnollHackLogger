@@ -108,7 +108,7 @@
                  [attr.style]="'position-anchor: --tl-users-' + i + '-block-tip'">{{ user.isOverseerBlocked ? 'Unblock from the AI chat' : 'Block from the AI chat' }}</div>
           </div>
 
-          <!-- Fixed-width columns that line up down the list. Busiest hour is plain information. -->
+          <!-- Columns that line up down the list. Busiest hour is plain information. -->
           <dl class="tl-user-metrics">
             <div class="tl-metric">
               <dt>Requests</dt>
@@ -145,11 +145,11 @@
             </div>
             <div class="tl-metric">
               <dt>Limit refusals</dt>
-              <dd>{{ securityEventsAvailable() ? formatInteger(user.limitRefusals) : '—' }}</dd>
+              <dd [class.tl-metric-muted]="!securityEventsAvailable()">{{ securityEventsAvailable() ? formatInteger(user.limitRefusals) : '—' }}</dd>
             </div>
             <div class="tl-metric">
               <dt>Provider refusals</dt>
-              <dd>{{ securityEventsAvailable() ? formatInteger(user.providerRefusals) : '—' }}</dd>
+              <dd [class.tl-metric-muted]="!securityEventsAvailable()">{{ securityEventsAvailable() ? formatInteger(user.providerRefusals) : '—' }}</dd>
             </div>
           </dl>
 

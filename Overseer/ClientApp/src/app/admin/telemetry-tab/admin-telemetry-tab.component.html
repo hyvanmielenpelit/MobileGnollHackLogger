@@ -325,7 +325,7 @@
   }
 </section>
 
-<!-- One card's figures: fixed-width columns that line up down the list. -->
+<!-- One card's figures: columns that line up down the list. -->
 <ng-template #metrics let-m let-role="role">
   <dl class="tl-metrics">
     <div class="tl-metric"><dt>Requests</dt><dd>{{ formatInteger(m.requests) }}</dd></div>
@@ -338,7 +338,7 @@
     @if (costMetric(m); as cost) {
       <div class="tl-metric tl-metric-cost">
         <dt>Est. cost</dt>
-        <dd>{{ cost.value }}</dd>
+        <dd [class.tl-metric-muted]="cost.muted">{{ cost.value }}</dd>
         @if (cost.note) {
           <dd class="tl-metric-note">{{ cost.note }}</dd>
         }
@@ -347,7 +347,7 @@
     @if (providerErrorsMetric(m, role); as errors) {
       <div class="tl-metric tl-metric-errors">
         <dt>Provider errors</dt>
-        <dd>{{ errors.value }}</dd>
+        <dd [class.tl-metric-muted]="errors.muted">{{ errors.value }}</dd>
         @if (errors.note) {
           <dd class="tl-metric-note">{{ errors.note }}</dd>
         }

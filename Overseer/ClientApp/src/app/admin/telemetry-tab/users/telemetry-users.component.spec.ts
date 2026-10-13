@@ -256,6 +256,19 @@ describe('TelemetryUsersComponent', () => {
       expect(metrics).toContain('chat 8 · title 2');
       expect(metrics).toContain('3 unpriced');
     });
+
+    it('lays the nine metrics out in 9, 5, 5 and 2 columns as the list narrows', () => {
+      create();
+
+      const columns = (width: string): number => {
+        el.style.width = width;
+        fixture.detectChanges();
+        void el.offsetWidth;
+        return getComputedStyle(cards()[0].querySelector('.tl-user-metrics')!).gridTemplateColumns.split(' ').length;
+      };
+
+      expect(['1800px', '1300px', '900px', '380px'].map(columns)).toEqual([9, 5, 5, 2]);
+    });
   });
 
   describe('actions', () => {

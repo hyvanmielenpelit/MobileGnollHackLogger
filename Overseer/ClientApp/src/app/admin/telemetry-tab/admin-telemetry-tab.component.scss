@@ -1,4 +1,5 @@
 @use '../admin-shared' as shared;
+@use 'telemetry-cards' as cards;
 
 :host {
   display: block;
@@ -181,10 +182,10 @@ progress.telemetry-progress-bar {
 }
 
 .model-id-chip {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.85em;
+  font-family: var(--font-mono);
+  font-size: var(--text-secondary);
   background: rgba(0, 0, 0, 0.3);
-  padding: 2px 6px;
+  padding: 1px 6px;
   border-radius: 4px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #ccc;
@@ -312,42 +313,36 @@ progress.telemetry-progress-bar {
   min-inline-size: 0;
 }
 
-/* Head beside the metrics; the metrics under the head below 60 rem of the list, two per row below 30 rem. */
+/* Nine metrics by the list's width: 9 beside the head from 100 rem, 5 + 4 beside it from 68 rem,
+   5 + 4 under it, 3 × 3 below 44 rem, 2 per row below 28 rem. */
 .tl-card {
-  display: grid;
-  grid-template-columns: minmax(12rem, 1fr) minmax(0, auto);
-  grid-template-areas: "head metrics";
-  gap: 0.5rem 1.5rem;
-  padding: 0.75rem 1rem 0.875rem;
-  border: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
-  border-radius: 10px;
-  background: rgba(0, 0, 0, 0.18);
+  @include cards.card-surface;
+  --tl-metric-cols: 5;
+
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    "head"
+    "metrics";
+  gap: var(--tl-row-gap) var(--tl-zone-gap);
 }
 
+/* Same 1 px border as the other cards, so the columns line up; the inset ring is outside layout. */
 .tl-card-total {
-  border: 2px solid color-mix(in srgb, var(--primary-color, #e0ba6d) 55%, transparent);
-}
+  border-color: color-mix(in srgb, var(--primary-color) 60%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary-color) 35%, transparent);
+  background: color-mix(in srgb, var(--primary-color) 7%, rgba(14, 14, 16, 0.72));
 
-@container tl-cards (max-width: 60rem) {
-  .tl-card {
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-areas:
-      "head"
-      "metrics";
-  }
-}
-
-@container tl-cards (max-width: 30rem) {
-  .tl-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .tl-card-title {
+    color: var(--primary-color);
   }
 }
 
 .tl-card-head {
   grid-area: head;
+  align-self: center;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.375rem;
   min-inline-size: 0;
 }
 
@@ -360,14 +355,12 @@ progress.telemetry-progress-bar {
   color: #a1a1aa;
 }
 
-.tl-sep {
-  color: #71717a;
-}
-
 .tl-card-title {
   margin: 0;
   font-size: 1.0625rem;
-  color: #e4e4e7;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #f4f4f5;
   overflow-wrap: anywhere;
 }
 
@@ -379,32 +372,37 @@ progress.telemetry-progress-bar {
 
 .tl-metrics {
   grid-area: metrics;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, 7.5rem);
-  gap: 0.5rem 0.75rem;
-  margin: 0;
-  padding-top: 0.5rem;
-  border-top: 1px solid var(--border-glass, rgba(255, 255, 255, 0.1));
+  @include cards.metrics-grid;
 }
 
-.tl-metric {
-  min-inline-size: 0;
-
-  dt {
-    font-size: var(--text-secondary);
-    font-weight: 600;
-    color: var(--nav-color);
+@container tl-cards (inline-size >= 68rem) {
+  .tl-card {
+    grid-template-columns: minmax(14rem, 20rem) minmax(0, 1fr);
+    grid-template-areas: "head metrics";
   }
 
-  dd {
-    margin: 0;
-    font-variant-numeric: tabular-nums;
-    color: #e4e4e7;
-    overflow-wrap: anywhere;
-  }
-
-  .tl-metric-note {
-    font-size: var(--text-secondary);
-    color: #a1a1aa;
+  .tl-metrics {
+    @include cards.metrics-beside;
   }
 }
+
+@container tl-cards (inline-size >= 100rem) {
+  .tl-card {
+    --tl-metric-cols: 9;
+  }
+}
+
+@container tl-cards (inline-size < 44rem) {
+  .tl-card {
+    --tl-metric-cols: 3;
+  }
+}
+
+@container tl-cards (inline-size < 28rem) {
+  .tl-card {
+    --tl-metric-cols: 2;
+  }
+}
+
+@include cards.metric;
+@include cards.separator;

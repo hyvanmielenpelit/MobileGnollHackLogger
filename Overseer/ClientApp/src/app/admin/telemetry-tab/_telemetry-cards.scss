@@ -1,0 +1,79 @@
+/* Card list rules shared by the AI Telemetry breakdown cards and the System AI usage by user cards.
+ * Each component keeps its own grid areas and container queries; the metrics take their column
+ * count from `--tl-metric-cols`, which those queries set, so the track count is always definite.
+ */
+
+@mixin card-surface {
+  --tl-pad-block: 1rem;
+  --tl-pad-inline: 1.25rem;
+  --tl-zone-gap: 1.5rem;
+  --tl-row-gap: 0.875rem;
+
+  display: grid;
+  padding: var(--tl-pad-block) var(--tl-pad-inline);
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(14, 14, 16, 0.72);
+}
+
+/* Under the head: a hairline across the card's full width. */
+@mixin metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--tl-metric-cols, 5), minmax(0, 1fr));
+  gap: 0.75rem 1rem;
+  min-inline-size: 0;
+  margin: 0;
+  padding-block-start: var(--tl-row-gap);
+  border-block-start: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: var(--text-body);
+}
+
+/* Beside the head: a vertical hairline, the metrics centered against the head. */
+@mixin metrics-beside {
+  align-self: center;
+  padding-block-start: 0;
+  padding-inline-start: var(--tl-zone-gap);
+  border-block-start: none;
+  border-inline-start: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* A term and its value share one size and differ by color and weight. */
+@mixin metric {
+  .tl-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-inline-size: 0;
+
+    dt {
+      font-weight: 500;
+      color: #a1a1aa;
+    }
+
+    dd {
+      margin: 0;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: #f4f4f5;
+      overflow-wrap: anywhere;
+    }
+
+    .tl-metric-note {
+      font-size: var(--text-secondary);
+      font-weight: 400;
+      color: #a1a1aa;
+    }
+
+    /* A placeholder rather than a figure: the word says it, the gray lets real numbers stand out. */
+    .tl-metric-muted {
+      font-weight: 400;
+      color: #a1a1aa;
+    }
+  }
+}
+
+@mixin separator {
+  .tl-sep {
+    color: #71717a;
+  }
+}

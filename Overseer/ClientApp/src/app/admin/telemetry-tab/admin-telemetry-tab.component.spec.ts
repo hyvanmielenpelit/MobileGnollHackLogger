@@ -447,6 +447,47 @@ describe('AdminTelemetryTabComponent', () => {
       expect(cost).toContain('1 unpriced');
     });
 
+    it('grays a placeholder value, In GnollBench, No attempts and an unpriced cost, but not a rate or a priced cost', () => {
+      summarySpy.mockReturnValue(of(summary({
+        rows: [
+          row({ requests: 9, validAttempts: 200, providerErrors: 1, pricedRequests: 9, estimatedCost: 2 }),
+          row({ modelId: 'b', modelName: 'B', roleGroup: 'title', roleContext: 2, requests: 5, pricedRequests: 0 }),
+          row({ modelId: 'c', modelName: 'C', roleGroup: 'benchmark', roleContext: 4, requests: 3 })
+        ]
+      })));
+      openTab();
+
+      const value = (card: HTMLElement, metric: string) =>
+        card.querySelector<HTMLElement>(`.tl-metric-${metric} dd:not(.tl-metric-note)`)!;
+      const [chat, title, benchmark] = cards();
+      expect(value(chat, 'errors').classList.contains('tl-metric-muted')).toBe(false);
+      expect(value(chat, 'cost').classList.contains('tl-metric-muted')).toBe(false);
+      expect(value(title, 'errors').textContent?.trim()).toBe('No attempts');
+      expect(value(title, 'errors').classList.contains('tl-metric-muted')).toBe(true);
+      expect(value(title, 'cost').textContent?.trim()).toBe('—');
+      expect(value(title, 'cost').classList.contains('tl-metric-muted')).toBe(true);
+      expect(value(benchmark, 'errors').textContent?.trim()).toBe('In GnollBench');
+      expect(value(benchmark, 'errors').classList.contains('tl-metric-muted')).toBe(true);
+    });
+
+    it('lays the nine metrics out in 9, 5, 5 and 2 columns as the list narrows, lined up with the total', () => {
+      summarySpy.mockReturnValue(of(summary({ rows: [row({ requests: 2 }), row({ modelId: 'b', modelName: 'A much longer model name' })] })));
+      openTab();
+
+      const metrics = () => cards()[0].querySelector<HTMLElement>('.tl-metrics')!;
+      const totalMetrics = () => host().querySelector<HTMLElement>('.tl-card-total .tl-metrics')!;
+      const columns = (width: string): number => {
+        host().style.width = width;
+        fixture.detectChanges();
+        void host().offsetWidth;
+        return getComputedStyle(metrics()).gridTemplateColumns.split(' ').length;
+      };
+
+      expect(columns('1700px')).toBe(9);
+      expect(totalMetrics().getBoundingClientRect().left).toBe(metrics().getBoundingClientRect().left);
+      expect(['1300px', '900px', '380px'].map(columns)).toEqual([5, 5, 2]);
+    });
+
     // --- Summary cards ---
 
     it('shows Not recorded on the availability card until the ledger has a row, then the rate', () => {
