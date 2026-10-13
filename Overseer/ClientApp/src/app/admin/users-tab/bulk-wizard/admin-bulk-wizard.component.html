@@ -1,0 +1,118 @@
+<!-- No closedby="any": a wizard must not light-dismiss. Escape closes it, as Close does; before the
+     operation runs that changes no account. -->
+<dialog #dialog class="gh-dialog gh-dialog-fullscreen bw-dialog" aria-labelledby="bw-title" (close)="onClose()">
+  <div class="dialog-content gh-wizard bw-wizard">
+
+    <div class="dialog-header gh-wizard-header">
+      <div class="dialog-title-group">
+        <h3 id="bw-title" tabindex="-1">Bulk Actions</h3>
+        <p class="dialog-subtitle bw-subtitle">{{ subtitle }}</p>
+      </div>
+      <button type="button" class="btn-icon-action bw-close" aria-label="Close Bulk Actions"
+              interestfor="bw-close-tip" style="anchor-name: --bw-close-tip" (click)="close()">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <line x1="18" y1="6" x2="6" y2="18"></line>
+          <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" id="bw-close-tip" style="position-anchor: --bw-close-tip">{{ closeHint }}</div>
+    </div>
+
+    <!-- The steps run in order and the server's preview binds step 3 to step 2, so the bar shows where
+         the wizard is rather than offering a jump: a list, not a tab row. -->
+    <div class="gh-wizard-tabbar bw-tabbar">
+      <ol class="bw-steps" aria-label="Bulk Actions steps">
+        @for (entry of steps; track entry.step) {
+          <li class="bw-step-item" [class.is-done]="isDone(entry.step)" [attr.data-step]="entry.step"
+              [attr.aria-current]="step === entry.step ? 'step' : null">
+            <span class="bw-step-number">{{ entry.step }}.</span>&ngsp;<span class="bw-step-title">{{ entry.title }}</span>
+            @if (isDone(entry.step)) {
+              <span class="visually-hidden">, done</span>
+            }
+          </li>
+        }
+      </ol>
+    </div>
+
+    <div class="dialog-body gh-wizard-body">
+      @if (active) {
+        <section class="gh-wizard-step bw-step" aria-labelledby="bw-step-heading" [attr.data-step]="step"
+                 [attr.aria-busy]="previewBusy || executeBusy ? 'true' : null">
+          <!-- Focused on entering a step, so the step's action button never holds focus first. -->
+          <h4 id="bw-step-heading" class="bw-step-heading" tabindex="-1">{{ step }}. {{ stepTitle }}</h4>
+
+          @switch (step) {
+            @case (1) {
+              <app-bulk-users-step [criteria]="criteria" [preset]="preset" [facetCounts]="facetCounts"
+                                   [matches]="matches" [matchCount]="matchCount" [loading]="matchesLoading"
+                                   [error]="matchesError"
+                                   (criteriaChange)="onCriteriaChange($event)"
+                                   (presetChange)="onPresetChange($event)"></app-bulk-users-step>
+            }
+            @case (2) {
+              <app-bulk-action-step [action]="action" [options]="options" [matchCount]="matchCount"
+                                    [maxLockoutDays]="maxLockoutDays" [busy]="previewBusy"
+                                    [error]="previewError" [errorCode]="previewErrorCode"
+                                    (actionChange)="onActionChange($event)"
+                                    (optionsChange)="onOptionsChange($event)"
+                                    (backToUsers)="backToUsers()"></app-bulk-action-step>
+            }
+            @case (3) {
+              @if (preview) {
+                <app-bulk-review-step [preview]="preview" [choices]="choices" [effectText]="effectText"
+                                      [refreshedNote]="refreshedNote" [executeError]="executeError"
+                                      [busy]="previewBusy || executeBusy"
+                                      (choicesChange)="onChoicesChange($event)"></app-bulk-review-step>
+              }
+            }
+            @case (4) {
+              @if (operationId !== null) {
+                <app-bulk-results-step [operationId]="operationId" [initial]="startedOperation"
+                                       (operationChange)="onOperationChange($event)"
+                                       (showInLog)="onShowInLog()"></app-bulk-results-step>
+              }
+            }
+          }
+        </section>
+      }
+    </div>
+
+    <div class="dialog-footer gh-wizard-nav bw-nav">
+      @if (footerNote) {
+        <p class="gh-footer-note" id="bw-footer-note">
+          <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>{{ footerNote }}</span>
+        </p>
+      }
+      <div class="gh-wizard-nav-actions">
+        @if (step === 2 || step === 3) {
+          <button type="button" class="btn-gh btn-gh-cancel bw-back"
+                  [attr.aria-disabled]="previewBusy || executeBusy ? 'true' : null"
+                  (click)="back()">Back</button>
+        }
+        @if (step === 1 || step === 2) {
+          <button type="button" class="btn-gh bw-next"
+                  [attr.aria-disabled]="nextBlocked ? 'true' : null"
+                  [attr.aria-describedby]="footerNote ? 'bw-footer-note' : null"
+                  [attr.aria-busy]="step === 2 && previewBusy ? 'true' : null"
+                  (click)="next()">Next</button>
+        }
+        @if (step === 3) {
+          <button type="button" class="btn-gh bw-run" [class.btn-gh-delete]="runIsRed"
+                  [attr.aria-disabled]="runBlocked ? 'true' : null"
+                  [attr.aria-describedby]="footerNote ? 'bw-footer-note' : null"
+                  [attr.aria-busy]="executeBusy ? 'true' : null"
+                  (click)="execute()">
+            @if (runIsDelete) {
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            }
+            {{ runLabel }}
+          </button>
+        }
+        @if (step === 4) {
+          <button type="button" class="btn-gh btn-gh-cancel bw-done" (click)="close()">Done</button>
+        }
+      </div>
+    </div>
+  </div>
+</dialog>

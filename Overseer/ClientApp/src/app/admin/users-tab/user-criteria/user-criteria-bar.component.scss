@@ -1,0 +1,29 @@
+/* The filter bar, the facets, the chips and Clear all are the global card-list classes in styles.scss. */
+
+:host {
+  display: block;
+}
+
+.ucb-search {
+  flex: 1 1 16rem;
+}
+
+.ucb-sort {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-secondary);
+
+  label {
+    color: var(--nav-color);
+    white-space: nowrap;
+  }
+
+  select {
+    min-inline-size: 12rem;
+  }
+}
+
+.ucb-clear-all {
+  margin-inline-start: 4px;
+}

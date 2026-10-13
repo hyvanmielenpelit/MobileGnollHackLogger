@@ -1,0 +1,70 @@
+<dialog #dialog class="gh-dialog uad-dialog uad-lockout-dialog" aria-labelledby="uad-lockout-title" (close)="onClose()">
+  @if (user) {
+    <!-- Focused on open, so the dangerous button never holds focus first. -->
+    <h3 id="uad-lockout-title" tabindex="-1">Lock out {{ user.userName }}</h3>
+
+    <fieldset class="gh-choice uad-durations">
+      <legend>Lock out for</legend>
+      @for (option of durations; track option.value) {
+        <label class="gh-radio">
+          <input type="radio" name="uad-lockout-duration" [id]="'uad-lockout-for-' + option.value" [value]="option.value"
+                 [checked]="duration === option.value" (change)="setDuration(option.value)">
+          {{ option.label }}
+        </label>
+      }
+    </fieldset>
+
+    @if (duration === 'date') {
+      <div class="uad-field">
+        <label for="uad-lockout-date">Locked out until (UTC)</label>
+        <app-date-field inputId="uad-lockout-date" label="Locked out until (UTC)" [value]="dateValue"
+                        [min]="minDay" [max]="maxDay" [invalid]="!!dateError"
+                        [describedBy]="dateError ? 'uad-lockout-date-error' : null"
+                        (valueChange)="onDate($event)"></app-date-field>
+        @if (dateError) {
+          <p class="gh-field-error" id="uad-lockout-date-error">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ dateError }}</span>
+          </p>
+        }
+      </div>
+    }
+
+    <div class="uad-field">
+      <label for="uad-lockout-reason">Reason</label>
+      <textarea id="uad-lockout-reason" class="gh-input gh-textarea-autosize" rows="3" required
+                [attr.maxlength]="reasonMax" aria-describedby="uad-lockout-reason-hint"
+                (input)="onReason($event)"></textarea>
+      <span class="form-hint" id="uad-lockout-reason-hint">For administrators only; never shown to the user. {{ reason.length }} of {{ reasonMax }} characters.</span>
+    </div>
+
+    <p class="uad-effect" id="uad-lockout-effect">{{ effectText }}</p>
+
+    <label class="checkbox-label align-start uad-check">
+      <input type="checkbox" id="uad-lockout-check" [checked]="checked" (change)="onChecked($event)">
+      <span>I have checked this is the right account ({{ user.email }}).</span>
+    </label>
+
+    @if (error) {
+      <p class="gh-field-error uad-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ error }}</span>
+      </p>
+    }
+
+    <div class="dialog-actions">
+      @if (missingNote) {
+        <p class="gh-footer-note" id="uad-lockout-note">
+          <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>{{ missingNote }}</span>
+        </p>
+      }
+      <button type="button" class="btn-gh btn-gh-cancel uad-cancel" (click)="close()">Cancel</button>
+      <button type="button" class="btn-gh btn-gh-delete uad-confirm"
+              [attr.aria-disabled]="canSubmit ? null : 'true'"
+              [attr.aria-describedby]="missingNote ? 'uad-lockout-note' : null"
+              [attr.aria-busy]="busy ? 'true' : null"
+              (click)="submit()">{{ busy ? 'Locking Out…' : 'Lock Out' }}</button>
+    </div>
+  }
+</dialog>

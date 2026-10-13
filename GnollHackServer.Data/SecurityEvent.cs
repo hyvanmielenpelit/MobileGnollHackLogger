@@ -12,6 +12,8 @@ public enum SecurityEventKind : short
     AttachmentRejected = 30, ChatReported = 31,
     AdminBlocked = 40, AdminUnblocked = 41,
     AccountHoldPlaced = 42, AccountHoldReleased = 43, AccountDeletionHeld = 44,
+    AdminLockedOut = 45, AdminUnlocked = 46, AdminBanned = 47, AdminUnbanned = 48,
+    AdminSignedOut = 49, AdminEmailConfirmed = 50, AdminTwoFactorReset = 51,
 }
 
 /// <summary>

@@ -1,0 +1,49 @@
+<dialog #dialog class="gh-dialog uad-dialog uad-restrictions-dialog" aria-labelledby="uad-restrictions-title" (close)="onClose()">
+  @if (user) {
+    <h3 id="uad-restrictions-title" tabindex="-1">Game upload restrictions for {{ user.userName }}</h3>
+    <p class="uad-lead">{{ user.userName }} can still sign in everywhere. These stop only what GnollHack sends to the server and fetches from it.</p>
+
+    <fieldset class="uad-checks">
+      <legend>Restrictions</legend>
+      <label class="checkbox-label">
+        <input type="checkbox" id="uad-restrictions-gamelog" [checked]="gameLogBanned" (change)="onGameLog($event)">
+        <span>Ban game log uploads</span>
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="uad-restrictions-bones" [checked]="bonesBanned" (change)="onBones($event)">
+        <span>Ban bones uploads and downloads</span>
+      </label>
+    </fieldset>
+
+    <div class="uad-field">
+      <label for="uad-restrictions-reason">Reason @if (!reasonRequired) {<span class="uad-optional">Optional</span>}</label>
+      <textarea id="uad-restrictions-reason" class="gh-input gh-textarea-autosize" rows="3"
+                [attr.required]="reasonRequired ? '' : null"
+                [attr.maxlength]="reasonMax" aria-describedby="uad-restrictions-reason-hint"
+                (input)="onReason($event)"></textarea>
+      <span class="form-hint" id="uad-restrictions-reason-hint">For administrators only; required while a restriction is on. {{ reason.length }} of {{ reasonMax }} characters.</span>
+    </div>
+
+    @if (error) {
+      <p class="gh-field-error uad-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ error }}</span>
+      </p>
+    }
+
+    <div class="dialog-actions">
+      @if (missingNote) {
+        <p class="gh-footer-note" id="uad-restrictions-note">
+          <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+          <span>{{ missingNote }}</span>
+        </p>
+      }
+      <button type="button" class="btn-gh btn-gh-cancel uad-cancel" (click)="close()">Cancel</button>
+      <button type="button" class="btn-gh uad-confirm"
+              [attr.aria-disabled]="canSubmit ? null : 'true'"
+              [attr.aria-describedby]="missingNote ? 'uad-restrictions-note' : null"
+              [attr.aria-busy]="busy ? 'true' : null"
+              (click)="submit()">{{ busy ? 'Saving…' : 'Save Restrictions' }}</button>
+    </div>
+  }
+</dialog>

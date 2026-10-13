@@ -86,8 +86,34 @@ public class AuthController : ControllerBase
             });
         }
 
+        /* Identity refuses a banned or unconfirmed account before it checks lockout or the
+           password, so both are checked here: without the password check the refusal would tell
+           anyone what state the account is in, and without the lockout check and the counted
+           failure that check would allow unlimited guessing. */
         if (result.IsNotAllowed)
         {
+            if (await _userManager.IsLockedOutAsync(user))
+            {
+                RecordSignInEvent(SecurityEventKind.LoginLockedOut, user.Id, "login");
+                return Unauthorized(new
+                {
+                    message = "This account is temporarily locked after too many failed sign-in attempts. Try again later.",
+                    isLockedOut = true
+                });
+            }
+
+            if (!await _userManager.CheckPasswordAsync(user, request.Password))
+            {
+                await _userManager.AccessFailedAsync(user);
+                RecordSignInEvent(SecurityEventKind.LoginFailed, user.Id, "login");
+                return InvalidCredentials();
+            }
+
+            if (user.IsBanned == true)
+            {
+                return Unauthorized(new { message = "This account has been banned.", isBanned = true });
+            }
+
             return Unauthorized(new
             {
                 message = "This account is not permitted to sign in. Confirm your e-mail address and try again.",

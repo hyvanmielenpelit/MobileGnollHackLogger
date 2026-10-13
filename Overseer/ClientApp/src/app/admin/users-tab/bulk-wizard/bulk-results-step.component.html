@@ -1,0 +1,164 @@
+@if (!operation) {
+  @if (pollError) {
+    <p class="gh-field-error bw-res-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ pollError }}</span>
+    </p>
+  } @else {
+    <p class="bw-res-loading" role="status">
+      <svg class="dc-ring dc-ring--inline" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+        <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+        <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+      </svg>
+      <span>Loading bulk operation #{{ operationId }}…</span>
+    </p>
+  }
+} @else {
+  <p class="bw-res-kicker">
+    <span>Operation #{{ operation.id }}</span><span aria-hidden="true"> · </span><span class="visually-hidden">, </span>
+    <span>{{ actionTitle }}</span><span aria-hidden="true"> · </span><span class="visually-hidden">, </span>
+    <span>by {{ operation.actorUserName }}</span>
+  </p>
+
+  <div class="bw-res-progress" [attr.data-running]="running ? 'true' : null">
+    @if (running) {
+      <div class="bw-res-track" aria-hidden="true">
+        <div class="bw-res-bar" [style.width.%]="percent"></div>
+      </div>
+    }
+    <!-- The step's one polite live region: the progress while running, the counts once done. -->
+    <p class="bw-res-status" id="bw-res-status" role="status">{{ statusText }}</p>
+  </div>
+
+  @if (pollError) {
+    <p class="gh-field-error bw-res-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ pollError }}</span>
+    </p>
+  }
+
+  @if (running) {
+    <div class="bw-res-running-actions">
+      <button type="button" class="btn-ghost bw-stop"
+              [attr.aria-disabled]="stopBlockedReason ? 'true' : null"
+              [attr.aria-busy]="cancelBusy ? 'true' : null"
+              [attr.aria-describedby]="stopBlockedReason ? 'bw-stop-reason' : null"
+              (click)="stop()">Stop after the current account</button>
+      @if (stopBlockedReason) {
+        <span class="form-hint" id="bw-stop-reason">{{ stopBlockedReason }}</span>
+      }
+    </div>
+    @if (cancelError) {
+      <p class="gh-field-error bw-res-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ cancelError }}</span>
+      </p>
+    }
+  } @else {
+    @if (endNote) {
+      <p class="bw-res-note">{{ endNote }}</p>
+    }
+    @if (operation.stopMessage) {
+      <p class="bw-res-note bw-res-stop-message">{{ operation.stopMessage }}</p>
+    }
+
+    <div class="bw-res-actions">
+      <button type="button" class="btn-ghost bw-download" [attr.aria-busy]="downloadBusy ? 'true' : null" (click)="download()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="12" x2="12" y2="18"></line><polyline points="9 15 12 18 15 15"></polyline></svg>
+        Download report (CSV)
+      </button>
+      <button type="button" class="btn-link bw-show-in-log" (click)="showInLog.emit()">Show in admin log</button>
+    </div>
+    @if (downloadError) {
+      <p class="gh-field-error bw-res-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ downloadError }}</span>
+      </p>
+    }
+
+    <section class="bw-res-accounts" aria-labelledby="bw-res-accounts-title">
+      <h5 id="bw-res-accounts-title" class="bw-res-section-title">Accounts</h5>
+
+      @if (itemsError) {
+        <p class="gh-field-error bw-res-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ itemsError }}</span>
+        </p>
+      } @else if (itemsLoading) {
+        <p class="bw-res-loading">Loading the accounts…</p>
+      } @else if (items.length === 0) {
+        <p class="bw-res-note">This operation holds no accounts.</p>
+      } @else {
+        <div class="gh-filter-bar bw-res-filter">
+          <div class="gh-filter-bar-row">
+            <div class="gh-search-field bw-res-search">
+              <label class="visually-hidden" for="bw-results-search">Search the accounts by user name or message</label>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+              <input type="search" class="gh-input" id="bw-results-search" autocomplete="off" placeholder="User name or message"
+                     [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+            </div>
+            @if (facets.length > 0) {
+              <div class="gh-facet-row">
+                @for (facet of facets; track facet.column) {
+                  <app-filter-facet [facetId]="facet.facetId" [label]="facet.label" noun="accounts"
+                                    [mode]="facet.mode" [anyLabel]="facet.anyLabel"
+                                    [options]="facet.options" [selected]="facet.selected"
+                                    (selectedChange)="onFacetChange(facet.column, $event)"></app-filter-facet>
+                }
+              </div>
+            }
+          </div>
+          @if (chips.length > 0) {
+            <div class="gh-filter-bar-row">
+              <ul class="gh-filter-chips" role="list" aria-label="Active filters">
+                @for (chip of chips; track chip.key) {
+                  <li>
+                    <button type="button" class="gh-filter-chip"
+                            [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                            (click)="removeChip(chip)">
+                      <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                      <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                  </li>
+                }
+              </ul>
+            </div>
+          }
+        </div>
+        <p class="gh-list-status bw-res-list-status">{{ listStatus }}</p>
+
+        <ul class="bw-res-list" role="list" aria-labelledby="bw-res-accounts-title">
+          @for (item of itemsView; track item.id) {
+            <li>
+              <article class="bw-res-card" [attr.data-outcome]="outcomeOf(item)" [attr.aria-labelledby]="'bw-result-' + item.id + '-title'">
+                <div class="bw-res-card-head">
+                  <h6 class="bw-res-card-title" [id]="'bw-result-' + item.id + '-title'" tabindex="-1">{{ item.userName }}</h6>
+                  <span class="gh-account-badge bw-outcome" [attr.data-tone]="outcomeTone(item)">{{ outcomeLabel(item) }}</span>
+                  @if (item.isAdvanced) {
+                    <span class="gh-account-badge" data-tone="info">Confirmed email</span>
+                  }
+                  @if (processedText(item); as at) {
+                    <span class="bw-res-time">{{ at }}</span>
+                  }
+                </div>
+                @if (changeText(item); as change) {
+                  <p class="gh-change-note bw-res-change"><span class="gh-change-note-text">{{ change }}</span></p>
+                }
+                @if (item.message) {
+                  <p class="bw-res-message">{{ item.message }}</p>
+                }
+              </article>
+            </li>
+          }
+        </ul>
+
+        @if (remainingCount > 0) {
+          <div class="gh-load-more">
+            <button type="button" class="btn-ghost bw-res-more" (click)="showMore()">Show {{ nextBatchCount }} more</button>
+          </div>
+        }
+      }
+    </section>
+  }
+}

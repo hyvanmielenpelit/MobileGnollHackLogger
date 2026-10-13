@@ -16,7 +16,7 @@ public sealed record ReviewActionResult(ReviewActionStatus Status, string? Messa
 /// <summary>
 /// Account-deletion holds and the requests they held: listing them for review, approving (which erases the account
 /// through the same code as self-service deletion), declining, and placing and releasing holds. Overseer sends the
-/// decision emails; the website sends the review email.
+/// decision emails; the website sends the review email. Each decision and each hold change is written to the admin log.
 /// </summary>
 public class AccountDeletionReviewService
 {
@@ -156,6 +156,9 @@ public class AccountDeletionReviewService
         }
 
         var user = request.AspNetUserId == null ? null : await _userManager.FindByIdAsync(request.AspNetUserId);
+        var actor = await AdminUserActionLog.ResolveActorAsync(_db, adminId, ct);
+        string subjectUserId = request.AspNetUserId ?? string.Empty;
+        string? subjectUserName = request.UserNameSnapshot;
         var decision = new AccountDeletionDecisionResultDto();
         if (user != null)
         {
@@ -171,6 +174,8 @@ public class AccountDeletionReviewService
         request.AspNetUserId = null;
         request.UserNameSnapshot = null;
         request.EmailSnapshot = null;
+        _db.AdminUserActions.Add(AdminUserActionLog.Entry(actor, subjectUserId, subjectUserName, AdminUserActionKind.DeletionRequestApproved,
+            null, $"Deletion request {request.Id} approved; the account is erased.", request.DecidedUtc.Value));
         await _db.SaveChangesAsync(ct);
 
         await SendDecisionEmailAsync(email, "Your GnollHack account has been deleted",
@@ -194,6 +199,9 @@ public class AccountDeletionReviewService
         request.DecidedByUserId = adminId;
         request.DecidedUtc = DateTime.UtcNow;
         request.DecisionNote = note;
+        var actor = await AdminUserActionLog.ResolveActorAsync(_db, adminId, ct);
+        _db.AdminUserActions.Add(AdminUserActionLog.Entry(actor, request.AspNetUserId ?? string.Empty, request.UserNameSnapshot,
+            AdminUserActionKind.DeletionRequestDeclined, note, $"Deletion request {request.Id} declined; the account is kept.", request.DecidedUtc.Value));
         await _db.SaveChangesAsync(ct);
 
         string operatorAddress = _configuration["ReportEmailAddress"] ?? "gnollhack@hyvanmielenpelit.fi";
@@ -214,13 +222,18 @@ public class AccountDeletionReviewService
         if (await _db.AccountHolds.AnyAsync(h => h.AspNetUserId == userId && h.ReleasedUtc == null, ct))
             return new(ReviewActionStatus.Conflict, "The account already has an active deletion hold.");
 
-        _db.AccountHolds.Add(new AccountHold
+        var hold = new AccountHold
         {
             AspNetUserId = userId,
             Reason = reason,
             PlacedByUserId = adminId,
             PlacedUtc = DateTime.UtcNow
-        });
+        };
+        _db.AccountHolds.Add(hold);
+        var actor = await AdminUserActionLog.ResolveActorAsync(_db, adminId, ct);
+        string? subjectName = await _db.Users.Where(u => u.Id == userId).Select(u => u.UserName).FirstOrDefaultAsync(ct);
+        _db.AdminUserActions.Add(AdminUserActionLog.Entry(actor, userId, subjectName, AdminUserActionKind.HoldPlaced,
+            reason, "Deletion hold placed.", hold.PlacedUtc));
         await _db.SaveChangesAsync(ct);
         _securityEvents?.Record(new SecurityEventEntry(SecurityEventKind.AccountHoldPlaced, UserId: userId, Detail: reason));
         return new(ReviewActionStatus.Ok);
@@ -232,11 +245,16 @@ public class AccountDeletionReviewService
         var holds = await _db.AccountHolds.Where(h => h.AspNetUserId == userId && h.ReleasedUtc == null).ToListAsync(ct);
         if (holds.Count == 0) return new(ReviewActionStatus.NotFound, "The account has no active deletion hold.");
 
+        DateTime releasedUtc = DateTime.UtcNow;
         foreach (var hold in holds)
         {
-            hold.ReleasedUtc = DateTime.UtcNow;
+            hold.ReleasedUtc = releasedUtc;
             hold.ReleasedByUserId = adminId;
         }
+        var actor = await AdminUserActionLog.ResolveActorAsync(_db, adminId, ct);
+        string? subjectName = await _db.Users.Where(u => u.Id == userId).Select(u => u.UserName).FirstOrDefaultAsync(ct);
+        _db.AdminUserActions.Add(AdminUserActionLog.Entry(actor, userId, subjectName, AdminUserActionKind.HoldReleased,
+            holds[0].Reason, "Deletion hold released.", releasedUtc));
         await _db.SaveChangesAsync(ct);
         _securityEvents?.Record(new SecurityEventEntry(SecurityEventKind.AccountHoldReleased, UserId: userId, Detail: holds[0].Reason));
         return new(ReviewActionStatus.Ok);

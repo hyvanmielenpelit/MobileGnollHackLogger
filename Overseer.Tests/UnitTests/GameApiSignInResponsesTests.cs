@@ -92,12 +92,86 @@ public class GameApiSignInResponsesTests
         Assert.Null(response.RetryAfterSeconds);
     }
 
+    [Fact]
+    public void BannedIsA403WithoutRetryAfter()
+    {
+        var response = GameApiSignInResponses.For(GameApiSignInOutcome.Banned, TimeSpan.FromMinutes(3));
+
+        // A 403, so GnollHack stops posting instead of looping on the controllers' 423.
+        Assert.Equal(403, response.StatusCode);
+        Assert.Equal("This account has been banned.", response.Body);
+        Assert.Null(response.RetryAfterSeconds);
+    }
+
+    [Fact]
+    public void EmailNotConfirmedIsA403WithoutRetryAfter()
+    {
+        var response = GameApiSignInResponses.For(GameApiSignInOutcome.EmailNotConfirmed);
+
+        Assert.Equal(403, response.StatusCode);
+        Assert.Equal("Confirm your email address before signing in to GnollHack online features.", response.Body);
+        Assert.Null(response.RetryAfterSeconds);
+    }
+
+    [Fact]
+    public void ALockoutOfADayOrLessIsStatedInMinutes()
+    {
+        var now = new DateTimeOffset(2026, 10, 13, 15, 0, 0, TimeSpan.Zero);
+        var response = GameApiSignInResponses.For(GameApiSignInOutcome.LockedOut, TimeSpan.FromHours(24), now);
+
+        Assert.Equal("This account is temporarily locked. Try again in 1440 minutes.", response.Body);
+        Assert.Equal(86400, response.RetryAfterSeconds);
+    }
+
+    [Fact]
+    public void ALockoutLongerThanADayIsStatedAsItsEndInUtc()
+    {
+        var now = new DateTimeOffset(2026, 10, 13, 15, 0, 0, TimeSpan.Zero);
+        var response = GameApiSignInResponses.For(GameApiSignInOutcome.LockedOut, TimeSpan.FromDays(7), now);
+
+        Assert.Equal(403, response.StatusCode);
+        Assert.Equal("This account is locked until 2026-10-20 15:00 UTC.", response.Body);
+        Assert.Equal(7 * 86400, response.RetryAfterSeconds);
+    }
+
+    [Fact]
+    public void ALongLockoutEndIsRoundedUpToTheMinuteAndIgnoresTheCallersOffset()
+    {
+        var now = new DateTimeOffset(2026, 10, 13, 18, 0, 0, TimeSpan.FromHours(3));
+        var response = GameApiSignInResponses.For(GameApiSignInOutcome.LockedOut,
+            TimeSpan.FromDays(2) + TimeSpan.FromSeconds(20), now);
+
+        Assert.Equal("This account is locked until 2026-10-15 15:01 UTC.", response.Body);
+    }
+
+    [Fact]
+    public void TheRetryAfterClampDoesNotOverflowAtTheLargestLockout()
+    {
+        var now = new DateTimeOffset(2026, 10, 13, 15, 0, 0, TimeSpan.Zero);
+        var response = GameApiSignInResponses.For(GameApiSignInOutcome.LockedOut, DateTimeOffset.MaxValue - now, now);
+
+        Assert.Equal(403, response.StatusCode);
+        Assert.Equal(366 * 86400, response.RetryAfterSeconds);
+        Assert.Equal("This account is locked until 2027-10-14 15:00 UTC.", response.Body);
+    }
+
+    [Fact]
+    public void TheRetryAfterClampAppliesToEveryOutcomeThatSendsOne()
+    {
+        var response = GameApiSignInResponses.For(GameApiSignInOutcome.Throttled, TimeSpan.MaxValue);
+
+        Assert.Equal(366 * 86400, response.RetryAfterSeconds);
+        Assert.Equal($"Too many failed sign-in attempts. Try again in {366 * 24 * 60} minutes.", response.Body);
+    }
+
     [Theory]
     [InlineData(GameApiSignInOutcome.Failed, 403)]
     [InlineData(GameApiSignInOutcome.Throttled, 403)]
     [InlineData(GameApiSignInOutcome.LockedOut, 403)]
     [InlineData(GameApiSignInOutcome.RequiresTwoFactor, 412)]
     [InlineData(GameApiSignInOutcome.AntiForgeryMismatch, 401)]
+    [InlineData(GameApiSignInOutcome.Banned, 403)]
+    [InlineData(GameApiSignInOutcome.EmailNotConfirmed, 403)]
     public void EveryOutcomeHasItsStatusAndABody(GameApiSignInOutcome outcome, int expectedStatus)
     {
         var response = GameApiSignInResponses.For(outcome, TimeSpan.FromMinutes(1));

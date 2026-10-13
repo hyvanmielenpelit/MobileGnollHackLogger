@@ -1,0 +1,265 @@
+/* Step 3's layout. The danger zone, the advanced disclosure, the disclosure, the alerts, the search
+   field, the checkboxes and Load more are global in styles.scss. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-inline-size: 0;
+}
+
+.bw-refreshed,
+.bw-effect {
+  margin: 0;
+}
+
+.bw-data-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  font-size: var(--text-secondary);
+}
+
+.bw-data-total {
+  display: flex;
+  gap: 6px;
+
+  dt {
+    color: #d4d4d8;
+  }
+
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    color: #e4e4e7;
+  }
+}
+
+.bw-summary {
+  display: grid;
+  gap: 0.25rem;
+
+  p {
+    margin: 0;
+  }
+}
+
+.bw-summary-line {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e4e4e7;
+  font-variant-numeric: tabular-nums;
+}
+
+.bw-truncation {
+  color: var(--color-warning);
+}
+
+.bw-expiry {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+.bw-countdown {
+  font-variant-numeric: tabular-nums;
+}
+
+.bw-refused-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bw-refused-group {
+  display: grid;
+  gap: 2px;
+}
+
+.bw-refused-title {
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.bw-refused-names {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  overflow-wrap: anywhere;
+}
+
+.bw-none {
+  margin: 0;
+  color: var(--nav-color);
+}
+
+.bw-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.bw-section-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #e4e4e7;
+}
+
+.bw-review-search {
+  max-inline-size: 28rem;
+}
+
+.bw-review-status {
+  &:empty {
+    display: none;
+  }
+}
+
+.bw-review-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: bw-review / inline-size;
+}
+
+/* The checkbox top left, the head, then the badges at the end; one column on a narrow list. */
+.bw-review-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 4px 12px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+
+  /* An included account: the tick, a gold border and a tint together. */
+  &:has(.bw-include:checked) {
+    border-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
+    background: color-mix(in srgb, var(--primary-color) 5%, transparent);
+  }
+
+  &.is-excluded {
+    border-style: dashed;
+
+    .bw-review-card-title {
+      color: #a1a1aa;
+      text-decoration: line-through;
+    }
+  }
+
+  .bw-include {
+    width: 20px;
+    height: 20px;
+    margin: 2px 0 0;
+    accent-color: var(--primary-color);
+    cursor: pointer;
+  }
+}
+
+.bw-review-card-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 12px;
+  min-inline-size: 0;
+}
+
+.bw-review-card-title {
+  margin: 0;
+  font-size: var(--text-body);
+  color: #e4e4e7;
+
+  label {
+    cursor: pointer;
+    overflow-wrap: anywhere;
+  }
+}
+
+.bw-review-email,
+.bw-review-meta {
+  min-inline-size: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  overflow-wrap: anywhere;
+}
+
+.bw-review-meta {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+@container bw-review (inline-size < 36rem) {
+  .bw-review-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .bw-review-badges {
+    grid-column: 2;
+  }
+}
+
+.bw-advanced-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bw-advanced-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  font-size: var(--text-secondary);
+}
+
+.bw-advanced-name {
+  font-weight: 700;
+  color: #e4e4e7;
+}
+
+.bw-acks {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+
+  legend {
+    margin-bottom: 4px;
+    padding: 0;
+    font-size: var(--text-secondary);
+    color: var(--nav-color);
+  }
+}
+
+.bw-phrase {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-inline-size: 28rem;
+
+  > label {
+    font-size: 0.9em;
+    color: #ccc;
+  }
+}
+
+/* The phrase field after the user typed something that is not the phrase. */
+.bw-phrase-input:user-invalid,
+.bw-phrase-input[aria-invalid='true'] {
+  border-color: var(--color-error);
+  background-color: rgba(220, 53, 69, 0.1);
+}
+
+.bw-execute-error {
+  margin: 0;
+}
+
+@media (forced-colors: active) {
+  .bw-review-card:has(.bw-include:checked) {
+    border-color: Highlight;
+  }
+}

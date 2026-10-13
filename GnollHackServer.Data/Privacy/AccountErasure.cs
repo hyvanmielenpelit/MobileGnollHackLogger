@@ -13,7 +13,8 @@ public sealed record AccountErasureResult(int BonesFilesMissing, int FoldersMiss
 /// <summary>
 /// Erases a user's account and data: self-service deletion on the website and an administrator's approved
 /// deletion in Overseer run these same steps. Rows that reference the user by foreign key (security events,
-/// holds, usage and attempt logs, activity, model order) go with the user by cascade.
+/// holds, usage and attempt logs, activity, model order) go with the user by cascade; benchmark rows are kept
+/// with their attribution to the user removed.
 /// </summary>
 public static class AccountErasure
 {
@@ -148,6 +149,22 @@ public static class AccountErasure
             .ExecuteUpdateAsync(r => r
                 .SetProperty(x => x.AspNetUserId, (string?)null)
                 .SetProperty(x => x.RequestUserName, (string?)null), ct);
+
+        // 10. Remove the user's attribution from benchmark history, whose foreign keys do not cascade (the rows are kept)
+        await db.BenchmarkRuns.Where(r => r.StartedByUserId == userId)
+            .ExecuteUpdateAsync(r => r.SetProperty(x => x.StartedByUserId, (string?)null), ct);
+        await db.BenchmarkRunSeries.Where(r => r.StartedByUserId == userId)
+            .ExecuteUpdateAsync(r => r.SetProperty(x => x.StartedByUserId, (string?)null), ct);
+        await db.BenchmarkRunGroups.Where(r => r.CreatedByUserId == userId)
+            .ExecuteUpdateAsync(r => r.SetProperty(x => x.CreatedByUserId, (string?)null), ct);
+        await db.BenchmarkGroupAnalyses.Where(r => r.ComputedByUserId == userId)
+            .ExecuteUpdateAsync(r => r.SetProperty(x => x.ComputedByUserId, (string?)null), ct);
+        await db.BenchmarkBatteries.Where(r => r.CreatedByUserId == userId)
+            .ExecuteUpdateAsync(r => r.SetProperty(x => x.CreatedByUserId, (string?)null), ct);
+        await db.BenchmarkBatteryRuns.Where(r => r.StartedByUserId == userId)
+            .ExecuteUpdateAsync(r => r.SetProperty(x => x.StartedByUserId, (string?)null), ct);
+        await db.BenchmarkBatteryAnalyses.Where(r => r.ComputedByUserId == userId)
+            .ExecuteUpdateAsync(r => r.SetProperty(x => x.ComputedByUserId, (string?)null), ct);
 
         await db.SaveChangesAsync(ct);
 

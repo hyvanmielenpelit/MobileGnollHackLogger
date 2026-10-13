@@ -4,6 +4,7 @@ import { By } from '@angular/platform-browser';
 import { HttpErrorResponse } from '@angular/common/http';
 import { of, throwError } from 'rxjs';
 import { AdminService, SecurityEvent, SecurityEventsPage, SecuritySummary } from '../../services/admin.service';
+import { AdminUserActionResult, AdminUsersService } from '../../services/admin-users.service';
 import { FilterFacetComponent } from '../../shared/data-table/filter-facet.component';
 import { AdminPageStore } from '../admin-page.store';
 import { configureAdminTestBed } from '../admin.component.testing';
@@ -72,12 +73,13 @@ describe('AdminSecurityTabComponent', () => {
   let component: AdminSecurityTabComponent;
   let el: HTMLElement;
   let adminService: AdminService;
+  let usersService: AdminUsersService;
   let store: AdminPageStore;
   let eventsSpy: Mock;
 
   beforeEach(async () => {
     clearStorage();
-    ({ adminService, store } = await configureAdminTestBed(AdminSecurityTabComponent));
+    ({ adminService, usersService, store } = await configureAdminTestBed(AdminSecurityTabComponent));
     vi.spyOn(adminService, 'getSecuritySummary').mockReturnValue(of(fullSummary()));
     eventsSpy = vi.spyOn(adminService, 'getSecurityEvents').mockReturnValue(of(page([securityEvent(1)])));
     vi.spyOn(store, 'showToast').mockReturnValue(undefined);
@@ -207,6 +209,38 @@ describe('AdminSecurityTabComponent', () => {
       expect(card(1).querySelector('.sec-unblock')!.getAttribute('aria-label')).toBe('Unblock Alice');
     });
 
+    it('names the admin account actions in words, on the cards and in the Kind facet', () => {
+      const kind = (name: string, count: number) => ({ kind: name, count, distinctUsers: 1, distinctIps: 0 });
+      (adminService.getSecuritySummary as Mock).mockReturnValue(of({
+        kinds: [
+          kind('AdminLockedOut', 2), kind('AdminUnlocked', 1), kind('AdminBanned', 1), kind('AdminUnbanned', 1),
+          kind('AdminSignedOut', 1), kind('AdminEmailConfirmed', 1), kind('AdminTwoFactorReset', 1)
+        ],
+        pendingDeletionRequests: 0,
+        activeAccountHolds: 0
+      }));
+      eventsSpy.mockReturnValue(of(page([
+        securityEvent(2, { kind: 'AdminLockedOut', ipAddress: null }),
+        securityEvent(1, { kind: 'AdminTwoFactorReset', ipAddress: null })
+      ])));
+      create();
+
+      expect(textOf(card(2).querySelector('.sec-kind'))).toBe('Locked out by admin');
+      expect(textOf(card(1).querySelector('.sec-kind'))).toBe('Two-factor reset by admin');
+
+      const facet = fixture.debugElement.query(By.directive(FilterFacetComponent)).componentInstance as FilterFacetComponent;
+      expect(facet.options.map(o => o.label)).toEqual([
+        'Locked out by admin',
+        'Unlocked by admin',
+        'Banned by admin',
+        'Unbanned by admin',
+        'Signed out by admin',
+        'Email confirmed by admin',
+        'Two-factor reset by admin'
+      ]);
+      expect(facet.options.find(o => o.value === 'AdminLockedOut')?.count).toBe(2);
+    });
+
     it('shows the empty state when the range holds no events', () => {
       eventsSpy.mockReturnValue(of(page([])));
       create();
@@ -274,7 +308,7 @@ describe('AdminSecurityTabComponent', () => {
 
   describe('actions', () => {
     it('blocks the user with a reason and refetches the list', () => {
-      const block = vi.spyOn(adminService, 'blockUser').mockReturnValue(of(undefined));
+      const block = vi.spyOn(usersService, 'blockFromAiChat').mockReturnValue(of({} as AdminUserActionResult));
       create();
       eventsSpy.mockClear();
 
@@ -300,7 +334,7 @@ describe('AdminSecurityTabComponent', () => {
     });
 
     it('keeps the dialog open with the server message when the block is refused', () => {
-      vi.spyOn(adminService, 'blockUser').mockReturnValue(throwError(() => new HttpErrorResponse({
+      vi.spyOn(usersService, 'blockFromAiChat').mockReturnValue(throwError(() => new HttpErrorResponse({
         status: 400, error: { message: 'You cannot block yourself.' }
       })));
       create();
@@ -316,7 +350,7 @@ describe('AdminSecurityTabComponent', () => {
 
     it('unblocks a blocked user and refetches the list', () => {
       eventsSpy.mockReturnValue(of(page([securityEvent(1, { userIsOverseerBlocked: true })])));
-      const unblock = vi.spyOn(adminService, 'unblockUser').mockReturnValue(of(undefined));
+      const unblock = vi.spyOn(usersService, 'unblockFromAiChat').mockReturnValue(of({} as AdminUserActionResult));
       create();
       eventsSpy.mockClear();
 

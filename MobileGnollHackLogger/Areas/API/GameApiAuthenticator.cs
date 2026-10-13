@@ -19,7 +19,8 @@ namespace MobileGnollHackLogger.Areas.API
     /// The antiforgery check, the sign-in throttle and the password check every game API repeats. The password is
     /// checked without issuing a cookie; failures count toward <see cref="GameApiSignInThrottle"/>, never toward
     /// Identity lockout. A throttled request costs no password hash and writes no request-log row. Every refusal a
-    /// player can trigger is a 403 with a plain-text body (<see cref="GameApiSignInResponses"/>).
+    /// player can trigger is a 403 with a plain-text body (<see cref="GameApiSignInResponses"/>). A banned or
+    /// unconfirmed account is told so only after the correct password, and is not counted as a failure.
     /// </summary>
     public class GameApiAuthenticator
     {
@@ -28,15 +29,18 @@ namespace MobileGnollHackLogger.Areas.API
         private readonly IConfiguration _configuration;
         private readonly GameApiSignInThrottle _throttle;
         private readonly ApplicationDbContext _dbContext;
+        private readonly ILogger<GameApiAuthenticator> _logger;
 
         public GameApiAuthenticator(SignInManager<ApplicationUser> signInManager, UserManager<ApplicationUser> userManager,
-            IConfiguration configuration, GameApiSignInThrottle throttle, ApplicationDbContext dbContext)
+            IConfiguration configuration, GameApiSignInThrottle throttle, ApplicationDbContext dbContext,
+            ILogger<GameApiAuthenticator> logger)
         {
             _signInManager = signInManager;
             _userManager = userManager;
             _configuration = configuration;
             _throttle = throttle;
             _dbContext = dbContext;
+            _logger = logger;
         }
 
         /// <summary>Signs in a game client; <paramref name="route"/> names the endpoint in events, e.g. "xlogfile".</summary>
@@ -70,22 +74,38 @@ namespace MobileGnollHackLogger.Areas.API
             }
 
             var result = await _signInManager.CheckPasswordSignInAsync(user, password, lockoutOnFailure: false);
-            if (result.IsLockedOut)
+
+            // Identity refuses a banned or unconfirmed account before it checks the password, so the password is checked here.
+            bool? passwordCorrect = result.IsNotAllowed ? await _userManager.CheckPasswordAsync(user, password) : null;
+            var (outcome, countsAsFailure) = GameApiSignInClassifier.Classify(result, passwordCorrect,
+                isBanned: user.IsBanned == true, emailConfirmed: user.EmailConfirmed);
+
+            if (outcome == GameApiSignInOutcome.LockedOut)
             {
                 dbLogger.LoginSucceeded = false;
-                TimeSpan? remaining = user.LockoutEnd is DateTimeOffset end ? end - DateTimeOffset.UtcNow : null;
+                DateTimeOffset now = DateTimeOffset.UtcNow;
+                TimeSpan? remaining = user.LockoutEnd is DateTimeOffset end ? end - now : null;
                 var locked = GameApiSignInResponses.For(GameApiSignInOutcome.LockedOut,
-                    remaining is TimeSpan r && r > TimeSpan.Zero ? r : TimeSpan.FromMinutes(1));
+                    remaining is TimeSpan r && r > TimeSpan.Zero ? r : TimeSpan.FromMinutes(1), now);
                 await dbLogger.LogRequestAsync("User is locked out.", Data.LogLevel.Warning, locked.StatusCode);
                 return Fail(http, locked);
             }
 
-            if (!result.Succeeded)
+            if (outcome is GameApiSignInOutcome.Banned or GameApiSignInOutcome.EmailNotConfirmed)
+            {
+                dbLogger.LoginSucceeded = false;
+                var refused = GameApiSignInResponses.For(outcome);
+                await dbLogger.LogRequestAsync(outcome == GameApiSignInOutcome.Banned ? "User is banned." : "User email is not confirmed.",
+                    Data.LogLevel.Warning, refused.StatusCode);
+                return Fail(http, refused);
+            }
+
+            if (countsAsFailure)
             {
                 return await FailedPasswordAsync(http, dbLogger, userName, user.Id, ip, route);
             }
 
-            _throttle.RecordSuccess(userName);
+            _throttle.RecordSuccess(userName, ip);
 
             // As PasswordSignInAsync decides RequiresTwoFactor: 2FA enabled and a valid provider.
             if (await _userManager.GetTwoFactorEnabledAsync(user)
@@ -97,6 +117,7 @@ namespace MobileGnollHackLogger.Areas.API
                 return Fail(http, twoFactor);
             }
 
+            await AccountActivity.TouchSignInAsync(_dbContext, user.Id, DateTime.UtcNow, _logger);
             dbLogger.LoginSucceeded = true;
             return new GameApiAuthResult { Succeeded = true, User = user };
         }

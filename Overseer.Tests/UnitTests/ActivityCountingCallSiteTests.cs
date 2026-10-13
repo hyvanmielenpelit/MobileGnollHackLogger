@@ -312,7 +312,7 @@ public sealed class ActivityCountingCallSiteTests : IDisposable
 
         var result = await controller.Create(SessionRequest(true, false, password: "wrong"), activityCounter: counter);
 
-        Assert.IsType<UnauthorizedResult>(result);
+        Assert.IsType<UnauthorizedObjectResult>(result);
         Assert.Empty(counter.Calls);
     }
 

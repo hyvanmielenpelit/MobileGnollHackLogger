@@ -24,12 +24,15 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly ILogger<LoginModel> _logger;
         private readonly ApplicationDbContext _dbContext;
+        private readonly IConfiguration _configuration;
 
-        public LoginModel(SignInManager<ApplicationUser> signInManager, ILogger<LoginModel> logger, ApplicationDbContext dbContext)
+        public LoginModel(SignInManager<ApplicationUser> signInManager, ILogger<LoginModel> logger, ApplicationDbContext dbContext,
+            IConfiguration configuration)
         {
             _signInManager = signInManager;
             _logger = logger;
             _dbContext = dbContext;
+            _configuration = configuration;
         }
 
         /// <summary>
@@ -135,7 +138,34 @@ namespace MobileGnollHackLogger.Areas.Identity.Pages.Account
                 // The attempted user name is never stored; the user id only when an account matched.
                 var matchedUser = await _signInManager.UserManager.FindByNameAsync(Input.UserName);
                 string ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
-                if (result.IsLockedOut)
+
+                /* Identity refuses a banned or unconfirmed account before it checks lockout or the password, so both are
+                   checked here: a locked-out account is refused before any password check, a wrong password counts toward
+                   lockout as on any other account, and the ban is told only to whoever has the password. */
+                bool notAllowedLockedOut = false;
+                if (result.IsNotAllowed && matchedUser != null)
+                {
+                    var userManager = _signInManager.UserManager;
+                    if (await userManager.IsLockedOutAsync(matchedUser))
+                    {
+                        notAllowedLockedOut = true;
+                    }
+                    else if (!await userManager.CheckPasswordAsync(matchedUser, Input.Password))
+                    {
+                        await userManager.AccessFailedAsync(matchedUser);
+                    }
+                    else if (matchedUser.IsBanned == true)
+                    {
+                        _logger.LogWarning("Banned user attempted to log in.");
+                        string contact = _configuration["ReportEmailAddress"];
+                        ModelState.AddModelError(string.Empty, "This account has been banned. " + (string.IsNullOrWhiteSpace(contact)
+                            ? "Contact the GnollHack team if you think this is a mistake."
+                            : $"Contact {contact} if you think this is a mistake."));
+                        return Page();
+                    }
+                }
+
+                if (result.IsLockedOut || notAllowedLockedOut)
                 {
                     _logger.LogWarning("User account locked out.");
                     await GnollHackServer.Data.Security.SecurityEventWriter.RecordAsync(_dbContext, SecurityEventKind.LoginLockedOut,

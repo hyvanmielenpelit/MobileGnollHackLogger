@@ -1,0 +1,84 @@
+// The frame is the global `gh-dialog-fullscreen` and `gh-wizard*` rules in `styles.scss`; what follows
+// is the Bulk Actions wizard's own.
+
+:host {
+  display: contents;
+}
+
+.bw-dialog h3:focus,
+.bw-step-heading:focus {
+  outline: none;
+}
+
+.bw-dialog h3:focus-visible,
+.bw-step-heading:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.bw-subtitle {
+  overflow-wrap: anywhere;
+}
+
+// The step bar: where the wizard is, in order. The current step is gold, bold and underlined, a passed
+// step brighter than one to come; `aria-current` and the hidden word `done` carry the state too.
+.bw-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.bw-step-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 10px 12px 8px;
+  border-bottom: 2px solid transparent;
+  font-size: var(--text-secondary);
+  color: #8b8b90;
+
+  &.is-done {
+    color: #d4d4d8;
+  }
+
+  &[aria-current='step'] {
+    border-bottom-color: var(--primary-color);
+    font-weight: 700;
+    color: var(--primary-color);
+  }
+
+  & + &::before {
+    content: '·';
+    margin-inline-end: 8px;
+    color: #5f5f66;
+  }
+}
+
+.bw-step-number {
+  font-variant-numeric: tabular-nums;
+}
+
+.bw-step {
+  gap: 1rem;
+}
+
+.bw-step-heading {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #e4e4e7;
+}
+
+// The note takes the footer's start; Back and the step's action stay at its end, with or without it.
+.bw-nav {
+  justify-content: flex-end;
+}
+
+@media (forced-colors: active) {
+  .bw-step-item[aria-current='step'] {
+    border-bottom-color: Highlight;
+  }
+}

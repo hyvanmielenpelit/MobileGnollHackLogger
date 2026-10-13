@@ -1,0 +1,177 @@
+/* `.action-btn`, `.btn-ghost`, the action popover, the badges and the change note are global in
+   styles.scss. The grid follows the width of the `au-cards` container the list declares. */
+
+:host {
+  display: block;
+  min-inline-size: 0;
+}
+
+/* Head, status and actions in a row, the change note and the facts below; actions under the head below
+   48 rem of the list, one column below 30 rem. */
+.au-card {
+  display: grid;
+  grid-template-columns: minmax(12rem, 1fr) minmax(0, 1.4fr) auto;
+  grid-template-areas:
+    "head  status actions"
+    "note  note   note"
+    "facts facts  facts";
+  gap: 0.5rem 1.25rem;
+  padding: 0.75rem 1rem 0.875rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: color-mix(in srgb, var(--primary-color) 45%, transparent);
+  }
+}
+
+@container au-cards (max-width: 48rem) {
+  .au-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "head    head"
+      "actions actions"
+      "status  status"
+      "note    note"
+      "facts   facts";
+  }
+
+  .au-card-actions {
+    justify-content: flex-start;
+  }
+}
+
+@container au-cards (max-width: 30rem) {
+  .au-card {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "actions"
+      "status"
+      "note"
+      "facts";
+  }
+}
+
+.au-card-head {
+  grid-area: head;
+  min-inline-size: 0;
+
+  p {
+    margin: 0;
+  }
+}
+
+.au-card-title {
+  margin: 0;
+  font-size: 1.0625rem;
+  color: #e4e4e7;
+  overflow-wrap: anywhere;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.au-card-email {
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+  overflow-wrap: anywhere;
+}
+
+.au-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin-top: 2px;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+.au-sep {
+  color: #71717a;
+}
+
+.au-card-status {
+  grid-area: status;
+  align-self: start;
+  min-inline-size: 0;
+}
+
+.au-card-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 0.25rem;
+}
+
+.au-change-note {
+  grid-area: note;
+}
+
+/* Fixed 9 rem columns, so the facts line up down the list. */
+.au-card-facts {
+  grid-area: facts;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-glass);
+  font-size: var(--text-secondary);
+}
+
+.au-fact {
+  flex: 0 0 9rem;
+  min-inline-size: 0;
+
+  dt {
+    color: #a1a1aa;
+  }
+
+  dd {
+    margin: 0;
+    color: #e4e4e7;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+}
+
+.au-fact-wide {
+  flex-basis: 18rem;
+}
+
+.au-fact-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.au-group-chip {
+  display: inline-block;
+  padding: 0 8px;
+  border: 1px solid var(--border-glass);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #ddd;
+}
+
+.au-none {
+  color: #a1a1aa;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .au-card {
+    transition: none;
+  }
+}

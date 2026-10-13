@@ -10,6 +10,7 @@ public sealed record OverseerBlock(DateTime BlockedUtc, string? Reason);
 /// <summary>
 /// Reads and changes whether a user may start AI work in Overseer. A blocked user keeps sign-in, reading,
 /// export, deletion and settings. The block is cached for <see cref="CacheDuration"/> and evicted on change.
+/// Each change is written to the admin log with the administrator.
 /// </summary>
 public class OverseerAccessService
 {
@@ -79,6 +80,9 @@ public class OverseerAccessService
         user.OverseerBlockedUtc = DateTime.UtcNow;
         user.OverseerBlockReason = reason;
         user.OverseerBlockedByUserId = adminId;
+        var actor = await AdminUserActionLog.ResolveActorAsync(db, adminId);
+        db.AdminUserActions.Add(AdminUserActionLog.Entry(actor, user.Id, user.UserName, AdminUserActionKind.AiChatBlocked,
+            reason, "Blocked from the AI chat.", user.OverseerBlockedUtc.Value));
         await db.SaveChangesAsync();
 
         _cache.Remove(CacheKey(userId));
@@ -98,6 +102,12 @@ public class OverseerAccessService
         user.OverseerBlockedUtc = null;
         user.OverseerBlockReason = null;
         user.OverseerBlockedByUserId = null;
+        if (wasBlocked)
+        {
+            var actor = await AdminUserActionLog.ResolveActorAsync(db, adminId);
+            db.AdminUserActions.Add(AdminUserActionLog.Entry(actor, user.Id, user.UserName, AdminUserActionKind.AiChatUnblocked,
+                null, "Unblocked from the AI chat.", DateTime.UtcNow));
+        }
         await db.SaveChangesAsync();
 
         _cache.Remove(CacheKey(userId));

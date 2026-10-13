@@ -224,7 +224,7 @@ you already read the label, it is noise; drop it.
 | zap | Generate Questions, **Generate** (the Model Comparison wizard's Write step) and its **Write Anyway** confirmation, **Write Report** / **Write Reports** (the run report's AI Reports tab) and its **Write Anyway** confirmation | AI generation: content is produced by a model, not typed in |
 | thermometer | Assess Difficulty | A reading on a scale; the button rates how hard each question is |
 | heart | Suite Health | The health check; the glyph *is* the concept |
-| compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard, **Open Comparison Wizard** (the Model Comparison launcher), **Open in Model Comparison** (the battery leaderboard dialog; opens the same wizard), **Open Chat Consistency Wizard** (the Chat Consistency launcher's *New analysis*; the launcher's other gold button, **Open Analysis #N**, is text-only) | A guided route through several steps: the wizard finds the way, the admin follows it |
+| compass | Snapshot Suite Wizard, Open the Snapshot Suite Wizard, **Open Comparison Wizard** (the Model Comparison launcher), **Open in Model Comparison** (the battery leaderboard dialog; opens the same wizard), **Open Chat Consistency Wizard** (the Chat Consistency launcher's *New analysis*; the launcher's other gold button, **Open Analysis #N**, is text-only), **Bulk Actions** (the gold `.btn-gh` in the Admin Users tab's header, `aria-haspopup="dialog"`; opens the Bulk Actions wizard) | A guided route through several steps: the wizard finds the way, the admin follows it |
 | clock (Feather *clock*: a circle and two hands, the glyph the Run History sub-tab shows) | **Open Analysis History** (`.btn-ghost`, the Chat Consistency launcher's *Analysis history* bar; opens the Analysis History dialog) | "History": the saved records of earlier work, listed by when they were made |
 | award (a medal over two ribbon tails) | **Leaderboard** (`.btn-ghost`, first in each battery card's actions on the Multi-Suite tab) | "Rankings": it opens the ranked results of the battery's definition |
 | columns (two columns side by side) | **Paired tests** (the Model Comparison wizard's fifth step-2 view tab) | Two models side by side, compared on the same questions |
@@ -563,6 +563,21 @@ selection** became a compact `.btn-ghost` with the* x *glyph, in a one-line sele
 meaning is the selection chips' own remove button, done to every chip at once: it drops the selection
 and deletes nothing. Its visible text is *Clear selection*; the count is visually hidden, so the
 accessible name *Clear selection (9)* begins with the visible text. No glyph is new.*
+
+*Changed 2026-10-13 (Admin Users tab: cards, account actions, Bulk Actions and the admin log): the
+Users tab's header gains **Bulk Actions**, a gold `.btn-gh` with* compass*, since it opens a four-step
+wizard like the other wizard entries. Each user card keeps the icon-only **Manage groups** (*users*)
+and **Manage AI configurations** (*settings*), adds an icon-only **Security events** with* shield *(the
+glyph Deletion requests already uses for it), and ends in **Actions**, a text `.btn-ghost` with a
+trailing* chevron*: a §4f popover with headed groups. **Delete Account** and the wizard's **Delete N
+Accounts** keep* trash *on `btn-gh btn-gh-delete`; **Lock Out** and **Ban Account** are text-only
+`btn-gh btn-gh-delete` (they shut a person out, but nothing is erased), and **Save Restrictions** a
+text-only `.btn-gh`. **Ban instead**, **Open results** and **Show in admin log** are
+text-only `.btn-link`s, and the change note's **Dismiss** an icon-only `.action-btn` with* x*. The status
+badges' glyphs (*check-circle*, *lock*, *slash-circle*, *upload-cloud* struck through, *message-square*
+struck through, *shield*, *trash*, *mail*, *star*) and the danger zone's* alert-octagon *are status
+icons beside a word, not button glyphs. The Users table's unsortable `<th>` headers are gone with the
+table (§8c). No button glyph is new.*
 
 **Leave the icon off when the label is already the whole message:**
 
@@ -1142,7 +1157,9 @@ listed and gated by §4g) is the first. The Battery Run Report's **Actions** (*R
 *Compute analysis*, and *Show progress*) is another, and the Model Comparison wizard's step 3 **Preview layout** (a gold `.btn-gh` beside **Generate**; panel `aria-label` *Preview the chart layout of a document*; one item per document type, *Executive Summary · 2 charts*, focus on open going to the type the chart picker shows) a third. The Download Center's per-row **More actions**
 (*Update charts*, *Remove charts*; Report Pack rows, in the Model Comparison wizard's Documents step
 only) is the second: an icon-only `.action-btn` trigger named *More actions for <document>*, with a
-hint tooltip, whose panel's `aria-label` is *Chart actions for <document>*. It is a **popover-revealed button group,
+hint tooltip, whose panel's `aria-label` is *Chart actions for <document>*. The Admin Users tab's per-card
+**Actions** (a text `.btn-ghost` with a trailing *chevron*; panel `aria-label` *Account actions for {user}*) is
+the one with **headed groups**, described below. It is a **popover-revealed button group,
 not an ARIA menu**: no `role="menu"` / `menuitem`, no arrow-key roving; Tab moves through the items.
 
 **When to use it.** Several actions of one kind that would crowd a header or toolbar, whose names
@@ -1192,6 +1209,21 @@ visible buttons or icon buttons (§4); a single action stays a button.
 - **Open-state styling** uses `:is(:popover-open, .\:popover-open)` for the polyfill (§4, Polyfills),
   and the entry animation has a `prefers-reduced-motion: reduce` entry.
 - The reorderable list's **Move** menu (§4c) predates this pattern and is not migrated to it.
+
+**Headed groups.** A popover with several kinds of action splits them into sub-groups, each a
+`div.gh-action-popover-group[role="group"]` labelled by its visible heading, a
+`p.gh-action-popover-heading` with an id (`aria-labelledby`), separated by a hairline. The Users card's
+popover has *Access* (*Lock out…* / *Unlock*, *Ban…* / *Unban*, *Game upload restrictions…*, *Block from
+AI chat…* / *Unblock from AI chat*, *Sign out everywhere*), *Account* (*Mark email as confirmed* while
+unconfirmed, *Reset two-factor authentication…* while enabled; the group is left out when it has no item)
+and *Deletion* (*Place deletion hold…* / *Release deletion hold*, *Delete account…*). The states are pure
+functions in `users-tab/user-card/admin-user-card-actions.ts`, which mirror the server's guard; an
+unavailable item keeps its place `aria-disabled` with the reason on its second line (*You cannot lock out
+your own account.*, *Administrators cannot be locked out, banned or deleted here. Remove them from the
+Admins setting first.*, *Release the deletion hold first.*, *Decide the pending request in Deletion
+requests.*). A destructive item adds **`.is-danger`** (red ink and hover, only while enabled); its word
+still says what it does. An item that opens a dialog ends in an ellipsis; one that acts at once (behind
+the shared confirm dialog) does not. All three classes are global in `styles.scss`.
 
 **Grouping the trigger with its neighbors.** A header's cluster of a few Tab-stop buttons — the run
 report's *Run actions* — is `role="group"` with an `aria-label`, **not** `role="toolbar"`. A toolbar
@@ -1762,10 +1794,6 @@ wrapper between the row and the cell.
   class that could disagree with what is announced.
 - The label is a real `<button>`, so keyboard operability and Enter/Space come free.
 
-> **The Admin Users tab's table (`admin/users-tab/admin-users-tab.component.html`) is the old pattern — do not copy it.** It puts
-> `(click)` on a bare `<th>` with a `▲`/`▼` span and no `aria-sort`: it is not keyboard-operable
-> and announces nothing. It is out of scope rather than correct, and can adopt this layer later.
-
 ### 8d. The filter row
 
 A `<tr class="gh-filter-row">` sits directly under the header row, one `<td>` per column,
@@ -1890,7 +1918,10 @@ step 1 sources** (`app-comparison-source-picker`, 2026-10-12) are the seventh; t
 breakdown** (`admin/telemetry-tab/`, 2026-10-13) is the eighth; the **AI Telemetry Users view**
 (`app-telemetry-users`, 2026-10-13) is the ninth; the **Security tab's events**
 (`app-admin-security-tab`, 2026-10-13) are the tenth; the **Users tab's deletion requests**
-(`app-deletion-requests`, 2026-10-13) are the eleventh. Use one **when every row is a
+(`app-deletion-requests`, 2026-10-13) are the eleventh; the **Users tab's users** (`app-admin-user-list`
+with the shared `app-user-criteria-bar`, 2026-10-13) are the twelfth; the **Users tab's admin log**
+(`app-admin-user-log`, 2026-10-13) is the thirteenth; and the **Bulk Actions wizard's** review and results
+accounts (`app-bulk-review-step`, `app-bulk-results-step`, 2026-10-13) are two more. Use one **when every row is a
 small form** — two selects, a group of checkboxes, several actions — rather than values to compare
 down a column, **or when a row is a record too rich for one table line**: Run History's runs carry a
 kicker of badges, a badged model name, four metrics with visible qualifier lines, four actions and five
@@ -1996,7 +2027,10 @@ search and Sort by refetch page 1, *Show N more* fetches the next page, a `userI
 Security tab's *Usage* action shows one user with a *Clear* button). The tenth, the Security tab's events
 (`idPrefix: 'sec'`, `overseer.admin.security.events.view`, a *Kind* facet whose options come from the
 summary), and the eleventh, the deletion requests (`idPrefix: 'del'`, `overseer.admin.users.deletions.view`,
-a single-select *Status* facet defaulting to *Pending*), page on the server the same way. **A further card list that filters uses it too, rather than
+a single-select *Status* facet defaulting to *Pending*), page on the server the same way. So do the
+twelfth, the users, whose `CardListState` lives inside `app-user-criteria-bar` (`idPrefix` from the host,
+`au-criteria` in the list and `bw-criteria` in the wizard, `overseer.admin.users.view`), and the
+thirteenth, the admin log (`idPrefix: 'aul'`, batch 20, `overseer.admin.users.log.view`). **A further card list that filters uses it too, rather than
 copying a host**; if it needs something the class lacks, extend the class and its spec. Like `TableState` it is plain TypeScript with no Angular dependency, touches no DOM
 beyond the event it is handed and emits nothing, so a component owns it as an ordinary field and it
 unit-tests on its own (`card-list-state.spec.ts`). It wraps a caller-supplied `TableState`, which keeps
@@ -2297,6 +2331,53 @@ how a card list **fills a wizard step** and carries **sources that cannot be sel
   card the no-mix rule blocks looks unchanged, its checkbox described by the panel's mix note.
 - **No Select all.** A comparison is capped at `MAX_COMPARISON_SOURCES`, and a set built with one click
   over a filtered list is exactly what §8f warns against.
+
+**The Admin Users tab's lists** (2026-10-13, `admin/users-tab/`) replaced the four-column Users table and
+show three things: a card list whose **filters are server-side criteria**, a list of **records nobody
+edits**, and a review list whose **checkboxes decide what a bulk operation touches**.
+
+- **Server-side batching follows Deletion requests.** Each list fetches 20 rows, **Show 20 more** appends
+  the next `skip` and focuses the first new card's title, and every filter, chip or sort change refetches
+  page 1; the host holds `rows` and `totalCount`, calls `table.setRemoteTotal(totalCount)` and
+  `list.invalidate()` after each fetch, and its status line counts the server's total (*Showing 20 of
+  1,284 users · filtered from 9,102*, *Showing 20 of 134 actions*). Facet counts come from the server too
+  and follow the search only, as in Deletion requests.
+- **The users** (`app-admin-user-list`): `section` labelled by `h4#au-title`; the shared
+  `app-user-criteria-bar` (search by user name **or** email, facets *Status*, *Email*, *Registered*, *Last
+  sign-in*, *Data*, Sort by, chips) that the Bulk Actions wizard's step 1 renders too, so the two cannot
+  drift; then `ul.au-cards[role=list]` of `li > app-admin-user-card`. The card is
+  `article[aria-labelledby]` in the `au-cards` inline-size container, `"head status actions" / "facts facts
+  facts"`, the actions under the head below 48 rem and one column below 30 rem; a meta line (*Registered …*
+  or *Registered on or before …*, *Last sign-in … / not recorded*); `app-user-status-badges`, a
+  `ul[role=list]` of badges that are each a glyph and a word (a badge with facts is a focusable button with
+  an `interestfor` hint); a `dl` of facts in fixed 9 rem columns; and the actions group of §4f. Two empty
+  states: *No users yet.* and *No users match these filters.* with **Clear all filters**. After an action
+  the card is replaced by the server's copy and gains a `.gh-change-note` (*Changed just now by you: In good
+  standing → Locked out until …*, with an icon-only **Dismiss**), and focus returns to its **Actions**;
+  after a delete it becomes a tombstone and focus goes to the next card's title, else the previous one,
+  else `#au-title`.
+- **The admin log** (`app-admin-user-log`): read-only cards, no selection and no actions group; the kicker
+  is the action as a word in a `.gh-tag` (`data-tone` colors its outline, the word carries it) and a
+  `<time>`, the title `h5#aul-{id}-title[tabindex=-1]` is the account, then *by {administrator}*, the
+  reason, the before → after as a `.gh-change-note` without a dismiss, and for a bulk row *Part of bulk
+  operation #12* with a `.btn-link` **Open results** (its visually hidden rest names the operation). Search
+  and an **Action** facet (only kinds with entries, each with its count); a link's preset filters —
+  *Operation: #12*, *Account: bob* — are chips before the facet and search chips, removable like them, and
+  **Clear all** drops them too. The log writes its filter back to the page store, so a sub-tab switch keeps
+  it.
+- **The review list** (the wizard's step 3, `app-bulk-review-step`): every eligible account is a compact
+  card with a **checked** checkbox named *Include {user}* — top left, the §8h selection rule. Unchecking
+  excludes the account, and the live count drives every label after it: the summary, the
+  acknowledgments, the typed phrase (*DELETE 36 ACCOUNTS*) and the action button (*Delete 36 Accounts*).
+  The list searches and shows 50 at a time; it never offers *Select all* or *Exclude all*.
+- **The advanced disclosure.** Accounts an operation may touch only on a deliberate extra choice (for a
+  bulk delete, those with a confirmed email) sit in a **closed** `details.gh-advanced-disclosure` at the
+  very end, after every other control, styled to look secondary: a muted dashed summary that names the
+  count (*Advanced: accounts with a confirmed email (5)*), then inside a `.gh-danger-zone` explaining the
+  risk, the accounts, and one unchecked checkbox (*Also delete these 5 accounts with a confirmed email
+  address.*). Opening it changes nothing; **closing it unchecks the box**, so a choice is never hidden
+  inside a closed disclosure; and checking it adds its own acknowledgment. It is the only override; hard
+  protections are refused outright and listed under *Protected and skipped*, never offered here.
 
 **Global classes** (`styles.scss`, beside `.gh-datatable`): `.gh-filter-bar` / `.gh-filter-bar-row`,
 `.gh-search-field`, `.gh-facet-row` (wraps; below 36rem of the bar one row that scrolls sideways with

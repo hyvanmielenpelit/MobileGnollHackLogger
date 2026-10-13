@@ -1,0 +1,175 @@
+@if (refreshedNote) {
+  <div class="alert alert-warning bw-refreshed" role="alert">
+    <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+    <div class="alert-content"><span class="alert-body">{{ refreshedNote }}</span></div>
+  </div>
+}
+
+<!-- 1. What happens: a danger zone for a permanent deletion, an alert otherwise. -->
+@if (isDelete) {
+  <section class="gh-danger-zone bw-danger" aria-labelledby="bw-danger-title">
+    <div class="gh-danger-zone-head">
+      <svg class="gh-danger-zone-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <h5 id="bw-danger-title">Permanent deletion</h5>
+    </div>
+    <p>The accounts below and everything they hold are erased. This cannot be undone. Each account is
+      checked again just before it is deleted, and one that changed since this review is skipped.</p>
+    @if (dataTotals.length > 0) {
+      <dl class="bw-data-totals">
+        @for (category of dataTotals; track category.key) {
+          <div class="bw-data-total" [attr.data-key]="category.key">
+            <dt>{{ category.label }}</dt>
+            <dd>{{ category.count }}</dd>
+          </div>
+        }
+      </dl>
+    }
+  </section>
+} @else {
+  <div class="alert bw-effect" [class.alert-warning]="preview.dangerLevel === 'caution'" [class.alert-info]="preview.dangerLevel !== 'caution'">
+    <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+    <div class="alert-content">
+      <span class="alert-heading">{{ info.title }}</span>
+      <span class="alert-body">{{ effectText }} Each account is checked again just before it is changed, and one that changed since this review is skipped.</span>
+    </div>
+  </div>
+}
+
+<!-- 2. The summary, the cap and the expiry. -->
+<div class="bw-summary">
+  <p class="bw-summary-line" id="bw-review-summary" role="status">{{ summaryText }}</p>
+  @if (truncationText) {
+    <p class="bw-truncation">{{ truncationText }}</p>
+  }
+  <p class="bw-expiry">{{ expiryText }} <span class="bw-countdown" aria-hidden="true">({{ countdown }})</span></p>
+</div>
+
+<!-- 3. Protected and skipped: open while anything is there. -->
+<details class="gh-disclosure bw-protected" [open]="hasProtected">
+  <summary>Protected and skipped ({{ protectedCount.toLocaleString('en-US') }})</summary>
+  <div class="gh-disclosure-body">
+    @if (hasProtected) {
+      <ul class="bw-refused-list" role="list">
+        @for (group of preview.refused; track group.code) {
+          <li class="bw-refused-group" [attr.data-code]="group.code">
+            <span class="bw-refused-title">{{ group.message }} — {{ group.count.toLocaleString('en-US') }}</span>
+            @if (group.exampleUserNames.length > 0) {
+              <span class="bw-refused-names">{{ namesText(group) }}</span>
+            }
+          </li>
+        }
+        @if (preview.noOpCount > 0) {
+          <li class="bw-refused-group" data-code="already-done">
+            <span class="bw-refused-title">Already done — {{ preview.noOpCount.toLocaleString('en-US') }}</span>
+          </li>
+        }
+      </ul>
+    } @else {
+      <p class="bw-none">No matching account is protected or already done.</p>
+    }
+  </div>
+</details>
+
+<!-- 4. The accounts the operation runs on. -->
+<section class="bw-accounts" aria-labelledby="bw-review-accounts-title">
+  <h5 id="bw-review-accounts-title" class="bw-section-title">Accounts in this operation ({{ preview.eligible.length.toLocaleString('en-US') }})</h5>
+
+  @if (preview.eligible.length > 0) {
+    <div class="gh-search-field bw-review-search">
+      <label class="visually-hidden" for="bw-review-search">Search the accounts in this operation</label>
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+      <input type="search" class="gh-input" id="bw-review-search" autocomplete="off" placeholder="User name or email"
+             [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+    </div>
+    <p class="gh-list-status bw-review-status">{{ listStatus }}</p>
+
+    <ul class="bw-review-list" role="list" aria-labelledby="bw-review-accounts-title">
+      @for (item of eligibleView; track item.userId) {
+        <li>
+          <article class="bw-review-card" [class.is-excluded]="isExcluded(item)" [attr.data-user-id]="item.userId"
+                   [attr.aria-labelledby]="'bw-include-' + item.userId + '-title'">
+            <input type="checkbox" class="bw-include" [id]="'bw-include-' + item.userId"
+                   [attr.aria-label]="'Include ' + item.userName" [checked]="!isExcluded(item)"
+                   (change)="onInclude(item, $event)">
+            <div class="bw-review-card-main">
+              <h6 class="bw-review-card-title" [id]="'bw-include-' + item.userId + '-title'">
+                <label [for]="'bw-include-' + item.userId">{{ item.userName }}</label>
+              </h6>
+              <span class="bw-review-email">{{ item.email }}</span>
+              <p class="bw-review-meta">{{ registeredText(item) }}<span aria-hidden="true"> · </span><span class="visually-hidden">, </span>{{ signInText(item) }}</p>
+            </div>
+            <app-user-status-badges class="bw-review-badges" [user]="item" [idPrefix]="'bw-review-' + item.userId"></app-user-status-badges>
+          </article>
+        </li>
+      }
+    </ul>
+
+    @if (remainingCount > 0) {
+      <div class="gh-load-more">
+        <button type="button" class="btn-ghost bw-review-more" (click)="showMore()">Show {{ nextBatchCount }} more</button>
+      </div>
+    }
+  } @else {
+    <p class="bw-none">No account is eligible for this action.</p>
+  }
+</section>
+
+<!-- 5. The rare override: closed, at the bottom, delete only. -->
+@if (hasAdvanced) {
+  <details #advancedDetails class="gh-advanced-disclosure bw-advanced" (toggle)="onAdvancedToggle($event)">
+    <summary>Advanced: accounts with a confirmed email ({{ advancedCount }})</summary>
+    <div class="gh-advanced-disclosure-body">
+      <section class="gh-danger-zone" aria-labelledby="bw-advanced-title">
+        <div class="gh-danger-zone-head">
+          <svg class="gh-danger-zone-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <h5 id="bw-advanced-title">Accounts with a confirmed email</h5>
+        </div>
+        <p>A confirmed email means a real person finished registering. These accounts have no game or Overseer
+          data, but their owners may still expect them to exist.</p>
+      </section>
+      <ul class="bw-advanced-list" role="list" aria-label="Accounts with a confirmed email">
+        @for (item of preview.advanced; track item.userId) {
+          <li class="bw-advanced-row" [attr.data-user-id]="item.userId">
+            <span class="bw-advanced-name">{{ item.userName }}</span>
+            <span class="bw-review-email">{{ item.email }}</span>
+            <span class="bw-review-meta">{{ registeredText(item) }}</span>
+          </li>
+        }
+      </ul>
+      <label class="checkbox-label align-start">
+        <input type="checkbox" id="bw-include-advanced" [checked]="choices.includeAdvanced" (change)="onIncludeAdvanced($event)">
+        <span>Also delete these {{ advancedCount }} account{{ advancedCount === 1 ? '' : 's' }} with a confirmed email address.</span>
+      </label>
+    </div>
+  </details>
+}
+
+<!-- 6. The acknowledgments the server requires for this danger level. -->
+@if (requiredAcknowledgments.length > 0) {
+  <fieldset class="bw-acks">
+    <legend>Acknowledge</legend>
+    @for (key of requiredAcknowledgments; track key) {
+      <label class="checkbox-label align-start">
+        <input type="checkbox" [id]="'bw-ack-' + key" [checked]="isAcknowledged(key)" (change)="onAcknowledge(key, $event)">
+        <span>{{ acknowledgmentText(key) }}</span>
+      </label>
+    }
+  </fieldset>
+}
+
+<!-- 7. The typed phrase, delete only; it follows the live count. -->
+@if (requiredPhrase) {
+  <div class="bw-phrase">
+    <label for="bw-phrase">Type <strong>{{ requiredPhrase }}</strong> to confirm</label>
+    <input id="bw-phrase" type="text" class="gh-input bw-phrase-input" autocomplete="off" spellcheck="false" required
+           [attr.pattern]="phrasePattern" [attr.aria-invalid]="phraseInvalid ? 'true' : null"
+           [value]="choices.phrase" (input)="onPhrase($event)">
+  </div>
+}
+
+@if (executeError) {
+  <p class="gh-field-error bw-execute-error" role="alert">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    <span>{{ executeError }}</span>
+  </p>
+}

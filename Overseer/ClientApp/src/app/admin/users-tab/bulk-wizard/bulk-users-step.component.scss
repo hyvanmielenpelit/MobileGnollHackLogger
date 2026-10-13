@@ -1,0 +1,65 @@
+/* Step 1's layout. The filter bar, the status line, the badges and the radios are global in
+   styles.scss or in their own components. */
+
+:host {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-inline-size: 0;
+}
+
+.bw-match-status {
+  &:empty {
+    display: none;
+  }
+}
+
+.bw-match-error,
+.bw-match-note {
+  margin: 0;
+}
+
+/* Compact read-only rows: name, email and badges on one line where the list is wide, wrapping
+   below. */
+.bw-match-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  container: bw-matches / inline-size;
+}
+
+.bw-match-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 14rem) minmax(10rem, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 0.5rem 0.75rem;
+  font-size: var(--text-secondary);
+
+  & + & {
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+  }
+}
+
+.bw-match-name {
+  min-inline-size: 0;
+  font-weight: 700;
+  color: #e4e4e7;
+  overflow-wrap: anywhere;
+}
+
+.bw-match-email {
+  min-inline-size: 0;
+  color: #a1a1aa;
+  overflow-wrap: anywhere;
+}
+
+@container bw-matches (inline-size < 40rem) {
+  .bw-match-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

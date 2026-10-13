@@ -16,20 +16,6 @@ public class CreateGroupRequest
     public string DisplayName { get; set; } = string.Empty;
 }
 
-public class AdminUserDto
-{
-    public string Id { get; set; } = string.Empty;
-    public string UserName { get; set; } = string.Empty;
-    public string Email { get; set; } = string.Empty;
-    public List<AdminGroupDto> Groups { get; set; } = new List<AdminGroupDto>();
-    public bool IsOverseerBlocked { get; set; }
-    public DateTime? OverseerBlockedUtc { get; set; }
-    public string? OverseerBlockReason { get; set; }
-    public bool HasAccountHold { get; set; }
-    public string? AccountHoldReason { get; set; }
-    public long? PendingDeletionRequestId { get; set; }
-}
-
 public class AssignGroupRequest
 {
     public long GroupId { get; set; }

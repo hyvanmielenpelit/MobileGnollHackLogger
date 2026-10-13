@@ -20,6 +20,7 @@ import {
   AiTelemetryUsersQuery,
   AiTelemetryUsersSort
 } from '../../../services/admin.service';
+import { AdminUsersService } from '../../../services/admin-users.service';
 import { formatCost } from '../../benchmark/batteries/battery.models';
 import { formatInteger } from '../../benchmark/shared/provider-availability/provider-availability';
 import { CardListSort, CardListState } from '../../../shared/data-table/card-list-state';
@@ -79,6 +80,7 @@ const LIMIT_SOURCE_LABELS: Readonly<Record<AiTelemetryUserConfigDto['limitSource
 })
 export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
   private readonly adminService = inject(AdminService);
+  private readonly usersService = inject(AdminUsersService);
   private readonly store = inject(AdminPageStore);
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
   private readonly cdr = inject(ChangeDetectorRef);
@@ -344,7 +346,7 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
 
   private block(user: AiTelemetryUserRowDto, reason: string): void {
     this.busyUserId.set(user.userId);
-    this.adminService.blockUser(user.userId, reason).subscribe({
+    this.usersService.blockFromAiChat(user.userId, reason).subscribe({
       next: () => {
         this.busyUserId.set(null);
         this.store.showToast(`${user.userName} is blocked from the Overseer AI chat.`, 'success', 'User Blocked');
@@ -369,7 +371,7 @@ export class TelemetryUsersComponent implements OnInit, OnChanges, OnDestroy {
 
   private unblock(user: AiTelemetryUserRowDto): void {
     this.busyUserId.set(user.userId);
-    this.adminService.unblockUser(user.userId).subscribe({
+    this.usersService.unblockFromAiChat(user.userId).subscribe({
       next: () => {
         this.busyUserId.set(null);
         this.store.showToast(`${user.userName} can use the Overseer AI chat again.`, 'success', 'User Unblocked');

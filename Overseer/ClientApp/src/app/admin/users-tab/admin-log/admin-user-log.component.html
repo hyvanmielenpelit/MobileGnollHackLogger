@@ -1,0 +1,107 @@
+<section class="aul-section" aria-labelledby="aul-title">
+  <div class="aul-head">
+    <h4 id="aul-title" tabindex="-1">Admin log</h4>
+    <!-- The list's one polite live region. -->
+    <p class="gh-list-status aul-status" id="aul-status" role="status">{{ listStatus }}</p>
+  </div>
+  <p class="aul-intro">Every administrator action on an account, newest first. Entries stay after the account is deleted.</p>
+
+  <!-- Search, the Action facet and the active filters, the account and operation chips first. -->
+  <div class="gh-filter-bar aul-filter-bar">
+    <div class="gh-filter-bar-row">
+      <div class="gh-search-field aul-search">
+        <label class="visually-hidden" for="aul-search">Search the admin log by account, administrator or reason</label>
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="search" class="gh-input" id="aul-search" autocomplete="off" placeholder="Search account, administrator or reason"
+               [value]="list.searchText" (input)="onSearchInput($event)" (keydown)="onSearchKeydown($event)">
+      </div>
+      @if (kindOptions.length > 0) {
+        <div class="gh-facet-row aul-facet-row">
+          <app-filter-facet facetId="aul-facet-kind" label="Action" noun="actions" mode="multiple"
+                            [options]="kindOptions" [selected]="selectedKinds"
+                            (selectedChange)="onKindChange($event)"></app-filter-facet>
+        </div>
+      }
+    </div>
+
+    @if (chips.length > 0) {
+      <div class="gh-filter-bar-row aul-chips-row">
+        <ul class="gh-filter-chips aul-chips" role="list" aria-label="Active filters">
+          @for (chip of chips; track chip.key) {
+            <li>
+              <button type="button" class="gh-filter-chip"
+                      [attr.aria-label]="'Remove filter ' + chip.facetLabel + ': ' + chip.valueLabel"
+                      (click)="removeChip(chip)">
+                <span class="gh-filter-chip-facet">{{ chip.facetLabel }}:</span>
+                <span class="gh-filter-chip-value">{{ chip.valueLabel }}</span>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </li>
+          }
+        </ul>
+        <button type="button" class="gh-filter-clear aul-clear-filters" (click)="clearFilters()">Clear all</button>
+      </div>
+    }
+  </div>
+
+  @if (error) {
+    <p class="gh-field-error aul-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ error }}</span>
+    </p>
+  } @else if (loaded && rows.length === 0) {
+    @if (hasFilters) {
+      <p class="aul-empty">No admin actions match these filters.
+        <button type="button" class="gh-filter-clear aul-empty-clear" (click)="clearFilters()">Clear all filters</button>
+      </p>
+    } @else {
+      <p class="aul-empty">No admin actions recorded yet.</p>
+    }
+  } @else if (rows.length > 0) {
+    <ul class="aul-cards" role="list" aria-labelledby="aul-title">
+      @for (card of cards; track card.entry.id) {
+        <li class="aul-item">
+          <article class="aul-card" [attr.data-entry-id]="card.entry.id" [attr.data-kind]="card.entry.kind"
+                   [attr.aria-labelledby]="'aul-' + card.entry.id + '-title'">
+            <!-- A dot on screen between the parts, a comma for assistive technology. The action is a word. -->
+            <div class="aul-kicker">
+              <span class="gh-tag aul-kind-tag" [attr.data-tone]="card.tone">{{ card.kindLabel }}</span>
+              <span class="aul-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+              <time class="aul-time" [attr.datetime]="card.entry.occurredUtc">{{ card.time }}</time>
+            </div>
+
+            <!-- Focused after Show more. -->
+            <h5 class="aul-card-title" [id]="'aul-' + card.entry.id + '-title'" tabindex="-1">{{ card.subject }}</h5>
+            <p class="aul-actor">by {{ card.actor }}</p>
+
+            @if (card.entry.reason) {
+              <p class="aul-reason"><span class="aul-label">Reason:</span> {{ card.entry.reason }}</p>
+            }
+
+            @if (card.change; as change) {
+              <p class="gh-change-note aul-detail">
+                <span class="gh-change-note-text">{{ change.before }} <span aria-hidden="true">&rarr;</span><span class="visually-hidden"> changed to </span> {{ change.after }}</span>
+              </p>
+            } @else if (card.detailText) {
+              <p class="aul-detail aul-detail-text">{{ card.detailText }}</p>
+            }
+
+            @if (card.operationId; as operationId) {
+              <div class="aul-bulk">
+                <span class="aul-bulk-text">Part of bulk operation #{{ operationId }}</span>
+                <button type="button" class="btn-link aul-open-results" (click)="openResults(operationId)">Open results<span class="visually-hidden"> of bulk operation #{{ operationId }}</span></button>
+              </div>
+            }
+          </article>
+        </li>
+      }
+    </ul>
+
+    @if (remainingCount > 0) {
+      <div class="gh-load-more aul-load-more">
+        <button type="button" class="btn-ghost aul-show-more" [attr.aria-busy]="loading ? 'true' : null"
+                (click)="showMore()">Show {{ nextBatchCount }} more</button>
+      </div>
+    }
+  }
+</section>

@@ -327,6 +327,187 @@ namespace GnollHackServer.Data.Migrations
                     b.ToTable("AccountHolds");
                 });
 
+            modelBuilder.Entity("MobileGnollHackLogger.Data.AdminBulkOperation", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<short>("Action")
+                        .HasColumnType("smallint");
+
+                    b.Property<string>("ActorUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ActorUserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("ChangedCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CompletedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CriteriaJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("EligibleCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ExpiresUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("FailedCount")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IncludedAdvanced")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("MatchedCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OptionsJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("RefusedCount")
+                        .HasColumnType("int");
+
+                    b.Property<string>("RefusedSummaryJson")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("SkippedCount")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("StartedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<short>("Status")
+                        .HasColumnType("smallint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status", "CreatedUtc");
+
+                    b.ToTable("AdminBulkOperations");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.AdminBulkOperationItem", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("AfterStatus")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("BeforeStatus")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("Excluded")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsAdvanced")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<long>("OperationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<short>("Outcome")
+                        .HasColumnType("smallint");
+
+                    b.Property<DateTime?>("ProcessedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OperationId", "Outcome");
+
+                    b.ToTable("AdminBulkOperationItems");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.AdminUserAction", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("ActorUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("ActorUserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<long?>("BulkOperationId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("Detail")
+                        .HasMaxLength(1024)
+                        .HasColumnType("nvarchar(1024)");
+
+                    b.Property<short>("Kind")
+                        .HasColumnType("smallint");
+
+                    b.Property<DateTime>("OccurredUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("SubjectUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("SubjectUserName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BulkOperationId");
+
+                    b.HasIndex("OccurredUtc");
+
+                    b.HasIndex("SubjectUserId", "OccurredUtc");
+
+                    b.ToTable("AdminUserActions");
+                });
+
             modelBuilder.Entity("MobileGnollHackLogger.Data.ApiKeyFailureAlertState", b =>
                 {
                     b.Property<long>("Id")
@@ -5538,6 +5719,34 @@ namespace GnollHackServer.Data.Migrations
                 {
                     b.HasBaseType("Microsoft.AspNetCore.Identity.IdentityUser");
 
+                    b.Property<string>("AdminLockoutByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTimeOffset?>("AdminLockoutEndUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("AdminLockoutReason")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("BanReason")
+                        .HasMaxLength(512)
+                        .HasColumnType("nvarchar(512)");
+
+                    b.Property<string>("BannedByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("BannedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("CreatedUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("CreatedUtcIsEstimate")
+                        .HasColumnType("bit");
+
                     b.Property<bool?>("IsBanned")
                         .HasColumnType("bit");
 
@@ -5550,6 +5759,9 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("JunetHackUserName")
                         .HasMaxLength(255)
                         .HasColumnType("nvarchar(255)");
+
+                    b.Property<DateTime?>("LastSignInUtc")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("OverseerBlockReason")
                         .HasMaxLength(256)
@@ -5625,6 +5837,27 @@ namespace GnollHackServer.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("AspNetUser");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.AdminBulkOperationItem", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.AdminBulkOperation", "Operation")
+                        .WithMany("Items")
+                        .HasForeignKey("OperationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Operation");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.AdminUserAction", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.AdminBulkOperation", "BulkOperation")
+                        .WithMany()
+                        .HasForeignKey("BulkOperationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("BulkOperation");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkAssessorCalibration", b =>
@@ -6338,6 +6571,11 @@ namespace GnollHackServer.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("AspNetUser");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.AdminBulkOperation", b =>
+                {
+                    b.Navigation("Items");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBattery", b =>

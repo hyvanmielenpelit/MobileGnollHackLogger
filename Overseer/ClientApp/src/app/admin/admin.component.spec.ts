@@ -8,9 +8,12 @@ import { of, throwError } from 'rxjs';
 import { NG_CHARTS_CONFIGURATION } from 'ng2-charts';
 import { APP_CHART_REGISTRABLES } from '../chart-registrables';
 import { AdminComponent } from './admin.component';
-import { AdminService, UsersResponse, GroupDto, SystemAiConfigDto, DefaultApiKeyStatus } from '../services/admin.service';
+import { AdminService, GroupDto, SystemAiConfigDto, DefaultApiKeyStatus } from '../services/admin.service';
+import { AdminUsersService } from '../services/admin-users.service';
 import { buildSystemConfig, spyAdminService } from './admin.component.testing';
 import { AdminUsersTabComponent } from './users-tab/admin-users-tab.component';
+import { AdminUserListComponent } from './users-tab/user-list/admin-user-list.component';
+import { buildAdminUser, buildUsersPage, spyAdminUsersService } from './users-tab/admin-users.testing';
 import { AdminConfigsTabComponent } from './configs-tab/admin-configs-tab.component';
 import { ModelResolutionDialogComponent } from '../shared/model-resolution-dialog/model-resolution-dialog.component';
 
@@ -18,6 +21,7 @@ describe('AdminComponent', () => {
   let component: AdminComponent;
   let fixture: ComponentFixture<AdminComponent>;
   let adminService: AdminService;
+  let usersService: AdminUsersService;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
@@ -31,6 +35,8 @@ describe('AdminComponent', () => {
 
     adminService = TestBed.inject(AdminService);
     spyAdminService(adminService);
+    usersService = TestBed.inject(AdminUsersService);
+    spyAdminUsersService(usersService);
 
     fixture = TestBed.createComponent(AdminComponent);
     component = fixture.componentInstance;
@@ -46,10 +52,7 @@ describe('AdminComponent', () => {
 
   describe('loadData', () => {
     it('should populate users, groups, and configs on normal success', () => {
-      const mockUsers: UsersResponse = {
-        rows: [{ id: '1', userName: 'admin', email: 'admin@test.com', groups: [] }],
-        totalCount: 1
-      };
+      const mockUsers = buildUsersPage([buildAdminUser({ id: '1', userName: 'admin', email: 'admin@test.com' })]);
       const mockGroups: GroupDto[] = [{ id: 1, displayName: 'Admins' }];
       const mockConfigs: SystemAiConfigDto[] = [buildSystemConfig({
         id: 1,
@@ -59,22 +62,23 @@ describe('AdminComponent', () => {
         isSystemWide: true
       })];
 
-      (adminService.getUsers as Mock).mockReturnValue(of(mockUsers));
+      (usersService.list as Mock).mockReturnValue(of(mockUsers));
       (adminService.getGroups as Mock).mockReturnValue(of(mockGroups));
       (adminService.getSystemConfigs as Mock).mockReturnValue(of(mockConfigs));
 
       // ngOnInit runs loadData, and the Users tab it then shows loads the users.
       fixture.detectChanges();
 
-      const usersTab: AdminUsersTabComponent = fixture.debugElement.query(By.directive(AdminUsersTabComponent)).componentInstance;
-      expect(usersTab.users.length).toBe(1);
+      expect(fixture.debugElement.query(By.directive(AdminUsersTabComponent))).toBeTruthy();
+      const list: AdminUserListComponent = fixture.debugElement.query(By.directive(AdminUserListComponent)).componentInstance;
+      expect(list.rows.length).toBe(1);
       expect(component.store.groups.length).toBe(1);
       expect(component.store.configs.length).toBe(1);
       expect(component.loading).toBe(false);
     });
 
-    it('should catch TypeError: Failed to fetch on getUsers and reset loading to false', () => {
-      (adminService.getUsers as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
+    it('should catch TypeError: Failed to fetch on the user list and reset loading to false', () => {
+      (usersService.list as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
       expect(() => {
         fixture.detectChanges();
@@ -84,7 +88,6 @@ describe('AdminComponent', () => {
     });
 
     it('should catch TypeError: Failed to fetch on nested getGroups and reset loading to false', () => {
-      (adminService.getUsers as Mock).mockReturnValue(of({ rows: [], totalCount: 0 }));
       (adminService.getGroups as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
       expect(() => {
@@ -95,7 +98,6 @@ describe('AdminComponent', () => {
     });
 
     it('should catch TypeError: Failed to fetch on nested getSystemConfigs and reset loading to false', () => {
-      (adminService.getUsers as Mock).mockReturnValue(of({ rows: [], totalCount: 0 }));
       (adminService.getGroups as Mock).mockReturnValue(of([]));
       (adminService.getSystemConfigs as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
 
@@ -368,6 +370,14 @@ describe('AdminComponent', () => {
       expect(component.activeTab).toBe('users');
       expect(component.store.usersSubTab).toBe('deletions');
       expect(component.pendingBenchmarkNavigation).toBeNull();
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(removal));
+    });
+
+    it('selects the Users tab on its admin log for ?tab=users&subtab=log', () => {
+      component.applyNavigationParams(convertToParamMap({ tab: 'users', subtab: 'log' }));
+
+      expect(component.activeTab).toBe('users');
+      expect(component.store.usersSubTab).toBe('log');
       expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(removal));
     });
 

@@ -68,7 +68,7 @@ export class AdminComponent implements OnInit, OnDestroy {
   /**
    * Applies the `tab`, `subtab`, `suiteId` and `resolveConfig` query parameters a link carries, then
    * removes them from the address, so a reload or Back does not apply them again. `subtab` goes to
-   * the Benchmark tab, or to the Users tab (`users` or `deletions`). A valid `resolveConfig` selects
+   * the Benchmark tab, or to the Users tab (`users`, `deletions` or `log`). A valid `resolveConfig` selects
    * the System Configs tab, which opens that configuration's resolution dialog.
    */
   applyNavigationParams(params: ParamMap): void {
@@ -82,7 +82,7 @@ export class AdminComponent implements OnInit, OnDestroy {
         this.pendingBenchmarkNavigation = { subTab: params.get('subtab'), suiteId };
       } else if (tab === 'users') {
         const subTab = params.get('subtab');
-        if (subTab === 'users' || subTab === 'deletions') {
+        if (subTab === 'users' || subTab === 'deletions' || subTab === 'log') {
           this.store.usersSubTab = subTab;
         }
       }

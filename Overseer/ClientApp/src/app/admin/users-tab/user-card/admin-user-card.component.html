@@ -1,0 +1,123 @@
+<article class="au-card" [attr.data-user-id]="user.id" [attr.aria-labelledby]="idBase + '-title'">
+  <div class="au-card-head">
+    <!-- Focused after Show more and after a delete. -->
+    <h5 class="au-card-title" [id]="idBase + '-title'" tabindex="-1">{{ user.userName }}</h5>
+    <p class="au-card-email">{{ user.email }}</p>
+    <!-- A dot on screen between the parts, a comma for assistive technology. -->
+    <p class="au-card-meta">
+      <span class="au-registered">{{ registeredText }}</span>
+      <span class="au-sep"><span aria-hidden="true">&middot;</span><span class="visually-hidden">, </span></span>
+      <span class="au-last-sign-in">{{ lastSignInText }}</span>
+    </p>
+  </div>
+
+  <div class="au-card-status">
+    <app-user-status-badges [user]="user" [idPrefix]="idBase" [highlight]="highlight"></app-user-status-badges>
+  </div>
+
+  <div class="au-card-actions" role="group" [attr.aria-label]="'Actions for ' + user.userName">
+    <button type="button" class="action-btn au-manage-groups"
+            [attr.aria-label]="'Manage the groups of ' + user.userName"
+            [attr.interestfor]="idBase + '-groups-tip'"
+            [attr.style]="'anchor-name: --' + idBase + '-groups-tip'"
+            (click)="manageGroups.emit()">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+    </button>
+    <div popover="hint" class="gh-tooltip" [id]="idBase + '-groups-tip'"
+         [attr.style]="'position-anchor: --' + idBase + '-groups-tip'">Manage groups</div>
+
+    <button type="button" class="action-btn au-manage-configs"
+            [attr.aria-label]="'Manage the AI configurations of ' + user.userName"
+            [attr.interestfor]="idBase + '-configs-tip'"
+            [attr.style]="'anchor-name: --' + idBase + '-configs-tip'"
+            (click)="manageConfigs.emit()">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+    </button>
+    <div popover="hint" class="gh-tooltip" [id]="idBase + '-configs-tip'"
+         [attr.style]="'position-anchor: --' + idBase + '-configs-tip'">Manage AI configurations</div>
+
+    <button type="button" class="action-btn au-security"
+            [attr.aria-label]="'Show the security events of ' + user.userName"
+            [attr.interestfor]="idBase + '-security-tip'"
+            [attr.style]="'anchor-name: --' + idBase + '-security-tip'"
+            (click)="securityEvents.emit()">
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+    </button>
+    <div popover="hint" class="gh-tooltip" [id]="idBase + '-security-tip'"
+         [attr.style]="'position-anchor: --' + idBase + '-security-tip'">Security events</div>
+
+    <button type="button" class="btn-ghost au-actions-btn" [id]="idBase + '-actions-btn'"
+            [attr.popovertarget]="idBase + '-actions'"
+            [attr.aria-expanded]="actionsOpen"
+            [attr.aria-busy]="busy ? 'true' : null"
+            [attr.style]="'anchor-name: --' + idBase + '-actions'">
+      Actions
+      <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </button>
+    <div popover="auto" class="gh-action-popover au-actions-popover" [id]="idBase + '-actions'"
+         role="group" [attr.aria-label]="'Account actions for ' + user.userName"
+         [attr.style]="'position-anchor: --' + idBase + '-actions'"
+         (toggle)="onActionsToggle($event)" (keydown)="onActionsKeydown($event)">
+      @for (group of actionGroups; track group.key) {
+        <div class="gh-action-popover-group" role="group" [attr.aria-labelledby]="idBase + '-group-' + group.key">
+          <p class="gh-action-popover-heading" [id]="idBase + '-group-' + group.key">{{ group.heading }}</p>
+          @for (item of group.items; track item.id) {
+            <button type="button" class="gh-action-popover-item" [class.is-danger]="item.danger" [id]="itemId(item)"
+                    [attr.data-action]="item.id"
+                    [attr.aria-disabled]="item.disabledReason ? 'true' : null"
+                    (click)="choose(item)">
+              <span>{{ item.label }}</span>
+              @if (item.disabledReason) {
+                <span class="gh-action-popover-item-reason">{{ item.disabledReason }}</span>
+              }
+            </button>
+          }
+        </div>
+      }
+    </div>
+  </div>
+
+  @if (changeNote) {
+    <div class="gh-change-note au-change-note">
+      <span class="gh-change-note-text">Changed just now by you: {{ changeNote }}</span>
+      <button type="button" class="action-btn au-dismiss-note"
+              [attr.aria-label]="'Dismiss the change note of ' + user.userName"
+              [attr.interestfor]="idBase + '-note-tip'"
+              [attr.style]="'anchor-name: --' + idBase + '-note-tip'"
+              (click)="dismissNote.emit()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+      <div popover="hint" class="gh-tooltip" [id]="idBase + '-note-tip'"
+           [attr.style]="'position-anchor: --' + idBase + '-note-tip'">Dismiss</div>
+    </div>
+  }
+
+  <dl class="au-card-facts">
+    <div class="au-fact">
+      <dt>Failed sign-ins</dt>
+      <dd class="au-fact-failed">{{ user.accessFailedCount }}</dd>
+    </div>
+    <div class="au-fact">
+      <dt>Two-factor</dt>
+      <dd class="au-fact-2fa">{{ twoFactorText }}</dd>
+    </div>
+    <div class="au-fact au-fact-wide">
+      <dt>Groups</dt>
+      <dd class="au-fact-groups">
+        @for (group of user.groups; track group.id) {
+          <span class="au-group-chip">{{ group.displayName }}</span>
+        } @empty {
+          <span class="au-none">None</span>
+        }
+      </dd>
+    </div>
+    <div class="au-fact">
+      <dt>Game data</dt>
+      <dd class="au-fact-game">{{ gameDataText }}</dd>
+    </div>
+    <div class="au-fact">
+      <dt>Chats</dt>
+      <dd class="au-fact-chats">{{ user.chatSessionCount }}</dd>
+    </div>
+  </dl>
+</article>

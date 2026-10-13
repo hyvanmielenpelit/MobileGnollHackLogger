@@ -36,6 +36,15 @@ public class SessionController : ControllerBase
         _logger = logger;
     }
 
+    private const string InvalidCredentialsMessage = "Invalid credentials.";
+
+    /* Every sign-in refusal is a 401, the status GnollHack's Overseer page stops retrying on
+       (with 400 and 404); code is throttled, locked_out, banned, email_not_confirmed or
+       invalid_credentials. Only a caller with the correct password is told banned or
+       email_not_confirmed. */
+    private UnauthorizedObjectResult SignInRefused(string code, string message)
+        => Unauthorized(new { code, message });
+
     [HttpPost("create")]
     [IgnoreAntiforgeryToken] // CRITICAL: Called by a native client without standard CSRF tokens
     [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting(Overseer.Security.RateLimitPolicies.Login)]
@@ -43,7 +52,8 @@ public class SessionController : ControllerBase
         [FromForm] CreateSessionRequest request,
         [FromServices] Overseer.Services.Security.OverseerAccessService? overseerAccess = null,
         [FromServices] Overseer.Services.Security.ISecurityEventRecorder? securityEvents = null,
-        [FromServices] Overseer.Services.Telemetry.IActivityCounter? activityCounter = null)
+        [FromServices] Overseer.Services.Telemetry.IActivityCounter? activityCounter = null,
+        [FromServices] GnollHackServer.Data.Security.GameApiSignInThrottle? signInThrottle = null)
     {
         var expectedSecret = _configuration["AntiForgeryToken"];
         if (string.IsNullOrEmpty(expectedSecret) || request.AntiForgeryToken != expectedSecret)
@@ -58,23 +68,69 @@ public class SessionController : ControllerBase
 
         string? remoteIp = HttpContext?.Connection.RemoteIpAddress?.ToString();
 
+        /* GnollHack calls this with its stored credentials and retries, so failures count toward
+           the game-style throttle and never toward Identity lockout. Checked before the user is
+           looked up: a throttled request costs no lookup and no password hash. */
+        var decision = signInThrottle?.Check(request.UserName, remoteIp);
+        if (decision is { Allowed: false } throttled)
+        {
+            securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
+                SecurityEventKind.RateLimitRejected, IpAddress: remoteIp, Code: "session-create", Detail: throttled.Reason));
+            return SignInRefused("throttled", GnollHackServer.Data.Security.GameApiSignInResponses.For(
+                GnollHackServer.Data.Security.GameApiSignInOutcome.Throttled, throttled.RetryAfter).Body);
+        }
+
         var user = await _signInManager.UserManager.FindByNameAsync(request.UserName);
         if (user == null)
         {
+            signInThrottle?.RecordFailure(request.UserName, remoteIp);
             // The attempted name is never stored.
             securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
                 SecurityEventKind.LoginFailed, IpAddress: remoteIp, Code: "session-create", Detail: "unknown-user"));
-            return Unauthorized();
+            return SignInRefused("invalid_credentials", InvalidCredentialsMessage);
         }
 
-        var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: true);
-        if (!result.Succeeded)
+        // A locked-out account is still refused: the lockout is checked whatever the flag says.
+        var result = await _signInManager.CheckPasswordSignInAsync(user, request.Password, lockoutOnFailure: false);
+
+        // Identity refuses a banned or unconfirmed account before it checks the password, so the password is checked here.
+        bool? passwordCorrect = result.IsNotAllowed
+            ? await _signInManager.UserManager.CheckPasswordAsync(user, request.Password)
+            : null;
+        var (outcome, countsAsFailure) = GnollHackServer.Data.Security.GameApiSignInClassifier.Classify(
+            result, passwordCorrect, isBanned: user.IsBanned == true, emailConfirmed: user.EmailConfirmed);
+
+        if (outcome != GnollHackServer.Data.Security.GameApiSignInOutcome.Success)
         {
-            securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
-                result.IsLockedOut ? SecurityEventKind.LoginLockedOut : SecurityEventKind.LoginFailed,
-                UserId: user.Id, IpAddress: remoteIp, Code: "session-create"));
-            return Unauthorized();
+            if (countsAsFailure)
+            {
+                signInThrottle?.RecordFailure(request.UserName, remoteIp);
+            }
+
+            switch (outcome)
+            {
+                case GnollHackServer.Data.Security.GameApiSignInOutcome.LockedOut:
+                {
+                    securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
+                        SecurityEventKind.LoginLockedOut, UserId: user.Id, IpAddress: remoteIp, Code: "session-create"));
+                    DateTimeOffset now = DateTimeOffset.UtcNow;
+                    TimeSpan? remaining = user.LockoutEnd is DateTimeOffset end ? end - now : null;
+                    return SignInRefused("locked_out", GnollHackServer.Data.Security.GameApiSignInResponses.For(outcome,
+                        remaining is TimeSpan r && r > TimeSpan.Zero ? r : TimeSpan.FromMinutes(1), now).Body);
+                }
+                case GnollHackServer.Data.Security.GameApiSignInOutcome.Banned:
+                    return SignInRefused("banned", GnollHackServer.Data.Security.GameApiSignInResponses.For(outcome).Body);
+                case GnollHackServer.Data.Security.GameApiSignInOutcome.EmailNotConfirmed:
+                    return SignInRefused("email_not_confirmed", GnollHackServer.Data.Security.GameApiSignInResponses.For(outcome).Body);
+                default:
+                    securityEvents?.Record(new Overseer.Services.Security.SecurityEventEntry(
+                        SecurityEventKind.LoginFailed, UserId: user.Id, IpAddress: remoteIp, Code: "session-create"));
+                    return SignInRefused("invalid_credentials", InvalidCredentialsMessage);
+            }
         }
+
+        signInThrottle?.RecordSuccess(request.UserName, remoteIp);
+        await GnollHackServer.Data.Security.AccountActivity.TouchSignInAsync(_dbContext, user.Id, DateTime.UtcNow, _logger);
 
         // Anonymous until the password passes, so the block is checked here rather than by a filter.
         var block = overseerAccess == null ? null : await overseerAccess.GetBlockAsync(user.Id);

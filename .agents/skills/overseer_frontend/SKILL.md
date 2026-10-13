@@ -104,6 +104,24 @@ Harness-neutral, and the floor for any Overseer frontend work.
   `-severity`, `-item-title`, `-item-detail`, `-item-actions` and `.gh-readiness-ack`. Every severity is
   a word and a glyph, never a color alone, and forced-colors mode keeps the borders and words. Contract:
   [`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 4i.
+- **Account management** (since 2026-10-13) — global in `styles.scss`, shared by the Users tab's cards,
+  its account action dialogs, the Bulk Actions wizard and the Admin log; never copied into a component:
+  - **`.gh-account-badges`** / **`.gh-account-badge`** with `[data-tone]` `ok`, `info`, `warning` or
+    `danger`: a status badge, a 12 px `aria-hidden` glyph and a word, tone tokens plus a border, never a
+    color alone. `button.gh-account-badge` is a badge with facts behind an `interestfor` hint;
+    `.is-new` gives a new badge a one-second outline, turned off under reduced motion; forced-colors mode
+    keeps the borders.
+  - **`.gh-action-popover-group`**, **`.gh-action-popover-heading`** and
+    **`.gh-action-popover-item.is-danger`**: the headed groups and the destructive item of an action
+    popover ([`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 4f).
+  - **`.gh-danger-zone`** with `.gh-danger-zone-head` and `.gh-danger-zone-icon` (a Feather
+    *alert-octagon*): the red-edged panel that states a permanent deletion, in the delete dialog and the
+    wizard's review step.
+  - **`.gh-change-note`** with `.gh-change-note-text`: the dashed *before → after* note of an action,
+    with an optional `.action-btn` Dismiss; the admin log's cards use it without one.
+  - **`.gh-advanced-disclosure`** with `.gh-advanced-disclosure-body`: a muted, dashed `details` for the
+    one rare override, styled to look secondary
+    ([`frontend_ui_controls`](../frontend_ui_controls/SKILL.md) § 8h).
 - **`.gh-multi-picker--cards`** (since 2026-10-10) — the card mode of `app-multi-picker`
   (`chipStyle="card"`), global in `styles.scss`'s *Multi-select picker* block with the chip parts
   `.gh-multi-picker-chip-main`, `-chip-badges` and `-chip-note` (`.is-warning`) and the count read-out
@@ -366,14 +384,38 @@ To find specific popups, look in the corresponding component's `.html` template:
   one tab panel per tab. Each tab is a component of its own (`users-tab/`, `groups-tab/`, `configs-tab/`,
   `database-tab/`, `telemetry-tab/`, `devtools-tab/`), and `AdminPageStore` (`admin-page.store.ts`) holds
   what the tabs share or keep across a tab switch. Dialogs, by the component that holds them:
-  - `#manageGroupsDialog`: Manage Groups (`users-tab/`)
+  - `#manageGroupsDialog`: Manage Groups (`users-tab/user-list/`)
   - `#createGroupDialog`: Create Group (`groups-tab/`)
   - `#configDialog`: Config (`configs-tab/`) — near full screen (`settings-dialog model-form-dialog`);
     only the body of its `app-ai-model-form` scrolls.
   - `#config-filter-panel`: Config Filter (`popover="auto"`, anchored to `#config-filter-trigger`)
   - `#confirmDialog`: Confirm (`admin-dialogs/admin-confirm-dialog.component.html`; Groups, Database and
     the rate limits dialog each embed their own)
-  - `#manageUserConfigsDialog`: Manage User Configs (`users-tab/`)
+  - `#manageUserConfigsDialog`: Manage User Configs (`users-tab/user-list/`)
+  - The Users list's account action dialogs (`users-tab/user-action-dialogs/`, `app-user-*-dialog`,
+    each a `dialog.gh-dialog.uad-dialog` opened with `showModal()`, focus on its heading, a server error
+    kept inline and `aria-busy` while sending; their shared layout is `user-action-dialog.scss`, the
+    `styleUrl` of each):
+    - `app-user-lockout-dialog` (`.uad-lockout-dialog`): *Lock out {user}* — duration radios (*1 hour*,
+      *24 hours*, *7 days*, *30 days*, *Until a date…* with an `app-date-field`), a required reason, the
+      effect line, the *right account* checkbox and **Lock Out**, `aria-disabled` with its reason in a
+      `.gh-footer-note`.
+    - `app-user-ban-dialog` (`.uad-ban-dialog`): *Ban {user}* — a required reason, the effect line, the
+      same checkbox and **Ban Account**.
+    - `app-user-restrictions-dialog` (`.uad-restrictions-dialog`): *Game upload restrictions for {user}* — two
+      checkboxes, prefilled, a reason required while anything is on, **Save Restrictions**.
+    - `app-user-delete-dialog` (`.uad-delete-dialog`): *Delete {user}?* — a `.dc-ring` while the
+      deletion impact loads; with refusals only a `.gh-danger-zone` naming them and **Close**; otherwise
+      the counts, one required checkbox per important category with data, **Ban instead**, a reason, the
+      typed user name and **Delete Account** (*trash*).
+    - The safe and reason-only actions (unlock, unban, sign out everywhere, mark email confirmed; block,
+      hold, reset two-factor) use the shared `app-admin-confirm-dialog` and `app-admin-reason-dialog`,
+      which the list embeds.
+  - `app-admin-bulk-wizard` (`users-tab/bulk-wizard/`): *Bulk Actions*, a full-screen four-step wizard
+    (`dialog.gh-dialog.gh-dialog-fullscreen.bw-dialog`, the global `gh-wizard*` frame, `showModal()`, no
+    `closedby="any"`): *1. Users · 2. Action · 3. Review · 4. Results*. Opened by the tab's **Bulk Actions**
+    with the list's criteria, or by the Admin log's **Open results** on step 4 through the page store's
+    `requestBulkWizard`. Its state is discarded on close; a running operation continues.
   - `#manageGroupConfigsDialog`: Manage Group Configs (`groups-tab/`)
   - `#editConfigOverrideDialog`: Edit Config Override (`admin-dialogs/admin-config-override-dialog.component.html`)
   - `#rateLimitsDialog`: Rate Limits (`admin-dialogs/admin-rate-limits-dialog.component.html`)

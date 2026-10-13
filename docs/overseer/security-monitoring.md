@@ -4,7 +4,9 @@ How Overseer and the GnollHack website keep per-user AI limits enforceable, bloc
 chat, attribute provider safety actions to a user, record security events, harden sign-in on the
 website and the game APIs, and hold an account deletion for administrator review. This is not legal
 advice: the owners should check their obligations as an operator of an AI service with legal counsel,
-in particular for account-deletion holds, which delay an erasure request.
+in particular for account-deletion holds, which delay an erasure request. The Users tab's per-user
+actions (lock out, ban, game upload restrictions, delete), the Bulk Actions wizard and the admin log are
+in [`admin-user-management.md`](admin-user-management.md).
 
 ## 1. Do the AI providers already monitor for misuse?
 
@@ -87,7 +89,8 @@ WHERE c.IsSystemWide = 0
 ## 3. Blocking a user from the AI chat
 
 An administrator blocks a user from the Users tab (or the Security tab) with a written reason of 1–256
-characters, which is shown to the user; an administrator cannot block themselves. The fields live on
+characters, which is shown to the user; an administrator cannot block themselves or another
+administrator. The fields live on
 `ApplicationUser` (`OverseerBlockedUtc`, `OverseerBlockReason`, `OverseerBlockedByUserId`).
 `OverseerAccessService` reads the block with a 30-second cache (entries declare a size, as the cache has
 a size limit) evicted on block and unblock, and writes `AdminBlocked` / `AdminUnblocked` events.
@@ -134,13 +137,14 @@ the request's context, at most 30 writes per IP address a minute.
 | Kind | Written by | User | IP |
 |---|---|---|---|
 | `LoginFailed` (`Detail` `unknown-user` when no account matched), `LoginLockedOut`, `TwoFactorFailed` | Overseer `AuthController` login and 2FA; `SessionController.Create`; website `Login`; game APIs | when matched | yes |
-| `RateLimitRejected` (`Code` = policy) | Overseer and website rate limiters; the game API sign-in throttle (`game-api-signin`) | when signed in | yes |
+| `RateLimitRejected` (`Code` = policy) | Overseer and website rate limiters; the game API sign-in throttle (`game-api-signin`) and the session-create throttle (`session-create`), `Detail` = the limit (`pair`, `account` or `ip`) | when signed in | yes |
 | `QuotaRefused` (`Code` user / group / system), `AccessDenied` (`Code` disabled / not-assigned) | `SystemAiConfigService` | yes | no |
 | `ProviderRefusal`, `ProviderSafetyBlock` (`Code` = finish / block reason), `ProviderPolicyRejection` (`Code` = sanitized error code of a final 4xx attempt naming a policy) | after every operator-funded chat turn and sub-agent run (`ProviderRefusalEvents`), incognito included; never for titles | yes | no |
 | `AttachmentRejected` (`Code` count / validation / content / malware / scan-failed) | `ChatService` attachment checks | yes | no |
 | `ChatReported` | `ChatController.ReportMessage`, after the email is sent; the report itself is not stored | yes | no |
 | `AdminBlocked`, `AdminUnblocked` | `OverseerAccessService` | the blocked user | no |
 | `AccountHoldPlaced`, `AccountHoldReleased` (`Detail` = reason), `AccountDeletionHeld` (`Code` manual / automatic) | holds and the website deletion page | the account's user | no |
+| `AdminLockedOut`, `AdminUnlocked`, `AdminBanned`, `AdminUnbanned`, `AdminSignedOut`, `AdminEmailConfirmed`, `AdminTwoFactorReset` (`Detail` = reason) | the Users tab's per-user actions and the Bulk Actions runner (`AdminUserManagementService`); the durable record naming the administrator is the admin log | the account's user | no |
 
 **Retention:** `ChatRetentionSettings:PruneSecurityEventDays` (180) prunes runs last seen before the
 window (full-pass phase 9, `POST api/admin/maintenance/prune-security-events`, the Database tab), except
@@ -163,6 +167,23 @@ successful sign-in, so ordinary typing mistakes never accumulate; combined with 
 attacker gets at most ten guesses per account per 15 minutes, while NIST SP 800-63B only requires
 capping consecutive failures at 100. The website's password page counts failures toward lockout; its
 2FA and recovery-code pages always did. Its Lockout page names the duration.
+
+**Only the website's and Overseer's own sign-in pages count toward Identity lockout.** The game APIs
+and `/api/session/create`, which GnollHack calls with its stored credentials and retries, check the
+password with `lockoutOnFailure: false` and count failures toward the game sign-in throttle of § 8
+instead, so a game client retrying a mistyped password can never lock the account. A locked-out account
+is still refused there.
+
+**A banned or unconfirmed account** is refused by Identity before the password is checked
+(`GnollHackSignInManager` makes a ban refuse every sign-in path; both apps require a confirmed account).
+Both sign-in pages then check, in order: a locked-out account is refused first, before any password
+check; a wrong password counts toward lockout like any other wrong password; only the correct password
+reveals *"This account has been banned."* (on the website followed by a contact line) or, in Overseer
+only, that the email is not confirmed. The ban reason is never shown.
+
+**Signed-in sessions end within `IdentityLockout:SecurityStampValidationMinutes` (5)** of a new security
+stamp — a ban, an admin lockout, *Sign out everywhere* or a two-factor reset: both apps set
+`SecurityStampValidatorOptions.ValidationInterval` from it, instead of the 30-minute default.
 
 **Accounts created with lockout disabled** keep `LockoutEnabled = 0` and are never locked. Count them:
 
@@ -197,22 +218,44 @@ two seconds without backoff. So every refusal a player can trigger is a 403:
 
 | Outcome | Status | Body (`text/plain; charset=utf-8`) | Headers |
 |---|---|---|---|
-| Wrong password, unknown user, unconfirmed account | 403 | *"Sign-in failed."* | — |
-| Throttled (account or IP) | 403 | *"Too many failed sign-in attempts. Try again in {n} minutes."* | `Retry-After` |
-| Identity lockout | 403 (was 423) | *"This account is temporarily locked. Try again in {n} minutes."* | `Retry-After` from `LockoutEnd` |
+| Wrong password, unknown user (and a banned or unconfirmed account with a wrong password) | 403 | *"Sign-in failed."* | — |
+| Throttled (pair, account or IP) | 403 | *"Too many failed sign-in attempts. Try again in {n} minutes."* | `Retry-After` |
+| Identity lockout | 403 (was 423) | *"This account is temporarily locked. Try again in {n} minutes."*; beyond 24 hours *"This account is locked until {yyyy-MM-dd HH:mm} UTC."* | `Retry-After` from `LockoutEnd`, at most 366 days |
+| Banned, correct password | 403 | *"This account has been banned."* | — |
+| Unconfirmed email, correct password | 403 | *"Confirm your email address before signing in to GnollHack online features."* | — |
 | 2FA account | 412 | *"This account requires two-factor authentication."* | — |
 | Antiforgery mismatch | 401 | *"AntiForgeryToken is invalid."* | — |
-| Banned | 423 (unchanged) | unchanged — the ban checks stay in the controllers | — |
+| Game log or bones upload restriction | 423 (unchanged) | unchanged — these checks stay in the controllers, after sign-in | — |
 
 `GameApiAuthenticator` does what the four controllers repeated: the antiforgery check, the in-memory
-`GameApiSignInThrottle` (10 failed passwords per account in 15 minutes → 15 minutes refused; 100 failures
-per IP in 15 minutes → 15 minutes refused; a refused request costs no password hash, writes no request
-log row and extends nothing; a correct password clears the account's failures), and the password check
-through `CheckPasswordSignInAsync` without issuing a cookie, with 2FA detected exactly as
-`PasswordSignInAsync` decides it. Failures count toward the throttle, never toward Identity lockout. The
-throttle is per process: with more than one instance each keeps its own windows (the deployment is a
-single instance). `ReplayController` is not implemented after sign-in and answers a correct password
-with the same 403.
+`GameApiSignInThrottle`, and the password check through `CheckPasswordSignInAsync` without issuing a
+cookie, with 2FA detected exactly as `PasswordSignInAsync` decides it. Failures count toward the
+throttle, never toward Identity lockout. The throttle has three sliding limits:
+
+| Limit | Key | Failures | Window | Block |
+|---|---|---|---|---|
+| Pair | account and address | 10 | 15 minutes | 15 minutes |
+| Account | account, across addresses | 50 | 60 minutes | 30 minutes |
+| Address | address, across accounts | 100 | 15 minutes | 15 minutes |
+
+The account key is the upper-cased user name, whether or not the account exists. The throttle is
+checked before the account is looked up, so a refused request costs no lookup and no password hash,
+writes no request log row and extends nothing. Only a wrong password or an unknown user counts
+(`GameApiSignInClassifier`); a banned or unconfirmed account with the correct password is told so and
+is not counted. A correct password clears the pair's and the account's failures, not the address's.
+Because the tight limit is per pair, guessing from another address cannot keep a player out of the
+game: that address meets the account limit only after 50 failures an hour.
+
+Overseer's `/api/session/create` uses the same throttle, classifier and limits (its own `GameApiSecurity`
+section) and answers every refusal with 401 `{ code, message }`: `throttled`, `locked_out`, `banned`,
+`email_not_confirmed` or `invalid_credentials`. Its refusals are the `session-create` events of § 5.
+
+The throttle is per process: the website and Overseer keep separate windows, so do several instances
+(the deployment is a single instance), and a restart clears them. **An administrator's Unlock in
+Overseer does not clear it**, since the website's windows are out of Overseer's reach; a pair block lasts
+at most 15 minutes and an account block 30. `ReplayController` is not implemented after sign-in and
+answers a correct password with the same 403. Details and the full response tables are in
+[`admin-user-management.md`](admin-user-management.md) § 7.
 
 The website's rate limiter has two policies per remote IP: `GameApiFlood`
 (`GameApiSecurity:FloodRequestsPerMinute`, 600 — far above one client's worst loop) on the five POST
@@ -244,8 +287,11 @@ SELECT TOP 50 RequestUserName, UserIPAddress, LastDate FROM RequestLogs WHERE Ty
 ```
 
 If it is one address, set `GameApiSecurity:PerIpLimitsEnabled` to `false` until forwarded headers are
-configured for that proxy; the account limits keep working either way. The same applies to Overseer's
-`Login` policy, which partitions by remote IP.
+configured for that proxy; the account limits keep working either way. Neither app calls
+`UseForwardedHeaders`, so behind a proxy every client also shares one pair key per account: the pair
+limit then behaves like a per-account limit of 10 failures, and the address limit could refuse every
+player at once. The same applies to Overseer's `Login` policy and to `/api/session/create`'s throttle,
+which partition by remote IP.
 
 ## 9. Acceptable use
 
@@ -330,6 +376,7 @@ kept past retention until the request is decided; an approved deletion removes t
 
 `LimitEnforcementTests`, `OverseerBlockTests`, `SafetyIdentifierTests`, `SecurityEventRecorderTests`,
 `SecurityEventMaintenanceTests`, `GameApiSignInThrottleTests`, `GameApiSignInResponsesTests`,
+`GameApiSignInClassifierTests`, `GnollHackSignInManagerTests`, `SessionCreateLockoutTests`,
 `AccountHoldEvaluatorTests`, `AccountErasureTests`, `AccountDeletionReviewTests` and
 `AccountDeletionReviewEmailTests` in `Overseer.Tests/UnitTests/`. No test project hosts the website,
 so the game API controllers, the account pages and the deletion page are checked manually.

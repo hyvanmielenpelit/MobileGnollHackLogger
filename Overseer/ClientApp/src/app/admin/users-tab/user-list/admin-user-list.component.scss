@@ -1,0 +1,113 @@
+@use '../../admin-shared' as shared;
+
+/* The filter bar, the status line, Load more, `.action-btn` and `.btn-ghost` are global in styles.scss;
+   the card's own layout is in the card component. */
+
+:host {
+  display: block;
+}
+
+@include shared.text-muted;
+@include shared.badge-system-wide;
+@include shared.d-flex;
+@include shared.scrollable-list;
+@include shared.config-list-item;
+@include shared.dialog-wide;
+
+.au-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.au-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+
+  h4 {
+    margin: 0;
+  }
+
+  h4:focus {
+    outline: none;
+  }
+
+  h4:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.au-status {
+  margin: 0;
+
+  &:empty {
+    display: none;
+  }
+}
+
+.au-empty,
+.au-error {
+  margin: 0;
+}
+
+.au-empty {
+  color: var(--nav-color);
+}
+
+/* One full-width card per row; the cards lay out by this list's width. */
+.au-cards {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  container: au-cards / inline-size;
+}
+
+.au-item {
+  min-inline-size: 0;
+}
+
+.au-tombstone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 0.625rem 1rem;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  color: #a1a1aa;
+
+  .au-dismiss-tombstone {
+    margin-inline-start: auto;
+  }
+}
+
+.au-tombstone-title {
+  margin: 0;
+  font-size: 1rem;
+  color: #d4d4d8;
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.au-tombstone-text {
+  margin: 0;
+  font-size: var(--text-secondary);
+}
+
+.au-config-actions {
+  display: flex;
+  gap: 5px;
+}

@@ -5,7 +5,9 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { of } from 'rxjs';
 import { AdminService, SystemAiConfigDto } from '../services/admin.service';
+import { AdminUsersService } from '../services/admin-users.service';
 import { AdminPageStore } from './admin-page.store';
+import { spyAdminUsersService } from './users-tab/admin-users.testing';
 
 // Spec helper for AdminComponent and the Admin tab and dialog components. Imported by specs only.
 
@@ -57,11 +59,10 @@ export function buildSystemConfig(overrides: Partial<SystemAiConfigDto> = {}): S
 }
 
 /**
- * The empty responses every Admin spec starts from: no users, groups, configurations, default keys or deletion
- * requests.
+ * The empty responses every Admin spec starts from: no groups, configurations, default keys or deletion
+ * requests. The users come from `AdminUsersService`, which `spyAdminUsersService` empties.
  */
 export function spyAdminService(adminService: AdminService): void {
-  vi.spyOn(adminService, 'getUsers').mockReturnValue(of({ rows: [], totalCount: 0 }));
   vi.spyOn(adminService, 'getGroups').mockReturnValue(of([]));
   vi.spyOn(adminService, 'getSystemConfigs').mockReturnValue(of([]));
   vi.spyOn(adminService, 'getDefaultApiKeys').mockReturnValue(of([]));
@@ -72,9 +73,13 @@ export function spyAdminService(adminService: AdminService): void {
 
 /**
  * Configures the TestBed for one Admin tab or dialog component with a page store of its own, and
- * installs the default AdminService spies.
+ * installs the default AdminService and AdminUsersService spies.
  */
-export async function configureAdminTestBed(component: Type<unknown>): Promise<{ adminService: AdminService; store: AdminPageStore }> {
+export async function configureAdminTestBed(component: Type<unknown>): Promise<{
+  adminService: AdminService;
+  store: AdminPageStore;
+  usersService: AdminUsersService;
+}> {
   await TestBed.configureTestingModule({
     imports: [component],
     providers: [
@@ -87,5 +92,7 @@ export async function configureAdminTestBed(component: Type<unknown>): Promise<{
 
   const adminService = TestBed.inject(AdminService);
   spyAdminService(adminService);
-  return { adminService, store: TestBed.inject(AdminPageStore) };
+  const usersService = TestBed.inject(AdminUsersService);
+  spyAdminUsersService(usersService);
+  return { adminService, store: TestBed.inject(AdminPageStore), usersService };
 }

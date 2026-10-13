@@ -313,6 +313,59 @@ public sealed class AccountDeletionReviewTests : IDisposable
         Assert.Empty(_events.Entries);
     }
 
+    private async Task<List<AdminUserAction>> AdminLogAsync()
+    {
+        _db.ChangeTracker.Clear();
+        return await _db.AdminUserActions.AsNoTracking().OrderBy(a => a.Id).ToListAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task ApprovingWritesAnAdminLogRowThatOutlivesTheAccount()
+    {
+        long id = await SeedPendingRequestAsync();
+
+        await Service().ApproveAsync(id, UserName, AdminId, TestContext.Current.CancellationToken);
+
+        var row = Assert.Single(await AdminLogAsync());
+        Assert.Equal(AdminUserActionKind.DeletionRequestApproved, row.Kind);
+        Assert.Equal(AdminId, row.ActorUserId);
+        Assert.Equal("admin-name", row.ActorUserName);
+        Assert.Equal(UserId, row.SubjectUserId);
+        Assert.Equal(UserName, row.SubjectUserName);
+        Assert.DoesNotContain("@", row.Detail ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task DecliningWritesAnAdminLogRowWithTheNote()
+    {
+        long id = await SeedPendingRequestAsync();
+
+        await Service().DeclineAsync(id, "Kept for the investigation.", AdminId, TestContext.Current.CancellationToken);
+
+        var row = Assert.Single(await AdminLogAsync());
+        Assert.Equal(AdminUserActionKind.DeletionRequestDeclined, row.Kind);
+        Assert.Equal("Kept for the investigation.", row.Reason);
+        Assert.Equal(UserName, row.SubjectUserName);
+    }
+
+    [Fact]
+    public async Task PlacingAndReleasingAHoldWriteAdminLogRows()
+    {
+        await SeedPendingRequestAsync();
+        var ct = TestContext.Current.CancellationToken;
+
+        await Service().PlaceHoldAsync(UserId, "Abuse report under review", AdminId, ct);
+        await Service().ReleaseHoldAsync(UserId, "admin-2", ct);
+        await Service().PlaceHoldAsync(UserId, " ", AdminId, ct);
+
+        var rows = await AdminLogAsync();
+        Assert.Equal(new[] { AdminUserActionKind.HoldPlaced, AdminUserActionKind.HoldReleased }, rows.Select(r => r.Kind));
+        Assert.Equal("admin-name", rows[0].ActorUserName);
+        // An administrator id with no account is logged by its id.
+        Assert.Equal("admin-2", rows[1].ActorUserName);
+        Assert.All(rows, r => Assert.Equal(UserName, r.SubjectUserName));
+    }
+
     [Fact]
     public async Task ARequestIsOverdueAtTwentyFiveDays()
     {

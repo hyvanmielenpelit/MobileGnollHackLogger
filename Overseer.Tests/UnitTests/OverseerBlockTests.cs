@@ -263,6 +263,52 @@ public class OverseerBlockTests : IDisposable
         Assert.Empty(recorder.Entries);
     }
 
+    private static async Task<List<AdminUserAction>> ReadAdminLogAsync(IServiceProvider sp)
+    {
+        using var scope = sp.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+        return await db.AdminUserActions.AsNoTracking().OrderBy(a => a.Id).ToListAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task BlockAndUnblock_WriteAnAdminLogRowWithTheAdministrator()
+    {
+        using var sp = BuildDbServices(Guid.NewGuid().ToString());
+        await SeedUserAsync(sp, TargetId);
+        await SeedUserAsync(sp, AdminId);
+        using var cache = NewSizedCache();
+        var access = NewAccessService(sp, cache);
+
+        Assert.Null(await access.BlockAsync(TargetId, "Abusive prompts", AdminId));
+        Assert.Null(await access.UnblockAsync(TargetId, AdminId));
+        // Lifting a block that is not there is not a change.
+        Assert.Null(await access.UnblockAsync(TargetId, AdminId));
+
+        var rows = await ReadAdminLogAsync(sp);
+        Assert.Equal(new[] { AdminUserActionKind.AiChatBlocked, AdminUserActionKind.AiChatUnblocked }, rows.Select(r => r.Kind));
+        Assert.All(rows, r =>
+        {
+            Assert.Equal(AdminId, r.ActorUserId);
+            Assert.Equal("user-" + AdminId, r.ActorUserName);
+            Assert.Equal(TargetId, r.SubjectUserId);
+            Assert.Equal("user-" + TargetId, r.SubjectUserName);
+        });
+        Assert.Equal("Abusive prompts", rows[0].Reason);
+    }
+
+    [Fact]
+    public async Task ARefusedBlockWritesNoAdminLogRow()
+    {
+        using var sp = BuildDbServices(Guid.NewGuid().ToString());
+        await SeedUserAsync(sp, TargetId);
+        using var cache = NewSizedCache();
+        var access = NewAccessService(sp, cache);
+
+        Assert.NotNull(await access.BlockAsync(TargetId, "", AdminId));
+
+        Assert.Empty(await ReadAdminLogAsync(sp));
+    }
+
     // ── OverseerAccessService: GetBlockAsync and its cache ──────────────────────
 
     [Fact]
@@ -618,7 +664,7 @@ public class OverseerBlockTests : IDisposable
         var result = await controller.Create(SessionRequest(password: "wrong-password"), access, recorder);
 
         // The block is not disclosed to someone who does not hold the password.
-        Assert.IsType<UnauthorizedResult>(result);
+        Assert.IsType<UnauthorizedObjectResult>(result);
         Assert.Equal(0, access.Lookups);
 
         var entry = Assert.Single(recorder.Entries);
@@ -654,7 +700,7 @@ public class OverseerBlockTests : IDisposable
 
         var result = await controller.Create(SessionRequest(userName: attemptedName), new FixedBlockAccessService(null), recorder);
 
-        Assert.IsType<UnauthorizedResult>(result);
+        Assert.IsType<UnauthorizedObjectResult>(result);
         var entry = Assert.Single(recorder.Entries);
         Assert.Equal(SecurityEventKind.LoginFailed, entry.Kind);
         Assert.Null(entry.UserId);

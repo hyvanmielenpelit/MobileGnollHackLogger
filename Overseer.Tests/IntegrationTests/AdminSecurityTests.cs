@@ -114,6 +114,74 @@ namespace Overseer.Tests.IntegrationTests
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         }
 
+        public static TheoryData<string, string> AdminUserRoutes => new()
+        {
+            { "GET", "/api/admin/users" },
+            { "GET", "/api/admin/users?statuses=LockedOut&emailConfirmed=no&skip=0&take=20" },
+            { "GET", "/api/admin/users/facets?search=a" },
+            { "GET", "/api/admin/users/user-1" },
+            { "POST", "/api/admin/users/user-1/lockout" },
+            { "DELETE", "/api/admin/users/user-1/lockout" },
+            { "POST", "/api/admin/users/user-1/ban" },
+            { "DELETE", "/api/admin/users/user-1/ban" },
+            { "PUT", "/api/admin/users/user-1/game-restrictions" },
+            { "POST", "/api/admin/users/user-1/sign-out-everywhere" },
+            { "POST", "/api/admin/users/user-1/confirm-email" },
+            { "POST", "/api/admin/users/user-1/reset-two-factor" },
+            { "POST", "/api/admin/users/user-1/overseer-block" },
+            { "DELETE", "/api/admin/users/user-1/overseer-block" },
+            { "POST", "/api/admin/users/user-1/account-hold" },
+            { "DELETE", "/api/admin/users/user-1/account-hold" },
+            { "GET", "/api/admin/users/user-1/deletion-impact" },
+            { "POST", "/api/admin/users/user-1/delete" },
+            { "POST", "/api/admin/users/bulk/preview" },
+            { "GET", "/api/admin/users/bulk" },
+            { "GET", "/api/admin/users/bulk/1" },
+            { "POST", "/api/admin/users/bulk/1/execute" },
+            { "POST", "/api/admin/users/bulk/1/cancel" },
+            { "GET", "/api/admin/users/bulk/1/report.csv" },
+            { "GET", "/api/admin/users/log?kinds=Banned&skip=0&take=10" }
+        };
+
+        private static HttpRequestMessage AdminUserRequest(string method, string url)
+        {
+            var request = new HttpRequestMessage(new HttpMethod(method), url);
+            if (method is "POST" or "PUT")
+            {
+                request.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+            }
+            return request;
+        }
+
+        [Theory]
+        [MemberData(nameof(AdminUserRoutes))]
+        public async Task AdminUsers_Unauthenticated_Returns401(string method, string url)
+        {
+            var response = await _client.SendAsync(AdminUserRequest(method, url), TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+
+        [Theory]
+        [MemberData(nameof(AdminUserRoutes))]
+        public async Task AdminUsers_NonAdmin_Returns403(string method, string url)
+        {
+            var request = AdminUserRequest(method, url);
+            request.Headers.Add("X-Test-User", "NormalUser");
+
+            var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+
+        [Fact]
+        public async Task AdminUsers_Admin_ListReturns200()
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, "/api/admin/users?sort=name&take=5");
+            request.Headers.Add("X-Test-User", "TestAdmin");
+
+            var response = await _client.SendAsync(request, TestContext.Current.CancellationToken);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
         private async Task<long> SeedSystemConfigAsync()
         {
             using var scope = _factory.Services.CreateScope();

@@ -2,7 +2,9 @@ import { Injectable, inject } from '@angular/core';
 import { Observable, Subject } from 'rxjs';
 import { map, switchMap, tap } from 'rxjs/operators';
 import { AdminService, DefaultApiKeyStatus, GroupDto, SystemAiConfigDto } from '../services/admin.service';
+import { AdminUserActionKind, AdminUserCriteria, AdminUserSort } from '../services/admin-users.service';
 import { DefaultKeyInfo } from '../shared/ai-model-form/ai-model-form.component';
+import { readStoredUserSort } from './users-tab/user-criteria/user-criteria';
 
 export type AdminToastType = 'success' | 'error' | 'info';
 
@@ -13,17 +15,32 @@ export interface AdminToastRequest {
   title?: string;
 }
 
-/** The Users table's query, kept while the tab is closed. */
+/** The user list's criteria and Sort by, kept while the tab is closed. */
 export interface AdminUsersQuery {
-  page: number;
-  pageSize: number;
-  sortColumn: string;
-  sortOrder: 'asc' | 'desc';
-  usernameFilter: string;
+  criteria: AdminUserCriteria;
+  sort: AdminUserSort;
 }
 
 /** The Users tab's sub-tabs. */
-export type AdminUsersSubTab = 'users' | 'deletions';
+export type AdminUsersSubTab = 'users' | 'deletions' | 'log';
+
+/** What the Admin log sub-tab shows; every field is optional. `subjectUserName` and the operation id label its chips. */
+export interface AdminUsersLogFilter {
+  search?: string;
+  kinds?: AdminUserActionKind[];
+  subjectUserId?: string;
+  subjectUserName?: string;
+  bulkOperationId?: number;
+}
+
+/**
+ * How the Bulk Actions wizard opens: on step 1 seeded with `criteria`, or on the results of an
+ * operation (`operationId`).
+ */
+export interface AdminBulkWizardRequest {
+  criteria?: AdminUserCriteria;
+  operationId?: number;
+}
 
 export type TelemetryTimeSpan = '7d' | '28d' | '30d' | '90d' | '180d' | '1y' | 'custom';
 
@@ -56,9 +73,19 @@ export class AdminPageStore {
 
   readonly toast$ = new Subject<AdminToastRequest>();
 
-  usersQuery: AdminUsersQuery = {
-    page: 1, pageSize: 10, sortColumn: 'UserName', sortOrder: 'asc', usernameFilter: ''
-  };
+  usersQuery: AdminUsersQuery = { criteria: {}, sort: readStoredUserSort() };
+
+  /** The Admin log's filter; *Show in admin log* links preset it through `showUsersLog`. */
+  usersLogFilter: AdminUsersLogFilter = {};
+
+  /** Emits when `usersLogFilter` is replaced, for an Admin log already on screen. */
+  readonly usersLogFilterChanged$ = new Subject<void>();
+
+  /** A Bulk Actions wizard opening a link asked for; cleared once the Users tab has read it. */
+  pendingBulkWizard: AdminBulkWizardRequest | null = null;
+
+  /** Emits when `pendingBulkWizard` is set. */
+  readonly bulkWizardRequested$ = new Subject<void>();
 
   telemetryRange: AdminTelemetryRange = { timeSpan: '30d', start: '', end: '' };
 
@@ -170,6 +197,21 @@ export class AdminPageStore {
   requestManageUser(userId: string, userName: string): void {
     this.pendingManageUser = { userId, userName };
     this.manageUserRequested$.next();
+    this.requestTab('users');
+  }
+
+  /** Shows the Users tab's Admin log with `filter`, and selects it. */
+  showUsersLog(filter: AdminUsersLogFilter = {}): void {
+    this.usersLogFilter = { ...filter, kinds: filter.kinds ? [...filter.kinds] : undefined };
+    this.usersSubTab = 'log';
+    this.usersLogFilterChanged$.next();
+    this.requestTab('users');
+  }
+
+  /** Asks the Users tab to open the Bulk Actions wizard, and selects it. */
+  requestBulkWizard(request: AdminBulkWizardRequest): void {
+    this.pendingBulkWizard = request;
+    this.bulkWizardRequested$.next();
     this.requestTab('users');
   }
 

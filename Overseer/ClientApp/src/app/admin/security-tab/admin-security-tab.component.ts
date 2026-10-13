@@ -10,6 +10,7 @@ import {
   SecurityKindCount,
   SecuritySummary
 } from '../../services/admin.service';
+import { AdminUsersService } from '../../services/admin-users.service';
 import { CardListChip, CardListSort, CardListState } from '../../shared/data-table/card-list-state';
 import { FilterFacetComponent, FilterFacetOption } from '../../shared/data-table/filter-facet.component';
 import { TableState, anyOfFilter, customFilter } from '../../shared/data-table/table-state';
@@ -30,7 +31,9 @@ export const SECURITY_BLOCK_REASON_MAX = 256;
 export const SECURITY_EVENT_KINDS: readonly string[] = [
   'LoginFailed', 'LoginLockedOut', 'TwoFactorFailed', 'RateLimitRejected', 'QuotaRefused', 'AccessDenied',
   'ProviderRefusal', 'ProviderSafetyBlock', 'ProviderPolicyRejection', 'AttachmentRejected', 'ChatReported',
-  'AdminBlocked', 'AdminUnblocked', 'AccountHoldPlaced', 'AccountHoldReleased', 'AccountDeletionHeld'
+  'AdminBlocked', 'AdminUnblocked', 'AccountHoldPlaced', 'AccountHoldReleased', 'AccountDeletionHeld',
+  'AdminLockedOut', 'AdminUnlocked', 'AdminBanned', 'AdminUnbanned', 'AdminSignedOut', 'AdminEmailConfirmed',
+  'AdminTwoFactorReset'
 ];
 
 const KIND_LABELS: Readonly<Record<string, string>> = {
@@ -49,7 +52,14 @@ const KIND_LABELS: Readonly<Record<string, string>> = {
   AdminUnblocked: 'Unblocked by admin',
   AccountHoldPlaced: 'Deletion hold placed',
   AccountHoldReleased: 'Deletion hold released',
-  AccountDeletionHeld: 'Deletion held for review'
+  AccountDeletionHeld: 'Deletion held for review',
+  AdminLockedOut: 'Locked out by admin',
+  AdminUnlocked: 'Unlocked by admin',
+  AdminBanned: 'Banned by admin',
+  AdminUnbanned: 'Unbanned by admin',
+  AdminSignedOut: 'Signed out by admin',
+  AdminEmailConfirmed: 'Email confirmed by admin',
+  AdminTwoFactorReset: 'Two-factor reset by admin'
 };
 
 /** What a security event kind reads as; an unknown kind reads as its name. */
@@ -95,6 +105,7 @@ interface SecurityUserFilter {
 })
 export class AdminSecurityTabComponent implements OnInit, OnDestroy {
   private readonly adminService = inject(AdminService);
+  private readonly usersService = inject(AdminUsersService);
   private readonly store = inject(AdminPageStore);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly host: ElementRef<HTMLElement> = inject(ElementRef);
@@ -564,7 +575,7 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
     const name = this.userLabel(target);
     this.blocking = true;
     this.blockError = null;
-    this.adminService.blockUser(target.userId, reason).subscribe({
+    this.usersService.blockFromAiChat(target.userId, reason).subscribe({
       next: () => {
         this.blocking = false;
         this.returnFocus = null;
@@ -585,7 +596,7 @@ export class AdminSecurityTabComponent implements OnInit, OnDestroy {
     if (!event.userId || this.unblockingUserId) return;
     const name = this.userLabel(event);
     this.unblockingUserId = event.userId;
-    this.adminService.unblockUser(event.userId).subscribe({
+    this.usersService.unblockFromAiChat(event.userId).subscribe({
       next: () => {
         this.unblockingUserId = null;
         this.focusEventId = event.id;

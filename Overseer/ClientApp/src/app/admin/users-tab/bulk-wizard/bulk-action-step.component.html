@@ -1,0 +1,95 @@
+<fieldset class="bw-action-choice" [attr.aria-busy]="busy ? 'true' : null">
+  <legend class="bw-action-legend">{{ legendText }}</legend>
+  <ul class="bw-action-cards" role="list">
+    @for (info of actions; track info.action) {
+      <li class="bw-action-item" [class.is-chosen]="action === info.action" [attr.data-danger]="info.danger">
+        <label class="bw-action-card" [for]="cardId(info)">
+          <input type="radio" name="bw-action" [id]="cardId(info)" [value]="info.action"
+                 [checked]="action === info.action" [attr.aria-describedby]="cardId(info) + '-line'"
+                 (change)="choose(info.action)">
+          <span class="bw-action-title">{{ info.title }}</span>
+          <span class="gh-account-badge bw-danger-tag" [attr.data-tone]="dangerTone(info.danger)">
+            @switch (info.danger) {
+              @case ('danger') {
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              }
+              @case ('caution') {
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              }
+              @default {
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+              }
+            }
+            {{ dangerTagLabel(info.danger) }}
+          </span>
+        </label>
+        <p class="bw-action-line" [id]="cardId(info) + '-line'">{{ info.line }}</p>
+
+        @if (action === info.action && (info.action === 'LockOut' || info.needsReason)) {
+          <div class="bw-action-fields">
+            @if (info.action === 'LockOut') {
+              <fieldset class="gh-choice bw-durations">
+                <legend>Lock out for</legend>
+                @for (option of durations; track option.value) {
+                  <label class="gh-radio">
+                    <input type="radio" name="bw-lockout-duration" [id]="'bw-lockout-for-' + option.value" [value]="option.value"
+                           [checked]="options.duration === option.value" (change)="setDuration(option.value)">
+                    {{ option.label }}
+                  </label>
+                }
+              </fieldset>
+
+              @if (options.duration === 'date') {
+                <div class="bw-field">
+                  <label for="bw-lockout-date">Locked out until (UTC)</label>
+                  <app-date-field inputId="bw-lockout-date" label="Locked out until (UTC)" [value]="options.dateValue"
+                                  [min]="dayRange.min" [max]="dayRange.max" [invalid]="!!dateError"
+                                  [describedBy]="dateError ? 'bw-lockout-date-error' : null"
+                                  (valueChange)="onDate($event)"></app-date-field>
+                  @if (dateError) {
+                    <p class="gh-field-error" id="bw-lockout-date-error">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                      <span>{{ dateError }}</span>
+                    </p>
+                  }
+                </div>
+              }
+            }
+
+            @if (info.needsReason) {
+              <div class="bw-field">
+                <label for="bw-action-reason">Reason</label>
+                <textarea id="bw-action-reason" class="gh-input gh-textarea-autosize" rows="3" required
+                          [attr.maxlength]="reasonMax" aria-describedby="bw-action-reason-hint"
+                          [value]="options.reason" (input)="onReason($event)"></textarea>
+                <span class="form-hint" id="bw-action-reason-hint">For administrators only; kept in the admin log with each account. {{ options.reason.length }} of {{ reasonMax }} characters.</span>
+              </div>
+            }
+          </div>
+        }
+      </li>
+    }
+  </ul>
+</fieldset>
+
+@if (busy) {
+  <p class="bw-checking" role="status">
+    <svg class="dc-ring dc-ring--inline" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+      <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+      <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+    </svg>
+    <span>{{ checkingText }}</span>
+  </p>
+}
+
+@if (error) {
+  <div class="bw-action-error">
+    <p class="gh-field-error" id="bw-action-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ error }}</span>
+    </p>
+    @if (errorCode === 'narrowing') {
+      <button type="button" class="btn-ghost bw-back-to-users" (click)="backToUsers.emit()">Back to Users</button>
+    }
+  </div>
+}

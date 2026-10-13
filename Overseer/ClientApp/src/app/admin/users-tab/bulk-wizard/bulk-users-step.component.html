@@ -1,0 +1,34 @@
+<fieldset class="gh-choice bw-presets">
+  <legend>Start from</legend>
+  @for (option of presets; track option.preset) {
+    <label class="gh-radio">
+      <input type="radio" name="bw-preset" [id]="'bw-preset-' + option.preset" [value]="option.preset"
+             [checked]="preset === option.preset" (change)="choosePreset(option.preset)">
+      {{ option.label }}
+    </label>
+  }
+</fieldset>
+
+<app-user-criteria-bar idPrefix="bw-criteria" [criteria]="criteria" [facetCounts]="facetCounts" [showSort]="false"
+                       (criteriaChange)="onCriteriaChange($event)"></app-user-criteria-bar>
+
+<!-- The step's one polite live region. -->
+<p class="gh-list-status bw-match-status" id="bw-match-status" role="status">{{ statusText }}</p>
+
+@if (error) {
+  <p class="gh-field-error bw-match-error" role="alert">
+    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+    <span>{{ error }}</span>
+  </p>
+} @else if (matches.length > 0) {
+  <ul class="bw-match-list" role="list" aria-label="The first matching accounts" [attr.aria-busy]="loading ? 'true' : null">
+    @for (user of matches; track user.id) {
+      <li class="bw-match-row" [attr.data-user-id]="user.id">
+        <span class="bw-match-name">{{ user.userName }}</span>
+        <span class="bw-match-email">{{ user.email }}</span>
+        <app-user-status-badges class="bw-match-badges" [user]="user" [idPrefix]="'bw-match-' + user.id"></app-user-status-badges>
+      </li>
+    }
+  </ul>
+  <p class="form-hint bw-match-note">{{ sampleNote }}</p>
+}

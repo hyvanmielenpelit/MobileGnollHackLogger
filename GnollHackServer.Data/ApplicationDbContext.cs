@@ -73,6 +73,9 @@ namespace MobileGnollHackLogger.Data
         public DbSet<UserKeyAiUsageLog> UserKeyAiUsageLogs { get; set; } = null!;
         public DbSet<ChatProviderAttempt> ChatProviderAttempts { get; set; } = null!;
         public DbSet<OverseerDailyActivity> OverseerDailyActivities { get; set; } = null!;
+        public DbSet<AdminUserAction> AdminUserActions { get; set; } = null!;
+        public DbSet<AdminBulkOperation> AdminBulkOperations { get; set; } = null!;
+        public DbSet<AdminBulkOperationItem> AdminBulkOperationItems { get; set; } = null!;
 
         public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
             : base(options)
@@ -206,6 +209,25 @@ namespace MobileGnollHackLogger.Data
             {
                 e.HasIndex(r => new { r.Status, r.RequestedUtc });
                 e.HasIndex(r => new { r.AspNetUserId, r.Status });
+            });
+
+            // No foreign key to the user: the admin log outlives the deleted account.
+            modelBuilder.Entity<AdminUserAction>(e =>
+            {
+                e.HasOne(a => a.BulkOperation).WithMany().HasForeignKey(a => a.BulkOperationId).OnDelete(DeleteBehavior.SetNull);
+                e.HasIndex(a => new { a.SubjectUserId, a.OccurredUtc });
+                e.HasIndex(a => a.OccurredUtc);
+            });
+
+            modelBuilder.Entity<AdminBulkOperation>(e =>
+            {
+                e.HasIndex(o => new { o.Status, o.CreatedUtc });
+            });
+
+            modelBuilder.Entity<AdminBulkOperationItem>(e =>
+            {
+                e.HasOne(i => i.Operation).WithMany(o => o.Items).HasForeignKey(i => i.OperationId).OnDelete(DeleteBehavior.Cascade);
+                e.HasIndex(i => new { i.OperationId, i.Outcome });
             });
 
             /* Benchmark history references the settings it ran with through these append-only,

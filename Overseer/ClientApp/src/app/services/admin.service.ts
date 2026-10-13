@@ -9,23 +9,6 @@ import {
   ModelResolutionResult
 } from '../shared/model-availability/model-availability';
 
-export interface UserDto {
-  id: string;
-  userName: string;
-  email: string;
-  groups: GroupDto[];
-  /** Blocked from starting any AI work in Overseer. */
-  isOverseerBlocked?: boolean;
-  overseerBlockedUtc?: string | null;
-  /** The administrator's reason, shown to the user while blocked. */
-  overseerBlockReason?: string | null;
-  /** An administrator's active hold on deleting the account. */
-  hasAccountHold?: boolean;
-  accountHoldReason?: string | null;
-  /** The account's pending deletion request, when one is waiting for review. */
-  pendingDeletionRequestId?: number | null;
-}
-
 /** Counts of one security event kind in a range; `count` sums the runs' repeat counts. */
 export interface SecurityKindCount {
   /** A `SecurityEventKind` name, e.g. "LoginFailed". */
@@ -132,11 +115,6 @@ export interface AccountDeletionDecisionResult {
   bonesFilesMissing: number;
   /** Approve only: dumplog and attachment folders not found on disk. */
   foldersMissing: number;
-}
-
-export interface UsersResponse {
-  rows: UserDto[];
-  totalCount: number;
 }
 
 export interface GroupDto {
@@ -910,34 +888,6 @@ export class AdminService {
       `/api/admin/systemconfigs/${configId}/analytics`,
       { params: httpParams }
     );
-  }
-
-  // Users
-  getUsers(page: number = 1, pageSize: number = 10, usernameFilter: string = '', sortColumn: string = 'UserName', sortOrder: string = 'asc'): Observable<UsersResponse> {
-    const params: any = { page, pageSize, sortColumn, sortOrder };
-    if (usernameFilter) {
-      params.usernameFilter = usernameFilter;
-    }
-    return this.http.get<UsersResponse>('/api/admin/users', { params });
-  }
-
-  /** Blocks the user from starting AI work in Overseer; `reason` (1–256 characters) is shown to them. 400 for the admin's own id. */
-  blockUser(userId: string, reason: string): Observable<void> {
-    return this.http.post<void>(`/api/admin/users/${encodeURIComponent(userId)}/overseer-block`, { reason });
-  }
-
-  unblockUser(userId: string): Observable<void> {
-    return this.http.delete<void>(`/api/admin/users/${encodeURIComponent(userId)}/overseer-block`);
-  }
-
-  /** Holds any deletion of the account for review; `reason` (1–512 characters) is never shown to the user. */
-  placeAccountHold(userId: string, reason: string): Observable<void> {
-    return this.http.post<void>(`/api/admin/users/${encodeURIComponent(userId)}/account-hold`, { reason });
-  }
-
-  /** Releases the hold; a pending deletion request still needs an explicit decision. */
-  releaseAccountHold(userId: string): Observable<void> {
-    return this.http.delete<void>(`/api/admin/users/${encodeURIComponent(userId)}/account-hold`);
   }
 
   // Security

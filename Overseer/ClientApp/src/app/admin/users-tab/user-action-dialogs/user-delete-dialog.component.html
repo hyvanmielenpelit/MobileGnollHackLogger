@@ -1,0 +1,109 @@
+<dialog #dialog class="gh-dialog uad-dialog uad-delete-dialog" aria-labelledby="uad-delete-title"
+        [attr.aria-busy]="loading || busy ? 'true' : null" (close)="onClose()">
+  @if (user) {
+    <!-- Focused on open, so the delete button never holds focus first. -->
+    <h3 id="uad-delete-title" tabindex="-1">Delete {{ user.userName }}?</h3>
+
+    @if (loading) {
+      <div class="uad-loading" role="status">
+        <svg class="dc-ring dc-ring--inline" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+          <circle class="dc-ring-track" cx="24" cy="24" r="20" pathLength="100"></circle>
+          <circle class="dc-ring-arc" cx="24" cy="24" r="20" pathLength="100"></circle>
+        </svg>
+        <span>Checking what deleting {{ user.userName }} would erase…</span>
+      </div>
+    } @else if (loadError) {
+      <p class="gh-field-error uad-error" role="alert">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ loadError }}</span>
+      </p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-gh btn-gh-cancel uad-cancel" (click)="close()">Close</button>
+      </div>
+    } @else if (impact && refused) {
+      <!-- Refused: the reasons and Close; no delete control is rendered. -->
+      <section class="gh-danger-zone uad-refused mt-20" aria-labelledby="uad-delete-refused-title">
+        <div class="gh-danger-zone-head">
+          <svg class="gh-danger-zone-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <h4 id="uad-delete-refused-title">{{ user.userName }} cannot be deleted</h4>
+        </div>
+        <ul class="uad-refusals">
+          @for (refusal of impact.refusals; track refusal.code) {
+            <li [attr.data-code]="refusal.code">{{ refusal.message }}</li>
+          }
+        </ul>
+      </section>
+      <div class="dialog-actions">
+        <button type="button" class="btn-gh btn-gh-cancel uad-cancel" (click)="close()">Close</button>
+      </div>
+    } @else if (impact) {
+      <section class="gh-danger-zone uad-impact mt-20" aria-labelledby="uad-delete-zone-title">
+        <div class="gh-danger-zone-head">
+          <svg class="gh-danger-zone-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <h4 id="uad-delete-zone-title">Permanently delete {{ user.userName }}</h4>
+        </div>
+        <p>The account and everything below are erased. This cannot be undone.</p>
+        <dl class="uad-categories">
+          @for (category of impact.categories; track category.key) {
+            <dt>{{ category.label }}</dt>
+            <dd [attr.data-key]="category.key">{{ category.count }}@if (category.note) { · {{ category.note }} }</dd>
+          }
+        </dl>
+        <button type="button" class="btn-link uad-ban-instead" (click)="onBanInstead()">Ban instead</button>
+      </section>
+
+      @if (importantCategories.length > 0) {
+        <fieldset class="uad-checks">
+          <legend>Acknowledge what is erased</legend>
+          @for (category of importantCategories; track category.key) {
+            <label class="checkbox-label align-start">
+              <input type="checkbox" [id]="'uad-delete-ack-' + category.key" [checked]="isAcknowledged(category)"
+                     (change)="onAcknowledge(category, $event)">
+              <span>{{ acknowledgmentText(category) }}</span>
+            </label>
+          }
+        </fieldset>
+      }
+
+      <div class="uad-field">
+        <label for="uad-delete-reason">Reason</label>
+        <textarea id="uad-delete-reason" class="gh-input gh-textarea-autosize" rows="3" required
+                  [attr.maxlength]="reasonMax" aria-describedby="uad-delete-reason-hint"
+                  (input)="onReason($event)"></textarea>
+        <span class="form-hint" id="uad-delete-reason-hint">Kept in the admin log with the user name. {{ reason.length }} of {{ reasonMax }} characters.</span>
+      </div>
+
+      <div class="uad-field">
+        <label for="uad-delete-name">Type the user name <strong>{{ user.userName }}</strong> to confirm</label>
+        <input id="uad-delete-name" type="text" class="gh-input" autocomplete="off" spellcheck="false" required
+               [attr.aria-invalid]="typedName && !nameMatches ? 'true' : null"
+               (input)="onName($event)">
+      </div>
+
+      @if (error) {
+        <p class="gh-field-error uad-error" role="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ error }}</span>
+        </p>
+      }
+
+      <div class="dialog-actions">
+        @if (missingNote) {
+          <p class="gh-footer-note" id="uad-delete-note">
+            <svg class="gh-footer-note-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span>{{ missingNote }}</span>
+          </p>
+        }
+        <button type="button" class="btn-gh btn-gh-cancel uad-cancel" (click)="close()">Cancel</button>
+        <button type="button" class="btn-gh btn-gh-delete uad-confirm"
+                [attr.aria-disabled]="canSubmit ? null : 'true'"
+                [attr.aria-describedby]="missingNote ? 'uad-delete-note' : null"
+                [attr.aria-busy]="busy ? 'true' : null"
+                (click)="submit()">
+          <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          {{ busy ? 'Deleting…' : 'Delete Account' }}
+        </button>
+      </div>
+    }
+  }
+</dialog>

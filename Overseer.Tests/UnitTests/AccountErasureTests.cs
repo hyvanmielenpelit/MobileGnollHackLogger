@@ -281,6 +281,54 @@ public sealed class AccountErasureTests : IDisposable
     }
 
     [Fact]
+    public async Task BenchmarkRowsAreKeptWithTheUsersAttributionRemoved()
+    {
+        await SeedAsync();
+        var ct = TestContext.Current.CancellationToken;
+        // The benchmark rows reference parents this test does not seed; the assertion is on the nulled columns.
+        await _db.Database.ExecuteSqlRawAsync("PRAGMA foreign_keys = OFF;", ct);
+
+        var group = new BenchmarkRunGroup { Name = "Group", CreatedByUserId = UserId };
+        var batteryRun = new BenchmarkBatteryRun
+        {
+            BatteryName = "Battery", DefinitionJson = "{}", DefinitionSha256 = "sha", StartRequestJson = "{}", StartedByUserId = UserId
+        };
+        // Snapshots are unique by hash, so both runs share one candidate and one assessor row.
+        var candidate = Overseer.Tests.Helpers.BenchmarkModelSnapshots.Candidate();
+        var assessor = Overseer.Tests.Helpers.BenchmarkModelSnapshots.Assessor();
+        _db.BenchmarkRuns.AddRange(
+            new BenchmarkRun { SuiteName = "Suite", StartedByUserId = UserId, TestedModelSnapshot = candidate, AssessorModelSnapshot = assessor },
+            new BenchmarkRun { SuiteName = "Suite", StartedByUserId = OtherUserId, TestedModelSnapshot = candidate, AssessorModelSnapshot = assessor });
+        _db.BenchmarkRunSeries.Add(new BenchmarkRunSeries { SuiteName = "Suite", StartRequestJson = "{}", StartedByUserId = UserId });
+        _db.BenchmarkRunGroups.Add(group);
+        _db.BenchmarkGroupAnalyses.Add(new BenchmarkGroupAnalysis
+        {
+            BenchmarkRunGroup = group, MemberRunIdsJson = "[]", ResultJson = "{}", ComputedByUserId = UserId
+        });
+        _db.BenchmarkBatteries.Add(new BenchmarkBattery { Name = "Battery", DefinitionSha256 = "sha", CreatedByUserId = UserId });
+        _db.BenchmarkBatteryRuns.Add(batteryRun);
+        _db.BenchmarkBatteryAnalyses.Add(new BenchmarkBatteryAnalysis
+        {
+            BenchmarkBatteryRun = batteryRun, MemberRunIdsJson = "[]", ResultJson = "{}", DefinitionSha256 = "sha", ComputedByUserId = UserId
+        });
+        await _db.SaveChangesAsync(ct);
+        _db.ChangeTracker.Clear();
+
+        await EraseAsync(new AccountErasurePaths(DumpLogRoot, ConversationsRoot));
+
+        Assert.Equal(2, await _db.BenchmarkRuns.CountAsync(ct));
+        Assert.False(await _db.BenchmarkRuns.AnyAsync(r => r.StartedByUserId == UserId, ct));
+        Assert.True(await _db.BenchmarkRuns.AnyAsync(r => r.StartedByUserId == OtherUserId, ct));
+        Assert.Null((await _db.BenchmarkRunSeries.AsNoTracking().SingleAsync(ct)).StartedByUserId);
+        Assert.Null((await _db.BenchmarkRunGroups.AsNoTracking().SingleAsync(ct)).CreatedByUserId);
+        Assert.Null((await _db.BenchmarkGroupAnalyses.AsNoTracking().SingleAsync(ct)).ComputedByUserId);
+        Assert.Null((await _db.BenchmarkBatteries.AsNoTracking().SingleAsync(ct)).CreatedByUserId);
+        Assert.Null((await _db.BenchmarkBatteryRuns.AsNoTracking().SingleAsync(ct)).StartedByUserId);
+        Assert.Null((await _db.BenchmarkBatteryAnalyses.AsNoTracking().SingleAsync(ct)).ComputedByUserId);
+        Assert.False(await _db.Users.AnyAsync(u => u.Id == UserId, ct));
+    }
+
+    [Fact]
     public async Task MissingBaseFoldersAreCounted()
     {
         await SeedAsync(createFiles: false);

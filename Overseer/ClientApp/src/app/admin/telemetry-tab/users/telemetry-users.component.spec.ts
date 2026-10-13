@@ -8,6 +8,7 @@ import {
   AiTelemetryUsersPage,
   AiTelemetryUsersQuery
 } from '../../../services/admin.service';
+import { AdminUserActionResult, AdminUsersService } from '../../../services/admin-users.service';
 import { AdminPageStore } from '../../admin-page.store';
 import { configureAdminTestBed } from '../../admin.component.testing';
 import { TELEMETRY_USERS_SORTS, TELEMETRY_USERS_VIEW_STORAGE_KEY, TelemetryUserRef, TelemetryUsersComponent } from './telemetry-users.component';
@@ -60,6 +61,7 @@ describe('TelemetryUsersComponent', () => {
   let component: TelemetryUsersComponent;
   let el: HTMLElement;
   let adminService: AdminService;
+  let usersService: AdminUsersService;
   let store: AdminPageStore;
   let usersSpy: Mock;
   /** What the next users request returns. */
@@ -67,7 +69,7 @@ describe('TelemetryUsersComponent', () => {
 
   beforeEach(async () => {
     clearStorage();
-    ({ adminService, store } = await configureAdminTestBed(TelemetryUsersComponent));
+    ({ adminService, usersService, store } = await configureAdminTestBed(TelemetryUsersComponent));
     nextPage = page([user(1)]);
     usersSpy = vi.spyOn(adminService, 'getAiTelemetryUsers').mockImplementation(() => of(nextPage));
     vi.spyOn(store, 'showToast').mockReturnValue(undefined);
@@ -291,7 +293,7 @@ describe('TelemetryUsersComponent', () => {
     });
 
     it('Block asks for a reason, blocks with it and refetches', () => {
-      const blockSpy = vi.spyOn(adminService, 'blockUser').mockReturnValue(of(undefined));
+      const blockSpy = vi.spyOn(usersService, 'blockFromAiChat').mockReturnValue(of({} as AdminUserActionResult));
       create();
       usersSpy.mockClear();
 
@@ -313,7 +315,7 @@ describe('TelemetryUsersComponent', () => {
     });
 
     it('Unblock asks for confirmation, unblocks and refetches', () => {
-      const unblockSpy = vi.spyOn(adminService, 'unblockUser').mockReturnValue(of(undefined));
+      const unblockSpy = vi.spyOn(usersService, 'unblockFromAiChat').mockReturnValue(of({} as AdminUserActionResult));
       nextPage = page([user(1, { isOverseerBlocked: true })]);
       create();
       usersSpy.mockClear();

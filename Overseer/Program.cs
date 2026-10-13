@@ -46,7 +46,15 @@ builder.Services.AddIdentityCore<ApplicationUser>(options =>
    these from AddDefaultIdentity, which is why TOTP could be enabled there and then not
    honoured here. */
 .AddDefaultTokenProviders()
-.AddSignInManager<SignInManager<ApplicationUser>>();
+.AddSignInManager<GnollHackServer.Data.Security.GnollHackSignInManager>();
+
+// A ban, a lockout or Sign out everywhere renews the security stamp; signed-in cookies see it within this interval.
+builder.Services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval =
+    TimeSpan.FromMinutes(builder.Configuration.GetValue("IdentityLockout:SecurityStampValidationMinutes", 5)));
+
+// Throttles failed sign-ins on /api/session/create in place of Identity lockout.
+builder.Services.AddSingleton(new GnollHackServer.Data.Security.GameApiSignInThrottle(
+    GnollHackServer.Data.Security.GameApiSignInThrottleOptions.FromConfiguration(builder.Configuration)));
 
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddCookie(IdentityConstants.ApplicationScheme, options =>
@@ -284,6 +292,16 @@ builder.Services.AddScoped<Overseer.Services.Security.SecurityQueryService>();
 builder.Services.AddScoped<Overseer.Services.Security.AccountDeletionReviewService>();
 builder.Services.AddSingleton(sp => builder.Configuration.GetSection("AccountHold").Get<GnollHackServer.Data.Security.AccountHoldOptions>()
     ?? new GnollHackServer.Data.Security.AccountHoldOptions());
+
+// Admin user management: per-user actions per request; bulk operations run one account at a time on a background loop.
+builder.Services.AddSingleton(sp => builder.Configuration.GetSection("AdminUserManagement").Get<Overseer.Services.Security.AdminUserManagementOptions>()
+    ?? new Overseer.Services.Security.AdminUserManagementOptions());
+builder.Services.AddScoped<Overseer.Services.Security.AdminUserManagementService>();
+builder.Services.AddScoped<Overseer.Services.Security.AdminBulkUserOperationService>();
+builder.Services.AddSingleton<Overseer.Services.Security.AdminBulkOperationRunner>();
+builder.Services.AddSingleton<Overseer.Services.Security.IAdminBulkOperationQueue>(
+    sp => sp.GetRequiredService<Overseer.Services.Security.AdminBulkOperationRunner>());
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Overseer.Services.Security.AdminBulkOperationRunner>());
 
 // AI telemetry: activity counts write in their own scopes; the summary queries are per request.
 builder.Services.AddSingleton<Overseer.Services.Telemetry.IActivityCounter, Overseer.Services.Telemetry.ActivityCounter>();

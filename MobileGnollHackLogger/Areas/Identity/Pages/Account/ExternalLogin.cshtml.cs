@@ -155,6 +155,7 @@ public class ExternalLoginModel : PageModel
 
             await _userStore.SetUserNameAsync(user, Input.Email, CancellationToken.None);
             await _emailStore.SetEmailAsync(user, Input.Email, CancellationToken.None);
+            user.CreatedUtc = DateTime.UtcNow;
 
             var result = await _userManager.CreateAsync(user);
             if (result.Succeeded)

@@ -1,0 +1,106 @@
+/* The layout the account action dialogs share; each compiles it under its own encapsulation. The
+   buttons, the footer note, the danger zone and the form controls are global in styles.scss. */
+
+:host {
+  display: contents;
+}
+
+.uad-dialog {
+  width: min(36rem, calc(100vw - 2rem));
+
+  h3:focus {
+    outline: none;
+  }
+
+  h3:focus-visible {
+    outline: 2px solid var(--primary-color);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.uad-durations,
+.uad-field,
+.uad-check,
+.uad-effect,
+.uad-error,
+.uad-lead,
+.uad-checks {
+  margin-top: 14px;
+}
+
+.uad-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+
+  > label {
+    font-size: 0.9em;
+    color: #ccc;
+  }
+
+  .gh-input {
+    width: 100%;
+  }
+}
+
+.uad-optional {
+  margin-inline-start: 6px;
+  font-size: var(--text-xs);
+  color: #a1a1aa;
+}
+
+.uad-effect,
+.uad-lead {
+  margin-bottom: 0;
+  line-height: var(--leading-body);
+  color: #d4d4d8;
+}
+
+.uad-checks {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 0;
+  padding: 0;
+  border: 0;
+
+  legend {
+    margin-bottom: 4px;
+    padding: 0;
+    font-size: var(--text-secondary);
+    color: var(--nav-color);
+  }
+}
+
+.uad-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  color: var(--nav-color);
+}
+
+.uad-categories {
+  display: grid;
+  grid-template-columns: max-content auto;
+  gap: 2px 16px;
+  font-size: var(--text-secondary);
+
+  dt {
+    color: #d4d4d8;
+  }
+
+  dd {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    color: #e4e4e7;
+  }
+}
+
+.uad-refusals {
+  padding-inline-start: 1.25rem;
+}
+
+.uad-ban-instead {
+  justify-self: start;
+}
