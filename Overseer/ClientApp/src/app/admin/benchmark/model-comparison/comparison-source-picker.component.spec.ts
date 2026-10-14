@@ -71,7 +71,6 @@ describe('ComparisonSourcePickerComponent', () => {
       computedScore: 65,
       qualityIndex: 60 + id,
       qualityIndexStandardError: 2.1,
-      rawQualityIndex: 68,
       speedIndex: 80,
       totalAnswerDurationMs: 300000,
       speedMeasurementDegraded: false,

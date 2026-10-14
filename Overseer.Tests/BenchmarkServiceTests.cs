@@ -208,97 +208,7 @@ public class BenchmarkServiceTests
         Assert.EndsWith("…", truncated);
     }
 
-    // --- 6. Benchmark Run Finalizer Tests ---
-
-    [Fact]
-    public void BenchmarkRunFinalizer_ComputeStatus_ReturnsCorrectStatus()
-    {
-        var answersAllOk = new List<BenchmarkRunAnswer>
-        {
-            new() { Status = BenchmarkAnswerStatus.Ok, AssessmentStatus = BenchmarkAssessmentStatus.Scored }
-        };
-        Assert.False(BenchmarkRunFinalizer.HasUnresolvedWork(answersAllOk[0]));
-        Assert.Equal(BenchmarkRunStatus.Completed, BenchmarkRunFinalizer.ComputeStatus(answersAllOk));
-
-        var answersWithError = new List<BenchmarkRunAnswer>
-        {
-            new() { Status = BenchmarkAnswerStatus.ProviderError, AssessmentStatus = BenchmarkAssessmentStatus.Scored }
-        };
-        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(answersWithError[0]));
-        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answersWithError));
-
-        var answersWithFailedAssessment = new List<BenchmarkRunAnswer>
-        {
-            new() { Status = BenchmarkAnswerStatus.Ok, AssessmentStatus = BenchmarkAssessmentStatus.Failed }
-        };
-        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(answersWithFailedAssessment[0]));
-        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answersWithFailedAssessment));
-
-        var answersInProgress = new List<BenchmarkRunAnswer>
-        {
-            new() { Status = BenchmarkAnswerStatus.Ok, AssessmentStatus = BenchmarkAssessmentStatus.Pending }
-        };
-        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(answersInProgress[0]));
-        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answersInProgress));
-    }
-
-    [Fact]
-    public void BenchmarkRunFinalizer_Apply_RecalculatesMetricsAndCompletedTime()
-    {
-        var run = new BenchmarkRun
-        {
-            Id = 1,
-            Status = BenchmarkRunStatus.Running,
-            Answers = new List<BenchmarkRunAnswer>
-            {
-                new()
-                {
-                    OrderIndex = 1,
-                    QuestionText = "Q1",
-                    AnswerText = "A1",
-                    Status = BenchmarkAnswerStatus.Ok,
-                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
-                    QualityScore = 90,
-                    SpeedScore = 80,
-                    DurationMs = 2000,
-                    InputTokens = 100,
-                    OutputTokens = 50,
-                    CacheReadInputTokens = 20,
-                    CacheCreationInputTokens = 10
-                },
-                new()
-                {
-                    OrderIndex = 2,
-                    QuestionText = "Q2",
-                    AnswerText = "A2",
-                    Status = BenchmarkAnswerStatus.Ok,
-                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
-                    QualityScore = 70,
-                    SpeedScore = 60,
-                    DurationMs = 3000,
-                    InputTokens = 200,
-                    OutputTokens = 100,
-                    CacheReadInputTokens = 40,
-                    CacheCreationInputTokens = 20
-                }
-            }
-        };
-
-        BenchmarkRunFinalizer.Apply(run, run.Answers);
-
-        Assert.Equal(BenchmarkRunStatus.Completed, run.Status);
-        Assert.NotNull(run.CompletedAtUtc);
-        Assert.Equal(2, run.AnsweredQuestionCount);
-        Assert.Equal(5000, run.TotalAnswerDurationMs);
-        Assert.Equal(300, run.TotalInputTokens);
-        Assert.Equal(150, run.TotalOutputTokens);
-        Assert.Equal(60, run.TotalCacheReadTokens);
-        Assert.Equal(30, run.TotalCacheCreationTokens);
-        Assert.Equal(80, run.QualityIndex);
-        Assert.Equal(70, run.SpeedIndex);
-    }
-
-    // --- 7. Benchmark Service Orphaned Run Cleanup Tests ---
+    // --- 6. Benchmark Service Orphaned Run Cleanup Tests ---
 
     [Fact]
     public async Task BenchmarkService_CleanupOrphanedRunsAsync_WithoutAnswers_MarksFailed()
@@ -651,7 +561,7 @@ public class BenchmarkServiceTests
     /// scoring profiles. The provider-facing collaborators stay null: nothing here makes a model
     /// call.
     /// </summary>
-    // --- 8. Segmented Candidate Prompt ---
+    // --- 7. Segmented Candidate Prompt ---
 
     /// <summary>
     /// The candidate request carries the prompt in the three cache segments the providers key their
@@ -1420,7 +1330,7 @@ public class BenchmarkServiceTests
         Assert.Contains(claims.AssessorStatements, c => c.Contains("-4 AC"));
     }
 
-    // --- 9. Second-Opinion Sample Top-Up (FlaggedPlusSample) ---
+    // --- 8. Second-Opinion Sample Top-Up (FlaggedPlusSample) ---
 
     [Fact]
     public async Task SecondOpinionSampleTopUp_SelectsTheLowestScoringAnswers_TiesByOrderIndex()
@@ -1640,7 +1550,7 @@ public class BenchmarkServiceTests
         }
     }
 
-    // --- 10. Claim Verification Token Budget ---
+    // --- 9. Claim Verification Token Budget ---
 
     [Fact]
     public async Task RunClaimVerificationAsync_ExhaustedTokenBudget_MarksRemainingAnswersNotChecked()
@@ -1791,7 +1701,7 @@ public class BenchmarkServiceTests
             .OrderBy(a => a.OrderIndex)
             .ToListAsync();
     }
-    // --- 11. Claim-verifier long-context buckets ---
+    // --- 10. Claim-verifier long-context buckets ---
 
     private static readonly ModelPricing HaikuVerifierCard =
         new(0.10m, 0.50m, CachedInputPerMillion: 0.01m, CacheWritePerMillion: 0.125m,
@@ -1864,7 +1774,7 @@ public class BenchmarkServiceTests
         Assert.Equal(6_000, live.TotalClaimVerificationLongContextCacheCreationTokens);
     }
 
-    // --- 12. Candidate failure attribution (harness 56) ---
+    // --- 11. Candidate failure attribution (harness 56) ---
 
     private static readonly ProviderErrorClassification NotAProviderError = new(false, null, "Not a provider error");
 
@@ -2027,7 +1937,7 @@ public class BenchmarkServiceTests
         Assert.Equal(new BenchmarkService.CandidateOutcome(BenchmarkAnswerStatus.Ok, null, null), ok);
     }
 
-    // --- 13. Repair passes ---
+    // --- 12. Repair passes ---
 
     [Fact]
     public void BeginRepairPass_CountsEveryPass_AndAProviderPassWhenAReExecutedAnswerLastFailedAtTheProvider()

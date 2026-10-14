@@ -136,6 +136,14 @@ public static class ChatConsistencyComparisonSetKinds
     public const string BatteryKeyPrefix = "battery:";
     public const string SuiteKeyPrefix = "suite:";
 
+    /// <summary>The refusal for a kind that is neither <see cref="Battery"/> nor <see cref="Suite"/>.</summary>
+    public const string KindRefusal = "The comparison set's kind must be \"battery\" or \"suite\".";
+
+    /// <summary>The refusal for a key of <paramref name="kind"/> without its kind's prefix and a value after it.</summary>
+    public static string KeyRefusal(string kind) => kind == Battery
+        ? "A " + kind + " comparison set's key is " + BatteryKeyPrefix + " followed by the battery definition hash."
+        : "A " + kind + " comparison set's key is " + SuiteKeyPrefix + " followed by the suite identity.";
+
     /// <summary>The unit kind of a run-by-run analysis and of a suite set.</summary>
     public const string RunUnit = "run";
 

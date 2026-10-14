@@ -367,7 +367,7 @@ internal sealed class ChatConsistencyReportHarness : IAsyncDisposable
 
     private static readonly DateTime Day1 = new(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
 
-    /// <summary>The service providers and knowledge-base services <see cref="Service"/> creates, disposed with the harness.</summary>
+    /// <summary>The service providers <see cref="Service"/> creates, disposed with the harness.</summary>
     private readonly List<IDisposable> _disposables = new();
 
     public DbContextOptions<ApplicationDbContext> Options { get; private init; } = default!;
@@ -530,20 +530,16 @@ internal sealed class ChatConsistencyReportHarness : IAsyncDisposable
         services.AddSingleton<IAiProvider>(Provider);
         var serviceProvider = services.BuildServiceProvider();
         _disposables.Add(serviceProvider);
-        return ServiceFor(Db, serviceProvider.GetRequiredService<IServiceScopeFactory>(), Configuration, Jobs, Provider, _disposables);
+        return ServiceFor(Db, serviceProvider.GetRequiredService<IServiceScopeFactory>(), Configuration, Jobs, Provider);
     }
 
     /// <summary>
-    /// A report-pack service over <paramref name="db"/>, writing through the real agent loop over <paramref name="provider"/>;
-    /// the knowledge-base service it creates is added to <paramref name="disposables"/> when one is given.
+    /// A report-pack service over <paramref name="db"/>, writing through the real agent loop over <paramref name="provider"/>.
     /// </summary>
     public static BenchmarkReportPackService ServiceFor(
-        ApplicationDbContext db, IServiceScopeFactory agentScopes, IConfiguration configuration, BenchmarkReportPackJobManager jobs, IAiProvider provider,
-        ICollection<IDisposable>? disposables = null)
+        ApplicationDbContext db, IServiceScopeFactory agentScopes, IConfiguration configuration, BenchmarkReportPackJobManager jobs, IAiProvider provider)
     {
         var cache = new MemoryCache(new MemoryCacheOptions());
-        var knowledgeBase = new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, configuration);
-        disposables?.Add(knowledgeBase);
         var handlers = new List<IToolHandler>();
         var bridge = new BenchmarkReportPackServiceTests.NoClientBridge();
         var runner = new AgentLoopRunner(
@@ -553,7 +549,7 @@ internal sealed class ChatConsistencyReportHarness : IAsyncDisposable
             new BenchmarkReportPackServiceTests.ReplyEchoHttpClientFactory(),
             configuration,
             agentScopes,
-            knowledgeBase,
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance);
 

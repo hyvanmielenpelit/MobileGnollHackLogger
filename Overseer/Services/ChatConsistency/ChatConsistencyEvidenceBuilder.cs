@@ -1061,13 +1061,12 @@ public class ChatConsistencyEvidenceBuilder
         {
             ChatConsistencyComparisonSetKinds.Battery => ChatConsistencyComparisonSetKinds.BatteryKeyPrefix,
             ChatConsistencyComparisonSetKinds.Suite => ChatConsistencyComparisonSetKinds.SuiteKeyPrefix,
-            _ => throw new ChatConsistencyRequestException("A comparison set is a battery or a suite.")
+            _ => throw new ChatConsistencyRequestException(ChatConsistencyComparisonSetKinds.KindRefusal)
         };
 
         if (!key.StartsWith(prefix, StringComparison.Ordinal) || key.Length == prefix.Length)
         {
-            throw new ChatConsistencyRequestException("A " + kind + " comparison set's key is " + prefix + " followed by "
-                + (kind == ChatConsistencyComparisonSetKinds.Battery ? "the battery definition hash." : "the suite identity."));
+            throw new ChatConsistencyRequestException(ChatConsistencyComparisonSetKinds.KeyRefusal(kind));
         }
 
         return new SetRef(kind, key, key[prefix.Length..]);

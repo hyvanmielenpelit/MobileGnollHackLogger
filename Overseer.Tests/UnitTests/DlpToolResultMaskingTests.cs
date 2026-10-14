@@ -17,6 +17,7 @@ using Overseer.Services.Privacy;
 using Overseer.Services.Privacy.Dlp;
 using Overseer.Services.Providers;
 using Overseer.Services.Tools;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -153,7 +154,7 @@ public class DlpToolResultMaskingTests
             new StubHttpClientFactory(),
             config,
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance,
             new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));

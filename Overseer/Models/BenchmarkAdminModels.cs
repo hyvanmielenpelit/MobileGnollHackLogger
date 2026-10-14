@@ -2037,7 +2037,6 @@ public class BenchmarkRunSummaryDto : IProviderAvailabilityCardDto
     public int? ComputedScore { get; set; }
     public int? QualityIndex { get; set; }
     public double? QualityIndexStandardError { get; set; }
-    public int? RawQualityIndex { get; set; }
     public int? SpeedIndex { get; set; }
     public long TotalAnswerDurationMs { get; set; }
     public bool SpeedMeasurementDegraded { get; set; }

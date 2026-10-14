@@ -18,6 +18,7 @@ using Overseer.Services.Agents;
 using Overseer.Services.Providers;
 using Overseer.Services.Security;
 using Overseer.Services.Tools;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -353,7 +354,7 @@ public class SafetyIdentifierTests
             new OkHttpClientFactory(),
             config,
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance);
 

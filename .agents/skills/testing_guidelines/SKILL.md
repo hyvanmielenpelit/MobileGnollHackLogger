@@ -315,6 +315,7 @@ When testing services or tools that index files in the background (`WikiService`
 *   **Asynchronous Initialization**: Tests must be `async Task` methods.
 *   **Await `InitializationTask`**: Always call `await service.InitializationTask;` before querying the service or executing tools to ensure background Lucene/file indexing has finished.
 *   **Testing Cold Guards**: To test that a tool returns `Success = false` with a directive error message (`ToolGuardMessages`), execute the tool immediately **without** awaiting `service.InitializationTask`.
+*   **Shared Empty Knowledge Base**: A test that needs a `KnowledgeBaseService` only to construct a runner, tool or service uses `TestKnowledgeBase.Empty` (`Overseer.Tests/Helpers`) rather than constructing one, because each instance starts a 10-minute reload timer. A test of the knowledge base itself constructs its own with a real `KbPath` and disposes it, as `StatsToolArgumentTrimTests` does.
 *   Refer to the `background_indexing_architecture` skill for full architectural details.
 
 ## 6. Accessing Internal Members in Unit Tests (`InternalsVisibleTo`)

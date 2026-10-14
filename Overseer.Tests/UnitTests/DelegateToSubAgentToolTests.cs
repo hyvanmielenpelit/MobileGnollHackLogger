@@ -10,6 +10,7 @@ using Overseer.Services;
 using Overseer.Services.Agents;
 using Overseer.Services.Providers;
 using Overseer.Services.Tools;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -1113,7 +1114,7 @@ public class DelegateToSubAgentToolTests
         services.AddSingleton(metadata);
         services.AddSingleton(toolRegistry);
         services.AddSingleton(toolExecutor);
-        services.AddSingleton(new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config));
+        services.AddSingleton(TestKnowledgeBase.Empty);
         services.AddSingleton(catalogService);
         services.AddSingleton<IHttpClientFactory>(new MockHttpClientFactory());
         services.AddSingleton<IConfiguration>(config);

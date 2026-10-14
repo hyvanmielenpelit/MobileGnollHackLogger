@@ -11,6 +11,7 @@ using Overseer.Services.Agents;
 using Overseer.Services.ApiKeyAlerts;
 using Overseer.Services.Providers;
 using Overseer.Services.Tools;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -149,7 +150,7 @@ public class AgentLoopRunnerTests
             new MockHttpClientFactory(),
             config,
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance,
             new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
@@ -205,7 +206,7 @@ public class AgentLoopRunnerTests
             new MockHttpClientFactory(),
             config,
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance,
             new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
@@ -318,7 +319,7 @@ public class AgentLoopRunnerTests
             new MockHttpClientFactory(),
             config,
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance,
             new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
@@ -387,7 +388,7 @@ public class AgentLoopRunnerTests
             new MockHttpClientFactory(),
             config,
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance,
             new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
@@ -441,7 +442,7 @@ public class AgentLoopRunnerTests
             new MockHttpClientFactory(),
             config,
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance,
             new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
@@ -523,7 +524,7 @@ public class AgentLoopRunnerTests
             new MockHttpClientFactory(),
             config,
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance,
             new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
@@ -706,7 +707,7 @@ public class AgentLoopRunnerTests
             new MockHttpClientFactory(),
             config,
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance,
             new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
@@ -795,7 +796,7 @@ public class AgentLoopRunnerTests
             new MockHttpClientFactory(),
             config,
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance,
             new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
@@ -992,7 +993,7 @@ public class AgentLoopRunnerTests
             new FixedHttpClientFactory(handler),
             config,
             sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance,
             new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
@@ -1126,22 +1127,5 @@ public class AgentLoopRunnerTests
         Assert.Equal("Google no longer serves the model mock-model. Choose another model; an administrator can update this configuration.", error.Data);
         Assert.Empty(reports);
         Assert.Equal(1, errorLogs);
-    }
-
-    // --- Provider attempts of the key, billing, rate-limit and missing-model paths ---
-
-    [Fact]
-    public async Task RunAsync_OpenAi429RateLimit_RetriesExhausted_RecordsOneOurRateLimitAttempt()
-    {
-        // The helper's configuration allows no 429 retries, so the one 429 ends the call.
-        var (events, _, calls, _, result) = await RunAgainstStatusWithResultAsync(
-            System.Net.HttpStatusCode.TooManyRequests, OpenAiRateLimitBody, AlertTestConfigId, alertContext: null);
-
-        Assert.Equal(1, calls);
-        var attempt = Assert.Single(Assert.Single(result.ModelCalls).Attempts);
-        Assert.Equal(ProviderAttemptOutcome.OurRateLimit, attempt.Outcome);
-        Assert.Equal("rate_limit_exceeded", attempt.ProviderErrorCode);
-        Assert.Equal(ProviderAttemptOutcome.OurRateLimit, result.TerminalOutcome);
-        Assert.Contains(events, e => e.Type == "error" && e.Data != null && e.Data.StartsWith("429 Rate Limited"));
     }
 }

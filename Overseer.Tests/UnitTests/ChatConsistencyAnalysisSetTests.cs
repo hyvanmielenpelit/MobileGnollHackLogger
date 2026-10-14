@@ -273,7 +273,7 @@ public class ChatConsistencyAnalysisSetTests
             "A suite comparison set's key is suite: followed by the suite identity.");
         await Refused(
             Request(key) with { ComparisonSet = new ChatConsistencyComparisonSetRef { Kind = "group", Key = "group:1" } },
-            "A comparison set is a battery or a suite.");
+            "The comparison set's kind must be \"battery\" or \"suite\".");
         await Refused(
             Request(key) with { ComparisonSet = BatterySet(), BaselineRunIds = new long[] { 1 } },
             "A battery comparison takes battery run ids.");

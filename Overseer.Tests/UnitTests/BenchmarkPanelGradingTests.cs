@@ -1067,7 +1067,7 @@ public class BenchmarkPanelGradingTests
             new ReplyEchoHttpClientFactory(),
             configuration,
             scopeFactory,
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, configuration),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance);
 

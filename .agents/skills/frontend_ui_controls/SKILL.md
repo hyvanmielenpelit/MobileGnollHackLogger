@@ -1562,6 +1562,17 @@ onTabKeydown(event: KeyboardEvent, index: number): void {
 Keep the tab list in a `readonly` array on the component and render it with `@for`. Seven
 hand-written tab buttons is seven places to forget an attribute.
 
+**A tab that refuses selection** stays a focusable `<button>` with `aria-disabled="true"`, never
+`disabled`, and, where its reason is shown, `aria-describedby` pointing at that visible reason.
+Arrow keys, Home and End move focus onto it anyway, so its reason is read, while selection,
+`aria-selected`, the panel and `tabindex="0"` stay on the selected tab: the handler calls select and
+focus independently instead of focusing only after a successful select, and takes the focused tab's
+own index, so the arrows keep working from there. A click on it does nothing (the Chat Consistency
+wizard's click focuses the panel only when the step opened). This is the one case where focus
+deliberately does not follow selection. Hosts: the Model Comparison step and figure-view tabs, the
+paired-tests mode tabs and the Chat Consistency wizard steps, all through `rovingTabIndex`
+(`src/app/utils/roving-tab.util.ts`).
+
 ### `aria-selected` drives the styling
 
 `.gh-tab[aria-selected="true"]` carries the active appearance. There is deliberately **no**

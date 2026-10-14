@@ -812,7 +812,7 @@ public class LimitEnforcementTests : IDisposable
         services.AddSingleton(metadata);
         services.AddSingleton(toolRegistry);
         services.AddSingleton(toolExecutor);
-        services.AddSingleton(new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config));
+        services.AddSingleton(TestKnowledgeBase.Empty);
         services.AddSingleton(catalogService);
         services.AddSingleton<IHttpClientFactory>(new StubHttpClientFactory());
         services.AddSingleton<IConfiguration>(config);

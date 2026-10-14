@@ -1619,7 +1619,7 @@ public class BenchmarkReportPackServiceTests
                 new ReplyEchoHttpClientFactory(),
                 Configuration,
                 scopeFactory,
-                new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, Configuration),
+                TestKnowledgeBase.Empty,
                 new ModelMetadataService(),
                 NullLogger<AgentLoopRunner>.Instance);
 

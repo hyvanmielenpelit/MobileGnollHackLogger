@@ -1966,7 +1966,6 @@ export interface BenchmarkRunSummaryDto extends ProviderAvailabilityCardFields {
   computedScore?: number | null;
   qualityIndex?: number | null;
   qualityIndexStandardError?: number | null;
-  rawQualityIndex?: number | null;
   speedIndex?: number | null;
   totalAnswerDurationMs: number;
   speedMeasurementDegraded: boolean;

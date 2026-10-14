@@ -254,6 +254,19 @@ public class ChatConsistencyAnalysisRefusalTests
         });
     }
 
+    [Theory]
+    [InlineData("group", "group:1", "The comparison set's kind must be \"battery\" or \"suite\".")]
+    [InlineData("battery", "suite:id:7", "A battery comparison set's key is battery: followed by the battery definition hash.")]
+    [InlineData("suite", "suite:", "A suite comparison set's key is suite: followed by the suite identity.")]
+    [InlineData("battery", null, "A battery comparison set's key is battery: followed by the battery definition hash.")]
+    public void AMalformedComparisonSetIsRefused_WithTheSameTextsAsTheEvidenceBuilder(string kind, string? key, string message)
+    {
+        var request = Request("subject") with { ComparisonSet = new ChatConsistencyComparisonSetRef { Kind = kind, Key = key! } };
+
+        var refusal = Assert.Throws<ChatConsistencyRequestException>(() => ChatConsistencyAnalysisService.Validate(request));
+        Assert.Equal(message, refusal.Message);
+    }
+
     [Fact]
     public async Task ARefusedRunSelectionSavesNothing()
     {

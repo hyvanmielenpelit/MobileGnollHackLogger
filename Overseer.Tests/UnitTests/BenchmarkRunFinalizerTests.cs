@@ -1606,4 +1606,94 @@ public class BenchmarkRunFinalizerTests
         Assert.True(ProviderRollupCounts.Of(Array.Empty<ProviderAttemptOutcome>()).IsZero);
         Assert.False(ProviderRollupCounts.Of(new[] { ProviderAttemptOutcome.OurThrottle }).IsZero);
     }
+
+    // --- Run status and measured totals -------------------------------------------------------------
+
+    [Fact]
+    public void ComputeStatus_ReturnsCorrectStatus()
+    {
+        var answersAllOk = new List<BenchmarkRunAnswer>
+        {
+            new() { Status = BenchmarkAnswerStatus.Ok, AssessmentStatus = BenchmarkAssessmentStatus.Scored }
+        };
+        Assert.False(BenchmarkRunFinalizer.HasUnresolvedWork(answersAllOk[0]));
+        Assert.Equal(BenchmarkRunStatus.Completed, BenchmarkRunFinalizer.ComputeStatus(answersAllOk));
+
+        var answersWithError = new List<BenchmarkRunAnswer>
+        {
+            new() { Status = BenchmarkAnswerStatus.ProviderError, AssessmentStatus = BenchmarkAssessmentStatus.Scored }
+        };
+        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(answersWithError[0]));
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answersWithError));
+
+        var answersWithFailedAssessment = new List<BenchmarkRunAnswer>
+        {
+            new() { Status = BenchmarkAnswerStatus.Ok, AssessmentStatus = BenchmarkAssessmentStatus.Failed }
+        };
+        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(answersWithFailedAssessment[0]));
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answersWithFailedAssessment));
+
+        var answersInProgress = new List<BenchmarkRunAnswer>
+        {
+            new() { Status = BenchmarkAnswerStatus.Ok, AssessmentStatus = BenchmarkAssessmentStatus.Pending }
+        };
+        Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(answersInProgress[0]));
+        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answersInProgress));
+    }
+
+    [Fact]
+    public void Apply_RecalculatesMetricsAndCompletedTime()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 1,
+            Status = BenchmarkRunStatus.Running,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new()
+                {
+                    OrderIndex = 1,
+                    QuestionText = "Q1",
+                    AnswerText = "A1",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    QualityScore = 90,
+                    SpeedScore = 80,
+                    DurationMs = 2000,
+                    InputTokens = 100,
+                    OutputTokens = 50,
+                    CacheReadInputTokens = 20,
+                    CacheCreationInputTokens = 10
+                },
+                new()
+                {
+                    OrderIndex = 2,
+                    QuestionText = "Q2",
+                    AnswerText = "A2",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    QualityScore = 70,
+                    SpeedScore = 60,
+                    DurationMs = 3000,
+                    InputTokens = 200,
+                    OutputTokens = 100,
+                    CacheReadInputTokens = 40,
+                    CacheCreationInputTokens = 20
+                }
+            }
+        };
+
+        BenchmarkRunFinalizer.Apply(run, run.Answers);
+
+        Assert.Equal(BenchmarkRunStatus.Completed, run.Status);
+        Assert.NotNull(run.CompletedAtUtc);
+        Assert.Equal(2, run.AnsweredQuestionCount);
+        Assert.Equal(5000, run.TotalAnswerDurationMs);
+        Assert.Equal(300, run.TotalInputTokens);
+        Assert.Equal(150, run.TotalOutputTokens);
+        Assert.Equal(60, run.TotalCacheReadTokens);
+        Assert.Equal(30, run.TotalCacheCreationTokens);
+        Assert.Equal(80, run.QualityIndex);
+        Assert.Equal(70, run.SpeedIndex);
+    }
 }

@@ -624,12 +624,12 @@ public class ChatConsistencyAnalysisService
             };
             if (prefix == null)
             {
-                throw new ChatConsistencyRequestException("The comparison set's kind must be \"battery\" or \"suite\".");
+                throw new ChatConsistencyRequestException(ChatConsistencyComparisonSetKinds.KindRefusal);
             }
 
             if (set.Key == null || set.Key.Length <= prefix.Length || !set.Key.StartsWith(prefix, StringComparison.Ordinal))
             {
-                throw new ChatConsistencyRequestException("The comparison set's key must start with \"" + prefix + "\".");
+                throw new ChatConsistencyRequestException(ChatConsistencyComparisonSetKinds.KeyRefusal(set.Kind));
             }
         }
 

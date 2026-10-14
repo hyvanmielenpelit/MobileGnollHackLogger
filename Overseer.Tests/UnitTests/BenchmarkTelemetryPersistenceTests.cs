@@ -236,7 +236,7 @@ public class BenchmarkTelemetryPersistenceTests
             new FixedHttpClientFactory(handler),
             config,
             scopeFactory,
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
+            TestKnowledgeBase.Empty,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance,
             new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
