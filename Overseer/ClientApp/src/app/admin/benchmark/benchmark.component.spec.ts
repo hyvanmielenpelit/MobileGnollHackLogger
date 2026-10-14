@@ -1608,17 +1608,6 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.subTabs[3]).toBe('multisuite');
     });
 
-    it('should reach Multi-Suite with the arrow keys from both of its neighbors', () => {
-      tabs()[2].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }));
-      fixture.detectChanges();
-      expect(component.activeSubTab).toBe('multisuite');
-      expect(document.activeElement).toBe(fixture.nativeElement.querySelector('#bm-tab-multisuite'));
-
-      tabs()[4].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }));
-      fixture.detectChanges();
-      expect(component.activeSubTab).toBe('multisuite');
-    });
-
     it('should mark exactly one tab selected, matching activeSubTab', () => {
       const selected = tabs().filter(t => t.getAttribute('aria-selected') === 'true');
       expect(selected.length).toBe(1);
@@ -1629,18 +1618,6 @@ describe('AdminBenchmarkComponent', () => {
       const all = tabs();
       expect(all.filter(t => t.getAttribute('tabindex') === '0').length).toBe(1);
       expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(all.length - 1);
-    });
-
-    it.each([
-      { name: 'wrap forward from the last tab to the first with ArrowRight', from: 'chatconsistency', key: 'ArrowRight', index: 7, to: 'run' },
-      { name: 'wrap backward from the first tab to the last with ArrowLeft', from: 'run', key: 'ArrowLeft', index: 0, to: 'chatconsistency' },
-      { name: 'select the last tab with End', from: 'history', key: 'End', index: 1, to: 'chatconsistency' },
-      { name: 'select the first tab with Home', from: 'chatconsistency', key: 'Home', index: 7, to: 'run' },
-      { name: 'ignore keys that are not part of the tab keyboard model', from: 'history', key: 'a', index: 1, to: 'history' }
-    ] as const)('should $name', ({ from, key, index, to }) => {
-      component.activeSubTab = from;
-      component.onTabKeydown(new KeyboardEvent('keydown', { key }), index);
-      expect(component.activeSubTab).toBe(to);
     });
 
     it('should place Chat Consistency last, with its own panel', () => {

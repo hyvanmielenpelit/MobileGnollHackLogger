@@ -984,9 +984,9 @@ public class BenchmarkReportPackValidatorTests
     [Fact]
     public void Rule7_TheExecutiveSummaryHasNoCapOnTheResearcherSlots()
     {
-        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.WhyItScored));
-        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Ib, BenchmarkReportSlots.WhatWorked));
-        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.OverseerChat));
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.WhyItScored, comparisonScope: false));
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Ib, BenchmarkReportSlots.WhatWorked, comparisonScope: false));
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.OverseerChat, comparisonScope: false));
     }
 
     [Fact]

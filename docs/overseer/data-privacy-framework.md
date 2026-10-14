@@ -1480,8 +1480,13 @@ account's sign-in cookie fails security-stamp validation within
 `IdentityLockout:SecurityStampValidationMinutes` (default 5), after which its requests are no
 longer authenticated and cannot refresh the session's sliding window; the session is erased by
 the sliding timeout `PrivacySettings:Ephemeral:TimeoutMinutes` (default 60) after its last access.
-A chat hub connection the browser opened before the deletion is not re-validated, so while it
-stays open its hub calls can still refresh that window.
+The chat hub re-checks the caller's account and security stamp when a connection opens, and then
+on a hub call at most once per `IdentityLockout:SecurityStampValidationMinutes`
+(`HubPrincipalValidationFilter`). It ends a connection whose account is gone or whose stamp has
+changed, refusing the call so it cannot refresh the window, and on finding the account gone it
+erases that user's incognito sessions at once. A connection that makes no hub call is not
+checked, so those sessions then end by the sliding timeout. If the database cannot be reached,
+the call proceeds and the check is retried on the next call.
 
 **The window says the number.** `GET /api/settings` serves `ephemeralTimeoutMinutes` from the
 store rather than re-reading configuration, so the Incognito badge's tooltip names the interval

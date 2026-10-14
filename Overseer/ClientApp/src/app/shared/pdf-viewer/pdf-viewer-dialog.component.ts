@@ -18,6 +18,7 @@ import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist';
 import type { EventBus, PDFLinkService, PDFViewer } from 'pdfjs-dist/web/pdf_viewer.mjs';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
 import { safeFileName } from '../../utils/download.util';
+import { rovingTabIndex } from '../../utils/roving-tab.util';
 import { InfoTipComponent } from '../info-tip/info-tip.component';
 import { PDFJS_LOADER, PdfJsModules } from './pdfjs-loader';
 
@@ -332,18 +333,9 @@ export class PdfViewerDialogComponent implements OnInit, OnDestroy {
 
   onVariantKeydown(event: KeyboardEvent, index: number): void {
     const variants = this.variants;
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: variants.length - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined || variants.length === 0) {
-      return;
-    }
-    event.preventDefault();
-    const next = variants[(requested + variants.length) % variants.length];
+    const target = rovingTabIndex(event, index, variants.length);
+    if (target === null) return;
+    const next = variants[target];
     this.selectVariant(next.key);
     document.getElementById(this.variantTabId(next.key))?.focus();
   }
@@ -363,18 +355,9 @@ export class PdfViewerDialogComponent implements OnInit, OnDestroy {
 
   onSecondaryKeydown(event: KeyboardEvent, index: number): void {
     const options = this.secondaryVariants;
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: options.length - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined || options.length === 0) {
-      return;
-    }
-    event.preventDefault();
-    const next = options[(requested + options.length) % options.length];
+    const target = rovingTabIndex(event, index, options.length);
+    if (target === null) return;
+    const next = options[target];
     this.selectSecondaryVariant(next.key);
     document.getElementById(this.secondaryTabId(next.key))?.focus();
   }

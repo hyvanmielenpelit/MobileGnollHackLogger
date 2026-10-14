@@ -1390,8 +1390,10 @@ layouts move to version 3, which appends the figure to a stored figure list:
    moving range of consecutive *z*<sub>i</sub> and 1.128 is d₂ for ranges of two. The limits are p̄ ± 3 ·
    σ<sub>p,i</sub> · σ<sub>Z</sub>, the lower one clipped at 0. Laney's correction keeps the overdispersion
    of bursty errors from making plain p-chart limits raise false alarms at large *n*. Points beyond the
-   limits are labeled. `ChatConsistencyStatistics.LaneyPPrimeLimits` holds the same formula for the
-   documents and the tests.
+   limits are labeled. The chart's limits come from `ccLaneyPPrimeLimits` in the client;
+   `ChatConsistencyStatistics.LaneyPPrimeLimits` holds the same formula on the server as a reference
+   implementation for the tests, and the two are pinned together by the shared fixture
+   `chat-consistency-tab/cc-laney-limits.fixture.json`.
 3. **`strip`**: one row per measure (`strict`, provider errors only, and `inclusive`, unattributed added),
    one cell per UTC day, shaded on a color-blind-safe sequential ramp, gray for a day with no runs.
 

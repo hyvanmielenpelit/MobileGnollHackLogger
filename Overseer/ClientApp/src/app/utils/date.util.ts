@@ -18,6 +18,27 @@ export function parseServerUtcDate(value: string | Date): Date {
 }
 
 /**
+ * Local calendar date for a stored UTC timestamp (read with `parseServerUtcDate`), or '' when
+ * nothing has been recorded or the value does not parse.
+ */
+export function formatServerDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const parsed = parseServerUtcDate(iso);
+  return isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString();
+}
+
+/**
+ * A date entered as a calendar date (stored as its midnight, with no zone), shown as that same
+ * date in every time zone, or '' when nothing has been recorded. Read as local time on purpose,
+ * unlike `formatServerDate`: appending `Z` would shift the date west of UTC.
+ */
+export function formatCalendarDate(iso: string | null | undefined): string {
+  if (!iso) return '';
+  const parsed = new Date(iso);
+  return isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString();
+}
+
+/**
  * Milliseconds from a server timestamp to `end` (default: now), clamped at 0 so client
  * clock skew reads as "just started" rather than as a negative duration.
  */

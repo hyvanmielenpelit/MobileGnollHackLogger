@@ -14,6 +14,9 @@ public class ModelPricingServiceTests
 {
     private readonly ModelMetadataService _metadataService = new();
 
+    // Catalog price pins resolve on a fixed date, so a schedule added to the catalog later cannot move them.
+    private static readonly DateOnly PinDate = new(2026, 10, 14);
+
     private ApplicationDbContext CreateInMemoryDb()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -28,7 +31,7 @@ public class ModelPricingServiceTests
         using var db = CreateInMemoryDb();
         var service = new ModelPricingService(_metadataService, db);
 
-        var result = service.ResolveDefault("OpenAI", "gpt-5.6-sol");
+        var result = service.ResolveDefault("OpenAI", "gpt-5.6-sol", PinDate);
 
         Assert.NotNull(result);
         Assert.Equal(4.00m, result.InputPerMillion);
@@ -45,12 +48,15 @@ public class ModelPricingServiceTests
         using var db = CreateInMemoryDb();
         var service = new ModelPricingService(_metadataService, db);
 
-        var result = service.ResolveDefault("Google", "gemini-3.8-flash-001", new DateOnly(2026, 12, 31));
+        var day = new DateOnly(2026, 12, 31);
+        var baseCard = service.ResolveDefault("Google", "gemini-3.8-flash", day);
+        var result = service.ResolveDefault("Google", "gemini-3.8-flash-001", day);
 
+        Assert.NotNull(baseCard);
         Assert.NotNull(result);
-        Assert.Equal(0.75m, result.InputPerMillion);
-        Assert.Equal(3.75m, result.OutputPerMillion);
-        Assert.Equal(ModelPricingSource.Catalog, result.Source);
+        Assert.Equal(baseCard.InputPerMillion, result.InputPerMillion);
+        Assert.Equal(baseCard.OutputPerMillion, result.OutputPerMillion);
+        Assert.Equal(baseCard.Source, result.Source);
     }
 
     [Fact]
@@ -93,7 +99,8 @@ public class ModelPricingServiceTests
     public void Resolve_SystemConfig_HalfFilledCustom_FallsBackToCatalog()
     {
         using var db = CreateInMemoryDb();
-        var service = new ModelPricingService(_metadataService, db);
+        var service = new ModelPricingService(
+            new FixedPricingMetadataService(new ModelCatalogPricing { InputPerMillion = 4.00m, OutputPerMillion = 20.00m }), db);
 
         var config = new SystemAiApiConfiguration
         {
@@ -189,7 +196,8 @@ public class ModelPricingServiceTests
         db.SystemAiApiConfigurations.Add(config);
         await db.SaveChangesAsync(ct);
 
-        var service = new ModelPricingService(_metadataService, db);
+        var service = new ModelPricingService(
+            new FixedPricingMetadataService(new ModelCatalogPricing { InputPerMillion = 4.00m, OutputPerMillion = 20.00m }), db);
 
         var first = await service.ResolveForConfigurationAsync(42, null, null);
         Assert.NotNull(first);
@@ -424,6 +432,39 @@ public class ModelPricingServiceTests
         Assert.True(checkedKeys > 0, "No service-tier multipliers were found in the shipped catalogs.");
     }
 
+    [Fact]
+    public void ShippedCatalogs_EveryScheduledChange_ParsesAndTakesEffectOnItsDate()
+    {
+        // A mistyped effectiveFrom produces no error, just the base card left in force. Holds for any
+        // number of schedules, none included.
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(_metadataService, db);
+
+        foreach (var provider in new[] { "OpenAI", "Anthropic", "Google" })
+        {
+            foreach (var entry in _metadataService.GetCatalogEntries(provider))
+            {
+                var raw = entry.Pricing?.ScheduledChange;
+                if (raw == null) continue;
+
+                var scheduled = ModelPricingService.ParseScheduled(raw);
+                Assert.True(scheduled != null, $"{provider} {entry.Prefixes[0]}: effectiveFrom '{raw.EffectiveFrom}' does not parse.");
+
+                var before = service.ResolveDefault(provider, entry.Prefixes[0], scheduled.EffectiveFrom.AddDays(-1));
+                Assert.NotNull(before);
+                Assert.Equal(entry.Pricing!.InputPerMillion, before.InputPerMillion);
+                Assert.Equal(entry.Pricing.OutputPerMillion, before.OutputPerMillion);
+                Assert.False(before.ScheduleElapsed);
+
+                var onDate = service.ResolveDefault(provider, entry.Prefixes[0], scheduled.EffectiveFrom);
+                Assert.NotNull(onDate);
+                Assert.Equal(scheduled.InputPerMillion, onDate.InputPerMillion);
+                Assert.Equal(scheduled.OutputPerMillion, onDate.OutputPerMillion);
+                Assert.True(onDate.ScheduleElapsed);
+            }
+        }
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Scheduled price changes. The base card is always the rate in force today.
     // ---------------------------------------------------------------------------------------------
@@ -468,7 +509,7 @@ public class ModelPricingServiceTests
     }
 
     [Fact]
-    public void ParseScheduled_ScheduledCardWithoutACachedRate_InheritsTheBaseValue()
+    public void ResolveDefault_AfterAScheduledChangeWithoutCacheRates_InheritsTheBaseCacheRates()
     {
         var catalogEntry = new ModelCatalogPricing
         {
@@ -770,7 +811,7 @@ public class ModelPricingServiceTests
         using var db = CreateInMemoryDb();
         var service = new ModelPricingService(_metadataService, db);
 
-        var pricing = service.ResolveDefault("Anthropic", "claude-sonnet-5");
+        var pricing = service.ResolveDefault("Anthropic", "claude-sonnet-5", PinDate);
         Assert.NotNull(pricing);
         Assert.Equal(2.00m, pricing.InputPerMillion);
         Assert.Equal(10.00m, pricing.OutputPerMillion);
@@ -955,7 +996,7 @@ public class ModelPricingServiceTests
         using var db = CreateInMemoryDb();
         var service = new ModelPricingService(_metadataService, db);
 
-        var pricing = service.ResolveDefault("Anthropic", "claude-haiku-5-5");
+        var pricing = service.ResolveDefault("Anthropic", "claude-haiku-5-5", PinDate);
 
         Assert.NotNull(pricing);
         Assert.Equal(0.10m, pricing.InputPerMillion);

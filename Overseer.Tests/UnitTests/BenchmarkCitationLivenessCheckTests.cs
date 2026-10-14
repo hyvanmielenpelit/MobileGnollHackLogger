@@ -103,6 +103,8 @@ public class BenchmarkCitationLivenessCheckTests
     [InlineData("NetHack src/priest.c:10")]
     [InlineData("src/priest.c:2")]
     [InlineData("src/priest.c:500")]
+    [InlineData("src/shk.c; wiki:Shops")]
+    [InlineData("nethack/src/x.c")]
     [InlineData(null)]
     public void ACitationThatIsNotASingleLiveCheckableSourceLine_GetsNoNote(string? citation)
     {
@@ -112,30 +114,13 @@ public class BenchmarkCitationLivenessCheckTests
     [Theory]
     [InlineData("src/priest.c", "cited file src/priest.c without a line")]
     [InlineData("src/priest.c:priest_talk", "cited file src/priest.c without a line")]
+    // The lineless check is purely textual; "src/shk.c" need not be in the corpus for it to fire.
+    [InlineData("src/shk.c", "cited file src/shk.c without a line")]
     public void ACitationNamingAFileWithoutALine_GetsTheLinelessNote(string citation, string expected)
     {
         // "src/priest.c" names no line at all; "src/priest.c:priest_talk" names a symbol, not a
         // line number — the colon is not followed by a digit, so neither is a checkable source line.
         Assert.Equal(expected, Check().NoteFor(citation));
-    }
-
-    [Fact]
-    public void ALinelessSourceFile_GetsTheLinelessNote_RegardlessOfWhetherItIsIndexed()
-    {
-        // The lineless check is purely textual; "src/shk.c" need not be in the corpus for it to fire.
-        Assert.Equal("cited file src/shk.c without a line", Check().NoteFor("src/shk.c"));
-    }
-
-    [Fact]
-    public void ALinelessSourceFileAlongsideAWikiPage_GetsNoNote()
-    {
-        Assert.Null(Check().NoteFor("src/shk.c; wiki:Shops"));
-    }
-
-    [Fact]
-    public void ALinelessNetHackSourceFile_GetsNoNote()
-    {
-        Assert.Null(Check().NoteFor("nethack/src/x.c"));
     }
 
     [Fact]
@@ -270,13 +255,6 @@ public class BenchmarkCitationLivenessCheckTests
         // The file is absent from the corpus entirely — never indexed, or dropped for exceeding
         // the indexer's per-file size limit; the note's wording is the same for both.
         Assert.Equal("cited file src/mattackm.c is not in the indexed source", Check().NoteFor("src/mattackm.c:40"));
-    }
-
-    [Fact]
-    public void ACitationOfAnIndexedFile_DoesNotGetTheMissingFileNote()
-    {
-        Assert.Equal("cited function priest_talk has no live call site", Check().NoteFor("src/priest.c:10"));
-        Assert.Null(Check().NoteFor("src/priest.c:18"));
     }
 
     [Fact]
@@ -515,29 +493,6 @@ public class BenchmarkCitationLivenessCheckTests
     }
 
     [Fact]
-    public void AOneLineMacroCitedForItsValue_KeepsItsVerdictForCounting()
-    {
-        var verification = new BenchmarkClaimVerification(0, "Breath weapons cost 15 mana.", BenchmarkClaimVerdict.Supported, "include/general.h:1", "The macro's value is 15.");
-
-        var annotated = Assert.Single(OneLineMacroCheck().Annotate(new[] { verification }));
-
-        Assert.Null(annotated.CitationNote);
-        Assert.Equal(BenchmarkClaimVerdict.Supported, annotated.EffectiveVerdict);
-    }
-
-    [Fact]
-    public void TheMacroNote_DemotesTheVerdictForCounting_AndKeepsTheStoredVerdict()
-    {
-        var verification = new BenchmarkClaimVerification(0, "Spells take 6 turns to learn.", BenchmarkClaimVerdict.Refuted, "src/objects.c:4", "The SPELL macro says otherwise.");
-
-        var annotated = Assert.Single(MacroCheck().Annotate(new[] { verification }));
-
-        Assert.Equal("cited line src/objects.c:4 is only the definition of macro SPELL", annotated.CitationNote);
-        Assert.Equal(BenchmarkClaimVerdict.Refuted, annotated.Verdict);
-        Assert.Equal(BenchmarkClaimVerdict.Indeterminate, annotated.EffectiveVerdict);
-    }
-
-    [Fact]
     public void AVerificationThatAlreadyCarriesANote_KeepsIt()
     {
         var verification = new BenchmarkClaimVerification(0, "Claim.", BenchmarkClaimVerdict.Supported, "src/objects.c:4", "Basis.")
@@ -633,6 +588,7 @@ public class BenchmarkCitationLivenessCheckTests
     [Theory]
     [InlineData("src/blank.c:1", "cited line src/blank.c:1 is blank or a comment")]
     [InlineData("src/blank.c:2", "cited line src/blank.c:2 is blank or a comment")]
+    [InlineData("src/blank.c:7", "cited line src/blank.c:7 is blank or a comment")]
     [InlineData("src/blank.c:6-7", "cited lines src/blank.c:6-7 are blank or comments")]
     public void ABlankOrCommentOnlyCitedLine_GetsTheBlankLineNote(string citation, string expected)
     {
@@ -644,17 +600,5 @@ public class BenchmarkCitationLivenessCheckTests
     {
         // Line 8 is code inside blank_helper, which use_it calls.
         Assert.Null(BlankLineCheck().NoteFor("src/blank.c:6-8"));
-    }
-
-    [Fact]
-    public void TheBlankLineNote_DemotesTheVerdictForCounting()
-    {
-        var verification = new BenchmarkClaimVerification(0, "Claim.", BenchmarkClaimVerdict.Supported, "src/blank.c:7", "Basis.");
-
-        var annotated = Assert.Single(BlankLineCheck().Annotate(new[] { verification }));
-
-        Assert.Equal("cited line src/blank.c:7 is blank or a comment", annotated.CitationNote);
-        Assert.Equal(BenchmarkClaimVerdict.Supported, annotated.Verdict);
-        Assert.Equal(BenchmarkClaimVerdict.Indeterminate, annotated.EffectiveVerdict);
     }
 }

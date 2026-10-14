@@ -1,6 +1,8 @@
+import protocolFixture from './cc-protocol.fixture.json';
 import { groupOverseerEvents } from './chat-consistency-events';
 import { CcPeriodIds, ccPeriodAssignment, ccPeriodUnits } from './chat-consistency-periods';
 import {
+  CC_PROTOCOL_V1,
   CC_PROTOCOL_V1_ENDPOINTS,
   CC_PROTOCOL_V2,
   CC_PROTOCOL_V2_ENDPOINTS,
@@ -59,13 +61,24 @@ const readiness = (baselineIds: number[], comparisonIds: number[], points = poin
 
 describe('chat consistency readiness', () => {
   describe('the protocol', () => {
-    it('copies the server\'s endpoint axes and stratification', () => {
-      expect(CC_PROTOCOL_V1_ENDPOINTS.map(endpoint => [endpoint.id, endpoint.axis, endpoint.stratified, endpoint.legacyAxis])).toEqual([
-        ['P1', 'quality', false, null],
-        ['P2', 'speedTelemetry', true, 'speedLegacy'],
-        ['P3', 'speedTelemetry', true, null],
-        ['P4', 'work', false, null],
-        ['P5', 'cost', false, null]
+    it.each([
+      { version: 'V1', endpoints: CC_PROTOCOL_V1_ENDPOINTS, sample: CC_PROTOCOL_V1 },
+      { version: 'V2', endpoints: CC_PROTOCOL_V2_ENDPOINTS, sample: CC_PROTOCOL_V2 }
+    ] as const)('matches the shared protocol fixture: $version', ({ version, endpoints, sample }) => {
+      const copy = protocolFixture.protocols[version];
+      expect(endpoints.map(({ id, name, margin, unit, axis, stratified }) => ({ id, name, margin, unit, axis, stratified })))
+        .toEqual(copy.endpoints);
+      expect({ ...sample }).toEqual(copy.sample);
+    });
+
+    it('falls back from P2 to the legacy speed axis, a client-side choice the protocol does not carry', () => {
+      expect(CC_PROTOCOL_V2_ENDPOINTS.map(endpoint => [endpoint.id, endpoint.legacyAxis])).toEqual([
+        ['P1', null],
+        ['P2', 'speedLegacy'],
+        ['P3', null],
+        ['P4', null],
+        ['P5', null],
+        ['P6', null]
       ]);
     });
 
@@ -74,14 +87,6 @@ describe('chat consistency readiness', () => {
       expect(ccMarginText(15, '%')).toBe('±15 %');
       expect(ccMarginText(1, 'pp')).toBe('±1.0 percentage point');
       expect(ccMarginText(1.5, 'pp')).toBe('±1.5 percentage points');
-    });
-
-    it('copies Protocol V2 as V1\'s endpoints and P6, in percentage points on the availability axis', () => {
-      expect(CC_PROTOCOL_V2_ENDPOINTS.slice(0, 5)).toEqual(CC_PROTOCOL_V1_ENDPOINTS);
-      expect(CC_PROTOCOL_V2_ENDPOINTS[5]).toEqual({
-        id: 'P6', name: 'Provider error rate', margin: 1, unit: 'pp', axis: 'availability', stratified: true, legacyAxis: null
-      });
-      expect(CC_PROTOCOL_V2.minimumAttemptsPerStratum).toBe(30);
     });
 
     it('lists a protocol version\'s own endpoints, V1\'s for a stored analysis without one', () => {

@@ -159,6 +159,7 @@ describe('CcAnalysisHistoryDialogComponent', () => {
     expect(current.querySelector('.cc-hist-tag-earlier, .cc-hist-tag-reports, .cc-hist-tag-relaxed')).toBeNull();
     expect(textOf(current.querySelector('.cc-kind-tag'))).toBe('Suite');
     expect(textOf(card(7).querySelector('.cc-kind-tag'))).toBe('All suites');
+    expect(card(7).querySelector('.cc-hist-compared-label')).toBeNull();
 
     const actions = claude.querySelector('.cc-hist-actions')!;
     expect(actions.getAttribute('role')).toBe('group');

@@ -364,4 +364,82 @@ public class BenchmarkScoringVersionGuardTests
         Assert.NotNull(rescored.Answers.Single().QualityScore);
         Assert.NotNull(rescored.QualityIndex);
     }
+
+    [Theory]
+    [InlineData(1)]
+    // Finalized before harness version 21: the count is taken from the answers and not written.
+    [InlineData(null)]
+    public async Task Rescore_WithAProviderFailedAnswer_WithholdsTheIndices(int? storedTerminalFailureCount)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dbOptions = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        var (service, _) = CreateService(dbOptions);
+
+        await using (var seedDb = new ApplicationDbContext(dbOptions))
+        {
+            var run = new BenchmarkRun
+            {
+                Id = 54,
+                SuiteName = "Suite",
+                TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider", modelId: "candidate", displayName: "Candidate"),
+                AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Provider", modelId: "assessor", displayName: "Assessor"),
+                Status = BenchmarkRunStatus.CompletedWithErrors,
+                StartedAtUtc = FixedCompletedAt.AddHours(-1),
+                CompletedAtUtc = FixedCompletedAt,
+                TotalQuestionCount = 2,
+                ScoringMethodVersion = 10,
+                TerminalFailureAnswerCount = storedTerminalFailureCount,
+                // Stale figures a rescore must not leave standing.
+                QualityIndex = 77,
+                QualityIndexStandardError = 3.0,
+                UnweightedQualityIndex = 77,
+                SpeedIndex = 60,
+                AssessorOnlyQualityIndex = 70,
+                CoAssessorOnlyQualityIndex = 72
+            };
+            run.Answers.Add(new BenchmarkRunAnswer
+            {
+                ExpectedPointsRecorded = true,
+                OrderIndex = 1,
+                QuestionText = "Q1",
+                AnswerText = "A1",
+                Status = BenchmarkAnswerStatus.Ok,
+                AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                AccuracyLevel = 5,
+                CompletenessLevel = 5,
+                ConcisenessLevel = 5,
+                ReadabilityLevel = 5,
+                AssessedDifficulty = 50,
+                DurationMs = 2000
+            });
+            run.Answers.Add(new BenchmarkRunAnswer
+            {
+                ExpectedPointsRecorded = true,
+                OrderIndex = 2,
+                QuestionText = "Q2",
+                AnswerText = string.Empty,
+                Status = BenchmarkAnswerStatus.ProviderError,
+                AssessedDifficulty = 50,
+                DurationMs = 2000
+            });
+            seedDb.BenchmarkRuns.Add(run);
+            await seedDb.SaveChangesAsync(ct);
+        }
+
+        var (success, error) = await service.RescoreRunAsync(54);
+        Assert.True(success, error);
+
+        await using var readback = new ApplicationDbContext(dbOptions);
+        var rescored = await readback.BenchmarkRuns.Include(r => r.Answers).FirstAsync(r => r.Id == 54, ct);
+        Assert.NotNull(rescored.Answers.Single(a => a.OrderIndex == 1).QualityScore);
+        Assert.Null(rescored.QualityIndex);
+        Assert.Null(rescored.QualityIndexStandardError);
+        Assert.Null(rescored.UnweightedQualityIndex);
+        Assert.Null(rescored.SpeedIndex);
+        Assert.Null(rescored.AssessorOnlyQualityIndex);
+        Assert.Null(rescored.CoAssessorOnlyQualityIndex);
+        Assert.Equal(storedTerminalFailureCount, rescored.TerminalFailureAnswerCount);
+    }
 }

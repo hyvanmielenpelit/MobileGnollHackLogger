@@ -20,6 +20,7 @@ import { ModelResolutionResult, isResolutionDeletion, needsAttention } from '../
 import { AttachedSnapshotService, type AttachedSnapshotInfo } from '../services/attached-snapshot.service';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
 import { parseServerUtcDate } from '../utils/date.util';
+import { formatThinkingLevel, showReasoningBadge } from '../utils/model-badge-format.util';
 import * as signalR from '@microsoft/signalr';
 import { firstValueFrom, filter, Observable, Subscription, Subject, debounceTime, distinctUntilChanged } from 'rxjs';
 export interface ToolClientRequest {
@@ -1067,16 +1068,8 @@ export class ChatComponent implements OnInit, OnDestroy, AfterViewInit {
     this.currentTurnFailed = false;
   }
 
-  formatThinkingLevel(level: string | undefined): string {
-    if (!level) return 'Default';
-    return level.charAt(0).toUpperCase() + level.slice(1);
-  }
-
-  showReasoningBadge(mode: string | null | undefined): boolean {
-    if (!mode) return false;
-    const lower = mode.toLowerCase();
-    return lower !== 'default' && lower !== 'standard';
-  }
+  readonly formatThinkingLevel = formatThinkingLevel;
+  readonly showReasoningBadge = showReasoningBadge;
 
   formatServiceTier(tier: string | null | undefined): string {
     if (!tier) return '';

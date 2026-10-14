@@ -69,7 +69,7 @@ describe('results image export', () => {
     expect(full.footer).toMatch(/^GnollBench · Overseer 1\.0\.29 · exported \d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC$/);
   });
 
-  it('downloads a PNG at fit, 2560 px wide, even when the logo does not load', async () => {
+  it('downloads a PNG under the section\'s .png name, even when the logo does not load', async () => {
     const save = vi.spyOn(ccResultsImageIo, 'save').mockReturnValue(undefined);
     expect(await exportResultsImage('download', request())).toBe('Image downloaded.');
     expect(save).toHaveBeenCalledTimes(1);
@@ -105,7 +105,7 @@ describe('results image export', () => {
     expect(await exportResultsImage('copy', request('attribution'))).toBe('Could not copy the image.');
   });
 
-  it('writes a box at exactly its size times the density, in either scheme', async () => {
+  it('writes an HD box at density 2 as exactly 2560 × 1440 pixels', async () => {
     const light = await renderResultsImage(request('summary', { ...withSize({ resolutionId: 'hd', densitySelection: 2 }), scheme: 'light' }));
     const lightBitmap = await createImageBitmap(light.blob);
     expect([lightBitmap.width, lightBitmap.height]).toEqual([2560, 1440]);

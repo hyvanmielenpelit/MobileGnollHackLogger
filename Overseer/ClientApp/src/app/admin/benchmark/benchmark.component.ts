@@ -121,6 +121,7 @@ import { RunAiReportsComponent, RunReportStatusChange } from './run-ai-reports/r
 import { copyToClipboard } from '../../utils/clipboard.util';
 import { downloadTextFile, safeFileName } from '../../utils/download.util';
 import { jobStatusLabel } from '../../utils/job-status-label.util';
+import { rovingTabIndex } from '../../utils/roving-tab.util';
 import {
   COPY_STATUS_MS,
   RUN_REPORT_TABS,
@@ -911,19 +912,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
    * tabindex="0" is the one holding focus.
    */
   onTabKeydown(event: KeyboardEvent, index: number): void {
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: this.subTabs.length - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-
-    event.preventDefault();
-    const next = (requested + this.subTabs.length) % this.subTabs.length;
+    const next = rovingTabIndex(event, index, this.subTabs.length);
+    if (next === null) return;
     const tab = this.subTabs[next];
     this.selectSubTab(tab);
     document.getElementById(`bm-tab-${tab}`)?.focus();
@@ -3260,14 +3250,9 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   onRunReportTabKeydown(event: KeyboardEvent, index: number): void {
-    const count = RUN_REPORT_TABS.length;
-    const targets: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: count - 1 };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-    event.preventDefault();
-    const key = RUN_REPORT_TABS[(requested + count) % count].key;
+    const next = rovingTabIndex(event, index, RUN_REPORT_TABS.length);
+    if (next === null) return;
+    const key = RUN_REPORT_TABS[next].key;
     this.selectRunReportTab(key);
     document.getElementById(`rr-tab-${key}`)?.focus();
   }

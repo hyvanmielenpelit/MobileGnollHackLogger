@@ -345,33 +345,6 @@ public class AgentLoopRunnerTelemetryTests
     }
 
     [Fact]
-    public async Task RateLimitedThenOk_CountsTheRetryApartFromPermitWait()
-    {
-        var config = FastRetryConfig();
-        var governor = new AiRequestGovernor(config, NullLogger<AiRequestGovernor>.Instance);
-        var provider = new ScriptedProvider(AnswerScript);
-        var handler = new ScriptedHandler(
-            () => Status(HttpStatusCode.TooManyRequests, "{\"error\":{\"message\":\"Rate limit reached.\",\"code\":\"rate_limit_exceeded\"}}"),
-            () => Status(HttpStatusCode.OK));
-        var runner = CreateRunner(new[] { provider }, handler, config, governor);
-
-        var (result, events) = await RunAsync(runner, Request(provider));
-
-        Assert.Equal(2, handler.CallCount);
-        var record = Assert.Single(result.ModelCalls);
-        Assert.Equal(1, record.Http429Count);
-        Assert.Equal(0, record.Http5xxCount);
-        Assert.Equal(2, record.AttemptCount);
-        Assert.Equal(200, record.FinalHttpStatus);
-        Assert.Null(record.ErrorKind);
-        Assert.True(record.PermitWaitMs < 500, $"PermitWaitMs was {record.PermitWaitMs}");
-        Assert.True(record.BackoffWaitMs < 500, $"BackoffWaitMs was {record.BackoffWaitMs}");
-        Assert.True(record.FailedAttemptMs >= 0);
-        Assert.Equal(1, result.RetryAttemptCount);
-        Assert.DoesNotContain(events, e => e.Type == "error");
-    }
-
-    [Fact]
     public async Task RealProviderStream_CallMetaIsConsumedAndNeverYielded()
     {
         var provider = new OpenAiResponsesProvider(new ConfigurationBuilder().Build());
@@ -648,13 +621,24 @@ public class AgentLoopRunnerTelemetryTests
                 return response;
             },
             () => Status(HttpStatusCode.OK));
-        var runner = CreateRunner(new[] { provider }, handler, FastRetryConfig());
+        var config = FastRetryConfig();
+        var governor = new AiRequestGovernor(config, NullLogger<AiRequestGovernor>.Instance);
+        var runner = CreateRunner(new[] { provider }, handler, config, governor);
 
-        var (result, _) = await RunAsync(runner, Request(provider));
+        var (result, events) = await RunAsync(runner, Request(provider));
 
+        Assert.Equal(2, handler.CallCount);
         var call = Assert.Single(result.ModelCalls);
         Assert.Equal(2, call.AttemptCount);
         Assert.Equal(1, call.Http429Count);
+        Assert.Equal(0, call.Http5xxCount);
+        Assert.Equal(200, call.FinalHttpStatus);
+        Assert.Null(call.ErrorKind);
+        Assert.True(call.PermitWaitMs < 500, $"PermitWaitMs was {call.PermitWaitMs}");
+        Assert.True(call.BackoffWaitMs < 500, $"BackoffWaitMs was {call.BackoffWaitMs}");
+        Assert.True(call.FailedAttemptMs >= 0);
+        Assert.Equal(1, result.RetryAttemptCount);
+        Assert.DoesNotContain(events, e => e.Type == "error");
         Assert.Equal(2, call.Attempts.Count);
         var limited = call.Attempts[0];
         Assert.Equal(ProviderAttemptOutcome.OurRateLimit, limited.Outcome);

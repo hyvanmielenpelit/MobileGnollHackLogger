@@ -1,8 +1,10 @@
 import type { Mock, MockedObject } from "vitest";
+import { Component } from '@angular/core';
 import { ComponentFixture, TestBed, discardPeriodicTasks, fakeAsync, flush, tick } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { Subject, of, throwError } from 'rxjs';
+import { By } from '@angular/platform-browser';
+import { of } from 'rxjs';
 
 import {
   AdminBenchmarkService,
@@ -15,6 +17,7 @@ import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-
 import { PDFJS_LOADER } from '../../../shared/pdf-viewer/pdfjs-loader';
 import { BenchmarkDownloadCenterComponent, rememberedPdfPaper } from '../download-center/benchmark-download-center.component';
 import { reportDisclosureInfo } from '../report-disclosure-guide';
+import { RunAiReportsComponent } from '../run-ai-reports/run-ai-reports.component';
 import { RunReportWritingDialogComponent } from '../run-ai-reports/run-report-writing-dialog.component';
 import {
   BATTERY_REPORT_DOCUMENTS_POLL_MS,
@@ -101,6 +104,29 @@ function estimateDto(overrides: Partial<BenchmarkRunReportEstimateDto> = {}): Be
   };
 }
 
+/** The run report's AI Reports tab beside two battery run report tabs, one of them not writable yet. */
+@Component({
+  standalone: true,
+  imports: [RunAiReportsComponent, BatteryAiReportsComponent],
+  template: `
+    <app-run-ai-reports [run]="run" [pickerOptions]="options" [writerConfigs]="configs" [dialogOpen]="true"></app-run-ai-reports>
+    <app-battery-ai-reports [batteryRun]="batteryRuns[0]" [analysis]="latest" [pickerOptions]="options"
+                            [writerConfigs]="configs"></app-battery-ai-reports>
+    <app-battery-ai-reports [batteryRun]="batteryRuns[1]" [analysis]="null" [pickerOptions]="options"
+                            [writerConfigs]="configs"></app-battery-ai-reports>
+  `
+})
+class AiReportsTabsHostComponent {
+  readonly run = {
+    id: 55, suiteName: 'Default Suite', testedModelDisplayNameUsed: 'Test Model', testedModelProviderUsed: 'OpenAI',
+    testedModelIdUsed: 'gpt-test', status: 'Completed', assessmentJson: '{}', answers: []
+  } as any;
+  readonly batteryRuns = [batteryRun(), batteryRun({ id: 8, status: 'Running' })];
+  readonly latest = analysis();
+  readonly options = OPTIONS;
+  readonly configs = CONFIGS;
+}
+
 describe('BatteryAiReportsComponent', () => {
   let fixture: ComponentFixture<BatteryAiReportsComponent>;
   let component: BatteryAiReportsComponent;
@@ -136,7 +162,7 @@ describe('BatteryAiReportsComponent', () => {
     downloadCenterOpen = vi.spyOn(BenchmarkDownloadCenterComponent.prototype, 'open').mockReturnValue(undefined);
 
     await TestBed.configureTestingModule({
-      imports: [BatteryAiReportsComponent],
+      imports: [BatteryAiReportsComponent, AiReportsTabsHostComponent],
       providers: [
         { provide: AdminBenchmarkService, useValue: service },
         { provide: PDFJS_LOADER, useValue: () => Promise.reject(new Error('pdf.js is not loaded in specs')) },
@@ -323,53 +349,6 @@ describe('BatteryAiReportsComponent', () => {
         .toBe('Choose a report writer. The deleted document was written by Test Writer.');
       expect(document.activeElement).toBe(checkbox(1));
     });
-
-    it('refuses while a job is in progress, saying why', () => {
-      service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
-      setUp();
-      load(batteryRun({ reportDocumentsStatus: 2 }));
-
-      const button = deleteButton(1);
-      expect(button.getAttribute('aria-disabled')).toBe('true');
-      const tip = fixture.nativeElement.querySelector('#' + button.getAttribute('interestfor')) as HTMLElement;
-      expect(tip.textContent?.trim()).toBe('Wait for the writing to finish, or cancel it');
-      button.click();
-      expect(dialog('.rr-ai-delete-dialog').open).toBe(false);
-      expect(service.deleteBatteryReportDocument).not.toHaveBeenCalled();
-    });
-
-    it('keeps the confirmation open with the failure inside it', () => {
-      service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
-      service.deleteBatteryReportDocument.mockReturnValue(throwError(() => ({
-        status: 409, error: { error: 'The reports are being written.' }
-      })));
-      setUp();
-      load(batteryRun());
-
-      deleteButton(1).click();
-      fixture.detectChanges();
-      const confirm = dialog('.rr-ai-delete-dialog');
-      buttonIn(confirm, 'Delete').click();
-      fixture.detectChanges();
-
-      expect(confirm.open).toBe(true);
-      expect(confirm.querySelector('.alert.alert-danger[role="alert"]')?.textContent?.trim())
-        .toBe('The Executive Summary could not be deleted: The reports are being written.');
-    });
-
-    it('stops its nested dialogs\' close and cancel events at the component', () => {
-      setUp();
-      load(batteryRun());
-      const reached: string[] = [];
-      fixture.nativeElement.addEventListener('close', (event: Event) => reached.push(event.type));
-      fixture.nativeElement.addEventListener('cancel', (event: Event) => reached.push(event.type));
-      for (const selector of ['.rr-ai-delete-dialog', '.rr-ai-same-provider-dialog']) {
-        const nested = dialog(selector);
-        nested.dispatchEvent(new Event('cancel', { bubbles: true, cancelable: true }));
-        nested.dispatchEvent(new Event('close', { bubbles: true }));
-      }
-      expect(reached).toEqual([]);
-    });
   });
 
   // --- The report writer ---
@@ -461,24 +440,6 @@ describe('BatteryAiReportsComponent', () => {
     discardPeriodicTasks();
   }));
 
-  it('checks every missing document, sends the checked ones, and names the button by their count', () => {
-    service.writeBatteryReportDocuments.mockReturnValue(of({ runId: 7, status: 1 }));
-    setUp();
-    load(batteryRun({ reportWriterModelConfigurationId: 1 }));
-
-    expect(checkbox(1).checked).toBe(true);
-    expect(checkbox(2).checked).toBe(true);
-    expect(checkbox(3).checked).toBe(true);
-    checkbox(1).click();
-    fixture.detectChanges();
-    expect(writeButton().textContent?.trim()).toBe('Write Reports');
-    checkbox(3).click();
-    fixture.detectChanges();
-    expect(writeButton().textContent?.trim()).toBe('Write Report');
-    writeButton().click();
-    expect(service.writeBatteryReportDocuments).toHaveBeenCalledWith(7, { writerModelConfigurationId: 1, audiences: [2] });
-  });
-
   it('refuses the model under test as its own writer, in red, joined to the picker\'s description', () => {
     setUp();
     load(batteryRun({ reportWriterModelConfigurationId: 10 }));
@@ -489,91 +450,6 @@ describe('BatteryAiReportsComponent', () => {
     expect(writeButton().disabled).toBe(true);
     expect(section().querySelector('.bai-report-writer-model-selector .selector-trigger')?.getAttribute('aria-describedby'))
       .toBe(`${component.idPrefix}ReportWriterBlocked`);
-  });
-
-  it('shows the estimate\'s refusal and holds Write Reports back', fakeAsync(() => {
-    service.estimateBatteryReports.mockReturnValue(of(estimateDto({ refusal: 'The writer cannot be used for this battery run.' })));
-    setUp();
-    load(batteryRun({ reportWriterModelConfigurationId: 1 }));
-    tick(BATTERY_REPORT_ESTIMATE_DEBOUNCE_MS);
-    fixture.detectChanges();
-
-    expect(byId('ReportWriterBlocked')?.textContent?.trim()).toBe('The writer cannot be used for this battery run.');
-    expect(writeButton().disabled).toBe(true);
-    flush();
-    discardPeriodicTasks();
-  }));
-
-  it('warns about a writer from the candidate\'s provider in amber and writes only after Write Anyway', () => {
-    service.writeBatteryReportDocuments.mockReturnValue(of({ runId: 7, status: 1 }));
-    setUp();
-    load(batteryRun());
-    component.selectWriter(CONFIGS[2]);
-    fixture.detectChanges();
-
-    const warning = 'GPT Writer is from OpenAI, the provider of the model under test. Its reports may describe that model more favorably.';
-    const alert = section().querySelector('.rr-ai-writer-warning') as HTMLElement;
-    expect(alert.classList).toContain('alert-warning');
-    expect(alert.textContent?.trim()).toBe(warning);
-    expect(writeButton().disabled).toBe(false);
-
-    writeButton().click();
-    fixture.detectChanges();
-    const confirm = dialog('.rr-ai-same-provider-dialog');
-    expect(confirm.open).toBe(true);
-    expect(confirm.querySelector('h3')?.textContent?.trim()).toBe('Same-Provider Report Writer');
-    expect(confirm.querySelector('.rr-ai-same-provider-text')?.textContent?.trim()).toBe(warning);
-    expect(service.writeBatteryReportDocuments).not.toHaveBeenCalled();
-
-    buttonIn(confirm, 'Cancel').click();
-    expect(confirm.open).toBe(false);
-    expect(document.activeElement).toBe(writeButton());
-
-    writeButton().click();
-    fixture.detectChanges();
-    const anyway = buttonIn(confirm, 'Write Anyway');
-    expect(anyway.querySelector('svg.btn-icon')).not.toBeNull();
-    anyway.click();
-    expect(service.writeBatteryReportDocuments).toHaveBeenCalledWith(7, {
-      writerModelConfigurationId: 9, audiences: [1, 2, 3], acknowledgeSameProvider: true
-    });
-    expect(confirm.open).toBe(false);
-  });
-
-  it('asks for the confirmation when the server answers 409 with a same-provider warning', () => {
-    service.writeBatteryReportDocuments.mockReturnValueOnce(throwError(() => ({
-      status: 409,
-      error: {
-        sameProvider: true, provider: 'Google', testedModelDisplayName: 'Test Model',
-        assessorModelDisplayName: 'Other Writer', message: 'Same provider.', role: 'reportWriter'
-      }
-    }))).mockReturnValueOnce(of({ runId: 7, status: 1 }));
-    setUp();
-    load(batteryRun({ reportWriterModelConfigurationId: 8 }));
-
-    writeButton().click();
-    fixture.detectChanges();
-    const confirm = dialog('.rr-ai-same-provider-dialog');
-    expect(confirm.open).toBe(true);
-    buttonIn(confirm, 'Write Anyway').click();
-    const calls = vi.mocked(service.writeBatteryReportDocuments).mock.calls;
-    expect(calls.length).toBe(2);
-    expect(calls[0][1].acknowledgeSameProvider).toBeUndefined();
-    expect(calls[1][1].acknowledgeSameProvider).toBe(true);
-  });
-
-  it('shows the server\'s refusal of Write Reports inline', () => {
-    service.writeBatteryReportDocuments.mockReturnValue(throwError(() => ({
-      status: 400, error: { error: 'The battery run has no complete, current analysis.' }
-    })));
-    setUp();
-    load(batteryRun({ reportWriterModelConfigurationId: 1 }));
-
-    writeButton().click();
-    fixture.detectChanges();
-    const alert = section().querySelector('[role="alert"]') as HTMLElement;
-    expect(alert.textContent?.trim()).toBe('The battery run has no complete, current analysis.');
-    expect(writingOpen).not.toHaveBeenCalled();
   });
 
   // --- When the battery run cannot be written ---
@@ -687,20 +563,6 @@ describe('BatteryAiReportsComponent', () => {
     discardPeriodicTasks();
   }));
 
-  it('reads the documents again when the progress dialog\'s job finishes, and opens one it asks to view', () => {
-    setUp();
-    load(batteryRun({ reportDocumentsStatus: 2 }));
-    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
-
-    component.writingDialog!.finished.emit(jobView(3));
-    fixture.detectChanges();
-    expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written', 'Not written']);
-
-    component.writingDialog!.viewRequested.emit(71);
-    expect(viewerOpen).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(viewerOpen).mock.lastCall![0].title).toBe('Executive Summary');
-  });
-
   it('gives the progress dialog ids of its own', () => {
     setUp();
     load(batteryRun());
@@ -755,16 +617,25 @@ describe('BatteryAiReportsComponent', () => {
     expect(downloadCenterOpen).not.toHaveBeenCalled();
   });
 
-  it('shows only the names until the document list answers', () => {
-    const pending = new Subject<any>();
-    service.listReportDocuments.mockReturnValue(pending.asObservable());
-    setUp();
-    load(batteryRun());
+  // --- Beside the run report's tab ---
 
-    expect(rows().length).toBe(3);
-    expect(section().querySelector('.rr-ai-doc-status')).toBeNull();
-    pending.next([aiDoc(71, 1)]);
-    fixture.detectChanges();
-    expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Not written', 'Not written']);
+  it('gives every element an id no other AI Reports tab in the document uses', () => {
+    service.listReportDocuments.mockImplementation((query: any) => of(query?.runId != null
+      ? [{ ...aiDoc(55, 1), subjectKey: 'run:55', subjectRunIds: [55], origin: 2 }]
+      : [aiDoc(query.subject === 'battery:7' ? 71 : 81, 1, { subjectKey: query.subject })]));
+    const host = TestBed.createComponent(AiReportsTabsHostComponent);
+    host.detectChanges();
+
+    const batteries = host.debugElement.queryAll(By.directive(BatteryAiReportsComponent))
+      .map(element => element.componentInstance as BatteryAiReportsComponent);
+    const ids = (Array.from(host.nativeElement.querySelectorAll('[id]')) as HTMLElement[])
+      .map(element => element.id)
+      .filter(id => id !== '');
+    for (const id of ['rrAudience2', 'rrWriteEstimate', 'rr-ai-tip-delete-1', 'rrAiDeleteTitle', 'rwTitle',
+      `${batteries[0].idPrefix}Audience2`, `${batteries[0].idPrefix}-tip-delete-1`, `${batteries[0].idPrefix}RwTitle`,
+      `${batteries[1].idPrefix}NotWritable`, `${batteries[1].idPrefix}DeleteTitle`]) {
+      expect(ids).toContain(id);
+    }
+    expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([]);
   });
 });

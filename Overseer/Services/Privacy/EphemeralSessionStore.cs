@@ -265,6 +265,16 @@ public sealed class EphemeralToolCall
         _result = Array.Empty<byte>();
         _error = Array.Empty<byte>();
     }
+
+    /// <summary>
+    /// Test seam: answers only whether every payload buffer held at capture time is all zero,
+    /// revealing no content.
+    /// </summary>
+    internal Func<bool> CaptureErasureProbe()
+    {
+        var buffers = new[] { _args, _result, _error };
+        return () => Array.TrueForAll(buffers, b => b.AsSpan().IndexOfAnyExcept((byte)0) < 0);
+    }
 }
 
 /// <summary>
@@ -552,9 +562,11 @@ public sealed class EphemeralSessionStore : IDisposable
     /// <summary>Evicts and erases every session belonging to one user.</summary>
     /// <remarks>
     /// Called after an account erasure in Overseer: <c>AccountDeletionReviewService.ApproveAsync</c>
-    /// and <c>AdminUserManagementService</c>'s single and bulk deletion. The website's self-service
-    /// deletion runs in another process and cannot reach this store, so that user's sessions end
-    /// by the sliding timeout instead.
+    /// and <c>AdminUserManagementService</c>'s single and bulk deletion; and by
+    /// <c>HubPrincipalValidationFilter</c> when it finds a connected caller's account gone. The
+    /// website's self-service deletion runs in another process and cannot reach this store, so that
+    /// user's sessions end by the sliding timeout instead, unless an open chat connection's check
+    /// finds the account gone first.
     /// </remarks>
     public int CloseAllForUser(string? userId)
     {

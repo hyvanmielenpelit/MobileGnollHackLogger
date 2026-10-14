@@ -1050,7 +1050,7 @@ describe('ModelComparisonComponent', () => {
 
     const tabs = fixture.debugElement.queryAll(By.css('.mc-wizard-steps .gh-tab'))
       .map(tab => tab.nativeElement as HTMLElement);
-    expect(tabs.length).toBe(4);
+    expect(tabs.length).toBe(component.steps.length);
     expect(tabs[1].getAttribute('aria-selected')).toBe('true');
     expect(tabs[1].getAttribute('tabindex')).toBe('0');
     expect(tabs[0].getAttribute('tabindex')).toBe('-1');

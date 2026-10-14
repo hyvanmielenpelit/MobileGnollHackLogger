@@ -166,7 +166,7 @@ public static class ModelCallTelemetryWriter
                 HttpStatus = attempt.HttpStatus is int status && status >= short.MinValue && status <= short.MaxValue
                     ? (short)status
                     : null,
-                ProviderErrorCode = SanitizeErrorCode(attempt.ProviderErrorCode),
+                ProviderErrorCode = ProviderAttemptClassifier.SanitizeErrorCode(attempt.ProviderErrorCode),
                 Retried = attempt.Retried,
                 RetryAfterMs = attempt.RetryAfterMs is int retryAfter ? Math.Max(0, retryAfter) : null,
             })
@@ -213,7 +213,7 @@ public static class ModelCallTelemetryWriter
         HttpStatus = attempt.HttpStatus is int status && status >= short.MinValue && status <= short.MaxValue
             ? (short)status
             : null,
-        ProviderErrorCode = SanitizeErrorCode(attempt.ProviderErrorCode),
+        ProviderErrorCode = ProviderAttemptClassifier.SanitizeErrorCode(attempt.ProviderErrorCode),
         Retried = attempt.Retried,
         RetryAfterMs = attempt.RetryAfterMs is int retryAfter ? Math.Max(0, retryAfter) : null,
     };
@@ -244,22 +244,4 @@ public static class ModelCallTelemetryWriter
         value == null || value.Length <= max ? value : value[..max];
 
     private static byte ToByte(int value) => (byte)Math.Clamp(value, 0, byte.MaxValue);
-
-    /// <summary>The characters <c>[A-Za-z0-9_.-]</c> of <paramref name="code"/>, at most 64; null when none remain.</summary>
-    internal static string? SanitizeErrorCode(string? code)
-    {
-        if (string.IsNullOrEmpty(code)) return null;
-
-        var kept = new System.Text.StringBuilder(Math.Min(code.Length, 64));
-        foreach (char c in code)
-        {
-            if (kept.Length == 64) break;
-            if (char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-')
-            {
-                kept.Append(c);
-            }
-        }
-
-        return kept.Length == 0 ? null : kept.ToString();
-    }
 }

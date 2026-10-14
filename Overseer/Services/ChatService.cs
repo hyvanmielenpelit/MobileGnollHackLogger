@@ -146,13 +146,6 @@ public class ChatService
     public const int MaxPlaintextTitleLength = 256;
 
     /// <summary>
-    /// SQL LIKE patterns matching the text of a game snapshot system message. Live detection
-    /// reads ChatMessage.IsGameSnapshot instead; these patterns remain the source of truth for
-    /// the migration that backfilled that column, and for recognising legacy snapshot text.
-    /// </summary>
-    public static readonly string[] GameSnapshotLikePatterns = { "Game Snapshot%", "Game Context Snapshot%" };
-
-    /// <summary>
     /// Strips the game snapshot prefix from snapshot content so imported benchmark boards
     /// do not begin with "Game Context Snapshot:".
     /// </summary>
@@ -230,18 +223,6 @@ public class ChatService
            testing the constant separately would be dead code. */
         return content.StartsWith("Game Snapshot", StringComparison.OrdinalIgnoreCase)
             || content.StartsWith("Game Context Snapshot", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Recognises message-history text by its prefix. Live detection reads
-    /// ChatMessage.IsMessageHistory.
-    /// </summary>
-    public static bool IsMessageHistoryMessage(string? content)
-    {
-        if (string.IsNullOrEmpty(content))
-            return false;
-
-        return content.StartsWith(MessageHistoryPrefix, StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task GenerateAndBroadcastMessageAsync(Overseer.Services.Privacy.SessionRef sessionRef, string message, List<SendMessageAttachment>? attachments, string userId, bool isHidden, CancellationToken cancellationToken, long? userModelId = null, long? systemModelId = null, bool hasGreeted = false)

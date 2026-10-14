@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
+using Overseer.Tests.Helpers;
 using Xunit;
 using LogLevel = Microsoft.Extensions.Logging.LogLevel;
 
@@ -69,12 +70,12 @@ public sealed class GnollHackSignInManagerTests : IDisposable
 
     public GnollHackSignInManagerTests()
     {
-        _connection = new SqliteConnection("Filename=:memory:");
-        _connection.Open();
+        _connection = SqliteSchemaTemplate.OpenCopy();
 
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddDbContext<ApplicationDbContext>(o => o.UseSqlite(_connection));
+        services.Configure<PasswordHasherOptions>(o => o.IterationCount = 1);
         services.AddIdentityCore<ApplicationUser>(o =>
             {
                 o.SignIn.RequireConfirmedEmail = true;
@@ -92,7 +93,6 @@ public sealed class GnollHackSignInManagerTests : IDisposable
         _signInManager = _scope.ServiceProvider.GetRequiredService<SignInManager<ApplicationUser>>();
         // Set on the manager rather than the accessor, whose async-local value does not reach the test method.
         _signInManager.Context = new DefaultHttpContext { RequestServices = _scope.ServiceProvider };
-        _db.Database.EnsureCreated();
     }
 
     public void Dispose()

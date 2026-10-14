@@ -51,15 +51,31 @@ public class ChatConsistencyAnalysisService
     private readonly ApplicationDbContext _db;
     private readonly ChatConsistencyEvidenceBuilder _evidence;
     private readonly ILogger<ChatConsistencyAnalysisService> _logger;
+    private readonly int? _bootstrapReplicatesOverride;
 
     public ChatConsistencyAnalysisService(
         ApplicationDbContext db,
         ChatConsistencyEvidenceBuilder evidence,
         ILogger<ChatConsistencyAnalysisService> logger)
+        : this(db, evidence, logger, null)
+    {
+    }
+
+    /// <summary>
+    /// Test seam: computes every bootstrap with <paramref name="bootstrapReplicatesOverride"/> replicates instead of
+    /// the protocol's. The stored protocol, overrides and input fingerprint are unchanged, so a saved row claims the
+    /// protocol's replicate count while computed with fewer. Never used in production.
+    /// </summary>
+    internal ChatConsistencyAnalysisService(
+        ApplicationDbContext db,
+        ChatConsistencyEvidenceBuilder evidence,
+        ILogger<ChatConsistencyAnalysisService> logger,
+        int? bootstrapReplicatesOverride)
     {
         _db = db;
         _evidence = evidence;
         _logger = logger;
+        _bootstrapReplicatesOverride = bootstrapReplicatesOverride;
     }
 
     // --- Analyses --------------------------------------------------------------------------------
@@ -98,7 +114,7 @@ public class ChatConsistencyAnalysisService
             throw new ChatConsistencyRequestException("The comparison period holds no usable run of this model.");
         }
 
-        var result = await WithCheckpointBatteryAsync(Compute(request, protocol, evidence), ct);
+        var result = await WithCheckpointBatteryAsync(Compute(request, protocol, evidence, _bootstrapReplicatesOverride), ct);
 
         var row = new ChatConsistencyAnalysis
         {
@@ -494,6 +510,15 @@ public class ChatConsistencyAnalysisService
     /// <summary>The analysis of <paramref name="evidence"/> under <paramref name="protocol"/>. Pure.</summary>
     public static ChatConsistencyAnalysisResult Compute(
         ChatConsistencyAnalysisRequest request, ChatConsistencyProtocol protocol, ChatConsistencyEvidence evidence)
+        => Compute(request, protocol, evidence, null);
+
+    /// <summary>
+    /// <see cref="Compute(ChatConsistencyAnalysisRequest, ChatConsistencyProtocol, ChatConsistencyEvidence)"/> with
+    /// every bootstrap at <paramref name="bootstrapReplicatesOverride"/> replicates when set. Test seam.
+    /// </summary>
+    internal static ChatConsistencyAnalysisResult Compute(
+        ChatConsistencyAnalysisRequest request, ChatConsistencyProtocol protocol, ChatConsistencyEvidence evidence,
+        int? bootstrapReplicatesOverride)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(protocol);
@@ -503,7 +528,7 @@ public class ChatConsistencyAnalysisService
             throw new ChatConsistencyRequestException("Each period needs at least one usable run of the model.");
         }
 
-        return new Engine(request, protocol, evidence).Run();
+        return new Engine(request, protocol, evidence, bootstrapReplicatesOverride).Run();
     }
 
     /// <summary>
@@ -794,10 +819,16 @@ public class ChatConsistencyAnalysisService
         private List<AnalysisUnit> _availabilityComparisonUnits = new();
         private int _seedOffset;
 
-        public Engine(ChatConsistencyAnalysisRequest request, ChatConsistencyProtocol protocol, ChatConsistencyEvidence evidence)
+        // Every bootstrap's replicate count: the protocol's unless a test overrides it.
+        private readonly int _replicates;
+
+        public Engine(
+            ChatConsistencyAnalysisRequest request, ChatConsistencyProtocol protocol, ChatConsistencyEvidence evidence,
+            int? bootstrapReplicatesOverride = null)
         {
             _request = request;
             _protocol = protocol;
+            _replicates = bootstrapReplicatesOverride ?? protocol.BootstrapReplicates;
             _evidence = evidence;
             _baseline = evidence.BaselineRuns.ToList();
             _comparison = evidence.ComparisonRuns.ToList();
@@ -1314,7 +1345,7 @@ public class ChatConsistencyAnalysisService
                 return;
             }
 
-            var distribution = ChatConsistencyResampling.PairedBootstrap(mb, mc, w.Statistic, true, _protocol.BootstrapReplicates, NextSeed());
+            var distribution = ChatConsistencyResampling.PairedBootstrap(mb, mc, w.Statistic, true, _replicates, NextSeed());
             if (distribution == null || distribution.Replicates.Count == 0)
             {
                 NotComputed(w, "The bootstrap produced no replicate.", ChatConsistencyNotComputedKinds.Other);
@@ -1607,7 +1638,7 @@ public class ChatConsistencyAnalysisService
             }
 
             var (point, distribution) = ChatConsistencyResampling.StratifiedRunBootstrap(
-                cb, cc, BootstrapStatistic.HodgesLehmann, _protocol.BootstrapReplicates, NextSeed());
+                cb, cc, BootstrapStatistic.HodgesLehmann, _replicates, NextSeed());
             if (!point.Shift.HasValue || distribution == null || distribution.Replicates.Count == 0)
             {
                 NotComputed(w, "The periods share no time-of-week stratum, so their times cannot be compared on common support.",
@@ -1674,7 +1705,7 @@ public class ChatConsistencyAnalysisService
 
             var xs = cb.SelectMany(r => r).Where(o => common.Contains(o.Stratum)).Select(o => o.Value).ToList();
             var ys = cc.SelectMany(r => r).Where(o => common.Contains(o.Stratum)).Select(o => o.Value).ToList();
-            w.ShiftFunction = ChatConsistencyStatistics.ShiftFunction(xs, ys, 0.95, _protocol.BootstrapReplicates, NextSeed());
+            w.ShiftFunction = ChatConsistencyStatistics.ShiftFunction(xs, ys, 0.95, _replicates, NextSeed());
         }
 
         /// <summary>P2 with Overseer's own waits left in, for the infrastructure row of the attribution table.</summary>
@@ -1691,7 +1722,7 @@ public class ChatConsistencyAnalysisService
             var (cb, cc, items) = Center(SpeedUnits(net.BaselineUnits, gross), SpeedUnits(net.ComparisonUnits, gross));
             if (items == 0) return null;
             var (point, distribution) = ChatConsistencyResampling.StratifiedRunBootstrap(
-                cb, cc, BootstrapStatistic.HodgesLehmann, _protocol.BootstrapReplicates, NextSeed());
+                cb, cc, BootstrapStatistic.HodgesLehmann, _replicates, NextSeed());
             if (!point.Shift.HasValue || distribution == null || distribution.Replicates.Count == 0) return null;
 
             double p = ChatConsistencyResampling.BootstrapPValue(distribution);
@@ -1897,7 +1928,7 @@ public class ChatConsistencyAnalysisService
             }
 
             var (point, distribution) = ChatConsistencyResampling.StratifiedRunBootstrap(
-                ob, oc, BootstrapStatistic.Mean, _protocol.BootstrapReplicates, NextSeed(), common);
+                ob, oc, BootstrapStatistic.Mean, _replicates, NextSeed(), common);
             if (!point.Shift.HasValue || distribution == null || distribution.Replicates.Count == 0)
             {
                 NotComputed(w, "The bootstrap produced no replicate.", ChatConsistencyNotComputedKinds.Other);
@@ -2383,7 +2414,7 @@ public class ChatConsistencyAnalysisService
                 => units.Select(l => (IReadOnlyList<double>)l.Select(a => counted(a.Outcome) ? 1.0 : 0.0).ToList()).ToList();
             var distribution = ub.Count > 0 && uc.Count > 0
                 ? ChatConsistencyStatistics.ClusterBootstrapTwoSample(
-                    Observations(ub), Observations(uc), BootstrapStatistic.Mean, resampleItems: false, _protocol.BootstrapReplicates, NextSeed())
+                    Observations(ub), Observations(uc), BootstrapStatistic.Mean, resampleItems: false, _replicates, NextSeed())
                 : null;
 
             double? rb = nb > 0 ? kb / (double)nb : null;
@@ -2731,8 +2762,8 @@ public class ChatConsistencyAnalysisService
 
             var did = ChatConsistencyStatistics.ItemDifferenceInDifferences(
                 new DifferenceInDifferencesArm(tb, tc), new DifferenceInDifferencesArm(mb, mc),
-                statistic, resampleItems, _protocol.BootstrapReplicates, NextSeed());
-            var own = ChatConsistencyResampling.PairedBootstrap(mb, mc, statistic, resampleItems, _protocol.BootstrapReplicates, NextSeed());
+                statistic, resampleItems, _replicates, NextSeed());
+            var own = ChatConsistencyResampling.PairedBootstrap(mb, mc, statistic, resampleItems, _replicates, NextSeed());
             if (did == null || own == null || did.Distribution.Replicates.Count == 0) return null;
 
             var didCi = did.Distribution.Interval95;
@@ -2785,8 +2816,8 @@ public class ChatConsistencyAnalysisService
 
             var tb = w.BaselineUnits.Select(u => Counts(u.Members)).ToList();
             var tc = w.ComparisonUnits.Select(u => Counts(u.Members)).ToList();
-            var did = ChatConsistencyStatistics.RateDifferenceInDifferences(tb, tc, kb, kc, _protocol.BootstrapReplicates, NextSeed());
-            var own = ChatConsistencyStatistics.RateDifference(kb, kc, _protocol.BootstrapReplicates, NextSeed());
+            var did = ChatConsistencyStatistics.RateDifferenceInDifferences(tb, tc, kb, kc, _replicates, NextSeed());
+            var own = ChatConsistencyStatistics.RateDifference(kb, kc, _replicates, NextSeed());
             if (did == null || own == null || did.Replicates.Count == 0) return null;
 
             var didCi = did.Interval95;
@@ -3029,7 +3060,7 @@ public class ChatConsistencyAnalysisService
             var differences = ChatConsistencyResampling.PairedDifferences(mb, mc);
             var distribution = differences == null
                 ? null
-                : ChatConsistencyResampling.PairedBootstrap(mb, mc, statistic, true, _protocol.BootstrapReplicates, NextSeed());
+                : ChatConsistencyResampling.PairedBootstrap(mb, mc, statistic, true, _replicates, NextSeed());
             if (differences == null || distribution == null)
             {
                 return new ChatConsistencySecondaryResult { Id = id, Name = name, Unit = unit, Method = "not computable", Note = "No item has a value in both periods." };

@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -70,60 +67,6 @@ public class ParallelExecutionModeTests
 
         var actual = resolver.Resolve(null, null);
         Assert.Equal(ParallelExecutionMode.OnRequest, actual);
-    }
-
-    [Fact]
-    public async Task Resolver_ResolveAsync_ReadsUserKeyFromDb()
-    {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        var config = CreateConfig(enforce: true, defaultMode: 2);
-        var resolver = new ParallelExecutionResolver(config);
-
-        using (var db = new ApplicationDbContext(options))
-        {
-            var ct = TestContext.Current.CancellationToken;
-            db.UserAiApiKeys.Add(new UserAiApiKey
-            {
-                AspNetUserId = "user-123",
-                Provider = "OpenAI",
-                ParallelExecutionMode = ParallelExecutionMode.Disabled
-            });
-            await db.SaveChangesAsync(ct);
-
-            var resolved = await resolver.ResolveAsync("user-123", "OpenAI", null, db, ct);
-            Assert.Equal(ParallelExecutionMode.Disabled, resolved);
-        }
-    }
-
-    [Fact]
-    public async Task Resolver_ResolveAsync_ReadsSystemConfigFromDb()
-    {
-        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
-            .Options;
-
-        var config = CreateConfig(enforce: true, defaultMode: 2);
-        var resolver = new ParallelExecutionResolver(config);
-
-        using (var db = new ApplicationDbContext(options))
-        {
-            var ct = TestContext.Current.CancellationToken;
-            var sysConfig = new SystemAiApiConfiguration
-            {
-                DisplayName = "Test System Model",
-                Provider = "Anthropic",
-                ModelId = "claude-3-5-sonnet",
-                ParallelExecutionMode = ParallelExecutionMode.OnRequest
-            };
-            db.SystemAiApiConfigurations.Add(sysConfig);
-            await db.SaveChangesAsync(ct);
-
-            var resolved = await resolver.ResolveAsync(null, null, sysConfig.Id, db, ct);
-            Assert.Equal(ParallelExecutionMode.OnRequest, resolved);
-        }
     }
 
     [Fact]

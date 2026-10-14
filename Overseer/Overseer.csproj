@@ -14,11 +14,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.SpaProxy" Version="10.0.12" />
+    <PackageReference Include="Microsoft.AspNetCore.SpaProxy" Version="10.0.13" />
     <PackageReference Include="Lucene.Net" Version="4.8.0-beta00016" />
     <PackageReference Include="Lucene.Net.Analysis.Common" Version="4.8.0-beta00016" />
     <PackageReference Include="Lucene.Net.QueryParser" Version="4.8.0-beta00016" />
-    <PackageReference Include="Sentry.AspNetCore" Version="6.12.0" />
+    <PackageReference Include="Sentry.AspNetCore" Version="6.12.1" />
   </ItemGroup>
 
   <!-- Document ingestion and local retrieval. Pinned deliberately rather than floated: a
@@ -30,7 +30,7 @@
   <ItemGroup>
     <PackageReference Include="PdfPig" Version="0.1.16" />
     <PackageReference Include="DocumentFormat.OpenXml" Version="3.5.1" />
-    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.31.0" />
     <PackageReference Include="Microsoft.ML.Tokenizers" Version="2.0.0" />
   </ItemGroup>
 
@@ -58,8 +58,7 @@
   </ItemGroup>
 
 
-  <Target Name="SyncAngularVersion" BeforeTargets="Build"
-          Condition="'$(Version)' != '' And !$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\ClientApp\package.json').Contains('&quot;version&quot;: &quot;$(Version)&quot;'))">
+  <Target Name="SyncAngularVersion" BeforeTargets="Build" Condition="'$(Version)' != '' And !$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\ClientApp\package.json').Contains('&quot;version&quot;: &quot;$(Version)&quot;'))">
     <Exec WorkingDirectory="ClientApp" Command="npm version $(Version) --no-git-tag-version --allow-same-version" IgnoreExitCode="true" />
   </Target>
 

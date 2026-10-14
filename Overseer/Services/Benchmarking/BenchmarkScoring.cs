@@ -575,35 +575,4 @@ public static class BenchmarkScoring
 
         return (msRows - msError) / denominator;
     }
-
-    /// <summary>
-    /// Difficulty-weighted speed index. Superseded by <see cref="SpeedIndex(IEnumerable{int?})"/>
-    /// and retained only to reproduce runs scored before scoring method version 4.
-    /// </summary>
-    public static int? DifficultyWeightedSpeedIndex(IEnumerable<(int? SpeedScore, int? Difficulty)> items)
-    {
-        if (items == null) return null;
-
-        double weightedSum = 0.0;
-        double weightSum = 0.0;
-        int count = 0;
-
-        foreach (var (speed, difficulty) in items)
-        {
-            if (speed.HasValue)
-            {
-                double diffWeight = Math.Max(1.0, (double)(difficulty ?? 50));
-                weightedSum += speed.Value * diffWeight;
-                weightSum += diffWeight;
-                count++;
-            }
-        }
-
-        if (count == 0 || weightSum <= 0.0)
-        {
-            return null;
-        }
-
-        return (int)Math.Round(weightedSum / weightSum, MidpointRounding.AwayFromZero);
-    }
 }

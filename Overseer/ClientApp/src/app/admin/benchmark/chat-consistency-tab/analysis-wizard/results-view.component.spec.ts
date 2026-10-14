@@ -263,13 +263,6 @@ describe('CcResultsViewComponent', () => {
       expect(document.activeElement).toBe(tabButton('summary'));
     });
 
-    it('leave other keys alone', () => {
-      const summary = tabButton('summary');
-      expect(keydown(summary, 'ArrowDown').defaultPrevented).toBe(false);
-      expect(keydown(summary, 'a').defaultPrevented).toBe(false);
-      expect(selectedTab()).toBe('cc-res-tab-summary');
-    });
-
     it('remember the selected tab in this browser as { version: 2, tab }', () => {
       expect(localStorage.getItem(CC_RESULTS_STORAGE_KEY)).toBeNull();
       tabButton('nextRuns').click();

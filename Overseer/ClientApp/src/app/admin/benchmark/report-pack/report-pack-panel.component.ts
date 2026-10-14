@@ -34,6 +34,7 @@ import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import { rememberedPdfPaper } from '../download-center/download-center-panel.component';
 import { RunReportFrameComponent } from '../run-report-frame/run-report-frame.component';
 import { REPORT_PACK_WRITER_ADVICE, REPORT_WRITER_ADVICE_LEAD } from '../run-ai-reports/report-writer-advice';
@@ -729,14 +730,9 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
 
   /** Arrow keys wrap, Home and End jump; focus follows the selection. */
   onScopeKeydown(event: KeyboardEvent, index: number): void {
-    const count = this.scopeOptions.length;
-    const targets: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: count - 1 };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-    event.preventDefault();
-    const next = this.scopeOptions[(requested + count) % count];
+    const target = rovingTabIndex(event, index, this.scopeOptions.length);
+    if (target === null) return;
+    const next = this.scopeOptions[target];
     this.selectScope(next.value);
     document.getElementById(`${this.idPrefix}-scope-${next.value}`)?.focus();
   }

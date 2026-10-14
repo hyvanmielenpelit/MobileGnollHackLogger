@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -186,7 +187,7 @@ public class AttachmentValidator
                 return AttachmentValidationResult.Invalid(
                     $"\"{Describe(fileName)}\" does not contain the {contentType} image it claims to be.");
         }
-        else if (contentType != null && _binaryDocumentContentTypes.Contains(contentType))
+        else if (IsBinaryDocumentContentType(contentType))
         {
             if (!DocumentMagicBytesAgree(contentType, bytes))
                 return AttachmentValidationResult.Invalid(
@@ -283,7 +284,7 @@ public class AttachmentValidator
     public IReadOnlyList<string> AllowedExtensions => _allowedExtensions.OrderBy(e => e).ToArray();
 
     /// <summary>Whether this content type is one whose bytes are legitimately binary.</summary>
-    public bool IsBinaryDocumentContentType(string? contentType)
+    public bool IsBinaryDocumentContentType([NotNullWhen(true)] string? contentType)
         => !string.IsNullOrWhiteSpace(contentType) && _binaryDocumentContentTypes.Contains(contentType);
 
     /* "%PDF-" and the local-file header of a ZIP, which is what an OpenXML container is. */

@@ -18,6 +18,7 @@ import { FormsModule } from '@angular/forms';
 
 import { MarkdownPipe } from '../../chat/markdown.pipe';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
+import { rovingTabIndex } from '../../utils/roving-tab.util';
 
 export type MarkdownEditorMode = 'write' | 'split' | 'preview';
 
@@ -215,14 +216,8 @@ export class MarkdownEditorComponent implements OnInit, AfterViewInit, OnChanges
 
   onTabKeydown(event: KeyboardEvent, index: number): void {
     const modes = this.modes;
-    let next = index;
-    if (event.key === 'ArrowRight') next = (index + 1) % modes.length;
-    else if (event.key === 'ArrowLeft') next = (index - 1 + modes.length) % modes.length;
-    else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = modes.length - 1;
-    else return;
-
-    event.preventDefault();
+    const next = rovingTabIndex(event, index, modes.length);
+    if (next === null) return;
     this.selectMode(modes[next]);
     document.getElementById(`${this.inputId}-tab-${this.mode}`)?.focus();
   }

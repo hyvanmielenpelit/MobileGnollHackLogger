@@ -137,13 +137,18 @@ public class SystemAiConfigurationSnapshotStoreTests
     }
 
     [Fact]
-    public void Bind_TakesTheEndpointFromTheSnapshot()
+    public void Bind_KeepsTheSnapshotsEndpoint()
     {
-        var recorded = SystemAiConfigurationSnapshotStore.FromConfiguration(Live(baseUrl: "https://gw.example.com"));
+        var live = Live(baseUrl: "https://gw.example.com");
+        live.ApiVersion = "2026-01-01";
+        live.CustomHeadersJson = "{\"X-A\":\"1\"}";
+        var recorded = SystemAiConfigurationSnapshotStore.FromConfiguration(live);
 
-        var bound = SystemAiConfigurationSnapshotStore.Bind(Live(baseUrl: "https://gw.example.com"), recorded);
+        var bound = SystemAiConfigurationSnapshotStore.Bind(live, recorded);
 
         Assert.Equal("https://gw.example.com", bound.BaseUrl);
+        Assert.Equal("2026-01-01", bound.ApiVersion);
+        Assert.Equal("{\"X-A\":\"1\"}", bound.CustomHeadersJson);
     }
 
     [Theory]

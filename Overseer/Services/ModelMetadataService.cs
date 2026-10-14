@@ -170,22 +170,34 @@ public class ModelMetadataService
 
     public IReadOnlyList<RetiredModelEntry> GetRetiredEntries() => _retiredEntries;
 
-    /// <summary>The catalog entries of one provider as switch targets, newest release first.</summary>
-    public IReadOnlyList<CatalogTargetDto> GetCatalogTargets(string provider)
+    /// <summary>
+    /// The catalog entries of one provider as switch targets, newest release first, each priced at the
+    /// input and output rates in force on <paramref name="today"/>, as <see cref="ModelPricingService.ResolveDefault"/> costs them.
+    /// </summary>
+    /// <param name="today">UTC today by default; injected only by tests.</param>
+    public IReadOnlyList<CatalogTargetDto> GetCatalogTargets(string provider, DateOnly? today = null)
     {
+        var now = today ?? DateOnly.FromDateTime(DateTime.UtcNow);
+
         return GetCatalogEntries(provider)
             .Where(e => e.Prefixes != null && e.Prefixes.Count > 0 && !string.IsNullOrEmpty(e.Prefixes[0]))
             .OrderByDescending(e => e.ReleaseDate, StringComparer.Ordinal)
-            .Select(e => new CatalogTargetDto
+            .Select(e =>
             {
-                ModelId = e.Prefixes[0],
-                DisplayName = e.DisplayName,
-                ReleaseDate = e.ReleaseDate,
-                ThinkingLevels = new List<string>(e.ThinkingLevels ?? new List<string>()),
-                ContextWindowSize = e.ContextWindowSize,
-                MaxOutputTokens = e.MaxOutputTokens,
-                InputPerMillion = e.Pricing?.InputPerMillion,
-                OutputPerMillion = e.Pricing?.OutputPerMillion
+                var scheduled = ModelPricingService.ParseScheduled(e.Pricing?.ScheduledChange);
+                bool elapsed = scheduled != null && now >= scheduled.EffectiveFrom;
+
+                return new CatalogTargetDto
+                {
+                    ModelId = e.Prefixes[0],
+                    DisplayName = e.DisplayName,
+                    ReleaseDate = e.ReleaseDate,
+                    ThinkingLevels = new List<string>(e.ThinkingLevels ?? new List<string>()),
+                    ContextWindowSize = e.ContextWindowSize,
+                    MaxOutputTokens = e.MaxOutputTokens,
+                    InputPerMillion = elapsed ? scheduled!.InputPerMillion : e.Pricing?.InputPerMillion,
+                    OutputPerMillion = elapsed ? scheduled!.OutputPerMillion : e.Pricing?.OutputPerMillion
+                };
             })
             .ToList();
     }

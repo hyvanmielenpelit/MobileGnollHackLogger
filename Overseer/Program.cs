@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Identity.UI.Services;
 using Overseer.Middleware;
 using Overseer.Security;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
 string? connectionString = builder.Configuration["ConnectionStrings:SqlDatabaseConnection"];
@@ -375,8 +376,12 @@ builder.Services.AddSingleton<ModelAvailabilityService>();
 builder.Services.AddSingleton<ModelResolutionService>();
 builder.Services.AddScoped<ModelPricingService>();
 builder.Services.AddSingleton<RecommendedModelService>();
+builder.Services.AddSingleton<Overseer.Hubs.HubPrincipalValidationFilter>();
 builder.Services.AddSignalR(options =>
 {
+    // The hub's principal is otherwise validated only when the connection is established.
+    options.AddFilter<Overseer.Hubs.HubPrincipalValidationFilter>();
+
     /* Client tool results arrive as ChatHub.SubmitToolResult invocations. The SignalR
        default MaximumReceiveMessageSize is 32 KB, which silently aborts the connection
        for a large refresh_snapshot payload (the client caps snapshots at 60,000 chars).

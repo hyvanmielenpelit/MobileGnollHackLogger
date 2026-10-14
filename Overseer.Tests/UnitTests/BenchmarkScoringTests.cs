@@ -159,16 +159,11 @@ public class BenchmarkScoringTests
     [Fact]
     public void SpeedIndex_IsNotPulledDownByHardQuestions()
     {
-        // Difficulty enters through the per-question target, not the aggregate weight. Under the
-        // old difficulty-weighted index, the slow hard question dominated and the index came out
-        // near it rather than midway.
+        // Difficulty enters through the per-question target, not the aggregate weight, so the slow
+        // hard question does not pull the index below the midway point.
         int? equalWeight = BenchmarkScoring.SpeedIndex(new int?[] { 95, 45 });
-        int? oldWeighted = BenchmarkScoring.DifficultyWeightedSpeedIndex(
-            new List<(int? SpeedScore, int? Difficulty)> { (95, 20), (45, 95) });
 
         Assert.Equal(70, equalWeight!.Value);
-        Assert.True(oldWeighted!.Value < equalWeight.Value,
-            "the difficulty-weighted index should sit below the equal-weight one here");
     }
 
     [Fact]

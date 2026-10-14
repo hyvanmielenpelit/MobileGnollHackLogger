@@ -1,9 +1,11 @@
 <!--
-  The run's AI-written reports: an Executive Summary, a Report for AI Researchers and Developers and
-  an Internal Improvement Brief, written by a report writer and stored. One row per document, written or not; View renders the
-  stored text as a PDF and only Write Reports calls a model.
+  The AI-written reports of a run (app-run-ai-reports) or a battery run (app-battery-ai-reports):
+  an Executive Summary, a Report for AI Researchers and Developers and an Internal Improvement Brief,
+  written by a report writer and stored. One row per document, written or not; View renders the
+  stored text as a PDF and only Write Reports calls a model. Every id comes from the component, so
+  each battery run tab's ids take its own prefix (ReportDocumentsTabBase).
 -->
-<div class="rr-ai-reports">
+<div class="rr-ai-reports" [class]="rootClass">
   <div class="rr-ai-status-row">
     <p class="rr-ai-status" role="status"
        [class.gh-field-error]="statusKind === 'failed'"
@@ -38,7 +40,7 @@
               <span class="gh-tag rr-ai-doc-status" [class.is-warning]="doc.status === 'CompletedWithWarnings'">{{ documentStatusLabel(doc) }}</span>
               <span class="rr-ai-doc-meta">{{ documentMeta(doc) }}</span>
               @if (doc.runChangedSinceGeneration) {
-                <span class="gh-tag gh-tag-changed">Run changed since this document was written</span>
+                <span class="gh-tag gh-tag-changed">{{ changedSinceText }}</span>
               }
             } @else if (documentsLoaded) {
               <span class="gh-tag rr-ai-doc-status is-missing">Not written</span>
@@ -55,13 +57,13 @@
               <button type="button" class="action-btn action-btn-danger rr-ai-doc-delete"
                       [attr.aria-label]="'Delete the ' + row.label"
                       [attr.aria-disabled]="jobInProgress ? 'true' : null"
-                      [attr.interestfor]="'rr-ai-tip-delete-' + row.audience"
-                      [attr.style]="'anchor-name: --rr-ai-tip-delete-' + row.audience"
+                      [attr.interestfor]="deleteTipIdPrefix + row.audience"
+                      [attr.style]="'anchor-name: --' + deleteTipIdPrefix + row.audience"
                       (click)="requestDelete(doc)">
                 <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
               </button>
-              <div popover="hint" class="gh-tooltip" [id]="'rr-ai-tip-delete-' + row.audience"
-                   [attr.style]="'position-anchor: --rr-ai-tip-delete-' + row.audience">{{ jobInProgress ? 'Wait for the writing to finish, or cancel it' : 'Delete' }}</div>
+              <div popover="hint" class="gh-tooltip" [id]="deleteTipIdPrefix + row.audience"
+                   [attr.style]="'position-anchor: --' + deleteTipIdPrefix + row.audience">{{ jobInProgress ? 'Wait for the writing to finish, or cancel it' : 'Delete' }}</div>
             </div>
           }
         </li>
@@ -82,8 +84,7 @@
       <div class="alert-content">
         <div class="alert-heading">Downloads</div>
         <div class="alert-body">
-          These reports, and the rest of this run, can be downloaded from the Download Center as PDF, Word or
-          Markdown, at Summary, Detailed or Full disclosure, one by one or together in a ZIP.
+          {{ downloadsNoticeText }}
         </div>
         <div class="alert-actions">
           <button #openDownloadsButton type="button" class="btn-ghost rr-ai-open-downloads"
@@ -100,11 +101,15 @@
     <fieldset class="gh-fieldset rr-ai-write">
       <legend>Write missing reports</legend>
 
+      @if (notWritableReason) {
+        <p class="form-hint bai-not-writable" [id]="notWritableId">{{ notWritableReason }}</p>
+      }
+
       <fieldset class="gh-choice rr-ai-audiences">
         <legend>Documents</legend>
         @for (audience of missingAudiences; track audience) {
           <label class="checkbox-label">
-            <input type="checkbox" [id]="'rrAudience' + audience" [attr.data-audience]="audience"
+            <input type="checkbox" [id]="audienceId(audience)" [attr.data-audience]="audience"
                    [checked]="isChecked(audience)" (change)="toggleAudience(audience, $event)">
             {{ audienceLabel(audience) }}
           </label>
@@ -115,15 +120,15 @@
       </fieldset>
 
       <div class="rr-ai-writer">
-        <label id="rrReportWriterModelLabel">Report writer</label>
+        <label [id]="labelId">Report writer</label>
         <div class="rr-ai-write-row">
           <div class="gh-field-row rr-ai-writer-field">
-            <app-model-picker class="rr-report-writer-model-selector" labelledBy="rrReportWriterModelLabel"
+            <app-model-picker [class]="writerPickerClass" [labelledBy]="labelId"
                               [describedBy]="writerDescribedBy"
-                              placeholder="Select a model" [emptyHint]="pickerEmptyHint" [showPrice]="true"
-                              [options]="pickerOptions" [selectedKey]="writerConfigId"
+                              placeholder="Select a model" [emptyHint]="emptyHint" [showPrice]="true"
+                              [options]="options" [selectedKey]="writerConfigId"
                               (selectionChange)="selectWriter($event.model)"></app-model-picker>
-            <app-info-tip trigger="dialog" tipId="rrReportWriterHint" subject="Report writer"
+            <app-info-tip trigger="dialog" [tipId]="hintId" subject="Report writer"
                           dialogTitle="Choosing a report writer">
               <dl>
                 @for (entry of writerAdvice; track entry.term) {
@@ -137,7 +142,7 @@
           </div>
           <button #writeButton type="button" class="btn-gh rr-ai-write-btn"
                   [disabled]="writeDisabled"
-                  aria-describedby="rrWriteEstimate"
+                  [attr.aria-describedby]="writeDescribedBy"
                   [attr.aria-busy]="writeSubmitting ? 'true' : null"
                   (click)="requestWrite()">
             <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
@@ -151,7 +156,7 @@
       }
 
       @if (writeRefusal) {
-        <p id="rrReportWriterBlocked" class="gh-field-error rr-ai-write-blocked">
+        <p [id]="blockedId" class="gh-field-error rr-ai-write-blocked">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
           <span>{{ writeRefusal }}</span>
         </p>
@@ -160,12 +165,12 @@
       @if (writerWarning) {
         <div class="alert alert-warning rr-ai-writer-warning" role="note">
           <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-          <div class="alert-content"><div class="alert-body" id="rrReportWriterWarning">{{ writerWarning }}</div></div>
+          <div class="alert-content"><div class="alert-body" [id]="warningId">{{ writerWarning }}</div></div>
         </div>
       }
 
       <!-- Always rendered, so the live region is in place before an estimate arrives. -->
-      <div id="rrWriteEstimate" class="gh-estimate-panel" role="status"
+      <div [id]="estimateId" class="gh-estimate-panel" role="status"
            [class.is-empty]="!estimateView"
            [class.is-muted]="estimateView !== null && estimateView.state !== 'ready'"
            [attr.aria-busy]="estimateView?.state === 'loading' ? 'true' : null">
@@ -211,13 +216,13 @@
   }
 </div>
 
-<!-- DELETE CONFIRMATION: opened inside the run report dialog, so its own events stop here. -->
-<dialog #deleteDialog class="gh-dialog rr-ai-confirm-dialog rr-ai-delete-dialog" aria-labelledby="rrAiDeleteTitle"
+<!-- DELETE CONFIRMATION: opened inside the host's report dialog, so its own events stop here. -->
+<dialog #deleteDialog class="gh-dialog rr-ai-confirm-dialog rr-ai-delete-dialog" [attr.aria-labelledby]="deleteTitleId"
         (cancel)="stopNestedEvent($event)" (close)="stopNestedEvent($event)">
   <div class="dialog-content">
     <div class="dialog-header">
       <div class="dialog-title-group">
-        <h3 id="rrAiDeleteTitle">Delete the {{ deleteTarget ? audienceLabel(deleteTarget.audience) : 'document' }}?</h3>
+        <h3 [id]="deleteTitleId">Delete the {{ deleteTarget ? audienceLabel(deleteTarget.audience) : 'document' }}?</h3>
       </div>
     </div>
     <div class="dialog-body">
@@ -246,12 +251,12 @@
 </dialog>
 
 <!-- SAME-PROVIDER CONFIRMATION: asked on every write with such a writer, never remembered. -->
-<dialog #sameProviderDialog class="gh-dialog rr-ai-confirm-dialog rr-ai-same-provider-dialog" aria-labelledby="rrAiSameProviderTitle"
+<dialog #sameProviderDialog class="gh-dialog rr-ai-confirm-dialog rr-ai-same-provider-dialog" [attr.aria-labelledby]="sameProviderTitleId"
         (cancel)="stopNestedEvent($event)" (close)="stopNestedEvent($event)">
   <div class="dialog-content">
     <div class="dialog-header">
       <div class="dialog-title-group">
-        <h3 id="rrAiSameProviderTitle">Same-Provider Report Writer</h3>
+        <h3 [id]="sameProviderTitleId">Same-Provider Report Writer</h3>
       </div>
     </div>
     <div class="dialog-body">
@@ -270,7 +275,11 @@
   </div>
 </dialog>
 
-<app-run-report-writing-dialog (finished)="onWritingFinished($event)"
+<app-run-report-writing-dialog [idPrefix]="writingDialogIdPrefix"
+                               (finished)="onWritingFinished($event)"
                                (viewRequested)="viewDocumentById($event)"
                                (downloadsRequested)="requestDownloads($event)"></app-run-report-writing-dialog>
 <app-pdf-viewer-dialog></app-pdf-viewer-dialog>
+@if (ownDownloadCenter) {
+  <app-benchmark-download-center (closed)="onDownloadCenterClosed()"></app-benchmark-download-center>
+}

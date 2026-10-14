@@ -54,7 +54,8 @@ public class AdminChatConsistencyControllerTests
             Db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase(name, root).Options);
 
             var evidence = new ChatConsistencyEvidenceBuilder(Db);
-            var analysis = new ChatConsistencyAnalysisService(Db, evidence, NullLogger<ChatConsistencyAnalysisService>.Instance);
+            var analysis = new ChatConsistencyAnalysisService(
+                Db, evidence, NullLogger<ChatConsistencyAnalysisService>.Instance, ChatConsistencyAnalysisTestData.TestBootstrapReplicates);
             var regrade = new ChatConsistencyRegradeService(
                 Db, new ChatConsistencyRegradeJobManager(), Provider.GetRequiredService<IServiceScopeFactory>(), new BenchmarkRunManager(),
                 NullLogger<ChatConsistencyRegradeService>.Instance, calibrationRunner: (_, _, _, _) => Task.CompletedTask);
@@ -535,21 +536,12 @@ public class AdminChatConsistencyControllerTests
         Assert.Equal(saved.Headline, summary.Headline);
 
         Assert.IsType<NotFoundResult>(await h.Controller.GetAnalysis(id + 1000, ct));
-    }
 
-    [Fact]
-    public async Task TheAnalysesListCarriesEachAnalysisSubjectAndEndpointVerdicts()
-    {
-        using var h = new Harness();
-        string key = Seed(h.Db);
-        var ct = CancellationToken.None;
-        var saved = ValueOf<ChatConsistencyAnalysisResult>(await h.Controller.Analyze(Request(key), ct));
-
-        var list = ValueOf<IReadOnlyList<ChatConsistencyAnalysisSummary>>(await h.Controller.ListAnalyses(ct));
+        // The list carries each analysis's subject and endpoint verdicts, in this property order.
         using var doc = JsonDocument.Parse(JsonSerializer.Serialize(list, ChatConsistencyJson.Options));
-        var summary = Assert.Single(doc.RootElement.EnumerateArray().ToList());
+        var summaryJson = Assert.Single(doc.RootElement.EnumerateArray().ToList());
 
-        var subject = summary.GetProperty("subject");
+        var subject = summaryJson.GetProperty("subject");
         Assert.Equal(
             new[] { "displayName", "provider", "modelId", "thinkingLevel", "serviceTier" },
             subject.EnumerateObject().Select(p => p.Name).ToArray());
@@ -557,7 +549,7 @@ public class AdminChatConsistencyControllerTests
         Assert.Equal(saved.Subject.Provider, subject.GetProperty("provider").GetString());
         Assert.Equal(saved.Subject.ModelId, subject.GetProperty("modelId").GetString());
 
-        var endpoints = summary.GetProperty("endpoints").EnumerateArray().ToList();
+        var endpoints = summaryJson.GetProperty("endpoints").EnumerateArray().ToList();
         Assert.Equal(saved.Endpoints.Select(e => e.Id), endpoints.Select(e => e.GetProperty("id").GetString()));
         foreach (var endpoint in endpoints)
         {
@@ -598,6 +590,9 @@ public class AdminChatConsistencyControllerTests
         var fresh = ValueOf<ChatConsistencyAnalysisResult>(await h.Controller.Analyze(Request(key), ct));
         Assert.Equal(ChatConsistencyProtocol.V2Version, fresh.Protocol.ProtocolVersion);
         Assert.Contains(fresh.Endpoints, e => e.Id == ChatConsistencyEndpointIds.ProviderErrorRate);
+        Assert.Equal(ChatConsistencyProtocol.V2Version, fresh.Request!.ProtocolVersion);
+        Assert.Equal(ChatConsistencyEndpointIds.All, fresh.Endpoints.Select(e => e.Id));
+        Assert.Equal(ChatConsistencyProtocol.V2.ToJson(), h.Db.ChatConsistencyAnalyses.Single(a => a.Id == fresh.AnalysisId).ProtocolJson);
 
         var v1 = ValueOf<ChatConsistencyAnalysisResult>(await h.Controller.Analyze(Request(key) with { ProtocolVersion = ChatConsistencyProtocol.V1Version }, ct));
         var again = ValueOf<ChatConsistencyAnalysisResult>(await h.Controller.Analyze(Request(key) with { ReanalysisOfAnalysisId = v1.AnalysisId }, ct));
@@ -621,9 +616,8 @@ public class AdminChatConsistencyControllerTests
     public async Task DeletingAnAnalysisIsAConflictWhileAReportDocumentReferencesIt()
     {
         using var h = new Harness();
-        string key = Seed(h.Db);
         var ct = CancellationToken.None;
-        int id = ValueOf<ChatConsistencyAnalysisResult>(await h.Controller.Analyze(Request(key), ct)).AnalysisId!.Value;
+        int id = ChatConsistencyAnalysisTestData.StoreResult(h.Db, ChatConsistencyReportTestData.Result());
 
         var document = Document(BenchmarkReportDocumentOrigin.ChatConsistencyReport, "chat-consistency:" + id, id);
         h.Db.BenchmarkReportDocuments.Add(document);
@@ -648,7 +642,6 @@ public class AdminChatConsistencyControllerTests
     public async Task StartingAReGradeWithoutConfirmationIsABadRequest()
     {
         using var h = new Harness();
-        Seed(h.Db);
         var ct = CancellationToken.None;
 
         var unconfirmed = await h.Controller.StartRegrade(
@@ -965,6 +958,7 @@ public class AdminChatConsistencyControllerTests
         Assert.True(freshness.EarlierAnalysisCode);
         Assert.Equal(4, freshness.AnalysisCodeVersion);
         Assert.Null(freshness.InputsChanged);
+        Assert.Equal("Not checked: the analysis code changed, so its input fingerprint is not comparable.", freshness.InputsNote);
 
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(result.Value, ChatConsistencyJson.Options));
         Assert.True(json.RootElement.GetProperty("outOfDate").GetBoolean());

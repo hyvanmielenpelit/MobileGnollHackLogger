@@ -70,6 +70,7 @@ public class ModelAvailabilityServiceTests
         Assert.Equal("gemini-3.8-flash", result.Replacement.ModelId);
         Assert.Equal("Gemini 3.8 Flash", result.Replacement.DisplayName);
 
+        // RetiredModels.json's lastKnown card for the retired model, not the live gemini-3.8-flash card.
         Assert.NotNull(result.SuggestedCustom);
         Assert.Equal(1048576 - 65536, result.SuggestedCustom.MaxInputTokens);
         Assert.Equal(65536, result.SuggestedCustom.MaxOutputTokens);

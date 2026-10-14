@@ -1,5 +1,5 @@
 import { Component, Input } from '@angular/core';
-import { DecimalPipe } from '@angular/common';
+import { formatCostAmount } from '../benchmark-run-format';
 
 /** Distinguishes the heading ids of the several panels a page may hold. */
 let costPanelSequence = 0;
@@ -188,14 +188,7 @@ export class BenchmarkCostPanelComponent {
    * A dollar amount at four decimals fixed, so a sub-cent cost like $0.0007 renders
    * as $0.0007, not $0.00, and zero renders as $0.0000.
    */
-  formatAmount(amount: number | null | undefined): string {
-    if (!this.isFigure(amount)) {
-      return '-';
-    }
-    const numPipe = new DecimalPipe('en-US');
-    const digits = '1.4-4';
-    return `$${numPipe.transform(amount, digits)}`;
-  }
+  readonly formatAmount = formatCostAmount;
 
   private isFigure(amount: number | null | undefined): amount is number {
     return amount != null && Number.isFinite(amount);

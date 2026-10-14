@@ -8,6 +8,7 @@ import type {
   ProviderAvailabilityOutcomeDto
 } from '../../../../services/admin-benchmark.service';
 import { parseServerUtcDate } from '../../../../utils/date.util';
+import { rovingTabIndex } from '../../../../utils/roving-tab.util';
 import {
   FEW_ATTEMPTS_THRESHOLD,
   NOT_RECORDED_TEXT,
@@ -468,18 +469,9 @@ export class ProviderAvailabilityComponent {
   }
 
   onViewKeydown(event: KeyboardEvent, index: number): void {
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: this.views.length - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-    event.preventDefault();
-    const next = this.views[(requested + this.views.length) % this.views.length].key;
+    const target = rovingTabIndex(event, index, this.views.length);
+    if (target === null) return;
+    const next = this.views[target].key;
     this.selectView(next);
     document.getElementById(`${this.uid}-tab-${next}`)?.focus();
   }

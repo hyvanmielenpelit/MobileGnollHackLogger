@@ -3,6 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { AdminService } from '../../services/admin.service';
 import { AdminPageStore } from '../admin-page.store';
 import { AdminConfirmDialogComponent } from './admin-confirm-dialog.component';
+import { rovingTabIndex } from '../../utils/roving-tab.util';
 
 /** Usage counters and limits of a system configuration, or of a user's or group's assignment of one. */
 @Component({
@@ -49,19 +50,8 @@ export class AdminRateLimitsDialogComponent {
 
   /** Roving-tabindex keyboard support for the rate limits dialog tab row. */
   onRateLimitTabKeydown(event: KeyboardEvent, index: number): void {
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: this.rateLimitTabs.length - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-
-    event.preventDefault();
-    const next = (requested + this.rateLimitTabs.length) % this.rateLimitTabs.length;
+    const next = rovingTabIndex(event, index, this.rateLimitTabs.length);
+    if (next === null) return;
     const tab = this.rateLimitTabs[next].id;
     this.activeRateLimitTab = tab;
     document.getElementById(`rate-limit-tab-${tab}`)?.focus();

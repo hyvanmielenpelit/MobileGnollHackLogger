@@ -253,24 +253,6 @@ public static class BenchmarkReportChartPlacement
     /// <summary>The marker line of a figure: <c>[[figure:p1a-quality]]</c>.</summary>
     public static string Marker(string figureKey) => MarkerPrefix + figureKey + MarkerSuffix;
 
-    /// <summary>
-    /// Whether <paramref name="line"/>, trimmed, is exactly the marker of a known figure; its key in
-    /// <paramref name="figureKey"/>, empty otherwise.
-    /// </summary>
-    public static bool TryParseMarker(string? line, out string figureKey)
-    {
-        figureKey = string.Empty;
-        string text = line?.Trim() ?? string.Empty;
-        if (!text.StartsWith(MarkerPrefix, StringComparison.Ordinal) || !text.EndsWith(MarkerSuffix, StringComparison.Ordinal)) return false;
-        if (text.Length <= MarkerPrefix.Length + MarkerSuffix.Length) return false;
-
-        string key = text[MarkerPrefix.Length..^MarkerSuffix.Length];
-        if (!IsKnown(key)) return false;
-
-        figureKey = key;
-        return true;
-    }
-
     private static int IndexOf(IReadOnlyList<string> keys, string figureKey)
     {
         for (int i = 0; i < keys.Count; i++)

@@ -153,7 +153,7 @@ public class AdminSystemAiConfigTests
         var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest, TestContext.Current.CancellationToken);
         Assert.IsType<OkResult>(updateResult);
 
-        var updated = await db.SystemAiApiConfigurations.FindAsync(new object?[] { initial.Id }, ct);
+        var updated = await ReloadAsync(db, initial.Id);
         Assert.NotNull(updated);
         Assert.False(string.IsNullOrWhiteSpace(updated.EncryptedApiKey));
         Assert.False(string.IsNullOrWhiteSpace(updated.ApiKeyNonce));
@@ -202,7 +202,7 @@ public class AdminSystemAiConfigTests
         var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest, TestContext.Current.CancellationToken);
         Assert.IsType<OkResult>(updateResult);
 
-        var updated = await db.SystemAiApiConfigurations.FindAsync(new object?[] { initial.Id }, ct);
+        var updated = await ReloadAsync(db, initial.Id);
         Assert.NotNull(updated);
         Assert.Null(updated.EncryptedApiKey);
         Assert.Null(updated.ApiKeyNonce);
@@ -248,7 +248,7 @@ public class AdminSystemAiConfigTests
         var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest, TestContext.Current.CancellationToken);
         Assert.IsType<OkResult>(updateResult);
 
-        var updated = await db.SystemAiApiConfigurations.FindAsync(new object?[] { initial.Id }, ct);
+        var updated = await ReloadAsync(db, initial.Id);
         Assert.NotNull(updated);
         Assert.Equal("Updated Name", updated.DisplayName);
         Assert.Equal(ciphertext, updated.EncryptedApiKey);
@@ -304,46 +304,32 @@ public class AdminSystemAiConfigTests
         Assert.Equal("custom", dto.PricingSource);
     }
 
-    [Fact]
-    public async Task CreateSystemConfig_WithNegativePrice_ReturnsBadRequest()
+    public static TheoryData<decimal?, decimal?, string> InvalidCustomPricing => new()
+    {
+        { -1.00m, 10.00m, "Prices cannot be negative." },
+        { 2.50m, null, "Custom pricing requires both input and output prices per million." }
+    };
+
+    [Theory]
+    [MemberData(nameof(InvalidCustomPricing))]
+    public async Task CreateSystemConfig_WithInvalidCustomPricing_ReturnsBadRequest(decimal? input, decimal? output, string message)
     {
         var (controller, _, _) = CreateTestController();
 
         var request = new CreateSystemAiApiConfigurationRequest
         {
-            DisplayName = "Invalid Negative Price",
+            DisplayName = "Invalid Custom Pricing",
             Provider = "OpenAI",
             ModelId = "gpt-5.6",
             IsEnabled = true,
             PricingMode = "custom",
-            InputPricePerMillion = -1.00m,
-            OutputPricePerMillion = 10.00m
+            InputPricePerMillion = input,
+            OutputPricePerMillion = output
         };
 
         var result = await controller.CreateSystemConfig(request, TestContext.Current.CancellationToken);
         var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Equal("Prices cannot be negative.", badRequest.Value);
-    }
-
-    [Fact]
-    public async Task CreateSystemConfig_WithCustomModeAndNullOutput_ReturnsBadRequest()
-    {
-        var (controller, _, _) = CreateTestController();
-
-        var request = new CreateSystemAiApiConfigurationRequest
-        {
-            DisplayName = "Missing Output Rate",
-            Provider = "OpenAI",
-            ModelId = "gpt-5.6",
-            IsEnabled = true,
-            PricingMode = "custom",
-            InputPricePerMillion = 2.50m,
-            OutputPricePerMillion = null
-        };
-
-        var result = await controller.CreateSystemConfig(request, TestContext.Current.CancellationToken);
-        var badRequest = Assert.IsType<BadRequestObjectResult>(result);
-        Assert.Equal("Custom pricing requires both input and output prices per million.", badRequest.Value);
+        Assert.Equal(message, badRequest.Value);
     }
 
     [Fact]
@@ -379,7 +365,7 @@ public class AdminSystemAiConfigTests
         var updateResult = await controller.UpdateSystemConfig(initial.Id, updateRequest, TestContext.Current.CancellationToken);
         Assert.IsType<OkResult>(updateResult);
 
-        var updated = await db.SystemAiApiConfigurations.FindAsync(new object?[] { initial.Id }, ct);
+        var updated = await ReloadAsync(db, initial.Id);
         Assert.NotNull(updated);
         Assert.Equal("custom", updated.PricingMode);
         Assert.Equal(4.00m, updated.InputPricePerMillion);
@@ -668,7 +654,7 @@ public class AdminSystemAiConfigTests
         }, ct);
         Assert.IsType<OkResult>(result);
 
-        var updated = await db.SystemAiApiConfigurations.SingleAsync(ct);
+        var updated = await ReloadAsync(db, config.Id);
         Assert.False(updated.UseDefaultApiKey);
         Assert.Null(updated.EncryptedApiKey);
         Assert.Null(updated.ApiKeyNonce);
@@ -694,7 +680,7 @@ public class AdminSystemAiConfigTests
         }, ct);
         Assert.IsType<OkResult>(result);
 
-        var updated = await db.SystemAiApiConfigurations.SingleAsync(ct);
+        var updated = await ReloadAsync(db, config.Id);
         Assert.False(updated.UseDefaultApiKey);
         Assert.Equal("test-key-not-real-custom", DecryptConfigKey(crypto, updated));
     }
@@ -719,7 +705,7 @@ public class AdminSystemAiConfigTests
         }, ct);
         Assert.IsType<OkResult>(result);
 
-        var updated = await db.SystemAiApiConfigurations.SingleAsync(ct);
+        var updated = await ReloadAsync(db, config.Id);
         Assert.True(updated.UseDefaultApiKey);
         Assert.Equal("Anthropic", updated.Provider);
         Assert.Equal(AnthropicDefaultKey, DecryptConfigKey(crypto, updated));

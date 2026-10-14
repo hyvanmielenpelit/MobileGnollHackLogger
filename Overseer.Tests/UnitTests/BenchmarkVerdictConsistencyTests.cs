@@ -16,6 +16,8 @@ public class BenchmarkVerdictConsistencyTests
     [InlineData("References a nonexistent constant.")]
     [InlineData("There is no such item in the game.")]
     [InlineData("The AC value appears to be made up.")]
+    // Game vocabulary beside a fabrication does not mask the fabrication.
+    [InlineData("The hero quaffed a potion of hallucination and it hallucinates a wand.")]
     public void MentionsFabrication_MatchesTheVocabulary(string comment)
     {
         Assert.True(BenchmarkVerdictConsistency.MentionsFabrication(comment));
@@ -29,6 +31,8 @@ public class BenchmarkVerdictConsistencyTests
     [InlineData("The inventory weight calculation is accurate.")]
     [InlineData("Accurate and thorough breakdown of Master Kaen's stats.")]
     [InlineData("Omits bronze armor mechanics.")]
+    // Game vocabulary sharing the "hallucinat" stem.
+    [InlineData("The hero quaffed a potion of hallucination.")]
     [InlineData("")]
     [InlineData(null)]
     public void MentionsFabrication_DoesNotMatchOrdinaryProse(string? comment)
@@ -61,13 +65,6 @@ public class BenchmarkVerdictConsistencyTests
         Assert.False(BenchmarkVerdictConsistency.MentionsUndeniedFabrication(text));
     }
 
-    [Fact]
-    public void MentionsFabrication_IgnoresGameVocabulary()
-    {
-        Assert.False(BenchmarkVerdictConsistency.MentionsFabrication("The hero quaffed a potion of hallucination."));
-        Assert.True(BenchmarkVerdictConsistency.MentionsFabrication("The hero quaffed a potion of hallucination and it hallucinates a wand."));
-    }
-
     private static string ParserVerdict(string comment, string accuracyEvidence, string completenessEvidence, int accuracyLevel = 5) => $$"""
         {
           "accuracyLevel": {{accuracyLevel}},
@@ -90,7 +87,8 @@ public class BenchmarkVerdictConsistencyTests
             ParserVerdict(
                 comment: "Solid answer; misses the poison or hallucination gamble of the mushrooms.",
                 accuracyEvidence: "Matches rubric.",
-                completenessEvidence: "It does not explain that the mushrooms are a poison or hallucination gamble."),
+                completenessEvidence: "It does not explain that the mushrooms are a poison or hallucination gamble.",
+                accuracyLevel: 3),
             gradedAnswerText: null);
 
         Assert.True(result.Success);
@@ -104,7 +102,8 @@ public class BenchmarkVerdictConsistencyTests
             ParserVerdict(
                 comment: "Solid answer.",
                 accuracyEvidence: "Matches rubric.",
-                completenessEvidence: "Omits the made up charge count."),
+                completenessEvidence: "Omits the made up charge count.",
+                accuracyLevel: 3),
             gradedAnswerText: null);
 
         Assert.True(result.Success);
@@ -144,49 +143,42 @@ public class BenchmarkVerdictConsistencyTests
     }
 
     [Theory]
-    [InlineData("Candidate invents a racial intrinsic not in the rubric.", 3, true)]
-    [InlineData("Candidate invents a racial intrinsic not in the rubric.", 5, false)]
-    [InlineData("A trivial imprecision: the candidate invents a turn count.", 3, false)]
-    public void ContestedVerdict_NeedsAnUnqualifiedFabricationAtAccuracyFourOrBelow(string accuracyEvidence, int accuracyLevel, bool expected)
+    // Close to the 2026-09-03 run's actual synthesis, which reported Q10's hallucination as
+    // the headline finding of a run whose per-question verdict had not flagged it.
+    [InlineData(
+        "The benchmark demonstrates an extraordinarily high degree of competence. " +
+        "The only notable flaw occurred in Question 10 regarding object materials, where the " +
+        "model hallucinated non-existent materials ('adamantium'). " +
+        "Overall the run represents an elite understanding of the game's systems.",
+        new[] { 10 })]
+    // Sentence-scoped on purpose: a paragraph-wide match would attribute one question's
+    // hallucination to every question mentioned near it.
+    [InlineData(
+        "Question 4 was answered accurately and concisely. " +
+        "Question 10 hallucinates a material that does not exist.",
+        new[] { 10 })]
+    // Undenied inventing names the question.
+    [InlineData("Q15 loses accuracy for inventing an automatic regeneration of the spell's charges.", new[] { 15 })]
+    // One denied and one plain match.
+    [InlineData("Q12's table was supported rather than invented, but Q14 fabricated a cooldown.", new[] { 12, 14 })]
+    // A list sentence names only the item that carries the fabrication.
+    [InlineData(
+        "The remaining accuracy faults were few: Q6 misstates the healing-potion dice, " +
+        "Q13 invents an ink cost outside the documented range, and Q17 overstates the hunger of worn items.",
+        new[] { 13 })]
+    // List items split at semicolons, but not inside parentheses.
+    [InlineData("Two answers stand out: Q4 fabricates a relight rule (citing use_lamp, apply.c); Q9 omits the cost.", new[] { 4 })]
+    // The lead before the colon is its own item.
+    [InlineData("Q11 fabricates a mechanic: the answer claims torches can be relit, and Q12 omits the fuel count.", new[] { 11 })]
+    // A citation colon is not a list colon.
+    [InlineData("Q4 cites src/apply.c:2604 and invents a relight rule.", new[] { 4 })]
+    // A verification sentence without a verdict: naming the verifier alone is not a report of its
+    // results.
+    [InlineData("Before any verification, Q9 fabricated a grave mechanic.", new[] { 9 })]
+    public void QuestionsNamedWithFabrication_NamesTheChargedQuestions(string synthesis, int[] expected)
     {
-        var result = BenchmarkAssessmentParser.ParsePerQuestion(
-            ParserVerdict(comment: "Solid answer.", accuracyEvidence: accuracyEvidence, completenessEvidence: "Matches rubric.", accuracyLevel: accuracyLevel),
-            gradedAnswerText: null);
-
-        Assert.True(result.Success);
-        Assert.Equal(expected, result.Result!.ContestedVerdict);
-    }
-
-    [Fact]
-    public void QuestionsNamedWithFabrication_FindsTheQuestionInTheSentenceThatNamesIt()
-    {
-        // Close to the 2026-09-03 run's actual synthesis, which reported Q10's hallucination as
-        // the headline finding of a run whose per-question verdict had not flagged it.
-        const string synthesis =
-            "The benchmark demonstrates an extraordinarily high degree of competence. " +
-            "The only notable flaw occurred in Question 10 regarding object materials, where the " +
-            "model hallucinated non-existent materials ('adamantium'). " +
-            "Overall the run represents an elite understanding of the game's systems.";
-
-        var named = BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18));
-
-        Assert.Equal(new[] { 10 }, named);
-    }
-
-    [Fact]
-    public void QuestionsNamedWithFabrication_DoesNotReachAcrossSentences()
-    {
-        // Sentence-scoped on purpose: a paragraph-wide match would attribute one question's
-        // hallucination to every question mentioned near it.
-        const string synthesis =
-            "Question 4 was answered accurately and concisely. " +
-            "Question 10 hallucinates a material that does not exist.";
-
-        var named = BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18));
-
-        Assert.Equal(new[] { 10 }, named);
+        Assert.Equal(expected, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
+            synthesis, Enumerable.Range(1, 18)));
     }
 
     [Theory]
@@ -202,37 +194,6 @@ public class BenchmarkVerdictConsistencyTests
         Assert.Equal(new[] { 7 }, named);
     }
 
-    [Fact]
-    public void QuestionsNamedWithFabrication_IgnoresQuestionsOutsideTheRun()
-    {
-        var named = BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            "Question 99 hallucinates a material.", Enumerable.Range(1, 18));
-
-        Assert.Empty(named);
-    }
-
-    [Fact]
-    public void QuestionsNamedWithFabrication_ReturnsNothingForCleanSynthesis()
-    {
-        const string synthesis =
-            "Question 3 was accurate and complete. Question 10 covered the material list well.";
-
-        Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18)));
-    }
-
-    [Fact]
-    public void QuestionsNamedWithFabrication_DeniedFabricationNamesNoQuestion()
-    {
-        // Run 63's synthesis praised Q13 and Q18 in this sentence.
-        const string synthesis =
-            "The verifier confirmed the component analysis in Q13, and the reagent associations in Q18 " +
-            "were verified as supported rather than invented.";
-
-        Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18)));
-    }
-
     [Theory]
     [InlineData("Q9 names a real item, not an invented item.")]
     [InlineData("Q9 never fabricated a number.")]
@@ -244,112 +205,36 @@ public class BenchmarkVerdictConsistencyTests
     }
 
     [Fact]
-    public void QuestionsNamedWithFabrication_UndeniedInventing_NamesTheQuestion()
-    {
-        const string synthesis =
-            "Q15 loses accuracy for inventing an automatic regeneration of the spell's charges.";
-
-        Assert.Equal(new[] { 15 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18)));
-    }
-
-    [Fact]
-    public void QuestionsNamedWithFabrication_OneDeniedAndOnePlainMatch_NamesItsQuestions()
-    {
-        const string synthesis =
-            "Q12's table was supported rather than invented, but Q14 fabricated a cooldown.";
-
-        Assert.Equal(new[] { 12, 14 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18)));
-    }
-
-    [Fact]
     public void QuestionsNamedWithFabrication_HandlesEmptyInput()
     {
         Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(null, Enumerable.Range(1, 5)));
         Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication("Q1 invents a thing.", Enumerable.Empty<int>()));
     }
 
-    [Fact]
-    public void QuestionsNamedWithFabrication_ListOfLesserConsequence_NamesNoQuestion()
-    {
-        // The shape of run 73's synthesis: a list of small slips, one of them worded as an invention.
-        const string synthesis =
-            "The remaining accuracy faults were of lesser consequence: Q6 misstates the healing-potion dice, " +
-            "Q13 invents an ink cost outside the documented range, and Q17 overstates the hunger of worn items.";
-
-        Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18)));
-    }
-
-    [Fact]
-    public void QuestionsNamedWithFabrication_ListSentence_NamesOnlyTheItemThatCarriesTheFabrication()
-    {
-        const string synthesis =
-            "The remaining accuracy faults were few: Q6 misstates the healing-potion dice, " +
-            "Q13 invents an ink cost outside the documented range, and Q17 overstates the hunger of worn items.";
-
-        Assert.Equal(new[] { 13 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18)));
-    }
-
-    [Fact]
-    public void QuestionsNamedWithFabrication_ListItemsSplitAtSemicolonsButNotInsideParentheses()
-    {
-        const string synthesis =
-            "Two answers stand out: Q4 fabricates a relight rule (citing use_lamp, apply.c); Q9 omits the cost.";
-
-        Assert.Equal(new[] { 4 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18)));
-    }
-
-    [Fact]
-    public void QuestionsNamedWithFabrication_TheLeadBeforeTheColonIsItsOwnItem()
-    {
-        const string synthesis = "Q11 fabricates a mechanic: the answer claims torches can be relit, and Q12 omits the fuel count.";
-
-        Assert.Equal(new[] { 11 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18)));
-    }
-
-    [Fact]
-    public void QuestionsNamedWithFabrication_ACitationColonIsNotAListColon()
-    {
-        const string synthesis = "Q4 cites src/apply.c:2604 and invents a relight rule.";
-
-        Assert.Equal(new[] { 4 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18)));
-    }
-
-    [Fact]
-    public void QuestionsNamedWithFabrication_ASentenceReportingClaimVerification_NamesNoQuestion()
-    {
-        // Member A's synthesis in run 74.
-        const string synthesis =
-            "Claim verification refuted 9 claims across seven answers (advisory), including a wand-of-digging " +
-            "grave claim on Q9, a non-existent skill prerequisite on Q14 and a sacrifice-gift claim on Q12.";
-
-        Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18)));
-    }
-
     [Theory]
+    // A question outside the run.
+    [InlineData("Question 99 hallucinates a material.")]
+    // A clean synthesis.
+    [InlineData("Question 3 was accurate and complete. Question 10 covered the material list well.")]
+    // Run 63's synthesis praised Q13 and Q18 in this sentence.
+    [InlineData(
+        "The verifier confirmed the component analysis in Q13, and the reagent associations in Q18 " +
+        "were verified as supported rather than invented.")]
+    // The shape of run 73's synthesis: a list of small slips, one of them worded as an invention.
+    [InlineData(
+        "The remaining accuracy faults were of lesser consequence: Q6 misstates the healing-potion dice, " +
+        "Q13 invents an ink cost outside the documented range, and Q17 overstates the hunger of worn items.")]
+    // Member A's synthesis in run 74: a sentence reporting claim verification.
+    [InlineData(
+        "Claim verification refuted 9 claims across seven answers (advisory), including a wand-of-digging " +
+        "grave claim on Q9, a non-existent skill prerequisite on Q14 and a sacrifice-gift claim on Q12.")]
+    // A verification sentence with a verdict.
     [InlineData("The verifier refuted a claim, and Q9 fabricated a grave mechanic.")]
     [InlineData("Q9's invented grave mechanic was supported by the claim verifier.")]
     public void QuestionsNamedWithFabrication_AVerificationSentenceWithAVerdict_NamesNoQuestion(string sentence)
     {
         Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
             sentence, Enumerable.Range(1, 18)));
-    }
-
-    [Fact]
-    public void QuestionsNamedWithFabrication_AVerificationSentenceWithoutAVerdict_StillNamesTheQuestion()
-    {
-        // Naming the verifier alone is not a report of its results.
-        const string synthesis = "Before any verification, Q9 fabricated a grave mechanic.";
-
-        Assert.Equal(new[] { 9 }, BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
-            synthesis, Enumerable.Range(1, 18)));
     }
 
     [Theory]
@@ -611,95 +496,36 @@ public class BenchmarkVerdictConsistencyTests
         Assert.Null(BenchmarkVerdictConsistency.UnverifiabilityBasisOf("Matches rubric."));
     }
 
-    [Fact]
-    public void IsOmissionGroundedAccuracyDeduction_SubstitutionEvidence_DoesNotFlag()
+    [Theory]
+    // Q1's literal evidence string from run 11: describes a substitution ("provides ... rather than ..."),
+    // which is a genuine accuracy defect and must not be flagged as an omission.
+    [InlineData(4, "The answer provides D&D-style relative attribute modifiers (+1 Dex, -2 Int, etc.) rather than GnollHack's racial attribute maxima (Str 18/100, Int 16, Wis 16, Dex 19, Con 19, Cha 16).", false)]
+    // Pure omission evidence.
+    [InlineData(4, "The answer omits the racial attribute maxima.", true)]
+    // Q10 shape from run 10: fails to identify/mention
+    [InlineData(3, "Rubric REQUIRED: hard crystal grants REFLECTION ..., orichalcum grants MAGIC RESISTANCE (+7 MC) ...; the answer fails to identify these crucial specific properties.", true)]
+    // When the evidence names a genuine inaccuracy or falsehood along with an omission, it is not a pure omission
+    [InlineData(3, "Incorrect statement that silver grants poison resistance, and fails to mention AC.", false)]
+    // Accuracy level 5 flags; level 6 does not.
+    [InlineData(5, "Omits attribute maxima.", true)]
+    [InlineData(6, "Omits attribute maxima.", false)]
+    // Empty or null evidence.
+    [InlineData(3, null, false)]
+    [InlineData(3, "", false)]
+    [InlineData(3, "   ", false)]
+    // "omits" alone would read as a pure omission; the widened FalsehoodRegex ("opposite") must
+    // recognise the sentence as a genuine falsehood instead.
+    [InlineData(4, "The answer states the opposite of what the rubric says about the prayer timeout, and omits nothing but that.", false)]
+    // The passive shape names the missing fact, not the answer, as the sentence's subject — "the
+    // axis is never stated" rather than "the answer never states the axis" — which the
+    // mentions/states pair alone does not cover. The clause that follows names the same
+    // shortfall again as an absence of source-level precision, still an omission rather than an
+    // assertion that anything stated is untrue.
+    [InlineData(5, "the combat-difficulty axis is never stated, so no source-level precision on that modifier", true)]
+    public void IsOmissionGroundedAccuracyDeduction_FlagsAPureOmissionBelowLevelSix(int level, string? evidence, bool expected)
     {
-        // Q1's literal evidence string from run 11: describes a substitution ("provides ... rather than ..."),
-        // which is a genuine accuracy defect and must not be flagged as an omission.
-        const string substitutionEvidence =
-            "The answer provides D&D-style relative attribute modifiers (+1 Dex, -2 Int, etc.) rather than GnollHack's racial attribute maxima (Str 18/100, Int 16, Wis 16, Dex 19, Con 19, Cha 16).";
-        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
-            accuracyLevel: 4,
-            accuracyEvidence: substitutionEvidence));
-    }
-
-    [Fact]
-    public void IsOmissionGroundedAccuracyDeduction_PureOmissionEvidence_Flags()
-    {
-        const string omissionEvidence = "The answer omits the racial attribute maxima.";
-        Assert.True(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
-            accuracyLevel: 4,
-            accuracyEvidence: omissionEvidence));
-    }
-
-    [Fact]
-    public void IsOmissionGroundedAccuracyDeduction_Run10Q10Shape_Flags()
-    {
-        // Q10 shape from run 10: fails to identify/mention
-        const string evidence = "Rubric REQUIRED: hard crystal grants REFLECTION ..., orichalcum grants MAGIC RESISTANCE (+7 MC) ...; the answer fails to identify these crucial specific properties.";
-        Assert.True(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
-            accuracyLevel: 3,
-            accuracyEvidence: evidence));
-    }
-
-    [Fact]
-    public void IsOmissionGroundedAccuracyDeduction_WithFalsehood_DoesNotFlag()
-    {
-        // When the evidence names a genuine inaccuracy or falsehood along with an omission, it is not a pure omission
-        const string evidence = "Incorrect statement that silver grants poison resistance, and fails to mention AC.";
-        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
-            accuracyLevel: 3,
-            accuracyEvidence: evidence));
-    }
-
-    [Fact]
-    public void IsOmissionGroundedAccuracyDeduction_AccuracyLevelFive_Flags()
-    {
-        Assert.True(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
-            accuracyLevel: 5,
-            accuracyEvidence: "Omits attribute maxima."));
-    }
-
-    [Fact]
-    public void IsOmissionGroundedAccuracyDeduction_AccuracyLevelSix_DoesNotFlag()
-    {
-        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
-            accuracyLevel: 6,
-            accuracyEvidence: "Omits attribute maxima."));
-    }
-
-    [Fact]
-    public void IsOmissionGroundedAccuracyDeduction_EmptyOrNullEvidence_DoesNotFlag()
-    {
-        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, null));
-        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, ""));
-        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(3, "   "));
-    }
-
-    [Fact]
-    public void IsOmissionGroundedAccuracyDeduction_StatesTheOpposite_DoesNotFlag()
-    {
-        // "omits" alone would read as a pure omission; the widened FalsehoodRegex ("opposite") must
-        // recognise the sentence as a genuine falsehood instead.
-        const string evidence =
-            "The answer states the opposite of what the rubric says about the prayer timeout, and omits nothing but that.";
-        Assert.False(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
-            accuracyLevel: 4,
-            accuracyEvidence: evidence));
-    }
-
-    [Fact]
-    public void IsOmissionGroundedAccuracyDeduction_NeverStatedPassiveForm_Flags()
-    {
-        // The passive shape names the missing fact, not the answer, as the sentence's subject — "the
-        // axis is never stated" rather than "the answer never states the axis" — which the
-        // mentions/states pair alone does not cover. The clause that follows names the same
-        // shortfall again as an absence of source-level precision, still an omission rather than an
-        // assertion that anything stated is untrue.
-        const string evidence =
-            "the combat-difficulty axis is never stated, so no source-level precision on that modifier";
-        Assert.True(BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
-            accuracyLevel: 5,
+        Assert.Equal(expected, BenchmarkVerdictConsistency.IsOmissionGroundedAccuracyDeduction(
+            accuracyLevel: level,
             accuracyEvidence: evidence));
     }
 
@@ -903,22 +729,6 @@ public class BenchmarkVerdictConsistencyTests
     }
 
     [Fact]
-    public void NamesAnAccuracyDefect_Run14Q11Shape_StillFlags()
-    {
-        const string evidence =
-            "The answer covers the set mechanics but overlooks that weapon swapping between sets takes 0 turns in GnollHack, suggesting instead that switching weapons requires extra equipment management overhead.";
-        Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
-    }
-
-    [Fact]
-    public void NamesAnAccuracyDefect_Run14Q14Shape_StillFlags()
-    {
-        const string evidence =
-            "The answer lists Level as 40 and Hit dice as 25; in the monster definition LVL(25, 16, -10, 15, 10, -20), his level/HD is 25, while 40 is his monster difficulty.";
-        Assert.True(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, evidence));
-    }
-
-    [Fact]
     public void NamesAnAccuracyDefect_DenialAlongsideAFalsehood_StillFlags()
     {
         // The denial clause is stripped before the falsehood test, and the concession that follows
@@ -1003,18 +813,6 @@ public class BenchmarkVerdictConsistencyTests
     {
         Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(6, "Overlooks a rubric point."));
         Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(6, null));
-    }
-
-    [Fact]
-    public void NamesAnAccuracyDefect_TerseBoilerplateEvidence_DoesNotFlag()
-    {
-        Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, "Matches rubric"));
-    }
-
-    [Fact]
-    public void NamesAnAccuracyDefect_NullEvidence_DoesNotFlag()
-    {
-        Assert.False(BenchmarkVerdictConsistency.NamesAnAccuracyDefect(5, null));
     }
 
     [Fact]
@@ -1325,14 +1123,5 @@ public class BenchmarkVerdictConsistencyTests
     public void UnverifiabilityVocabulary_ReadsAdjudicateOnlyWhenNegated(string evidence, bool flags)
     {
         Assert.Equal(flags, BenchmarkVerdictConsistency.IsUnverifiabilityGroundedDeduction(5, evidence, 1));
-    }
-
-    [Theory]
-    [InlineData("the answer inverts the direction, as its worked example correctly shows")]
-    [InlineData("the answer reverses the sign, which the table correctly gives")]
-    [InlineData("it states the opposite, although the example is correct")]
-    public void AnInversion_IsAChargeEvenBesideAnApprovalWord(string clause)
-    {
-        Assert.False(BenchmarkVerdictConsistency.AccusationClauseApproves(clause));
     }
 }

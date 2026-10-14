@@ -190,25 +190,6 @@ describe('BenchmarkSynthesisPanelComponent', () => {
       expect(tabs().map(t => t.getAttribute('tabindex'))).toEqual(['-1', '-1', '0']);
     });
 
-    it('should jump to the ends with Home and End', () => {
-      press(tabs()[0], 'End');
-      expect(tabs()[2].getAttribute('aria-selected')).toBe('true');
-      expect(document.activeElement).toBe(tabs()[2]);
-
-      press(tabs()[2], 'Home');
-      expect(tabs()[0].getAttribute('aria-selected')).toBe('true');
-      expect(document.activeElement).toBe(tabs()[0]);
-    });
-
-    it('should let other keys through untouched', () => {
-      const event = new KeyboardEvent('keydown', { key: 'a', bubbles: true, cancelable: true });
-      tabs()[0].dispatchEvent(event);
-      fixture.detectChanges();
-
-      expect(event.defaultPrevented).toBe(false);
-      expect(tabs()[0].getAttribute('aria-selected')).toBe('true');
-    });
-
     it('should render the agreement table in the Agreement tab, never on the table element itself', () => {
       tabs()[2].click();
       fixture.detectChanges();

@@ -310,7 +310,7 @@ describe('ModelBatchProgressDialogComponent', () => {
     expect(closed).not.toHaveBeenCalled();
   });
 
-  it('lists every figure in order, the failed answers marked, and the finish time on the reference line', () => {
+  it('marks the failed answers as needing attention, and puts the finish time on the reference line', () => {
     const finishedAt = new Date();
     const startedAt = new Date(finishedAt.getTime() - (13 * 60 + 40) * 1000);
     open(batch({

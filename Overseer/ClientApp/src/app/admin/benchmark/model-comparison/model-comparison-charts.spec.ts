@@ -2746,9 +2746,13 @@ describe('chart.js registration', () => {
     Chart.register(...APP_CHART_REGISTRABLES);
   });
 
-  it('demands cover all nine figures, the provider-error dot plots included', () => {
-    expect(demands.length).toBe(9);
-    expect(new Set(demands.map((demand) => demand.id)).size).toBe(9);
+  it('demands cover every figure the set builds, the provider-error dot plots included', () => {
+    const built: unknown[] = [...Object.values(figures), ...Object.values(figures.smallMultiples)];
+    const figureIds = built
+      .filter((v): v is { id: string } => typeof (v as { id?: unknown } | null)?.id === 'string')
+      .map((v) => v.id);
+    expect(new Set(demands.map((demand) => demand.id))).toEqual(new Set(figureIds));
+    expect(demands.length).toBe(figureIds.length);
   });
 
   demands.forEach((demand) => {

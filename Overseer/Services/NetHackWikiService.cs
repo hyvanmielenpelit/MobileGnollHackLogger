@@ -30,7 +30,7 @@ public class NetHackWikiService : IDisposable
     private IndexSearcher? _searcher;
     private Analyzer? _analyzer;
 
-    public Task InitializationTask { get; private set; }
+    public Task InitializationTask { get; }
     public bool IsIndexingComplete => InitializationTask?.IsCompleted ?? false;
 
     /// <summary>What the index the tools currently read holds; null until the first pass finishes.</summary>
@@ -42,6 +42,15 @@ public class NetHackWikiService : IDisposable
     }
 
     internal NetHackWikiService(IConfiguration configuration, ILogger<NetHackWikiService>? logger, int? indexingParallelism)
+        : this(configuration, logger, indexingParallelism, startIndexing: true)
+    {
+    }
+
+    /// <param name="startIndexing">
+    /// False only in tests: the single startup pass never starts, so the service reports indexing in
+    /// progress for its whole life.
+    /// </param>
+    internal NetHackWikiService(IConfiguration configuration, ILogger<NetHackWikiService>? logger, int? indexingParallelism, bool startIndexing)
     {
         _logger = logger;
         _wikiPath = configuration["NetHackWikiPath"] ?? string.Empty;
@@ -51,7 +60,7 @@ public class NetHackWikiService : IDisposable
         // NetHackWiki consists of thousands of static files that change very seldomly.
         // To avoid heavy periodic disk I/O and Lucene re-indexing, indexing is performed ONLY at startup.
         // If NetHackWiki files are updated on disk, the site must be restarted to re-read them.
-        InitializationTask = Task.Run(() => IndexWikiFiles());
+        InitializationTask = startIndexing ? Task.Run(() => IndexWikiFiles()) : new TaskCompletionSource().Task;
     }
 
     private void IndexWikiFiles()

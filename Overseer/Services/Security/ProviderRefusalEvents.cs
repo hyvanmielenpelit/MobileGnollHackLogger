@@ -32,7 +32,7 @@ public static class ProviderRefusalEvents
                     SystemAiApiConfigurationId: systemConfigurationId,
                     Provider: call.Provider,
                     ModelId: call.RequestedModelId,
-                    Code: SanitizeCode(call.FinishReason) ?? "refusal"));
+                    Code: ProviderAttemptClassifier.SanitizeErrorCode(call.FinishReason) ?? "refusal"));
             }
 
             var last = call.Attempts.Count > 0 ? call.Attempts[^1] : null;
@@ -45,7 +45,7 @@ public static class ProviderRefusalEvents
                     SystemAiApiConfigurationId: systemConfigurationId,
                     Provider: call.Provider,
                     ModelId: call.RequestedModelId,
-                    Code: SanitizeCode(last.ProviderErrorCode)));
+                    Code: ProviderAttemptClassifier.SanitizeErrorCode(last.ProviderErrorCode)));
             }
         }
         return events;
@@ -70,13 +70,4 @@ public static class ProviderRefusalEvents
 
     public static bool IsPolicyCode(string? code) =>
         !string.IsNullOrEmpty(code) && PolicyErrorCodeFragments.Any(f => code.Contains(f, StringComparison.OrdinalIgnoreCase));
-
-    /// <summary>Keeps <c>[A-Za-z0-9_.-]</c>, at most 64 characters; null when nothing is left.</summary>
-    public static string? SanitizeCode(string? code)
-    {
-        if (string.IsNullOrEmpty(code)) return null;
-        var kept = new string(code.Where(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '.' or '-').ToArray());
-        if (kept.Length == 0) return null;
-        return kept.Length <= 64 ? kept : kept[..64];
-    }
 }

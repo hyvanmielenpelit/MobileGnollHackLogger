@@ -51,24 +51,13 @@ public class BenchmarkBatteryPlannerTests
         var all = new[] { (0, 1), (1, 1) };
 
         Assert.Null(BenchmarkBatteryPlanner.NextMember(2, 1, all));
-        Assert.Equal(0, BenchmarkBatteryPlanner.RemainingLaunches(2, 1, all));
-    }
-
-    [Fact]
-    public void RemainingLaunches_CountsUnoccupiedSlotsInTheGrid()
-    {
-        Assert.Equal(6, BenchmarkBatteryPlanner.RemainingLaunches(3, 2, Array.Empty<(int, int)>()));
-        Assert.Equal(4, BenchmarkBatteryPlanner.RemainingLaunches(3, 2, new[] { (0, 1), (2, 2) }));
-
-        // A pair outside the grid occupies nothing.
-        Assert.Equal(6, BenchmarkBatteryPlanner.RemainingLaunches(3, 2, new[] { (5, 1), (0, 3) }));
     }
 
     [Fact]
     public void ThePlanner_RefusesAnEmptyGrid()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => BenchmarkBatteryPlanner.NextMember(0, 1, Array.Empty<(int, int)>()));
-        Assert.Throws<ArgumentOutOfRangeException>(() => BenchmarkBatteryPlanner.RemainingLaunches(2, 0, Array.Empty<(int, int)>()));
+        Assert.Throws<ArgumentOutOfRangeException>(() => BenchmarkBatteryPlanner.NextMember(2, 0, Array.Empty<(int, int)>()));
     }
 
     // --- Usability (M4) --------------------------------------------------------------------------

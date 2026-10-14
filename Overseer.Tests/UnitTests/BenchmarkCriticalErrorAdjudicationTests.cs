@@ -2,7 +2,6 @@ namespace Overseer.Tests.UnitTests;
 
 using System;
 using System.Collections.Generic;
-using System.Text.Json;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Xunit;
@@ -117,26 +116,6 @@ public class BenchmarkCriticalErrorAdjudicationTests
         Assert.Equal(claims, BenchmarkService.WithCriticalErrorQuoteFirst(claims, null));
         Assert.Empty(BenchmarkService.WithCriticalErrorQuoteFirst(null, null));
         Assert.Equal(new[] { Quote }, BenchmarkService.WithCriticalErrorQuoteFirst(null, Quote));
-    }
-
-    [Fact]
-    public void TheQuoteNeverEntersTheUnadjudicableClaimColumns()
-    {
-        // UnverifiedClaimsJson means "claims the assessor could not adjudicate". A claim the
-        // assessor called outright false is the opposite of one, so the quote is carried in the
-        // prompt only and the two columns keep whatever the assessor put there.
-        var answer = Answer(
-            criticalError: true,
-            criticalErrorQuote: Quote,
-            unverifiedClaimCount: 1,
-            unverifiedClaimsJson: JsonSerializer.Serialize(new[] { "Gnolls have keen smell" }));
-
-        var stored = JsonSerializer.Deserialize<List<string>>(answer.UnverifiedClaimsJson!)!;
-        var submitted = BenchmarkService.WithCriticalErrorQuoteFirst(stored, answer.CriticalErrorQuote);
-
-        Assert.Equal(2, submitted.Count);
-        Assert.Equal(1, answer.UnverifiedClaimCount);
-        Assert.DoesNotContain(Quote, answer.UnverifiedClaimsJson);
     }
 
     // --- The advisory flag ---

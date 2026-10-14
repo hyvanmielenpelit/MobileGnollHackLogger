@@ -87,25 +87,10 @@ public class GameSnapshotDetectionTests
         Assert.Equal(expected, actual);
     }
 
-    [Theory]
-    [InlineData("Full Message History (last messages shown):\nLine 1", true)]
-    [InlineData("Full Message History\nLine 1", true)]
-    [InlineData("full message history", true)]
-    [InlineData("Game Context Snapshot:\nMap", false)]
-    [InlineData("Random text", false)]
-    [InlineData("", false)]
-    [InlineData(null, false)]
-    public void IsMessageHistoryMessage_DetectsPrefixesCorrectly(string? content, bool expected)
-    {
-        bool actual = ChatService.IsMessageHistoryMessage(content);
-        Assert.Equal(expected, actual);
-    }
-
     [Fact]
     public void Predicates_MatchConstantPrefixes()
     {
         Assert.True(ChatService.IsGameSnapshotMessage(ChatService.GameSnapshotPrefix));
-        Assert.True(ChatService.IsMessageHistoryMessage(ChatService.MessageHistoryPrefix));
     }
 
     [Theory]

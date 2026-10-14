@@ -1,0 +1,43 @@
+{
+  "description": "The published chat consistency protocols V1 and V2 as the client copies them: α, the minimum samples and the primary endpoints (margin in display units, a log-ratio endpoint's margin as 100 · (e^margin − 1) in %; axis camel-cased). Read by chat-consistency-readiness.spec.ts against CC_PROTOCOL_V1, CC_PROTOCOL_V2 and their endpoint lists, and by Overseer.Tests ChatConsistencyClientParityTests against ChatConsistencyProtocol.ForVersion; both must match these values within the tolerance.",
+  "tolerance": 1e-9,
+  "protocols": {
+    "V1": {
+      "sample": {
+        "alpha": 0.05,
+        "minimumRunsPerPeriod": 2,
+        "minimumDaysPerPeriod": 2,
+        "minimumPairedItems": 20,
+        "minimumSpeedRunsPerStratum": 3
+      },
+      "endpoints": [
+        { "id": "P1", "name": "Quality", "margin": 3, "unit": "index points", "axis": "quality", "stratified": false },
+        { "id": "P2", "name": "Time to first answer text", "margin": 15, "unit": "%", "axis": "speedTelemetry", "stratified": true },
+        { "id": "P3", "name": "Answer streaming rate", "margin": 10, "unit": "%", "axis": "speedTelemetry", "stratified": true },
+        { "id": "P4", "name": "Work per turn", "margin": 15, "unit": "%", "axis": "work", "stratified": false },
+        { "id": "P5", "name": "Cost per question", "margin": 10, "unit": "%", "axis": "cost", "stratified": false }
+      ]
+    },
+    "V2": {
+      "sample": {
+        "alpha": 0.05,
+        "minimumRunsPerPeriod": 2,
+        "minimumDaysPerPeriod": 2,
+        "minimumPairedItems": 20,
+        "minimumSpeedRunsPerStratum": 3,
+        "minimumAttemptsPerStratum": 30
+      },
+      "endpoints": [
+        { "id": "P1", "name": "Quality", "margin": 3, "unit": "index points", "axis": "quality", "stratified": false },
+        { "id": "P2", "name": "Time to first answer text", "margin": 15, "unit": "%", "axis": "speedTelemetry", "stratified": true },
+        { "id": "P3", "name": "Answer streaming rate", "margin": 10, "unit": "%", "axis": "speedTelemetry", "stratified": true },
+        { "id": "P4", "name": "Work per turn", "margin": 15, "unit": "%", "axis": "work", "stratified": false },
+        { "id": "P5", "name": "Cost per question", "margin": 10, "unit": "%", "axis": "cost", "stratified": false },
+        { "id": "P6", "name": "Provider error rate", "margin": 1, "unit": "pp", "axis": "availability", "stratified": true }
+      ]
+    }
+  },
+  "clientOnly": {
+    "legacyAxis": "The client's legacyAxis (P2 falls back to speedLegacy) is not part of the protocol: the server applies it in ChatConsistencyAnalysisService, so only the client spec pins it."
+  }
+}

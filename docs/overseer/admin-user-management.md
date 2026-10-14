@@ -149,7 +149,8 @@ return the result DTO instead of an empty 200, and their services write the audi
 
 Locking out, banning, signing out everywhere and resetting two-factor renew the security stamp; signed-in
 website and Overseer sessions notice it within `IdentityLockout:SecurityStampValidationMinutes` (5) and
-end. A ban and a lockout also refuse every new sign-in at once.
+end, an open Overseer chat connection no later than its first hub call after that interval. A ban and a
+lockout also refuse every new sign-in at once.
 
 ### 3.2 Confirmation
 
@@ -416,7 +417,8 @@ Identity lockout is unchanged: `IdentityLockout:MaxFailedAccessAttempts` (10) co
 the account for `LockoutMinutes` (15). **Existing sessions end within
 `IdentityLockout:SecurityStampValidationMinutes` (5)** of a ban, a lockout, *Sign out everywhere* or a
 two-factor reset: both apps set `SecurityStampValidatorOptions.ValidationInterval` from it, at the cost
-of one user lookup per signed-in user per interval.
+of one user lookup per signed-in user per interval. Overseer's chat hub applies the same interval to an
+open chat connection, which ends no later than its first hub call once that interval has passed.
 
 ### 7.2 GnollHack: game APIs and `/api/session/create`
 

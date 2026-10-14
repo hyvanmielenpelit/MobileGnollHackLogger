@@ -2151,11 +2151,9 @@ public class BenchmarkReportPackRendererTests
         Assert.Null(BenchmarkReportChartPlacement.AnchorOf(researcher, "p9-other"));
 
         Assert.Equal("[[figure:p2-profile]]", BenchmarkReportChartPlacement.Marker("p2-profile"));
-        Assert.True(BenchmarkReportChartPlacement.TryParseMarker("  [[figure:p2-profile]] ", out string parsed));
-        Assert.Equal("p2-profile", parsed);
-        Assert.False(BenchmarkReportChartPlacement.TryParseMarker("[[figure:p9-other]]", out _));
-        Assert.False(BenchmarkReportChartPlacement.TryParseMarker("See [[figure:p2-profile]]", out _));
-        Assert.False(BenchmarkReportChartPlacement.TryParseMarker(null, out _));
+        Assert.True(BenchmarkReportChartPlacement.IsKnown("p2-profile"));
+        Assert.False(BenchmarkReportChartPlacement.IsKnown("p9-other"));
+        Assert.False(BenchmarkReportChartPlacement.IsKnown(null));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -3126,8 +3124,7 @@ public class BenchmarkReportPackRendererTests
         Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, "p1a-quality", chat));
         Assert.Equal(results, BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, "cc1-quality", chat));
         Assert.Empty(BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportChartAnchor.HowItCompares));
-        Assert.True(BenchmarkReportChartPlacement.TryParseMarker("[[figure:cc4-timeline]]", out string parsed));
-        Assert.Equal("cc4-timeline", parsed);
+        Assert.True(BenchmarkReportChartPlacement.IsKnown("cc4-timeline"));
     }
 
     [Theory]

@@ -4,6 +4,7 @@ import {
   BenchmarkSynthesisConvergenceRowDto,
   BenchmarkSynthesisFindingDto
 } from '../../../services/admin-benchmark.service';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 
 /** Distinguishes the element ids of the several panels a page may hold. */
 let synthesisPanelSequence = 0;
@@ -100,19 +101,9 @@ export class BenchmarkSynthesisPanelComponent {
   /** Left/Right move and wrap, Home/End jump to the ends, and focus follows selection. */
   onTabKeydown(event: KeyboardEvent, index: number): void {
     const keys = this.tabKeys;
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: keys.length - 1
-    };
-    const requested = Object.prototype.hasOwnProperty.call(targets, event.key) ? targets[event.key] : undefined;
-    if (requested === undefined || keys.length === 0) {
-      return;
-    }
-
-    event.preventDefault();
-    const next = keys[(requested + keys.length) % keys.length];
+    const target = rovingTabIndex(event, index, keys.length);
+    if (target === null) return;
+    const next = keys[target];
     this.selectTab(next);
     this.host.nativeElement.querySelector<HTMLElement>(`#${this.tabId(next)}`)?.focus();
   }

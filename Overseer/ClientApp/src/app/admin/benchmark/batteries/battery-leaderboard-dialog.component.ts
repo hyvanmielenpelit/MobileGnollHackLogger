@@ -25,6 +25,7 @@ import { SortHeaderComponent } from '../../../shared/data-table/sort-header.comp
 import { TableState } from '../../../shared/data-table/table-state';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import { MAX_COMPARISON_SOURCES } from '../model-comparison/comparison-source-picker.component';
 import { RunFactBadge, runFactBadges } from '../run-report-frame/run-facts';
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
@@ -480,19 +481,8 @@ export class BatteryLeaderboardDialogComponent implements OnInit, OnDestroy {
 
   /** §5 keyboard model: Left / Right move and wrap, Home / End jump; focus follows selection. */
   onTabKeydown(event: KeyboardEvent, index: number): void {
-    const count = this.classViews.length;
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: count - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined || count === 0) {
-      return;
-    }
-    event.preventDefault();
-    const next = (requested + count) % count;
+    const next = rovingTabIndex(event, index, this.classViews.length);
+    if (next === null) return;
     this.selectClass(next);
     this.cdr.detectChanges();
     this.dialog?.nativeElement.querySelector<HTMLElement>(`#bl-tab-${next}`)?.focus();

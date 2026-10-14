@@ -574,37 +574,14 @@ public class DocumentParserServiceTests
         Assert.Contains("does not appear to contain text", result.Error);
     }
 
-    // ---- CanParse --------------------------------------------------------------------------
-
-    [Theory]
-    [InlineData("application/pdf", "a.pdf", true)]
-    [InlineData(WordContentType, "a.docx", true)]
-    [InlineData(ExcelContentType, "a.xlsx", true)]
-    [InlineData("text/csv", "a.csv", true)]
-    [InlineData("text/plain", "a.txt", true)]
-    [InlineData("text/markdown", "a.md", true)]
-    [InlineData("text/plain; charset=utf-8", null, true)]
-    [InlineData(null, "a.docm", true)]
-    [InlineData("application/octet-stream", "a.bin", false)]
-    [InlineData("application/zip", "a.zip", false)]
-    [InlineData("image/png", "a.png", false)]
-    [InlineData(null, null, false)]
-    public void CanParseJudgesTheDeclarationAlone(string? contentType, string? fileName, bool expected)
-    {
-        Assert.Equal(expected, CreateParser().CanParse(contentType, fileName));
-    }
-
     [Theory]
     [InlineData("application/octet-stream", "a.bin")]
     [InlineData("application/zip", "a.zip")]
     [InlineData("image/png", "a.png")]
-    public async Task WhateverCanParseRefusesParseAsyncRefusesToo(string contentType, string fileName)
+    public async Task AnUnsupportedDeclarationIsRefusedByParseAsync(string contentType, string fileName)
     {
         var parser = CreateParser();
-        Assert.False(parser.CanParse(contentType, fileName));
 
-        /* The two must agree on what is even attempted, or a caller that pre-checks with
-           CanParse gets a different answer from the one that does the work. */
         var result = await parser.ParseAsync(
             Encoding.UTF8.GetBytes("some content"), contentType, fileName, TestContext.Current.CancellationToken);
 
@@ -617,10 +594,9 @@ public class DocumentParserServiceTests
     [InlineData("text/plain", "a.txt", "text")]
     [InlineData("text/markdown", "a.md", "text")]
     [InlineData(null, "a.json", "text")]
-    public async Task WhatCanParseAdmitsParseAsyncActuallyAttempts(string? contentType, string fileName, string format)
+    public async Task ASupportedDeclarationIsAttemptedByParseAsync(string? contentType, string fileName, string format)
     {
         var parser = CreateParser();
-        Assert.True(parser.CanParse(contentType, fileName));
 
         var result = await parser.ParseAsync(
             Encoding.UTF8.GetBytes("a,b\r\n1,2\r\n"), contentType, fileName, TestContext.Current.CancellationToken);

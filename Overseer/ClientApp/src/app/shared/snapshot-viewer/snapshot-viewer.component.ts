@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { Observable, Subscription, isObservable } from 'rxjs';
 import { AdminBenchmarkService, BenchmarkGameSnapshotDto, BenchmarkRunBoardDto, BoardFactsCheckDto } from '../../services/admin-benchmark.service';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
+import { rovingTabIndex } from '../../utils/roving-tab.util';
 import { SnapshotTextEditorComponent } from './snapshot-text-editor.component';
 import { DIGEST_MAX_CHARS, SnapshotDigestEditorComponent } from './snapshot-digest-editor.component';
 
@@ -278,16 +279,8 @@ export class SnapshotViewerComponent implements OnDestroy {
   /* Arrow keys wrap, Home and End jump; selection follows focus. */
   onTabKeydown(event: KeyboardEvent, index: number) {
     const sections = this.visibleSections;
-    const count = sections.length;
-    let nextIndex: number;
-    switch (event.key) {
-      case 'ArrowRight': nextIndex = (index + 1) % count; break;
-      case 'ArrowLeft': nextIndex = (index - 1 + count) % count; break;
-      case 'Home': nextIndex = 0; break;
-      case 'End': nextIndex = count - 1; break;
-      default: return;
-    }
-    event.preventDefault();
+    const nextIndex = rovingTabIndex(event, index, sections.length);
+    if (nextIndex === null) return;
     const next = sections[nextIndex].id;
     this.selectTab(next);
     document.getElementById(`snapshot-tab-${next}-${this.uid}`)?.focus();

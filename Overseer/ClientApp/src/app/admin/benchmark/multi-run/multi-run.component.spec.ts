@@ -612,6 +612,7 @@ describe('MultiRunComponent', () => {
     expect(component.formatCost(2.5311)).toBe('$2.5311');
     expect(component.formatCost(0.0042)).toBe('$0.0042');
     expect(component.formatCost(null)).toBe('—');
+    expect(component.formatCost(Number.NaN)).toBe('—');
   });
 
   it('should render a p-value below the column resolution as a bound rather than as zero', () => {

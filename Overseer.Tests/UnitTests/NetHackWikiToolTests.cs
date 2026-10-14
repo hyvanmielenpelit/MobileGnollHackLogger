@@ -583,15 +583,12 @@ Foo has no mention of the search term in its title or body.
     }
 
     /// <summary>
-    /// A service whose indexing never finishes. The service starts its pass in the constructor, so
-    /// the pass gets no path to index and the task the tools check is replaced by one that never
-    /// completes.
+    /// A service whose indexing never finishes: its startup pass is never started, so the task the
+    /// tools check never completes.
     /// </summary>
     private static NetHackWikiService CreateServiceStillIndexing(IConfiguration config)
     {
-        var service = new NetHackWikiService(config);
-        typeof(NetHackWikiService).GetProperty(nameof(NetHackWikiService.InitializationTask))!
-            .SetValue(service, new TaskCompletionSource().Task);
+        var service = new NetHackWikiService(config, null, null, startIndexing: false);
         Assert.False(service.IsIndexingComplete);
         return service;
     }

@@ -564,6 +564,10 @@ public class BenchmarkComparabilityIndexTests
     }
 
     [Fact]
+    public void RunCap_CoversTheWholeRunHistoryList()
+        => Assert.True(BenchmarkComparabilityIndexService.MaxRunIds >= AdminBenchmarkController.MaxRunListSize);
+
+    [Fact]
     public async Task TooManyGroups_IsRefusedNamingTheCap()
     {
         using var db = new ApplicationDbContext(NewDatabase());

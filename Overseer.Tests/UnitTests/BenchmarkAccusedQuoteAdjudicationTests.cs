@@ -159,8 +159,6 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         Assert.Equal(
             "Keep a healthy supply of vegan food such as fortune cookies, and candy bars, since as a vegan Monk you will not eat corpses.",
             quote.Text);
-        Assert.Contains("healthy supply of vegan food", quote.Text);
-        Assert.Contains("cookies, and candy", quote.Text);
         Assert.Equal(new[] { "healthy supply of vegan food", "cookies, and candy" }, quote.QuotedFragments);
         Assert.Equal(
             "The answer recommends a \"healthy supply of vegan food\" such as fortune \"cookies, and candy\", but fortune cookies and candy bars are not vegan in GnollHack.",
@@ -974,24 +972,16 @@ public class BenchmarkAccusedQuoteAdjudicationTests
             SuspectedFalse = true
         };
 
-    [Fact]
-    public void ASupportedDockedSuspicion_ContestsTheAccuracyDeduction()
+    [Theory]
+    [InlineData(BenchmarkClaimVerdict.Supported, true)]
+    [InlineData(BenchmarkClaimVerdict.Refuted, false)]
+    public void ADockedSuspicion_ContestsTheAccuracyDeduction_OnlyWhenSupported(BenchmarkClaimVerdict verdict, bool contested)
     {
         var answer = Run56Q18Graded();
 
-        BenchmarkService.ApplyClaimVerificationOutcome(answer, new[] { FlameBurstVerdict(BenchmarkClaimVerdict.Supported) }, false, null);
+        BenchmarkService.ApplyClaimVerificationOutcome(answer, new[] { FlameBurstVerdict(verdict) }, false, null);
 
-        Assert.NotEqual(0, answer.AnswerFlags & (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction);
-    }
-
-    [Fact]
-    public void ARefutedDockedSuspicion_ContestsNothing()
-    {
-        var answer = Run56Q18Graded();
-
-        BenchmarkService.ApplyClaimVerificationOutcome(answer, new[] { FlameBurstVerdict(BenchmarkClaimVerdict.Refuted) }, false, null);
-
-        Assert.Equal(0, answer.AnswerFlags & (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction);
+        Assert.Equal(contested, (answer.AnswerFlags & (int)BenchmarkAnswerFlags.ContestedAccuracyDeduction) != 0);
     }
 
     // Run 98 Q16, member A's Accuracy evidence verbatim. The answer and rubric below are
@@ -1028,6 +1018,8 @@ public class BenchmarkAccusedQuoteAdjudicationTests
     [InlineData("consistent with the source", true)]
     [InlineData("correct but overstated", false)]
     [InlineData("the answer inverts the direction, as its own worked example correctly shows", false)]
+    [InlineData("the answer reverses the sign, which the table correctly gives", false)]
+    [InlineData("it states the opposite, although the example is correct", false)]
     [InlineData("this implies more than it says", false)]
     [InlineData("the answer says", null)]
     [InlineData("a notable claim", null)]
@@ -1697,25 +1689,6 @@ public class BenchmarkAccusedQuoteAdjudicationTests
         Assert.Equal(new[] { "Donate for protection", "cheapest" }, item.QuotedFragments);
         Assert.Equal("B: donate later. A: the price does not change.", item.Charge);
         Assert.Equal(new[] { "A", "B" }, item.RaisedBy);
-    }
-
-    [Fact]
-    public void UnionManifest_ClaimsOfDifferentAnswers_AreNotMerged()
-    {
-        const string otherAnswerText = "Pray first. " + Cheapest;
-        var first = BenchmarkService.BuildUnionClaimManifest(new[]
-        {
-            Contribution(BenchmarkPanelMember.A, new[] { Cheapest })
-        }, otherAnswerText);
-        var second = BenchmarkService.BuildUnionClaimManifest(new[]
-        {
-            Contribution(BenchmarkPanelMember.B, new[] { DonateAndCheapest })
-        }, DonationAnswerText);
-
-        Assert.Equal(Cheapest, Assert.Single(first).Text);
-        Assert.Equal(new[] { "A" }, first[0].RaisedBy);
-        Assert.Equal(DonateAndCheapest, Assert.Single(second).Text);
-        Assert.Equal(new[] { "B" }, second[0].RaisedBy);
     }
 
     [Fact]

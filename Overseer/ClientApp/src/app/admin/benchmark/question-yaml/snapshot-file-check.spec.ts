@@ -4,6 +4,7 @@ describe('snapshot-file-check', () => {
   it('applies the server rule for HTML', () => {
     expect(looksLikeHtml('﻿  <!DOCTYPE html><html><body>x')).toBe(true);
     expect(looksLikeHtml('<pre>GnollHack</pre>')).toBe(true);
+    expect(looksLikeHtml('<PRE>map</PRE>')).toBe(true);
     expect(looksLikeHtml('<div>GnollHack</div>')).toBe(false);
     expect(looksLikeHtml('GnollHack 4.2.0 <html>')).toBe(false);
   });

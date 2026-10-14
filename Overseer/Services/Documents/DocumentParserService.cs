@@ -142,15 +142,6 @@ public sealed class DocumentParserService
     /// </summary>
     public int MaxExtractedCharacters { get; }
 
-    /// <summary>Whether this content type or extension has a parser at all.</summary>
-    /// <remarks>
-    /// Judges the declaration alone, because that is all a caller has before reading the bytes.
-    /// <see cref="ParseAsync"/> is the stricter of the two: it also sniffs the content, so it can
-    /// parse a file whose declaration says nothing useful and can refuse one whose declaration
-    /// the bytes contradict.
-    /// </remarks>
-    public bool CanParse(string? contentType, string? fileName) => DeclaredKind(contentType, fileName) != DocumentKind.None;
-
     /// <summary>
     /// Extracts text. Never throws for a malformed or hostile document: a failure is a
     /// <see cref="ParsedDocument"/> with <see cref="ParsedDocument.Succeeded"/> false.

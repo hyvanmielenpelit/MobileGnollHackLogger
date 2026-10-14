@@ -33,7 +33,8 @@ using Overseer.Models;
 public class BenchmarkComparabilityIndexService
 {
     /// <summary>
-    /// The most runs one index may cover. The runs table itself is capped at 1000 rows, so this is
+    /// The most runs one index may cover. The runs table itself is capped at
+    /// <see cref="Overseer.Controllers.AdminBenchmarkController.MaxRunListSize"/> rows, so this is
     /// the whole of what a picker can offer and the query is bounded by construction.
     /// </summary>
     public const int MaxRunIds = 1000;

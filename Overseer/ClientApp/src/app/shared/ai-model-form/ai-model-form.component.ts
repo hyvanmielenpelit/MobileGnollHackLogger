@@ -10,6 +10,7 @@ import {
 import { AdminService, EndpointPolicySummaryDto } from '../../services/admin.service';
 import { ModelAvailability, needsAttention } from '../model-availability/model-availability';
 import { ModelAvailabilityNoticeComponent } from '../model-availability/model-availability-notice.component';
+import { formatThinkingLevel } from '../../utils/model-badge-format.util';
 
 export type DisplayNameMode = 'model_name' | 'model_id' | 'custom';
 
@@ -931,10 +932,7 @@ export class AiModelFormComponent implements OnInit, OnChanges {
     return lvl ? `Default (Adaptive, ${this.formatThinkingLevel(lvl)})` : 'Default';
   }
 
-  formatThinkingLevel(level: string): string {
-    if (!level) return 'Default';
-    return level.charAt(0).toUpperCase() + level.slice(1);
-  }
+  readonly formatThinkingLevel = formatThinkingLevel;
 
   formatServiceTier(tier: string): string {
     if (!tier) return 'None (Default)';

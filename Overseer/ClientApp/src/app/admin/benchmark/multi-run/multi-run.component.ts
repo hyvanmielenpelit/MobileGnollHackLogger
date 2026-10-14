@@ -28,6 +28,7 @@ import {
   BenchmarkRunSummaryDto
 } from '../../../services/admin-benchmark.service';
 import { RUN_HISTORY_LIMIT } from '../benchmark.models';
+import { formatCostAmount } from '../benchmark-run-format';
 
 // ---------------------------------------------------------------------------------------------
 // The shapes of BenchmarkGroupAnalysisDto.result and .comparison.
@@ -1172,13 +1173,10 @@ export class MultiRunComponent implements OnInit, OnChanges {
 
   /**
    * Money at four decimals fixed, so a sub-cent cost like $0.0007 renders as $0.0007, not $0.00,
-   * and zero renders as $0.0000. Matches `formatRunEstimatedCost` on the run cards.
+   * and zero renders as $0.0000; a missing or non-finite value renders as a dash. Matches
+   * `formatRunEstimatedCost` on the run cards.
    */
-  formatCost(value: number | null | undefined): string {
-    if (value == null) return '—';
-    const pipe = new DecimalPipe('en-US');
-    return `$${pipe.transform(value, '1.4-4')}`;
-  }
+  readonly formatCost = (value: number | null | undefined): string => formatCostAmount(value, '—');
 
   /**
    * `1 question`, `18 questions`, `17.5 questions`. Kept apart from Model Comparison's copy: the two

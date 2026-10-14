@@ -527,6 +527,41 @@ public class BenchmarkRunFinalizerTests
     }
 
     [Fact]
+    public void QualityIndexItems_AndTheirRawCounterpart_KeepTheUnansweredZero()
+    {
+        var a1 = MakeAnswer(1);
+        a1.QualityScore = 80;
+        a1.RawQualityScore = 90;
+        a1.AssessedDifficulty = 25;
+
+        var a2 = MakeAnswer(2);
+        a2.QualityScore = 60;
+        a2.RawQualityScore = 60;
+        a2.AssessedDifficulty = 75;
+
+        var unanswered = MakeUnansweredAnswer(3, assessedDifficulty: 50);
+        var answers = new List<BenchmarkRunAnswer> { a1, a2, unanswered };
+
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3, Answers = answers };
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        var items = BenchmarkRunFinalizer.QualityIndexItems(answers, isPanelRun: false);
+        var rawItems = BenchmarkRunFinalizer.RawQualityIndexItems(answers, isPanelRun: false);
+
+        Assert.Equal(3, items.Count);
+        Assert.Equal(3, rawItems.Count);
+        Assert.Contains(((double?)0.0, 50), items);
+        Assert.Contains(((double?)0.0, 50), rawItems);
+
+        // (25*80 + 75*60 + 50*0) / 150 = 6500 / 150 = 43
+        Assert.Equal(43, BenchmarkScoring.QualityIndex(items));
+        Assert.Equal(43, run.QualityIndex);
+
+        // (25*90 + 75*60 + 50*0) / 150 = 6750 / 150 = 45
+        Assert.Equal(45, BenchmarkScoring.QualityIndex(rawItems));
+    }
+
+    [Fact]
     public void Finalizer_SumsToolTimeIntoRunOverhead()
     {
         var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 2 };
@@ -971,6 +1006,22 @@ public class BenchmarkRunFinalizerTests
         Assert.NotNull(run.QualityIndexStandardError);
         Assert.NotNull(run.UnweightedQualityIndex);
         Assert.NotNull(run.SpeedIndex);
+    }
+
+    [Theory]
+    [InlineData(1, BenchmarkAnswerStatus.ProviderError, true)]
+    [InlineData(0, BenchmarkAnswerStatus.Ok, false)]
+    // A run finalized before harness version 21 recorded no count: the answers decide.
+    [InlineData(null, BenchmarkAnswerStatus.ProviderError, true)]
+    [InlineData(null, BenchmarkAnswerStatus.Ok, false)]
+    public void WithholdsIndices_ReadsTheStoredCount_OrCountsTheAnswersWhenNoneWasRecorded(
+        int? storedCount, BenchmarkAnswerStatus secondStatus, bool expected)
+    {
+        var answers = new[] { MakeAnswer(1), MakeAnswer(2, status: secondStatus) };
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 2, TerminalFailureAnswerCount = storedCount };
+
+        Assert.Equal(expected, BenchmarkRunFinalizer.WithholdsIndices(run, answers));
+        Assert.Equal(storedCount, run.TerminalFailureAnswerCount);
     }
 
     [Fact]

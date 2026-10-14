@@ -26,6 +26,10 @@ using Microsoft.Extensions.DependencyInjection;
 [ApiController]
 public class AdminBenchmarkController : ControllerBase
 {
+    /// <summary>The run count <c>GET runs</c> returns by default and at most; the comparability index cap must cover the latter.</summary>
+    internal const int DefaultRunListSize = 50;
+    internal const int MaxRunListSize = 1000;
+
     private readonly ApplicationDbContext _dbContext;
     private readonly BenchmarkService _benchmarkService;
     private readonly BenchmarkScoringProfileService _scoringProfileService;
@@ -3344,11 +3348,10 @@ public class AdminBenchmarkController : ControllerBase
             FinalScore = run.FinalScore,
             ComputedScore = run.ComputedScore,
             QualityIndex = run.QualityIndex,
-            RawQualityIndex = BenchmarkScoring.QualityIndex(
-                run.Answers
-                    .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && BenchmarkScoring.IndexQuality(a, isPanelRun).HasValue)
-                    .Select(a => (BenchmarkScoring.IndexRawQuality(a, isPanelRun), a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
-                    .ToList()),
+            // Withheld with the headline indices.
+            RawQualityIndex = BenchmarkRunFinalizer.WithholdsIndices(run, run.Answers)
+                ? null
+                : BenchmarkScoring.QualityIndex(BenchmarkRunFinalizer.RawQualityIndexItems(run.Answers, isPanelRun)),
             UnweightedQualityIndex = run.UnweightedQualityIndex,
             QualityIndexStandardError = run.QualityIndexStandardError,
             SpeedIndex = run.SpeedIndex,
@@ -3813,7 +3816,7 @@ public class AdminBenchmarkController : ControllerBase
             query = query.Where(r => r.BenchmarkSuiteId == suiteId.Value);
         }
 
-        int limit = Math.Clamp(take ?? 50, 1, 1000);
+        int limit = Math.Clamp(take ?? DefaultRunListSize, 1, MaxRunListSize);
 
         var rows = await query
             .OrderByDescending(r => r.StartedAtUtc)

@@ -23,6 +23,7 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { showReasoningBadge } from '../../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import {
   ForestMarks,
   VerdictShape,
@@ -438,13 +439,9 @@ export class PairedTestsViewComponent implements OnInit, OnChanges, OnDestroy {
   /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection, onto a refusing tab too. */
   onModeKeydown(event: KeyboardEvent, index: number): void {
     const modes: BenchmarkPairedComparisonMode[] = ['Reference', 'AllPairs'];
-    const targets: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: modes.length - 1 };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-    event.preventDefault();
-    const next = modes[(requested + modes.length) % modes.length];
+    const target = rovingTabIndex(event, index, modes.length);
+    if (target === null) return;
+    const next = modes[target];
     this.selectMode(next);
     this.cdr.detectChanges();
     document.getElementById(`mc-paired-mode-${next}`)?.focus();

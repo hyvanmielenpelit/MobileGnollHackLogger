@@ -13,7 +13,7 @@ public class ChatHistoryBudgetTests
     private const int Headroom = 40000;
     private const decimal Factor = 1.3m;
 
-    private static ModelMetadata HaikuMetadata() => new ModelMetadataService().GetMetadata("Anthropic", "claude-haiku-5-5");
+    private static ModelMetadata LongContextMetadata() => Metadata(872000, 100000);
 
     private static ModelMetadata Metadata(int maxInputTokens, int? threshold) => new()
     {
@@ -28,15 +28,15 @@ public class ChatHistoryBudgetTests
     [InlineData(200000)]
     public void ExplicitLimit_AlwaysWins_EvenAboveTheThreshold(int explicitLimit)
     {
-        var limit = ChatHistoryBudget.Resolve(explicitLimit, HaikuMetadata(), true, Headroom, Factor);
+        var limit = ChatHistoryBudget.Resolve(explicitLimit, LongContextMetadata(), true, Headroom, Factor);
 
         Assert.Equal(new ChatHistoryLimit(explicitLimit, ChatHistoryLimitSource.Explicit), limit);
     }
 
     [Fact]
-    public void ClaudeHaiku55_WithDefaults_IsTheLongContextBudget()
+    public void LongContextCard_WithDefaults_IsTheLongContextBudget()
     {
-        var meta = HaikuMetadata();
+        var meta = LongContextMetadata();
         Assert.Equal(872000, meta.MaxInputTokens);
 
         var limit = ChatHistoryBudget.Resolve(null, meta, true, Headroom, Factor);
@@ -64,7 +64,7 @@ public class ChatHistoryBudgetTests
     [Fact]
     public void SwitchedOff_IsTheModelMaximum()
     {
-        var limit = ChatHistoryBudget.Resolve(null, HaikuMetadata(), false, Headroom, Factor);
+        var limit = ChatHistoryBudget.Resolve(null, LongContextMetadata(), false, Headroom, Factor);
 
         Assert.Equal(new ChatHistoryLimit(872000, ChatHistoryLimitSource.ModelMaximum), limit);
     }
@@ -74,7 +74,7 @@ public class ChatHistoryBudgetTests
     [InlineData(150000)]
     public void HeadroomAtOrAboveTheThreshold_IsTheModelMaximum(int headroom)
     {
-        var limit = ChatHistoryBudget.Resolve(null, HaikuMetadata(), true, headroom, Factor);
+        var limit = ChatHistoryBudget.Resolve(null, LongContextMetadata(), true, headroom, Factor);
 
         Assert.Equal(new ChatHistoryLimit(872000, ChatHistoryLimitSource.ModelMaximum), limit);
     }
@@ -82,7 +82,7 @@ public class ChatHistoryBudgetTests
     [Fact]
     public void ZeroFactor_IsTreatedAsOne()
     {
-        var limit = ChatHistoryBudget.Resolve(null, HaikuMetadata(), true, Headroom, 0m);
+        var limit = ChatHistoryBudget.Resolve(null, LongContextMetadata(), true, Headroom, 0m);
 
         Assert.Equal(new ChatHistoryLimit(60000, ChatHistoryLimitSource.LongContextBudget), limit);
     }
@@ -90,7 +90,7 @@ public class ChatHistoryBudgetTests
     [Fact]
     public void NegativeHeadroom_IsTreatedAsZero()
     {
-        var limit = ChatHistoryBudget.Resolve(null, HaikuMetadata(), true, -5000, 1.0m);
+        var limit = ChatHistoryBudget.Resolve(null, LongContextMetadata(), true, -5000, 1.0m);
 
         Assert.Equal(new ChatHistoryLimit(100000, ChatHistoryLimitSource.LongContextBudget), limit);
     }

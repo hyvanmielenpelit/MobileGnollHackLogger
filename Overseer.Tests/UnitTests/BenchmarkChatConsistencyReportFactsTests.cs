@@ -7,6 +7,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.ChatConsistency;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
@@ -1196,14 +1197,5 @@ public class BenchmarkChatConsistencyReportFactsTests
     }
 
     /// <summary>The event-group fixture the client's report-chart spec reads too, from the repository root.</summary>
-    private static string EventGroupsFixturePath()
-    {
-        var directory = new System.IO.DirectoryInfo(AppContext.BaseDirectory);
-        while (directory != null && !System.IO.File.Exists(System.IO.Path.Combine(directory.FullName, "MobileGnollHackLogger.slnx")))
-        {
-            directory = directory.Parent;
-        }
-        Assert.NotNull(directory);
-        return System.IO.Path.Combine(directory!.FullName, "Overseer", "ClientApp", "src", "app", "admin", "benchmark", "chat-consistency-tab", "cc-event-groups.fixture.json");
-    }
+    private static string EventGroupsFixturePath() => ClientAppFixtures.ChatConsistencyFixture("cc-event-groups.fixture.json");
 }

@@ -19,6 +19,7 @@ import { copyToClipboard } from '../../../utils/clipboard.util';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { saveFigureBlob } from './figure-export';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import { anyOfFilter, customFilter, TableState } from '../../../shared/data-table/table-state';
 import {
   CardListChip,
@@ -548,19 +549,8 @@ export class ComparisonSourcePickerComponent implements OnInit, OnChanges, OnDes
    * somewhere unexpected.
    */
   onSourceTabKeydown(event: KeyboardEvent, index: number): void {
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: this.sourceTabs.length - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-
-    event.preventDefault();
-    const next = (requested + this.sourceTabs.length) % this.sourceTabs.length;
+    const next = rovingTabIndex(event, index, this.sourceTabs.length);
+    if (next === null) return;
     const tab = this.sourceTabs[next];
     this.selectSourceTab(tab);
     document.getElementById('csp-src-tab-' + tab)?.focus();

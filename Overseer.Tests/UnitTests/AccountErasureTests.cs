@@ -8,6 +8,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using MobileGnollHackLogger.Data;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -37,8 +38,7 @@ public sealed class AccountErasureTests : IDisposable
     {
         Directory.CreateDirectory(_root);
 
-        _connection = new SqliteConnection("Filename=:memory:");
-        _connection.Open();
+        _connection = SqliteSchemaTemplate.OpenCopy();
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -48,7 +48,6 @@ public sealed class AccountErasureTests : IDisposable
         _scope = _provider.CreateScope();
         _db = _scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         _userManager = _scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        _db.Database.EnsureCreated();
     }
 
     public void Dispose()

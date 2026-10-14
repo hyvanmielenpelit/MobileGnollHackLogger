@@ -271,14 +271,13 @@ public class EphemeralSessionStoreTests
         });
         held.AddMessage(id => EphemeralMessage.From(id, source));
         var toolCall = Assert.Single(Assert.Single(held.Messages).ToolCalls);
-        /* The payload buffers are private, so they are read by reflection: overwriting them in
-           place is the part of the teardown that is more than a dropped reference. */
-        var buffers = new[] { "_args", "_result", "_error" }
-            .Select(name => (byte[])typeof(EphemeralToolCall)
-                .GetField(name, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
-                .GetValue(toolCall)!)
-            .ToArray();
-        Assert.All(buffers, b => Assert.NotEmpty(b));
+        Assert.NotNull(toolCall.ArgsText);
+        Assert.NotNull(toolCall.Result);
+        Assert.NotNull(toolCall.Error);
+        /* The probe holds the payload buffers themselves: overwriting them in place is the part
+           of the teardown that is more than a dropped reference. */
+        var erased = toolCall.CaptureErasureProbe();
+        Assert.False(erased());
 
         store.Close(held.Ref, Owner);
 
@@ -287,7 +286,7 @@ public class EphemeralSessionStoreTests
         Assert.Null(toolCall.ArgsText);
         Assert.Null(toolCall.Result);
         Assert.Null(toolCall.Error);
-        Assert.All(buffers, buffer => Assert.All(buffer, b => Assert.Equal(0, b)));
+        Assert.True(erased());
     }
 
     [Fact]

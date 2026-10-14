@@ -533,9 +533,6 @@ public static class BenchmarkReportPackValidator
     public static bool RecommendationsRequireEvidence(BenchmarkReportAudience audience)
         => audience == BenchmarkReportAudience.TechnicalReport;
 
-    /// <summary>The word cap of a slot of a per-model document, or null when it has none.</summary>
-    public static int? SlotMaxWords(BenchmarkReportAudience audience, string slot) => SlotMaxWords(audience, slot, comparisonScope: false);
-
     /// <summary>The word cap of a slot of a per-model or comparison-scope document, or null when it has none.</summary>
     public static int? SlotMaxWords(BenchmarkReportAudience audience, string slot, bool comparisonScope) => comparisonScope
         ? slot switch

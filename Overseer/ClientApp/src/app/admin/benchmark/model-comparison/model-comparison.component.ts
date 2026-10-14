@@ -27,6 +27,7 @@ import type { Subscription } from 'rxjs';
 
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
 import { parseServerUtcDate } from '../../../utils/date.util';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import {
   FigureChrome,
   FigureFooter,
@@ -1547,19 +1548,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * `aria-disabled` rather than `disabled` — so the two calls here are deliberately independent.
    */
   onStepKeydown(event: KeyboardEvent, index: number): void {
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: this.steps.length - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-
-    event.preventDefault();
-    const next = this.steps[(requested + this.steps.length) % this.steps.length];
+    const target = rovingTabIndex(event, index, this.steps.length);
+    if (target === null) return;
+    const next = this.steps[target];
     this.goToStep(next);
     document.getElementById(`mc-step-tab-${next}`)?.focus();
   }
@@ -4008,10 +3999,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** Left/Right move and wrap, Home/End jump to the ends, over the visible tabs; focus follows selection. */
   onSidebarTabKeydown(event: KeyboardEvent, index: number): void {
     const tabs = this.visibleSidebarTabs;
-    const next = this.rovingTabIndex(event, index, tabs.length);
-    if (next === null) {
-      return;
-    }
+    const next = rovingTabIndex(event, index, tabs.length);
+    if (next === null) return;
     const tab = tabs[next].id;
     this.selectSidebarTab(tab);
     this.cdr.detectChanges();
@@ -4096,10 +4085,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection, onto a refusing tab too. */
   onFigureTabKeydown(event: KeyboardEvent, index: number): void {
-    const next = this.rovingTabIndex(event, index, this.figureTabs.length);
-    if (next === null) {
-      return;
-    }
+    const next = rovingTabIndex(event, index, this.figureTabs.length);
+    if (next === null) return;
     const tab = this.figureTabs[next].id;
     this.selectFigureTab(tab);
     this.cdr.detectChanges();
@@ -4127,22 +4114,6 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
     event.preventDefault();
     this.openInSingle(card);
-  }
-
-  /** The §5 tab keyboard model's target index, or null for a key it does not handle. */
-  private rovingTabIndex(event: KeyboardEvent, index: number, count: number): number | null {
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: count - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return null;
-    }
-    event.preventDefault();
-    return (requested + count) % count;
   }
 
   private writeStoredSidebar(): void {
@@ -4235,10 +4206,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
   onStyleFamilyKeydown(event: KeyboardEvent, index: number): void {
     const families = this.styleFamilies;
-    const next = this.rovingTabIndex(event, index, families.length);
-    if (next === null) {
-      return;
-    }
+    const next = rovingTabIndex(event, index, families.length);
+    if (next === null) return;
     const kind = families[next].kind;
     this.selectStyleFamily(kind);
     this.cdr.detectChanges();

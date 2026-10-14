@@ -319,14 +319,5 @@ describe('QuestionYamlHelpDialogComponent', () => {
       expect(details.every(d => d.getAttribute('name') === 'suite-yaml-help-example')).toBe(true);
       expect(details.map(d => d.open)).toEqual(SUITE_YAML_EXAMPLES.map((_, i) => i === 0));
     });
-
-    it('wraps the arrow keys round to the last tab', () => {
-      component.open();
-      const first = tabButtons()[0];
-      first.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
-      fixture.detectChanges();
-      expect(component.activeTab).toBe('ai');
-      expect(document.activeElement!.id).toBe('suite-yaml-help-tab-ai');
-    });
   });
 });

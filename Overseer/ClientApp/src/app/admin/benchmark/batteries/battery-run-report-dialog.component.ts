@@ -29,6 +29,7 @@ import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { copyToClipboard } from '../../../utils/clipboard.util';
 import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import { batteryStatusBadgeClass, getScoreBadgeClass } from '../benchmark-run-format';
 import { BenchmarkFingerprintEntry, COPY_STATUS_MS, FINGERPRINT_LONG_NAMES } from '../benchmark.models';
 import { BenchmarkDownloadCenterComponent } from '../download-center/benchmark-download-center.component';
@@ -1013,14 +1014,9 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
   }
 
   onTabKeydown(event: KeyboardEvent, index: number): void {
-    const count = BATTERY_RUN_REPORT_TABS.length;
-    const targets: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: count - 1 };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-    event.preventDefault();
-    const key = BATTERY_RUN_REPORT_TABS[(requested + count) % count].key;
+    const next = rovingTabIndex(event, index, BATTERY_RUN_REPORT_TABS.length);
+    if (next === null) return;
+    const key = BATTERY_RUN_REPORT_TABS[next].key;
     this.selectTab(key);
     this.cdr.detectChanges();
     document.getElementById(`brr-tab-${key}`)?.focus();

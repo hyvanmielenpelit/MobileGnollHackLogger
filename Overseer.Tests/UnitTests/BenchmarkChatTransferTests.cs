@@ -90,21 +90,21 @@ public class BenchmarkChatTransferTests
     {
         var xPositive = new double[] { 1, 2, 3, 4, 5 };
         var yPositive = new double[] { 2, 4, 6, 8, 10 };
-        var rPos = BenchmarkChatTransfer.ComputePearsonCorrelation(xPositive, yPositive);
+        var rPos = BenchmarkChatTransfer.PearsonCorrelation(xPositive, yPositive);
         Assert.NotNull(rPos);
         Assert.InRange(rPos.Value, 0.999, 1.001);
 
         var yNegative = new double[] { 10, 8, 6, 4, 2 };
-        var rNeg = BenchmarkChatTransfer.ComputePearsonCorrelation(xPositive, yNegative);
+        var rNeg = BenchmarkChatTransfer.PearsonCorrelation(xPositive, yNegative);
         Assert.NotNull(rNeg);
         Assert.InRange(rNeg.Value, -1.001, -0.999);
 
         // Constant values -> standard deviation is 0 -> null
         var yConstant = new double[] { 5, 5, 5, 5, 5 };
-        Assert.Null(BenchmarkChatTransfer.ComputePearsonCorrelation(xPositive, yConstant));
+        Assert.Null(BenchmarkChatTransfer.PearsonCorrelation(xPositive, yConstant));
 
         // Less than 2 pairs -> null
-        Assert.Null(BenchmarkChatTransfer.ComputePearsonCorrelation(new double[] { 1 }, new double[] { 2 }));
+        Assert.Null(BenchmarkChatTransfer.PearsonCorrelation(new double[] { 1 }, new double[] { 2 }));
     }
 
     [Fact]

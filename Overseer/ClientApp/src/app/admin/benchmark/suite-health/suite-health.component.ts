@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { jobStatusLabel } from '../../../utils/job-status-label.util';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import {
   AdminBenchmarkService,
   BenchmarkSuiteItemAnalysisDto,
@@ -223,14 +224,8 @@ export class SuiteHealthComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   onTabKeydown(event: KeyboardEvent, index: number): void {
-    let next = index;
-    if (event.key === 'ArrowRight') next = (index + 1) % this.tabOrder.length;
-    else if (event.key === 'ArrowLeft') next = (index - 1 + this.tabOrder.length) % this.tabOrder.length;
-    else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = this.tabOrder.length - 1;
-    else return;
-
-    event.preventDefault();
+    const next = rovingTabIndex(event, index, this.tabOrder.length);
+    if (next === null) return;
     this.activeTab = this.tabOrder[next];
     const target = document.getElementById(`sh-tab-${this.activeTab}`);
     target?.focus();

@@ -2904,7 +2904,9 @@ const LANEY_D2 = 1.128;
  * the baseline units with attempts; for each, σ_p,i = √(p̄(1 − p̄) ÷ n_i) and z_i = (p_i − p̄) ÷ σ_p,i;
  * σ_Z = MR̄ ÷ 1.128, MR̄ the mean absolute moving range of consecutive z_i (1 with fewer than two units
  * or p̄ of 0 or 1); the limits p̄ ± 3 · √(p̄(1 − p̄) ÷ nI) · σ_Z, the lower clipped at 0 and the upper at 1.
- * Null when the baseline holds no attempt or `nI` is not positive.
+ * Null when the baseline holds no attempt or `nI` is not positive; for the latter the server throws.
+ * `cc-laney-limits.fixture.json` pins the two together: this client's spec and the server's
+ * `ChatConsistencyClientParityTests` both read it.
  */
 export function ccLaneyPPrimeLimits(baseline: readonly { k: number; n: number }[], nI: number): CcLaneyLimits | null {
   if (!(nI > 0)) return null;

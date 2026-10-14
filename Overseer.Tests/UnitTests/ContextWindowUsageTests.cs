@@ -13,7 +13,7 @@ namespace Overseer.Tests.UnitTests;
 public class ContextWindowUsageTests
 {
     [Fact]
-    public void TurnWithUsage_PersistsPromptOutputWindowAndInputLimit()
+    public void TurnWithUsage_ReportsThePromptAndOutputTokens()
     {
         var runResult = new AgentRunResult { LastPromptTokens = 204400, LastOutputTokens = 1200 };
 

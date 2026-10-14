@@ -123,17 +123,4 @@ public class BenchmarkQuestionAssessmentTests
 
         Assert.Equal(2, question.ItemRevision);
     }
-
-    [Fact]
-    public void IsAssessed_ReflectsPresenceOfAssessedDifficulty()
-    {
-        var question = new BenchmarkQuestion();
-        Assert.False(BenchmarkQuestionAssessment.IsAssessed(question));
-
-        question.AssessedDifficulty = 45;
-        Assert.True(BenchmarkQuestionAssessment.IsAssessed(question));
-
-        BenchmarkQuestionAssessment.Clear(question);
-        Assert.False(BenchmarkQuestionAssessment.IsAssessed(question));
-    }
 }

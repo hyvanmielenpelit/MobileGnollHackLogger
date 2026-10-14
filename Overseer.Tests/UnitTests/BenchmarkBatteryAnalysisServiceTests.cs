@@ -132,9 +132,10 @@ internal static class BenchmarkBatteryTestData
         BenchmarkBatteryDefinition definition,
         params (BenchmarkRun Run, int SuiteIndex, int Round)[] members)
     {
+        var trackedRunIds = new HashSet<long>(db.BenchmarkRuns.Local.Select(r => r.Id));
         foreach (var member in members)
         {
-            if (!db.BenchmarkRuns.Local.Any(r => r.Id == member.Run.Id))
+            if (trackedRunIds.Add(member.Run.Id))
             {
                 db.BenchmarkRuns.Add(member.Run);
             }

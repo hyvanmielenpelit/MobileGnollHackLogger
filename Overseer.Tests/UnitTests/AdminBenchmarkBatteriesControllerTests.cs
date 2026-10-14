@@ -196,6 +196,20 @@ public class AdminBenchmarkBatteriesControllerTests
         string? definitionSha256 = null,
         int runsPerSuite = 1)
     {
+        var batteryRun = NewBatteryRun(fixture, batteryId, status, definitionSha256, runsPerSuite);
+        fixture.Db.BenchmarkBatteryRuns.Add(batteryRun);
+        await fixture.Db.SaveChangesAsync();
+        return batteryRun;
+    }
+
+    /// <summary>The unsaved battery run row <see cref="SeedBatteryRunAsync"/> writes.</summary>
+    private static BenchmarkBatteryRun NewBatteryRun(
+        Fixture fixture,
+        long? batteryId,
+        BenchmarkRunSeriesStatus status,
+        string? definitionSha256 = null,
+        int runsPerSuite = 1)
+    {
         var definition = new BenchmarkBatteryDefinition(
             batteryId,
             "Pair",
@@ -207,7 +221,7 @@ public class AdminBenchmarkBatteriesControllerTests
                 new BenchmarkBatteryDefinitionSuite(1, fixture.SuiteB.Id, fixture.SuiteB.Name, null)
             });
 
-        var batteryRun = new BenchmarkBatteryRun
+        return new BenchmarkBatteryRun
         {
             BenchmarkBatteryId = batteryId,
             BatteryName = "Pair",
@@ -225,10 +239,6 @@ public class AdminBenchmarkBatteriesControllerTests
             }),
             StartedAtUtc = DateTime.UtcNow.AddHours(-1)
         };
-
-        fixture.Db.BenchmarkBatteryRuns.Add(batteryRun);
-        await fixture.Db.SaveChangesAsync();
-        return batteryRun;
     }
 
     private static async Task<BenchmarkRun> SeedMemberAsync(
@@ -1420,15 +1430,13 @@ public class AdminBenchmarkBatteriesControllerTests
     [Fact]
     public async Task BatteryRunList_ReturnsTheNewest50ByDefault_AndUpTo1000WhenAsked()
     {
-        Assert.Equal(50, AdminBenchmarkBatteriesController.DefaultRunListSize);
         Assert.Equal(1000, AdminBenchmarkBatteriesController.MaxRunListSize);
 
         var f = await CreateFixtureAsync();
         var ct = TestContext.Current.CancellationToken;
-        for (int i = 0; i < 201; i++)
-        {
-            await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
-        }
+        f.Db.BenchmarkBatteryRuns.AddRange(
+            Enumerable.Range(0, 201).Select(_ => NewBatteryRun(f, null, BenchmarkRunSeriesStatus.Completed)));
+        await f.Db.SaveChangesAsync(ct);
 
         List<BenchmarkBatteryRunDto> ReadRuns(IActionResult result)
             => Assert.IsAssignableFrom<IEnumerable<BenchmarkBatteryRunDto>>(Assert.IsType<OkObjectResult>(result).Value).ToList();

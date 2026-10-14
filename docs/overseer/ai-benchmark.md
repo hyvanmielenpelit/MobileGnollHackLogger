@@ -1742,6 +1742,10 @@ stamped 20 on `HarnessVersion` alone, not on `ToolGuidesSha256` or `CandidateSys
   `CompletedWithErrors` only because of assessment failures or model-produced empty answers is
   unaffected and keeps its indexes — the suppression is specific to a terminal *provider* failure.
   Re-running the failed questions re-finalises the run, so a fully repaired run regains its indexes.
+  A rescore (`BenchmarkService.RescoreRunAsync`) withholds the same indexes on the same condition,
+  counting terminal failures from the answers when `TerminalFailureAnswerCount` is `null`, and leaves
+  that column unwritten. The *Raw Quality Index* the run detail and the report derive from the
+  answers is withheld with them, so a withheld run prints none.
   A minimum-item threshold (publish an index once fewer than some fraction of questions failed) was
   considered and rejected: it would still publish a number over an item set that no longer matches the
   suite's, and that number is comparable with no complete run.
@@ -6233,7 +6237,7 @@ document.
   its coverage: an unbiased inter-rater rate requires `SecondOpinionMode = All`. In a panel run "first"
   is the panel score and "second" the reference reader, and a `criticalError` split counts only where
   both members agree and the reader differs.
-- **Speed Index**: the **equal-weight mean** of $\text{Speed}(q)$ over answered questions. Difficulty enters through $Target(q)$, not through the weight — weighting here as well would count difficulty twice and drag the index toward the floor by construction. (This line previously claimed a difficulty-weighted mean, which neither the code nor the generated report has ever produced.)
+- **Speed Index**: the **equal-weight mean** of $\text{Speed}(q)$ over answered questions. Difficulty enters through $Target(q)$, not through the weight — weighting here as well would count difficulty twice and drag the index toward the floor by construction. (Runs scored before scoring method version 4 stored a difficulty-weighted mean of speed scores against a flat target. No code path reproduces it, and a rescore recomputes such a run with the equal-weight mean; the former formula is in git at `8fa6dd19`, as `BenchmarkScoring.DifficultyWeightedSpeedIndex`.)
 
 The panel formulas below apply to panel runs only (harness 40, a run with a co-assessor); on a
 single-assessor run every panel figure is null. $A$ is member A, the assessor, and $B$ member B, the

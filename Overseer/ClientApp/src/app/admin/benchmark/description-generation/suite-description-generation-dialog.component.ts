@@ -26,6 +26,7 @@ import { SystemAiConfigDto } from '../../../services/admin.service';
 import { copyToClipboard } from '../../../utils/clipboard.util';
 import { formatServiceTier } from '../../../utils/model-badge-format.util';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import { ModelPickerComponent, ModelPickerOption, toModelPickerOptions } from '../../../shared/model-picker/model-picker.component';
 import { MarkdownPipe } from '../../../chat/markdown.pipe';
 
@@ -421,14 +422,8 @@ export class SuiteDescriptionGenerationDialogComponent implements OnInit, OnChan
 
   onResultTabKeydown(event: KeyboardEvent, index: number): void {
     const modes = this.resultModes;
-    let next = index;
-    if (event.key === 'ArrowRight') next = (index + 1) % modes.length;
-    else if (event.key === 'ArrowLeft') next = (index - 1 + modes.length) % modes.length;
-    else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = modes.length - 1;
-    else return;
-
-    event.preventDefault();
+    const next = rovingTabIndex(event, index, modes.length);
+    if (next === null) return;
     this.selectResultMode(modes[next]);
     this.cdr.detectChanges();
     document.getElementById(`sdgResult-tab-${this.resultMode}`)?.focus();

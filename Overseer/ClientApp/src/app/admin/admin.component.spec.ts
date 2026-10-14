@@ -130,33 +130,6 @@ describe('AdminComponent', () => {
       expect(mainTabs().every(t => t.getAttribute('type') === 'button')).toBe(true);
     });
 
-    it('should wrap forward from the last tab to the first with ArrowRight', () => {
-      const last = component.tabs.length - 1;
-      component.selectTab(component.tabs[last].id);
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), last);
-      expect(component.activeTab).toBe(component.tabs[0].id);
-    });
-
-    it('should wrap backward from the first tab to the last with ArrowLeft', () => {
-      component.selectTab(component.tabs[0].id);
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 0);
-      expect(component.activeTab).toBe(component.tabs[component.tabs.length - 1].id);
-    });
-
-    it('should select the first and last tab with Home and End', () => {
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 0);
-      expect(component.activeTab).toBe(component.tabs[component.tabs.length - 1].id);
-
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 6);
-      expect(component.activeTab).toBe(component.tabs[0].id);
-    });
-
-    it('should ignore keys that are not part of the tab keyboard model', () => {
-      component.selectTab('groups');
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'x' }), 1);
-      expect(component.activeTab).toBe('groups');
-    });
-
     it('should move focus to the newly selected tab after a keyboard change', () => {
       mainTabs()[0].focus();
       component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 0);

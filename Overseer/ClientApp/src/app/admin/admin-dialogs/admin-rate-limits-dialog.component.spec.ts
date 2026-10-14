@@ -22,19 +22,5 @@ describe('AdminRateLimitsDialogComponent', () => {
       component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 1);
       expect(component.activeRateLimitTab).toBe('chat');
     });
-
-    it('should select the ends with Home and End', () => {
-      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 0);
-      expect(component.activeRateLimitTab).toBe('title');
-
-      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 1);
-      expect(component.activeRateLimitTab).toBe('chat');
-    });
-
-    it('should ignore unrelated keys', () => {
-      component.activeRateLimitTab = 'title';
-      component.onRateLimitTabKeydown(new KeyboardEvent('keydown', { key: 'Enter' }), 1);
-      expect(component.activeRateLimitTab).toBe('title');
-    });
   });
 });

@@ -118,6 +118,7 @@ describe('CcLatestAnalysisCardComponent', () => {
       })
     });
     expect(textOf(el.querySelector('.cc-latest-subject .cc-kind-tag'))).toBe('Battery');
+    expect(el.querySelector('.cc-latest-subject .cc-kind-tag')!.getAttribute('data-kind')).toBe('battery');
     expect(textOf(el.querySelector('.cc-latest-compared-label'))).toBe('Two initial suites (revision 1)');
     expect(facts().slice(0, 2)).toEqual([
       ['Baseline', '2026-10-08 · 1 battery run'],

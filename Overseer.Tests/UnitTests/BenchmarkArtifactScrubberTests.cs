@@ -747,125 +747,82 @@ public class BenchmarkArtifactScrubberTests
     // ---------------------------------------------------------------------------------------
     // HasAnswerFramingOpener — a claim-of-sufficiency detector. Detection only: nothing here is
     // in Strip's removal set, since removing it would replace the very text the assessor grades.
-    // Positives verbatim from the run-29 GPT benchmark.
     // ---------------------------------------------------------------------------------------
 
     [Theory]
+    // Verbatim from the run-29 GPT benchmark.
     [InlineData("I now have all the pieces I need to give a complete answer.")]
     [InlineData("This has clear answer already. Let me give it directly.")]
     [InlineData("Now I have a clear picture of the full pipeline.")]
     [InlineData("I now have the pieces I need to answer this.")]
     [InlineData("Now I have both sides fully. Here's the comparison:")]
     [InlineData("I have every piece I need.")]
-    public void HasAnswerFramingOpener_DetectsRun29Openers(string answer)
-    {
-        Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
-    }
-
     // The source-claim form: the sufficiency claim is made about the corpus rather than about the
     // model. Counted, not removed — like every other opener this detector recognises. The first
     // three are verbatim from the run-31 GPT benchmark; the fourth is the same claim with the
     // source named after the sufficiency word.
-    [Theory]
     [InlineData("This is well covered by the wiki. Here's the breakdown for weapons:")]
     [InlineData("The wiki has this well documented.")]
     [InlineData("This wiki article gives a comprehensive, implementation-level breakdown.")]
     [InlineData("This is well documented on the GnollHack wiki.")]
-    public void HasAnswerFramingOpener_DetectsRun31SourceClaimOpeners(string answer)
-    {
-        Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
-    }
-
     // Verbatim from the run-32 Claude benchmark (Q2, Q7): the "clear answer" claim with a verb
     // other than has/is, and a claim of a clear picture behind an interjection.
-    [Theory]
     [InlineData("This gives a clear answer already. Here's the summary:")]
     [InlineData("Good — I now have a clear picture of how this works. Here's the breakdown:")]
-    public void HasAnswerFramingOpener_DetectsRun32Openers(string answer)
-    {
-        Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
-    }
-
     // Verbatim from the run-33 Claude benchmark (Q2, Q7, Q17). Q7 separates "clear" from "answer"
     // with an adjective and names the source after "gives".
-    [Theory]
     [InlineData("The wiki has this well documented:")]
     [InlineData("This gives a clear, well-documented answer straight from the wiki — no need for source code digging.")]
     [InlineData("This is well documented on the wiki.")]
-    public void HasAnswerFramingOpener_DetectsRun33Openers(string answer)
-    {
-        Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
-    }
-
-    // Run-33 openers that begin with a fact.
-    [Theory]
-    [InlineData("There are exactly three runewords in GnollHack, each engraved as a separate word.")]
-    [InlineData("Gnolls are a versatile, highly perceptive race with a few notable quirks.")]
-    public void HasAnswerFramingOpener_DoesNotFireOnRun33FactOpeners(string answer)
-    {
-        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
-    }
-
     // Verbatim from the run-34 Claude benchmark (Q5, Q17): a pronoun-subject sufficiency claim
     // with no source noun, followed by a "here's the ..." tail announcing the substance.
-    [Theory]
     [InlineData("This has full detail — here's the rundown for GnollHack:\n\nPrayer timeout is a turn-based counter, not a real-time cooldown.")]
     [InlineData("This covers it well — here's the summary:\n\nEach runeword requires runes engraved in a specific order.")]
-    public void HasAnswerFramingOpener_DetectsRun34Openers(string answer)
+    // The sufficiency-word-led "here's the ..." tail: a claim of sufficiency inside the first
+    // sentence, a sentence boundary, then the announcement that the substance follows.
+    [InlineData("This wiki article covers it fully. Here's the breakdown for weapons specifically:")]
+    public void HasAnswerFramingOpener_Detects(string answer)
     {
         Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
     }
 
     [Theory]
+    // Run-33 openers that begin with a fact.
+    [InlineData("There are exactly three runewords in GnollHack, each engraved as a separate word.")]
+    [InlineData("Gnolls are a versatile, highly perceptive race with a few notable quirks.")]
+    // Run-34 controls.
     // A pronoun subject followed by ordinary content, not a sufficiency claim.
     [InlineData("This spell covers a 3×3 area…")]
     [InlineData("It has full fire resistance…")]
     // "Here's ..." as a first line, with nothing before it for the tail alternative to anchor to.
     [InlineData("Here's how it works:\n\nStand adjacent to the altar and pray during a favorable moon phase.")]
     [InlineData("This is well suited to low-level characters.")]
-    public void HasAnswerFramingOpener_DoesNotFireOnRun34Controls(string answer)
-    {
-        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
-    }
-
-    [Theory]
+    // Run-32 controls.
     // The same opening words with no claim of sufficiency behind them.
     [InlineData("This gives the player a clear advantage.")]
     [InlineData("Good — the sword is cursed.")]
     [InlineData("Perfect — I now have a question about the rules?")]
     [InlineData("Great question: I have a clear preference for the long sword.")]
-    public void HasAnswerFramingOpener_DoesNotFireOnRun32Controls(string answer)
-    {
-        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
-    }
-
-    [Theory]
     // A source noun in the opening is not itself a claim about the source, and a sufficiency word
     // with no source noun after it is not a claim about the source either.
     [InlineData("The wiki article on Elbereth says the engraving must be intact.")]
     [InlineData("This spell is well suited to a low-level character.")]
     [InlineData("This is a well-documented GnollHack mechanic.")]
     [InlineData("This is a great example of a mechanic that changed in GnollHack.")]
-    public void HasAnswerFramingOpener_DoesNotFireOnSourceMentionsThatClaimNoSufficiency(string answer)
-    {
-        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
-    }
-
-    [Theory]
+    // Ordinary prose.
     [InlineData("I will explain how prayer timeout works.")]
     [InlineData("Let me explain the two checks in src/zap.c.")]
     [InlineData("This is a clear-cut case of the monster resisting.")]
     [InlineData("I have to say the two games differ here.")]
     [InlineData("Both games handle this the same way.")]
-    public void HasAnswerFramingOpener_DoesNotFireOnOrdinaryProse(string answer)
-    {
-        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
-    }
-
-    [Theory]
+    // Null or whitespace.
     [InlineData(null)]
     [InlineData("   ")]
-    public void HasAnswerFramingOpener_NullOrWhitespace_IsFalse(string? answer)
+    // A substantive first sentence carrying no sufficiency claim, followed by an ordinary
+    // lead-in to the substance, must not be read as an opener: _policy.md forbids opening with
+    // the act of finding, not with a lead-in to substance that follows real content.
+    [InlineData("Silver dragon scale mail is armor made from dragon hide. Here's the breakdown of its stats:")]
+    public void HasAnswerFramingOpener_DoesNotFire(string? answer)
     {
         Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
     }
@@ -901,7 +858,13 @@ public class BenchmarkArtifactScrubberTests
     [InlineData("I now have all the pieces I need to give a complete answer.")]
     [InlineData("This has clear answer already. Let me give it directly.")]
     [InlineData("Now I have a clear picture of the full pipeline.")]
-    public void Scrub_LeavesAnAnswerFramingOpenerUntouched(string answer)
+    // The source-claim openers are detected on the same terms as every other framing opener:
+    // counted, never removed.
+    [InlineData("This is well covered by the wiki. Here's the breakdown for weapons:")]
+    [InlineData("The wiki has this well documented.")]
+    [InlineData("This wiki article gives a comprehensive, implementation-level breakdown.")]
+    [InlineData("This is well documented on the GnollHack wiki.")]
+    public void Scrub_LeavesAFramingOpenerUntouched(string answer)
     {
         // Detection only: Strip's removal set was deliberately not touched, so Scrub must hand
         // this text back byte-for-byte. A later change wiring the detector into removal would
@@ -910,42 +873,5 @@ public class BenchmarkArtifactScrubberTests
         var result = Scrubber.Scrub(answer);
 
         Assert.Equal(answer, result.AnswerText);
-    }
-
-    [Theory]
-    [InlineData("This is well covered by the wiki. Here's the breakdown for weapons:")]
-    [InlineData("The wiki has this well documented.")]
-    [InlineData("This wiki article gives a comprehensive, implementation-level breakdown.")]
-    [InlineData("This is well documented on the GnollHack wiki.")]
-    public void Scrub_LeavesASourceClaimFramingOpenerUntouched(string answer)
-    {
-        // The source-claim openers are detected on the same terms as every other framing opener:
-        // counted, never removed. Scrub must hand this text back byte-for-byte.
-        var result = Scrubber.Scrub(answer);
-
-        Assert.Equal(answer, result.AnswerText);
-    }
-
-    // The sufficiency-word-led "here's the ..." tail: a claim of sufficiency inside the first
-    // sentence, a sentence boundary, then the announcement that the substance follows.
-    [Fact]
-    public void HasAnswerFramingOpener_DetectsSufficiencyLedHeresTail()
-    {
-        const string answer =
-            "This wiki article covers it fully. Here's the breakdown for weapons specifically:";
-
-        Assert.True(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
-    }
-
-    // A substantive first sentence carrying no sufficiency claim, followed by an ordinary
-    // lead-in to the substance, must not be read as an opener: _policy.md forbids opening with
-    // the act of finding, not with a lead-in to substance that follows real content.
-    [Fact]
-    public void HasAnswerFramingOpener_DoesNotFireOnSubstantiveSentenceBeforeHeresTail()
-    {
-        const string answer =
-            "Silver dragon scale mail is armor made from dragon hide. Here's the breakdown of its stats:";
-
-        Assert.False(BenchmarkArtifactScrubber.HasAnswerFramingOpener(answer));
     }
 }

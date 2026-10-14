@@ -719,10 +719,7 @@ public static class BenchmarkRunFinalizer
             }
         }
 
-        var scorableItems = answers
-            .Where(CountsTowardQualityIndex)
-            .Select(a => (BenchmarkScoring.IndexQuality(a, isPanelRun), IndexDifficulty(a)))
-            .ToList();
+        var scorableItems = QualityIndexItems(answers, isPanelRun);
 
         run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
         run.QualityIndexStandardError = BenchmarkScoring.QualityIndexStandardError(scorableItems);
@@ -746,12 +743,7 @@ public static class BenchmarkRunFinalizer
         // HasTerminalFailure is ProviderError or Failed, not every reason CompletedWithErrors fires.
         if (run.TerminalFailureAnswerCount > 0)
         {
-            run.QualityIndex = null;
-            run.QualityIndexStandardError = null;
-            run.UnweightedQualityIndex = null;
-            run.SpeedIndex = null;
-            run.AssessorOnlyQualityIndex = null;
-            run.CoAssessorOnlyQualityIndex = null;
+            WithholdIndices(run);
         }
 
         if (!preserveCompletedAt || run.CompletedAtUtc == null)
@@ -762,8 +754,47 @@ public static class BenchmarkRunFinalizer
         run.Status = ComputeStatus(answers);
     }
 
+    /// <summary>
+    /// Whether the run's headline indices are withheld: any answer has a terminal failure. A run
+    /// finalized before harness version 21 has no stored count, so it is counted from the answers.
+    /// </summary>
+    public static bool WithholdsIndices(BenchmarkRun run, IEnumerable<BenchmarkRunAnswer> answers)
+        => (run.TerminalFailureAnswerCount ?? answers.Count(HasTerminalFailure)) > 0;
+
+    /// <summary>
+    /// Nulls the Quality Index, its standard error, the unweighted Quality Index, the Speed Index and
+    /// a panel run's member-alone indices.
+    /// </summary>
+    public static void WithholdIndices(BenchmarkRun run)
+    {
+        run.QualityIndex = null;
+        run.QualityIndexStandardError = null;
+        run.UnweightedQualityIndex = null;
+        run.SpeedIndex = null;
+        run.AssessorOnlyQualityIndex = null;
+        run.CoAssessorOnlyQualityIndex = null;
+    }
+
+    /// <summary>The answers a quality index is computed over: they count toward it and have a published score.</summary>
+    public static List<BenchmarkRunAnswer> QualityIndexAnswers(IEnumerable<BenchmarkRunAnswer> answers, bool isPanelRun)
+        => answers
+            .Where(a => CountsTowardQualityIndex(a) && BenchmarkScoring.IndexQuality(a, isPanelRun).HasValue)
+            .ToList();
+
+    /// <summary>The published score and weighting difficulty of each <see cref="QualityIndexAnswers"/> answer.</summary>
+    public static List<(double? QualityScore, int Difficulty)> QualityIndexItems(IEnumerable<BenchmarkRunAnswer> answers, bool isPanelRun)
+        => QualityIndexAnswers(answers, isPanelRun)
+            .Select(a => (BenchmarkScoring.IndexQuality(a, isPanelRun), IndexDifficulty(a)))
+            .ToList();
+
+    /// <summary>The pre-cap score and weighting difficulty of each <see cref="QualityIndexAnswers"/> answer.</summary>
+    public static List<(double? QualityScore, int Difficulty)> RawQualityIndexItems(IEnumerable<BenchmarkRunAnswer> answers, bool isPanelRun)
+        => QualityIndexAnswers(answers, isPanelRun)
+            .Select(a => (BenchmarkScoring.IndexRawQuality(a, isPanelRun), IndexDifficulty(a)))
+            .ToList();
+
     /// <summary>The difficulty an answer is weighted by in every quality index of its run.</summary>
-    private static int IndexDifficulty(BenchmarkRunAnswer answer)
+    public static int IndexDifficulty(BenchmarkRunAnswer answer)
         => answer.AssessedDifficulty ?? FallbackDifficulty(answer.Difficulty);
 
     /// <summary>

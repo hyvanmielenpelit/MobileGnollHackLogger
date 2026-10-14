@@ -10,10 +10,11 @@ import { parseServerUtcDate } from '../../utils/date.util';
 
 /**
  * U3. A dollar amount at four decimals fixed, so a sub-cent cost like $0.0007 renders
- * as $0.0007, not $0.00, and zero renders as $0.0000.
+ * as $0.0007, not $0.00, and zero renders as $0.0000. A missing or non-finite amount
+ * renders as `missing`.
  */
-export function formatCostAmount(amount: number | null | undefined): string {
-  if (amount == null || !Number.isFinite(amount)) return '-';
+export function formatCostAmount(amount: number | null | undefined, missing = '-'): string {
+  if (amount == null || !Number.isFinite(amount)) return missing;
   const numPipe = new DecimalPipe('en-US');
   const digits = '1.4-4';
   return `$${numPipe.transform(amount, digits)}`;

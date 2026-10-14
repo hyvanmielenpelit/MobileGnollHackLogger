@@ -321,11 +321,6 @@ public static class BenchmarkChatTransfer
         };
     }
 
-    public static double? ComputePearsonCorrelation(IReadOnlyList<double> xs, IReadOnlyList<double> ys)
-    {
-        return PearsonCorrelation(xs, ys);
-    }
-
     public static double? PearsonCorrelation(IReadOnlyList<double> xs, IReadOnlyList<double> ys)
     {
         if (xs.Count != ys.Count || xs.Count < 2) return null;

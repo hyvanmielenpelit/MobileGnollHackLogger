@@ -1,4 +1,4 @@
-import { parseServerUtcDate, elapsedMsBetween } from './date.util';
+import { parseServerUtcDate, elapsedMsBetween, formatServerDate, formatCalendarDate } from './date.util';
 
 describe('date.util', () => {
   describe('parseServerUtcDate', () => {
@@ -72,6 +72,33 @@ describe('date.util', () => {
 
     it('should return 0 when timestamps are invalid', () => {
       expect(elapsedMsBetween('invalid-date', '2026-09-02T17:00:00')).toBe(0);
+    });
+  });
+
+  describe('formatServerDate', () => {
+    it('reads an offset-less stored stamp as UTC', () => {
+      const date = new Date(Date.UTC(2026, 9, 5, 23, 30, 0)).toLocaleDateString();
+      expect(formatServerDate('2026-10-05T23:30:00')).toBe(date);
+      expect(formatServerDate('2026-10-05T23:30:00Z')).toBe(date);
+    });
+
+    it('returns an empty string for a missing or unparseable stamp', () => {
+      expect(formatServerDate(null)).toBe('');
+      expect(formatServerDate(undefined)).toBe('');
+      expect(formatServerDate('')).toBe('');
+      expect(formatServerDate('invalid-date')).toBe('');
+    });
+  });
+
+  describe('formatCalendarDate', () => {
+    it('keeps a calendar date as entered', () => {
+      expect(formatCalendarDate('2026-10-05T00:00:00')).toBe(new Date(2026, 9, 5).toLocaleDateString());
+    });
+
+    it('returns an empty string for a missing or unparseable date', () => {
+      expect(formatCalendarDate(null)).toBe('');
+      expect(formatCalendarDate(undefined)).toBe('');
+      expect(formatCalendarDate('invalid-date')).toBe('');
     });
   });
 });

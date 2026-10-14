@@ -188,25 +188,6 @@ public class BenchmarkOutOfRubricAdjudicationTests
         Assert.Equal(new[] { Basis }, BenchmarkService.WithOutOfRubricBasis(null, Basis, 1));
     }
 
-    [Fact]
-    public void TheBasisNeverEntersTheUnadjudicableClaimColumns()
-    {
-        // UnverifiedClaimsJson means "claims the assessor could not adjudicate", and the basis is the
-        // assessor's own statement, so it is carried in the prompt only.
-        var answer = Answer(
-            BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction,
-            $"Not in rubric: {Basis}",
-            unverifiedClaimCount: 1,
-            unverifiedClaimsJson: JsonSerializer.Serialize(new[] { "Gnolls have keen smell" }));
-
-        var stored = JsonSerializer.Deserialize<List<string>>(answer.UnverifiedClaimsJson!)!;
-        var submitted = BenchmarkService.WithOutOfRubricBasis(stored, BenchmarkService.OutOfRubricBasisOf(answer), 0);
-
-        Assert.Equal(2, submitted.Count);
-        Assert.Equal(1, answer.UnverifiedClaimCount);
-        Assert.DoesNotContain("prayer timeout", answer.UnverifiedClaimsJson);
-    }
-
     // --- The advisory flag ---
 
     [Fact]

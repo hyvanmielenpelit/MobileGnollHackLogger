@@ -1583,7 +1583,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(status()).not.toBe('Download canceled. Nothing was saved.');
     });
 
-    it('shows Cancel while a download is prepared; Cancel stops it, keeps the dialog open, saves nothing and says so', async () => {
+    it('keeps the dialog open when Cancel stops a download being prepared', async () => {
       openRun();
       choose('custom', { 'doc:1': { formats: ['pdf'] }, 'doc:2': { formats: ['pdf'] } });
       const outer = wrapper.dialog!.nativeElement;

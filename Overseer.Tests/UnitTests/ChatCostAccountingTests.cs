@@ -19,7 +19,7 @@ public class ChatCostAccountingTests
     }
 
     [Fact]
-    public void ChatMessage_PersistedEstimatedCost_IsStableAgainstSubsequentPriceChanges()
+    public void ComputeCost_WithCustomPricing_UsesTheConfiguredPerMillionRates()
     {
         using var db = CreateInMemoryDbContext();
 

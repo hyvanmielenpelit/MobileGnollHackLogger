@@ -16,9 +16,14 @@ describe('model-badge-format.util', () => {
     it.each([
       { name: 'return false when the mode is null', input: null, expected: false },
       { name: 'return false when the mode is undefined', input: undefined, expected: false },
+      { name: 'return false when the mode is empty', input: '', expected: false },
+      { name: 'return false for default', input: 'default', expected: false },
       { name: 'return false for default, case-insensitively', input: 'Default', expected: false },
+      { name: 'return false for standard', input: 'standard', expected: false },
       { name: 'return false for standard, case-insensitively', input: 'STANDARD', expected: false },
-      { name: 'return true for any other mode', input: 'extended', expected: true }
+      { name: 'return true for any other mode', input: 'extended', expected: true },
+      { name: 'return true for pro', input: 'pro', expected: true },
+      { name: 'return true for pro, case-insensitively', input: 'PRO', expected: true }
     ])('should $name', ({ input, expected }) => {
       expect(showReasoningBadge(input)).toBe(expected);
     });

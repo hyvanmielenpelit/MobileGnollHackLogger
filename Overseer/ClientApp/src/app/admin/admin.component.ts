@@ -4,6 +4,7 @@ import { ActivatedRoute, ParamMap, Router, RouterModule } from '@angular/router'
 import { AdminApiKeysComponent } from './admin-api-keys/admin-api-keys.component';
 import { AdminBenchmarkComponent, BenchmarkNavigationRequest } from './benchmark/benchmark.component';
 import { ensureOverlayPolyfills } from '../utils/polyfills.util';
+import { rovingTabIndex } from '../utils/roving-tab.util';
 import { Subscription } from 'rxjs';
 import { provideCharts } from 'ng2-charts';
 import { APP_CHART_REGISTRABLES } from '../chart-registrables';
@@ -214,19 +215,8 @@ export class AdminComponent implements OnInit, OnDestroy {
    * tabindex="0" is the one holding focus.
    */
   onTabKeydown(event: KeyboardEvent, index: number): void {
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: this.tabs.length - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-
-    event.preventDefault();
-    const next = (requested + this.tabs.length) % this.tabs.length;
+    const next = rovingTabIndex(event, index, this.tabs.length);
+    if (next === null) return;
     const tab = this.tabs[next].id;
     this.selectTab(tab);
     document.getElementById(`admin-tab-${tab}`)?.focus();

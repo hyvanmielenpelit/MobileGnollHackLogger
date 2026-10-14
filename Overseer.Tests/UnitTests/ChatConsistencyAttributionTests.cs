@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using MobileGnollHackLogger.Data;
+using Overseer.Services.Benchmarking;
 using Overseer.Services.ChatConsistency;
 using Xunit;
 
@@ -23,16 +24,6 @@ public class ChatConsistencyAttributionTests
         RunId = 12,
         PreviousRunId = 11,
         InTargetSeries = true
-    };
-
-    private static readonly string[] IntentVocabulary =
-    {
-        "deliberately", "intentionally", "on purpose", "throttled", "nerfed", "sabotage", "cheating", "secretly", "quietly downgraded"
-    };
-
-    private static readonly string[] MechanismVocabulary =
-    {
-        "quantized", "quantization", "speculative decoding", "hardware", "batching"
     };
 
     private static readonly IReadOnlyDictionary<string, string> Names = new Dictionary<string, string>
@@ -122,13 +113,28 @@ public class ChatConsistencyAttributionTests
     // --- Totals ---------------------------------------------------------------------------------
 
     [Fact]
-    public void EveryEndpointsTotalChangeIsReportedFirstInProtocolOrder()
+    public void EveryEndpointsTotalChangeIsReportedFirstInInputOrder()
     {
-        var outcome = ChatConsistencyAttribution.Attribute(Quiet(Endpoint(ChatConsistencyEndpointIds.Quality, ConsistencyVerdict.ChangedDegraded)));
+        // Out of protocol order; Cost carries an Established verdict but is not computed.
+        var endpoints = new[]
+        {
+            Endpoint(ChatConsistencyEndpointIds.Cost, ConsistencyVerdict.ChangedDegraded) with { Computed = false },
+            Endpoint(ChatConsistencyEndpointIds.Work, ConsistencyVerdict.Equivalent),
+            Endpoint(ChatConsistencyEndpointIds.Quality, ConsistencyVerdict.ChangedDegraded),
+            Endpoint(ChatConsistencyEndpointIds.ProviderErrorRate, ConsistencyVerdict.Equivalent),
+            Endpoint(ChatConsistencyEndpointIds.StreamingRate, ConsistencyVerdict.Equivalent),
+            Endpoint(ChatConsistencyEndpointIds.TimeToFirstAnswerText, ConsistencyVerdict.Equivalent)
+        };
+        Assert.NotEqual(ChatConsistencyEndpointIds.All, endpoints.Select(e => e.Id).ToList());
 
-        Assert.Equal(ChatConsistencyEndpointIds.All, outcome.TotalChanges.Select(t => t.EndpointId).ToList());
-        Assert.Equal("degraded", outcome.TotalChanges[0].VerdictLabel);
+        var outcome = ChatConsistencyAttribution.Attribute(Quiet() with { Endpoints = endpoints });
+
+        Assert.Equal(endpoints.Select(e => e.Id).ToList(), outcome.TotalChanges.Select(t => t.EndpointId).ToList());
+        Assert.Equal("not computable", outcome.TotalChanges[0].VerdictLabel);
+        Assert.Equal(ChatConsistencyEvidenceGrade.NotEstablished, outcome.TotalChanges[0].Grade);
         Assert.Equal("equivalent", outcome.TotalChanges[1].VerdictLabel);
+        Assert.Equal("degraded", outcome.TotalChanges[2].VerdictLabel);
+        Assert.Equal(ChatConsistencyEvidenceGrade.Established, outcome.TotalChanges[2].Grade);
     }
 
     // --- R1 / R2 --------------------------------------------------------------------------------
@@ -559,7 +565,7 @@ public class ChatConsistencyAttributionTests
         Assert.NotEmpty(texts);
         foreach (var text in texts)
         {
-            foreach (var word in IntentVocabulary.Concat(MechanismVocabulary))
+            foreach (var word in BenchmarkReportPackValidator.ChatIntentWords.Concat(BenchmarkReportPackValidator.ChatMechanismWords))
             {
                 Assert.False(text.Contains(word, StringComparison.OrdinalIgnoreCase), $"\"{word}\" appears in: {text}");
             }

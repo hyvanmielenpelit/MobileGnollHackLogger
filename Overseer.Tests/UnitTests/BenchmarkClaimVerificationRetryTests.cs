@@ -404,57 +404,27 @@ public class BenchmarkClaimVerificationRetryTests
             answer.ClaimVerificationCallUsageJson);
     }
 
-    [Fact]
-    public async Task ADenyListedProviderError_IsNotRetried()
-    {
-        // The deny list wins over the retryable "503" the same text carries.
-        const string invalidRequest = "OpenAI stream error: [invalid_request_error] The request was rejected (503).";
-        var ran = new List<int>();
-
-        var attempts = await BenchmarkService.RunClaimVerificationAttemptsAsync(
-            Scripted(ran,
-                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 100), invalidRequest),
-                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 300), null)),
-            providerErrorRetries: 1,
-            TimeSpan.Zero,
-            CancellationToken.None);
-
-        Assert.Equal(new[] { 0 }, ran);
-        Assert.Equal(invalidRequest, Assert.Single(attempts).TerminalError);
-    }
-
-    [Fact]
-    public async Task ZeroProviderErrorRetries_DisablesTheRetry()
+    [Theory]
+    // A deny-listed provider error: the deny list wins over the retryable "503" the same text carries.
+    [InlineData("OpenAI stream error: [invalid_request_error] The request was rejected (503).", false, 1)]
+    // Zero provider-error retries disable the retry.
+    [InlineData(Google503, false, 0)]
+    // A timed-out attempt, even when its text carries a retryable code.
+    [InlineData("Claim verification timeout exceeded (503 s).", true, 1)]
+    public async Task AnAttemptThatMustNotBeRetried_RunsOnce(string error, bool timedOut, int retries)
     {
         var ran = new List<int>();
 
         var attempts = await BenchmarkService.RunClaimVerificationAttemptsAsync(
             Scripted(ran,
-                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 100), Google503),
+                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 100), error, TimedOut: timedOut),
                 new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 300), null)),
-            providerErrorRetries: 0,
+            providerErrorRetries: retries,
             TimeSpan.Zero,
             CancellationToken.None);
 
         Assert.Equal(new[] { 0 }, ran);
-        Assert.Equal(Google503, Assert.Single(attempts).TerminalError);
-    }
-
-    [Fact]
-    public async Task ATimedOutAttempt_IsNotRetried_EvenWhenItsTextCarriesARetryableCode()
-    {
-        var ran = new List<int>();
-
-        var attempts = await BenchmarkService.RunClaimVerificationAttemptsAsync(
-            Scripted(ran,
-                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 100), "Claim verification timeout exceeded (503 s).", TimedOut: true),
-                new BenchmarkService.ClaimVerificationAttempt(LoopResult(1, 300), null)),
-            providerErrorRetries: 1,
-            TimeSpan.Zero,
-            CancellationToken.None);
-
-        Assert.Equal(new[] { 0 }, ran);
-        Assert.Single(attempts);
+        Assert.Equal(error, Assert.Single(attempts).TerminalError);
     }
 
     [Fact]

@@ -406,29 +406,6 @@ public class BenchmarkModelBatchOrchestratorTests
     }
 
     [Fact]
-    public async Task Continue_RelaunchesAFailedSingleRunMember_KeepingTheOldRunAsSuperseded()
-    {
-        var f = await CreateFixtureAsync();
-        int attempts = 0;
-        f.Orchestrator.Outcome = id => id == 2 && Interlocked.Increment(ref attempts) == 1
-            ? BenchmarkRunStatus.Failed
-            : BenchmarkRunStatus.Completed;
-        var result = await f.Orchestrator.StartAsync(Request(f), "admin", TestContext.Current.CancellationToken);
-        long id = result.BatchId!.Value;
-        var stopped = await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Stopped, "the stop");
-        long failedRunId = stopped.Members.Single(m => m.OrderIndex == 1).BenchmarkRunId!.Value;
-        await WaitUntilIdleAsync(f, id);
-
-        Assert.Equal(BenchmarkModelBatchOutcome.Ok,
-            (await f.Orchestrator.ResumeAsync(id, BenchmarkModelBatchResumeMode.Continue, TestContext.Current.CancellationToken)).Outcome);
-
-        var batch = await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Completed, "completion");
-        Assert.Equal(new long[] { 1, 2, 2, 3 }, f.Orchestrator.Launched.ToArray());
-        Assert.NotEqual(failedRunId, batch.Members.Single(m => m.OrderIndex == 1).BenchmarkRunId);
-        Assert.Contains($"\"runId\":{failedRunId}", batch.SupersededMembersJson);
-    }
-
-    [Fact]
     public async Task Continue_AdoptsASingleRunMemberWhoseRunHasSinceCompleted()
     {
         var f = await CreateFixtureAsync();
@@ -701,24 +678,6 @@ public class BenchmarkModelBatchOrchestratorTests
         Assert.Equal(new long[] { 1, 2, 3 }, f.Orchestrator.Launched.ToArray());
     }
 
-    [Fact]
-    public async Task AnInstrumentChange_RerunUnderCurrentInstrument_StartsOver_KeepingTheOldLinks()
-    {
-        var f = await CreateFixtureAsync();
-        long id = await StopOnAnInstrumentChangeAsync(f);
-        f.Orchestrator.Outcome = _ => BenchmarkRunStatus.Completed;
-
-        var rerun = await f.Orchestrator.ResumeAsync(id, BenchmarkModelBatchResumeMode.RerunUnderCurrentInstrument, TestContext.Current.CancellationToken);
-        Assert.Equal(BenchmarkModelBatchOutcome.Ok, rerun.Outcome);
-
-        var batch = await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Completed, "completion");
-        Assert.Equal(new long[] { 1, 1, 2, 3 }, f.Orchestrator.Launched.ToArray());
-        Assert.Equal("guides-2", batch.FirstMemberToolGuidesSha256);
-        Assert.False(batch.InstrumentChangeAcknowledged);
-        Assert.NotNull(batch.SupersededMembersJson);
-        Assert.Single(JsonDocument.Parse(batch.SupersededMembersJson!).RootElement.EnumerateArray());
-    }
-
     // --- Replacement lineage ----------------------------------------------------------------------
 
     /// <summary>
@@ -758,7 +717,10 @@ public class BenchmarkModelBatchOrchestratorTests
 
         Assert.Equal(BenchmarkModelBatchOutcome.Ok,
             (await f.Orchestrator.ResumeAsync(id, BenchmarkModelBatchResumeMode.Continue, ct)).Outcome);
-        await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Completed, "completion");
+        var batch = await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Completed, "completion");
+        Assert.Equal(new long[] { 1, 2, 2, 3 }, f.Orchestrator.Launched.ToArray());
+        Assert.NotEqual(failedRunId, batch.Members.Single(m => m.OrderIndex == 1).BenchmarkRunId);
+        Assert.Contains($"\"runId\":{failedRunId}", batch.SupersededMembersJson);
 
         var relaunched = await WaitForRunOfAsync(f, 2, nth: 2);
         Assert.Equal(failedRunId, relaunched.ReplacesRunId);
@@ -782,6 +744,11 @@ public class BenchmarkModelBatchOrchestratorTests
         Assert.Equal(BenchmarkModelBatchOutcome.Ok,
             (await f.Orchestrator.ResumeAsync(id, BenchmarkModelBatchResumeMode.RerunUnderCurrentInstrument, ct)).Outcome);
         var batch = await WaitForAsync(f, id, b => b.Status == BenchmarkRunSeriesStatus.Completed, "completion");
+        Assert.Equal(new long[] { 1, 1, 2, 3 }, f.Orchestrator.Launched.ToArray());
+        Assert.Equal("guides-2", batch.FirstMemberToolGuidesSha256);
+        Assert.False(batch.InstrumentChangeAcknowledged);
+        Assert.NotNull(batch.SupersededMembersJson);
+        Assert.Single(JsonDocument.Parse(batch.SupersededMembersJson!).RootElement.EnumerateArray());
 
         var rerun = await WaitForRunOfAsync(f, 1, nth: 2);
         Assert.Equal(firstRunId, rerun.ReplacesRunId);

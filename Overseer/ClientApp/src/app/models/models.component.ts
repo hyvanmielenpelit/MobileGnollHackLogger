@@ -15,6 +15,8 @@ import { AiModelFormComponent, AiModelFormResult } from '../shared/ai-model-form
 import { ProviderBadgeComponent } from '../shared/provider-badge/provider-badge.component';
 import { ModelPickerComponent, ModelPickerKey, ModelPickerOption, toModelPickerOptions } from '../shared/model-picker/model-picker.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../utils/polyfills.util';
+import { formatCalendarDate } from '../utils/date.util';
+import { formatThinkingLevel } from '../utils/model-badge-format.util';
 import {
   AvailabilityChip,
   ModelResolutionResult,
@@ -635,10 +637,7 @@ export class ModelsComponent implements OnInit {
     }
   }
 
-  formatThinkingLevel(level: string | undefined): string {
-    if (!level) return 'Default';
-    return level.charAt(0).toUpperCase() + level.slice(1);
-  }
+  readonly formatThinkingLevel = formatThinkingLevel;
 
   formatServiceTier(tier: string | null | undefined): string {
     if (!tier) return 'None';
@@ -770,8 +769,6 @@ export class ModelsComponent implements OnInit {
   }
 
   private formatPostureDate(iso: string | null | undefined): string {
-    if (!iso) return '';
-    const parsed = new Date(iso);
-    return isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString();
+    return formatCalendarDate(iso);
   }
 }

@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, Input, Output, inject } from '@angular/core';
 
 import { BenchmarkReportAudience } from '../../../services/admin-benchmark.service';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import { REPORT_PACK_AUDIENCES, audienceLabel, audienceShortLabel } from './report-document-format';
 import {
   REPORT_CHART_FIGURES,
@@ -368,19 +369,9 @@ export class ReportChartPickerComponent {
   /** Arrow keys wrap, Home and End jump; focus follows the selection. */
   onTabKeydown(event: KeyboardEvent, index: number): void {
     const columns = this.columns;
-    const count = columns.length;
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: count - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined || count === 0) {
-      return;
-    }
-    event.preventDefault();
-    const column = columns[(requested + count) % count];
+    const next = rovingTabIndex(event, index, columns.length);
+    if (next === null) return;
+    const column = columns[next];
     this.selectAudience(column.audience);
     this.cdr.detectChanges();
     document.getElementById(this.tabId(column))?.focus();

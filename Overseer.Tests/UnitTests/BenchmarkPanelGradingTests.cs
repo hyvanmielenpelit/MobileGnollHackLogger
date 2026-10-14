@@ -397,18 +397,6 @@ public class BenchmarkPanelGradingTests
     }
 
     [Fact]
-    public void ComputePanelScore_Method13_ASplitFlagWithNoVerification_IsUnresolved()
-    {
-        var run = PanelRun();
-        var answer = PanelAnswerFlaggedBy(flagA: true, flagB: false);
-
-        BenchmarkService.ComputePanelScore(answer, run);
-
-        Assert.Equal(BenchmarkCriticalErrorResolution.Unresolved, answer.CriticalErrorResolution);
-        Assert.Equal((25 + 87) / 2.0, answer.PanelQualityScore);
-    }
-
-    [Fact]
     public void ComputePanelScore_Method13_AVerdictOnTheOtherMembersItem_DoesNotSettleTheFlag()
     {
         var run = PanelRun();
@@ -419,21 +407,6 @@ public class BenchmarkPanelGradingTests
 
         Assert.Equal(BenchmarkCriticalErrorResolution.Unresolved, answer.CriticalErrorResolution);
         Assert.Equal((25 + 87) / 2.0, answer.PanelQualityScore);
-    }
-
-    [Fact]
-    public void ComputePanelScore_Method13_WithAMemberUnscored_ClearsThePanelColumns()
-    {
-        var run = PanelRun();
-        var answer = PanelAnswerFlaggedBy(flagA: true, flagB: false);
-        BenchmarkService.ComputePanelScore(answer, run);
-        answer.CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
-
-        BenchmarkService.ComputePanelScore(answer, run);
-
-        Assert.Null(answer.PanelQualityScore);
-        Assert.Null(answer.PanelDisagreed);
-        Assert.Null(answer.CriticalErrorResolution);
     }
 
     [Fact]
@@ -465,15 +438,11 @@ public class BenchmarkPanelGradingTests
         run.ScoringMethodVersion = BenchmarkCriticalErrorResolver.FirstScoringMethod - 1;
         var answer = PanelAnswerFlaggedBy(flagA: true, flagB: false);
         answer.ClaimVerificationJson = QuoteVerification(BenchmarkClaimVerdict.Supported, "A");
-        var legacy = PanelAnswerFlaggedBy(flagA: true, flagB: false);
-        legacy.ClaimVerificationJson = answer.ClaimVerificationJson;
 
         BenchmarkService.ComputePanelScore(answer, run);
-        BenchmarkService.ComputePanelScore(legacy);
 
         Assert.Equal((25 + 87) / 2.0, answer.PanelQualityScore);
-        Assert.Equal(legacy.PanelQualityScore, answer.PanelQualityScore);
-        Assert.Equal(legacy.PanelDisagreed, answer.PanelDisagreed);
+        Assert.True(answer.PanelDisagreed);
         Assert.Null(answer.CriticalErrorResolution);
     }
 

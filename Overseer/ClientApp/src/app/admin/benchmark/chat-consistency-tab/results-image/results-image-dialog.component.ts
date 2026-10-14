@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 
 import { ensureOverlayPolyfills } from '../../../../utils/polyfills.util';
+import { rovingTabIndex } from '../../../../utils/roving-tab.util';
 import { ExportFormatSectionComponent } from '../../model-comparison/export-format-section.component';
 import { ExportSizeSectionComponent } from '../../model-comparison/export-size-section.component';
 import { FigureExportFormat, WebpQuality, displayDensity as currentDisplayDensity } from '../../model-comparison/figure-export';
@@ -157,14 +158,9 @@ export class CcResultsImageDialogComponent implements OnInit {
 
   /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
   onSectionKeydown(event: KeyboardEvent, index: number): void {
-    const count = this.sections.length;
-    const targets: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: count - 1 };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-    event.preventDefault();
-    const next = this.sections[(requested + count) % count].id;
+    const target = rovingTabIndex(event, index, this.sections.length);
+    if (target === null) return;
+    const next = this.sections[target].id;
     this.selectSection(next);
     this.cdr.detectChanges();
     document.getElementById(`cc-rim-tab-${next}`)?.focus();

@@ -151,13 +151,6 @@ describe('RunFactsComponent', () => {
     }
   });
 
-  it('flows the pairs in a wrapping flex row, not a grid', () => {
-    const style = getComputedStyle(root().querySelector('.rr-facts') as HTMLElement);
-    expect(style.display).toBe('flex');
-    expect(style.flexWrap).toBe('wrap');
-    expect(getComputedStyle(fact('model')).display).toBe('flex');
-  });
-
   it('keeps a three-line Board pair from stretching the pair before it', () => {
     const shell = document.createElement('div');
     shell.style.cssText = 'width: 1800px;';
@@ -226,6 +219,10 @@ describe('RunFactsComponent', () => {
       shell.appendChild(root());
       expect(root().classList).not.toContain('rr-facts-stacked');
       expect(getComputedStyle(fact('profile')).flexDirection).toBe('row');
+      const list = getComputedStyle(root().querySelector('.rr-facts') as HTMLElement);
+      expect(list.display).toBe('flex');
+      expect(list.flexWrap).toBe('wrap');
+      expect(getComputedStyle(fact('profile')).display).toBe('flex');
     } finally {
       shell.remove();
     }

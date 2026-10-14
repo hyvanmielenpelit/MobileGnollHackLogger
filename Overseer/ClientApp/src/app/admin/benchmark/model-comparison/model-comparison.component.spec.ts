@@ -193,7 +193,7 @@ describe('ModelComparisonComponent', () => {
     expect(component.panelCards.length).toBe(4);
     expect(component.scatterCards.length).toBe(3);
     expect(component.availabilityCard).not.toBeNull();
-    expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(8);
+    expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(component.exportableCards.length);
   });
 
   function scatterPluginIds(): string[][] {
@@ -300,7 +300,8 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)), 2);
     const directions = (): number => component.exportableCards.filter(card => card.chrome.direction).length;
     // Every card but the profile: four P1 panels, three scatters and A1.
-    expect(directions()).toBe(8);
+    expect(component.profileCard).not.toBeNull();
+    expect(directions()).toBe(component.exportableCards.length - 1);
 
     vi.useFakeTimers();
     try {
@@ -1059,6 +1060,7 @@ describe('ModelComparisonComponent', () => {
 
   it('takes the provider availability panel out of P1 while the style hides it, and keeps A1', () => {
     render(buildDto(comparableSet(3)));
+    const before = component.exportableCards.length;
     vi.useFakeTimers();
     try {
       component.onFigureStyleChange({ ...DEFAULT_FIGURE_STYLE, availability: { ...DEFAULT_FIGURE_STYLE.availability, panel: 'off' } });
@@ -1071,7 +1073,7 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.panelCards.map(card => card.id)).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost']);
     expect(component.exportableCards.map(card => card.id)).toContain('a1-availability');
-    expect(component.exportableCards.length).toBe(8);
+    expect(component.exportableCards.length).toBe(before - 1);
   });
 
   it('describes the provider-error figures in their accessible names, model by model, with the count beside each rate', () => {

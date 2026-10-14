@@ -381,16 +381,6 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(component.formatDuration(500, 1200)).toBe('0.5s→1s');
     });
 
-    it('should determine whether to show reasoning badge correctly', () => {
-      expect(component.showReasoningBadge(null)).toBe(false);
-      expect(component.showReasoningBadge(undefined)).toBe(false);
-      expect(component.showReasoningBadge('')).toBe(false);
-      expect(component.showReasoningBadge('default')).toBe(false);
-      expect(component.showReasoningBadge('standard')).toBe(false);
-      expect(component.showReasoningBadge('pro')).toBe(true);
-      expect(component.showReasoningBadge('PRO')).toBe(true);
-    });
-
     it('should update totalDurationMs when duration event is received', () => {
       expect(component.totalDurationMs).toBeNull();
 

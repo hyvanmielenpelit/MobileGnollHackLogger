@@ -8466,10 +8466,7 @@ public class BenchmarkService
             }
         }
 
-        var scorableItems = run.Answers
-            .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && BenchmarkScoring.IndexQuality(a, isPanelRun).HasValue)
-            .Select(a => (BenchmarkScoring.IndexQuality(a, isPanelRun), a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
-            .ToList();
+        var scorableItems = BenchmarkRunFinalizer.QualityIndexItems(run.Answers, isPanelRun);
 
         run.QualityIndex = BenchmarkScoring.QualityIndex(scorableItems);
         run.QualityIndexStandardError = BenchmarkScoring.QualityIndexStandardError(scorableItems);
@@ -8482,6 +8479,13 @@ public class BenchmarkService
         run.SpeedIndex = BenchmarkScoring.SpeedIndex(run.Answers
             .Where(a => a.Status == BenchmarkAnswerStatus.Ok && a.SpeedScore.HasValue)
             .Select(a => a.SpeedScore));
+
+        // The finalizer's withholding rule: a run with a terminally failed answer publishes no
+        // headline index. The stored terminal-failure count is left as it is.
+        if (BenchmarkRunFinalizer.WithholdsIndices(run, run.Answers))
+        {
+            BenchmarkRunFinalizer.WithholdIndices(run);
+        }
 
         await db.SaveChangesAsync();
         _logger.LogInformation("Successfully re-scored benchmark run {RunId} using profile '{ProfileName}'.", runId, profile.Name);

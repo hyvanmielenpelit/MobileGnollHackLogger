@@ -46,17 +46,6 @@ public static class BenchmarkBatteryPlanner
         return null;
     }
 
-    /// <summary>The number of unoccupied slots; occupied pairs outside the grid are ignored.</summary>
-    public static int RemainingLaunches(
-        int suiteCount,
-        int runsPerSuite,
-        IReadOnlyCollection<(int SuiteIndex, int Round)> occupied)
-    {
-        var taken = Occupied(suiteCount, runsPerSuite, occupied);
-        int inGrid = taken.Count(s => s.SuiteIndex >= 0 && s.SuiteIndex < suiteCount && s.Round >= 1 && s.Round <= runsPerSuite);
-        return suiteCount * runsPerSuite - inGrid;
-    }
-
     /// <summary>
     /// True when the member may enter a statistic: it is not superseded, carries no guard failure,
     /// its run ended Completed, CompletedWithLimits or CompletedWithErrors, and the run's

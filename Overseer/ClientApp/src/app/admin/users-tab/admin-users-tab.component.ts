@@ -6,6 +6,7 @@ import { AdminUserListComponent } from './user-list/admin-user-list.component';
 import { AdminUserLogComponent } from './admin-log/admin-user-log.component';
 import { AdminBulkWizardComponent } from './bulk-wizard/admin-bulk-wizard.component';
 import { ensureOverlayPolyfills } from '../../utils/polyfills.util';
+import { rovingTabIndex } from '../../utils/roving-tab.util';
 import { Subscription } from 'rxjs';
 
 /**
@@ -128,18 +129,8 @@ export class AdminUsersTabComponent implements OnInit, OnDestroy {
 
   /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
   onSubTabKeydown(event: KeyboardEvent, index: number): void {
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: this.subTabs.length - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined) {
-      return;
-    }
-    event.preventDefault();
-    const next = (requested + this.subTabs.length) % this.subTabs.length;
+    const next = rovingTabIndex(event, index, this.subTabs.length);
+    if (next === null) return;
     const tab = this.subTabs[next];
     this.selectSubTab(tab);
     document.getElementById(`users-subtab-${tab}`)?.focus();

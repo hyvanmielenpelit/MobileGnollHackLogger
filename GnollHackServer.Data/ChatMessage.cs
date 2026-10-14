@@ -23,8 +23,8 @@ public class ChatMessage
 
     /// <summary>
     /// True while this system message currently carries a game state snapshot. Replaces the
-    /// content pattern matching that ChatService.GameSnapshotLikePatterns
-    /// performed, so snapshot detection survives content encryption.
+    /// content pattern matching on the "Game Snapshot" and "Game Context Snapshot" prefixes,
+    /// so snapshot detection survives content encryption.
     /// Reflects the row's <b>current</b> state: a snapshot superseded by a newer one is
     /// rewritten to a marker and the flag is cleared with it.
     /// </summary>

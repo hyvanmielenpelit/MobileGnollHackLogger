@@ -35,7 +35,9 @@ export interface CcProtocolEndpoint {
 /**
  * Protocol V1's primary endpoints as the server publishes them (`ChatConsistencyProtocol.V1`, its
  * `DefaultEndpoints`): margins, axes and stratification. A change to the server protocol changes this
- * list with it.
+ * list with it. `cc-protocol.fixture.json` pins these lists and the minimums below to the server: this
+ * client's spec and the server's `ChatConsistencyClientParityTests` both read it. `legacyAxis` is the
+ * client's alone.
  */
 export const CC_PROTOCOL_V1_ENDPOINTS: readonly CcProtocolEndpoint[] = [
   { id: 'P1', name: 'Quality', margin: 3, unit: 'index points', axis: 'quality', stratified: false, legacyAxis: null },

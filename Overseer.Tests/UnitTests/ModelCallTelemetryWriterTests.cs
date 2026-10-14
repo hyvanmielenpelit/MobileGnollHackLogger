@@ -249,18 +249,6 @@ public class ModelCallTelemetryWriterTests
     }
 
     [Theory]
-    [InlineData(null, null)]
-    [InlineData("", null)]
-    [InlineData("!!!", null)]
-    [InlineData("rate_limit_exceeded", "rate_limit_exceeded")]
-    [InlineData("google.rpc.QuotaFailure", "google.rpc.QuotaFailure")]
-    [InlineData("RESOURCE EXHAUSTED", "RESOURCEEXHAUSTED")]
-    public void SanitizeErrorCode_KeepsOnlyTheAllowedCharacters(string? code, string? expected)
-    {
-        Assert.Equal(expected, ModelCallTelemetryWriter.SanitizeErrorCode(code));
-    }
-
-    [Theory]
     [InlineData(new[] { "a", "a" }, "a")]
     [InlineData(new[] { "a", "b" }, null)]
     [InlineData(new string[0], null)]

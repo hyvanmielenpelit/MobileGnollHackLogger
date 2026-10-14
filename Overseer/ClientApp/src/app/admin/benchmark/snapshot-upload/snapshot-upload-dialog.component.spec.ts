@@ -9,7 +9,6 @@ import {
 } from '../../../services/admin-benchmark.service';
 import {
   SnapshotUploadDialogComponent,
-  looksLikeHtml,
   snapshotNameFromFileName
 } from './snapshot-upload-dialog.component';
 
@@ -63,13 +62,6 @@ describe('SnapshotUploadDialogComponent', () => {
     await component.loadFile(new File([text], name, { type: 'text/plain' }));
     fixture.detectChanges();
   }
-
-  it('detects HTML dumps the way the server does', () => {
-    expect(looksLikeHtml('  <html><body>x')).toBe(true);
-    expect(looksLikeHtml('<PRE>map</PRE>')).toBe(true);
-    expect(looksLikeHtml('<div>no dump</div>')).toBe(false);
-    expect(looksLikeHtml('Dlvl:1 <html>')).toBe(false);
-  });
 
   it('derives the name from the file name', () => {
     expect(snapshotNameFromFileName('Valkyrie dlvl 12.snapshot.txt')).toBe('Valkyrie dlvl 12');

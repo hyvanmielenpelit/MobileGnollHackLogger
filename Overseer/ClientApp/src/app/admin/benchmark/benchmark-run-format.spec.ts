@@ -1,6 +1,29 @@
-import { formatStatusLabel, getScoreBadgeClass } from './benchmark-run-format';
+import { formatCostAmount, formatStatusLabel, getScoreBadgeClass } from './benchmark-run-format';
 
 describe('benchmark run format', () => {
+  describe('formatCostAmount', () => {
+    it.each([
+      { amount: 2.5312, missing: undefined, label: '$2.5312' },
+      { amount: 1, missing: undefined, label: '$1.0000' },
+      { amount: 0.9912, missing: undefined, label: '$0.9912' },
+      { amount: 0.0004, missing: undefined, label: '$0.0004' },
+      { amount: 1234.5, missing: undefined, label: '$1,234.5000' },
+      // A negative amount that rounds to zero loses its sign.
+      { amount: -0.00001, missing: undefined, label: '$0.0000' },
+      { amount: null, missing: undefined, label: '-' },
+      { amount: undefined, missing: undefined, label: '-' },
+      { amount: Number.NaN, missing: undefined, label: '-' },
+      { amount: Number.POSITIVE_INFINITY, missing: undefined, label: '-' },
+      { amount: Number.NEGATIVE_INFINITY, missing: undefined, label: '-' },
+      { amount: null, missing: '—', label: '—' },
+      { amount: Number.NaN, missing: '—', label: '—' },
+      { amount: Number.POSITIVE_INFINITY, missing: '—', label: '—' },
+      { amount: 0.0042, missing: '—', label: '$0.0042' }
+    ])('formats $amount as "$label" (missing: $missing)', ({ amount, missing, label }) => {
+      expect(formatCostAmount(amount, missing)).toBe(label);
+    });
+  });
+
   describe('formatStatusLabel', () => {
     it.each([
       { status: 'CompletedWithLimits', label: 'Completed with limits' },

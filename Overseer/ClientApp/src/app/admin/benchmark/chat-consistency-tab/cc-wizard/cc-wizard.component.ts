@@ -13,6 +13,7 @@ import {
 import { SystemAiConfigDto } from '../../../../services/admin.service';
 import { ModelPickerOption } from '../../../../shared/model-picker/model-picker.component';
 import { refreshAnchorPositioning } from '../../../../utils/polyfills.util';
+import { rovingTabIndex } from '../../../../utils/roving-tab.util';
 import { CcAnalysisStep, CcAnalysisWizardComponent } from '../analysis-wizard/analysis-wizard.component';
 import { plural } from '../chat-consistency-format';
 import { CC_ALL_DATES, CcDateRange, ccDateRangeText } from '../chat-consistency-range';
@@ -443,17 +444,9 @@ export class CcWizardComponent {
    * refuses to open, so its reason is read.
    */
   onStepKeydown(event: KeyboardEvent, index: number): void {
-    const targets: Record<string, number> = {
-      ArrowRight: index + 1,
-      ArrowLeft: index - 1,
-      Home: 0,
-      End: this.steps.length - 1
-    };
-    const requested = targets[event.key];
-    if (requested === undefined) return;
-
-    event.preventDefault();
-    const next = this.steps[(requested + this.steps.length) % this.steps.length].step;
+    const target = rovingTabIndex(event, index, this.steps.length);
+    if (target === null) return;
+    const next = this.steps[target].step;
     this.selectStep(next);
     this.host.nativeElement.querySelector<HTMLElement>(`#cc-step-tab-${next}`)?.focus();
   }

@@ -183,7 +183,9 @@ only, that the email is not confirmed. The ban reason is never shown.
 
 **Signed-in sessions end within `IdentityLockout:SecurityStampValidationMinutes` (5)** of a new security
 stamp — a ban, an admin lockout, *Sign out everywhere* or a two-factor reset: both apps set
-`SecurityStampValidatorOptions.ValidationInterval` from it, instead of the 30-minute default.
+`SecurityStampValidatorOptions.ValidationInterval` from it, instead of the 30-minute default. Overseer's
+chat hub applies the same interval to an open chat connection, which ends no later than its first hub
+call once that interval has passed.
 
 **Accounts created with lockout disabled** keep `LockoutEnabled = 0` and are never locked. Count them:
 

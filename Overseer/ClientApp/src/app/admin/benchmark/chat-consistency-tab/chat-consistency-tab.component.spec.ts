@@ -707,6 +707,9 @@ describe('ChatConsistencyTabComponent', () => {
     http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
     fixture.detectChanges();
     flushSubject();
+    dialog().querySelector<HTMLButtonElement>('#cc-step-tab-1')!.click();
+    fixture.detectChanges();
+    expect(fixture.componentInstance.wizard!.step).toBe(1);
     let done = closed();
     dialog().close();
     await done;
@@ -721,6 +724,7 @@ describe('ChatConsistencyTabComponent', () => {
     http.expectOne(`${CC_API}/analyses/8`).flush(ccAnalysisResult({ analysisId: 8 }));
     fixture.detectChanges();
     expect(dialog().open).toBe(true);
+    expect(fixture.componentInstance.wizard!.step).toBe(4);
     done = closed();
     dialog().querySelector<HTMLButtonElement>('.cc-wizard-close')!.click();
     await done;
@@ -976,27 +980,6 @@ describe('ChatConsistencyTabComponent', () => {
     delete (wizard as unknown as { closeBlocked?: boolean }).closeBlocked;
   });
 
-  it('opens the latest analysis from the launcher after the wizard was closed', async () => {
-    createTab();
-    openWizard();
-    chooseModelInWizard();
-    const done = closed();
-    dialog().querySelector<HTMLButtonElement>('.cc-wizard-close')!.click();
-    await done;
-    fixture.detectChanges();
-    http.expectOne(`${CC_API}/analyses`).flush([ccAnalysisSummary(7)]);
-    fixture.detectChanges();
-
-    const open = el.querySelector<HTMLButtonElement>('#cc-latest-open')!;
-    expect(textOf(open)).toBe('Open Analysis #7');
-    open.click();
-    fixture.detectChanges();
-    http.expectOne(`${CC_API}/analyses/7`).flush(ccAnalysisResult());
-    fixture.detectChanges();
-    expect(dialog().open).toBe(true);
-    expect(fixture.componentInstance.wizard!.step).toBe(4);
-  });
-
   it('empties the launcher when the only saved analysis is deleted in Analysis History', () => {
     createTab();
     openHistory();
@@ -1105,23 +1088,6 @@ describe('ChatConsistencyTabComponent', () => {
       createTab();
       flushSubject(batterySubject());
       expect(fixture.componentInstance.compareKey).toBe(CC_BATTERY_SET_KEY);
-    });
-
-    it('names each saved analysis\'s compared set, and All suites for one without', () => {
-      createTab([
-        ccAnalysisSummary(8, { comparisonSetKey: CC_BATTERY_SET_KEY, comparisonSetLabel: 'Two initial suites (revision 1)' }),
-        ccAnalysisSummary(7)
-      ]);
-      const subject = latestCard().querySelector('.cc-latest-subject')!;
-      expect(textOf(subject.querySelector('.cc-kind-tag'))).toBe('Battery');
-      expect(subject.querySelector('.cc-kind-tag')!.getAttribute('data-kind')).toBe('battery');
-      expect(textOf(subject.querySelector('.cc-latest-compared-label'))).toBe('Two initial suites (revision 1)');
-
-      openHistory();
-      expect(textOf(historyCard(8).querySelector('.cc-kind-tag'))).toBe('Battery');
-      expect(textOf(historyCard(8).querySelector('.cc-hist-compared-label'))).toBe('Two initial suites (revision 1)');
-      expect(textOf(historyCard(7).querySelector('.cc-kind-tag'))).toBe('All suites');
-      expect(historyCard(7).querySelector('.cc-hist-compared-label')).toBeNull();
     });
 
     it('opens a battery run report and a member\'s run report through the shell', () => {

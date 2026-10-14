@@ -322,6 +322,25 @@ describe('PairedTestsViewComponent', () => {
     expect(el().querySelectorAll('#mc-paired-intelligence .mcp-pair-list li').length).toBe(6);
   });
 
+  it('moves selection and focus to All pairs with ArrowRight', () => {
+    const keys = ['run:1', 'run:2', 'run:3', 'run:4'];
+    service.getPairedComparison.mockReturnValue(of(pairedDto(keys, 'Reference', 'run:4')));
+    show({ comparison: comparison(4), active: true });
+
+    service.getPairedComparison.mockReturnValue(of(pairedDto(keys, 'AllPairs', 'run:4')));
+    const reference = el().querySelector('#mc-paired-mode-Reference') as HTMLButtonElement;
+    reference.focus();
+    const event = new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true });
+    reference.dispatchEvent(event);
+    fixture.detectChanges();
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(lastRequest().mode).toBe('AllPairs');
+    const allPairs = el().querySelector('#mc-paired-mode-AllPairs') as HTMLButtonElement;
+    expect(allPairs.getAttribute('aria-selected')).toBe('true');
+    expect(document.activeElement).toBe(allPairs);
+  });
+
   it('refuses All pairs above twelve comparable entries and says why', () => {
     const keys = Array.from({ length: 13 }, (_unused, index) => `run:${index + 1}`);
     service.getPairedComparison.mockReturnValue(of(pairedDto(keys, 'Reference', 'run:13')));

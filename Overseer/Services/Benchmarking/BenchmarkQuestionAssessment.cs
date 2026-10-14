@@ -30,7 +30,4 @@ public static class BenchmarkQuestionAssessment
         question.AssessedDifficultyModelSnapshot = null;
         question.AssessedDifficultyModelSnapshotId = null;
     }
-
-    /// <summary>True when the question counts toward suite completion.</summary>
-    public static bool IsAssessed(BenchmarkQuestion question) => question.AssessedDifficulty.HasValue;
 }

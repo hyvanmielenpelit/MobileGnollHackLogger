@@ -363,19 +363,4 @@ describe('BenchmarkCostPanelComponent', () => {
       expect(apportionWholePercentShares([1, 1, 1])).toEqual([34, 33, 33]);
     });
   });
-
-  describe('formatAmount', () => {
-    it('should use four decimals at every magnitude', () => {
-      expect(component.formatAmount(2.5312)).toBe('$2.5312');
-      expect(component.formatAmount(1)).toBe('$1.0000');
-      expect(component.formatAmount(0.9912)).toBe('$0.9912');
-      expect(component.formatAmount(0.0004)).toBe('$0.0004');
-    });
-
-    it('should render a missing figure as a dash', () => {
-      expect(component.formatAmount(null)).toBe('-');
-      expect(component.formatAmount(undefined)).toBe('-');
-      expect(component.formatAmount(Number.NaN)).toBe('-');
-    });
-  });
 });

@@ -16,6 +16,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Privacy;
 using Overseer.Services.Security;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -79,8 +80,7 @@ internal sealed class AdminUserTestHost : IDisposable
         Directory.CreateDirectory(Path.Combine(Root, "dumplogs"));
         Directory.CreateDirectory(Path.Combine(Root, "conversations"));
 
-        _connection = new SqliteConnection("Filename=:memory:");
-        _connection.Open();
+        _connection = SqliteSchemaTemplate.OpenCopy();
 
         var values = new Dictionary<string, string?> { ["Admins"] = ActorName + ", " + OtherAdminName };
         if (erasurePaths)
@@ -112,7 +112,6 @@ internal sealed class AdminUserTestHost : IDisposable
         Provider = services.BuildServiceProvider();
 
         _scope = Provider.CreateScope();
-        Db.Database.EnsureCreated();
     }
 
     public void Dispose()

@@ -19,7 +19,7 @@ import {
   verificationTooltip
 } from '../shared/key-verification/key-verification';
 import { ensureOverlayPolyfills } from '../utils/polyfills.util';
-import { parseServerUtcDate } from '../utils/date.util';
+import { formatServerDate } from '../utils/date.util';
 
 /** An inline error under a provider's key input: the message, then the failure detail when there is one. */
 export interface ApiKeyFieldError {
@@ -271,11 +271,7 @@ export class ApiKeysComponent implements OnInit, OnDestroy {
   }
 
   /** Local calendar date for a stored UTC timestamp, or '' when nothing has been recorded. */
-  formatStamp(iso: string | null | undefined): string {
-    if (!iso) return '';
-    const parsed = parseServerUtcDate(iso);
-    return isNaN(parsed.getTime()) ? '' : parsed.toLocaleDateString();
-  }
+  readonly formatStamp = formatServerDate;
 
   onParallelModeChange(provider: string, mode: number) {
     const numMode = Number(mode);

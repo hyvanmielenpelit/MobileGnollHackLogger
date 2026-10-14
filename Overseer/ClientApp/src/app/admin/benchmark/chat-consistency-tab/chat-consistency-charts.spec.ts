@@ -5,6 +5,7 @@ import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import { DEFAULT_FIGURE_STYLE } from '../model-comparison/figure-style';
 import type { FigureAppearanceStyle } from '../model-comparison/figure-style';
 import { resolveFigureTheme } from '../model-comparison/figure-theme';
+import laney from './cc-laney-limits.fixture.json';
 import {
   CC_AVAILABILITY_FORMS,
   CC_CHART_STYLE_DEFAULTS,
@@ -1854,18 +1855,22 @@ describe('chat-consistency-charts', () => {
     const ys = (figure: CcFigure, id: string) =>
       (figure.config!.data.datasets.find(ds => ds.seriesId === id)!.data as CcChartPoint[]).map(point => point.y);
 
-    it('mirrors the server\'s Laney p′ limits', () => {
-      const limits = ccLaneyPPrimeLimits([{ k: 2, n: 100 }, { k: 5, n: 100 }, { k: 1, n: 100 }], 200)!;
-      expect(limits.center).toBeCloseTo(8 / 300, 10);
-      expect(limits.sigmaZ).toBeCloseTo(1.92594, 4);
-      expect(limits.lower).toBe(0);
-      expect(limits.upper).toBeCloseTo(0.092488, 5);
-      // One baseline unit, or a rate of 0, is the plain p chart; the limits are clipped to [0, 1].
-      expect(ccLaneyPPrimeLimits([{ k: 2, n: 100 }], 100)!.sigmaZ).toBe(1);
-      expect(ccLaneyPPrimeLimits([{ k: 0, n: 100 }, { k: 0, n: 50 }], 100)).toEqual({ center: 0, lower: 0, upper: 0, sigmaZ: 1 });
-      expect(ccLaneyPPrimeLimits([{ k: 50, n: 100 }], 1)).toEqual({ center: 0.5, lower: 0, upper: 1, sigmaZ: 1 });
-      expect(ccLaneyPPrimeLimits([{ k: 0, n: 0 }], 100)).toBeNull();
-      expect(ccLaneyPPrimeLimits([{ k: 2, n: 100 }], 0)).toBeNull();
+    it.each(laney.cases)('matches the shared Laney fixture: $name', ({ baseline, nI, expected }) => {
+      const limits = ccLaneyPPrimeLimits(baseline, nI);
+      if (expected === null) {
+        expect(limits).toBeNull();
+        return;
+      }
+      expect(limits).not.toBeNull();
+      for (const key of ['center', 'lower', 'upper', 'sigmaZ'] as const) {
+        expect(Math.abs(limits![key] - expected[key])).toBeLessThanOrEqual(laney.tolerance);
+      }
+    });
+
+    it('returns the client\'s value for each divergent case of the Laney fixture, where the server throws', () => {
+      for (const { baseline, nI, client } of laney.divergent) {
+        expect(ccLaneyPPrimeLimits(baseline, nI)).toBe(client);
+      }
     });
 
     it('draws a dot per unit with its interval, the availability-only run hollow, and says what it shows', () => {

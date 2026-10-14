@@ -126,7 +126,7 @@ public class BenchmarkReportComparisonIdentityRenderTests
     }
 
     // ---------------------------------------------------------------------------------------------
-    // W2: joint ranks in the documents
+    // Ranks in the documents: a separate rank keeps its stored wording
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
@@ -154,7 +154,7 @@ public class BenchmarkReportComparisonIdentityRenderTests
     }
 
     // ---------------------------------------------------------------------------------------------
-    // W1: no peer letter in a named copy
+    // No peer letter in a named copy
     // ---------------------------------------------------------------------------------------------
 
     [Theory]

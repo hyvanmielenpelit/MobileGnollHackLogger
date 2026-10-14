@@ -120,8 +120,8 @@ The holy grail has appeared in many quests throughout history.
 @"A holy symbol is a religious item used for prayer and turning undead.
 ");
 
-        // A single-match item with no title collision, so its exact-title lookup result carries a
-        // plain "--- Items/Torch.md ---" header rather than one qualified by "[Other matches: ...]".
+        // No test reads this article. It stays so the index's document count, and with it every
+        // term's IDF and the rankings the search tests pin, does not change.
         File.WriteAllText(Path.Combine(itemsDir, "Torch.md"),
 @"A torch is a simple light source that burns for a limited number of turns.
 

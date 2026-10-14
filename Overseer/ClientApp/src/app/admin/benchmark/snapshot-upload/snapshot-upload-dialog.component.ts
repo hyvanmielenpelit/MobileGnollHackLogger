@@ -21,21 +21,11 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { FilePickerComponent } from '../../../shared/file-picker/file-picker.component';
 import { errorText } from '../question-yaml/question-yaml-import-dialog.component';
+import { looksLikeHtml } from '../question-yaml/snapshot-file-check';
 
 export const MAX_SNAPSHOT_FILE_BYTES = 4 * 1024 * 1024;
 /** The server stores at most this many characters and marks the cut. */
 export const SNAPSHOT_STORED_CHARS = 60_000;
-
-/**
- * The server's rule for Auto: after trimming, content that starts with '<' and contains an html,
- * body or pre tag is an HTML dump; anything else is snapshot text.
- */
-export function looksLikeHtml(content: string): boolean {
-  const trimmed = (content ?? '').replace(/^﻿/, '').trim();
-  if (!trimmed.startsWith('<')) return false;
-  const lower = trimmed.toLowerCase();
-  return lower.includes('<html') || lower.includes('<body') || lower.includes('<pre');
-}
 
 /** A file name without its extension and a trailing ".snapshot", as the viewer's download names it. */
 export function snapshotNameFromFileName(fileName: string): string {

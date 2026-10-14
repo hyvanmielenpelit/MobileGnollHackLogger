@@ -238,7 +238,8 @@ public class ModelMetadataServiceTests
     [Fact]
     public void GetCatalogTargets_ListsEveryEntryNewestFirst()
     {
-        var targets = _service.GetCatalogTargets("Google");
+        var targets = _service.GetCatalogTargets("Google", new DateOnly(2026, 10, 14));
+        var pricing = _service.GetCatalogEntries("Google").Single(e => e.Prefixes[0] == "gemini-3.8-flash").Pricing!;
 
         Assert.Equal(_service.GetCatalogEntries("Google").Count, targets.Count);
         Assert.Equal(targets.OrderByDescending(t => t.ReleaseDate, StringComparer.Ordinal).Select(t => t.ReleaseDate), targets.Select(t => t.ReleaseDate));
@@ -248,8 +249,24 @@ public class ModelMetadataServiceTests
         Assert.Equal("Gemini 3.8 Flash", flash.DisplayName);
         Assert.Equal(1048576, flash.ContextWindowSize);
         Assert.Equal(65536, flash.MaxOutputTokens);
-        Assert.Equal(0.75m, flash.InputPerMillion);
-        Assert.Equal(3.75m, flash.OutputPerMillion);
+        Assert.Equal(pricing.InputPerMillion, flash.InputPerMillion);
+        Assert.Equal(pricing.OutputPerMillion, flash.OutputPerMillion);
+    }
+
+    [Fact]
+    public void GetCatalogTargets_PricesEachTargetAtTheRateInForceOnTheDay()
+    {
+        var pricing = _service.GetCatalogEntries("Google").Single(e => e.Prefixes[0] == "gemini-3.8-flash").Pricing!;
+        var scheduled = Assert.IsType<ModelCatalogScheduledPricing>(pricing.ScheduledChange);
+
+        var before = Assert.Single(_service.GetCatalogTargets("Google", new DateOnly(2026, 12, 31)), t => t.ModelId == "gemini-3.8-flash");
+        Assert.Equal(pricing.InputPerMillion, before.InputPerMillion);
+        Assert.Equal(pricing.OutputPerMillion, before.OutputPerMillion);
+
+        var after = Assert.Single(_service.GetCatalogTargets("Google", new DateOnly(2027, 1, 1)), t => t.ModelId == "gemini-3.8-flash");
+        Assert.Equal(scheduled.InputPerMillion, after.InputPerMillion);
+        Assert.Equal(scheduled.OutputPerMillion, after.OutputPerMillion);
+        Assert.NotEqual(before.InputPerMillion, after.InputPerMillion);
     }
 
     [Fact]

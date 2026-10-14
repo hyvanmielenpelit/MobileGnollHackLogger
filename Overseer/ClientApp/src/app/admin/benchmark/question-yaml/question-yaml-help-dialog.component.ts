@@ -14,6 +14,7 @@ import { MarkdownPipe } from '../../../chat/markdown.pipe';
 import { AdminBenchmarkService, RubricAuthoringGuidance } from '../../../services/admin-benchmark.service';
 import { CodeBlockComponent } from '../../../shared/code-block/code-block.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import {
   AI_INGRESS,
   AI_INSTRUCTIONS_FILE_NAME,
@@ -194,15 +195,8 @@ export class QuestionYamlHelpDialogComponent {
 
   onTabKeydown(event: KeyboardEvent, index: number): void {
     const tabs = this.tabs;
-    const count = tabs.length;
-    let next = index;
-    if (event.key === 'ArrowRight') next = (index + 1) % count;
-    else if (event.key === 'ArrowLeft') next = (index - 1 + count) % count;
-    else if (event.key === 'Home') next = 0;
-    else if (event.key === 'End') next = count - 1;
-    else return;
-
-    event.preventDefault();
+    const next = rovingTabIndex(event, index, tabs.length);
+    if (next === null) return;
     this.selectTab(tabs[next].id);
     document.getElementById(`${this.idPrefix}-tab-${this.activeTab}`)?.focus();
   }

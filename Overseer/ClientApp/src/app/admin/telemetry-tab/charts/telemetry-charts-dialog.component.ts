@@ -27,6 +27,7 @@ import {
 } from '../../../services/admin.service';
 import { PaneResizerComponent } from '../../../shared/pane-resizer/pane-resizer.component';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
+import { rovingTabIndex } from '../../../utils/roving-tab.util';
 import {
   CcFigureChrome,
   CcTargetPixels,
@@ -796,7 +797,7 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
 
   /** Left/Right move and wrap, Home/End jump to the ends; focus follows selection. */
   onSidebarTabKeydown(event: KeyboardEvent, index: number): void {
-    const next = this.rovingTabIndex(event, index, this.sidebarTabs.length);
+    const next = rovingTabIndex(event, index, this.sidebarTabs.length);
     if (next === null) return;
     const tab = this.sidebarTabs[next].id;
     this.selectSidebarTab(tab);
@@ -955,7 +956,7 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
   }
 
   onViewTabKeydown(event: KeyboardEvent, index: number): void {
-    const next = this.rovingTabIndex(event, index, this.viewTabs.length);
+    const next = rovingTabIndex(event, index, this.viewTabs.length);
     if (next === null) return;
     const view = this.viewTabs[next].id;
     this.selectView(view);
@@ -1404,15 +1405,6 @@ export class TelemetryChartsDialogComponent implements OnInit, AfterViewInit, Af
 
   tipId(action: string, key: string): string {
     return `tl-charts-tip-${action}-${key}`;
-  }
-
-  /** The §5 tab keyboard model's target index, or null for a key it does not handle. */
-  private rovingTabIndex(event: KeyboardEvent, index: number, count: number): number | null {
-    const targets: Record<string, number> = { ArrowRight: index + 1, ArrowLeft: index - 1, Home: 0, End: count - 1 };
-    const requested = targets[event.key];
-    if (requested === undefined) return null;
-    event.preventDefault();
-    return (requested + count) % count;
   }
 
   private persistLayout(): void {

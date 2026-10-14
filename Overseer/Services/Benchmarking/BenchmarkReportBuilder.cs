@@ -2471,9 +2471,7 @@ public static class BenchmarkReportBuilder
         // actually read and therefore the set the dimensional averages are taken over. Both are
         // needed: an index over a different item set than the run's stored one would put two
         // disagreeing numbers on one run.
-        var indexAnswers = answers
-            .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && IndexQualityOf(a).HasValue)
-            .ToList();
+        var indexAnswers = BenchmarkRunFinalizer.QualityIndexAnswers(answers, isPanelRun);
 
         var unansweredAnswers = answers
             .Where(BenchmarkRunFinalizer.IsModelProducedEmptyAnswer)
@@ -2485,10 +2483,10 @@ public static class BenchmarkReportBuilder
         // TerminalFailureAnswerCount, so it is recomputed here rather than trusted as zero.
         int terminalFailureCount = run.TerminalFailureAnswerCount ?? answers.Count(BenchmarkRunFinalizer.HasTerminalFailure);
 
-        var rawScorableItems = indexAnswers
-            .Select(a => (BenchmarkScoring.IndexRawQuality(a, isPanelRun), (int?)(a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty))))
-            .ToList();
-        int? rawQualityIndex = BenchmarkScoring.QualityIndex(rawScorableItems);
+        // Withheld with the headline indices, so a withheld run prints no Raw Quality Index.
+        int? rawQualityIndex = BenchmarkRunFinalizer.WithholdsIndices(run, answers)
+            ? null
+            : BenchmarkScoring.QualityIndex(BenchmarkRunFinalizer.RawQualityIndexItems(indexAnswers, isPanelRun));
         int cappedCount = scoredAnswers.Count(a =>
             BenchmarkScoring.IndexRawQuality(a, isPanelRun) is double raw && IndexQualityOf(a) is double published && raw > published);
 
