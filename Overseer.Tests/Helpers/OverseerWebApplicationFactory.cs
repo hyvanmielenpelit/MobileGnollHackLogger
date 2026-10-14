@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
 using System.Linq;
@@ -19,6 +21,16 @@ namespace Overseer.Tests.Helpers
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
+            // Host logs go to the running test's output, which the test runner shows only for a failed test.
+            builder.ConfigureLogging(logging =>
+            {
+                logging.ClearProviders();
+                logging.AddProvider(new TestContextLoggerProvider());
+            });
+
+            // Requests run in the calling test's execution context, so TestContext.Current names that test.
+            builder.UseTestServer(o => o.PreserveExecutionContext = true);
+
             builder.ConfigureAppConfiguration((context, configBuilder) =>
             {
                 // Inject fake admins and test encryption key for CryptoService dependency in BenchmarkService cleanup

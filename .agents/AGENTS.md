@@ -87,17 +87,21 @@ These are the **only** correct ways to run this repository's tests. Use them ver
   ```bash
   dotnet test Overseer.Tests --filter-not-trait "Category=UsesExternalApi"
   ```
-  The `--filter-not-trait` is **not optional**. Without it the run calls live OpenAI, Anthropic and Google APIs, spending quota and money. For the whole solution, substitute `MobileGnollHackLogger.slnx` for `Overseer.Tests`. Note the project directory is `Overseer.Tests`, plural.
+  The `--filter-not-trait` is **not optional**. The live-API tests are also marked `[Fact(Explicit = true)]`, so a run without the filter reports them as *Not run (due to explicit test filtering)* instead of calling OpenAI, Anthropic and Google; the filter stays the documented default as a second guard, because a new live test that omits `Explicit = true` would otherwise spend quota and money unnoticed. For the whole solution, substitute `MobileGnollHackLogger.slnx` for `Overseer.Tests`. Note the project directory is `Overseer.Tests`, plural.
 
-  To run **only** the live-API tests, which needs the secrets and your explicit permission, the counterpart is `--filter-trait "Category=UsesExternalApi"` — the same argument, without the `not`.
+  To run **only** the live-API tests, which needs the secrets and your explicit permission:
+  ```bash
+  dotnet test Overseer.Tests --filter-trait "Category=UsesExternalApi" --explicit on
+  ```
+  The trait filter selects them; `--explicit on` lets explicit tests execute. Without it the command runs nothing and reports the four as not run.
 
   **This command depends on the repository-root `global.json`.** `Overseer.Tests` is a Microsoft.Testing.Platform application, and from the .NET 10 SDK onward `dotnet test` refuses to run one through the old VSTest path — *"Testing with VSTest target is no longer supported…"*. The `"test": { "runner": "Microsoft.Testing.Platform" }` entry in `global.json` selects the new runner, and without it the command above fails outright. **Do not delete or "modernise" that file** — see the `testing-guidelines` skill for why `dotnet.config` is not the mechanism here.
 
   > ⚠️ **The filter fails open, so verify it rather than trusting it.** A typo in the trait name or its value — `Categoy=UsesExternalApi`, `Category=UsesExternalApis` — matches nothing, therefore excludes nothing, and runs the live-API tests without a word of complaint. So does writing `!=` inside `--filter-not-trait`, which is the old VSTest habit. If you change the argument, confirm it with a **discovery** count first, which runs no test and spends nothing:
   > ```bash
-  > dotnet test Overseer.Tests --list-tests --filter-trait "Category=UsesExternalApi"
+  > dotnet test Overseer.Tests --list-tests text --filter-trait "Category=UsesExternalApi"
   > ```
-  > That must report exactly the live-API tests (4 as of 2026-09-09). Never check a filter by running the suite unfiltered.
+  > That must report exactly the live-API tests (4 as of 2026-10-14). Discovery lists explicit tests too, so the count is unaffected by `Explicit = true`. `--list-tests` takes a format argument (`text` or `json`); without one it reads the next option as its format and fails.
 
   > **If you meet `--filter "Category!=UsesExternalApi"` in an older plan or commit, it is the same thing.** That is VSTest filter syntax, which Microsoft.Testing.Platform accepts as a compatibility shim; this repository moved to the native `--filter-not-trait` on 2026-09-09 so the documented command does not rest on a compatibility layer in a toolchain that has already dropped one. Both still work today.
 

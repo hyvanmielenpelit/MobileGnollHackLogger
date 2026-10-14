@@ -175,20 +175,23 @@ Two prerequisites for that command, both easy to break:
    tests that cost money. Verify with a discovery run, which executes nothing:
 
    ```powershell
-   dotnet test Overseer.Tests --list-tests --filter-trait "Category=UsesExternalApi"
+   dotnet test Overseer.Tests --list-tests text --filter-trait "Category=UsesExternalApi"
    ```
 
-   It must list exactly the live-API tests — 4 as of 2026-09-09, one in `ChatServiceTests` and
+   It must list exactly the live-API tests — 4 as of 2026-10-14, one in `ChatServiceTests` and
    three in `ServiceTierLiveApiTests`.
 
-> **The secrets are what make an unfiltered run expensive, and they are also why it looks safe on
-> a fresh clone.** Without them the four live tests *fail* (they assert on
-> `LiveTestSecrets.DescribeMissing`) rather than calling anything, so an unfiltered run on an
-> unconfigured machine costs nothing and proves nothing about a configured one.
+> **The four live tests are `[Fact(Explicit = true)]`**, so an unfiltered run reports them as
+> *Not run (due to explicit test filtering)* and calls nothing. The filter above is kept as a
+> second guard for a future live test that omits `Explicit = true`. When explicitly run without
+> the secrets, the live tests *fail* (they assert on `LiveTestSecrets.DescribeMissing`) rather
+> than calling anything.
 
 ### Live API Test Run (Requires Secrets & Permission)
 Per [`testing_guidelines`](../../.agents/skills/testing_guidelines/SKILL.md) §1, AI agents must **always request explicit user permission** before executing tests that connect to external AI APIs:
 
 ```powershell
-dotnet test Overseer.Tests\Overseer.Tests.csproj --filter-trait "Category=UsesExternalApi"
+dotnet test Overseer.Tests\Overseer.Tests.csproj --filter-trait "Category=UsesExternalApi" --explicit on
 ```
+
+`--explicit on` is required: the live tests are explicit, and without it they are reported as not run.

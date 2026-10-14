@@ -254,10 +254,10 @@ dotnet test --filter-method "*EmptyResponseNotice_*"
 > discovery run, which executes nothing:
 >
 > ```bash
-> dotnet test Overseer.Tests --list-tests --filter-trait "Category=UsesExternalApi"
+> dotnet test Overseer.Tests --list-tests text --filter-trait "Category=UsesExternalApi"
 > ```
 >
-> It must list exactly the live-API tests (4 as of 2026-09-09). Never verify a filter by running
+> It must list exactly the live-API tests (4 as of 2026-10-14). Never verify a filter by running
 > the suite unfiltered.
 
 ---

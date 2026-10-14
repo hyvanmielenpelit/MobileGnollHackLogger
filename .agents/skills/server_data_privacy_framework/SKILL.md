@@ -279,7 +279,7 @@ dotnet test Overseer.Tests --filter-not-trait "Category=UsesExternalApi"
 
 Without it the run calls the live OpenAI, Anthropic and Google APIs, spending quota and money.
 The filter **fails open**, so a typo in the trait name excludes nothing and says nothing — verify
-a changed filter by discovery (`--list-tests --filter-trait "Category=UsesExternalApi"`), never by
+a changed filter by discovery (`--list-tests text --filter-trait "Category=UsesExternalApi"`), never by
 running the suite unfiltered. The rest of the rules are in `testing_guidelines`.
 
 Five harness facts this framework's own tests were built on:

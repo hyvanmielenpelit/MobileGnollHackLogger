@@ -107,8 +107,7 @@ public class ConfigHealthServiceTests
     public void AlertsWithoutALink_LeaveTheLinkFieldsNull()
     {
         var alert = Assert.Single(new ConfigHealthService(new ConfigurationBuilder().Build())
-            .GetSystemAlerts()
-            .Where(a => a.Id == "sentry-dsn-missing"));
+            .GetSystemAlerts(), a => a.Id == "sentry-dsn-missing");
 
         Assert.Null(alert.LinkUrl);
         Assert.Null(alert.LinkText);

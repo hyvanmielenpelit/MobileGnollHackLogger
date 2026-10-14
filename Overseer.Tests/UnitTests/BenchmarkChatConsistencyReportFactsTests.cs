@@ -1191,7 +1191,7 @@ public class BenchmarkChatConsistencyReportFactsTests
 
         Assert.Contains("availability.baseline.providerErrorRate", keys);
         Assert.Contains("endpoint.P6.ci95", keys);
-        Assert.Empty(keys.Where(k => !BenchmarkReportFactLabels.TryLabel(k, out _)));
+        Assert.DoesNotContain(keys, k => !BenchmarkReportFactLabels.TryLabel(k, out _));
         Assert.All(keys, k => Assert.DoesNotContain(".", BenchmarkReportFactLabels.Label(k)));
     }
 

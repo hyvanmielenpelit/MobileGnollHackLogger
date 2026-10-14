@@ -208,7 +208,7 @@ dotnet test MobileGnollHackLogger.slnx --filter-not-trait "Category=UsesExternal
 ```
 
 ```powershell
-dotnet test Overseer.Tests\Overseer.Tests.csproj --filter-trait "Category=UsesExternalApi"
+dotnet test Overseer.Tests\Overseer.Tests.csproj --filter-trait "Category=UsesExternalApi" --explicit on
 ```
 
 Any live test touching these models **must** tolerate HTTP 429 and 503 by logging a

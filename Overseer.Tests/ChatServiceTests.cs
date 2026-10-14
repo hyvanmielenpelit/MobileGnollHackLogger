@@ -13,6 +13,9 @@ using Xunit;
 // 
 // To run the test suite while SKIPPING this file (to save AI API quota), use:
 // dotnet test --filter-not-trait "Category=UsesExternalApi"
+//
+// The live test is Explicit, so it runs only when asked for:
+// dotnet test Overseer.Tests --filter-trait "Category=UsesExternalApi" --explicit on
 // ====================================================================================
 
 namespace Overseer.Tests
@@ -26,7 +29,7 @@ namespace Overseer.Tests
             _output = output;
         }
 
-        [Fact]
+        [Fact(Explicit = true)]
         [Trait("Category", "UsesExternalApi")]
         public async Task StreamMessageAsync_Returns_Valid_Response()
         {

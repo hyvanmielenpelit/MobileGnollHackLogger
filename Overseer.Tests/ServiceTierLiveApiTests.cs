@@ -20,6 +20,9 @@ using Xunit;
 // To run the test suite while SKIPPING this file (to save AI API quota and money), use:
 // dotnet test MobileGnollHackLogger.slnx --filter-not-trait "Category=UsesExternalApi"
 //
+// The tests are Explicit, so they run only when asked for:
+// dotnet test Overseer.Tests --filter-trait "Category=UsesExternalApi" --explicit on
+//
 // Expected behaviour of the live API is documented in
 // docs/overseer/gemini-service-tier-measurements.md — read it before debugging a failure.
 // ====================================================================================
@@ -62,7 +65,7 @@ namespace Overseer.Tests
             return (config, provider, apiKey, model);
         }
 
-        [Fact]
+        [Fact(Explicit = true)]
         public async Task Google_NonStreaming_ReportsServiceTier_InHeaderAndBody()
         {
             var (_, provider, apiKey, model) = Setup();
@@ -130,7 +133,7 @@ namespace Overseer.Tests
             }
         }
 
-        [Fact]
+        [Fact(Explicit = true)]
         public async Task Google_Streaming_ReportsServiceTier_InBodyOnly()
         {
             var (_, provider, apiKey, model) = Setup();
@@ -206,7 +209,7 @@ namespace Overseer.Tests
             }
         }
 
-        [Fact]
+        [Fact(Explicit = true)]
         public async Task Google_Streaming_PriorityRequest_IsHonouredOrDowngraded()
         {
             var (_, provider, apiKey, model) = Setup();

@@ -21,10 +21,11 @@ Tests that call external APIs (like OpenAI, Anthropic, or Google) consume quota 
     ```bash
     dotnet test MobileGnollHackLogger.slnx --filter-not-trait "Category=UsesExternalApi"
     ```
-    The opt-in counterpart, for a deliberate live-API run, is the same argument without the `not`:
+    The opt-in counterpart, for a deliberate live-API run, is the same argument without the `not`, plus `--explicit on`:
     ```bash
-    dotnet test Overseer.Tests --filter-trait "Category=UsesExternalApi"
+    dotnet test Overseer.Tests --filter-trait "Category=UsesExternalApi" --explicit on
     ```
+*   **Explicit**: every live-API test is also `[Fact(Explicit = true)]`, so a run without the trait filter reports it as *Not run (due to explicit test filtering)* instead of calling the API. A new live test gets both the trait and `Explicit = true`. The filter stays in the default command as a second guard against a live test that omits `Explicit = true`.
     Both commands are also stated in **`AGENTS.md`**, which is loaded into every context window, so they are available without invoking this skill. The Verification Plan rules that consume them are in `server_implementation_planning`.
 
 ### 1a. What makes that command work, what makes it unsafe, and why it is spelled this way
@@ -77,11 +78,17 @@ silently. Measured on 2026-09-09 by discovery count:
 The last row is the one to watch during the transition: `--filter-not-trait` takes a plain
 `name=value` pair, and an operator smuggled into the value is accepted in silence.
 
+Since 2026-10-14 the four live tests are `[Fact(Explicit = true)]`, which closes the fail-open path
+for them: measured that day, discovery found 8098 tests and 4 live, and an unfiltered run executed
+8094 and reported the 4 as *Not run (due to explicit test filtering)*. The table above still holds
+for discovery, which lists explicit tests, and for any future live test that omits `Explicit = true`.
+
 **So verify a filter by discovery, never by running the suite.** `--list-tests` enumerates without
-executing anything, so it costs nothing:
+executing anything, so it costs nothing. It takes a format argument (`text` or `json`); without one
+it reads the next option as its format and fails:
 
 ```bash
-dotnet test Overseer.Tests --list-tests --filter-trait "Category=UsesExternalApi"
+dotnet test Overseer.Tests --list-tests text --filter-trait "Category=UsesExternalApi"
 ```
 
 That must list exactly the live-API tests and nothing else. The arithmetic to check is
@@ -91,9 +98,9 @@ executes 1478.
 
 > **The four live tests fail rather than skip when their secrets are absent**
 > (`LiveTestSecrets.DescribeMissing` feeds `Assert.True`), which is deliberate — see § 1's secrets
-> note. The consequence for this section: on a machine **without** the secrets an unfiltered run
-> costs nothing and merely reports four failures, while on a machine **with** them it spends real
-> money. Do not infer from a clean unfiltered run on one machine that the filter is unnecessary on
+> note. The consequence for this section: on a machine **without** the secrets a run that executes
+> them costs nothing and merely reports four failures, while on a machine **with** them it spends
+> real money. Do not infer from a clean run on one machine that the filter is unnecessary on
 > another.
 
 **Why `--filter-not-trait` and not `--filter`.** Both select the same 1478 tests, in every command
@@ -233,6 +240,7 @@ When testing ASP.NET Core controllers and endpoints:
 *   **Remove Hosted Services**: Remove background services like `SourceCodeService` that perform heavy local file I/O unless explicitly testing them.
 *   **Mock Authentication**: Swap the real cookie authentication with a `TestAuthHandler` that can automatically log in a user based on an HTTP header (e.g., `X-Test-User`).
 *   **Swap Database**: Replace the SQL Server DbContext with `UseInMemoryDatabase`.
+*   **Logging**: the factory clears the host's logging providers and routes logs to the current test's output (`Overseer.Tests/Helpers/TestContextLoggerProvider.cs`), with `PreserveExecutionContext` on the TestServer so a request's log reaches the test that sent it. Passing runs stay quiet; a failing test carries its server log, and `--output detailed` shows it for passing ones. Expect `ExecuteUpdate ... not supported` warnings there: the InMemory provider cannot run `ExecuteUpdateAsync`, and its callers catch and log by design. Their logic is tested on SQLite.
 *   **Blank corpus paths**: the factory sets `WikiPath`, `NetHackWikiPath`, `KbPath`, `SourceCodePath` and `NetHackSourceCodePath` to empty, because Overseer's `ApplicationStarted` hook would otherwise index the developer's real corpora once per factory.
 
 ## 4. Angular Frontend Testing (Overseer ClientApp)
