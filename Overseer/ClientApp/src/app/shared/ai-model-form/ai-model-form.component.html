@@ -200,7 +200,7 @@
             [(ngModel)]="pickerModelSelect"
             (change)="onPickerModelSelect()"
             [disabled]="loadingModels || (isAdmin && !usesDefaultKey && !apiKey && !hasApiKey)">
-            @for (model of sortedModels; track model) {
+            @for (model of sortedModels; track model.id) {
               <option [value]="model.id">
                 {{ model.displayName || model.id }} {{ model.isRecommended ? '⭐' : '' }}
               </option>

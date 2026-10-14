@@ -340,6 +340,32 @@ describe('AiModelFormComponent', () => {
     });
   });
 
+  describe('Model list', () => {
+    const el = () => fixture.nativeElement as HTMLElement;
+    const option = (id: string) => Array.from(el().querySelectorAll<HTMLOptionElement>('#pickerModelSelect option'))
+      .find(o => o.value === id);
+
+    beforeEach(() => {
+      component.isAdmin = true;
+      component.mode = 'add';
+      component.apiKey = 'dummy-key';
+      fixture.detectChanges();
+    });
+
+    it('keeps each model\'s option when Check Models returns fresh objects for the same models', () => {
+      component.onCheckModels();
+      fixture.detectChanges();
+      const before = mockModels.map(m => option(m.id));
+      before.forEach((o, i) => expect(o, mockModels[i].id).toBeDefined());
+
+      (settingsService.getAvailableModels as Mock).mockReturnValue(of(mockModels.map(m => ({ ...m }))));
+      component.onCheckModels();
+      fixture.detectChanges();
+
+      mockModels.forEach((m, i) => expect(option(m.id), m.id).toBe(before[i]));
+    });
+  });
+
   describe('Edit mode initialization and custom fallback', () => {
     it('should fallback model and thinkingLevel/reasoningMode/reasoningSummary to custom when model is not in availableModels', () => {
       component.isAdmin = true;
