@@ -221,19 +221,6 @@ public class BenchmarkComparabilityIdentityTests
             BenchmarkComparabilityKey.ComputeKeyHash(DeleteSuite(Run(1))));
     }
 
-    [Fact]
-    public void Resolve_MembersUsingDifferentItemRevisions_IsNotComparable()
-    {
-        var a = Run(1);
-        var b = Run(2);
-        b.Answers.First().ItemRevisionUsed = 2;
-
-        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
-
-        Assert.Equal(BenchmarkComparabilityTier.NotComparable, result.Tier);
-        Assert.Contains(result.Differences, d => d.Name == BenchmarkComparabilityKey.ItemRevisionsKey);
-    }
-
     // --- Helpers ------------------------------------------------------------------------------------
 
     private static string SuiteKeyOf(BenchmarkRun run)

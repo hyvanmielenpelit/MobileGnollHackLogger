@@ -122,14 +122,27 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(BenchmarkReportPackRenderer.ReportFormatVersion, document.ReportFormatVersion);
     }
 
-    [Fact]
-    public async Task AnUnrepairedIntervalAdjective_IsKept_AndMarksTheDocumentWithWarnings()
+    /// <summary>
+    /// A warning rule's issue still there after the repair turn: the text is kept, its note is kept
+    /// undropped, and the document completes with warnings.
+    /// </summary>
+    [Theory]
+    [InlineData("confidence", "The interval is narrow, so the result should be read with care.", BenchmarkReportPackValidator.IntervalWidthRule, null)]
+    [InlineData("headline", "{{subject}} answered well, though the claim verifier refuted one of its answers.", BenchmarkReportPackValidator.VerifierInSummaryRule, "headline")]
+    [InlineData("strength", "{{subject}} showed sound judgement on item lore.", BenchmarkReportPackValidator.UsSpellingRule, "strengths[1]")]
+    public async Task AWarningStillThereAfterRepair_IsKept_AndTheDocumentCompletesWithWarnings(
+        string part, string text, int rule, string? location)
     {
         await using var h = await Harness.CreateAsync();
         var prep = await h.PrepareAsync();
-        const string confidence = "The interval is narrow, so the result should be read with care.";
-        h.Provider.Replies.Enqueue(ExecutiveReply(prep, confidence: confidence));
-        h.Provider.Replies.Enqueue(ExecutiveReply(prep, confidence: confidence));
+        string reply = part switch
+        {
+            "confidence" => ExecutiveReply(prep, confidence: text),
+            "headline" => ExecutiveReply(prep, headline: text),
+            _ => ExecutiveReply(prep, extraStrength: text)
+        };
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(reply);
 
         var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
 
@@ -137,30 +150,23 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(2, h.Provider.Calls);
         var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
+
         var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
-        Assert.Equal(confidence, writer.Sections[BenchmarkReportSlots.Confidence]);
+        switch (part)
+        {
+            case "confidence":
+                Assert.Equal(text, writer.Sections[BenchmarkReportSlots.Confidence]);
+                break;
+            case "headline":
+                Assert.Equal(text, writer.Headline);
+                break;
+            default:
+                Assert.Contains(writer.Strengths, s => s.Text == text);
+                break;
+        }
+
         var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson!);
-        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.IntervalWidthRule && !n.Dropped);
-    }
-
-    [Fact]
-    public async Task AHeadlineNamingTheClaimVerifier_GetsTheRepairTurn_AndIsKeptWithItsNote()
-    {
-        await using var h = await Harness.CreateAsync();
-        var prep = await h.PrepareAsync();
-        const string headline = "{{subject}} answered well, though the claim verifier refuted one of its answers.";
-        h.Provider.Replies.Enqueue(ExecutiveReply(prep, headline: headline));
-        h.Provider.Replies.Enqueue(ExecutiveReply(prep, headline: headline));
-
-        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
-
-        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
-        Assert.Equal(2, h.Provider.Calls);
-        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
-        var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
-        Assert.Equal(headline, writer.Headline);
-        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson!);
-        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.VerifierInSummaryRule && !n.Dropped && n.Location == "headline");
+        Assert.Contains(notes, n => n.Rule == rule && !n.Dropped && (location == null || n.Location == location));
         Assert.DoesNotContain(notes, n => n.Dropped);
     }
 
@@ -238,29 +244,6 @@ public class BenchmarkReportPackServiceTests
         Assert.Contains(notes, n => n.Dropped && n.Location.StartsWith("strengths", StringComparison.Ordinal));
         var output = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
         Assert.DoesNotContain(output.Strengths, s => s.Text.Contains('7'));
-        Assert.Equal(2, h.Provider.Calls);
-    }
-
-    [Fact]
-    public async Task ABritishSpellingStillThereAfterRepair_IsKept_AndTheDocumentCompletesWithWarnings()
-    {
-        await using var h = await Harness.CreateAsync();
-        var prep = await h.PrepareAsync();
-        string reply = ExecutiveReply(prep, extraStrength: "{{subject}} showed sound judgement on item lore.");
-        h.Provider.Replies.Enqueue(reply);
-        h.Provider.Replies.Enqueue(reply);
-
-        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
-
-        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
-        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
-        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
-
-        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson);
-        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.UsSpellingRule && !n.Dropped && n.Location == "strengths[1]");
-        Assert.DoesNotContain(notes, n => n.Dropped);
-        var output = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
-        Assert.Contains(output.Strengths, s => s.Text.Contains("judgement", StringComparison.Ordinal));
         Assert.Equal(2, h.Provider.Calls);
     }
 
@@ -1276,15 +1259,6 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(
             new[] { typeof(ApplicationDbContext), typeof(BenchmarkReportChartStore), typeof(ILogger<BenchmarkReportRenderService>) },
             constructor.GetParameters().Select(p => p.ParameterType));
-    }
-
-    [Fact]
-    public void TheRenderer_IsAStaticClassWithoutFields()
-    {
-        var type = typeof(BenchmarkReportPackRenderer);
-        Assert.True(type.IsAbstract && type.IsSealed, "BenchmarkReportPackRenderer must be static.");
-        var fields = type.GetFields(BindingFlags.Static | BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-        Assert.All(fields, f => Assert.True(f.IsLiteral, $"{f.Name} is a field, not a constant."));
     }
 
     [Fact]

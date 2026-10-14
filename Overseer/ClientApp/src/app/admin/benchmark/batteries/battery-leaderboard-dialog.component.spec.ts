@@ -13,7 +13,6 @@ import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import {
   BatteryLeaderboardDialogComponent,
   BatteryLeaderboardOpenRequest,
-  comparisonSourceIds,
   intervalStripGeometry,
   intervalStripScale,
   intervalsOverlap
@@ -584,11 +583,6 @@ describe('BatteryLeaderboardDialogComponent', () => {
 
     const expected = Array.from({ length: MAX_COMPARISON_SOURCES }, (_, i) => MAX_COMPARISON_SOURCES - i);
     expect(bridge.openComparisonWizard).toHaveBeenCalledWith({ batteryRunIds: expected });
-  });
-
-  it('keeps every source that fits', () => {
-    expect(comparisonSourceIds(threeRows(), 2)).toEqual([1, 2]);
-    expect(comparisonSourceIds(threeRows())).toEqual([1, 2, 3]);
   });
 
   it('refreshes the leaderboard and keeps the shown class', () => {

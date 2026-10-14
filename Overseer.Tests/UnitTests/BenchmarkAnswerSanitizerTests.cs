@@ -78,7 +78,7 @@ public class BenchmarkAnswerSanitizerTests
 
         Assert.Equal("Silver dragons reflect rays.", result.AnswerText.Trim());
         Assert.NotNull(result.ThoughtText);
-        Assert.Contains("Thinking about silver dragons...", result.ThoughtText);
+        Assert.Equal("Thinking about silver dragons...", result.ThoughtText);
         Assert.Equal(BenchmarkAnswerFlags.None, result.Flags);
     }
 

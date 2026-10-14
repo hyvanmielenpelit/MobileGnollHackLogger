@@ -397,25 +397,16 @@ describe('key figures image', () => {
   });
 
   describe('strip layout', () => {
-    it('pads 7 cards in two columns to an exact square', () => {
-      const layout = chooseStripLayout(cellsOf(7), STRIP_TEXT, noWrap);
-      expect([layout.columns, layout.cardWidth, layout.mainSpans]).toEqual([2, 280, false]);
-      expect(layout.naturalHeight).toBe(617);
-      expect([layout.width, layout.height, layout.square]).toEqual([618, 618, true]);
-    });
-
-    it('pads 9 cards in two columns to an exact square', () => {
-      const layout = chooseStripLayout(cellsOf(9), STRIP_TEXT, noWrap);
-      expect([layout.columns, layout.cardWidth, layout.mainSpans]).toEqual([2, 340, false]);
-      expect(layout.naturalHeight).toBe(719);
-      expect([layout.width, layout.height, layout.square]).toEqual([738, 738, true]);
-    });
-
-    it('pads 10 cards in two columns to an exact square', () => {
-      const layout = chooseStripLayout(cellsOf(10), STRIP_TEXT, noWrap);
-      expect([layout.columns, layout.cardWidth, layout.mainSpans]).toEqual([2, 340, false]);
-      expect(layout.naturalHeight).toBe(719);
-      expect([layout.width, layout.height, layout.square]).toEqual([738, 738, true]);
+    it.each([
+      { label: '7 cards in two columns', count: 7, columns: 2, cardWidth: 280, naturalHeight: 617, side: 618 },
+      { label: '9 cards in two columns', count: 9, columns: 2, cardWidth: 340, naturalHeight: 719, side: 738 },
+      { label: '10 cards in two columns', count: 10, columns: 2, cardWidth: 340, naturalHeight: 719, side: 738 },
+      { label: 'a single card', count: 1, columns: 1, cardWidth: 270, naturalHeight: 311, side: 318 }
+    ])('pads $label to an exact square', ({ count, columns, cardWidth, naturalHeight, side }) => {
+      const layout = chooseStripLayout(cellsOf(count), STRIP_TEXT, noWrap);
+      expect([layout.columns, layout.cardWidth, layout.mainSpans]).toEqual([columns, cardWidth, false]);
+      expect(layout.naturalHeight).toBe(naturalHeight);
+      expect([layout.width, layout.height, layout.square]).toEqual([side, side, true]);
     });
 
     it('keeps 11 cards landscape in three columns, the main card spanning two', () => {
@@ -455,13 +446,6 @@ describe('key figures image', () => {
       expect([one.columns, one.cardWidth, one.mainSpans]).toEqual([1, 260, false]);
       expect(one.naturalHeight).toBe(302);
       expect([one.width, one.height, one.square]).toEqual([308, 308, true]);
-    });
-
-    it('pads a single card to an exact square', () => {
-      const layout = chooseStripLayout(cellsOf(1), STRIP_TEXT, noWrap);
-      expect([layout.columns, layout.cardWidth]).toEqual([1, 270]);
-      expect(layout.naturalHeight).toBe(311);
-      expect([layout.width, layout.height, layout.square]).toEqual([318, 318, true]);
     });
 
     it('widens a single card with long notes until it is no longer portrait', () => {

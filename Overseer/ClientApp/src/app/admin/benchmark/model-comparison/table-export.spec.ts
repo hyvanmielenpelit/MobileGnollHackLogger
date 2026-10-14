@@ -155,7 +155,7 @@ describe('table-export', () => {
     };
   }
 
-  /** Every display column shown, in catalogue order: in the data flavour, all thirty-four parts. */
+  /** Every display column shown, in catalogue order: in the data flavour, every catalogue part. */
   const ALL_COLUMNS: TableColumnConfig = {
     order: TABLE_DISPLAY_COLUMNS.map(column => column.key),
     shown: TABLE_DISPLAY_COLUMNS.map(column => column.key)
@@ -200,10 +200,10 @@ describe('table-export', () => {
   // The model
   // -------------------------------------------------------------------------------------------
 
-  it('declares thirty-four columns, and a cell for every one of them on every row', () => {
+  it('declares every catalogue column, and a cell for every one of them on every row', () => {
     const built = model([buildEntry(), buildEntry({ key: 'run:2', sourceId: 44 })]);
 
-    expect(built.columns.length).toBe(34);
+    expect(built.columns.length).toBe(COMPARISON_TABLE_COLUMNS.length);
     expect(new Set(built.columns.map(column => column.key)))
       .toEqual(new Set(COMPARISON_TABLE_COLUMNS.map(column => column.key)));
     expect(built.rows.length).toBe(2);
@@ -303,11 +303,9 @@ describe('table-export', () => {
   // The display columns and the two flavours
   // -------------------------------------------------------------------------------------------
 
-  it('catalogues 36 display columns that cover every part, each primary once and each other part as its own column', () => {
-    expect(TABLE_DISPLAY_COLUMNS.length).toBe(36);
-    expect(new Set(TABLE_DISPLAY_COLUMNS.map(column => column.key)).size).toBe(36);
+  it('catalogues display columns that cover every part, each primary once and each other part as its own column', () => {
+    expect(new Set(TABLE_DISPLAY_COLUMNS.map(column => column.key)).size).toBe(TABLE_DISPLAY_COLUMNS.length);
     const singles = TABLE_DISPLAY_COLUMNS.filter(column => column.renderer === 'text');
-    expect(singles.length).toBe(25);
     expect(singles.every(column => column.parts.length === 1 && column.parts[0] === column.key && column.sortPart === column.key)).toBe(true);
     const primaries = TABLE_DISPLAY_COLUMNS.filter(column => column.renderer !== 'text').map(column => column.parts[0]);
     const covered = new Set([...singles.map(column => column.key), ...primaries.filter(part => !singles.some(s => s.key === part))]);
@@ -321,7 +319,7 @@ describe('table-export', () => {
         'Model', 'R', 'State', 'Intelligence Index', 'Speed Index', 'Timings', 'Candidate $ / question',
         'Total $ / run, with grading', 'Provider errors', 'Notes'
       ]);
-    expect(DEFAULT_TABLE_COLUMNS.order.length).toBe(36);
+    expect(DEFAULT_TABLE_COLUMNS.order.length).toBe(TABLE_DISPLAY_COLUMNS.length);
     // Re-runs needed is offered, after Provider errors, but hidden.
     expect(DEFAULT_TABLE_COLUMNS.order.indexOf('rerunsCol')).toBe(DEFAULT_TABLE_COLUMNS.order.indexOf('providerErrors') + 1);
     expect(DEFAULT_TABLE_COLUMNS.shown).not.toContain('rerunsCol');
@@ -331,7 +329,7 @@ describe('table-export', () => {
     const built = buildComparisonTableModel([buildEntry({ runCount: 1, reasoningMode: 'extended' })], provenance(), DEFAULT_TABLE_COLUMNS, 'reading');
     const cells = built.rows[0].cells;
 
-    expect(built.columns.length).toBe(10);
+    expect(built.columns.length).toBe(DEFAULT_TABLE_COLUMNS.shown.length);
     expect(cells['providerErrors'].text).toBe('0.81 % (12/1,480)');
     expect(cells['model'].text).toBe('Gemini 2.5 Flash · medium · extended · Google · Run 43');
     expect(cells['runs'].text).toBe('1 · n = 1');
@@ -414,7 +412,6 @@ describe('table-export', () => {
     // ± is shown before Intelligence Index, so it is written there, and not again inside the index's parts.
     expect(keys.indexOf('intervalHalfWidth')).toBeLessThan(keys.indexOf('intelligenceIndex'));
     expect(keys.slice(0, 4)).toEqual(['label', 'thinkingLevel', 'provider', 'source']);
-    expect(buildComparisonTableModel([buildEntry()], provenance(), DEFAULT_TABLE_COLUMNS, 'data').columns.length).toBe(29);
   });
 
   it('carries provider errors and re-runs as typed parts, and words their combined cells as on screen', () => {
@@ -461,7 +458,7 @@ describe('table-export', () => {
       shown: ['notes', 'nope']
     });
     expect(repaired.order.slice(0, 2)).toEqual(['notes', 'model']);
-    expect(repaired.order.length).toBe(36);
+    expect(repaired.order.length).toBe(TABLE_DISPLAY_COLUMNS.length);
     expect(repaired.shown).toEqual(['notes', 'model']);
     expect(normalizeTableColumnConfig(null)).toEqual({ order: DEFAULT_TABLE_COLUMNS.order, shown: DEFAULT_TABLE_COLUMNS.shown });
     expect(sameTableColumnConfig(normalizeTableColumnConfig('x'), DEFAULT_TABLE_COLUMNS)).toBe(true);
@@ -487,7 +484,7 @@ describe('table-export', () => {
 
       expect(migrated.order[migrated.order.indexOf('cost') + 1]).toBe('totalCost');
       expect(migrated.shown).toEqual(['model', 'runs', 'cost', 'totalCost', 'providerErrors', 'notes']);
-      expect(migrated.order.length).toBe(36);
+      expect(migrated.order.length).toBe(TABLE_DISPLAY_COLUMNS.length);
     });
 
     it('adds it hidden when candidate cost is hidden', () => {
@@ -509,7 +506,7 @@ describe('table-export', () => {
       expect(migrated.order.slice(at, at + 4)).toEqual(['cost', 'totalCost', 'providerErrors', 'rerunsCol']);
       // Shown as the new default is, rather than appended hidden by the normalization.
       expect(migrated.shown).toEqual(['model', 'cost', 'totalCost', 'providerErrors']);
-      expect(migrated.order.length).toBe(36);
+      expect(migrated.order.length).toBe(TABLE_DISPLAY_COLUMNS.length);
     });
 
     it('puts Provider errors, shown, and Re-runs needed, hidden, after the total cost in a version-2 layout', () => {
@@ -520,7 +517,7 @@ describe('table-export', () => {
       expect(migrated.shown).toEqual(['model', 'cost', 'providerErrors']);
       // The three new parts are offered at the end, hidden.
       expect(migrated.order.slice(-3)).toEqual(['providerErrorCount', 'providerAttempts', 'providerReruns']);
-      expect(migrated.order.length).toBe(36);
+      expect(migrated.order.length).toBe(TABLE_DISPLAY_COLUMNS.length);
     });
 
     it('leaves a version-3 layout as saved, so a column the admin hid stays hidden', () => {
@@ -588,7 +585,7 @@ describe('table-export', () => {
 
     expect(text.startsWith('\uFEFF')).toBe(true);
     const columns = dataLines(text)[0].split('\t');
-    expect(columns.length).toBe(34);
+    expect(columns.length).toBe(COMPARISON_TABLE_COLUMNS.length);
     expect(columns[columnIndex(built, 'explanation')]).toBe('before after');
   });
 
@@ -603,7 +600,7 @@ describe('table-export', () => {
     expect(text).toContain('Flash \\| medium');
     // Header, separator and one body row, each with the same number of cells.
     expect(rows.length).toBe(3);
-    expect(rows.map(row => row.split(' | ').length)).toEqual([34, 34, 34]);
+    expect(rows.map(row => row.split(' | ').length)).toEqual(Array(3).fill(COMPARISON_TABLE_COLUMNS.length));
   });
 
   it('carries the provenance as a caption and the notices as a list', () => {
@@ -621,7 +618,7 @@ describe('table-export', () => {
       rows: Record<string, unknown>[];
     };
 
-    expect(parsed.columns.length).toBe(34);
+    expect(parsed.columns.length).toBe(COMPARISON_TABLE_COLUMNS.length);
     expect(parsed.columns.map(column => column.key))
       .toEqual(model().columns.map(column => column.key));
     // Numbers, not the strings the human formats carry.
@@ -657,17 +654,17 @@ describe('table-export', () => {
   // The spreadsheet
   // -------------------------------------------------------------------------------------------
 
-  it('writes one sheet of thirty-four columns and a header row, and a second of provenance', async () => {
+  it('writes one sheet of every column and a header row, and a second of provenance', async () => {
     const captured = captureXlsx();
 
     const blob = await toXlsx(model([buildEntry(), buildEntry({ key: 'run:2', sourceId: 44 })]));
 
     expect(captured.sheets.length).toBe(2);
     expect(captured.sheets[0].sheet).toBe('Comparison');
-    // A frozen header, so thirty-four columns stay identifiable after a scroll.
+    // A frozen header, so every column stays identifiable after a scroll.
     expect(captured.sheets[0].stickyRowsCount).toBe(1);
     expect(captured.sheets[0].data.length).toBe(3);
-    expect(captured.sheets[0].data.every((row: unknown[]) => row.length === 34)).toBe(true);
+    expect(captured.sheets[0].data.every((row: unknown[]) => row.length === COMPARISON_TABLE_COLUMNS.length)).toBe(true);
     expect(captured.sheets[1].sheet).toBe('Provenance');
 
     expect(blob.size).toBeGreaterThan(0);
@@ -1266,14 +1263,14 @@ describe('table-export', () => {
       const plain = model();
       const attached = withDiagnostics(plain, diagnostics());
 
-      expect(attached.columns.length).toBe(34);
+      expect(attached.columns.length).toBe(plain.columns.length);
       expect(toCsv(attached)).toBe(toCsv(plain));
       expect(toTsv(attached)).toBe(toTsv(plain));
       expect(toJson(attached)).toBe(toJson(plain));
       expect(toHtml(attached)).toBe(toHtml(plain));
-      // The comparison table's own rows keep their thirty-four cells.
+      // The comparison table's own rows keep one cell per column.
       const tableRows = toMarkdown(attached).split('\n').filter(line => line.startsWith('|')).slice(0, 3);
-      expect(tableRows.map(line => line.split(' | ').length)).toEqual([34, 34, 34]);
+      expect(tableRows.map(line => line.split(' | ').length)).toEqual(Array(3).fill(plain.columns.length));
       expect(tableClipboardPayload(attached, 'md').text).toContain('## Assessor Panel Diagnostics');
     });
 

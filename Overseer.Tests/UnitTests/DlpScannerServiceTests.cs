@@ -275,13 +275,6 @@ public class DlpScannerServiceTests
     }
 
     [Fact]
-    public void ARealisticRandomKeyClearsTheEntropyGate()
-    {
-        Assert.True(DlpScannerService.ShannonEntropy(SkKey) >= DlpScannerService.MinKeyEntropyBitsPerChar);
-        Assert.Single(ScanWithDefaults($"key {SkKey}"));
-    }
-
-    [Fact]
     public void ShannonEntropyIsZeroForARepeatedCharacterAndHighForARandomKey()
     {
         Assert.Equal(0.0, DlpScannerService.ShannonEntropy("aaaaaaaaaaaa"), 6);

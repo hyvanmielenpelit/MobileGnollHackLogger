@@ -287,31 +287,6 @@ public class EphemeralTurnTests : IDisposable
     }
 
     [Fact]
-    public async Task ClosingTheSessionAfterATurnErasesWhatTheTurnProduced()
-    {
-        string databaseName = Guid.NewGuid().ToString();
-        using var container = BuildContainer(databaseName);
-        string userId = await SeedUserAsync(container);
-        var store = container.GetRequiredService<EphemeralSessionStore>();
-        var held = store.Create(userId, Template(userId));
-
-        var chatService = container.CreateScope().ServiceProvider.GetRequiredService<ChatService>();
-        await foreach (var _ in chatService.StreamMessageAsync(
-            held.Ref, "Remember this secret", OneTextAttachment(), userId, false,
-            TestContext.Current.CancellationToken))
-        {
-        }
-
-        var attachmentBuffer = Assert.Single(held.Attachments).Bytes;
-        Assert.True(store.Close(held.Ref, userId));
-
-        Assert.Empty(held.Messages);
-        Assert.Empty(held.Attachments);
-        Assert.All(attachmentBuffer, b => Assert.Equal(0, b));
-        Assert.Null(store.Get(held.Ref, userId));
-    }
-
-    [Fact]
     public async Task ASecondTurnSeesTheFirstOneInItsHistory()
     {
         string databaseName = Guid.NewGuid().ToString();

@@ -340,22 +340,6 @@ describe('ChatComponent session loading and exclusivity', () => {
     expect(component.messages[1].content).toBe('Complete server response');
   });
 
-  it('should no-op when loadSession is called on already active session with messages', async () => {
-    component.currentSessionId = '42';
-    component.isLoadingSession = false;
-    component.messages = [
-      { id: 1, role: 'user', content: 'Existing msg', timestampUtc: '2026-08-20T20:00:00Z' }
-    ];
-
-    const getSessionSpy = vi.spyOn(chatService, 'getSession').mockReturnValue(undefined as any);
-
-    await component.loadSession(42);
-
-    expect(getSessionSpy).not.toHaveBeenCalled();
-    expect(component.messages.length).toBe(1);
-    expect(component.isLoadingSession).toBe(false);
-  });
-
   it('should trigger scrollToBottomClamped after session loads', async () => {
     (component as any).hubStartPromise = null;
     (component as any).hubConnection = null;
@@ -502,17 +486,6 @@ describe('ChatComponent session loading and exclusivity', () => {
       expect(component.formatCost(0.99)).toBe('99.00¢');
       expect(component.formatCost(1)).toBe('$1.00');
       expect(component.formatCost(1.235)).toBe('$1.24');
-    });
-
-    it('should format the chat total with the same dollars-or-cents rule', () => {
-      component.sessionTotalCost = 0.015;
-      expect(component.formattedChatCost).toBe('1.50¢');
-      component.sessionTotalCost = 0.004;
-      expect(component.formattedChatCost).toBe('0.40¢');
-      component.sessionTotalCost = 1.2;
-      expect(component.formattedChatCost).toBe('$1.20');
-      component.sessionTotalCost = 0;
-      expect(component.formattedChatCost).toBe('0.00¢');
     });
 
     it('should render the persisted session total for a restored chat with no live turn', () => {
@@ -1582,24 +1555,6 @@ describe('ChatComponent context window indicator', () => {
       expect(attachBtn).toBeFalsy();
     });
 
-    it('should no longer offer the live capture link in the sidebar', () => {
-      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
-      (authService as any).userSubject.next({
-        userName: 'admin',
-        email: 'admin@example.com',
-        hasApiKey: true,
-        isAdmin: true
-      });
-      component.currentSessionId = '42';
-      component.hasGameSnapshot = true;
-      fixture.detectChanges();
-
-      const compiled = fixture.nativeElement as HTMLElement;
-      const sidebarLink = compiled.querySelector('.bottom-links a[title="Capture Live Game Board for Benchmarking"]');
-
-      expect(sidebarLink).toBeFalsy();
-    });
-
     it('should omit the save button when user is not admin', () => {
       (authService as any).userSubject.next({
         userName: 'player',
@@ -1635,22 +1590,6 @@ describe('ChatComponent context window indicator', () => {
 
       expect(attachBtn).toBeTruthy();
       expect(saveBtn).toBeFalsy();
-    });
-
-    it('should show the header attach-snapshot button only when embedded and !hasGameSnapshot', () => {
-      vi.spyOn(clientBridge, 'isEmbedded').mockReturnValue(true);
-      component.hasGameSnapshot = false;
-      fixture.detectChanges();
-
-      let compiled = fixture.nativeElement as HTMLElement;
-      let attachBtn = compiled.querySelector('button[aria-label="Attach the current game snapshot from GnollHack to this chat"]');
-      expect(attachBtn).toBeTruthy();
-
-      // When hasGameSnapshot is true, it should disappear
-      component.hasGameSnapshot = true;
-      fixture.detectChanges();
-      attachBtn = compiled.querySelector('button[aria-label="Attach the current game snapshot from GnollHack to this chat"]');
-      expect(attachBtn).toBeFalsy();
     });
 
     it('should hide the header attach-snapshot button when not embedded', () => {
@@ -1978,6 +1917,8 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       await component.loadSession(42);
 
       expect(getSessionSpy).not.toHaveBeenCalled();
+      expect(component.messages.length).toBe(1);
+      expect(component.isLoadingSession).toBe(false);
     });
   });
 
@@ -2358,13 +2299,6 @@ describe('ChatComponent incognito (ephemeral) chats', () => {
       expect(lead).toContain('Incognito');
       expect(lead).toContain('nothing in it is saved');
       expect(lead).toContain('45 minutes');
-    });
-
-    it('should not point at a button label that is no longer shown', () => {
-      fixture.detectChanges();
-
-      const text = component.ephemeralInfoDialog!.nativeElement.textContent || '';
-      expect(text).not.toContain('press \u201cDelete chat\u201d');
     });
 
     it('should hide the rename control, which would have nothing to rename', () => {
@@ -3244,10 +3178,6 @@ describe('ChatComponent attachment excerpt notices', () => {
       expect(line).toContain('a VBA macro project');
       expect(line).toContain('an embedded object');
       expect(line).toContain('None of it reached the assistant');
-    });
-
-    it('should attribute truncation to a size limit rather than to retrieval', () => {
-      expect(component.excerptTruncationText).toContain('size limit');
     });
   });
 

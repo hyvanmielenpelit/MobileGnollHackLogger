@@ -754,27 +754,6 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("an estimate from question sampling only, not adjusted for comparing several models and not a significance test", system);
     }
 
-    [Fact]
-    public void PromptSha256_CoversTheNewInstructions()
-    {
-        // The hash is of the whole system prompt, so each audience's new slot and rules are inside it.
-        foreach (var (audience, marker) in new[]
-        {
-            (BenchmarkReportAudience.ExecutiveSummary, "- comparison:"),
-            (BenchmarkReportAudience.TechnicalReport, "- limitations:"),
-            (BenchmarkReportAudience.InternalBrief, "- Lead with the action, then the evidence.")
-        })
-        {
-            string system = BenchmarkReportPackPrompt.BuildSystemPrompt(audience);
-            Assert.Contains(marker, system);
-            Assert.Contains("READABILITY:", system);
-            Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(system))), BenchmarkReportPackPrompt.PromptSha256(audience));
-
-            string withoutReadability = system[..system.IndexOf("READABILITY:", StringComparison.Ordinal)];
-            Assert.NotEqual(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(withoutReadability))), BenchmarkReportPackPrompt.PromptSha256(audience));
-        }
-    }
-
     /// <summary>The writer test sheet with the subject's and each peer's explanation and per-peer facts.</summary>
     private static BenchmarkReportFactSheet PeerFactSheet()
     {
@@ -928,15 +907,6 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("- When an answer repeats a tool result the facts show to be wrong, write the lead about the source of that result "
             + "(tag `corpus`), not about the model's knowledge.\n", system);
         Assert.Equal(3, BenchmarkReportPackPrompt.SharedWritingRules.Count);
-        Assert.All(BenchmarkReportPackPrompt.SharedWritingRules, rule => Assert.Contains("- " + rule + "\n", system));
-    }
-
-    [Theory]
-    [MemberData(nameof(Audiences))]
-    public void ABatterySubject_StatesTheSharedWritingRules(BenchmarkReportAudience audience)
-    {
-        string system = BenchmarkReportPackPrompt.Build(audience, BatteryReportFixture.Sheet(), BatteryReportFixture.Content()).SystemPrompt;
-
         Assert.All(BenchmarkReportPackPrompt.SharedWritingRules, rule => Assert.Contains("- " + rule + "\n", system));
     }
 

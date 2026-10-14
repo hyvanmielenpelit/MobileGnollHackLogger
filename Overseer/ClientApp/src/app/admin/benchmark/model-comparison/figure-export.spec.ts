@@ -389,22 +389,6 @@ describe('figure-export', () => {
       expect(alone.height - bare.height).toBe(6 + 17);
     });
 
-    it('measures exactly the height the composition draws with the Better badge alone on its row', () => {
-      const canvas = sourceCanvas();
-      const figure = request({
-        canvas,
-        chrome: figureChrome({ ...headerOnlyChrome(), badges: [], direction: { y: 'top', label: 'Better' } }),
-        footer: figureFooter(emptyFooter)
-      });
-      const measured = measureFigureChrome(figure, 400);
-
-      let composed!: HTMLCanvasElement;
-      const plotTop = plotTopOf(canvas, () => { composed = composeFigureImage({ ...figure, density: 1 }); });
-
-      expect(composed.height).toBe(measured.height + sourceSize.height);
-      expect(plotTop + sourceSize.height + 20).toBe(composed.height);
-    });
-
     it('sizes the pill with the badge text', () => {
       const small = measureFigureChrome(sourceOf({ ...headerOnlyChrome(), badges: [], direction: topLeft }, emptyFooter), 400);
       const large = measureFigureChrome(
@@ -413,22 +397,6 @@ describe('figure-export', () => {
       );
       expect(large.direction!.width).toBeGreaterThan(small.direction!.width);
       expect(large.height - small.height).toBe(11);
-    });
-
-    it('measures exactly the height the composition draws, with a direction present', () => {
-      const canvas = sourceCanvas();
-      const figure = request({
-        canvas,
-        chrome: figureChrome({ ...headerOnlyChrome(), direction: topLeft }),
-        footer: figureFooter(emptyFooter)
-      });
-      const measured = measureFigureChrome(figure, 400);
-
-      let composed!: HTMLCanvasElement;
-      const plotTop = plotTopOf(canvas, () => { composed = composeFigureImage({ ...figure, density: 1 }); });
-
-      expect(composed.height).toBe(measured.height + sourceSize.height);
-      expect(plotTop + sourceSize.height + 20).toBe(composed.height);
     });
   });
 
@@ -652,23 +620,6 @@ describe('figure-export', () => {
       expect(plotTop + sourceSize.height + 20).toBe(composed.height);
     });
 
-    it('measures exactly the height the composition draws with a logo taller than the header', () => {
-      const canvas = sourceCanvas();
-      const figure = request({
-        canvas,
-        chrome: figureChrome({ ...headerOnlyChrome(), title: 'Intelligence', badges: [] }),
-        footer: figureFooter(emptyFooter),
-        logo: logoOf(80)
-      });
-      const measured = measureFigureChrome(figure, 400);
-
-      let composed!: HTMLCanvasElement;
-      const plotTop = plotTopOf(canvas, () => { composed = composeFigureImage({ ...figure, density: 1 }); });
-
-      expect(plotTop).toBe(20 + 80 + 16);
-      expect(composed.height).toBe(measured.height + sourceSize.height);
-    });
-
     it('leaves every measurement unchanged without a logo', () => {
       const source = sourceOf({ direction: topLeft });
       const absent = measureFigureChrome(source, 400);
@@ -693,17 +644,76 @@ describe('figure-export', () => {
   });
 
   describe('measureFigureChrome', () => {
-    it('measures exactly the height the composition draws around the plot', () => {
+    /** An 8 × 8 px logo image drawn `heightPx` tall and as wide. */
+    function squareLogo(heightPx: number): FigureLogo {
+      const image = document.createElement('canvas');
+      image.width = 8;
+      image.height = 8;
+      return { image, aspectRatio: 1, heightPx };
+    }
+
+    // `plotTop` is the exact top the plot is drawn at, where the row pins one; `nothingBelow` marks
+    // a figure with an empty footer, after whose plot only the bottom padding follows.
+    it.each([
+      {
+        name: 'around the plot',
+        figure: () => ({ chrome: figureChrome(headerOnlyChrome()), footer: figureFooter(emptyFooter) }),
+        plotTop: null,
+        nothingBelow: true
+      },
+      {
+        name: 'with the Better badge alone on its row',
+        figure: () => ({
+          chrome: figureChrome({ ...headerOnlyChrome(), badges: [], direction: { y: 'top', label: 'Better' } }),
+          footer: figureFooter(emptyFooter)
+        }),
+        plotTop: null,
+        nothingBelow: true
+      },
+      {
+        name: 'with a direction present',
+        figure: () => ({
+          chrome: figureChrome({ ...headerOnlyChrome(), direction: { x: 'left', y: 'top', label: 'Better' } }),
+          footer: figureFooter(emptyFooter)
+        }),
+        plotTop: null,
+        nothingBelow: true
+      },
+      {
+        name: 'with a logo taller than the header',
+        figure: () => ({
+          chrome: figureChrome({ ...headerOnlyChrome(), title: 'Intelligence', badges: [] }),
+          footer: figureFooter(emptyFooter),
+          logo: squareLogo(80)
+        }),
+        // The padding, the 80 px logo and the gap before the plot.
+        plotTop: 20 + 80 + 16,
+        nothingBelow: false
+      },
+      {
+        name: 'at larger caption sizes',
+        figure: () => ({
+          chrome: figureChrome({ direction: { x: 'right', label: 'Better' } }),
+          textSizes: { titlePx: 40, badgePx: 24, footerPx: 30 }
+        }),
+        plotTop: null,
+        nothingBelow: false
+      }
+    ])('measures exactly the height the composition draws $name', ({ figure, plotTop: expectedPlotTop, nothingBelow }) => {
       const canvas = sourceCanvas();
-      const figure = request({ canvas, chrome: figureChrome(headerOnlyChrome()), footer: figureFooter(emptyFooter) });
-      const measured = measureFigureChrome(figure, 400);
+      const composition = request({ canvas, ...figure() });
+      const measured = measureFigureChrome(composition, 400);
 
       let composed!: HTMLCanvasElement;
-      const plotTop = plotTopOf(canvas, () => { composed = composeFigureImage({ ...figure, density: 1 }); });
+      const plotTop = plotTopOf(canvas, () => { composed = composeFigureImage({ ...composition, density: 1 }); });
 
       expect(composed.height).toBe(measured.height + sourceSize.height);
-      // Nothing is drawn below this plot, so only the bottom padding follows it.
-      expect(plotTop + sourceSize.height + 20).toBe(composed.height);
+      if (expectedPlotTop !== null) {
+        expect(plotTop).toBe(expectedPlotTop);
+      }
+      if (nothingBelow) {
+        expect(plotTop + sourceSize.height + 20).toBe(composed.height);
+      }
     });
 
     it('wraps five badges at a 360 px content width onto more than one row', () => {
@@ -806,18 +816,6 @@ describe('figure-export', () => {
       const composed = composeFigureImage({ ...figure, density: 1 });
       expect(composed.height).toBe(measured.height + sourceSize.height);
       expect(fills).toContain('#d95926');
-    });
-
-    it('measures exactly the height the composition draws at larger caption sizes', () => {
-      const canvas = sourceCanvas();
-      const figure = request({
-        canvas,
-        chrome: figureChrome({ direction: { x: 'right', label: 'Better' } }),
-        textSizes: { titlePx: 40, badgePx: 24, footerPx: 30 }
-      });
-      const measured = measureFigureChrome(figure, 400);
-      const composed = composeFigureImage({ ...figure, density: 1 });
-      expect(composed.height).toBe(measured.height + sourceSize.height);
     });
   });
 
@@ -1560,37 +1558,19 @@ describe('figure-export', () => {
   });
 
   describe('WebP quality encoding', () => {
-    it('passes quality divided by 100 to toBlob for WebP', async () => {
+    it.each([
+      { name: 'quality divided by 100 for WebP', format: 'webp' as const, quality: 85 as const, type: 'image/webp', expected: 0.85 },
+      { name: '1.0 for WebP quality 100', format: 'webp' as const, quality: 100 as const, type: 'image/webp', expected: 1.0 },
+      { name: 'undefined for PNG regardless of quality parameter', format: 'png' as const, quality: 85 as const, type: 'image/png', expected: undefined }
+    ])('passes $name to toBlob', async ({ format, quality, type, expected }) => {
       const canvas = sourceCanvas(120, 80);
       const blobSpy = vi.spyOn(canvas, 'toBlob').mockImplementation((callback: BlobCallback) => {
-        callback(new Blob(['fake'], { type: 'image/webp' }));
+        callback(new Blob(['fake'], { type }));
       });
 
-      await encodeFigureImage(canvas, 'webp', 85);
+      await encodeFigureImage(canvas, format, quality);
 
-      expect(blobSpy).toHaveBeenCalledWith(expect.any(Function), 'image/webp', 0.85);
-    });
-
-    it('passes 1.0 to toBlob for WebP quality 100', async () => {
-      const canvas = sourceCanvas(120, 80);
-      const blobSpy = vi.spyOn(canvas, 'toBlob').mockImplementation((callback: BlobCallback) => {
-        callback(new Blob(['fake'], { type: 'image/webp' }));
-      });
-
-      await encodeFigureImage(canvas, 'webp', 100);
-
-      expect(blobSpy).toHaveBeenCalledWith(expect.any(Function), 'image/webp', 1.0);
-    });
-
-    it('passes undefined to toBlob for PNG regardless of quality parameter', async () => {
-      const canvas = sourceCanvas(120, 80);
-      const blobSpy = vi.spyOn(canvas, 'toBlob').mockImplementation((callback: BlobCallback) => {
-        callback(new Blob(['fake'], { type: 'image/png' }));
-      });
-
-      await encodeFigureImage(canvas, 'png', 85);
-
-      expect(blobSpy).toHaveBeenCalledWith(expect.any(Function), 'image/png', undefined);
+      expect(blobSpy).toHaveBeenCalledWith(expect.any(Function), type, expected);
     });
 
     // 85 is the project-wide WebP quality (`.agents/AGENTS.md` § Image Conventions).

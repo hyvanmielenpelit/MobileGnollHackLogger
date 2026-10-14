@@ -216,94 +216,82 @@ describe('AdminDatabaseTabComponent', () => {
       expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
     });
 
-    it('prunes security events as a dry run at the chosen age without confirmation', () => {
-      const pruneSpy = vi.spyOn(adminService, 'pruneSecurityEvents').mockReturnValue(
-        of({ ...result(true), prunedSecurityEventCount: 4 }));
+    it.each([
+      {
+        name: 'security events', days: 90, count: 4, countLabel: 'Security events pruned',
+        run: (c: AdminDatabaseTabComponent, days: number) => { c.securityEventPruneDays = days; c.pruneSecurityEventsNow(); },
+        spyOnPrune: () => vi.spyOn(adminService, 'pruneSecurityEvents').mockReturnValue(
+          of({ ...result(true), prunedSecurityEventCount: 4 })),
+        request: { securityEventPruneDays: 90, dryRun: true }
+      },
+      {
+        name: 'chat provider attempts', days: 180, count: 6, countLabel: 'Chat provider attempts pruned',
+        run: (c: AdminDatabaseTabComponent, days: number) => { c.chatProviderAttemptPruneDays = days; c.pruneChatProviderAttemptsNow(); },
+        spyOnPrune: () => vi.spyOn(adminService, 'pruneChatProviderAttempts').mockReturnValue(
+          of({ ...result(true), prunedChatProviderAttemptCount: 6 })),
+        request: { chatProviderAttemptPruneDays: 180, dryRun: true }
+      }
+    ])('prunes $name as a dry run at the chosen age without confirmation', ({ days, count, countLabel, run, spyOnPrune, request }) => {
+      const pruneSpy = spyOnPrune();
       const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
 
       component.maintenanceDryRun = true;
-      component.securityEventPruneDays = 90;
-      component.pruneSecurityEventsNow();
+      run(component, days);
 
       expect(confirmSpy).not.toHaveBeenCalled();
-      expect(pruneSpy).toHaveBeenCalledWith({ securityEventPruneDays: 90, dryRun: true });
+      expect(pruneSpy).toHaveBeenCalledWith(request);
       expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
       expect(component.maintenanceResultCounts(component.lastMaintenanceResult!))
-        .toContainEqual({ label: 'Security events pruned', value: '4' });
+        .toContainEqual({ label: countLabel, value: String(count) });
       component.closeMaintenanceRunDialog();
     });
 
-    it('takes the security event age from the policy and shows it in the template', async () => {
-      (adminService.getStorageMetrics as Mock).mockReturnValue(of({
-        ...metrics(),
-        securityEventRowCount: 40, securityEventPrunableCount: 7, securityEventOldestUtc: '2026-01-02T00:00:00Z',
-        policy: { ...metrics().policy, pruneSecurityEventDays: 365 }
-      }));
+    it.each([
+      {
+        name: 'security event',
+        overrides: (): Partial<DatabaseStorageMetrics> => ({
+          securityEventRowCount: 40, securityEventPrunableCount: 7, securityEventOldestUtc: '2026-01-02T00:00:00Z',
+          policy: { ...metrics().policy, pruneSecurityEventDays: 365 }
+        }),
+        pruneDays: (c: AdminDatabaseTabComponent) => c.securityEventPruneDays,
+        selectId: '#maintenance-security-event-days',
+        options: ['Older than 30d', 'Older than 90d', 'Older than 180d', 'Older than 365d'],
+        policyLabel: 'Security events kept',
+        statLabel: 'Prunable security events',
+        statValue: '7 of 40, oldest 2026-01-02'
+      },
+      {
+        name: 'chat provider attempt',
+        overrides: (): Partial<DatabaseStorageMetrics> => ({
+          chatProviderAttemptRowCount: 500, chatProviderAttemptPrunableCount: 12,
+          chatProviderAttemptOldestUtc: '2025-08-03T00:00:00Z',
+          policy: { ...metrics().policy, pruneChatProviderAttemptDays: 365 }
+        }),
+        pruneDays: (c: AdminDatabaseTabComponent) => c.chatProviderAttemptPruneDays,
+        selectId: '#maintenance-provider-attempt-days',
+        options: ['Older than 90d', 'Older than 180d', 'Older than 365d', 'Older than 400d'],
+        policyLabel: 'Chat provider attempts kept',
+        statLabel: 'Prunable provider attempts',
+        statValue: '12 of 500, oldest 2025-08-03'
+      }
+    ])('takes the $name age from the policy and shows it in the template', async ({ overrides, pruneDays, selectId, options, policyLabel, statLabel, statValue }) => {
+      (adminService.getStorageMetrics as Mock).mockReturnValue(of({ ...metrics(), ...overrides() }));
       fixture.detectChanges();
       await fixture.whenStable();
       fixture.detectChanges();
 
-      expect(component.securityEventPruneDays).toBe(365);
+      expect(pruneDays(component)).toBe(365);
       const host = fixture.nativeElement as HTMLElement;
-      expect(host.querySelector('#maintenance-security-event-days')).not.toBeNull();
+      const select = host.querySelector(selectId) as HTMLSelectElement;
+      expect(select).not.toBeNull();
+      expect(Array.from(select.options).map(o => (o.textContent ?? '').trim())).toEqual(options);
       const policyRow = Array.from(host.querySelectorAll('.policy-list dt'))
-        .find(dt => dt.textContent?.trim() === 'Security events kept');
-      expect(policyRow?.nextElementSibling?.textContent?.trim()).toBe('365 days');
-      const text = (host.textContent ?? '').replace(/\s+/g, ' ');
-      expect(text).toContain('7 of 40, oldest 2026-01-02');
-      fixture.destroy();
-    });
-
-    it('prunes chat provider attempts as a dry run at the chosen age without confirmation', () => {
-      const pruneSpy = vi.spyOn(adminService, 'pruneChatProviderAttempts').mockReturnValue(
-        of({ ...result(true), prunedChatProviderAttemptCount: 6 }));
-      const confirmSpy = vi.spyOn(component, 'openConfirmationModal').mockReturnValue(undefined);
-
-      component.maintenanceDryRun = true;
-      component.chatProviderAttemptPruneDays = 180;
-      component.pruneChatProviderAttemptsNow();
-
-      expect(confirmSpy).not.toHaveBeenCalled();
-      expect(pruneSpy).toHaveBeenCalledWith({ chatProviderAttemptPruneDays: 180, dryRun: true });
-      expect(component.lastMaintenanceResult?.isDryRun).toBe(true);
-      expect(component.maintenanceResultCounts(component.lastMaintenanceResult!))
-        .toContainEqual({ label: 'Chat provider attempts pruned', value: '6' });
-      component.closeMaintenanceRunDialog();
-    });
-
-    it('takes the chat provider attempt age from the policy and shows it in the template', async () => {
-      (adminService.getStorageMetrics as Mock).mockReturnValue(of({
-        ...metrics(),
-        chatProviderAttemptRowCount: 500, chatProviderAttemptPrunableCount: 12,
-        chatProviderAttemptOldestUtc: '2025-08-03T00:00:00Z',
-        policy: { ...metrics().policy, pruneChatProviderAttemptDays: 365 }
-      }));
-      fixture.detectChanges();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      expect(component.chatProviderAttemptPruneDays).toBe(365);
-      const host = fixture.nativeElement as HTMLElement;
-      expect(host.querySelector('#maintenance-provider-attempt-days')).not.toBeNull();
-      const policyRow = Array.from(host.querySelectorAll('.policy-list dt'))
-        .find(dt => dt.textContent?.trim() === 'Chat provider attempts kept');
+        .find(dt => dt.textContent?.trim() === policyLabel);
       expect(policyRow?.nextElementSibling?.textContent?.trim()).toBe('365 days');
       const statBox = Array.from(host.querySelectorAll('.preview-grid .stat-box'))
-        .find(box => box.querySelector('.stat-label')?.textContent?.trim() === 'Prunable provider attempts');
+        .find(box => box.querySelector('.stat-label')?.textContent?.trim() === statLabel);
       expect((statBox?.querySelector('.stat-value')?.textContent ?? '').replace(/\s+/g, ' ').trim())
-        .toBe('12 of 500, oldest 2025-08-03');
-      fixture.destroy();
-    });
-
-    it('defaults the chat provider attempt age to the configured 400 days', async () => {
-      fixture.detectChanges();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      expect(component.chatProviderAttemptPruneDays).toBe(400);
-      const select: HTMLSelectElement = fixture.nativeElement.querySelector('#maintenance-provider-attempt-days');
-      expect(Array.from(select.options).map(o => (o.textContent ?? '').trim()))
-        .toEqual(['Older than 90d', 'Older than 180d', 'Older than 365d', 'Older than 400d']);
+        .toBe(statValue);
       fixture.destroy();
     });
 

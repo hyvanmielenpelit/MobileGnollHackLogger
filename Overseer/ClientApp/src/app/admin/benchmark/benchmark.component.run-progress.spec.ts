@@ -1,4 +1,4 @@
-import type { MockedObject } from "vitest";
+import type { Mock, MockedObject } from "vitest";
 import { ComponentFixture, TestBed, fakeAsync, tick, discardPeriodicTasks } from '@angular/core/testing';
 import { of, throwError } from 'rxjs';
 import { AdminBenchmarkComponent } from './benchmark.component';
@@ -1193,60 +1193,23 @@ describe('AdminBenchmarkComponent', () => {
       fixture.detectChanges();
     });
 
-    it('should correctly open retry dialog with resolved assessor', () => {
-      const answer = component.selectedRunDetail!.answers[1];
-      component.openRetryDialog('question', 42, answer);
-
-      expect(component.retryScope).toBe('question');
-      expect(component.retryRunId).toBe(42);
-      expect(component.retryAnswer).toBe(answer);
-      expect(component.retryAssessorConfigId).toBe(1);
-    });
-
-    it('should trigger rerunAnswer on confirmRetry when scope is question', () => {
-      benchmarkServiceMock.rerunAnswer.mockReturnValue(of({ runId: 42 }));
+    // `args` end in the resolved assessor's configuration id; `onAnswer` retries the failed answer 102.
+    it.each([
+      { scope: 'question', method: 'rerunAnswer', onAnswer: true, args: [42, 102, 1], flag: 'rerunningAnswerId', flagValue: 102 },
+      { scope: 'assessment', method: 'reassessAnswer', onAnswer: true, args: [42, 102, 1], flag: 'reassessingAnswerId', flagValue: 102 },
+      { scope: 'synthesis', method: 'rerunFinalSynthesis', onAnswer: false, args: [42, 1], flag: 'runningSynthesis', flagValue: true },
+      { scope: 'assessments', method: 'retryFailedAssessments', onAnswer: false, args: [42, 1], flag: 'retryingAssessments', flagValue: true }
+    ] as const)('should trigger $method on confirmRetry when scope is $scope', ({ scope, method, onAnswer, args, flag, flagValue }) => {
+      const call = benchmarkServiceMock[method] as unknown as Mock;
+      call.mockReturnValue(of({ runId: 42 }));
       benchmarkServiceMock.getRun.mockReturnValue(of(component.selectedRunDetail!));
 
-      const answer = component.selectedRunDetail!.answers[1];
-      component.openRetryDialog('question', 42, answer);
+      const answer = onAnswer ? component.selectedRunDetail!.answers[1] : undefined;
+      component.openRetryDialog(scope, 42, answer);
       component.confirmRetry();
 
-      expect(benchmarkServiceMock.rerunAnswer).toHaveBeenCalledWith(42, 102, 1);
-      expect(component.rerunningAnswerId).toBe(102);
-    });
-
-    it('should trigger reassessAnswer on confirmRetry when scope is assessment', () => {
-      benchmarkServiceMock.reassessAnswer.mockReturnValue(of({ runId: 42 }));
-      benchmarkServiceMock.getRun.mockReturnValue(of(component.selectedRunDetail!));
-
-      const answer = component.selectedRunDetail!.answers[1];
-      component.openRetryDialog('assessment', 42, answer);
-      component.confirmRetry();
-
-      expect(benchmarkServiceMock.reassessAnswer).toHaveBeenCalledWith(42, 102, 1);
-      expect(component.reassessingAnswerId).toBe(102);
-    });
-
-    it('should trigger rerunFinalSynthesis on confirmRetry when scope is synthesis', () => {
-      benchmarkServiceMock.rerunFinalSynthesis.mockReturnValue(of({ runId: 42 }));
-      benchmarkServiceMock.getRun.mockReturnValue(of(component.selectedRunDetail!));
-
-      component.openRetryDialog('synthesis', 42);
-      component.confirmRetry();
-
-      expect(benchmarkServiceMock.rerunFinalSynthesis).toHaveBeenCalledWith(42, 1);
-      expect(component.runningSynthesis).toBe(true);
-    });
-
-    it('should trigger retryFailedAssessments on confirmRetry when scope is assessments', () => {
-      benchmarkServiceMock.retryFailedAssessments.mockReturnValue(of({ runId: 42 }));
-      benchmarkServiceMock.getRun.mockReturnValue(of(component.selectedRunDetail!));
-
-      component.openRetryDialog('assessments', 42);
-      component.confirmRetry();
-
-      expect(benchmarkServiceMock.retryFailedAssessments).toHaveBeenCalledWith(42, 1);
-      expect(component.retryingAssessments).toBe(true);
+      expect(call).toHaveBeenCalledWith(...args);
+      expect(component[flag]).toBe(flagValue);
     });
   });
 

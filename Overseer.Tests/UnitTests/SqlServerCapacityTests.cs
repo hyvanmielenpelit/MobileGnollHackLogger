@@ -63,33 +63,10 @@ public class SqlServerCapacityTests
         var result = SqlServerCapacity.Resolve(info, settings.DatabaseMaxSizeMbOverride);
 
         Assert.Equal(51200, result.MaxLimitMb);
+        Assert.True(result.HasEngineSizeLimit);
         Assert.Equal("Detected", result.LimitSource);
         Assert.Equal("SQL Server 2025 Express", result.ProductLabel);
         Assert.Equal("Normal", SqlServerCapacity.ResolveStatusLevel(8704, result, settings));
-    }
-
-    [Fact]
-    public void Resolve_Express2022_Returns10Gb()
-    {
-        var result = SqlServerCapacity.Resolve(ExpressInfo(16, "16.0.4200.1"), configuredOverrideMb: 0);
-
-        Assert.Equal(10240, result.MaxLimitMb);
-        Assert.True(result.HasEngineSizeLimit);
-        Assert.Equal("Detected", result.LimitSource);
-        Assert.Equal("SQL Server 2022 Express", result.ProductLabel);
-        Assert.Equal("Express Edition (64-bit)", result.EditionName);
-        Assert.Equal("16.0.4200.1", result.ProductVersion);
-    }
-
-    [Fact]
-    public void Resolve_Express2025_Returns50Gb()
-    {
-        var result = SqlServerCapacity.Resolve(ExpressInfo(17, "17.0.1000.6"), configuredOverrideMb: 0);
-
-        Assert.Equal(51200, result.MaxLimitMb);
-        Assert.True(result.HasEngineSizeLimit);
-        Assert.Equal("Detected", result.LimitSource);
-        Assert.Equal("SQL Server 2025 Express", result.ProductLabel);
     }
 
     [Fact]
@@ -107,28 +84,13 @@ public class SqlServerCapacityTests
     [InlineData(11, "11.0.7001.0", 10240)] // 2012
     [InlineData(13, "13.0.5026.0", 10240)] // 2016
     [InlineData(15, "15.0.4236.7", 10240)] // 2019
-    public void Resolve_ExpressBetween2012And2022_Returns10Gb(int major, string version, double expected)
+    [InlineData(null, "10.50.1600.1", 10240)] // 2008 R2: 10.50 raised the Express cap from 4 GB to 10 GB.
+    [InlineData(null, "10.00.1600.22", 4096)] // 2008
+    public void Resolve_ExpressByVersion_ReturnsThatVersionsLimit(int? major, string version, double expected)
     {
         var result = SqlServerCapacity.Resolve(ExpressInfo(major, version), configuredOverrideMb: 0);
 
         Assert.Equal(expected, result.MaxLimitMb);
-    }
-
-    [Fact]
-    public void Resolve_Express2008R2_Returns10Gb()
-    {
-        // 10.50 raised the Express cap from 4 GB to 10 GB.
-        var result = SqlServerCapacity.Resolve(ExpressInfo(null, "10.50.1600.1"), configuredOverrideMb: 0);
-
-        Assert.Equal(10240, result.MaxLimitMb);
-    }
-
-    [Fact]
-    public void Resolve_Express2008_Returns4Gb()
-    {
-        var result = SqlServerCapacity.Resolve(ExpressInfo(null, "10.00.1600.22"), configuredOverrideMb: 0);
-
-        Assert.Equal(4096, result.MaxLimitMb);
     }
 
     [Fact]
@@ -211,15 +173,6 @@ public class SqlServerCapacityTests
         Assert.Equal(51200, result.MaxLimitMb);
         Assert.Equal("Configured", result.LimitSource);
         Assert.Equal("SQL Server 2022 Express", result.ProductLabel);
-    }
-
-    [Fact]
-    public void Resolve_ZeroOverride_LetsDetectionWin()
-    {
-        var result = SqlServerCapacity.Resolve(ExpressInfo(17, "17.0.1000.6"), configuredOverrideMb: 0);
-
-        Assert.Equal(51200, result.MaxLimitMb);
-        Assert.Equal("Detected", result.LimitSource);
     }
 
     [Fact]
@@ -355,17 +308,5 @@ public class SqlServerCapacityTests
     public void HasInvalidThresholds_DefaultSettings_AreValid()
     {
         Assert.False(SqlServerCapacity.HasInvalidThresholds(new ChatRetentionSettings()));
-    }
-
-    [Fact]
-    public void DefaultSettings_ReproduceTheHistoricThresholdsOn10Gb()
-    {
-        var settings = new ChatRetentionSettings();
-        var capacity = SqlServerCapacity.Resolve(ExpressInfo(16, "16.0.4200.1"), settings.DatabaseMaxSizeMbOverride);
-
-        Assert.Equal(10240, capacity.MaxLimitMb);
-        Assert.Equal("Normal", SqlServerCapacity.ResolveStatusLevel(7679, capacity, settings));
-        Assert.Equal("Warning", SqlServerCapacity.ResolveStatusLevel(7680, capacity, settings));
-        Assert.Equal("Critical", SqlServerCapacity.ResolveStatusLevel(8704, capacity, settings));
     }
 }

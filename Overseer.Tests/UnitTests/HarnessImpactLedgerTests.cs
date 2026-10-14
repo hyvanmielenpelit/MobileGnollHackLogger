@@ -2,7 +2,6 @@ namespace Overseer.Tests.UnitTests;
 
 using System.Globalization;
 using System.Linq;
-using Overseer.Services.Benchmarking;
 using Overseer.Services.ChatConsistency;
 using Xunit;
 
@@ -28,12 +27,6 @@ public class HarnessImpactLedgerTests
             + "harness version in HarnessImpactLedger (Overseer/Services/ChatConsistency/HarnessImpactLedger.cs) "
             + "from its changelog entry on BenchmarkAssessmentPrompt.HarnessVersion: which of CandidateInput, "
             + "CandidateTiming, Grading, Scoring, CandidateAccounting, ProviderErrorAccounting or ReportingOnly it changed.");
-    }
-
-    [Fact]
-    public void CurrentVersionIsTheHarnessConstant()
-    {
-        Assert.Equal(BenchmarkAssessmentPrompt.HarnessVersion, HarnessImpactLedger.CurrentVersion);
     }
 
     [Fact]

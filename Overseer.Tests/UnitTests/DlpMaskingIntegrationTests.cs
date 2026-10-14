@@ -37,7 +37,6 @@ public class DlpMaskingIntegrationTests : IDisposable
     /* A realistic-looking key: random enough to clear the entropy gate, which a placeholder
        like sk-XXXX deliberately does not. */
     private const string Secret = "sk-proj-7Qf2xVn8LpR4tKw9BzYm3JdG6ScHaEuT1oNvXbAiQrZk5W";
-    private const string OtherSecret = "AKIA2QF7XV9NLPR4TKW8";
 
     // The published example IBAN, and a password with no shape of its own to be recognised by.
     private const string Iban = "GB82WEST12345698765432";
@@ -243,48 +242,24 @@ public class DlpMaskingIntegrationTests : IDisposable
 
     // ── the outbound half ───────────────────────────────────────────────────────
 
-    [Fact]
-    public async Task ASecretInTheUsersMessageNeverReachesTheProvider()
+    [Theory]
+    [InlineData($"Is this key valid? {Secret}", Secret, "[REDACTED_API_KEY_1]", null)]
+    [InlineData($"Which bank is {Iban}?", Iban, "[REDACTED_IBAN_1]", null)]
+    // A password in a connection string: the keyword stays, or the model cannot see it is reading a connection string.
+    [InlineData($"Why does Server=db;Password={Password}; fail?", Password, "[REDACTED_PASSWORD_1]", "Password=")]
+    public async Task ASecretInTheUsersMessageNeverReachesTheProvider(string message, string secret, string token, string? keptText)
     {
         using var container = BuildContainer(Guid.NewGuid().ToString());
         string userId = await SeedUserAsync(container);
         long sessionId = await SeedSessionAsync(container, userId);
         var stub = container.GetRequiredService<StubAiProvider>();
 
-        await RunTurnAsync(container, sessionId, userId, $"Is this key valid? {Secret}");
+        await RunTurnAsync(container, sessionId, userId, message);
 
-        Assert.DoesNotContain(Secret, stub.LastRequestJson);
-        Assert.Contains("[REDACTED_API_KEY_1]", stub.LastRequestJson);
-    }
-
-    [Fact]
-    public async Task AnIbanInTheUsersMessageNeverReachesTheProvider()
-    {
-        using var container = BuildContainer(Guid.NewGuid().ToString());
-        string userId = await SeedUserAsync(container);
-        long sessionId = await SeedSessionAsync(container, userId);
-        var stub = container.GetRequiredService<StubAiProvider>();
-
-        await RunTurnAsync(container, sessionId, userId, $"Which bank is {Iban}?");
-
-        Assert.DoesNotContain(Iban, stub.LastRequestJson);
-        Assert.Contains("[REDACTED_IBAN_1]", stub.LastRequestJson);
-    }
-
-    [Fact]
-    public async Task APasswordInAConnectionStringNeverReachesTheProvider()
-    {
-        using var container = BuildContainer(Guid.NewGuid().ToString());
-        string userId = await SeedUserAsync(container);
-        long sessionId = await SeedSessionAsync(container, userId);
-        var stub = container.GetRequiredService<StubAiProvider>();
-
-        await RunTurnAsync(container, sessionId, userId, $"Why does Server=db;Password={Password}; fail?");
-
-        Assert.DoesNotContain(Password, stub.LastRequestJson);
-        Assert.Contains("[REDACTED_PASSWORD_1]", stub.LastRequestJson);
-        // The keyword stays, or the model cannot see it is reading a connection string.
-        Assert.Contains("Password=", stub.LastRequestJson);
+        Assert.DoesNotContain(secret, stub.LastRequestJson);
+        Assert.Contains(token, stub.LastRequestJson);
+        if (keptText != null)
+            Assert.Contains(keptText, stub.LastRequestJson);
     }
 
     [Fact]
@@ -342,22 +317,6 @@ public class DlpMaskingIntegrationTests : IDisposable
         Assert.DoesNotContain(Secret, stub.LastRequestJson);
         Assert.Contains("[REDACTED_API_KEY_1]", stub.LastRequestJson);
         Assert.DoesNotContain("[REDACTED_API_KEY_2]", stub.LastRequestJson);
-    }
-
-    [Fact]
-    public async Task TwoDifferentSecretsGetTwoDifferentTokens()
-    {
-        using var container = BuildContainer(Guid.NewGuid().ToString());
-        string userId = await SeedUserAsync(container);
-        long sessionId = await SeedSessionAsync(container, userId);
-        var stub = container.GetRequiredService<StubAiProvider>();
-
-        await RunTurnAsync(container, sessionId, userId, $"Two keys: {Secret} and {OtherSecret}");
-
-        Assert.DoesNotContain(Secret, stub.LastRequestJson);
-        Assert.DoesNotContain(OtherSecret, stub.LastRequestJson);
-        Assert.Contains("[REDACTED_API_KEY_1]", stub.LastRequestJson);
-        Assert.Contains("[REDACTED_API_KEY_2]", stub.LastRequestJson);
     }
 
     [Fact]

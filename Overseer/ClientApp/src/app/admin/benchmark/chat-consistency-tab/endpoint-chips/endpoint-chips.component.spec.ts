@@ -51,16 +51,6 @@ describe('CcEndpointChipsComponent', () => {
     }
   });
 
-  it('words a change in provider error rate (P6) as the server does, in a summary and a full result', () => {
-    render([
-      ccEndpointBrief('P6', { name: 'Provider error rate', verdictLabel: 'more provider errors', grade: 'indicated' }),
-      ccEndpoint('P6', { name: 'Provider error rate', verdict: 'changedImproved', verdictLabel: 'fewer provider errors', direction: 'lowerIsBetter' })
-    ]);
-    expect(chips().map(chip => [chip.getAttribute('data-endpoint'), chip.getAttribute('data-status')]))
-      .toEqual([['P6', 'changed'], ['P6', 'improved']]);
-    expect(chips().map(chip => textOf(chip.querySelector('.cc-ep-chip-word')))).toEqual(['More provider errors', 'Fewer provider errors']);
-  });
-
   it('reads a full result\'s endpoints by the same mapping', () => {
     render([
       ccEndpoint('P1'),

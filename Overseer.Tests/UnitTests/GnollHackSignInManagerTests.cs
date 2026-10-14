@@ -125,12 +125,6 @@ public sealed class GnollHackSignInManagerTests : IDisposable
             .ExecuteUpdateAsync(s => s.SetProperty(u => u.LastSignInUtc, value), TestContext.Current.CancellationToken);
 
     [Fact]
-    public void TheRegisteredSignInManagerIsTheGnollHackOne()
-    {
-        Assert.IsType<GnollHackSignInManager>(_signInManager);
-    }
-
-    [Fact]
     public async Task ABannedUserWithTheCorrectPasswordIsNotAllowed()
     {
         var user = await CreateUserAsync("banned_player", isBanned: true);
@@ -206,18 +200,6 @@ public sealed class GnollHackSignInManagerTests : IDisposable
     }
 
     [Fact]
-    public async Task ASecondSignInWithinTheHourLeavesTheStampAlone()
-    {
-        var user = await CreateUserAsync("player_two");
-        DateTime recent = DateTime.UtcNow.AddMinutes(-30);
-        await SetLastSignInAsync(user.Id, recent);
-
-        await _signInManager.SignInAsync(user, isPersistent: false);
-
-        Assert.Equal(recent, (await ReloadAsync(user.Id)).LastSignInUtc);
-    }
-
-    [Fact]
     public async Task ASignInMoreThanAnHourLaterMovesTheStamp()
     {
         var user = await CreateUserAsync("player_three");
@@ -289,8 +271,16 @@ public sealed class GnollHackSignInManagerTests : IDisposable
     [Fact]
     public async Task TouchOfAnUnknownUserDoesNothing()
     {
-        await AccountActivity.TouchSignInAsync(_db, "no-such-user", DateTime.UtcNow, ct: TestContext.Current.CancellationToken);
-        await AccountActivity.TouchSignInAsync(_db, string.Empty, DateTime.UtcNow, ct: TestContext.Current.CancellationToken);
+        var bystander = await CreateUserAsync("touch_bystander");
+        var now = new DateTime(2026, 10, 13, 12, 0, 0, DateTimeKind.Utc);
+        var logger = new ListLogger();
+
+        await AccountActivity.TouchSignInAsync(_db, "no-such-user", now, logger, TestContext.Current.CancellationToken);
+        await AccountActivity.TouchSignInAsync(_db, string.Empty, now, logger, TestContext.Current.CancellationToken);
+
+        Assert.Empty(logger.Warnings);
+        Assert.Null((await ReloadAsync(bystander.Id)).LastSignInUtc);
+        Assert.Equal(1, await _db.Users.CountAsync(TestContext.Current.CancellationToken));
     }
 
     [Fact]

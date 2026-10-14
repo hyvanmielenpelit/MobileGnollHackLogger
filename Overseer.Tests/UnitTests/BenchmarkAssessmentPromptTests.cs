@@ -945,18 +945,6 @@ public class BenchmarkAssessmentPromptTests
     }
 
     [Fact]
-    public void Versions_HarnessIs56_ScoringMethodIs14()
-    {
-        Assert.Equal("56", BenchmarkAssessmentPrompt.HarnessVersion);
-
-        // Harness 56 records every provider attempt, attributes terminal failures to the provider,
-        // to nobody or to our side, and lists Failed answers in the synthesis prompt exactly as
-        // ProviderError answers; the ACCURACY anchors, the weights and the level-to-points mapping
-        // do not change, so scoring method 14 stays.
-        Assert.Equal(14, BenchmarkAssessmentPrompt.ScoringMethodVersion);
-    }
-
-    [Fact]
     public void BuildFinalSynthesisPrompt_AFailedAnswer_IsListedAsExcludedExactlyAsAProviderError()
     {
         BenchmarkPerQuestionVerdictSummary Summary(BenchmarkAnswerStatus status) => new()

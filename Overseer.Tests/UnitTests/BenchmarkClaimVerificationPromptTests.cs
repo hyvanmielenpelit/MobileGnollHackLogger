@@ -19,60 +19,100 @@ public class BenchmarkClaimVerificationPromptTests
             isDisputedVerdict: isDisputedVerdict);
     }
 
-    [Fact]
-    public void BuildPrompt_StatesThatComputationClaimsAreCheckedInTheImplementingCode()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_StatesThatComputationClaimsAreCheckedInTheImplementingCode(bool isDisputedVerdict)
     {
-        string prompt = BuildPrompt();
+        string prompt = BuildPrompt(isDisputedVerdict);
 
         Assert.Contains(
             "A table or page that omits a term does not refute a claim that names the term",
             prompt);
     }
 
-    [Fact]
-    public void BuildPrompt_StatesThatAResistanceMagnitudeIsCheckedWhereThePropertyIsApplied()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_StatesThatAResistanceMagnitudeIsCheckedWhereThePropertyIsApplied(bool isDisputedVerdict)
     {
-        string prompt = BuildPrompt();
+        string prompt = BuildPrompt(isDisputedVerdict);
 
         Assert.Contains(
             "how an intrinsic is acquired says nothing about how much it protects",
             prompt);
     }
 
-    [Fact]
-    public void BuildPrompt_Instruction3a_FollowsInstruction3WithoutRenumberingLaterInstructions()
+    private const string Instruction3p = "3p. Plan your lookups before you call a tool. Tool calls you issue together in one turn run in parallel and count as one round, and every round re-reads everything gathered so far. In your first turn, issue the first lookup for every claim, or for as many as the tool budget allows, together; batch your follow-up lookups the same way. Issue a call by itself only when its arguments depend on a result you do not have yet.";
+
+    /// <summary>
+    /// The sub-instructions 3a to 3p follow instruction 3 in order, and instruction 4 follows them
+    /// unrenumbered. Instruction 3c is present only with a board.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instructions3To3p_AppearInOrderBeforeInstruction4_WithAndWithoutABoard(bool withBoard)
     {
-        string prompt = BuildPrompt();
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
 
-        int index3 = prompt.IndexOf("3. Use the available tools to search the GnollHack codebase and wiki", System.StringComparison.Ordinal);
-        int index3a = prompt.IndexOf("3a. A claim about how a spell, attack or effect is computed", System.StringComparison.Ordinal);
-        int index3b = prompt.IndexOf("3b. A claim about the magnitude or tier of a resistance", System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts for each claim:", System.StringComparison.Ordinal);
+        var markers = new List<string>
+        {
+            "3. Use the available tools to search the GnollHack codebase and wiki",
+            "3a. A claim about how a spell, attack or effect is computed",
+            "3b. A claim about the magnitude or tier of a resistance"
+        };
+        if (withBoard)
+        {
+            markers.Add("3c. A claim about the hero's");
+        }
+        markers.AddRange(new[]
+        {
+            "3d. Before you cite a function as the code that implements something, confirm it is called",
+            "3e. A wiki page alone does not settle a claim about a number",
+            "3f. You judge facts, not advice.",
+            "3g. Before refuting a formula, a table or a number, check whether the claim and the code state the same quantity in different notation",
+            "3h. When the function you cite hands the effect to another function, read that function before concluding that an effect is absent.",
+            "3i. Absence needs more than one place.",
+            "3j. Values passed are settled where they are assigned.",
+            "3k. When a claim joins several statements",
+            "3l. When a GnollHack wiki page states",
+            "3m. A sentence that reports what a source says",
+            "3n. A line inside a `switch`",
+            "3o. A wiki page's hedge",
+            Instruction3p,
+            "4. Possible verdicts for each claim:"
+        });
 
-        Assert.True(index3 >= 0, "Instruction 3 must still be present.");
-        Assert.True(index3a > index3, "Instruction 3a must follow instruction 3.");
-        Assert.True(index3b > index3a, "Instruction 3b must follow instruction 3a.");
-        Assert.True(index4 > index3b, "Instruction 4 must follow 3b, unrenumbered.");
+        int previous = -1;
+        string previousMarker = "the start of the prompt";
+        foreach (string marker in markers)
+        {
+            int index = prompt.IndexOf(marker, System.StringComparison.Ordinal);
+            Assert.True(index >= 0, $"Missing: \"{marker}\".");
+            Assert.True(index > previous, $"\"{marker}\" must follow \"{previousMarker}\".");
+            previous = index;
+            previousMarker = marker;
+        }
+
+        // 3p sits in the fixed head, ahead of the board.
+        int index3p = prompt.IndexOf(Instruction3p, System.StringComparison.Ordinal);
+        int boardStart = prompt.IndexOf("--- GAME BOARD", System.StringComparison.Ordinal);
+        Assert.True(boardStart < 0 || index3p < boardStart, "Instruction 3p must precede the board.");
     }
 
-    [Fact]
-    public void BuildPrompt_DisputedVerdict_StillCarriesInstruction3a()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildPrompt_Instructions3kTo3o_CarryTheirFullText_WithAndWithoutABoard(bool withBoard)
     {
-        string prompt = BuildPrompt(isDisputedVerdict: true);
+        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
 
-        Assert.Contains(
-            "A table or page that omits a term does not refute a claim that names the term",
-            prompt);
-    }
-
-    [Fact]
-    public void BuildPrompt_DisputedVerdict_StillCarriesInstruction3b()
-    {
-        string prompt = BuildPrompt(isDisputedVerdict: true);
-
-        Assert.Contains(
-            "how an intrinsic is acquired says nothing about how much it protects",
-            prompt);
+        Assert.Contains("For an item that names a charged part, chargedPartVerdict is your verdict on that part alone, with its own citation in chargedPartBasis; the item's verdict field is ignored for such an item.", prompt);
+        Assert.Contains("3l. When a GnollHack wiki page states the property a claim is about — a spell's casting time, an item's effect, a stat block value — and your reading of the source seems to contradict it, name the wiki statement in your basis and cite the code that overrides it; the wiki's stat blocks are printed from the same game data. Without both, the verdict is Indeterminate.", prompt);
+        Assert.Contains("3m. A sentence that reports what a source says — the wiki says, the game's screen shows, the manual says — is checked against that source. It is Supported when the source says it, whether or not the source is right; if the source is wrong, say so in the basis. Refute it only when the source does not say it.", prompt);
+        Assert.Contains("3n. A line inside a `switch` is reached only for that `case`'s labels, and a line inside an `if` only when its condition holds. Before citing a line as what an item does, read the `case` labels and the `if`/`else` conditions above it; a branch that tests for an item inside a `case` whose labels do not include that item never runs for it, and a branch guarded by a condition (charges, a state, a flag) applies only when that condition holds.", prompt);
+        Assert.Contains("3o. A wiki page's hedge — usually, often, typically, in most cases — is not evidence that exceptions exist. When the implementing code or data shows the rule without an exception, judge the claim by the code and say in the basis that the wiki hedges.", prompt);
     }
 
     private const string BoardText =
@@ -135,99 +175,6 @@ public class BenchmarkClaimVerificationPromptTests
     }
 
     [Fact]
-    public void BuildPrompt_WithABoard_OrdersInstructions3bThen3cThen3dThen3e()
-    {
-        string prompt = BuildPromptWithBoard();
-
-        int index3b = prompt.IndexOf("3b. A claim about the magnitude", System.StringComparison.Ordinal);
-        int index3c = prompt.IndexOf("3c. A claim about the hero's", System.StringComparison.Ordinal);
-        int index3d = prompt.IndexOf("3d. Before you cite a function as the code that implements something, confirm it is called", System.StringComparison.Ordinal);
-        int index3e = prompt.IndexOf("3e. A wiki page alone does not settle a claim about a number", System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
-
-        Assert.True(index3b >= 0);
-        Assert.True(index3c > index3b, "Instruction 3c must follow instruction 3b.");
-        Assert.True(index3d > index3c, "Instruction 3d must follow instruction 3c.");
-        Assert.True(index3e > index3d, "Instruction 3e must follow instruction 3d.");
-        Assert.True(index4 > index3e, "Instruction 4 must follow 3e, unrenumbered.");
-    }
-
-    [Fact]
-    public void BuildPrompt_WithoutABoard_OrdersInstructions3bThen3dThen3e()
-    {
-        string prompt = BuildPrompt();
-
-        int index3b = prompt.IndexOf("3b. A claim about the magnitude", System.StringComparison.Ordinal);
-        int index3d = prompt.IndexOf("3d. Before you cite a function", System.StringComparison.Ordinal);
-        int index3e = prompt.IndexOf("3e. A wiki page alone", System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
-
-        Assert.True(index3b >= 0);
-        Assert.True(index3d > index3b, "Instruction 3d must follow instruction 3b.");
-        Assert.True(index3e > index3d, "Instruction 3e must follow instruction 3d.");
-        Assert.True(index4 > index3e, "Instruction 4 must follow 3e, unrenumbered.");
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void BuildPrompt_Instructions3fThen3gThen3hThen3i_FollowInstruction3e_WithAndWithoutABoard(bool withBoard)
-    {
-        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
-
-        int index3e = prompt.IndexOf("3e. A wiki page alone", System.StringComparison.Ordinal);
-        int index3f = prompt.IndexOf("3f. You judge facts, not advice.", System.StringComparison.Ordinal);
-        int index3g = prompt.IndexOf("3g. Before refuting a formula, a table or a number, check whether the claim and the code state the same quantity in different notation", System.StringComparison.Ordinal);
-        int index3h = prompt.IndexOf("3h. When the function you cite hands the effect to another function, read that function before concluding that an effect is absent.", System.StringComparison.Ordinal);
-        int index3i = prompt.IndexOf("3i. Absence needs more than one place.", System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
-
-        Assert.True(index3e >= 0);
-        Assert.True(index3f > index3e, "Instruction 3f must follow instruction 3e.");
-        Assert.True(index3g > index3f, "Instruction 3g must follow instruction 3f.");
-        Assert.True(index3h > index3g, "Instruction 3h must follow instruction 3g.");
-        Assert.True(index3i > index3h, "Instruction 3i must follow instruction 3h.");
-        Assert.True(index4 > index3i, "Instruction 4 must follow 3i, unrenumbered.");
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void BuildPrompt_Instruction3j_SitsBetween3iAnd4_WithAndWithoutABoard(bool withBoard)
-    {
-        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
-
-        int index3i = prompt.IndexOf("3i. Absence needs more than one place.", System.StringComparison.Ordinal);
-        int index3j = prompt.IndexOf("3j. Values passed are settled where they are assigned.", System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
-
-        Assert.Contains("3j.", prompt);
-        Assert.True(index3j > index3i, "Instruction 3j must follow instruction 3i.");
-        Assert.True(index4 > index3j, "Instruction 4 must follow 3j, unrenumbered.");
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void BuildPrompt_Instruction3p_BatchesLookups_Between3oAnd4_WithAndWithoutABoard(bool withBoard)
-    {
-        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
-
-        const string instruction3p = "3p. Plan your lookups before you call a tool. Tool calls you issue together in one turn run in parallel and count as one round, and every round re-reads everything gathered so far. In your first turn, issue the first lookup for every claim, or for as many as the tool budget allows, together; batch your follow-up lookups the same way. Issue a call by itself only when its arguments depend on a result you do not have yet.";
-        int index3o = prompt.IndexOf("3o. A wiki page's hedge", System.StringComparison.Ordinal);
-        int index3p = prompt.IndexOf(instruction3p, System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
-
-        Assert.True(index3o >= 0);
-        Assert.True(index3p > index3o, "Instruction 3p must follow instruction 3o.");
-        Assert.True(index4 > index3p, "Instruction 4 must follow 3p, unrenumbered.");
-
-        // 3p sits in the fixed head, ahead of the board.
-        int boardStart = prompt.IndexOf("--- GAME BOARD", System.StringComparison.Ordinal);
-        Assert.True(boardStart < 0 || index3p < boardStart, "Instruction 3p must precede the board.");
-    }
-
-    [Fact]
     public void BuildPrompt_Instructions3dAnd3e_SayWhatALiveCallSiteAndANumberRequire()
     {
         string prompt = BuildPrompt(isDisputedVerdict: true);
@@ -244,13 +191,6 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.Contains("3c. A claim about the hero's current state", prompt);
         Assert.Contains("Absence from the rubric is not absence from the board.", prompt);
         Assert.Contains("a game board line such as 'board:", prompt);
-
-        int index3b = prompt.IndexOf("3b. A claim about the magnitude", System.StringComparison.Ordinal);
-        int index3c = prompt.IndexOf("3c. A claim about the hero's", System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
-
-        Assert.True(index3c > index3b, "Instruction 3c must follow instruction 3b.");
-        Assert.True(index4 > index3c, "Instruction 4 must follow 3c, unrenumbered.");
     }
 
     [Fact]
@@ -473,22 +413,6 @@ public class BenchmarkClaimVerificationPromptTests
         Assert.Contains("A true clause elsewhere in the sentence does not make a false charged part Supported.", prompt);
     }
 
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void BuildPrompt_Instruction3k_SitsBetween3jAnd4_WithAndWithoutABoard(bool withBoard)
-    {
-        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
-
-        int index3j = prompt.IndexOf("3j. Values passed are settled where they are assigned.", System.StringComparison.Ordinal);
-        int index3k = prompt.IndexOf("3k. When a claim joins several statements", System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
-
-        Assert.Contains("3k.", prompt);
-        Assert.True(index3k > index3j, "Instruction 3k must follow instruction 3j.");
-        Assert.True(index4 > index3k, "Instruction 4 must follow 3k, unrenumbered.");
-    }
-
     [Fact]
     public void BuildPrompt_TheCriticalErrorBlock_JudgesThePartTheEvidenceNames()
     {
@@ -504,24 +428,6 @@ public class BenchmarkClaimVerificationPromptTests
             assessorEvidence: "Evidence.");
 
         Assert.Contains("Judge that part: a true clause elsewhere in the claim does not make the verdict Supported.", prompt);
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void BuildPrompt_Instruction3k_AsksForTheChargedPartVerdict_And3lFollowsIt_WithAndWithoutABoard(bool withBoard)
-    {
-        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
-
-        Assert.Contains("For an item that names a charged part, chargedPartVerdict is your verdict on that part alone, with its own citation in chargedPartBasis; the item's verdict field is ignored for such an item.", prompt);
-        Assert.Contains("3l. When a GnollHack wiki page states the property a claim is about — a spell's casting time, an item's effect, a stat block value — and your reading of the source seems to contradict it, name the wiki statement in your basis and cite the code that overrides it; the wiki's stat blocks are printed from the same game data. Without both, the verdict is Indeterminate.", prompt);
-
-        int index3k = prompt.IndexOf("3k. When a claim joins several statements", System.StringComparison.Ordinal);
-        int index3l = prompt.IndexOf("3l. When a GnollHack wiki page states", System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
-
-        Assert.True(index3l > index3k, "Instruction 3l must follow instruction 3k.");
-        Assert.True(index4 > index3l, "Instruction 4 must follow 3l, unrenumbered.");
     }
 
     [Fact]
@@ -803,61 +709,6 @@ public class BenchmarkClaimVerificationPromptTests
         var charged = BenchmarkClaimVerificationPrompt.ChargedPartItems(claims, roles, parts);
 
         Assert.Equal(new[] { false, true, false, false }, charged);
-    }
-
-    // --- Instruction 3m: a sentence that reports what a source says -----------------------
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void BuildPrompt_Instruction3m_ChecksAReportedStatementAgainstItsSource_AndFollows3l(bool withBoard)
-    {
-        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
-
-        Assert.Contains("3m. A sentence that reports what a source says — the wiki says, the game's screen shows, the manual says — is checked against that source. It is Supported when the source says it, whether or not the source is right; if the source is wrong, say so in the basis. Refute it only when the source does not say it.", prompt);
-
-        int index3l = prompt.IndexOf("3l. When a GnollHack wiki page states", System.StringComparison.Ordinal);
-        int index3m = prompt.IndexOf("3m. A sentence that reports what a source says", System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
-
-        Assert.True(index3m > index3l, "Instruction 3m must follow instruction 3l.");
-        Assert.True(index4 > index3m, "Instruction 4 must follow 3m, unrenumbered.");
-    }
-
-    // --- Instructions 3n and 3o: branch conditions, and a wiki hedge -------------------------
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void BuildPrompt_Instruction3n_ReadsTheCaseLabelsAndConditionsAboveACitedLine_AndFollows3m(bool withBoard)
-    {
-        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
-
-        Assert.Contains("3n. A line inside a `switch` is reached only for that `case`'s labels, and a line inside an `if` only when its condition holds. Before citing a line as what an item does, read the `case` labels and the `if`/`else` conditions above it; a branch that tests for an item inside a `case` whose labels do not include that item never runs for it, and a branch guarded by a condition (charges, a state, a flag) applies only when that condition holds.", prompt);
-
-        int index3m = prompt.IndexOf("3m. A sentence that reports what a source says", System.StringComparison.Ordinal);
-        int index3n = prompt.IndexOf("3n. A line inside a `switch`", System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
-
-        Assert.True(index3n > index3m, "Instruction 3n must follow instruction 3m.");
-        Assert.True(index4 > index3n, "Instruction 4 must follow 3n, unrenumbered.");
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void BuildPrompt_Instruction3o_JudgesAWikiHedgeByTheCode_AndFollows3n(bool withBoard)
-    {
-        string prompt = withBoard ? BuildPromptWithBoard() : BuildPrompt();
-
-        Assert.Contains("3o. A wiki page's hedge — usually, often, typically, in most cases — is not evidence that exceptions exist. When the implementing code or data shows the rule without an exception, judge the claim by the code and say in the basis that the wiki hedges.", prompt);
-
-        int index3n = prompt.IndexOf("3n. A line inside a `switch`", System.StringComparison.Ordinal);
-        int index3o = prompt.IndexOf("3o. A wiki page's hedge", System.StringComparison.Ordinal);
-        int index4 = prompt.IndexOf("4. Possible verdicts", System.StringComparison.Ordinal);
-
-        Assert.True(index3o > index3n, "Instruction 3o must follow instruction 3n.");
-        Assert.True(index4 > index3o, "Instruction 4 must follow 3o, unrenumbered.");
     }
 
     // --- The antecedent of a claim that opens with a pronoun (run 74, Q12) -----------------

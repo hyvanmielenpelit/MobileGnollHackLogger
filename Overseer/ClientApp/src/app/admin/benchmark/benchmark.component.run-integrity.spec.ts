@@ -651,11 +651,6 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).toContain('1 answer(s) flagged with a critical error (question(s) 1; member A flagged 1, member B 1).');
     });
 
-    it('should format CompletedWithLimits from both the numeric and the string status', () => {
-      expect(component.formatStatus(6)).toBe('CompletedWithLimits');
-      expect(component.formatStatus('CompletedWithLimits')).toBe('CompletedWithLimits');
-    });
-
     it('should mute advisory flag badges and show the effective tool budget and scrubbed count', () => {
       component.selectedRunDetail = buildCompletedRun({
         answers: [

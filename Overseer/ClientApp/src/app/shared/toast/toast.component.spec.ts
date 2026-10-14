@@ -43,10 +43,6 @@ describe('ToastComponent', () => {
     fixture.detectChanges();
   }
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
-
   it('shows the popover for a success notice and auto-hides after durationMs, emitting dismissed', () => {
     const dismissed = vi.fn().mockName('dismissed');
     component.dismissed.subscribe(dismissed);

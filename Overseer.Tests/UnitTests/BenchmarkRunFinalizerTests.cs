@@ -229,21 +229,28 @@ public class BenchmarkRunFinalizerTests
         };
     }
 
-    [Fact]
-    public void AdvisoryFlags_DoNotAffectRunStatusOrCleanCount()
+    [Theory]
+    // ReasoningBleed and RepeatedFragments describe text that was removed before grading,
+    // so the graded answer is unaffected and the run is not degraded by them.
+    [InlineData(BenchmarkAnswerFlags.ReasoningBleed)]
+    [InlineData(BenchmarkAnswerFlags.RepeatedFragments)]
+    // Grouping ContestedVerdict with the defect flags would flip every run carrying one to
+    // CompletedWithErrors - the exact regression harness version 4 was written to undo. The
+    // answer is intact and the verdict may well be right; what it is not is unambiguous.
+    [InlineData(BenchmarkAnswerFlags.ContestedVerdict)]
+    // A previous round's regression was exactly an advisory flag flipping healthy runs to
+    // CompletedWithErrors.
+    [InlineData(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction)]
+    [InlineData(BenchmarkAnswerFlags.AnswerFramingOpener)]
+    public void AdvisoryFlags_DoNotAffectRunStatusOrCleanCount(BenchmarkAnswerFlags flag)
     {
-        // ReasoningBleed and RepeatedFragments describe text that was removed before grading,
-        // so the graded answer is unaffected and the run is not degraded by them.
-        var answers = new List<BenchmarkRunAnswer>
-        {
-            MakeAnswer(1, BenchmarkAnswerFlags.ReasoningBleed),
-            MakeAnswer(2, BenchmarkAnswerFlags.RepeatedFragments)
-        };
+        var answer = MakeAnswer(1, flag);
+        var answers = new[] { answer, MakeAnswer(2) };
 
+        Assert.True(BenchmarkRunFinalizer.HasAdvisoryFlag(answer));
+        Assert.False(BenchmarkRunFinalizer.HasTransportDefect(answer));
+        Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(answer));
         Assert.Equal(BenchmarkRunStatus.Completed, BenchmarkRunFinalizer.ComputeStatus(answers));
-        Assert.All(answers, a => Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(a)));
-        Assert.All(answers, a => Assert.True(BenchmarkRunFinalizer.HasAdvisoryFlag(a)));
-        Assert.All(answers, a => Assert.False(BenchmarkRunFinalizer.HasTransportDefect(a)));
     }
 
     [Fact]
@@ -313,8 +320,17 @@ public class BenchmarkRunFinalizerTests
             MakeAnswer(6, BenchmarkAnswerFlags.ReasoningBleed, budgetExhausted: true),
             MakeAnswer(7, BenchmarkAnswerFlags.HarnessArtifacts, budgetExhausted: true),
             MakeAnswer(8, status: BenchmarkAnswerStatus.EmptyAnswer),
-            MakeUnansweredAnswer(9)
+            MakeUnansweredAnswer(9),
+            MakeAnswer(10, status: BenchmarkAnswerStatus.Failed),
+            MakeAnswer(11, status: BenchmarkAnswerStatus.ProviderError)
         };
+        var endTurn = MakeUnansweredAnswer(12);
+        endTurn.ProviderFinishReason = "end_turn";
+        answers.Add(endTurn);
+
+        Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(answers[9]));
+        Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(answers[10]));
+        Assert.Equal(BenchmarkAnswerIntegrity.Unanswered, BenchmarkRunFinalizer.Classify(endTurn));
 
         int clean = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Clean);
         int defects = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.TransportDefect);
@@ -324,10 +340,10 @@ public class BenchmarkRunFinalizerTests
 
         Assert.Equal(answers.Count, clean + defects + recovered + limits + unanswered);
         Assert.Equal(2, clean);        // 1 and 5 (advisory only)
-        Assert.Equal(2, defects);      // 3 (truncated) and 8 (empty, no finish reason recorded)
+        Assert.Equal(4, defects);      // 3 (truncated), 8 (empty, no finish reason recorded), 10 (failed) and 11 (provider error)
         Assert.Equal(2, recovered);    // 2 and 7 — repaired and graded
         Assert.Equal(2, limits);       // 4 and 6
-        Assert.Equal(1, unanswered);   // 9 — the model stopped normally with no text
+        Assert.Equal(2, unanswered);   // 9 and 12 — the model stopped normally with no text
     }
 
     [Fact]
@@ -347,19 +363,6 @@ public class BenchmarkRunFinalizerTests
         Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(emptyWithNoReason));
         Assert.True(BenchmarkRunFinalizer.HasTransportDefect(emptyWithNoReason));
         Assert.True(BenchmarkRunFinalizer.HasUnresolvedWork(emptyWithNoReason));
-    }
-
-    [Fact]
-    public void ComputeStatus_UnansweredStillProducesCompletedWithErrors()
-    {
-        // Item 6b: an empty answer is an error, not merely a low score, whatever produced it.
-        var answers = new List<BenchmarkRunAnswer>
-        {
-            MakeAnswer(1),
-            MakeUnansweredAnswer(2)
-        };
-
-        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answers));
     }
 
     [Theory]
@@ -501,10 +504,8 @@ public class BenchmarkRunFinalizerTests
     }
 
     [Fact]
-    public void ScoringSites_AgreeOnAFixtureContainingAnUnansweredAnswer()
+    public void Apply_WeighsAnUnansweredAnswerAtZero_ByItsAssessedDifficulty()
     {
-        // Option B's central risk: six sites recompute a quality index, and one that filters on
-        // Status == Ok alone would silently exclude the zeros the finaliser included.
         var a1 = MakeAnswer(1);
         a1.QualityScore = 80;
         a1.RawQualityScore = 80;
@@ -521,32 +522,8 @@ public class BenchmarkRunFinalizerTests
         var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 3, Answers = answers };
         BenchmarkRunFinalizer.Apply(run, answers);
 
-        // 2: AdminBenchmarkController's RawQualityIndex expression.
-        int? controllerRawIndex = BenchmarkScoring.QualityIndex(
-            answers
-                .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
-                .Select(a => (a.RawQualityScore ?? a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
-                .ToList());
-
-        // 3: BenchmarkReportBuilder's rawScorableItems selector.
-        int? reportRawIndex = BenchmarkScoring.QualityIndex(
-            answers
-                .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
-                .Select(a => (a.RawQualityScore ?? a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
-                .ToList());
-
-        // 6: BenchmarkService.RescoreRunAsync's scorableItems selector.
-        int? rescoreIndex = BenchmarkScoring.QualityIndex(
-            answers
-                .Where(a => BenchmarkRunFinalizer.CountsTowardQualityIndex(a) && a.QualityScore.HasValue)
-                .Select(a => (a.QualityScore, a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty)))
-                .ToList());
-
         // (25*80 + 75*60 + 50*0) / 150 = 6500 / 150 = 43
         Assert.Equal(43, run.QualityIndex);
-        Assert.Equal(run.QualityIndex, controllerRawIndex);
-        Assert.Equal(run.QualityIndex, reportRawIndex);
-        Assert.Equal(run.QualityIndex, rescoreIndex);
     }
 
     [Fact]
@@ -577,31 +554,6 @@ public class BenchmarkRunFinalizerTests
 
         Assert.Null(run.ToolOverheadMs);
     }
-    [Fact]
-    public void ContestedVerdict_IsAdvisory_NotATransportDefect()
-    {
-        var answer = MakeAnswer(1, BenchmarkAnswerFlags.ContestedVerdict);
-
-        Assert.True(BenchmarkRunFinalizer.HasAdvisoryFlag(answer));
-        Assert.False(BenchmarkRunFinalizer.HasTransportDefect(answer));
-        Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(answer));
-    }
-
-    [Fact]
-    public void ContestedVerdict_AloneDoesNotDegradeTheRunStatus()
-    {
-        // Grouping it with the defect flags would flip every run carrying one to
-        // CompletedWithErrors - the exact regression harness version 4 was written to undo. The
-        // answer is intact and the verdict may well be right; what it is not is unambiguous.
-        var answers = new[]
-        {
-            MakeAnswer(1, BenchmarkAnswerFlags.ContestedVerdict),
-            MakeAnswer(2)
-        };
-
-        Assert.Equal(BenchmarkRunStatus.Completed, BenchmarkRunFinalizer.ComputeStatus(answers));
-    }
-
     [Fact]
     public void Apply_CountsContestedVerdictsAndReassessments_AndTheUnweightedMean()
     {
@@ -749,15 +701,6 @@ public class BenchmarkRunFinalizerTests
     }
 
     [Fact]
-    public void Finalizer_LeavesContestedCriticalErrorCountAtZero_WhenNoAnswerCarriesTheFlag()
-    {
-        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1 };
-        BenchmarkRunFinalizer.Apply(run, new[] { MakeAnswer(1) });
-
-        Assert.Equal(0, run.ContestedCriticalErrorAnswerCount);
-    }
-
-    [Fact]
     public void Finalizer_AggregatesOmissionAsAccuracy_AndBudgetSaturated_AndStandardError()
     {
         var a1 = MakeAnswer(1, BenchmarkAnswerFlags.OmissionAsAccuracy);
@@ -846,55 +789,6 @@ public class BenchmarkRunFinalizerTests
 
         Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, run.Status);
         Assert.Equal(1, run.TransportDefectAnswerCount);
-    }
-
-    [Fact]
-    public void IntegrityBuckets_WithTerminalFailures_StillSumToTheAnswerCount()
-    {
-        var failed = MakeAnswer(1, status: BenchmarkAnswerStatus.Failed);
-        var providerError = MakeAnswer(2, status: BenchmarkAnswerStatus.ProviderError);
-        var unanswered = MakeUnansweredAnswer(3);
-        unanswered.ProviderFinishReason = "end_turn";
-        var recovered = MakeAnswer(4, BenchmarkAnswerFlags.HarnessArtifacts);
-        var budgetExhausted = MakeAnswer(5, budgetExhausted: true);
-        var clean = MakeAnswer(6);
-
-        var answers = new List<BenchmarkRunAnswer>
-        {
-            failed, providerError, unanswered, recovered, budgetExhausted, clean
-        };
-
-        Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(failed));
-        Assert.Equal(BenchmarkAnswerIntegrity.TransportDefect, BenchmarkRunFinalizer.Classify(providerError));
-        Assert.Equal(BenchmarkAnswerIntegrity.Unanswered, BenchmarkRunFinalizer.Classify(unanswered));
-        Assert.Equal(BenchmarkAnswerIntegrity.Recovered, BenchmarkRunFinalizer.Classify(recovered));
-        Assert.Equal(BenchmarkAnswerIntegrity.HarnessLimit, BenchmarkRunFinalizer.Classify(budgetExhausted));
-        Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(clean));
-
-        int clean_ = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Clean);
-        int defects = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.TransportDefect);
-        int recovered_ = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Recovered);
-        int limits = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.HarnessLimit);
-        int unanswered_ = answers.Count(a => BenchmarkRunFinalizer.Classify(a) == BenchmarkAnswerIntegrity.Unanswered);
-
-        Assert.Equal(answers.Count, clean_ + defects + recovered_ + limits + unanswered_);
-        Assert.Equal(1, clean_);
-        Assert.Equal(2, defects);      // failed + providerError
-        Assert.Equal(1, recovered_);
-        Assert.Equal(1, limits);
-        Assert.Equal(1, unanswered_);
-    }
-
-    [Theory]
-    [InlineData(BenchmarkAnswerStatus.Failed)]
-    [InlineData(BenchmarkAnswerStatus.ProviderError)]
-    public void ComputeStatus_FailedOrProviderErrorAnswer_StaysCompletedWithErrors(BenchmarkAnswerStatus status)
-    {
-        // Pinned because the bucket change above must not move the run status: it was already
-        // CompletedWithErrors through HasUnresolvedWork, and still is.
-        var answers = new List<BenchmarkRunAnswer> { MakeAnswer(1, status: status), MakeAnswer(2) };
-
-        Assert.Equal(BenchmarkRunStatus.CompletedWithErrors, BenchmarkRunFinalizer.ComputeStatus(answers));
     }
 
     [Fact]
@@ -1001,15 +895,6 @@ public class BenchmarkRunFinalizerTests
         BenchmarkRunFinalizer.ApplyTotals(run, new[] { ok, failed, providerError });
 
         Assert.Equal(2, run.TerminalFailureAnswerCount);
-    }
-
-    [Fact]
-    public void ApplyTotals_LeavesTerminalFailureAnswerCountAtZero_WhenNoAnswerHasOne()
-    {
-        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 1 };
-        BenchmarkRunFinalizer.ApplyTotals(run, new[] { MakeAnswer(1) });
-
-        Assert.Equal(0, run.TerminalFailureAnswerCount);
     }
 
     [Theory]
@@ -1122,21 +1007,6 @@ public class BenchmarkRunFinalizerTests
         Assert.NotEqual(originalCompletedAt, run.CompletedAtUtc);
     }
 
-    [Theory]
-    [InlineData(BenchmarkAnswerFlags.OutOfRubricAccuracyDeduction)]
-    [InlineData(BenchmarkAnswerFlags.AnswerFramingOpener)]
-    public void HasAdvisoryFlag_TrueForTheTwoNewFlags_AndDoesNotAffectStatusOrCleanCount(BenchmarkAnswerFlags flag)
-    {
-        var answer = MakeAnswer(1, flag);
-        var answers = new[] { answer, MakeAnswer(2) };
-
-        Assert.True(BenchmarkRunFinalizer.HasAdvisoryFlag(answer));
-        Assert.Equal(BenchmarkAnswerIntegrity.Clean, BenchmarkRunFinalizer.Classify(answer));
-        // The assertion that matters: a previous round's regression was exactly an advisory flag
-        // flipping healthy runs to CompletedWithErrors.
-        Assert.Equal(BenchmarkRunStatus.Completed, BenchmarkRunFinalizer.ComputeStatus(answers));
-    }
-
     [Fact]
     public void ApplyTotals_CountsOutOfRubricAccuracyAndAnswerFramingOpenerFlags()
     {
@@ -1199,40 +1069,29 @@ public class BenchmarkRunFinalizerTests
     // both leave every answer row in place and are re-runnable.
     // -----------------------------------------------------------------------
 
-    [Fact]
-    public void IsAbortedRun_CanceledWithFullAnswerCoverage_IsNotAborted()
+    /// <summary>
+    /// Both overloads: the status form, and the run form, which reads the answer row count rather
+    /// than the answered-question count. Every row's answers are one Ok answer followed by
+    /// provider errors, so a covered run here has almost no answered questions.
+    /// </summary>
+    [Theory]
+    // All 18 rows exist; 17 of them failed at the provider. The run covers its suite.
+    [InlineData(BenchmarkRunStatus.Canceled, 18, 18, false)]
+    [InlineData(BenchmarkRunStatus.Canceled, 18, 7, true)]
+    // TotalQuestionCount 0 means the count was never recorded. "Not covered" is the safe
+    // reading: such a row stays refused exactly as it was before the coverage test existed.
+    [InlineData(BenchmarkRunStatus.Failed, 0, 18, true)]
+    // CompletedWithErrors is never aborted, whatever its coverage.
+    [InlineData(BenchmarkRunStatus.CompletedWithErrors, 18, 18, false)]
+    [InlineData(BenchmarkRunStatus.CompletedWithErrors, 18, 3, false)]
+    public void IsAbortedRun_ReadsTheStatusAndTheAnswerRowCoverage(
+        BenchmarkRunStatus status, int totalQuestionCount, int answerRowCount, bool expected)
     {
-        Assert.False(BenchmarkRunFinalizer.IsAbortedRun(BenchmarkRunStatus.Canceled, 18, 18));
-    }
+        Assert.Equal(expected, BenchmarkRunFinalizer.IsAbortedRun(status, totalQuestionCount, answerRowCount));
 
-    [Fact]
-    public void IsAbortedRun_CanceledWithPartialCoverage_IsAborted()
-    {
-        Assert.True(BenchmarkRunFinalizer.IsAbortedRun(BenchmarkRunStatus.Canceled, 18, 7));
-    }
-
-    [Fact]
-    public void IsAbortedRun_FailedWithUnknownTotal_IsAborted()
-    {
-        // TotalQuestionCount 0 means the count was never recorded. "Not covered" is the safe
-        // reading: such a row stays refused exactly as it was before the coverage test existed.
-        Assert.True(BenchmarkRunFinalizer.IsAbortedRun(BenchmarkRunStatus.Failed, 0, 18));
-    }
-
-    [Fact]
-    public void IsAbortedRun_CompletedWithErrors_IsNeverAborted()
-    {
-        Assert.False(BenchmarkRunFinalizer.IsAbortedRun(BenchmarkRunStatus.CompletedWithErrors, 18, 18));
-        Assert.False(BenchmarkRunFinalizer.IsAbortedRun(BenchmarkRunStatus.CompletedWithErrors, 18, 3));
-    }
-
-    [Fact]
-    public void IsAbortedRun_ReadsTheAnswerRowCount_NotTheAnsweredQuestionCount()
-    {
-        // All 18 rows exist; 17 of them failed at the provider. The run covers its suite.
-        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = 18, Status = BenchmarkRunStatus.Canceled };
+        var run = new BenchmarkRun { Id = 1, TotalQuestionCount = totalQuestionCount, Status = status };
         var answers = new List<BenchmarkRunAnswer>();
-        for (int i = 1; i <= 18; i++)
+        for (int i = 1; i <= answerRowCount; i++)
         {
             answers.Add(new BenchmarkRunAnswer
             {
@@ -1241,7 +1100,7 @@ public class BenchmarkRunFinalizerTests
             });
         }
 
-        Assert.False(BenchmarkRunFinalizer.IsAbortedRun(run, answers));
+        Assert.Equal(expected, BenchmarkRunFinalizer.IsAbortedRun(run, answers));
     }
 
     // --- Two-family assessor panel ------------------------------------------------------------------

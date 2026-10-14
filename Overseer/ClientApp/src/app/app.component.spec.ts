@@ -11,18 +11,6 @@ describe('AppComponent', () => {
     }).compileComponents();
   });
 
-  it('should create the app', () => {
-    const fixture = TestBed.createComponent(AppComponent);
-    const app = fixture.componentInstance;
-    expect(app).toBeTruthy();
-  });
-
-  it(`should have the 'ClientApp' title`, () => {
-    const fixture = TestBed.createComponent(AppComponent);
-    const app = fixture.componentInstance;
-    expect(app.title).toEqual('ClientApp');
-  });
-
   it('should notify ClientBridgeService on NavigationEnd when embedded', async () => {
     const fixture = TestBed.createComponent(AppComponent);
     const bridge = TestBed.inject(ClientBridgeService);

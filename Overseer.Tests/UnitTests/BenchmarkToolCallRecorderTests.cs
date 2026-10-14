@@ -234,6 +234,9 @@ public class BenchmarkToolCallRecorderTests
     [Theory]
     [InlineData(1000, 3000)]
     [InlineData(5000, 7000)]
+    // Benchmark:MaxResultLength defaults to 10,000; with no handler in the allowed set
+    // declaring MaxResultLengthOverride, the cap is just the agent figure plus headroom.
+    [InlineData(10_000, 12_000)]
     public void Resolve_MaxResultChars_DefaultsToMaxResultLengthPlusHeadroom_NotALiteral(
         int maxResultLength, int expectedMaxResultChars)
     {
@@ -256,16 +259,6 @@ public class BenchmarkToolCallRecorderTests
         var limits = BenchmarkToolCallRecordLimits.Resolve(configuration, maxResultLength: 1000);
 
         Assert.Equal(9999, limits.MaxResultChars);
-    }
-
-    [Fact]
-    public void Resolve_NoOverride_DerivesCapFromMaxResultLengthAlone()
-    {
-        // Benchmark:MaxResultLength defaults to 10,000; with no handler in the allowed set
-        // declaring MaxResultLengthOverride, the cap is just the agent figure plus headroom.
-        var limits = BenchmarkToolCallRecordLimits.Resolve(EmptyConfig(), maxResultLength: 10_000);
-
-        Assert.Equal(12_000, limits.MaxResultChars);
     }
 
     [Fact]

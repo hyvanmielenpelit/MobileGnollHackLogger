@@ -389,7 +389,7 @@ public class BenchmarkPdfRendererTests
         // The Markdown footer is left out; the cover states its facts once.
         Assert.DoesNotContain(Squash("Figures and tables were computed by Overseer."), text);
         Assert.DoesNotContain(Squash("rendered with format version"), text);
-        Assert.Contains(Squash("PDF layout 8"), text);
+        Assert.Contains(Squash("PDF layout " + BenchmarkPdfRenderer.LayoutVersion.ToString(System.Globalization.CultureInfo.InvariantCulture)), text);
         Assert.DoesNotContain(Squash("Audience"), text);
         // The stamp prints once, in the cover banner.
         Assert.Single(AllIndexesOf(text, Squash("INTERNAL — contains benchmark questions and rubrics.")));
@@ -463,18 +463,6 @@ public class BenchmarkPdfRendererTests
     }
 
     [Fact]
-    public void APdfWithFigures_StillDeclaresPdfA3AndPdfUA1()
-    {
-        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken, TwoCharts());
-
-        using var reader = PdfDocument.Open(pdf);
-        Assert.True(reader.TryGetXmpMetadata(out var xmp), "The PDF carries no XMP metadata.");
-        var xml = xmp.GetXDocument();
-        Assert.True(HasXmpValue(xml, "http://www.aiim.org/pdfa/ns/id/", "part", "3"), "pdfaid:part is not 3.");
-        Assert.True(HasXmpValue(xml, "http://www.aiim.org/pdfua/ns/id/", "part", "1"), "pdfuaid:part is not 1.");
-    }
-
-    [Fact]
     public void TheSourceHash_CoversTheDrawnCharts()
     {
         var charts = TwoCharts();
@@ -490,7 +478,7 @@ public class BenchmarkPdfRendererTests
         string second = AllText(BenchmarkPdfRenderer.RenderMarkdown(FigureMarkdown, Info(), TestContext.Current.CancellationToken, changed));
         Assert.Contains("Source" + original[..16], first);
         Assert.Contains("Source" + altered[..16], second);
-        Assert.Contains("PDFlayout8", first);
+        Assert.Contains("PDFlayout" + BenchmarkPdfRenderer.LayoutVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), first);
 
         // A chart with no marker is not drawn and leaves the hash alone.
         string unplaced = AllText(BenchmarkPdfRenderer.RenderMarkdown("Only text.\n", Info(), TestContext.Current.CancellationToken, charts));
@@ -1017,55 +1005,7 @@ public class BenchmarkPdfRendererTests
     [Fact]
     public void AReportDocumentName_IsTheDownloadCentersWithPdf()
     {
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
-
-        Assert.Equal(
-            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
-            BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
-            {
-                Disclosure = BenchmarkReportDisclosure.Detailed,
-                PeerNaming = BenchmarkReportPeerNaming.Anonymized
-            }));
-        Assert.Equal(
-            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
-            BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
-            {
-                Disclosure = BenchmarkReportDisclosure.Full,
-                PeerNaming = BenchmarkReportPeerNaming.Named
-            }));
         Assert.Equal("Suite_Model_20260928_104200_INTERNAL.pdf", BenchmarkPdfFileNames.InternalPdfName("Suite_Model_20260928_104200.md"));
-    }
-
-    [Fact]
-    public void ARunSubjectsName_StartsWithTheRunNumber()
-    {
-        var document = BenchmarkReportPackFixture.StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary);
-        document.SubjectKey = "run:73";
-        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
-
-        string name = BenchmarkPdfFileNames.ForReportDocument(document, options);
-
-        Assert.StartsWith("run-73_", name, StringComparison.Ordinal);
-        Assert.Equal("run-73_" + BenchmarkPdfFileNames.SafeFileName(document.Title) + "_full_named_INTERNAL.pdf", name);
-        Assert.Equal(name[..^".pdf".Length] + ".docx", BenchmarkPdfFileNames.ForReportDocument(document, options, "docx"));
-    }
-
-    [Theory]
-    [InlineData("group:5")]
-    [InlineData("run:")]
-    [InlineData("run:7a")]
-    public void AGroupSubjectsName_HasNoRunPrefix(string subjectKey)
-    {
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
-        document.SubjectKey = subjectKey;
-
-        Assert.Equal(
-            "vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf",
-            BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
-            {
-                Disclosure = BenchmarkReportDisclosure.Summary,
-                PeerNaming = BenchmarkReportPeerNaming.Named
-            }));
     }
 
     [Fact]

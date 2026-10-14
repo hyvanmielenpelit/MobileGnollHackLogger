@@ -144,10 +144,6 @@ describe('BatteryEditorDialogComponent', () => {
     if (dialog?.open) dialog.close();
   });
 
-  it('creates', () => {
-    expect(component).toBeTruthy();
-  });
-
   it('opens a new battery with every suite unchecked and the default weighting', () => {
     component.open(null, SUITES);
     fixture.detectChanges();

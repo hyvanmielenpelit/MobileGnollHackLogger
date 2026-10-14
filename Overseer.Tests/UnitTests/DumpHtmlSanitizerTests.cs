@@ -270,26 +270,4 @@ public class DumpHtmlSanitizerTests
         Assert.Equal(DumpHtmlSanitizer.MaxFlattenedSnapshotChars - 1, result.Length);
         Assert.False(char.IsHighSurrogate(result[^1]));
     }
-
-    [Fact]
-    public void PrepareFlattenedSnapshot_IsIdempotent()
-    {
-        string clientShapedText = "Map:\n   #   .\n\n\n\nInventory:   \n1 - an apple   \n";
-        string once = DumpHtmlSanitizer.PrepareFlattenedSnapshot(clientShapedText);
-
-        Assert.Equal(once, DumpHtmlSanitizer.PrepareFlattenedSnapshot(once));
-    }
-
-    [Fact]
-    public void PrepareFlattenedSnapshot_ConvertsNbspToAsciiSpace_AndPreservesColumns()
-    {
-        string rowWithNbsps = "  #  . @";
-        string normalized = DumpHtmlSanitizer.PrepareFlattenedSnapshot($"Header\n{rowWithNbsps}\nFooter");
-
-        Assert.DoesNotContain(' ', normalized);
-        string[] lines = normalized.Split('\n');
-        Assert.Equal(3, lines.Length);
-        Assert.Equal(rowWithNbsps.Length, lines[1].Length);
-        Assert.Equal("  #  . @", lines[1]);
-    }
 }

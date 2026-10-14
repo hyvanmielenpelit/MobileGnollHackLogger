@@ -59,6 +59,31 @@ public class BenchmarkProviderErrorClassifierTests
         Assert.Equal(expectedStatus, result.HttpStatus);
     }
 
+    // --- Message-based classifier: provider error wording without a status code ---
+
+    [Theory]
+    [InlineData("Rate limit reached for requests per minute.", 429)]
+    [InlineData("[overloaded_error] Service is overloaded.", 529)]
+    [InlineData("The request to Anthropic timed out after 300 seconds.", 408)]
+    public void Classify_Message_ProviderErrorWording_MatchesExpectedStatus(string message, int expectedStatus)
+    {
+        var result = BenchmarkProviderErrorClassifier.Classify(message);
+
+        Assert.True(result.IsProviderError);
+        Assert.Equal(expectedStatus, result.HttpStatus);
+    }
+
+    [Theory]
+    [InlineData("The requested monster could not be found in the database.")]
+    [InlineData("Syntax error in user query.")]
+    public void Classify_Message_UnrelatedErrorText_IsNotAProviderError(string message)
+    {
+        var result = BenchmarkProviderErrorClassifier.Classify(message);
+
+        Assert.False(result.IsProviderError);
+        Assert.Null(result.HttpStatus);
+    }
+
     [Fact]
     public void Classify_Message_RateLimitExceeded_IsCheckedBeforeServerError()
     {
@@ -181,37 +206,18 @@ public class BenchmarkProviderErrorClassifierTests
         Assert.False(result.IsProviderError);
     }
 
-    [Fact]
-    public void Classify_Typed_TimeoutException_Returns408()
+    [Theory]
+    [InlineData(typeof(TimeoutException), "The operation has timed out.", 408)]
+    [InlineData(typeof(IOException), "The pipe has been ended.", 502)]
+    [InlineData(typeof(AuthenticationException), "The TLS handshake failed.", 502)]
+    public void Classify_Typed_ExceptionType_ReturnsItsStatus(Type exceptionType, string exceptionMessage, int expectedStatus)
     {
-        var ex = new TimeoutException("The operation has timed out.");
+        var ex = (Exception)Activator.CreateInstance(exceptionType, exceptionMessage)!;
 
         var result = BenchmarkProviderErrorClassifier.Classify(ex, null, false);
 
         Assert.True(result.IsProviderError);
-        Assert.Equal(408, result.HttpStatus);
-    }
-
-    [Fact]
-    public void Classify_Typed_IOException_Returns502()
-    {
-        var ex = new IOException("The pipe has been ended.");
-
-        var result = BenchmarkProviderErrorClassifier.Classify(ex, null, false);
-
-        Assert.True(result.IsProviderError);
-        Assert.Equal(502, result.HttpStatus);
-    }
-
-    [Fact]
-    public void Classify_Typed_AuthenticationException_Returns502()
-    {
-        var ex = new AuthenticationException("The TLS handshake failed.");
-
-        var result = BenchmarkProviderErrorClassifier.Classify(ex, null, false);
-
-        Assert.True(result.IsProviderError);
-        Assert.Equal(502, result.HttpStatus);
+        Assert.Equal(expectedStatus, result.HttpStatus);
     }
 
     [Fact]
@@ -316,6 +322,7 @@ public class BenchmarkProviderErrorClassifierTests
     [InlineData("prompt is too long: 205000 tokens > 200000")]
     [InlineData("API Error: 400 - The request used 4290 input tokens and 15030 cached tokens.")]
     [InlineData("API Error: 400 - Invalid value at 'generation_config.max_output_tokens' (5029).")]
+    [InlineData("API Error: 400 - prompt is too long: 205000 tokens > 200000")]
     public void Classify_Message_StatusDigitsInsideOtherNumbers_AreNotAProviderError(string message)
     {
         var result = BenchmarkProviderErrorClassifier.Classify(message);
@@ -335,21 +342,18 @@ public class BenchmarkProviderErrorClassifierTests
     [InlineData("Proxy error. Status: 500", 500)]
     [InlineData("Google stream error: [503] This model is currently experiencing high demand.", 503)]
     [InlineData("Stream interrupted: The response ended prematurely. | 503 Unavailable. Max retries exceeded.", 503)]
+    [InlineData("429 Rate Limited. Max retries exceeded.", 429)]
+    [InlineData("529 Overloaded error from Anthropic.", 529)]
+    [InlineData("502 Bad Gateway from cloudflare.", 502)]
+    [InlineData("504 Gateway Timeout.", 504)]
+    [InlineData("API Error: 503 - Service temporarily unavailable.", 503)]
+    [InlineData("Upstream returned HTTP 520.", 520)] // An anchored 5xx outside the named statuses maps to itself.
     public void Classify_Message_AnchoredStatus_StillClassifies(string message, int expectedStatus)
     {
         var result = BenchmarkProviderErrorClassifier.Classify(message);
 
         Assert.True(result.IsProviderError);
         Assert.Equal(expectedStatus, result.HttpStatus);
-    }
-
-    [Fact]
-    public void Classify_Message_AnchoredOtherFiveHundred_MapsToThatStatus()
-    {
-        var result = BenchmarkProviderErrorClassifier.Classify("Upstream returned HTTP 520.");
-
-        Assert.True(result.IsProviderError);
-        Assert.Equal(520, result.HttpStatus);
     }
 
     // --- Overseer's own failure texts are never provider errors ---
@@ -359,6 +363,7 @@ public class BenchmarkProviderErrorClassifierTests
     [InlineData("Request throttled: Rate limit cooldown active for OpenAI:system:503 (30.0s remaining), exceeding wait timeout of 10.0s.")]
     [InlineData("Rate limit cooldown active for Google:system:529 (12.5s remaining), exceeding wait timeout of 5.0s.")]
     [InlineData("Per-question timeout exceeded (720 s) after 3 model call(s) and 2 tool call(s); first token at 1.6 s; last stream event 690 s before the timeout.")]
+    [InlineData("Request throttled: Rate limit cooldown active for Anthropic:system:503 (10.0s remaining), exceeding wait timeout of 5.0s.")]
     public void Classify_Message_OwnFailureText_IsNotAProviderError(string message)
     {
         var result = BenchmarkProviderErrorClassifier.Classify(message);

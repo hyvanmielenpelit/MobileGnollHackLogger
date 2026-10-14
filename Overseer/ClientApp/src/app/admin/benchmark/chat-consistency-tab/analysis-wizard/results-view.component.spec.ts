@@ -14,7 +14,6 @@ import {
   ccEndpoint,
   ccEventAnnotations,
   ccEventPoints,
-  ccFreshness,
   ccOutOfDateFreshness,
   ccOverseerEvents,
   ccRunRows,
@@ -127,12 +126,6 @@ describe('CcResultsViewComponent', () => {
       fixture.detectChanges();
     }
 
-    it('asks for the saved analysis\'s freshness and shows nothing while it is current', () => {
-      answerFreshness(ccFreshness());
-      expect(el.querySelector('.cc-fresh-notice')).toBeNull();
-      expect(el.querySelector('.cc-fresh-unchecked')).toBeNull();
-    });
-
     it('shows the notice under the bar, over every section, and Analyze again asks the host', () => {
       let requested = 0;
       fixture.componentInstance.analyzeAgain.subscribe(() => requested++);
@@ -145,22 +138,6 @@ describe('CcResultsViewComponent', () => {
 
       notice.querySelector<HTMLButtonElement>('#cc-res-fresh-again')!.click();
       expect(requested).toBe(1);
-    });
-
-    it('says quietly when the changes since saving could not be checked', () => {
-      answerFreshness(ccFreshness({ inputsChanged: null, inputsNote: 'A run of the analysis was deleted.' }));
-      expect(textOf(el.querySelector('.cc-fresh-unchecked')))
-        .toBe('Changes since saving could not be checked: A run of the analysis was deleted.');
-    });
-
-    it('asks again only when another analysis is shown', () => {
-      const http = TestBed.inject(HttpTestingController);
-      answerFreshness(ccFreshness());
-      show(ccAnalysisResult({ name: 'Renamed' }));
-      http.expectNone(`${CC_API}/analyses/7/freshness`);
-      show(ccAnalysisResult({ analysisId: 9 }));
-      answerFreshness(ccOutOfDateFreshness({ analysisId: 9 }));
-      expect(el.querySelector('.cc-fresh-notice')).not.toBeNull();
     });
   });
 
@@ -434,6 +411,12 @@ describe('CcResultsViewComponent', () => {
       fixture.componentRef.setInput('eventNumbering', groups);
       fixture.componentRef.setInput('annotations', annotations);
       fixture.detectChanges();
+
+      // A visually hidden heading, kept in the outline.
+      const heading = panel('periods').querySelector<HTMLElement>(':scope > h5')!;
+      expect(heading.classList).toContain('visually-hidden');
+      expect(heading.classList).not.toContain('gh-section-title');
+      expect(textOf(heading)).toBe('Periods');
 
       const host = panel('periods').querySelector('app-cc-result-periods');
       expect(host).not.toBeNull();
@@ -756,14 +739,15 @@ describe('CcResultsViewComponent', () => {
       vi.spyOn(ccResultsImageIo, 'now').mockReturnValue(new Date(2026, 9, 10, 9, 45, 12));
     });
 
-    it('hides the headings of Verdicts, Periods, Attribution and Details, keeping them in the outline', () => {
-      for (const id of ['verdicts', 'periods', 'attribution', 'details']) {
-        const heading = panel(id).querySelector<HTMLElement>(':scope > h5')!;
-        expect(heading.classList).toContain('visually-hidden');
-        expect(heading.classList).not.toContain('gh-section-title');
-      }
-      expect(textOf(panel('periods').querySelector(':scope > h5'))).toBe('Periods');
-    });
+    /**
+     * Stands in for the canvas encoder the export reaches through `toBlob`, answering with the
+     * requested type; the outer `afterEach` restores it with `vi.restoreAllMocks()`.
+     */
+    function stubEncoder(): void {
+      vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback: BlobCallback, type?: string) => {
+        callback(new Blob(['image'], { type: type ?? 'image/png' }));
+      });
+    }
 
     it('names Copy, Download and Image settings after the shown section, each with a tooltip', () => {
       const group = el.querySelector<HTMLElement>('.cc-res-export')!;
@@ -793,6 +777,7 @@ describe('CcResultsViewComponent', () => {
     });
 
     it('downloads the shown section and announces it', async () => {
+      stubEncoder();
       const save = vi.spyOn(ccResultsImageIo, 'save').mockReturnValue(undefined);
       tabButton('verdicts').click();
       fixture.detectChanges();
@@ -809,6 +794,7 @@ describe('CcResultsViewComponent', () => {
     });
 
     it('marks both buttons aria-disabled while an export runs, and refuses another', async () => {
+      stubEncoder();
       let finish: (outcome: 'copied') => void = () => undefined;
       const copy = vi.spyOn(ccResultsImageIo, 'copy').mockImplementation(() => new Promise(resolve => { finish = resolve; }));
       const save = vi.spyOn(ccResultsImageIo, 'save').mockReturnValue(undefined);

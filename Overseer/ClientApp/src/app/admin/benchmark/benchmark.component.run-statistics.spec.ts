@@ -537,16 +537,6 @@ describe('AdminBenchmarkComponent', () => {
       expect(text).not.toContain('critical error resolution:');
       expect(text).not.toContain('answer outcomes:');
     });
-
-    it('should name the snapshot in the prompt summary only when the run had one', () => {
-      expect(component.candidatePromptSummaryOf({
-        candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true,"hasGameSnapshot":true}'
-      } as any)).toBe('Gameplay Help · concise (tools on) · snapshot');
-
-      expect(component.candidatePromptSummaryOf({
-        candidatePromptOptionsJson: '{"verboseMode":false,"enableToolUse":true}'
-      } as any)).toBe('Gameplay Help · concise (tools on)');
-    });
   });
 
   describe('assessor calibration panel', () => {

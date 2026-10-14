@@ -67,18 +67,6 @@ public class ClientSettingsReaderTests
         Assert.Null(ClientSettingsReader.ReadBool("{ \"BoolData\": { \"allowSpoilers\": true } }", "isGameOn"));
     }
 
-    [Fact]
-    public void ReadBool_ReturnsTrue_ForTrue()
-    {
-        Assert.True(ClientSettingsReader.ReadBool("{ \"BoolData\": { \"isGameOn\": true } }", "isGameOn"));
-    }
-
-    [Fact]
-    public void ReadBool_ReturnsFalse_ForFalse()
-    {
-        Assert.False(ClientSettingsReader.ReadBool("{ \"BoolData\": { \"isGameOn\": false } }", "isGameOn"));
-    }
-
     /* A number or a string is not a boolean and must not be coerced into one: a host that
        sends 1 has told us nothing we can act on. */
     [Theory]
@@ -169,8 +157,8 @@ public class ClientSettingsReaderTests
     [InlineData(null, "winui", ClientInputMethod.Keyboard)]
     [InlineData(null, "MacCatalyst", ClientInputMethod.Keyboard)]
     [InlineData(null, "macOS", ClientInputMethod.Keyboard)]
-    [InlineData(null, null, ClientInputMethod.Unknown)]
-    [InlineData(null, "", ClientInputMethod.Unknown)]
+    [InlineData(null, null, ClientInputMethod.Unknown)] // The web client and benchmark prompts send neither key.
+    [InlineData(null, "",ClientInputMethod.Unknown)]
     [InlineData(null, "   ", ClientInputMethod.Unknown)]
     [InlineData(null, "Tizen", ClientInputMethod.Unknown)]
     // A number or a string is not a boolean, so the platform decides for those too.
@@ -195,13 +183,6 @@ public class ClientSettingsReaderTests
     public void ResolveInputMethod_ReturnsUnknown_WhenNothingCanBeRead(string? json)
     {
         Assert.Equal(ClientInputMethod.Unknown, ClientSettingsReader.ResolveInputMethod(json));
-    }
-
-    /* The web client and benchmark prompts send neither key. */
-    [Fact]
-    public void ResolveInputMethod_ReturnsUnknown_ForAPayloadWithNeitherKey()
-    {
-        Assert.Equal(ClientInputMethod.Unknown, ClientSettingsReader.ResolveInputMethod(RealisticSettings));
     }
 }
 

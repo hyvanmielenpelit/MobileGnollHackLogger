@@ -127,56 +127,23 @@ public class SourceCodeServiceDefinitionMatcherTests : IDisposable
         Assert.Contains("    return x;", result);
     }
 
-    [Fact]
-    public void FindDefinition_ExternPrototype_DoesNotMatch()
+    [Theory]
+    [InlineData(nameof(SourceCodeService.FindDefinition), "extern_fn")]
+    [InlineData(nameof(SourceCodeService.GetFunctionBody), "extern_fn")]
+    [InlineData(nameof(SourceCodeService.FindDefinition), "fdecl_fn")]
+    [InlineData(nameof(SourceCodeService.FindDefinition), "ovl_fn")]
+    // "helper_fn(x);" at column 0 and "    return helper_fn(x);" are both call sites, not
+    // definitions - neither the unindented call nor the indented "return" form must match.
+    [InlineData(nameof(SourceCodeService.FindDefinition), "helper_fn")]
+    public void PrototypeOrCallStatement_IsNotADefinition(string method, string name)
     {
         using var service = CreateService();
 
-        string result = service.FindDefinition("extern_fn", "any");
+        string result = method == nameof(SourceCodeService.GetFunctionBody)
+            ? service.GetFunctionBody(name, "any")
+            : service.FindDefinition(name, "any");
 
-        Assert.Equal("No definition found for 'extern_fn' of kind 'any'.", result);
-    }
-
-    [Fact]
-    public void GetFunctionBody_ExternPrototype_DoesNotMatch()
-    {
-        using var service = CreateService();
-
-        string result = service.GetFunctionBody("extern_fn", "any");
-
-        Assert.Equal("No definition found for 'extern_fn' of kind 'any'.", result);
-    }
-
-    [Fact]
-    public void FindDefinition_FdeclPrototype_DoesNotMatch()
-    {
-        using var service = CreateService();
-
-        string result = service.FindDefinition("fdecl_fn", "any");
-
-        Assert.Equal("No definition found for 'fdecl_fn' of kind 'any'.", result);
-    }
-
-    [Fact]
-    public void FindDefinition_StaticOvlPrototype_DoesNotMatch()
-    {
-        using var service = CreateService();
-
-        string result = service.FindDefinition("ovl_fn", "any");
-
-        Assert.Equal("No definition found for 'ovl_fn' of kind 'any'.", result);
-    }
-
-    [Fact]
-    public void FindDefinition_CallStatementAtLineStartAndIndentedReturnCall_DoesNotMatch()
-    {
-        using var service = CreateService();
-
-        // "helper_fn(x);" at column 0 and "    return helper_fn(x);" are both call sites, not
-        // definitions - neither the unindented call nor the indented "return" form must match.
-        string result = service.FindDefinition("helper_fn", "any");
-
-        Assert.Equal("No definition found for 'helper_fn' of kind 'any'.", result);
+        Assert.Equal($"No definition found for '{name}' of kind 'any'.", result);
     }
 
     [Fact]

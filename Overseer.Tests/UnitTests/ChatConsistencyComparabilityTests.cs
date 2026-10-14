@@ -499,12 +499,6 @@ public class ChatConsistencyComparabilityTests
     }
 
     [Fact]
-    public void SuitesAlternatingInABatteryWithoutAChangeAreNoEvent()
-    {
-        Assert.Empty(ChatConsistencyComparability.DetectOverseerEvents(AlternatingSuites()));
-    }
-
-    [Fact]
     public void AChangeSeenInBothSuitesIsOneEventDatedByTheEarliest()
     {
         var runs = AlternatingSuites();

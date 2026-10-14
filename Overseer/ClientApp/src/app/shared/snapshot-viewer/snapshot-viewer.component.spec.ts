@@ -170,10 +170,6 @@ describe('SnapshotViewerComponent', () => {
     fixture.detectChanges();
   }
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
-
   it('should load snapshot when open is called', () => {
     component.open(1);
     expect(mockBenchmarkService.getSnapshot).toHaveBeenCalledWith(1, true);

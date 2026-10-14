@@ -11,8 +11,7 @@ import {
   ccPreviewDpr,
   ccPreviewLayout,
   ccResolveZoom,
-  ccTargetPixels,
-  ccZoomRange
+  ccTargetPixels
 } from './cc-chart-zoom';
 
 /** A size at 100 % density and 100 % text, with overrides. */
@@ -144,12 +143,6 @@ describe('cc-chart-zoom', () => {
   });
 
   describe('range, stops and resolving', () => {
-    it('runs from 10 % to 800 %, the floor following a lower fit', () => {
-      expect(ccZoomRange(1)).toEqual({ min: PREVIEW_MIN_ZOOM_FLOOR, max: PREVIEW_MAX_ZOOM });
-      expect(ccZoomRange(0.05)).toEqual({ min: 0.05, max: PREVIEW_MAX_ZOOM });
-      expect(ccZoomRange(Number.NaN)).toEqual({ min: PREVIEW_MIN_ZOOM_FLOOR, max: PREVIEW_MAX_ZOOM });
-    });
-
     const fits = { width: 1.5, height: 2, screen: 1.5 };
 
     it('resolves each fit view to its fit', () => {

@@ -39,10 +39,6 @@ describe('ClientBridgeService', () => {
     }
   });
 
-  it('should be created', () => {
-    expect(service).toBeTruthy();
-  });
-
   it('should detect browser platform (null) by default', () => {
     resetGlobals();
 

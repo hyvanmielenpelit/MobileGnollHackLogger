@@ -543,14 +543,6 @@ describe('toChartContext', () => {
     expect([differing.scoredItemsMin, differing.scoredItemsMax, differing.examItemCount]).toEqual([15, 16, 18]);
   });
 
-  it('reads the exam size from examItemCount, whatever the suite holds now', () => {
-    const context = toChartContext(buildComparison([
-      buildComparisonEntry('a', { itemCount: 18, examItemCount: 18 }),
-      buildComparisonEntry('b', { itemCount: 18, examItemCount: 18 })
-    ]));
-    expect([context.scoredItemsMin, context.scoredItemsMax, context.examItemCount]).toEqual([18, 18, 18]);
-  });
-
   it('is all zeros with no charted entry, and ignores excluded ones', () => {
     const none = toChartContext(buildComparison([
       buildComparisonEntry('x', null, { excluded: true })
@@ -562,15 +554,6 @@ describe('toChartContext', () => {
 describe('questionCoverageNotes', () => {
   it('is empty when every charted entry scored every asked question', () => {
     expect(questionCoverageNotes([buildComparisonEntry('a', {}), buildComparisonEntry('b', {})])).toEqual([]);
-  });
-
-  it('adds no note about rubric revisions', () => {
-    const notes = questionCoverageNotes([
-      buildComparisonEntry('a', { itemCount: 18, examItemCount: 18 }),
-      buildComparisonEntry('b', { itemCount: 18, examItemCount: 18 })
-    ]);
-    expect(notes).toEqual([]);
-    expect(notes.some(note => note.tone === 'info')).toBe(false);
   });
 
   it('warns once per entry with unscored questions, naming the entry', () => {

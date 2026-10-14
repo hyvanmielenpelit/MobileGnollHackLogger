@@ -433,13 +433,6 @@ describe('CcAnalysisWizardComponent', () => {
       expect(note()).toBe('');
     });
 
-    it('refuses a period whose last run comes before its first', () => {
-      press(101, 'baselineLastId');
-      press(102, 'baselineFirstId');
-      expect(bounds()).toEqual(['102', '101', '104', '106']);
-      expect(component.periodsError).toBe('The baseline\'s last run comes before its first.');
-    });
-
     it('sends the same request for bounds set on the cards as for the bounds a rule sets', () => {
       const byRule = component.buildRequest();
       chooseRule('custom');

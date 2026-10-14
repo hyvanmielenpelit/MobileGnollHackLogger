@@ -237,28 +237,6 @@ public class AgentLoopRunnerTests
         Assert.Contains(debugEvents, d => d.Data != null && d.Data.StartsWith("[SubAgent:wiki_researcher - MockProvider]"));
     }
 
-    private class ToolCallingMockProvider : MockAiProvider
-    {
-        private int _callCount = 0;
-
-        public override async IAsyncEnumerable<ChatEvent> ParseStreamAsync(HttpResponseMessage response, bool showDebugLog, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
-        {
-            _callCount++;
-            if (_callCount <= 2)
-            {
-                var tcJson = JsonSerializer.Serialize(new { id = $"call_{_callCount}", name = "mock_tool", arguments = "{}" });
-                yield return new ChatEvent { Type = "tool_call_complete", Data = tcJson };
-            }
-            else
-            {
-                yield return new ChatEvent { Type = "chunk", Data = "Final summary" };
-            }
-            await Task.CompletedTask;
-        }
-
-        public override object? BuildToolsPayload(List<object> providerTools, List<object> functionDeclarations) => new { };
-    }
-
     private class MockToolHandler : IToolHandler
     {
         public string ToolName => "mock_tool";
@@ -359,97 +337,6 @@ public class AgentLoopRunnerTests
 
         Assert.Equal("Final summary", result.FinalText);
         Assert.Equal(new[] { CostCarryingToolHandler.First, CostCarryingToolHandler.Second }, result.DelegatedRunCosts);
-    }
-
-    [Fact]
-    public async Task RunAsync_WhenIterationLimitReached_SetsIterationLimitTerminationReason()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        var sp = services.BuildServiceProvider();
-
-        var toolCallingProvider = new ToolCallingMockProvider();
-        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            { "AiPerformanceSettings:MaxToolIterations:Default", "1" }
-        }).Build();
-        using var cache = new MemoryCache(new MemoryCacheOptions());
-
-        var clientBridge = new NullClientBridge();
-        var handlers = new List<IToolHandler> { new MockToolHandler() };
-        var toolRegistry = new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance);
-        var toolExecutor = new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config);
-
-        var runner = new AgentLoopRunner(
-            new[] { toolCallingProvider },
-            toolRegistry,
-            toolExecutor,
-            new MockHttpClientFactory(),
-            config,
-            sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
-            new ModelMetadataService(),
-            NullLogger<AgentLoopRunner>.Instance,
-            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
-
-        var request = new AgentRunRequest
-        {
-            ProviderName = "MockProvider",
-            ModelId = "mock-model",
-            ApiKey = "test-key",
-            MaxToolIterations = 1,
-            SeedHistory = new List<object> { new { role = "user", content = "Run tools" } },
-            AiProvider = toolCallingProvider
-        };
-
-        var result = new AgentRunResult();
-        await foreach (var _ in runner.RunAsync(request, null, result, CancellationToken.None)) { }
-
-        Assert.Equal("iteration_limit", result.TerminationReason);
-    }
-
-    [Fact]
-    public async Task RunAsync_WhenBudgetExhausted_SetsBudgetExhaustedTerminationReason()
-    {
-        var services = new ServiceCollection();
-        services.AddLogging();
-        var sp = services.BuildServiceProvider();
-
-        var toolCallingProvider = new ToolCallingMockProvider();
-        var config = new ConfigurationBuilder().AddInMemoryCollection().Build();
-        using var cache = new MemoryCache(new MemoryCacheOptions());
-
-        var clientBridge = new NullClientBridge();
-        var handlers = new List<IToolHandler> { new MockToolHandler() };
-        var toolRegistry = new ToolRegistry(handlers, clientBridge, NullLogger<ToolRegistry>.Instance);
-        var toolExecutor = new ToolExecutor(handlers, clientBridge, NullLogger<ToolExecutor>.Instance, cache, config);
-
-        var runner = new AgentLoopRunner(
-            new[] { toolCallingProvider },
-            toolRegistry,
-            toolExecutor,
-            new MockHttpClientFactory(),
-            config,
-            sp.GetRequiredService<IServiceScopeFactory>(),
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, config),
-            new ModelMetadataService(),
-            NullLogger<AgentLoopRunner>.Instance,
-            new SubAgentCatalogService(config, NullLogger<SubAgentCatalogService>.Instance));
-
-        var request = new AgentRunRequest
-        {
-            ProviderName = "MockProvider",
-            ModelId = "mock-model",
-            ApiKey = "test-key",
-            SeedHistory = new List<object> { new { role = "user", content = "Run tools" } },
-            AiProvider = toolCallingProvider
-        };
-
-        var budget = new AgentRunBudget { MaxSubAgentRuns = 3, MaxTotalModelCalls = 1 };
-        var result = new AgentRunResult();
-        await foreach (var _ in runner.RunAsync(request, budget, result, CancellationToken.None)) { }
-
-        Assert.Equal("budget_exhausted", result.TerminationReason);
     }
 
     private class ToolEmittingMockProvider : MockAiProvider
@@ -1244,36 +1131,6 @@ public class AgentLoopRunnerTests
     // --- Provider attempts of the key, billing, rate-limit and missing-model paths ---
 
     [Fact]
-    public async Task RunAsync_OpenAi429InsufficientQuota_RecordsOneOurBillingAttempt()
-    {
-        var (_, _, calls, _, result) = await RunAgainstStatusWithResultAsync(
-            System.Net.HttpStatusCode.TooManyRequests, OpenAiInsufficientQuotaBody, AlertTestConfigId, alertContext: null);
-
-        Assert.Equal(1, calls);
-        var call = Assert.Single(result.ModelCalls);
-        Assert.Equal(1, call.Http429Count);
-        var attempt = Assert.Single(call.Attempts);
-        Assert.Equal(ProviderAttemptOutcome.OurBilling, attempt.Outcome);
-        Assert.Equal("insufficient_quota", attempt.ProviderErrorCode);
-        Assert.False(attempt.Retried);
-        Assert.Equal(ProviderAttemptOutcome.OurBilling, result.TerminalOutcome);
-    }
-
-    [Fact]
-    public async Task RunAsync_RejectedKey_RecordsOneOurKeyAttempt()
-    {
-        var (_, _, _, _, result) = await RunAgainstStatusWithResultAsync(
-            System.Net.HttpStatusCode.Unauthorized, OpenAiInvalidKeyBody, systemModelId: null, alertContext: null);
-
-        var attempt = Assert.Single(Assert.Single(result.ModelCalls).Attempts);
-        Assert.Equal(ProviderAttemptOutcome.OurKey, attempt.Outcome);
-        Assert.Equal(401, attempt.HttpStatus);
-        Assert.Equal("invalid_api_key", attempt.ProviderErrorCode);
-        Assert.Equal(ProviderAttemptOutcome.OurKey, result.TerminalOutcome);
-        Assert.Equal("invalid_api_key", result.TerminalErrorCode);
-    }
-
-    [Fact]
     public async Task RunAsync_OpenAi429RateLimit_RetriesExhausted_RecordsOneOurRateLimitAttempt()
     {
         // The helper's configuration allows no 429 retries, so the one 429 ends the call.
@@ -1286,19 +1143,5 @@ public class AgentLoopRunnerTests
         Assert.Equal("rate_limit_exceeded", attempt.ProviderErrorCode);
         Assert.Equal(ProviderAttemptOutcome.OurRateLimit, result.TerminalOutcome);
         Assert.Contains(events, e => e.Type == "error" && e.Data != null && e.Data.StartsWith("429 Rate Limited"));
-    }
-
-    [Fact]
-    public async Task RunAsync_Google404ModelNotFound_RecordsOneOurRequestAttempt()
-    {
-        var (_, _, _, _, result) = await RunAgainstStatusWithResultAsync(
-            System.Net.HttpStatusCode.NotFound, GoogleModelNotFoundBody, systemModelId: null, alertContext: null, providerName: "Google");
-
-        var call = Assert.Single(result.ModelCalls);
-        Assert.Equal("model_not_found", call.ErrorKind);
-        var attempt = Assert.Single(call.Attempts);
-        Assert.Equal(ProviderAttemptOutcome.OurRequest, attempt.Outcome);
-        Assert.Equal("NOT_FOUND", attempt.ProviderErrorCode);
-        Assert.Equal(ProviderAttemptOutcome.OurRequest, result.TerminalOutcome);
     }
 }

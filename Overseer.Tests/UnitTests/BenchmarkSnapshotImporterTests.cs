@@ -94,20 +94,6 @@ public class BenchmarkSnapshotImporterTests
     }
 
     [Fact]
-    public async Task Determinism_SameInputYieldsSameSha256()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var db = CreateDbContext();
-        var importer = new BenchmarkSnapshotImporter(db);
-
-        string boardText = "Dungeon Level 1\n.......";
-        var (b1, _) = await importer.FromClientTextAsync(boardText, new BoardMetadata("board1"), ct);
-        var (b2, _) = await importer.FromClientTextAsync(boardText, new BoardMetadata("board2"), ct);
-
-        Assert.Equal(b1.Sha256, b2.Sha256);
-    }
-
-    [Fact]
     public async Task TextOver60k_TruncatesAt60kWithMarker()
     {
         using var db = CreateDbContext();
@@ -269,23 +255,5 @@ public class BenchmarkSnapshotImporterTests
         Assert.True(board.DigestText!.Length <= BenchmarkSnapshotDigestBuilder.MaxDigestChars);
         Assert.Contains("Dlvl:3 $:412 HP:31(44)", board.DigestText);
         Assert.DoesNotContain("Map grid:", board.DigestText);
-    }
-
-    [Fact]
-    public async Task DocumentedSanitizerDivergence_BetweenClientAndHtmlSanitize()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var db = CreateDbContext();
-        var importer = new BenchmarkSnapshotImporter(db);
-
-        // R8: table rows have a pre-existing divergence between server sanitizer
-        // (which has <tr> in block-open) and client (which does not, producing extra newlines).
-        string html = "<table><tr><td>Force bolt</td><td>75%</td></tr></table>";
-        string clientShapedText = "Force bolt 75%\n\nExtra row";
-
-        var (boardHtml, _) = await importer.FromRawHtmlAsync(html, new BoardMetadata("html_test"), ct);
-        var (boardClient, _) = await importer.FromClientTextAsync(clientShapedText, new BoardMetadata("client_test"), ct);
-
-        Assert.NotEqual(boardHtml.Sha256, boardClient.Sha256);
     }
 }

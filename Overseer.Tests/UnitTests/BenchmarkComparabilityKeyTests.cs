@@ -577,12 +577,24 @@ public class BenchmarkComparabilityKeyTests
     /// own snapshot of them two runs straddling a cap change look like a replicate set. A cap that
     /// binds truncates an investigation, which moves what the candidate scored.
     /// </summary>
-    [Fact]
-    public void ChangingTheToolIterationCap_EndsTheReplicateSet()
+    [Theory]
+    [InlineData("ToolIterationCap")]
+    [InlineData("QuestionTimeout")]
+    public void ChangingAPerQuestionBudget_EndsTheReplicateSet(string budget)
     {
         var a = Run(13);
         var b = Run(14);
-        b.ToolIterationCapsJson = "{\"Simple\":22,\"Intermediate\":22,\"Advanced\":35}";
+        switch (budget)
+        {
+            case "ToolIterationCap":
+                b.ToolIterationCapsJson = "{\"Simple\":22,\"Intermediate\":22,\"Advanced\":35}";
+                break;
+            case "QuestionTimeout":
+                b.QuestionTimeoutSecondsJson = "{\"Simple\":420,\"Intermediate\":600,\"Advanced\":900}";
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(budget), budget, null);
+        }
 
         var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
 
@@ -590,19 +602,6 @@ public class BenchmarkComparabilityKeyTests
         var difference = Assert.Single(result.Differences);
         Assert.Equal(BenchmarkComparabilityKey.PerQuestionBudgetsKey, difference.Name);
         Assert.Equal(BenchmarkComparabilityKeyKind.Instrument, difference.Kind);
-    }
-
-    [Fact]
-    public void ChangingTheQuestionTimeout_EndsTheReplicateSet()
-    {
-        var a = Run(13);
-        var b = Run(14);
-        b.QuestionTimeoutSecondsJson = "{\"Simple\":420,\"Intermediate\":600,\"Advanced\":900}";
-
-        var result = BenchmarkComparabilityKey.Resolve(new[] { a, b });
-
-        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
-        Assert.Equal(BenchmarkComparabilityKey.PerQuestionBudgetsKey, Assert.Single(result.Differences).Name);
     }
 
     /// <summary>
@@ -635,34 +634,21 @@ public class BenchmarkComparabilityKeyTests
 
     // --- The scoring profile key reads scoring semantics, not the whole snapshot ----------------
 
-    [Fact]
-    public void ChangingADimensionWeight_EndsTheReplicateSet()
+    [Theory]
+    [InlineData("DimensionWeight")]
+    [InlineData("CriticalErrorCeiling")]
+    [InlineData("LevelScoreTable")]
+    public void ChangingAScoringField_EndsTheReplicateSet(string field)
     {
-        var result = ResolveWithProfileSnapshots(
-            Snapshot(),
-            Snapshot(p => p.WeightAccuracy = 0.60));
+        Action<BenchmarkScoringProfile> mutate = field switch
+        {
+            "DimensionWeight" => p => p.WeightAccuracy = 0.60,
+            "CriticalErrorCeiling" => p => p.CriticalErrorCeiling = 30,
+            "LevelScoreTable" => p => p.LevelScoresJson = "[1, 15, 35, 55, 72, 90, 100]",
+            _ => throw new ArgumentOutOfRangeException(nameof(field), field, null)
+        };
 
-        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
-        Assert.Equal(BenchmarkComparabilityKey.ScoringProfileKey, Assert.Single(result.Differences).Name);
-    }
-
-    [Fact]
-    public void ChangingTheCriticalErrorCeiling_EndsTheReplicateSet()
-    {
-        var result = ResolveWithProfileSnapshots(
-            Snapshot(),
-            Snapshot(p => p.CriticalErrorCeiling = 30));
-
-        Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
-        Assert.Equal(BenchmarkComparabilityKey.ScoringProfileKey, Assert.Single(result.Differences).Name);
-    }
-
-    [Fact]
-    public void ChangingTheLevelScoreTable_EndsTheReplicateSet()
-    {
-        var result = ResolveWithProfileSnapshots(
-            Snapshot(),
-            Snapshot(p => p.LevelScoresJson = "[1, 15, 35, 55, 72, 90, 100]"));
+        var result = ResolveWithProfileSnapshots(Snapshot(), Snapshot(mutate));
 
         Assert.Equal(BenchmarkComparabilityTier.CrossCondition, result.Tier);
         Assert.Equal(BenchmarkComparabilityKey.ScoringProfileKey, Assert.Single(result.Differences).Name);
@@ -709,55 +695,42 @@ public class BenchmarkComparabilityKeyTests
     }
 
     /// <summary>
-    /// A rename cannot move a score, and hashing the raw snapshot made it move this key — which
-    /// ended a comparable series with no warning anywhere in the UI.
+    /// Profile snapshots that differ in nothing a score reads resolve Tier A.
     /// </summary>
-    [Fact]
-    public void ProfileSnapshotsDifferingOnlyInName_ResolveTierA()
+    [Theory]
+    // A rename cannot move a score, and hashing the raw snapshot made it move this key — which
+    // ended a comparable series with no warning anywhere in the UI.
+    [InlineData("Name")]
+    // IsDefault decides which profile a run picks when none is named. It cannot change what a
+    // run already named this profile scored.
+    [InlineData("IsDefault")]
+    // Editing a field and reverting it leaves the semantics identical and ModifiedAtUtc moved.
+    [InlineData("Timestamps")]
+    [InlineData("LevelScoreTableFormatting")]
+    public void ProfileSnapshotsDifferingOnlyInNonScoringFields_ResolveTierA(string difference)
     {
-        var result = ResolveWithProfileSnapshots(
-            Snapshot(p => p.Name = "Standard Intelligence Index (Default)"),
-            Snapshot(p => p.Name = "Standard Intelligence Index"));
+        var (first, second) = difference switch
+        {
+            "Name" => (
+                Snapshot(p => p.Name = "Standard Intelligence Index (Default)"),
+                Snapshot(p => p.Name = "Standard Intelligence Index")),
+            "IsDefault" => (
+                Snapshot(p => p.IsDefault = true),
+                Snapshot(p => p.IsDefault = false)),
+            "Timestamps" => (
+                Snapshot(p => p.ModifiedAtUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc)),
+                Snapshot(p =>
+                {
+                    p.CreatedAtUtc = new DateTime(2026, 7, 4, 12, 0, 0, DateTimeKind.Utc);
+                    p.ModifiedAtUtc = new DateTime(2026, 9, 6, 18, 30, 0, DateTimeKind.Utc);
+                })),
+            "LevelScoreTableFormatting" => (
+                Snapshot(p => p.LevelScoresJson = "[1, 15, 35, 55, 72, 87, 100]"),
+                Snapshot(p => p.LevelScoresJson = "[1,15,35,55,72,87,100.0]")),
+            _ => throw new ArgumentOutOfRangeException(nameof(difference), difference, null)
+        };
 
-        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
-        Assert.Empty(result.Differences);
-    }
-
-    [Fact]
-    public void ProfileSnapshotsDifferingOnlyInIsDefault_ResolveTierA()
-    {
-        // IsDefault decides which profile a run picks when none is named. It cannot change what a
-        // run already named this profile scored.
-        var result = ResolveWithProfileSnapshots(
-            Snapshot(p => p.IsDefault = true),
-            Snapshot(p => p.IsDefault = false));
-
-        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
-        Assert.Empty(result.Differences);
-    }
-
-    [Fact]
-    public void ProfileSnapshotsDifferingOnlyInTimestamps_ResolveTierA()
-    {
-        // Editing a field and reverting it leaves the semantics identical and ModifiedAtUtc moved.
-        var result = ResolveWithProfileSnapshots(
-            Snapshot(p => p.ModifiedAtUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc)),
-            Snapshot(p =>
-            {
-                p.CreatedAtUtc = new DateTime(2026, 7, 4, 12, 0, 0, DateTimeKind.Utc);
-                p.ModifiedAtUtc = new DateTime(2026, 9, 6, 18, 30, 0, DateTimeKind.Utc);
-            }));
-
-        Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
-        Assert.Empty(result.Differences);
-    }
-
-    [Fact]
-    public void LevelScoreTableFormatting_DoesNotMoveTheProfileKey()
-    {
-        var result = ResolveWithProfileSnapshots(
-            Snapshot(p => p.LevelScoresJson = "[1, 15, 35, 55, 72, 87, 100]"),
-            Snapshot(p => p.LevelScoresJson = "[1,15,35,55,72,87,100.0]"));
+        var result = ResolveWithProfileSnapshots(first, second);
 
         Assert.Equal(BenchmarkComparabilityTier.Replicate, result.Tier);
         Assert.Empty(result.Differences);
@@ -963,18 +936,6 @@ public class BenchmarkComparabilityKeyTests
             thinkingLevel: "high");
         run.CoAssessorEffectiveMaxOutputTokens = coAssessorCap;
         return run;
-    }
-
-    [Fact]
-    public void AssessorSignature_WithoutACoAssessor_IsUnchanged()
-    {
-        var run = Run(13);
-        run.AssessorEffectiveMaxOutputTokens = 32000;
-
-        string value = KeyValue(run, BenchmarkComparabilityKey.AssessorConfigurationKey);
-
-        Assert.Equal(MemberASignature, value);
-        Assert.DoesNotContain("panelMember", value);
     }
 
     [Fact]

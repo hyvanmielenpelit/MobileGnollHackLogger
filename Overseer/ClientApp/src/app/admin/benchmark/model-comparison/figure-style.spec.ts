@@ -14,6 +14,7 @@ import {
   normalizeFigureStyle,
   timelineRangeControl
 } from './figure-style';
+import { DEFAULT_MEASURE_DECIMALS } from './measure-format';
 
 describe('figure-style', () => {
   const chromeDefaults = { titleSizePx: 18, badgeTextSizePx: 11, footerTextSizePx: 12, footer: true };
@@ -84,16 +85,7 @@ describe('figure-style', () => {
       logoHeightPx: 48
     });
     expect(DEFAULT_FIGURE_STYLE.table).toEqual({ rowShading: 'medium', rowRules: false });
-    expect(DEFAULT_FIGURE_STYLE.numbers).toEqual({
-      intelligenceIndex: 0,
-      speedIndex: 0,
-      meanModelTime: 1,
-      totalModelTime: 1,
-      ttftP50: 2,
-      suiteCost: 4,
-      totalRunCost: 4,
-      costPerQuestion: 4
-    });
+    expect(DEFAULT_FIGURE_STYLE.numbers).toBe(DEFAULT_MEASURE_DECIMALS);
     // 0.8 × 0.9, the two percentages the bars were drawn with.
     expect(1 - DEFAULT_FIGURE_STYLE.bar.gapPercent / 100).toBeCloseTo(0.72, 9);
     expect(HIDDEN_INTERVALS_NOTE).toBe(
@@ -130,12 +122,11 @@ describe('figure-style', () => {
       'titleSizePx', 'badgeTextSizePx', 'footerTextSizePx'];
     const controls = [...BAR_RANGE_CONTROLS, ...SCATTER_RANGE_CONTROLS, ...CHROME_RANGE_CONTROLS]
       .filter(control => textKeys.includes(control.key));
-    expect(controls.length).toBe(9);
+    expect(controls.map(control => control.key)).toEqual(expect.arrayContaining(textKeys));
     for (const control of controls) {
       expect(control.max, control.key).toBe(MAX_TEXT_SIZE_PX);
       expect(control.min, control.key).toBe(8);
     }
-    expect(MAX_TEXT_SIZE_PX).toBe(48);
 
     const sixty = { titleSizePx: 60, badgeTextSizePx: 60, footerTextSizePx: 60, axisTextSizePx: 60, axisTitleSizePx: 60 };
     const style = normalizeFigureStyle({

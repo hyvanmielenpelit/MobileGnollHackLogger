@@ -17,7 +17,6 @@ import {
   ChatProviderAvailabilityDto,
   OverseerActivityDto
 } from '../../services/admin.service';
-import { AdminComponent } from '../admin.component';
 import { AdminPageStore } from '../admin-page.store';
 import { spyAdminService } from '../admin.component.testing';
 import { AdminTelemetryTabComponent } from './admin-telemetry-tab.component';
@@ -242,20 +241,15 @@ describe('AdminTelemetryTabComponent', () => {
       vi.useFakeTimers();
       try {
         governorSpy.mockReturnValue(of(governor([key('openai:user:u1', 5)])));
-        // The Admin page provides a page store of its own, so this tab instance does not use `store`.
-        const shell = TestBed.createComponent(AdminComponent);
-        shell.detectChanges();
-        shell.componentInstance.selectTab('telemetry');
-        shell.detectChanges();
-        const tab: AdminTelemetryTabComponent =
-          shell.debugElement.query(By.directive(AdminTelemetryTabComponent)).componentInstance;
+        openTab();
+        vi.advanceTimersByTime(1000);
+        expect(component.governorStatus!.activeKeys[0].remainingCooldownSeconds).toBe(4);
 
-        shell.componentInstance.selectTab('groups');
-        shell.detectChanges();
-
+        // Selecting another Admin tab destroys this one.
+        fixture.destroy();
         vi.advanceTimersByTime(3000);
 
-        expect(tab.governorStatus!.activeKeys[0].remainingCooldownSeconds).toBe(5);
+        expect(component.governorStatus!.activeKeys[0].remainingCooldownSeconds).toBe(4);
       }
       finally {
         vi.useRealTimers();
@@ -427,8 +421,8 @@ describe('AdminTelemetryTabComponent', () => {
     it('shows provider errors for Chat with the count and one-in, No attempts at none, and In GnollBench for Benchmark', () => {
       summarySpy.mockReturnValue(of(summary({
         rows: [
-          row({ requests: 9, validAttempts: 200, providerErrors: 1 }),
-          row({ modelId: 'b', modelName: 'B', roleGroup: 'title', roleContext: 2, requests: 5 }),
+          row({ requests: 9, validAttempts: 200, providerErrors: 1, pricedRequests: 9, estimatedCost: 2 }),
+          row({ modelId: 'b', modelName: 'B', roleGroup: 'title', roleContext: 2, requests: 5, pricedRequests: 0 }),
           row({ modelId: 'c', modelName: 'C', roleGroup: 'benchmark', roleContext: 4, requests: 3 })
         ]
       })));
@@ -441,6 +435,18 @@ describe('AdminTelemetryTabComponent', () => {
       expect(errors(chat)).toContain('about 1 in 200');
       expect(errors(title)).toContain('No attempts');
       expect(errors(benchmark)).toContain('In GnollBench');
+
+      // A placeholder value, In GnollBench, No attempts and an unpriced cost are grayed; a rate and a priced cost are not.
+      const value = (card: HTMLElement, metric: string) =>
+        card.querySelector<HTMLElement>(`.tl-metric-${metric} dd:not(.tl-metric-note)`)!;
+      expect(value(chat, 'errors').classList.contains('tl-metric-muted')).toBe(false);
+      expect(value(chat, 'cost').classList.contains('tl-metric-muted')).toBe(false);
+      expect(value(title, 'errors').textContent?.trim()).toBe('No attempts');
+      expect(value(title, 'errors').classList.contains('tl-metric-muted')).toBe(true);
+      expect(value(title, 'cost').textContent?.trim()).toBe('—');
+      expect(value(title, 'cost').classList.contains('tl-metric-muted')).toBe(true);
+      expect(value(benchmark, 'errors').textContent?.trim()).toBe('In GnollBench');
+      expect(value(benchmark, 'errors').classList.contains('tl-metric-muted')).toBe(true);
     });
 
     it('shows a partial cost with its unpriced qualifier', () => {
@@ -450,29 +456,6 @@ describe('AdminTelemetryTabComponent', () => {
       const cost = cards()[0].querySelector('.tl-metric-cost')?.textContent ?? '';
       expect(cost).toContain('$1.50');
       expect(cost).toContain('1 unpriced');
-    });
-
-    it('grays a placeholder value, In GnollBench, No attempts and an unpriced cost, but not a rate or a priced cost', () => {
-      summarySpy.mockReturnValue(of(summary({
-        rows: [
-          row({ requests: 9, validAttempts: 200, providerErrors: 1, pricedRequests: 9, estimatedCost: 2 }),
-          row({ modelId: 'b', modelName: 'B', roleGroup: 'title', roleContext: 2, requests: 5, pricedRequests: 0 }),
-          row({ modelId: 'c', modelName: 'C', roleGroup: 'benchmark', roleContext: 4, requests: 3 })
-        ]
-      })));
-      openTab();
-
-      const value = (card: HTMLElement, metric: string) =>
-        card.querySelector<HTMLElement>(`.tl-metric-${metric} dd:not(.tl-metric-note)`)!;
-      const [chat, title, benchmark] = cards();
-      expect(value(chat, 'errors').classList.contains('tl-metric-muted')).toBe(false);
-      expect(value(chat, 'cost').classList.contains('tl-metric-muted')).toBe(false);
-      expect(value(title, 'errors').textContent?.trim()).toBe('No attempts');
-      expect(value(title, 'errors').classList.contains('tl-metric-muted')).toBe(true);
-      expect(value(title, 'cost').textContent?.trim()).toBe('—');
-      expect(value(title, 'cost').classList.contains('tl-metric-muted')).toBe(true);
-      expect(value(benchmark, 'errors').textContent?.trim()).toBe('In GnollBench');
-      expect(value(benchmark, 'errors').classList.contains('tl-metric-muted')).toBe(true);
     });
 
     it('lays the nine metrics out in 9, 5, 5 and 2 columns as the list narrows, lined up with the total', () => {

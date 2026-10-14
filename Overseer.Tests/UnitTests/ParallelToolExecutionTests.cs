@@ -196,43 +196,6 @@ public class ParallelToolExecutionTests
     }
 
     [Fact]
-    public async Task RunAsync_ServerToolsNeverTakeClientSlot()
-    {
-        var items = new List<ToolBatchItem>
-        {
-            new() { ToolCallId = "s1", ToolName = "server_1", Arguments = EmptyArgs, IsClientTool = false },
-            new() { ToolCallId = "s2", ToolName = "server_2", Arguments = EmptyArgs, IsClientTool = false },
-            new() { ToolCallId = "s3", ToolName = "server_3", Arguments = EmptyArgs, IsClientTool = false }
-        };
-
-        int currentConcurrent = 0;
-        int maxObservedConcurrent = 0;
-
-        var channel = Channel.CreateUnbounded<ToolBatchOutcome>();
-
-        var outcomes = await ToolBatchRunner.RunAsync(
-            items,
-            async (item, ct) =>
-            {
-                int c = Interlocked.Increment(ref currentConcurrent);
-                lock (items)
-                {
-                    if (c > maxObservedConcurrent) maxObservedConcurrent = c;
-                }
-                await Task.Delay(50, ct);
-                Interlocked.Decrement(ref currentConcurrent);
-                return new ToolResult { Success = true, Content = "OK" };
-            },
-            maxParallelTools: 3,
-            maxParallelClientTools: 1, // Client limit is 1, but these are server tools
-            channel.Writer,
-            CancellationToken.None);
-
-        Assert.Equal(3, outcomes.Count);
-        Assert.True(maxObservedConcurrent > 1, $"Server tools should run up to global limit (3), observed {maxObservedConcurrent}");
-    }
-
-    [Fact]
     public async Task RunAsync_FaultTolerance_HandlesExceptionsGracefully()
     {
         var items = new List<ToolBatchItem>

@@ -14,10 +14,6 @@ describe('CollapsibleMarkdownComponent', () => {
     component = fixture.componentInstance;
   });
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
-
   it('should render nothing when text is empty or null', () => {
     component.text = null;
     fixture.detectChanges();

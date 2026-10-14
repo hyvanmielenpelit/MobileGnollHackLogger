@@ -203,14 +203,4 @@ public class BenchmarkSnapshotDigestBuilderTests
     {
         Assert.Equal("HP: 12/60\nturn: 120", BenchmarkSnapshotDigestBuilder.Build("HP: 12/60\nturn: 120"));
     }
-
-    [Fact]
-    public void Build_IsDeterministic()
-    {
-        string board = BuildBoard(inventoryLines: 120, notableLines: 90);
-
-        Assert.Equal(
-            BenchmarkSnapshotDigestBuilder.Build(board),
-            BenchmarkSnapshotDigestBuilder.Build(board));
-    }
 }

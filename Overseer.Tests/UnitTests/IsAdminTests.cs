@@ -17,60 +17,19 @@ namespace Overseer.Tests.UnitTests
             return new ConfigurationBuilder().AddInMemoryCollection(dict).Build();
         }
 
-        [Fact]
-        public void NullUserName_ReturnsFalse()
+        [Theory]
+        [InlineData("Admin1", null, false)]                     // Null user name
+        [InlineData("Admin1", "", false)]                       // Empty user name
+        [InlineData("Admin1,Admin2", "Intruder", false)]        // User not in the list
+        [InlineData("Admin1,Admin2", "Admin1", true)]           // User in the list
+        [InlineData("Admin1", "admin1", true)]                  // Case-insensitive match
+        [InlineData(" Admin1 , Admin2 ", "Admin2", true)]       // Whitespace around listed names
+        [InlineData("", "Admin1", false)]                       // Empty Admins value
+        [InlineData(null, "Admin1", false)]                     // Missing Admins key
+        public void IsAdmin_IsTrueOnlyForAListedUserName(string? adminsValue, string? userName, bool expected)
         {
-            var config = CreateConfig("Admin1");
-            Assert.False(config.IsAdmin(null));
-        }
-
-        [Fact]
-        public void EmptyUserName_ReturnsFalse()
-        {
-            var config = CreateConfig("Admin1");
-            Assert.False(config.IsAdmin(""));
-        }
-
-        [Fact]
-        public void UserNotInList_ReturnsFalse()
-        {
-            var config = CreateConfig("Admin1,Admin2");
-            Assert.False(config.IsAdmin("Intruder"));
-        }
-
-        [Fact]
-        public void UserInList_ReturnsTrue()
-        {
-            var config = CreateConfig("Admin1,Admin2");
-            Assert.True(config.IsAdmin("Admin1"));
-        }
-
-        [Fact]
-        public void CaseInsensitive_ReturnsTrue()
-        {
-            var config = CreateConfig("Admin1");
-            Assert.True(config.IsAdmin("admin1"));
-        }
-
-        [Fact]
-        public void WhitespaceInConfig_ReturnsTrue()
-        {
-            var config = CreateConfig(" Admin1 , Admin2 ");
-            Assert.True(config.IsAdmin("Admin2"));
-        }
-
-        [Fact]
-        public void EmptyConfig_ReturnsFalse()
-        {
-            var config = CreateConfig("");
-            Assert.False(config.IsAdmin("Admin1"));
-        }
-
-        [Fact]
-        public void MissingConfigKey_ReturnsFalse()
-        {
-            var config = CreateConfig(null);
-            Assert.False(config.IsAdmin("Admin1"));
+            var config = CreateConfig(adminsValue);
+            Assert.Equal(expected, config.IsAdmin(userName));
         }
     }
 }

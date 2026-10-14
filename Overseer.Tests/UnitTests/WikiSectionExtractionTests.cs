@@ -189,6 +189,13 @@ The innerbody has the actual detail.
         Assert.DoesNotContain("decoratednotesbody", content);
     }
 
+    /// <summary>
+    /// A section no heading matches is handled by WikiService, not by wiki_view's miss path: the
+    /// marker line is followed by the whole article, so the model is told what happened and still
+    /// gets the content, and BuildMissContent is never reached, which is why it carries no
+    /// section-mismatch branch. This article is under the result cap; the over-cap case is
+    /// <see cref="WikiToolMissContentTests.WikiViewTool_SectionMissOnAnOverCapArticle_EndsAtTheCapWithoutTruncatedSuffix"/>.
+    /// </summary>
     [Fact]
     public async Task WikiView_SectionMatchesNoHeading_MarkerLineListsTheHeadingsAndTheArticleFollows()
     {
@@ -196,11 +203,13 @@ The innerbody has the actual detail.
 
         Assert.Contains("[Section 'Nope' not found in article. Headings: ", content);
         Assert.Contains("Headings: 🔮 Elbereth; ✨ Gilthoniel. Returning full text.]", content);
+        Assert.DoesNotContain("No wiki article matched", content);
 
-        // The whole article still follows the marker line.
+        // The whole article still follows the marker line, to its last line.
         Assert.Contains("elberethrunemark", content);
         Assert.Contains("gilthonielrunemark", content);
         Assert.Contains("Runewords are combinations of runes", content);
+        Assert.DoesNotContain("Showing the first", content);
     }
 
     [Fact]

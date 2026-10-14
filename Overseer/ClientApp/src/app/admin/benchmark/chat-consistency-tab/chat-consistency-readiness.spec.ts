@@ -183,15 +183,6 @@ describe('chat consistency readiness', () => {
       expect(rows[1].fact).toBe('The periods share no time stratum.');
     });
 
-    it('says at most Indicated below the minimum sample, and Not computable where nothing can be computed', () => {
-      expect(CC_READINESS_STATUS_TEXT).toEqual({
-        meets: 'Meets the minimum sample',
-        belowMinimum: 'At most Indicated',
-        capped: 'At most Indicated',
-        notComputed: 'Not computable'
-      });
-    });
-
     it('does not compute P6 while a period has no run that recorded provider attempts', () => {
       const units = sixRuns();
       const rows = ccEndpointReadiness(CC_PROTOCOL_V2_ENDPOINTS, units.slice(0, 3), units.slice(3), pointsById(), false);

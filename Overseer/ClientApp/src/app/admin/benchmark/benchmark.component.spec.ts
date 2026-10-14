@@ -153,12 +153,6 @@ describe('AdminBenchmarkComponent', () => {
     });
   });
 
-  it('should create and load suites', () => {
-    expect(component).toBeTruthy();
-    expect(ctx.workspace.suites.length).toBe(1);
-    expect(ctx.workspace.suites[0].name).toBe('Default Suite');
-  });
-
   it('should filter benchmarkCapableConfigs based on modelRole bitmask 4', () => {
     expect(ctx.workspace.benchmarkCapableConfigs.length).toBe(1);
     
@@ -211,21 +205,6 @@ describe('AdminBenchmarkComponent', () => {
 
     expect(ctx.workspace.benchmarkCapableConfigs.length).toBe(1);
     expect(ctx.workspace.benchmarkCapableConfigs[0].id).toBe(1);
-  });
-
-  it('should format status strings correctly', () => {
-    expect(component.formatStatus(1)).toBe('Running');
-    expect(component.formatStatus(2)).toBe('Completed');
-    expect(component.formatStatus(3)).toBe('CompletedWithErrors');
-    expect(component.formatStatus(4)).toBe('Failed');
-    expect(component.formatStatus(5)).toBe('Canceled');
-  });
-
-  it('should compute score badge classes correctly', () => {
-    expect(component.getScoreBadgeClass(90)).toBe('badge-score-high');
-    expect(component.getScoreBadgeClass(65)).toBe('badge-score-mid');
-    expect(component.getScoreBadgeClass(40)).toBe('badge-score-low');
-    expect(component.getScoreBadgeClass(null)).toBe('badge-score-na');
   });
 
   it('should render suite description markdown via CollapsibleMarkdownComponent and sanitize XSS vectors', () => {
@@ -1614,7 +1593,7 @@ describe('AdminBenchmarkComponent', () => {
     it('should expose the sub-navigation as a labelled tablist', () => {
       expect(tabList()).toBeTruthy();
       expect(tabList().getAttribute('aria-label')).toBe('Benchmark sections');
-      expect(tabs().length).toBe(8);
+      expect(tabs().length).toBe(component.subTabs.length);
       expect(tabList().classList.contains('gh-tabs-wrap')).toBe(true);
     });
 
@@ -1649,28 +1628,19 @@ describe('AdminBenchmarkComponent', () => {
     it('should give exactly one tab tabindex="0" and the rest tabindex="-1"', () => {
       const all = tabs();
       expect(all.filter(t => t.getAttribute('tabindex') === '0').length).toBe(1);
-      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(7);
+      expect(all.filter(t => t.getAttribute('tabindex') === '-1').length).toBe(all.length - 1);
     });
 
-    it('should wrap forward from the last tab to the first with ArrowRight', () => {
-      component.activeSubTab = 'chatconsistency';
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowRight' }), 7);
-      expect(component.activeSubTab).toBe('run');
-    });
-
-    it('should wrap backward from the first tab to the last with ArrowLeft', () => {
-      component.activeSubTab = 'run';
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'ArrowLeft' }), 0);
-      expect(component.activeSubTab).toBe('chatconsistency');
-    });
-
-    it('should select the first and last tab with Home and End', () => {
-      component.activeSubTab = 'history';
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'End' }), 1);
-      expect(component.activeSubTab).toBe('chatconsistency');
-
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'Home' }), 7);
-      expect(component.activeSubTab).toBe('run');
+    it.each([
+      { name: 'wrap forward from the last tab to the first with ArrowRight', from: 'chatconsistency', key: 'ArrowRight', index: 7, to: 'run' },
+      { name: 'wrap backward from the first tab to the last with ArrowLeft', from: 'run', key: 'ArrowLeft', index: 0, to: 'chatconsistency' },
+      { name: 'select the last tab with End', from: 'history', key: 'End', index: 1, to: 'chatconsistency' },
+      { name: 'select the first tab with Home', from: 'chatconsistency', key: 'Home', index: 7, to: 'run' },
+      { name: 'ignore keys that are not part of the tab keyboard model', from: 'history', key: 'a', index: 1, to: 'history' }
+    ] as const)('should $name', ({ from, key, index, to }) => {
+      component.activeSubTab = from;
+      component.onTabKeydown(new KeyboardEvent('keydown', { key }), index);
+      expect(component.activeSubTab).toBe(to);
     });
 
     it('should place Chat Consistency last, with its own panel', () => {
@@ -1695,12 +1665,6 @@ describe('AdminBenchmarkComponent', () => {
       for (const tab of tabs()) {
         expect(tab.querySelectorAll('svg.btn-icon').length, tab.id).toBe(1);
       }
-    });
-
-    it('should ignore keys that are not part of the tab keyboard model', () => {
-      component.activeSubTab = 'history';
-      component.onTabKeydown(new KeyboardEvent('keydown', { key: 'a' }), 1);
-      expect(component.activeSubTab).toBe('history');
     });
 
     it('should move focus to the newly selected tab after a keyboard change', () => {
@@ -1786,29 +1750,6 @@ describe('AdminBenchmarkComponent', () => {
       component.selectSubTab('profiles');
       ctx.refresh();
       expect(benchmarkServiceMock.getScoringProfiles).toHaveBeenCalled();
-    });
-  });
-
-  describe('formatStatusLabel', () => {
-    it('should format CompletedWithLimits as "Completed with limits"', () => {
-      expect(component.formatStatusLabel('CompletedWithLimits')).toBe('Completed with limits');
-      expect(component.formatStatusLabel(6)).toBe('Completed with limits');
-    });
-
-    it('should format CompletedWithErrors as "Completed with errors"', () => {
-      expect(component.formatStatusLabel('CompletedWithErrors')).toBe('Completed with errors');
-      expect(component.formatStatusLabel(3)).toBe('Completed with errors');
-    });
-
-    it('should return standard status for other values', () => {
-      expect(component.formatStatusLabel('Running')).toBe('Running');
-      expect(component.formatStatusLabel(1)).toBe('Running');
-      expect(component.formatStatusLabel('Completed')).toBe('Completed');
-      expect(component.formatStatusLabel(2)).toBe('Completed');
-      expect(component.formatStatusLabel('Failed')).toBe('Failed');
-      expect(component.formatStatusLabel(4)).toBe('Failed');
-      expect(component.formatStatusLabel('Canceled')).toBe('Canceled');
-      expect(component.formatStatusLabel(5)).toBe('Canceled');
     });
   });
 

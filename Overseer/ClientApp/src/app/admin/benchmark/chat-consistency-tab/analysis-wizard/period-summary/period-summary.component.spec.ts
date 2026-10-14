@@ -130,19 +130,6 @@ describe('CcPeriodSummaryComponent', () => {
     }
   });
 
-  it('formats the window from the bound windows', () => {
-    renderRuns({
-      windows: {
-        baselineStartUtc: '2026-09-01T00:00:00.000Z',
-        baselineEndUtc: '2026-09-12T23:59:59.999Z',
-        comparisonStartUtc: '2026-09-20T00:00:00.000Z',
-        comparisonEndUtc: '2026-10-01T23:59:59.999Z'
-      }
-    });
-    expect(textOf(period('baseline').querySelector('.cc-ps-window'))).toBe('Window 2026-09-01 00:00 to 2026-09-12 23:59 UTC');
-    expect(textOf(period('comparison').querySelector('.cc-ps-window'))).toBe('Window 2026-09-20 00:00 to 2026-10-01 23:59 UTC');
-  });
-
   it('marks a battery period below the minimum sample with the icon, the words and what it needs', () => {
     renderBattery();
     expect(textOf(period('baseline').querySelector('.cc-ps-count'))).toBe('1 battery run on 1 day · 2026-10-08');

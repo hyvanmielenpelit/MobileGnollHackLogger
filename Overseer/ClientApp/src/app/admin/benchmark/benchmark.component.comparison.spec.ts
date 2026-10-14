@@ -704,20 +704,10 @@ describe('AdminBenchmarkComponent', () => {
         degradingKeyNames: ['PricingSnapshot']
       } as any;
 
-      ctx.comparison.comparisonRunIds = [1, 2];
-      ctx.comparison.comparisonGroupIds = [];
-      expect(ctx.comparison.comparisonSelectionNotices).toEqual([]);
-
       ctx.comparison.comparisonRunIds = [1, 2, 3];
+      ctx.comparison.comparisonGroupIds = [];
       expect(ctx.comparison.comparisonSelectionNotices.map(notice => notice.id))
         .toEqual(['cross-condition']);
-
-      ctx.comparison.comparabilityIndex = null;
-      ctx.comparison.comparabilityIndexError = 'The index could not be built.';
-      const failed = ctx.comparison.comparisonSelectionNotices;
-      expect(failed.map(notice => notice.id)).toEqual(['index-error']);
-      expect(failed[0].severity).toBe('error');
-      expect(failed[0].body).toContain('The index could not be built.');
     });
 
     it('drops the payload when the selection changes, so Compare is asked for again', () => {

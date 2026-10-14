@@ -142,26 +142,6 @@ public class DatabaseStorageMetricsServiceTests
         Assert.Equal(6, second.ReportChartFileCount);
     }
 
-    /// <summary>
-    /// Regression test for the crash where edition detection cached its result with the
-    /// convenience Set(key, value, TimeSpan) overload, which does not set an entry Size.
-    /// Against the production cache configuration that throws
-    /// "Cache entry must specify a value for Size when SizeLimit is set", taking down the
-    /// whole Database tab.
-    /// </summary>
-    [Fact]
-    public async Task GetStorageMetricsAsync_WithSizeLimitedCache_DoesNotThrow()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var db = CreateInMemoryDbContext();
-        using var cache = (MemoryCache)CreateSizeLimitedCache();
-        var service = CreateService(db, cache);
-
-        var metrics = await service.GetStorageMetricsAsync(ct);
-
-        Assert.NotNull(metrics);
-    }
-
     [Fact]
     public async Task GetStorageMetricsAsync_WhenDetectionFails_ReportsConservativeFallback()
     {
@@ -181,6 +161,13 @@ public class DatabaseStorageMetricsServiceTests
         Assert.Equal("Normal", metrics.StatusLevel);
     }
 
+    /// <summary>
+    /// Regression test for the crash where edition detection cached its result with the
+    /// convenience Set(key, value, TimeSpan) overload, which does not set an entry Size.
+    /// Against the production cache configuration that throws
+    /// "Cache entry must specify a value for Size when SizeLimit is set", taking down the
+    /// whole Database tab.
+    /// </summary>
     [Fact]
     public async Task GetStorageMetricsAsync_CachesDetectionResult()
     {

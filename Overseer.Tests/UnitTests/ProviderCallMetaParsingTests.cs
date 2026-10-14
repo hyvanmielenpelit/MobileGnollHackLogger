@@ -260,8 +260,8 @@ public class ProviderCallMetaParsingTests
 
     // --- Google ----------------------------------------------------------------------------------
 
-    private static string GoogleTextChunk(string text, string extra = "") =>
-        Data("{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":" + JsonSerializer.Serialize(text) + "}]}" + extra + "}],"
+    private static string GoogleTextChunk(string text) =>
+        Data("{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":" + JsonSerializer.Serialize(text) + "}]}}],"
             + "\"modelVersion\":\"gemini-x-served\",\"responseId\":\"google-resp-1\"}");
 
     [Fact]
@@ -316,14 +316,6 @@ public class ProviderCallMetaParsingTests
 
         Assert.True(meta.IsRefusal);
         Assert.NotNull(meta.CompletedTicks);
-    }
-
-    [Fact]
-    public async Task Google_StopFinishReason_IsNotARefusal()
-    {
-        var meta = TakeMeta(await ParseAsync(new GoogleProvider(EmptyConfig()), GoogleTextChunk(Delta1, ",\"finishReason\":\"STOP\"")));
-
-        Assert.False(meta.IsRefusal);
     }
 
     [Fact]

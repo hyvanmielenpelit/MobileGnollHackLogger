@@ -694,12 +694,13 @@ public class AgentLoopRunnerTelemetryTests
     [InlineData("Google", 408, "{}", ProviderAttemptOutcome.ProviderTimeout, null)]
     [InlineData("Anthropic", 400, "{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"prompt is too long: 205000 tokens > 200000 maximum\"}}", ProviderAttemptOutcome.OurRequest, "invalid_request_error")]
     [InlineData("OpenAI", 401, "{\"error\":{\"message\":\"Incorrect API key provided.\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\"}}", ProviderAttemptOutcome.OurKey, "invalid_api_key")]
-    [InlineData("OpenAI", 429, "{\"error\":{\"message\":\"You exceeded your current quota.\",\"type\":\"insufficient_quota\",\"code\":\"insufficient_quota\"}}", ProviderAttemptOutcome.OurBilling, "insufficient_quota")]
-    [InlineData("Google", 404, "{\"error\":{\"code\":404,\"message\":\"models/mock-model is not found for API version v1beta.\",\"status\":\"NOT_FOUND\"}}", ProviderAttemptOutcome.OurRequest, "NOT_FOUND")]
+    [InlineData("OpenAI", 429, "{\"error\":{\"message\":\"You exceeded your current quota.\",\"type\":\"insufficient_quota\",\"code\":\"insufficient_quota\"}}", ProviderAttemptOutcome.OurBilling, "insufficient_quota", 1)]
+    [InlineData("Google", 404, "{\"error\":{\"code\":404,\"message\":\"models/mock-model is not found for API version v1beta.\",\"status\":\"NOT_FOUND\"}}", ProviderAttemptOutcome.OurRequest, "NOT_FOUND", null, "model_not_found")]
     [InlineData("Google", 429, GoogleBareExhaustedBody, ProviderAttemptOutcome.RateLimitUnattributed, "RESOURCE_EXHAUSTED")]
     [InlineData("Google", 429, GoogleQuotaBody, ProviderAttemptOutcome.OurRateLimit, "RESOURCE_EXHAUSTED")]
     public async Task Attempts_StatusThatEndsTheCall_RecordsOneAttemptAndTheTerminalOutcome(
-        string providerName, int status, string body, ProviderAttemptOutcome expected, string? expectedCode)
+        string providerName, int status, string body, ProviderAttemptOutcome expected, string? expectedCode,
+        int? expectedHttp429Count = null, string? expectedErrorKind = null)
     {
         var provider = new ScriptedProvider(CompletedAnswer, providerName);
         var handler = new ScriptedHandler(() => Status((HttpStatusCode)status, body));
@@ -710,6 +711,14 @@ public class AgentLoopRunnerTelemetryTests
         Assert.Equal(1, handler.CallCount);
         var call = Assert.Single(result.ModelCalls);
         Assert.NotNull(call.ErrorKind);
+        if (expectedErrorKind != null)
+        {
+            Assert.Equal(expectedErrorKind, call.ErrorKind);
+        }
+        if (expectedHttp429Count.HasValue)
+        {
+            Assert.Equal(expectedHttp429Count.Value, call.Http429Count);
+        }
         var attempt = Assert.Single(call.Attempts);
         Assert.Equal(expected, attempt.Outcome);
         Assert.Equal(status, attempt.HttpStatus);

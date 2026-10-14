@@ -50,17 +50,6 @@ describe('ModelComparisonComponent', () => {
   it('carries the three timings in one labelled column, after Speed Index', () => {
     renderTable(buildDto(comparableSet(1)));
 
-    // Model, R, State, Intelligence Index, Speed Index, Timings, Candidate $ / question, Total $ / run,
-    // Provider errors, Notes.
-    const headers = fixture.debugElement.queryAll(By.css('table.mc-table thead tr:first-child th'))
-      .map(header => (header.nativeElement as HTMLElement).textContent?.trim() ?? '');
-    expect(headers.length).toBe(10);
-    expect(headers[3]).toContain('Intelligence Index');
-    expect(headers[4]).toContain('Speed Index');
-    expect(headers[5]).toContain('Timings');
-    // No TTFT column of its own: the exported table still carries both percentiles.
-    expect(headers.some(header => header.includes('TTFT'))).toBe(false);
-
     // The body row's Model cell is a <th scope="row">, so the <td> list starts at R.
     const row = fixture.debugElement.query(By.css('table.mc-table tbody tr'));
     const cellsText = row.queryAll(By.css('td')).map(cell => (cell.nativeElement as HTMLElement).textContent ?? '');
@@ -270,7 +259,7 @@ describe('ModelComparisonComponent', () => {
 
     expect(component.shape).toBe('full');
     // Four P1 panels, the profile, three scatters and A1.
-    expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(9);
+    expect(fixture.debugElement.queryAll(By.css('canvas')).length).toBe(component.exportableCards.length);
     // The normalization caveat's exact wording belongs to the chart builder; this only checks the
     // profile figure carries some explanatory note rather than none.
     expect(component.profileCard?.chrome.notes.length).toBeGreaterThan(0);
@@ -884,7 +873,7 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)), 2);
 
     const tiles = fixture.debugElement.queryAll(By.css('.mc-all-tile'));
-    expect(tiles.length).toBe(9);
+    expect(tiles.length).toBe(component.exportableCards.length);
     for (const tile of tiles) {
       const title = (tile.nativeElement as HTMLElement).getAttribute('aria-label')!;
       const actions = tile.queryAll(By.css('.mc-all-tile-actions button'))
@@ -1058,7 +1047,6 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)));
 
     const ids = component.exportableCards.map(card => card.id);
-    expect(ids.length).toBe(9);
     expect(ids).toEqual([
       ...component.panelCards.map(card => card.id),
       component.profileCard!.id,

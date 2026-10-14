@@ -12,13 +12,6 @@ namespace Overseer.Tests.UnitTests;
 
 public class ToolResultHandlingTests
 {
-    private static string ExtractResultContent(ToolResult res)
-    {
-        return res.Success
-            ? (!string.IsNullOrEmpty(res.Content) ? res.Content : "Success")
-            : (!string.IsNullOrWhiteSpace(res.ErrorMessage) ? res.ErrorMessage : (!string.IsNullOrWhiteSpace(res.Content) ? res.Content : "Unknown error"));
-    }
-
     [Fact]
     public void ToolResult_DefaultProperties_InitializedCorrectly()
     {
@@ -32,7 +25,7 @@ public class ToolResultHandlingTests
     public void ExtractResultContent_WhenSuccessWithContent_ReturnsContent()
     {
         var result = new ToolResult { Success = true, Content = "Found 5 items" };
-        var extracted = ExtractResultContent(result);
+        var extracted = ToolBatchRunner.ResultContent(result);
         Assert.Equal("Found 5 items", extracted);
     }
 
@@ -40,7 +33,7 @@ public class ToolResultHandlingTests
     public void ExtractResultContent_WhenSuccessWithEmptyContent_ReturnsSuccess()
     {
         var result = new ToolResult { Success = true, Content = "" };
-        var extracted = ExtractResultContent(result);
+        var extracted = ToolBatchRunner.ResultContent(result);
         Assert.Equal("Success", extracted);
     }
 
@@ -54,7 +47,7 @@ public class ToolResultHandlingTests
             ErrorMessage = "NetHack Wiki is temporarily unavailable (HTTP 503 Service Unavailable)."
         };
 
-        var extracted = ExtractResultContent(result);
+        var extracted = ToolBatchRunner.ResultContent(result);
         Assert.Equal("NetHack Wiki is temporarily unavailable (HTTP 503 Service Unavailable).", extracted);
     }
 
@@ -68,7 +61,7 @@ public class ToolResultHandlingTests
             ErrorMessage = null
         };
 
-        var extracted = ExtractResultContent(result);
+        var extracted = ToolBatchRunner.ResultContent(result);
         Assert.Equal("Execution failed on step 2", extracted);
     }
 
@@ -82,7 +75,7 @@ public class ToolResultHandlingTests
             ErrorMessage = null
         };
 
-        var extracted = ExtractResultContent(result);
+        var extracted = ToolBatchRunner.ResultContent(result);
         Assert.Equal("Unknown error", extracted);
     }
 
@@ -109,7 +102,7 @@ public class ToolResultHandlingTests
             ErrorMessage = ToolGuardMessages.WikiIndexingInProgress
         };
 
-        var extracted = ExtractResultContent(result);
+        var extracted = ToolBatchRunner.ResultContent(result);
         Assert.Equal(ToolGuardMessages.WikiIndexingInProgress, extracted);
     }
 

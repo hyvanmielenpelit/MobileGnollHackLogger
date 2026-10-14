@@ -1391,26 +1391,6 @@ describe('BenchmarkDownloadCenterComponent', () => {
       }
     });
 
-    it('names a comparison document after its peers, or its peer count and comparison key, as the server does', () => {
-      const subject = 'GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark';
-      const summary = (overrides: Partial<BenchmarkReportDocumentListItemDto>) =>
-        reportDocumentFileStem(doc(1, ExecutiveSummary, { title: `${subject} — Executive Summary`, ...overrides }), 'x');
-      const tail = 'gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary';
-
-      expect(`${summary({ subjectKey: 'battery:9', peerCount: 1, peerLetters: { 'battery:10': 'A' }, comparisonKey: '0123456789abcdef' })}_summary_anonymized.pdf`)
-        .toBe(`battery-run-9_vs-battery-run-10_${tail}_summary_anonymized.pdf`);
-      expect(`${summary({ subjectKey: 'run:92', peerCount: 2, peerLetters: { 'run:95': 'B', 'run:94': 'A' }, comparisonKey: '0123456789abcdef' })}_full_named_INTERNAL.pdf`)
-        .toBe(`run-92_vs-run-94-run-95_${tail}_full_named_INTERNAL.pdf`);
-      expect(summary({
-        subjectKey: 'group:5',
-        peerCount: 4,
-        peerLetters: { 'run:1': 'A', 'run:2': 'B', 'run:3': 'C', 'run:4': 'D' },
-        comparisonKey: '0123456789abcdef'
-      })).toBe(`vs-4-models-01234567_${tail}`);
-      // A document stored before comparison keys keeps the earlier form.
-      expect(summary({ subjectKey: 'run:12', peerCount: 4, peerLetters: {}, comparisonKey: null })).toBe(`run-12_vs-4-models_${tail}`);
-    });
-
     it('never doubles _INTERNAL on a server name that already carries it', () => {
       expect(internalServerName('Suite_Model_run42_tool_calls_INTERNAL.pdf', 'pdf')).toBe('Suite_Model_run42_tool_calls_INTERNAL.pdf');
       expect(internalServerName('Suite_Model_20260921_160000.md', 'html')).toBe('Suite_Model_20260921_160000_INTERNAL.html');
@@ -1603,51 +1583,24 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(status()).not.toBe('Download canceled. Nothing was saved.');
     });
 
-    it('has no Cancel in the footer while no download is prepared', () => {
-      openRun();
-
-      expect(host().querySelector('.dc-footer .dc-cancel')).toBeNull();
-      expect(downloadButton()).not.toBeNull();
-    });
-
     it('shows Cancel while a download is prepared; Cancel stops it, keeps the dialog open, saves nothing and says so', async () => {
       openRun();
       choose('custom', { 'doc:1': { formats: ['pdf'] }, 'doc:2': { formats: ['pdf'] } });
       const outer = wrapper.dialog!.nativeElement;
 
       const done = component.download();
-      const pending = await nextRequest();
+      await nextRequest();
       render();
 
-      const cancel = host().querySelector<HTMLButtonElement>('.dc-footer .dc-cancel')!;
-      expect(cancel).not.toBeNull();
-      expect(cancel.classList.contains('btn-gh-cancel')).toBe(true);
-      expect(cancel.textContent!.trim()).toBe('Cancel');
-      expect(cancel.querySelector('svg')).toBeNull();
-      // Cancel sits left of Download.
-      expect(cancel.nextElementSibling).toBe(downloadButton());
-
-      cancel.click();
+      host().querySelector<HTMLButtonElement>('.dc-footer .dc-cancel')!.click();
       render();
 
-      expect(pending.cancelled).toBe(true);
+      // The footer Cancel behavior itself is pinned in download-center-panel.component.spec.ts;
+      // in the dialog it must not close the dialog.
       expect(outer.open).toBe(true);
-      expect(component.preparing).toBe(false);
-      expect(component.progress).toBeNull();
-      expect(overlay()).toBeNull();
-      expect(host().querySelector('.dc-footer .dc-cancel')).toBeNull();
-      expect(status()).toBe('Download canceled. Nothing was saved.');
-      expect(document.activeElement).toBe(downloadButton());
 
       await done;
       await settle();
-      render();
-
-      httpMock.expectNone(() => true);
-      expect(saveBytes).not.toHaveBeenCalled();
-      expect(saveBlob).not.toHaveBeenCalled();
-      expect(status()).toBe('Download canceled. Nothing was saved.');
-      expect(component.canDownload).toBe(true);
     });
   });
 

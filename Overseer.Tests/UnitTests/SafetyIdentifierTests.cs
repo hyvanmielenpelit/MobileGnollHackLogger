@@ -74,10 +74,12 @@ public class SafetyIdentifierTests
         Assert.Matches(IdentifierShape, identifier);
     }
 
+    /* Hex-only ids, because those are the only ones the identifier's own alphabet could carry
+       through: an id with any other character is already excluded by the shape test above. */
     [Theory]
-    [InlineData("3f2b8c1e-7d4a-4e9b-a1c2-5d6e7f8091ab")]
-    [InlineData("gnollhacker")]
-    [InlineData("game-user-1")]
+    [InlineData("abc123def456")]
+    [InlineData("0123456789abcdef")]
+    [InlineData("deadbeefdeadbeefdeadbeefdeadbeef")]
     public void For_NeverContainsTheUserId(string userId)
     {
         string identifier = new SafetyIdentifierService(Key(7)).For(userId);

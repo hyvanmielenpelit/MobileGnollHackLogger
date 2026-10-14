@@ -339,20 +339,6 @@ public class SessionControllerCreateTests : IDisposable
     }
 
     [Fact]
-    public async Task SnapshotText_WinsOverSnapshotHtml_WhenACurrentAppSendsBoth()
-    {
-        var config = CreateConfig();
-        using var db = CreateDb();
-        var (controller, protection) = CreateController(db, config);
-
-        var request = Request(isConfidential: false);
-        request.SnapshotText = AppFlattenedText;
-        request.SnapshotHtml = RawDumpHtml;
-
-        Assert.Equal(AppFlattenedText, await CreateAndReadSnapshotAsync(controller, db, protection, request));
-    }
-
-    [Fact]
     public async Task SnapshotHtml_IsNotReadAtAll_WhenSnapshotTextIsPresent()
     {
         var config = CreateConfig();

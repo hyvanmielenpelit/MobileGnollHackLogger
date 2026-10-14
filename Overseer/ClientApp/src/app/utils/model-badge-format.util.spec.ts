@@ -2,90 +2,50 @@ import { formatThinkingLevel, showReasoningBadge, formatServiceTier, formatDiffi
 
 describe('model-badge-format.util', () => {
   describe('formatThinkingLevel', () => {
-    it('should return Default when the level is null', () => {
-      expect(formatThinkingLevel(null)).toBe('Default');
-    });
-
-    it('should return Default when the level is undefined', () => {
-      expect(formatThinkingLevel(undefined)).toBe('Default');
-    });
-
-    it('should return Default when the level is empty', () => {
-      expect(formatThinkingLevel('')).toBe('Default');
-    });
-
-    it('should title-case a lowercase level', () => {
-      expect(formatThinkingLevel('high')).toBe('High');
+    it.each([
+      { name: 'return Default when the level is null', input: null, expected: 'Default' },
+      { name: 'return Default when the level is undefined', input: undefined, expected: 'Default' },
+      { name: 'return Default when the level is empty', input: '', expected: 'Default' },
+      { name: 'title-case a lowercase level', input: 'high', expected: 'High' }
+    ])('should $name', ({ input, expected }) => {
+      expect(formatThinkingLevel(input)).toBe(expected);
     });
   });
 
   describe('showReasoningBadge', () => {
-    it('should return false when the mode is null', () => {
-      expect(showReasoningBadge(null)).toBe(false);
-    });
-
-    it('should return false when the mode is undefined', () => {
-      expect(showReasoningBadge(undefined)).toBe(false);
-    });
-
-    it('should return false for default, case-insensitively', () => {
-      expect(showReasoningBadge('Default')).toBe(false);
-    });
-
-    it('should return false for standard, case-insensitively', () => {
-      expect(showReasoningBadge('STANDARD')).toBe(false);
-    });
-
-    it('should return true for any other mode', () => {
-      expect(showReasoningBadge('extended')).toBe(true);
+    it.each([
+      { name: 'return false when the mode is null', input: null, expected: false },
+      { name: 'return false when the mode is undefined', input: undefined, expected: false },
+      { name: 'return false for default, case-insensitively', input: 'Default', expected: false },
+      { name: 'return false for standard, case-insensitively', input: 'STANDARD', expected: false },
+      { name: 'return true for any other mode', input: 'extended', expected: true }
+    ])('should $name', ({ input, expected }) => {
+      expect(showReasoningBadge(input)).toBe(expected);
     });
   });
 
   describe('formatServiceTier', () => {
-    it('should return None when the tier is null', () => {
-      expect(formatServiceTier(null)).toBe('None');
-    });
-
-    it('should return None when the tier is undefined', () => {
-      expect(formatServiceTier(undefined)).toBe('None');
-    });
-
-    it('should return Standard Only for standard_only, case-insensitively', () => {
-      expect(formatServiceTier('STANDARD_ONLY')).toBe('Standard Only');
-    });
-
-    it('should title-case any other tier', () => {
-      expect(formatServiceTier('priority')).toBe('Priority');
+    it.each([
+      { name: 'return None when the tier is null', input: null, expected: 'None' },
+      { name: 'return None when the tier is undefined', input: undefined, expected: 'None' },
+      { name: 'return Standard Only for standard_only, case-insensitively', input: 'STANDARD_ONLY', expected: 'Standard Only' },
+      { name: 'title-case any other tier', input: 'priority', expected: 'Priority' }
+    ])('should $name', ({ input, expected }) => {
+      expect(formatServiceTier(input)).toBe(expected);
     });
   });
 
   describe('formatDifficulty', () => {
-    it('should return Simple for the numeric value', () => {
-      expect(formatDifficulty(1)).toBe('Simple');
-    });
-
-    it('should return Simple for the name', () => {
-      expect(formatDifficulty('Simple')).toBe('Simple');
-    });
-
-    it('should return Intermediate for the numeric value', () => {
-      expect(formatDifficulty(2)).toBe('Intermediate');
-    });
-
-    it('should return Intermediate for the name', () => {
-      expect(formatDifficulty('Intermediate')).toBe('Intermediate');
-    });
-
-    it('should return Advanced for the numeric value', () => {
-      expect(formatDifficulty(3)).toBe('Advanced');
-    });
-
-    it('should return Advanced for the name', () => {
-      expect(formatDifficulty('Advanced')).toBe('Advanced');
-    });
-
-    it('should stringify an unrecognized value', () => {
-      expect(formatDifficulty(99)).toBe('99');
+    it.each([
+      { name: 'return Simple for the numeric value', input: 1, expected: 'Simple' },
+      { name: 'return Simple for the name', input: 'Simple', expected: 'Simple' },
+      { name: 'return Intermediate for the numeric value', input: 2, expected: 'Intermediate' },
+      { name: 'return Intermediate for the name', input: 'Intermediate', expected: 'Intermediate' },
+      { name: 'return Advanced for the numeric value', input: 3, expected: 'Advanced' },
+      { name: 'return Advanced for the name', input: 'Advanced', expected: 'Advanced' },
+      { name: 'stringify an unrecognized value', input: 99, expected: '99' }
+    ])('should $name', ({ input, expected }) => {
+      expect(formatDifficulty(input)).toBe(expected);
     });
   });
 });

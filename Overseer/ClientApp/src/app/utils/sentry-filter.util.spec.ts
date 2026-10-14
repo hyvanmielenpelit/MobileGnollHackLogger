@@ -13,100 +13,40 @@ describe('sentry-filter.util', () => {
   });
   describe('isHttpOrNetworkError', () => {
     describe('Normal operational & runtime errors (MUST NOT be filtered)', () => {
-      it('should return false for null and undefined', () => {
-        expect(isHttpOrNetworkError(null)).toBe(false);
-        expect(isHttpOrNetworkError(undefined)).toBe(false);
-      });
-
-      it('should return false for genuine TypeError (e.g. null reference / property access)', () => {
-        const error = new TypeError("Cannot read properties of undefined (reading 'username')");
-        expect(isHttpOrNetworkError(error)).toBe(false);
-      });
-
-      it('should return false for ReferenceError', () => {
-        const error = new ReferenceError('foo is not defined');
-        expect(isHttpOrNetworkError(error)).toBe(false);
-      });
-
-      it('should return false for standard application Error', () => {
-        const error = new Error('Invalid business logic state in component');
-        expect(isHttpOrNetworkError(error)).toBe(false);
-      });
-
-      it('should return false for RangeError', () => {
-        const error = new RangeError('Maximum call stack size exceeded');
-        expect(isHttpOrNetworkError(error)).toBe(false);
-      });
-
-      it('should return false for empty or non-error objects', () => {
-        expect(isHttpOrNetworkError({})).toBe(false);
-        expect(isHttpOrNetworkError({ message: 'Success event' })).toBe(false);
+      it.each<{ name: string; error: () => unknown }>([
+        { name: 'null', error: () => null },
+        { name: 'undefined', error: () => undefined },
+        // e.g. null reference / property access
+        { name: 'genuine TypeError', error: () => new TypeError("Cannot read properties of undefined (reading 'username')") },
+        { name: 'ReferenceError', error: () => new ReferenceError('foo is not defined') },
+        { name: 'standard application Error', error: () => new Error('Invalid business logic state in component') },
+        { name: 'RangeError', error: () => new RangeError('Maximum call stack size exceeded') },
+        { name: 'an empty object', error: () => ({}) },
+        { name: 'a non-error object', error: () => ({ message: 'Success event' }) }
+      ])('should return false for $name', ({ error }) => {
+        expect(isHttpOrNetworkError(error())).toBe(false);
       });
     });
 
     describe('Network dropouts & HTTP errors (MUST be filtered)', () => {
-      it('should return true for Chrome / Android WebView TypeError: Failed to fetch', () => {
-        const error = new TypeError('Failed to fetch');
-        expect(isHttpOrNetworkError(error)).toBe(true);
-      });
-
-      it('should return true for Safari / WebKit TypeError: Load failed', () => {
-        const error = new TypeError('Load failed');
-        expect(isHttpOrNetworkError(error)).toBe(true);
-      });
-
-      it('should return true for Firefox TypeError: NetworkError when attempting to fetch resource', () => {
-        const error = new TypeError('NetworkError when attempting to fetch resource.');
-        expect(isHttpOrNetworkError(error)).toBe(true);
-      });
-
-      it('should return true for DOMException AbortError', () => {
-        const error = new DOMException('The user aborted a request.', 'AbortError');
-        expect(isHttpOrNetworkError(error)).toBe(true);
-      });
-
-      it('should return true for object with name AbortError or TimeoutError', () => {
-        expect(isHttpOrNetworkError({ name: 'AbortError', message: 'Aborted' })).toBe(true);
-        expect(isHttpOrNetworkError({ name: 'TimeoutError', message: 'Timed out' })).toBe(true);
-      });
-
-      it('should return true for Angular HttpErrorResponse (status 0, 404, 500, 503)', () => {
-        expect(isHttpOrNetworkError(new HttpErrorResponse({ status: 0, statusText: 'Unknown Error' }))).toBe(true);
-        expect(isHttpOrNetworkError(new HttpErrorResponse({ status: 404, statusText: 'Not Found' }))).toBe(true);
-        expect(isHttpOrNetworkError(new HttpErrorResponse({ status: 500, statusText: 'Internal Server Error' }))).toBe(true);
-        expect(isHttpOrNetworkError(new HttpErrorResponse({ status: 503, statusText: 'Service Unavailable' }))).toBe(true);
-      });
-
-      it('should return true for duck-typed HttpErrorResponse name', () => {
-        expect(isHttpOrNetworkError({ name: 'HttpErrorResponse', status: 500 })).toBe(true);
-      });
-
-      it('should return true for Zone.js wrapped promise rejection', () => {
-        const wrapped = {
-          rejection: new TypeError('Failed to fetch')
-        };
-        expect(isHttpOrNetworkError(wrapped)).toBe(true);
-      });
-
-      it('should return true for Angular ngOriginalError wrapper', () => {
-        const wrapped = {
-          ngOriginalError: new TypeError('Failed to fetch')
-        };
-        expect(isHttpOrNetworkError(wrapped)).toBe(true);
-      });
-
-      it('should return true for originalError wrapper', () => {
-        const wrapped = {
-          originalError: new HttpErrorResponse({ status: 500 })
-        };
-        expect(isHttpOrNetworkError(wrapped)).toBe(true);
-      });
-
-      it('should return true for nested RxJS error wrapper', () => {
-        const wrapped = {
-          error: new TypeError('Failed to fetch')
-        };
-        expect(isHttpOrNetworkError(wrapped)).toBe(true);
+      it.each<{ name: string; error: () => unknown }>([
+        { name: 'Chrome / Android WebView TypeError: Failed to fetch', error: () => new TypeError('Failed to fetch') },
+        { name: 'Safari / WebKit TypeError: Load failed', error: () => new TypeError('Load failed') },
+        { name: 'Firefox TypeError: NetworkError when attempting to fetch resource', error: () => new TypeError('NetworkError when attempting to fetch resource.') },
+        { name: 'DOMException AbortError', error: () => new DOMException('The user aborted a request.', 'AbortError') },
+        { name: 'object with name AbortError', error: () => ({ name: 'AbortError', message: 'Aborted' }) },
+        { name: 'object with name TimeoutError', error: () => ({ name: 'TimeoutError', message: 'Timed out' }) },
+        { name: 'Angular HttpErrorResponse status 0', error: () => new HttpErrorResponse({ status: 0, statusText: 'Unknown Error' }) },
+        { name: 'Angular HttpErrorResponse status 404', error: () => new HttpErrorResponse({ status: 404, statusText: 'Not Found' }) },
+        { name: 'Angular HttpErrorResponse status 500', error: () => new HttpErrorResponse({ status: 500, statusText: 'Internal Server Error' }) },
+        { name: 'Angular HttpErrorResponse status 503', error: () => new HttpErrorResponse({ status: 503, statusText: 'Service Unavailable' }) },
+        { name: 'duck-typed HttpErrorResponse name', error: () => ({ name: 'HttpErrorResponse', status: 500 }) },
+        { name: 'Zone.js wrapped promise rejection', error: () => ({ rejection: new TypeError('Failed to fetch') }) },
+        { name: 'Angular ngOriginalError wrapper', error: () => ({ ngOriginalError: new TypeError('Failed to fetch') }) },
+        { name: 'originalError wrapper', error: () => ({ originalError: new HttpErrorResponse({ status: 500 }) }) },
+        { name: 'nested RxJS error wrapper', error: () => ({ error: new TypeError('Failed to fetch') }) }
+      ])('should return true for $name', ({ error }) => {
+        expect(isHttpOrNetworkError(error())).toBe(true);
       });
     });
   });

@@ -424,6 +424,31 @@ public sealed class AdminBulkUserOperationTests : IDisposable
         Assert.Empty(await _host.AuditRowsAsync("id-first"));
     }
 
+    [Fact]
+    public async Task ABulkDeletionClosesTheIncognitoSessionsOfEveryDeletedAccountAndNoOtherAccounts()
+    {
+        var preview = await TwoAccountDeletePreviewAsync();
+        var firstA = _host.OpenIncognito("id-first");
+        var firstB = _host.OpenIncognito("id-first");
+        var second = _host.OpenIncognito("id-second");
+        var bystander = _host.OpenIncognito(AdminUserTestHost.OtherAdminId);
+
+        var executed = await _host.Bulk.ExecuteAsync(_host.Actor, preview.OperationId, DeleteRequest(2), TestContext.Current.CancellationToken);
+        await _host.Runner.ProcessOperationAsync(preview.OperationId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.Ok, executed.Status);
+        Assert.Null(await _host.ReadUserAsync("id-first"));
+        Assert.Null(await _host.ReadUserAsync("id-second"));
+        Assert.Null(_host.Ephemeral.Get(firstA.Ref, "id-first"));
+        Assert.Null(_host.Ephemeral.Get(firstB.Ref, "id-first"));
+        Assert.Null(_host.Ephemeral.Get(second.Ref, "id-second"));
+        Assert.True(firstA.IsErased);
+        Assert.True(firstB.IsErased);
+        Assert.True(second.IsErased);
+        Assert.NotNull(_host.Ephemeral.Get(bystander.Ref, AdminUserTestHost.OtherAdminId));
+        Assert.False(bystander.IsErased);
+    }
+
     private async Task<long> QueuedBanOfThreeAsync()
     {
         await _host.SeedAdministratorsAsync();

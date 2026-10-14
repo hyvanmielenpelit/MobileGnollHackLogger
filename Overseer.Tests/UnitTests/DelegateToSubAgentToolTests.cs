@@ -998,51 +998,22 @@ public class DelegateToSubAgentToolTests
         Assert.DoesNotContain("subagent_name", reqList);
     }
 
-    [Fact]
-    public async Task ExecuteAsync_Succeeds_WithSubagentName()
+    /// <summary>Raw JSON values for <c>subagent_name</c> that cannot be used as a title.</summary>
+    public static TheoryData<string> UnusableSubagentNames => new()
+    {
+        "\"\"",                                // blank
+        "\"   \"",                             // whitespace only
+        "\"" + new string('z', 500) + "\"",    // oversized
+        "42"                                   // not a string
+    };
+
+    [Theory]
+    [MemberData(nameof(UnusableSubagentNames))]
+    public async Task ExecuteAsync_Succeeds_WithAnUnusableSubagentName(string subagentNameJson)
     {
         var (tool, db, provider, manager) = CreateTestSetup();
         var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
-        var pars = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"Research stats\",\"subagent_name\":\"Rakshasa stats researcher\"}").RootElement;
-
-        var result = await tool.ExecuteAsync(pars, context, CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.NotNull(provider.LastMessageHistory);
-        Assert.NotEmpty(provider.LastMessageHistory);
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_Succeeds_WithoutSubagentName()
-    {
-        var (tool, db, provider, manager) = CreateTestSetup();
-        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
-        var pars = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"Research stats\"}").RootElement;
-
-        var result = await tool.ExecuteAsync(pars, context, CancellationToken.None);
-
-        Assert.True(result.Success);
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_Succeeds_WithBlankOrOversizedSubagentName()
-    {
-        var (tool, db, provider, manager) = CreateTestSetup();
-        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
-        var longTitle = new string('z', 500);
-        var pars = JsonDocument.Parse($"{{\"agent_name\":\"wiki_researcher\",\"task\":\"Research stats\",\"subagent_name\":\"{longTitle}\"}}").RootElement;
-
-        var result = await tool.ExecuteAsync(pars, context, CancellationToken.None);
-
-        Assert.True(result.Success);
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_Succeeds_WithNonStringSubagentName()
-    {
-        var (tool, db, provider, manager) = CreateTestSetup();
-        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), AgentDepth = 0, MaxAgentDepth = 1, EnableSubAgents = true };
-        var pars = JsonDocument.Parse("{\"agent_name\":\"wiki_researcher\",\"task\":\"Research stats\",\"subagent_name\":42}").RootElement;
+        var pars = JsonDocument.Parse($"{{\"agent_name\":\"wiki_researcher\",\"task\":\"Research stats\",\"subagent_name\":{subagentNameJson}}}").RootElement;
 
         var result = await tool.ExecuteAsync(pars, context, CancellationToken.None);
 

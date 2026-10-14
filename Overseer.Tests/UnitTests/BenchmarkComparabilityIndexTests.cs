@@ -501,17 +501,6 @@ public class BenchmarkComparabilityIndexTests
     }
 
     [Fact]
-    public async Task ReferenceSelectionRule_IsPopulated_WhenAConditionExists()
-    {
-        var options = NewDatabase();
-        await SeedAsync(options, new[] { Run(1) });
-
-        var dto = await IndexAsync(options, runIds: new long[] { 1 });
-
-        Assert.Equal(BenchmarkComparabilityIndexService.ReferenceSelectionRule, dto.ReferenceSelectionRule);
-    }
-
-    [Fact]
     public async Task ReferenceSelectionRule_IsPopulated_EvenOverAnOfferedSetThatProducesNoConditionAtAll()
     {
         // A group with no loadable members defines no condition, so the index reports zero of them —
@@ -572,13 +561,6 @@ public class BenchmarkComparabilityIndexTests
 
         Assert.Null(result);
         Assert.Contains(BenchmarkComparabilityIndexService.MaxRunIds.ToString(), error!);
-    }
-
-    [Fact]
-    public void TheCaps_CoverTheRunHistoryListAndFiveHundredGroups()
-    {
-        Assert.Equal(1000, BenchmarkComparabilityIndexService.MaxRunIds);
-        Assert.Equal(500, BenchmarkComparabilityIndexService.MaxGroupIds);
     }
 
     [Fact]

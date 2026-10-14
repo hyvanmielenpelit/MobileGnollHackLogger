@@ -1,6 +1,5 @@
 import {
   CC_NO_PERIOD_IDS,
-  CC_PERIOD_BOUND_LABELS,
   CcPeriodIds,
   ccBeforeAfter,
   ccConfirmOnLaterData,
@@ -321,15 +320,6 @@ describe('chat consistency periods', () => {
       expect(ccToggleBound(ids(101, 103, 104, 106), 'baselineFirstId', 101)).toEqual(ids(null, 103, 104, 106));
       // A unit may hold two bounds; pressing one leaves the other.
       expect(ccToggleBound(ids(11, 11, 12, 12), 'baselineLastId', 11)).toEqual(ids(11, null, 12, 12));
-    });
-
-    it('names each bound for a sentence', () => {
-      expect(CC_PERIOD_BOUND_LABELS).toEqual({
-        baselineFirstId: 'the baseline\'s first run',
-        baselineLastId: 'the baseline\'s last run',
-        comparisonFirstId: 'the comparison\'s first run',
-        comparisonLastId: 'the comparison\'s last run'
-      });
     });
   });
 });

@@ -148,17 +148,6 @@ struct windowprocs { void (*win_print_glyph)(int, int, int); };
         Assert.Contains("list_indexed_files", result.Content);
     }
 
-    [Fact]
-    public async Task Miss_OnAnIdentifierWithNoNeighbours_SaysSoRatherThanStayingSilent()
-    {
-        var result = await SearchAsync(@"{""query"": ""zzzqqqxxx""}");
-
-        Assert.True(result.Success);
-        Assert.Contains("No relevant source code found for 'zzzqqqxxx'", result.Content);
-        Assert.Contains("No shorter form of this identifier matched either.", result.Content);
-        Assert.Contains("search_definitions", result.Content);
-    }
-
     /// <summary>
     /// Five of six recorded identifier misses were scoped to one file, and the model was never told
     /// that the filter rather than the corpus may have been what excluded the hit. The unfiltered
@@ -255,6 +244,7 @@ struct windowprocs { void (*win_print_glyph)(int, int, int); };
     {
         var result = await SearchAsync(@"{""query"": ""zzzqqqxxx""}");
 
+        Assert.True(result.Success);
         Assert.Equal(
             "No relevant source code found for 'zzzqqqxxx'. No shorter form of this identifier matched either." +
             " Try search_definitions for a known symbol, or list_indexed_files to see what is indexed.",
@@ -275,31 +265,20 @@ struct windowprocs { void (*win_print_glyph)(int, int, int); };
         Assert.Equal(string.Empty, summary);
     }
 
-    [Fact]
-    public void RunProbe_OnAnErrorResult_ReturnsFailed()
+    /// <summary>
+    /// The expected state is passed by name because <see cref="SourceCodeSearchTool.ProbeState"/> is
+    /// internal and cannot appear in a public test method's signature.
+    /// </summary>
+    [Theory]
+    [InlineData("Error: invalid pattern", "Failed", "")]
+    [InlineData("", "NoMatch", "")]
+    [InlineData("src/encounter.c (2 matches)", "Hit", "src/encounter.c (2 matches)")] // A hit is returned unchanged.
+    public void RunProbe_OnAReturnedResult_ClassifiesIt(string probeResult, string expectedState, string expectedSummary)
     {
-        var (state, summary) = SourceCodeSearchTool.RunProbe(() => "Error: invalid pattern");
+        var (state, summary) = SourceCodeSearchTool.RunProbe(() => probeResult);
 
-        Assert.Equal(SourceCodeSearchTool.ProbeState.Failed, state);
-        Assert.Equal(string.Empty, summary);
-    }
-
-    [Fact]
-    public void RunProbe_OnAnEmptyResult_ReturnsNoMatch()
-    {
-        var (state, summary) = SourceCodeSearchTool.RunProbe(() => "");
-
-        Assert.Equal(SourceCodeSearchTool.ProbeState.NoMatch, state);
-        Assert.Equal(string.Empty, summary);
-    }
-
-    [Fact]
-    public void RunProbe_OnAHit_ReturnsTheResultUnchanged()
-    {
-        var (state, summary) = SourceCodeSearchTool.RunProbe(() => "src/encounter.c (2 matches)");
-
-        Assert.Equal(SourceCodeSearchTool.ProbeState.Hit, state);
-        Assert.Equal("src/encounter.c (2 matches)", summary);
+        Assert.Equal(Enum.Parse<SourceCodeSearchTool.ProbeState>(expectedState), state);
+        Assert.Equal(expectedSummary, summary);
     }
 
     /// <summary>
@@ -410,19 +389,6 @@ struct windowprocs { void (*win_print_glyph)(int, int, int); };
         Assert.Contains("include/winprocs.h", result.Content);
         Assert.Contains("source_code_search", result.Content);
         Assert.Contains("context_lines", result.Content);
-        Assert.Contains("search_definitions", result.Content);
-        Assert.True(result.Content.Length < 600,
-            $"Miss payload was {result.Content.Length} characters: {result.Content}");
-    }
-
-    [Fact]
-    public async Task DefinitionMiss_OnAnIdentifierThatOccursNowhere_SaysSo()
-    {
-        var result = await GetDefinitionAsync(@"{""name"": ""zzzqqqxxx""}");
-
-        Assert.True(result.Success);
-        Assert.StartsWith("No definition found for 'zzzqqqxxx' of kind 'any'.", result.Content);
-        Assert.Contains("'zzzqqqxxx' does not occur in the indexed gnollhack source.", result.Content);
         Assert.Contains("search_definitions", result.Content);
         Assert.True(result.Content.Length < 600,
             $"Miss payload was {result.Content.Length} characters: {result.Content}");

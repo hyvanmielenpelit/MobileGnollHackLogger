@@ -1,6 +1,5 @@
 import type { BenchmarkQuestionDto, BenchmarkSuiteDto, RubricAuthoringGuidance } from '../../../services/admin-benchmark.service';
 import {
-  HUMAN_GUIDE_TABS,
   RUBRIC_GUIDANCE_UNAVAILABLE,
   SnapshotExport,
   YAML_EXAMPLES,
@@ -352,22 +351,12 @@ describe('question-yaml-format', () => {
     });
   });
 
-  it('every guide tab has a label and text', () => {
-    expect(HUMAN_GUIDE_TABS.length).toBe(3);
-    for (const tab of HUMAN_GUIDE_TABS) {
-      expect(tab.label.trim()).not.toBe('');
-      expect(tab.markdown.trim()).not.toBe('');
-      expect(tab.ingress.trim(), tab.id).not.toBe('');
-    }
-  });
-
   describe('examples', () => {
     // The placeholder ids every example with ids uses.
     const existing = [question(42, 1, 'Current text', 1, 'Current rubric'), question(43, 2, 'Second', 2, null)];
 
-    it('has six examples with unique ids', () => {
-      expect(YAML_EXAMPLES.length).toBe(6);
-      expect(new Set(YAML_EXAMPLES.map(e => e.id)).size).toBe(6);
+    it('has examples with unique ids', () => {
+      expect(new Set(YAML_EXAMPLES.map(e => e.id)).size).toBe(YAML_EXAMPLES.length);
     });
 
     for (const example of YAML_EXAMPLES) {

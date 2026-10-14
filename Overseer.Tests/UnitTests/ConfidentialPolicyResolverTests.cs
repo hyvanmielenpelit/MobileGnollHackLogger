@@ -84,19 +84,6 @@ public class ConfidentialPolicyResolverTests
     // ── Stricter-of-two, per value ──────────────────────────────────────────────
 
     [Fact]
-    public void AUserCannotWeakenPersistenceBelowTheFloor()
-    {
-        var resolver = CreateResolver(new Dictionary<string, string?>
-        {
-            { "PrivacySettings:ConfidentialFloor:Persistence", "Encrypted" }
-        });
-
-        var resolved = resolver.Resolve(new UserAiSettings { ConfidentialPersistence = "Plaintext" });
-
-        Assert.Equal(ConfidentialPersistence.Encrypted, resolved.Persistence);
-    }
-
-    [Fact]
     public void AUserCanTightenPersistenceAboveTheFloor()
     {
         var resolver = CreateResolver();

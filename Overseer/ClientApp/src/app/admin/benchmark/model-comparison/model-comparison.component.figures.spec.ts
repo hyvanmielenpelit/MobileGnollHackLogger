@@ -331,7 +331,7 @@ describe('ModelComparisonComponent', () => {
   it('opens the Single tab on one tile and steps through the set, wrapping at both ends', () => {
     render(buildDto(comparableSet(3)), 2);
     const cards = component.exportableCards;
-    expect(cards.length).toBe(9);
+    expect(cards.length).toBe(fixture.debugElement.queryAll(By.css('.mc-all-tile')).length);
 
     openSingle(cards[2]);
     expect(component.figureTab).toBe('single');
@@ -1556,12 +1556,12 @@ describe('ModelComparisonComponent', () => {
 
     const opens = (): HTMLButtonElement[] => fixture.debugElement.queryAll(By.css('.mc-all-tile .mc-all-open'))
       .map(button => button.nativeElement as HTMLButtonElement);
-    expect(opens().length).toBe(9);
+    expect(opens().length).toBe(component.exportableCards.length);
 
-    // Icon-only, so aria-label is the accessible name — and nine of them must not share one.
+    // Icon-only, so aria-label is the accessible name — and no two of them may share one.
     const names = opens().map(button => button.getAttribute('aria-label') ?? '');
     expect(names.every(name => name.startsWith('Open ') && name.endsWith(' in Single view'))).toBe(true);
-    expect(new Set(names).size).toBe(9);
+    expect(new Set(names).size).toBe(component.exportableCards.length);
     expect(opens().every(button => button.querySelector('path')?.getAttribute('d')?.startsWith('M1 12s4-8')), 'the eye glyph').toBe(true);
     expect(opens().every(button => !button.disabled && button.getAttribute('aria-disabled') === null)).toBe(true);
     expect(opens().every(button => button.textContent?.trim() === '')).toBe(true);

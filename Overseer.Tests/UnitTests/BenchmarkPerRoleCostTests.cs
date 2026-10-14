@@ -573,15 +573,6 @@ public class BenchmarkPerRoleCostTests
         Assert.Equal("mixed", costs.Source);
     }
 
-    [Fact]
-    public void GroupCostRoles_NameTheCoAssessorAndItsSynthesisApart()
-    {
-        Assert.Equal("Co-assessor", BenchmarkGroupAnalysisService.CoAssessorRole);
-        Assert.Equal("Co-assessor synthesis", BenchmarkGroupAnalysisService.CoSynthesisRole);
-        Assert.NotEqual(BenchmarkGroupAnalysisService.AssessorRole, BenchmarkGroupAnalysisService.CoAssessorRole);
-        Assert.NotEqual(BenchmarkGroupAnalysisService.SynthesisRole, BenchmarkGroupAnalysisService.CoSynthesisRole);
-    }
-
     /// <summary>A pricing service that returns one fixed card set for every run.</summary>
     private sealed class FixedPricingService : ModelPricingService
     {

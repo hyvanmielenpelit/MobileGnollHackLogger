@@ -541,10 +541,4 @@ public class BenchmarkReportChartStoreTests
             Assert.False(Directory.Exists(Path.GetFullPath(root)), "A relative root must never be created.");
         }
     }
-
-    [Fact]
-    public void Unconfigured_Helper_IsNotConfigured()
-    {
-        Assert.False(TestChartStores.Unconfigured().IsConfigured);
-    }
 }

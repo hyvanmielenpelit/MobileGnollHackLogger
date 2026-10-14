@@ -961,11 +961,6 @@ describe('BatteryProgressDialogComponent', () => {
       open(batteryRun());
       expect((cell(1, 2).querySelector('.bp-cell-waiting')?.textContent ?? '').trim()).toBe('Waiting for suite 1');
     });
-
-    it('keeps a single live region with running and finished members shown', () => {
-      open(batteryRun());
-      expect(el().querySelectorAll('[aria-live], [role="status"]').length).toBe(1);
-    });
   });
 
   describe('mean answer and cost', () => {

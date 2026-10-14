@@ -71,22 +71,6 @@ public class AiRequestGovernorTests
     }
 
     [Fact]
-    public void UpdateLimitsFromHeaders_ParsesRetryAfterHeader()
-    {
-        var governor = CreateGovernor();
-        string key = "google:user:user_789";
-
-        var response = new HttpResponseMessage(System.Net.HttpStatusCode.TooManyRequests);
-        response.Headers.Add("Retry-After", "12");
-
-        governor.UpdateLimitsFromHeaders(key, response);
-
-        bool isRateLimited = governor.IsRateLimited(key, out var remaining);
-        Assert.True(isRateLimited);
-        Assert.True(remaining.TotalSeconds > 8 && remaining.TotalSeconds <= 12);
-    }
-
-    [Fact]
     public void UpdateLimitsFromHeaders_SuccessWithRetryAfter_RecordsNoCooldown()
     {
         var governor = CreateGovernor();

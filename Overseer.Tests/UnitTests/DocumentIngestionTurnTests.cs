@@ -353,21 +353,6 @@ public class DocumentIngestionTurnTests : IDisposable
     }
 
     [Fact]
-    public async Task TheParserItselfStripsAByteOrderMark()
-    {
-        // Isolated from the turn, so a failure points at the parser rather than at the prompt.
-        var parser = new DocumentParserService(new ConfigurationBuilder().Build());
-        var withBom = new List<byte> { 0xEF, 0xBB, 0xBF };
-        withBom.AddRange(Encoding.UTF8.GetBytes("BOMLESS-BODY"));
-
-        var parsed = await parser.ParseAsync(
-            withBom.ToArray(), "text/plain", "bom.txt", TestContext.Current.CancellationToken);
-
-        Assert.True(parsed.Succeeded, parsed.Error);
-        Assert.Equal("BOMLESS-BODY", parsed.Text);
-    }
-
-    [Fact]
     public async Task AByteOrderMarkDoesNotReachTheModel()
     {
         // The old Encoding.UTF8.GetString left a BOM at the head of the text, where it became

@@ -33,43 +33,23 @@ public class ChatTurnCostTests
         Assert.Equal(0.05m, turn.OperatorEstimatedCost);
     }
 
-    [Fact]
-    public void UserMain_UserRun_SumsWithNoOperatorShare()
+    [Theory]
+    // User main, user run: no operator share.
+    [InlineData(false, false, null)]
+    // User main, operator run: the operator share is the run.
+    [InlineData(false, true, 2)]
+    // Operator main, user run: the operator share is the main.
+    [InlineData(true, false, 5)]
+    // Operator main, operator run: the operator share is the whole turn.
+    [InlineData(true, true, 7)]
+    public void FundingQuadrants_SumTheTurnAndSplitTheOperatorShare(bool mainOperatorFunded, bool runOperatorFunded, int? expectedOperatorCents)
     {
-        var turn = ChatTurnCost.Combine(0.05m, "catalog", false, new[] { Run(0.02m, operatorFunded: false) });
+        var turn = ChatTurnCost.Combine(0.05m, "catalog", mainOperatorFunded, new[] { Run(0.02m, operatorFunded: runOperatorFunded) });
 
         Assert.Equal(0.07m, turn.EstimatedCost);
         Assert.Equal(0.02m, turn.SubAgentEstimatedCost);
-        Assert.Null(turn.OperatorEstimatedCost);
+        Assert.Equal(expectedOperatorCents / 100m, turn.OperatorEstimatedCost);
         Assert.Equal(1, turn.SubAgentRuns);
-    }
-
-    [Fact]
-    public void UserMain_OperatorRun_OperatorShareIsTheRun()
-    {
-        var turn = ChatTurnCost.Combine(0.05m, "catalog", false, new[] { Run(0.02m, operatorFunded: true) });
-
-        Assert.Equal(0.07m, turn.EstimatedCost);
-        Assert.Equal(0.02m, turn.OperatorEstimatedCost);
-    }
-
-    [Fact]
-    public void OperatorMain_UserRun_OperatorShareIsTheMain()
-    {
-        var turn = ChatTurnCost.Combine(0.05m, "catalog", true, new[] { Run(0.02m, operatorFunded: false) });
-
-        Assert.Equal(0.07m, turn.EstimatedCost);
-        Assert.Equal(0.05m, turn.OperatorEstimatedCost);
-        Assert.Equal(0.02m, turn.SubAgentEstimatedCost);
-    }
-
-    [Fact]
-    public void OperatorMain_OperatorRun_OperatorShareIsTheWhole()
-    {
-        var turn = ChatTurnCost.Combine(0.05m, "catalog", true, new[] { Run(0.02m, operatorFunded: true) });
-
-        Assert.Equal(0.07m, turn.EstimatedCost);
-        Assert.Equal(0.07m, turn.OperatorEstimatedCost);
     }
 
     [Fact]

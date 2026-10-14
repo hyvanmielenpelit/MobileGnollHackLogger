@@ -475,51 +475,33 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.Equal(3, (await h.DocumentsAsync()).Count);
     }
 
-    [Fact]
-    public async Task WriteNow_WritesOnlyTheRequestedDocument_AndLeavesTheOthersMissing()
+    [Theory]
+    [InlineData(BenchmarkReportAudience.TechnicalReport)]
+    [InlineData(BenchmarkReportAudience.InternalBrief)]
+    public async Task WriteNow_WritesOnlyTheRequestedDocument_AndLeavesTheOthersMissing(BenchmarkReportAudience audience)
     {
         await using var h = await Harness.CreateAsync(withWriter: false);
 
         var accepted = Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(h.RunId, new WriteRunReportDocumentsRequest
         {
             WriterModelConfigurationId = h.WriterConfig.Id,
-            Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.TechnicalReport }
+            Audiences = new List<BenchmarkReportAudience> { audience }
         }, Ct));
         Assert.Equal(
-            new[] { BenchmarkReportAudience.TechnicalReport },
+            new[] { audience },
             Assert.IsType<WriteRunReportDocumentsResponse>(accepted.Value).Audiences);
 
         await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
         var written = Assert.Single(await h.DocumentsAsync());
-        Assert.Equal(BenchmarkReportAudience.TechnicalReport, written.Audience);
-        Assert.Equal(new[] { BenchmarkReportAudience.TechnicalReport }, h.Writer.LastAudiences);
+        Assert.Equal(audience, written.Audience);
+        Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, written.Origin);
+        Assert.Equal(new[] { audience }, h.Writer.LastAudiences);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
 
         await using var db = new ApplicationDbContext(h.Options);
         Assert.Equal(
-            new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.InternalBrief },
+            AllAudiences.Where(a => a != audience).ToArray(),
             await BenchmarkRunReportDocumentService.MissingAudiencesAsync(db, h.RunId, Ct));
-    }
-
-    [Fact]
-    public async Task WriteNow_WritesTheInternalBriefOnItsOwn()
-    {
-        await using var h = await Harness.CreateAsync(withWriter: false);
-
-        var accepted = Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(h.RunId, new WriteRunReportDocumentsRequest
-        {
-            WriterModelConfigurationId = h.WriterConfig.Id,
-            Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.InternalBrief }
-        }, Ct));
-        Assert.Equal(
-            new[] { BenchmarkReportAudience.InternalBrief },
-            Assert.IsType<WriteRunReportDocumentsResponse>(accepted.Value).Audiences);
-
-        await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
-        var written = Assert.Single(await h.DocumentsAsync());
-        Assert.Equal(BenchmarkReportAudience.InternalBrief, written.Audience);
-        Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, written.Origin);
-        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
     }
 
     [Fact]

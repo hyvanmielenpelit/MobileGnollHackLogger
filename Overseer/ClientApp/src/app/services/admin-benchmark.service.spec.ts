@@ -46,10 +46,6 @@ describe('AdminBenchmarkService', () => {
     httpMock.verify();
   });
 
-  it('should be created', () => {
-    expect(service).toBeTruthy();
-  });
-
   it('should get suites', () => {
     const mockSuites = [{ id: 1, name: 'Default Suite', description: 'Test', createdAtUtc: '2026-09-01T00:00:00Z', modifiedAtUtc: null, questionCount: 15 }];
     service.getSuites().subscribe(res => {
@@ -218,12 +214,14 @@ describe('AdminBenchmarkService', () => {
   it('asks for battery runs with an optional battery and take', () => {
     service.getBatteryRuns(undefined, 500).subscribe();
     const all = httpMock.expectOne(request => request.url === '/api/admin/benchmark/batteries/runs');
+    expect(all.request.method).toBe('GET');
     expect(all.request.params.has('batteryId')).toBe(false);
     expect(all.request.params.get('take')).toBe('500');
     all.flush([]);
 
     service.getBatteryRuns(4).subscribe();
     const one = httpMock.expectOne(request => request.url === '/api/admin/benchmark/batteries/runs');
+    expect(one.request.method).toBe('GET');
     expect(one.request.params.get('batteryId')).toBe('4');
     expect(one.request.params.has('take')).toBe(false);
     one.flush([]);
@@ -702,19 +700,6 @@ describe('AdminBenchmarkService', () => {
       const restore = httpMock.expectOne(`${root}/5/archive`);
       expect(restore.request.body).toEqual({ archived: false });
       restore.flush({ id: 5 });
-    });
-
-    it('lists battery runs, filtered by battery only when one is given', () => {
-      service.getBatteryRuns().subscribe();
-      const all = httpMock.expectOne(request => request.url === `${root}/runs`);
-      expect(all.request.method).toBe('GET');
-      expect(all.request.params.has('batteryId')).toBe(false);
-      all.flush([]);
-
-      service.getBatteryRuns(5).subscribe();
-      const one = httpMock.expectOne(request => request.url === `${root}/runs`);
-      expect(one.request.params.get('batteryId')).toBe('5');
-      one.flush([]);
     });
 
     it('starts a battery run and returns its id', () => {

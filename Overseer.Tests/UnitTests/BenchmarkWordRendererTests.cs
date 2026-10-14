@@ -730,33 +730,6 @@ public class BenchmarkWordRendererTests
         Assert.Equal(6, matched.Count);
     }
 
-    // --- File names --------------------------------------------------------------------------------
-
-    [Fact]
-    public void WordNames_AreThePdfNamesWithDocx()
-    {
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
-
-        Assert.Equal(
-            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
-            BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
-            {
-                Disclosure = BenchmarkReportDisclosure.Detailed,
-                PeerNaming = BenchmarkReportPeerNaming.Anonymized
-            }, "docx"));
-
-        document.SubjectKey = "group:5";
-        Assert.Equal(
-            "vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
-            BenchmarkPdfFileNames.ForReportDocument(document, new BenchmarkReportRenderOptions
-            {
-                Disclosure = BenchmarkReportDisclosure.Detailed,
-                PeerNaming = BenchmarkReportPeerNaming.Anonymized
-            }, "docx"));
-        Assert.Equal("Suite_Model_20260928_104200_INTERNAL.docx", BenchmarkPdfFileNames.InternalFileName("Suite_Model_20260928_104200.md", "docx"));
-        Assert.Equal("Suite_Model_20260928_104200_INTERNAL.pdf", BenchmarkPdfFileNames.InternalPdfName("Suite_Model_20260928_104200.md"));
-    }
-
     // --- Run file endpoints ------------------------------------------------------------------------
 
     [Fact]

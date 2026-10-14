@@ -85,11 +85,7 @@ public static class ToolBatchRunner
                         var res = await executor(item, cancellationToken);
                         swTool.Stop();
 
-                        var content = res.Success
-                            ? (!string.IsNullOrEmpty(res.Content) ? res.Content : "Success")
-                            : (!string.IsNullOrWhiteSpace(res.ErrorMessage)
-                                ? res.ErrorMessage
-                                : (!string.IsNullOrWhiteSpace(res.Content) ? res.Content : "Unknown error"));
+                        var content = ResultContent(res);
 
                         var outcome = new ToolBatchOutcome
                         {
@@ -146,6 +142,19 @@ public static class ToolBatchRunner
         {
             events.TryComplete();
         }
+    }
+
+    /// <summary>
+    /// The text a tool call contributes to the conversation: the content on success
+    /// ("Success" when empty); on failure the error message, else the content, else "Unknown error".
+    /// </summary>
+    internal static string ResultContent(ToolResult res)
+    {
+        return res.Success
+            ? (!string.IsNullOrEmpty(res.Content) ? res.Content : "Success")
+            : (!string.IsNullOrWhiteSpace(res.ErrorMessage)
+                ? res.ErrorMessage
+                : (!string.IsNullOrWhiteSpace(res.Content) ? res.Content : "Unknown error"));
     }
 
     private static ToolBatchOutcome SynthesizeFailure(ToolBatchItem item, Exception? ex)

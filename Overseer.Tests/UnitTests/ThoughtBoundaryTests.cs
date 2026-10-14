@@ -189,22 +189,6 @@ public class ThoughtBoundaryTests
     }
 
     [Fact]
-    public void CancellationTimeoutError_LandsOutsideDiv()
-    {
-        var writer = new ThoughtMarkupWriter();
-        var sb = new StringBuilder();
-
-        writer.ResetIteration();
-        writer.HandleThinkingChunk(sb, "Thinking in progress");
-        writer.CloseOpenThoughtDiv(sb);
-        sb.Append("\n\n**Error:** The request timed out.");
-
-        string result = sb.ToString();
-        Assert.EndsWith("\n\n**Error:** The request timed out.", result);
-        Assert.True(result.IndexOf("</div>") < result.IndexOf("**Error:**"));
-    }
-
-    [Fact]
     public void StripThoughtsRegex_LeavesNoResidualThoughtTextOrOrphanDiv()
     {
         var writer = new ThoughtMarkupWriter();

@@ -382,9 +382,13 @@ public class AnthropicProviderTests
             system[1].GetProperty("text").GetString());
         Assert.Equal("ephemeral", system[1].GetProperty("cache_control").GetProperty("type").GetString());
 
+        // Only the two system blocks are breakpoints; the single-shot user turn carries none.
+        Assert.Equal(2, CountOccurrences(doc.RootElement.GetRawText(), "\"cache_control\""));
+
         var messages = doc.RootElement.GetProperty("messages");
         Assert.Equal(1, messages.GetArrayLength());
         Assert.DoesNotContain("GAME CONTEXT BOARD", messages.GetRawText());
+        Assert.Contains(Overseer.Services.Benchmarking.BenchmarkAssessmentPrompt.QuestionBlockMarker, messages.GetRawText());
     }
 
     [Fact]

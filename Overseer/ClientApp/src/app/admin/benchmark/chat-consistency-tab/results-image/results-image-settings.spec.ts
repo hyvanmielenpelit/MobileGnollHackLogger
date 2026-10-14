@@ -2,7 +2,6 @@ import {
   CC_RESULTS_IMAGE_SECTIONS,
   CC_RESULTS_IMAGE_SECTIONS_STORAGE_KEY,
   CC_RESULTS_IMAGE_STORAGE_KEY,
-  ccResultsImageFormatLabel,
   defaultCcResultsImageSettings,
   parseCcResultsImageSettings,
   readStoredCcResultsImageFileSections,
@@ -118,16 +117,5 @@ describe('results image settings', () => {
     expect(readStoredCcResultsImageFileSections()).toEqual({ format: false, size: true });
     localStorage.setItem(CC_RESULTS_IMAGE_SECTIONS_STORAGE_KEY, JSON.stringify({ format: 'no', size: false }));
     expect(readStoredCcResultsImageFileSections()).toEqual({ format: true, size: false });
-  });
-
-  it('replaces one section\'s exclusions and leaves the others', () => {
-    const next = withSectionExclusions(defaultCcResultsImageSettings(), 'nextRuns', []);
-    expect(next.excluded.nextRuns).toEqual([]);
-    expect(next.excluded.verdicts).toEqual(['more']);
-  });
-
-  it('names the formats as the download labels print them', () => {
-    expect(ccResultsImageFormatLabel('png')).toBe('PNG');
-    expect(ccResultsImageFormatLabel('webp')).toBe('WebP');
   });
 });

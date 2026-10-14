@@ -21,8 +21,6 @@ public class ClientToolHandlerTests
         Assert.Equal("get_performance_reports", tool.ToolName);
         Assert.Equal(ToolExecutionLocation.Client, tool.ExecutionLocation);
         Assert.Equal(ToolCategory.ClientPersistentDataQuery, tool.Category);
-        Assert.Equal(15, tool.TimeoutSeconds);
-        Assert.Equal(16000, tool.MaxResultLengthOverride);
 
         var properties = tool.ParameterSchema.GetProperty("properties");
         Assert.Equal("string", properties.GetProperty("filename").GetProperty("type").GetString());

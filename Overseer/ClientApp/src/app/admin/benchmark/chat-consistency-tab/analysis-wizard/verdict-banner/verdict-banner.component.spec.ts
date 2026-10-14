@@ -191,15 +191,6 @@ describe('CcVerdictBannerComponent', () => {
       .toBe('Speed (P2, P3) needs runs at the same hours in both periods.');
   });
 
-  it('opens the scope dialog from its info button', () => {
-    show(ccAnalysisResult());
-    const dialog = el.querySelector<HTMLDialogElement>('[data-meta="scope"] dialog.gh-info-dialog');
-    expect(dialog?.open).toBe(false);
-    el.querySelector<HTMLButtonElement>('[data-meta="scope"] button.gh-info-btn')?.click();
-    expect(dialog?.open).toBe(true);
-    dialog?.close();
-  });
-
   it('shows the protocol with an info dialog of its endpoints, significance, sample, verdicts and grades', () => {
     show(ccAnalysisResult());
     const item = el.querySelector('.cc-vb-meta > div[data-meta="protocol"]');

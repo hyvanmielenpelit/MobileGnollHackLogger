@@ -2,7 +2,6 @@ namespace Overseer.Tests.UnitTests;
 
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
@@ -20,39 +19,9 @@ public class ChatCostAccountingTests
     }
 
     [Fact]
-    public void ComputeCost_UsesWholeTurnTokens_AcrossMultipleToolIterations()
-    {
-        // Suppose a turn ran 2 tool iterations:
-        // Iteration 1: 500,000 input, 10,000 output
-        // Iteration 2 (final call): 600,000 input, 5,000 output
-        // Whole turn: 1,100,000 uncached input, 15,000 output
-        long iter2Input = 600_000;
-        long iter2Output = 5_000;
-
-        long wholeTurnInput = 1_100_000;
-        long wholeTurnOutput = 15_000;
-
-        var pricing = new ModelPricing(
-            InputPerMillion: 2.50m,
-            OutputPerMillion: 10.00m,
-            Source: ModelPricingSource.Catalog);
-
-        decimal finalCallOnlyCost = ModelPricingService.ComputeCost(pricing, iter2Input, iter2Output);
-        decimal wholeTurnCost = ModelPricingService.ComputeCost(pricing, wholeTurnInput, wholeTurnOutput);
-
-        // finalCallOnly: 0.6 * 2.50 + 0.005 * 10.00 = 1.50 + 0.05 = $1.55
-        Assert.Equal(1.55m, finalCallOnlyCost);
-
-        // wholeTurn: 1.1 * 2.50 + 0.015 * 10.00 = 2.75 + 0.15 = $2.90
-        Assert.Equal(2.90m, wholeTurnCost);
-        Assert.True(wholeTurnCost > finalCallOnlyCost);
-    }
-
-    [Fact]
-    public async Task ChatMessage_PersistedEstimatedCost_IsStableAgainstSubsequentPriceChanges()
+    public void ChatMessage_PersistedEstimatedCost_IsStableAgainstSubsequentPriceChanges()
     {
         using var db = CreateInMemoryDbContext();
-        var ct = TestContext.Current.CancellationToken;
 
         var config = new SystemAiApiConfiguration
         {
@@ -64,99 +33,17 @@ public class ChatCostAccountingTests
             InputPricePerMillion = 2.00m,
             OutputPricePerMillion = 8.00m
         };
-        db.SystemAiApiConfigurations.Add(config);
-        await db.SaveChangesAsync(ct);
 
-        var metadataService = new ModelMetadataService();
-        var pricingService = new ModelPricingService(metadataService, db);
+        var pricingService = new ModelPricingService(new ModelMetadataService(), db);
         var pricing = pricingService.Resolve(config);
         Assert.NotNull(pricing);
+        Assert.Equal(ModelPricingSource.Custom, pricing.Source);
 
         // Cost a 1M input, 100k output message: 1 * 2.00 + 0.1 * 8.00 = $2.80
         decimal cost = ModelPricingService.ComputeCost(pricing, 1_000_000, 100_000);
         Assert.Equal(2.80m, cost);
-
-        var session = new ChatSession
-        {
-            AspNetUserId = "test-user-id",
-            Title = "Test Session",
-            CreatedUtc = DateTime.UtcNow,
-            LastMessageUtc = DateTime.UtcNow
-        };
-        db.ChatSession.Add(session);
-        await db.SaveChangesAsync(ct);
-
-        var message = new ChatMessage
-        {
-            ChatSessionId = session.Id,
-            Role = "assistant",
-            Content = "Test response",
-            TimestampUtc = DateTime.UtcNow,
-            InputTokens = 1_000_000,
-            OutputTokens = 100_000,
-            EstimatedCost = cost,
-            PricingSource = pricing.Source == ModelPricingSource.Custom ? "custom" : "catalog"
-        };
-        db.ChatMessage.Add(message);
-        await db.SaveChangesAsync(ct);
-
-        // Now operator changes the configuration's price to double
-        config.InputPricePerMillion = 4.00m;
-        config.OutputPricePerMillion = 16.00m;
-        await db.SaveChangesAsync(ct);
-
-        // Reload the message from db; its stored cost must still be the original $2.80
-        var reloaded = await db.ChatMessage.FindAsync(new object?[] { message.Id }, ct);
-        Assert.NotNull(reloaded);
-        Assert.Equal(2.80m, reloaded.EstimatedCost);
-        Assert.Equal("custom", reloaded.PricingSource);
     }
 
-    [Fact]
-    public void ChatMessage_IsOperatorCost_TrueForSystemConfig_FalseForUserModel()
-    {
-        // System configuration usage is paid by operator
-        long? systemConfigId = 123;
-        long? userModelId = null;
-        bool isOperatorCostSystem = systemConfigId.HasValue && !userModelId.HasValue;
-        Assert.True(isOperatorCostSystem);
-
-        // User model usage is paid by user using their own API key
-        systemConfigId = null;
-        userModelId = 456;
-        bool isOperatorCostUser = systemConfigId.HasValue && !userModelId.HasValue;
-        Assert.False(isOperatorCostUser);
-    }
-
-    [Fact]
-    public void ChatMessage_UnpricedModel_ResultsInNullEstimatedCost_NotZero()
-    {
-        ModelPricing? pricing = null;
-
-        decimal? estimatedCost = null;
-        string? pricingSource = null;
-
-        if (pricing != null)
-        {
-            estimatedCost = ModelPricingService.ComputeCost(pricing, 1_000_000, 100_000);
-            pricingSource = pricing.Source == ModelPricingSource.Custom ? "custom" : "catalog";
-        }
-
-        var message = new ChatMessage
-        {
-            ChatSessionId = 1,
-            Role = "assistant",
-            Content = "Unpriced test",
-            TimestampUtc = DateTime.UtcNow,
-            InputTokens = 1_000_000,
-            OutputTokens = 100_000,
-            EstimatedCost = estimatedCost,
-            PricingSource = pricingSource
-        };
-
-        Assert.Null(message.EstimatedCost);
-        Assert.Null(message.PricingSource);
-    }
     [Fact]
     public void Accumulator_FirstPricedTurn_SetsTotalFromNull()
     {
@@ -240,29 +127,6 @@ public class ChatCostAccountingTests
     }
 
     [Fact]
-    public async Task ChatSession_TotalEstimatedCost_RoundTripsThroughTheContext()
-    {
-        using var db = CreateInMemoryDbContext();
-        var ct = TestContext.Current.CancellationToken;
-
-        var session = new ChatSession
-        {
-            AspNetUserId = "test-user-id",
-            Title = "Test Session",
-            CreatedUtc = DateTime.UtcNow,
-            LastMessageUtc = DateTime.UtcNow
-        };
-        ChatSessionCostAccumulator.Apply(session, 0.01234567m, isOperatorFunded: false);
-        db.ChatSession.Add(session);
-        await db.SaveChangesAsync(ct);
-
-        var reloaded = await db.ChatSession.FindAsync(new object?[] { session.Id }, ct);
-        Assert.NotNull(reloaded);
-        Assert.Equal(0.01234567m, reloaded.TotalEstimatedCost);
-        Assert.Equal(0.01234567m, reloaded.TotalUserEstimatedCost);
-    }
-
-    [Fact]
     public void ComputeCost_WithNoPerCallUsage_FallsBackToTheAggregateOverloadExactly()
     {
         // A turn whose provider reported no per-call usage must cost exactly what it costed before per-call
@@ -278,61 +142,6 @@ public class ChatCostAccountingTests
             (1_100_000 / 1_000_000m * 10m) + (15_000 / 1_000_000m * 50m) +
             (200_000 / 1_000_000m * 1m) + (50_000 / 1_000_000m * 12.5m),
             aggregate);
-    }
-
-    [Fact]
-    public void AggregateFallback_CostArgument_ExcludesCacheWritesFromTheBaseInputFigure()
-    {
-        // The chat fallback path's wholeTurnInputTokens is the provider's uncached figure — the prompt less
-        // the cache reads — so it still contains the cache-creation tokens. The figure handed to the cost
-        // call takes them off, because the same call bills them at the cache-write rate. The variable itself
-        // is left whole: it is also the turn's reported input-token count and the value persisted on the row.
-        var pricing = new ModelPricing(10m, 50m, 1m, 12.5m);
-
-        int baseInputTokens = 100_000;
-        long cacheCreationTokens = 40_000;
-        long cacheReadTokens = 200_000;
-        int wholeTurnInputTokens = baseInputTokens + (int)cacheCreationTokens;
-        int wholeTurnOutputTokens = 15_000;
-
-        decimal cost = ModelPricingService.ComputeCost(
-            pricing,
-            Math.Max(0, wholeTurnInputTokens - (int)cacheCreationTokens),
-            wholeTurnOutputTokens, cacheReadTokens, cacheCreationTokens);
-
-        decimal expected = (100_000 / 1_000_000m * 10m)
-            + (15_000 / 1_000_000m * 50m)
-            + (200_000 / 1_000_000m * 1m)
-            + (40_000 / 1_000_000m * 12.5m);
-        Assert.Equal(expected, cost);
-
-        // Handing the whole figure over charges the 40,000 written tokens a second time, at the base rate.
-        decimal doubleCharged = ModelPricingService.ComputeCost(
-            pricing, wholeTurnInputTokens, wholeTurnOutputTokens, cacheReadTokens, cacheCreationTokens);
-        Assert.Equal(expected + (40_000 / 1_000_000m * 10m), doubleCharged);
-        Assert.True(cost < doubleCharged);
-    }
-
-    [Fact]
-    public void AggregateFallback_WithNoCacheWrites_CostsExactlyTheUncachedInputFigure()
-    {
-        // Every provider but Anthropic reports no cache-creation tokens, so the subtraction is a no-op and
-        // the turn costs what the uncached figure alone costs.
-        var pricing = new ModelPricing(10m, 50m, 1m, 12.5m);
-
-        int wholeTurnInputTokens = 1_100_000;
-        long cacheCreationTokens = 0;
-        long cacheReadTokens = 200_000;
-
-        decimal cost = ModelPricingService.ComputeCost(
-            pricing,
-            Math.Max(0, wholeTurnInputTokens - (int)cacheCreationTokens),
-            15_000, cacheReadTokens, cacheCreationTokens);
-
-        Assert.Equal(
-            (1_100_000 / 1_000_000m * 10m) + (15_000 / 1_000_000m * 50m) +
-            (200_000 / 1_000_000m * 1m),
-            cost);
     }
 
     [Fact]

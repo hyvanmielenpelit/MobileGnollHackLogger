@@ -567,24 +567,6 @@ public class ObjectsMacroResolverTests
     /// otherwise show up only as one item's raw dump in production.
     /// </summary>
     [Fact]
-    public void RealCorpus_KeepsEveryEntryOfAName()
-    {
-        var resolver = LoadRealCorpusOrSkip();
-
-        int names = resolver.ItemNames.Count;
-        int entries = resolver.ItemNames.Sum(n => resolver.ObjectClassesOf(n).Count);
-        int shared = resolver.ItemNames.Count(n => resolver.ObjectClassesOf(n).Count > 1);
-
-        // A name-keyed, first-wins index loses one entry per extra class sharing a name. The
-        // exact figures move with the game source; what must hold is that the entries outnumber
-        // the names by the number of extra classes, and that none of them was dropped.
-        Assert.True(shared > 0, "Expected objects.c to hold at least one name in several object classes.");
-        Assert.True(entries > names,
-            $"Expected more entries than distinct names, got {entries} entries for {names} names.");
-        Assert.Equal(entries - names, resolver.ItemNames.Sum(n => resolver.ObjectClassesOf(n).Count - 1));
-    }
-
-    [Fact]
     public void RealCorpus_EveryItemEntryResolves()
     {
         var resolver = LoadRealCorpusOrSkip();

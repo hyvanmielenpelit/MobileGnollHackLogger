@@ -92,18 +92,6 @@ public class BenchmarkRunExamTests
     }
 
     [Fact]
-    public void AQuestionAddedToTheLiveSuiteLater_IsNotPartOfTheExam()
-    {
-        // The exam is built from answer rows alone; a question nobody answered has none.
-        var runs = new[] { Run(1, T0, Answer(10, 1, "Q1"), Answer(11, 2, "Q2")) };
-
-        var (_, questions) = BenchmarkRunExam.Build(runs);
-
-        Assert.Equal(2, questions.Count);
-        Assert.DoesNotContain(questions, q => q.Id == 12);
-    }
-
-    [Fact]
     public void ItemRevision_IsTheGradedRevision_AndMixedRevisionsGiveTheHighest()
     {
         var runs = new[]

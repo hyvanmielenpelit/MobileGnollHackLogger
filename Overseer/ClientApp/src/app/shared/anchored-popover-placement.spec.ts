@@ -72,6 +72,8 @@ interface MeasureOptions {
   native: boolean;
   triggerWidth?: number;
   scrolled?: boolean;
+  /** The output of `collectCss()`, when the caller collected it once for several measurements. */
+  css?: string;
 }
 
 interface Measurement {
@@ -127,7 +129,7 @@ function spotPosition(spot: Spot, w: number, h: number, tw: number, th: number):
  * apply; without it, the rules the polyfill and older engines get.
  */
 function measure(source: HTMLElement, w: number, h: number, spot: Spot, options: MeasureOptions): Measurement {
-  const css = collectCss();
+  const css = options.css ?? collectCss();
   expect(css, 'the global stylesheet is loaded').toContain('.gh-action-popover');
 
   const iframe = document.createElement('iframe');
@@ -235,22 +237,26 @@ describe('Anchored popover placement', () => {
   const viewports: [number, number][] = [[375, 700], [1000, 655], [1280, 800], [1000, 300]];
   const spots: Spot[] = ['top-left', 'bottom-left', 'bottom-right', 'middle', 'lower-middle'];
 
+  // One test per popover kind; expect.soft checks every viewport and trigger spot, and each message names its case.
   for (const kind of popovers) {
-    for (const [w, h] of viewports) {
-      for (const spot of spots) {
-        it(`keeps the ${kind} popover inside a ${w}×${h} viewport with its trigger ${spot}`, () => {
-          const native = measure(sources[kind](), w, h, spot, { native: true });
-          expect(isInside(native), `native box ${boxText(native.popover)}`).toBe(true);
+    it(`keeps the ${kind} popover inside every viewport with its trigger at every spot`, () => {
+      const css = collectCss();
+      for (const [w, h] of viewports) {
+        for (const spot of spots) {
+          const where = `${kind} popover, ${w}×${h} viewport, trigger ${spot}`;
+          const native = measure(sources[kind](), w, h, spot, { native: true, css });
+          expect.soft(isInside(native), `${where}: native box ${boxText(native.popover)}`).toBe(true);
 
-          const today = measure(sources[kind](), w, h, spot, { native: false });
+          const today = measure(sources[kind](), w, h, spot, { native: false, css });
           if (isInside(today)) {
             for (const side of ['left', 'top', 'right', 'bottom'] as const) {
-              expect(native.popover[side], `${side}, unchanged where it fits today`).toBeCloseTo(today.popover[side], WITHIN_HALF_PX);
+              expect.soft(native.popover[side], `${where}: ${side}, unchanged where it fits today`)
+                .toBeCloseTo(today.popover[side], WITHIN_HALF_PX);
             }
           }
-        });
+        }
       }
-    }
+    }, 60_000);
   }
 
   it('keeps the ordinary placement when there is room', () => {

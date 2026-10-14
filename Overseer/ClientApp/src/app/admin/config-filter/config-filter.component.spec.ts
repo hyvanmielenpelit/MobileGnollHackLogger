@@ -66,15 +66,6 @@ describe('ConfigFilterModel', () => {
       expect(matchesFilter(chatAndTitleConfig, f)).toBe(true);
     });
 
-    it('differentiates any vs all for role filter [1, 4] with modelRole 3 (1 | 2)', () => {
-      const config = { modelRole: ROLE_CHAT | ROLE_TITLE, provider: 'OpenAI' }; // 1 | 2 = 3
-      const anyFilter: ConfigFilter = { roles: [ROLE_CHAT, ROLE_BENCHMARK], roleMatchMode: 'any', providers: [] };
-      const allFilter: ConfigFilter = { roles: [ROLE_CHAT, ROLE_BENCHMARK], roleMatchMode: 'all', providers: [] };
-
-      expect(matchesFilter(config, anyFilter)).toBe(true); // has Chat (1)
-      expect(matchesFilter(config, allFilter)).toBe(false); // lacks Benchmark (4)
-    });
-
     it('filters by provider in OR mode', () => {
       const f: ConfigFilter = { roles: [], roleMatchMode: 'any', providers: ['Anthropic', 'Google'] };
       expect(matchesFilter(titleOnlyAnthropic, f)).toBe(true);

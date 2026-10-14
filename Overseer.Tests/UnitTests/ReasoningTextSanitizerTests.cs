@@ -256,21 +256,6 @@ public class ReasoningTextSanitizerTests
     }
 
     [Fact]
-    public void ToolArgumentJsonInsideFencedJsonBlock_SurvivesUntouched()
-    {
-        string input =
-            "Example arguments:\n\n" +
-            "```json\n" +
-            "{\"query\":\"lined_up\",\"repository\":\"gnollhack\",\"max_results\":20}\n" +
-            "```\n\n" +
-            "Pass those to the tool.";
-
-        string output = ReasoningTextSanitizer.SanitizeStateless(input);
-
-        Assert.Equal(input, output);
-    }
-
-    [Fact]
     public void LeakOutsideFence_StrippedWhileFencedCopySurvives()
     {
         string input =

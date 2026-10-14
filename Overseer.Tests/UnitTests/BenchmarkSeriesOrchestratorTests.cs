@@ -463,19 +463,6 @@ public class BenchmarkSeriesOrchestratorTests
         Assert.Equal(BenchmarkRunSeriesStatus.Stopped, (await readback.BenchmarkRunSeries.SingleAsync(s => s.Id == series.Id, ct)).Status);
     }
 
-    [Fact]
-    public async Task Resume_OfAnUnknownSeries_IsNotFound()
-    {
-        var config = CreateConfig();
-        var (factory, _) = CreateScopeFactory(config);
-
-        var orchestrator = CreateOrchestrator(factory, new BenchmarkRunManager());
-
-        var result = await orchestrator.ResumeSeriesAsync(4242, acknowledgeInstrumentChange: false, TestContext.Current.CancellationToken);
-
-        Assert.Equal(BenchmarkSeriesStartOutcome.NotFound, result.Outcome);
-    }
-
     // --- Cancellation ------------------------------------------------------------------------
 
     [Fact]

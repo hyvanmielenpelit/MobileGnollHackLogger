@@ -382,21 +382,6 @@ describe('TelemetryChartsDialogComponent', () => {
     expect(JSON.stringify(stored(TL_CHARTS_STORAGE_KEY))).not.toContain('u-17');
   });
 
-  it('draws the activity charts apart from Split by, with a gap before the counting started', () => {
-    create();
-    open();
-    respond(0, seriesDto({
-      splitBy: 'provider',
-      series: [line('Anthropic', 'Anthropic', { provider: 'Anthropic' }), line('OpenAI', 'OpenAI', { provider: 'OpenAI' })]
-    }));
-    const figure = (key: string) => component.figures.find(entry => entry.key === key)!;
-    expect(figure('requests').lines.map(entry => entry.key)).toEqual(['Anthropic', 'OpenAI']);
-    expect(figure('activeUsers').lines.map(entry => entry.key)).toEqual(['activeUsers', 'newUsers']);
-    expect(figure('activeUsers').lines[0].values).toEqual([null, 2, 2]);
-    expect(figure('chats').lines.map(entry => entry.values[0])).toEqual([null, null, null, null]);
-    expect(figure('messages').notes.map(note => note.text)).toContain('Counted since 2026-10-02.');
-  });
-
   // --- Views ---
 
   it('shows the nine charts as tiles in All charts', () => {

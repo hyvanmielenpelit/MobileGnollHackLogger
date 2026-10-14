@@ -23,11 +23,32 @@ public class ToolExecutorRateLimitTests
         public ToolCategory Category { get; set; } = ToolCategory.InformationRetrieval;
         public JsonElement ParameterSchema => JsonDocument.Parse("{}").RootElement;
         public int TimeoutSeconds { get; set; } = 15;
+        public int DelayMilliseconds { get; set; } = 5;
+
+        private int _active;
+        private int _peakConcurrency;
+
+        /// <summary>The most calls that were inside <see cref="ExecuteAsync"/> at the same time.</summary>
+        public int PeakConcurrency => Volatile.Read(ref _peakConcurrency);
 
         public async Task<ToolResult> ExecuteAsync(JsonElement parameters, ToolExecutionContext context, CancellationToken cancellationToken)
         {
-            await Task.Delay(5, cancellationToken);
-            return new ToolResult { Success = true, Content = "Test result" };
+            int active = Interlocked.Increment(ref _active);
+            int peak;
+            while (active > (peak = Volatile.Read(ref _peakConcurrency))
+                && Interlocked.CompareExchange(ref _peakConcurrency, active, peak) != peak)
+            {
+            }
+
+            try
+            {
+                await Task.Delay(DelayMilliseconds, cancellationToken);
+                return new ToolResult { Success = true, Content = "Test result" };
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _active);
+            }
         }
     }
 
@@ -120,7 +141,7 @@ public class ToolExecutorRateLimitTests
     public async Task ExecuteAsync_ProcessWideThrottling_CapsConcurrencyAcrossAllSessions()
     {
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 });
-        var handler = new TestServerToolHandler();
+        var handler = new TestServerToolHandler { DelayMilliseconds = 100 };
         const int maxProcessLimit = 3;
         var executor = new ToolExecutor(
             new[] { handler },
@@ -138,13 +159,18 @@ public class ToolExecutorRateLimitTests
         var results = await Task.WhenAll(tasks);
         Assert.Equal(10, results.Length);
         Assert.All(results, r => Assert.True(r.Success));
+
+        // Each call enters the handler synchronously while a slot is free, so the first calls fill
+        // every slot before any finishes: the peak reaches the cap and never passes it.
+        Assert.True(handler.PeakConcurrency <= maxProcessLimit, $"Peak concurrency {handler.PeakConcurrency} exceeded the cap {maxProcessLimit}.");
+        Assert.Equal(maxProcessLimit, handler.PeakConcurrency);
     }
 
     [Fact]
     public async Task ExecuteAsync_ExternalLookupCategoryThrottling_CapsLookupConcurrency()
     {
         using var cache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 });
-        var handler = new TestServerToolHandler { Category = ToolCategory.ExternalLookup };
+        var handler = new TestServerToolHandler { Category = ToolCategory.ExternalLookup, DelayMilliseconds = 100 };
         const int maxLookupLimit = 2;
         var executor = new ToolExecutor(
             new[] { handler },
@@ -162,6 +188,10 @@ public class ToolExecutorRateLimitTests
         var results = await Task.WhenAll(tasks);
         Assert.Equal(6, results.Length);
         Assert.All(results, r => Assert.True(r.Success));
+
+        // The process cap (30) leaves room for all six; the lookup cap is what holds them to two.
+        Assert.True(handler.PeakConcurrency <= maxLookupLimit, $"Peak concurrency {handler.PeakConcurrency} exceeded the cap {maxLookupLimit}.");
+        Assert.Equal(maxLookupLimit, handler.PeakConcurrency);
     }
 
     [Fact]

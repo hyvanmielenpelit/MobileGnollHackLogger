@@ -13,8 +13,8 @@ using Xunit;
 
 /// <summary>
 /// get_item_stats, get_monster_stats and get_artifact_stats trim the name argument, so a name with
-/// leading or trailing whitespace returns the same result as the bare name, and a name that is
-/// blank after trimming is a missing one. The stats cases run against the real src/objects.c,
+/// leading or trailing whitespace returns the same result as the bare name; a name that is blank
+/// after trimming is a missing one (<see cref="ToolMissingNameArgumentTests"/>). The stats cases run against the real src/objects.c,
 /// include/objclass.h, src/monst.c and include/artilist.h, copied from the GnollHack clone when it
 /// is present on this machine. get_knowledge_article trims its topic the same way, against a
 /// synthetic knowledge base.
@@ -52,6 +52,9 @@ public class StatsToolArgumentTrimTests : IDisposable
 
     private static bool SourceAvailable =>
         Array.TrueForAll(CorpusFiles, f => File.Exists(Path.Combine(GnollHackSourceDir, f)));
+
+    private const string SourceUnavailableReason =
+        "The GnollHack clone's src/objects.c, include/objclass.h, src/monst.c and include/artilist.h are not all present under " + GnollHackSourceDir + ".";
 
     private static IConfiguration CreateConfiguration(string sourceDir)
     {
@@ -104,7 +107,7 @@ public class StatsToolArgumentTrimTests : IDisposable
     [InlineData("get_artifact_stats", "Excalibur")]
     public async Task PaddedName_ReturnsTheSameEntryAsTheBareName(string toolName, string name)
     {
-        if (!SourceAvailable) return;
+        if (!SourceAvailable) Assert.Skip(SourceUnavailableReason);
 
         var (service, config) = await CreateRealCorpusServiceAsync();
         using (service)
@@ -127,7 +130,7 @@ public class StatsToolArgumentTrimTests : IDisposable
     [Fact]
     public async Task PaddedObjectClass_SelectsTheSameClassAsTheBareOne()
     {
-        if (!SourceAvailable) return;
+        if (!SourceAvailable) Assert.Skip(SourceUnavailableReason);
 
         var (service, config) = await CreateRealCorpusServiceAsync();
         using (service)
@@ -142,35 +145,6 @@ public class StatsToolArgumentTrimTests : IDisposable
             Assert.True(padded.Success, padded.ErrorMessage);
             Assert.Equal(bare.Content, padded.Content);
         }
-    }
-
-    [Theory]
-    [InlineData("get_item_stats")]
-    [InlineData("get_monster_stats")]
-    [InlineData("get_artifact_stats")]
-    public async Task WhitespaceOnlyName_ReturnsMissingNameError(string toolName)
-    {
-        string sourceDir = Path.Combine(_rootDir, "blank");
-        Directory.CreateDirectory(Path.Combine(sourceDir, "src"));
-        File.WriteAllText(Path.Combine(sourceDir, "src", "util.c"),
-            "/* util.c */\r\n" +
-            "int\r\n" +
-            "bar(void)\r\n" +
-            "{\r\n" +
-            "    return 1;\r\n" +
-            "}\r\n");
-
-        var config = CreateConfiguration(sourceDir);
-        using var service = new SourceCodeService(config, NullLogger<SourceCodeService>.Instance);
-        await service.StartAsync(TestContext.Current.CancellationToken);
-        Assert.True(service.IsIndexingComplete);
-
-        var tool = CreateTool(toolName, service, config);
-
-        var result = await ExecuteAsync(tool, new { name = " \t\r\n " });
-
-        Assert.False(result.Success);
-        Assert.Equal("Missing name parameter", result.ErrorMessage);
     }
 
     [Fact]

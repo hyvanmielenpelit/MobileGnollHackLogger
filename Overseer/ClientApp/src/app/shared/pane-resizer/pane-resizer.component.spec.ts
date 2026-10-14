@@ -90,29 +90,17 @@ describe('PaneResizerComponent', () => {
   });
 
   describe('keyboard', () => {
-    it('ArrowRight increases the value by step and commits once', () => {
-      const event = keydown('ArrowRight');
+    // From 240: step is 16, largeStep (with Shift) is 64.
+    it.each([
+      { label: 'ArrowRight', key: 'ArrowRight', shift: false, expected: 256 },
+      { label: 'ArrowLeft', key: 'ArrowLeft', shift: false, expected: 224 },
+      { label: 'Shift+ArrowRight', key: 'ArrowRight', shift: true, expected: 304 },
+      { label: 'Shift+ArrowLeft', key: 'ArrowLeft', shift: true, expected: 176 }
+    ])('$label moves the value to $expected and commits once', ({ key, shift, expected }) => {
+      const event = keydown(key, shift);
       expect(event.defaultPrevented).toBe(true);
-      expect(hostComponent.changes).toEqual([256]);
-      expect(hostComponent.commits).toEqual([256]);
-    });
-
-    it('ArrowLeft decreases the value by step', () => {
-      const event = keydown('ArrowLeft');
-      expect(event.defaultPrevented).toBe(true);
-      expect(hostComponent.changes).toEqual([224]);
-      expect(hostComponent.commits).toEqual([224]);
-    });
-
-    it('Shift+ArrowRight increases by largeStep', () => {
-      keydown('ArrowRight', true);
-      expect(hostComponent.changes).toEqual([304]);
-      expect(hostComponent.commits).toEqual([304]);
-    });
-
-    it('Shift+ArrowLeft decreases by largeStep', () => {
-      keydown('ArrowLeft', true);
-      expect(hostComponent.changes).toEqual([176]);
+      expect(hostComponent.changes).toEqual([expected]);
+      expect(hostComponent.commits).toEqual([expected]);
     });
 
     it('Home jumps to min and End jumps to max, each with one commit', () => {

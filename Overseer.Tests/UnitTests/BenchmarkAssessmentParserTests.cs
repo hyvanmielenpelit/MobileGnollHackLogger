@@ -252,55 +252,18 @@ public class BenchmarkAssessmentParserTests
         """;
     }
 
-    [Fact]
-    public void CompletenessOutOfScope_IsSetWhenTheMarkerIsPresent()
-    {
-        // Q12's shape on the 2026-09-06 run, as scoring method v8 asks the assessor to record it:
-        // the rubric enumerates more than the question asked for, and that is not an omission.
-        var result = BenchmarkAssessmentParser.ParsePerQuestion(
-            VerdictWithCompletenessEvidence(
-                "OUT-OF-SCOPE: the rubric lists Celestial/Primordial/Infernal modifiers; the question asked only for Exceptional and Elite."),
-            Answer);
-
-        Assert.True(result.Success);
-        Assert.True(result.Result!.CompletenessOutOfScope);
-    }
-
-    [Fact]
-    public void CompletenessOutOfScope_IsSetWhenTheMarkerFollowsARealDeduction()
-    {
-        // One evidence string can carry both a deduction and an out-of-scope note, so the marker is
-        // matched anywhere in the string rather than only at its start.
-        var result = BenchmarkAssessmentParser.ParsePerQuestion(
-            VerdictWithCompletenessEvidence(
-                "Rubric point 2: the answer omits the crowning penalty. OUT-OF-SCOPE: rubric point 5 covers Infernal armor, which the question did not ask about."),
-            Answer);
-
-        Assert.True(result.Result!.CompletenessOutOfScope);
-    }
-
-    [Fact]
-    public void CompletenessOutOfScope_IsNotSetWhenTheMarkerIsAbsent()
-    {
-        // The normal case. A missing marker is never an error: most rubrics ask for nothing the
-        // question did not.
-        var result = BenchmarkAssessmentParser.ParsePerQuestion(
-            VerdictWithCompletenessEvidence("Rubric point 2: the answer omits the crowning penalty."),
-            Answer);
-
-        Assert.True(result.Success);
-        Assert.False(result.Result!.CompletenessOutOfScope);
-    }
-
     [Theory]
     // A mangled marker costs the measurement and nothing else — never the verdict, and never an
-    // exception. The last case is the ordinary English phrase without the colon, which must not
+    // exception. The phrase case is the ordinary English phrase without the colon, which must not
     // count as the marker: it appears in evidence strings that are describing something else.
     [InlineData("OUT-OF-SCOPE")]
     [InlineData("out_of_scope:")]
     [InlineData("OUT-OF-SCOPE;")]
     [InlineData("The rubric point is arguably out of scope for this question.")]
     [InlineData("")]
+    // The normal case. A missing marker is never an error: most rubrics ask for nothing the
+    // question did not.
+    [InlineData("Rubric point 2: the answer omits the crowning penalty.")]
     public void CompletenessOutOfScope_MalformedMarker_ParsesWithoutThrowingAndDoesNotSetTheFlag(string evidence)
     {
         var result = BenchmarkAssessmentParser.ParsePerQuestion(
@@ -317,12 +280,19 @@ public class BenchmarkAssessmentParserTests
     [InlineData("Out of scope: rubric point 5.")]
     [InlineData("out-of-scope : rubric point 5.")]
     [InlineData("OUTOFSCOPE: rubric point 5.")]
+    // Q12's shape on the 2026-09-06 run, as scoring method v8 asks the assessor to record it:
+    // the rubric enumerates more than the question asked for, and that is not an omission.
+    [InlineData("OUT-OF-SCOPE: the rubric lists Celestial/Primordial/Infernal modifiers; the question asked only for Exceptional and Elite.")]
+    // One evidence string can carry both a deduction and an out-of-scope note, so the marker is
+    // matched anywhere in the string rather than only at its start.
+    [InlineData("Rubric point 2: the answer omits the crowning penalty. OUT-OF-SCOPE: rubric point 5 covers Infernal armor, which the question did not ask about.")]
     public void CompletenessOutOfScope_ToleratesTheFormsAssessorsActuallyWrite(string evidence)
     {
         var result = BenchmarkAssessmentParser.ParsePerQuestion(
             VerdictWithCompletenessEvidence(evidence),
             Answer);
 
+        Assert.True(result.Success);
         Assert.True(result.Result!.CompletenessOutOfScope);
     }
 
@@ -375,32 +345,6 @@ public class BenchmarkAssessmentParserTests
         """;
     }
 
-    [Fact]
-    public void ReadabilityFormOnly_IsSetWhenTheMarkerIsPresent()
-    {
-        // The shape scoring method v9 asks for: the rubric named a presentation, the answer used
-        // another, and the assessor records that instead of docking Readability for it.
-        var result = BenchmarkAssessmentParser.ParsePerQuestion(
-            VerdictWithReadabilityEvidence(
-                "FORM: the rubric suggests a comparison table; the answer covers the same material as prose."),
-            Answer);
-
-        Assert.True(result.Success);
-        Assert.True(result.Result!.ReadabilityFormOnly);
-    }
-
-    [Fact]
-    public void ReadabilityFormOnly_IsNotSetWhenTheMarkerIsAbsent()
-    {
-        // The normal case, and the one the field is normally null in.
-        var result = BenchmarkAssessmentParser.ParsePerQuestion(
-            VerdictWithReadabilityEvidence(""),
-            Answer);
-
-        Assert.True(result.Success);
-        Assert.False(result.Result!.ReadabilityFormOnly);
-    }
-
     [Theory]
     // Anchored, unlike the out-of-scope marker: 'form' is an ordinary word, and readabilityEvidence
     // carries the marker and nothing else, so a mid-sentence occurrence is prose about the answer
@@ -410,6 +354,8 @@ public class BenchmarkAssessmentParserTests
     [InlineData("FORM")]
     [InlineData("FORMAT: the rubric suggests a table.")]
     [InlineData("Clear headings and short paragraphs throughout.")]
+    // The normal case, and the one the field is normally null in.
+    [InlineData("")]
     public void ReadabilityFormOnly_MarkerNotAtTheStart_DoesNotSetTheFlag(string evidence)
     {
         var result = BenchmarkAssessmentParser.ParsePerQuestion(
@@ -426,12 +372,16 @@ public class BenchmarkAssessmentParserTests
     [InlineData("Form: the rubric suggests a table.")]
     [InlineData("form : the rubric suggests a table.")]
     [InlineData("  FORM: the rubric suggests a table.")]
+    // The shape scoring method v9 asks for: the rubric named a presentation, the answer used
+    // another, and the assessor records that instead of docking Readability for it.
+    [InlineData("FORM: the rubric suggests a comparison table; the answer covers the same material as prose.")]
     public void ReadabilityFormOnly_ToleratesTheFormsAssessorsActuallyWrite(string evidence)
     {
         var result = BenchmarkAssessmentParser.ParsePerQuestion(
             VerdictWithReadabilityEvidence(evidence),
             Answer);
 
+        Assert.True(result.Success);
         Assert.True(result.Result!.ReadabilityFormOnly);
     }
 
@@ -472,42 +422,24 @@ public class BenchmarkAssessmentParserTests
         """;
     }
 
-    [Fact]
-    public void AccuracyOutOfRubric_IsSetWhenTheMarkerIsPresent()
-    {
-        var result = BenchmarkAssessmentParser.ParsePerQuestion(
-            VerdictWithAccuracyEvidence("Not in rubric: the answer omits the Yeenaghu wish condition."),
-            Answer);
-
-        Assert.True(result.Success);
-        Assert.True(result.Result!.AccuracyOutOfRubric);
-    }
-
-    [Fact]
-    public void AccuracyOutOfRubric_IsSetWhenTheMarkerFollowsARealDeduction()
-    {
-        // One evidence string can carry both a rubric deduction and an out-of-rubric note, so the
-        // marker is matched anywhere in the string rather than only at its start — mirroring the
-        // out-of-scope marker's own reasoning.
-        var result = BenchmarkAssessmentParser.ParsePerQuestion(
-            VerdictWithAccuracyEvidence("Rubric point 2 unmet. Not in rubric: the AC figure is stated as a bonus."),
-            Answer);
-
-        Assert.True(result.Result!.AccuracyOutOfRubric);
-    }
-
     [Theory]
     // Casing and spacing tolerance, plus the optional "the" the prompt allows: models write the
     // marker the way they feel like writing it.
     [InlineData("NOT IN RUBRIC: fabricated racial trait.")]
     [InlineData("not  in   rubric : fabricated racial trait.")]
     [InlineData("Not in the rubric: fabricated racial trait.")]
+    [InlineData("Not in rubric: the answer omits the Yeenaghu wish condition.")]
+    // One evidence string can carry both a rubric deduction and an out-of-rubric note, so the
+    // marker is matched anywhere in the string rather than only at its start — mirroring the
+    // out-of-scope marker's own reasoning.
+    [InlineData("Rubric point 2 unmet. Not in rubric: the AC figure is stated as a bonus.")]
     public void AccuracyOutOfRubric_ToleratesTheFormsAssessorsActuallyWrite(string evidence)
     {
         var result = BenchmarkAssessmentParser.ParsePerQuestion(
             VerdictWithAccuracyEvidence(evidence),
             Answer);
 
+        Assert.True(result.Success);
         Assert.True(result.Result!.AccuracyOutOfRubric);
     }
 
@@ -518,34 +450,14 @@ public class BenchmarkAssessmentParserTests
     [InlineData("Matches rubric.")]
     [InlineData("The rubric does not mention this, but it is wrong.")]
     [InlineData("Not in rubric")]
-    public void AccuracyOutOfRubric_MalformedOrAbsentMarker_DoesNotSetTheFlag(string evidence)
+    // Total on its input, like HasOutOfScopeMarker: a null evidence string must not fail the
+    // parse.
+    [InlineData(null)]
+    [InlineData("")]
+    public void AccuracyOutOfRubric_MalformedOrAbsentMarker_DoesNotSetTheFlag(string? evidence)
     {
         var result = BenchmarkAssessmentParser.ParsePerQuestion(
             VerdictWithAccuracyEvidence(evidence),
-            Answer);
-
-        Assert.True(result.Success);
-        Assert.False(result.Result!.AccuracyOutOfRubric);
-    }
-
-    [Fact]
-    public void AccuracyOutOfRubric_IsNotSetWhenAccuracyEvidenceIsNull()
-    {
-        // Total on its input, like HasOutOfScopeMarker: a null evidence string must not fail the
-        // parse.
-        var result = BenchmarkAssessmentParser.ParsePerQuestion(
-            VerdictWithAccuracyEvidence(null),
-            Answer);
-
-        Assert.True(result.Success);
-        Assert.False(result.Result!.AccuracyOutOfRubric);
-    }
-
-    [Fact]
-    public void AccuracyOutOfRubric_IsNotSetWhenAccuracyEvidenceIsEmpty()
-    {
-        var result = BenchmarkAssessmentParser.ParsePerQuestion(
-            VerdictWithAccuracyEvidence(""),
             Answer);
 
         Assert.True(result.Success);
@@ -636,18 +548,24 @@ public class BenchmarkAssessmentParserTests
         Assert.Contains("readabilityLevel", result.ErrorMessage!);
     }
 
-    [Fact]
-    public void AllFourLevels_Present_ParseUnchanged()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)] // The verdict arrives inside a Markdown ```json fence.
+    public void AllFourLevels_Present_ParseUnchanged(bool fenced)
     {
         // The happy path the requirement did not move: a complete verdict still parses, and the
         // levels are the ones the assessor wrote.
-        var result = BenchmarkAssessmentParser.ParsePerQuestion(Verdict(), Answer);
+        string raw = fenced ? "```json\n" + Verdict() + "\n```" : Verdict();
+
+        var result = BenchmarkAssessmentParser.ParsePerQuestion(raw, Answer);
 
         Assert.True(result.Success);
         Assert.Equal(3, result.Result!.AccuracyLevel);
         Assert.Equal(4, result.Result.CompletenessLevel);
         Assert.Equal(5, result.Result.ConcisenessLevel);
         Assert.Equal(5, result.Result.ReadabilityLevel);
+        Assert.False(result.Result.CriticalError);
+        Assert.Equal("A reasonable answer.", result.Result.Comment);
         Assert.NotNull(result.RawText);
     }
 

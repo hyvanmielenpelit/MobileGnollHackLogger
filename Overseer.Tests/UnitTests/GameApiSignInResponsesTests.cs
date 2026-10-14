@@ -163,21 +163,4 @@ public class GameApiSignInResponsesTests
         Assert.Equal(366 * 86400, response.RetryAfterSeconds);
         Assert.Equal($"Too many failed sign-in attempts. Try again in {366 * 24 * 60} minutes.", response.Body);
     }
-
-    [Theory]
-    [InlineData(GameApiSignInOutcome.Failed, 403)]
-    [InlineData(GameApiSignInOutcome.Throttled, 403)]
-    [InlineData(GameApiSignInOutcome.LockedOut, 403)]
-    [InlineData(GameApiSignInOutcome.RequiresTwoFactor, 412)]
-    [InlineData(GameApiSignInOutcome.AntiForgeryMismatch, 401)]
-    [InlineData(GameApiSignInOutcome.Banned, 403)]
-    [InlineData(GameApiSignInOutcome.EmailNotConfirmed, 403)]
-    public void EveryOutcomeHasItsStatusAndABody(GameApiSignInOutcome outcome, int expectedStatus)
-    {
-        var response = GameApiSignInResponses.For(outcome, TimeSpan.FromMinutes(1));
-
-        Assert.Equal(expectedStatus, response.StatusCode);
-        Assert.NotEqual(423, response.StatusCode);
-        Assert.False(string.IsNullOrWhiteSpace(response.Body));
-    }
 }

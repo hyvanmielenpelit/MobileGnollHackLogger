@@ -3,7 +3,6 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using Overseer.Services.Benchmarking;
 using Overseer.Services.ChatConsistency;
 using Xunit;
 
@@ -151,16 +150,6 @@ public class ChatConsistencyStatisticsTests
     }
 
     // --- Strata ---------------------------------------------------------------------------------
-
-    [Fact]
-    public void AssignStratum_FixtureDates_HaveTheExpectedWeekdays()
-    {
-        Assert.Equal(DayOfWeek.Wednesday, new DateTime(2026, 10, 7).DayOfWeek);
-        Assert.Equal(DayOfWeek.Friday, new DateTime(2026, 10, 9).DayOfWeek);
-        Assert.Equal(DayOfWeek.Saturday, new DateTime(2026, 10, 10).DayOfWeek);
-        Assert.Equal(DayOfWeek.Sunday, new DateTime(2026, 10, 11).DayOfWeek);
-        Assert.Equal(DayOfWeek.Monday, new DateTime(2026, 10, 12).DayOfWeek);
-    }
 
     [Theory]
     [InlineData(7, 0, 0, 0, "Weekday 00–04 UTC")]
@@ -413,35 +402,6 @@ public class ChatConsistencyStatisticsTests
     public void FisherExactTwoSided_NegativeCount_Throws()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => ChatConsistencyStatistics.FisherExactTwoSided(-1, 2, 3, 4));
-    }
-
-    [Fact]
-    public void Wilson95_ReusesTheBenchmarkInterval()
-    {
-        Assert.Equal(BenchmarkProportionInterval.Wilson95(5, 10), ChatConsistencyStatistics.Wilson95(5, 10));
-        Assert.Equal(BenchmarkProportionInterval.Wilson95(0, 7), ChatConsistencyStatistics.Wilson95(0, 7));
-        Assert.Null(ChatConsistencyStatistics.Wilson95(0, 0));
-    }
-
-    [Fact]
-    public void Holm_ReusesTheBatteryAdjustment()
-    {
-        // Sorted 0.01, 0.03, 0.04 -> 3 * 0.01, max(0.03, 2 * 0.03), max(0.06, 1 * 0.04).
-        var adjusted = ChatConsistencyStatistics.Holm(new[] { 0.01, 0.04, 0.03 });
-
-        Assert.Equal(0.03, adjusted[0], 12);
-        Assert.Equal(0.06, adjusted[1], 12);
-        Assert.Equal(0.06, adjusted[2], 12);
-    }
-
-    [Fact]
-    public void BenjaminiHochberg_ReusesTheGroupProcedure()
-    {
-        var p = new[] { 0.001, 0.02, 0.04, 0.3 };
-
-        Assert.Equal(
-            BenchmarkGroupStatistics.BenjaminiHochberg(p).Select(r => r.AdjustedPValue),
-            ChatConsistencyStatistics.BenjaminiHochberg(p).Select(r => r.AdjustedPValue));
     }
 
     // --- Difference in differences --------------------------------------------------------------

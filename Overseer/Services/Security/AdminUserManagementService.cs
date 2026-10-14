@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Extensions;
 using Overseer.Models;
+using Overseer.Services.Privacy;
 
 namespace Overseer.Services.Security;
 
@@ -92,10 +93,12 @@ public class AdminUserManagementService
     private readonly ILogger<AdminUserManagementService> _logger;
     private readonly ISecurityEventRecorder? _securityEvents;
     private readonly TimeProvider _time;
+    private readonly EphemeralSessionStore? _ephemeralSessions;
 
     public AdminUserManagementService(ApplicationDbContext db, UserManager<ApplicationUser> userManager, IConfiguration configuration,
         AdminUserManagementOptions options, AccountDeletionReviewService review, OverseerAccessService access,
-        ILogger<AdminUserManagementService> logger, ISecurityEventRecorder? securityEvents = null, TimeProvider? time = null)
+        ILogger<AdminUserManagementService> logger, ISecurityEventRecorder? securityEvents = null, TimeProvider? time = null,
+        EphemeralSessionStore? ephemeralSessions = null)
     {
         _db = db;
         _userManager = userManager;
@@ -106,6 +109,7 @@ public class AdminUserManagementService
         _logger = logger;
         _securityEvents = securityEvents;
         _time = time ?? TimeProvider.System;
+        _ephemeralSessions = ephemeralSessions;
     }
 
     private DateTime UtcNow => _time.GetUtcNow().UtcDateTime;
@@ -822,6 +826,7 @@ public class AdminUserManagementService
             return Refuse(AdminResultStatus.Failed, "Deletion failed: " + ex.Message, AdminRefusalCodes.ErasureFailed);
         }
 
+        _ephemeralSessions?.CloseAllForUser(userId);
         return new(AdminResultStatus.Ok, new AdminUserActionResultDto
         {
             User = null,

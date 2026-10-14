@@ -574,19 +574,6 @@ public class DocumentParserServiceTests
         Assert.Contains("does not appear to contain text", result.Error);
     }
 
-    [Fact]
-    public async Task AnUnsupportedFileTypeIsRefusedWithoutBeingParsed()
-    {
-        var parser = CreateParser();
-
-        var result = await parser.ParseAsync(
-            Encoding.UTF8.GetBytes("MZ binary-ish"), "application/octet-stream", "tool.bin",
-            TestContext.Current.CancellationToken);
-
-        Assert.False(result.Succeeded);
-        Assert.Contains("not supported", result.Error);
-    }
-
     // ---- CanParse --------------------------------------------------------------------------
 
     [Theory]

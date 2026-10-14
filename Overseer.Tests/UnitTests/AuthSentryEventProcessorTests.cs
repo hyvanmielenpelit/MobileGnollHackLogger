@@ -48,244 +48,51 @@ public class AuthSentryEventProcessorTests
         Assert.NotNull(result);
     }
 
-    [Fact]
-    public void Process_AuthenticatedUser_TransientHttpRequestException_DropsEvent()
+    [Theory]
+    [InlineData("Service unavailable", HttpStatusCode.ServiceUnavailable, true)] // Transient status, no URL.
+    [InlineData("Error calling https://api.openai.com/v1/responses: 500 Internal Server Error", HttpStatusCode.InternalServerError, true)]
+    [InlineData("Error calling internal service: 500 Internal Server Error", HttpStatusCode.InternalServerError, false)]
+    [InlineData("Error calling https://api.github.com/repos/dotnet/maui: 500 Internal Server Error", HttpStatusCode.InternalServerError, true)]
+    [InlineData("Connection failure connecting to https://api.github.com/repos/hyvanmielenpelit/GnollHack", null, true)]
+    public void Process_HttpRequestException_DropsUpstreamFailuresAndKeepsOthers(string message, HttpStatusCode? status, bool expectedDropped)
     {
         var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
         var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        var httpEx = new HttpRequestException("Service unavailable", null, HttpStatusCode.ServiceUnavailable);
-        var @event = new SentryEvent(httpEx);
 
-        var result = processor.Process(@event);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void Process_HttpFailedRequestHandler_AiProvider503_DropsEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var @event = new SentryEvent();
-        @event.Request = new SentryRequest
-        {
-            Url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:streamGenerateContent?alt=sse"
-        };
-        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
-        @event.SetTag("response.status_code", "503");
-
-        var result = processor.Process(@event);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void Process_HttpFailedRequestHandler_AiProvider429_DropsEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var @event = new SentryEvent();
-        @event.Request = new SentryRequest
-        {
-            Url = "https://api.anthropic.com/v1/messages"
-        };
-        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
-        @event.SetTag("response.status_code", "429");
-
-        var result = processor.Process(@event);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void Process_HttpFailedRequestHandler_OpenAi503_DropsEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var @event = new SentryEvent();
-        @event.Request = new SentryRequest
-        {
-            Url = "https://api.openai.com/v1/responses"
-        };
-        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
-        @event.SetTag("response.status_code", "503");
-
-        var result = processor.Process(@event);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void Process_HttpFailedRequestHandler_NonAiUrl503_PreservesEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var @event = new SentryEvent();
-        @event.Request = new SentryRequest
-        {
-            Url = "https://internal-service.example.com/api/data"
-        };
-        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
-        @event.SetTag("response.status_code", "503");
-
-        var result = processor.Process(@event);
-
-        Assert.NotNull(result);
-    }
-
-    [Fact]
-    public void Process_HttpFailedRequestHandler_AiProvider500_DropsEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var @event = new SentryEvent();
-        @event.Request = new SentryRequest
-        {
-            Url = "https://generativelanguage.googleapis.com/v1beta/models"
-        };
-        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
-        @event.SetTag("response.status_code", "500");
-
-        var result = processor.Process(@event);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void Process_HttpFailedRequestHandler_AiProvider501_DropsEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var @event = new SentryEvent();
-        @event.Request = new SentryRequest
-        {
-            Url = "https://api.anthropic.com/v1/messages"
-        };
-        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
-        @event.SetTag("response.status_code", "501");
-
-        var result = processor.Process(@event);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void Process_HttpRequestException_AiProvider500_DropsEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var ex = new HttpRequestException("Error calling https://api.openai.com/v1/responses: 500 Internal Server Error", null, HttpStatusCode.InternalServerError);
+        var ex = new HttpRequestException(message, null, status);
         var @event = new SentryEvent(ex);
 
         var result = processor.Process(@event);
 
-        Assert.Null(result);
+        Assert.Equal(expectedDropped, result == null);
     }
 
-    [Fact]
-    public void Process_HttpRequestException_NonAiProvider500_PreservesEvent()
+    [Theory]
+    [InlineData("https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:streamGenerateContent?alt=sse", "503", true)]
+    [InlineData("https://api.anthropic.com/v1/messages", "429", true)]
+    [InlineData("https://api.openai.com/v1/responses", "503", true)]
+    [InlineData("https://internal-service.example.com/api/data", "503", false)]
+    [InlineData("https://generativelanguage.googleapis.com/v1beta/models", "500", true)]
+    [InlineData("https://api.anthropic.com/v1/messages", "501", true)]
+    [InlineData("https://api.github.com/repos/hyvanmielenpelit/GnollHack/commits", "500", true)]
+    [InlineData("https://api.github.com/search/issues?q=test", "503", true)]
+    [InlineData("https://api.github.com/repos/dotnet/maui", "429", true)]
+    public void Process_HttpFailedRequestHandler_DropsUpstreamFailuresAndKeepsOthers(string url, string status, bool expectedDropped)
     {
         var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
         var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var ex = new HttpRequestException("Error calling internal service: 500 Internal Server Error", null, HttpStatusCode.InternalServerError);
-        var @event = new SentryEvent(ex);
 
-        var result = processor.Process(@event);
-
-        Assert.NotNull(result);
-    }
-
-    [Fact]
-    public void Process_HttpFailedRequestHandler_GitHub500_DropsEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
         var @event = new SentryEvent();
         @event.Request = new SentryRequest
         {
-            Url = "https://api.github.com/repos/hyvanmielenpelit/GnollHack/commits"
+            Url = url
         };
         @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
-        @event.SetTag("response.status_code", "500");
+        @event.SetTag("response.status_code", status);
 
         var result = processor.Process(@event);
 
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void Process_HttpFailedRequestHandler_GitHub503_DropsEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var @event = new SentryEvent();
-        @event.Request = new SentryRequest
-        {
-            Url = "https://api.github.com/search/issues?q=test"
-        };
-        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
-        @event.SetTag("response.status_code", "503");
-
-        var result = processor.Process(@event);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void Process_HttpFailedRequestHandler_GitHub429_DropsEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var @event = new SentryEvent();
-        @event.Request = new SentryRequest
-        {
-            Url = "https://api.github.com/repos/dotnet/maui"
-        };
-        @event.SetTag("mechanism", "SentryHttpFailedRequestHandler");
-        @event.SetTag("response.status_code", "429");
-
-        var result = processor.Process(@event);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void Process_HttpRequestException_GitHub500_DropsEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var ex = new HttpRequestException("Error calling https://api.github.com/repos/dotnet/maui: 500 Internal Server Error", null, HttpStatusCode.InternalServerError);
-        var @event = new SentryEvent(ex);
-
-        var result = processor.Process(@event);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void Process_HttpRequestException_GitHubConnectionFailure_DropsEvent()
-    {
-        var httpContextAccessor = new HttpContextAccessor { HttpContext = CreateAuthenticatedContext() };
-        var processor = new AuthSentryEventProcessor(httpContextAccessor);
-        
-        var ex = new HttpRequestException("Connection failure connecting to https://api.github.com/repos/hyvanmielenpelit/GnollHack");
-        var @event = new SentryEvent(ex);
-
-        var result = processor.Process(@event);
-
-        Assert.Null(result);
+        Assert.Equal(expectedDropped, result == null);
     }
 
     [Fact]

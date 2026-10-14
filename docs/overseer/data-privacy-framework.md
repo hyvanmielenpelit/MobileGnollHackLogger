@@ -1471,8 +1471,17 @@ Eviction is both explicit and timed. The timed half is a sliding window from
 `PrivacySettings:Ephemeral:TimeoutMinutes` (default 60), refreshed on every access — a browser
 that closes without calling `POST /api/chat/sessions/{ref}/ephemeral/close` is the normal case,
 not the exception. A read enforces the deadline itself rather than waiting for the once-a-minute
-sweeper, or the window would be a minute wider than it says. Account deletion calls
-`CloseAllForUser`.
+sweeper, or the window would be a minute wider than it says.
+
+Overseer closes every incognito session of an account it erases — an approved deletion request,
+or an administrator's single or bulk deletion — through `CloseAllForUser`. Self-service deletion
+on the website runs in another process and cannot reach Overseer's memory. There the deleted
+account's sign-in cookie fails security-stamp validation within
+`IdentityLockout:SecurityStampValidationMinutes` (default 5), after which its requests are no
+longer authenticated and cannot refresh the session's sliding window; the session is erased by
+the sliding timeout `PrivacySettings:Ephemeral:TimeoutMinutes` (default 60) after its last access.
+A chat hub connection the browser opened before the deletion is not re-validated, so while it
+stays open its hub calls can still refresh that window.
 
 **The window says the number.** `GET /api/settings` serves `ephemeralTimeoutMinutes` from the
 store rather than re-reading configuration, so the Incognito badge's tooltip names the interval

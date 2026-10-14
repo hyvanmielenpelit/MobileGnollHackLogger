@@ -90,6 +90,11 @@ public class BenchmarkItemAnalysisTests
         var analysis = BenchmarkItemAnalysis.Compute(Suite(), new[] { question }, runs);
         var item = Assert.Single(analysis.Items);
 
+        // Without an explicit run set, every run passed in is analyzed.
+        Assert.False(analysis.ExplicitRunSet);
+        Assert.Equal(0, analysis.ExcludedRunCount);
+        Assert.Equal(3, analysis.RunCount);
+
         Assert.Equal(3, item.RunCount);
         Assert.Equal(70.0, item.MeanQuality);
         Assert.Equal(60, item.MinQuality);
@@ -386,20 +391,6 @@ public class BenchmarkItemAnalysisTests
         var item = Assert.Single(analysis.Items);
         Assert.Equal(2, item.RunCount);
         Assert.Equal(70.0, item.MeanQuality);
-    }
-
-    [Fact]
-    public void Compute_WithoutAnExplicitRunSet_BehavesExactlyAsBefore()
-    {
-        var question = Question(1, 1);
-        var runs = new[] { Run(1, 1, 60), Run(2, 1, 80), Run(3, 1, 100) };
-
-        var analysis = BenchmarkItemAnalysis.Compute(Suite(), new[] { question }, runs);
-
-        Assert.False(analysis.ExplicitRunSet);
-        Assert.Equal(0, analysis.ExcludedRunCount);
-        Assert.Equal(3, analysis.RunCount);
-        Assert.Equal(80.0, Assert.Single(analysis.Items).MeanQuality);
     }
 
     [Fact]

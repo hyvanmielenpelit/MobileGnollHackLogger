@@ -17,10 +17,6 @@ describe('DebugLogComponent', () => {
     fixture.detectChanges();
   });
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
-
   it('should post message via ClientBridgeService when shareLogs is called in webview', () => {
     const bridge = TestBed.inject(ClientBridgeService);
     vi.spyOn(bridge, 'isEmbedded').mockReturnValue(true);

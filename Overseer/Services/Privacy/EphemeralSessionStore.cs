@@ -551,8 +551,10 @@ public sealed class EphemeralSessionStore : IDisposable
 
     /// <summary>Evicts and erases every session belonging to one user.</summary>
     /// <remarks>
-    /// Account deletion calls this. A user whose account is being erased should not keep an open
-    /// incognito conversation in the server's memory for the rest of its timeout.
+    /// Called after an account erasure in Overseer: <c>AccountDeletionReviewService.ApproveAsync</c>
+    /// and <c>AdminUserManagementService</c>'s single and bulk deletion. The website's self-service
+    /// deletion runs in another process and cannot reach this store, so that user's sessions end
+    /// by the sliding timeout instead.
     /// </remarks>
     public int CloseAllForUser(string? userId)
     {

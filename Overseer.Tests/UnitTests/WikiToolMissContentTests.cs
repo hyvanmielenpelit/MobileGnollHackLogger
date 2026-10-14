@@ -230,7 +230,7 @@ Wielding a lit torch increases visibility in dark areas.
 
         Assert.True(result.Success);
         Assert.Null(result.ErrorMessage);
-        Assert.Contains("'gnoll'", result.Content);
+        Assert.Contains("No GnollHack wiki article matched 'gnoll'", result.Content);
         Assert.Contains("category='spellbook'", result.Content);
         Assert.Contains("category matches the article's file path as a substring, not a tag", result.Content);
         Assert.Contains("Gnoll.md", result.Content);
@@ -256,15 +256,28 @@ Wielding a lit torch increases visibility in dark areas.
     }
 
     [Theory]
-    [InlineData("gnoll AND (")]
-    [InlineData("*")]
-    public async Task WikiSearchTool_Miss_LuceneSpecialCharacterQuery_NeverThrowsOrLeaksError(string query)
+    [InlineData("wiki_search", "query", "gnoll AND (")]
+    [InlineData("wiki_search", "query", "*")]
+    [InlineData("wiki_view", "article", "gnoll AND (")]
+    [InlineData("wiki_view", "article", "*")]
+    [InlineData("monster_lookup", "name", "gnoll AND (")]
+    [InlineData("monster_lookup", "name", "*")]
+    [InlineData("item_lookup", "name", "gnoll AND (")]
+    [InlineData("item_lookup", "name", "*")]
+    public async Task WikiTools_Miss_LuceneSpecialCharacterInput_NeverThrowsOrLeaksError(string toolName, string parameter, string input)
     {
         using var service = new WikiService(BuildConfig());
         await service.InitializationTask;
-        var tool = new WikiSearchTool(service, BuildConfig());
+        IToolHandler tool = toolName switch
+        {
+            "wiki_search" => new WikiSearchTool(service, BuildConfig()),
+            "wiki_view" => new WikiViewTool(service),
+            "monster_lookup" => new MonsterLookupTool(service),
+            "item_lookup" => new ItemLookupTool(service),
+            _ => throw new ArgumentOutOfRangeException(nameof(toolName), toolName, null)
+        };
 
-        var jsonParams = JsonDocument.Parse(JsonSerializer.Serialize(new { query })).RootElement;
+        var jsonParams = JsonDocument.Parse(JsonSerializer.Serialize(new Dictionary<string, string> { [parameter] = input })).RootElement;
         var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
 
         Assert.True(result.Success);
@@ -398,58 +411,12 @@ Wielding a lit torch increases visibility in dark areas.
         Assert.DoesNotContain("No wiki article matched", result.Content);
     }
 
-    [Fact]
-    public async Task WikiViewTool_Miss_ArticleNotFound_NamesArticleAndNextAction()
-    {
-        using var service = new WikiService(BuildConfig());
-        await service.InitializationTask;
-        var tool = new WikiViewTool(service);
-
-        var jsonParams = JsonDocument.Parse("{\"article\": \"NonExistentArticleXYZ\"}").RootElement;
-        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.Null(result.ErrorMessage);
-        Assert.Contains("'NonExistentArticleXYZ'", result.Content);
-        Assert.Contains("wiki_search", result.Content);
-        Assert.Contains("nethack_wiki_view", result.Content);
-        Assert.True(result.Content!.Length < MissContentMaxChars);
-    }
-
-    /// <summary>
-    /// A section no heading matches is handled by WikiService, not by the miss path:
-    /// ExtractMarkdownSection returns an explanatory "[Section '...' not found in article.
-    /// Returning full text.]" line followed by the whole article, so the model is told what
-    /// happened and still gets the content. BuildMissContent is never reached, which is why it
-    /// carries no section-mismatch branch. This article is under the result cap; the over-cap case
-    /// is <see cref="WikiViewTool_SectionMissOnAnOverCapArticle_EndsAtTheCapWithoutTruncatedSuffix"/>.
-    /// </summary>
-    [Fact]
-    public async Task WikiViewTool_SectionNotFoundOnExistingArticle_ReturnsTheWholeArticleWithAnExplanatoryLine()
-    {
-        using var service = new WikiService(BuildConfig());
-        await service.InitializationTask;
-        var tool = new WikiViewTool(service);
-
-        var jsonParams = JsonDocument.Parse("{\"article\": \"Gnoll\", \"section\": \"TotallyMissingSection\"}").RootElement;
-        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.Null(result.ErrorMessage);
-        Assert.Contains("TotallyMissingSection", result.Content);
-        Assert.Contains("Returning full text", result.Content);
-        // The article body, not a miss payload: this path is not a miss at all.
-        Assert.DoesNotContain("No wiki article matched", result.Content);
-        // Under the cap the whole article follows, to its last line.
-        Assert.Contains("fight them one at a time.", result.Content);
-        Assert.DoesNotContain("Showing the first", result.Content);
-    }
-
     /// <summary>
     /// Over the result cap, the section-miss marker line keeps its heading list, says how much of
     /// the article follows, and points back at a heading; the header, the line, one newline and the
     /// article's opening characters land at exactly the cap, so ToolExecutor never appends its own
-    /// "[Truncated: …]" suffix and cuts the article's tail with no pointer back into it.
+    /// "[Truncated: …]" suffix and cuts the article's tail with no pointer back into it. The
+    /// under-cap case is <see cref="WikiSectionExtractionTests.WikiView_SectionMatchesNoHeading_MarkerLineListsTheHeadingsAndTheArticleFollows"/>.
     /// </summary>
     [Fact]
     public async Task WikiViewTool_SectionMissOnAnOverCapArticle_EndsAtTheCapWithoutTruncatedSuffix()
@@ -463,10 +430,19 @@ Wielding a lit torch increases visibility in dark areas.
         var jsonParams = JsonDocument.Parse("{\"article\": \"Gnoll\", \"section\": \"TotallyMissingSection\"}").RootElement;
         var result = await tool.ExecuteAsync(jsonParams, ctx, CancellationToken.None);
 
+        // The same request under the default cap returns the whole article after the marker line.
+        var uncapped = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
+        const string fullTextEnding = " Returning full text.]\n\n";
+        string uncappedContent = uncapped.Content!;
+        int fullTextEnd = uncappedContent.IndexOf(fullTextEnding, StringComparison.Ordinal);
+        Assert.True(fullTextEnd >= 0, uncappedContent);
+        string fullArticle = uncappedContent.Substring(fullTextEnd + fullTextEnding.Length);
+
         Assert.True(result.Success);
         string content = result.Content!;
         Assert.Equal(ctx.MaxResultLength, content.Length);
         Assert.DoesNotContain("[Truncated:", content);
+        Assert.DoesNotContain("[Article is", content);
         Assert.DoesNotContain("Returning full text", content);
 
         string[] lines = content.Split('\n');
@@ -482,6 +458,8 @@ Wielding a lit torch increases visibility in dark areas.
         int shown = int.Parse(counts.Groups[1].Value);
         int articleLength = int.Parse(counts.Groups[2].Value);
         Assert.True(shown > 0 && shown < articleLength, marker);
+        // The total the marker names is the whole article's length.
+        Assert.Equal(fullArticle.Length, articleLength);
 
         // Exactly the shown count follows the marker line, from the article's first character.
         string shownText = content.Substring(lines[0].Length + 1 + marker.Length + 1);
@@ -508,41 +486,7 @@ Wielding a lit torch increases visibility in dark areas.
         Assert.True(content.Length < MissContentMaxChars);
     }
 
-    [Theory]
-    [InlineData("gnoll AND (")]
-    [InlineData("*")]
-    public async Task WikiViewTool_Miss_LuceneSpecialCharacterArticle_NeverThrowsOrLeaksError(string article)
-    {
-        using var service = new WikiService(BuildConfig());
-        await service.InitializationTask;
-        var tool = new WikiViewTool(service);
-
-        var jsonParams = JsonDocument.Parse(JsonSerializer.Serialize(new { article })).RootElement;
-        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.Null(result.ErrorMessage);
-        Assert.NotNull(result.Content);
-        Assert.DoesNotContain("Error:", result.Content);
-    }
-
     // ----- monster_lookup -----
-
-    [Fact]
-    public async Task MonsterLookupTool_Hit_ReturnsArticleContent_NotMissPayload()
-    {
-        using var service = new WikiService(BuildConfig());
-        await service.InitializationTask;
-        var tool = new MonsterLookupTool(service);
-
-        var jsonParams = JsonDocument.Parse("{\"name\": \"gnoll\"}").RootElement;
-        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.Null(result.ErrorMessage);
-        Assert.Contains("Gnoll", result.Content);
-        Assert.DoesNotContain("No GnollHack wiki article matched the monster", result.Content);
-    }
 
     [Fact]
     public async Task MonsterLookupTool_Miss_BothFilteredAndUnfilteredMiss_NamesMonsterAndNextAction()
@@ -581,41 +525,7 @@ Wielding a lit torch increases visibility in dark areas.
         Assert.Contains("Gnoll Whelp", result.Content);
     }
 
-    [Theory]
-    [InlineData("gnoll AND (")]
-    [InlineData("*")]
-    public async Task MonsterLookupTool_Miss_LuceneSpecialCharacterName_NeverThrowsOrLeaksError(string name)
-    {
-        using var service = new WikiService(BuildConfig());
-        await service.InitializationTask;
-        var tool = new MonsterLookupTool(service);
-
-        var jsonParams = JsonDocument.Parse(JsonSerializer.Serialize(new { name })).RootElement;
-        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.Null(result.ErrorMessage);
-        Assert.NotNull(result.Content);
-        Assert.DoesNotContain("Error:", result.Content);
-    }
-
     // ----- item_lookup -----
-
-    [Fact]
-    public async Task ItemLookupTool_Hit_ReturnsArticleContent_NotMissPayload()
-    {
-        using var service = new WikiService(BuildConfig());
-        await service.InitializationTask;
-        var tool = new ItemLookupTool(service);
-
-        var jsonParams = JsonDocument.Parse("{\"name\": \"dagger\"}").RootElement;
-        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.Null(result.ErrorMessage);
-        Assert.Contains("Dagger", result.Content);
-        Assert.DoesNotContain("No GnollHack wiki article matched the item", result.Content);
-    }
 
     [Fact]
     public async Task ItemLookupTool_Miss_BothFilteredAndUnfilteredMiss_NamesItemAndNextAction()
@@ -652,24 +562,6 @@ Wielding a lit torch increases visibility in dark areas.
         Assert.Single(headerMatches);
         Assert.Contains("[Other matches:", result.Content);
         Assert.Contains("Dagger Sheath", result.Content);
-    }
-
-    [Theory]
-    [InlineData("gnoll AND (")]
-    [InlineData("*")]
-    public async Task ItemLookupTool_Miss_LuceneSpecialCharacterName_NeverThrowsOrLeaksError(string name)
-    {
-        using var service = new WikiService(BuildConfig());
-        await service.InitializationTask;
-        var tool = new ItemLookupTool(service);
-
-        var jsonParams = JsonDocument.Parse(JsonSerializer.Serialize(new { name })).RootElement;
-        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.Null(result.ErrorMessage);
-        Assert.NotNull(result.Content);
-        Assert.DoesNotContain("Error:", result.Content);
     }
 
     [Fact]
@@ -719,30 +611,9 @@ Wielding a lit torch increases visibility in dark areas.
         Assert.Null(result.ErrorMessage);
         var firstHeader = System.Text.RegularExpressions.Regex.Match(result.Content!, @"^--- (.+?) ---", System.Text.RegularExpressions.RegexOptions.Multiline);
         Assert.True(firstHeader.Success);
+        // The header carries the repository-relative path, not the bare filename, as wiki_search's
+        // snippet header and wiki_view's article header do.
         Assert.Equal("Items/Grail of healing.md", firstHeader.Groups[1].Value);
-    }
-
-    /// <summary>
-    /// The exact-title lookup result header carries the repository-relative path, not the bare
-    /// filename, so a hit under Items/ is distinguishable from one of the same name under another
-    /// category — matching how wiki_search's own snippet header and wiki_view's article header
-    /// already label a hit.
-    /// </summary>
-    [Fact]
-    public async Task ItemLookupTool_ExactTitle_HeaderCarriesTheRepositoryRelativePath()
-    {
-        using var service = new WikiService(BuildConfig());
-        await service.InitializationTask;
-        var tool = new ItemLookupTool(service);
-
-        var jsonParams = JsonDocument.Parse("{\"name\": \"Torch\"}").RootElement;
-        var result = await tool.ExecuteAsync(jsonParams, Context(), CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.Null(result.ErrorMessage);
-        var firstHeader = System.Text.RegularExpressions.Regex.Match(result.Content!, @"^--- (.+?) ---", System.Text.RegularExpressions.RegexOptions.Multiline);
-        Assert.True(firstHeader.Success);
-        Assert.Equal("Items/Torch.md", firstHeader.Groups[1].Value);
     }
 }
 
@@ -933,7 +804,7 @@ Every sokobanboulderpuzzle has exactly one solution that does not waste a boulde
     {
         string? content = await ViewAsync("Zzqqxx Nonexistent Article 4711");
 
-        Assert.Contains("No wiki article matched '", content);
+        Assert.Contains("No wiki article matched 'Zzqqxx Nonexistent Article 4711'", content);
         Assert.Contains("wiki_search", content);
         Assert.Contains("nethack_wiki_view", content);
         Assert.True(content!.Length < PayloadMaxChars, $"Miss payload was {content.Length} characters.");
@@ -987,16 +858,6 @@ Every sokobanboulderpuzzle has exactly one solution that does not waste a boulde
 
         Assert.Contains("--- Monsters/Gnoll.md ---", content);
         Assert.DoesNotContain("--- Races/Gnoll.md ---", content);
-    }
-
-    [Fact]
-    public async Task WikiSearch_CategoryNamesNoDirectory_ReturnsMissPayload()
-    {
-        // The corpus has no Spells/ directory, so "spell" excludes every hit rather than
-        // narrowing them, even though "sokoban" alone matches Guides/Sokoban.md.
-        string? content = await SearchAsync("sokoban", "spell");
-
-        Assert.Contains("No GnollHack wiki article matched", content);
     }
 }
 

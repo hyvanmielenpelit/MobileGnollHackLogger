@@ -262,12 +262,6 @@ describe('run facts', () => {
     });
   });
 
-  describe('RUN_FACT_PRIMARY_KEYS', () => {
-    it('is the model and the assessor', () => {
-      expect([...RUN_FACT_PRIMARY_KEYS]).toEqual(['model', 'assessor']);
-    });
-  });
-
   describe('runFactsReadout', () => {
     const COMPLETE_BOARD: Partial<BenchmarkRunDetailDto> = {
       boardDelivery: [

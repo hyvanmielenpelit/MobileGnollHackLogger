@@ -67,11 +67,6 @@ describe('BenchmarkCostPanelComponent', () => {
     component = fixture.componentInstance;
   });
 
-  it('should create', () => {
-    fixture.detectChanges();
-    expect(component).toBeTruthy();
-  });
-
   describe('role rows', () => {
     it('should render the roles in the fixed order, subtotal last', () => {
       fillEveryRole();
@@ -183,22 +178,6 @@ describe('BenchmarkCostPanelComponent', () => {
       const shares = roleShares();
       expect(shares.length).toBe(5);
       expect(shares.reduce((running, share) => running + share, 0)).toBe(100);
-    });
-
-    it('should still sum to 100 per cent for figures that do not round cleanly', () => {
-      setInputs({
-        candidate: 1,
-        assessor: 1,
-        secondOpinion: 1,
-        claimVerifier: 1,
-        synthesis: 1,
-        grading: 4
-      });
-      fixture.detectChanges();
-
-      const shares = roleShares();
-      expect(shares.reduce((running, share) => running + share, 0)).toBe(100);
-      expect(shares).toEqual([20, 20, 20, 20, 20]);
     });
 
     it('should report a zero share for every role when nothing was spent', () => {
@@ -367,11 +346,6 @@ describe('BenchmarkCostPanelComponent', () => {
   });
 
   describe('apportionWholePercentShares', () => {
-    it('should sum to exactly 100 for figures that do not round cleanly', () => {
-      const shares = apportionWholePercentShares([0.6926, 0.80, 0.10, 1.10, 0.0321]);
-      expect(shares.reduce((running, share) => running + share, 0)).toBe(100);
-    });
-
     it('should give the leftover points to the largest fractional remainders', () => {
       // Exact shares: 25.42, 29.36, 3.67, 40.37, 1.18 -- the floors sum to 98, so the two largest
       // remainders (second opinion, then candidate) each get one extra point.

@@ -99,4 +99,13 @@ public class AgentRunResult
     /// <summary>Output tokens from the most recent provider usage report. See
     /// <see cref="LastPromptTokens"/>.</summary>
     public int LastOutputTokens { get; set; }
+
+    /// <summary>The context prompt tokens to persist on the assistant message: <see cref="LastPromptTokens"/>,
+    /// or null when no provider usage was reported.</summary>
+    public int? ReportedContextPromptTokens => LastPromptTokens > 0 ? LastPromptTokens : null;
+
+    /// <summary>The context output tokens to persist on the assistant message: <see cref="LastOutputTokens"/>,
+    /// or null when no provider usage was reported. Gated on <see cref="LastPromptTokens"/>, so a zero output
+    /// count with a reported prompt is persisted as 0.</summary>
+    public int? ReportedContextOutputTokens => LastPromptTokens > 0 ? LastOutputTokens : null;
 }

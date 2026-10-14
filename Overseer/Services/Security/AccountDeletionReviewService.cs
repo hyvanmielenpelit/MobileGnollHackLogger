@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Overseer.Services.Privacy;
 
 namespace Overseer.Services.Security;
 
@@ -30,10 +31,11 @@ public class AccountDeletionReviewService
     private readonly ILogger<AccountDeletionReviewService> _logger;
     private readonly ISecurityEventRecorder? _securityEvents;
     private readonly IServiceProvider _services;
+    private readonly EphemeralSessionStore? _ephemeralSessions;
 
     public AccountDeletionReviewService(ApplicationDbContext db, UserManager<ApplicationUser> userManager, IConfiguration configuration,
         AccountHoldOptions options, ILogger<AccountDeletionReviewService> logger, IServiceProvider services,
-        ISecurityEventRecorder? securityEvents = null)
+        ISecurityEventRecorder? securityEvents = null, EphemeralSessionStore? ephemeralSessions = null)
     {
         _db = db;
         _userManager = userManager;
@@ -42,6 +44,7 @@ public class AccountDeletionReviewService
         _logger = logger;
         _services = services;
         _securityEvents = securityEvents;
+        _ephemeralSessions = ephemeralSessions;
     }
 
     /// <summary>The erasure paths Overseer reads, which must equal the website's.</summary>
@@ -163,6 +166,7 @@ public class AccountDeletionReviewService
         if (user != null)
         {
             var erased = await AccountErasure.EraseAsync(_db, _userManager, user, ErasurePaths, ct);
+            _ephemeralSessions?.CloseAllForUser(user.Id);
             decision.BonesFilesMissing = erased.BonesFilesMissing;
             decision.FoldersMissing = erased.FoldersMissing;
         }

@@ -345,7 +345,10 @@ Spellcasters include gnomish wizards and other spell-slinging monsters.
     [Fact]
     public async Task NetHackWikiService_RealData_IndexesAndQueriesSuccessfully()
     {
-        if (!Directory.Exists(@"c:\hmp\nethackwiki")) return;
+        if (!Directory.Exists(@"c:\hmp\nethackwiki"))
+        {
+            Assert.Skip(@"The NetHack wiki corpus was not found at c:\hmp\nethackwiki, so the real-data indexing check cannot run.");
+        }
 
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
@@ -579,58 +582,58 @@ Foo has no mention of the search term in its title or body.
         }
     }
 
+    /// <summary>
+    /// A service whose indexing never finishes. The service starts its pass in the constructor, so
+    /// the pass gets no path to index and the task the tools check is replaced by one that never
+    /// completes.
+    /// </summary>
+    private static NetHackWikiService CreateServiceStillIndexing(IConfiguration config)
+    {
+        var service = new NetHackWikiService(config);
+        typeof(NetHackWikiService).GetProperty(nameof(NetHackWikiService.InitializationTask))!
+            .SetValue(service, new TaskCompletionSource().Task);
+        Assert.False(service.IsIndexingComplete);
+        return service;
+    }
+
     [Fact]
     public async Task NetHackWikiSearchTool_WhenIndexingInProgress_ReturnsDirectiveError()
     {
-        if (!Directory.Exists(@"c:\hmp\nethackwiki")) return;
-
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
             {
-                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", @"c:\hmp\nethackwiki")
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", "")
             })
             .Build();
 
-        using var service = new NetHackWikiService(config);
-        // Do NOT await service.InitializationTask to test warm-up / in-progress state
-        if (!service.IsIndexingComplete)
-        {
-            var searchTool = new NetHackWikiSearchTool(service, config);
-            var jsonParams = JsonDocument.Parse("{\"query\": \"cockatrice\"}").RootElement;
-            var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = false };
+        using var service = CreateServiceStillIndexing(config);
+        var searchTool = new NetHackWikiSearchTool(service, config);
+        var jsonParams = JsonDocument.Parse("{\"query\": \"cockatrice\"}").RootElement;
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = false };
 
-            var result = await searchTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
-            Assert.False(result.Success);
-            Assert.Equal(ToolGuardMessages.NetHackWikiIndexingInProgress, result.ErrorMessage);
-            Assert.Contains("Do not retry", result.ErrorMessage);
-        }
+        var result = await searchTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
+        Assert.False(result.Success);
+        Assert.Equal(ToolGuardMessages.NetHackWikiIndexingInProgress, result.ErrorMessage);
     }
 
     [Fact]
     public async Task NetHackWikiViewTool_WhenIndexingInProgress_ReturnsDirectiveError()
     {
-        if (!Directory.Exists(@"c:\hmp\nethackwiki")) return;
-
         var config = new ConfigurationBuilder()
             .AddInMemoryCollection(new[]
             {
-                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", @"c:\hmp\nethackwiki")
+                new System.Collections.Generic.KeyValuePair<string, string?>("NetHackWikiPath", "")
             })
             .Build();
 
-        using var service = new NetHackWikiService(config);
-        // Do NOT await service.InitializationTask to test warm-up / in-progress state
-        if (!service.IsIndexingComplete)
-        {
-            var viewTool = new NetHackWikiViewTool(service);
-            var jsonParams = JsonDocument.Parse("{\"article\": \"Cockatrice\"}").RootElement;
-            var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = false };
+        using var service = CreateServiceStillIndexing(config);
+        var viewTool = new NetHackWikiViewTool(service);
+        var jsonParams = JsonDocument.Parse("{\"article\": \"Cockatrice\"}").RootElement;
+        var context = new ToolExecutionContext { SessionId = Overseer.Services.Privacy.SessionRef.Persistent(1), SpoilerFreeMode = false };
 
-            var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
-            Assert.False(result.Success);
-            Assert.Equal(ToolGuardMessages.NetHackWikiIndexingInProgress, result.ErrorMessage);
-            Assert.Contains("Do not retry", result.ErrorMessage);
-        }
+        var result = await viewTool.ExecuteAsync(jsonParams, context, CancellationToken.None);
+        Assert.False(result.Success);
+        Assert.Equal(ToolGuardMessages.NetHackWikiIndexingInProgress, result.ErrorMessage);
     }
 
     private class NullClientBridge : IClientToolBridge

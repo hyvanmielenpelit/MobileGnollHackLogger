@@ -1,6 +1,5 @@
 import {
   DEFAULT_MEASURE_DECIMALS,
-  MAX_MEASURE_DECIMALS,
   MEASURE_EXAMPLES,
   MEASURE_NAMES,
   MEASURE_SHORT_NAMES,
@@ -19,17 +18,6 @@ describe('measure-format', () => {
       'intelligenceIndex', 'speedIndex', 'meanModelTime', 'totalModelTime', 'ttftP50',
       'suiteCost', 'totalRunCost', 'costPerQuestion'
     ]);
-    expect(DEFAULT_MEASURE_DECIMALS).toEqual({
-      intelligenceIndex: 0,
-      speedIndex: 0,
-      meanModelTime: 1,
-      totalModelTime: 1,
-      ttftP50: 2,
-      suiteCost: 4,
-      totalRunCost: 4,
-      costPerQuestion: 4
-    });
-    expect(MAX_MEASURE_DECIMALS).toBe(6);
     for (const measure of NUMBER_MEASURES) {
       expect(MEASURE_NAMES[measure], measure).toBeTruthy();
       expect(MEASURE_SHORT_NAMES[measure], measure).toBeTruthy();

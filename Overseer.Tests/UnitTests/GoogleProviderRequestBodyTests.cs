@@ -115,22 +115,6 @@ public class GoogleProviderRequestBodyTests
         Assert.Equal(SerializeBody(provider, once), SerializeBody(provider, twice));
     }
 
-    [Fact]
-    public void BuildChatRequestBody_WithRawContentHistory_ProducesTheBodyGoogleRejects()
-    {
-        // Documents the defect itself, so that a future refactor which removes the
-        // normalization step fails a test instead of failing in production.
-        var provider = CreateProvider();
-
-        string json = SerializeBody(provider, new List<object>
-        {
-            new { role = "user", content = "hi" }
-        });
-
-        Assert.Contains("\"content\":\"hi\"", json);
-        Assert.DoesNotContain("\"parts\"", json);
-    }
-
     // ---------------------------------------------------------------------------------------
     // Prefix stability. Gemini's implicit cache keys on a request prefix, so everything that is
     // identical from turn to turn has to be serialized before the turn list. Run 22 read a
@@ -266,13 +250,16 @@ public class GoogleProviderRequestBodyTests
 
     private const string GradingBoard = "Dlvl:3  HP:14(14)\na - a blessed +1 quarterstaff (weapon in hands)\nc - 3 fortune cookies";
 
-    private static string SerializeGrading(GoogleProvider provider, int questionNumber, bool repairTurn = false)
-    {
-        var (prompt, seed) = BenchmarkService.BuildGradingPrompt(
+    private static (SegmentedPrompt Prompt, List<object> SeedHistory) GradingSeed(int questionNumber) =>
+        BenchmarkService.BuildGradingPrompt(
             BenchmarkService.GradingSystemPrompt,
             "Grading preamble.",
             BenchmarkAssessmentPrompt.QuestionBlockMarker + $"\nQuestion #{questionNumber}\nRubric and answer.",
             BenchmarkAssessmentPrompt.BuildGradingBoardBlock("Tommi2", GradingBoard));
+
+    private static string SerializeGrading(GoogleProvider provider, int questionNumber, bool repairTurn = false)
+    {
+        var (prompt, seed) = GradingSeed(questionNumber);
         if (repairTurn)
         {
             seed.Add(new { role = "assistant", content = "{\"accuracyLevel\":5}" });
@@ -296,6 +283,7 @@ public class GoogleProviderRequestBodyTests
         var parts = doc.RootElement.GetProperty("systemInstruction").GetProperty("parts");
         Assert.Equal(2, parts.GetArrayLength());
         Assert.StartsWith(BenchmarkService.GradingSystemPrompt, parts[0].GetProperty("text").GetString());
+        Assert.Equal(GradingSeed(2).Prompt.FrozenPrefix, parts[0].GetProperty("text").GetString());
         Assert.StartsWith(BenchmarkAssessmentPrompt.GradingBoardHeading, parts[1].GetProperty("text").GetString());
         Assert.DoesNotContain("GAME CONTEXT BOARD", doc.RootElement.GetProperty("contents").GetRawText());
     }

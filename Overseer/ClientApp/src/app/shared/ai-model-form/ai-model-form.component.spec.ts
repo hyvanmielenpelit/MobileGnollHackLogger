@@ -100,10 +100,6 @@ describe('AiModelFormComponent', () => {
     component = fixture.componentInstance;
   });
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
-
   describe('Display name options and preview logic', () => {
     beforeEach(() => {
       component.isAdmin = true;

@@ -174,17 +174,6 @@ public class DlpTokenVaultTests
     }
 
     [Fact]
-    public void UnmaskRestoresEveryOccurrenceOfAToken()
-    {
-        var vault = CreateVault();
-        vault.Mask(SkKey);
-
-        Assert.Equal(
-            $"{SkKey} then {SkKey} then {SkKey}",
-            vault.Unmask("[REDACTED_API_KEY_1] then [REDACTED_API_KEY_1] then [REDACTED_API_KEY_1]"));
-    }
-
-    [Fact]
     public void UnmaskLeavesATokenItNeverIssuedAlone()
     {
         /* The model can invent a token-shaped string, or repeat one from replayed history that

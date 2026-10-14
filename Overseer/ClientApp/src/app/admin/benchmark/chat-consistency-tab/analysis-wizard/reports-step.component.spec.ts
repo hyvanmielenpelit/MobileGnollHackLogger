@@ -404,11 +404,6 @@ describe('CcReportsStepComponent', () => {
   describe('an out-of-date analysis', () => {
     const outOfDateDialog = () => el.querySelector<HTMLDialogElement>('dialog.cc-rep-out-of-date-dialog')!;
 
-    it('shows no notice while the analysis is current', () => {
-      expect(el.querySelector('.cc-fresh-notice')).toBeNull();
-      expect(el.querySelector('.cc-fresh-unchecked')).toBeNull();
-    });
-
     it('shows the notice in the header, and Analyze again asks the host for Analyze', () => {
       let requested = 0;
       component().analyzeAgain.subscribe(() => requested++);

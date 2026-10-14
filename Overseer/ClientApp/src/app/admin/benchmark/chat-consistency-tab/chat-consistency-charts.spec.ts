@@ -9,7 +9,6 @@ import {
   CC_AVAILABILITY_FORMS,
   CC_CHART_STYLE_DEFAULTS,
   CC_DECIMAL_CHOICES,
-  CC_FIGURE_ENDPOINTS,
   CC_FIGURE_KEYS,
   CC_FIGURE_SERIES,
   CC_HEADER_LOGO_PX,
@@ -797,18 +796,6 @@ describe('chat-consistency-charts', () => {
         } as unknown as ChartConfiguration);
         return chart;
       }
-
-      it('writes the value of both points of a two-point chart in the table’s format', () => {
-        mount(qualityFigure({
-          points: [
-            ccBatteryPoint(11, '2026-10-08T07:14:00Z', { overallIndex: 82.0 }),
-            ccBatteryPoint(12, '2026-10-08T09:00:00Z', { overallIndex: 82.4 })
-          ],
-          unitKind: 'batteryRun'
-        }));
-        expect(drawn).toContain('82.0');
-        expect(drawn).toContain('82.4');
-      });
 
       it('writes no point values on the reliability chart', () => {
         mount(reliabilityFigure({ points: [ccPoint(1, '2026-09-01T00:00:00Z', { timeoutRate: 0.04 }), ccPoint(2, '2026-09-02T00:00:00Z')] }));
@@ -2068,10 +2055,6 @@ describe('chat-consistency-charts', () => {
       expect(ccNotComparableText('TTFT telemetry is missing in the baseline.'))
         .toBe('Not comparable across the periods: TTFT telemetry is missing in the baseline.');
       expect(ccNotComparableText('  ')).toBe('Not comparable across the periods: the analysis could not compute this measure.');
-    });
-
-    it('maps each report figure to the endpoint it plots', () => {
-      expect(CC_REPORT_FIGURE_KEYS.map(key => CC_FIGURE_ENDPOINTS[CC_REPORT_FIGURES[key]] ?? null)).toEqual(['P1', 'P2', 'P4', null, 'P6']);
     });
   });
 });

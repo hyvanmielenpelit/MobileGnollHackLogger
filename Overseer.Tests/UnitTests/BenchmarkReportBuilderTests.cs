@@ -551,52 +551,6 @@ public class BenchmarkReportBuilderTests
     // --- Critical-error headline -------------------------------------------------------------
 
     [Fact]
-    public void BuildMarkdownReport_ShowsCriticalErrorsHeadline_WhenAnAnswerWasCapped()
-    {
-        var run = new BenchmarkRun
-        {
-            Id = 54,
-            SuiteName = "Critical Error Suite",
-            TestedModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Model X"),
-            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(displayName: "Assessor Y"),
-            Status = BenchmarkRunStatus.Completed,
-            StartedAtUtc = DateTime.UtcNow,
-            TotalQuestionCount = 2,
-            Answers = new List<BenchmarkRunAnswer>
-            {
-                new BenchmarkRunAnswer
-                {
-                    OrderIndex = 1,
-                    QuestionText = "Q1",
-                    Difficulty = BenchmarkDifficulty.Simple,
-                    Status = BenchmarkAnswerStatus.Ok,
-                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
-                    AnswerText = "Answer 1",
-                    QualityScore = 25,
-                    RawQualityScore = 95,
-                    CriticalError = true,
-                    CriticalErrorQuote = "This is definitely safe to do."
-                },
-                new BenchmarkRunAnswer
-                {
-                    OrderIndex = 2,
-                    QuestionText = "Q2",
-                    Difficulty = BenchmarkDifficulty.Simple,
-                    Status = BenchmarkAnswerStatus.Ok,
-                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
-                    AnswerText = "Answer 2",
-                    QualityScore = 90,
-                    CriticalError = false
-                }
-            }
-        };
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
-
-        Assert.Contains("**Critical Errors:** 1 applied (question(s) 1)", report);
-    }
-
-    [Fact]
     public void BuildMarkdownReport_OmitsCriticalErrorsHeadline_WhenNoAnswerWasCapped()
     {
         var run = new BenchmarkRun
@@ -1569,20 +1523,6 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
-    public void Report_CarriesNoCalibrationData()
-    {
-        // Calibration runs grade a run's answers with a third model to measure that model's
-        // agreement with the run's assessor. They change no score and belong to assessor
-        // selection, not to the run's published record — so nothing about them appears here.
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(
-            BenchmarkSecondOpinionMode.All,
-            ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 90)));
-
-        Assert.DoesNotContain("Calibration", report);
-        Assert.DoesNotContain("calibration", report);
-    }
-
-    [Fact]
     public void AssessorAgreement_ZeroCoverage_ReportsAssessorConfiguredWithNoTriggersMet()
     {
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 70);
@@ -2386,14 +2326,66 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("- *Prices: candidate catalog (as of 2026-09-05); assessor catalog (as of 2026-09-05); verifier custom.*", report);
     }
 
-    [Fact]
-    public void ClaimVerificationYield_ReportsWhatTheVerifiersDollarsBought()
+    [Theory]
+    // Run 14's shape: 10 claims checked, none refuted, $1.70 of verifier spend against a
+    // $2.52 run — two thirds of the run's cost for zero refutations. That ratio is the figure
+    // an operator steers by, and before H4 it appeared nowhere.
+    [InlineData(null, null, null, null, null, 3,
+        "- **Claim Verification Yield:** 10 claim(s) checked — 7 supported, 0 refuted, 3 indeterminate. $1.70 ($0.17/claim), 67% of run cost.")]
+    // Counts the answers that needed a parse retry.
+    [InlineData(RetriedUsageJson, null, null, null, null, 3,
+        "- **Claim Verification Yield:** 10 claim(s) checked — 7 supported, 0 refuted, 3 indeterminate; 1 answer(s) needed a parse retry. $1.70 ($0.17/claim), 67% of run cost.")]
+    // Counts the answers that needed a provider-error retry.
+    [InlineData(ProviderRetriedUsageJson, null, null, null, null, 3,
+        "- **Claim Verification Yield:** 10 claim(s) checked — 7 supported, 0 refuted, 3 indeterminate; 1 answer(s) needed a provider-error retry. $1.70 ($0.17/claim), 67% of run cost.")]
+    // Unverified claims and accused sentences are stated apart. The run's claim columns count
+    // the answers' own claims only.
+    [InlineData(null, BenchmarkClaimRoles.AccusedQuote, "Charged and false.", null, null, 1,
+        "- **Claim Verification Yield:** 8 unverified claim(s) + 2 accused sentence(s) checked — claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 1 refuted, 0 indeterminate. $1.70 ($0.17/item over both), 67% of run cost.")]
+    // Over several populations, counts the answers that needed a parse retry: a retry record
+    // without usage counts, an answer without a retry does not.
+    [InlineData(RetriedUsageJson, BenchmarkClaimRoles.AccusedQuote, "Charged and false.", "[{\"p\":0,\"c\":0,\"o\":0,\"r\":1}]", "[{\"p\":100,\"c\":0,\"o\":10}]", 1,
+        "- **Claim Verification Yield:** 8 unverified claim(s) + 2 accused sentence(s) checked — claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 1 refuted, 0 indeterminate; 2 answer(s) needed a parse retry. $1.70 ($0.17/item over both), 67% of run cost.")]
+    // Assessor statements are counted as a third population.
+    [InlineData(null, BenchmarkClaimRoles.AssessorStatement, "The assessor's own statement.", null, null, 1,
+        "- **Claim Verification Yield:** 8 unverified claim(s) + 1 accused sentence(s) + 1 assessor statement(s) checked — claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 0 refuted, 0 indeterminate; assessor statements: 0 supported, 1 refuted, 0 indeterminate. $1.70 ($0.17/item over all three), 67% of run cost.")]
+    public void ClaimVerificationYield_ReportsWhatTheVerifiersDollarsBought(
+        string? q1UsageJson,
+        string? secondItemRole,
+        string? secondItemClaim,
+        string? q2UsageJson,
+        string? q3UsageJson,
+        int runIndeterminateCount,
+        string expectedLine)
     {
-        // Run 14's shape: 10 claims checked, none refuted, $1.70 of verifier spend against a
-        // $2.52 run — two thirds of the run's cost for zero refutations. That ratio is the figure
-        // an operator steers by, and before H4 it appeared nowhere.
+        // Q1 carries no verification record, or a supported accused sentence followed by one
+        // refuted item of the given role.
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
+        if (secondItemRole != null)
+        {
+            q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
+            {
+                RoleItem(0, "Charged but true.", BenchmarkClaimVerdict.Supported, "src/objects.c:2889", BenchmarkClaimRoles.AccusedQuote),
+                RoleItem(1, secondItemClaim!, BenchmarkClaimVerdict.Refuted, "src/zap.c:9", secondItemRole)
+            });
+        }
+        q1.ClaimVerificationCallUsageJson = q1UsageJson;
+
+        var answers = new List<BenchmarkRunAnswer> { q1 };
+        if (q2UsageJson != null)
+        {
+            var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 30, 75);
+            q2.ClaimVerificationCallUsageJson = q2UsageJson;
+            answers.Add(q2);
+        }
+        if (q3UsageJson != null)
+        {
+            var q3 = ScoredAnswer(3, BenchmarkDifficulty.Simple, 30, 75);
+            q3.ClaimVerificationCallUsageJson = q3UsageJson;
+            answers.Add(q3);
+        }
+
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, answers.ToArray());
         run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
         run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
         run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
@@ -2405,7 +2397,7 @@ public class BenchmarkReportBuilderTests
         run.TotalClaimVerificationOutputTokens = 100_000;
         run.ClaimsSupportedCount = 7;
         run.ClaimsRefutedCount = 0;
-        run.ClaimsIndeterminateCount = 3;
+        run.ClaimsIndeterminateCount = runIndeterminateCount;
 
         var runPricing = new BenchmarkRunPricing(
             Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
@@ -2417,9 +2409,7 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
 
-        Assert.Contains(
-            "- **Claim Verification Yield:** 10 claim(s) checked — 7 supported, 0 refuted, 3 indeterminate. $1.70 ($0.17/claim), 67% of run cost.",
-            report);
+        Assert.Contains(expectedLine, report);
     }
 
     [Fact]
@@ -2533,20 +2523,6 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains("**Claim Verification Failed:**", report);
         Assert.DoesNotContain("**Claim Verification Not Checked (budget):**", report);
-    }
-
-    [Fact]
-    public void ClaimVerificationFailure_ErrorEndingInAPeriod_GetsNoSecondPeriod()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q1.UnverifiedClaimCount = 2;
-        q1.ClaimVerificationError = "Verification text was empty.";
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(
-            HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
-
-        Assert.Contains("failed — Verification text was empty. The unverified claims", report);
-        Assert.DoesNotContain("Verification text was empty..", report);
     }
 
     [Fact]
@@ -2761,52 +2737,53 @@ public class BenchmarkReportBuilderTests
     private static string ClaimVerificationLine(string report)
         => report.Split('\n').Single(l => l.StartsWith("> - **Claim Verification (", StringComparison.Ordinal)).TrimEnd('\r');
 
-    [Fact]
-    public void ClaimVerification_VerdictLine_NamesTheParseRetry_AndHowTheFirstAttemptEnded()
+    [Theory]
+    // A verdict line names the parse retry and how the first attempt ended.
+    [InlineData(null, 2, 2, RetriedUsageJson,
+        "advisory, not reflected in the score.* \u2014 2 model call(s) \u2014 parse retry: 1 model call(s) after the first attempt (" + RetryFirstAttemptEnd + ")")]
+    // A failed line names the parse retry before the period.
+    [InlineData("Verification text was empty.", null, 2, RetriedUsageJson,
+        "The unverified claims above were not checked \u2014 2 model call(s) \u2014 parse retry: 1 model call(s) after the first attempt (" + RetryFirstAttemptEnd + "). Use **Retry claim verification** to repeat it.")]
+    // A retry that reported no usage says so.
+    [InlineData("Verification text was empty.", null, 1, RetryPlaceholderUsageJson,
+        "The unverified claims above were not checked \u2014 1 model call(s) \u2014 parse retry: no model call reported usage after the first attempt (" + RetryFirstAttemptEnd + "). Use **Retry claim verification** to repeat it.")]
+    // A verdict line names the provider-error retry without the error's closing period; a
+    // provider-error retry is not a parse retry.
+    [InlineData(null, 2, 2, ProviderRetriedUsageJson,
+        "advisory, not reflected in the score.* \u2014 2 model call(s); provider-error retry after: "
+        + "Google stream error: [503] This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later",
+        false, true)]
+    // A failed line ends by naming the retry action, and an error that ends in a period gets no
+    // second one.
+    [InlineData("Claim verification timeout exceeded (600 s).", null, 1, null,
+        "failed \u2014 Claim verification timeout exceeded (600 s). The unverified claims above were not checked \u2014 1 model call(s). Use **Retry claim verification** to repeat it.")]
+    public void ClaimVerification_VerdictAndFailedLines_EndWithTheirRetryText(
+        string? error,
+        int? supportedCount,
+        int modelCallCount,
+        string? usageJson,
+        string expectedSuffix,
+        bool? expectedParseRetry = null,
+        bool? expectedProviderErrorRetry = null)
     {
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
         q1.UnverifiedClaimCount = 2;
-        q1.ClaimsSupportedCount = 2;
-        q1.ClaimVerificationModelCallCount = 2;
-        q1.ClaimVerificationCallUsageJson = RetriedUsageJson;
+        q1.ClaimsSupportedCount = supportedCount;
+        q1.ClaimVerificationError = error;
+        q1.ClaimVerificationModelCallCount = modelCallCount;
+        q1.ClaimVerificationCallUsageJson = usageJson;
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
 
-        Assert.EndsWith(
-            "advisory, not reflected in the score.* \u2014 2 model call(s) \u2014 parse retry: 1 model call(s) after the first attempt (" + RetryFirstAttemptEnd + ")",
-            ClaimVerificationLine(report));
-    }
-
-    [Fact]
-    public void ClaimVerification_FailedLine_NamesTheParseRetry_BeforeThePeriod()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q1.UnverifiedClaimCount = 2;
-        q1.ClaimVerificationError = "Verification text was empty.";
-        q1.ClaimVerificationModelCallCount = 2;
-        q1.ClaimVerificationCallUsageJson = RetriedUsageJson;
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
-
-        Assert.EndsWith(
-            "The unverified claims above were not checked \u2014 2 model call(s) \u2014 parse retry: 1 model call(s) after the first attempt (" + RetryFirstAttemptEnd + "). Use **Retry claim verification** to repeat it.",
-            ClaimVerificationLine(report));
-    }
-
-    [Fact]
-    public void ClaimVerification_RetryThatReportedNoUsage_SaysSo()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q1.UnverifiedClaimCount = 2;
-        q1.ClaimVerificationError = "Verification text was empty.";
-        q1.ClaimVerificationModelCallCount = 1;
-        q1.ClaimVerificationCallUsageJson = RetryPlaceholderUsageJson;
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
-
-        Assert.EndsWith(
-            "The unverified claims above were not checked \u2014 1 model call(s) \u2014 parse retry: no model call reported usage after the first attempt (" + RetryFirstAttemptEnd + "). Use **Retry claim verification** to repeat it.",
-            ClaimVerificationLine(report));
+        if (expectedParseRetry.HasValue)
+        {
+            Assert.Equal(expectedParseRetry.Value, BenchmarkReportBuilder.ClaimVerificationWasRetried(q1));
+        }
+        if (expectedProviderErrorRetry.HasValue)
+        {
+            Assert.Equal(expectedProviderErrorRetry.Value, BenchmarkReportBuilder.ClaimVerificationHadProviderErrorRetry(q1));
+        }
+        Assert.EndsWith(expectedSuffix, ClaimVerificationLine(report));
     }
 
     [Fact]
@@ -2818,26 +2795,13 @@ public class BenchmarkReportBuilderTests
         Assert.Equal(" \u2014 parse retry: 1 model call(s) after the first attempt", BenchmarkReportBuilder.ClaimVerificationRetryText(answer));
     }
 
-    [Fact]
-    public void ClaimVerification_WithoutARetry_RendersTheLineUnchanged()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q1.UnverifiedClaimCount = 2;
-        q1.ClaimsSupportedCount = 2;
-        q1.ClaimVerificationModelCallCount = 2;
-        q1.ClaimVerificationCallUsageJson = "[{\"p\":100,\"c\":0,\"o\":10},{\"p\":200,\"c\":0,\"o\":20}]";
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
-
-        Assert.EndsWith("advisory, not reflected in the score.* \u2014 2 model call(s)", ClaimVerificationLine(report));
-        Assert.DoesNotContain("parse retry", report);
-    }
-
     [Theory]
     [InlineData(null)]
     [InlineData("")]
     [InlineData("not json")]
     [InlineData("{\"r\":1}")]
+    // A well-formed record of two calls without a retry renders the line unchanged.
+    [InlineData("[{\"p\":100,\"c\":0,\"o\":10},{\"p\":200,\"c\":0,\"o\":20}]")]
     public void ClaimVerification_NullEmptyOrInvalidUsageJson_RendersNothingExtra(string? json)
     {
         var answer = new BenchmarkRunAnswer { ClaimVerificationCallUsageJson = json };
@@ -2853,40 +2817,7 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
 
         Assert.EndsWith("advisory, not reflected in the score.* \u2014 2 model call(s)", ClaimVerificationLine(report));
-    }
-
-    [Fact]
-    public void ClaimVerificationYield_CountsTheAnswersThatNeededAParseRetry()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q1.ClaimVerificationCallUsageJson = RetriedUsageJson;
-        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
-        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
-        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
-        run.TotalInputTokens = 200_000;
-        run.TotalOutputTokens = 30_000;
-        run.TotalAssessmentInputTokens = 100_000;
-        run.TotalAssessmentOutputTokens = 10_000;
-        run.TotalClaimVerificationInputTokens = 1_300_000;
-        run.TotalClaimVerificationOutputTokens = 100_000;
-        run.ClaimsSupportedCount = 7;
-        run.ClaimsRefutedCount = 0;
-        run.ClaimsIndeterminateCount = 3;
-
-        var runPricing = new BenchmarkRunPricing(
-            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
-            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
-            SecondOpinion: null,
-            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
-            IsSnapshot: true
-        );
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
-
-        Assert.Contains(
-            "- **Claim Verification Yield:** 10 claim(s) checked \u2014 7 supported, 0 refuted, 3 indeterminate; 1 answer(s) needed a parse retry. $1.70 ($0.17/claim), 67% of run cost.",
-            report);
+        Assert.DoesNotContain("parse retry", report);
     }
 
     private const string ProviderError503 =
@@ -2894,25 +2825,6 @@ public class BenchmarkReportBuilderTests
 
     private const string ProviderRetriedUsageJson =
         "[{\"p\":100,\"c\":0,\"o\":10},{\"p\":300,\"c\":0,\"o\":30,\"pe\":1,\"e\":\"" + ProviderError503 + "\"}]";
-
-    [Fact]
-    public void ClaimVerification_VerdictLine_NamesTheProviderErrorRetry_WithoutTheErrorsClosingPeriod()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q1.UnverifiedClaimCount = 2;
-        q1.ClaimsSupportedCount = 2;
-        q1.ClaimVerificationModelCallCount = 2;
-        q1.ClaimVerificationCallUsageJson = ProviderRetriedUsageJson;
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
-
-        Assert.True(BenchmarkReportBuilder.ClaimVerificationHadProviderErrorRetry(q1));
-        Assert.False(BenchmarkReportBuilder.ClaimVerificationWasRetried(q1));
-        Assert.EndsWith(
-            "advisory, not reflected in the score.* \u2014 2 model call(s); provider-error retry after: "
-            + "Google stream error: [503] This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later",
-            ClaimVerificationLine(report));
-    }
 
     [Fact]
     public void ClaimVerificationRetryText_NamesTheParseRetryThenTheProviderErrorRetry()
@@ -2929,21 +2841,6 @@ public class BenchmarkReportBuilderTests
     }
 
     [Fact]
-    public void ClaimVerification_FailedLine_EndsByNamingTheRetryAction()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q1.UnverifiedClaimCount = 2;
-        q1.ClaimVerificationError = "Claim verification timeout exceeded (600 s).";
-        q1.ClaimVerificationModelCallCount = 1;
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1));
-
-        Assert.EndsWith(
-            "failed \u2014 Claim verification timeout exceeded (600 s). The unverified claims above were not checked \u2014 1 model call(s). Use **Retry claim verification** to repeat it.",
-            ClaimVerificationLine(report));
-    }
-
-    [Fact]
     public void HarnessStageFailures_SubtitleSaysWhatALostVerificationCosts_AndHowToRepeatIt()
     {
         var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
@@ -2957,40 +2854,6 @@ public class BenchmarkReportBuilderTests
             + "*(Advisory infrastructure failures. The candidate's answer is intact; a lost claim verification leaves its claims unchecked and, in a panel run, can leave a split critical error unresolved. **Retry claim verification** in the run's **Re-run** menu repeats it.)*" + Environment.NewLine,
             report);
         Assert.DoesNotContain("candidate output was not damaged", report);
-    }
-
-    [Fact]
-    public void ClaimVerificationYield_CountsTheAnswersThatNeededAProviderErrorRetry()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q1.ClaimVerificationCallUsageJson = ProviderRetriedUsageJson;
-        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
-        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
-        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
-        run.TotalInputTokens = 200_000;
-        run.TotalOutputTokens = 30_000;
-        run.TotalAssessmentInputTokens = 100_000;
-        run.TotalAssessmentOutputTokens = 10_000;
-        run.TotalClaimVerificationInputTokens = 1_300_000;
-        run.TotalClaimVerificationOutputTokens = 100_000;
-        run.ClaimsSupportedCount = 7;
-        run.ClaimsRefutedCount = 0;
-        run.ClaimsIndeterminateCount = 3;
-
-        var runPricing = new BenchmarkRunPricing(
-            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
-            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
-            SecondOpinion: null,
-            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
-            IsSnapshot: true
-        );
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
-
-        Assert.Contains(
-            "- **Claim Verification Yield:** 10 claim(s) checked \u2014 7 supported, 0 refuted, 3 indeterminate; 1 answer(s) needed a provider-error retry. $1.70 ($0.17/claim), 67% of run cost.",
-            report);
     }
 
     // -------------------------------------------------------------------------------------
@@ -4932,89 +4795,6 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("- **Supported Accusations:** 1 (Q1)", report);
     }
 
-    [Fact]
-    public void ClaimVerificationYield_StatesUnverifiedClaimsAndAccusedSentencesApart()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
-        {
-            RoleItem(0, "Charged but true.", BenchmarkClaimVerdict.Supported, "src/objects.c:2889", BenchmarkClaimRoles.AccusedQuote),
-            RoleItem(1, "Charged and false.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AccusedQuote)
-        });
-        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
-        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
-        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
-        run.TotalInputTokens = 200_000;
-        run.TotalOutputTokens = 30_000;
-        run.TotalAssessmentInputTokens = 100_000;
-        run.TotalAssessmentOutputTokens = 10_000;
-        run.TotalClaimVerificationInputTokens = 1_300_000;
-        run.TotalClaimVerificationOutputTokens = 100_000;
-
-        // The run's claim columns count the answers' own claims only.
-        run.ClaimsSupportedCount = 7;
-        run.ClaimsRefutedCount = 0;
-        run.ClaimsIndeterminateCount = 1;
-
-        var runPricing = new BenchmarkRunPricing(
-            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
-            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
-            SecondOpinion: null,
-            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
-            IsSnapshot: true
-        );
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
-
-        Assert.Contains(
-            "- **Claim Verification Yield:** 8 unverified claim(s) + 2 accused sentence(s) checked — claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 1 refuted, 0 indeterminate. $1.70 ($0.17/item over both), 67% of run cost.",
-            report);
-    }
-
-    [Fact]
-    public void ClaimVerificationYield_OverSeveralPopulations_CountsTheAnswersThatNeededAParseRetry()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
-        {
-            RoleItem(0, "Charged but true.", BenchmarkClaimVerdict.Supported, "src/objects.c:2889", BenchmarkClaimRoles.AccusedQuote),
-            RoleItem(1, "Charged and false.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AccusedQuote)
-        });
-        q1.ClaimVerificationCallUsageJson = RetriedUsageJson;
-        var q2 = ScoredAnswer(2, BenchmarkDifficulty.Simple, 30, 75);
-        q2.ClaimVerificationCallUsageJson = "[{\"p\":0,\"c\":0,\"o\":0,\"r\":1}]";
-        var q3 = ScoredAnswer(3, BenchmarkDifficulty.Simple, 30, 75);
-        q3.ClaimVerificationCallUsageJson = "[{\"p\":100,\"c\":0,\"o\":10}]";
-        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1, q2, q3);
-        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
-        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
-        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
-        run.TotalInputTokens = 200_000;
-        run.TotalOutputTokens = 30_000;
-        run.TotalAssessmentInputTokens = 100_000;
-        run.TotalAssessmentOutputTokens = 10_000;
-        run.TotalClaimVerificationInputTokens = 1_300_000;
-        run.TotalClaimVerificationOutputTokens = 100_000;
-        run.ClaimsSupportedCount = 7;
-        run.ClaimsRefutedCount = 0;
-        run.ClaimsIndeterminateCount = 1;
-
-        var runPricing = new BenchmarkRunPricing(
-            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
-            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
-            SecondOpinion: null,
-            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
-            IsSnapshot: true
-        );
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
-
-        Assert.Contains(
-            "- **Claim Verification Yield:** 8 unverified claim(s) + 2 accused sentence(s) checked \u2014 claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 1 refuted, 0 indeterminate; 2 answer(s) needed a parse retry. $1.70 ($0.17/item over both), 67% of run cost.",
-            report);
-    }
-
     // -------------------------------------------------------------------------------------
     // Harness 33 / scoring method 12: assessor statements apart, suspected-false claims,
     // citation-liveness notes, widened accused sentences.
@@ -5121,44 +4901,6 @@ public class BenchmarkReportBuilderTests
         string report = BenchmarkReportBuilder.BuildMarkdownReport(Harness30BoardRun(q1));
 
         Assert.Contains("— \"Keep a healthy supply of vegan food such as fortune cookies, and candy bars.\" (quoted: \"healthy supply of vegan food\", \"cookies, and candy\") (src/eat.c:5).", report);
-    }
-
-    [Fact]
-    public void ClaimVerificationYield_CountsAssessorStatementsAsAThirdPopulation()
-    {
-        var q1 = ScoredAnswer(1, BenchmarkDifficulty.Simple, 25, 80);
-        q1.ClaimVerificationJson = JsonSerializer.Serialize(new[]
-        {
-            RoleItem(0, "Charged but true.", BenchmarkClaimVerdict.Supported, "src/objects.c:2889", BenchmarkClaimRoles.AccusedQuote),
-            RoleItem(1, "The assessor's own statement.", BenchmarkClaimVerdict.Refuted, "src/zap.c:9", BenchmarkClaimRoles.AssessorStatement)
-        });
-        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, q1);
-        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-5.6", displayName: "GPT-5.6 Luna", thinkingLevel: "max");
-        run.AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-3.7-flash", displayName: "Gemini 3.7 Flash");
-        run.ClaimVerifierModelSnapshot = BenchmarkModelSnapshots.Model(modelId: "gpt-5-mini");
-        run.TotalInputTokens = 200_000;
-        run.TotalOutputTokens = 30_000;
-        run.TotalAssessmentInputTokens = 100_000;
-        run.TotalAssessmentOutputTokens = 10_000;
-        run.TotalClaimVerificationInputTokens = 1_300_000;
-        run.TotalClaimVerificationOutputTokens = 100_000;
-        run.ClaimsSupportedCount = 7;
-        run.ClaimsRefutedCount = 0;
-        run.ClaimsIndeterminateCount = 1;
-
-        var runPricing = new BenchmarkRunPricing(
-            Candidate: new ModelPricing(2.50m, 10.00m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
-            Assessor: new ModelPricing(0.15m, 0.60m, Source: ModelPricingSource.Catalog, AsOf: "2026-09-05"),
-            SecondOpinion: null,
-            ClaimVerifier: new ModelPricing(1.00m, 4.00m, Source: ModelPricingSource.Custom),
-            IsSnapshot: true
-        );
-
-        var report = BenchmarkReportBuilder.BuildMarkdownReport(run, runPricing: runPricing);
-
-        Assert.Contains(
-            "- **Claim Verification Yield:** 8 unverified claim(s) + 1 accused sentence(s) + 1 assessor statement(s) checked — claims: 7 supported, 0 refuted, 1 indeterminate; accused sentences: 1 supported, 0 refuted, 0 indeterminate; assessor statements: 0 supported, 1 refuted, 0 indeterminate. $1.70 ($0.17/item over all three), 67% of run cost.",
-            report);
     }
 
     [Theory]

@@ -180,21 +180,6 @@ namespace Overseer.Tests.UnitTests
         }
 
         [Fact]
-        public void SavedMessageId_CanBeRecordedAndRetrieved()
-        {
-            var manager = new OngoingChatManager();
-            var cts = new CancellationTokenSource();
-            var sessionId = Overseer.Services.Privacy.SessionRef.Persistent(1011);
-
-            manager.TryStart(sessionId, cts, out var state);
-            state.SavedMessageId = 4294967296L; // 64-bit ID
-
-            var retrieved = manager.TryGet(sessionId);
-            Assert.NotNull(retrieved);
-            Assert.Equal(4294967296L, retrieved.SavedMessageId);
-        }
-
-        [Fact]
         public void SubAgent_Registration_And_Cancellation_WorksCorrectly()
         {
             var manager = new OngoingChatManager();

@@ -11,7 +11,6 @@ import { ClientBridgeService } from './services/client-bridge.service';
     styleUrl: './app.component.scss'
 })
 export class AppComponent implements OnInit {
-  title = 'ClientApp';
   private router = inject(Router);
   private clientBridge = inject(ClientBridgeService);
 

@@ -1198,15 +1198,6 @@ public class BenchmarkReportFactsTests
     }
 
     [Fact]
-    public void TheNewFacts_HaveLabels()
-    {
-        Assert.Equal("Runs per peer", BenchmarkReportFactLabels.Label("comparison.peerRuns"));
-        Assert.Equal("Paired interval against Model A relative to zero", BenchmarkReportFactLabels.Label("peer.A.pairedExcludesZero"));
-        Assert.True(BenchmarkReportFactLabels.TryLabel("comparison.peerRuns", out _));
-        Assert.True(BenchmarkReportFactLabels.TryLabel("peer.B.pairedExcludesZero", out _));
-    }
-
-    [Fact]
     public void EachEntry_RecordsItsHarnessVersionAndRunDates()
     {
         var subject = SimpleRun(1, "OpenAI");

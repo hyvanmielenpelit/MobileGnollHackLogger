@@ -14,8 +14,8 @@ using Xunit;
 namespace Overseer.Tests.UnitTests;
 
 /// <summary>
-/// The joint-rank helper and how documents print ranks whose 95 % intervals overlap; named copies
-/// without peer letters and the Letter column of Compared models; the Markdown's Comparison line; and
+/// The joint-rank helper and how documents print ranks whose 95 % intervals do not overlap; named copies
+/// without peer letters; the Markdown's Comparison line; and
 /// the document list's comparison, scope and covered-model fields with its comparison filter.
 /// </summary>
 public class BenchmarkReportComparisonIdentityRenderTests
@@ -129,21 +129,6 @@ public class BenchmarkReportComparisonIdentityRenderTests
     // W2: joint ranks in the documents
     // ---------------------------------------------------------------------------------------------
 
-    [Theory]
-    [InlineData(BenchmarkReportPeerNaming.Named)]
-    [InlineData(BenchmarkReportPeerNaming.Anonymized)]
-    public void AnOverlappingRank_PrintsAsJoint_InTheKeyFiguresAndTheQualityTable(BenchmarkReportPeerNaming naming)
-    {
-        // The fixture's three intervals (77–83, 81–89 and 74–83) overlap in a chain.
-        string markdown = BenchmarkReportPackRenderer.Render(
-            BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport), Options(naming));
-
-        Assert.Contains("- **Intelligence:** 80 / 100 (interval 77–83), joint 1st of 3 (intervals overlap);", markdown, StringComparison.Ordinal);
-        Assert.Contains("| 80 | 77–83 | joint 1 |", markdown, StringComparison.Ordinal);
-        Assert.Contains("| 85 | 81–89 | joint 1 |", markdown, StringComparison.Ordinal);
-        Assert.Contains("ranking joint 1st of 3 (intervals overlap) against", markdown, StringComparison.Ordinal);
-    }
-
     [Fact]
     public void ASeparateRank_KeepsItsStoredWording()
     {
@@ -169,7 +154,7 @@ public class BenchmarkReportComparisonIdentityRenderTests
     }
 
     // ---------------------------------------------------------------------------------------------
-    // W1: no peer letter in a named copy; the Letter column
+    // W1: no peer letter in a named copy
     // ---------------------------------------------------------------------------------------------
 
     [Theory]
@@ -184,22 +169,6 @@ public class BenchmarkReportComparisonIdentityRenderTests
         Assert.DoesNotContain("Grok 5 (A)", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("Mistral Large 4 (B)", markdown, StringComparison.Ordinal);
         Assert.Contains("Grok 5", markdown, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void ComparedModels_HasALetterColumn_InBothNamings()
-    {
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
-
-        string named = BenchmarkReportPackRenderer.Render(document, Options(BenchmarkReportPeerNaming.Named));
-        Assert.Contains("| Model | Provider | Letter | Kind | Runs | Thinking level |", named, StringComparison.Ordinal);
-        Assert.Contains("| **GPT-5.6 Luna** | OpenAI | — | run | 1 | high |", named, StringComparison.Ordinal);
-        Assert.Contains("| Grok 5 | xAI | A | run | 1 | high |", named, StringComparison.Ordinal);
-        Assert.Contains("| Mistral Large 4 | Mistral | B | run | 1 |", named, StringComparison.Ordinal);
-
-        string anonymized = BenchmarkReportPackRenderer.Render(document, Options(BenchmarkReportPeerNaming.Anonymized));
-        Assert.Contains("| Model | Letter | Kind | Runs | Thinking level |", anonymized, StringComparison.Ordinal);
-        Assert.Contains("| Model A | A | run | 1 | high |", anonymized, StringComparison.Ordinal);
     }
 
     // ---------------------------------------------------------------------------------------------

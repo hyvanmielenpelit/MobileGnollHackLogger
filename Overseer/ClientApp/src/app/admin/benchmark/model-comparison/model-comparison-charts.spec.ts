@@ -275,11 +275,6 @@ describe('model-comparison-charts', () => {
       expect(CATEGORICAL_PALETTE_DARK).toEqual(['#3987e5', '#d95926', '#199e70']);
     });
 
-    it('caps the categorical hues at three, the all-pairs ceiling for scatter forms', () => {
-      expect(CATEGORICAL_PALETTE_DARK.length).toBe(3);
-      expect(new Set(CATEGORICAL_PALETTE_DARK).size).toBe(3);
-    });
-
     it('is designed against the composited dark panel surface', () => {
       expect(CHART_SURFACE).toBe('#0b0b0b');
     });

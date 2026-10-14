@@ -85,6 +85,8 @@ describe('chat-consistency-scope', () => {
       const s = scope(11, 13, [12]);
       expect(ids(scopeRuns(rows(), s))).toEqual([11, 13]);
       expect(entries(notAnalyzedRuns(rows(), s))).toEqual([[10, 'beforeSpan'], [12, 'leftOut'], [14, 'afterSpan']]);
+      const list = rows();
+      expect(list.map(row => runInclusion(row, list, s))).toEqual(['afterSpan', 'included', 'leftOut', 'included', 'beforeSpan']);
     });
 
     it('report a left-out run outside the span by the span, and keep it out once the span widens', () => {
@@ -121,14 +123,6 @@ describe('chat-consistency-scope', () => {
       const list = rows();
       scopeRuns(list, scope(11, 13, [12]));
       expect(ids(list)).toEqual([14, 13, 12, 11, 10]);
-    });
-  });
-
-  describe('runInclusion', () => {
-    it('classifies each run', () => {
-      const s = scope(11, 13, [12]);
-      const list = rows();
-      expect(list.map(row => runInclusion(row, list, s))).toEqual(['afterSpan', 'included', 'leftOut', 'included', 'beforeSpan']);
     });
   });
 

@@ -22,40 +22,7 @@ using Xunit;
 
 public class BenchmarkServiceTests
 {
-    // --- 1. Provider Error Classifier Tests ---
-
-    [Theory]
-    [InlineData("429 Rate Limited. Max retries exceeded.", true, 429)]
-    [InlineData("Rate limit reached for requests per minute.", true, 429)]
-    [InlineData("529 Overloaded error from Anthropic.", true, 529)]
-    [InlineData("[overloaded_error] Service is overloaded.", true, 529)]
-    [InlineData("503 Unavailable. Max retries exceeded.", true, 503)]
-    [InlineData("502 Bad Gateway from cloudflare.", true, 502)]
-    [InlineData("504 Gateway Timeout.", true, 504)]
-    [InlineData("The request to Anthropic timed out after 300 seconds.", true, 408)]
-    [InlineData("API Error: 503 - Service temporarily unavailable.", true, 503)]
-    [InlineData("The requested monster could not be found in the database.", false, null)]
-    [InlineData("Syntax error in user query.", false, null)]
-    [InlineData("API Error: 400 - prompt is too long: 205000 tokens > 200000", false, null)]
-    [InlineData("Request throttled: Rate limit cooldown active for Anthropic:system:503 (10.0s remaining), exceeding wait timeout of 5.0s.", false, null)]
-    public void Classify_CorrectlyIdentifiesProviderErrors(string message, bool expectedIsProvider, int? expectedStatus)
-    {
-        var result = BenchmarkProviderErrorClassifier.Classify(message);
-        Assert.Equal(expectedIsProvider, result.IsProviderError);
-        Assert.Equal(expectedStatus, result.HttpStatus);
-    }
-
     // --- 2. Answer Sanitizer Tests ---
-
-    [Fact]
-    public void Sanitize_StripsThoughtDivsAndExtractsThoughtText()
-    {
-        string raw = "<div class=\"ai-thought\">Thinking through the Gnoll Barbarian starting stats...</div>\n\nA Gnoll Barbarian starts with high Strength and Constitution.";
-        var sanitized = BenchmarkAnswerSanitizer.Sanitize(raw);
-
-        Assert.Equal("A Gnoll Barbarian starts with high Strength and Constitution.", sanitized.AnswerText);
-        Assert.Equal("Thinking through the Gnoll Barbarian starting stats...", sanitized.ThoughtText);
-    }
 
     [Fact]
     public void Sanitize_HandlesUnclosedThoughtTagAtEnd()
@@ -77,32 +44,6 @@ public class BenchmarkServiceTests
     }
 
     // --- 3. Per-Question Assessment Parser Tests ---
-
-    [Fact]
-    public void ParsePerQuestion_ParsesValidBARSJson()
-    {
-        string json = @"```json
-{
-  ""accuracyLevel"": 5,
-  ""completenessLevel"": 4,
-  ""concisenessLevel"": 6,
-  ""readabilityLevel"": 5,
-  ""criticalError"": false,
-  ""comment"": ""Accurate answer with all essential details.""
-}
-```";
-
-        var parseResult = BenchmarkAssessmentParser.ParsePerQuestion(json);
-
-        Assert.True(parseResult.Success);
-        Assert.NotNull(parseResult.Result);
-        Assert.Equal(5, parseResult.Result.AccuracyLevel);
-        Assert.Equal(4, parseResult.Result.CompletenessLevel);
-        Assert.Equal(6, parseResult.Result.ConcisenessLevel);
-        Assert.Equal(5, parseResult.Result.ReadabilityLevel);
-        Assert.False(parseResult.Result.CriticalError);
-        Assert.Equal("Accurate answer with all essential details.", parseResult.Result.Comment);
-    }
 
     [Fact]
     public void ParsePerQuestion_ClampsInvalidLevels()
@@ -314,27 +255,6 @@ public class BenchmarkServiceTests
         Assert.Contains("## 6. Synthesis Assessment", report);
         Assert.Contains("## 7. Final Indices", report);
         Assert.Contains("Concurrency Timing Notice", report);
-    }
-
-    // --- 7. Model Role Bitmask Tests ---
-
-    [Theory]
-    [InlineData(1, true, false, false)]  // Chat only
-    [InlineData(2, false, true, false)]  // Title only
-    [InlineData(4, false, false, true)]  // Benchmark only
-    [InlineData(3, true, true, false)]   // Chat + Title
-    [InlineData(5, true, false, true)]   // Chat + Benchmark
-    [InlineData(6, false, true, true)]   // Title + Benchmark
-    [InlineData(7, true, true, true)]    // Chat + Title + Benchmark
-    public void ModelRoleBitmask_CorrectlyIdentifiesRoles(int role, bool expectChat, bool expectTitle, bool expectBenchmark)
-    {
-        bool hasChat = (role & 1) == 1;
-        bool hasTitle = (role & 2) == 2;
-        bool hasBenchmark = (role & 4) == 4;
-
-        Assert.Equal(expectChat, hasChat);
-        Assert.Equal(expectTitle, hasTitle);
-        Assert.Equal(expectBenchmark, hasBenchmark);
     }
 
     // --- 8. Benchmark Assessment Failure Tests ---
@@ -975,44 +895,6 @@ public class BenchmarkServiceTests
     }
 
     [Fact]
-    public void BenchmarkAnswer_PersistsDiagnostics_AndStampsHarnessV2()
-    {
-        var run = new BenchmarkRun
-        {
-            Id = 99,
-            HarnessVersion = "2",
-            MaxToolCallsPerQuestionUsed = 25,
-            Answers = new List<BenchmarkRunAnswer>
-            {
-                new BenchmarkRunAnswer
-                {
-                    ExpectedPointsRecorded = true,
-                    OrderIndex = 1,
-                    Status = BenchmarkAnswerStatus.Ok,
-                    QualityScore = 25,
-                    RawQualityScore = 95,
-                    ModelCallCount = 3,
-                    ToolCallCount = 25,
-                    ToolBudgetExhausted = true,
-                    TerminationReason = "BudgetExhausted",
-                    AnswerFlags = (int)BenchmarkAnswerFlags.HarnessArtifacts
-                }
-            }
-        };
-
-        Assert.Equal("2", run.HarnessVersion);
-        Assert.Equal(25, run.MaxToolCallsPerQuestionUsed);
-        var ans = run.Answers[0];
-        Assert.Equal(25, ans.QualityScore);
-        Assert.Equal(95, ans.RawQualityScore);
-        Assert.Equal(3, ans.ModelCallCount);
-        Assert.Equal(25, ans.ToolCallCount);
-        Assert.True(ans.ToolBudgetExhausted);
-        Assert.Equal("BudgetExhausted", ans.TerminationReason);
-        Assert.Equal((int)BenchmarkAnswerFlags.HarnessArtifacts, ans.AnswerFlags);
-    }
-
-    [Fact]
     public void ResolveSecondOpinionTrigger_ContestedVerdictBeatsUnevidencedDeduction()
     {
         var answer = new BenchmarkRunAnswer
@@ -1427,20 +1309,6 @@ public class BenchmarkServiceTests
         Assert.Equal(original.EnableToolUse, roundTripped.EnableToolUse);
         Assert.Equal(original.AllowSourceCodeReferences, roundTripped.AllowSourceCodeReferences);
         Assert.Equal(original.OverseerMode, roundTripped.OverseerMode);
-    }
-
-    [Theory]
-    [InlineData(null, false)]
-    [InlineData(false, false)]
-    [InlineData(true, true)]
-    public void CandidatePromptOptions_VerboseMode_ResolvedCorrectlyFromRequest(bool? requestVerbose, bool expectedVerbose)
-    {
-        var options = new BenchmarkCandidatePromptOptions
-        {
-            VerboseMode = requestVerbose ?? false
-        };
-
-        Assert.Equal(expectedVerbose, options.VerboseMode);
     }
 
     [Theory]

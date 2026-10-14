@@ -14,6 +14,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Overseer.Services.Privacy;
 using Overseer.Services.Security;
 using Xunit;
 
@@ -51,8 +52,8 @@ internal sealed class RecordingBulkQueue : IAdminBulkOperationQueue
 
 /// <summary>
 /// The container the admin user-management tests share: SQLite in memory (the erasure runs set-based updates),
-/// Identity with token providers, the review and access services, and the bulk runner. The acting administrator
-/// is "boss"; "deputy" is another administrator.
+/// Identity with token providers, the review and access services, the bulk runner, and the incognito session store.
+/// The acting administrator is "boss"; "deputy" is another administrator.
 /// </summary>
 internal sealed class AdminUserTestHost : IDisposable
 {
@@ -71,6 +72,7 @@ internal sealed class AdminUserTestHost : IDisposable
     public RecordingBulkQueue Queue { get; } = new();
     public AdminUserManagementOptions Options { get; } = new();
     public IConfiguration Configuration { get; }
+    public EphemeralSessionStore Ephemeral { get; }
 
     public AdminUserTestHost(bool erasurePaths = true)
     {
@@ -87,6 +89,7 @@ internal sealed class AdminUserTestHost : IDisposable
             values["ConversationsDataLocation"] = Path.Combine(Root, "conversations");
         }
         Configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        Ephemeral = new EphemeralSessionStore(Configuration, startSweeper: false);
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -100,6 +103,7 @@ internal sealed class AdminUserTestHost : IDisposable
         services.AddSingleton<ISecurityEventRecorder>(Events);
         services.AddSingleton<IMemoryCache>(new MemoryCache(new MemoryCacheOptions { SizeLimit = 10000 }));
         services.AddSingleton<OverseerAccessService>();
+        services.AddSingleton(Ephemeral);
         services.AddScoped<AccountDeletionReviewService>();
         services.AddScoped<AdminUserManagementService>();
         services.AddScoped<AdminBulkUserOperationService>();
@@ -115,6 +119,7 @@ internal sealed class AdminUserTestHost : IDisposable
     {
         _scope.Dispose();
         Provider.Dispose();
+        Ephemeral.Dispose();
         _connection.Dispose();
         try
         {
@@ -212,6 +217,16 @@ internal sealed class AdminUserTestHost : IDisposable
         await Db.SaveChangesAsync(TestContext.Current.CancellationToken);
         Db.ChangeTracker.Clear();
     }
+
+    /// <summary>An open incognito session owned by <paramref name="userId"/>, held only in <see cref="Ephemeral"/>.</summary>
+    public EphemeralSession OpenIncognito(string userId) => Ephemeral.Create(userId, new ChatSession
+    {
+        AspNetUserId = userId,
+        Title = "Incognito chat",
+        CreatedUtc = DateTime.UtcNow,
+        LastMessageUtc = DateTime.UtcNow,
+        IsConfidential = true
+    });
 }
 
 /// <summary>
@@ -645,6 +660,45 @@ public sealed class AdminUserManagementServiceTests : IDisposable
         Assert.All(rows, r => Assert.Equal(AdminUserActionKind.Deleted, r.Kind));
         Assert.StartsWith("Deleted victim.", rows[0].Detail);
         Assert.StartsWith("Deletion failed: ", rows[1].Detail);
+    }
+
+    [Fact]
+    public async Task DeleteClosesEveryIncognitoSessionOfTheAccountAndNoOtherAccounts()
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync();
+        var first = _host.OpenIncognito(TargetId);
+        var second = _host.OpenIncognito(TargetId);
+        var bystander = _host.OpenIncognito(AdminUserTestHost.OtherAdminId);
+
+        var result = await _host.Users.DeleteAsync(_host.Actor, TargetId, TargetName, "Spam", Array.Empty<string>(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.Ok, result.Status);
+        Assert.Null(_host.Ephemeral.Get(first.Ref, TargetId));
+        Assert.Null(_host.Ephemeral.Get(second.Ref, TargetId));
+        Assert.True(first.IsErased);
+        Assert.True(second.IsErased);
+        Assert.NotNull(_host.Ephemeral.Get(bystander.Ref, AdminUserTestHost.OtherAdminId));
+        Assert.False(bystander.IsErased);
+    }
+
+    [Fact]
+    public async Task AFailedDeletionLeavesTheAccountsIncognitoSessionsOpen()
+    {
+        await _host.SeedAdministratorsAsync();
+        await SeedTargetAsync();
+        var held = _host.OpenIncognito(TargetId);
+        var sp = _host.Services;
+        var users = new AdminUserManagementService(_host.Db, new FailingDeleteUserManager(sp), _host.Configuration, _host.Options,
+            sp.GetRequiredService<AccountDeletionReviewService>(), sp.GetRequiredService<OverseerAccessService>(),
+            NullLogger<AdminUserManagementService>.Instance, _host.Events, _host.Time, _host.Ephemeral);
+
+        var result = await users.DeleteAsync(_host.Actor, TargetId, TargetName, "Spam", Array.Empty<string>(), TestContext.Current.CancellationToken);
+
+        Assert.Equal(AdminResultStatus.Failed, result.Status);
+        Assert.NotNull(await _host.ReadUserAsync(TargetId));
+        Assert.NotNull(_host.Ephemeral.Get(held.Ref, TargetId));
+        Assert.False(held.IsErased);
     }
 
     [Fact]

@@ -42,6 +42,7 @@ describe('AdminBenchmarkComponent', () => {
       ctx.launcher.claimVerifierConfigId = 1;
       ctx.launcher.selectedScoringProfileId = 1;
       ctx.launcher.candidateVerboseMode = true;
+      ctx.launcher.completionSound = false;
 
       ctx.runTab().startBenchmark();
 
@@ -55,6 +56,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(stored.verboseMode).toBe(true);
       expect(stored.allowSourceCodeReferences).toBe(false);
       expect(stored.runCount).toBe(1);
+      expect(stored.completionSound).toBe(false);
       fixture.destroy();
     });
 
@@ -84,7 +86,8 @@ describe('AdminBenchmarkComponent', () => {
         secondOpinionMode: 3,
         scoringProfileId: 1,
         verboseMode: true,
-        runCount: 5
+        runCount: 5,
+        completionSound: false
       }));
 
       const restored = TestBed.createComponent(AdminBenchmarkComponent);
@@ -101,6 +104,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(c.selectedScoringProfileId).toBe(1);
       expect(c.candidateVerboseMode).toBe(true);
       expect(c.runCount).toBe(5);
+      expect(c.completionSound).toBe(false);
       restored.destroy();
     });
 
@@ -248,36 +252,6 @@ describe('AdminBenchmarkComponent', () => {
 
     it('should default completionSound to true before anything is remembered', () => {
       expect(ctx.launcher.completionSound).toBe(true);
-    });
-
-    it('should persist completionSound when a run is started', () => {
-      benchmarkServiceMock.startRun.mockReturnValue(of({ runId: 99 }));
-      ctx.launcher.selectedSuiteId = 1;
-      ctx.launcher.testedConfigId = 1;
-      ctx.launcher.assessorConfigId = 1;
-      ctx.launcher.completionSound = false;
-
-      ctx.runTab().startBenchmark();
-
-      const stored = JSON.parse(localStorage.getItem(RUN_SETTINGS_KEY)!);
-      expect(stored.completionSound).toBe(false);
-      fixture.destroy();
-    });
-
-    it('should restore a remembered completionSound value on the next construction', () => {
-      localStorage.setItem(RUN_SETTINGS_KEY, JSON.stringify({
-        suiteId: 1, testedConfigId: 1, assessorConfigId: 1,
-        secondOpinionConfigId: null, claimVerifierConfigId: null,
-        secondOpinionMode: null, scoringProfileId: 1, verboseMode: null,
-        completionSound: false
-      }));
-
-      const restored = TestBed.createComponent(AdminBenchmarkComponent);
-      restored.componentInstance.systemConfigs = [component.systemConfigs[0]];
-      restored.detectChanges();
-
-      expect(benchmarkSpecHandles(restored).launcher.completionSound).toBe(false);
-      restored.destroy();
     });
 
     it('should default completionSound to true when the stored blob predates the field', () => {
@@ -1121,22 +1095,21 @@ describe('AdminBenchmarkComponent', () => {
       ctx.monitor.multiRunDialogVisible = false;
     }
 
-    // A banner describing work that is still going to produce something.
-    ['Pending', 'Running', 'WaitingForCap'].forEach(status => {
-      it(`should show the series banner while the series is ${status}`, () => {
-        attachSeries(status);
+    it.each([
+      // A banner describing work that is still going to produce something.
+      { status: 'Pending', finished: false, shown: true },
+      { status: 'Running', finished: false, shown: true },
+      { status: 'WaitingForCap', finished: false, shown: true },
+      // Stopped is the one non-terminal end state; it is continued from the progress dialog.
+      { status: 'Stopped', finished: false, shown: true },
+      { status: 'Completed', finished: true, shown: false },
+      { status: 'Cancelled', finished: true, shown: false },
+      { status: 'Failed', finished: true, shown: false }
+    ])('should show the series banner only while the series is unfinished: $status', ({ status, finished, shown }) => {
+      attachSeries(status);
 
-        expect(ctx.monitor.seriesIsFinished).toBe(false);
-        expect(ctx.runTab().seriesBannerVisible).toBe(true);
-      });
-    });
-
-    // Stopped is the one non-terminal end state; it is continued from the progress dialog.
-    it('should keep the series banner for a Stopped series, which is resumable', () => {
-      attachSeries('Stopped');
-
-      expect(ctx.monitor.seriesIsFinished).toBe(false);
-      expect(ctx.runTab().seriesBannerVisible).toBe(true);
+      expect(ctx.monitor.seriesIsFinished).toBe(finished);
+      expect(ctx.runTab().seriesBannerVisible).toBe(shown);
     });
 
     it('should give a Stopped series banner only Show Series Progress, and point Continue at the progress dialog', () => {
@@ -1152,30 +1125,12 @@ describe('AdminBenchmarkComponent', () => {
       expect((banner.textContent || '').replace(/\s+/g, ' ')).toContain('Continue from the progress dialog.');
     });
 
-    ['Completed', 'Cancelled', 'Failed'].forEach(status => {
-      it(`should hide the series banner once the series is ${status}`, () => {
-        attachSeries(status);
-
-        expect(ctx.monitor.seriesIsFinished).toBe(true);
-        expect(ctx.runTab().seriesBannerVisible).toBe(false);
-      });
-    });
-
     it('should not render the banner element for a completed series', () => {
       attachSeries('Completed');
       component.activeSubTab = 'run';
       ctx.refresh();
 
       expect(fixture.nativeElement.querySelector('.series-banner')).toBeNull();
-    });
-
-    it('should keep activeSeries so the dialog and run labelling still resolve it', () => {
-      attachSeries('Completed');
-
-      // Gated rendering, not cleared state: seriesIdForRun and the progress dialog read this after
-      // the series ends.
-      expect(ctx.monitor.activeSeries).not.toBeNull();
-      expect(ctx.monitor.activeSeriesId).toBe(2);
     });
 
     it('should hide the banner while the progress dialog is open', () => {

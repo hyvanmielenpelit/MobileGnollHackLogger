@@ -376,11 +376,6 @@ describe('SettingsComponent', () => {
       expect(metricsSpy).toHaveBeenCalled();
       expect(toastSpy).toHaveBeenCalledWith('Trash emptied successfully!');
     });
-
-    it('should update trashCount on onSettingsTrashCountChange', () => {
-      component.onSettingsTrashCountChange(7);
-      expect(component.trashCount).toBe(7);
-    });
   });
 
   describe('Confidentiality Mode', () => {
@@ -817,27 +812,47 @@ describe('SettingsComponent', () => {
       expect(compiled.querySelectorAll('.dlp-floor-note').length).toBe(0);
     });
 
-    it('should group the masking switches into two named fieldsets', async () => {
+    it('should explain the masking section in its fieldsets, hints and callouts', async () => {
       createWith({ dlpFloor: noFloor });
       showSection('masking');
       await fixture.whenStable();
       fixture.detectChanges();
+      const compiled = fixture.nativeElement as HTMLElement;
 
-      const legends = Array.from(
-        (fixture.nativeElement as HTMLElement).querySelectorAll('fieldset.gh-fieldset > legend')
-      ).map(l => l.textContent?.trim());
-
+      // The switches are grouped into two named fieldsets.
+      const legends = Array.from(compiled.querySelectorAll('fieldset.gh-fieldset > legend'))
+        .map(l => l.textContent?.trim());
       expect(legends).toEqual(['Credentials and payment data', 'Contact details']);
-    });
 
-    it('should say that only the US format of an ID number is recognised', async () => {
-      createWith({ dlpFloor: noFloor });
-      showSection('masking');
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      const hint = (fixture.nativeElement as HTMLElement).querySelector('#dlpMaskSsnsHint');
+      // Only the US format of an ID number is recognized.
+      const hint = compiled.querySelector('#dlpMaskSsnsHint');
       expect(hint!.textContent).toContain('ID numbers from other countries are not recognised');
+
+      // Masking is not a guarantee.
+      const limit = compiled.querySelector('.dlp-limit');
+      expect(limit).toBeTruthy();
+      // The limit carries a real heading, so it does not read as one more grey hint.
+      expect(limit!.querySelector('.alert-heading')!.textContent).toContain('A safety net, not a guarantee');
+      expect(limit!.textContent).toContain('it does not guarantee it');
+      expect(limit!.textContent).toContain('A secret with no recognisable shape passes straight through');
+
+      // How masking works is its own callout with three steps.
+      const how = compiled.querySelector('.dlp-how');
+      expect(how).toBeTruthy();
+      expect(how!.querySelector('.alert-heading')!.textContent).toContain('How it works');
+      expect(how!.querySelectorAll('.dlp-steps li').length).toBe(3);
+      expect(how!.textContent).toContain('the provider only ever receives the placeholder');
+
+      // Masking applies to every chat, not only a confidential one.
+      const intro = Array.from(compiled.querySelectorAll('.dlp-intro'))
+        .map(p => p.textContent ?? '')
+        .join(' ');
+      expect(intro).toContain('every outbound turn, in every chat, confidential or not');
+
+      // Why e-mail addresses and phone numbers start off.
+      const note = compiled.querySelector('.dlp-default-note');
+      expect(note).toBeTruthy();
+      expect(note!.textContent).toContain('measurably degrades answers');
     });
 
     it('should reflect the defaults in the rendered checkboxes', async () => {
@@ -873,58 +888,6 @@ describe('SettingsComponent', () => {
       expect(notes.length).toBe(1);
       expect(notes[0].textContent).toContain('An administrator requires this class to be masked.');
       expect(notes[0].id).toBe('dlpMaskPhoneNumbersFloor');
-    });
-
-    it('should state plainly that masking is not a guarantee', async () => {
-      createWith({ dlpFloor: noFloor });
-      showSection('masking');
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      const limit = (fixture.nativeElement as HTMLElement).querySelector('.dlp-limit');
-      expect(limit).toBeTruthy();
-      // The limit carries a real heading, so it does not read as one more grey hint.
-      expect(limit!.querySelector('.alert-heading')!.textContent).toContain('A safety net, not a guarantee');
-      expect(limit!.textContent).toContain('it does not guarantee it');
-      expect(limit!.textContent).toContain('A secret with no recognisable shape passes straight through');
-    });
-
-    it('should present how masking works as its own callout with three steps', async () => {
-      createWith({ dlpFloor: noFloor });
-      showSection('masking');
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      const how = (fixture.nativeElement as HTMLElement).querySelector('.dlp-how');
-      expect(how).toBeTruthy();
-      expect(how!.querySelector('.alert-heading')!.textContent).toContain('How it works');
-      expect(how!.querySelectorAll('.dlp-steps li').length).toBe(3);
-      expect(how!.textContent).toContain('the provider only ever receives the placeholder');
-    });
-
-    it('should say that masking applies to every chat, not only a confidential one', async () => {
-      createWith({ dlpFloor: noFloor });
-      showSection('masking');
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      const compiled = fixture.nativeElement as HTMLElement;
-      const intro = Array.from(compiled.querySelectorAll('.dlp-intro'))
-        .map(p => p.textContent ?? '')
-        .join(' ');
-
-      expect(intro).toContain('every outbound turn, in every chat, confidential or not');
-    });
-
-    it('should explain why e-mail addresses and phone numbers start off', async () => {
-      createWith({ dlpFloor: noFloor });
-      showSection('masking');
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      const note = (fixture.nativeElement as HTMLElement).querySelector('.dlp-default-note');
-      expect(note).toBeTruthy();
-      expect(note!.textContent).toContain('measurably degrades answers');
     });
 
     it('should not post masking settings during the initial load', fakeAsync(() => {
@@ -1118,12 +1081,6 @@ describe('SettingsComponent', () => {
       expect(component.contentSectionLabel).toBe('System Models for Confidential Chats');
       const compiled = fixture.nativeElement as HTMLElement;
       expect(compiled.querySelector('.settings-section-title')?.textContent).toBe('System Models for Confidential Chats');
-    });
-
-    it('renders no sparkle badge on the Release Notes button', () => {
-      emitSection('version');
-      const compiled = fixture.nativeElement as HTMLElement;
-      expect(compiled.querySelector('.version-notes-btn .sparkle-icon')).toBeNull();
     });
 
     it('renders the default-for-new-chats select first in the Confidentiality section', () => {

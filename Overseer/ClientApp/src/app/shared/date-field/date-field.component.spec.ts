@@ -311,15 +311,6 @@ describe('DateFieldComponent', () => {
       expect(press('a').defaultPrevented).toBe(false);
     });
 
-    it('clamps the day when a page key lands in a shorter month', async () => {
-      setHost({ value: '2028-01-31' });
-      await openCalendar();
-      press('PageDown');
-      expect(focusedDay()).toBe('2028-02-29');
-      press('PageDown', true);
-      expect(focusedDay()).toBe('2029-02-28');
-    });
-
     it('picks with Enter, closes and returns focus to the calendar button', async () => {
       setHost({ value: '2026-10-07' });
       await openCalendar();

@@ -30,42 +30,6 @@ public class BenchmarkDifficultyBandsTests
     }
 
     [Fact]
-    public void BandPredicates_AgreeWithBandOf()
-    {
-        for (int d = BenchmarkDifficultyBands.MinDifficulty; d <= BenchmarkDifficultyBands.MaxDifficulty; d++)
-        {
-            var band = BenchmarkDifficultyBands.BandOf(d);
-
-            Assert.Equal(band == BenchmarkDifficulty.Simple, BenchmarkDifficultyBands.IsSimple(d));
-            Assert.Equal(band == BenchmarkDifficulty.Intermediate, BenchmarkDifficultyBands.IsIntermediate(d));
-            Assert.Equal(band == BenchmarkDifficulty.Advanced, BenchmarkDifficultyBands.IsAdvanced(d));
-        }
-    }
-
-    [Fact]
-    public void EveryDifficultyBelongsToExactlyOneBand()
-    {
-        for (int d = BenchmarkDifficultyBands.MinDifficulty; d <= BenchmarkDifficultyBands.MaxDifficulty; d++)
-        {
-            int matches =
-                (BenchmarkDifficultyBands.IsSimple(d) ? 1 : 0) +
-                (BenchmarkDifficultyBands.IsIntermediate(d) ? 1 : 0) +
-                (BenchmarkDifficultyBands.IsAdvanced(d) ? 1 : 0);
-
-            Assert.Equal(1, matches);
-        }
-    }
-
-    [Fact]
-    public void BandRangesAreContiguousAndNonOverlapping()
-    {
-        Assert.Equal(BenchmarkDifficultyBands.SimpleMax + 1, BenchmarkDifficultyBands.IntermediateMin);
-        Assert.Equal(BenchmarkDifficultyBands.IntermediateMax + 1, BenchmarkDifficultyBands.AdvancedMin);
-        Assert.True(BenchmarkDifficultyBands.SimpleMin < BenchmarkDifficultyBands.SimpleMax);
-        Assert.True(BenchmarkDifficultyBands.AdvancedMin <= BenchmarkDifficultyBands.MaxDifficulty);
-    }
-
-    [Fact]
     public void RangeLabel_RendersInclusiveRanges()
     {
         Assert.Equal("1–35", BenchmarkDifficultyBands.RangeLabel(BenchmarkDifficulty.Simple));

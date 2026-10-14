@@ -191,16 +191,6 @@ describe('buildRunReportWritingDiagnostics', () => {
     expect(buildRunReportWritingDiagnostics(fullView(), RUN, CLIENT, NOW, 0.5)).toBe(EXPECTED_FULL);
   });
 
-  it('keeps the sections in order', () => {
-    const text = buildRunReportWritingDiagnostics(fullView(), RUN, CLIENT, NOW, 0.5);
-    const sections = ['Overseer AI report writing diagnostics', '== Run ==', '== Report status ==', '== Job ==',
-      '== Writer ==', '== Timing ==', '== Queue ==', '== Documents ==', '== Totals ==', '== Client polling ==',
-      '== Job log =='];
-    const positions = sections.map(section => text.indexOf(section));
-    expect(positions.every(position => position >= 0)).toBe(true);
-    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
-  });
-
   it('uses LF line endings only', () => {
     const view = fullView();
     view.job.log[0].message = 'Line one\r\nline two';

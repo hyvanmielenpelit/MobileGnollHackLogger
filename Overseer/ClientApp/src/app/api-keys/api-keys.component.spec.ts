@@ -29,10 +29,6 @@ describe('ApiKeysComponent', () => {
     fixture.detectChanges();
   });
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
-
   it('reads an offset-less stored stamp as UTC', () => {
     const date = new Date(Date.UTC(2026, 9, 5, 23, 30, 0)).toLocaleDateString();
     expect(component.formatStamp('2026-10-05T23:30:00')).toBe(date);

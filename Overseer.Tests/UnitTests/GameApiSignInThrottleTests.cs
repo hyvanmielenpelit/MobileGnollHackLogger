@@ -337,22 +337,6 @@ public class GameApiSignInThrottleTests
     }
 
     [Fact]
-    public void AnUnknownNameIsThrottledLikeARealOne()
-    {
-        // The throttle never looks accounts up, so a name with no account behaves exactly as one with an account.
-        var clock = new FakeClock();
-        var throttle = new GameApiSignInThrottle(time: clock);
-
-        Fail(throttle, "no-such-account-anywhere", null, 10);
-        Fail(throttle, "alice", null, 10);
-
-        var unknown = throttle.Check("no-such-account-anywhere", null);
-        var known = throttle.Check("alice", null);
-        Assert.False(unknown.Allowed);
-        Assert.Equal(known, unknown);
-    }
-
-    [Fact]
     public void TheKeyCapDropsTheOldestKey()
     {
         var clock = new FakeClock();

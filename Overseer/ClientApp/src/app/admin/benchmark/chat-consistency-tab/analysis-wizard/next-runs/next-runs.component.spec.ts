@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { CcAnalysisResult, CcNextRun, CcRunRow } from '../../chat-consistency.models';
 import { ccAnalysisResult, ccRunRow, ccSubjectWithLevel, textOf } from '../../chat-consistency-tab.testing';
-import { CcNextRunsComponent, ccNextRunSections, ccNextRunsLeadText } from './next-runs.component';
+import { CcNextRunsComponent } from './next-runs.component';
 import { BenchmarkShellBridge } from '../../../state/benchmark-shell-bridge.service';
 
 /** Runs 205 (Board Suite) and 206 (Wiki Suite), the targets of the control fixtures. */
@@ -95,13 +95,6 @@ describe('CcNextRunsComponent', () => {
   });
 
   describe('sections', () => {
-    it('are the pure sections the Results image reads too', () => {
-      renderBattery();
-      const result = ccAnalysisResult({ subject: ccSubjectWithLevel(), nextRuns: batteryNextRuns() });
-      expect(ccNextRunSections(result, targetRows())).toEqual(component.sections);
-      expect(ccNextRunsLeadText(component.actionCount)).toBe(textOf(el.querySelector('.cc-nr-lead')));
-    });
-
     it('heads one section per kind present, in card order, the model by its base name', () => {
       renderBattery();
       const groups = Array.from(el.querySelectorAll<HTMLElement>('.cc-nr-group'));

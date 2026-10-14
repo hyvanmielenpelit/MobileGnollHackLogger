@@ -325,18 +325,10 @@ describe('ModelBatchProgressDialogComponent', () => {
       })]
     }));
     const done = card(100);
-    expect(Array.from(done.querySelectorAll('.mb-member-figures dt')).map(dt => dt.textContent?.trim())).toEqual([
-      'Speed Index', 'Duration', 'Median model time', 'TTFT P50', 'Cost / question', 'Total cost',
-      'Refuted claims', 'Flagged answers', 'Failed answers', 'Provider errors', 'Re-runs'
-    ]);
-    expect(text('[data-figure="provider-errors"] dd', done)).toBe('4');
-    expect(text('[data-figure="reruns"] dd', done)).toBe('1');
-    expect(text('[data-figure="speed-index"] dd', done)).toBe('71');
-    expect(text('[data-figure="duration"] dd', done)).toBe('13m 40s');
+    // The figure order and values are pinned in model-batch.models.spec.ts.
     const failed = done.querySelector('[data-figure="failed-answers"] dd') as HTMLElement;
     expect(failed.classList).toContain('mb-figure-warning');
     expect(text('.visually-hidden', failed)).toBe('(needs attention)');
-    expect(text('[data-figure="flagged-answers"] dd', done)).toBe('3');
     const time = new DatePipe('en-US').transform(finishedAt, 'HH:mm');
     expect(text('.mb-member-ref', done)).toBe(`Run #61 · finished ${time}`);
   });

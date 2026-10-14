@@ -249,31 +249,25 @@ public class SystemConfigUsageGuardTests
         Assert.Empty(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken));
     }
 
-    [Fact]
-    public async Task AGenerationJob_BlocksWhileActive()
+    [Theory]
+    [InlineData("generationJob")]
+    [InlineData("rubricCheckJob")]
+    [InlineData("rubricGapAuthorJob")]
+    public async Task AGenerationOrRubricJob_BlocksWhileActive(string kind)
     {
-        var job = new BenchmarkGenerationJob { SuiteName = "Sokoban basics", GeneratorConfigId = ConfigId };
-        Assert.True(_generation.TryStart(job, out _));
+        bool started = kind switch
+        {
+            "generationJob" => _generation.TryStart(
+                new BenchmarkGenerationJob { SuiteName = "Sokoban basics", GeneratorConfigId = ConfigId }, out _),
+            "rubricCheckJob" => _rubricCheck.TryStart(
+                new BenchmarkRubricCheckJob { SuiteName = "Sokoban basics", CheckerConfigId = ConfigId }, out _),
+            "rubricGapAuthorJob" => _gapAuthor.TryStart(
+                new BenchmarkRubricGapAuthorJob { SuiteName = "Sokoban basics", AuthorConfigId = ConfigId }, out _),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null)
+        };
+        Assert.True(started);
 
-        Assert.Equal("generationJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken)).Kind);
-    }
-
-    [Fact]
-    public async Task ARubricCheckJob_BlocksWhileActive()
-    {
-        var job = new BenchmarkRubricCheckJob { SuiteName = "Sokoban basics", CheckerConfigId = ConfigId };
-        Assert.True(_rubricCheck.TryStart(job, out _));
-
-        Assert.Equal("rubricCheckJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken)).Kind);
-    }
-
-    [Fact]
-    public async Task ARubricGapAuthorJob_BlocksWhileActive()
-    {
-        var job = new BenchmarkRubricGapAuthorJob { SuiteName = "Sokoban basics", AuthorConfigId = ConfigId };
-        Assert.True(_gapAuthor.TryStart(job, out _));
-
-        Assert.Equal("rubricGapAuthorJob", Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken)).Kind);
+        Assert.Equal(kind, Assert.Single(await Guard().FindActiveUsesAsync(ConfigId, TestContext.Current.CancellationToken)).Kind);
     }
 
     [Fact]

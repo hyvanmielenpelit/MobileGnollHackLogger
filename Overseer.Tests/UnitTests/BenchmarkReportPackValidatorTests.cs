@@ -944,50 +944,26 @@ public class BenchmarkReportPackValidatorTests
         Assert.Equal("questionTopics[0]", note.Location);
     }
 
-    [Fact]
-    public void Rule7_AbstractWordLimit()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-
-        output.Sections[BenchmarkReportSlots.Abstract] = string.Join(" ", Enumerable.Repeat("result", 150));
-        Assert.Empty(Validate(Tr, output));
-
-        output.Sections[BenchmarkReportSlots.Abstract] = string.Join(" ", Enumerable.Repeat("result", 151));
-        var note = Assert.Single(Validate(Tr, output));
-        Assert.Equal(7, note.Rule);
-        Assert.Equal("sections.abstract", note.Location);
-    }
-
     [Theory]
-    [InlineData(BenchmarkReportSlots.Meaning, 90)]
-    [InlineData(BenchmarkReportSlots.Confidence, 60)]
-    [InlineData(BenchmarkReportSlots.Comparison, 70)]
-    public void Rule7_ExecutiveSummarySlotWordLimits(string slot, int limit)
+    [InlineData(Tr, BenchmarkReportSlots.Abstract, 150)]
+    [InlineData(Es, BenchmarkReportSlots.Meaning, 90)]
+    [InlineData(Es, BenchmarkReportSlots.Confidence, 60)]
+    [InlineData(Es, BenchmarkReportSlots.Comparison, 70)]
+    [InlineData(Tr, BenchmarkReportSlots.WhyItScored, 300)]
+    [InlineData(Tr, BenchmarkReportSlots.WhatWorked, 150)]
+    [InlineData(Tr, BenchmarkReportSlots.Limitations, 120)]
+    [InlineData(Ib, BenchmarkReportSlots.OverseerChat, 200)]
+    [InlineData(Ib, BenchmarkReportSlots.BenchmarkSystem, 150)]
+    [InlineData(Ib, BenchmarkReportSlots.ModelResult, 150)]
+    public void Rule7_SlotWordLimits_AskForTheRepairTurn_AndDropTheLastParagraphs(BenchmarkReportAudience audience, string slot, int limit)
     {
-        var output = ReportPackWriterTestData.ValidOutput(Es);
+        var output = ReportPackWriterTestData.ValidOutput(audience);
 
-        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("advice", limit));
-        Assert.Empty(Validate(Es, output));
+        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("check", limit));
+        Assert.Empty(Validate(audience, output));
 
-        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("advice", limit + 1));
-        var note = Assert.Single(Validate(Es, output));
-        Assert.Equal(7, note.Rule);
-        Assert.Equal("sections." + slot, note.Location);
-    }
-
-    [Theory]
-    [InlineData(BenchmarkReportSlots.WhyItScored, 300)]
-    [InlineData(BenchmarkReportSlots.WhatWorked, 150)]
-    [InlineData(BenchmarkReportSlots.Limitations, 120)]
-    public void Rule7_ResearcherReportSlotWordLimits_AskForTheRepairTurn(string slot, int limit)
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-
-        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("pattern", limit));
-        Assert.Empty(Validate(Tr, output));
-
-        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("pattern", limit + 1));
-        var note = Assert.Single(Validate(Tr, output));
+        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("check", limit + 1));
+        var note = Assert.Single(Validate(audience, output));
         Assert.Equal(7, note.Rule);
         Assert.Equal("sections." + slot, note.Location);
         Assert.Contains(limit.ToString(System.Globalization.CultureInfo.InvariantCulture), note.Message);
@@ -995,11 +971,14 @@ public class BenchmarkReportPackValidatorTests
         // A note from Validate is what sends the writer its repair turn.
         Assert.Contains("- rule 7 at sections." + slot + ":", BenchmarkReportPackPrompt.BuildRepairMessage(new[] { note }));
 
-        // Without a repair, the paragraphs past the cap are dropped.
-        output.Sections[slot] = "A first paragraph about the patterns.\n\n" + string.Join(" ", Enumerable.Repeat("pattern", limit));
-        var cleaned = Drop(Tr, output);
-        Assert.Equal("A first paragraph about the patterns.", cleaned.Output.Sections[slot]);
-        Assert.Contains(cleaned.Notes, n => n.Rule == 7 && n.Dropped && n.Location == "sections." + slot + "[p2]");
+        // Without a repair, the paragraphs past the cap are dropped. Four words, then enough to reach
+        // the cap exactly, then four more: only the last paragraph goes.
+        string kept = "Check the first thing.\n\n" + string.Join(" ", Enumerable.Repeat("check", limit - 4));
+        output.Sections[slot] = kept + "\n\nCheck the last thing.";
+        var cleaned = Drop(audience, output);
+        Assert.False(cleaned.Fatal);
+        Assert.Equal(kept, cleaned.Output.Sections[slot]);
+        Assert.Contains(cleaned.Notes, n => n.Rule == 7 && n.Dropped && n.Location == "sections." + slot + "[p3]");
     }
 
     [Fact]
@@ -1007,40 +986,7 @@ public class BenchmarkReportPackValidatorTests
     {
         Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.WhyItScored));
         Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Ib, BenchmarkReportSlots.WhatWorked));
-        Assert.Equal(300, BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.WhyItScored));
-        Assert.Equal(150, BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.WhatWorked));
-        Assert.Equal(120, BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.Limitations));
-        Assert.Equal(70, BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.Comparison));
-        Assert.Equal(200, BenchmarkReportPackValidator.SlotMaxWords(Ib, BenchmarkReportSlots.OverseerChat));
-        Assert.Equal(150, BenchmarkReportPackValidator.SlotMaxWords(Ib, BenchmarkReportSlots.BenchmarkSystem));
-        Assert.Equal(150, BenchmarkReportPackValidator.SlotMaxWords(Ib, BenchmarkReportSlots.ModelResult));
         Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.OverseerChat));
-    }
-
-    [Theory]
-    [InlineData(BenchmarkReportSlots.OverseerChat, 200)]
-    [InlineData(BenchmarkReportSlots.BenchmarkSystem, 150)]
-    [InlineData(BenchmarkReportSlots.ModelResult, 150)]
-    public void Rule7_InternalBriefSlotWordLimits_AskForTheRepairTurn_AndDropTheLastParagraphs(string slot, int limit)
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Ib);
-
-        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("check", limit));
-        Assert.Empty(Validate(Ib, output));
-
-        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("check", limit + 1));
-        var note = Assert.Single(Validate(Ib, output));
-        Assert.Equal(7, note.Rule);
-        Assert.Equal("sections." + slot, note.Location);
-        Assert.Contains(limit.ToString(System.Globalization.CultureInfo.InvariantCulture), note.Message);
-
-        // Four words, then enough to reach the cap exactly, then four more: only the last paragraph goes.
-        string kept = "Check the first thing.\n\n" + string.Join(" ", Enumerable.Repeat("check", limit - 4));
-        output.Sections[slot] = kept + "\n\nCheck the last thing.";
-        var cleaned = Drop(Ib, output);
-        Assert.False(cleaned.Fatal);
-        Assert.Equal(kept, cleaned.Output.Sections[slot]);
-        Assert.Contains(cleaned.Notes, n => n.Rule == 7 && n.Dropped && n.Location == "sections." + slot + "[p3]");
     }
 
     [Fact]
@@ -1381,21 +1327,24 @@ public class BenchmarkReportPackValidatorTests
         Assert.Single(output.Recommendations);
     }
 
-    [Fact]
-    public void Drop_TrimsAnOverlongAbstractByParagraph()
+    [Theory]
+    [InlineData(Tr, BenchmarkReportSlots.Abstract, "result", 100, "outcome", 100)]
+    [InlineData(Es, BenchmarkReportSlots.Meaning, "advice", 60, "guidance", 40)]
+    public void Drop_TrimsAnOverlongSectionByParagraph(
+        BenchmarkReportAudience audience, string slot, string firstWord, int firstCount, string secondWord, int secondCount)
     {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        string first = string.Join(" ", Enumerable.Repeat("result", 100));
-        string second = string.Join(" ", Enumerable.Repeat("outcome", 100));
-        output.Sections[BenchmarkReportSlots.Abstract] = first + "\n\n" + second;
+        var output = ReportPackWriterTestData.ValidOutput(audience);
+        string first = string.Join(" ", Enumerable.Repeat(firstWord, firstCount));
+        string second = string.Join(" ", Enumerable.Repeat(secondWord, secondCount));
+        output.Sections[slot] = first + "\n\n" + second;
 
-        var result = Drop(Tr, output);
+        var result = Drop(audience, output);
 
         Assert.False(result.Fatal);
-        Assert.Equal(first, result.Output.Sections[BenchmarkReportSlots.Abstract]);
+        Assert.Equal(first, result.Output.Sections[slot]);
         var note = Assert.Single(result.Notes);
         Assert.Equal(7, note.Rule);
-        Assert.Equal("sections.abstract[p2]", note.Location);
+        Assert.Equal("sections." + slot + "[p2]", note.Location);
         Assert.True(note.Dropped);
     }
 
@@ -1571,24 +1520,6 @@ public class BenchmarkReportPackValidatorTests
     }
 
     [Fact]
-    public void Drop_TrimsAnOverlongMeaningByParagraph()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Es);
-        string first = string.Join(" ", Enumerable.Repeat("advice", 60));
-        string second = string.Join(" ", Enumerable.Repeat("guidance", 40));
-        output.Sections[BenchmarkReportSlots.Meaning] = first + "\n\n" + second;
-
-        var result = Drop(Es, output);
-
-        Assert.False(result.Fatal);
-        Assert.Equal(first, result.Output.Sections[BenchmarkReportSlots.Meaning]);
-        var note = Assert.Single(result.Notes);
-        Assert.Equal(7, note.Rule);
-        Assert.Equal("sections.meaning[p2]", note.Location);
-        Assert.True(note.Dropped);
-    }
-
-    [Fact]
     public void Drop_MissingTopicIsRecordedButNotFatal()
     {
         var output = ReportPackWriterTestData.ValidOutput(Tr);
@@ -1739,14 +1670,6 @@ public class BenchmarkReportPackValidatorTests
         Assert.Contains("Q3", missing.Message);
     }
 
-    [Fact]
-    public void Rule15_DoesNotApplyWhereTheDocumentHasNoNotes()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Es);
-
-        Assert.DoesNotContain(Validate(Es, output), n => n.Rule == 15);
-    }
-
     // Rule 16 -----------------------------------------------------------------------------------
 
     /// <summary>The writer test sheet with Model A's interval overlapping the subject's and Model B's not.</summary>
@@ -1870,6 +1793,8 @@ public class BenchmarkReportPackValidatorTests
     [InlineData("On the same questions {{peer:A}} scored higher than {{subject}} on average, and the paired interval excludes zero.")]
     [InlineData("{{subject}} scored lower than {{peer:A}}; {{peer.A.pairedExcludesZero}}, not adjusted for comparing several models.")]
     [InlineData("{{subject}} trails {{peer:A}} on the same questions, a paired interval excluding zero.")]
+    // The overlap hedge still passes for a paired peer.
+    [InlineData("{{subject}} scored lower than {{peer:A}}, and their intervals overlap.")]
     public void Rule16_APairedHedge_PassesForAPeerWhosePairedIntervalExcludesZero(string text)
     {
         Assert.Empty(ValidateMeaning(text, PairedSheet()));
@@ -1900,12 +1825,6 @@ public class BenchmarkReportPackValidatorTests
         Assert.DoesNotContain("not established", note.Message);
     }
 
-    [Fact]
-    public void Rule16_TheOverlapHedgeStillPassesForAPairedPeer()
-    {
-        Assert.Empty(ValidateMeaning("{{subject}} scored lower than {{peer:A}}, and their intervals overlap.", PairedSheet()));
-    }
-
     // Rule 18 -----------------------------------------------------------------------------------
 
     [Theory]
@@ -1916,7 +1835,11 @@ public class BenchmarkReportPackValidatorTests
     [InlineData("Follow the System Prompt more closely.", "system prompt")]
     [InlineData("Read the tool guides before calling a tool.", "tool guides")]
     [InlineData("Rebuild the search index for version-specific code.", "index")]
-    public void Rule18_AModelDeveloperRecommendation_AboutTheOverseer_AsksForRepair(string text, string term)
+    [InlineData("Prompt the model to name conduct-safe fallbacks such as prayer.", "prompt the model")]
+    [InlineData("Strengthen knowledge of which NPC provides which service in GnollHack towns.", "GnollHack")]
+    [InlineData("Add a rule to the assistant's prompt about shop prices.", "the assistant's prompt")]
+    [InlineData("Add a rule to the assistant’s prompt about shop prices.", "the assistant's prompt")]
+    public void Rule18_AModelDeveloperRecommendation_AboutTheOverseerOrTheGame_AsksForRepair(string text, string term)
     {
         var output = ReportPackWriterTestData.ValidOutput(Tr);
         output.Recommendations[0].Text = text;
@@ -1927,6 +1850,7 @@ public class BenchmarkReportPackValidatorTests
         Assert.Equal(18, note.Rule);
         Assert.Equal("recommendations[0]", note.Location);
         Assert.Contains("\"" + term + "\"", note.Message);
+        Assert.Contains("general capability a model developer can train or tune", note.Message);
         Assert.True(BenchmarkReportPackValidator.IsWarningRule(18));
     }
 
@@ -1983,37 +1907,9 @@ public class BenchmarkReportPackValidatorTests
     [InlineData("Check the board state before answering questions about item status.")]
     [InlineData("Keep answers shorter where the question asks for a single fact.")]
     [InlineData("Call a lookup tool before stating an item's weight.")]
-    public void Rule18_ModelLevelRecommendationsPass(string text)
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.Recommendations[0].Text = text;
-
-        Assert.Empty(Validate(Tr, output));
-    }
-
-    [Theory]
-    [InlineData("Prompt the model to name conduct-safe fallbacks such as prayer.", "prompt the model")]
-    [InlineData("Strengthen knowledge of which NPC provides which service in GnollHack towns.", "GnollHack")]
-    [InlineData("Add a rule to the assistant's prompt about shop prices.", "the assistant's prompt")]
-    [InlineData("Add a rule to the assistant’s prompt about shop prices.", "the assistant's prompt")]
-    [InlineData("Cover every rubric point before answering.", "rubric")]
-    [InlineData("Read the system prompt more closely.", "system prompt")]
-    public void Rule18_AGameFactOrAPromptChange_ForModelDevelopers_AsksForRepair(string text, string term)
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.Recommendations[0].Text = text;
-
-        var note = Assert.Single(Validate(Tr, output));
-
-        Assert.Equal(BenchmarkReportPackValidator.ModelDeveloperScopeRule, note.Rule);
-        Assert.Contains("\"" + term + "\"", note.Message);
-        Assert.Contains("general capability a model developer can train or tune", note.Message);
-    }
-
-    [Theory]
     [InlineData("State the decisive mechanic behind a verdict before the verdict itself.")]
     [InlineData("Commit to a conclusion the inputs already settle instead of hedging.")]
-    public void Rule18_AGeneralCapability_Passes(string text)
+    public void Rule18_ModelLevelRecommendationsPass(string text)
     {
         var output = ReportPackWriterTestData.ValidOutput(Tr);
         output.Recommendations[0].Text = text;
@@ -2524,17 +2420,11 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
     [InlineData("Answer quality degraded in the comparison period.", "degraded")]
     [InlineData("Answers got slower for players.", "got slower")]
     [InlineData("The Overseer chat regressed after the tool guide edit.", "regressed")]
+    // Citing only an inconclusive endpoint is no result.
+    [InlineData("Cost per answer rose by {{endpoint.P5.estimate}}, against {{endpoint.P5.mde}} detectable.", "rose")]
     public void C1_AChangeWordWithoutAResult_IsAnError(string text, string phrase)
     {
         AssertChatRule(ValidateAsGoodAsBefore(text), BenchmarkReportPackValidator.ChatChangeClaimRule, "C1", AsGoodAsBeforeP1, "\"" + phrase + "\"");
-    }
-
-    [Fact]
-    public void C1_AChangeWordCitingOnlyAnInconclusiveEndpoint_IsAnError()
-    {
-        var notes = ValidateAsGoodAsBefore("Cost per answer rose by {{endpoint.P5.estimate}}, against {{endpoint.P5.mde}} detectable.");
-
-        AssertChatRule(notes, BenchmarkReportPackValidator.ChatChangeClaimRule, "C1", AsGoodAsBeforeP1, "\"rose\"");
     }
 
     [Theory]
@@ -2643,13 +2533,6 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
 
         Assert.False(Assert.Single(sheet.Facts, f => f.Key == "scope.hours").Available);
         Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.ChatHoursRule);
-    }
-
-    [Fact]
-    public void C5_AnInconclusiveEndpointWithItsMdeElsewhereInTheSlot_Passes()
-    {
-        Assert.Empty(ValidateChatSlot(Es, BenchmarkReportSlots.PlayerImpact,
-            "Cost per answer is {{endpoint.P5.verdict}} at {{endpoint.P5.estimate}}.\n\nThe runs could detect a change of {{endpoint.P5.mde}}."));
     }
 
     [Theory]

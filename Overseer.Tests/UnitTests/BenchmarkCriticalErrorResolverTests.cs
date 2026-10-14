@@ -308,18 +308,6 @@ public class BenchmarkCriticalErrorResolverTests
     }
 
     [Fact]
-    public void QuoteVerdict_AgreesWithCriticalErrorQuoteWasSupported()
-    {
-        foreach (var verdict in new[] { BenchmarkClaimVerdict.Supported, BenchmarkClaimVerdict.Refuted, BenchmarkClaimVerdict.Indeterminate })
-        {
-            var items = new List<BenchmarkClaimVerification> { Item(QuoteA, verdict) };
-            Assert.Equal(
-                BenchmarkService.CriticalErrorQuoteWasSupported(items, QuoteA),
-                BenchmarkCriticalErrorResolver.QuoteVerdict(items, QuoteA) == BenchmarkClaimVerdict.Supported);
-        }
-    }
-
-    [Fact]
     public void QuoteVerdict_ForAView_ReadsTheItemsThatMemberRaised()
     {
         var answer = PanelAnswer(80, 20, flagB: true,

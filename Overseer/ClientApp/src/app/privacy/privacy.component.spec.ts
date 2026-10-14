@@ -21,10 +21,6 @@ describe('PrivacyComponent', () => {
     host = fixture.nativeElement as HTMLElement;
   });
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
-
   it('should render one h1 and an h2 for every section, skipping no heading level', () => {
     const h1s = host.querySelectorAll('h1');
     expect(h1s.length).toBe(1);

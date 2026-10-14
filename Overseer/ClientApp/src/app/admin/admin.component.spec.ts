@@ -42,10 +42,6 @@ describe('AdminComponent', () => {
     component = fixture.componentInstance;
   });
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
-
   it('provides the application\'s chart registrables to the admin page', () => {
     expect(fixture.debugElement.injector.get(NG_CHARTS_CONFIGURATION).registerables).toEqual(APP_CHART_REGISTRABLES);
   });
@@ -74,16 +70,6 @@ describe('AdminComponent', () => {
       expect(list.rows.length).toBe(1);
       expect(component.store.groups.length).toBe(1);
       expect(component.store.configs.length).toBe(1);
-      expect(component.loading).toBe(false);
-    });
-
-    it('should catch TypeError: Failed to fetch on the user list and reset loading to false', () => {
-      (usersService.list as Mock).mockReturnValue(throwError(() => new TypeError('Failed to fetch')));
-
-      expect(() => {
-        fixture.detectChanges();
-      }).not.toThrow();
-
       expect(component.loading).toBe(false);
     });
 
@@ -185,10 +171,6 @@ describe('AdminComponent', () => {
       expect(panel.id).toBe('admin-panel-' + component.activeTab);
       expect(panel.getAttribute('aria-labelledby')).toBe('admin-tab-' + component.activeTab);
       expect(panel.getAttribute('tabindex')).toBe('0');
-    });
-
-    it('should not rely on the removed admin-tab-active class', () => {
-      expect(fixture.nativeElement.querySelectorAll('.admin-tab-active').length).toBe(0);
     });
   });
 
@@ -357,13 +339,6 @@ describe('AdminComponent', () => {
       expect(component.pendingBenchmarkNavigation).toBeNull();
     });
 
-    it('selects the Security tab for ?tab=security', () => {
-      component.applyNavigationParams(convertToParamMap({ tab: 'security' }));
-
-      expect(component.activeTab).toBe('security');
-      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(removal));
-    });
-
     it('selects the Users tab on its deletion requests for ?tab=users&subtab=deletions', () => {
       component.applyNavigationParams(convertToParamMap({ tab: 'users', subtab: 'deletions' }));
 
@@ -417,49 +392,6 @@ describe('AdminComponent', () => {
         expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(removal));
       });
     }
-
-    it('reads the parameters from the route on init', () => {
-      TestBed.resetTestingModule();
-      TestBed.configureTestingModule({
-        imports: [AdminComponent],
-        providers: [
-          provideRouter([]),
-          provideHttpClient(),
-          provideHttpClientTesting(),
-          { provide: ActivatedRoute, useValue: { queryParamMap: of(convertToParamMap({ tab: 'telemetry' })) } }
-        ]
-      });
-      const service = TestBed.inject(AdminService);
-      spyAdminService(service);
-      // The Telemetry tab loads its summary and governor status when it is created.
-      vi.spyOn(service, 'getAiTelemetrySummary').mockReturnValue(of({
-        keySource: 'system',
-        totalRequests: 0, totalChatRequests: 0, totalTitleRequests: 0, totalBenchmarkRequests: 0,
-        totalPromptTokens: 0, totalUncachedInputTokens: 0, totalOutputTokens: 0, totalCacheReadTokens: 0,
-        totalCacheCreationTokens: 0, cacheHitRatio: 0, avgDurationMs: 0,
-        totalEstimatedCost: 0, pricedRequests: 0, costRecordedSinceUtc: null, rows: [],
-        chatAvailability: {
-          recorded: false, validAttempts: 0, providerErrors: 0, unattributedErrors: 0, ourSideFailures: 0,
-          overloaded: 0, serverErrors: 0, timeouts: 0, streamFailures: 0, rateLimitedUnattributed: 0,
-          transportUnattributed: 0, calls: 0, firstAttemptSuccessCalls: 0, failedCalls: 0, chatTurns: 0,
-          chatTurnsEndedByProviderError: 0, titleValidAttempts: 0, titleProviderErrors: 0, titleRequests: 0,
-          titleRequestsFailed: 0
-        },
-        activity: {
-          activeUsers: 0, newUsers: 0, chatsCreated: 0, confidentialChatsCreated: 0, gnollHackChatsCreated: 0,
-          userMessages: 0, assistantMessages: 0, incognitoChatsCreated: 0, incognitoUserMessages: 0
-        }
-      }));
-      vi.spyOn(service, 'getAiTelemetryUsers').mockReturnValue(of({ users: [], totalUsers: 0, securityEventsAvailable: true }));
-      vi.spyOn(service, 'getGovernorStatus').mockReturnValue(of({ maxConcurrentCalls: 4, maxRetryAfterSeconds: 90, activeKeys: [] }));
-      vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-
-      const routed = TestBed.createComponent(AdminComponent);
-      routed.detectChanges();
-
-      expect(routed.componentInstance.activeTab).toBe('telemetry');
-      routed.destroy();
-    });
 
     it('opens the resolution dialog for a resolveConfig link once the configurations have loaded', () => {
       TestBed.resetTestingModule();

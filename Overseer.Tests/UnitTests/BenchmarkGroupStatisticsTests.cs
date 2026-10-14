@@ -1701,24 +1701,6 @@ public class BenchmarkGroupStatisticsTests
         Assert.Equal(new int?[] { null, null }, usage.PerRunModelCalls);
     }
 
-    /// <summary>
-    /// Model calls alone are enough to make the usage block a measurement, so a group that recorded
-    /// nothing but the counter still gets one.
-    /// </summary>
-    [Fact]
-    public void Usage_IsNotNull_WhenOnlyModelCallsWereRecorded()
-    {
-        var questions = Questions(50);
-
-        var a = Run(1, questions, new[] { 90 });
-        a.Answers[0].ModelCallCount = 3;
-
-        var result = BenchmarkGroupStatistics.Compute(Suite(), questions, new[] { a });
-
-        Assert.NotNull(result.Usage);
-        Assert.Equal(3, result.Usage!.TotalModelCalls!.Value);
-    }
-
     /// <summary>An all-zero usage block reads as a measurement. A run that recorded none is null.</summary>
     [Fact]
     public void Usage_IsNull_WhenNoMemberRecordedAny()

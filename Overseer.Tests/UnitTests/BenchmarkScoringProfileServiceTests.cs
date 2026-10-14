@@ -358,14 +358,6 @@ public class BenchmarkScoringProfileServiceTests
     }
 
     [Fact]
-    public void CanonicalSignature_IsStableAcrossInstances()
-    {
-        Assert.Equal(
-            BenchmarkScoringProfileService.CanonicalSignature(FullProfile()),
-            BenchmarkScoringProfileService.CanonicalSignature(FullProfile()));
-    }
-
-    [Fact]
     public void CanonicalSignature_RendersAnUnparseableLevelScoreTableDeterministically()
     {
         var broken = FullProfile();

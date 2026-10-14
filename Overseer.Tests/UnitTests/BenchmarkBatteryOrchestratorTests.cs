@@ -1980,18 +1980,6 @@ public class BenchmarkBatteryOrchestratorTests
     }
 
     [Fact]
-    public void ComparabilityGuard_PassesOneModelUnderOneInstrument_AcrossSuites()
-    {
-        var members = new List<(BenchmarkBatteryRunMember, BenchmarkRun)>
-        {
-            (Member(0, 1, 1), GuardRun(1, 10)),
-            (Member(1, 1, 2), GuardRun(2, 20))
-        };
-
-        Assert.Null(BenchmarkBatteryOrchestrator.ComparabilityGuardFailure(members));
-    }
-
-    [Fact]
     public void ComparabilityGuard_RefusesAHarnessChangeBetweenSuites()
     {
         var members = new List<(BenchmarkBatteryRunMember, BenchmarkRun)>

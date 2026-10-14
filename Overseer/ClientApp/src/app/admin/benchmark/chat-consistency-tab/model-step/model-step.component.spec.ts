@@ -149,15 +149,6 @@ describe('CcModelStepComponent', () => {
 
     afterEach(() => vi.useRealTimers());
 
-    it('offers the eleven presets in order', () => {
-      const options = Array.from(el.querySelectorAll<HTMLOptionElement>('#cc-tl-range option'));
-      expect(options.map(option => option.value)).toEqual(['all', '1d', '3d', '7d', '14d', '28d', '30d', '90d', '180d', '1y', 'custom']);
-      expect(options.map(option => textOf(option))).toEqual([
-        'All dates', 'Last 1 day', 'Last 3 days', 'Last 7 days', 'Last 14 days', 'Last 28 days', 'Last 30 days',
-        'Last 90 days', 'Last 180 days', 'Last year', 'Custom'
-      ]);
-    });
-
     it('asks for a rolling preset anchored now, and names the anchor under the select', () => {
       vi.useFakeTimers({ toFake: ['Date'] });
       vi.setSystemTime(new Date('2026-10-07T14:05:00Z'));

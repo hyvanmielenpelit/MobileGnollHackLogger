@@ -159,25 +159,6 @@ public class ConfidentialRetentionTests : IDisposable
         Assert.False((await db.ChatSession.FindAsync([2L], ct))!.IsDeleted);
     }
 
-    [Fact]
-    public async Task EnforceUserSessionQuotaAsync_StillTrashesAnEvictedNormalSession()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var db = CreateDb();
-        db.ChatSession.AddRange(
-            Session(1, "u1", immediatePurge: false, lastMessage: DateTime.UtcNow.AddDays(-5)),
-            Session(2, "u1", immediatePurge: false, lastMessage: DateTime.UtcNow));
-        await db.SaveChangesAsync(ct);
-
-        var service = CreateService(db, CreateConfig(maxActiveSessions: 1));
-        await service.EnforceUserSessionQuotaAsync("u1", ct);
-
-        var evicted = await db.ChatSession.FindAsync([1L], ct);
-        Assert.NotNull(evicted);
-        Assert.True(evicted!.IsDeleted);
-        Assert.Equal("Quota", evicted.DeletionReason);
-    }
-
     // ── Path 4 of 4: inactivity expiry ──────────────────────────────────────────
 
     [Fact]

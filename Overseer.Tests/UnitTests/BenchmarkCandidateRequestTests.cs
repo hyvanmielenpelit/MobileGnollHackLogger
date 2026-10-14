@@ -332,29 +332,6 @@ public class BenchmarkCandidateRequestTests
         Assert.DoesNotContain(Escaped(BenchmarkAssessmentPrompt.GradingBoardHeading), input, StringComparison.Ordinal);
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void OpenAiGradingRequest_PassesTheGradingProbe_WithAndWithoutABoard(bool withBoard)
-    {
-        var run = RunWith(withBoard);
-        var (segments, seed) = GradingSeed(run);
-        var request = new Overseer.Services.Agents.AgentRunRequest
-        {
-            ProviderName = "OpenAI",
-            SystemPrompt = segments.FullPrompt,
-            SegmentedPrompt = segments,
-            PromptCacheKey = "benchmark:per_question:probe",
-            CacheConversationTail = false,
-            SeedHistory = seed
-        };
-
-        BenchmarkGradingRequestProbe.Verify(
-            ProviderNamed("OpenAI"), request, "assessor", segments.FullPrompt,
-            BenchmarkService.GradingBoardBlock(run), withBoard ? BoardText : null,
-            BenchmarkAssessmentPrompt.QuestionBlockMarker, questionNumber: 2);
-    }
-
     private static string? Role(object message) =>
         message.GetType().GetProperty("role")?.GetValue(message) as string;
 

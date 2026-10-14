@@ -103,48 +103,6 @@ public class UserAiModelTests
             provider: "Google");
 
     [Fact]
-    public async Task UpdateUserModelAsync_WithNewModelId_UpdatesModelIdAndDisplayName()
-    {
-        var (service, db) = CreateTestSettingsService();
-        var userId = "test-user-1";
-        var ct = TestContext.Current.CancellationToken;
-
-        var initial = new UserAiModel
-        {
-            AspNetUserId = userId,
-            Provider = "Google",
-            ModelId = "gemini-3.6-flash",
-            DisplayName = "Gemini 3.6 Flash",
-            DisplayNameMode = "model_name",
-            ThinkingLevel = "high",
-            OrderIndex = 0
-        };
-        db.UserAiModels.Add(initial);
-        await db.SaveChangesAsync(ct);
-
-        await service.UpdateUserModelAsync(
-            userId: userId,
-            id: initial.Id,
-            displayName: "Gemini 3.7 Flash",
-            displayNameMode: "model_name",
-            thinkingLevel: "high",
-            reasoningMode: null,
-            reasoningSummary: null,
-            serviceTier: null,
-            maxInputTokens: null,
-            maxOutputTokens: null,
-            modelId: "gemini-3.7-flash",
-            provider: "Google"
-        );
-
-        var updated = await db.UserAiModels.FirstOrDefaultAsync(m => m.Id == initial.Id, ct);
-        Assert.NotNull(updated);
-        Assert.Equal("gemini-3.7-flash", updated.ModelId);
-        Assert.Equal("Google", updated.Provider);
-        Assert.Equal("Gemini 3.7 Flash", updated.DisplayName);
-    }
-
-    [Fact]
     public async Task UpdateUserModelAsync_WithNullModelId_PreservesExistingModelId()
     {
         var (service, db) = CreateTestSettingsService();

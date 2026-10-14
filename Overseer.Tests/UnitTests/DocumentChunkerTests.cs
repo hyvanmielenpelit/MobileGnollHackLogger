@@ -88,40 +88,23 @@ public class DocumentChunkerTests
     public void EstimateTokensIsFourCharactersPerTokenRoundedUp(string? text, int expected)
         => Assert.Equal(expected, DocumentChunker.EstimateTokens(text));
 
-    [Fact]
-    public void ADocumentUnderTheThresholdGoesToTheModelWhole()
-    {
-        var chunker = Chunker(direct: 100);
-
-        Assert.True(chunker.FitsDirectIngestion(new string('x', 8)));
-        Assert.True(chunker.FitsDirectIngestion(new string('x', 396)));
-    }
-
-    [Fact]
-    public void TheDirectIngestionBoundaryItselfStillFits()
-    {
-        // 100 tokens is 400 characters exactly, and the comparison is inclusive.
-        var chunker = Chunker(direct: 100);
-
-        Assert.True(chunker.FitsDirectIngestion(new string('x', 400)));
-        Assert.False(chunker.FitsDirectIngestion(new string('x', 401)));
-    }
-
-    [Fact]
-    public void ADocumentOverTheThresholdDoesNotFit()
-    {
-        var chunker = Chunker(direct: 100);
-
-        Assert.False(chunker.FitsDirectIngestion(new string('x', 4000)));
-    }
-
     [Theory]
-    [InlineData(null)]
-    [InlineData("")]
-    public void NothingAtAllFitsDirectIngestion(string? text)
+    // Under the threshold: the document goes to the model whole.
+    [InlineData(8, true)]
+    [InlineData(396, true)]
+    // 100 tokens is 400 characters exactly, and the comparison is inclusive.
+    [InlineData(400, true)]
+    [InlineData(401, false)]
+    // Over the threshold.
+    [InlineData(4000, false)]
+    // Zero tokens is under any threshold, and there is nothing to retrieve from either way.
+    [InlineData(null, true)]
+    [InlineData(0, true)]
+    public void FitsDirectIngestionComparesTheEstimateWithTheThresholdInclusively(int? length, bool expected)
     {
-        // Zero tokens is under any threshold, and there is nothing to retrieve from either way.
-        Assert.True(Chunker(direct: 100).FitsDirectIngestion(text));
+        string? text = length.HasValue ? new string('x', length.Value) : null;
+
+        Assert.Equal(expected, Chunker(direct: 100).FitsDirectIngestion(text));
     }
 
     // ── Chunking: what must never happen ───────────────────────────────────────
@@ -332,15 +315,5 @@ public class DocumentChunkerTests
         var chunker = Chunker(target: 40, overlap: 8);
 
         Assert.Equal(chunker.Chunk(document), chunker.Chunk(document));
-    }
-
-    [Fact]
-    public void TwoChunkersWithTheSameSettingsAgree()
-    {
-        string document = Document();
-
-        Assert.Equal(
-            Chunker(target: 40, overlap: 8).Chunk(document),
-            Chunker(target: 40, overlap: 8).Chunk(document));
     }
 }

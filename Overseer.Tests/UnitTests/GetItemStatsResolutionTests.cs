@@ -45,8 +45,19 @@ public class GetItemStatsResolutionTests : IDisposable
         File.Exists(Path.Combine(GnollHackSourceDir, "src", "objects.c"))
         && File.Exists(Path.Combine(GnollHackSourceDir, "include", "objclass.h"));
 
+    /// <summary>
+    /// Indexes a copy of the real objects.c and objclass.h, or skips with the reason. A silent pass
+    /// would make a broken resolution look tested.
+    /// </summary>
     private async Task<SourceCodeService> CreateServiceAsync()
     {
+        if (!SourceAvailable)
+        {
+            Assert.Skip(
+                $"The GnollHack working copy was not found at {GnollHackSourceDir} (src/objects.c and "
+                + "include/objclass.h), so the get_item_stats resolution checks against the real item names cannot run.");
+        }
+
         Directory.CreateDirectory(Path.Combine(_sourceDir, "src"));
         Directory.CreateDirectory(Path.Combine(_sourceDir, "include"));
         File.Copy(Path.Combine(GnollHackSourceDir, "src", "objects.c"), Path.Combine(_sourceDir, "src", "objects.c"));
@@ -68,8 +79,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task BareSuffix_ResolvesToTheOneItemNamedOfIt_WithANote()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         var experience = service.GetItemStats("experience");
@@ -91,8 +100,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task ExactName_ResolvesDirectly_WithoutANote()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         var digging = service.GetItemStats("digging");
@@ -104,8 +111,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task SuffixSharedByTwoItems_StaysAMissWithSuggestions()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         // Two item names end in "of dexterity", and no item is named "dexterity".
@@ -119,8 +124,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task NameWithNoSuffixMatch_StaysTheUsualMiss()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         var response = service.GetItemStats("quuxwidget");
@@ -132,8 +135,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task ObjectClass_StillFiltersTheSuffixMatch()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         var response = service.GetItemStats("experience", "WEAPON_CLASS");
@@ -145,8 +146,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task TrailingWords_ResolveToTheItemNamedByTheRest_WithANote()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         var mail = service.GetItemStats("silver dragon scale mail concept?");
@@ -172,26 +171,8 @@ public class GetItemStatsResolutionTests : IDisposable
     }
 
     [Fact]
-    public async Task ThreeTrailingWords_ResolveToTheItemNamedByTheRest_WithANote()
-    {
-        if (!SourceAvailable) return;
-
-        using var service = await CreateServiceAsync();
-
-        var response = service.GetItemStats("belt of hill giant strength worth wearing now");
-        Assert.Null(response.Error);
-        Assert.NotNull(response.Stats);
-        Assert.Contains("\"belt of hill giant strength\"", response.RawDefinition);
-        Assert.StartsWith(
-            "Resolved 'belt of hill giant strength worth wearing now' to 'belt of hill giant strength': no item is named 'belt of hill giant strength worth wearing now'.",
-            response.Message);
-    }
-
-    [Fact]
     public async Task ManyTrailingWords_AfterAHyphenatedName_Resolve()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         var response = service.GetItemStats("triple-headed flail for monk fists comparison");
@@ -205,8 +186,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task TrailingNonLatinGlyphs_AreCut_AndTheNoteQuotesTheNameAsGiven()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         // Tamil glyphs after an exact item name.
@@ -236,8 +215,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task CutName_FallsBackToTheSuffixMatch()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         var response = service.GetItemStats("experience\u5F15");
@@ -251,8 +228,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task CutAppearance_StaysAMissWithItsAppearanceNote()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         var response = service.GetItemStats("orange potion?");
@@ -266,8 +241,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task ObjectClass_StillFiltersTheCutName()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         var response = service.GetItemStats("belt of hill giant strength\u5F15", "WEAPON_CLASS");
@@ -279,8 +252,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task Appearance_StaysAMissWithItsAppearanceNote()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         // "orange" is an item, but a one-word prefix never resolves.
@@ -295,8 +266,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task ObjectClass_StillFiltersTheTrailingWordMatch()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         var excluded = service.GetItemStats("belt of hill giant strength excluding", "WEAPON_CLASS");
@@ -313,8 +282,6 @@ public class GetItemStatsResolutionTests : IDisposable
     [Fact]
     public async Task ExactMultiWordName_ResolvesDirectly_WithoutANote()
     {
-        if (!SourceAvailable) return;
-
         using var service = await CreateServiceAsync();
 
         var mail = service.GetItemStats("silver dragon scale mail");

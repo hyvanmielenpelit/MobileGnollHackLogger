@@ -365,59 +365,25 @@ public class BenchmarkVerdictConsistencyTests
         Assert.Equal(expected, BenchmarkVerdictConsistency.IsNoFaultEvidence(evidence));
     }
 
-    [Fact]
-    public void HasUnevidencedDeduction_Q1_AccuracyFourWithNoFaultEvidence_ReturnsTrue()
+    [Theory]
+    // Q1 shape from run 8: Accuracy = 4/6 with accuracyEvidence = "Matches rubric."
+    [InlineData(4, "Matches rubric.", 6, "Matches rubric.", true)]
+    // Q1 shape from run 37: Accuracy = 5/6 with evidence that names no defect.
+    [InlineData(5, "Matches rubric.", 6, "Matches rubric.", true)]
+    [InlineData(6, "Matches rubric.", 5, "Matches rubric.", true)]
+    [InlineData(6, "Matches rubric.", 6, "Matches rubric.", false)]
+    // Accuracy 4 docked with real evidence; completeness 6 awarded with "Matches rubric."
+    // Because completeness was not docked (level 6), its no-fault evidence is legitimate.
+    [InlineData(4, "Misstated Master Kaen AC as -5 instead of -2.", 6, "Matches rubric.", false)]
+    public void HasUnevidencedDeduction_FlagsOnlyADockedDimensionWithNoFaultEvidence(
+        int accuracyLevel, string accuracyEvidence, int completenessLevel, string completenessEvidence, bool expected)
     {
-        // Q1 shape from run 8: Accuracy = 4/6 with accuracyEvidence = "Matches rubric."
-        Assert.True(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
-            accuracyLevel: 4,
-            accuracyEvidence: "Matches rubric.",
-            completenessLevel: 6,
-            completenessEvidence: "Matches rubric."));
-    }
-
-    [Fact]
-    public void HasUnevidencedDeduction_AccuracyFiveWithNoFaultEvidence_ReturnsTrue_PinsMaxLevel()
-    {
-        // Q1 shape from run 37: Accuracy = 5/6 with evidence that names no defect.
         Assert.Equal(5, BenchmarkVerdictConsistency.UnevidencedDeductionMaxLevel);
-        Assert.True(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
-            accuracyLevel: 5,
-            accuracyEvidence: "Matches rubric.",
-            completenessLevel: 6,
-            completenessEvidence: "Matches rubric."));
-    }
-
-    [Fact]
-    public void HasUnevidencedDeduction_CompletenessFiveWithNoFaultEvidence_ReturnsTrue()
-    {
-        Assert.True(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
-            accuracyLevel: 6,
-            accuracyEvidence: "Matches rubric.",
-            completenessLevel: 5,
-            completenessEvidence: "Matches rubric."));
-    }
-
-    [Fact]
-    public void HasUnevidencedDeduction_LevelSixWithNoFaultEvidence_ReturnsFalse()
-    {
-        Assert.False(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
-            accuracyLevel: 6,
-            accuracyEvidence: "Matches rubric.",
-            completenessLevel: 6,
-            completenessEvidence: "Matches rubric."));
-    }
-
-    [Fact]
-    public void HasUnevidencedDeduction_CrossDimension_AccuracyFourWithEvidence_CompletenessSixWithNoFault_ReturnsFalse()
-    {
-        // Accuracy 4 docked with real evidence; completeness 6 awarded with "Matches rubric."
-        // Because completeness was not docked (level 6), its no-fault evidence is legitimate.
-        Assert.False(BenchmarkVerdictConsistency.HasUnevidencedDeduction(
-            accuracyLevel: 4,
-            accuracyEvidence: "Misstated Master Kaen AC as -5 instead of -2.",
-            completenessLevel: 6,
-            completenessEvidence: "Matches rubric."));
+        Assert.Equal(expected, BenchmarkVerdictConsistency.HasUnevidencedDeduction(
+            accuracyLevel: accuracyLevel,
+            accuracyEvidence: accuracyEvidence,
+            completenessLevel: completenessLevel,
+            completenessEvidence: completenessEvidence));
     }
 
     [Fact]

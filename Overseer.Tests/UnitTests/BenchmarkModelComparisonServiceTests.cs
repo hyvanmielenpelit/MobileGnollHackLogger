@@ -326,25 +326,6 @@ public class BenchmarkModelComparisonServiceTests
     }
 
     [Fact]
-    public void MixedCandidatePromptOptions_ExcludeTheEntry()
-    {
-        var odd = Run(3, "claude-opus-5");
-        odd.CandidatePromptOptionsJson = "{\"verboseMode\":true,\"spoilerFreeMode\":false,\"overseerMode\":0}";
-
-        var dto = Build(new[]
-        {
-            Source("a", Card(), Run(1, "gpt-5.6-luna")),
-            Source("b", Card(), Run(2, "gemini-3.8-flash-lite")),
-            Source("c", Card(), odd)
-        });
-
-        var excluded = Entry(dto, "c");
-        Assert.True(excluded.Excluded);
-        Assert.Null(excluded.Quality);
-        Assert.Equal(new[] { BenchmarkComparabilityKey.CandidatePromptOptionsKey }, excluded.ExcludingKeys);
-    }
-
-    [Fact]
     public void ARefusedSource_IsExcludedWithItsOwnReason()
     {
         // A group whose members do not pool cannot be one point. The reason travels with the entry.

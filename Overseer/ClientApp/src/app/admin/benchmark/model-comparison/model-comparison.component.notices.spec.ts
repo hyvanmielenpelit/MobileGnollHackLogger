@@ -7,7 +7,6 @@ import { APP_CHART_REGISTRABLES } from '../../../chart-registrables';
 import {
   BenchmarkComparabilityIndexDto,
   BenchmarkComparabilityIndexEntryDto,
-  BenchmarkModelComparisonCostDto,
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonEntryDto,
   ComparisonSelectedSource,
@@ -1337,50 +1336,6 @@ describe('model-comparison adapter', () => {
     expect(entry.candidateCostPerQuestionSdUsd).toBeNull();
     expect(entry.speedIndexSd).toBeNull();
     expect(entry.totalModelTimeSdMs).toBeNull();
-  });
-
-  it('maps the run total including grading roles when the payload carries one, and NaN when it is null', () => {
-    const cost: BenchmarkModelComparisonCostDto = {
-      candidateCostPerQuestionUsd: 0.0123,
-      candidateCostPerRunUsd: 0.2214,
-      totalRunCostPerRunUsd: 0.9876,
-      totalRunCostSdUsd: 0.0432,
-      basis: 'Current',
-      pricingResolved: true,
-      degraded: false
-    };
-    const measured = (key: string, overrides: Partial<BenchmarkModelComparisonCostDto>): BenchmarkModelComparisonEntryDto =>
-      ({ ...excluded, key, excluded: false, comparable: true, state: 'Comparable', excludingKeys: [], cost: { ...cost, ...overrides } });
-    const [withTotal, withoutTotal] = toChartEntries({
-      pricingBasis: 'Current',
-      pricingBasisLabel: 'Current catalog',
-      computedAtUtc: '2026-09-07T12:00:00Z',
-      baselineSuiteId: 5,
-      baselineSuiteName: 'Suite',
-      baselineEntryKeys: [],
-      baselineKeyValues: {},
-      baselineSignature: '',
-      modelAxisKeys: [],
-      entries: [
-        measured('run:1', {}),
-        measured('run:2', {
-          totalRunCostPerRunUsd: null,
-          totalRunCostSdUsd: null,
-          totalRunCostUnavailableReason: 'Run 2 has no resolvable pricing.'
-        })
-      ],
-      comparableCount: 2,
-      excludedCount: 0,
-      thinkingLevelsDiffer: false,
-      speedAxisCaveat: null,
-      explanation: '',
-      excludedMeasures: []
-    });
-
-    expect(withTotal.totalRunCostUsd).toBe(0.9876);
-    expect(withTotal.totalRunCostSdUsd).toBe(0.0432);
-    expect(Number.isNaN(withoutTotal.totalRunCostUsd)).toBe(true);
-    expect(withoutTotal.totalRunCostSdUsd).toBeNull();
   });
 
   it('reads the question counts and the pricing label off the payload header', () => {

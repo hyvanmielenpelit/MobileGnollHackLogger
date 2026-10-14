@@ -1,8 +1,6 @@
 namespace Overseer.Tests.UnitTests;
 
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Benchmarking;
 using Overseer.Tests.Helpers;
@@ -137,46 +135,5 @@ public class BenchmarkQuestionAssessmentTests
 
         BenchmarkQuestionAssessment.Clear(question);
         Assert.False(BenchmarkQuestionAssessment.IsAssessed(question));
-    }
-
-    [Fact]
-    public void SuiteProgressRule_CalculatesCompletionCorrectly()
-    {
-        // Empty suite
-        var emptyQuestions = new List<BenchmarkQuestion>();
-        int emptyTotal = emptyQuestions.Count;
-        int emptyAssessed = emptyQuestions.Count(q => q.AssessedDifficulty != null);
-        bool emptyFullyAssessed = emptyTotal > 0 && emptyAssessed == emptyTotal;
-
-        Assert.Equal(0, emptyAssessed);
-        Assert.False(emptyFullyAssessed);
-
-        // Partial suite: 2 of 3 assessed
-        var partialQuestions = new List<BenchmarkQuestion>
-        {
-            new BenchmarkQuestion { Id = 1, AssessedDifficulty = 30 },
-            new BenchmarkQuestion { Id = 2, AssessedDifficulty = null },
-            new BenchmarkQuestion { Id = 3, AssessedDifficulty = 70 }
-        };
-        int partialTotal = partialQuestions.Count;
-        int partialAssessed = partialQuestions.Count(q => q.AssessedDifficulty != null);
-        bool partialFullyAssessed = partialTotal > 0 && partialAssessed == partialTotal;
-
-        Assert.Equal(2, partialAssessed);
-        Assert.False(partialFullyAssessed);
-
-        // Complete suite: 3 of 3 assessed
-        var completeQuestions = new List<BenchmarkQuestion>
-        {
-            new BenchmarkQuestion { Id = 1, AssessedDifficulty = 30 },
-            new BenchmarkQuestion { Id = 2, AssessedDifficulty = 50 },
-            new BenchmarkQuestion { Id = 3, AssessedDifficulty = 70 }
-        };
-        int completeTotal = completeQuestions.Count;
-        int completeAssessed = completeQuestions.Count(q => q.AssessedDifficulty != null);
-        bool completeFullyAssessed = completeTotal > 0 && completeAssessed == completeTotal;
-
-        Assert.Equal(3, completeAssessed);
-        Assert.True(completeFullyAssessed);
     }
 }

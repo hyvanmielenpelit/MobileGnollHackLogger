@@ -175,45 +175,26 @@ public class SystemAiUsageRecordingTests
         OutputTokens = output
     };
 
-    [Fact]
-    public async Task RecordUsageAsync_WithoutThinkingLevel_StoresTheConfigurationsLevel()
+    /// <summary>
+    /// The configuration's level is "medium". No <see cref="UsageThinkingLevel"/> stores that level;
+    /// one whose value is null (a thinking level of none) stores an empty string; an explicit one is
+    /// stored as given.
+    /// </summary>
+    [Theory]
+    [InlineData(false, null, 4, "medium")]
+    [InlineData(true, null, 1, "")]
+    [InlineData(true, "high", 1, "high")]
+    public async Task RecordUsageAsync_StoresTheThinkingLevel(bool passLevel, string? level, int roleContext, string expected)
     {
         var (db, service) = CreateService();
         var config = await SeedConfigAsync(db);
         config.ThinkingLevel = "medium";
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        await service.RecordUsageAsync(config.Id, TestUserId, inputTokens: 10, outputTokens: 5, roleContext: 4);
+        await service.RecordUsageAsync(config.Id, TestUserId, inputTokens: 10, outputTokens: 5, roleContext: roleContext,
+            thinkingLevel: passLevel ? new UsageThinkingLevel(level) : null);
 
-        Assert.Equal("medium", Assert.Single(db.SystemAiUsageLogs.ToList()).ThinkingLevel);
-    }
-
-    [Fact]
-    public async Task RecordUsageAsync_WithAThinkingLevelOfNone_StoresAnEmptyString()
-    {
-        var (db, service) = CreateService();
-        var config = await SeedConfigAsync(db);
-        config.ThinkingLevel = "medium";
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
-
-        await service.RecordUsageAsync(config.Id, TestUserId, inputTokens: 10, outputTokens: 5, roleContext: 1,
-            thinkingLevel: new UsageThinkingLevel(null));
-
-        Assert.Equal(string.Empty, Assert.Single(db.SystemAiUsageLogs.ToList()).ThinkingLevel);
-    }
-
-    [Fact]
-    public async Task RecordUsageAsync_WithAnExplicitThinkingLevel_StoresIt()
-    {
-        var (db, service) = CreateService();
-        var config = await SeedConfigAsync(db);
-        config.ThinkingLevel = "medium";
-        await db.SaveChangesAsync(TestContext.Current.CancellationToken);
-
-        await service.RecordUsageAsync(config.Id, TestUserId, inputTokens: 10, outputTokens: 5, roleContext: 1,
-            thinkingLevel: new UsageThinkingLevel("high"));
-
-        Assert.Equal("high", Assert.Single(db.SystemAiUsageLogs.ToList()).ThinkingLevel);
+        Assert.Equal(expected, Assert.Single(db.SystemAiUsageLogs.ToList()).ThinkingLevel);
     }
 
     [Fact]

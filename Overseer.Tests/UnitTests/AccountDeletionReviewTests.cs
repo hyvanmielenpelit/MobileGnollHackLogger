@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Services;
+using Overseer.Services.Privacy;
 using Overseer.Services.Security;
 using Xunit;
 
@@ -35,6 +36,7 @@ public sealed class AccountDeletionReviewTests : IDisposable
     private readonly ApplicationDbContext _db;
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly RecordingSecurityEvents _events = new();
+    private readonly EphemeralSessionStore _ephemeral = new(new ConfigurationBuilder().Build(), startSweeper: false);
 
     private sealed class RecordingSecurityEvents : ISecurityEventRecorder
     {
@@ -66,6 +68,7 @@ public sealed class AccountDeletionReviewTests : IDisposable
     {
         _scope.Dispose();
         _provider.Dispose();
+        _ephemeral.Dispose();
         _connection.Dispose();
         try
         {
@@ -86,7 +89,16 @@ public sealed class AccountDeletionReviewTests : IDisposable
 
     private AccountDeletionReviewService Service(IConfiguration? config = null, AccountHoldOptions? options = null) =>
         new(_db, _userManager, config ?? Config(), options ?? new AccountHoldOptions(),
-            NullLogger<AccountDeletionReviewService>.Instance, _scope.ServiceProvider, _events);
+            NullLogger<AccountDeletionReviewService>.Instance, _scope.ServiceProvider, _events, _ephemeral);
+
+    private EphemeralSession OpenIncognito(string userId) => _ephemeral.Create(userId, new ChatSession
+    {
+        AspNetUserId = userId,
+        Title = "Incognito chat",
+        CreatedUtc = DateTime.UtcNow,
+        LastMessageUtc = DateTime.UtcNow,
+        IsConfidential = true
+    });
 
     private async Task<long> SeedPendingRequestAsync()
     {
@@ -140,6 +152,25 @@ public sealed class AccountDeletionReviewTests : IDisposable
         Assert.NotNull(result.Decision);
         Assert.False(result.Decision!.EmailSent);
         Assert.Equal("No email sender is configured.", result.Decision.EmailError);
+    }
+
+    [Fact]
+    public async Task ApproveClosesEveryIncognitoSessionOfTheAccountAndNoOtherAccounts()
+    {
+        long id = await SeedPendingRequestAsync();
+        var first = OpenIncognito(UserId);
+        var second = OpenIncognito(UserId);
+        var bystander = OpenIncognito(AdminId);
+
+        var result = await Service().ApproveAsync(id, UserName, AdminId, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ReviewActionStatus.Ok, result.Status);
+        Assert.Null(_ephemeral.Get(first.Ref, UserId));
+        Assert.Null(_ephemeral.Get(second.Ref, UserId));
+        Assert.True(first.IsErased);
+        Assert.True(second.IsErased);
+        Assert.NotNull(_ephemeral.Get(bystander.Ref, AdminId));
+        Assert.False(bystander.IsErased);
     }
 
     [Theory]

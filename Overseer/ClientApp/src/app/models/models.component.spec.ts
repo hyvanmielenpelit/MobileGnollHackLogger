@@ -62,10 +62,6 @@ describe('ModelsComponent', () => {
     fixture.detectChanges();
   });
 
-  it('should create', () => {
-    expect(component).toBeTruthy();
-  });
-
   describe('confirmDelete', () => {
     let mockDialog: any;
 

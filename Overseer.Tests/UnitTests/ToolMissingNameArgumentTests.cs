@@ -68,7 +68,8 @@ public class ToolMissingNameArgumentTests : IDisposable
             "{\"type\": \"function\"}",
             "{\"name\": null}",
             "{\"name\": 42}",
-            "{\"name\": \"   \"}"
+            "{\"name\": \"   \"}",
+            "{\"name\": \" \\t\\r\\n \"}"
         };
 
         var data = new TheoryData<string, string>();

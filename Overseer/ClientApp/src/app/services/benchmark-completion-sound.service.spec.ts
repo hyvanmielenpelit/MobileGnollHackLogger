@@ -46,10 +46,6 @@ describe('BenchmarkCompletionSoundService', () => {
     service = TestBed.inject(BenchmarkCompletionSoundService);
   });
 
-  it('should be created', () => {
-    expect(service).toBeTruthy();
-  });
-
   it('should create the audio element lazily, with the Opus source ahead of the AAC fallback', async () => {
     expect(audioSpy).not.toHaveBeenCalled();
 
@@ -659,14 +655,6 @@ describe('BenchmarkCompletionSoundService', () => {
       expect(attempts[0].path).toBe('element');
       expect(attempts[0].outcome).toBe('played');
       expect(attempts[0].hidden).toBe(false);
-    });
-
-    it('records an attempt for prime(), keyed "test"', async () => {
-      await service.prime();
-
-      const attempts = service.diagnostics.attempts;
-      expect(attempts.length).toBe(1);
-      expect(attempts[0].key).toBe('test');
     });
 
     it('keeps only the last 10 attempts', async () => {

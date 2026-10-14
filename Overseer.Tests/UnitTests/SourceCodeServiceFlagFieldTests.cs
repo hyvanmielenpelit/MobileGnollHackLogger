@@ -15,67 +15,30 @@ using Xunit;
 /// </summary>
 public class SourceCodeServiceFlagFieldTests
 {
-    [Fact]
-    public void SingleWrappedUnion_UnwrapsThenSplits()
+    [Theory]
+    [InlineData("(A | B)", new[] { "A", "B" })] // A single wrapper is removed before splitting.
+    [InlineData("((A | B))", new[] { "A", "B" })] // Both layers of a nested wrapper are removed.
+    [InlineData("A | B", new[] { "A", "B" })] // An unwrapped union splits without needing parentheses.
+    public void Union_IsUnwrappedThenSplitIntoFlagNames(string field, string[] expected)
     {
-        var result = SourceCodeService.ParseFlagField("(A | B)");
+        var result = SourceCodeService.ParseFlagField(field);
 
         var flags = Assert.IsType<List<string>>(result);
-        Assert.Equal(new[] { "A", "B" }, flags);
+        Assert.Equal(expected, flags);
     }
 
-    [Fact]
-    public void DoublyWrappedUnion_UnwrapsBothLayersThenSplits()
+    [Theory]
+    [InlineData("(A)", "A")] // A single wrapped flag unwraps to a plain string.
+    [InlineData("0", "0")] // A plain number stays a plain string.
+    [InlineData("(A | B", "(A | B")] // An unbalanced open paren has no matching close at the end: returned verbatim.
+    // The opening paren's own matching close is not the last character — the string is a union
+    // of two already-wrapped unions — so nothing is unwrapped, and the leftover parentheses mean
+    // this is returned whole rather than split into "A", "B) | (C" and "D" style fragments.
+    [InlineData("(A | B) | (C | D)", "(A | B) | (C | D)")]
+    public void NonUnionOrUnsplittableField_IsReturnedAsOneString(string field, string expected)
     {
-        var result = SourceCodeService.ParseFlagField("((A | B))");
+        var result = SourceCodeService.ParseFlagField(field);
 
-        var flags = Assert.IsType<List<string>>(result);
-        Assert.Equal(new[] { "A", "B" }, flags);
-    }
-
-    [Fact]
-    public void SingleWrappedFlag_UnwrapsToAPlainString()
-    {
-        var result = SourceCodeService.ParseFlagField("(A)");
-
-        Assert.Equal("A", Assert.IsType<string>(result));
-    }
-
-    [Fact]
-    public void UnwrappedUnion_SplitsWithoutNeedingParentheses()
-    {
-        var result = SourceCodeService.ParseFlagField("A | B");
-
-        var flags = Assert.IsType<List<string>>(result);
-        Assert.Equal(new[] { "A", "B" }, flags);
-    }
-
-    [Fact]
-    public void PlainNumber_StaysAPlainString()
-    {
-        var result = SourceCodeService.ParseFlagField("0");
-
-        Assert.Equal("0", Assert.IsType<string>(result));
-    }
-
-    [Fact]
-    public void UnbalancedOpenParen_HasNoMatchingCloseAtTheEnd_IsReturnedVerbatim()
-    {
-        var result = SourceCodeService.ParseFlagField("(A | B");
-
-        Assert.Equal("(A | B", Assert.IsType<string>(result));
-    }
-
-    /// <summary>
-    /// The opening paren's own matching close is not the last character — the string is a union
-    /// of two already-wrapped unions — so nothing is unwrapped, and the leftover parentheses mean
-    /// this is returned whole rather than split into "A", "B) | (C" and "D" style fragments.
-    /// </summary>
-    [Fact]
-    public void UnionOfTwoWrappedUnions_IsNotUnwrapped_IsReturnedVerbatim()
-    {
-        var result = SourceCodeService.ParseFlagField("(A | B) | (C | D)");
-
-        Assert.Equal("(A | B) | (C | D)", Assert.IsType<string>(result));
+        Assert.Equal(expected, Assert.IsType<string>(result));
     }
 }

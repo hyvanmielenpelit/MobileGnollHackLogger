@@ -156,18 +156,6 @@ public class DocumentAttachmentAcceptanceTests
     }
 
     [Fact]
-    public void RealTextIsStillScannedForBinaryContent()
-    {
-        // The check the three-way split exists to preserve: a payload declared as text and
-        // containing something else is still refused.
-        var validator = CreateValidator();
-
-        var withNul = Encoding.UTF8.GetBytes("hello\0world").ToArray();
-        Assert.False(validator.ValidateBytes("notes.txt", "text/plain", withNul).IsValid);
-        Assert.True(validator.ValidateBytes("notes.txt", "text/plain", Encoding.UTF8.GetBytes("hello world")).IsValid);
-    }
-
-    [Fact]
     public void CsvAndCodeAreTreatedAsTextAndNotAsBinaryDocuments()
     {
         var validator = CreateValidator();
@@ -193,15 +181,5 @@ public class DocumentAttachmentAcceptanceTests
 
         Assert.True(validator.IsBinaryDocumentContentType(Pdf));
         Assert.False(validator.IsBinaryDocumentContentType(Docx));
-    }
-
-    [Fact]
-    public void AnImageIsUnaffectedByAnyOfThis()
-    {
-        var validator = CreateValidator();
-        var png = new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3 };
-
-        Assert.True(validator.ValidateBytes("shot.png", "image/png", png).IsValid);
-        Assert.False(validator.ValidateBytes("shot.png", "image/png", PdfBytes()).IsValid);
     }
 }

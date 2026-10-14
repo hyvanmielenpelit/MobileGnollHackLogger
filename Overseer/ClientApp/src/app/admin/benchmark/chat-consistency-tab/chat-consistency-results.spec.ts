@@ -195,11 +195,6 @@ describe('chat consistency results', () => {
       }
     });
 
-    it('words a change in work per turn as the server does', () => {
-      expect(ccEndpointBriefStatusText(ccEndpointBrief('P4', { verdictLabel: 'more work' }))).toBe('More work');
-      expect(ccEndpointBriefStatusText(ccEndpointBrief('P4', { verdictLabel: 'less work' }))).toBe('Less work');
-    });
-
     it('reads a change in provider error rate as the full P6 endpoint reads it', () => {
       const more = ccEndpointBrief('P6', { verdictLabel: 'more provider errors' });
       const fewer = ccEndpointBrief('P6', { verdictLabel: 'fewer provider errors' });

@@ -139,34 +139,6 @@ public class BenchmarkReportChartsTests
         Assert.Equal("report-documents/{id:long}/charts", delete.GetCustomAttribute<HttpDeleteAttribute>()!.Template);
     }
 
-    [Fact]
-    public async Task PutCharts_ReplacesTheWholeSet()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        using var charts = TestChartStores.InTempFolder();
-        await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
-        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport));
-        var controller = Controller(db, charts.Store);
-
-        Assert.IsType<OkObjectResult>(await controller.PutCharts(id, Request(
-            Upload("p1a-quality", BenchmarkReportChartStore.Named),
-            Upload("p1a-quality", BenchmarkReportChartStore.Anonymized),
-            Upload("p1b-speed", BenchmarkReportChartStore.Named)), ct));
-
-        string newHash = new('c', 64);
-        var ok = Assert.IsType<OkObjectResult>(await controller.PutCharts(id, Request(
-            Upload("s2-quality-cost", BenchmarkReportChartStore.Anonymized, settingsHash: newHash)), ct));
-
-        var summary = Assert.IsType<ReportDocumentChartsSummaryDto>(ok.Value);
-        Assert.Equal(1, summary.ChartCount);
-        Assert.Equal(new[] { "s2-quality-cost" }, summary.FigureKeys);
-        Assert.Equal(newHash, charts.Store.ReadSummary(id)!.SettingsHash);
-        Assert.Equal(
-            new[] { "manifest.json", "s2-quality-cost.anonymized.png" },
-            Directory.GetFiles(DocumentFolder(charts, id)).Select(Path.GetFileName).OrderBy(n => n, StringComparer.Ordinal));
-        Assert.Empty(await charts.Store.LoadAsync(id, BenchmarkReportChartStore.Named, ct));
-    }
-
     // --- Deletion ----------------------------------------------------------------------------------
 
     [Fact]

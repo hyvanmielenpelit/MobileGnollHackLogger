@@ -543,15 +543,6 @@ public class BenchmarkReportCoverAndFileNameTests
         Assert.True(BenchmarkPdfFileNames.NameSlug(name).Length <= BenchmarkPdfFileNames.MaxNameSlugLength);
     }
 
-    [Theory]
-    [InlineData(BenchmarkReportAudience.ExecutiveSummary, "executive-summary")]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, "researcher-report")]
-    [InlineData(BenchmarkReportAudience.InternalBrief, "internal-brief")]
-    public void TheKindSlugs_AreOneSpellingEach(BenchmarkReportAudience audience, string slug)
-    {
-        Assert.Equal(slug, BenchmarkPdfFileNames.KindSlug(audience));
-    }
-
     [Fact]
     public void RunAndBatteryCompletionDocuments_AndALegacyReportPackRow_KeepTodaysNames()
     {

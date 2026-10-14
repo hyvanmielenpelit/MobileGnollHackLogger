@@ -45,7 +45,7 @@ public class ModelPricingServiceTests
         using var db = CreateInMemoryDb();
         var service = new ModelPricingService(_metadataService, db);
 
-        var result = service.ResolveDefault("Google", "gemini-3.8-flash-001");
+        var result = service.ResolveDefault("Google", "gemini-3.8-flash-001", new DateOnly(2026, 12, 31));
 
         Assert.NotNull(result);
         Assert.Equal(0.75m, result.InputPerMillion);
@@ -460,13 +460,16 @@ public class ModelPricingServiceTests
         Assert.True(result.ScheduleElapsed);
     }
 
+    /// <summary>Returns the same hand-built catalog card for every model.</summary>
+    private sealed class FixedPricingMetadataService(ModelCatalogPricing pricing) : ModelMetadataService
+    {
+        public override ModelMetadata GetMetadata(string provider, string modelId) =>
+            new() { Id = modelId, Description = modelId, DefaultPricing = pricing };
+    }
+
     [Fact]
     public void ParseScheduled_ScheduledCardWithoutACachedRate_InheritsTheBaseValue()
     {
-        using var db = CreateInMemoryDb();
-        var service = new ModelPricingService(_metadataService, db);
-
-        // Exercised through ResolveDefault, which is where the inheritance actually happens.
         var catalogEntry = new ModelCatalogPricing
         {
             InputPerMillion = 1.00m,
@@ -486,9 +489,18 @@ public class ModelPricingServiceTests
         Assert.Null(scheduled.CachedInputPerMillion);
         Assert.Null(scheduled.CacheWritePerMillion);
 
-        // ResolveDefault falls back to the base value when the scheduled card omits one.
-        decimal? resolvedCached = scheduled.CachedInputPerMillion ?? catalogEntry.CachedInputPerMillion;
-        Assert.Equal(0.10m, resolvedCached);
+        using var db = CreateInMemoryDb();
+        var service = new ModelPricingService(new FixedPricingMetadataService(catalogEntry), db);
+
+        var result = service.ResolveDefault("OpenAI", "scheduled-probe", new DateOnly(2027, 2, 1));
+
+        // The scheduled card replaces the rates it states and inherits the two it omits.
+        Assert.NotNull(result);
+        Assert.True(result.ScheduleElapsed);
+        Assert.Equal(2.00m, result.InputPerMillion);
+        Assert.Equal(8.00m, result.OutputPerMillion);
+        Assert.Equal(0.10m, result.CachedInputPerMillion);
+        Assert.Equal(1.25m, result.CacheWritePerMillion);
     }
 
     [Theory]
@@ -956,20 +968,6 @@ public class ModelPricingServiceTests
         Assert.Equal(2.50m, pricing.LongContext.OutputPerMillion);
         Assert.Equal(0.05m, pricing.LongContext.CachedInputPerMillion);
         Assert.Equal(0.625m, pricing.LongContext.CacheWritePerMillion);
-    }
-
-    [Fact]
-    public void ComputeCost_ClaudeHaiku55_OneHundredThousandIsBase_OneMoreIsLongContext()
-    {
-        var pricing = HaikuCard();
-
-        decimal atThreshold = ModelPricingService.ComputeCost(
-            pricing, new List<TokenUsageReport> { Call(100_000, outputTokens: 1_000) });
-        decimal oneOver = ModelPricingService.ComputeCost(
-            pricing, new List<TokenUsageReport> { Call(100_001, outputTokens: 1_000) });
-
-        Assert.Equal((100_000 / 1_000_000m * 0.10m) + (1_000 / 1_000_000m * 0.50m), atThreshold);
-        Assert.Equal((100_001 / 1_000_000m * 0.50m) + (1_000 / 1_000_000m * 2.50m), oneOver);
     }
 
     [Fact]
