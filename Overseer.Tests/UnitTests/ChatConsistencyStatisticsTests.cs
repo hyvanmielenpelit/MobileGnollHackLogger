@@ -660,21 +660,6 @@ public class ChatConsistencyStatisticsTests
     }
 
     [Fact]
-    public void LaneyPPrimeLimits_OneBaselineUnitOrNoErrors_IsThePlainPChart()
-    {
-        var one = ChatConsistencyStatistics.LaneyPPrimeLimits(new[] { (10, 100) }, 400);
-        var none = ChatConsistencyStatistics.LaneyPPrimeLimits(new[] { (0, 100), (0, 50) }, 100);
-
-        Assert.Equal(1.0, one!.SigmaZ, 12);
-        Assert.Equal(0.1 + 3.0 * Math.Sqrt(0.1 * 0.9 / 400), one.Upper, 12);
-        Assert.Equal(0.1 - 3.0 * Math.Sqrt(0.1 * 0.9 / 400), one.Lower, 12);
-        Assert.Equal(0.0, none!.Center, 12);
-        Assert.Equal(0.0, none.Upper, 12);
-        Assert.Null(ChatConsistencyStatistics.LaneyPPrimeLimits(Array.Empty<(int, int)>(), 10));
-        Assert.Throws<ArgumentOutOfRangeException>(() => ChatConsistencyStatistics.LaneyPPrimeLimits(new[] { (1, 10) }, 0));
-    }
-
-    [Fact]
     public void RateDifferenceInDifferences_IsTheChangeOfPooledRatesInPercentagePoints()
     {
         var did = ChatConsistencyStatistics.RateDifferenceInDifferences(

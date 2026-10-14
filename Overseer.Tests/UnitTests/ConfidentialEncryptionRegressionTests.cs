@@ -14,6 +14,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Controllers;
 using Overseer.Services;
 using Overseer.Services.Privacy;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -39,13 +40,11 @@ public class ConfidentialEncryptionRegressionTests
        opposed to only that it compiles. */
     private static (ApplicationDbContext Db, Microsoft.Data.Sqlite.SqliteConnection Connection) CreateRelationalDb()
     {
-        var connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
-        connection.Open();
+        var connection = SqliteSchemaTemplate.OpenCopy();
 
         var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlite(connection)
             .Options);
-        db.Database.EnsureCreated();
 
         /* A relational provider enforces the foreign keys the InMemory provider ignores, so
            the owning user has to exist. Worth knowing: a test that passes on InMemory can be

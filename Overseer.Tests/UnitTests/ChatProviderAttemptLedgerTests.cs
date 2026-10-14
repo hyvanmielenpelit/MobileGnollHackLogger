@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Agents;
 using Overseer.Services.Telemetry;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -323,11 +324,9 @@ public class ChatProviderAttemptLedgerTests
     public async Task DeletingAUserRemovesTheirUserKeyRows_AndKeepsSystemAttempts()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
-        connection.Open();
+        using var connection = SqliteSchemaTemplate.OpenCopy();
         using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlite(connection).Options);
-        db.Database.EnsureCreated();
 
         db.Users.Add(new ApplicationUser { Id = UserId, UserName = "ledger-user" });
         db.UserKeyAiUsageLogs.Add(new UserKeyAiUsageLog

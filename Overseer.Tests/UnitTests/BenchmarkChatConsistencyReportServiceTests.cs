@@ -367,6 +367,9 @@ internal sealed class ChatConsistencyReportHarness : IAsyncDisposable
 
     private static readonly DateTime Day1 = new(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc);
 
+    /// <summary>The service providers and knowledge-base services <see cref="Service"/> creates, disposed with the harness.</summary>
+    private readonly List<IDisposable> _disposables = new();
+
     public DbContextOptions<ApplicationDbContext> Options { get; private init; } = default!;
     public ApplicationDbContext Db { get; private init; } = default!;
     public IConfiguration Configuration { get; private init; } = default!;
@@ -525,14 +528,22 @@ internal sealed class ChatConsistencyReportHarness : IAsyncDisposable
         services.AddLogging();
         services.AddScoped(_ => new ApplicationDbContext(Options));
         services.AddSingleton<IAiProvider>(Provider);
-        return ServiceFor(Db, services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(), Configuration, Jobs, Provider);
+        var serviceProvider = services.BuildServiceProvider();
+        _disposables.Add(serviceProvider);
+        return ServiceFor(Db, serviceProvider.GetRequiredService<IServiceScopeFactory>(), Configuration, Jobs, Provider, _disposables);
     }
 
-    /// <summary>A report-pack service over <paramref name="db"/>, writing through the real agent loop over <paramref name="provider"/>.</summary>
+    /// <summary>
+    /// A report-pack service over <paramref name="db"/>, writing through the real agent loop over <paramref name="provider"/>;
+    /// the knowledge-base service it creates is added to <paramref name="disposables"/> when one is given.
+    /// </summary>
     public static BenchmarkReportPackService ServiceFor(
-        ApplicationDbContext db, IServiceScopeFactory agentScopes, IConfiguration configuration, BenchmarkReportPackJobManager jobs, IAiProvider provider)
+        ApplicationDbContext db, IServiceScopeFactory agentScopes, IConfiguration configuration, BenchmarkReportPackJobManager jobs, IAiProvider provider,
+        ICollection<IDisposable>? disposables = null)
     {
         var cache = new MemoryCache(new MemoryCacheOptions());
+        var knowledgeBase = new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, configuration);
+        disposables?.Add(knowledgeBase);
         var handlers = new List<IToolHandler>();
         var bridge = new BenchmarkReportPackServiceTests.NoClientBridge();
         var runner = new AgentLoopRunner(
@@ -542,7 +553,7 @@ internal sealed class ChatConsistencyReportHarness : IAsyncDisposable
             new BenchmarkReportPackServiceTests.ReplyEchoHttpClientFactory(),
             configuration,
             agentScopes,
-            new KnowledgeBaseService(NullLogger<KnowledgeBaseService>.Instance, configuration),
+            knowledgeBase,
             new ModelMetadataService(),
             NullLogger<AgentLoopRunner>.Instance);
 
@@ -567,7 +578,9 @@ internal sealed class ChatConsistencyReportHarness : IAsyncDisposable
             Db, new ChatConsistencyRegradeJobManager(), regradeScopes, new BenchmarkRunManager(),
             NullLogger<ChatConsistencyRegradeService>.Instance, calibrationRunner: (_, _, _, _) => Task.CompletedTask);
         return new AdminChatConsistencyController(
-            new ChatConsistencyAnalysisService(Db, evidence, NullLogger<ChatConsistencyAnalysisService>.Instance), evidence, regrade, Service())
+            new ChatConsistencyAnalysisService(
+                Db, evidence, NullLogger<ChatConsistencyAnalysisService>.Instance, ChatConsistencyAnalysisTestData.TestBootstrapReplicates),
+            evidence, regrade, Service())
         {
             ControllerContext = new ControllerContext
             {
@@ -583,5 +596,12 @@ internal sealed class ChatConsistencyReportHarness : IAsyncDisposable
         };
     }
 
-    public async ValueTask DisposeAsync() => await Db.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var disposable in _disposables)
+        {
+            disposable.Dispose();
+        }
+        await Db.DisposeAsync();
+    }
 }

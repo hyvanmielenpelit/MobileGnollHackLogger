@@ -322,11 +322,9 @@ public class DatabaseStorageMetricsServiceTests
     public async Task GetStorageMetricsAsync_CountsPrunableSecurityEventsAndProviderAttempts_ExcludingHeldUsers()
     {
         var ct = TestContext.Current.CancellationToken;
-        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
-        connection.Open();
+        using var connection = SqliteSchemaTemplate.OpenCopy();
         using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlite(connection).Options);
-        db.Database.EnsureCreated();
         using var cache = (MemoryCache)CreateSizeLimitedCache();
 
         db.Users.Add(new ApplicationUser { Id = "held-user", UserName = "held-user" });

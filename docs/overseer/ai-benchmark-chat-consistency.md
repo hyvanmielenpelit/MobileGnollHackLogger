@@ -1384,11 +1384,12 @@ layouts move to version 3, which appends the figure to a stored figure list:
    its valid attempts, availability-only units hollow, a ▲ above a unit that needed a provider-caused
    re-run, and the period shading and Overseer-change markers of the other charts.
 2. **`controlChart`**: a **Laney p′ chart**, labeled *control limits*. The center line is the baseline
-   period's pooled rate p̄. For unit *i* with *n*<sub>i</sub> valid attempts, σ<sub>p,i</sub> =
-   √(p̄ (1 − p̄) ÷ *n*<sub>i</sub>); the standardized rates *z*<sub>i</sub> = (*p*<sub>i</sub> − p̄) ÷
-   σ<sub>p,i</sub> over the baseline units give σ<sub>Z</sub> = MR̄ ÷ 1.128, where MR̄ is the mean absolute
-   moving range of consecutive *z*<sub>i</sub> and 1.128 is d₂ for ranges of two. The limits are p̄ ± 3 ·
-   σ<sub>p,i</sub> · σ<sub>Z</sub>, the lower one clipped at 0. Laney's correction keeps the overdispersion
+   period's pooled rate p̄. For each baseline unit *i* with *n*<sub>i</sub> > 0 valid attempts,
+   σ<sub>p,i</sub> = √(p̄ (1 − p̄) ÷ *n*<sub>i</sub>) and *z*<sub>i</sub> = (*p*<sub>i</sub> − p̄) ÷
+   σ<sub>p,i</sub>; σ<sub>Z</sub> = MR̄ ÷ 1.128, where MR̄ is the mean absolute moving range of consecutive
+   *z*<sub>i</sub> and 1.128 is d₂ for ranges of two (σ<sub>Z</sub> is 1 with fewer than two such units, or
+   when p̄ is 0 or 1). A plotted unit with *n* valid attempts gets the limits p̄ ± 3 · √(p̄ (1 − p̄) ÷ *n*)
+   · σ<sub>Z</sub>, the lower clipped at 0 and the upper at 1. Laney's correction keeps the overdispersion
    of bursty errors from making plain p-chart limits raise false alarms at large *n*. Points beyond the
    limits are labeled. The chart's limits come from `ccLaneyPPrimeLimits` in the client;
    `ChatConsistencyStatistics.LaneyPPrimeLimits` holds the same formula on the server as a reference

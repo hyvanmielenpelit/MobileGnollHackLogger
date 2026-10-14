@@ -19,6 +19,7 @@ using Overseer.Controllers;
 using Overseer.Services;
 using Overseer.Services.Privacy;
 using Overseer.Services.Security;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -57,12 +58,12 @@ public sealed class SessionCreateLockoutTests : IDisposable
 
     public SessionCreateLockoutTests()
     {
-        _connection = new SqliteConnection("Filename=:memory:");
-        _connection.Open();
+        _connection = SqliteSchemaTemplate.OpenCopy();
 
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddDbContext<ApplicationDbContext>(o => o.UseSqlite(_connection));
+        services.Configure<PasswordHasherOptions>(o => o.IterationCount = 1);
         services.AddIdentityCore<ApplicationUser>(o =>
             {
                 o.SignIn.RequireConfirmedEmail = true;
@@ -78,7 +79,6 @@ public sealed class SessionCreateLockoutTests : IDisposable
         _db = _scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         _userManager = _scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         _signInManager = _scope.ServiceProvider.GetRequiredService<SignInManager<ApplicationUser>>();
-        _db.Database.EnsureCreated();
 
         _config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {

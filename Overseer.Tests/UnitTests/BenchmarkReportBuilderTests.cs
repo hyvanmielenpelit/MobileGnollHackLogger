@@ -7114,7 +7114,7 @@ public class BenchmarkReportBuilderTests
         Assert.DoesNotContain("  - **Answer Streaming Rate:** Not recorded", report);
     }
 
-    // --- 13. Report Cost Breakdown, Integrity and Agreement Reporting ---
+    // --- Report Cost Breakdown, Integrity and Agreement Reporting ---
 
     /// <summary>
     /// A minimal answer that scores and counts as clean, so a report-shape test can add one field
@@ -7586,5 +7586,142 @@ public class BenchmarkReportBuilderTests
 
         Assert.Contains("95% CI over 3 items", report);
         Assert.DoesNotContain("The interval is inflated by", report);
+    }
+
+    // --- Whole report and assessor provenance ---------------------------------------------
+
+    [Fact]
+    public void BuildMarkdownReport_GeneratesAllSectionsWithIndices()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 101,
+            SuiteName = "GnollHack Core Suite",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet-20241022", displayName: "Claude 3.5 Sonnet"),
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-opus", displayName: "Claude Opus"),
+            StartedAtUtc = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc),
+            CompletedAtUtc = new DateTime(2026, 9, 1, 12, 5, 30, DateTimeKind.Utc),
+            TotalDurationMs = 330000,
+            TotalAnswerDurationMs = 45000,
+            Status = BenchmarkRunStatus.Completed,
+            FinalScore = 85,
+            QualityIndex = 82,
+            SpeedIndex = 76,
+            ComputedScore = 82,
+            ScoringMethodVersion = 2,
+            SpeedMeasurementDegraded = true,
+            TotalQuestionCount = 2,
+            AnsweredQuestionCount = 2,
+            TotalInputTokens = 15000,
+            TotalOutputTokens = 3000,
+            AssessmentText = "The model performed reasonably well with good reasoning.",
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new BenchmarkRunAnswer
+                {
+                    ExpectedPointsRecorded = true,
+                    OrderIndex = 1,
+                    QuestionText = "Question 1",
+                    Difficulty = BenchmarkDifficulty.Simple,
+                    AssessedDifficulty = 25,
+                    AnswerText = "Answer 1",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AccuracyLevel = 5,
+                    CompletenessLevel = 4,
+                    ConcisenessLevel = 6,
+                    ReadabilityLevel = 5,
+                    AccuracyScore = 87,
+                    CompletenessScore = 72,
+                    ConcisenessScore = 100,
+                    ReadabilityScore = 87,
+                    QualityScore = 83,
+                    SpeedScore = 80,
+                    DurationMs = 6000,
+                    ReviewComment = "Decent."
+                },
+                new BenchmarkRunAnswer
+                {
+                    ExpectedPointsRecorded = true,
+                    OrderIndex = 2,
+                    QuestionText = "Question 2",
+                    Difficulty = BenchmarkDifficulty.Intermediate,
+                    AssessedDifficulty = 60,
+                    AnswerText = "Answer 2",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AccuracyLevel = 4,
+                    CompletenessLevel = 5,
+                    ConcisenessLevel = 5,
+                    ReadabilityLevel = 5,
+                    AccuracyScore = 72,
+                    CompletenessScore = 87,
+                    ConcisenessScore = 87,
+                    ReadabilityScore = 87,
+                    QualityScore = 80,
+                    SpeedScore = 70,
+                    DurationMs = 9000,
+                    ReviewComment = "Okay."
+                }
+            }
+        };
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.29");
+
+        Assert.Contains("# GnollHack Overseer AI Intelligence Benchmark Report", report);
+        Assert.Contains("## 1. Run Manifest", report);
+        Assert.Contains("## 2. Results Summary", report);
+        Assert.Contains("Intelligence Index: 82 / 100", report);
+        Assert.Contains("Speed Index: 76 / 100", report);
+        Assert.Contains("## 3. Questions and Replies", report);
+        Assert.Contains("## 4. Scoring Method & Configuration", report);
+        Assert.Contains("## 5. Issues", report);
+        Assert.Contains("## 6. Synthesis Assessment", report);
+        Assert.Contains("## 7. Final Indices", report);
+        Assert.Contains("Concurrency Timing Notice", report);
+    }
+
+    [Fact]
+    public void BenchmarkReportBuilder_AssessedBy_IncludesCalloutWhenOverridden()
+    {
+        var run = new BenchmarkRun
+        {
+            Id = 1,
+            SuiteName = "Test Suite",
+            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet", displayName: "Tested Model"),
+            AssessorModelConfigurationId = 10,
+            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet", displayName: "Original Assessor"),
+            Status = BenchmarkRunStatus.Completed,
+            Answers = new List<BenchmarkRunAnswer>
+            {
+                new()
+                {
+                    OrderIndex = 1,
+                    QuestionText = "Question 1",
+                    AnswerText = "Answer 1",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    QualityScore = 80,
+                    AssessedByModelConfigurationId = 20, // Differs!
+                    AssessedByModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-opus", displayName: "Override Assessor"),
+                    AssessedAtUtc = new DateTime(2026, 9, 2, 12, 0, 0, DateTimeKind.Utc)
+                },
+                new()
+                {
+                    OrderIndex = 2,
+                    QuestionText = "Question 2",
+                    AnswerText = "Answer 2",
+                    Status = BenchmarkAnswerStatus.Ok,
+                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
+                    QualityScore = 80,
+                    AssessedByModelConfigurationId = 10, // Matches run assessor!
+                    AssessedByModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet", displayName: "Original Assessor")
+                }
+            }
+        };
+
+        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.29");
+
+        Assert.Contains("Assessed by:** Override Assessor (Anthropic, claude-3-opus) — differs from this run's assessor", report);
+        // Question 2 should not have "differs from this run's assessor" callout
+        Assert.DoesNotContain("Original Assessor (Anthropic, claude-3-5-sonnet) — differs from this run's assessor", report);
     }
 }

@@ -12,6 +12,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Services;
 using Overseer.Services.Privacy;
 using Overseer.Services.Rag;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -203,11 +204,9 @@ public class RagSidecarLifecycleTests : IDisposable
            session key first, through ExecuteUpdateAsync, which InMemory cannot translate. A
            relational provider is the only way to run the real purge path rather than a stand-in
            for it. */
-        using var connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
-        connection.Open();
+        using var connection = SqliteSchemaTemplate.OpenCopy();
         using var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlite(connection).Options);
-        db.Database.EnsureCreated();
 
         // A relational provider enforces the foreign key the InMemory provider ignores.
         db.Users.Add(new ApplicationUser { Id = Owner, UserName = "sidecar-tester", Email = "sidecar@example.com" });

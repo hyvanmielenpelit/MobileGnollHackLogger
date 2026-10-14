@@ -12,6 +12,7 @@ using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Providers;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -29,11 +30,9 @@ public class ChatProviderAttemptMaintenanceTests
 
     private static (ApplicationDbContext Db, Microsoft.Data.Sqlite.SqliteConnection Connection) NewRelationalDb()
     {
-        var connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
-        connection.Open();
+        var connection = SqliteSchemaTemplate.OpenCopy();
         var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlite(connection).Options);
-        db.Database.EnsureCreated();
         return (db, connection);
     }
 

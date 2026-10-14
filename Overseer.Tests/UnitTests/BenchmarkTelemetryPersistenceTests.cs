@@ -615,13 +615,8 @@ public class BenchmarkTelemetryPersistenceTests
     /// </summary>
     private static (Microsoft.Data.Sqlite.SqliteConnection Connection, DbContextOptions<ApplicationDbContext> Options) OpenRelationalDb()
     {
-        var connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
-        connection.Open();
+        var connection = SqliteSchemaTemplate.OpenCopy();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseSqlite(connection).Options;
-        using (var db = new ApplicationDbContext(options))
-        {
-            db.Database.EnsureCreated();
-        }
 
         return (connection, options);
     }

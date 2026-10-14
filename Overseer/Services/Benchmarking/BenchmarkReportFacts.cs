@@ -40,8 +40,12 @@ using Overseer.Models;
 //   quality.intervalOverlap  descriptive: which peers' intervals overlap the subject's, by letter
 //   quality.peerMedian       median of the peers' point estimates
 //   quality.peerBest         best peer point estimate
-//   quality.rawIndex         mean over runs of the pre-cap index
-//   quality.unweightedMean   mean over runs of the equal-weight mean of answer quality
+//   quality.rawIndex         mean over runs of the pre-cap index, over each run's scored items, as the
+//                            comparison scores them; a run whose stored indices are withheld still
+//                            contributes
+//   quality.unweightedMean   mean over runs of the equal-weight mean of answer quality, over each run's
+//                            scored items, as the comparison scores them; a run whose stored indices are
+//                            withheld still contributes
 //   quality.scoredItems      "4 of 4 questions": items with a scored answer of the exam's items
 //
 // Dimensions (d = accuracy, completeness, conciseness, readability; the assessor's, or in a panel run
@@ -2188,15 +2192,15 @@ public static class BenchmarkReportFacts
     private static int? HarnessOf(BenchmarkRun run)
         => int.TryParse(run.HarnessVersion, NumberStyles.Integer, CultureInfo.InvariantCulture, out int h) ? h : null;
 
-    /// <summary>The run's pre-cap Intelligence Index, weighted as the published one.</summary>
+    /// <summary>
+    /// The run's pre-cap Intelligence Index over its scored items, weighted as the published one and
+    /// computed as the comparison scores a run, so a run whose stored indices are withheld still has one.
+    /// </summary>
     private static double? RawIndexOf(BenchmarkRun run)
     {
         bool panel = BenchmarkRunFinalizer.IsPanelRun(run);
-        var items = (run.Answers ?? new List<BenchmarkRunAnswer>())
-            .Where(BenchmarkRunFinalizer.CountsTowardQualityIndex)
-            .Select(a => (BenchmarkScoring.IndexRawQuality(a, panel), (int?)(a.AssessedDifficulty ?? BenchmarkRunFinalizer.FallbackDifficulty(a.Difficulty))))
-            .ToList();
-        return BenchmarkScoring.QualityIndex(items);
+        return BenchmarkScoring.QualityIndex(
+            BenchmarkRunFinalizer.RawQualityIndexItems(run.Answers ?? new List<BenchmarkRunAnswer>(), panel));
     }
 
     private static double? UnweightedMeanOf(BenchmarkRun run)

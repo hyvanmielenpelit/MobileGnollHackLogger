@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using MobileGnollHackLogger.Data;
 using Overseer.Controllers;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -34,12 +35,12 @@ public sealed class AuthLoginNotAllowedTests : IDisposable
 
     public AuthLoginNotAllowedTests()
     {
-        _connection = new SqliteConnection("Filename=:memory:");
-        _connection.Open();
+        _connection = SqliteSchemaTemplate.OpenCopy();
 
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddDbContext<ApplicationDbContext>(o => o.UseSqlite(_connection));
+        services.Configure<PasswordHasherOptions>(o => o.IterationCount = 1);
         services.AddIdentityCore<ApplicationUser>(o =>
             {
                 o.SignIn.RequireConfirmedEmail = true;
@@ -55,7 +56,6 @@ public sealed class AuthLoginNotAllowedTests : IDisposable
         _db = _scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         _userManager = _scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         _signInManager = _scope.ServiceProvider.GetRequiredService<SignInManager<ApplicationUser>>();
-        _db.Database.EnsureCreated();
     }
 
     public void Dispose()

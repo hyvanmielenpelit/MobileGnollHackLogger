@@ -2455,6 +2455,10 @@ a battery document renders through the same code as a run's:
   `tools.callsPerQuestion.peerMean` with peers (their answers are not loaded);
   `panel.judgeDependentPairs`; and, on a stand-alone sheet, every peer fact (*"A stand-alone battery
   report has no peers."*). A peer has **no paired difference**: the `peer.X.paired*` facts are absent.
+  On a run or group subject's sheet, by contrast, `quality.rawIndex` is the pre-cap Intelligence Index
+  and `quality.unweightedMean` the equal-weight mean of answer quality, each the mean of one figure per
+  run of the subject (unavailable if any run has no scored answer) and taken over each run's scored
+  items, like `quality.index`.
 - **The battery's own keys:** `battery.*` (name, revision, scheme, suite count, runs per suite, member
   runs, rounds, definition and class hashes, pooled identity, critical-error rate, speed index, the
   suites' SD and range, excluded members, caveats), `suite.<n>.*` (name, weight, index, contribution,
@@ -2549,6 +2553,8 @@ document returns the battery run to NotRequested unless a job is in progress.
 (`app-battery-ai-reports`) is the counterpart of a run's: all three documents listed, **View** in the PDF
 viewer, **Delete** behind a confirmation, *Write missing reports* with the writer picker (starting on the
 battery run's own writer), the cost estimate, the same-provider confirmation and **Show Progress**.
+Both tabs extend `ReportDocumentsTabBase` (`run-ai-reports/report-documents-tab.base.ts`) and render
+`run-ai-reports.component.html`.
 
 **The battery Download Center.** Opened on a battery run (its `battery` context, from the Battery Run
 Report's **Downloads** or its **AI Reports** tab), it lists the battery's Markdown analysis report and

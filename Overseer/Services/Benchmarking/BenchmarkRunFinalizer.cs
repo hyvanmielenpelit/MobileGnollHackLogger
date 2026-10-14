@@ -740,7 +740,7 @@ public static class BenchmarkRunFinalizer
         // A run that lost a question at the provider is not honestly scored over the ones that
         // happened to finish: withhold the headline indices rather than publish a partial one. A run
         // stopped only by an assessment failure or a model-produced empty answer keeps its indexes —
-        // HasTerminalFailure is ProviderError or Failed, not every reason CompletedWithErrors fires.
+        // HasTerminalFailure is ProviderError, Failed or Canceled, not every reason CompletedWithErrors fires.
         if (run.TerminalFailureAnswerCount > 0)
         {
             WithholdIndices(run);

@@ -9,8 +9,9 @@ namespace Overseer.Tests.Helpers;
 
 /// <summary>
 /// An in-memory SQLite database holding the <see cref="ApplicationDbContext"/> schema, created once per test run,
-/// that the SQLite-backed test hosts copy instead of each running <c>EnsureCreated</c>. The template is built with
-/// the same provider and Identity registration the hosts use, so a copy has the schema they would create.
+/// that the SQLite-backed tests copy instead of each running <c>EnsureCreated</c>. The template is built with
+/// the same provider and Identity registration the tests use, so a copy has the schema they would create.
+/// <see cref="CopyInto"/> serves a caller that owns a shared-cache or otherwise named database.
 /// </summary>
 internal static class SqliteSchemaTemplate
 {
@@ -28,16 +29,25 @@ internal static class SqliteSchemaTemplate
         try
         {
             copy.Open();
-            lock (BackupLock)
-            {
-                Template.Value.BackupDatabase(copy);
-            }
+            CopyInto(copy);
             return copy;
         }
         catch
         {
             copy.Dispose();
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Copies the schema into the database behind <paramref name="target"/>, which must be open. The caller keeps
+    /// ownership of the connection.
+    /// </summary>
+    internal static void CopyInto(SqliteConnection target)
+    {
+        lock (BackupLock)
+        {
+            Template.Value.BackupDatabase(target);
         }
     }
 

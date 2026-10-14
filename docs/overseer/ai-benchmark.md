@@ -1746,6 +1746,9 @@ stamped 20 on `HarnessVersion` alone, not on `ToolGuidesSha256` or `CandidateSys
   counting terminal failures from the answers when `TerminalFailureAnswerCount` is `null`, and leaves
   that column unwritten. The *Raw Quality Index* the run detail and the report derive from the
   answers is withheld with them, so a withheld run prints none.
+  The report-pack fact sheet follows the model comparison instead: its `quality.index`,
+  `quality.rawIndex` and `quality.unweightedMean` are taken over each run's scored items, and
+  `quality.scoredItems` states how many those are.
   A minimum-item threshold (publish an index once fewer than some fraction of questions failed) was
   considered and rejected: it would still publish a number over an item set that no longer matches the
   suite's, and that number is comparable with no complete run.

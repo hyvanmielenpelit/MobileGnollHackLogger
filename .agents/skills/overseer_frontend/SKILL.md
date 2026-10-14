@@ -1972,8 +1972,11 @@ To find specific popups, look in the corresponding component's `.html` template:
     verification, replicate (Compare disabled: M7 refuses it), probably refused; **Compare** runs `analyseBatteryRun(id, baselineId)` (M7,
     persisted) and then `POST model-comparison/paired/battery`, shown in `app-paired-test-result` with
     `[showPrimary]="false"` under the M7 block) and **AI Reports**.
-  - `app-battery-ai-reports` (`batteries/battery-ai-reports.component.*`): the Battery Run Report's AI
-    Reports tab, the counterpart of `app-run-ai-reports` with the same rows and tags, **View** (PDF
+  - `app-battery-ai-reports` (`batteries/battery-ai-reports.component.ts` and `.scss`): the Battery Run
+    Report's AI Reports tab. Both AI Reports tabs extend `ReportDocumentsTabBase`
+    (`run-ai-reports/report-documents-tab.base.ts`), which holds their shared state, and render
+    `run-ai-reports.component.html`; the battery tab's ids take a per-instance `bai<N>` prefix, the run
+    tab's `rr`. It is the counterpart of `app-run-ai-reports` with the same rows and tags, **View** (PDF
     viewer), **Delete** (confirmation), the *Write missing reports* fieldset, the **Report writer**
     picker preselected with the battery run's writer, the `.gh-estimate-panel`, the refusal line, the
     amber same-provider warning with **Write Anyway** (*zap*), **Show Progress** and **Open Download

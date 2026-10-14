@@ -231,7 +231,7 @@ public class BenchmarkVerdictConsistencyTests
     // A verification sentence with a verdict.
     [InlineData("The verifier refuted a claim, and Q9 fabricated a grave mechanic.")]
     [InlineData("Q9's invented grave mechanic was supported by the claim verifier.")]
-    public void QuestionsNamedWithFabrication_AVerificationSentenceWithAVerdict_NamesNoQuestion(string sentence)
+    public void QuestionsNamedWithFabrication_NamesNoQuestion(string sentence)
     {
         Assert.Empty(BenchmarkVerdictConsistency.QuestionsNamedWithFabrication(
             sentence, Enumerable.Range(1, 18)));

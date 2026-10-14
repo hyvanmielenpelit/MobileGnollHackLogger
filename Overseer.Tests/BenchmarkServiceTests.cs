@@ -166,98 +166,7 @@ public class BenchmarkServiceTests
         Assert.Equal(80, parseResult.Items[1].Difficulty);
     }
 
-    // --- 5. Report Builder Tests ---
-
-    [Fact]
-    public void BuildMarkdownReport_GeneratesAllSectionsWithIndices()
-    {
-        var run = new BenchmarkRun
-        {
-            Id = 101,
-            SuiteName = "GnollHack Core Suite",
-            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet-20241022", displayName: "Claude 3.5 Sonnet"),
-            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-opus", displayName: "Claude Opus"),
-            StartedAtUtc = new DateTime(2026, 9, 1, 12, 0, 0, DateTimeKind.Utc),
-            CompletedAtUtc = new DateTime(2026, 9, 1, 12, 5, 30, DateTimeKind.Utc),
-            TotalDurationMs = 330000,
-            TotalAnswerDurationMs = 45000,
-            Status = BenchmarkRunStatus.Completed,
-            FinalScore = 85,
-            QualityIndex = 82,
-            SpeedIndex = 76,
-            ComputedScore = 82,
-            ScoringMethodVersion = 2,
-            SpeedMeasurementDegraded = true,
-            TotalQuestionCount = 2,
-            AnsweredQuestionCount = 2,
-            TotalInputTokens = 15000,
-            TotalOutputTokens = 3000,
-            AssessmentText = "The model performed reasonably well with good reasoning.",
-            Answers = new List<BenchmarkRunAnswer>
-            {
-                new BenchmarkRunAnswer
-                {
-                    ExpectedPointsRecorded = true,
-                    OrderIndex = 1,
-                    QuestionText = "Question 1",
-                    Difficulty = BenchmarkDifficulty.Simple,
-                    AssessedDifficulty = 25,
-                    AnswerText = "Answer 1",
-                    Status = BenchmarkAnswerStatus.Ok,
-                    AccuracyLevel = 5,
-                    CompletenessLevel = 4,
-                    ConcisenessLevel = 6,
-                    ReadabilityLevel = 5,
-                    AccuracyScore = 87,
-                    CompletenessScore = 72,
-                    ConcisenessScore = 100,
-                    ReadabilityScore = 87,
-                    QualityScore = 83,
-                    SpeedScore = 80,
-                    DurationMs = 6000,
-                    ReviewComment = "Decent."
-                },
-                new BenchmarkRunAnswer
-                {
-                    ExpectedPointsRecorded = true,
-                    OrderIndex = 2,
-                    QuestionText = "Question 2",
-                    Difficulty = BenchmarkDifficulty.Intermediate,
-                    AssessedDifficulty = 60,
-                    AnswerText = "Answer 2",
-                    Status = BenchmarkAnswerStatus.Ok,
-                    AccuracyLevel = 4,
-                    CompletenessLevel = 5,
-                    ConcisenessLevel = 5,
-                    ReadabilityLevel = 5,
-                    AccuracyScore = 72,
-                    CompletenessScore = 87,
-                    ConcisenessScore = 87,
-                    ReadabilityScore = 87,
-                    QualityScore = 80,
-                    SpeedScore = 70,
-                    DurationMs = 9000,
-                    ReviewComment = "Okay."
-                }
-            }
-        };
-
-        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.29");
-
-        Assert.Contains("# GnollHack Overseer AI Intelligence Benchmark Report", report);
-        Assert.Contains("## 1. Run Manifest", report);
-        Assert.Contains("## 2. Results Summary", report);
-        Assert.Contains("Intelligence Index: 82 / 100", report);
-        Assert.Contains("Speed Index: 76 / 100", report);
-        Assert.Contains("## 3. Questions and Replies", report);
-        Assert.Contains("## 4. Scoring Method & Configuration", report);
-        Assert.Contains("## 5. Issues", report);
-        Assert.Contains("## 6. Synthesis Assessment", report);
-        Assert.Contains("## 7. Final Indices", report);
-        Assert.Contains("Concurrency Timing Notice", report);
-    }
-
-    // --- 6. Benchmark Assessment Failure Tests ---
+    // --- 5. Benchmark Assessment Failure Tests ---
 
     [Fact]
     public void BenchmarkAssessmentFailure_Describe_FormatsCorrectly()
@@ -299,7 +208,7 @@ public class BenchmarkServiceTests
         Assert.EndsWith("…", truncated);
     }
 
-    // --- 7. Benchmark Run Finalizer Tests ---
+    // --- 6. Benchmark Run Finalizer Tests ---
 
     [Fact]
     public void BenchmarkRunFinalizer_ComputeStatus_ReturnsCorrectStatus()
@@ -389,55 +298,7 @@ public class BenchmarkServiceTests
         Assert.Equal(70, run.SpeedIndex);
     }
 
-    // --- 8. Benchmark Report Builder Assessor Provenance Tests ---
-
-    [Fact]
-    public void BenchmarkReportBuilder_AssessedBy_IncludesCalloutWhenOverridden()
-    {
-        var run = new BenchmarkRun
-        {
-            Id = 1,
-            SuiteName = "Test Suite",
-            TestedModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet", displayName: "Tested Model"),
-            AssessorModelConfigurationId = 10,
-            AssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet", displayName: "Original Assessor"),
-            Status = BenchmarkRunStatus.Completed,
-            Answers = new List<BenchmarkRunAnswer>
-            {
-                new()
-                {
-                    OrderIndex = 1,
-                    QuestionText = "Question 1",
-                    AnswerText = "Answer 1",
-                    Status = BenchmarkAnswerStatus.Ok,
-                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
-                    QualityScore = 80,
-                    AssessedByModelConfigurationId = 20, // Differs!
-                    AssessedByModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-opus", displayName: "Override Assessor"),
-                    AssessedAtUtc = new DateTime(2026, 9, 2, 12, 0, 0, DateTimeKind.Utc)
-                },
-                new()
-                {
-                    OrderIndex = 2,
-                    QuestionText = "Question 2",
-                    AnswerText = "Answer 2",
-                    Status = BenchmarkAnswerStatus.Ok,
-                    AssessmentStatus = BenchmarkAssessmentStatus.Scored,
-                    QualityScore = 80,
-                    AssessedByModelConfigurationId = 10, // Matches run assessor!
-                    AssessedByModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-3-5-sonnet", displayName: "Original Assessor")
-                }
-            }
-        };
-
-        string report = BenchmarkReportBuilder.BuildMarkdownReport(run, "1.0.29");
-
-        Assert.Contains("Assessed by:** Override Assessor (Anthropic, claude-3-opus) — differs from this run's assessor", report);
-        // Question 2 should not have "differs from this run's assessor" callout
-        Assert.DoesNotContain("Original Assessor (Anthropic, claude-3-5-sonnet) — differs from this run's assessor", report);
-    }
-
-    // --- 9. Benchmark Service Orphaned Run Cleanup Tests ---
+    // --- 7. Benchmark Service Orphaned Run Cleanup Tests ---
 
     [Fact]
     public async Task BenchmarkService_CleanupOrphanedRunsAsync_WithoutAnswers_MarksFailed()
@@ -790,7 +651,7 @@ public class BenchmarkServiceTests
     /// scoring profiles. The provider-facing collaborators stay null: nothing here makes a model
     /// call.
     /// </summary>
-    // --- 10. Segmented Candidate Prompt ---
+    // --- 8. Segmented Candidate Prompt ---
 
     /// <summary>
     /// The candidate request carries the prompt in the three cache segments the providers key their
@@ -1559,7 +1420,7 @@ public class BenchmarkServiceTests
         Assert.Contains(claims.AssessorStatements, c => c.Contains("-4 AC"));
     }
 
-    // --- 11. Second-Opinion Sample Top-Up (FlaggedPlusSample) ---
+    // --- 9. Second-Opinion Sample Top-Up (FlaggedPlusSample) ---
 
     [Fact]
     public async Task SecondOpinionSampleTopUp_SelectsTheLowestScoringAnswers_TiesByOrderIndex()
@@ -1779,7 +1640,7 @@ public class BenchmarkServiceTests
         }
     }
 
-    // --- 12. Claim Verification Token Budget ---
+    // --- 10. Claim Verification Token Budget ---
 
     [Fact]
     public async Task RunClaimVerificationAsync_ExhaustedTokenBudget_MarksRemainingAnswersNotChecked()
@@ -1930,7 +1791,7 @@ public class BenchmarkServiceTests
             .OrderBy(a => a.OrderIndex)
             .ToListAsync();
     }
-    // --- 13. Claim-verifier long-context buckets ---
+    // --- 11. Claim-verifier long-context buckets ---
 
     private static readonly ModelPricing HaikuVerifierCard =
         new(0.10m, 0.50m, CachedInputPerMillion: 0.01m, CacheWritePerMillion: 0.125m,
@@ -2003,7 +1864,7 @@ public class BenchmarkServiceTests
         Assert.Equal(6_000, live.TotalClaimVerificationLongContextCacheCreationTokens);
     }
 
-    // --- 14. Candidate failure attribution (harness 56) ---
+    // --- 12. Candidate failure attribution (harness 56) ---
 
     private static readonly ProviderErrorClassification NotAProviderError = new(false, null, "Not a provider error");
 
@@ -2166,7 +2027,7 @@ public class BenchmarkServiceTests
         Assert.Equal(new BenchmarkService.CandidateOutcome(BenchmarkAnswerStatus.Ok, null, null), ok);
     }
 
-    // --- 15. Repair passes ---
+    // --- 13. Repair passes ---
 
     [Fact]
     public void BeginRepairPass_CountsEveryPass_AndAProviderPassWhenAReExecutedAnswerLastFailedAtTheProvider()

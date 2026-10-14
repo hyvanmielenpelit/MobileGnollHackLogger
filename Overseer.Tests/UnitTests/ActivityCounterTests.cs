@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Services.Telemetry;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -29,6 +30,7 @@ public sealed class ActivityCounterTests : IDisposable
         string connectionString = $"Data Source=activity-{Guid.NewGuid():N};Mode=Memory;Cache=Shared";
         _keeper = new SqliteConnection(connectionString);
         _keeper.Open();
+        SqliteSchemaTemplate.CopyInto(_keeper);
 
         var services = new ServiceCollection();
         services.AddDbContext<ApplicationDbContext>(o => o.UseSqlite(connectionString));
@@ -36,7 +38,6 @@ public sealed class ActivityCounterTests : IDisposable
 
         using var scope = _services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        db.Database.EnsureCreated();
         db.Users.Add(new ApplicationUser { Id = UserId, UserName = "activity-user" });
         db.SaveChanges();
     }

@@ -19,6 +19,7 @@ using Overseer.Services.Privacy;
 using Overseer.Services.Providers;
 using Overseer.Services.Security;
 using Overseer.Services.Tools;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -61,11 +62,9 @@ public class LimitEnforcementTests : IDisposable
     /// <summary>SQLite in memory, for the set-based ExecuteDeleteAsync and ExecuteUpdateAsync calls.</summary>
     private static (ApplicationDbContext Db, Microsoft.Data.Sqlite.SqliteConnection Connection) NewRelationalDb()
     {
-        var connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
-        connection.Open();
+        var connection = SqliteSchemaTemplate.OpenCopy();
         var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlite(connection).Options);
-        db.Database.EnsureCreated();
         return (db, connection);
     }
 

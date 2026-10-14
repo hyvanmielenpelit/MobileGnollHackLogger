@@ -11,6 +11,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Controllers;
 using Overseer.Services;
 using Overseer.Services.Privacy;
+using Overseer.Tests.Helpers;
 using Xunit;
 
 namespace Overseer.Tests.UnitTests;
@@ -40,13 +41,11 @@ public class ProvidedModelTrustTests
        statement does needs a relational one. */
     private static (ApplicationDbContext Db, Microsoft.Data.Sqlite.SqliteConnection Connection) CreateRelationalDb()
     {
-        var connection = new Microsoft.Data.Sqlite.SqliteConnection("Filename=:memory:");
-        connection.Open();
+        var connection = SqliteSchemaTemplate.OpenCopy();
 
         var db = new ApplicationDbContext(new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlite(connection)
             .Options);
-        db.Database.EnsureCreated();
 
         // A relational provider enforces the foreign keys the InMemory one ignores.
         db.Users.Add(new ApplicationUser { Id = Owner, UserName = Owner, Email = "u1@example.com" });

@@ -191,6 +191,44 @@ public class BenchmarkReportFactsTests
     }
 
     [Fact]
+    public void QualityFacts_ARunWithAProviderFailedAnswer_AreOverItsScoredItems()
+    {
+        var run = Run(1, "OpenAI", "model-1",
+            new AnswerSpec(1, 1, 1, 50), new AnswerSpec(2, 2, 1, 50), new AnswerSpec(3, 3, 1, 0));
+        run.TerminalFailureAnswerCount = 1;
+        foreach (var answer in run.Answers.Where(a => a.OrderIndex != 3))
+        {
+            answer.RawQualityScore = 70;
+        }
+
+        var failed = run.Answers.Single(a => a.OrderIndex == 3);
+        failed.Status = BenchmarkAnswerStatus.ProviderError;
+        failed.AnswerText = string.Empty;
+        failed.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
+        failed.QualityScore = null;
+        failed.PanelQualityScore = null;
+        failed.RawQualityScore = null;
+
+        var subject = Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 50);
+        var facts = new BenchmarkReportFacts.FactList();
+        BenchmarkReportFacts.AddQualityFacts(
+            facts, subject,
+            Array.Empty<(BenchmarkModelComparisonEntryDto, string, BenchmarkReportFacts.EntryStats)>(),
+            new[] { subject }, new[] { run });
+        var sorted = facts.Sorted();
+
+        var raw = Assert.Single(sorted, f => f.Key == "quality.rawIndex");
+        Assert.True(raw.Available);
+        Assert.Equal(70.0, raw.Value!.GetValue<double>());
+        Assert.Equal("70 / 100", raw.Display);
+
+        var unweighted = Assert.Single(sorted, f => f.Key == "quality.unweightedMean");
+        Assert.True(unweighted.Available);
+        Assert.Equal(50.0, unweighted.Value!.GetValue<double>());
+        Assert.Equal("50 / 100", unweighted.Display);
+    }
+
+    [Fact]
     public void NormalizeSupportLabels_RewritesTheFamilyLabelsOfOlderSheets_AndIsIdempotent()
     {
         var sheet = new BenchmarkReportFactSheet
