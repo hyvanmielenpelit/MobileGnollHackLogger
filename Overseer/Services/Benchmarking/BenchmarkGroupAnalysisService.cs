@@ -121,6 +121,12 @@ public class BenchmarkGroupAnalysisService
             return (null, null, "A group analysis needs at least two member runs.");
         }
 
+        var unsettledError = UnsettledMemberError(loaded.Runs);
+        if (unsettledError != null)
+        {
+            return (null, null, unsettledError);
+        }
+
         var tier = loaded.Comparability.Tier;
 
         if (tier == BenchmarkComparabilityTier.NotComparable)
@@ -225,6 +231,7 @@ public class BenchmarkGroupAnalysisService
     {
         var loaded = await LoadGroupAsync(groupId, ct);
         if (loaded == null || loaded.Runs.Count < 2) return null;
+        if (UnsettledMemberError(loaded.Runs) != null) return null;
 
         var tier = loaded.Comparability.Tier;
         if (tier == BenchmarkComparabilityTier.NotComparable
@@ -243,6 +250,22 @@ public class BenchmarkGroupAnalysisService
             loaded.Runs,
             costs,
             options);
+    }
+
+    /// <summary>
+    /// Null when every member has settled into a poolable status; otherwise the refusal naming the
+    /// lowest-id member still in flight or ended without a measurement.
+    /// </summary>
+    private static string? UnsettledMemberError(IReadOnlyList<BenchmarkRun> runs)
+    {
+        var unsettled = runs
+            .OrderBy(r => r.Id)
+            .FirstOrDefault(r => !BenchmarkRunFinalizer.IsPoolable(r.Status));
+        if (unsettled == null) return null;
+
+        return unsettled.Status == BenchmarkRunStatus.Running
+            ? $"Member run #{unsettled.Id} is still in progress. Analyze the group once it has finished."
+            : $"Member run #{unsettled.Id} ended {unsettled.Status} and produced no measurement. Remove it from the group to analyze the rest.";
     }
 
     /// <summary>The most recent stored analysis for a group, or null when none has been computed.</summary>

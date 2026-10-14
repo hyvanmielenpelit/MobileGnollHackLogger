@@ -456,6 +456,7 @@ public class AdminBenchmarkModelBatchesControllerTests
         Assert.Equal(64d, result.SpeedIndex);
         Assert.Equal(3, result.FlaggedAnswers);
         Assert.Equal(18, result.QuestionCount);
+        Assert.Equal(0, result.IndexWithheldRunCount);
 
         run.RerunStartedAtUtc = DateTime.UtcNow.AddMinutes(-1);
         run.RerunCompletedAtUtc = DateTime.UtcNow;
@@ -507,6 +508,46 @@ public class AdminBenchmarkModelBatchesControllerTests
         Assert.Equal(60d, result.SpeedIndex);
         Assert.Equal(3, result.FlaggedAnswers);
         Assert.Equal(20, result.QuestionCount);
+    }
+
+    [Fact]
+    public async Task GetBatch_ASeriesResult_CountsItsWithheldRuns()
+    {
+        var f = await CreateFixtureAsync();
+        var batch = await SeedBatchAsync(f, BenchmarkRunSeriesStatus.Completed);
+        var member = await f.Db.BenchmarkModelBatchMembers.SingleAsync(m => m.BenchmarkModelBatchRunId == batch.Id, TestContext.Current.CancellationToken);
+        var first = await f.Db.BenchmarkRuns.SingleAsync(r => r.Id == member.BenchmarkRunId, TestContext.Current.CancellationToken);
+
+        var series = new BenchmarkRunSeries { SuiteName = "Suite A", StartRequestJson = "{}", RequestedRunCount = 2, CompletedRunCount = 2, Status = BenchmarkRunSeriesStatus.Completed };
+        f.Db.BenchmarkRunSeries.Add(series);
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var second = BenchmarkModelSnapshots.Attach(new BenchmarkRun
+        {
+            BenchmarkSuiteId = f.SuiteId,
+            SuiteName = "Suite A",
+            TestedModelConfigurationId = 1,
+            Status = BenchmarkRunStatus.CompletedWithErrors,
+            StartedAtUtc = DateTime.UtcNow.AddMinutes(-20),
+            CompletedAtUtc = DateTime.UtcNow.AddMinutes(-10),
+            QualityIndex = null,
+            TerminalFailureAnswerCount = 1,
+            TotalQuestionCount = 10,
+            RunSeriesId = series.Id,
+            RunSeriesIndex = 2
+        });
+        f.Db.BenchmarkRuns.Add(second);
+        first.RunSeriesId = series.Id;
+        first.RunSeriesIndex = 1;
+        first.QualityIndex = 70;
+        first.TotalQuestionCount = 10;
+        member.BenchmarkRunId = null;
+        member.BenchmarkRunSeriesId = series.Id;
+        await f.Db.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var result = (await FirstMemberAsync(f, batch.Id)).Result!;
+        Assert.Equal("runMean", result.IndexSource);
+        Assert.Equal(1, result.IndexWithheldRunCount);
     }
 
     [Fact]

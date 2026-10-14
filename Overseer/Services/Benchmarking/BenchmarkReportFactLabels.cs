@@ -45,6 +45,7 @@ public static class BenchmarkReportFactLabels
         ["quality.rawIndex"] = "Intelligence Index before the critical-error cap",
         ["quality.unweightedMean"] = "Unweighted mean answer quality",
         ["quality.scoredItems"] = "Scored questions",
+        ["quality.withheldRuns"] = "Runs with a withheld index",
 
         // Speed
         ["speed.modelTimeP50"] = "Median answer time",

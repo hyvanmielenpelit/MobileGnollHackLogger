@@ -306,6 +306,7 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
 
         KeyFigures(sb, ctx, "## Key figures");
+        WithheldRunsLine(sb, ctx);
         Figures(sb, ctx, BenchmarkReportChartAnchor.ProviderAvailability);
         if (ctx.Battery)
         {
@@ -349,6 +350,7 @@ public static partial class BenchmarkReportPackRenderer
         Slot(sb, ctx, BenchmarkReportSlots.Abstract);
 
         KeyFigures(sb, ctx, "## Key figures");
+        WithheldRunsLine(sb, ctx);
         ProviderAvailabilitySection(sb, ctx);
         Figures(sb, ctx, BenchmarkReportChartAnchor.ProviderAvailability);
         SetupAndMethod(sb, ctx);
@@ -409,6 +411,7 @@ public static partial class BenchmarkReportPackRenderer
         Heading(sb, "## 3. The model's result");
         Slot(sb, ctx, BenchmarkReportSlots.ModelResult);
         KeyFigures(sb, ctx, "### Key figures");
+        WithheldRunsLine(sb, ctx);
         IntervalSpanLine(sb, ctx);
         ProviderAvailabilitySection(sb, ctx);
         Figures(sb, ctx, BenchmarkReportChartAnchor.ProviderAvailability);
@@ -661,6 +664,20 @@ public static partial class BenchmarkReportPackRenderer
 
         Line(sb, "The 95 % interval is " + D(ctx, "quality.interval") + ", a span of " + D(ctx, "quality.intervalSpan")
             + ", and rests on " + scored + " with a scored answer.");
+        Line(sb);
+    }
+
+    /// <summary>
+    /// The subject runs that withhold their own Intelligence Index, in one code-rendered sentence after
+    /// the key figures; nothing on a sheet without the <c>quality.withheldRuns</c> fact.
+    /// </summary>
+    private static void WithheldRunsLine(StringBuilder sb, Context ctx)
+    {
+        if (!IsAvailable(ctx, "quality.withheldRuns")) return;
+
+        bool single = Fact(ctx, "quality.withheldRuns")!.Value is JsonValue value && value.TryGetValue(out int count) && count == 1;
+        Line(sb, D(ctx, "quality.withheldRuns") + (single ? " withholds its own" : " withhold their own")
+            + " Intelligence Index because a question failed at the provider; the Intelligence figure above is over the scored questions.");
         Line(sb);
     }
 

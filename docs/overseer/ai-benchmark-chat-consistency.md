@@ -511,7 +511,9 @@ Secondary results are descriptive and adjusted within their family (Benjamini–
 - **Reliability** (Protocol V1) — terminal failures, timeouts, empty answers, refusals, tool-budget exhaustion
   (answers), and HTTP 429 and 5xx responses (calls), each with Wilson intervals and Fisher's exact test.
   An increase is **established** when it is rejected, higher in the comparison and the run minimum is
-  met in both periods; it is added to the headline.
+  met in both periods; it is added to the headline. A *terminal failure* here is an answer the
+  provider never delivered, status `ProviderError` or `Failed`; an operator cancel (`Canceled`) is not
+  a reliability failure and is not counted, although the run finalizer withholds a run's indices for it.
 - **Reliability, Protocol V2.** The call-level HTTP 429 and 5xx Fisher rates, which counted our own
   429s as the provider's and ignored run and time clustering, are replaced by attributed attempt rates
   from the provider attempt ledger: `providerOverloaded`, `providerServerErrors`, `providerTimeouts`,

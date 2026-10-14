@@ -2842,6 +2842,8 @@ export interface BenchmarkModelBatchMemberResultDto {
   flaggedAnswers?: number;
   /** Questions, over the completed runs. */
   questionCount?: number;
+  /** Completed runs that withhold their own index because a question failed at the provider. */
+  indexWithheldRunCount?: number;
 }
 
 /** The instrument a member ran under. */
@@ -3009,6 +3011,8 @@ export interface BenchmarkRunGroupMemberDto {
   testedModelDisplayName?: string | null;
   shortFingerprint?: string | null;
   addedAtUtc: string;
+  /** The run withholds its own index because a question failed at the provider. */
+  indexWithheld?: boolean;
 }
 
 export interface BenchmarkRunGroupDto extends ProviderAvailabilityCardFields {

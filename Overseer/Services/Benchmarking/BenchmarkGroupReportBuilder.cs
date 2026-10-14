@@ -188,19 +188,35 @@ public static class BenchmarkGroupReportBuilder
         {
             sb.AppendLine("| Run | Started (UTC) | Status | Index | Speed | Fingerprints |");
             sb.AppendLine("|---:|---|---|---:|---:|---|");
+            // The members are loaded without their answers, so the mark rests on the stored
+            // terminal-failure count.
+            var withheldIds = new List<long>();
             foreach (var run in members.OrderBy(r => r.Id))
             {
+                bool withheld = BenchmarkRunFinalizer.IndexWithheld(run);
+                if (withheld)
+                {
+                    withheldIds.Add(run.Id);
+                }
                 sb.AppendLine(
                     $"| {run.Id} " +
                     $"| {Stamp(run.StartedAtUtc, "yyyy-MM-dd HH:mm")} " +
                     $"| {run.Status} " +
-                    $"| {(run.QualityIndex.HasValue ? run.QualityIndex.Value.ToString(CultureInfo.InvariantCulture) : "—")} " +
+                    $"| {(run.QualityIndex.HasValue ? run.QualityIndex.Value.ToString(CultureInfo.InvariantCulture) : withheld ? "withheld" : "—")} " +
                     $"| {(run.SpeedIndex.HasValue ? run.SpeedIndex.Value.ToString(CultureInfo.InvariantCulture) : "—")} " +
                     $"| PROMPT `{Short(run.CandidateSystemPromptSha256)}`<br>" +
                     $"GUIDES `{Short(run.ToolGuidesSha256)}`<br>" +
                     $"KB `{Short(run.KnowledgeBaseHeadSha)}`<br>" +
                     $"WIKI `{Short(run.WikiHeadSha)}`<br>" +
                     $"SRC `{Short(run.SourceCodeHeadSha)}` |");
+            }
+            if (withheldIds.Count > 0)
+            {
+                string ids = string.Join(", ", withheldIds.Select(id => $"#{id}"));
+                sb.AppendLine();
+                sb.AppendLine(withheldIds.Count == 1
+                    ? $"Run {ids} withholds its own Intelligence Index (a question failed at the provider); the figures below are over its scored answers."
+                    : $"Runs {ids} withhold their own Intelligence Index (a question failed at the provider); the figures below are over their scored answers.");
             }
         }
         else

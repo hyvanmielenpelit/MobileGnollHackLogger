@@ -6089,6 +6089,19 @@ public class AdminBenchmarkController : ControllerBase
                 .Where(r => memberIds.Contains(r.Id))
                 .ToListAsync();
 
+            // A run finalized without a stored terminal-failure count reads its withheld index from
+            // its answers' statuses.
+            var uncountedRunIds = runs
+                .Where(r => !r.QualityIndex.HasValue && !r.TerminalFailureAnswerCount.HasValue)
+                .Select(r => r.Id)
+                .ToList();
+            var uncountedAnswers = uncountedRunIds.Count == 0
+                ? new List<BenchmarkRunAnswer>()
+                : await _dbContext.BenchmarkRunAnswers
+                    .Where(a => uncountedRunIds.Contains(a.BenchmarkRunId))
+                    .Select(a => new BenchmarkRunAnswer { BenchmarkRunId = a.BenchmarkRunId, Status = a.Status })
+                    .ToListAsync();
+
             foreach (var member in group.Members.OrderBy(m => m.AddedAtUtc))
             {
                 var run = runs.FirstOrDefault(r => r.Id == member.BenchmarkRunId);
@@ -6101,6 +6114,8 @@ public class AdminBenchmarkController : ControllerBase
                     Status = run.Status.ToString(),
                     QualityIndex = run.QualityIndex,
                     SpeedIndex = run.SpeedIndex,
+                    IndexWithheld = BenchmarkRunFinalizer.IndexWithheld(
+                        run, uncountedAnswers.Where(a => a.BenchmarkRunId == run.Id)),
                     TestedModelDisplayName = run.TestedModelSnapshot.Label()!,
                     ShortFingerprint = ShortFingerprint(run.CandidateSystemPromptSha256),
                     AddedAtUtc = member.AddedAtUtc

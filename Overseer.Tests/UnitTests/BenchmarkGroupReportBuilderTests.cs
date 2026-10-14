@@ -124,6 +124,32 @@ public class BenchmarkGroupReportBuilderTests
         Assert.Contains("1.2.3", md);
     }
 
+    [Fact]
+    public void Manifest_MarksAWithheldMember()
+    {
+        var (group, result, runs) = Fixture();
+        string Report() => BenchmarkGroupReportBuilder.BuildMarkdownReport(
+            group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
+
+        string clean = Report();
+        Assert.DoesNotContain("| withheld |", clean);
+        Assert.DoesNotContain("Intelligence Index (a question failed at the provider)", clean);
+
+        // The report loads members without their answers, so the stored count alone marks one.
+        runs[1].QualityIndex = null;
+        runs[1].TerminalFailureAnswerCount = 1;
+        runs[1].Answers.Clear();
+        string one = Report().Replace("\r\n", "\n");
+        Assert.Contains("| 2 | 2026-09-06 10:00 | Completed | withheld | 72 |", one);
+        Assert.Contains("| 1 | 2026-09-06 10:00 | Completed | 94 | 72 |", one);
+        Assert.Contains("|\n\nRun #2 withholds its own Intelligence Index (a question failed at the provider); the figures below are over its scored answers.\n\n", one);
+
+        runs[2].QualityIndex = null;
+        runs[2].TerminalFailureAnswerCount = 1;
+        string two = Report();
+        Assert.Contains("Runs #2, #3 withhold their own Intelligence Index (a question failed at the provider); the figures below are over their scored answers.", two);
+    }
+
     /// <summary>
     /// The section counter, at the two shapes that broke the old hardcoded numbers: a report with
     /// no comparison and no usage block, and one with both.

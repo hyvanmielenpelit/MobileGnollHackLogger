@@ -955,6 +955,23 @@ export class MultiRunComponent implements OnInit, OnChanges {
     return this.result?.index ?? null;
   }
 
+  /**
+   * The note on analyzed members that withhold their own index because a question failed at the
+   * provider; null when none does.
+   */
+  get withheldIndexNote(): string | null {
+    const analyzed = new Set(this.analysis?.memberRunIds ?? []);
+    const withheld = (this.selectedGroup?.members ?? [])
+      .filter(member => member.indexWithheld && analyzed.has(member.runId))
+      .map(member => member.runId)
+      .sort((a, b) => a - b);
+    if (withheld.length === 0) return null;
+    const ids = withheld.map(id => `#${id}`).join(', ');
+    return withheld.length === 1
+      ? `Run ${ids} withholds its own index (a question failed at the provider); its per-run index here is over its scored answers.`
+      : `Runs ${ids} withhold their own index (a question failed at the provider); their per-run indices here are over their scored answers.`;
+  }
+
   get itemStats(): MultiRunItemStatistics[] {
     return this.result?.items ?? [];
   }

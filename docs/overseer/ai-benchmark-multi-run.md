@@ -105,6 +105,27 @@ Two or more instrument differences drop the set below Tier B rather than to Tier
 C's whole claim is that exactly one thing was varied on purpose, and a set with two varied keys cannot
 attribute a difference to either.
 
+Whatever its tier, a group is **not analyzed while a member is unsettled**: a member whose status is
+`Running` (a re-run in progress), `Failed` or `Canceled` refuses the analysis, naming the lowest-id
+such member (`BenchmarkRunFinalizer.IsPoolable` admits `Completed`, `CompletedWithLimits` and
+`CompletedWithErrors`). The error reads *Member run #{id} is still in progress. Analyze the group once
+it has finished.* or *Member run #{id} ended {Status} and produced no measurement. Remove it from the
+group to analyze the rest.*, and no analysis is stored. The group a series creates never admits such a
+member; a user-made group can hold one, for example while a member's failed questions are re-run.
+
+A member whose own Intelligence Index is **withheld** (a question failed at the provider, so its run
+detail reads *Not computed*) is still pooled over its scored answers, and is marked rather than
+hidden: `BenchmarkRunGroupMemberDto.IndexWithheld` is set, the group's member list reads *Index not
+computed* for it, the analysis shows a warning under the point estimate — *Run #12 withholds its own
+index (a question failed at the provider); its per-run index here is over its scored answers.* or
+*Runs #12, #15 withhold their own index (a question failed at the provider); their per-run indices
+here are over their scored answers.* — and the Markdown report's *Group Manifest* reads `withheld` in
+the member's Index cell, followed by *Run #12 withholds its own Intelligence Index (a question failed
+at the provider); the figures below are over its scored answers.* (or *Runs #12, #15 withhold their
+own Intelligence Index …; the figures below are over their scored answers.*). The member flag reads
+the run's stored terminal-failure count, or its answers' statuses when none was stored; the Markdown
+report reads the stored count alone, which every run finalized at harness 21 or later has.
+
 ### 3.2 A tier verdict always carries its reasons
 
 `BenchmarkComparabilityResult` returns not just the tier but **which keys differed, what each value

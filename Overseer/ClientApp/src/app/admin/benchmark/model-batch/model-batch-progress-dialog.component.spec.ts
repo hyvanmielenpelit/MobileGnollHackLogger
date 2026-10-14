@@ -349,6 +349,25 @@ describe('ModelBatchProgressDialogComponent', () => {
     expect(text('[data-figure="failed-answers"] dd', done)).toBe('3 (needs attention)');
   });
 
+  it('says under the index what it stands on when some of the member\'s runs withhold their own', () => {
+    open(batch({
+      status: 'Completed', isDriving: false, currentMemberIndex: null, completedMemberCount: 2, runsPerModel: 3,
+      members: [
+        completed(0, 61, {
+          runIds: [61, 63, 65], seriesId: 8,
+          result: {
+            intelligenceIndex: 71.4, indexHalfWidth: 3.1, indexSource: 'groupAnalysis', indexWithheldRunCount: 1,
+            refutedClaims: 0, confirmedCriticalErrors: 0, failedAnswers: 0, providerErrors: 2, retries: 0
+          }
+        }),
+        completed(1, 62)
+      ]
+    }));
+    expect(text('.mb-member-score p.text-muted', card(100)))
+      .toBe('1 run withholds its own index (a question failed at the provider); this index is over its scored answers.');
+    expect(card(101).querySelector('.mb-member-score p.text-muted')).toBeNull();
+  });
+
   describe('a member repairing on a final batch', () => {
     function repairing(overrides: Partial<BenchmarkModelBatchMemberDto> = {}): BenchmarkModelBatchRunDto {
       return batch({

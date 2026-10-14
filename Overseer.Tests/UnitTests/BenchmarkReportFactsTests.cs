@@ -196,6 +196,7 @@ public class BenchmarkReportFactsTests
         var run = Run(1, "OpenAI", "model-1",
             new AnswerSpec(1, 1, 1, 50), new AnswerSpec(2, 2, 1, 50), new AnswerSpec(3, 3, 1, 0));
         run.TerminalFailureAnswerCount = 1;
+        run.QualityIndex = null;
         foreach (var answer in run.Answers.Where(a => a.OrderIndex != 3))
         {
             answer.RawQualityScore = 70;
@@ -226,6 +227,30 @@ public class BenchmarkReportFactsTests
         Assert.True(unweighted.Available);
         Assert.Equal(50.0, unweighted.Value!.GetValue<double>());
         Assert.Equal("50 / 100", unweighted.Display);
+
+        var withheld = Assert.Single(sorted, f => f.Key == "quality.withheldRuns");
+        Assert.True(withheld.Available);
+        Assert.Equal(1, withheld.Value!.GetValue<int>());
+        Assert.Equal("1 of 1 run", withheld.Display);
+    }
+
+    [Fact]
+    public void QualityFacts_NoWithheldRun_HasNoWithheldRunsFact()
+    {
+        var sheet = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
+        Assert.DoesNotContain(sheet.Facts, f => f.Key == "quality.withheldRuns");
+
+        // A provider-failed answer withholds nothing while the run keeps its own index.
+        var scored = SimpleRun(1, "OpenAI");
+        scored.TerminalFailureAnswerCount = 1;
+        scored.QualityIndex = 80;
+        var subject = Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80);
+        var facts = new BenchmarkReportFacts.FactList();
+        BenchmarkReportFacts.AddQualityFacts(
+            facts, subject,
+            Array.Empty<(BenchmarkModelComparisonEntryDto, string, BenchmarkReportFacts.EntryStats)>(),
+            new[] { subject }, new[] { scored });
+        Assert.DoesNotContain(facts.Sorted(), f => f.Key == "quality.withheldRuns");
     }
 
     [Fact]
@@ -689,6 +714,52 @@ public class BenchmarkReportFactsTests
 
         var notPanel = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
         Assert.Equal("The model was not graded by an assessor panel in every run.", FactOf(notPanel, "panel.referenceReaderIndex").UnavailableReason);
+    }
+
+    [Fact]
+    public void PanelFacts_AWithheldRunCountsInTheMemberAloneMeans()
+    {
+        // Member A scores 60 and member B 70 on both answered questions; the third failed at the provider.
+        var withheld = AsPanelRun(
+            Run(2, "OpenAI", "subject", new AnswerSpec(11, 1, 1, 60), new AnswerSpec(12, 2, 1, 60), new AnswerSpec(13, 3, 1, 0)),
+            accuracyLevel: 5, completenessLevel: 5, concisenessLevel: 5, readabilityLevel: 5);
+        withheld.TerminalFailureAnswerCount = 1;
+        withheld.QualityIndex = null;
+        withheld.AssessorOnlyQualityIndex = null;
+        withheld.CoAssessorOnlyQualityIndex = null;
+        foreach (var answer in withheld.Answers.Where(a => a.OrderIndex != 3)) answer.CoAssessmentQualityScore = 70;
+
+        var failed = withheld.Answers.Single(a => a.OrderIndex == 3);
+        failed.Status = BenchmarkAnswerStatus.ProviderError;
+        failed.AnswerText = string.Empty;
+        failed.AssessmentStatus = BenchmarkAssessmentStatus.Pending;
+        failed.CoAssessmentStatus = BenchmarkAssessmentStatus.Pending;
+        failed.QualityScore = null;
+        failed.PanelQualityScore = null;
+        failed.CoAssessmentQualityScore = null;
+
+        Assert.True(BenchmarkRunFinalizer.IndexWithheld(withheld, withheld.Answers));
+        var (recomputedA, recomputedB) = BenchmarkRunFinalizer.MemberAloneIndices(withheld.Answers);
+        Assert.Equal(60, recomputedA);
+        Assert.Equal(70, recomputedB);
+
+        var clean = PanelRun(1);
+        Assert.False(BenchmarkRunFinalizer.IndexWithheld(clean, clean.Answers));
+
+        var subject = Entry("group:9", new long[] { 1, 2 }, "Subject", "OpenAI", 70);
+        var facts = new BenchmarkReportFacts.FactList();
+        BenchmarkReportFacts.AddPanelFacts(
+            facts, subject, new[] { clean, withheld }, Comparison(subject),
+            Array.Empty<(BenchmarkModelComparisonEntryDto, string, BenchmarkReportFacts.EntryStats)>());
+        var sorted = facts.Sorted();
+
+        // The clean run's stored 80 and 84 beside the withheld run's recomputed 60 and 70.
+        var memberA = Assert.Single(sorted, f => f.Key == "panel.memberAAlone");
+        Assert.Equal(70.0, memberA.Value!.GetValue<double>());
+        Assert.Equal("70 / 100", memberA.Display);
+        var memberB = Assert.Single(sorted, f => f.Key == "panel.memberBAlone");
+        Assert.Equal(77.0, memberB.Value!.GetValue<double>());
+        Assert.Equal("77 / 100", memberB.Display);
     }
 
     [Fact]

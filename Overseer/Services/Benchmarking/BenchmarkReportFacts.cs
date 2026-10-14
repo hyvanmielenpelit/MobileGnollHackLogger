@@ -47,6 +47,7 @@ using Overseer.Models;
 //                            scored items, as the comparison scores them; a run whose stored indices are
 //                            withheld still contributes
 //   quality.scoredItems      "4 of 4 questions": items with a scored answer of the exam's items
+//   quality.withheldRuns     "1 of 3 runs": subject runs whose own index is withheld; absent when none is
 //
 // Dimensions (d = accuracy, completeness, conciseness, readability; the assessor's, or in a panel run
 // the panel row of BenchmarkPanelDimensions, the mean of both members' averages)
@@ -721,6 +722,13 @@ public static class BenchmarkReportFacts
                 Inv(quality.ItemCount) + " of " + Inv(quality.ExamItemCount) + (quality.ExamItemCount == 1 ? " question" : " questions"));
         }
 
+        int withheld = subjectRuns.Count(r => BenchmarkRunFinalizer.IndexWithheld(r, r.Answers));
+        if (withheld > 0)
+        {
+            facts.Add("quality.withheldRuns", withheld,
+                Inv(withheld) + " of " + Inv(subjectRuns.Count) + (subjectRuns.Count == 1 ? " run" : " runs"));
+        }
+
         var peerEstimates = peers.Where(p => p.Entry.Quality != null).Select(p => p.Entry.Quality!.PointEstimate).ToList();
         if (peerEstimates.Count == 0)
         {
@@ -1121,9 +1129,15 @@ public static class BenchmarkReportFacts
             int disagreements = subjectRuns.Sum(r => r.PanelDisagreementCount ?? 0);
             facts.Add("panel.disagreements", disagreements, Inv(disagreements) + " of " + Inv(graded) + " answers");
 
-            AddMean(facts, "panel.memberAAlone", subjectRuns.Select(r => (double?)r.AssessorOnlyQualityIndex).ToList(),
+            // A withheld run's member-alone indices are recomputed over its answers; the others are stored.
+            var memberAlone = subjectRuns
+                .Select(r => BenchmarkRunFinalizer.IndexWithheld(r, r.Answers)
+                    ? BenchmarkRunFinalizer.MemberAloneIndices(r.Answers ?? [])
+                    : (MemberA: r.AssessorOnlyQualityIndex, MemberB: r.CoAssessorOnlyQualityIndex))
+                .ToList();
+            AddMean(facts, "panel.memberAAlone", memberAlone.Select(m => (double?)m.MemberA).ToList(),
                 v => BenchmarkReportFormat.Whole(v) + " / 100");
-            AddMean(facts, "panel.memberBAlone", subjectRuns.Select(r => (double?)r.CoAssessorOnlyQualityIndex).ToList(),
+            AddMean(facts, "panel.memberBAlone", memberAlone.Select(m => (double?)m.MemberB).ToList(),
                 v => BenchmarkReportFormat.Whole(v) + " / 100");
             AddReferenceReaderFacts(facts, subjectRuns);
         }

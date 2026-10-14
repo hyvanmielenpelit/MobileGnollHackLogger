@@ -158,6 +158,23 @@ describe('ModelComparisonComponent', () => {
     expect(excluded).toContain('v9');
   });
 
+  it('names the reason of an entry refused for its status', () => {
+    const refused = {
+      ...buildExcludedEntry('run:9', ['ScoringMethodVersion']),
+      excludingKeys: [],
+      differences: [],
+      explanation: 'Run #9 was canceled before it finished, so it cannot be compared.'
+    };
+    render(buildDto([...comparableSet(3), refused]));
+
+    component.openAbout();
+    fixture.detectChanges();
+
+    const excluded = textOf('.mc-about-excluded');
+    expect(excluded).toContain('Run #9 was canceled before it finished, so it cannot be compared.');
+    expect(excluded).not.toContain('its measurement setup');
+  });
+
   it('draws no axes at all when nothing in the set may be charted together', () => {
     render(buildDto([
       buildExcludedEntry('run:8', ['ScoringMethodVersion']),
@@ -671,7 +688,7 @@ describe('ModelComparisonComponent', () => {
 
     render(buildDto([...comparableSet(3), buildExcludedEntry('run:9', ['ScoringMethodVersion'])]));
     expect(component.aboutSummary).toBe(
-      '3 of 4 models can be charted together. 1 was measured differently and is in the table only.');
+      '3 of 4 models can be charted together. 1 is in the table only.');
 
     render(buildDto([
       ...comparableSet(3),
@@ -679,7 +696,7 @@ describe('ModelComparisonComponent', () => {
       buildExcludedEntry('run:9', ['CandidatePromptOptions'])
     ]));
     expect(component.aboutSummary).toBe(
-      '3 of 5 models can be charted together. 2 were measured differently and are in the table only.');
+      '3 of 5 models can be charted together. 2 are in the table only.');
   });
 
   it('badges the About button with the note count, and opens the dialog as a modal', async () => {

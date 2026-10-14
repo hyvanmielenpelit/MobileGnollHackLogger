@@ -117,6 +117,12 @@ public class BenchmarkModelComparisonQualityDto
 
     /// <summary>Ready to render under the interval: which sources it actually covers.</summary>
     public string IntervalBasis { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The entry's runs whose own Intelligence Index is withheld, ascending; the point estimate
+    /// includes their scored answers.
+    /// </summary>
+    public List<long> WithheldRunIds { get; set; } = new();
 }
 
 /// <summary>

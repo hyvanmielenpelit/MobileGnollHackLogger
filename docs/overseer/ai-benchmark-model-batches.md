@@ -424,7 +424,15 @@ re-score, a new battery analysis — refreshes the result without a status chang
 - **Index** — a battery member's **Overall Index** and its combined half-width from its battery run's
   latest analysis (`batteryAnalysis`); a series member's pooled **Intelligence Index** from its run group's
   latest analysis (`groupAnalysis`), else the mean of its runs' indices (`runMean`); a single run's index
-  with 1.96 × its standard error (`run`).
+  with 1.96 × its standard error (`run`). A series member also reports `IndexWithheldRunCount`, its
+  completed runs whose own index is withheld (a question failed at the provider); it is zero for a
+  single run or a battery. When the count is above zero and the member has an index, the progress
+  dialog adds a note under it: for `groupAnalysis`, *1 run withholds its own index (a question failed at
+  the provider); this index is over its scored answers.* (or *2 runs withhold their own index (a
+  question failed at the provider); this index is over their scored answers.*), and for `runMean`, *1
+  run withholds its own index (a question failed at the provider); this index is the mean of the other
+  runs.* (or *2 runs withhold their own index (a question failed at the provider); this index is the
+  mean of the other runs.*).
 - **Speed** — `SpeedIndex`: a single run's own, a series member's `Speed.MeanSpeedIndex` from its run
   group's latest analysis, else the mean of its runs' indices when every run has one, a battery member's
   `Speed.OverallSpeedIndex` from its battery run's latest analysis; null when withheld. Then the median

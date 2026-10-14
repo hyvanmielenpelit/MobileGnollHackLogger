@@ -5,7 +5,8 @@ import {
   modelBatchMemberFigures,
   modelBatchMemberRepairLabel,
   modelBatchMemberRepairText,
-  modelBatchOwnedReasonText
+  modelBatchOwnedReasonText,
+  modelBatchWithheldRunsNote
 } from './model-batch.models';
 
 function result(overrides: Partial<BenchmarkModelBatchMemberResultDto> = {}): BenchmarkModelBatchMemberResultDto {
@@ -98,6 +99,42 @@ describe('model batch models', () => {
     it('is a plain sentence when no answer failed, or there is no result', () => {
       expect(modelBatchIndexWithheldText(member({ result: result() }), 'Battery')).toBe('No index for this result.');
       expect(modelBatchIndexWithheldText(member({ result: null }), 'Suite')).toBe('No index for this result.');
+    });
+  });
+
+  describe('modelBatchWithheldRunsNote', () => {
+    it('says a group analysis index is over the withholding runs\' scored answers, in singular and plural', () => {
+      expect(modelBatchWithheldRunsNote(member({
+        result: result({ intelligenceIndex: 72, indexSource: 'groupAnalysis', indexWithheldRunCount: 1 })
+      }))).toBe('1 run withholds its own index (a question failed at the provider); this index is over its scored answers.');
+      expect(modelBatchWithheldRunsNote(member({
+        result: result({ intelligenceIndex: 72, indexSource: 'groupAnalysis', indexWithheldRunCount: 2 })
+      }))).toBe('2 runs withhold their own index (a question failed at the provider); this index is over their scored answers.');
+    });
+
+    it('says a run mean index is the mean of the other runs, in singular and plural', () => {
+      expect(modelBatchWithheldRunsNote(member({
+        result: result({ intelligenceIndex: 72, indexSource: 'runMean', indexWithheldRunCount: 1 })
+      }))).toBe('1 run withholds its own index (a question failed at the provider); this index is the mean of the other runs.');
+      expect(modelBatchWithheldRunsNote(member({
+        result: result({ intelligenceIndex: 72, indexSource: 'runMean', indexWithheldRunCount: 2 })
+      }))).toBe('2 runs withhold their own index (a question failed at the provider); this index is the mean of the other runs.');
+    });
+
+    it('is null at zero or without a count, without an index, and for any other source', () => {
+      expect(modelBatchWithheldRunsNote(member({
+        result: result({ intelligenceIndex: 72, indexSource: 'groupAnalysis', indexWithheldRunCount: 0 })
+      }))).toBeNull();
+      expect(modelBatchWithheldRunsNote(member({
+        result: result({ intelligenceIndex: 72, indexSource: 'groupAnalysis' })
+      }))).toBeNull();
+      expect(modelBatchWithheldRunsNote(member({
+        result: result({ intelligenceIndex: null, indexSource: 'runMean', indexWithheldRunCount: 2 })
+      }))).toBeNull();
+      expect(modelBatchWithheldRunsNote(member({ result: null }))).toBeNull();
+      expect(modelBatchWithheldRunsNote(member({
+        result: result({ intelligenceIndex: 72, indexSource: 'run', indexWithheldRunCount: 1 })
+      }))).toBeNull();
     });
   });
 

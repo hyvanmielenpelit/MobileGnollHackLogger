@@ -401,8 +401,11 @@ describe('MultiRunComponent', () => {
 
   // --- Analysis rendering ---
 
-  function openAnalysed(analysis: BenchmarkGroupAnalysisDto = buildAnalysis()): void {
-    const analysed = buildGroup({ latestAnalysisId: 11, latestAnalysisAtUtc: '2026-09-06T11:00:00Z' });
+  function openAnalysed(
+    analysis: BenchmarkGroupAnalysisDto = buildAnalysis(),
+    groupOverrides: Partial<BenchmarkRunGroupDto> = {}
+  ): void {
+    const analysed = buildGroup({ latestAnalysisId: 11, latestAnalysisAtUtc: '2026-09-06T11:00:00Z', ...groupOverrides });
     serviceMock.getRunGroups.mockReturnValue(of([analysed]));
     serviceMock.getRunGroup.mockReturnValue(of(analysed));
     serviceMock.getRunGroupAnalysis.mockReturnValue(of(analysis));
@@ -410,6 +413,44 @@ describe('MultiRunComponent', () => {
     component.selectGroup(analysed);
     fixture.detectChanges();
   }
+
+  function withWithheld(...runIds: number[]): Partial<BenchmarkRunGroupDto> {
+    return {
+      members: buildGroup().members.map(member =>
+        runIds.includes(member.runId) ? { ...member, indexWithheld: true } : member)
+    };
+  }
+
+  it('should show a member withholding its own index as not computed, with a note under the point estimate', () => {
+    openAnalysed(buildAnalysis(), withWithheld(42));
+
+    const members = allText('.mr-member-list li');
+    expect(members).toContain('#42');
+    expect(members).toContain('Index not computed');
+    expect(members).toContain('Index 71');
+    expect(allText('.mr-aggregates [role="note"]')).toContain(
+      'Run #42 withholds its own index (a question failed at the provider); its per-run index here is over its scored answers.');
+  });
+
+  it('should name every analyzed member withholding its own index, ids ascending, and leave out an unanalyzed one', () => {
+    const group = withWithheld(43, 41);
+    group.members = [...group.members!, {
+      runId: 44, startedAtUtc: '2026-09-06T10:10:00Z', status: 'Completed', qualityIndex: null, speedIndex: null,
+      testedModelDisplayName: 'GPT-5.6 Luna', shortFingerprint: 'e9b3e9a7', addedAtUtc: '2026-09-06T10:20:00Z', indexWithheld: true
+    }];
+    openAnalysed(buildAnalysis(), group);
+
+    expect(allText('.mr-aggregates [role="note"]')).toContain(
+      'Runs #41, #43 withhold their own index (a question failed at the provider); their per-run indices here are over their scored answers.');
+  });
+
+  it('should show no withheld-index note and no "not computed" when no member withholds its index', () => {
+    openAnalysed();
+
+    expect(allText('.mr-member-list li')).not.toContain('not computed');
+    expect(allText('.mr-aggregates [role="note"]')).not.toContain('withhold');
+    expect(component.withheldIndexNote).toBeNull();
+  });
 
   it('should render both interval components with distinct labels, and the item-sampling one with its does-not-shrink note', () => {
     openAnalysed();

@@ -591,6 +591,43 @@ describe('questionCoverageNotes', () => {
       'b: 2 questions have no scored answer (failed, skipped or ungraded) and are left out of its index.'
     );
   });
+
+  it('warns about one run withholding its own index, directly after the entry\'s unscored note', () => {
+    const notes = questionCoverageNotes([
+      buildComparisonEntry('a', { itemCount: 17, unscoredItemCount: 1, withheldRunIds: [12] }),
+      buildComparisonEntry('b', { itemCount: 17, unscoredItemCount: 1 })
+    ]);
+    expect(notes.map(note => note.tone)).toEqual(['warning', 'warning', 'warning']);
+    expect(notes[0].text).toBe(
+      'a: 1 question has no scored answer (failed, skipped or ungraded) and is left out of its index.'
+    );
+    expect(notes[1].text).toBe(
+      'a: run #12 has its own index withheld because a question failed at the provider; ' +
+      'this figure is over its scored answers.'
+    );
+    expect(notes[2].text).toBe(
+      'b: 1 question has no scored answer (failed, skipped or ungraded) and is left out of its index.'
+    );
+  });
+
+  it('warns about several runs withholding their own index, ids ascending', () => {
+    const notes = questionCoverageNotes([
+      buildComparisonEntry('a', { withheldRunIds: [15, 12] })
+    ]);
+    expect(notes).toEqual([{
+      text: 'a: runs #12, #15 have their own index withheld because a question failed at the provider; ' +
+        'this figure is over their scored answers.',
+      tone: 'warning'
+    }]);
+  });
+
+  it('adds no withheld-run note for an empty or absent list', () => {
+    expect(questionCoverageNotes([
+      buildComparisonEntry('a', { withheldRunIds: [] }),
+      buildComparisonEntry('b', {}),
+      buildComparisonEntry('c', null)
+    ])).toEqual([]);
+  });
 });
 
 describe('normalizeThinkingLevel', () => {

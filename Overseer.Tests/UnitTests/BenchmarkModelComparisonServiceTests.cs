@@ -341,6 +341,58 @@ public class BenchmarkModelComparisonServiceTests
         Assert.Contains("do not pool", Entry(dto, "c").Explanation);
     }
 
+    [Fact]
+    public void AWithheldRunIsCharted_AndNamedInItsQuality()
+    {
+        // Run 2 lost a question at the provider, so its own index is withheld; its two scored answers
+        // still count toward the entry's pooled estimate.
+        var withheld = Run(2);
+        withheld.Status = BenchmarkRunStatus.CompletedWithErrors;
+        withheld.QualityIndex = null;
+        withheld.TerminalFailureAnswerCount = 1;
+        withheld.Answers.Single(a => a.BenchmarkQuestionId == 2).Status = BenchmarkAnswerStatus.ProviderError;
+
+        var dto = Build(new[]
+        {
+            Source("a", Card(), Run(1), withheld),
+            Source("b", Card(), Run(3, "gemini-3.8-flash-lite"))
+        });
+
+        var entry = Entry(dto, "a");
+        Assert.False(entry.Excluded, entry.Explanation);
+        Assert.Equal(new long[] { 2 }, entry.Quality!.WithheldRunIds);
+        Assert.Empty(Entry(dto, "b").Quality!.WithheldRunIds);
+    }
+
+    private static BenchmarkRunGroup Group() => new() { Id = 7, Name = "Luna series" };
+
+    [Theory]
+    [InlineData(BenchmarkRunStatus.Running,
+        "Excluded: member run #2 of \"Luna series\" is still in progress, so the group's figures are not settled.")]
+    [InlineData(BenchmarkRunStatus.Failed,
+        "Excluded: member run #2 of \"Luna series\" ended Failed, so the group cannot be one point.")]
+    [InlineData(BenchmarkRunStatus.Canceled,
+        "Excluded: member run #2 of \"Luna series\" ended Canceled, so the group cannot be one point.")]
+    public void AGroupWithAnUnsettledMemberIsRefused_NamingTheMember(BenchmarkRunStatus status, string expected)
+    {
+        // Runs 2 and 3 are both unsettled; the refusal names the lowest id.
+        var second = Run(2);
+        second.Status = status;
+        var third = Run(3);
+        third.Status = status;
+
+        Assert.Equal(expected, BenchmarkModelComparisonService.RefuseGroup(Group(), new[] { Run(1), second, third }));
+    }
+
+    [Fact]
+    public void AGroupOfCompletedWithErrorsMembers_Pools()
+    {
+        var members = new[] { Run(1), Run(2) };
+        foreach (var run in members) run.Status = BenchmarkRunStatus.CompletedWithErrors;
+
+        Assert.Null(BenchmarkModelComparisonService.RefuseGroup(Group(), members));
+    }
+
     // --- Pricing: one basis, arithmetic over stored totals ---------------------------------------------
 
     [Fact]

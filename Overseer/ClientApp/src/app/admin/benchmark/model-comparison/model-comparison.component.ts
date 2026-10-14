@@ -1221,7 +1221,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return 'A comparison report compares one model with at least one other. Add another model on step 1, '
         + 'or write a run\'s or battery run\'s own reports in the AI Reports tab of its report.';
     }
-    return 'Every model in this comparison was measured differently, so none of them can be the subject of a report.';
+    return 'No model in this comparison can be charted, so none of them can be the subject of a report.';
   }
 
   get canGoPrevious(): boolean {
@@ -3072,7 +3072,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     }
     const one = excluded === 1;
     return `${total - excluded} of ${total} models can be charted together. ${excluded} `
-      + `${one ? 'was' : 'were'} measured differently and ${one ? 'is' : 'are'} in the table only.`;
+      + `${one ? 'is' : 'are'} in the table only.`;
   }
 
   /** The caveats that qualify the figures, each counted on the About button's badge. */

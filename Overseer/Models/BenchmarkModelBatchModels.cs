@@ -275,6 +275,9 @@ public class BenchmarkModelBatchMemberResultDto
     /// <summary>Where the index comes from: <c>run</c>, <c>groupAnalysis</c>, <c>runMean</c> or <c>batteryAnalysis</c>.</summary>
     public string? IndexSource { get; set; }
 
+    /// <summary>A series member's completed runs whose own index is withheld; zero for a single run or a battery.</summary>
+    public int IndexWithheldRunCount { get; set; }
+
     /// <summary>Median model time (turn duration less tool time) over the Ok answers of the member's runs.</summary>
     public double? MedianModelTimeMs { get; set; }
 

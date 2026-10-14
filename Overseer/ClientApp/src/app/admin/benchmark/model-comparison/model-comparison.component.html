@@ -1934,10 +1934,14 @@
         @if (excludedEntries.length > 0) {
           <section class="mc-about-section" aria-labelledby="mc-about-excluded-heading">
             <h4 id="mc-about-excluded-heading">Not in the charts</h4>
-            <p class="mc-field-hint">These were measured differently from the rest. They are still in the table.</p>
+            <p class="mc-field-hint">These cannot be charted with the rest. They are still in the table.</p>
             @for (entry of excludedEntries; track entry.key) {
               <div class="mc-about-excluded">
-                <p><strong>{{ entry.label }}</strong> — differs on {{ entry.excludingKeys.join(', ') || 'its measurement setup' }}.</p>
+                @if (entry.excludingKeys.length > 0) {
+                  <p><strong>{{ entry.label }}</strong> — differs on {{ entry.excludingKeys.join(', ') || 'its measurement setup' }}.</p>
+                } @else {
+                  <p><strong>{{ entry.label }}</strong> — {{ entry.explanation }}</p>
+                }
                 @if (entry.differences.length > 0) {
                   <details class="gh-disclosure">
                     <summary>Details</summary>

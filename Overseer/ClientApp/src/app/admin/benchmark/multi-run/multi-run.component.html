@@ -515,7 +515,7 @@
                   <li>
                     <span class="mr-run-id">#{{ member.runId }}</span>
                     <span>{{ member.testedModelDisplayName || '—' }}</span>
-                    <span>Index {{ member.qualityIndex ?? '—' }}</span>
+                    <span>Index {{ member.indexWithheld ? 'not computed' : (member.qualityIndex ?? '—') }}</span>
                     <span>Speed {{ member.speedIndex ?? '—' }}</span>
                     <span class="mr-run-fingerprint">{{ shortFingerprint(member.shortFingerprint) }}</span>
                   </li>
@@ -663,6 +663,12 @@
                 <span class="mr-point-value">{{ formatNumber(indexStats.pointEstimate, 1) }}</span>
                 <span class="mr-point-label">mean of {{ indexStats.runCount }} per-run indices</span>
               </div>
+
+              @if (withheldIndexNote; as note) {
+                <div class="alert alert-warning" role="note">
+                  <div class="alert-content"><div class="alert-body">{{ note }}</div></div>
+                </div>
+              }
 
               @if (indexStats.identityHolds === false) {
                 <div class="alert alert-warning" role="note">

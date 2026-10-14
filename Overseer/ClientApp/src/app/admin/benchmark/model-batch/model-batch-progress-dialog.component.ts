@@ -66,6 +66,7 @@ import {
   modelBatchStatusLabel,
   modelBatchStopReasonLabel,
   modelBatchTargetText,
+  modelBatchWithheldRunsNote,
   resolveModelBatchComparisonPreset
 } from './model-batch.models';
 
@@ -115,6 +116,8 @@ export interface ModelBatchMemberView {
   readonly indexLabel: string;
   /** Why a finished member has no index; null when it has one or is not finished. */
   readonly indexWithheldText: string | null;
+  /** What a finished member's index stands on when some of its runs withhold their own; null otherwise. */
+  readonly withheldRunsNote: string | null;
   readonly figures: ModelBatchMemberFigure[];
   /** *Run #55*, *Series #8* or *Battery run #12*, then *· finished 22:41* once finished; null before the member launched anything. */
   readonly refText: string | null;
@@ -694,6 +697,7 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
       indexValue,
       indexLabel: battery ? 'Overall Index' : 'Intelligence Index',
       indexWithheldText: finished && indexValue == null ? modelBatchIndexWithheldText(member, batch.targetKind) : null,
+      withheldRunsNote: finished && indexValue != null ? modelBatchWithheldRunsNote(member) : null,
       figures: finished ? modelBatchMemberFigures(member) : [],
       refText: ref && finishedAt ? `${ref} · finished ${finishedAt}` : ref,
       reason: ended ? (member.errorMessage?.trim() || this.endedReason(member.status)) : null,

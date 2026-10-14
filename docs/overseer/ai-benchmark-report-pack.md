@@ -1980,8 +1980,8 @@ exists; step 3 also needs **two** entries that are not Excluded (`hasComparisonP
 comparison report needs a subject and a peer (§ 1a). Otherwise it is `aria-disabled` with a visually
 hidden reason — with one comparable entry *"A comparison report compares one model with at least one
 other. Add another model on step 1, or write a run's or battery run's own reports in the AI Reports tab
-of its report."*, with none *"Every model in this comparison was measured differently, so none of them
-can be the subject of a report."* — and **Next** skips it. Next runs 2 → 3 → 4, and closes the wizard on step 4. Step 2's former **Reports** button and
+of its report."*, with none *"No model in this comparison can be charted, so none of them can be the
+subject of a report."* — and **Next** skips it. Next runs 2 → 3 → 4, and closes the wizard on step 4. Step 2's former **Reports** button and
 the Report Pack dialog it opened are gone; **About** and **Recompute** stay on step 2.
 
 **The comparison's number in the header.** After a successful Compare, and whenever the entry set
@@ -2459,6 +2459,18 @@ a battery document renders through the same code as a run's:
   and `quality.unweightedMean` the equal-weight mean of answer quality, each the mean of one figure per
   run of the subject (unavailable if any run has no scored answer) and taken over each run's scored
   items, like `quality.index`.
+  A run or group sheet also carries `quality.withheldRuns` (*1 of 3 runs*, labeled *Runs with a
+  withheld index*) when one or more subject runs withhold their own Intelligence Index because a
+  question failed at the provider; the fact is **absent**, not unavailable, when none does, so every
+  other sheet, prompt and document is unchanged. When it is present, each single-subject document —
+  the executive summary, the technical report and the internal brief — follows its key figures with
+  *1 of 3 runs withholds its own Intelligence Index because a question failed at the provider; the
+  Intelligence figure above is over the scored questions.* (*withhold their own* when more than one
+  run does). A comparison's per-model sheet carries the fact, prefixed `model.<letter>.`, for a model
+  with a withheld run; the comparison documents add no sentence. `panel.memberAAlone` and
+  `panel.memberBAlone` include a withheld panel run too, at the member-alone index recomputed over its
+  answers, since its stored member-alone indices are withheld with its headline. A battery sheet never
+  carries the fact: a battery's members exclude withheld runs.
 - **The battery's own keys:** `battery.*` (name, revision, scheme, suite count, runs per suite, member
   runs, rounds, definition and class hashes, pooled identity, critical-error rate, speed index, the
   suites' SD and range, excluded members, caveats), `suite.<n>.*` (name, weight, index, contribution,

@@ -349,3 +349,24 @@ export function modelBatchIndexWithheldText(member: BenchmarkModelBatchMemberDto
   const progress = targetKind === 'Battery' ? 'the battery progress' : 'the run progress';
   return `No index — ${answers}. Open ${progress} to re-run failed questions.`;
 }
+
+/**
+ * What an index over several runs stands on when some of them withhold their own index because a
+ * question failed at the provider: over their scored answers for a group analysis, the mean of the
+ * other runs for a run mean. Null without an index, without such a run, or for any other source.
+ */
+export function modelBatchWithheldRunsNote(member: BenchmarkModelBatchMemberDto): string | null {
+  const result = member.result ?? null;
+  const count = result?.indexWithheldRunCount ?? 0;
+  if (!result || !(count > 0)) return null;
+  if (!isFiniteNumber(result.intelligenceIndex) && !isFiniteNumber(result.overallIndex)) return null;
+  const one = count === 1;
+  const lead = one
+    ? '1 run withholds its own index (a question failed at the provider)'
+    : `${count} runs withhold their own index (a question failed at the provider)`;
+  switch (result.indexSource) {
+    case 'groupAnalysis': return `${lead}; this index is over ${one ? 'its' : 'their'} scored answers.`;
+    case 'runMean': return `${lead}; this index is the mean of the other runs.`;
+    default: return null;
+  }
+}

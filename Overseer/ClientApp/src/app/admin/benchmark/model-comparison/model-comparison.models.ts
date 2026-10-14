@@ -89,6 +89,8 @@ export interface BenchmarkModelComparisonQualityDto {
   reproducibilityAvailable: boolean;
   /** Ready to render under the interval: which sources of variation it actually covers. */
   intervalBasis: string;
+  /** Runs whose own index is withheld because a question failed at the provider, ascending. */
+  withheldRunIds?: number[];
 }
 
 /** The speed axis: time to first token, which is the latency a chat user perceives. */
@@ -1402,23 +1404,37 @@ export function toChartContext(dto: BenchmarkModelComparisonDto | null): Compari
 /**
  * Why the charted entries' indices cover fewer questions than these runs were asked. An entry's
  * own unscored questions are a warning each, because indices over different item sets are not
- * strictly the same exam. Empty when every asked question is scored.
+ * strictly the same exam. Each entry's runs that withhold their own index, because a question
+ * failed at the provider, are a further warning directly after it. Empty when every asked question
+ * is scored and no run withholds its index.
  */
 export function questionCoverageNotes(entries: readonly BenchmarkModelComparisonEntryDto[]): FigureNote[] {
   const notes: FigureNote[] = [];
 
   for (const entry of entries) {
+    const label = chartLabel(entry).label;
     const unscored = entry.quality?.unscoredItemCount ?? 0;
-    if (unscored <= 0) {
-      continue;
+    if (unscored > 0) {
+      const one = unscored === 1;
+      notes.push({
+        text: `${label}: ${unscored} ` +
+          `${one ? 'question has' : 'questions have'} no scored answer (failed, skipped or ungraded) and ` +
+          `${one ? 'is' : 'are'} left out of its index.`,
+        tone: 'warning',
+      });
     }
-    const one = unscored === 1;
-    notes.push({
-      text: `${chartLabel(entry).label}: ${unscored} ` +
-        `${one ? 'question has' : 'questions have'} no scored answer (failed, skipped or ungraded) and ` +
-        `${one ? 'is' : 'are'} left out of its index.`,
-      tone: 'warning',
-    });
+
+    const withheld = [...(entry.quality?.withheldRunIds ?? [])].sort((a, b) => a - b);
+    if (withheld.length > 0) {
+      const one = withheld.length === 1;
+      const ids = withheld.map(id => `#${id}`).join(', ');
+      notes.push({
+        text: `${label}: ${one ? 'run' : 'runs'} ${ids} ` +
+          `${one ? 'has its' : 'have their'} own index withheld because a question failed at the provider; ` +
+          `this figure is over ${one ? 'its' : 'their'} scored answers.`,
+        tone: 'warning',
+      });
+    }
   }
 
   return notes;

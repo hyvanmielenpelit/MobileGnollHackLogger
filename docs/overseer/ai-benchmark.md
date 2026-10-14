@@ -1737,7 +1737,7 @@ stamped 20 on `HarnessVersion` alone, not on `ToolGuidesSha256` or `CandidateSys
 - **`BenchmarkRunFinalizer` withholds the indexes rather than publishing a partial number.** New
   `BenchmarkRun.TerminalFailureAnswerCount` (`int?` — `null` means *not recorded*, i.e. the run was
   finalised before harness 21). When **any** answer in the run carries a terminal failure (status
-  `ProviderError` or `Failed`), `QualityIndex`, `QualityIndexStandardError`, `UnweightedQualityIndex`
+  `ProviderError`, `Failed` or `Canceled`), `QualityIndex`, `QualityIndexStandardError`, `UnweightedQualityIndex`
   and `SpeedIndex` are all stored as `null` rather than computed over the survivors. A run that is
   `CompletedWithErrors` only because of assessment failures or model-produced empty answers is
   unaffected and keeps its indexes — the suppression is specific to a terminal *provider* failure.
@@ -1752,6 +1752,25 @@ stamped 20 on `HarnessVersion` alone, not on `ToolGuidesSha256` or `CandidateSys
   A minimum-item threshold (publish an index once fewer than some fraction of questions failed) was
   considered and rejected: it would still publish a number over an item set that no longer matches the
   suite's, and that number is comparable with no complete run.
+- **A run's own surfaces print no run-level index or mean when its indices are withheld; surfaces
+  that pool or compare runs compute over the scored answers and mark the withheld runs.** A run is
+  *withheld* (`BenchmarkRunFinalizer.IndexWithheld`) when its stored Quality Index is null and an
+  answer failed terminally; a run finalised before harness 21 that kept its index is not, and gets no
+  mark. On the withholding side: the run detail and run history read *Not computed*; the run report
+  prints *Not computed* for its headline, its Raw Quality Index, a panel run's Member A alone, Member B
+  alone and Reference reader (advisory), replaces every sensitivity figure in § 2 with
+  `- **Sensitivity figures:** not computed — each recomputes the Intelligence Index, which is withheld for this run.`
+  and in § 7 with
+  `### Sensitivity Figures: not computed — the Intelligence Index is withheld; see § 2.`, and its Tool
+  Usage Profile names no run mean and prints no *Budget/Quality Correlation*; the battery planner treats
+  the run as unusable, and a single-run model-batch member shows its index as withheld. On the marking
+  side: the model comparison charts the entry and adds a *Notices* warning naming the withheld runs;
+  Multi-Run Analysis marks the member *Index not computed* in the manifest and adds a note under the
+  point estimate, and its Markdown report reads `withheld` in the member's Index cell; a model-batch
+  series member notes how many of its runs withhold their own index; the report-pack fact sheet carries
+  `quality.withheldRuns`. Paired tests and the panel diagnostics compute over the scored answers too
+  and are covered by the comparison's notice: paired tests count a failed question as unpaired and print
+  no run-level index.
 - **The report says so instead of showing a number.** § 2 and § 7 print
   `Not computed — N of M questions failed at the provider` in place of an index whenever the
   suppression above applies; `Provider Errors` now counts terminal failures directly, so run 37's own
@@ -2512,6 +2531,13 @@ here grades anything: `HarnessVersion`, `ScoringMethodVersion`, `CandidateSystem
   rubrics (*2 of the suite's 18 questions are left out: their rubrics were revised after these
   runs…*), and one *warning* per plotted entry with unscored questions, naming it, since two indices
   over different item sets are not strictly the same exam.
+  Beside it, a *warning* per entry whose quality lists `WithheldRunIds` (the entry's runs whose own
+  Intelligence Index is withheld, ascending): *{label}: run #12 has its own index withheld because a
+  question failed at the provider; this figure is over its scored answers.*, or for several *{label}:
+  runs #12, #15 have their own index withheld because a question failed at the provider; this figure is
+  over their scored answers.* The unscored-questions note cannot stand in for it: a question that failed
+  in the withheld run but was scored in another run of the same group or series leaves no unscored
+  question, so without this note the entry would carry no warning at all.
 - **The whole-suite cost is each entry's own mean run cost** (`cost.candidateCostPerRunUsd`), not
   `$ / question` multiplied by the first entry's count. It no longer depends on any item count, so
   entries with different scored counts are no longer rescaled by the wrong one. Where the counts
@@ -2973,6 +2999,18 @@ to read the charts*; and *Not shown as charts* (the server's refused measures, e
 summary, an *Instead: …* line and a *Why* disclosure). The dialog's body renders only while it is
 open, and it stops propagation of its own close and cancel events so they never reach, and close,
 the wizard's own dialog.
+
+*Not in the charts* also holds an entry refused for what it is rather than for a setup key: a
+**run group with a `Running`, `Failed` or `Canceled` member** is excluded, naming the lowest-id such
+member — *Excluded: member run #{id} of "{group}" is still in progress, so the group's figures are
+not settled.* or *Excluded: member run #{id} of "{group}" ended {Status}, so the group cannot be one
+point.* (`BenchmarkModelComparisonService.RefuseGroup`; a group whose members all ended `Completed`,
+`CompletedWithLimits` or `CompletedWithErrors` pools as before). The panel's hint reads *These cannot
+be charted with the rest. They are still in the table.*; an entry with differing keys is listed as
+before, and an entry without them shows its label and its explanation, never *its measurement
+setup*. The dialog's summary ends *1 is in the table only.* or *2 are in the table only.*, and the
+report step's blocked reason reads *No model in this comparison can be charted, so none of them can
+be the subject of a report.*
 
 **Refetch and selection.** A refetch that returns the same set of entry keys — from changing
 Prices or from Recompute — keeps the admin's Show and Highlight choices exactly as set. A refetch

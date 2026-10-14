@@ -184,6 +184,10 @@ public class BenchmarkRunGroupMemberDto
     public string Status { get; set; } = string.Empty;
     public int? QualityIndex { get; set; }
     public int? SpeedIndex { get; set; }
+
+    /// <summary>The run's own Intelligence Index is withheld: a question failed at the provider.</summary>
+    public bool IndexWithheld { get; set; }
+
     public string? TestedModelDisplayName { get; set; }
     public string? ShortFingerprint { get; set; }
     public DateTime AddedAtUtc { get; set; }

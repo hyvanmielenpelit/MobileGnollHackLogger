@@ -672,6 +672,12 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             .ToListAsync(ct);
         var ok = answers.Where(a => a.Status == BenchmarkAnswerStatus.Ok).ToList();
 
+        if (member.BenchmarkRunSeriesId != null)
+        {
+            result.IndexWithheldRunCount = completed.Count(r =>
+                BenchmarkRunFinalizer.IndexWithheld(r, answers.Where(a => a.BenchmarkRunId == r.Id)));
+        }
+
         result.MedianModelTimeMs = BenchmarkGroupStatistics.Median(ok.Select(a => (double)a.ModelTimeMs).ToList());
         result.TtftP50Ms = BenchmarkGroupStatistics.Median(ok
             .Select(CallTelemetryMeasures.TimeToFirstAnswerTextMs)

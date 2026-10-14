@@ -567,7 +567,12 @@ public static class BenchmarkModelComparison
                 ? "Item sampling and run-to-run reproducibility, combined in quadrature."
                 : $"Item sampling only. Below {BenchmarkGroupStatistics.MinRunsForReproducibility} runs "
                   + "there is no reproducibility estimate, so this interval covers one source of "
-                  + "variation rather than two."
+                  + "variation rather than two.",
+            WithheldRunIds = source.Runs
+                .Where(r => BenchmarkRunFinalizer.IndexWithheld(r, r.Answers))
+                .Select(r => r.Id)
+                .OrderBy(id => id)
+                .ToList()
         };
     }
 
@@ -997,13 +1002,24 @@ public class BenchmarkModelComparisonService
     /// <summary>
     /// Null when the group may be pooled into one point. A Tier C group is two conditions, and a set
     /// below Tier B is not one thing at all — either would put a number on the chart that describes
-    /// no model.
+    /// no model. A member still in flight or ended without a measurement refuses the group, the
+    /// lowest such id named.
     /// </summary>
-    private static string? RefuseGroup(BenchmarkRunGroup group, IReadOnlyList<BenchmarkRun> members)
+    internal static string? RefuseGroup(BenchmarkRunGroup group, IReadOnlyList<BenchmarkRun> members)
     {
         if (members.Count == 0)
         {
             return "Excluded: this group has no loadable member runs.";
+        }
+
+        var unsettled = members
+            .OrderBy(r => r.Id)
+            .FirstOrDefault(r => !BenchmarkRunFinalizer.IsPoolable(r.Status));
+        if (unsettled != null)
+        {
+            return unsettled.Status == BenchmarkRunStatus.Running
+                ? $"Excluded: member run #{unsettled.Id} of \"{group.Name}\" is still in progress, so the group's figures are not settled."
+                : $"Excluded: member run #{unsettled.Id} of \"{group.Name}\" ended {unsettled.Status}, so the group cannot be one point.";
         }
 
         var comparability = BenchmarkComparabilityKey.Resolve(members);

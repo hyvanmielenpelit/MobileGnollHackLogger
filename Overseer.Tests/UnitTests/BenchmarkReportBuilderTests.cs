@@ -4402,6 +4402,115 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("**Failed:** timed out", report);
     }
 
+    private const string WithheldSensitivityLine = "- **Sensitivity figures:** not computed — each recomputes the Intelligence Index, which is withheld for this run.";
+    private const string WithheldFinalSensitivityLine = "### Sensitivity Figures: not computed — the Intelligence Index is withheld; see § 2.";
+
+    /// <summary>Marks <paramref name="run"/> as one whose Intelligence Index a provider failure withheld.</summary>
+    private static void WithholdIndex(BenchmarkRun run, int failedOrderIndex)
+    {
+        run.Answers.Add(TerminalFailureAnswer(failedOrderIndex, BenchmarkAnswerStatus.ProviderError, 503, "Our servers are currently overloaded."));
+        run.TotalQuestionCount = run.Answers.Count;
+        run.QualityIndex = null;
+        run.SpeedIndex = null;
+        run.TerminalFailureAnswerCount = 1;
+    }
+
+    [Fact]
+    public void PanelRun_Withheld_PrintsNoMemberAloneOrReferenceReaderIndex()
+    {
+        var run = PanelReportRun();
+        Assert.Equal(70, run.AssessorOnlyQualityIndex);
+        WithholdIndex(run, 6);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        string panelLine = report.Split('\n').Single(l => l.StartsWith("- **Panel:** mean of both members' per-answer quality.", StringComparison.Ordinal));
+        Assert.Contains("Member A alone: not computed. Member B alone: not computed. Reference reader (advisory): not computed.", panelLine);
+        Assert.DoesNotContain("/ 100", panelLine);
+        Assert.Contains("### Panel Member A Alone: not computed — ", report);
+        Assert.Contains("### Panel Member B Alone: not computed — ", report);
+
+        Assert.Contains(WithheldSensitivityLine, report);
+        Assert.Contains(WithheldFinalSensitivityLine, report);
+        Assert.DoesNotContain("Panel verification-cleared Accuracy sensitivity", report);
+        Assert.DoesNotContain("**Other sensitivity figures:**", report);
+        Assert.DoesNotContain("### Other Sensitivity Figures:", report);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Withheld_PrintsOneSensitivityLine_AndNoSensitivityFigure(bool withheld)
+    {
+        // The fixture prints a contested-verdict and a verification-cleared sensitivity when its
+        // index is not withheld. With the index stored, the provider failure leaves it unwithheld,
+        // as on a run finalized before harness 21.
+        var cleared = VerificationClearedAnswer(1, BenchmarkDifficulty.Intermediate, 50, 70);
+        var capped = VerificationClearedAnswer(2, BenchmarkDifficulty.Intermediate, 50, 25);
+        capped.CriticalError = true;
+        var contested = ScoredAnswer(12, BenchmarkDifficulty.Intermediate, 55, 42);
+        contested.AnswerFlags = (int)BenchmarkAnswerFlags.ContestedVerdict;
+        contested.SecondOpinionCriticalError = true;
+        contested.SecondOpinionQualityScore = 25;
+        var run = HarnessV7Run(BenchmarkSecondOpinionMode.Off, cleared, capped, contested);
+        WithholdIndex(run, 13);
+        if (!withheld)
+        {
+            run.QualityIndex = 60;
+        }
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        // Assessor Findings still names the verification-cleared answers either way.
+        Assert.Contains("**Verification-cleared Accuracy deductions:** 2 (Q1, Q2)", report);
+        if (withheld)
+        {
+            Assert.Contains(WithheldSensitivityLine, report);
+            Assert.Contains(WithheldFinalSensitivityLine, report);
+            Assert.DoesNotContain("Contested-Verdict Sensitivity:", report);
+            Assert.DoesNotContain("Verification-cleared Accuracy Sensitivity:", report);
+            Assert.DoesNotContain("Evidence-informed Sensitivity", report);
+            Assert.DoesNotContain("FORM-cleared Readability Sensitivity:", report);
+        }
+        else
+        {
+            Assert.DoesNotContain(WithheldSensitivityLine, report);
+            Assert.DoesNotContain(WithheldFinalSensitivityLine, report);
+            Assert.Contains("- **Contested-Verdict Sensitivity:**", report);
+            Assert.Contains("### Contested-Verdict Sensitivity:", report);
+            Assert.Contains("- **Verification-cleared Accuracy Sensitivity:**", report);
+            Assert.Contains("### Verification-cleared Accuracy Sensitivity:", report);
+        }
+    }
+
+    [Fact]
+    public void Withheld_PrintsNoRunMean()
+    {
+        var pressured = ScoredAnswer(10, BenchmarkDifficulty.Simple, 30, 60);
+        pressured.ToolCallBudgetUsed = 35;
+        pressured.ToolCallCount = 34;
+        var exhausted = ScoredAnswer(11, BenchmarkDifficulty.Intermediate, 55, 84);
+        exhausted.ToolCallBudgetUsed = 25;
+        exhausted.ToolCallCount = 25;
+        exhausted.ToolBudgetExhausted = true;
+        var run = HarnessV7Run(
+            BenchmarkSecondOpinionMode.Off,
+            pressured,
+            exhausted,
+            ScoredAnswer(12, BenchmarkDifficulty.Advanced, 85, 100),
+            ScoredAnswer(13, BenchmarkDifficulty.Advanced, 90, 100));
+        run.UnweightedQualityIndex = 92;
+        WithholdIndex(run, 14);
+
+        var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
+
+        Assert.Contains("Q10 34/35 (1 left). *An answer this close to its cap", report);
+        Assert.Contains("- **Budget Exhausted:** 1 question(s)", report);
+        Assert.DoesNotContain("below the run mean", report);
+        Assert.DoesNotContain("Budget/Quality Correlation", report);
+        Assert.DoesNotContain("Unweighted Quality Mean", report);
+    }
+
     /// <summary>A recorded run (harness 56) with one answer of each failure origin.</summary>
     private static BenchmarkRun RecordedRunWithFailures()
     {

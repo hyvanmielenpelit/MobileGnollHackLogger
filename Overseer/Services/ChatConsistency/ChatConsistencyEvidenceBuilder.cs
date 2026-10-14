@@ -40,7 +40,10 @@ public static class ChatConsistencyMeasures
     /// <summary>The answer was delivered: the measures of speed, work and cost read only these.</summary>
     public static bool IsDelivered(BenchmarkRunAnswer answer) => answer.Status == BenchmarkAnswerStatus.Ok;
 
-    /// <summary>The provider never delivered the answer.</summary>
+    /// <summary>
+    /// The provider never delivered the answer: ProviderError or Failed. An operator cancel (Canceled)
+    /// is not a reliability failure and is not counted.
+    /// </summary>
     public static bool IsTerminalFailure(BenchmarkRunAnswer answer)
         => answer.Status is BenchmarkAnswerStatus.ProviderError or BenchmarkAnswerStatus.Failed;
 

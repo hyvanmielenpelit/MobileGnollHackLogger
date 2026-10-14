@@ -789,6 +789,46 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
+    public void AWithheldRunsFact_AddsOneSentence_InEveryDocument()
+    {
+        const string Sentence = "1 of 3 runs withholds its own Intelligence Index because a question failed at the provider; "
+            + "the Intelligence figure above is over the scored questions.";
+        const string Plural = "2 of 3 runs withhold their own Intelligence Index because a question failed at the provider; "
+            + "the Intelligence figure above is over the scored questions.";
+        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief })
+        {
+            var options = new BenchmarkReportRenderOptions
+            {
+                PeerNaming = BenchmarkReportPeerNaming.Named,
+                Disclosure = audience == BenchmarkReportAudience.InternalBrief ? BenchmarkReportDisclosure.Full : BenchmarkReportDisclosure.Summary
+            };
+            string plain = BenchmarkReportPackRenderer.Render(Document(audience), options);
+            Assert.DoesNotContain("because a question failed at the provider", plain);
+
+            string text = RenderWithWithheldRuns(audience, options, 1, "1 of 3 runs");
+            Assert.Single(AllIndexesOf(text, Sentence));
+            Assert.InRange(text.IndexOf("- **Intelligence:**", StringComparison.Ordinal), 0, text.IndexOf(Sentence, StringComparison.Ordinal));
+            Assert.Contains("\n\n" + Sentence + "\n\n", text);
+            // The sentence is the only rendered difference: one paragraph, no extra blank line. The
+            // internal brief's embedded fact sheet carries the fact itself, so it is left out.
+            static string Rendered(string s) => s.Split("## 6. Fact sheet\n")[0];
+            AssertSameText(Rendered(plain), Rendered(text.Replace(Sentence + "\n\n", string.Empty)), audience + " without the sentence");
+
+            Assert.Single(AllIndexesOf(RenderWithWithheldRuns(audience, options, 2, "2 of 3 runs"), Plural));
+        }
+    }
+
+    /// <summary>The fixture document of <paramref name="audience"/> with a <c>quality.withheldRuns</c> fact added.</summary>
+    private static string RenderWithWithheldRuns(BenchmarkReportAudience audience, BenchmarkReportRenderOptions options, int count, string display)
+    {
+        var sheet = Sheet();
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "quality.withheldRuns", Value = JsonValue.Create(count), Display = display });
+        var document = Document(audience);
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+        return BenchmarkReportPackRenderer.Render(document, options);
+    }
+
+    [Fact]
     public void AboutThisBenchmark_SaysWhenAGraderSharesTheSubjectsCompany()
     {
         var document = Document(BenchmarkReportAudience.ExecutiveSummary);

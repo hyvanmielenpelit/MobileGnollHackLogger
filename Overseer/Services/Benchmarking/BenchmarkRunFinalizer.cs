@@ -762,6 +762,25 @@ public static class BenchmarkRunFinalizer
         => (run.TerminalFailureAnswerCount ?? answers.Count(HasTerminalFailure)) > 0;
 
     /// <summary>
+    /// Whether the run's own detail and report show its Intelligence Index as not computed: the stored
+    /// index is null and an answer failed terminally. The answers are read only when no count was
+    /// stored. Unlike <see cref="WithholdsIndices"/>, a run finalized before harness version 21 that
+    /// kept its index is not withheld.
+    /// </summary>
+    public static bool IndexWithheld(BenchmarkRun run, IEnumerable<BenchmarkRunAnswer>? answers = null)
+        => !run.QualityIndex.HasValue
+           && (run.TerminalFailureAnswerCount ?? (answers ?? run.Answers ?? []).Count(HasTerminalFailure)) > 0;
+
+    /// <summary>
+    /// Whether a run of this status may be pooled into a group's figure. A <c>Running</c> run is not
+    /// settled, and a <c>Failed</c> or <c>Canceled</c> one produced no measurement.
+    /// </summary>
+    public static bool IsPoolable(BenchmarkRunStatus status)
+        => status is BenchmarkRunStatus.Completed
+            or BenchmarkRunStatus.CompletedWithLimits
+            or BenchmarkRunStatus.CompletedWithErrors;
+
+    /// <summary>
     /// Nulls the Quality Index, its standard error, the unweighted Quality Index, the Speed Index and
     /// a panel run's member-alone indices.
     /// </summary>
@@ -821,13 +840,7 @@ public static class BenchmarkRunFinalizer
             return;
         }
 
-        var graded = answers
-            .Where(CountsTowardQualityIndex)
-            .Where(a => a.AssessmentStatus == BenchmarkAssessmentStatus.Scored
-                        && a.CoAssessmentStatus == BenchmarkAssessmentStatus.Scored
-                        && a.QualityScore.HasValue
-                        && a.CoAssessmentQualityScore.HasValue)
-            .ToList();
+        var graded = PanelGradedAnswers(answers);
 
         bool CriticalErrorSplit(BenchmarkRunAnswer a)
             => a.CoAssessmentCriticalError.HasValue && a.CoAssessmentCriticalError.Value != a.CriticalError;
@@ -850,9 +863,30 @@ public static class BenchmarkRunFinalizer
             ? Math.Round(icc.Value, 2, MidpointRounding.AwayFromZero)
             : null;
 
-        run.AssessorOnlyQualityIndex = BenchmarkScoring.QualityIndex(
-            graded.Select(a => (a.QualityScore, IndexDifficulty(a))).ToList());
-        run.CoAssessorOnlyQualityIndex = BenchmarkScoring.QualityIndex(
-            graded.Select(a => (a.CoAssessmentQualityScore, IndexDifficulty(a))).ToList());
+        (run.AssessorOnlyQualityIndex, run.CoAssessorOnlyQualityIndex) = MemberAloneIndicesOf(graded);
     }
+
+    /// <summary>
+    /// The answers the panel statistics are computed over: they count toward the quality index and
+    /// both members scored them.
+    /// </summary>
+    internal static List<BenchmarkRunAnswer> PanelGradedAnswers(IEnumerable<BenchmarkRunAnswer> answers)
+        => answers
+            .Where(CountsTowardQualityIndex)
+            .Where(a => a.AssessmentStatus == BenchmarkAssessmentStatus.Scored
+                        && a.CoAssessmentStatus == BenchmarkAssessmentStatus.Scored
+                        && a.QualityScore.HasValue
+                        && a.CoAssessmentQualityScore.HasValue)
+            .ToList();
+
+    /// <summary>
+    /// A panel run's member-alone indices over its answers, as <see cref="ApplyPanelStatistics"/>
+    /// computes them before any withholding.
+    /// </summary>
+    public static (int? MemberA, int? MemberB) MemberAloneIndices(IEnumerable<BenchmarkRunAnswer> answers)
+        => MemberAloneIndicesOf(PanelGradedAnswers(answers));
+
+    private static (int? MemberA, int? MemberB) MemberAloneIndicesOf(List<BenchmarkRunAnswer> graded)
+        => (BenchmarkScoring.QualityIndex(graded.Select(a => (a.QualityScore, IndexDifficulty(a))).ToList()),
+            BenchmarkScoring.QualityIndex(graded.Select(a => (a.CoAssessmentQualityScore, IndexDifficulty(a))).ToList()));
 }

@@ -2483,6 +2483,10 @@ public static class BenchmarkReportBuilder
         // TerminalFailureAnswerCount, so it is recomputed here rather than trusted as zero.
         int terminalFailureCount = run.TerminalFailureAnswerCount ?? answers.Count(BenchmarkRunFinalizer.HasTerminalFailure);
 
+        // Whether the headline reads *Not computed*. Such a run prints no member-alone, reference
+        // reader or sensitivity index and no run mean: each recomputes the withheld index.
+        bool withheld = BenchmarkRunFinalizer.IndexWithheld(run, answers);
+
         // Withheld with the headline indices, so a withheld run prints no Raw Quality Index.
         int? rawQualityIndex = BenchmarkRunFinalizer.WithholdsIndices(run, answers)
             ? null
@@ -2514,19 +2518,23 @@ public static class BenchmarkReportBuilder
         if (isPanelRun)
         {
             string readerIndexText;
-            if (run.SecondOpinionAssessorModelConfigurationId.HasValue)
+            if (!run.SecondOpinionAssessorModelConfigurationId.HasValue)
+            {
+                readerIndexText = "none configured";
+            }
+            else if (withheld)
+            {
+                readerIndexText = "not computed";
+            }
+            else
             {
                 int? readerIndex = ReferenceReaderIndex(run, answers, out int readerCovered);
                 readerIndexText = readerIndex.HasValue
                     ? $"{readerIndex.Value} / 100" + (readerCovered < indexAnswers.Count ? $" (over {readerCovered} of {indexAnswers.Count} items)" : string.Empty)
                     : "not graded";
             }
-            else
-            {
-                readerIndexText = "none configured";
-            }
-            string memberAIndexText = run.AssessorOnlyQualityIndex.HasValue ? $"{run.AssessorOnlyQualityIndex.Value} / 100" : "not recorded";
-            string memberBIndexText = run.CoAssessorOnlyQualityIndex.HasValue ? $"{run.CoAssessorOnlyQualityIndex.Value} / 100" : "not recorded";
+            string memberAIndexText = withheld ? "not computed" : run.AssessorOnlyQualityIndex.HasValue ? $"{run.AssessorOnlyQualityIndex.Value} / 100" : "not recorded";
+            string memberBIndexText = withheld ? "not computed" : run.CoAssessorOnlyQualityIndex.HasValue ? $"{run.CoAssessorOnlyQualityIndex.Value} / 100" : "not recorded";
             sb.AppendLine($"- **Panel:** mean of both members' per-answer quality. Member A alone: {memberAIndexText}. Member B alone: {memberBIndexText}. Reference reader (advisory): {readerIndexText}.");
         }
         // A critical error caps Quality at 25 (see BenchmarkScoring), which the Raw/Intelligence
@@ -2590,8 +2598,9 @@ public static class BenchmarkReportBuilder
         // alone. On the 2026-09-03 run it moved the index *up* by two points, because the
         // model's two weakest answers were also two of its easiest questions. Computed here for
         // runs that predate the stored column, so the line works on the whole archive.
-        int? unweightedMean = run.UnweightedQualityIndex
-            ?? BenchmarkScoring.UnweightedQualityMean(indexAnswers.Select(IndexQualityOf));
+        int? unweightedMean = withheld
+            ? null
+            : run.UnweightedQualityIndex ?? BenchmarkScoring.UnweightedQualityMean(indexAnswers.Select(IndexQualityOf));
         if (unweightedMean.HasValue && run.QualityIndex.HasValue &&
             Math.Abs(run.QualityIndex.Value - unweightedMean.Value) >= 1)
         {
@@ -2727,9 +2736,15 @@ public static class BenchmarkReportBuilder
         // A panel run's verification-cleared Accuracy sensitivity lifts each member on its own
         // evidence (BenchmarkPanelSensitivity). The other three figures each re-score member A's
         // verdict alone, so a panel run states once why it has none and points at the member-alone
-        // indices instead. § 7 Final Indices prints the same clauses.
+        // indices instead. § 7 Final Indices prints the same clauses. A withheld run computes none of
+        // the figures below and says so in one line.
+        if (withheld)
+        {
+            sb.AppendLine("- **Sensitivity figures:** not computed — each recomputes the Intelligence Index, which is withheld for this run.");
+        }
+
         string? panelSensitivityClause = null;
-        if (isPanelRun)
+        if (!withheld && isPanelRun)
         {
             panelSensitivityClause = PanelSensitivityClause(run, BenchmarkPanelSensitivity.Compute(run, indexAnswers, scoringConstants));
             sb.AppendLine($"- **{panelSensitivityClause}");
@@ -2743,7 +2758,7 @@ public static class BenchmarkReportBuilder
         // rule leaves unchanged. Over the Intelligence Index's own items and weights; nothing is
         // written. § 7 Final Indices prints the same clause.
         string? resolutionSensitivityClause = null;
-        if (isPanelRun && !resolvesCriticalErrors)
+        if (!withheld && isPanelRun && !resolvesCriticalErrors)
         {
             int ceiling = BenchmarkCriticalErrorResolver.CeilingOf(run);
             var resolvedPanel = indexAnswers
@@ -2785,7 +2800,7 @@ public static class BenchmarkReportBuilder
             }
         }
 
-        if (!isPanelRun && splitAnswers.Count > 0)
+        if (!withheld && !isPanelRun && splitAnswers.Count > 0)
         {
             var sensitivityScorableItems = scoredAnswers
                 .Select(a =>
@@ -2823,7 +2838,7 @@ public static class BenchmarkReportBuilder
         int excludedRegradeCount = regradedAnswers.Count - evidenceInformedAnswers.Count;
         int? evidenceInformedIndex = null;
         string? evidenceInformedClause = null;
-        if (!isPanelRun && regradedAnswers.Count > 0)
+        if (!withheld && !isPanelRun && regradedAnswers.Count > 0)
         {
             var eligibleIds = evidenceInformedAnswers.Select(a => a.OrderIndex).ToHashSet();
             evidenceInformedIndex = BenchmarkScoring.QualityIndex(evidenceInformedPopulation
@@ -2875,7 +2890,7 @@ public static class BenchmarkReportBuilder
             return BenchmarkScoring.QualityIndex(scorableItems);
         }
 
-        if (!isPanelRun && verificationClearedAnswers.Count > 0)
+        if (!withheld && !isPanelRun && verificationClearedAnswers.Count > 0)
         {
             var clearedOrderIndexes = verificationClearedAnswers.Select(a => a.OrderIndex).ToHashSet();
             verificationClearedIndex = ClearedSensitivityIndex(clearedOrderIndexes, a =>
@@ -2886,7 +2901,7 @@ public static class BenchmarkReportBuilder
             }
         }
 
-        if (!isPanelRun && formClearedAnswers.Count > 0)
+        if (!withheld && !isPanelRun && formClearedAnswers.Count > 0)
         {
             // The Readability counterpart of the block above: recomputed with Readability one
             // level higher, on the answers whose only Readability basis was a rubric FORM
@@ -5978,14 +5993,22 @@ public static class BenchmarkReportBuilder
         {
             // The member-alone indices take the member-A-only sensitivity figures' place: how far the
             // published index rests on either member.
-            sb.AppendLine($"### Panel Member A Alone: {(run.AssessorOnlyQualityIndex.HasValue ? $"{run.AssessorOnlyQualityIndex.Value} / 100" : "not recorded")} — {memberALabel}, {memberARelation}; advisory, the published index is the panel's.");
-            sb.AppendLine($"### Panel Member B Alone: {(run.CoAssessorOnlyQualityIndex.HasValue ? $"{run.CoAssessorOnlyQualityIndex.Value} / 100" : "not recorded")} — {memberBLabel}, {memberBRelation}; advisory, the published index is the panel's.");
+            sb.AppendLine($"### Panel Member A Alone: {(withheld ? "not computed" : run.AssessorOnlyQualityIndex.HasValue ? $"{run.AssessorOnlyQualityIndex.Value} / 100" : "not recorded")} — {memberALabel}, {memberARelation}; advisory, the published index is the panel's.");
+            sb.AppendLine($"### Panel Member B Alone: {(withheld ? "not computed" : run.CoAssessorOnlyQualityIndex.HasValue ? $"{run.CoAssessorOnlyQualityIndex.Value} / 100" : "not recorded")} — {memberBLabel}, {memberBRelation}; advisory, the published index is the panel's.");
             // The same clause as § 2, from the same variable.
             if (panelSensitivityClause != null)
             {
                 sb.AppendLine($"### {panelSensitivityClause.Replace(":**", ":", StringComparison.Ordinal)}");
             }
-            sb.AppendLine("### Other Sensitivity Figures: not computed for a panel run — the contested-verdict, evidence-informed and FORM-cleared sensitivities each re-score member A's verdict alone; see § 2.");
+            if (!withheld)
+            {
+                sb.AppendLine("### Other Sensitivity Figures: not computed for a panel run — the contested-verdict, evidence-informed and FORM-cleared sensitivities each re-score member A's verdict alone; see § 2.");
+            }
+        }
+        // A withheld run's sensitivity variables are all null, so this one line stands for them.
+        if (withheld)
+        {
+            sb.AppendLine("### Sensitivity Figures: not computed — the Intelligence Index is withheld; see § 2.");
         }
         // The same value and clause as § 2, from the same variable.
         if (resolutionSensitivityClause != null)

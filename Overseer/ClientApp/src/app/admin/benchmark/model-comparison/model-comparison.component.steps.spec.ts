@@ -147,7 +147,7 @@ describe('ModelComparisonComponent', () => {
       expect(component.isStepReachable(4)).toBe(true);
       const tab3 = fixture.debugElement.query(By.css('#mc-step-tab-3')).nativeElement as HTMLElement;
       expect(tab3.getAttribute('aria-disabled')).toBe('true');
-      expect(textOf(`#${tab3.getAttribute('aria-describedby')}`)).toContain('measured differently');
+      expect(textOf(`#${tab3.getAttribute('aria-describedby')}`)).toContain('can be charted');
       component.goToStep(3);
       expect(component.step).toBe(2);
     });

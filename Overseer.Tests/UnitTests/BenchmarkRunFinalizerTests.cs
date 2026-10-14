@@ -1370,6 +1370,58 @@ public class BenchmarkRunFinalizerTests
     }
 
     [Fact]
+    public void MemberAloneIndices_AreWhatApplyPanelStatisticsStores()
+    {
+        var run = PanelRun(5);
+        var answers = PanelAnswers();
+        answers[4].CoAssessmentStatus = BenchmarkAssessmentStatus.Failed;
+        answers[4].CoAssessmentQualityScore = null;
+
+        BenchmarkRunFinalizer.Apply(run, answers);
+
+        var (memberA, memberB) = BenchmarkRunFinalizer.MemberAloneIndices(answers);
+        Assert.NotNull(memberA);
+        Assert.Equal(run.AssessorOnlyQualityIndex, memberA);
+        Assert.Equal(run.CoAssessorOnlyQualityIndex, memberB);
+    }
+
+    // --- Withheld and poolable runs -----------------------------------------------------------------
+
+    [Theory]
+    [InlineData(null, 1, false, true)]
+    [InlineData(80, 1, false, false)]
+    [InlineData(null, 0, false, false)]
+    [InlineData(null, null, true, true)]
+    [InlineData(null, null, false, false)]
+    public void IndexWithheld_IsTrueOnlyWhenTheStoredIndexIsNullAndAnAnswerFailedTerminally(
+        int? qualityIndex, int? terminalFailureCount, bool providerErrorAnswer, bool expected)
+    {
+        var run = new BenchmarkRun { QualityIndex = qualityIndex, TerminalFailureAnswerCount = terminalFailureCount };
+        var answers = new List<BenchmarkRunAnswer>
+        {
+            MakeAnswer(1),
+            MakeAnswer(2, status: providerErrorAnswer ? BenchmarkAnswerStatus.ProviderError : BenchmarkAnswerStatus.Ok)
+        };
+
+        Assert.Equal(expected, BenchmarkRunFinalizer.IndexWithheld(run, answers));
+
+        run.Answers = answers;
+        Assert.Equal(expected, BenchmarkRunFinalizer.IndexWithheld(run));
+    }
+
+    [Theory]
+    [InlineData(BenchmarkRunStatus.Running, false)]
+    [InlineData(BenchmarkRunStatus.Completed, true)]
+    [InlineData(BenchmarkRunStatus.CompletedWithErrors, true)]
+    [InlineData(BenchmarkRunStatus.Failed, false)]
+    [InlineData(BenchmarkRunStatus.Canceled, false)]
+    [InlineData(BenchmarkRunStatus.CompletedWithLimits, true)]
+    public void IsPoolable_AdmitsOnlyTheCompletedStatuses(BenchmarkRunStatus status, bool expected)
+    {
+        Assert.Equal(expected, BenchmarkRunFinalizer.IsPoolable(status));
+    }
+
+    [Fact]
     public void ApplyTotals_SumsTheCoAssessorsUsage_IntoItsOwnColumns()
     {
         var run = PanelRun(2);

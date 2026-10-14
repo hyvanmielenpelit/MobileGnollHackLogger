@@ -1269,6 +1269,37 @@ public class BenchmarkGroupStatisticsTests
         Assert.Equal(0, await db.BenchmarkQuestions.CountAsync(ct));
     }
 
+    [Theory]
+    [InlineData(BenchmarkRunStatus.Running,
+        "Member run #{0} is still in progress. Analyze the group once it has finished.")]
+    [InlineData(BenchmarkRunStatus.Failed,
+        "Member run #{0} ended Failed and produced no measurement. Remove it from the group to analyze the rest.")]
+    [InlineData(BenchmarkRunStatus.Canceled,
+        "Member run #{0} ended Canceled and produced no measurement. Remove it from the group to analyze the rest.")]
+    public async Task AnalyseAsync_RefusesAGroupWithAnUnsettledMember(BenchmarkRunStatus status, string expectedFormat)
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var options = BenchmarkRunExamTests.InMemoryOptions();
+        var seeded = await BenchmarkRunExamTests.SeedSuiteWithRunsAsync(options);
+        long unsettledId = seeded.RunIds[1];
+
+        await using (var setup = new ApplicationDbContext(options))
+        {
+            var run = await setup.BenchmarkRuns.SingleAsync(r => r.Id == unsettledId, ct);
+            run.Status = status;
+            await setup.SaveChangesAsync(ct);
+        }
+
+        await using var db = new ApplicationDbContext(options);
+        var service = new BenchmarkGroupAnalysisService(db, NullLogger<BenchmarkGroupAnalysisService>.Instance);
+        var (analysis, result, error) = await service.AnalyseAsync(seeded.GroupId, null, ct: ct);
+
+        Assert.Null(analysis);
+        Assert.Null(result);
+        Assert.Equal(string.Format(expectedFormat, unsettledId), error);
+        Assert.Equal(0, await db.BenchmarkGroupAnalyses.CountAsync(ct));
+    }
+
     [Fact]
     public void Compare_ReportsCohensDzAndAPairedTBesideWilcoxon()
     {
