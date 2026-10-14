@@ -2104,9 +2104,12 @@ To find specific popups, look in the corresponding component's `.html` template:
   - **About** (`#mc-about-trigger`) is a `.btn-ghost` with the help-circle glyph the source picker's
     *About conditions* button already uses, visible text *About*, and a count badge equal to the
     number of caveat notes while any exist. It opens the **About this comparison** dialog
-    (`#aboutDialog`): a one-line summary; *Read these first* (thinking levels differ; every model has
-    only one run); *Not in the charts* (models measured differently, the keys they differ on, behind
-    a Details disclosure); *How to read the charts*; and *Not shown as charts* (the server's refused
+    (`#aboutDialog`): a one-line summary (ending *1 is in the table only.* / *N are in the table
+    only.* while any entry is excluded); *Read these first* (thinking levels differ; every model has
+    only one run); *Not in the charts* (hint *These cannot be charted with the rest. They are still in
+    the table.*; an entry that differs on setup keys lists them, with a Details disclosure; an entry
+    refused for what it is, such as a run group with a `Running`, `Failed` or `Canceled` member, shows
+    its explanation instead); *How to read the charts*; and *Not shown as charts* (the server's refused
     measures, each with a summary, an *Instead: …* line and a *Why* disclosure). The dialog body
     renders only while it is open, and it stops propagation of its own close and cancel events so
     they never reach, and close, the wizard's own dialog.

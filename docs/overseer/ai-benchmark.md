@@ -2537,7 +2537,9 @@ here grades anything: `HarnessVersion`, `ScoringMethodVersion`, `CandidateSystem
   runs #12, #15 have their own index withheld because a question failed at the provider; this figure is
   over their scored answers.* The unscored-questions note cannot stand in for it: a question that failed
   in the withheld run but was scored in another run of the same group or series leaves no unscored
-  question, so without this note the entry would carry no warning at all.
+  question, so without this note the entry would carry no warning at all. A battery entry never lists
+  any: a battery's members exclude withheld runs (`BenchmarkBatteryPlanner.UnusableReason`), as the
+  report-pack fact sheet already does (`ai-benchmark-report-pack.md`, *quality.withheldRuns*).
 - **The whole-suite cost is each entry's own mean run cost** (`cost.candidateCostPerRunUsd`), not
   `$ / question` multiplied by the first entry's count. It no longer depends on any item count, so
   entries with different scored counts are no longer rescaled by the wrong one. Where the counts
@@ -2993,9 +2995,10 @@ help-circle glyph the source picker's *About conditions* button already uses, wi
 *About*), carrying a count badge equal to the number of caveat notes while any exist. It opens an
 **About this comparison** dialog (`#aboutDialog`) holding: a one-line summary; *Read these first*
 (thinking levels differ across candidates; every model here has only one run); *Not in the
-charts* (models measured differently, the keys they differ on, behind a Details disclosure) —
-this is where the removed *Entries excluded from every figure* section's content now lives; *How
-to read the charts*; and *Not shown as charts* (the server's refused measures, each with its
+charts* (the entries that cannot be charted with the rest: a model measured differently, with the
+keys it differs on behind a Details disclosure, or an entry refused for what it is, below) — this
+is where the removed *Entries excluded from every figure* section's content now lives; *How to
+read the charts*; and *Not shown as charts* (the server's refused measures, each with its
 summary, an *Instead: …* line and a *Why* disclosure). The dialog's body renders only while it is
 open, and it stops propagation of its own close and cancel events so they never reach, and close,
 the wizard's own dialog.

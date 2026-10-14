@@ -130,6 +130,28 @@ public class BenchmarkBatteryModelComparisonTests
         Assert.Equal(newest.TestedModelSnapshot.ModelId, entry.ModelId);
     }
 
+    [Fact]
+    public async Task AWithheldMember_IsLeftOutOfItsEntry_WhichListsNoWithheldRun()
+    {
+        // Round 2's suite B member stores one terminal failure and withholds its index; its answers are scored.
+        var withheld = BenchmarkBatteryTestData.Run(4, BenchmarkBatteryTestData.SuiteB, new[] { 90, 50 }, new[] { 20, 60 },
+            status: BenchmarkRunStatus.CompletedWithErrors, qualityIndex: null, terminalFailures: 1);
+        Assert.True(BenchmarkRunFinalizer.IndexWithheld(withheld));
+
+        long id = await SeedAnalysedAsync(
+            BenchmarkBatteryTestData.Definition(),
+            (BenchmarkBatteryTestData.SuiteARun(1), 0, 1),
+            (BenchmarkBatteryTestData.SuiteBRun(2), 1, 1),
+            (BenchmarkBatteryTestData.SuiteARun(3), 0, 2),
+            (withheld, 1, 2));
+
+        var entry = Entry(await CompareAsync(id), id);
+
+        Assert.True(entry.Comparable);
+        Assert.Equal(new long[] { 1, 2, 3 }, entry.RunIds);
+        Assert.Empty(entry.Quality!.WithheldRunIds);
+    }
+
     // --- Measures ---------------------------------------------------------------------------------------
 
     [Fact]

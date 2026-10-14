@@ -120,7 +120,8 @@ public class BenchmarkModelComparisonQualityDto
 
     /// <summary>
     /// The entry's runs whose own Intelligence Index is withheld, ascending; the point estimate
-    /// includes their scored answers.
+    /// includes their scored answers. Always empty on a battery entry: a battery's members exclude
+    /// withheld runs (<see cref="Overseer.Services.Benchmarking.BenchmarkBatteryPlanner.UnusableReason"/>).
     /// </summary>
     public List<long> WithheldRunIds { get; set; } = new();
 }
