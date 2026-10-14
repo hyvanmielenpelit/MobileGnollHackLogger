@@ -32,6 +32,7 @@ import {
 import { reportPackIo } from './report-pack-diagnostics';
 import {
   REPORT_PACK_ALL_WRITTEN_REASON,
+  REPORT_PACK_KEEP_OPEN_TEXT,
   REPORT_PACK_MODEL_SCOPE_TIP,
   REPORT_PACK_PEERLESS_REFUSAL,
   REPORT_PACK_POLL_MS,
@@ -1907,6 +1908,139 @@ describe('ReportPackPanelComponent', () => {
       component.onLayoutViewerClosed();
       expect(document.activeElement).toBe(previewTrigger());
     });
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // The reference model
+  // -------------------------------------------------------------------------------------------
+
+  describe('the reference model', () => {
+    /** The comparison with GPT Sol group as its charted baseline model. */
+    const BASELINE_CONTEXT: ReportPackContext = { ...CONTEXT, baselineModelEntryKey: 'group:4' };
+
+    const referenceSelect = (): HTMLSelectElement => q<HTMLSelectElement>('#rp-reference')!;
+
+    function chooseReference(value: string): void {
+      const select = referenceSelect();
+      select.value = value;
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    }
+
+    it('defaults to the baseline model when it is covered, and sends it', fakeAsync(() => {
+      openPanel({ context: BASELINE_CONTEXT });
+      const request = chooseWriter(7);
+
+      const select = referenceSelect();
+      expect(text('label[for="rp-reference"]')).toBe('Reference model');
+      expect(select.value).toBe('group:4');
+      expect(Array.from(select.options).map(option => option.textContent!.trim())).toEqual([
+        'Highest Intelligence Index', 'Gemini Flash (medium)', 'Claude Opus (medium)', 'GPT Sol group (medium) (baseline model)'
+      ]);
+      expect(request.request.body.referenceEntryKey).toBe('group:4');
+
+      generateButton().click();
+      const start = http.expectOne(START_URL);
+      expect(start.request.body.referenceEntryKey).toBe('group:4');
+      fixture.destroy();
+    }));
+
+    it('sends a reference only when one is named', fakeAsync(() => {
+      openPanel();
+      const first = chooseWriter(7);
+      expect(referenceSelect().value).toBe('');
+      expect('referenceEntryKey' in first.request.body).toBe(false);
+
+      chooseReference('run:2');
+      const named = answerPreview();
+      expect(named.request.body.referenceEntryKey).toBe('run:2');
+
+      chooseReference('');
+      const unnamed = answerPreview();
+      expect('referenceEntryKey' in unnamed.request.body).toBe(false);
+      fixture.destroy();
+    }));
+
+    it('falls back to the highest Intelligence Index when the baseline model is not covered', fakeAsync(() => {
+      openPanel({ context: BASELINE_CONTEXT });
+      chooseWriter(7);
+      chooseModels(['run:1', 'run:2']);
+
+      expect(referenceSelect().value).toBe('');
+      const request = answerPreview();
+      expect('referenceEntryKey' in request.request.body).toBe(false);
+      fixture.destroy();
+    }));
+
+    it('is not offered for per-model documents, which send no reference', fakeAsync(() => {
+      openPanel({ context: BASELINE_CONTEXT });
+      selectScope('model');
+
+      expect(q('#rp-reference')).toBeNull();
+      const request = answerPreview(modelPreview());
+      expect('referenceEntryKey' in request.request.body).toBe(false);
+      fixture.destroy();
+    }));
+
+    it('shows each written document\'s reference, with an amber note when it is not the one chosen', fakeAsync(() => {
+      openPanel({ context: BASELINE_CONTEXT });
+      const written = [
+        { ...writtenDoc(ExecutiveSummary, 41), referenceEntryKey: 'group:4' },
+        { ...writtenDoc(TechnicalReport, 42), referenceEntryKey: null }
+      ];
+      chooseWriter(7, comparisonPreview({ writtenDocuments: written }));
+      answerPreview(comparisonPreview({ estimates: COMPARISON_ESTIMATES.slice(2), writtenDocuments: written }));
+
+      expect(text('#rp-written-references-title')).toBe('Reference of the written documents');
+      const rows = Array.from(host.querySelectorAll('.rp-written-reference'));
+      expect(rows.map(row => row.querySelector('dt')!.textContent!.trim()))
+        .toEqual(['Executive Summary', 'Report for AI Researchers and Developers']);
+      expect(text(`.rp-written-reference[data-row="comparison|${ExecutiveSummary}"] dd`)).toBe('GPT Sol group (medium) (baseline model)');
+      expect(text(`.rp-written-reference[data-row="comparison|${TechnicalReport}"] dd`))
+        .toBe('Highest Intelligence Index · not the one chosen');
+      const note = q('.rp-reference-mismatch')!;
+      expect(note.classList).toContain('alert-warning');
+      expect(note.getAttribute('role')).toBe('note');
+      expect(text('.rp-reference-mismatch')).toBe(
+        'A written document was written against another reference model than the one chosen: Report for AI Researchers '
+        + 'and Developers (Highest Intelligence Index). Check Rewrite to write it against GPT Sol group (medium) (baseline model).');
+
+      // The same reference as the newer document's: the note names the other one.
+      chooseReference('');
+      expect(text('.rp-reference-mismatch')).toContain('Executive Summary (GPT Sol group (medium) (baseline model))');
+      fixture.destroy();
+    }));
+
+    it('keeps the baseline model among more than 12 models, and says so', () => {
+      const entries = Array.from({ length: 14 }, (_, i) => entry(`run:${i + 1}`, `Model ${i + 1}`, 50 + i));
+      openPanel({
+        context: {
+          ...CONTEXT, runIds: entries.map((_, i) => i + 1), groupIds: [], entries, entryKeys: entries.map(e => e.key),
+          baselineModelEntryKey: 'run:1'
+        }
+      });
+
+      expect(component.chosenKeys.length).toBe(12);
+      expect(component.chosenKeys).toContain('run:1');
+      expect(component.chosenKeys).not.toContain('run:2');
+      expect(component.chosenKeys).not.toContain('run:3');
+      expect(referenceSelect().value).toBe('run:1');
+      expect(text('.rp-models-cap')).toBe('A document covers at most 12 models, so the baseline model and the 11 others '
+        + 'with the highest Intelligence Index of the 14 are chosen first.');
+    });
+  });
+
+  it('says beside Generate to keep the wizard open while the charts are drawn, unless there is no chart storage', () => {
+    openPanel();
+    const note = q('.rp-keep-open')!;
+    expect(text('.rp-keep-open')).toBe(REPORT_PACK_KEEP_OPEN_TEXT);
+    expect(REPORT_PACK_KEEP_OPEN_TEXT).toBe('Keep this wizard open until every document shows its charts. Charts are drawn by '
+      + 'this browser as each document finishes; if you close it, add them on step 4 with Update charts…');
+    expect(q('.rp-actions-row')!.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    fixture.componentRef.setInput('chartStorageMissing', true);
+    fixture.detectChanges();
+    expect(q('.rp-keep-open')).toBeNull();
   });
 
   // -------------------------------------------------------------------------------------------

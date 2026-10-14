@@ -51,6 +51,12 @@ public sealed class BenchmarkReportPackPreparation
     /// <summary>The comparison's entries that are not Excluded.</summary>
     public int ComparisonEntryCount { get; init; }
 
+    /// <summary>
+    /// A comparison-scope preparation's reference model, by entry key: the requested one, else the covered
+    /// model with the highest Intelligence Index; null for model scope.
+    /// </summary>
+    public string? ReferenceEntryKey { get; init; }
+
     /// <summary>The subject's runs, in run-id order; for comparison scope, every covered model's runs.</summary>
     public IReadOnlyList<BenchmarkRun> SubjectRuns { get; init; } = default!;
 
@@ -387,11 +393,13 @@ public sealed class BenchmarkReportPackPreparation
     /// A comparison-scope preparation over the request's covered entries, or every entry that is not
     /// Excluded when it names none: each covered model's per-model sheet and content over the covered
     /// models only, the paired-test families requested for the covered models only, so each Holm
-    /// adjustment counts the tests the document reports, and the comparison sheet built from them
-    /// (<see cref="BenchmarkComparisonReportFacts.Build"/>). Refused when a covered entry is not in the
-    /// comparison or is Excluded, or the covered models are fewer than two or more than twelve. Over
-    /// <paramref name="comparison"/> when it is given; computed from the request otherwise. Makes no
-    /// model call.
+    /// adjustment counts the tests the document reports, each model's failure profile over its runs'
+    /// answers, and the comparison sheet built from them (<see cref="BenchmarkComparisonReportFacts.Build"/>)
+    /// against the request's reference model, the highest-Index one when it names none. Refused when a
+    /// covered entry is not in the comparison or is Excluded, the covered models are fewer than two or
+    /// more than twelve, or the reference is not a covered model
+    /// (<see cref="BenchmarkComparisonReportFacts.ReferenceRefusal"/>). Over <paramref name="comparison"/>
+    /// when it is given; computed from the request otherwise. Makes no model call.
     /// </summary>
     public static async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareComparisonAsync(
         ApplicationDbContext db,
@@ -416,12 +424,16 @@ public sealed class BenchmarkReportPackPreparation
 
         var covered = BenchmarkComparisonReportFacts.CoveredKeysOf(comparison, request.CoveredEntryKeys);
         string? refusal = BenchmarkComparisonReportFacts.CoveredRefusal(comparison, covered)
-            ?? BenchmarkComparisonReportFacts.BoundsRefusal(covered.Count);
+            ?? BenchmarkComparisonReportFacts.BoundsRefusal(covered.Count)
+            ?? BenchmarkComparisonReportFacts.ReferenceRefusalOf(comparison, covered, request.ReferenceEntryKey);
         if (refusal != null) return (null, refusal);
 
         var restricted = BenchmarkComparisonReportFacts.Restrict(comparison, covered);
+        string referenceKey = string.IsNullOrWhiteSpace(request.ReferenceEntryKey)
+            ? BenchmarkComparisonReportFacts.InLetterOrder(restricted.Entries)[0].Key
+            : request.ReferenceEntryKey.Trim();
         var (reference, allPairs, pairedUnavailable) = await PairedFamiliesAsync(
-            pairedTests ?? new BenchmarkPairedTestsService(db, comparisonService), restricted, request.PricingBasis, ct);
+            pairedTests ?? new BenchmarkPairedTestsService(db, comparisonService), restricted, request.PricingBasis, referenceKey, ct);
 
         bool batteries = string.Equals(comparison.SubjectKind, BenchmarkModelComparisonSubjectKinds.Batteries, StringComparison.Ordinal);
         BenchmarkComparisonReportFactsResult built;
@@ -436,6 +448,7 @@ public sealed class BenchmarkReportPackPreparation
                 Comparison = comparison,
                 Entries = entries,
                 ReferenceFamily = reference,
+                ReferenceKey = referenceKey,
                 AllPairsFamily = allPairs,
                 PairedTestsUnavailableReason = pairedUnavailable,
                 AnswerExcerptChars = answerExcerptChars,
@@ -459,7 +472,8 @@ public sealed class BenchmarkReportPackPreparation
                 availability[entry.Key] = await AvailabilityOfAsync(availabilityService, entry, ct);
             }
             built = BenchmarkComparisonReportFacts.BuildFromRuns(
-                comparison, covered, runs.ToDictionary(r => r.Id), answerExcerptChars, reference, allPairs, pairedUnavailable, comparisonId, availability);
+                comparison, covered, runs.ToDictionary(r => r.Id), answerExcerptChars, reference, allPairs, pairedUnavailable, comparisonId, availability,
+                referenceKey);
         }
         if (built.Sheet == null || built.Content == null) return (null, built.Refusal ?? "The fact sheet could not be computed.");
         if (runs.Count == 0) return (null, "The covered models' runs no longer exist.");
@@ -477,6 +491,7 @@ public sealed class BenchmarkReportPackPreparation
             CoveredSetKey = built.CoveredSetKey ?? string.Empty,
             CoversAllEntries = built.Sheet.CoversAllEntries == true,
             ComparisonEntryCount = built.Sheet.ComparisonEntryCount ?? comparison.Entries.Count(e => !e.Excluded),
+            ReferenceEntryKey = referenceKey,
             SubjectRuns = runs,
             PeerRuns = Array.Empty<BenchmarkRun>(),
             Notes = built.Notes
@@ -533,8 +548,9 @@ public sealed class BenchmarkReportPackPreparation
 
     /// <summary>
     /// Each covered battery result's own battery sheet and content over the covered results: the
-    /// battery analyses loaded once, the members' answers loaded once, and each result's tool-call
-    /// outcomes. The prompt budget is applied over the whole comparison, so none is applied here.
+    /// battery analyses loaded once, the members' answers loaded once, each result's tool-call
+    /// outcomes, and its failure profile over its member runs' answers. The prompt budget is applied
+    /// over the whole comparison, so none is applied here.
     /// </summary>
     private static async Task<(List<BenchmarkComparisonReportEntry>? Entries, List<BenchmarkRun> Runs, string? Refusal)> BatteryEntriesAsync(
         ApplicationDbContext db, BenchmarkModelComparisonDto restricted, int answerExcerptChars, int detailQuestionsPerSuite, CancellationToken ct)
@@ -574,7 +590,13 @@ public sealed class BenchmarkReportPackPreparation
             {
                 return (null, runs, entry.Label + ": " + (built.Refusal ?? "The fact sheet could not be computed."));
             }
-            entries.Add(new BenchmarkComparisonReportEntry { Entry = entry, Sheet = built.Sheet, Content = built.Content });
+            entries.Add(new BenchmarkComparisonReportEntry
+            {
+                Entry = entry,
+                Sheet = built.Sheet,
+                Content = built.Content,
+                Profile = BenchmarkComparisonModelProfile.FromRuns(memberIds.Where(runsById.ContainsKey).OrderBy(id => id).Select(id => runsById[id]).ToList())
+            });
         }
 
         return (entries, runs, null);
@@ -582,12 +604,13 @@ public sealed class BenchmarkReportPackPreparation
 
     /// <summary>
     /// The paired-test families of the covered models, from the service the wizard's Paired tests view
-    /// uses, requested for the covered models only: against the highest-Index one, and over all pairs
-    /// from three to <see cref="BenchmarkComparisonReportFacts.AllPairsMaxEntries"/> models. A refusal or a
-    /// failure is the reason the sheet states instead.
+    /// uses, requested for the covered models only: against the reference <paramref name="referenceKey"/>,
+    /// and over all pairs from three to <see cref="BenchmarkComparisonReportFacts.AllPairsMaxEntries"/>
+    /// models. A refusal or a failure is the reason the sheet states instead.
     /// </summary>
     private static async Task<(BenchmarkPairedComparisonDto? Reference, BenchmarkPairedComparisonDto? AllPairs, string? Unavailable)> PairedFamiliesAsync(
-        BenchmarkPairedTestsService pairedTests, BenchmarkModelComparisonDto restricted, BenchmarkModelComparisonPricingBasis basis, CancellationToken ct)
+        BenchmarkPairedTestsService pairedTests, BenchmarkModelComparisonDto restricted, BenchmarkModelComparisonPricingBasis basis,
+        string referenceKey, CancellationToken ct)
     {
         var lettered = BenchmarkComparisonReportFacts.InLetterOrder(restricted.Entries.Where(e => !e.Excluded));
         if (lettered.Count < 2) return (null, null, BenchmarkPairedTests.NeedsTwoEntriesError);
@@ -600,7 +623,7 @@ public sealed class BenchmarkReportPackPreparation
             BatteryRunIds = IdsOf(keys, "battery:"),
             PricingBasis = basis,
             Mode = BenchmarkPairedComparisonMode.Reference,
-            ReferenceKey = lettered[0].Key,
+            ReferenceKey = keys.Contains(referenceKey, StringComparer.Ordinal) ? referenceKey : lettered[0].Key,
             Recompute = true
         };
 
@@ -1198,6 +1221,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             ComparisonId = reportPack ? job.ComparisonId : null,
             CoveredEntryKeysJson = reportPack ? BenchmarkReportJson.Serialize(prep.CoveredEntryKeys.ToList()) : null,
             CoveredSetKey = reportPack && prep.CoveredSetKey.Length > 0 ? prep.CoveredSetKey : null,
+            ReferenceEntryKey = reportPack && comparisonScope ? prep.ReferenceEntryKey : null,
             SubjectKey = comparisonScope || chatConsistency ? prep.Sheet.SubjectKey : prep.Subject.Key,
             SubjectLabel = Truncate(prep.Sheet.SubjectLabel, 256),
             SubjectRunIdsJson = BenchmarkReportJson.Serialize(chatConsistency

@@ -467,4 +467,60 @@ describe('PairedTestsViewComponent', () => {
     fixture.destroy();
     expect(pending.observed).toBe(false);
   });
+
+  describe('the baseline model', () => {
+    const keys = ['run:1', 'run:2', 'run:3'];
+
+    function withBaseline(
+      state: 'Included' | 'Excluded', key: string, extra: BenchmarkModelComparisonEntryDto[] = []
+    ): BenchmarkModelComparisonDto {
+      return { ...comparison(3, extra), baselineModelEntryKey: key, baselineModelState: state };
+    }
+
+    function optionTexts(): string[] {
+      const select = el().querySelector('#mc-paired-reference') as HTMLSelectElement;
+      return Array.from(select.options).map(option => (option.textContent ?? '').trim());
+    }
+
+    it('is the default reference when a charted entry is it, ahead of the first highlighted entry', () => {
+      service.getPairedComparison.mockReturnValue(of(pairedDto(keys, 'Reference', 'run:2')));
+      show({ comparison: withBaseline('Included', 'run:2'), highlightedKeys: ['run:3'], active: true });
+
+      expect(lastRequest().referenceKey).toBe('run:2');
+      expect((el().querySelector('#mc-paired-reference') as HTMLSelectElement).value).toBe('run:2');
+      expect(optionTexts()).toEqual(['Model 1', 'Model 2 (baseline model)', 'Model 3']);
+    });
+
+    it("yields to the admin's own choice", () => {
+      service.getPairedComparison.mockReturnValue(of(pairedDto(keys, 'Reference', 'run:2')));
+      show({ comparison: withBaseline('Included', 'run:2'), active: true });
+
+      service.getPairedComparison.mockReturnValue(of(pairedDto(keys, 'Reference', 'run:1')));
+      const select = el().querySelector('#mc-paired-reference') as HTMLSelectElement;
+      select.value = 'run:1';
+      select.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+
+      expect(lastRequest().referenceKey).toBe('run:1');
+      expect(select.value).toBe('run:1');
+      // The baseline model stays marked when it is not the reference.
+      expect(optionTexts()).toContain('Model 2 (baseline model)');
+    });
+
+    it('is not the default when only an excluded entry is it', () => {
+      const excluded = entry(4, { excluded: true, comparable: false, state: 'Excluded' });
+      service.getPairedComparison.mockReturnValue(of(pairedDto(keys, 'Reference', 'run:3')));
+      show({ comparison: withBaseline('Excluded', 'run:4', [excluded]), highlightedKeys: ['run:3'], active: true });
+
+      expect(lastRequest().referenceKey).toBe('run:3');
+      expect(optionTexts().some(option => option.includes('(baseline model)'))).toBe(false);
+    });
+
+    it('leaves the reference to the server when nothing names one', () => {
+      service.getPairedComparison.mockReturnValue(of(pairedDto(keys, 'Reference', 'run:1')));
+      show({ comparison: { ...comparison(3), baselineModelEntryKey: null, baselineModelState: 'NotInComparison' }, active: true });
+
+      expect(lastRequest().referenceKey).toBeNull();
+    });
+  });
 });

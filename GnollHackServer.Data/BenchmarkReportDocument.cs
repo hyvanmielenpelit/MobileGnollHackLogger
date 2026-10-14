@@ -151,6 +151,13 @@ public class BenchmarkReportDocument
     [MaxLength(64)]
     public string? CoveredSetKey { get; set; }
 
+    /// <summary>
+    /// The entry key of the model a comparison-scope document compares the others with. Null on
+    /// model-scope rows and on documents written before the column existed, which used model A.
+    /// </summary>
+    [MaxLength(64)]
+    public string? ReferenceEntryKey { get; set; }
+
     public long? SuiteId { get; set; }
 
     [MaxLength(256)]

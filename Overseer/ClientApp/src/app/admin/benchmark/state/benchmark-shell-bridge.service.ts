@@ -38,6 +38,8 @@ export interface ComparisonWizardPreset {
   batteryRunIds: readonly number[];
   runIds?: readonly number[];
   groupIds?: readonly number[];
+  /** Why the GnollBench baseline model's result is not among the sources; shown once in the wizard's notice band. */
+  baselineModelNote?: string | null;
 }
 
 /** What Run Benchmark's model batch launcher is filled with: the target and the first model. Nothing starts. */

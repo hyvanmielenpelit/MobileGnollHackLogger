@@ -320,8 +320,16 @@ public static class ChatConsistencyComparability
     public static string ModelAxisKey(BenchmarkRun run)
     {
         ArgumentNullException.ThrowIfNull(run);
+        return ModelAxisKey(run.TestedModelSnapshot);
+    }
 
-        var values = BenchmarkComparabilityKey.Extract(run)
+    /// <summary>
+    /// The <see cref="ModelAxisKey(BenchmarkRun)"/> of a run tested with <paramref name="snapshot"/>. It
+    /// leaves out the display name and prices, so a renamed or repriced configuration keeps its key.
+    /// </summary>
+    public static string ModelAxisKey(SystemAiConfigurationSnapshot? snapshot)
+    {
+        var values = BenchmarkComparabilityKey.ModelAxisEntries(snapshot)
             .GroupBy(k => k.Name, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First().Value, StringComparer.Ordinal);
 

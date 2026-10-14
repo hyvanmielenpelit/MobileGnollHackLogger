@@ -1,12 +1,19 @@
+import { of } from 'rxjs';
+
 import type { BenchmarkModelBatchMemberDto, BenchmarkModelBatchMemberResultDto } from '../../../services/admin-benchmark.service';
 import {
+  MODEL_BATCH_DOCUMENTS_GUIDE,
+  MODEL_BATCH_DOCUMENTS_GUIDE_TITLE,
   MODEL_BATCH_REPAIR_LABEL,
+  modelBatchComparisonPreset,
+  modelBatchDocumentsGuideText,
   modelBatchIndexWithheldText,
   modelBatchMemberFigures,
   modelBatchMemberRepairLabel,
   modelBatchMemberRepairText,
   modelBatchOwnedReasonText,
-  modelBatchWithheldRunsNote
+  modelBatchWithheldRunsNote,
+  resolveModelBatchComparisonPreset
 } from './model-batch.models';
 
 function result(overrides: Partial<BenchmarkModelBatchMemberResultDto> = {}): BenchmarkModelBatchMemberResultDto {
@@ -163,6 +170,49 @@ describe('model batch models', () => {
         .toBe('Model batch #7 controls this battery run. Cancel, continue or re-run it from the batch.');
       expect(modelBatchOwnedReasonText(7, 'series'))
         .toBe('Model batch #7 controls this series. Cancel, continue or re-run it from the batch.');
+    });
+  });
+
+  describe('modelBatchComparisonPreset', () => {
+    it('selects the server\'s sources as they are, with no note when the baseline model was added', () => {
+      expect(modelBatchComparisonPreset({
+        runIds: [61, 62, 70], groupIds: [4], batteryRunIds: [],
+        baselineModelSource: { runId: 70, label: 'Baseline Model', startedAtUtc: '2026-10-09T08:00:00Z' },
+        baselineModelReason: null
+      })).toEqual({ batteryRunIds: [], runIds: [61, 62, 70], groupIds: [4] });
+    });
+
+    it('carries why the baseline model was not added as the preset\'s note', () => {
+      expect(modelBatchComparisonPreset({
+        runIds: [], groupIds: [], batteryRunIds: [9, 10], baselineModelSource: null,
+        baselineModelReason: '  No baseline model is set.  '
+      })).toEqual({ batteryRunIds: [9, 10], runIds: [], groupIds: [], baselineModelNote: 'No baseline model is set.' });
+    });
+
+    it('asks the server for the batch\'s sources', () => {
+      const service = {
+        getModelBatchComparisonSources: vi.fn().mockReturnValue(of({
+          runIds: [61, 62], groupIds: [], batteryRunIds: [], baselineModelSource: null, baselineModelReason: null
+        }))
+      };
+      const presets: unknown[] = [];
+      resolveModelBatchComparisonPreset({ id: 21 }, service).subscribe(preset => presets.push(preset));
+      expect(service.getModelBatchComparisonSources).toHaveBeenCalledWith(21);
+      expect(presets).toEqual([{ batteryRunIds: [], runIds: [61, 62], groupIds: [] }]);
+    });
+  });
+
+  describe('the comparison documents guide', () => {
+    it('copies as the numbered steps under the heading, the step names the wizard\'s own', () => {
+      const lines = modelBatchDocumentsGuideText().split('\n');
+      expect(lines[0]).toBe(MODEL_BATCH_DOCUMENTS_GUIDE_TITLE);
+      expect(lines.length).toBe(MODEL_BATCH_DOCUMENTS_GUIDE.length + 1);
+      expect(lines[1].startsWith('1. Open in Model Comparison.')).toBe(true);
+      expect(lines[2].startsWith('2. Step 2 — Charts & table.')).toBe(true);
+      expect(lines[3].startsWith('3. Step 3 — Write.')).toBe(true);
+      expect(lines[3].endsWith('Keep the wizard open until every document shows its charts: they are drawn by this browser as each document finishes.')).toBe(true);
+      expect(lines[4]).toBe('4. Step 4 — Documents. Each card\'s Charts reads current. If you closed the wizard early, select the documents '
+        + 'and use Update charts…');
     });
   });
 });

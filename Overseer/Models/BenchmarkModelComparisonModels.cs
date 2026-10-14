@@ -451,6 +451,19 @@ public class BenchmarkModelComparisonDto
     /// all graded by the same panel.
     /// </summary>
     public BenchmarkPanelDiagnosticsDto? PanelDiagnostics { get; set; }
+
+    /// <summary>The GnollBench baseline model when one is set, whether or not the comparison holds it.</summary>
+    public BenchmarkBaselineModelDto? BaselineModel { get; set; }
+
+    /// <summary>
+    /// The entry that is the baseline model: of the entries with its model-axis key, a charted one before
+    /// an excluded one, then the newest. Null when <see cref="BaselineModelState"/> is <c>NotSet</c> or
+    /// <c>NotInComparison</c>; set but unusable as a reference when it is <c>Excluded</c>.
+    /// </summary>
+    public string? BaselineModelEntryKey { get; set; }
+
+    /// <summary>One of <see cref="BenchmarkBaselineModelStates"/>.</summary>
+    public string BaselineModelState { get; set; } = BenchmarkBaselineModelStates.NotSet;
 }
 
 /// <summary>The values of <see cref="BenchmarkModelComparisonDto.SubjectKind"/>.</summary>

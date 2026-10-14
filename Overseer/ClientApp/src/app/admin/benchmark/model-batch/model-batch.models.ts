@@ -1,7 +1,8 @@
-import { Observable, catchError, forkJoin, map, of } from 'rxjs';
+import { Observable, map } from 'rxjs';
 
 import type {
   AdminBenchmarkService,
+  BenchmarkModelBatchComparisonSourcesDto,
   BenchmarkModelBatchMemberDto,
   BenchmarkModelBatchMemberStatus,
   BenchmarkModelBatchResumeMode,
@@ -13,7 +14,6 @@ import type {
 import { elapsedMsBetween } from '../../../utils/date.util';
 import { BATTERY_REPAIRING_LABEL, formatCost } from '../batteries/battery.models';
 import { formatCostAmount, formatElapsed, formatModelTime } from '../benchmark-run-format';
-import { MAX_COMPARISON_SOURCES } from '../model-comparison/comparison-source-picker.component';
 import { RunFactBadge, runFactBadges } from '../run-report-frame/run-facts';
 import { NOT_RECORDED_TEXT, formatInteger } from '../shared/provider-availability/provider-availability';
 import type { ComparisonWizardPreset } from '../state/benchmark-shell-bridge.service';
@@ -176,55 +176,77 @@ export const MODEL_BATCH_RESUME_ORDER: readonly BenchmarkModelBatchResumeMode[] 
 ];
 
 /**
- * The comparison preset of a batch's members with a result: a battery's battery runs, a suite's runs
- * (one run per model) or a series' analysis groups (two or more runs per model). At most
- * `MAX_COMPARISON_SOURCES`.
+ * The comparison preset of a batch's comparison sources, as the server chose them: its members'
+ * results (battery runs, runs, or the series' analysis groups) and the baseline model's latest
+ * comparable result when one was found. Why the baseline model was not added rides along as the
+ * preset's note.
  */
-export function modelBatchComparisonPreset(
-  batch: BenchmarkModelBatchRunDto,
-  groupIdBySeriesId: ReadonlyMap<number, number | null> = new Map()
-): ComparisonWizardPreset {
-  const members = comparableModelBatchMembers(batch);
-  if (batch.targetKind === 'Battery') {
-    const batteryRunIds = members.map(m => m.batteryRunId).filter((id): id is number => id != null);
-    return { batteryRunIds: batteryRunIds.slice(0, MAX_COMPARISON_SOURCES) };
-  }
-  const runIds: number[] = [];
-  const groupIds: number[] = [];
-  for (const member of members) {
-    const groupId = member.seriesId != null ? groupIdBySeriesId.get(member.seriesId) ?? null : null;
-    if (groupId != null) {
-      groupIds.push(groupId);
-    } else if (member.runId != null) {
-      runIds.push(member.runId);
-    } else {
-      // A series without its group: its runs, so the comparison still sees the model.
-      runIds.push(...(member.runIds ?? []));
-    }
-  }
-  const cappedRuns = runIds.slice(0, MAX_COMPARISON_SOURCES);
-  const cappedGroups = groupIds.slice(0, Math.max(0, MAX_COMPARISON_SOURCES - cappedRuns.length));
-  return { batteryRunIds: [], runIds: cappedRuns, groupIds: cappedGroups };
+export function modelBatchComparisonPreset(sources: BenchmarkModelBatchComparisonSourcesDto): ComparisonWizardPreset {
+  const note = sources.baselineModelReason?.trim() || null;
+  return {
+    batteryRunIds: [...(sources.batteryRunIds ?? [])],
+    runIds: [...(sources.runIds ?? [])],
+    groupIds: [...(sources.groupIds ?? [])],
+    ...(note ? { baselineModelNote: note } : {})
+  };
 }
 
-/**
- * The comparison preset, with each series member's analysis group read from its series. A series
- * that cannot be read, or has no group yet, contributes its runs instead.
- */
+/** The comparison preset of a batch, from the server's comparison sources. */
 export function resolveModelBatchComparisonPreset(
-  batch: BenchmarkModelBatchRunDto,
-  service: Pick<AdminBenchmarkService, 'getRunSeries'>
+  batch: Pick<BenchmarkModelBatchRunDto, 'id'>,
+  service: Pick<AdminBenchmarkService, 'getModelBatchComparisonSources'>
 ): Observable<ComparisonWizardPreset> {
-  const seriesIds = comparableModelBatchMembers(batch)
-    .map(m => m.seriesId)
-    .filter((id): id is number => id != null);
-  if (batch.targetKind === 'Battery' || seriesIds.length === 0) {
-    return of(modelBatchComparisonPreset(batch));
+  return service.getModelBatchComparisonSources(batch.id).pipe(map(modelBatchComparisonPreset));
+}
+
+/** One step of the guide a finished batch's dialog shows: its title, what to do, and what must not be missed. */
+export interface ModelBatchGuideStep {
+  readonly title: string;
+  readonly text: string;
+  /** Shown in bold after the text; null when the step has none. */
+  readonly emphasis: string | null;
+}
+
+/** The heading of the guide to the comparison documents. */
+export const MODEL_BATCH_DOCUMENTS_GUIDE_TITLE = 'Next: the comparison documents';
+
+/**
+ * How to write the comparison documents after a batch, by hand in Model Comparison: nothing writes
+ * them automatically, and their charts are drawn by the browser while the wizard is open. The step
+ * and control names are the wizard's own.
+ */
+export const MODEL_BATCH_DOCUMENTS_GUIDE: readonly ModelBatchGuideStep[] = [
+  {
+    title: 'Open in Model Comparison.',
+    text: 'It opens the wizard with every member\'s result and the baseline model\'s latest comparable result, '
+      + 'or says why that was not added.',
+    emphasis: null
+  },
+  {
+    title: 'Step 2 — Charts & table.',
+    text: 'The documents\' charts are drawn from step 2\'s settings: set the figures as you want them in print.',
+    emphasis: null
+  },
+  {
+    title: 'Step 3 — Write.',
+    text: 'Choose Whole comparison, and the baseline model as the Reference model; choose a report writer, the '
+      + 'documents, and the charts under Charts in PDF and Word; check the estimated cost; then Generate.',
+    emphasis: 'Keep the wizard open until every document shows its charts: they are drawn by this browser as each '
+      + 'document finishes.'
+  },
+  {
+    title: 'Step 4 — Documents.',
+    text: 'Each card\'s Charts reads current. If you closed the wizard early, select the documents and use '
+      + 'Update charts…',
+    emphasis: null
   }
-  return forkJoin(seriesIds.map(id => service.getRunSeries(id).pipe(
-    map(series => [id, series?.autoCreatedGroupId ?? null] as const),
-    catchError(() => of([id, null] as const))
-  ))).pipe(map(pairs => modelBatchComparisonPreset(batch, new Map(pairs))));
+];
+
+/** The guide as plain text, numbered as it is shown: what Copy steps copies. */
+export function modelBatchDocumentsGuideText(): string {
+  const steps = MODEL_BATCH_DOCUMENTS_GUIDE.map((step, i) =>
+    [`${i + 1}.`, step.title, step.text, step.emphasis].filter(part => !!part).join(' '));
+  return [MODEL_BATCH_DOCUMENTS_GUIDE_TITLE, ...steps].join('\n');
 }
 
 /** `model-batch-12-diagnostics.txt`. */

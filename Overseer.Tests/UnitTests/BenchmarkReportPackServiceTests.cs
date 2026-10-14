@@ -777,12 +777,135 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(3, preview.ComparisonEntryCount);
         Assert.True(preview.CoversAllEntries);
         Assert.Equal(new[] { "A", "B", "C" }, preview.CoveredModels.Select(m => m.Letter));
-        Assert.Equal(new[] { 3000, 9500, 9000 }, preview.Estimates.Select(e => e.EstimatedOutputTokens));
+        Assert.Equal(new[] { 3800, 12500, 10000 }, preview.Estimates.Select(e => e.EstimatedOutputTokens));
         Assert.All(preview.Estimates, e => Assert.Equal(preview.SubjectKey, e.SubjectKey));
         Assert.Equal(3, preview.SubjectDocuments.Count);
         Assert.Empty(preview.OtherModelSets);
         Assert.Null(preview.WriterContextWindowTokens);
         Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task AStartedJob_CarriesTheRequestedReference_IntoItsSheetAndItsDocument()
+    {
+        await using var h = await Harness.CreateAsync();
+        var lettered = await h.PrepareComparisonAsync(h.ComparisonRequest());
+        var last = lettered.Sheet.Peers.OrderBy(p => p.Letter.Length).ThenBy(p => p.Letter, StringComparer.Ordinal).Last();
+        Assert.Equal("A", lettered.Sheet.ReferenceLetter);
+        Assert.NotEqual("A", last.Letter);
+
+        var request = h.ComparisonRequest();
+        request.ReferenceEntryKey = " " + last.EntryKey + " ";
+        var job = AdminBenchmarkReportPacksController.NewJob(request, h.Writer, sameProvider: false, UserId, comparisonId: 1, snapshotId: 0);
+        Assert.Equal(last.EntryKey, job.Request.ReferenceEntryKey);
+
+        // The job writes from its own copy of the request, completed as a comparison-scope start completes it.
+        var copied = job.Request;
+        copied.Scope = BenchmarkReportScope.Comparison;
+        copied.Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.ExecutiveSummary };
+        var prep = await h.PrepareComparisonAsync(copied);
+        Assert.Equal(last.Letter, prep.Sheet.ReferenceLetter);
+        Assert.Equal(last.EntryKey, prep.ReferenceEntryKey);
+        if (prep.Sheet.PairedTests is { Count: > 0 } families)
+        {
+            Assert.Equal(last.Letter, Assert.Single(families, f => f.Mode == "Reference").ReferenceLetter);
+        }
+
+        string reply = Reply(BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, prep.Sheet));
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(reply);
+        await h.RunComparisonAsync(copied);
+
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(last.EntryKey, document.ReferenceEntryKey);
+        Assert.Equal(last.Letter, BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson).ReferenceLetter);
+    }
+
+    [Fact]
+    public async Task AReferenceThatIsNotACoveredModel_IsA400_FromThePreviewTheLayoutPreviewAndTheStart()
+    {
+        await using var h = await Harness.CreateAsync();
+        var controller = h.Controller();
+        var covered = h.Seeded.RunIds.Take(2).Select(id => "run:" + id).ToList();
+        string outside = "run:" + h.Seeded.RunIds[2];
+
+        foreach (string reference in new[] { outside, "run:999999" })
+        {
+            var request = h.ComparisonRequest(covered: covered);
+            request.ReferenceEntryKey = reference;
+
+            var preview = Assert.IsType<BadRequestObjectResult>(await controller.Preview(request, CancellationToken.None));
+            Assert.Equal(BenchmarkComparisonReportFacts.ReferenceRefusal, ErrorOf(preview.Value));
+
+            var start = Assert.IsType<BadRequestObjectResult>(await controller.Start(request, CancellationToken.None));
+            Assert.Equal(BenchmarkComparisonReportFacts.ReferenceRefusal, ErrorOf(start.Value));
+
+            var layout = new BenchmarkReportLayoutPreviewRequest
+            {
+                RunIds = request.RunIds,
+                PricingBasis = request.PricingBasis,
+                Scope = BenchmarkReportScope.Comparison,
+                CoveredEntryKeys = covered,
+                ReferenceEntryKey = reference,
+                Audience = BenchmarkReportAudience.ExecutiveSummary
+            };
+            string json = JsonSerializer.Serialize(layout, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            var refused = Assert.IsType<BadRequestObjectResult>(await controller.LayoutPreview(json, null, CancellationToken.None));
+            Assert.Equal(BenchmarkComparisonReportFacts.ReferenceRefusal, ErrorOf(refused.Value));
+        }
+
+        // A covered reference is previewed as usual.
+        var ok = h.ComparisonRequest(covered: covered);
+        ok.ReferenceEntryKey = covered[1];
+        var previewed = Assert.IsType<BenchmarkReportPackPreviewDto>(Assert.IsType<OkObjectResult>(await controller.Preview(ok, CancellationToken.None)).Value);
+        Assert.Null(previewed.Refusal);
+
+        Assert.Empty(await h.Db.BenchmarkComparisons.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public void AnElevenModelComparisonOfTwentyQuestions_StaysBelowSeventyPercentOfA200000TokenWriter()
+    {
+        const int models = 11;
+        const int questions = 20;
+        var entries = new List<BenchmarkModelComparisonEntryDto>();
+        var runs = new Dictionary<long, BenchmarkRun>();
+        for (int m = 0; m < models; m++)
+        {
+            long id = 500 + m;
+            var specs = Enumerable.Range(0, questions)
+                .Select(q => new BenchmarkReportPackFixture.AnswerSpec(700 + q, q + 1, 1, 35 + (q * 7 + m * 13) % 60, Difficulty: 20 + (q % 3) * 30))
+                .ToArray();
+            var run = BenchmarkReportPackFixture.Run(id, "Provider" + m, "model-" + m, specs);
+            foreach (var answer in run.Answers)
+            {
+                answer.QuestionText = "How does the game treat item " + answer.OrderIndex + " when it is thrown, dipped, read, worn or broken during play? " + new string('x', 200);
+                answer.ExpectedPointsUsed = string.Join("\n", Enumerable.Range(1, 6).Select(i => "- Rubric point " + i + " for question " + answer.OrderIndex + ": " + new string('y', 80)));
+                answer.AnswerText = string.Join(" ", Enumerable.Repeat("The answer explains the rule for this item and its exceptions in detail.", 30));
+                answer.ReviewComment = string.Join(" ", Enumerable.Repeat("The grader explains what the answer got wrong about the rule.", 8));
+            }
+            runs[id] = run;
+            double quality = 90 - m * 3;
+            entries.Add(BenchmarkReportPackFixture.Entry("run:" + id, new[] { id }, "Candidate " + m, "Provider" + m, quality, quality - 4, quality + 4,
+                modelTimeP50Ms: 8000 + m * 1500, costPerQuestion: 0.01 + m * 0.004));
+        }
+        var comparison = BenchmarkReportPackFixture.Comparison(entries.ToArray());
+        var keys = entries.Select(e => e.Key).ToList();
+        var (reference, allPairs, unavailable) = BenchmarkComparisonReportFacts.PairedFromRuns(comparison, keys, runs);
+        var built = BenchmarkComparisonReportFacts.BuildFromRuns(
+            comparison, keys, runs, BenchmarkReportPackPreparation.DefaultAnswerExcerptChars, reference, allPairs, unavailable, comparisonId: 12);
+        Assert.True(built.Sheet != null, built.Refusal);
+        Assert.Equal(models, built.Sheet!.Peers.Count);
+        Assert.Equal(questions, built.Sheet.Questions.Count);
+
+        const int window = 200_000;
+        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief })
+        {
+            var prompt = BenchmarkReportPackPrompt.Build(audience, built.Sheet, built.Content!);
+            int tokens = (prompt.SystemPrompt.Length + prompt.UserMessage.Length + 3) / 4;
+            Assert.True(tokens < window * 0.7, $"{audience}: {tokens} estimated tokens, {(double)tokens / window:P0} of the window.");
+        }
     }
 
     // --- Preview ----------------------------------------------------------------------------------------

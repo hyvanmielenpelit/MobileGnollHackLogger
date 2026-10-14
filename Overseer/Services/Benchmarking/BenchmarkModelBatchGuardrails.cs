@@ -11,6 +11,7 @@ using Microsoft.Extensions.Configuration;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
+using Overseer.Services.ChatConsistency;
 
 /// <summary>The graders of a run or a batch, by configuration id; a role left empty is null.</summary>
 public sealed record BenchmarkModelBatchRoster(long? AssessorId, long? CoAssessorId, long? ReaderId, long? VerifierId);
@@ -54,6 +55,12 @@ public sealed record BenchmarkModelBatchGuardContext
     /// <summary>The <c>RecommendedModels</c> entries by provider name.</summary>
     public IReadOnlyDictionary<string, IReadOnlyList<RecommendedModel>> Recommended { get; init; }
         = new Dictionary<string, IReadOnlyList<RecommendedModel>>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The GnollBench baseline model's model-axis key; null when none is set (MB-A09).</summary>
+    public string? BaselineModelAxisKey { get; init; }
+
+    /// <summary>The baseline model's display name, for MB-A09.</summary>
+    public string? BaselineModelName { get; init; }
 
     /// <summary>Candidates whose price card does not resolve (MB-A07).</summary>
     public IReadOnlyCollection<long> UnpricedCandidateIds { get; init; } = Array.Empty<long>();
@@ -562,19 +569,35 @@ public static class BenchmarkModelBatchGuardrails
             }
         }
 
-        var recommendedHere = providers
-            .SelectMany(p => ctx.Recommended.TryGetValue(p, out var list)
-                ? list.Select(r => (Provider: p, Entry: r))
-                : Enumerable.Empty<(string Provider, RecommendedModel Entry)>())
-            .ToList();
-        if (recommendedHere.Count > 0
-            && !candidates.Any(c => recommendedHere.Any(r => IsRecommendedEntry(c, r.Provider, r.Entry, guard))))
+        if (ctx.BaselineModelAxisKey != null)
         {
-            string names = string.Join(" or ", recommendedHere.Select(r =>
-                string.IsNullOrWhiteSpace(r.Entry.ThinkingLevel) ? r.Entry.Model : $"{r.Entry.Model} ({r.Entry.ThinkingLevel})"));
-            Add("MB-A09", "NoBaseline", Advice, FieldModels,
-                "No current production model in the batch",
-                $"Add {names} as the baseline the others are judged against.");
+            // The GnollBench baseline model, when set, is the baseline the batch is judged against.
+            if (!candidates.Any(c => BenchmarkBaselineModelService.IsBaselineModel(c, ctx.BaselineModelAxisKey)))
+            {
+                string baseline = string.IsNullOrWhiteSpace(ctx.BaselineModelName) ? "the baseline model" : ctx.BaselineModelName.Trim();
+                Add("MB-A09", "NoBaseline", Advice, FieldModels,
+                    "No baseline model in the batch",
+                    $"Add {baseline} so the others are judged against it under the same graders. " +
+                    "Otherwise Open in Model Comparison adds its latest comparable result, if there is one.",
+                    clipDetail: false);
+            }
+        }
+        else
+        {
+            var recommendedHere = providers
+                .SelectMany(p => ctx.Recommended.TryGetValue(p, out var list)
+                    ? list.Select(r => (Provider: p, Entry: r))
+                    : Enumerable.Empty<(string Provider, RecommendedModel Entry)>())
+                .ToList();
+            if (recommendedHere.Count > 0
+                && !candidates.Any(c => recommendedHere.Any(r => IsRecommendedEntry(c, r.Provider, r.Entry, guard))))
+            {
+                string names = string.Join(" or ", recommendedHere.Select(r =>
+                    string.IsNullOrWhiteSpace(r.Entry.ThinkingLevel) ? r.Entry.Model : $"{r.Entry.Model} ({r.Entry.ThinkingLevel})"));
+                Add("MB-A09", "NoBaseline", Advice, FieldModels,
+                    "No current production model in the batch",
+                    $"Add {names} as the baseline the others are judged against.");
+            }
         }
 
         if (ctx.RecentRoster != null)
@@ -596,7 +619,16 @@ public static class BenchmarkModelBatchGuardrails
                 : candidates.Count * Math.Max(1, request.RunsPerModel) * perReport;
             Add("MB-A11", "ReportWriterInBatch", Advice, FieldReportWriter,
                 $"{Inv(documents)} AI documents will be written",
-                "For one document on the whole batch, use Model Comparison after it.");
+                "For documents on the whole batch, follow the steps the batch dialog shows when it finishes.");
+        }
+
+        if (requestedCount >= 2)
+        {
+            Add("MB-A13", "ComparisonDocumentsAreManual", Advice, null,
+                "Comparison documents are written by you, after the batch",
+                "When the batch finishes, its dialog shows the steps: Open in Model Comparison, then step 3, Write, " +
+                "with the wizard kept open so the charts are drawn.",
+                clipDetail: false);
         }
 
         if (!panel && ctx.Reader != null && !ctx.SecondOpinionBlind)
@@ -924,6 +956,9 @@ public class BenchmarkModelBatchGuardrailService
             ? new List<long>()
             : candidates.Where(c => _pricing.Resolve(c) == null).Select(c => c.Id).ToList();
 
+        var baselineSetting = await new BenchmarkBaselineModelService(_db).CurrentSettingAsync(ct);
+        var baselineSnapshot = baselineSetting?.ModelSnapshot;
+
         return new BenchmarkModelBatchGuardContext
         {
             Request = request,
@@ -941,6 +976,8 @@ public class BenchmarkModelBatchGuardrailService
             Projection = projection,
             Options = options,
             Recommended = LoadRecommended(),
+            BaselineModelAxisKey = baselineSnapshot == null ? null : ChatConsistencyComparability.ModelAxisKey(baselineSnapshot),
+            BaselineModelName = BenchmarkBaselineModelService.ToDto(baselineSetting)?.DisplayName,
             UnpricedCandidateIds = unpriced,
             SpeedTargetMs = profile?.SpeedTargetMs,
             SecondOpinionBlind = profile?.SecondOpinionBlind ?? true,

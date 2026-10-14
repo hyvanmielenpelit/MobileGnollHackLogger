@@ -21,7 +21,7 @@ using Overseer.Services.Telemetry;
 
 /// <summary>
 /// GnollBench model batches: the preflight the launcher renders, start, the progress dialog's polling,
-/// cancel, resume, skip, diagnostics and delete.
+/// cancel, resume, skip, diagnostics, comparison sources and delete.
 ///
 /// <para>Execution belongs to <see cref="BenchmarkModelBatchOrchestrator"/> and the rules to
 /// <see cref="BenchmarkModelBatchGuardrails"/>; this controller maps their outcomes to HTTP and
@@ -217,6 +217,27 @@ public class AdminBenchmarkModelBatchesController : ControllerBase
             var labels = await ConfigurationLabelsAsync(dto, ct);
             string text = BenchmarkModelBatchDiagnostics.BuildText(dto, labels);
             return Content(text, "text/plain", Encoding.UTF8);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>
+    /// The sources Open in Model Comparison starts from, with the baseline model's latest comparable
+    /// result added when the batch does not hold it, or the reason it was not. 404 for an unknown batch.
+    /// </summary>
+    [HttpGet("{id:long}/comparison-sources")]
+    public async Task<IActionResult> GetComparisonSources(
+        long id,
+        [FromServices] BenchmarkModelBatchComparisonSources sources,
+        CancellationToken ct)
+    {
+        try
+        {
+            var dto = await sources.BuildAsync(id, ct);
+            return dto == null ? NotFound() : Ok(dto);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {

@@ -43,7 +43,7 @@ import {
 } from '../shared/paired-test/paired-test-format';
 import { PairedTestResultComponent } from '../shared/paired-test/paired-test-result.component';
 import { saveFigureBlob } from './figure-export';
-import { BenchmarkModelComparisonDto, BenchmarkModelComparisonEntryDto } from './model-comparison.models';
+import { BenchmarkModelComparisonDto, BenchmarkModelComparisonEntryDto, baselineReferenceKey } from './model-comparison.models';
 import {
   PairedExportFormat,
   pairedExportFormat,
@@ -199,7 +199,7 @@ export class PairedTestsViewComponent implements OnInit, OnChanges, OnDestroy {
   /** The comparison's pricing basis. */
   @Input() pricingBasis: string = 'Current';
 
-  /** Step 2's Highlight; the first comparable one is the default reference. */
+  /** Step 2's Highlight; the first comparable one is the default reference when no charted entry is the baseline model. */
   @Input() highlightedKeys: readonly string[] = [];
 
   /** The Download tab's table format, which picks Markdown or CSV for Download. */
@@ -215,7 +215,10 @@ export class PairedTestsViewComponent implements OnInit, OnChanges, OnDestroy {
   /** The admin's mode; with two entries it is not offered and not sent. */
   mode: BenchmarkPairedComparisonMode = 'Reference';
 
-  /** The admin's reference, or null for the default: the first highlighted entry, else the server's choice. */
+  /**
+   * The admin's reference, or null for the default: the baseline model's entry when it is charted, else
+   * the first highlighted entry, else the server's choice.
+   */
   chosenReference: string | null = null;
 
   result: BenchmarkPairedComparisonDto | null = null;
@@ -316,12 +319,29 @@ export class PairedTestsViewComponent implements OnInit, OnChanges, OnDestroy {
     return this.mode;
   }
 
-  /** The reference the request names: the admin's, else the first highlighted comparable entry, else none. */
+  /**
+   * The reference the request names: the admin's, else the baseline model's charted entry, else the
+   * first highlighted comparable entry, else none. Named explicitly, so the response cache keys on it.
+   */
   get requestedReference(): string | null {
     if (this.isComparable(this.chosenReference)) {
       return this.chosenReference;
     }
+    const baseline = this.baselineKey;
+    if (this.isComparable(baseline)) {
+      return baseline;
+    }
     return this.highlightedKeys.find(key => this.isComparable(key)) ?? null;
+  }
+
+  /** The baseline model's entry when a charted entry is it, else null. */
+  get baselineKey(): string | null {
+    return baselineReferenceKey(this.comparison);
+  }
+
+  /** A Reference option's text: the entry's label, marked when it is the baseline model. */
+  referenceOptionLabel(entry: BenchmarkModelComparisonEntryDto): string {
+    return entry.key === this.baselineKey ? `${entry.label} (baseline model)` : entry.label;
   }
 
   /** What the Reference select shows: the request's, else the reference the server chose. */

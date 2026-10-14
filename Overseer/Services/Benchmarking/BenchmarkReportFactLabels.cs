@@ -33,6 +33,19 @@ public static class BenchmarkReportFactLabels
         ["comparison.pricedOn"] = "Catalog price date",
         ["comparison.signature"] = "Comparability signature",
 
+        // Comparison scope: the fixed keys of BenchmarkComparisonReportFacts
+        ["comparison.reference"] = "Reference model",
+        ["frontier.qualityCost"] = "Intelligence against cost frontier",
+        ["frontier.qualitySpeed"] = "Intelligence against speed frontier",
+        ["frontier.speedCost"] = "Speed against cost frontier",
+        ["spread.quality"] = "Intelligence Index spread",
+        ["spread.speed"] = "Median answer time spread",
+        ["spread.cost"] = "Cost per question spread",
+        ["questions.anyCriticalError"] = "Questions with a critical error",
+        ["questions.wideSpread"] = "Questions with a wide spread between models",
+        ["questions.sharedLow"] = "Questions every model scored low",
+        ["notable.count"] = "Notable findings",
+
         // Quality
         ["quality.index"] = "Intelligence Index",
         ["quality.interval"] = "95 % interval",
@@ -382,6 +395,80 @@ public static class BenchmarkReportFactLabels
         ["sharedQuestions"] = "Questions shared with {0}",
     };
 
+    /// <summary>
+    /// The labels of the comparison-scope keys a covered model has beyond its per-model sheet's
+    /// (<c>model.&lt;letter&gt;.&lt;suffix&gt;</c>), by suffix; any other suffix is labeled as its per-model key.
+    /// </summary>
+    private static readonly IReadOnlyDictionary<string, string> ModelLabels = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["runs"] = "Runs",
+        ["state"] = "Comparability state",
+        ["thinkingLevel"] = "Thinking level",
+        ["frontier"] = "Frontier",
+        ["profile.answers"] = "Scored answers in the failure profile",
+        ["profile.mayMislead"] = "Answers that may mislead",
+        ["profile.mayMisleadPer20"] = "Answers that may mislead, per 20 answers",
+        ["profile.outcome.correct"] = "Correct answers",
+        ["profile.outcome.partial"] = "Partially correct answers",
+        ["profile.outcome.incorrect"] = "Incorrect answers",
+        ["profile.outcome.notAttempted"] = "Answers not attempted",
+        ["profile.outcome.noAnswer"] = "Empty answers",
+        ["profile.outcome.wrongInsteadOfAbstaining"] = "Wrong instead of abstaining",
+        ["profile.truncated"] = "Truncated answers",
+        ["profile.outputDefects"] = "Answers with output defects",
+        ["profile.noToolAnswers"] = "Answers without a tool call",
+        ["profile.toolLimitHits"] = "Tool-limit hits",
+        ["profile.answerChars.median"] = "Median answer length",
+        ["profile.isolatedMisses"] = "Isolated misses",
+        ["profile.sharedMisses"] = "Shared misses",
+        ["profile.lowestScorer"] = "Questions scored lowest of all models",
+        ["profile.findings.runsWithSynthesis"] = "Runs with structured grader findings",
+        ["vsReference.shared"] = "Questions shared with the reference",
+        ["vsReference.better"] = "Questions scored more than 15 points above the reference",
+        ["vsReference.similar"] = "Questions scored within 15 points of the reference",
+        ["vsReference.worse"] = "Questions scored more than 15 points below the reference",
+    };
+
+    /// <summary>The synthesis finding categories as a weakness's words: <c>Runs with an accuracy weakness</c>.</summary>
+    private static readonly IReadOnlyDictionary<string, string> FindingCategoryWeaknesses = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["accuracy"] = "an accuracy weakness",
+        ["completeness"] = "a completeness weakness",
+        ["conciseness"] = "a conciseness weakness",
+        ["readability"] = "a readability weakness",
+        ["critical_error"] = "a critical-error weakness",
+        ["tool_use"] = "a tool-use weakness",
+        ["other"] = "a weakness of another kind",
+    };
+
+    /// <summary>The labels of a pair's facts (<c>pair.&lt;L&gt;.&lt;M&gt;.&lt;suffix&gt;</c>) by suffix.</summary>
+    private static readonly IReadOnlyDictionary<string, string> PairLabels = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["intervalOverlap"] = "Interval overlap",
+        ["sharedQuestions"] = "Questions both answered",
+        ["quality.difference"] = "Paired difference",
+        ["quality.interval"] = "Paired interval",
+        ["speed.ratio"] = "Time ratio",
+        ["cost.ratio"] = "Spend ratio",
+    };
+
+    /// <summary>The axes of a pair's paired-test results, with their names.</summary>
+    private static readonly IReadOnlyDictionary<string, string> PairAxisNames = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["quality"] = "Intelligence",
+        ["speed"] = "Speed",
+        ["cost"] = "Cost",
+    };
+
+    /// <summary>The parts of a notable finding's facts (<c>notable.&lt;n&gt;.&lt;part&gt;</c>).</summary>
+    private static readonly IReadOnlyDictionary<string, string> NotableParts = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["kind"] = "kind",
+        ["models"] = "models",
+        ["questions"] = "questions",
+        ["summary"] = "summary",
+    };
+
     private static readonly IReadOnlyDictionary<string, string> DimensionNames = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["accuracy"] = "Accuracy",
@@ -471,8 +558,99 @@ public static class BenchmarkReportFactLabels
             }
         }
 
+        if (TryComparisonLabel(parts, out label)) return true;
+
         return TryChatConsistencyLabel(parts, out label);
     }
+
+    /// <summary>
+    /// The label of a comparison-scope model key's suffix, <c>model.&lt;letter&gt;.&lt;suffix&gt;</c>: its own
+    /// entry, else its per-model key's label, else the readable fallback.
+    /// </summary>
+    public static string ModelSuffixLabel(string suffix)
+        => TryModelSuffixLabel(suffix, out string label) ? label : Fallback(suffix);
+
+    private static bool TryModelSuffixLabel(string suffix, out string label)
+    {
+        if (ModelLabels.TryGetValue(suffix, out var own))
+        {
+            label = own;
+            return true;
+        }
+
+        string[] parts = suffix.Split('.');
+
+        // profile.deficit.<d>
+        if (parts.Length == 3 && parts[0] == "profile" && parts[1] == "deficit" && DimensionNames.TryGetValue(parts[2], out var dimension))
+        {
+            label = "Answers at level 2 or below on " + dimension.ToLowerInvariant();
+            return true;
+        }
+
+        // profile.findings.<category>
+        if (parts.Length == 3 && parts[0] == "profile" && parts[1] == "findings" && FindingCategoryWeaknesses.TryGetValue(parts[2], out var weakness))
+        {
+            label = "Runs with " + weakness + " in the grader findings";
+            return true;
+        }
+
+        return TryLabel(suffix, out label);
+    }
+
+    /// <summary>
+    /// The patterned keys of a comparison-scope sheet: a covered model's figure (<c>model.&lt;L&gt;.*</c>), a
+    /// pair's (<c>pair.&lt;L&gt;.&lt;M&gt;.*</c>), a dimension's spread and a notable finding's parts.
+    /// </summary>
+    private static bool TryComparisonLabel(string[] parts, out string label)
+    {
+        label = string.Empty;
+
+        // model.<letter>.<suffix>
+        if (parts[0] == "model" && parts.Length >= 3 && IsLetter(parts[1]))
+        {
+            if (!TryModelSuffixLabel(string.Join('.', parts.Skip(2)), out var inner)) return false;
+            label = "Model " + parts[1] + ": " + LowerFirst(inner);
+            return true;
+        }
+
+        // pair.<L>.<M>.<suffix>
+        if (parts[0] == "pair" && parts.Length >= 4 && IsLetter(parts[1]) && IsLetter(parts[2]))
+        {
+            string suffix = string.Join('.', parts.Skip(3));
+            string? pair = PairLabels.TryGetValue(suffix, out var fixedLabel)
+                ? fixedLabel
+                : parts.Length == 5 && PairAxisNames.TryGetValue(parts[3], out var axis)
+                    ? parts[4] switch
+                    {
+                        BenchmarkComparisonReportFacts.ReferenceFamilyName => axis + " result against the reference",
+                        BenchmarkComparisonReportFacts.AllPairsFamilyName => axis + " result among all pairs",
+                        _ => null
+                    }
+                    : null;
+            if (pair == null) return false;
+            label = "Model " + parts[1] + " against Model " + parts[2] + ": " + LowerFirst(pair);
+            return true;
+        }
+
+        // spread.dimension.<d>
+        if (parts[0] == "spread" && parts.Length == 3 && parts[1] == "dimension" && DimensionNames.TryGetValue(parts[2], out var dimension))
+        {
+            label = dimension + " spread";
+            return true;
+        }
+
+        // notable.<n>.<part>
+        if (parts[0] == "notable" && parts.Length == 3 && IsIndex(parts[1]) && NotableParts.TryGetValue(parts[2], out var part))
+        {
+            label = "Notable finding " + parts[1] + ": " + part;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>A model letter: <c>A</c> to <c>Z</c>, <c>AA</c>, ….</summary>
+    private static bool IsLetter(string part) => part.Length > 0 && part.All(char.IsAsciiLetterUpper);
 
     /// <summary>
     /// The patterned keys of a chat consistency sheet: <c>&lt;prefix&gt;.&lt;suffix&gt;</c>, the prefix

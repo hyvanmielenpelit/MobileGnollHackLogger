@@ -186,12 +186,13 @@ MB-W10's acknowledgment is sent to each affected member as `acknowledgeSameProvi
 | MB-A06 SourceReferencesAllowed | Source Code References *Allowed* | *Not the production default* / *Players get Disallowed; results will differ from what they see.* |
 | MB-A07 PricingIncomplete | A candidate's price card does not resolve | *No price for {model}* / *Its cost per question will be missing from the comparison.* |
 | MB-A08 ProfileFit | A candidate at `high` or `max` and a scoring-profile speed target under 30 s | *This profile targets interactive latency* / *{model} at {level} will score low on Speed Index; read it as advisory.* |
-| MB-A09 NoBaseline | No candidate is a `RecommendedModels` entry (model and, where the entry names one, thinking level) of a provider present in the batch | *No current production model in the batch* / *Add {recommended} as the baseline the others are judged against.* |
+| MB-A09 NoBaseline | With a GnollBench baseline model set (`ai-benchmark.md` § *Baseline Model*): no candidate's current settings have its model-axis key (`BenchmarkBaselineModelService.IsBaselineModel`). With none set: no candidate is a `RecommendedModels` entry (model and, where the entry names one, thinking level) of a provider present in the batch | With a baseline model: *No baseline model in the batch* / *Add {baseline} so the others are judged against it under the same graders. Otherwise Open in Model Comparison adds its latest comparable result, if there is one.* Without: *No current production model in the batch* / *Add {recommended} as the baseline the others are judged against.* |
 | MB-A10 RosterDiffersFromRecent | The assessor, co-assessor, reader and verifier differ from those of the most recent completed run on the target | *Graders differ from recent runs* / *This batch will not compare with earlier runs of these models.* |
-| MB-A11 ReportWriterInBatch | A report writer is set | *{n} AI documents will be written* / *For one document on the whole batch, use Model Comparison after it.* |
+| MB-A11 ReportWriterInBatch | A report writer is set | *{n} AI documents will be written* / *For documents on the whole batch, follow the steps the batch dialog shows when it finishes.* |
 | MB-A12 AnchoredSecondReader | A single assessor and a second reader the scoring profile does not blind | *Second reader sees the first verdict* / *A blind reader gives an independent check.* |
+| MB-A13 ComparisonDocumentsAreManual | Every batch of two or more models | *Comparison documents are written by you, after the batch* / *When the batch finishes, its dialog shows the steps: Open in Model Comparison, then step 3, Write, with the wizard kept open so the charts are drawn.* |
 
-MB-A11's count is the number of AI documents one report writes (`BenchmarkRunReportDocumentService.Audiences`)
+MB-A09's and MB-A13's sentences are longer than 140 characters and are not clipped. MB-A11's count is the number of AI documents one report writes (`BenchmarkRunReportDocumentService.Audiences`)
 per member run on a suite target (models × R of them), and per battery run on a battery target (models of them).
 
 ### 3.4 Time and Order
@@ -621,8 +622,11 @@ complete, is not shown.
 
 The footer has **Run in Background** (or **Close**), **Cancel Batch** (confirmed first) while the batch is
 live or stopped, one button per resume option, and **Open in Model Comparison**, available once two members
-have a result: it closes the dialog and opens the comparison wizard with the members' battery runs, runs
-or (for a series) run groups selected, at most 24 sources. A note at the footer's start says why an action
+have a result: it closes the dialog and opens the comparison wizard with the sources the server lists for
+the batch (`GET {id}/comparison-sources`, § 11) — the members' battery runs, runs or
+(for a series) run groups, and the baseline model's latest comparable result when the batch did not run
+it, at most 24 sources. When the baseline model was not added, the wizard shows the reason once as an info
+notice, *Baseline model not added*, until the selection changes. A note at the footer's start says why an action
 waits: while a request is in flight, its reason (*Waiting for the server to resume the batch.* and the
 like), and the other actions are `aria-disabled`; otherwise, until two members have a result, *Two models
 with a completed result are needed to compare.* The disabled buttons are described by that note. The
@@ -644,6 +648,30 @@ the runs per model or suite, the start time and the user, *Models*, *Runs*, *Dur
 models in run order with their badges, and **View progress**, **Open in Model Comparison** and **Delete
 model batch** (final batches only). A run or battery run card whose run belongs to a loaded batch carries
 a *Batch #N* kicker, read from the batches' member lists, and from a battery run's own `modelBatchRunId`.
+
+### 8.1 Writing the comparison documents after a batch
+
+Nothing writes comparison-wide documents automatically: a document costs a writer call, and its charts
+are drawn by the browser while the wizard is open (`ai-benchmark-report-pack.md` § 13, *When charts are
+attached*). So, once the *Ready to compare* stage is done (two or more members have a result), the dialog's
+body shows **Next: the comparison documents**, a numbered guide, also when the dialog is reopened from Run
+History:
+
+1. **Open in Model Comparison.** It opens the wizard with every member's result and the baseline model's
+   latest comparable result, or says why that was not added.
+2. **Step 2 — Charts & table.** The documents' charts are drawn from step 2's settings: set the figures as
+   you want them in print.
+3. **Step 3 — Write.** Choose *Whole comparison*, and the baseline model as the *Reference model*; choose a
+   report writer, the documents, and the charts under *Charts in PDF and Word*; check the estimated cost;
+   then **Generate**. **Keep the wizard open until every document shows its charts**: they are drawn by
+   this browser as each document finishes.
+4. **Step 4 — Documents.** Each card's *Charts* reads *current*. If you closed the wizard early, select the
+   documents and use **Update charts…**.
+
+A **Copy steps** icon button copies the guide as plain text. The text is one constant
+(`MODEL_BATCH_DOCUMENTS_GUIDE` in `model-batch.models.ts`) used by the dialog and the copy. The launcher
+says the same up front through MB-A13 (§ 3.3), and step 3 of the wizard carries a matching note beside
+**Generate** (`ai-benchmark-report-pack.md` § 12).
 
 ## 9. Completion and Failure Alerts
 
@@ -694,6 +722,7 @@ All routes are under `api/admin/benchmark/model-batches` (`AdminOnly`). Enums tr
 | GET | `runs?skip=&take=` | Batches newest first, without member results (`take` default 50, at most 500); Run History asks for 200 |
 | GET | `runs/{id}` | One batch with its members' progress and results: what the banner and the dialog poll |
 | GET | `runs/{id}/diagnostics` | The diagnostics as `text/plain` |
+| GET | `{id}/comparison-sources` | What *Open in Model Comparison* selects: `{ runIds, groupIds, batteryRunIds, baselineModelSource: { runId, batteryRunId, label, startedAtUtc } \| null, baselineModelReason }`. Finished members (`Completed`, `CompletedWithErrors`) in order: a battery member's battery run; a series member's auto-created group, else its runs; a single run; at most 24 sources, runs first. When a baseline model is set and no member is it, `BenchmarkBaselineModelSourceFinder` adds its latest comparable result to the lists: for a battery, the newest ranked battery result of the members' definition and comparability class whose newest member run is the baseline model; for a suite, among the suite's finished runs of the baseline model, newest first and at most 10 tried, the first whose must-match signature equals the members' baseline signature. Otherwise `baselineModelReason` says why: *No baseline model is set.*, *The baseline model is already in the batch.*, *No earlier result of the baseline model is comparable with this batch.* or *The comparison already holds the most sources it can take, so the baseline model's result was not added.* **404** for an unknown batch |
 | POST | `runs/{id}/cancel` | Cancel. **400** for a final batch |
 | POST | `runs/{id}/resume` | Body `{ mode: "Continue" \| "SkipCurrent" \| "AcceptInstrumentChange" \| "RerunUnderCurrentInstrument" }`. **200** with the batch; **409** `{ instrumentChanged, batchId, changedKeys, message }` when Continue finds the instrument moved; **409** while a batch, a run or another claim is active; **400** for a mode not offered now or a batch not `Stopped`; a resumed child the server refuses is **400** with its reason |
 | POST | `runs/{id}/members/{memberId}/skip` | Mark a pending member Skipped. **400** otherwise |

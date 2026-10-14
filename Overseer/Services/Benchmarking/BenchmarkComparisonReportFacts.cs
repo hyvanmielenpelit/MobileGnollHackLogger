@@ -19,6 +19,7 @@ using Overseer.Models;
 //   suite.name                                     the suite of a comparison of runs and groups
 //   comparison.models                              the covered models
 //   comparison.pricingBasis, .pricingBasisKind, .pricedOn, .signature   as on a per-model sheet
+//   comparison.reference                           the reference model's letter: the requested one, else A
 //   model.<L>.*                                    every fact a per-model sheet states about its subject,
 //                                                  under the model's letter: subject.thinkingLevel, .runs and
 //                                                  .state as model.<L>.thinkingLevel, .runs and .state; the
@@ -31,6 +32,11 @@ using Overseer.Models;
 //   model.<L>.quality.rank                         its joint rank among the covered models' Intelligence Indices
 //   model.<L>.speed.rank, model.<L>.cost.rank      its rank among the covered models not degraded on the axis
 //   model.<L>.frontier                             the Pareto frontiers it lies on
+//   model.<L>.profile.*                            its failure profile (BenchmarkComparisonModelProfile), when one was computed
+//   model.<L>.vsReference.shared, .better, .similar, .worse
+//                                                  every model but the reference, on the questions both scored on
+//                                                  the same item revision: more than 15 points above it, within
+//                                                  15 points, more than 15 points below
 //   frontier.qualityCost, .qualitySpeed, .speedCost   the models on each two-measure Pareto frontier
 //   spread.quality, spread.dimension.<d>, spread.speed, spread.cost   lowest and highest, by model
 //   questions.anyCriticalError, .wideSpread, .sharedLow   question counts behind the excerpt priority
@@ -41,6 +47,7 @@ using Overseer.Models;
 //                                                  reference or allPairs)
 //   pair.<L>.<M>.speed.ratio, .cost.ratio          L's model time and spend per question relative to M's
 //   pair.<L>.<M>.speed.<family>, .cost.<family>    established after the family's Holm adjustment
+//   notable.count, notable.<n>.kind, .models, .questions, .summary   the notable findings (BenchmarkNotableFindings)
 //
 // L is always the earlier letter of a pair.
 
@@ -54,6 +61,9 @@ public sealed class BenchmarkComparisonReportEntry
 
     /// <summary>The model's own content snapshot, numbered as <see cref="Sheet"/> numbers its questions.</summary>
     public BenchmarkReportContentSnapshot Content { get; init; } = default!;
+
+    /// <summary>The model's failure profile over its runs' answers; null when it was not computed, and its facts are then left out.</summary>
+    public BenchmarkComparisonModelProfile? Profile { get; init; }
 }
 
 /// <summary>What <see cref="BenchmarkComparisonReportFacts.Build"/> reads.</summary>
@@ -65,8 +75,11 @@ public sealed class BenchmarkComparisonReportFactsInput
     /// <summary>The covered models, in any order.</summary>
     public IReadOnlyList<BenchmarkComparisonReportEntry> Entries { get; init; } = Array.Empty<BenchmarkComparisonReportEntry>();
 
-    /// <summary>The paired tests of the covered models against the highest-Index one; null when not computed.</summary>
+    /// <summary>The paired tests of the covered models against the reference model; null when not computed.</summary>
     public BenchmarkPairedComparisonDto? ReferenceFamily { get; init; }
+
+    /// <summary>The reference model's entry key; null means the covered model with the highest Intelligence Index.</summary>
+    public string? ReferenceKey { get; init; }
 
     /// <summary>The paired tests of every pair of covered models; null when not computed.</summary>
     public BenchmarkPairedComparisonDto? AllPairsFamily { get; init; }
@@ -127,6 +140,18 @@ public static class BenchmarkComparisonReportFacts
     public static readonly string TooManyRefusal =
         $"A comparison-wide document covers at most {MaxEntries.ToString(CultureInfo.InvariantCulture)} models: choose {MaxEntries.ToString(CultureInfo.InvariantCulture)} or fewer.";
 
+    /// <summary>Why a requested reference model cannot be the reference.</summary>
+    public const string ReferenceRefusal = "The reference model must be one of the covered models.";
+
+    /// <summary>A model scored more than this many points above or below the reference on a question is better or worse there.</summary>
+    public const double VsReferenceMarginPoints = 15.0;
+
+    /// <summary>A model's weakest answers: its questions scored below this…</summary>
+    public const double WeakestAnswerBelow = 70.0;
+
+    /// <summary>…at most this many per model, lowest first.</summary>
+    public const int WeakestAnswersPerModel = 3;
+
     private static readonly string[] Dimensions = { "accuracy", "completeness", "conciseness", "readability" };
 
     /// <summary>
@@ -177,6 +202,22 @@ public static class BenchmarkComparisonReportFacts
         return null;
     }
 
+    /// <summary>
+    /// <see cref="ReferenceRefusal"/> when a reference is requested that is not one of
+    /// <paramref name="coveredKeys"/>, or is not an entry of the comparison, or is Excluded; null when none
+    /// is requested or it can be the reference.
+    /// </summary>
+    public static string? ReferenceRefusalOf(BenchmarkModelComparisonDto comparison, IReadOnlyCollection<string> coveredKeys, string? referenceKey)
+    {
+        ArgumentNullException.ThrowIfNull(comparison);
+        ArgumentNullException.ThrowIfNull(coveredKeys);
+        if (string.IsNullOrWhiteSpace(referenceKey)) return null;
+
+        string key = referenceKey.Trim();
+        var entry = comparison.Entries.FirstOrDefault(e => string.Equals(e.Key, key, StringComparison.Ordinal));
+        return entry == null || entry.Excluded || !coveredKeys.Contains(key, StringComparer.Ordinal) ? ReferenceRefusal : null;
+    }
+
     /// <summary><see cref="TooFewRefusal"/> below <see cref="MinEntries"/>, <see cref="TooManyRefusal"/> above <see cref="MaxEntries"/>; null between.</summary>
     public static string? BoundsRefusal(int coveredCount)
         => coveredCount < MinEntries ? TooFewRefusal
@@ -225,8 +266,10 @@ public static class BenchmarkComparisonReportFacts
     /// <summary>
     /// The sheet and content of a comparison of runs and analysis groups over the covered keys: each
     /// model's per-model sheet over the covered models (<see cref="BenchmarkReportFacts.Build"/>), with its
-    /// provider availability from <paramref name="availability"/> by entry key where given, and its
-    /// content (<see cref="BenchmarkReportContent.Build"/>), then <see cref="Build"/>.
+    /// provider availability from <paramref name="availability"/> by entry key where given, its content
+    /// (<see cref="BenchmarkReportContent.Build"/>) and its failure profile
+    /// (<see cref="BenchmarkComparisonModelProfile.FromRuns"/>), then <see cref="Build"/> against the
+    /// reference <paramref name="referenceKey"/>, the highest-Index model when null.
     /// </summary>
     public static BenchmarkComparisonReportFactsResult BuildFromRuns(
         BenchmarkModelComparisonDto comparison,
@@ -237,13 +280,15 @@ public static class BenchmarkComparisonReportFacts
         BenchmarkPairedComparisonDto? allPairsFamily = null,
         string? pairedTestsUnavailableReason = null,
         int? comparisonId = null,
-        IReadOnlyDictionary<string, ProviderAvailabilitySummary>? availability = null)
+        IReadOnlyDictionary<string, ProviderAvailabilitySummary>? availability = null,
+        string? referenceKey = null)
     {
         ArgumentNullException.ThrowIfNull(comparison);
         ArgumentNullException.ThrowIfNull(coveredKeys);
         ArgumentNullException.ThrowIfNull(runs);
 
-        string? refusal = CoveredRefusal(comparison, coveredKeys) ?? BoundsRefusal(coveredKeys.Count);
+        string? refusal = CoveredRefusal(comparison, coveredKeys) ?? BoundsRefusal(coveredKeys.Count)
+            ?? ReferenceRefusalOf(comparison, coveredKeys, referenceKey);
         if (refusal != null) return new BenchmarkComparisonReportFactsResult { Refusal = refusal };
 
         var restricted = Restrict(comparison, coveredKeys);
@@ -264,7 +309,8 @@ public static class BenchmarkComparisonReportFacts
             {
                 Entry = entry,
                 Sheet = built.Sheet,
-                Content = BenchmarkReportContent.Build(entryRuns, answerExcerptChars)
+                Content = BenchmarkReportContent.Build(entryRuns, answerExcerptChars),
+                Profile = BenchmarkComparisonModelProfile.FromRuns(entryRuns)
             });
         }
 
@@ -273,6 +319,7 @@ public static class BenchmarkComparisonReportFacts
             Comparison = comparison,
             Entries = entries,
             ReferenceFamily = referenceFamily,
+            ReferenceKey = referenceKey,
             AllPairsFamily = allPairsFamily,
             PairedTestsUnavailableReason = pairedTestsUnavailableReason,
             AnswerExcerptChars = answerExcerptChars,
@@ -283,11 +330,13 @@ public static class BenchmarkComparisonReportFacts
     /// <summary>
     /// The paired-test families of a comparison of runs and groups over the covered keys, computed in
     /// process by <see cref="BenchmarkPairedTests.Build"/> without price cards, so cost is not tested:
-    /// against the highest-Index covered model, and over all pairs from three to
-    /// <see cref="AllPairsMaxEntries"/> covered models. Each Holm adjustment counts the covered models' tests only.
+    /// against the reference <paramref name="referenceKey"/> (the highest-Index covered model when null or
+    /// not covered), and over all pairs from three to <see cref="AllPairsMaxEntries"/> covered models.
+    /// Each Holm adjustment counts the covered models' tests only.
     /// </summary>
     public static (BenchmarkPairedComparisonDto? Reference, BenchmarkPairedComparisonDto? AllPairs, string? Unavailable) PairedFromRuns(
-        BenchmarkModelComparisonDto comparison, IReadOnlyList<string> coveredKeys, IReadOnlyDictionary<long, BenchmarkRun> runs)
+        BenchmarkModelComparisonDto comparison, IReadOnlyList<string> coveredKeys, IReadOnlyDictionary<long, BenchmarkRun> runs,
+        string? referenceKey = null)
     {
         ArgumentNullException.ThrowIfNull(comparison);
         ArgumentNullException.ThrowIfNull(coveredKeys);
@@ -307,7 +356,10 @@ public static class BenchmarkComparisonReportFacts
         var basis = Enum.TryParse<BenchmarkModelComparisonPricingBasis>(comparison.PricingBasis, out var parsed)
             ? parsed
             : BenchmarkModelComparisonPricingBasis.Current;
-        string reference = covered[0].Key;
+        string? requested = referenceKey?.Trim();
+        string reference = requested != null && covered.Any(c => string.Equals(c.Key, requested, StringComparison.Ordinal))
+            ? requested
+            : covered[0].Key;
         var computedAt = comparison.ComputedAtUtc;
 
         var referenceFamily = BenchmarkPairedTests.Build(entries, comparison.SubjectKind, basis, BenchmarkPairedComparisonMode.Reference, reference, computedAt);
@@ -333,6 +385,17 @@ public static class BenchmarkComparisonReportFacts
             .Select((entry, i) => (Letter: BenchmarkReportFacts.LetterFor(i), Item: supplied.First(s => s.Entry.Key == entry.Key)))
             .ToList();
         var letterOf = lettered.ToDictionary(l => l.Item.Entry.Key, l => l.Letter, StringComparer.Ordinal);
+
+        string? requestedReference = string.IsNullOrWhiteSpace(input.ReferenceKey) ? null : input.ReferenceKey.Trim();
+        if (requestedReference != null && !letterOf.ContainsKey(requestedReference))
+        {
+            return new BenchmarkComparisonReportFactsResult { Refusal = ReferenceRefusal };
+        }
+        string referenceLetter = requestedReference != null ? letterOf[requestedReference] : lettered[0].Letter;
+        string? baselineKey = string.Equals(comparison.BaselineModelState, BenchmarkBaselineModelStates.Included, StringComparison.Ordinal)
+            ? comparison.BaselineModelEntryKey
+            : null;
+        string? baselineLetter = baselineKey != null && letterOf.TryGetValue(baselineKey, out var baseline) ? baseline : null;
 
         var coveredKeys = BenchmarkReportComparisonKey.CanonicalEntryKeys(
             IdsOf(lettered.Select(l => l.Item.Entry.Key), "run:"),
@@ -392,14 +455,19 @@ public static class BenchmarkComparisonReportFacts
                 .ToList(),
             CoversAllEntries = coversAll,
             ComparisonEntryCount = entryCount,
-            PairedTestsUnavailableReason = input.PairedTestsUnavailableReason
+            PairedTestsUnavailableReason = input.PairedTestsUnavailableReason,
+            ReferenceLetter = referenceLetter,
+            ReferenceIsBaselineModel = baselineLetter != null && baselineLetter == referenceLetter,
+            BaselineModelLetter = baselineLetter
         };
 
         var facts = new BenchmarkReportFacts.FactList();
         AddComparisonFacts(facts, comparison, lettered.Count, batteries ? null : sheet.SuiteName);
+        AddReferenceFact(facts, referenceLetter, sheet.ReferenceIsBaselineModel == true, referenceLetter == lettered[0].Letter);
         foreach (var (letter, item) in lettered)
         {
             AddModelFacts(facts, letter, item.Sheet);
+            item.Profile?.AddFacts(facts, ModelPrefix(letter));
         }
         AddRankFacts(facts, lettered.Select(l => (l.Letter, l.Item.Entry)).ToList());
         AddFrontierFacts(facts, lettered.Select(l => (l.Letter, l.Item.Entry)).ToList());
@@ -414,6 +482,31 @@ public static class BenchmarkComparisonReportFacts
 
         var (questions, maps) = BuildMatrix(lettered.Select(l => (l.Letter, l.Item.Sheet)).ToList());
         AddQuestionFacts(facts, questions);
+        foreach (var (letter, _) in lettered.Where(l => l.Item.Profile != null))
+        {
+            BenchmarkComparisonModelProfile.AddMatrixFacts(facts, ModelPrefix(letter), questions, letter, lettered.Count);
+        }
+        AddVsReferenceFacts(facts, questions, lettered.Select(l => (l.Letter, l.Item.Sheet)).ToList(), maps, referenceLetter);
+
+        var notable = BenchmarkNotableFindings.Detect(new BenchmarkNotableFindingsInput
+        {
+            Models = lettered.Select(l => NotableModelOf(l.Letter, l.Item)).ToList(),
+            Questions = questions,
+            Families = families,
+            ReferenceLetter = referenceLetter,
+            ReferenceIsBaselineModel = sheet.ReferenceIsBaselineModel == true,
+            JudgeDependentPairs = JudgeDependentPairsOf(comparison, letterOf)
+        });
+        var factKeys = facts.Sorted().Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        foreach (var finding in notable)
+        {
+            finding.Facts = finding.Facts.Where(factKeys.Contains).ToList();
+        }
+        BenchmarkNotableFindings.AddFacts(facts, notable, n => questions.FirstOrDefault(row => row.Number == n) is { } found
+            ? BenchmarkNotableFindings.QuestionLabel(found)
+            : "Q" + Inv(n));
+        sheet.NotableFindings = notable;
+
         sheet.Questions = questions;
         sheet.Facts = facts.Sorted();
         sheet.Entries = BuildEntries(lettered.Select(l => (l.Letter, l.Item.Entry, l.Item.Sheet)).ToList());
@@ -430,6 +523,7 @@ public static class BenchmarkComparisonReportFacts
             questions,
             lettered.Select(l => new BenchmarkReportContent.ComparisonEntry(l.Letter, l.Item.Entry.Key, l.Item.Content ?? new BenchmarkReportContentSnapshot(), maps[l.Letter])).ToList(),
             input.AnswerExcerptChars);
+        content.ModelNotes = WeakestAnswers(lettered.Select(l => (l.Letter, l.Item)).ToList(), questions, maps);
 
         var withText = content.Questions?.Select(q => q.Number).ToHashSet() ?? new HashSet<int>();
         foreach (var question in questions)
@@ -721,6 +815,177 @@ public static class BenchmarkComparisonReportFacts
         facts.Add("questions.anyCriticalError", critical, Of(critical));
         facts.Add("questions.wideSpread", wide, Of(wide));
         facts.Add("questions.sharedLow", low, Of(low));
+    }
+
+    /// <summary>
+    /// <c>comparison.reference</c>: <c>Model C, the baseline model</c>, <c>Model A, the highest Intelligence
+    /// Index</c>, or <c>Model C, chosen as the reference</c>.
+    /// </summary>
+    private static void AddReferenceFact(BenchmarkReportFacts.FactList facts, string letter, bool baselineModel, bool highestIndex)
+    {
+        string why = baselineModel ? "the baseline model" : highestIndex ? "the highest Intelligence Index" : "chosen as the reference";
+        facts.Add("comparison.reference", letter, "Model " + letter + ", " + why);
+    }
+
+    /// <summary>
+    /// Every model but the reference against it, on the matrix questions both scored on the same item
+    /// revision: <c>model.&lt;L&gt;.vsReference.shared</c>, and of those <c>.better</c> (more than
+    /// <see cref="VsReferenceMarginPoints"/> points above the reference), <c>.similar</c> and <c>.worse</c>.
+    /// </summary>
+    private static void AddVsReferenceFacts(
+        BenchmarkReportFacts.FactList facts,
+        IReadOnlyList<BenchmarkReportQuestion> questions,
+        IReadOnlyList<(string Letter, BenchmarkReportFactSheet Sheet)> models,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<int, int>> maps,
+        string reference)
+    {
+        var revisions = models.ToDictionary(m => m.Letter, m => RevisionsByMatrixNumber(m.Sheet, maps[m.Letter]), StringComparer.Ordinal);
+        if (!revisions.TryGetValue(reference, out var referenceRevisions)) return;
+
+        foreach (var (letter, _) in models.Where(m => m.Letter != reference))
+        {
+            int shared = 0, better = 0, similar = 0, worse = 0;
+            foreach (var question in questions)
+            {
+                var own = question.Models?.FirstOrDefault(c => c.Letter == letter && c.Score.HasValue);
+                var theirs = question.Models?.FirstOrDefault(c => c.Letter == reference && c.Score.HasValue);
+                if (own == null || theirs == null) continue;
+                if (!revisions[letter].TryGetValue(question.Number, out int? ownRevision)
+                    || !referenceRevisions.TryGetValue(question.Number, out int? referenceRevision)
+                    || ownRevision != referenceRevision)
+                {
+                    continue;
+                }
+
+                shared++;
+                double difference = own.Score!.Value - theirs.Score!.Value;
+                if (difference > VsReferenceMarginPoints) better++;
+                else if (difference < -VsReferenceMarginPoints) worse++;
+                else similar++;
+            }
+
+            string prefix = ModelPrefix(letter) + "vsReference.";
+            facts.Add(prefix + "shared", shared, Inv(shared) + (shared == 1 ? " question" : " questions"));
+            if (shared == 0)
+            {
+                const string none = "No question was scored by both this model and the reference on the same item revision.";
+                facts.Unavailable(prefix + "better", none);
+                facts.Unavailable(prefix + "similar", none);
+                facts.Unavailable(prefix + "worse", none);
+                continue;
+            }
+
+            string Of(int n) => Inv(n) + " of " + Inv(shared) + (shared == 1 ? " question" : " questions");
+            facts.Add(prefix + "better", better, Of(better));
+            facts.Add(prefix + "similar", similar, Of(similar));
+            facts.Add(prefix + "worse", worse, Of(worse));
+        }
+    }
+
+    /// <summary>A model's item revision on each matrix question it was asked, by matrix number.</summary>
+    private static Dictionary<int, int?> RevisionsByMatrixNumber(BenchmarkReportFactSheet sheet, IReadOnlyDictionary<int, int> map)
+    {
+        var revisions = new Dictionary<int, int?>();
+        foreach (var question in sheet.Questions)
+        {
+            if (map.TryGetValue(question.Number, out int number)) revisions.TryAdd(number, question.ItemRevisionUsed);
+        }
+        return revisions;
+    }
+
+    /// <summary>What the notable-finding rules read of one covered model: its entry, its own sheet's facts and its failure profile.</summary>
+    private static BenchmarkNotableModel NotableModelOf(string letter, BenchmarkComparisonReportEntry item)
+    {
+        var entry = item.Entry;
+        var sheet = item.Sheet;
+        var profile = item.Profile;
+        int? Count(string key) => AnyNumberOf(sheet, key) is double value ? (int)Math.Round(value, MidpointRounding.AwayFromZero) : null;
+
+        return new BenchmarkNotableModel
+        {
+            Letter = letter,
+            Provider = entry.Provider ?? string.Empty,
+            ModelId = entry.ModelId ?? string.Empty,
+            ThinkingLevel = entry.ThinkingLevel,
+            Quality = entry.Quality?.PointEstimate,
+            QualityLower = entry.Quality?.IntervalLower,
+            QualityUpper = entry.Quality?.IntervalUpper,
+            ModelTimeP50Ms = Speed(entry),
+            CostPerQuestion = Cost(entry),
+            SimpleBandScore = AnyNumberOf(sheet, "band.simple.score"),
+            SimpleBandQuestions = Count("band.simple.questions") ?? 0,
+            AdvancedBandScore = AnyNumberOf(sheet, "band.advanced.score"),
+            AdvancedBandQuestions = Count("band.advanced.questions") ?? 0,
+            CriticalErrors = Count("errors.critical"),
+            CountingAnswers = Count("answers.scored"),
+            PanelDisagreements = profile?.PanelDisagreements,
+            PanelAnswers = profile?.PanelAnswers,
+            ToolCallsPerQuestion = AnyNumberOf(sheet, "tools.callsPerQuestion"),
+            MedianAnswerChars = profile?.MedianAnswerChars,
+            Answers = profile?.Answers,
+            Truncated = profile?.Truncated,
+            ToolLimitHits = profile?.ToolLimitHits,
+            ProviderErrorRate = AnyNumberOf(sheet, BenchmarkReportFacts.AvailabilityPrefix + "providerErrorRate")
+        };
+    }
+
+    /// <summary>The covered pairs whose order depends on which panel member grades, by letter; empty when the panel diagnostics do not apply.</summary>
+    private static List<(string First, string Second)> JudgeDependentPairsOf(BenchmarkModelComparisonDto comparison, IReadOnlyDictionary<string, string> letterOf)
+    {
+        var diagnostics = comparison.PanelDiagnostics;
+        if (diagnostics is not { Applicable: true }) return new List<(string, string)>();
+
+        return diagnostics.JudgeDependentPairs
+            .Where(p => letterOf.ContainsKey(p.FirstEntryKey) && letterOf.ContainsKey(p.SecondEntryKey))
+            .Select(p => (letterOf[p.FirstEntryKey], letterOf[p.SecondEntryKey]))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Each covered model's weakest answers: its matrix questions scored below <see cref="WeakestAnswerBelow"/>,
+    /// lowest first (ties by number), at most <see cref="WeakestAnswersPerModel"/>, each grader's comment on
+    /// the answer of its lowest-scoring run there. In letter order; a model without a failure profile has none.
+    /// </summary>
+    private static List<BenchmarkReportModelNote> WeakestAnswers(
+        IReadOnlyList<(string Letter, BenchmarkComparisonReportEntry Item)> models,
+        IReadOnlyList<BenchmarkReportQuestion> questions,
+        IReadOnlyDictionary<string, IReadOnlyDictionary<int, int>> maps)
+    {
+        var notes = new List<BenchmarkReportModelNote>();
+        foreach (var (letter, item) in models)
+        {
+            if (item.Profile == null || !maps.TryGetValue(letter, out var map)) continue;
+
+            var itemByNumber = new Dictionary<int, BenchmarkComparisonModelItem>();
+            foreach (var profileItem in item.Profile.Items)
+            {
+                var own = item.Sheet.Questions.FirstOrDefault(q => string.Equals(q.QuestionKey, profileItem.QuestionKey, StringComparison.Ordinal)
+                                                                   && q.ItemRevisionUsed == profileItem.ItemRevisionUsed);
+                if (own != null && map.TryGetValue(own.Number, out int number)) itemByNumber.TryAdd(number, profileItem);
+            }
+
+            var weakest = questions
+                .Select(q => (q.Number, Score: q.Models?.FirstOrDefault(c => c.Letter == letter)?.Score))
+                .Where(x => x.Score is double score && score < WeakestAnswerBelow && itemByNumber.ContainsKey(x.Number))
+                .OrderBy(x => x.Score)
+                .ThenBy(x => x.Number)
+                .Take(WeakestAnswersPerModel);
+            foreach (var (number, _) in weakest)
+            {
+                foreach (var note in itemByNumber[number].Notes)
+                {
+                    notes.Add(new BenchmarkReportModelNote
+                    {
+                        Letter = letter,
+                        Question = number,
+                        Role = note.Role,
+                        CriticalError = note.CriticalError,
+                        Comment = note.Comment
+                    });
+                }
+            }
+        }
+        return notes;
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1226,6 +1491,17 @@ public static class BenchmarkComparisonReportFacts
     {
         var fact = sheet.Facts.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.Ordinal));
         return fact is { Available: true, Value: JsonValue value } && value.TryGetValue(out double number) ? number : null;
+    }
+
+    /// <summary>An available fact's value as a number, whether stored as a floating-point or a whole number; null otherwise.</summary>
+    private static double? AnyNumberOf(BenchmarkReportFactSheet sheet, string key)
+    {
+        var fact = sheet.Facts.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.Ordinal));
+        if (fact is not { Available: true, Value: JsonValue value }) return null;
+        if (value.TryGetValue(out double number)) return number;
+        if (value.TryGetValue(out int whole)) return whole;
+        if (value.TryGetValue(out long wide)) return wide;
+        return null;
     }
 
     private static List<long> IdsOf(IEnumerable<string> keys, string prefix)

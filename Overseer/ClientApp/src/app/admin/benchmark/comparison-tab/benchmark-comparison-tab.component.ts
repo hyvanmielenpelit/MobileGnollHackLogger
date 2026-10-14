@@ -9,6 +9,7 @@ import { BenchmarkComparisonState } from '../state/benchmark-comparison.state';
 import { BenchmarkViewSync } from '../state/benchmark-view-sync.service';
 import { BenchmarkShellBridge } from '../state/benchmark-shell-bridge.service';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { BaselineModelCardComponent } from './baseline-model-card/baseline-model-card.component';
 import { ComparisonSummaryCardComponent } from './comparison-summary-card/comparison-summary-card.component';
 import type { LastComparisonRecord } from './last-comparison';
 
@@ -17,7 +18,7 @@ import type { LastComparisonRecord } from './last-comparison';
   selector: 'app-benchmark-comparison-tab',
   standalone: true,
   imports: [
-    CommonModule, ReportDocumentsLauncherComponent, ComparisonSummaryCardComponent
+    CommonModule, ReportDocumentsLauncherComponent, BaselineModelCardComponent, ComparisonSummaryCardComponent
   ],
   templateUrl: './benchmark-comparison-tab.component.html',
   styleUrls: ['./benchmark-comparison-tab.component.scss']
@@ -25,7 +26,7 @@ import type { LastComparisonRecord } from './last-comparison';
 export class BenchmarkComparisonTabComponent implements OnInit {
   private readonly viewSync = inject(BenchmarkViewSync);
   readonly bridge = inject(BenchmarkShellBridge);
-  private readonly workspace = inject(BenchmarkWorkspaceStore);
+  readonly workspace = inject(BenchmarkWorkspaceStore);
   readonly comparison = inject(BenchmarkComparisonState);
   private cdr = inject(ChangeDetectorRef);
 

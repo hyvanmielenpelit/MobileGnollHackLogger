@@ -113,6 +113,7 @@ import {
   BenchmarkPanelFamilyGapDto,
   ComparisonSelectedSource,
   ComparisonSelectionNotice,
+  baselineReferenceKey,
   orderedNotices,
   questionCoverageNotes,
   sourceLabel,
@@ -2294,6 +2295,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       return cached.context;
     }
     const { runIds, groupIds, batteryRunIds } = this.comparisonSourceIds(comparison);
+    const baselineKey = baselineReferenceKey(comparison);
     const context: ReportPackContext = {
       runIds,
       groupIds,
@@ -2303,7 +2305,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       entryKeys: comparison.entries.map(entry => entry.key),
       suiteId: comparison.baselineSuiteId ?? null,
       // A comparison of battery results spans several suites; its battery stands in for the suite.
-      suiteName: comparison.baselineSuiteName ?? comparison.baselineBatteryName ?? null
+      suiteName: comparison.baselineSuiteName ?? comparison.baselineBatteryName ?? null,
+      // Only when a charted entry is the baseline model, the Reference model step 3 then defaults to.
+      ...(baselineKey !== null ? { baselineModelEntryKey: baselineKey } : {})
     };
     this.reportPackContextCache = { comparison, basis, context };
     return context;

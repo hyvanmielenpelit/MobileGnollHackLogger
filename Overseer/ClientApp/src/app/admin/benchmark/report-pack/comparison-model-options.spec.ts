@@ -94,4 +94,17 @@ describe('comparison-model-options', () => {
     expect(chosen[0]).toBe('run:3');
     expect(chosen[11]).toBe('run:14');
   });
+
+  it('keeps the baseline model among more than 12, with the 11 highest-Index others', () => {
+    const many = comparisonModelOptions(Array.from({ length: 14 }, (_, i) => entry(`run:${i + 1}`, `Model ${i + 1}`, i + 1)));
+    const chosen = defaultCoveredKeys(many, 'run:1');
+    expect(chosen.length).toBe(12);
+    expect(chosen).toEqual(['run:1', ...Array.from({ length: 11 }, (_, i) => `run:${i + 4}`)]);
+
+    // A baseline already among the 12 highest changes nothing; one that is not offered is ignored.
+    expect(defaultCoveredKeys(many, 'run:14')).toEqual(defaultCoveredKeys(many));
+    expect(defaultCoveredKeys(many, 'run:99')).toEqual(defaultCoveredKeys(many));
+    const few = comparisonModelOptions([entry('run:1', 'A', 50), entry('run:2', 'B', 60)]);
+    expect(defaultCoveredKeys(few, 'run:1')).toEqual(['run:1', 'run:2']);
+  });
 });

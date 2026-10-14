@@ -144,6 +144,67 @@
   }
 }
 
+.rp-reference-field {
+  .alert {
+    margin-bottom: 0;
+  }
+}
+
+.rp-reference-hint {
+  margin: 0;
+}
+
+// The written documents' references, framed as the anonymized copies' letters are.
+.rp-written-references {
+  margin-block-start: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.15);
+  font-size: var(--text-secondary);
+}
+
+.rp-written-references-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rp-written-reference {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  min-inline-size: 0;
+
+  dt {
+    color: #a1a1aa;
+    font-weight: 400;
+  }
+
+  dd {
+    margin: 0;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+    color: #d4d4d8;
+  }
+
+  &.is-different dd {
+    color: var(--color-warning);
+  }
+}
+
+.rp-keep-open {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+
+  svg {
+    flex: none;
+    margin-top: 2px;
+  }
+}
+
 .rp-charts-choice {
   display: flex;
   flex-direction: column;

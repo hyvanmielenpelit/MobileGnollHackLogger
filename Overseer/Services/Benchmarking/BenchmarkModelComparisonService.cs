@@ -713,19 +713,22 @@ public class BenchmarkModelComparisonService
     private readonly ILogger<BenchmarkModelComparisonService>? _logger;
     private readonly BenchmarkBatteryLeaderboardService _leaderboard;
     private readonly BenchmarkProviderAvailabilityService _availability;
+    private readonly BenchmarkBaselineModelService _baselineModel;
 
     public BenchmarkModelComparisonService(
         ApplicationDbContext db,
         ILogger<BenchmarkModelComparisonService>? logger = null,
         ModelPricingService? pricingService = null,
         BenchmarkBatteryLeaderboardService? leaderboard = null,
-        BenchmarkProviderAvailabilityService? availability = null)
+        BenchmarkProviderAvailabilityService? availability = null,
+        BenchmarkBaselineModelService? baselineModel = null)
     {
         _db = db;
         _logger = logger;
         _pricingService = pricingService;
         _leaderboard = leaderboard ?? new BenchmarkBatteryLeaderboardService(db);
         _availability = availability ?? new BenchmarkProviderAvailabilityService(db);
+        _baselineModel = baselineModel ?? new BenchmarkBaselineModelService(db);
     }
 
     public async Task<(BenchmarkModelComparisonDto? Result, string? Error)> CompareAsync(
@@ -826,6 +829,7 @@ public class BenchmarkModelComparisonService
 
         var result = BenchmarkModelComparison.Build(sources, basis, today, DateTime.UtcNow);
         await ApplyAvailabilityAsync(result, ct);
+        await _baselineModel.ApplyAsync(result, sources.ToDictionary(s => s.Key, s => NewestRun(s.Runs)), ct);
 
         _logger?.LogInformation(
             "Computed a cross-model comparison over {EntryCount} entries on the {Basis} pricing basis: "
@@ -860,6 +864,7 @@ public class BenchmarkModelComparisonService
         var distinguishing = await DistinguishingKeysAsync(sources, ct);
         var result = BenchmarkBatteryModelComparison.Build(sources, distinguishing, basis, today, DateTime.UtcNow);
         await ApplyAvailabilityAsync(result, ct);
+        await _baselineModel.ApplyAsync(result, sources.ToDictionary(s => s.Key, s => NewestRun(s.IdentityRuns)), ct);
 
         _logger?.LogInformation(
             "Computed a battery comparison over {EntryCount} entries on the {Basis} pricing basis: "
@@ -868,6 +873,10 @@ public class BenchmarkModelComparisonService
 
         return (result, null);
     }
+
+    /// <summary>The run an entry's identity is read from, as <see cref="BenchmarkModelComparison.Identity"/> picks it.</summary>
+    private static BenchmarkRun? NewestRun(IReadOnlyList<BenchmarkRun> runs)
+        => runs.OrderBy(r => r.StartedAtUtc).LastOrDefault();
 
     /// <summary>
     /// Sets each entry's provider availability, pooled over its runs and their lineage predecessors, and

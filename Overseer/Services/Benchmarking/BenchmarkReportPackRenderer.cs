@@ -116,7 +116,7 @@ public static partial class BenchmarkReportPackRenderer
     public const int ReportFormatVersion = 12;
 
     /// <summary>The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>).</summary>
-    public const int ComparisonReportFormatVersion = 13;
+    public const int ComparisonReportFormatVersion = 14;
 
     /// <summary>The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.</summary>
     public const int ChatConsistencyReportFormatVersion = 3;

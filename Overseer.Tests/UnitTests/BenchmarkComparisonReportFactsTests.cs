@@ -311,6 +311,142 @@ public class BenchmarkComparisonReportFactsTests
     }
 
     [Fact]
+    public void TheReference_IsTheHighestIndexByDefault()
+    {
+        var sheet = ComparisonFacts().Sheet!;
+
+        Assert.Equal("A", sheet.ReferenceLetter);
+        Assert.False(sheet.ReferenceIsBaselineModel);
+        Assert.Null(sheet.BaselineModelLetter);
+        Assert.Equal("Model A, the highest Intelligence Index", Display(sheet, "comparison.reference"));
+        Assert.Equal("A", Assert.Single(sheet.PairedTests!, f => f.Mode == "Reference").ReferenceLetter);
+        Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("model.A.vsReference.", StringComparison.Ordinal));
+        Assert.Contains(sheet.Facts, f => f.Key == "model.B.vsReference.shared");
+    }
+
+    [Fact]
+    public void AnExplicitReference_IsTheFamilysReference_AndKeepsTheLetters()
+    {
+        var sheet = ComparisonFacts(referenceKey: "run:33").Sheet!;
+
+        Assert.Equal(new[] { "A", "B", "C", "D", "E" }, sheet.Peers.Select(p => p.Letter));
+        Assert.Equal("C", sheet.ReferenceLetter);
+        Assert.Equal("Model C, chosen as the reference", Display(sheet, "comparison.reference"));
+        var reference = Assert.Single(sheet.PairedTests!, f => f.Mode == "Reference");
+        Assert.Equal("C", reference.ReferenceLetter);
+        Assert.All(Assert.Single(reference.Measures, m => m.Measure == BenchmarkPairedTests.IntelligenceMeasure).Pairs,
+            p => Assert.True(p.FirstLetter == "C" || p.SecondLetter == "C"));
+        Assert.Contains(sheet.Facts, f => f.Key == "pair.A.C.quality.reference");
+        Assert.DoesNotContain(sheet.Facts, f => f.Key == "pair.A.B.quality.reference");
+        Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("model.C.vsReference.", StringComparison.Ordinal));
+        Assert.Contains(sheet.Facts, f => f.Key == "model.A.vsReference.better");
+    }
+
+    [Fact]
+    public void TheBaselineModel_IsLettered_WhenCovered_EvenWithAnotherReference()
+    {
+        var other = ComparisonFacts(referenceKey: "run:32", baselineKey: BaselineKey).Sheet!;
+        Assert.Equal("B", other.ReferenceLetter);
+        Assert.Equal("C", other.BaselineModelLetter);
+        Assert.False(other.ReferenceIsBaselineModel);
+        Assert.Equal("Model B, chosen as the reference", Display(other, "comparison.reference"));
+
+        var baseline = ComparisonFacts(referenceKey: BaselineKey, baselineKey: BaselineKey).Sheet!;
+        Assert.Equal("C", baseline.ReferenceLetter);
+        Assert.Equal("C", baseline.BaselineModelLetter);
+        Assert.True(baseline.ReferenceIsBaselineModel);
+        Assert.Equal("Model C, the baseline model", Display(baseline, "comparison.reference"));
+
+        // Not covered, or not usable as a reference: no baseline letter.
+        Assert.Null(ComparisonFacts(SubsetKeys, baselineKey: BaselineKey).Sheet!.BaselineModelLetter);
+        var comparison = FiveModelComparison();
+        comparison.BaselineModelEntryKey = BaselineKey;
+        comparison.BaselineModelState = BenchmarkBaselineModelStates.Excluded;
+        var excluded = BenchmarkComparisonReportFacts.BuildFromRuns(
+            comparison, BenchmarkComparisonReportFacts.DefaultCoveredKeys(comparison), FiveModelRuns(), 120);
+        Assert.Null(excluded.Sheet!.BaselineModelLetter);
+        Assert.False(excluded.Sheet.ReferenceIsBaselineModel);
+    }
+
+    [Fact]
+    public void AReferenceThatIsNotCovered_IsRefused()
+    {
+        var comparison = FiveModelComparison();
+        var runs = FiveModelRuns();
+
+        var refused = BenchmarkComparisonReportFacts.BuildFromRuns(comparison, SubsetKeys, runs, 120, referenceKey: "run:33");
+        Assert.Null(refused.Sheet);
+        Assert.Equal(BenchmarkComparisonReportFacts.ReferenceRefusal, refused.Refusal);
+        Assert.Equal("The reference model must be one of the covered models.", BenchmarkComparisonReportFacts.ReferenceRefusal);
+
+        Assert.Null(BenchmarkComparisonReportFacts.ReferenceRefusalOf(comparison, SubsetKeys, null));
+        Assert.Null(BenchmarkComparisonReportFacts.ReferenceRefusalOf(comparison, SubsetKeys, " run:35 "));
+        Assert.Equal(BenchmarkComparisonReportFacts.ReferenceRefusal, BenchmarkComparisonReportFacts.ReferenceRefusalOf(comparison, SubsetKeys, "run:99"));
+        comparison.Entries.Single(e => e.Key == "run:35").Excluded = true;
+        Assert.Equal(BenchmarkComparisonReportFacts.ReferenceRefusal, BenchmarkComparisonReportFacts.ReferenceRefusalOf(comparison, SubsetKeys, "run:35"));
+    }
+
+    [Fact]
+    public void VsReference_CountsTheSharedQuestions_BetterSimilarAndWorseByFifteenPoints()
+    {
+        var sheet = ComparisonFacts().Sheet!;
+
+        // Vega Pro minus Orion Max: -7, -8, +40, -15, -3 and -7; exactly 15 below is similar.
+        Assert.Equal("6 questions", Display(sheet, "model.B.vsReference.shared"));
+        Assert.Equal("1 of 6 questions", Display(sheet, "model.B.vsReference.better"));
+        Assert.Equal("5 of 6 questions", Display(sheet, "model.B.vsReference.similar"));
+        Assert.Equal("0 of 6 questions", Display(sheet, "model.B.vsReference.worse"));
+
+        // Zeta Prime is more than 15 points below on all but Q3.
+        Assert.Equal("5 of 6 questions", Display(sheet, "model.E.vsReference.worse"));
+        Assert.Equal("1 of 6 questions", Display(sheet, "model.E.vsReference.similar"));
+    }
+
+    [Fact]
+    public void TheWeakestAnswers_AreEachModelsLowestQuestionsBelowSeventy_WithTheirGradersComments()
+    {
+        var notes = ComparisonFacts().Content!.ModelNotes!;
+
+        Assert.Equal(
+            new[]
+            {
+                ("C", 3, BenchmarkReportFacts.AssessorRole, true, "Says the thrown gem always breaks, which contradicts the rubric."),
+                ("D", 2, BenchmarkReportFacts.AssessorRole, false, "Leaves out how the timeout is reset."),
+                ("E", 1, BenchmarkReportFacts.AssessorRole, false, "Misses the alignment condition.")
+            },
+            notes.Select(n => (n.Letter, n.Question, n.Role, n.CriticalError, n.Comment)));
+    }
+
+    [Fact]
+    public void EveryKeyTheComparisonBuilderEmits_HasALabel()
+    {
+        var keys = ComparisonFacts().Sheet!.Facts
+            .Concat(ComparisonFacts(SubsetKeys).Sheet!.Facts)
+            .Concat(ComparisonFacts(referenceKey: BaselineKey, baselineKey: BaselineKey).Sheet!.Facts)
+            .Select(f => f.Key)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .ToList();
+        Assert.Contains("comparison.reference", keys);
+        Assert.Contains("model.B.vsReference.better", keys);
+        Assert.Contains("model.A.profile.findings.critical_error", keys);
+        Assert.Contains("model.A.profile.deficit.accuracy", keys);
+        Assert.Contains("notable.count", keys);
+        Assert.Contains("notable.1.summary", keys);
+        Assert.Contains("pair.A.B.quality.allPairs", keys);
+        Assert.Contains("spread.dimension.accuracy", keys);
+        Assert.Contains("frontier.speedCost", keys);
+
+        var unlabeled = keys.Where(k => !BenchmarkReportFactLabels.TryLabel(k, out _)).ToList();
+
+        Assert.Empty(unlabeled);
+        Assert.Equal("Model B: questions scored more than 15 points above the reference", BenchmarkReportFactLabels.Label("model.B.vsReference.better"));
+        Assert.Equal("Model A against Model B: intelligence result among all pairs", BenchmarkReportFactLabels.Label("pair.A.B.quality.allPairs"));
+        Assert.Equal("Notable finding 1: summary", BenchmarkReportFactLabels.Label("notable.1.summary"));
+        Assert.Equal("Model A: runs with a critical-error weakness in the grader findings", BenchmarkReportFactLabels.Label("model.A.profile.findings.critical_error"));
+    }
+
+    [Fact]
     public void Lettered_ReplacesWholeNamesInOnePass_AndASharedNameByEveryLetter()
     {
         var names = BenchmarkComparisonReportFacts.NamesOf(new[]

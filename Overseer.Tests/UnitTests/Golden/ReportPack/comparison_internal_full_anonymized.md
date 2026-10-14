@@ -14,7 +14,7 @@
 
 | Model | Intelligence Index | Rank | Median answer time | Cost per question | Critical errors |
 |---|---|---|---|---|---|
-| Model A | 85 (82–88) | joint 1 | 12.0 s | $0.050 | 0 of 6 answers |
+| Model A (reference) | 85 (82–88) | joint 1 | 12.0 s | $0.050 | 0 of 6 answers |
 | Model B | 80 (77–83) | joint 1 | 9.0 s | $0.030 | 0 of 6 answers |
 | Model C | 70 (66–74) | joint 3 | 15.0 s | $0.020 | 1 of 6 answers |
 | Model D | 70 (64–76) | joint 3 | 8.0 s | $0.060 | 0 of 6 answers |
@@ -29,6 +29,18 @@ Q3 is a shared gap: most models scored low on it, so check the chat and the corp
 ## 2. Model-specific gaps
 
 Model B gave the weakest answer on Q3.
+
+### Failure profile
+
+| Model | Answers | May mislead | Correct / partial / incorrect / not attempted | Wrong instead of abstaining | Level 2 or below: accuracy / completeness / conciseness / readability | Truncated | Output defects | No tool call | Tool-limit hits | Median answer length | Isolated / shared misses | Lowest scorer |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Model A (reference) | 6 | 0 (0 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | 0 / 1 | 0 |
+| Model B | 6 | 0 (0 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | 0 / 0 | 0 |
+| Model C | 6 | 1 (3.3 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | 0 / 1 | 0 |
+| Model D | 6 | 0 (0 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | 0 / 1 | 0 |
+| Model E | 6 | 0 (0 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | 1 / 1 | 6 |
+
+*Counted over each model's scored answers in all its runs; in a panel run a level is the mean of both panel members' levels. May mislead: an accuracy level below 4 or a critical error. Outcomes are recorded from scoring method 13. Low levels: answers at level 2 or below on each dimension. Output defects: an empty, truncated or scrubbed answer, reasoning bleed, repeated fragments, or an answer that did not complete normally. Tool-limit hits: the tool budget or the iteration limit was reached. An isolated miss is a question the model scored 50 or less where the other models' median is 75 or more; a shared miss is one it scored below 50 along with at least half the others. Lowest scorer: questions where no other model scored lower. The counts say what the graders recorded, not why.*
 
 ## 3. The benchmarking system
 
@@ -102,13 +114,21 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
 
 *At least one entry has a single run. With one run a side, a paired test captures question sampling only, not run-to-run variation, so it can look more certain than it is.*
 
-## 4. Leads
+## 4. Notable findings
+
+- Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question.
+- Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time.
+- Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time.
+
+*Detected by code from the figures, in this order, at most two of a kind and ten in all: a model established as scoring higher than another (by a paired test or by 95 % intervals that do not overlap) at no more than half its cost per question, or half its median answer time; one model at two thinking levels where the lower level's Intelligence Index is at least the higher's; the highest-Index or reference model scoring 50 or less where the other models' median is 75 or more; the lowest-Index model scoring at least 15 points above every other model on a question; every model scoring below 50 on a question; an advanced-band score at least 10 points above the simple-band score, each band with at least three questions; at least two critical errors, or three panel disagreements, at twice the other models' median rate or more; a pair whose order depends on which panel member grades; truncated answers and tool-limit hits on at least 10 % of a model's answers; tool calls per question or median answer length at most half or at least twice the other models' median; and a provider error rate of at least 2 % and five times the other models' median.*
+
+## 5. Leads
 
 *Provisional and un-triaged. A lead is not a finding: it must go through the triage, evidence bar and tool-layer diagnostics of `server_benchmark_to_chat_transfer` before anything is changed.*
 
-- **[chat]** Check how the chat routes the question most models scored low on. *(evidence: Questions any critical error: 1 of 6 questions · Q3)*
+- **[chat]** Check how the chat routes the question most models scored low on. *(evidence: Questions with a critical error: 1 of 6 questions · Q3)*
 
-## 5. Per-question matrix
+## 6. Per-question matrix
 
 | Q | Topic | Band | A | B | C | D | E | Spread |
 |---|---|---|---|---|---|---|---|---|
@@ -199,7 +219,7 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 50.
+- **Assessor (Gemini 3.8 Flash):** score 50. Misses the alignment condition.
 
 **Claim verifier:**
 
@@ -265,7 +285,7 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 60.
+- **Assessor (Gemini 3.8 Flash):** score 60. Leaves out how the timeout is reset.
 
 **Claim verifier:**
 
@@ -331,7 +351,7 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 28.
+- **Assessor (Gemini 3.8 Flash):** score 28. Says the thrown gem always breaks, which contradicts the rubric.
   - Critical error: "Answer 203"
 
 **Claim verifier:**
@@ -606,7 +626,7 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
 
 - No claims were checked.
 
-## 6. Fact sheet
+## 7. Fact sheet
 
 ```json
 {
@@ -926,6 +946,12 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
     },
     {
       "available": true,
+      "display": "Model A, the highest Intelligence Index",
+      "key": "comparison.reference",
+      "value": "A"
+    },
+    {
+      "available": true,
       "display": "sig-7f3a91",
       "key": "comparison.signature",
       "value": "sig-7f3a91"
@@ -1145,6 +1171,180 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
       "display": "not available",
       "key": "model.A.panel.referenceReaderOffset",
       "unavailableReason": "The model was not graded by an assessor panel in every run."
+    },
+    {
+      "available": true,
+      "display": "10 characters",
+      "key": "model.A.profile.answerChars.median",
+      "value": 10
+    },
+    {
+      "available": true,
+      "display": "6 answers",
+      "key": "model.A.profile.answers",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.deficit.accuracy",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.deficit.completeness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.deficit.conciseness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.deficit.readability",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.accuracy",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.completeness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.conciseness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.critical_error",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.other",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.readability",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "0 of 1 run",
+      "key": "model.A.profile.findings.runsWithSynthesis",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.tool_use",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.A.profile.isolatedMisses",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.A.profile.lowestScorer",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.mayMislead",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "about 0 in 20 answers",
+      "key": "model.A.profile.mayMisleadPer20",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "6 of 6 answers",
+      "key": "model.A.profile.noToolAnswers",
+      "value": 6
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.correct",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.incorrect",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.noAnswer",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.notAttempted",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.partial",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.wrongInsteadOfAbstaining",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.outputDefects",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "1 of 6 questions",
+      "key": "model.A.profile.sharedMisses",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.toolLimitHits",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.truncated",
+      "value": 0
     },
     {
       "available": true,
@@ -1564,6 +1764,180 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
     },
     {
       "available": true,
+      "display": "10 characters",
+      "key": "model.B.profile.answerChars.median",
+      "value": 10
+    },
+    {
+      "available": true,
+      "display": "6 answers",
+      "key": "model.B.profile.answers",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.deficit.accuracy",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.deficit.completeness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.deficit.conciseness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.deficit.readability",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.accuracy",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.completeness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.conciseness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.critical_error",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.other",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.readability",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "0 of 1 run",
+      "key": "model.B.profile.findings.runsWithSynthesis",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.tool_use",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.B.profile.isolatedMisses",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.B.profile.lowestScorer",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.mayMislead",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "about 0 in 20 answers",
+      "key": "model.B.profile.mayMisleadPer20",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "6 of 6 answers",
+      "key": "model.B.profile.noToolAnswers",
+      "value": 6
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.correct",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.incorrect",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.noAnswer",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.notAttempted",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.partial",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.wrongInsteadOfAbstaining",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.outputDefects",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.B.profile.sharedMisses",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.toolLimitHits",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.truncated",
+      "value": 0
+    },
+    {
+      "available": true,
       "display": "80 / 100",
       "key": "model.B.quality.index",
       "value": 80
@@ -1782,6 +2156,30 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
     },
     {
       "available": true,
+      "display": "1 of 6 questions",
+      "key": "model.B.vsReference.better",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "6 questions",
+      "key": "model.B.vsReference.shared",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "5 of 6 questions",
+      "key": "model.B.vsReference.similar",
+      "value": 5
+    },
+    {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.B.vsReference.worse",
+      "value": 0
+    },
+    {
+      "available": true,
       "display": "6",
       "key": "model.C.answers.scored",
       "value": 6
@@ -1977,6 +2375,180 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
       "display": "not available",
       "key": "model.C.panel.referenceReaderOffset",
       "unavailableReason": "The model was not graded by an assessor panel in every run."
+    },
+    {
+      "available": true,
+      "display": "10 characters",
+      "key": "model.C.profile.answerChars.median",
+      "value": 10
+    },
+    {
+      "available": true,
+      "display": "6 answers",
+      "key": "model.C.profile.answers",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.C.profile.deficit.accuracy",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.C.profile.deficit.completeness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.C.profile.deficit.conciseness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.C.profile.deficit.readability",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.findings.accuracy",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.findings.completeness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.findings.conciseness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.findings.critical_error",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.findings.other",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.findings.readability",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "0 of 1 run",
+      "key": "model.C.profile.findings.runsWithSynthesis",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.findings.tool_use",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.C.profile.isolatedMisses",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.C.profile.lowestScorer",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "1 of 6 answers",
+      "key": "model.C.profile.mayMislead",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "about 3.3 in 20 answers",
+      "key": "model.C.profile.mayMisleadPer20",
+      "value": 3.333333333333333
+    },
+    {
+      "available": true,
+      "display": "6 of 6 answers",
+      "key": "model.C.profile.noToolAnswers",
+      "value": 6
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.outcome.correct",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.outcome.incorrect",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.outcome.noAnswer",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.outcome.notAttempted",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.outcome.partial",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.C.profile.outcome.wrongInsteadOfAbstaining",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.C.profile.outputDefects",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "1 of 6 questions",
+      "key": "model.C.profile.sharedMisses",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.C.profile.toolLimitHits",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.C.profile.truncated",
+      "value": 0
     },
     {
       "available": true,
@@ -2198,6 +2770,30 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
     },
     {
       "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.C.vsReference.better",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "6 questions",
+      "key": "model.C.vsReference.shared",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "3 of 6 questions",
+      "key": "model.C.vsReference.similar",
+      "value": 3
+    },
+    {
+      "available": true,
+      "display": "3 of 6 questions",
+      "key": "model.C.vsReference.worse",
+      "value": 3
+    },
+    {
+      "available": true,
       "display": "6",
       "key": "model.D.answers.scored",
       "value": 6
@@ -2393,6 +2989,180 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
       "display": "not available",
       "key": "model.D.panel.referenceReaderOffset",
       "unavailableReason": "The model was not graded by an assessor panel in every run."
+    },
+    {
+      "available": true,
+      "display": "10 characters",
+      "key": "model.D.profile.answerChars.median",
+      "value": 10
+    },
+    {
+      "available": true,
+      "display": "6 answers",
+      "key": "model.D.profile.answers",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.D.profile.deficit.accuracy",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.D.profile.deficit.completeness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.D.profile.deficit.conciseness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.D.profile.deficit.readability",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.findings.accuracy",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.findings.completeness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.findings.conciseness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.findings.critical_error",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.findings.other",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.findings.readability",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "0 of 1 run",
+      "key": "model.D.profile.findings.runsWithSynthesis",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.findings.tool_use",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.D.profile.isolatedMisses",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.D.profile.lowestScorer",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.D.profile.mayMislead",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "about 0 in 20 answers",
+      "key": "model.D.profile.mayMisleadPer20",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "6 of 6 answers",
+      "key": "model.D.profile.noToolAnswers",
+      "value": 6
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.outcome.correct",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.outcome.incorrect",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.outcome.noAnswer",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.outcome.notAttempted",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.outcome.partial",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.D.profile.outcome.wrongInsteadOfAbstaining",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.D.profile.outputDefects",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "1 of 6 questions",
+      "key": "model.D.profile.sharedMisses",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.D.profile.toolLimitHits",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.D.profile.truncated",
+      "value": 0
     },
     {
       "available": true,
@@ -2614,6 +3384,30 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
     },
     {
       "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.D.vsReference.better",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "6 questions",
+      "key": "model.D.vsReference.shared",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "1 of 6 questions",
+      "key": "model.D.vsReference.similar",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "5 of 6 questions",
+      "key": "model.D.vsReference.worse",
+      "value": 5
+    },
+    {
+      "available": true,
       "display": "6",
       "key": "model.E.answers.scored",
       "value": 6
@@ -2809,6 +3603,180 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
       "display": "not available",
       "key": "model.E.panel.referenceReaderOffset",
       "unavailableReason": "The model was not graded by an assessor panel in every run."
+    },
+    {
+      "available": true,
+      "display": "10 characters",
+      "key": "model.E.profile.answerChars.median",
+      "value": 10
+    },
+    {
+      "available": true,
+      "display": "6 answers",
+      "key": "model.E.profile.answers",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.E.profile.deficit.accuracy",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.E.profile.deficit.completeness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.E.profile.deficit.conciseness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.E.profile.deficit.readability",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.findings.accuracy",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.findings.completeness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.findings.conciseness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.findings.critical_error",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.findings.other",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.findings.readability",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "0 of 1 run",
+      "key": "model.E.profile.findings.runsWithSynthesis",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.findings.tool_use",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "1 of 6 questions",
+      "key": "model.E.profile.isolatedMisses",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "6 of 6 questions",
+      "key": "model.E.profile.lowestScorer",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.E.profile.mayMislead",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "about 0 in 20 answers",
+      "key": "model.E.profile.mayMisleadPer20",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "6 of 6 answers",
+      "key": "model.E.profile.noToolAnswers",
+      "value": 6
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.outcome.correct",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.outcome.incorrect",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.outcome.noAnswer",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.outcome.notAttempted",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.outcome.partial",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.E.profile.outcome.wrongInsteadOfAbstaining",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.E.profile.outputDefects",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "1 of 6 questions",
+      "key": "model.E.profile.sharedMisses",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.E.profile.toolLimitHits",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.E.profile.truncated",
+      "value": 0
     },
     {
       "available": true,
@@ -3027,6 +3995,108 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
       "display": "not available",
       "key": "model.E.tools.zeroKnowledgeBaseAnswers",
       "unavailableReason": "No question of this suite is a knowledge-base topic; the prompt routes game mechanics past the knowledge base."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.E.vsReference.better",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "6 questions",
+      "key": "model.E.vsReference.shared",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "1 of 6 questions",
+      "key": "model.E.vsReference.similar",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "5 of 6 questions",
+      "key": "model.E.vsReference.worse",
+      "value": 5
+    },
+    {
+      "available": true,
+      "display": "cheaper and better",
+      "key": "notable.1.kind",
+      "value": "cheaperAndBetter"
+    },
+    {
+      "available": true,
+      "display": "Models B and D",
+      "key": "notable.1.models",
+      "value": 2
+    },
+    {
+      "available": true,
+      "display": "none",
+      "key": "notable.1.questions",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question.",
+      "key": "notable.1.summary",
+      "value": "Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question."
+    },
+    {
+      "available": true,
+      "display": "faster and better",
+      "key": "notable.2.kind",
+      "value": "fasterAndBetter"
+    },
+    {
+      "available": true,
+      "display": "Models D and E",
+      "key": "notable.2.models",
+      "value": 2
+    },
+    {
+      "available": true,
+      "display": "none",
+      "key": "notable.2.questions",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time.",
+      "key": "notable.2.summary",
+      "value": "Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time."
+    },
+    {
+      "available": true,
+      "display": "faster and better",
+      "key": "notable.3.kind",
+      "value": "fasterAndBetter"
+    },
+    {
+      "available": true,
+      "display": "Models B and E",
+      "key": "notable.3.models",
+      "value": 2
+    },
+    {
+      "available": true,
+      "display": "none",
+      "key": "notable.3.questions",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time.",
+      "key": "notable.3.summary",
+      "value": "Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time."
+    },
+    {
+      "available": true,
+      "display": "3 notable findings",
+      "key": "notable.count",
+      "value": 3
     },
     {
       "available": false,
@@ -3746,6 +4816,59 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
   ],
   "noSignificanceInstead": "",
   "noSignificanceSummary": "",
+  "notableFindings": [
+    {
+      "facts": [
+        "pair.B.D.intervalOverlap",
+        "model.B.quality.index",
+        "model.D.quality.index",
+        "model.B.cost.perQuestion",
+        "model.D.cost.perQuestion"
+      ],
+      "kind": "cheaperAndBetter",
+      "models": [
+        "B",
+        "D"
+      ],
+      "number": 1,
+      "questions": [],
+      "summary": "Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question."
+    },
+    {
+      "facts": [
+        "pair.D.E.intervalOverlap",
+        "model.D.quality.index",
+        "model.E.quality.index",
+        "model.D.speed.modelTimeP50",
+        "model.E.speed.modelTimeP50"
+      ],
+      "kind": "fasterAndBetter",
+      "models": [
+        "D",
+        "E"
+      ],
+      "number": 2,
+      "questions": [],
+      "summary": "Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time."
+    },
+    {
+      "facts": [
+        "pair.B.E.intervalOverlap",
+        "model.B.quality.index",
+        "model.E.quality.index",
+        "model.B.speed.modelTimeP50",
+        "model.E.speed.modelTimeP50"
+      ],
+      "kind": "fasterAndBetter",
+      "models": [
+        "B",
+        "E"
+      ],
+      "number": 3,
+      "questions": [],
+      "summary": "Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time."
+    }
+  ],
   "pairedDifferences": [],
   "pairedTests": [
     {
@@ -4831,6 +5954,8 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
       "toolCalls": 0
     }
   ],
+  "referenceIsBaselineModel": false,
+  "referenceLetter": "A",
   "rows": [],
   "scope": "Comparison",
   "subjectDisplayName": "",
@@ -4855,6 +5980,6 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
 
 ---
 
-*Document ID 212 · format version 13 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models anonymized*
+*Document ID 212 · format version 14 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

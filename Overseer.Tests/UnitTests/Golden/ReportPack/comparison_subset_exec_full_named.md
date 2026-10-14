@@ -27,20 +27,37 @@ For the best answers, choose Orion Max or Zeta Prime; their intervals overlap, s
 
 | Model | Provider | Intelligence Index | Rank | Median answer time | Cost per question | Critical errors |
 |---|---|---|---|---|---|---|
-| Orion Max | Northwind | 85 (82–88) | 1 | 12.0 s | $0.050 | 0 of 6 answers |
+| Orion Max (reference) | Northwind | 85 (82–88) | 1 | 12.0 s | $0.050 | 0 of 6 answers |
 | Zeta Prime | Midland | 55 (50–60) | 2 | 20.0 s | $0.010 | 0 of 6 answers |
 
 *Each model's Intelligence Index is followed by its 95 % interval; a joint rank means its interval overlaps a neighbor's, so the order between them is not established by the intervals.*
 
 | Model | Provider | Accuracy | Completeness | Conciseness | Readability |
 |---|---|---|---|---|---|
-| Orion Max | Northwind | 80 | 80 | 80 | 80 |
+| Orion Max (reference) | Northwind | 80 | 80 | 80 | 80 |
 | Zeta Prime | Midland | 50 | 50 | 50 | 50 |
 
 - **Accuracy:** from 50 (Zeta Prime) to 80 (Orion Max), 30 points apart
 - **Completeness:** from 50 (Zeta Prime) to 80 (Orion Max), 30 points apart
 - **Conciseness:** from 50 (Zeta Prime) to 80 (Orion Max), 30 points apart
 - **Readability:** from 50 (Zeta Prime) to 80 (Orion Max), 30 points apart
+
+## Compared with the reference model
+
+**Reference:** Orion Max, the highest Intelligence Index.
+
+| Model | Provider | Paired difference (95 % interval) | Better / similar / worse | May mislead per 20 | Time ratio | Cost ratio |
+|---|---|---|---|---|---|---|
+| Orion Max (reference) | Northwind | — | — | 0 | 1.00× | 1.00× |
+| Zeta Prime | Midland | -30.0 (-43.9 to -16.1) | 0 / 1 / 5 | 0 | 1.67× | 0.20× |
+
+*Paired difference: the mean per-question difference, the model minus the reference, on the questions both answered, with its 95 % interval. Better, similar and worse count the questions both scored on the same item revision on which the model scored more than 15 points above the reference, within 15 points of it, or more than 15 points below it; they are not tests. May mislead per 20: answers with an accuracy level below 4 or a critical error, per 20 answers. Time and cost ratios: the model's median answer time and cost per question divided by the reference's.*
+
+The table sets every other model against Orion Max; only the paired tests and the intervals decide where an order is established.
+
+## Also worth knowing
+
+- Every model scored below 50 on Q3: a likely chat, corpus or question problem rather than one model's.
 
 ## Model by model
 
@@ -88,6 +105,6 @@ What it does not measure: conversations longer than one question, the wiki text 
 
 ---
 
-*Document ID 212 · format version 13 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
+*Document ID 212 · format version 14 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

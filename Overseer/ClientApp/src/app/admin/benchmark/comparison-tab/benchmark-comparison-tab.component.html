@@ -5,11 +5,13 @@
   dialog and this panel stays short.
 
   It deliberately duplicates none of the wizard's controls: the selection has one owner, and
-  a second Clear or a second suite scope here would let the two disagree. The Last comparison
-  card below the hero is the comparison last computed in this browser: a read-out with one
-  action, Open in wizard, which hands its selection to the wizard. The Comparison reports
-  library below it is a list of documents already written, not a comparison control: it
-  selects nothing and changes nothing the wizard owns.
+  a second Clear or a second suite scope here would let the two disagree. The Baseline model
+  card below the hero is the GnollBench baseline model, stored on the server for every
+  administrator; it is not part of any selection. The Last comparison card below it is the
+  comparison last computed in this browser: a read-out with one action, Open in wizard, which
+  hands its selection to the wizard. The Comparison reports library below it is a list of
+  documents already written, not a comparison control: it selects nothing and changes nothing
+  the wizard owns.
 -->
 <div class="mc-launcher bm-launcher">
   <div class="mc-launcher-hero bm-launcher-hero">
@@ -71,6 +73,10 @@
       </div>
     </details>
   </div>
+
+  <!-- The model the comparison and its documents judge the others against, for every administrator. -->
+  <app-baseline-model-card [pickerOptions]="workspace.benchmarkPickerOptions"
+                           [emptyHint]="workspace.benchmarkPickerEmptyHint"></app-baseline-model-card>
 
   <!-- Only what the last comparison produced. Nothing about a pending selection is reported
        here: this panel holds no control that could change one, and a labelled read-out beside

@@ -1,0 +1,97 @@
+<!--
+  The GnollBench baseline model, stored on the server: its name and settings, when it was set, and
+  the two ways to change it. Change shows the shared model picker over the enabled configurations
+  with the Benchmark role; a choice is saved at once.
+-->
+<section class="bm-summary-card mc-baseline-card" aria-labelledby="mc-baseline-title" [attr.aria-busy]="loading || saving ? 'true' : null">
+  <div class="bm-summary-card-header">
+    <div>
+      <p class="bm-summary-card-eyebrow">Baseline model</p>
+      @if (baseline; as model) {
+        <h4 id="mc-baseline-title" class="bm-summary-card-title">{{ model.displayName }}</h4>
+        <p class="bm-summary-card-meta">
+          Set on {{ setAt | date:'d MMM y, HH:mm' }} · the same for every administrator
+        </p>
+      } @else {
+        <h4 id="mc-baseline-title" class="bm-summary-card-title mc-baseline-none">
+          {{ loading ? 'Loading the baseline model…' : 'No baseline model' }}
+        </h4>
+        @if (!loading && !loadError) {
+          <p class="bm-summary-card-meta">
+            Choose the model the Overseer team prefers; the comparison and its documents judge the other models against it.
+          </p>
+        }
+      }
+    </div>
+    <div class="bm-summary-card-actions">
+      <button type="button" class="btn-ghost mc-baseline-change-btn"
+              [attr.aria-expanded]="changing" aria-controls="mc-baseline-change"
+              [attr.aria-disabled]="saving ? 'true' : null" (click)="startChange()">Change</button>
+      @if (baseline) {
+        <button type="button" class="btn-ghost mc-baseline-clear-btn"
+                [attr.aria-disabled]="saving ? 'true' : null" (click)="clear()">Clear</button>
+      }
+    </div>
+  </div>
+
+  @if (baseline; as model) {
+    <dl class="bm-summary-facts mc-baseline-facts">
+      <div>
+        <dt>Provider</dt>
+        <dd><app-provider-badge [provider]="model.provider"></app-provider-badge></dd>
+      </div>
+      <div>
+        <dt>Model id</dt>
+        <dd class="mc-baseline-model-id">{{ model.modelId }}</dd>
+      </div>
+      <div>
+        <dt>Thinking level</dt>
+        <dd>{{ model.thinkingLevel || 'None' }}</dd>
+      </div>
+    </dl>
+    @if (otherSettings.length > 0) {
+      <details class="gh-disclosure mc-baseline-more">
+        <summary>Other settings</summary>
+        <div class="gh-disclosure-body">
+          <dl class="bm-summary-facts">
+            @for (setting of otherSettings; track setting.term) {
+              <div>
+                <dt>{{ setting.term }}</dt>
+                <dd>{{ setting.value }}</dd>
+              </div>
+            }
+          </dl>
+        </div>
+      </details>
+    }
+  }
+
+  <div id="mc-baseline-change" class="mc-baseline-change" [hidden]="!changing">
+    @if (changing) {
+      <label id="mc-baseline-picker-label">New baseline model</label>
+      <app-model-picker class="baseline-model-selector" labelledBy="mc-baseline-picker-label"
+                        describedBy="mc-baseline-picker-hint" placeholder="Choose a model"
+                        [emptyHint]="emptyHint" [disabled]="saving"
+                        [options]="pickerOptions" [selectedKey]="selectedKey"
+                        (selectionChange)="choose($event.key)"></app-model-picker>
+      <p id="mc-baseline-picker-hint" class="form-hint">
+        Enabled configurations with the Benchmark role. The configuration's settings as they are now are stored;
+        a later change to it does not move the baseline model.
+      </p>
+    }
+  </div>
+
+  @if (loadError) {
+    <p class="gh-field-error mc-baseline-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ loadError }}</span>
+    </p>
+  }
+  @if (saveError) {
+    <p class="gh-field-error mc-baseline-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ saveError }}</span>
+    </p>
+  }
+  <p class="visually-hidden mc-baseline-status" aria-live="polite">{{ status }}</p>
+</section>

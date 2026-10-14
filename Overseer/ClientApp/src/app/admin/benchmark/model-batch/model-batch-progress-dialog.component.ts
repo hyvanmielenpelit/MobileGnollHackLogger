@@ -26,6 +26,7 @@ import {
 import { SystemAiConfigDto } from '../../../services/admin.service';
 import { IndexBadgeComponent } from '../../../shared/index-badge/index-badge.component';
 import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-badge.component';
+import { copyToClipboard } from '../../../utils/clipboard.util';
 import { elapsedMsBetween, parseServerUtcDate } from '../../../utils/date.util';
 import { downloadTextFile } from '../../../utils/download.util';
 import { startElapsedTicker } from '../../../utils/elapsed-ticker';
@@ -41,6 +42,8 @@ import { BenchmarkWorkspaceStore } from '../state/benchmark-workspace.store';
 import {
   MODEL_BATCH_COMPARE_REASON,
   MODEL_BATCH_CORPUS_QUIET_TEXT,
+  MODEL_BATCH_DOCUMENTS_GUIDE,
+  MODEL_BATCH_DOCUMENTS_GUIDE_TITLE,
   MODEL_BATCH_RESUME_ORDER,
   ModelBatchMemberFigure,
   canCompareModelBatch,
@@ -48,6 +51,7 @@ import {
   isModelBatchMemberRepairing,
   modelBatchCurrentMember,
   modelBatchDiagnosticsFileName,
+  modelBatchDocumentsGuideText,
   modelBatchFinishedMemberCount,
   modelBatchIndexWithheldText,
   modelBatchLaunchedRunCount,
@@ -179,7 +183,7 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
   @Output() openRunReport = new EventEmitter<number>();
   /** A battery run whose Battery Run Report the host opens over this dialog. */
   @Output() openBatteryRunReport = new EventEmitter<number>();
-  /** The members' results, for the comparison wizard; this dialog has closed. */
+  /** The members' results and the baseline model's, for the comparison wizard; this dialog has closed. */
   @Output() openComparison = new EventEmitter<ComparisonWizardPreset>();
   /** The batch id after a successful Cancel Batch. */
   @Output() batchCanceled = new EventEmitter<number>();
@@ -208,7 +212,14 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
   private diagnosticsSubscription: Subscription | null = null;
   private copiedTimer: ReturnType<typeof setTimeout> | null = null;
 
+  /** The outcome of Copy steps, in the guide's live line. */
+  guideCopyStatus = '';
+  copiedGuide = false;
+  private guideCopiedTimer: ReturnType<typeof setTimeout> | null = null;
+
   readonly corpusQuietText = MODEL_BATCH_CORPUS_QUIET_TEXT;
+  readonly documentsGuide = MODEL_BATCH_DOCUMENTS_GUIDE;
+  readonly documentsGuideTitle = MODEL_BATCH_DOCUMENTS_GUIDE_TITLE;
   readonly statusLabel = modelBatchStatusLabel;
 
   private isOpen = false;
@@ -253,6 +264,7 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
       clearTimeout(this.copiedTimer);
       this.copiedTimer = null;
     }
+    this.clearGuideCopied();
   }
 
   // --- Dialog lifecycle ------------------------------------------------------------------------
@@ -271,6 +283,8 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
     this.diagnosticsError = null;
     this.diagnosticsCopyStatus = '';
     this.diagnosticsStateKey = null;
+    this.clearGuideCopied();
+    this.guideCopyStatus = '';
   }
 
   private openDialog(): void {
@@ -628,6 +642,11 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
 
   get canCompare(): boolean {
     return canCompareModelBatch(this.batch);
+  }
+
+  /** The guide to the comparison documents: once the *Ready to compare* stage is done. */
+  get showDocumentsGuide(): boolean {
+    return this.railItems.some(item => item.key === 'compare' && item.state === 'done');
   }
 
   /** *3 of 10 finished*, for the models section's count pill. */
@@ -994,6 +1013,37 @@ export class ModelBatchProgressDialogComponent implements OnInit, OnChanges, OnD
       this.diagnosticsCopyStatus = 'Could not copy the batch diagnostics to the clipboard.';
     }
     this.cdr.markForCheck();
+  }
+
+  // --- The comparison documents guide ---------------------------------------------------------
+
+  /** Copy steps: the guide as plain text. */
+  async copyGuide(): Promise<void> {
+    if (await copyToClipboard(modelBatchDocumentsGuideText())) {
+      this.copiedGuide = true;
+      this.guideCopyStatus = 'Copied the steps.';
+      if (this.guideCopiedTimer !== null) {
+        clearTimeout(this.guideCopiedTimer);
+      }
+      this.guideCopiedTimer = setTimeout(() => {
+        this.guideCopiedTimer = null;
+        this.copiedGuide = false;
+        this.guideCopyStatus = '';
+        this.cdr.markForCheck();
+      }, ModelBatchProgressDialogComponent.COPIED_RESET_MS);
+    } else {
+      this.copiedGuide = false;
+      this.guideCopyStatus = 'Could not copy the steps to the clipboard.';
+    }
+    this.cdr.markForCheck();
+  }
+
+  private clearGuideCopied(): void {
+    if (this.guideCopiedTimer !== null) {
+      clearTimeout(this.guideCopiedTimer);
+      this.guideCopiedTimer = null;
+    }
+    this.copiedGuide = false;
   }
 
   downloadDiagnostics(): void {

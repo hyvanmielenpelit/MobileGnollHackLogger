@@ -154,6 +154,10 @@ public static class BenchmarkReportPackValidator
     public const int GraderReliabilityMaxWords = 120;
     public const int SharedGapsMaxWords = 250;
     public const int ModelGapsMaxWords = 200;
+    public const int ExecutiveAgainstReferenceMaxWords = 100;
+    public const int TechnicalAgainstReferenceMaxWords = 150;
+    public const int NotableFindingsMaxWords = 200;
+    public const int WhyModelsDifferMaxWords = 250;
 
     /// <summary>Each point of a comparison-scope Executive Summary's <c>models</c> list.</summary>
     public const int ExecutiveModelPointMaxWords = 30;
@@ -551,6 +555,11 @@ public static class BenchmarkReportPackValidator
             BenchmarkReportSlots.SharedGaps => SharedGapsMaxWords,
             BenchmarkReportSlots.ModelGaps => ModelGapsMaxWords,
             BenchmarkReportSlots.BenchmarkSystem => BenchmarkSystemMaxWords,
+            BenchmarkReportSlots.AgainstReference => audience == BenchmarkReportAudience.ExecutiveSummary
+                ? ExecutiveAgainstReferenceMaxWords
+                : TechnicalAgainstReferenceMaxWords,
+            BenchmarkReportSlots.NotableFindings => NotableFindingsMaxWords,
+            BenchmarkReportSlots.WhyModelsDiffer => WhyModelsDifferMaxWords,
             _ => (int?)null
         }
         : slot switch
@@ -2042,6 +2051,9 @@ public static class BenchmarkReportPackValidator
         BenchmarkReportSlots.GraderReliability => "\"Grader reliability\"",
         BenchmarkReportSlots.SharedGaps => "\"Shared gaps\"",
         BenchmarkReportSlots.ModelGaps => "\"Model-specific gaps\"",
+        BenchmarkReportSlots.AgainstReference => "\"Compared with the reference model\"",
+        BenchmarkReportSlots.NotableFindings => "\"Notable findings\"",
+        BenchmarkReportSlots.WhyModelsDiffer => "\"Why the models differ\"",
         _ when BenchmarkReportSlots.ChatConsistencySlotTitles.TryGetValue(slot, out string? title) => $"\"{title}\"",
         _ => $"The \"{slot}\" slot"
     };
@@ -2130,7 +2142,9 @@ public static class BenchmarkReportPackValidator
                 : new HashSet<string>(StringComparer.Ordinal);
             _factDisplays = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var fact in sheet.Facts) _factDisplays.TryAdd(fact.Key, fact.Display ?? string.Empty);
-            RequiredSlots = Comparison ? Spec.RequiredSlots : Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
+            RequiredSlots = Comparison
+                ? Spec.ComparisonSlotsFor(hasNotableFindings: BenchmarkNotableFindings.CountOf(sheet) > 0)
+                : Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
             FactKeys = new HashSet<string>(sheet.Facts.Select(f => f.Key), StringComparer.Ordinal);
             _trueFacts = new HashSet<string>(
                 sheet.Facts.Where(BenchmarkReportPackPrompt.IsTrue).Select(f => f.Key), StringComparer.Ordinal);
@@ -2229,6 +2243,10 @@ public static class BenchmarkReportPackValidator
                         AddShingles(ruling.Rationale, $"a verifier rationale on {qn}");
                     }
                 }
+            }
+            foreach (var note in content.ModelNotes ?? new List<BenchmarkReportModelNote>())
+            {
+                AddShingles(note.Comment, $"a grader comment on {Reference(note.Question)}");
             }
         }
 

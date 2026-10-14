@@ -118,7 +118,7 @@ public class BenchmarkReportRenderService
                 d.SameProviderAcknowledged, d.Status, d.ReportFormatVersion, d.CreatedAtUtc,
                 d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd,
                 d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson,
-                d.Scope, d.ComparisonId, d.CoveredEntryKeysJson, d.CoveredSetKey, d.ChatConsistencyAnalysisId,
+                d.Scope, d.ComparisonId, d.CoveredEntryKeysJson, d.CoveredSetKey, d.ReferenceEntryKey, d.ChatConsistencyAnalysisId,
                 Runs = d.Runs.Select(r => new { r.RunId, r.IsPeer, r.FinalScore, r.QualityIndex, r.SpeedIndex, r.ScoringMethodVersion, r.RerunCompletedAtUtc, r.SynthesisSha256 }).ToList()
             })
             .ToListAsync(ct);
@@ -143,7 +143,7 @@ public class BenchmarkReportRenderService
             item.MissingRunIds = missing;
             item.ChatConsistencyAnalysisId = d.ChatConsistencyAnalysisId;
             FillComparison(item, d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson);
-            FillScope(item, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.FactsJson);
+            FillScope(item, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.ReferenceEntryKey, d.FactsJson);
             FillCharts(item);
             return item;
         }).ToList();
@@ -172,13 +172,14 @@ public class BenchmarkReportRenderService
     /// </summary>
     private static void FillScope(
         BenchmarkReportDocumentListItemDto item, BenchmarkReportScope scope, int? comparisonId, string? comparisonName,
-        string? coveredEntryKeysJson, string? coveredSetKey, string? factsJson)
+        string? coveredEntryKeysJson, string? coveredSetKey, string? referenceEntryKey, string? factsJson)
     {
         var facts = ReadFacts(factsJson);
         item.Scope = scope;
         item.ComparisonId = comparisonId;
         item.ComparisonName = comparisonId == null ? null : comparisonName;
         item.CoveredSetKey = coveredSetKey;
+        item.ReferenceEntryKey = scope == BenchmarkReportScope.Comparison ? referenceEntryKey : null;
         item.CoversAllEntries = scope == BenchmarkReportScope.Comparison && facts.CoversAllEntries;
         item.ComparisonModelCount = scope == BenchmarkReportScope.Comparison ? facts.ComparisonEntryCount : null;
         item.CoveredModels = CoveredModels(scope, item.SubjectKey, item.SubjectLabel, coveredEntryKeysJson, facts);
@@ -469,7 +470,7 @@ public class BenchmarkReportRenderService
             d.InputTokens, d.OutputTokens, d.DurationMs, d.CostUsd);
         FillComparison(dto, d.ComparisonKey, d.ComparisonRequestJson, d.FactsJson);
         var comparisonNames = await ComparisonNamesAsync(new[] { d.ComparisonId }, ct);
-        FillScope(dto, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.FactsJson);
+        FillScope(dto, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.ReferenceEntryKey, d.FactsJson);
         FillCharts(dto);
         return dto;
     }

@@ -89,6 +89,12 @@ public sealed record BenchmarkReportAudienceSpec(
     public IReadOnlyList<string> PeerOnlySlots { get; init; } = Array.Empty<string>();
 
     /// <summary>
+    /// Slots of <see cref="RequiredSlots"/> that a comparison-scope document requires only when its sheet
+    /// holds at least one notable finding (<c>notable.count</c> above zero).
+    /// </summary>
+    public IReadOnlyList<string> NotableOnlySlots { get; init; } = Array.Empty<string>();
+
+    /// <summary>
     /// A comparison-scope document: every covered model is described as an equal, by its letter, and
     /// there is no subject.
     /// </summary>
@@ -112,6 +118,10 @@ public sealed record BenchmarkReportAudienceSpec(
     /// <summary>The slots a document requires: every slot with peers, the slots outside <see cref="PeerOnlySlots"/> without.</summary>
     public IReadOnlyList<string> SlotsFor(bool hasPeers)
         => hasPeers ? RequiredSlots : RequiredSlots.Where(s => !PeerOnlySlots.Contains(s, StringComparer.Ordinal)).ToList();
+
+    /// <summary>A comparison-scope document's slots: every slot with notable findings, the slots outside <see cref="NotableOnlySlots"/> without.</summary>
+    public IReadOnlyList<string> ComparisonSlotsFor(bool hasNotableFindings)
+        => hasNotableFindings ? RequiredSlots : RequiredSlots.Where(s => !NotableOnlySlots.Contains(s, StringComparer.Ordinal)).ToList();
 }
 
 public static class BenchmarkReportSlots
@@ -137,11 +147,14 @@ public static class BenchmarkReportSlots
     public const string WhichModel = "whichModel";           // Which model to use
     public const string TradeOffs = "tradeOffs";             // Trade-offs
     public const string Reliability = "reliability";         // How reliable this is
+    public const string AgainstReference = "againstReference"; // Compared with the baseline or reference model (also in the researcher report)
 
     // Comparison scope: Report for AI Researchers and Developers (abstract and limitations as above)
     public const string Results = "results";                     // after the results table and paired tests
+    public const string NotableFindings = "notableFindings";     // Notable findings, only when code detected one
     public const string DimensionProfiles = "dimensionProfiles";
     public const string Frontier = "frontier";                   // Speed and cost frontier
+    public const string WhyModelsDiffer = "whyModelsDiffer";     // Why the models differ
     public const string QuestionPatterns = "questionPatterns";   // Cross-model question patterns
     public const string GraderReliability = "graderReliability";
 
@@ -227,7 +240,7 @@ public static class BenchmarkReportSlots
 
     public static readonly BenchmarkReportAudienceSpec ComparisonExecutiveSummary = new(
         BenchmarkReportAudience.ExecutiveSummary,
-        new[] { Overview, WhichModel, TradeOffs, Reliability },
+        new[] { Overview, WhichModel, AgainstReference, TradeOffs, Reliability },
         MaxStrengths: 0,
         MaxWeaknesses: 0,
         UsesRecommendations: false,
@@ -243,7 +256,7 @@ public static class BenchmarkReportSlots
 
     public static readonly BenchmarkReportAudienceSpec ComparisonTechnicalReport = new(
         BenchmarkReportAudience.TechnicalReport,
-        new[] { Abstract, Results, DimensionProfiles, Frontier, QuestionPatterns, GraderReliability, Limitations },
+        new[] { Abstract, Results, AgainstReference, NotableFindings, DimensionProfiles, Frontier, WhyModelsDiffer, QuestionPatterns, GraderReliability, Limitations },
         MaxStrengths: 0,
         MaxWeaknesses: 0,
         UsesRecommendations: false,
@@ -254,7 +267,8 @@ public static class BenchmarkReportSlots
     {
         ComparisonScope = true,
         UsesStrengthsAndWeaknesses = false,
-        MaxModelPoints = 4
+        MaxModelPoints = 4,
+        NotableOnlySlots = new[] { NotableFindings }
     };
 
     public static readonly BenchmarkReportAudienceSpec ComparisonInternalBrief = new(
@@ -722,12 +736,61 @@ public sealed class BenchmarkReportFactSheet
 
     /// <summary>
     /// A comparison-scope sheet's paired-test families over its covered models: against the reference
-    /// (the model lettered A), and over all pairs when there are few enough models; null on a per-model sheet.
+    /// (<see cref="ReferenceLetter"/>, by default the model lettered A), and over all pairs when there are
+    /// few enough models; null on a per-model sheet.
     /// </summary>
     public List<BenchmarkReportPairedFamily>? PairedTests { get; set; }
 
     /// <summary>Why a comparison-scope sheet has no paired tests; null when it has them, and on a per-model sheet.</summary>
     public string? PairedTestsUnavailableReason { get; set; }
+
+    /// <summary>
+    /// The letter of a comparison-scope sheet's reference model, the one every other model is compared
+    /// with; null on a per-model sheet and on a document stored before format version 14, whose
+    /// reference is the model lettered A.
+    /// </summary>
+    public string? ReferenceLetter { get; set; }
+
+    /// <summary>
+    /// The reference model is the Overseer team's baseline model; null on a per-model sheet and on a
+    /// document stored before format version 14.
+    /// </summary>
+    public bool? ReferenceIsBaselineModel { get; set; }
+
+    /// <summary>
+    /// The baseline model's letter when it is one of a comparison-scope sheet's covered models, whether
+    /// or not it is the reference; null otherwise, on a per-model sheet and before format version 14.
+    /// </summary>
+    public string? BaselineModelLetter { get; set; }
+
+    /// <summary>
+    /// The notable findings code detected on a comparison-scope sheet, in priority order, numbered as the
+    /// <c>notable.&lt;n&gt;.*</c> facts; empty when none was detected, null on a per-model sheet and on a
+    /// document stored before format version 14.
+    /// </summary>
+    public List<BenchmarkReportNotableFinding>? NotableFindings { get; set; }
+}
+
+/// <summary>One notable finding of a comparison-scope sheet: what code detected, and the facts it rests on.</summary>
+public sealed class BenchmarkReportNotableFinding
+{
+    /// <summary>1-based, the <c>n</c> of its <c>notable.&lt;n&gt;.*</c> facts.</summary>
+    public int Number { get; set; }
+
+    /// <summary>One of <see cref="Overseer.Services.Benchmarking.BenchmarkNotableFindings"/>'s kinds, e.g. <c>cheaperAndBetter</c>.</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>The letters of the models it is about, in letter order.</summary>
+    public List<string> Models { get; set; } = new();
+
+    /// <summary>The question numbers it is about, as the matrix numbers them.</summary>
+    public List<int> Questions { get; set; } = new();
+
+    /// <summary>The fact keys it rests on.</summary>
+    public List<string> Facts { get; set; } = new();
+
+    /// <summary>The sentence code wrote, naming each model as <c>Model X</c>; the <c>notable.&lt;n&gt;.summary</c> fact's display.</summary>
+    public string Summary { get; set; } = string.Empty;
 }
 
 /// <summary>
@@ -772,7 +835,7 @@ public sealed class BenchmarkReportComparisonModel
 /// <summary>One family of paired tests over a comparison-scope sheet's covered models.</summary>
 public sealed class BenchmarkReportPairedFamily
 {
-    /// <summary><c>Reference</c> (the model lettered A against each other model) or <c>AllPairs</c>.</summary>
+    /// <summary><c>Reference</c> (the reference model against each other model) or <c>AllPairs</c>.</summary>
     public string Mode { get; set; } = string.Empty;
 
     /// <summary>The reference model's letter in <c>Reference</c> mode.</summary>
@@ -984,6 +1047,33 @@ public sealed class BenchmarkReportContentSnapshot
     /// number; null on a per-model document, whose runs carry them.
     /// </summary>
     public List<BenchmarkReportContentQuestion>? Questions { get; set; }
+
+    /// <summary>
+    /// A comparison-scope document's weakest answers by model: each model's lowest-scoring questions,
+    /// each grader's comment from the model's lowest-scoring run on it. In letter order, each model's
+    /// questions lowest score first, then grader role order; null on a per-model document and before
+    /// comparison format version 14.
+    /// </summary>
+    public List<BenchmarkReportModelNote>? ModelNotes { get; set; }
+}
+
+/// <summary>One grader's comment on one of a covered model's weakest answers.</summary>
+public sealed class BenchmarkReportModelNote
+{
+    /// <summary>The model's letter.</summary>
+    public string Letter { get; set; } = string.Empty;
+
+    /// <summary>The question number, as the matrix numbers it.</summary>
+    public int Question { get; set; }
+
+    /// <summary>The grader's role: <c>Panel member A</c>, <c>Panel member B</c> or <c>Assessor</c>.</summary>
+    public string Role { get; set; } = string.Empty;
+
+    /// <summary>This grader flagged a critical error on the answer.</summary>
+    public bool CriticalError { get; set; }
+
+    /// <summary>The grader's comment, cut at a word boundary to at most 300 characters.</summary>
+    public string Comment { get; set; } = string.Empty;
 }
 
 public sealed class BenchmarkReportContentRun
@@ -1213,6 +1303,13 @@ public class BenchmarkReportPackRequest
     /// </summary>
     public List<string>? CoveredEntryKeys { get; set; }
 
+    /// <summary>
+    /// Comparison scope: the entry key of the reference model, the one every other model is compared
+    /// with; null means the covered model with the highest Intelligence Index. It must be a covered
+    /// entry that is not Excluded.
+    /// </summary>
+    public string? ReferenceEntryKey { get; set; }
+
     public List<BenchmarkReportAudience> Audiences { get; set; } = new();
 
     public long WriterModelConfigurationId { get; set; }
@@ -1386,6 +1483,12 @@ public class BenchmarkReportPackWrittenDocumentDto
     public string? WriterThinkingLevel { get; set; }
     public long DurationMs { get; set; }
     public decimal? CostUsd { get; set; }
+
+    /// <summary>
+    /// A comparison-scope document's reference model, by entry key (<see cref="BenchmarkReportDocument.ReferenceEntryKey"/>);
+    /// null for model scope and for a document stored before the reference was kept.
+    /// </summary>
+    public string? ReferenceEntryKey { get; set; }
 }
 
 /// <summary>The comparison-scope documents of one covered set of a comparison.</summary>
@@ -1582,6 +1685,12 @@ public class BenchmarkReportDocumentListItemDto
 
     /// <summary>The covered entry set's key (<see cref="BenchmarkReportDocument.CoveredSetKey"/>).</summary>
     public string? CoveredSetKey { get; set; }
+
+    /// <summary>
+    /// Comparison scope: the reference model's entry key (<see cref="BenchmarkReportDocument.ReferenceEntryKey"/>);
+    /// null for model scope and for a document stored before the reference was kept.
+    /// </summary>
+    public string? ReferenceEntryKey { get; set; }
 
     /// <summary>
     /// Comparison scope: the comparison's entries that were not Excluded when the document was written,

@@ -6192,8 +6192,11 @@ that the measures are separate questions, not adjusted for each other.
 - **Two entries:** one test per measure, no adjustment — *"Single comparison — no adjustment needed"*;
   the adjusted p equals the raw p.
 - **Against a reference** (the default with three or more): k − 1 tests, **Holm**-adjusted (Holm 1979).
-  The reference is the first entry highlighted on step 2, else the one with the highest Intelligence
-  Index, and a select changes it.
+  The reference is the admin's choice in the **Reference** select; without one, the **baseline model**
+  (§ *Baseline Model* below) when the comparison holds a comparable result of it, else the first entry
+  highlighted on step 2, else the one with the highest Intelligence Index. The baseline model's option
+  reads *"<label> (baseline model)"*. The client always sends the reference it chose, so the response
+  cache, keyed by the reference, stays correct.
 - **All pairs:** k(k − 1)/2 tests, Holm-adjusted, offered up to **12** comparable entries (66 tests); above
   that it is unavailable, with the reason, and the server answers 400. Unadjusted all-pairs testing was
   rejected: it is what made the charts refuse pairwise significance in the first place.
@@ -6247,15 +6250,50 @@ the wizard's responses are kept in memory for **10 minutes** per (comparison key
 reference); **Recompute** bypasses the cache. Answers are loaded only for the comparable entries, and
 nothing is computed on a chart redraw.
 
-**Which documents cite them.** A comparison-wide Report Pack document (format 12) cites these tests:
+**Which documents cite them.** A comparison-wide Report Pack document (format 12 and later) cites these tests:
 its preparation asks the same service for the covered models only — *Against a reference* with the
-highest-Index covered model as the reference, plus *All pairs* for 3 to 6 covered models — so each Holm
+document's reference model (step 3's *Reference model*: the baseline model by default when covered; the
+highest-Index covered model when none is chosen), plus *All pairs* for 3 to 6 covered models — so each Holm
 adjustment counts the tests the document reports, and the response cache is not used
 (`ai-benchmark-report-pack.md` § 15). Per-model Report Pack, run-completion and battery-completion
 documents keep their own frozen *no significance test* statement
 (`BenchmarkReportFacts.NoSignificanceStatement`, `ai-benchmark-report-pack.md` § 2), decoupled from the
 wizard's *Pairwise significance* text so that changing the wizard moved no golden render and no stored
 document.
+
+### Baseline Model
+
+**The GnollBench baseline model** is the model the Overseer team currently prefers, which every other
+model is judged against. It is set, changed and cleared on the **Baseline model** card of the Model
+Comparison launcher (between the hero and *Last comparison*): **Change** opens the model picker over
+enabled configurations with the Benchmark role; **Clear** removes it. It is stored in the database, so
+every developer and browser sees the same one.
+
+- **Storage.** `BenchmarkBaselineModelSetting` is an append-only history: `ModelSnapshotId` (a `Restrict`,
+  auto-included foreign key to `SystemAiConfigurationSnapshot`; null records *cleared*),
+  `SourceConfigurationId` (a plain id, for the UI), `SetAtUtc` and `SetByUserId`. The current baseline
+  model is the row with the highest id. Setting it captures the configuration's current settings through
+  `SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync`, which reuses the existing snapshot when those
+  settings have run before.
+- **Matching.** A comparison entry is the baseline model when its newest run's tested snapshot has the
+  same **model-axis key** as the baseline's snapshot: the nine settings of
+  `BenchmarkCrossModelComparability.ModelAxisKeys` (provider, model id, thinking level, reasoning mode,
+  reasoning summary, service tier, maximum output tokens, parallel mode, endpoint), rendered by
+  `ChatConsistencyComparability.ModelAxisKey`. The display name and prices are not among them, so a
+  rename, a price change, a key rotation or a recreated configuration with the same settings still
+  matches; another thinking level, service tier, output limit, parallel mode or endpoint does not. The
+  snapshot id is not used for matching because the snapshot hash includes the display name. The key is
+  computed when read, never stored.
+- **In a comparison.** `BenchmarkModelComparisonDto` carries `BaselineModel`, `BaselineModelEntryKey` and
+  `BaselineModelState`: `NotSet`, `NotInComparison`, `Excluded` (only excluded entries match: their runs
+  are not comparable with the others) or `Included`. Among matching entries a charted one wins, then the
+  newest, then the entry key. Only an `Included` entry is used as a reference.
+- **Where it is used.** As the default reference of the Paired tests view and of the comparison-wide
+  documents (`ai-benchmark-report-pack.md`), and by model batches: advice MB-A09 and *Open in Model
+  Comparison* (`ai-benchmark-model-batches.md`).
+- **API.** `GET api/admin/benchmark/baseline-model` (200, or 204 when none is set);
+  `PUT api/admin/benchmark/baseline-model` `{ configurationId }` (null clears it; 400 for a missing
+  configuration or one without the Benchmark role).
 
 ### Aggregation Formulas:
 - **Quality Score**: $\text{Quality} = A^{0.55} \cdot C^{0.25} \cdot Cn^{0.10} \cdot R^{0.10}$ (capped at 25 if `criticalError` is true).
@@ -7790,6 +7828,31 @@ downloaded or copied. `splitImageHeading` makes the split from the run fact row 
 title is drawn and there is no subtitle, so the choice of rows is honored. The file names, the footer and
 the Chat Consistency results images are unchanged; the size chooser's read-out measures the new header.
 
+### Baseline Model, Comparison Against It, Failure Profiles and Notable Findings (2026-10-14) — No Harness Version Bump
+
+No `HarnessVersion`, `ScoringMethodVersion` or comparability key moves, and no run is graded or scored
+differently. Numbers still come from code, words from the writer, and rendering involves no AI.
+
+- **The GnollBench baseline model** (§ *Baseline Model*): an append-only database setting, changed on the
+  Model Comparison launcher's **Baseline model** card and matched to comparison entries by its snapshot's
+  model-axis key. `ChatConsistencyComparability.ModelAxisKey` gained a snapshot-level form, which the
+  run-level key now calls; the rendered key is unchanged for every run, so stored Chat Consistency subject
+  keys still match. Migration `AddBaselineModel` adds the table and
+  `BenchmarkReportDocuments.ReferenceEntryKey`; the snapshot table now has sixteen foreign keys
+  (§ *Model Configuration Snapshots*).
+- **Model Comparison** returns `baselineModel`, `baselineModelEntryKey` and `baselineModelState`, and the
+  Paired tests view defaults its reference to the baseline model when it is comparable (§ *Paired Tests*).
+- **Comparison-wide documents, format 14** (`ai-benchmark-report-pack.md` § 15): a chosen reference model
+  (the baseline model by default in step 3), a failure profile per model and a *Why the models differ*
+  section, a comparison of every model with the reference, the weakest answers' grader comments for the
+  writer, and up to ten **notable findings** detected and stated by code. Per-model, run-completion,
+  battery-completion and chat consistency documents do not change.
+- **Model batches** (`ai-benchmark-model-batches.md`): *Open in Model Comparison* takes its sources from
+  the server, which adds the baseline model's latest comparable result when the batch did not run it;
+  MB-A09 names the baseline model; the new MB-A13 and the finished batch's *Next: the comparison
+  documents* guide say that the comparison documents are written by hand in Model Comparison, with the
+  wizard kept open so their charts are drawn. Nothing writes them automatically.
+
 ---
 
 ## 3. Assessor Strategy
@@ -8740,9 +8803,10 @@ row per distinct combination of settings ever used, keyed by `Sha256`, never upd
   null field means **not recorded**; the comparability keys render it `(not recorded)`, never `(none)`.
   Legacy candidate rows recorded everything and are complete. Every legacy call went to the official
   endpoint, so their null endpoint fields are true.
-- **References.** Fourteen foreign keys point here, all `Restrict` and all auto-included: the five run
-  roles, the six per-answer graders, the difficulty assessor, the calibration assessor and the rubric
-  author. The `…ModelConfigurationId` columns beside them are plain attribution ids, not foreign keys:
+- **References.** Sixteen foreign keys point here, all `Restrict` and all auto-included: the five run
+  roles, the six per-answer graders, the difficulty assessor, the calibration assessor, the rubric
+  author, a report document's writer and the GnollBench baseline model
+  (`BenchmarkBaselineModelSetting`). The `…ModelConfigurationId` columns beside them are plain attribution ids, not foreign keys:
   they keep "the run had a second reader" and "graded by a different assessor" answerable, and default
   the re-run dialogs, but deleting a configuration never touches them.
 
@@ -9173,6 +9237,8 @@ All under `/api/admin/benchmark/batteries`; the full table, with bodies and stat
 - `POST /api/admin/benchmark/model-comparisons/identify`: Body `{ runIds, groupIds, batteryRunIds }`. The numbered comparison of the selection (*Comparison #N*), created and named when the entry set is new, else returned as it is: `{ id, name, customName, defaultName, entryCount, subjectKind, entryKeys, createdAtUtc, renamedAtUtc }`. 400 for no body, an empty selection, battery results mixed with runs or groups, or an entry that does not exist. Makes no model call.
 - `PATCH /api/admin/benchmark/model-comparisons/{id}`: Body `{ name }`: renames the comparison, trimmed; an empty or null name restores its default name. 400 for a name over 160 characters; 404 for an unknown comparison.
 - `GET /api/admin/benchmark/model-comparisons`: Every numbered comparison, newest first, with its display, custom and default names, entry count, subject kind, document count, last document time and creation time.
+- `GET /api/admin/benchmark/baseline-model`: The GnollBench baseline model `{ snapshotId, displayName, provider, modelId, thinkingLevel, reasoningMode, serviceTier, maxOutputTokens, sourceConfigurationId, setAtUtc }`; 204 when none is set.
+- `PUT /api/admin/benchmark/baseline-model`: Body `{ configurationId }`: sets the baseline model to that configuration's current settings and returns it, or clears it for a null id (204). Appends a history row either way. 400 for a missing configuration or one without the Benchmark role. The model comparison response carries `baselineModel`, `baselineModelEntryKey` and `baselineModelState` (§ *Baseline Model*).
 
 #### Rubric Gap Author
 - `POST /api/admin/benchmark/rubric-gap-author`, `GET .../{jobId}`, `GET .../active`, `POST .../{jobId}/cancel`: An AI job that **drafts** proposed rubric additions from verified claim clusters, using read-only tools to confirm each citation. It writes nothing.

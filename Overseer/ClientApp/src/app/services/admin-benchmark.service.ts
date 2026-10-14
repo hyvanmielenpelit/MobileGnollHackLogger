@@ -22,7 +22,8 @@ export type {
   BenchmarkComparabilityIndexQuery,
   BenchmarkModelComparisonDto,
   BenchmarkModelComparisonQuery,
-  BenchmarkModelComparisonPricingBasis
+  BenchmarkModelComparisonPricingBasis,
+  BenchmarkBaselineModelState
 } from '../admin/benchmark/model-comparison/model-comparison.models';
 
 // The battery statistics records are declared beside the views that render them; type-only, so
@@ -2967,6 +2968,47 @@ export interface BenchmarkModelBatchRunDto {
   supersededMembersJson?: string | null;
 }
 
+/** The baseline model's result a batch's comparison sources added: a run or a battery run. */
+export interface BenchmarkModelBatchBaselineSourceDto {
+  runId?: number | null;
+  batteryRunId?: number | null;
+  label: string;
+  startedAtUtc: string;
+}
+
+/**
+ * `GET model-batches/{id}/comparison-sources`: what Open in Model Comparison selects. Every member's
+ * result, plus the baseline model's latest comparable result when one was found; it is already in the
+ * id lists, and `baselineModelReason` says why nothing was added when it was not.
+ */
+export interface BenchmarkModelBatchComparisonSourcesDto {
+  runIds: number[];
+  groupIds: number[];
+  batteryRunIds: number[];
+  baselineModelSource: BenchmarkModelBatchBaselineSourceDto | null;
+  baselineModelReason: string | null;
+}
+
+/**
+ * The GnollBench baseline model: the model the Overseer team currently prefers, stored on the server
+ * from a configuration with the Benchmark role. Model Comparison and the comparison-wide documents
+ * judge the other models against it.
+ */
+export interface BenchmarkBaselineModelDto {
+  /** The configuration snapshot it was set from. */
+  snapshotId: number;
+  displayName: string;
+  provider: string;
+  modelId: string;
+  thinkingLevel: string | null;
+  reasoningMode: string | null;
+  serviceTier: string | null;
+  maxOutputTokens: number | null;
+  /** The configuration it was chosen from; null when that is unknown. */
+  sourceConfigurationId: number | null;
+  setAtUtc: string;
+}
+
 /**
  * How comparable a set of runs is, and therefore what may be computed over it. Higher is more
  * comparable; only `Replicate` may be pooled into one index.
@@ -3316,6 +3358,11 @@ export interface BenchmarkReportPackRequest {
    * document already written and not named here is refused with 409.
    */
   replaceDocumentIds?: number[];
+  /**
+   * Comparison scope: the covered entry the documents judge the others against; absent or null means
+   * the highest Intelligence Index. 400 when it is not a covered, non-excluded entry.
+   */
+  referenceEntryKey?: string | null;
 }
 
 /** `POST report-packs/layout-preview`: a preview request for one document type, with its paper and chart layout. */
@@ -3412,6 +3459,8 @@ export interface BenchmarkReportPackWrittenDocumentDto {
   writerThinkingLevel?: string | null;
   durationMs?: number;
   costUsd?: number | null;
+  /** Comparison scope: the reference model's entry key; null, or absent from an older document, is the highest Intelligence Index. */
+  referenceEntryKey?: string | null;
 }
 
 /** The comparison-scope documents of one covered set of a comparison. */
@@ -3557,6 +3606,8 @@ export interface BenchmarkReportDocumentListItemDto {
   coveredModels?: BenchmarkReportCoveredModelDto[];
   /** The saved chat consistency analysis a chat consistency document was written from; absent or null otherwise. */
   chatConsistencyAnalysisId?: number | null;
+  /** Comparison scope: the reference model's entry key; null, or absent from an older document, is the highest Intelligence Index. */
+  referenceEntryKey?: string | null;
 }
 
 /** A per-model document (1), a comparison-scope document (2) or a chat consistency document (3), as the server sends it. */
@@ -3900,6 +3951,9 @@ const BATTERIES_ENDPOINT = '/api/admin/benchmark/batteries';
 
 /** The root of the model batch endpoints (`AdminBenchmarkModelBatchesController`). */
 const MODEL_BATCHES_ENDPOINT = '/api/admin/benchmark/model-batches';
+
+/** The GnollBench baseline model (`AdminBenchmarkBaselineModelController`). */
+const BASELINE_MODEL_ENDPOINT = '/api/admin/benchmark/baseline-model';
 
 @Injectable({
   providedIn: 'root'
@@ -4567,6 +4621,31 @@ export class AdminBenchmarkService {
   /** Deletes a finished batch's record; its member runs, series and battery runs are kept. 204; 404 unknown; 409 while it is live. */
   deleteModelBatch(id: number): Observable<void> {
     return this.http.delete<void>(`${MODEL_BATCHES_ENDPOINT}/runs/${id}`);
+  }
+
+  /** The sources Open in Model Comparison selects for a batch: its members' results and the baseline model's. */
+  getModelBatchComparisonSources(id: number): Observable<BenchmarkModelBatchComparisonSourcesDto> {
+    return this.http.get<BenchmarkModelBatchComparisonSourcesDto>(`${MODEL_BATCHES_ENDPOINT}/${id}/comparison-sources`);
+  }
+
+  // The GnollBench baseline model
+
+  /** The baseline model, or null (204) when none is set. */
+  getBaselineModel(): Observable<BenchmarkBaselineModelDto | null> {
+    return this.http.get<BenchmarkBaselineModelDto>(BASELINE_MODEL_ENDPOINT, { observe: 'response' }).pipe(
+      map(response => response.status === 204 ? null : response.body ?? null)
+    );
+  }
+
+  /**
+   * Sets the baseline model from a configuration with the Benchmark role, or clears it for null. The
+   * new baseline model, or null (204) when cleared; 400 `{ error }` for a missing configuration or
+   * one without the Benchmark role.
+   */
+  setBaselineModel(configurationId: number | null): Observable<BenchmarkBaselineModelDto | null> {
+    return this.http.put<BenchmarkBaselineModelDto>(BASELINE_MODEL_ENDPOINT, { configurationId }, { observe: 'response' }).pipe(
+      map(response => response.status === 204 ? null : response.body ?? null)
+    );
   }
 
   /**

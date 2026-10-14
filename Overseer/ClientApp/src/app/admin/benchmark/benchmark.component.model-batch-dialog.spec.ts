@@ -208,11 +208,16 @@ describe('AdminBenchmarkComponent: model batch progress', () => {
   });
 
   it('opens the comparison wizard on the batch\'s runs from Open in Model Comparison', () => {
+    benchmarkServiceMock.getModelBatchComparisonSources.mockReturnValue(of({
+      runIds: [61, 62], groupIds: [], batteryRunIds: [], baselineModelSource: null, baselineModelReason: null
+    }));
     openBatch(finishedBatch());
+    expect(benchmarkServiceMock.getModelBatchComparisonSources).not.toHaveBeenCalled();
     query<HTMLButtonElement>('.mb-open-comparison')!.click();
     ctx.refresh();
 
     expect(batchDialog().open).toBe(false);
+    expect(benchmarkServiceMock.getModelBatchComparisonSources).toHaveBeenCalledWith(21);
     expect(ctx.comparison.comparisonRunIds).toEqual([61, 62]);
     expect(ctx.comparison.comparisonGroupIds).toEqual([]);
     expect(ctx.comparison.comparisonBatteryRunIds).toEqual([]);
@@ -282,6 +287,9 @@ describe('AdminBenchmarkComponent: model batch progress', () => {
       const waiting = batchCard(21).querySelector('.rh-batch-compare') as HTMLButtonElement;
       expect(waiting.getAttribute('aria-disabled')).toBe('true');
 
+      benchmarkServiceMock.getModelBatchComparisonSources.mockReturnValue(of({
+        runIds: [61, 62], groupIds: [], batteryRunIds: [], baselineModelSource: null, baselineModelReason: null
+      }));
       (batchCard(22).querySelector('.rh-batch-compare') as HTMLButtonElement).click();
       ctx.refresh();
       expect(ctx.comparison.comparisonRunIds).toEqual([61, 62]);

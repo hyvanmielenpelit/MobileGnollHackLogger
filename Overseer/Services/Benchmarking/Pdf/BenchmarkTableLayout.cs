@@ -25,7 +25,19 @@ internal sealed record BenchmarkTableLayout
         ["Contribution"] = "Contrib.",
         ["Cost per run, graders included"] = "Cost/run",
         ["Critical-error rate"] = "Crit. rate",
-        ["Provider errors"] = "Prov. err."
+        ["Provider errors"] = "Prov. err.",
+        ["Paired difference (95 % interval)"] = "Paired diff.",
+        ["Better / similar / worse"] = "B / S / W",
+        ["May mislead per 20"] = "Mislead/20",
+        ["Correct / partial / incorrect / not attempted"] = "Outcomes",
+        ["Wrong instead of abstaining"] = "Wrong, not abstained",
+        ["Level 2 or below: accuracy / completeness / conciseness / readability"] = "Low levels",
+        ["Output defects"] = "Defects",
+        ["Tool-limit hits"] = "Limit hits",
+        ["Median answer length"] = "Length",
+        ["Isolated / shared misses"] = "Misses",
+        ["Lowest scorer"] = "Lowest",
+        ["Runs with findings"] = "Runs"
     };
 
     /// <summary>The header of the per-question tables' column that may move onto a second line.</summary>

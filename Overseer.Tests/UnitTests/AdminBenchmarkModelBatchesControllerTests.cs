@@ -697,6 +697,34 @@ public class AdminBenchmarkModelBatchesControllerTests
         Assert.Contains("gpt-5 (#2)", content.Content);
     }
 
+    [Fact]
+    public async Task GetComparisonSources_ReturnsTheSourcesAndTheReason_And404ForAnUnknownBatch()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var f = await CreateFixtureAsync();
+        var batch = await SeedBatchAsync(f, BenchmarkRunSeriesStatus.Completed, null, null,
+            BenchmarkModelBatchMemberStatus.Completed, BenchmarkModelBatchMemberStatus.Skipped);
+        long runId = batch.Members.Single(m => m.OrderIndex == 0).BenchmarkRunId!.Value;
+        var sources = new BenchmarkModelBatchComparisonSources(f.Db);
+
+        var dto = Assert.IsType<BenchmarkModelBatchComparisonSourcesDto>(
+            Assert.IsType<OkObjectResult>(await f.Controller.GetComparisonSources(batch.Id, sources, ct)).Value);
+        Assert.Equal(new[] { runId }, dto.RunIds.ToArray());
+        Assert.Empty(dto.GroupIds);
+        Assert.Empty(dto.BatteryRunIds);
+        Assert.Null(dto.BaselineModelSource);
+        Assert.Equal(BenchmarkModelBatchComparisonSources.NoBaselineModelReason, dto.BaselineModelReason);
+
+        string json = JsonSerializer.Serialize(dto, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        Assert.Contains($"\"runIds\":[{runId}]", json);
+        Assert.Contains("\"groupIds\":[]", json);
+        Assert.Contains("\"batteryRunIds\":[]", json);
+        Assert.Contains("\"baselineModelSource\":null", json);
+        Assert.Contains("\"baselineModelReason\":\"No baseline model is set.\"", json);
+
+        Assert.IsType<NotFoundResult>(await f.Controller.GetComparisonSources(4242, sources, ct));
+    }
+
     // --- Skip, delete, mapping --------------------------------------------------------------------
 
     [Fact]

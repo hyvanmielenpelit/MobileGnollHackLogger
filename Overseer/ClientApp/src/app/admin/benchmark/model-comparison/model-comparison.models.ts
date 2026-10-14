@@ -11,7 +11,11 @@
  * nullable here, and nothing is computed that the server did not already compute.
  */
 
-import type { BenchmarkComparabilityDifferenceDto, ProviderAvailabilityDto } from '../../../services/admin-benchmark.service';
+import type {
+  BenchmarkBaselineModelDto,
+  BenchmarkComparabilityDifferenceDto,
+  ProviderAvailabilityDto
+} from '../../../services/admin-benchmark.service';
 import type { FigureNote } from './figure-chrome';
 import { modelLabelText } from './model-comparison-charts';
 import type { ModelComparisonAvailability, ModelComparisonContext, ModelComparisonEntry } from './model-comparison-charts';
@@ -242,6 +246,12 @@ export interface BenchmarkModelComparisonExcludedMeasureDto {
 /** What a comparison's entries are: runs and analysis groups, or battery results. */
 export type BenchmarkModelComparisonSubjectKind = 'Runs' | 'Batteries';
 
+/**
+ * Where the GnollBench baseline model stands in a comparison: none is set, no entry is it, only
+ * excluded entries are it, or a charted entry is it.
+ */
+export type BenchmarkBaselineModelState = 'NotSet' | 'NotInComparison' | 'Excluded' | 'Included';
+
 /** A cross-model comparison: one point per model, the basis they were costed on, and the refusals. */
 export interface BenchmarkModelComparisonDto {
   pricingBasis: string;
@@ -275,6 +285,19 @@ export interface BenchmarkModelComparisonDto {
    * by the same panel.
    */
   panelDiagnostics?: BenchmarkPanelDiagnosticsDto | null;
+  /** The GnollBench baseline model when one is set, whether or not the comparison holds it. Absent from an older server. */
+  baselineModel?: BenchmarkBaselineModelDto | null;
+  /** The entry that is the baseline model; usable as a reference only when `baselineModelState` is `Included`. */
+  baselineModelEntryKey?: string | null;
+  /** Absent from an older server, which reads as `NotSet`. */
+  baselineModelState?: BenchmarkBaselineModelState;
+}
+
+/** The baseline model's entry key when a charted entry is the baseline model, else null. */
+export function baselineReferenceKey(
+  dto: Pick<BenchmarkModelComparisonDto, 'baselineModelEntryKey' | 'baselineModelState'> | null | undefined
+): string | null {
+  return dto?.baselineModelState === 'Included' ? dto.baselineModelEntryKey ?? null : null;
 }
 
 // ---------------------------------------------------------------------------------------------

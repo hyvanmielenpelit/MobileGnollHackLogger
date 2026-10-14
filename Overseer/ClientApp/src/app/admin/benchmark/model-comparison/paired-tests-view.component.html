@@ -59,7 +59,7 @@
               <option value="" selected>Highest Intelligence Index</option>
             }
             @for (entry of comparableEntries; track entry.key) {
-              <option [value]="entry.key" [selected]="entry.key === referenceValue">{{ entry.label }}</option>
+              <option [value]="entry.key" [selected]="entry.key === referenceValue">{{ referenceOptionLabel(entry) }}</option>
             }
           </select>
         </div>

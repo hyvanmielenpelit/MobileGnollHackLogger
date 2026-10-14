@@ -15,7 +15,7 @@
 
 | Model | Intelligence Index | Rank | Median answer time | Cost per question | Critical errors |
 |---|---|---|---|---|---|
-| Model A | 85 (82–88) | 1 | 12.0 s | $0.050 | 0 of 6 answers |
+| Model A (reference) | 85 (82–88) | 1 | 12.0 s | $0.050 | 0 of 6 answers |
 | Model B | 55 (50–60) | 2 | 20.0 s | $0.010 | 0 of 6 answers |
 
 *Each model's Intelligence Index is followed by its 95 % interval; a joint rank means its interval overlaps a neighbor's, so the order between them is not established by the intervals.*
@@ -27,6 +27,15 @@ Q3 is a shared gap: most models scored low on it, so check the chat and the corp
 ## 2. Model-specific gaps
 
 Model B gave the weakest answer on Q3.
+
+### Failure profile
+
+| Model | Answers | May mislead | Correct / partial / incorrect / not attempted | Wrong instead of abstaining | Level 2 or below: accuracy / completeness / conciseness / readability | Truncated | Output defects | No tool call | Tool-limit hits | Median answer length | Isolated / shared misses | Lowest scorer |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Model A (reference) | 6 | 0 (0 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | — | — |
+| Model B | 6 | 0 (0 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | — | — |
+
+*Counted over each model's scored answers in all its runs; in a panel run a level is the mean of both panel members' levels. May mislead: an accuracy level below 4 or a critical error. Outcomes are recorded from scoring method 13. Low levels: answers at level 2 or below on each dimension. Output defects: an empty, truncated or scrubbed answer, reasoning bleed, repeated fragments, or an answer that did not complete normally. Tool-limit hits: the tool budget or the iteration limit was reached. An isolated miss is a question the model scored 50 or less where the other models' median is 75 or more; a shared miss is one it scored below 50 along with at least half the others. Lowest scorer: questions where no other model scored lower. The counts say what the graders recorded, not why.*
 
 ## 3. The benchmarking system
 
@@ -56,13 +65,19 @@ Speed: no test could be made. Cost: not tested. No candidate price card was reso
 
 *At least one entry has a single run. With one run a side, a paired test captures question sampling only, not run-to-run variation, so it can look more certain than it is.*
 
-## 4. Leads
+## 4. Notable findings
+
+- Every model scored below 50 on Q3: a likely chat, corpus or question problem rather than one model's.
+
+*Detected by code from the figures, in this order, at most two of a kind and ten in all: a model established as scoring higher than another (by a paired test or by 95 % intervals that do not overlap) at no more than half its cost per question, or half its median answer time; one model at two thinking levels where the lower level's Intelligence Index is at least the higher's; the highest-Index or reference model scoring 50 or less where the other models' median is 75 or more; the lowest-Index model scoring at least 15 points above every other model on a question; every model scoring below 50 on a question; an advanced-band score at least 10 points above the simple-band score, each band with at least three questions; at least two critical errors, or three panel disagreements, at twice the other models' median rate or more; a pair whose order depends on which panel member grades; truncated answers and tool-limit hits on at least 10 % of a model's answers; tool calls per question or median answer length at most half or at least twice the other models' median; and a provider error rate of at least 2 % and five times the other models' median.*
+
+## 5. Leads
 
 *Provisional and un-triaged. A lead is not a finding: it must go through the triage, evidence bar and tool-layer diagnostics of `server_benchmark_to_chat_transfer` before anything is changed.*
 
-- **[chat]** Check how the chat routes the question most models scored low on. *(evidence: Questions any critical error: 0 of 6 questions · Q3)*
+- **[chat]** Check how the chat routes the question most models scored low on. *(evidence: Questions with a critical error: 0 of 6 questions · Q3)*
 
-## 5. Per-question matrix
+## 6. Per-question matrix
 
 | Q | Topic | Band | A | B | Spread |
 |---|---|---|---|---|---|
@@ -111,7 +126,7 @@ Speed: no test could be made. Cost: not tested. No candidate price card was reso
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 50.
+- **Assessor (Gemini 3.8 Flash):** score 50. Misses the alignment condition.
 
 **Claim verifier:**
 
@@ -307,7 +322,7 @@ Speed: no test could be made. Cost: not tested. No candidate price card was reso
 
 - No claims were checked.
 
-## 6. Fact sheet
+## 7. Fact sheet
 
 ```json
 {
@@ -453,6 +468,12 @@ Speed: no test could be made. Cost: not tested. No candidate price card was reso
       "display": "catalog",
       "key": "comparison.pricingBasisKind",
       "value": "catalog"
+    },
+    {
+      "available": true,
+      "display": "Model A, the highest Intelligence Index",
+      "key": "comparison.reference",
+      "value": "A"
     },
     {
       "available": true,
@@ -675,6 +696,180 @@ Speed: no test could be made. Cost: not tested. No candidate price card was reso
       "display": "not available",
       "key": "model.A.panel.referenceReaderOffset",
       "unavailableReason": "The model was not graded by an assessor panel in every run."
+    },
+    {
+      "available": true,
+      "display": "10 characters",
+      "key": "model.A.profile.answerChars.median",
+      "value": 10
+    },
+    {
+      "available": true,
+      "display": "6 answers",
+      "key": "model.A.profile.answers",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.deficit.accuracy",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.deficit.completeness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.deficit.conciseness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.deficit.readability",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.accuracy",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.completeness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.conciseness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.critical_error",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.other",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.readability",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "0 of 1 run",
+      "key": "model.A.profile.findings.runsWithSynthesis",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.findings.tool_use",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.isolatedMisses",
+      "unavailableReason": "Fewer than three models are covered, so a miss cannot be set against the others."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.lowestScorer",
+      "unavailableReason": "Fewer than three models are covered, so a miss cannot be set against the others."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.mayMislead",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "about 0 in 20 answers",
+      "key": "model.A.profile.mayMisleadPer20",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "6 of 6 answers",
+      "key": "model.A.profile.noToolAnswers",
+      "value": 6
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.correct",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.incorrect",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.noAnswer",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.notAttempted",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.partial",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.outcome.wrongInsteadOfAbstaining",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.outputDefects",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.A.profile.sharedMisses",
+      "unavailableReason": "Fewer than three models are covered, so a miss cannot be set against the others."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.toolLimitHits",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.A.profile.truncated",
+      "value": 0
     },
     {
       "available": true,
@@ -1094,6 +1289,180 @@ Speed: no test could be made. Cost: not tested. No candidate price card was reso
     },
     {
       "available": true,
+      "display": "10 characters",
+      "key": "model.B.profile.answerChars.median",
+      "value": 10
+    },
+    {
+      "available": true,
+      "display": "6 answers",
+      "key": "model.B.profile.answers",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.deficit.accuracy",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.deficit.completeness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.deficit.conciseness",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.deficit.readability",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.accuracy",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.completeness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.conciseness",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.critical_error",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.other",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.readability",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": true,
+      "display": "0 of 1 run",
+      "key": "model.B.profile.findings.runsWithSynthesis",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.findings.tool_use",
+      "unavailableReason": "No run of this model recorded structured grader findings; they are recorded from harness 40."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.isolatedMisses",
+      "unavailableReason": "Fewer than three models are covered, so a miss cannot be set against the others."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.lowestScorer",
+      "unavailableReason": "Fewer than three models are covered, so a miss cannot be set against the others."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.mayMislead",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "about 0 in 20 answers",
+      "key": "model.B.profile.mayMisleadPer20",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "6 of 6 answers",
+      "key": "model.B.profile.noToolAnswers",
+      "value": 6
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.correct",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.incorrect",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.noAnswer",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.notAttempted",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.partial",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.outcome.wrongInsteadOfAbstaining",
+      "unavailableReason": "Outcome classes are not recorded before scoring method 13."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.outputDefects",
+      "value": 0
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "model.B.profile.sharedMisses",
+      "unavailableReason": "Fewer than three models are covered, so a miss cannot be set against the others."
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.toolLimitHits",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "0 of 6 answers",
+      "key": "model.B.profile.truncated",
+      "value": 0
+    },
+    {
+      "available": true,
       "display": "55 / 100",
       "key": "model.B.quality.index",
       "value": 55
@@ -1311,6 +1680,60 @@ Speed: no test could be made. Cost: not tested. No candidate price card was reso
       "unavailableReason": "No question of this suite is a knowledge-base topic; the prompt routes game mechanics past the knowledge base."
     },
     {
+      "available": true,
+      "display": "0 of 6 questions",
+      "key": "model.B.vsReference.better",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "6 questions",
+      "key": "model.B.vsReference.shared",
+      "value": 6
+    },
+    {
+      "available": true,
+      "display": "1 of 6 questions",
+      "key": "model.B.vsReference.similar",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "5 of 6 questions",
+      "key": "model.B.vsReference.worse",
+      "value": 5
+    },
+    {
+      "available": true,
+      "display": "a failure every model shares",
+      "key": "notable.1.kind",
+      "value": "sharedFailure"
+    },
+    {
+      "available": true,
+      "display": "Models A and B",
+      "key": "notable.1.models",
+      "value": 2
+    },
+    {
+      "available": true,
+      "display": "Q3",
+      "key": "notable.1.questions",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "Every model scored below 50 on Q3: a likely chat, corpus or question problem rather than one model's.",
+      "key": "notable.1.summary",
+      "value": "Every model scored below 50 on Q3: a likely chat, corpus or question problem rather than one model's."
+    },
+    {
+      "available": true,
+      "display": "1 notable finding",
+      "key": "notable.count",
+      "value": 1
+    },
+    {
       "available": false,
       "display": "not available",
       "key": "pair.A.B.cost.ratio",
@@ -1461,6 +1884,23 @@ Speed: no test could be made. Cost: not tested. No candidate price card was reso
   ],
   "noSignificanceInstead": "",
   "noSignificanceSummary": "",
+  "notableFindings": [
+    {
+      "facts": [
+        "questions.sharedLow"
+      ],
+      "kind": "sharedFailure",
+      "models": [
+        "A",
+        "B"
+      ],
+      "number": 1,
+      "questions": [
+        3
+      ],
+      "summary": "Every model scored below 50 on Q3: a likely chat, corpus or question problem rather than one model's."
+    }
+  ],
   "pairedDifferences": [],
   "pairedTests": [
     {
@@ -1842,6 +2282,8 @@ Speed: no test could be made. Cost: not tested. No candidate price card was reso
       "toolCalls": 0
     }
   ],
+  "referenceIsBaselineModel": false,
+  "referenceLetter": "A",
   "rows": [],
   "scope": "Comparison",
   "subjectDisplayName": "",
@@ -1863,6 +2305,6 @@ Speed: no test could be made. Cost: not tested. No candidate price card was reso
 
 ---
 
-*Document ID 212 · format version 13 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models anonymized*
+*Document ID 212 · format version 14 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

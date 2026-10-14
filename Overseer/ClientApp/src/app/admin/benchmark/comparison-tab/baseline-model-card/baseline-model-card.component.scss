@@ -1,0 +1,57 @@
+/* The card frame, header and facts are the global `bm-summary-card*` rules in `styles.scss`; the
+   picker's look is the global `.custom-model-selector`. This card's own parts are here. */
+
+:host {
+  // The host is the launcher grid's child, so it takes the full row the card's frame asks for.
+  display: block;
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+.mc-baseline-none {
+  color: #a1a1aa;
+}
+
+.mc-baseline-model-id {
+  font-family: var(--font-mono);
+  font-size-adjust: from-font;
+  overflow-wrap: anywhere;
+}
+
+.mc-baseline-more .bm-summary-facts {
+  margin-block-start: 0.5rem;
+}
+
+.mc-baseline-change {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  max-inline-size: 40rem;
+
+  // Kept in the DOM for Change's aria-controls; the display above would otherwise outrank [hidden].
+  &[hidden] {
+    display: none;
+  }
+
+  label {
+    margin: 0;
+    font-size: var(--text-secondary);
+    color: #a1a1aa;
+  }
+
+  .form-hint {
+    margin: 0;
+  }
+}
+
+.mc-baseline-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+
+  svg {
+    flex: none;
+    margin-top: 2px;
+  }
+}

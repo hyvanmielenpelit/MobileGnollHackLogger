@@ -96,6 +96,11 @@ export interface ReportPackContext {
   readonly entryKeys: readonly string[];
   readonly suiteId: number | null;
   readonly suiteName: string | null;
+  /**
+   * The GnollBench baseline model's entry when a charted entry is it; absent or null otherwise. The
+   * default Reference model, and kept among the covered models when there are more than the cap.
+   */
+  readonly baselineModelEntryKey?: string | null;
 }
 
 /** One stage of the job's rail: Queued, Preparing, one per document, Done. */
@@ -178,6 +183,14 @@ export const REPORT_PACK_CONTEXT_REFUSAL_SHARE = 0.9;
 /** The warning shown when the server has no chart folder. */
 export const REPORT_PACK_CHART_STORAGE_MISSING_TEXT =
   'Chart storage is not configured; documents will be written without charts.';
+
+/** The Reference model option that sends no reference: the server judges against the highest Intelligence Index. */
+export const REPORT_PACK_HIGHEST_INDEX_REFERENCE = 'Highest Intelligence Index';
+
+/** The note beside Generate: the charts are drawn by this browser while the wizard is open. */
+export const REPORT_PACK_KEEP_OPEN_TEXT =
+  'Keep this wizard open until every document shows its charts. Charts are drawn by this browser as each '
+  + 'document finishes; if you close it, add them on step 4 with Update charts…';
 
 /** The paragraph under the step heading: where these reports are kept, and where a run's own reports are written. */
 export const REPORT_PACK_LEAD_TEXT =
@@ -293,6 +306,18 @@ interface PreviewAnswer {
   readonly ticket: PreviewTicket;
   readonly preview: BenchmarkReportPackPreviewDto | null;
   readonly error: HttpErrorResponse | null;
+}
+
+/** A written comparison-scope document and the reference model it was written against. */
+export interface ReportPackWrittenReference {
+  /** The document's row key. */
+  readonly key: string;
+  /** The document type's name. */
+  readonly name: string;
+  /** The reference model's label, or *Highest Intelligence Index*. */
+  readonly reference: string;
+  /** It was written against another reference than the one chosen now. */
+  readonly differs: boolean;
 }
 
 /** A checked row and the estimate the preview gave for it. */
@@ -432,6 +457,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   readonly writerAdviceLead = REPORT_WRITER_ADVICE_LEAD;
   readonly chartStorageMissingText = REPORT_PACK_CHART_STORAGE_MISSING_TEXT;
   readonly leadText = REPORT_PACK_LEAD_TEXT;
+  readonly highestIndexReference = REPORT_PACK_HIGHEST_INDEX_REFERENCE;
+  readonly keepOpenText = REPORT_PACK_KEEP_OPEN_TEXT;
   readonly writerEmptyHint =
     'No system AI configs with the Benchmark role are enabled. Enable the Benchmark role in System Configs.';
 
@@ -450,6 +477,15 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   private coveredKeys: string[] = [];
   /** The models chosen under One model at a time, in the options' order. */
   private subjectKeys: string[] = [];
+  /**
+   * The admin's Reference model under Whole comparison: an entry key, `''` for the highest
+   * Intelligence Index, or null for the default (the baseline model when it is covered).
+   */
+  private referenceChoice: string | null = null;
+  private writtenReferencesSource: unknown[] | null = null;
+  private writtenReferencesCache: readonly ReportPackWrittenReference[] = [];
+  private referenceOptionsSource: unknown[] | null = null;
+  private referenceOptionsCache: readonly { readonly key: string; readonly label: string }[] = [];
   /** The admin's own Write and Rewrite choices, by row key; a row without one takes its default. */
   private readonly checks = new Map<string, boolean>();
   /** The comparison's stored documents, by id, for each row's flags and chart count. */
@@ -582,7 +618,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (key === this.contextKey) {
       if (context && previous) {
         const modelsChanged = this.refreshOptions(context);
-        if ((modelsChanged || context.pricingBasis !== previous.pricingBasis) && !this.jobInProgress) {
+        const baselineChanged = (context.baselineModelEntryKey ?? null) !== (previous.baselineModelEntryKey ?? null);
+        if ((modelsChanged || baselineChanged || context.pricingBasis !== previous.pricingBasis) && !this.jobInProgress) {
           this.schedulePreview();
         }
       }
@@ -599,15 +636,19 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
    */
   private refreshOptions(context: ReportPackContext): boolean {
     const before = this.modelOptions.map(option => String(option.key));
-    const hadAll = before.length > 0 && defaultCoveredKeys(this.modelOptions).every(key => this.coveredKeys.includes(key));
+    const baseline = this.baselineKey;
+    const hadAll = before.length > 0
+      && defaultCoveredKeys(this.modelOptions, baseline).every(key => this.coveredKeys.includes(key));
     this.modelOptions = comparisonModelOptions(context.entries);
     const offered = this.modelOptions.map(option => String(option.key));
     if (offered.join(',') === before.join(',')) {
       return false;
     }
-    this.coveredKeys = hadAll ? defaultCoveredKeys(this.modelOptions) : offered.filter(key => this.coveredKeys.includes(key));
+    this.coveredKeys = hadAll
+      ? defaultCoveredKeys(this.modelOptions, baseline)
+      : offered.filter(key => this.coveredKeys.includes(key));
     if (this.coveredKeys.length < MIN_COMPARISON_DOCUMENT_ENTRIES) {
-      this.coveredKeys = defaultCoveredKeys(this.modelOptions);
+      this.coveredKeys = defaultCoveredKeys(this.modelOptions, baseline);
     }
     this.subjectKeys = offered.filter(key => this.subjectKeys.includes(key));
     if (this.subjectKeys.length === 0) {
@@ -623,9 +664,10 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.stopTimers();
     this.stopTick();
     this.modelOptions = context ? comparisonModelOptions(context.entries) : [];
-    this.coveredKeys = defaultCoveredKeys(this.modelOptions);
+    this.coveredKeys = defaultCoveredKeys(this.modelOptions, this.baselineKey);
     const best = defaultSubjectKey(this.modelOptions);
     this.subjectKeys = best ? [best] : [];
+    this.referenceChoice = null;
     this.checks.clear();
     this.listItems = new Map();
     this.writerId = null;
@@ -791,8 +833,110 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (this.scopeMode !== 'comparison' || this.modelOptions.length <= MAX_COMPARISON_DOCUMENT_ENTRIES) {
       return null;
     }
+    const baseline = this.baselineKey;
+    if (baseline !== null && this.modelOptions.some(option => option.key === baseline)) {
+      return `A document covers at most ${MAX_COMPARISON_DOCUMENT_ENTRIES} models, so the baseline model and the `
+        + `${MAX_COMPARISON_DOCUMENT_ENTRIES - 1} others with the highest Intelligence Index of the `
+        + `${this.modelOptions.length} are chosen first.`;
+    }
     return `A document covers at most ${MAX_COMPARISON_DOCUMENT_ENTRIES} models, so the ${MAX_COMPARISON_DOCUMENT_ENTRIES} `
       + `with the highest Intelligence Index of the ${this.modelOptions.length} are chosen first.`;
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // The reference model
+  // -------------------------------------------------------------------------------------------
+
+  /** The baseline model's charted entry, from the comparison; null when none is. */
+  get baselineKey(): string | null {
+    return this.currentContext?.baselineModelEntryKey ?? null;
+  }
+
+  /**
+   * The Reference model a comparison-scope request names: the admin's choice while it is covered, else
+   * the baseline model while it is covered, else null (the highest Intelligence Index). Null under One
+   * model at a time.
+   */
+  get referenceEntryKey(): string | null {
+    if (this.scopeMode !== 'comparison') {
+      return null;
+    }
+    const choice = this.referenceChoice;
+    if (choice === '') {
+      return null;
+    }
+    if (choice !== null && this.coveredKeys.includes(choice)) {
+      return choice;
+    }
+    const baseline = this.baselineKey;
+    return baseline !== null && this.coveredKeys.includes(baseline) ? baseline : null;
+  }
+
+  /** The Reference model select's options after *Highest Intelligence Index*: each covered model. */
+  get referenceOptions(): readonly { readonly key: string; readonly label: string }[] {
+    const source: unknown[] = [this.coveredKeys, this.modelOptions, this.currentContext];
+    const cached = this.referenceOptionsSource;
+    if (cached && cached.every((item, i) => item === source[i])) {
+      return this.referenceOptionsCache;
+    }
+    this.referenceOptionsSource = source;
+    this.referenceOptionsCache = this.coveredKeys.map(key => ({ key, label: this.referenceLabel(key) }));
+    return this.referenceOptionsCache;
+  }
+
+  /** How the Reference model select and the written documents name a reference. */
+  referenceLabel(key: string | null): string {
+    if (key === null) {
+      return REPORT_PACK_HIGHEST_INDEX_REFERENCE;
+    }
+    const known = this.modelOptions.some(option => option.key === key);
+    const entry = this.currentContext?.entries.find(candidate => candidate.key === key);
+    const label = known
+      ? comparisonModelMention(key, this.modelOptions)
+      : entry ? (entry.label || entry.modelDisplayName) : key;
+    return key === this.baselineKey ? `${label} (baseline model)` : label;
+  }
+
+  onReferenceChange(event: Event): void {
+    this.referenceChoice = (event.target as HTMLSelectElement).value;
+    this.serverWarning = null;
+    this.startError = null;
+    this.schedulePreview();
+  }
+
+  /** The written comparison-scope documents of the chosen models, each with its reference model. */
+  get writtenReferences(): readonly ReportPackWrittenReference[] {
+    const rows = this.scopeMode === 'comparison'
+      ? this.documentsView.groups.flatMap(group => group.rows).filter(row => row.document !== null)
+      : [];
+    const current = this.referenceEntryKey;
+    const source: unknown[] = [
+      rows.length, ...rows.map(row => row.document), ...rows.map(row => row.listItem), current, this.modelOptions,
+      this.currentContext
+    ];
+    const cached = this.writtenReferencesSource;
+    if (cached && cached.length === source.length && cached.every((item, i) => item === source[i])) {
+      return this.writtenReferencesCache;
+    }
+    this.writtenReferencesSource = source;
+    this.writtenReferencesCache = rows.map(row => {
+      const reference = row.document?.referenceEntryKey ?? row.listItem?.referenceEntryKey ?? null;
+      return { key: row.key, name: row.name, reference: this.referenceLabel(reference), differs: reference !== current };
+    });
+    return this.writtenReferencesCache;
+  }
+
+  /** The amber note when a written document's reference is not the one chosen now, or null. */
+  get referenceMismatchNote(): string | null {
+    const differing = this.writtenReferences.filter(item => item.differs);
+    if (differing.length === 0) {
+      return null;
+    }
+    const one = differing.length === 1;
+    const names = differing.map(item => `${item.name} (${item.reference})`).join(', ');
+    return `${one ? 'A written document was' : 'Written documents were'} written against another reference model `
+      + `than the one chosen: ${names}. Check Rewrite to write ${one ? 'it' : 'them'} against `
+      + `${this.referenceLabel(this.referenceEntryKey)}.`;
   }
 
   /** Each covered model's letter and label, once the preview has lettered them; null under One model at a time. */
@@ -1158,7 +1302,12 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       ...(options.preview ? {} : { replaceDocumentIds })
     };
     if (this.scopeMode === 'comparison') {
-      return { ...base, subjectKey: '', scope: BenchmarkReportScope.Comparison, coveredEntryKeys: [...chosen], ...tail };
+      // Sent only when named, so a request without a reference is unchanged by it.
+      const reference = this.referenceEntryKey;
+      return {
+        ...base, subjectKey: '', scope: BenchmarkReportScope.Comparison, coveredEntryKeys: [...chosen], ...tail,
+        ...(reference !== null ? { referenceEntryKey: reference } : {})
+      };
     }
     const subjects = options.layout
       ? [chosen[0]]

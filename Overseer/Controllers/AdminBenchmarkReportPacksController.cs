@@ -46,9 +46,9 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// <summary>Rough output sizes per comparison-scope document, to be recalibrated after the first real jobs.</summary>
     private static readonly IReadOnlyDictionary<BenchmarkReportAudience, int> ComparisonEstimatedOutputTokens = new Dictionary<BenchmarkReportAudience, int>
     {
-        [BenchmarkReportAudience.ExecutiveSummary] = 3000,
-        [BenchmarkReportAudience.TechnicalReport] = 9500,
-        [BenchmarkReportAudience.InternalBrief] = 9000
+        [BenchmarkReportAudience.ExecutiveSummary] = 3800,
+        [BenchmarkReportAudience.TechnicalReport] = 12500,
+        [BenchmarkReportAudience.InternalBrief] = 10000
     };
 
     /// <summary>A prompt above this share of the writer configuration's context window is refused.</summary>
@@ -114,8 +114,9 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// letters, this covered set's documents, the comparison's other covered sets and its per-model
     /// documents. Both: the numbered comparison when it is identified, each document's estimated cost,
     /// prompt size and share of the writer's context window, the same-provider warning and any
-    /// refusal. Computes the fact sheets and the prompts. Battery results mixed with runs or groups are
-    /// a 400; a request the client aborts is a 499.
+    /// refusal. Computes the fact sheets and the prompts. Battery results mixed with runs or groups, and
+    /// a comparison-scope reference model that is not a covered model, are a 400; a request the client
+    /// aborts is a 499.
     /// </summary>
     [HttpPost("report-packs/preview")]
     public async Task<IActionResult> Preview([FromBody] BenchmarkReportPackRequest request, CancellationToken ct)
@@ -125,9 +126,12 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
         try
         {
-            return Ok(request.Scope == BenchmarkReportScope.Comparison
-                ? await ComparisonPreviewAsync(request, ct)
-                : await ModelPreviewAsync(request, ct));
+            if (request.Scope != BenchmarkReportScope.Comparison) return Ok(await ModelPreviewAsync(request, ct));
+
+            var preview = await ComparisonPreviewAsync(request, ct);
+            return preview.Refusal == BenchmarkComparisonReportFacts.ReferenceRefusal
+                ? BadRequest(new { error = preview.Refusal })
+                : Ok(preview);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -146,7 +150,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// battery results with runs or groups, an unknown audience, paper or naming, an invalid layout, a
     /// chart or file refused as a chart upload would be, a file without a chart entry or the reverse,
     /// and a preparation refusal (a subject with no peer, a covered entry that is not in the comparison
-    /// or is Excluded); 409 for fewer than two or more than twelve covered models; 413 for a document
+    /// or is Excluded, a reference model that is not a covered model); 409 for fewer than two or more
+    /// than twelve covered models; 413 for a document
     /// too large for a PDF; 499 when the client aborts.
     /// </summary>
     [HttpPost("report-packs/layout-preview")]
@@ -402,7 +407,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
         var covered = BenchmarkComparisonReportFacts.CoveredKeysOf(comparison, request.CoveredEntryKeys);
         string? refusal = BenchmarkComparisonReportFacts.CoveredRefusal(comparison, covered)
-            ?? BenchmarkComparisonReportFacts.BoundsRefusal(covered.Count);
+            ?? BenchmarkComparisonReportFacts.BoundsRefusal(covered.Count)
+            ?? BenchmarkComparisonReportFacts.ReferenceRefusalOf(comparison, covered, request.ReferenceEntryKey);
         if (refusal != null)
         {
             preview.Refusal = refusal;
@@ -586,9 +592,10 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     }
 
     /// <summary>
-    /// Starts a comparison-scope job over the covered entries. Refusals, in order: the comparison cannot
-    /// be computed (400); a covered entry is not in the comparison or is Excluded (400); fewer than two
-    /// or more than twelve covered models (409); unusable writer (400); the writer is a covered model,
+    /// Starts a comparison-scope job over the covered entries, against the request's reference model.
+    /// Refusals, in order: the comparison cannot be computed (400); a covered entry is not in the
+    /// comparison or is Excluded (400); fewer than two or more than twelve covered models (409); a
+    /// reference model that is not a covered model (400); unusable writer (400); the writer is a covered model,
     /// with its provider, model id and thinking level (400); no document (400); a prompt above 90 % of the
     /// writer's context window (400); a document named in <c>replaceDocumentIds</c> that this job does not
     /// write again (400); a requested document already written for this covered set and not named in
@@ -605,6 +612,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         if (coveredRefusal != null) return BadRequest(new { error = coveredRefusal });
         string? bounds = BenchmarkComparisonReportFacts.BoundsRefusal(coveredKeys.Count);
         if (bounds != null) return Conflict(new { error = bounds });
+        string? referenceRefusal = BenchmarkComparisonReportFacts.ReferenceRefusalOf(comparison, coveredKeys, request.ReferenceEntryKey);
+        if (referenceRefusal != null) return BadRequest(new { error = referenceRefusal });
 
         var covered = BenchmarkComparisonReportFacts.InLetterOrder(comparison.Entries.Where(e => coveredKeys.Contains(e.Key)));
         var writer = await _db.SystemAiApiConfigurations.FirstOrDefaultAsync(c => c.Id == request.WriterModelConfigurationId, ct);
@@ -688,8 +697,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         return Launch(job);
     }
 
-    /// <summary>A job of the request's sources and writer, holding the Report Pack slot once started.</summary>
-    private static BenchmarkReportPackJob NewJob(
+    /// <summary>A job of the request's sources, reference model and writer, holding the Report Pack slot once started.</summary>
+    internal static BenchmarkReportPackJob NewJob(
         BenchmarkReportPackRequest request, SystemAiApiConfiguration writer, bool sameProvider, string startedByUserId, int comparisonId, long snapshotId)
         => new()
         {
@@ -704,6 +713,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 GroupIds = (request.GroupIds ?? new List<long>()).ToList(),
                 BatteryRunIds = (request.BatteryRunIds ?? new List<long>()).ToList(),
                 PricingBasis = request.PricingBasis,
+                ReferenceEntryKey = string.IsNullOrWhiteSpace(request.ReferenceEntryKey) ? null : request.ReferenceEntryKey.Trim(),
                 WriterModelConfigurationId = writer.Id,
                 AcknowledgeSameProvider = request.AcknowledgeSameProvider,
                 ReplaceDocumentIds = (request.ReplaceDocumentIds ?? new List<long>()).Distinct().ToList()
@@ -1176,7 +1186,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     private sealed record WrittenRow(
         long Id, BenchmarkReportAudience Audience, DateTime CreatedAtUtc, string? WriterDisplayName, string SubjectKey,
         BenchmarkReportDocumentStatus Status, string? WriterProvider, string? WriterModelId, string? WriterThinkingLevel,
-        long DurationMs, decimal? CostUsd, string? CoveredSetKey);
+        long DurationMs, decimal? CostUsd, string? CoveredSetKey, string? ReferenceEntryKey);
 
     /// <summary>The newest row per audience, in audience order.</summary>
     private static List<BenchmarkReportPackWrittenDocumentDto> NewestPerAudience(IEnumerable<WrittenRow> rows)
@@ -1196,7 +1206,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 WriterModelId = d.WriterModelId,
                 WriterThinkingLevel = d.WriterThinkingLevel,
                 DurationMs = d.DurationMs,
-                CostUsd = d.CostUsd
+                CostUsd = d.CostUsd,
+                ReferenceEntryKey = d.ReferenceEntryKey
             })
             .ToList();
 
@@ -1211,7 +1222,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     private static IQueryable<WrittenRow> AsRows(IQueryable<BenchmarkReportDocument> documents)
         => documents.Select(d => new WrittenRow(
             d.Id, d.Audience, d.CreatedAtUtc, d.WriterDisplayName, d.SubjectKey, d.Status,
-            d.WriterProvider, d.WriterModelId, d.WriterThinkingLevel, d.DurationMs, d.CostUsd, d.CoveredSetKey));
+            d.WriterProvider, d.WriterModelId, d.WriterThinkingLevel, d.DurationMs, d.CostUsd, d.CoveredSetKey, d.ReferenceEntryKey));
 
     /// <summary>
     /// The Report Pack documents stored for the subject in the comparison of the request's sources,

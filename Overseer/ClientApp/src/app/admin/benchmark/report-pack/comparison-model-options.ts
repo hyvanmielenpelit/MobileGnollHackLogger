@@ -110,13 +110,17 @@ export function optionsByIntelligence(options: readonly ComparisonModelOption[])
 
 /**
  * The models a comparison-wide document set starts with: every option, or with more than `max` the
- * `max` of highest Intelligence Index; in the options' order.
+ * `keepKey` option (the baseline model) when offered plus the highest Intelligence Index ones up to
+ * `max`; in the options' order.
  */
 export function defaultCoveredKeys(
   options: readonly ComparisonModelOption[],
+  keepKey: string | null = null,
   max: number = MAX_COMPARISON_DOCUMENT_ENTRIES
 ): string[] {
-  const chosen = new Set(optionsByIntelligence(options).slice(0, max).map(option => String(option.key)));
+  const kept = keepKey !== null && options.some(option => option.key === keepKey) ? [keepKey] : [];
+  const others = optionsByIntelligence(options).map(option => String(option.key)).filter(key => !kept.includes(key));
+  const chosen = new Set([...kept, ...others].slice(0, max));
   return options.map(option => String(option.key)).filter(key => chosen.has(key));
 }
 

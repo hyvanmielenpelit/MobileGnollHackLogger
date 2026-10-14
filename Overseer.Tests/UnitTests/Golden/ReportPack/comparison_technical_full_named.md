@@ -31,7 +31,7 @@ The models answered the same questions, and Orion Max scored 85 / 100.
 
 | Letter | Model | Provider | Kind | Runs | Thinking level | Harness version | Run dates (UTC) | Price card |
 |---|---|---|---|---|---|---|---|---|
-| A | Orion Max | Northwind | run | 1 | not set | 41 | 2026-09-21 | — |
+| A | Orion Max (reference) | Northwind | run | 1 | not set | 41 | 2026-09-21 | — |
 | B | Vega Pro | Southstar | run | 1 | not set | 41 | 2026-09-21 | — |
 | C | Lyra Mini | Eastgate | run | 1 | not set | 41 | 2026-09-21 | — |
 | D | Nova Lite | Westlake | run | 1 | not set | 41 | 2026-09-21 | — |
@@ -41,7 +41,7 @@ The models answered the same questions, and Orion Max scored 85 / 100.
 
 | Model | Provider | Intelligence Index | 95 % interval | Rank | Median answer time | Speed rank | Cost per question | Cost rank | Critical errors |
 |---|---|---|---|---|---|---|---|---|---|
-| Orion Max | Northwind | 85 | 82–88 | joint 1 | 12.0 s | 3 | $0.050 | 4 | 0 of 6 answers |
+| Orion Max (reference) | Northwind | 85 | 82–88 | joint 1 | 12.0 s | 3 | $0.050 | 4 | 0 of 6 answers |
 | Vega Pro | Southstar | 80 | 77–83 | joint 1 | 9.0 s | 2 | $0.030 | 3 | 0 of 6 answers |
 | Lyra Mini | Eastgate | 70 | 66–74 | joint 3 | 15.0 s | 4 | $0.020 | 2 | 1 of 6 answers |
 | Nova Lite | Westlake | 70 | 64–76 | joint 3 | 8.0 s | 1 | $0.060 | 5 | 0 of 6 answers |
@@ -117,11 +117,37 @@ Speed: no test could be made. Cost: not tested. No pair could be tested on this 
 
 *At least one entry has a single run. With one run a side, a paired test captures question sampling only, not run-to-run variation, so it can look more certain than it is.*
 
+### Compared with the reference model
+
+**Reference:** Orion Max, the highest Intelligence Index.
+
+| Model | Provider | Questions | Paired difference (95 % interval) | Result | Better / similar / worse | May mislead per 20 | Time ratio | Cost ratio |
+|---|---|---|---|---|---|---|---|---|
+| Orion Max (reference) | Northwind | — | — | — | — | 0 | 1.00× | 1.00× |
+| Vega Pro | Southstar | 6 | 0.0 (-21.0 to +21.0) | not established | 1 / 5 / 0 | 0 | 0.75× | 0.60× |
+| Lyra Mini | Eastgate | 6 | -15.2 (-23.8 to -6.6) | not established | 0 / 3 / 3 | 3.3 | 1.25× | 0.40× |
+| Nova Lite | Westlake | 6 | -15.8 (-26.1 to -5.6) | not established | 0 / 1 / 5 | 0 | 0.67× | 1.20× |
+| Zeta Prime | Midland | 6 | -30.0 (-43.9 to -16.1) | not established | 0 / 1 / 5 | 0 | 1.67× | 0.20× |
+
+*Paired difference: the mean per-question difference, the model minus the reference, on the questions both answered, with its 95 % interval. Better, similar and worse count the questions both scored on the same item revision on which the model scored more than 15 points above the reference, within 15 points of it, or more than 15 points below it; they are not tests. May mislead per 20: answers with an accuracy level below 4 or a critical error, per 20 answers. Time and cost ratios: the model's median answer time and cost per question divided by the reference's.*
+
+The table sets every other model against Orion Max; only the paired tests and the intervals decide where an order is established.
+
+## Notable findings
+
+- Vega Pro scored higher than Nova Lite (established by 95 % intervals that do not overlap) at 0.50 times its cost per question.
+- Nova Lite scored higher than Zeta Prime (established by 95 % intervals that do not overlap) at 0.40 times its median answer time.
+- Vega Pro scored higher than Zeta Prime (established by 95 % intervals that do not overlap) at 0.45 times its median answer time.
+
+*Detected by code from the figures, in this order, at most two of a kind and ten in all: a model established as scoring higher than another (by a paired test or by 95 % intervals that do not overlap) at no more than half its cost per question, or half its median answer time; one model at two thinking levels where the lower level's Intelligence Index is at least the higher's; the highest-Index or reference model scoring 50 or less where the other models' median is 75 or more; the lowest-Index model scoring at least 15 points above every other model on a question; every model scoring below 50 on a question; an advanced-band score at least 10 points above the simple-band score, each band with at least three questions; at least two critical errors, or three panel disagreements, at twice the other models' median rate or more; a pair whose order depends on which panel member grades; truncated answers and tool-limit hits on at least 10 % of a model's answers; tool calls per question or median answer length at most half or at least twice the other models' median; and a provider error rate of at least 2 % and five times the other models' median.*
+
+Each finding follows from the tables above; the data does not explain them further.
+
 ## Dimension profiles
 
 | Model | Provider | Accuracy | Completeness | Conciseness | Readability |
 |---|---|---|---|---|---|
-| Orion Max | Northwind | 80 | 80 | 80 | 80 |
+| Orion Max (reference) | Northwind | 80 | 80 | 80 | 80 |
 | Vega Pro | Southstar | 80 | 80 | 80 | 80 |
 | Lyra Mini | Eastgate | 65 | 65 | 65 | 65 |
 | Nova Lite | Westlake | 64 | 64 | 64 | 64 |
@@ -138,7 +164,7 @@ Accuracy ranges from 50 (Zeta Prime) to 80 (Orion Max), 30 points apart.
 
 | Model | Provider | Median answer time | Cost per question |
 |---|---|---|---|
-| Orion Max | Northwind | 12.0 s | $0.050 |
+| Orion Max (reference) | Northwind | 12.0 s | $0.050 |
 | Vega Pro | Southstar | 9.0 s | $0.030 |
 | Lyra Mini | Eastgate | 15.0 s | $0.020 |
 | Nova Lite | Westlake | 8.0 s | $0.060 |
@@ -178,6 +204,26 @@ The intelligence against speed frontier holds Orion Max, Vega Pro and Nova Lite.
 
 - Zeta Prime scored 55 / 100 on intelligence.
   - *Evidence:* Zeta Prime's intelligence Index: 55 / 100 · Q1
+
+## Why the models differ
+
+### Failure profile
+
+| Model | Provider | Answers | May mislead | Correct / partial / incorrect / not attempted | Wrong instead of abstaining | Level 2 or below: accuracy / completeness / conciseness / readability | Truncated | Output defects | No tool call | Tool-limit hits | Median answer length | Isolated / shared misses | Lowest scorer |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Orion Max (reference) | Northwind | 6 | 0 (0 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | 0 / 1 | 0 |
+| Vega Pro | Southstar | 6 | 0 (0 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | 0 / 0 | 0 |
+| Lyra Mini | Eastgate | 6 | 1 (3.3 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | 0 / 1 | 0 |
+| Nova Lite | Westlake | 6 | 0 (0 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | 0 / 1 | 0 |
+| Zeta Prime | Midland | 6 | 0 (0 per 20) | — | — | 0 / 0 / 0 / 0 | 0 | 0 | 6 | 0 | 10 | 1 / 1 | 6 |
+
+*Counted over each model's scored answers in all its runs; in a panel run a level is the mean of both panel members' levels. May mislead: an accuracy level below 4 or a critical error. Outcomes are recorded from scoring method 13. Low levels: answers at level 2 or below on each dimension. Output defects: an empty, truncated or scrubbed answer, reasoning bleed, repeated fragments, or an answer that did not complete normally. Tool-limit hits: the tool budget or the iteration limit was reached. An isolated miss is a question the model scored 50 or less where the other models' median is 75 or more; a shared miss is one it scored below 50 along with at least half the others. Lowest scorer: questions where no other model scored lower. The counts say what the graders recorded, not why.*
+
+### Grader findings by category
+
+No run of these models recorded structured grader findings; they are recorded from harness 40.
+
+The failure profiles count what the graders recorded for each model; they do not say why.
 
 ## Cross-model question patterns
 
@@ -302,7 +348,7 @@ Every model rests on a single run, so no interval covers run-to-run variation.
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 50.
+- **Assessor (Gemini 3.8 Flash):** score 50. Misses the alignment condition.
 
 **Claim verifier:**
 
@@ -368,7 +414,7 @@ Every model rests on a single run, so no interval covers run-to-run variation.
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 60.
+- **Assessor (Gemini 3.8 Flash):** score 60. Leaves out how the timeout is reset.
 
 **Claim verifier:**
 
@@ -434,7 +480,7 @@ Every model rests on a single run, so no interval covers run-to-run variation.
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 28.
+- **Assessor (Gemini 3.8 Flash):** score 28. Says the thrown gem always breaks, which contradicts the rubric.
   - Critical error: "Answer 203"
 
 **Claim verifier:**
@@ -717,6 +763,6 @@ Every model rests on a single run, so no interval covers run-to-run variation.
 
 ---
 
-*Document ID 212 · format version 13 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
+*Document ID 212 · format version 14 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

@@ -2297,6 +2297,81 @@ public class BenchmarkReportPackComparisonValidatorTests
         Assert.Contains(cleaned.Notes, n => n.Rule == 7 && n.Dropped && n.Location == "sections." + slot + "[p2]");
     }
 
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.AgainstReference, 100)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.AgainstReference, 150)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.NotableFindings, 200)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.WhyModelsDiffer, 250)]
+    public void TheNewSlots_HoldTheirWordCaps(BenchmarkReportAudience audience, string slot, int cap)
+    {
+        Assert.Equal(cap, BenchmarkReportPackValidator.SlotMaxWords(audience, slot, comparisonScope: true));
+        Assert.Equal(cap, BenchmarkReportPackValidator.SlotMaxWords(audience, slot, BenchmarkReportScope.Comparison));
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(audience, slot, comparisonScope: false));
+
+        var output = Valid(audience);
+        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("word", cap));
+        Assert.Empty(Validate(audience, output));
+
+        output.Sections[slot] = string.Join(" ", Enumerable.Repeat("word", cap + 1));
+        var note = Assert.Single(Validate(audience, output));
+        Assert.Equal(7, note.Rule);
+        Assert.Equal("sections." + slot, note.Location);
+    }
+
+    [Fact]
+    public void TheNotableFindingsSlot_IsRequired_OnlyWhenTheSheetHasNotableFindings()
+    {
+        var (sheet, content) = Data();
+        Assert.True(BenchmarkNotableFindings.CountOf(sheet) > 0);
+        var output = Valid(BenchmarkReportAudience.TechnicalReport);
+        Assert.True(output.Sections.ContainsKey(BenchmarkReportSlots.NotableFindings));
+
+        output.Sections.Remove(BenchmarkReportSlots.NotableFindings);
+        var missing = Assert.Single(BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.TechnicalReport, output, sheet, content));
+        Assert.Equal(1, missing.Rule);
+        Assert.Equal("sections." + BenchmarkReportSlots.NotableFindings, missing.Location);
+
+        // A sheet with nothing notable does not ask for the slot, and a writer who supplies it anyway breaks rule 1.
+        var quiet = BenchmarkReportPackFixture.ComparisonFacts(new[] { "run:32", "run:33" });
+        Assert.Equal(0, BenchmarkNotableFindings.CountOf(quiet.Sheet!));
+        var quietOutput = BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.TechnicalReport, quiet.Sheet!);
+        Assert.False(quietOutput.Sections.ContainsKey(BenchmarkReportSlots.NotableFindings));
+        Assert.Empty(BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.TechnicalReport, quietOutput, quiet.Sheet!, quiet.Content!));
+
+        quietOutput.Sections[BenchmarkReportSlots.NotableFindings] = "Nothing to explain.";
+        var extra = Assert.Single(BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.TechnicalReport, quietOutput, quiet.Sheet!, quiet.Content!));
+        Assert.Equal(1, extra.Rule);
+        Assert.Equal("sections." + BenchmarkReportSlots.NotableFindings, extra.Location);
+
+        var spec = BenchmarkReportSlots.For(BenchmarkReportAudience.TechnicalReport, BenchmarkReportScope.Comparison);
+        Assert.Contains(BenchmarkReportSlots.NotableFindings, spec.ComparisonSlotsFor(hasNotableFindings: true));
+        Assert.DoesNotContain(BenchmarkReportSlots.NotableFindings, spec.ComparisonSlotsFor(hasNotableFindings: false));
+        Assert.Contains(BenchmarkReportSlots.WhyModelsDiffer, spec.ComparisonSlotsFor(hasNotableFindings: false));
+    }
+
+    [Fact]
+    public void AWeakestAnswersComment_IsDisclosureSourceText()
+    {
+        var output = Valid(BenchmarkReportAudience.InternalBrief);
+        output.Sections[BenchmarkReportSlots.ModelGaps] = "On Q3 the grader said it says the thrown gem always breaks, which contradicts the rubric.";
+
+        var note = Assert.Single(Validate(BenchmarkReportAudience.InternalBrief, output), n => n.Rule == 9);
+
+        Assert.Contains("a grader comment on Q3", note.Message);
+    }
+
+    [Fact]
+    public void TheParser_KnowsTheNewComparisonSlots()
+    {
+        var result = BenchmarkReportPackParser.Parse(
+            "{\"headline\":\"H\",\"sections\":{\"AgainstReference\":\"a\",\"NOTABLEFINDINGS\":\"n\",\"whymodelsdiffer\":\"w\"}}");
+
+        Assert.True(result.Success);
+        Assert.Equal("a", result.Output!.Sections[BenchmarkReportSlots.AgainstReference]);
+        Assert.Equal("n", result.Output.Sections[BenchmarkReportSlots.NotableFindings]);
+        Assert.Equal("w", result.Output.Sections[BenchmarkReportSlots.WhyModelsDiffer]);
+    }
+
     [Fact]
     public void ListsTheComparisonDocumentsDoNotUse_AreRule1()
     {

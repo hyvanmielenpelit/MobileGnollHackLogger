@@ -935,7 +935,10 @@ internal static class BenchmarkReportPackFixture
         return comparison;
     }
 
-    /// <summary>The five models' runs: Lyra Mini made a critical error on Q3, and the verifier refuted a claim of Nova Lite's on Q3.</summary>
+    /// <summary>
+    /// The five models' runs: Lyra Mini made a critical error on Q3, and the verifier refuted a claim of
+    /// Nova Lite's on Q3. The grader commented on Lyra Mini's Q3, Nova Lite's Q2 and Zeta Prime's Q1.
+    /// </summary>
     public static Dictionary<long, BenchmarkRun> FiveModelRuns()
     {
         var runs = new Dictionary<long, BenchmarkRun>();
@@ -950,18 +953,35 @@ internal static class BenchmarkReportPackFixture
         var critical = runs[33].Answers.Single(a => a.OrderIndex == 3);
         critical.CriticalError = true;
         critical.CriticalErrorQuote = "Answer 203";
+        critical.ReviewComment = "Says the thrown gem always breaks, which contradicts the rubric.";
         runs[34].Answers.Single(a => a.OrderIndex == 3).ClaimsRefutedCount = 1;
+        runs[34].Answers.Single(a => a.OrderIndex == 2).ReviewComment = "Leaves out how the timeout is reset.";
+        runs[35].Answers.Single(a => a.OrderIndex == 1).ReviewComment = "Misses the alignment condition.";
         return runs;
     }
 
-    /// <summary>The comparison-scope sheet and content over <paramref name="coveredKeys"/>, every model when null, with both paired families.</summary>
-    public static BenchmarkComparisonReportFactsResult ComparisonFacts(IReadOnlyList<string>? coveredKeys = null)
+    /// <summary>The model the baseline variant marks as the Overseer team's baseline model and takes as its reference: Lyra Mini, Model C.</summary>
+    public const string BaselineKey = "run:33";
+
+    /// <summary>
+    /// The comparison-scope sheet and content over <paramref name="coveredKeys"/>, every model when null, with both
+    /// paired families, against <paramref name="referenceKey"/> (the highest-Index model when null), with
+    /// <paramref name="baselineKey"/> as the comparison's baseline model when given.
+    /// </summary>
+    public static BenchmarkComparisonReportFactsResult ComparisonFacts(
+        IReadOnlyList<string>? coveredKeys = null, string? referenceKey = null, string? baselineKey = null)
     {
         var comparison = FiveModelComparison();
+        if (baselineKey != null)
+        {
+            comparison.BaselineModelEntryKey = baselineKey;
+            comparison.BaselineModelState = BenchmarkBaselineModelStates.Included;
+        }
         var runs = FiveModelRuns();
         var keys = coveredKeys ?? BenchmarkComparisonReportFacts.DefaultCoveredKeys(comparison);
-        var (reference, allPairs, unavailable) = BenchmarkComparisonReportFacts.PairedFromRuns(comparison, keys, runs);
-        var result = BenchmarkComparisonReportFacts.BuildFromRuns(comparison, keys, runs, 120, reference, allPairs, unavailable, ComparisonNumber);
+        var (reference, allPairs, unavailable) = BenchmarkComparisonReportFacts.PairedFromRuns(comparison, keys, runs, referenceKey);
+        var result = BenchmarkComparisonReportFacts.BuildFromRuns(
+            comparison, keys, runs, 120, reference, allPairs, unavailable, ComparisonNumber, referenceKey: referenceKey);
         Assert.True(result.Sheet != null, result.Refusal);
         return result;
     }
@@ -979,10 +999,16 @@ internal static class BenchmarkReportPackFixture
         CreatedAtUtc = ComparisonComputedAt
     };
 
-    /// <summary>A stored comparison-scope document over every model of the fixture comparison, or over <see cref="SubsetKeys"/>.</summary>
-    public static BenchmarkReportDocument ComparisonDocument(BenchmarkReportAudience audience, bool subset = false)
+    /// <summary>
+    /// A stored comparison-scope document over every model of the fixture comparison, or over
+    /// <see cref="SubsetKeys"/>; with <paramref name="baseline"/> (the whole comparison only),
+    /// <see cref="BaselineKey"/> is the comparison's baseline model and the document's reference.
+    /// </summary>
+    public static BenchmarkReportDocument ComparisonDocument(BenchmarkReportAudience audience, bool subset = false, bool baseline = false)
     {
-        var built = ComparisonFacts(subset ? SubsetKeys : null);
+        var built = baseline
+            ? ComparisonFacts(subset ? SubsetKeys : null, referenceKey: BaselineKey, baselineKey: BaselineKey)
+            : ComparisonFacts(subset ? SubsetKeys : null);
         var sheet = built.Sheet!;
         var comparison = ComparisonRow();
         return new BenchmarkReportDocument
@@ -996,6 +1022,7 @@ internal static class BenchmarkReportPackFixture
             Comparison = comparison,
             CoveredEntryKeysJson = BenchmarkReportJson.Serialize(built.CoveredEntryKeys.ToList()),
             CoveredSetKey = built.CoveredSetKey,
+            ReferenceEntryKey = baseline ? BaselineKey : sheet.Peers.Single(p => p.Letter == sheet.ReferenceLetter).EntryKey,
             SubjectKey = sheet.SubjectKey,
             SubjectLabel = sheet.SubjectLabel,
             SubjectRunIdsJson = BenchmarkReportJson.Serialize(sheet.SubjectRunIds),
@@ -1042,6 +1069,7 @@ internal static class BenchmarkReportPackFixture
         var letters = sheet.Peers.OrderBy(p => p.Letter.Length).ThenBy(p => p.Letter, StringComparer.Ordinal).Select(p => p.Letter).ToList();
         string a = letters[0];
         string b = letters[1];
+        string reference = sheet.ReferenceLetter ?? a;
         string T(string inner) => "{{" + inner + "}}";
 
         var texts = new Dictionary<string, string>
@@ -1059,14 +1087,18 @@ internal static class BenchmarkReportPackFixture
             [BenchmarkReportSlots.Limitations] = "Every model rests on a single run, so no interval covers run-to-run variation.",
             [BenchmarkReportSlots.SharedGaps] = "Q3 is a shared gap: most models scored low on it, so check the chat and the corpus first.",
             [BenchmarkReportSlots.ModelGaps] = T("model:" + b) + " gave the weakest answer on Q3.",
-            [BenchmarkReportSlots.BenchmarkSystem] = "The rubric of Q3 may need a review, since most models scored low on it."
+            [BenchmarkReportSlots.BenchmarkSystem] = "The rubric of Q3 may need a review, since most models scored low on it.",
+            [BenchmarkReportSlots.AgainstReference] = "The table sets every other model against " + T("model:" + reference)
+                + "; only the paired tests and the intervals decide where an order is established.",
+            [BenchmarkReportSlots.NotableFindings] = "Each finding follows from the tables above; the data does not explain them further.",
+            [BenchmarkReportSlots.WhyModelsDiffer] = "The failure profiles count what the graders recorded for each model; they do not say why."
         };
 
         var spec = BenchmarkReportSlots.For(audience, BenchmarkReportScope.Comparison);
         var output = new BenchmarkReportWriterOutput
         {
             Headline = T("model:" + a) + " and " + T("model:" + b) + " head the comparison; their intervals overlap, so the order between them is not established.",
-            Sections = spec.RequiredSlots.ToDictionary(s => s, s => texts[s])
+            Sections = spec.ComparisonSlotsFor(BenchmarkNotableFindings.CountOf(sheet) > 0).ToDictionary(s => s, s => texts[s])
         };
 
         if (spec.MaxModelPoints > 0)
@@ -1114,6 +1146,53 @@ internal static class BenchmarkReportPackFixture
     /// <summary>Every audience, disclosure and naming of a comparison-scope document, with its golden file name.</summary>
     public static IEnumerable<object[]> ComparisonCombinations()
         => AllowedCombinations().Select(c => new[] { c[0], c[1], c[2], "comparison_" + (string)c[3] });
+
+    /// <summary>The baseline variant's golden combinations (<see cref="ComparisonDocument"/> with <c>baseline</c>): one named, one anonymized.</summary>
+    public static IEnumerable<object[]> ComparisonBaselineCombinations() => new[]
+    {
+        new object[] { BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, "comparison_technical_full_named_baseline.md" },
+        new object[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized, "comparison_exec_full_anonymized_baseline.md" }
+    };
+
+    /// <summary>The writer slots comparison format version 14 added.</summary>
+    public static readonly IReadOnlyList<string> Format14Slots = new[]
+    {
+        BenchmarkReportSlots.AgainstReference, BenchmarkReportSlots.NotableFindings, BenchmarkReportSlots.WhyModelsDiffer
+    };
+
+    /// <summary>
+    /// <see cref="ComparisonDocument"/> as comparison format version 13 stored it: no reference, baseline or
+    /// notable findings on the sheet, no failure profile, reference or notable facts, no weakest answers
+    /// in the content and none of <see cref="Format14Slots"/> in the writer's output.
+    /// </summary>
+    public static BenchmarkReportDocument StoredV13ComparisonDocument(BenchmarkReportAudience audience)
+    {
+        var document = ComparisonDocument(audience);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        sheet.Facts = sheet.Facts
+            .Where(f => !f.Key.StartsWith("notable.", StringComparison.Ordinal)
+                        && f.Key != "comparison.reference"
+                        && !f.Key.Contains(".profile.", StringComparison.Ordinal)
+                        && !f.Key.Contains(".vsReference.", StringComparison.Ordinal))
+            .ToList();
+        sheet.ReferenceLetter = null;
+        sheet.ReferenceIsBaselineModel = null;
+        sheet.BaselineModelLetter = null;
+        sheet.NotableFindings = null;
+
+        var content = BenchmarkReportJson.Deserialize<BenchmarkReportContentSnapshot>(document.ContentJson);
+        content.ModelNotes = null;
+
+        var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
+        foreach (string slot in Format14Slots) writer.Sections.Remove(slot);
+
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+        document.ContentJson = BenchmarkReportJson.Serialize(content);
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+        document.ReferenceEntryKey = null;
+        document.ReportFormatVersion = 13;
+        return document;
+    }
 
     /// <summary>A synthesis JSON with one finding per tuple.</summary>
     public static string Synthesis(params (string Kind, string Category, int[] Questions, string Text)[] findings)

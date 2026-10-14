@@ -16,6 +16,7 @@ import {
   BenchmarkModelComparisonQuery,
   ComparisonSelectedSource,
   ComparisonSelectionNotice,
+  selectionKeys,
   selectionNotices
 } from '../model-comparison/model-comparison.models';
 import { Subscription } from 'rxjs';
@@ -125,7 +126,7 @@ export class BenchmarkComparisonState implements OnDestroy {
    * the picker and the band cannot disagree about what the selection costs.
    */
   get comparisonSelectionNotices(): ComparisonSelectionNotice[] {
-    return selectionNotices({
+    const notices = selectionNotices({
       index: this.comparabilityIndex,
       indexLoading: this.comparabilityIndexLoading,
       indexError: this.comparabilityIndexError,
@@ -134,6 +135,25 @@ export class BenchmarkComparisonState implements OnDestroy {
       batteryRunIds: this.comparisonBatteryRunIds,
       pricingBasis: this.comparisonPricingBasis
     });
+    const note = this.comparisonPresetNote;
+    if (note !== null && note.keys === this.comparisonSelectionKey()) {
+      notices.push({ id: 'baseline-model-not-added', severity: 'info', heading: 'Baseline model not added', body: note.text });
+    }
+    return notices;
+  }
+
+  /**
+   * A preset's note on the baseline model, with the selection it was given for. Shown in the notice
+   * band while that selection stands; the first change of selection drops it.
+   */
+  private comparisonPresetNote: { readonly text: string; readonly keys: string } | null = null;
+
+  private comparisonSelectionKey(
+    runIds: readonly number[] = this.comparisonRunIds,
+    groupIds: readonly number[] = this.comparisonGroupIds,
+    batteryRunIds: readonly number[] = this.comparisonBatteryRunIds
+  ): string {
+    return selectionKeys(runIds, groupIds, batteryRunIds).join(',');
   }
 
   /** Every selected source, battery results included. */
@@ -241,6 +261,10 @@ export class BenchmarkComparisonState implements OnDestroy {
   onComparisonSelectionChange(selection: ModelComparisonSelection): void {
     // A response still in flight was asked for the previous selection.
     this.cancelComparison();
+    if (this.comparisonPresetNote !== null
+      && this.comparisonPresetNote.keys !== this.comparisonSelectionKey(selection.runIds, selection.groupIds, selection.batteryRunIds ?? [])) {
+      this.comparisonPresetNote = null;
+    }
     this.comparisonRunIds = [...selection.runIds];
     this.comparisonGroupIds = [...selection.groupIds];
     this.comparisonBatteryRunIds = [...(selection.batteryRunIds ?? [])];
@@ -280,9 +304,11 @@ export class BenchmarkComparisonState implements OnDestroy {
    * wizard.
    */
   applyComparisonPreset(preset: ComparisonWizardPreset): void {
+    this.comparisonPresetNote = null;
     const batteryRunIds = [...new Set(preset.batteryRunIds)].slice(0, MAX_COMPARISON_SOURCES);
     if (batteryRunIds.length > 0) {
       this.onComparisonSelectionChange({ runIds: [], groupIds: [], batteryRunIds });
+      this.keepPresetNote(preset);
       this.loadMissingBatteryRuns(batteryRunIds);
       this.viewSync.notify();
       return;
@@ -298,8 +324,15 @@ export class BenchmarkComparisonState implements OnDestroy {
       }
     }
     this.onComparisonSelectionChange({ runIds, groupIds, batteryRunIds: [] });
+    this.keepPresetNote(preset);
     this.loadMissingRunsAndGroups(runIds, groupIds);
     this.viewSync.notify();
+  }
+
+  /** Keeps a preset's baseline model note for the selection it just made. */
+  private keepPresetNote(preset: ComparisonWizardPreset): void {
+    const text = preset.baselineModelNote?.trim();
+    this.comparisonPresetNote = text ? { text, keys: this.comparisonSelectionKey() } : null;
   }
 
   /**

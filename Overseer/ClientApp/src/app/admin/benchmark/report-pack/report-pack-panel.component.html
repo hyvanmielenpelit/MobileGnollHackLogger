@@ -74,6 +74,48 @@
         }
       </div>
 
+      <!-- Whole comparison only: the model the documents judge the others against. A written document
+           names its own reference, and an amber note says when that is not the one chosen here. -->
+      @if (scopeMode === 'comparison' && modelOptions.length > 0) {
+        <div class="form-group rp-field rp-reference-field">
+          <label [for]="idPrefix + '-reference'">Reference model</label>
+          <select class="gh-input rp-reference-select" [id]="idPrefix + '-reference'"
+                  [attr.aria-describedby]="idPrefix + '-reference-hint'" (change)="onReferenceChange($event)">
+            <option value="" [selected]="referenceEntryKey === null">{{ highestIndexReference }}</option>
+            @for (option of referenceOptions; track option.key) {
+              <option [value]="option.key" [selected]="option.key === referenceEntryKey">{{ option.label }}</option>
+            }
+          </select>
+          <p class="form-hint rp-reference-hint" [id]="idPrefix + '-reference-hint'">
+            The documents judge the other models against this one.
+          </p>
+          @if (writtenReferences.length > 0) {
+            <div class="rp-written-references" role="group" [attr.aria-labelledby]="idPrefix + '-written-references-title'">
+              <p class="rp-letters-title" [id]="idPrefix + '-written-references-title'">Reference of the written documents</p>
+              <dl class="rp-written-references-list">
+                @for (item of writtenReferences; track item.key) {
+                  <div class="rp-written-reference" [attr.data-row]="item.key" [class.is-different]="item.differs">
+                    <dt>{{ item.name }}</dt>
+                    <dd>
+                      {{ item.reference }}
+                      @if (item.differs) {
+                        <span class="rp-written-reference-differs">· not the one chosen</span>
+                      }
+                    </dd>
+                  </div>
+                }
+              </dl>
+            </div>
+          }
+          @if (referenceMismatchNote; as note) {
+            <div class="alert alert-warning rp-reference-mismatch" role="note">
+              <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+              <div class="alert-content"><div class="alert-body">{{ note }}</div></div>
+            </div>
+          }
+        </div>
+      }
+
       <app-comparison-documents-status class="rp-documents" [idPrefix]="idPrefix + '-docs'"
                                        [view]="documentsView" [busy]="jobInProgress"
                                        (checkChange)="onDocumentCheck($event)"
@@ -241,6 +283,13 @@
         Generate
       </button>
     </div>
+    <!-- The charts are drawn here, as each document finishes; none are drawn without chart storage. -->
+    @if (!chartStorageMissing) {
+      <p class="rp-note rp-keep-open">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+        <span>{{ keepOpenText }}</span>
+      </p>
+    }
     @if (layoutPreviewGlobalReason; as reason) {
       <p class="rp-note rp-preview-layout-reason" [id]="idPrefix + '-preview-layout-reason'">{{ reason }}</p>
     }

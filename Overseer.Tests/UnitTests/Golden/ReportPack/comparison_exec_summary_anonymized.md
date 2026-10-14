@@ -26,7 +26,7 @@ For the best answers, choose Model A or Model B; their intervals overlap, so the
 
 | Model | Intelligence Index | Rank | Median answer time | Cost per question | Critical errors |
 |---|---|---|---|---|---|
-| Model A | 85 (82–88) | joint 1 | 12.0 s | $0.050 | 0 of 6 answers |
+| Model A (reference) | 85 (82–88) | joint 1 | 12.0 s | $0.050 | 0 of 6 answers |
 | Model B | 80 (77–83) | joint 1 | 9.0 s | $0.030 | 0 of 6 answers |
 | Model C | 70 (66–74) | joint 3 | 15.0 s | $0.020 | 1 of 6 answers |
 | Model D | 70 (64–76) | joint 3 | 8.0 s | $0.060 | 0 of 6 answers |
@@ -36,7 +36,7 @@ For the best answers, choose Model A or Model B; their intervals overlap, so the
 
 | Model | Accuracy | Completeness | Conciseness | Readability |
 |---|---|---|---|---|
-| Model A | 80 | 80 | 80 | 80 |
+| Model A (reference) | 80 | 80 | 80 | 80 |
 | Model B | 80 | 80 | 80 | 80 |
 | Model C | 65 | 65 | 65 | 65 |
 | Model D | 64 | 64 | 64 | 64 |
@@ -46,6 +46,28 @@ For the best answers, choose Model A or Model B; their intervals overlap, so the
 - **Completeness:** from 50 (Model E) to 80 (Model A), 30 points apart
 - **Conciseness:** from 50 (Model E) to 80 (Model A), 30 points apart
 - **Readability:** from 50 (Model E) to 80 (Model A), 30 points apart
+
+## Compared with the reference model
+
+**Reference:** Model A, the highest Intelligence Index.
+
+| Model | Paired difference (95 % interval) | Better / similar / worse | May mislead per 20 | Time ratio | Cost ratio |
+|---|---|---|---|---|---|
+| Model A (reference) | — | — | 0 | 1.00× | 1.00× |
+| Model B | 0.0 (-21.0 to +21.0) | 1 / 5 / 0 | 0 | 0.75× | 0.60× |
+| Model C | -15.2 (-23.8 to -6.6) | 0 / 3 / 3 | 3.3 | 1.25× | 0.40× |
+| Model D | -15.8 (-26.1 to -5.6) | 0 / 1 / 5 | 0 | 0.67× | 1.20× |
+| Model E | -30.0 (-43.9 to -16.1) | 0 / 1 / 5 | 0 | 1.67× | 0.20× |
+
+*Paired difference: the mean per-question difference, the model minus the reference, on the questions both answered, with its 95 % interval. Better, similar and worse count the questions both scored on the same item revision on which the model scored more than 15 points above the reference, within 15 points of it, or more than 15 points below it; they are not tests. May mislead per 20: answers with an accuracy level below 4 or a critical error, per 20 answers. Time and cost ratios: the model's median answer time and cost per question divided by the reference's.*
+
+The table sets every other model against Model A; only the paired tests and the intervals decide where an order is established.
+
+## Also worth knowing
+
+- Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question.
+- Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time.
+- Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time.
 
 ## Model by model
 
@@ -107,6 +129,6 @@ What it does not measure: conversations longer than one question, the wiki text 
 
 ---
 
-*Document ID 212 · format version 13 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · models anonymized*
+*Document ID 212 · format version 14 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · models anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

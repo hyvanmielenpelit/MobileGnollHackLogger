@@ -358,7 +358,10 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
     resumeModelBatch: vi.fn().mockName("AdminBenchmarkService.resumeModelBatch"),
     skipModelBatchMember: vi.fn().mockName("AdminBenchmarkService.skipModelBatchMember"),
     getModelBatchDiagnostics: vi.fn().mockName("AdminBenchmarkService.getModelBatchDiagnostics"),
-    deleteModelBatch: vi.fn().mockName("AdminBenchmarkService.deleteModelBatch")
+    deleteModelBatch: vi.fn().mockName("AdminBenchmarkService.deleteModelBatch"),
+    getModelBatchComparisonSources: vi.fn().mockName("AdminBenchmarkService.getModelBatchComparisonSources"),
+    getBaselineModel: vi.fn().mockName("AdminBenchmarkService.getBaselineModel"),
+    setBaselineModel: vi.fn().mockName("AdminBenchmarkService.setBaselineModel")
   } as unknown as MockedObject<AdminBenchmarkService>;
 
   // The comparison wizard numbers every computed comparison, and its header can rename it.
@@ -376,6 +379,13 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
   benchmarkServiceMock.skipModelBatchMember.mockReturnValue(of(buildModelBatchRun()));
   benchmarkServiceMock.getModelBatchDiagnostics.mockReturnValue(of('BATCH\n  id: 21'));
   benchmarkServiceMock.deleteModelBatch.mockReturnValue(of(undefined));
+  benchmarkServiceMock.getModelBatchComparisonSources.mockReturnValue(of({
+    runIds: [], groupIds: [], batteryRunIds: [], baselineModelSource: null, baselineModelReason: null
+  }));
+
+  // The Model Comparison launcher's Baseline model card reads the baseline model; none is set.
+  benchmarkServiceMock.getBaselineModel.mockReturnValue(of(null));
+  benchmarkServiceMock.setBaselineModel.mockReturnValue(of(null));
   benchmarkServiceMock.preflightModelBatch.mockReturnValue(of({
     findings: [],
     projection: {

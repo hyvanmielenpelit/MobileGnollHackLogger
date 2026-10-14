@@ -62,6 +62,7 @@ namespace MobileGnollHackLogger.Data
         public DbSet<BenchmarkReportDocument> BenchmarkReportDocuments { get; set; } = null!;
         public DbSet<BenchmarkReportDocumentRun> BenchmarkReportDocumentRuns { get; set; } = null!;
         public DbSet<BenchmarkComparison> BenchmarkComparisons { get; set; } = null!;
+        public DbSet<BenchmarkBaselineModelSetting> BenchmarkBaselineModelSettings { get; set; } = null!;
         public DbSet<ModelCallTelemetry> ModelCallTelemetry { get; set; } = null!;
         public DbSet<BenchmarkProviderAttempt> BenchmarkProviderAttempts { get; set; } = null!;
         public DbSet<ChatConsistencyAnalysis> ChatConsistencyAnalyses { get; set; } = null!;
@@ -283,6 +284,12 @@ namespace MobileGnollHackLogger.Data
             {
                 e.HasOne(a => a.AuthorModelSnapshot).WithMany().HasForeignKey(a => a.AuthorModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
                 e.Navigation(a => a.AuthorModelSnapshot).AutoInclude();
+            });
+
+            modelBuilder.Entity<BenchmarkBaselineModelSetting>(e =>
+            {
+                e.HasOne(s => s.ModelSnapshot).WithMany().HasForeignKey(s => s.ModelSnapshotId).OnDelete(DeleteBehavior.Restrict);
+                e.Navigation(s => s.ModelSnapshot).AutoInclude();
             });
 
             modelBuilder.Entity<ChatSession>()

@@ -241,6 +241,45 @@
   margin: 8px 0 0;
 }
 
+/* The guide to the comparison documents, under the overview's facts. */
+.mb-guide {
+  margin: 16px 0 0;
+}
+
+.mb-guide-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The type and rule come from the global .gh-section-title; this is the layout only. */
+.mb-guide-title {
+  flex: 1 1 auto;
+  margin: 0;
+}
+
+.mb-guide-steps {
+  margin: 8px 0 0;
+  padding-inline-start: 1.5rem;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+
+  li + li {
+    margin-block-start: 4px;
+  }
+}
+
+.mb-guide-emphasis {
+  color: var(--primary-color);
+}
+
+.mb-guide-copy-status {
+  margin: 4px 0 0;
+  min-height: 1em;
+  font-size: var(--text-secondary);
+  color: var(--primary-color);
+}
+
 /* The type and rule come from the global .gh-section-title; this is the layout only. */
 .mb-members-title {
   display: flex;

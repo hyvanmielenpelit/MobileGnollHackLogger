@@ -5,6 +5,7 @@ import { NEVER, of, throwError } from 'rxjs';
 
 import {
   AdminBenchmarkService,
+  BenchmarkModelBatchComparisonSourcesDto,
   BenchmarkModelBatchMemberDto,
   BenchmarkModelBatchRunDto
 } from '../../../services/admin-benchmark.service';
@@ -15,8 +16,8 @@ import { ModelBatchProgressDialogComponent } from './model-batch-progress-dialog
 import {
   MODEL_BATCH_COMPARE_REASON,
   MODEL_BATCH_CORPUS_QUIET_TEXT,
-  modelBatchComparisonPreset,
-  modelBatchDiagnosticsFileName
+  modelBatchDiagnosticsFileName,
+  modelBatchDocumentsGuideText
 } from './model-batch.models';
 
 function member(orderIndex: number, overrides: Partial<BenchmarkModelBatchMemberDto> = {}): BenchmarkModelBatchMemberDto {
@@ -59,6 +60,24 @@ function batch(overrides: Partial<BenchmarkModelBatchRunDto> = {}): BenchmarkMod
     resumable: false, resumeOptions: [], stalled: false, stallMinutes: 15, lastProgressAtUtc: '2026-10-10T08:30:00Z',
     ...overrides
   };
+}
+
+/** The comparison sources the server gives Open in Model Comparison. */
+function sources(overrides: Partial<BenchmarkModelBatchComparisonSourcesDto> = {}): BenchmarkModelBatchComparisonSourcesDto {
+  return {
+    runIds: [61, 62, 70], groupIds: [], batteryRunIds: [],
+    baselineModelSource: { runId: 70, label: 'Baseline Model', startedAtUtc: '2026-10-09T08:00:00Z' },
+    baselineModelReason: null,
+    ...overrides
+  };
+}
+
+/** Finished, with both models' results: Ready to compare is done. */
+function finished(overrides: Partial<BenchmarkModelBatchRunDto> = {}): BenchmarkModelBatchRunDto {
+  return batch({
+    status: 'Completed', isDriving: false, currentMemberIndex: null, members: [completed(0, 61), completed(1, 62)],
+    completedMemberCount: 2, ...overrides
+  });
 }
 
 /** Stopped after the first model's run failed, with the three ways on. */
@@ -121,7 +140,7 @@ describe('ModelBatchProgressDialogComponent', () => {
       resumeModelBatch: vi.fn().mockName('AdminBenchmarkService.resumeModelBatch'),
       skipModelBatchMember: vi.fn().mockName('AdminBenchmarkService.skipModelBatchMember'),
       getModelBatchDiagnostics: vi.fn().mockName('AdminBenchmarkService.getModelBatchDiagnostics'),
-      getRunSeries: vi.fn().mockName('AdminBenchmarkService.getRunSeries')
+      getModelBatchComparisonSources: vi.fn().mockName('AdminBenchmarkService.getModelBatchComparisonSources')
     } as unknown as MockedObject<AdminBenchmarkService>;
     service.getModelBatch.mockReturnValue(of(batch()));
     service.cancelModelBatch.mockReturnValue(of(undefined));
@@ -552,8 +571,9 @@ describe('ModelBatchProgressDialogComponent', () => {
       expect(preset).not.toHaveBeenCalled();
     });
 
-    it('opens the runs of a one-run-per-model batch and closes', () => {
-      open(batch({ status: 'Completed', currentMemberIndex: null, members: [completed(0, 61), completed(1, 62)], completedMemberCount: 2 }));
+    it('opens the sources the server chose, the baseline model\'s result among them, and closes', () => {
+      service.getModelBatchComparisonSources.mockReturnValue(of(sources()));
+      open(finished());
       const preset = vi.fn();
       const closed = vi.fn();
       component.openComparison.subscribe(preset);
@@ -563,32 +583,98 @@ describe('ModelBatchProgressDialogComponent', () => {
 
       button('.mb-open-comparison')!.click();
 
-      expect(preset).toHaveBeenCalledWith({ batteryRunIds: [], runIds: [61, 62], groupIds: [] });
+      expect(service.getModelBatchComparisonSources).toHaveBeenCalledWith(21);
+      expect(preset).toHaveBeenCalledWith({ batteryRunIds: [], runIds: [61, 62, 70], groupIds: [] });
       expect(closed).toHaveBeenCalledTimes(1);
     });
 
-    it('opens the analysis groups of a series batch, read from each series', () => {
-      service.getRunSeries.mockImplementation((id: number) => of({ id, autoCreatedGroupId: id + 100 }) as never);
-      open(batch({
-        status: 'Completed', runsPerModel: 3, currentMemberIndex: null, completedMemberCount: 2,
-        members: [completed(0, 61, { runId: null, seriesId: 7, runIds: [61, 62, 63] }), completed(1, 64, { runId: null, seriesId: 8, runIds: [64, 65, 66] })]
-      }));
+    it('passes on why the baseline model was not added, for the wizard to show once', () => {
+      const reason = 'The baseline model has no result comparable with this batch.';
+      service.getModelBatchComparisonSources.mockReturnValue(of(sources({
+        runIds: [], groupIds: [107, 108], baselineModelSource: null, baselineModelReason: reason
+      })));
+      open(finished({ runsPerModel: 3 }));
       const preset = vi.fn();
       component.openComparison.subscribe(preset);
 
       button('.mb-open-comparison')!.click();
 
-      expect(service.getRunSeries).toHaveBeenCalledTimes(2);
-      expect(preset).toHaveBeenCalledWith({ batteryRunIds: [], runIds: [], groupIds: [107, 108] });
+      expect(preset).toHaveBeenCalledWith({ batteryRunIds: [], runIds: [], groupIds: [107, 108], baselineModelNote: reason });
+    });
+
+    it('opens a battery batch\'s battery runs', () => {
+      service.getModelBatchComparisonSources.mockReturnValue(of(sources({ runIds: [], batteryRunIds: [9, 10, 4] })));
+      open(finished({ targetKind: 'Battery' }));
+      const preset = vi.fn();
+      component.openComparison.subscribe(preset);
+
+      button('.mb-open-comparison')!.click();
+
+      expect(preset).toHaveBeenCalledWith({ batteryRunIds: [9, 10, 4], runIds: [], groupIds: [] });
+    });
+
+    it('stays open with the error when the sources cannot be read', () => {
+      service.getModelBatchComparisonSources.mockReturnValue(throwError(() => ({ status: 500 })));
+      open(finished());
+      const preset = vi.fn();
+      const closed = vi.fn();
+      component.openComparison.subscribe(preset);
+      component.closed.subscribe(closed);
+
+      button('.mb-open-comparison')!.click();
+      fixture.detectChanges();
+
+      expect(preset).not.toHaveBeenCalled();
+      expect(closed).not.toHaveBeenCalled();
+      expect(text('.mb-action-error')).toBe('The results could not be gathered for Model Comparison.');
     });
   });
 
-  it('builds a battery batch\'s preset from its members\' battery runs', () => {
-    const dto = batch({
-      targetKind: 'Battery', status: 'Completed', currentMemberIndex: null,
-      members: [completed(0, 61, { batteryRunId: 9 }), completed(1, 62, { batteryRunId: 10 }), member(2, { status: 'Failed', batteryRunId: 11 })]
+  describe('the comparison documents guide', () => {
+    it('is not shown before two models have a result', () => {
+      open(batch());
+      expect(el().querySelector('.mb-guide')).toBeNull();
+
+      open(batch({ id: 22, status: 'Completed', isDriving: false, currentMemberIndex: null, members: [completed(0, 61), member(1, { status: 'Failed' })] }));
+      expect(el().querySelector('.mb-guide')).toBeNull();
     });
-    expect(modelBatchComparisonPreset(dto)).toEqual({ batteryRunIds: [9, 10] });
+
+    it('lists the steps once Ready to compare is done, and copies them as plain text', async () => {
+      open(finished());
+      const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+
+      expect(text('#mbGuideTitle')).toBe('Next: the comparison documents');
+      const steps = Array.from(el().querySelectorAll('.mb-guide-steps > li')).map(step => (step.textContent ?? '').replace(/\s+/g, ' ').trim());
+      expect(steps.length).toBe(4);
+      expect(steps[0]).toContain('Open in Model Comparison.');
+      expect(steps[1]).toContain('Step 2 — Charts & table.');
+      expect(steps[2]).toContain('Reference model');
+      expect(steps[2]).toContain('Charts in PDF and Word');
+      expect(text('.mb-guide-emphasis')).toBe('Keep the wizard open until every document shows its charts: they are drawn by this browser as each document finishes.');
+      expect(steps[3]).toContain('Update charts…');
+
+      const copy = button('.mb-copy-guide')!;
+      expect(copy.getAttribute('aria-label')).toBe('Copy the steps to write the comparison documents');
+      expect(copy.getAttribute('interestfor')).toBe('mb-tip-copy-guide');
+      expect(text('#mb-tip-copy-guide')).toBe('Copy steps');
+
+      await component.copyGuide();
+      fixture.detectChanges();
+      const copied = modelBatchDocumentsGuideText();
+      expect(writeText).toHaveBeenCalledWith(copied);
+      expect(copied.split('\n')).toEqual(['Next: the comparison documents', ...steps.map((step, i) => `${i + 1}. ${step}`)]);
+      expect(text('.mb-guide-copy-status')).toBe('Copied the steps.');
+    });
+
+    it('says when the steps could not be copied', async () => {
+      open(finished());
+      vi.spyOn(navigator.clipboard, 'writeText').mockRejectedValue(new Error('denied'));
+
+      await component.copyGuide();
+      fixture.detectChanges();
+
+      expect(text('.mb-guide-copy-status')).toBe('Could not copy the steps to the clipboard.');
+    });
   });
 
   it('warns of an instrument change before a member, and of a stall', () => {

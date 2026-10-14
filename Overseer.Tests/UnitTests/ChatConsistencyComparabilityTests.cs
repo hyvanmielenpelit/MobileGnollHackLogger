@@ -94,6 +94,42 @@ public class ChatConsistencyComparabilityTests
         Assert.Contains("CandidateModelId=gpt-test", ChatConsistencyComparability.ModelAxisKey(Run(1)));
     }
 
+    public static TheoryData<SystemAiConfigurationSnapshot?> AxisSnapshots() => new()
+    {
+        BenchmarkModelSnapshots.Model(provider: "OpenAI", modelId: "gpt-test", displayName: "GPT Test (high)",
+            thinkingLevel: "high", reasoningMode: "auto", reasoningSummary: "detailed", serviceTier: "flex",
+            maxOutputTokens: 32000, baseUrl: "https://example.test/v1", apiVersion: "2025-01-01"),
+        BenchmarkModelSnapshots.Model(provider: "Anthropic", modelId: "claude-test", parallelExecutionMode: null, isComplete: false),
+        null!,
+    };
+
+    [Theory]
+    [MemberData(nameof(AxisSnapshots))]
+    public void ASnapshotsModelAxisKeyIsTheKeyExtractRendersForItsRun(SystemAiConfigurationSnapshot? snapshot)
+    {
+        var run = Run(1);
+        run.TestedModelSnapshot = snapshot!;
+
+        var values = Overseer.Services.Benchmarking.BenchmarkComparabilityKey.Extract(run)
+            .ToDictionary(k => k.Name, k => k.Value, StringComparer.Ordinal);
+        var fromExtract = string.Join(";", Overseer.Services.Benchmarking.BenchmarkCrossModelComparability.ModelAxisKeys
+            .Select(name => name + "=" + values[name]));
+
+        Assert.Equal(fromExtract, ChatConsistencyComparability.ModelAxisKey(snapshot));
+        Assert.Equal(fromExtract, ChatConsistencyComparability.ModelAxisKey(run));
+    }
+
+    [Fact]
+    public void ASnapshotsModelAxisKeyIgnoresTheDisplayNameAndNotTheThinkingLevel()
+    {
+        var high = BenchmarkModelSnapshots.Model(displayName: "Model (high)", thinkingLevel: "high");
+        var renamed = BenchmarkModelSnapshots.Model(displayName: "Renamed", thinkingLevel: "high");
+        var medium = BenchmarkModelSnapshots.Model(displayName: "Model (high)", thinkingLevel: "medium");
+
+        Assert.Equal(ChatConsistencyComparability.ModelAxisKey(high), ChatConsistencyComparability.ModelAxisKey(renamed));
+        Assert.NotEqual(ChatConsistencyComparability.ModelAxisKey(high), ChatConsistencyComparability.ModelAxisKey(medium));
+    }
+
     // --- Measurement change versus Overseer change --------------------------------------------
 
     [Fact]

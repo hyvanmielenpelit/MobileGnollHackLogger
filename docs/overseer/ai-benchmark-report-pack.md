@@ -323,7 +323,11 @@ their *both graders agreed* too).
 **Fact labels.** A rendered document never prints a raw fact key: every key has a human label in
 `BenchmarkReportFactLabels` (*Intelligence Index*, *95 % interval*, *Critical errors*…), used by the
 tables, the labeled lines and the evidence lines alike, so one figure never has two names. A key without
-an explicit label gets a readable fallback built from its dotted parts.
+an explicit label gets a readable fallback built from its dotted parts. Every key the per-model and the
+comparison builders emit has a label, explicit or by a pattern rule (`model.<L>.*`, `pair.<L>.<M>.*`,
+`spread.dimension.<d>`, `notable.<n>.*`), and a test holds both builders to it. Labels are chosen at
+render, so a comparison document of format 13 or earlier prints the newer labels too (*Questions with a
+critical error*, where the fallback read *Questions any critical error*).
 
 **Grader vocabulary.** The writer calls the graders by one set of role names, in lower case: *panel
 member A*, *panel member B*, *the reference reader* and *the claim verifier* (in a single-assessor run,
@@ -355,7 +359,7 @@ subject's preparation records when it left question detail out of the prompt (§
 | 6 | A strength may not cite a weakness row and a weakness may not cite a strength row; a finding citing only Conflicting rows must say the graders disagree |
 | 7 | Length limits: headline at most 35 words; abstract at most 150 words; a question topic at most 12 words; in the Executive Summary at most 3 strengths and 3 weaknesses, each at most 30 words, *What this means for use as a game assistant* (`meaning`) at most 90 words, *How reliable this result is* (`confidence`) at most 60 words and the *How it compares* paragraph (`comparison`) at most 70 words; in the Report for AI Researchers and Developers *Why it scored this way* (`whyItScored`) at most 300 words, *What worked well* (`whatWorked`) at most 150 words, `limitations` at most 120 words and at most 6 recommendations; in the Internal Improvement Brief `overseerChat` at most 200 words, `benchmarkSystem` and `modelResult` at most 150 each, at most 8 recommendations and at most 6 leads |
 | 8 | No headings, tables or HTML inside any text |
-| 9 | No run of 8 or more words shared with any question, rubric, answer or grader-evidence text |
+| 9 | No run of 8 or more words shared with any question, rubric, answer or grader-evidence text, including a comparison's *weakest answers* grader comments (`ModelNotes`, § 15) |
 | 10 | No peer names, model ids or providers in prose |
 | 11 | No significance language: *significant*, *significantly*, *statistically*, *reliably better* or *worse*, *clearly outperforms* |
 | 12 | US English: no word of the fixed British-spelling list (`BenchmarkReportPackValidator.BritishSpellings`: *colour, behaviour, analyse, analysed, organise, recognise, favour, honour, centre, defence, catalogue, programme, grey, travelled, modelling, labelled, cancelled, judgement*), matched as whole words ignoring case, in any prose |
@@ -718,8 +722,15 @@ earlier format re-renders without them, and a legacy run's unavailable facts ren
 `BenchmarkReportChartLayout.CurrentVersion` does not move: the chart layout schema is unchanged and a new
 figure key is additive.
 
+**Comparison format version 14** (2026-10-14) moves comparison-wide documents only
+(`ComparisonReportFormatVersion` 13 → 14); per-model documents stay at 12 and chat consistency documents
+at 3. It adds the reference model and the baseline model, the failure profile, the comparison with the
+reference and the notable findings (§ 15, *Format 14*). Every new section renders only when the sheet
+carries its facts, and the new writer slots are optional slots, so a document stored under format 13 or
+earlier renders as before apart from its footer and the fact labels it shares (§ 2, *Fact labels*).
+
 **Format version 12** (2026-10-06) is the format of the comparison-wide documents
-(`ComparisonReportFormatVersion`, § 15, 13 since 2026-10-12); `BenchmarkReportPackRenderer.CurrentFormatVersion(scope)` gives
+(`ComparisonReportFormatVersion`, § 15, 13 since 2026-10-12, 14 since 2026-10-14); `BenchmarkReportPackRenderer.CurrentFormatVersion(scope)` gives
 each scope's version. Per-model documents were written under format 11 until 2026-10-12. Every Report Pack document of a
 numbered comparison prints its comparison (§ 15), and every per-model document prints a named peer
 without its letter, a *Letter* column in *Compared models* and joint ranks (*"joint 1st of 2 (intervals
@@ -2022,7 +2033,8 @@ reports are written in the AI Reports tab of its report."*
     that are not Excluded, with no price or parallel badge and no chips; each option is the entry's model
     name with its thinking-level, reasoning-mode and provider badges, keyed by entry key, and two options
     that would look the same each name their source (*Battery run #10*). Under *Whole comparison* every
-    model starts chosen (2 to 12; with more than 12, the 12 of highest Intelligence Index, and a note says
+    model starts chosen (2 to 12; with more than 12, the 12 of highest Intelligence Index — or, when the
+    comparison holds the baseline model, the baseline model and the 11 of highest Index — and a note says
     why); under *One model at a time* the highest-Index model starts chosen (at least one). The choice is
     component state, reset when the comparison changes. One line under the picker says what Generate
     writes: *"Writes the comparison-wide documents."*, *"Writes documents for 3 of 5 models — leaves out
@@ -2031,6 +2043,14 @@ reports are written in the AI Reports tab of its report."*
     under *Whole comparison* a legend follows: a boxed group titled *Letters in the anonymized copies*
     whose `<dl>` pairs each letter (a small gold tile, read as *Letter A*) with the model's label, in a
     grid of 13 rem columns. It is not added to the picker's description, which it would make long.
+  - **Reference model** (*Whole comparison* only): a select of *Highest Intelligence Index* and each
+    covered model, the baseline model's option marked *(baseline model)*; it starts on the baseline model
+    when the comparison holds a comparable result of it among the covered models, else on *Highest
+    Intelligence Index*. The documents judge the other models against it (§ 15). It is sent as
+    `referenceEntryKey` in the preview, layout preview and start bodies **only when a model is chosen**;
+    *Highest Intelligence Index* sends nothing. Below it, *Reference of the written documents* lists each
+    written document's reference, and an amber note names the documents written against another
+    reference than the one chosen, which a **Rewrite** would change.
   - **Documents of this comparison** (`app-comparison-documents-status`): under *Whole comparison*,
     three rows, one per document type, for the chosen set — the comparison-wide documents while every
     model is chosen, else that subset's — and below them a closed *Other model sets (n)* disclosure with
@@ -2061,7 +2081,11 @@ reports are written in the AI Reports tab of its report."*
     writer's context window (refused from 90 %, § 15).
   - **Preview layout** and **Generate**, two gold `.btn-gh` buttons in one action row at the bottom of
     the sidebar, Generate last. At the default sidebar width they stack, Preview layout above Generate,
-    both full width; from a sidebar about 34 rem wide they sit side by side.
+    both full width; from a sidebar about 34 rem wide they sit side by side. Under the row, unless chart
+    storage is missing: *"Keep this wizard open until every document shows its charts. Charts are drawn by
+    this browser as each document finishes; if you close it, add them on step 4 with Update charts…"*
+    (§ 13, *When charts are attached*). A finished model batch's dialog gives the same advice as four steps
+    (`ai-benchmark-model-batches.md` § 8.1).
   - **Generate** (*zap*), which sends `scope`, `coveredEntryKeys` (whole comparison) or `subjectKeys`
     (the chosen models with a checked row), the checked document types and `replaceDocumentIds` (the
     checked written rows). It is unavailable, with its reason under it, while a job runs, with fewer than
@@ -2652,12 +2676,15 @@ or `Batteries`), `EntryCount`, `DefaultName`, `Name` (the admin's rename, nullab
 | `CoveredEntryKeysJson` | The subject alone | The covered entry keys, canonically sorted |
 | `CoveredSetKey` | SHA-256 of the subject alone | SHA-256 of the covered set (`BenchmarkReportComparisonKey.ForCoveredSet`), computed as the comparison key is, so a set covering every entry has the comparison's own key |
 | `SubjectKey` | `run:` / `group:` / `battery:` entry key | `comparison:<id>` for a comparison-wide document; `comparison:<id>/<first 16 hex of CoveredSetKey>` for a subset |
+| `ReferenceEntryKey` | null | The entry key of the reference model (format 14); null on older rows, which used model A. The document list and detail return it as `referenceEntryKey` |
 | Letters | Peers only, per document | Every covered model, A = highest Intelligence Index |
 | One document per | `(ComparisonKey, SubjectKey, Audience)` | `(ComparisonId, CoveredSetKey, Audience)` |
 
 An index on `(ComparisonId, Scope, CoveredSetKey, Audience)` serves the lookups; the uniqueness is
 enforced by the start endpoint, not by a constraint, as in § 5. The comparison-wide and the subset
-documents of one comparison are separate sets: every covered set is its own document set.
+documents of one comparison are separate sets: every covered set is its own document set. The reference
+model is not part of the key: a document written against another reference is a *Rewrite* of the one
+already there, which it replaces.
 
 **Comparison-wide or subset.** The covered set defaults to every entry that is not Excluded. Whether a
 document covers the whole comparison is decided when it is written and stored in its fact sheet as
@@ -2699,7 +2726,7 @@ other models without naming them.
   helper words the per-model documents' ranks (W2, below).
 - **The paired-test family** comes from the service step 2's *Paired tests* view uses, requested for the
   covered models only, so each Holm adjustment counts exactly the tests the document reports: *Against a
-  reference* with model A as the reference always, plus *All pairs* when there are **3 to 6** covered
+  reference* with the document's **reference model** (below; model A when none was chosen), plus *All pairs* when there are **3 to 6** covered
   models (`AllPairsMaxEntries`). Intelligence, Speed and Cost are each a family of their own. The sheet
   stores the families (`pairedTests`, each pair oriented with the earlier letter first) and the facts
   `pair.<L>.<M>.quality.difference`, `.quality.interval`, `.sharedQuestions`, `.speed.ratio`,
@@ -2722,6 +2749,69 @@ other models without naming them.
   refuted sentence come first, then the lowest scores; each excerpt is from the model's run whose score
   is closest to its score on the question. Each question's text and rubric are given once.
 
+**The reference model and the baseline model (format 14).** `BenchmarkReportPackRequest.ReferenceEntryKey`
+names the covered model the documents compare the others with; null means model A, the highest
+Intelligence Index. A key that is not a covered, non-Excluded entry is refused with **400** *"The
+reference model must be one of the covered models."* by the preview, the layout preview and the start;
+the start copies it into the background job's request (`NewJob`). Letters do not move: A is still the
+highest Index. The sheet keeps `referenceLetter`, `referenceIsBaselineModel` and `baselineModelLetter`
+(the GnollBench baseline model's letter when it is covered, `ai-benchmark.md` § *Baseline Model*, even
+when another model is the reference), and the fact `comparison.reference` reads *"Model C, the baseline
+model"*, *"Model A, the highest Intelligence Index"* or *"Model C, chosen as the reference"*. A sheet
+stored before format 14 reads as reference A with no baseline model. The server never picks the baseline
+model by itself: step 3 sends it (§ 12).
+
+**The failure profile (format 14)**, `BenchmarkComparisonModelProfile`, is computed in preparation from
+every covered run's answers and passed on `BenchmarkComparisonReportEntry.Profile`, so `Build` stays pure.
+Over each model's scored answers in all its runs (a panel run's level is the mean of the two members'):
+
+| Key `model.<L>.profile.*` | Value | Unavailable when |
+|---|---|---|
+| `answers` | scored answers, the denominator | — |
+| `mayMislead`, `mayMisleadPer20` | answers with an accuracy level below 4 or a critical error; *about 3.5 in 20* | — |
+| `outcome.correct`, `.partial`, `.incorrect`, `.notAttempted`, `.noAnswer`, `.wrongInsteadOfAbstaining` | `BenchmarkOutcomeSummary` per answer | a run before scoring method 13 |
+| `deficit.accuracy`, `.completeness`, `.conciseness`, `.readability` | answers at level 2 or below on the dimension | — |
+| `truncated`, `outputDefects`, `noToolAnswers`, `toolLimitHits` | answers flagged Truncated; flagged Empty, Truncated, HarnessArtifacts, ReasoningBleed or RepeatedFragments or not Ok; with no tool call; that hit the tool budget or the iteration limit | — |
+| `answerChars.median` | median answer length in characters | — |
+| `isolatedMisses`, `sharedMisses`, `lowestScorer` | from the question matrix: 50 or less where the others' median is 75 or more (at least two others scored it); below 50 with at least half the others below 50; the lowest of all, ties counting for each | fewer than three covered models |
+| `findings.runsWithSynthesis`, `findings.<category>` (`accuracy`, `completeness`, `conciseness`, `readability`, `critical_error`, `tool_use`, `other`) | runs whose final synthesis has structured findings; of those, how many raised a weakness in the category, by either panel member (*2 of 3 runs*) | no structured findings (before harness 40) |
+
+**Against the reference (format 14).** For every model but the reference, on the questions both scored on
+the same item revision, `model.<L>.vsReference.shared`, `.better` (more than 15 points above the
+reference), `.similar` and `.worse`. They are counts, not tests.
+
+**The weakest answers (format 14).** Per model, up to three questions scored below 70, lowest first; from
+its lowest-scoring run on each, each grader's comment (the assessor's `ReviewComment`, panel member B's from
+`CoAssessmentJson`) cut at a word boundary to 300 characters, and the critical-error flag. They are stored
+in the content snapshot as `ModelNotes` (`{ letter, question, role, criticalError, comment }`) and given to
+the writer as **WEAKEST ANSWERS BY MODEL**; rule 9 and the name backstop cover them.
+
+**Notable findings (format 14).** `BenchmarkNotableFindings`, pure, detects unusual results from the facts,
+the matrix and the profiles. Each finding has a kind, the letters and questions it is about, the fact keys
+it rests on, and one sentence written by code with tokens, so it renders named or anonymized. In priority
+order, at most two per kind and ten in all:
+
+| Kind | Detected when |
+|---|---|
+| `cheaperAndBetter` | X's quality is established above Y's (a paired verdict, or 95 % intervals that do not overlap) and X costs at most half of Y per question |
+| `fasterAndBetter` | the same, with median model time |
+| `thinkingLevelInversion` | two covered entries of one provider and model id at different thinking levels, the lower level's index at least the higher's; says whether the order is established, with the time and cost ratios |
+| `leaderMiss` | model A, or the reference, scored 50 or less where the others' median is 75 or more |
+| `underdogWin` | the lowest-index model scored at least 15 points above every other model on a question |
+| `sharedFailure` | every covered model scored below 50 on a question (up to three questions in one finding): likely a chat, corpus or question problem |
+| `difficultyInversion` | a model's advanced-band score at least 10 points above its simple-band score, each band with at least 3 questions |
+| `criticalErrorConcentration` | at least 2 critical errors and at least twice the others' median rate |
+| `graderDisagreementConcentration` | at least 3 panel disagreements and at least twice the others' median rate |
+| `judgeDependentOrder` | a pair whose order depends on which panel member grades |
+| `outputTrouble` | truncated answers plus tool-limit hits at least 10 % of its answers |
+| `toolUseOutlier` | tool calls per question at most half or at least twice the others' median (median above 0.5) |
+| `answerLengthOutlier` | median answer length at most half or at least twice the others' median |
+| `providerErrors` | a provider error rate of at least 2 % and at least five times the median |
+
+The facts are `notable.count` and per finding `notable.<n>.kind`, `.models`, `.questions` and `.summary`; a
+detection that needs a figure a model lacks is skipped. With nothing detected the documents print
+*"Nothing unusual was detected by the rules below."*
+
 **The writer never sees a model name.** The sheet's free text — every fact's display and unavailable
 reason, each model's explanation, the purpose statements and the paired tests' notes and caveats — is
 lettered (*Model A*) when the sheet is built. As a backstop, the prompt writes any covered model's label,
@@ -2735,7 +2825,23 @@ The prompt (`BuildComparisonSystemPrompt`, per audience) tells the writer every 
 equal known only by its letter, and that the document covers exactly the models listed. The user
 message gives, in order: COMPARISON, MODELS, GRADERS (each role's shared provider by letter), PAIRED
 TESTS, FACTS, RESPONSE STYLE, the QUESTION MATRIX, the questions with their excerpts, and the question
-topics. The prompt's SHA-256 covers it.
+topics. The prompt's SHA-256 covers it. From format 14 it also carries a **Reference:** line (*"Reference:
+{{model:C}}, the Overseer team's baseline model"* or *"Reference: {{model:A}}, the highest Intelligence
+Index"*, and a *Baseline model:* line when the baseline model is covered but not the reference), the
+**NOTABLE FINDINGS** block and **WEAKEST ANSWERS BY MODEL**, and the system prompt's wording of the
+reference family names the reference instead of assuming model A.
+
+- **Rules of format 14** in the system prompt: the failure profile counts what the graders recorded,
+  never why; a cause is stated only where the data shows it (a grader comment under WEAKEST ANSWERS BY
+  MODEL, a tool-limit or truncation count) and attributed (*"the graders charged …"*), never a model's
+  training, size or design; models with different numbers of answers are compared through the per-20 and
+  *of* facts, not raw counts; a signal most low scorers share is a pattern, one only one model shows is
+  that model's, and one every model shows points first at the chat, its tools, the corpus or the
+  question; better, similar and worse counts are not tests, and a model is ranked above or below the
+  reference only as the paired tests and intervals allow; notable findings are explained, or said to be
+  unexplained by the data, never restated. `whichModel` adds: when the reference is the baseline model,
+  say whether any model is established as better than it, and on which measure; `modelGaps` uses the
+  failure profile facts and the weakest answers, and a lead may cite a notable finding.
 
 - **Tokens.** `{{model:X}}` for a covered model and `{{key}}` for a fact; there is no `{{subject}}` and
   no `{{peer:X}}`. The validator accepts `{{model:X}}` for every letter of the sheet and the `model.<L>.*`
@@ -2745,7 +2851,15 @@ topics. The prompt's SHA-256 covers it.
   `reliability` (80); Report for AI Researchers and Developers `abstract` (150), `results` (200),
   `dimensionProfiles` (150), `frontier` (120), `questionPatterns` (250), `graderReliability` (120) and
   `limitations` (120); Internal Improvement Brief `sharedGaps` (250), `modelGaps` (200) and
-  `benchmarkSystem` (150).
+  `benchmarkSystem` (150). Format 14 adds `againstReference` (Executive Summary 100, researcher report
+  150: what a player would notice using each model instead of the reference — answer quality, misleading
+  answers, waiting, cost — each as far as the paired tests and intervals establish), `notableFindings`
+  (researcher report, 200: the most likely explanation the data supports for each notable finding, or
+  that it does not explain it, referring to a finding by what it is about) and `whyModelsDiffer`
+  (researcher report, 250: which failure signals separate the high scorers from the low ones, which the
+  low scorers share and which belong to one model). `notableFindings` is required only when
+  `notable.count` is above zero (`BenchmarkReportAudienceSpec.ComparisonSlotsFor`); the parser's
+  `KnownSlots` and the validator's caps include the three.
 - **Lists.** A `models` list with one entry per covered model, at most 2 points of at most 30 words in
   the Executive Summary and at most 4 of at most 40 words in the researcher report, each citing evidence;
   question topics in the researcher report and the brief; at most 8 leads in the brief, each tagged
@@ -2767,7 +2881,8 @@ topics. The prompt's SHA-256 covers it.
   bounds the start and the layout preview answer **409**, and the preview answers 200 with the refusal.
   A comparison of more than 12 models can still have documents: step 3's picker then starts with the 12
   highest-Index models chosen and says why.
-- A covered entry that is not in the comparison, or is Excluded — **400**.
+- A covered entry that is not in the comparison, or is Excluded — **400**; so is a `referenceEntryKey`
+  that is not one of the covered, non-Excluded entries.
 - **The writer's context window.** Each estimate carries `contextWindowShare`, the estimated input
   tokens over the writer configuration's context window from the model catalog. Step 3 warns in amber
   from **70 %**; the preview reports, and the start refuses with **400**, a prompt above **90 %**
@@ -2775,8 +2890,10 @@ topics. The prompt's SHA-256 covers it.
 - **Already written.** A requested document already written for this covered set (comparison scope) or
   subject (model scope) and not named in `replaceDocumentIds` — **409**; an id in `replaceDocumentIds`
   that this job does not write again — **400**.
-- **The estimate** uses 3,000, 9,500 and 9,000 output tokens for the comparison-scope Executive Summary,
-  researcher report and brief. These are first guesses, to be recalibrated after the first real jobs.
+- **The estimate** uses 3,800, 12,500 and 10,000 output tokens for the comparison-scope Executive
+  Summary, researcher report and brief (3,000, 9,500 and 9,000 before format 14). These are first
+  guesses, to be recalibrated after the first real jobs. A test holds an 11-model, 20-question
+  comparison's prompt below 70 % of a 200,000-token writer.
 
 ### Rewriting: replace after persist
 
@@ -2789,7 +2906,7 @@ behind a confirmation.
 
 ### The rendered documents
 
-`ReportFormatVersion` for comparison scope is **13** (`ComparisonReportFormatVersion`); per-model
+`ReportFormatVersion` for comparison scope is **14** (`ComparisonReportFormatVersion`); per-model
 documents are at 12 (§ 7). The sections, by audience:
 
 - **Executive Summary**: *The result in one sentence*, *The comparison in one paragraph*, *Which model to
@@ -2805,6 +2922,27 @@ documents are at 12 (§ 7). The sections, by audience:
 - **Internal Improvement Brief**: *Models compared*, *1. Shared gaps*, *2. Model-specific gaps*, *3. The
   benchmarking system* (with *Paired tests*), *4. Leads*, *5. Per-question matrix* with the question
   details, and *6. Fact sheet*.
+
+**Format 14** adds, each block only when its facts or sheet fields are there:
+
+- **Executive Summary**: after *How they compare*, **Compared with the baseline model** (*Compared with the
+  reference model* when the reference is not the baseline model): the *Reference:* line, a compact table
+  of every model — paired difference with its 95 % interval, better / similar / worse questions, answers
+  that may mislead per 20, time and cost ratio — its note, and the `againstReference` slot; then **Also
+  worth knowing**, the first three notable findings as code wrote them.
+- **Report for AI Researchers and Developers**: the full reference table (with *Questions* and the paired
+  *Result*) and its slot in *Results* after *Paired tests*; **Notable findings** after *Results*, every
+  finding as a code-written bullet, the thresholds as a note, then the slot; **Why the models differ**
+  after *Per-model analysis*: the **Failure profile** table, the **Grader findings by category** table,
+  then the slot.
+- **Internal Improvement Brief**: the Failure profile table under *2. Model-specific gaps*, and **4.
+  Notable findings** before the leads, which renumbers the later sections to *5. Leads*, *6. Per-question
+  matrix* and *7. Fact sheet* when the sheet has notable findings.
+- **Marks.** In every table that lists the models, the reference row reads *(reference)*, the baseline
+  model's *(baseline model)*, and one row that is both *(baseline model, reference)*, in named and
+  anonymized copies alike; neither word names a model or a provider. The paired-test summary and the
+  *Paired tests* heading name the reference instead of assuming model A. `Pdf/BenchmarkTableLayout`
+  abbreviates the wide new tables' headers.
 
 **Provider availability (format 13).** The results table (`ResultsTable`) gains a **Provider errors**
 column, *0.81 % (12/1,480)* or *not recorded*, from the entry figures; `Pdf/BenchmarkTableLayout.cs`

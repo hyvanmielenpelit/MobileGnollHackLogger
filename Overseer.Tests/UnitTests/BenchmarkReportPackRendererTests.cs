@@ -2479,7 +2479,7 @@ public class BenchmarkReportPackRendererTests
 
         string technical = RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         Assert.Contains("| Letter | Model | Provider | Kind |", technical);
-        Assert.Contains("| A | Orion Max | Northwind | run |", technical);
+        Assert.Contains("| A | Orion Max (reference) | Northwind | run |", technical);
         Assert.Contains("joint 1", technical);
 
         foreach (var combination in ComparisonCombinations().Where(c => (BenchmarkReportPeerNaming)c[2] == BenchmarkReportPeerNaming.Anonymized))
@@ -2674,13 +2674,156 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion13()
+    public void AComparisonDocument_IsCurrentAtFormatVersion14()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(13, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 13 · ", text);
+        Assert.Equal(14, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 14 · ", text);
         Assert.Contains(" · models named*", text);
+    }
+
+    public static IEnumerable<object[]> ComparisonBaselineGoldenCombinations() => ComparisonBaselineCombinations();
+
+    [Theory]
+    [MemberData(nameof(ComparisonBaselineGoldenCombinations))]
+    public void TheBaselineComparison_MatchesItsGoldenFile(
+        BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming, string file)
+    {
+        string text = BenchmarkReportPackRenderer.Render(ComparisonDocument(audience, baseline: true),
+            new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming });
+
+        Assert.DoesNotContain("\r", text);
+        AssertMatchesGolden(file, text);
+    }
+
+    [Fact]
+    public void TheBaselineComparison_SetsEveryModelAgainstTheBaselineModel_NamedOrAnonymized()
+    {
+        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
+        string named = BenchmarkReportPackRenderer.Render(ComparisonDocument(BenchmarkReportAudience.TechnicalReport, baseline: true), options);
+
+        Assert.Contains("### Compared with the baseline model\n\n**Reference:** Lyra Mini, the baseline model.\n", named);
+        Assert.Contains("| Lyra Mini (baseline model, reference) | Eastgate |", named);
+        Assert.Contains("**Against Lyra Mini (the reference, the baseline model)**\n", named);
+        Assert.DoesNotContain("Model C", named, StringComparison.Ordinal);
+        Assert.DoesNotContain("Model A", named, StringComparison.Ordinal);
+
+        string anonymized = BenchmarkReportPackRenderer.Render(ComparisonDocument(BenchmarkReportAudience.ExecutiveSummary, baseline: true),
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Anonymized });
+        Assert.Contains("## Compared with the baseline model\n\n**Reference:** Model C, the baseline model.\n", anonymized);
+        Assert.Contains("| Model C (baseline model, reference) |", anonymized);
+        Assert.Contains("Model C, the baseline model, was compared with each other model", anonymized);
+        Assert.All(ComparisonModels, m => Assert.DoesNotContain(m.Label, anonymized, StringComparison.Ordinal));
+        Assert.All(ComparisonModels, m => Assert.DoesNotContain(m.Provider, anonymized, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void AComparisonResearcherReport_PlacesTheReference_TheNotableFindings_AndWhyTheModelsDiffer()
+    {
+        string text = RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+
+        AssertInOrder(
+            text.IndexOf("## Results\n", StringComparison.Ordinal),
+            text.IndexOf("### Paired tests\n", StringComparison.Ordinal),
+            text.IndexOf("### Compared with the reference model\n", StringComparison.Ordinal),
+            text.IndexOf("## Notable findings\n", StringComparison.Ordinal),
+            text.IndexOf("## Dimension profiles\n", StringComparison.Ordinal),
+            text.IndexOf("## Per-model analysis\n", StringComparison.Ordinal),
+            text.IndexOf("## Why the models differ\n", StringComparison.Ordinal),
+            text.IndexOf("### Failure profile\n", StringComparison.Ordinal),
+            text.IndexOf("### Grader findings by category\n", StringComparison.Ordinal),
+            text.IndexOf("## Cross-model question patterns\n", StringComparison.Ordinal));
+
+        Assert.Contains("**Reference:** Model A, the highest Intelligence Index.\n", text);
+        Assert.Contains("| Model | Questions | Paired difference (95 % interval) | Result | Better / similar / worse | May mislead per 20 | Time ratio | Cost ratio |\n", text);
+        Assert.Contains("| Model A (reference) | — | — | — | — | ", text);
+        Assert.Contains("| Model B | 6 | ", text);
+        Assert.Contains(" | 1 / 5 / 0 | ", text);
+        Assert.Contains("*" + BenchmarkNotableFindings.RulesNote + "*\n", text);
+        Assert.Contains("No run of these models recorded structured grader findings; they are recorded from harness 40.\n", text);
+        Assert.Contains("The table sets every other model against Model A", text);
+        Assert.Contains("Each finding follows from the tables above", text);
+        Assert.Contains("The failure profiles count what the graders recorded", text);
+    }
+
+    [Fact]
+    public void TheExecutiveSummary_SetsTheModelsAgainstTheReference_AndListsTheFirstThreeNotableFindings()
+    {
+        var document = ComparisonDocument(BenchmarkReportAudience.ExecutiveSummary);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        string text = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+
+        AssertInOrder(
+            text.IndexOf("## How they compare\n", StringComparison.Ordinal),
+            text.IndexOf("## Compared with the reference model\n", StringComparison.Ordinal),
+            text.IndexOf("## Also worth knowing\n", StringComparison.Ordinal),
+            text.IndexOf("## Model by model\n", StringComparison.Ordinal));
+        Assert.Contains("| Model | Paired difference (95 % interval) | Better / similar / worse | May mislead per 20 | Time ratio | Cost ratio |\n", text);
+        Assert.DoesNotContain("## Notable findings", text);
+
+        var findings = sheet.NotableFindings!;
+        foreach (var finding in findings.Take(3)) Assert.Contains("- " + finding.Summary + "\n", text);
+        foreach (var finding in findings.Skip(3)) Assert.DoesNotContain(finding.Summary, text);
+    }
+
+    [Fact]
+    public void TheInternalBrief_PrintsTheFailureProfileUnderTheModelGaps_AndNumbersTheNotableFindingsBeforeTheLeads()
+    {
+        string text = RenderComparison(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
+
+        AssertInOrder(
+            text.IndexOf("## 2. Model-specific gaps\n", StringComparison.Ordinal),
+            text.IndexOf("### Failure profile\n", StringComparison.Ordinal),
+            text.IndexOf("## 3. The benchmarking system\n", StringComparison.Ordinal),
+            text.IndexOf("## 4. Notable findings\n", StringComparison.Ordinal),
+            text.IndexOf("## 5. Leads\n", StringComparison.Ordinal),
+            text.IndexOf("## 6. Per-question matrix\n", StringComparison.Ordinal),
+            text.IndexOf("## 7. Fact sheet\n", StringComparison.Ordinal));
+        Assert.DoesNotContain("### Grader findings by category", text);
+    }
+
+    [Fact]
+    public void ACoveredSetWithNothingNotable_SaysSo_AndPrintsNoSlot()
+    {
+        var document = ComparisonDocumentOver(BenchmarkReportAudience.TechnicalReport, new[] { "run:32", "run:33" });
+
+        string text = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+
+        Assert.Contains("## Notable findings\n\n" + BenchmarkNotableFindings.NothingDetected + "\n\n*" + BenchmarkNotableFindings.RulesNote + "*\n\n## Dimension profiles\n", text);
+        Assert.DoesNotContain("## Also worth knowing", RenderDocument(
+            ComparisonDocumentOver(BenchmarkReportAudience.ExecutiveSummary, new[] { "run:32", "run:33" }), BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named));
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named)]
+    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized)]
+    [InlineData(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized)]
+    public void AComparisonDocumentStoredUnderFormat13_RendersWithoutAnyFormat14Content(
+        BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming)
+    {
+        var options = new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming };
+        string text = BenchmarkReportPackRenderer.Render(StoredV13ComparisonDocument(audience), options);
+
+        foreach (string absent in new[]
+        {
+            "Compared with the", "**Reference:**", "Also worth knowing", "Notable findings", "Why the models differ", "Failure profile",
+            "Grader findings by category", "(reference)", "(baseline model)", "## 7.", "May mislead"
+        })
+        {
+            Assert.DoesNotContain(absent, text, StringComparison.Ordinal);
+        }
+        Assert.Contains("generated under format version 13 · rendered with format version 14", text);
+        if (audience == BenchmarkReportAudience.InternalBrief)
+        {
+            Assert.Contains("## 4. Leads\n", text);
+            Assert.Contains("## 6. Fact sheet\n", text);
+        }
+        if (audience == BenchmarkReportAudience.ExecutiveSummary)
+        {
+            Assert.Contains("Orion Max, the highest Intelligence Index, was compared with each other model", text);
+        }
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -2756,9 +2899,9 @@ public class BenchmarkReportPackRendererTests
         Assert.Equal(3, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
         Assert.Equal(3, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
         Assert.Equal(12, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(13, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(14, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
         Assert.Equal(12, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(13, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(14, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         Assert.Contains(" · format version 3 · ", text);
@@ -3455,7 +3598,7 @@ public class BenchmarkReportPackRendererTests
         Assert.Contains("### Provider availability\n\n"
             + "| Model | Valid attempts | Provider errors | Provider error rate | Unattributed errors | Re-runs needed |\n"
             + "|---|---|---|---|---|---|\n"
-            + "| Model A | 1,480 | 12 | 0.81 % (95 % CI 0.46–1.4 %) | 3 | 3 re-runs (2 for provider errors) |\n", text);
+            + "| Model A (reference) | 1,480 | 12 | 0.81 % (95 % CI 0.46–1.4 %) | 3 | 3 re-runs (2 for provider errors) |\n", text);
         Assert.Contains("| Model E | not recorded before harness 56 | — | — | — | — |\n", text);
         AssertInOrder(
             text.IndexOf("## Results\n", StringComparison.Ordinal),

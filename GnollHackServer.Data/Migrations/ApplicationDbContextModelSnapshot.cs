@@ -17,7 +17,7 @@ namespace GnollHackServer.Data.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "10.0.12")
+                .HasAnnotation("ProductVersion", "10.0.13")
                 .HasAnnotation("Relational:MaxIdentifierLength", 128);
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
@@ -615,6 +615,34 @@ namespace GnollHackServer.Data.Migrations
                     b.HasIndex("BenchmarkRunId", "CreatedAtUtc");
 
                     b.ToTable("BenchmarkAssessorCalibrations");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBaselineModelSetting", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("Id"));
+
+                    b.Property<long?>("ModelSnapshotId")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTime>("SetAtUtc")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("SetByUserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<long?>("SourceConfigurationId")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ModelSnapshotId");
+
+                    b.ToTable("BenchmarkBaselineModelSettings");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBattery", b =>
@@ -1494,6 +1522,10 @@ namespace GnollHackServer.Data.Migrations
                     b.Property<string>("PricingSource")
                         .HasMaxLength(32)
                         .HasColumnType("nvarchar(32)");
+
+                    b.Property<string>("ReferenceEntryKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("ReportFormatVersion")
                         .HasColumnType("int");
@@ -5876,6 +5908,16 @@ namespace GnollHackServer.Data.Migrations
                     b.Navigation("AssessorModelSnapshot");
 
                     b.Navigation("BenchmarkRun");
+                });
+
+            modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBaselineModelSetting", b =>
+                {
+                    b.HasOne("MobileGnollHackLogger.Data.SystemAiConfigurationSnapshot", "ModelSnapshot")
+                        .WithMany()
+                        .HasForeignKey("ModelSnapshotId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("ModelSnapshot");
                 });
 
             modelBuilder.Entity("MobileGnollHackLogger.Data.BenchmarkBattery", b =>

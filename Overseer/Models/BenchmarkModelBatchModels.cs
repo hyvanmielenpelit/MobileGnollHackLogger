@@ -73,7 +73,10 @@ public class BenchmarkModelBatchFindingDto
     /// <summary>At most 60 characters.</summary>
     public string Title { get; set; } = string.Empty;
 
-    /// <summary>One sentence, at most 140 characters, except where a launcher refusal is quoted.</summary>
+    /// <summary>
+    /// One sentence, at most 140 characters, except where a launcher refusal is quoted and in the
+    /// advice that names the baseline model (MB-A09) or the comparison documents' steps (MB-A13).
+    /// </summary>
     public string Detail { get; set; } = string.Empty;
 
     /// <summary>The model configurations the finding is about, ascending.</summary>
@@ -191,6 +194,38 @@ public class BenchmarkModelBatchRefusalDto
 {
     public string Message { get; set; } = string.Empty;
     public List<BenchmarkModelBatchFindingDto> Findings { get; set; } = new();
+}
+
+/// <summary>The baseline model's latest result comparable with a batch, added to its comparison sources.</summary>
+public class BenchmarkBaselineModelSourceDto
+{
+    /// <summary>The run, on a suite batch.</summary>
+    public long? RunId { get; set; }
+
+    /// <summary>The battery run, on a battery batch.</summary>
+    public long? BatteryRunId { get; set; }
+
+    /// <summary>The model's name and the run or battery run, such as <c>GPT Luna (high), run #412</c>.</summary>
+    public string Label { get; set; } = string.Empty;
+
+    public DateTime StartedAtUtc { get; set; }
+}
+
+/// <summary>
+/// What <c>GET {id}/comparison-sources</c> returns: the sources Open in Model Comparison starts from.
+/// The baseline model's source, when found, is already in the id lists.
+/// </summary>
+public class BenchmarkModelBatchComparisonSourcesDto
+{
+    public List<long> RunIds { get; set; } = new();
+    public List<long> GroupIds { get; set; } = new();
+    public List<long> BatteryRunIds { get; set; } = new();
+
+    /// <summary>The baseline model's latest comparable result, when one was added; null otherwise.</summary>
+    public BenchmarkBaselineModelSourceDto? BaselineModelSource { get; set; }
+
+    /// <summary>Why no baseline model result was added; null when one was.</summary>
+    public string? BaselineModelReason { get; set; }
 }
 
 /// <summary>How a stopped model batch is resumed.</summary>

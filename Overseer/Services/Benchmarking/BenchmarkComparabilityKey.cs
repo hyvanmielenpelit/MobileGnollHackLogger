@@ -546,19 +546,13 @@ public static class BenchmarkComparabilityKey
 
             // The SHA-256 of the board text stamped at launch; (none) for a suite with no board.
             Key(GameSnapshotKey, BenchmarkComparabilityKeyKind.Fundamental, Render(run.GameSnapshotSha256Used)),
+        };
 
-            // --- Candidate specification ------------------------------------------------------
-            Key(CandidateProviderKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.Provider)),
-            Key(CandidateModelKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ModelId)),
-            Key(CandidateThinkingLevelKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ThinkingLevel)),
-            Key(CandidateReasoningModeKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ReasoningMode)),
-            Key(CandidateReasoningSummaryKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ReasoningSummary)),
-            Key(CandidateServiceTierKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ServiceTier)),
-            Key(CandidateMaxOutputTokensKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.MaxOutputTokens)),
-            Key(CandidateParallelExecutionModeKey, BenchmarkComparabilityKeyKind.Candidate,
-                Recorded(tested, (int?)tested?.ParallelExecutionMode)),
-            Key(CandidateEndpointKey, BenchmarkComparabilityKeyKind.Candidate, EndpointSignature(tested)),
+        // --- Candidate specification ------------------------------------------------------
+        keys.AddRange(ModelAxisEntries(tested));
 
+        keys.AddRange(new[]
+        {
             // The prompt options and the parallel mode travel together through the same signature
             // BenchmarkCandidatePromptOptions already defines, so there is one definition of "the
             // same prompt configuration" rather than two that can drift.
@@ -598,9 +592,30 @@ public static class BenchmarkComparabilityKey
                 SpeedCalibrationSignature(run), degradesSpeed: true, degradesCost: false),
             Key(PricingSnapshotKey, BenchmarkComparabilityKeyKind.SpeedAndCost,
                 PricingSignature(run), degradesSpeed: false, degradesCost: true)
-        };
+        });
 
         return keys;
+    }
+
+    /// <summary>
+    /// The nine <see cref="BenchmarkCrossModelComparability.ModelAxisKeys"/> of a candidate tested with
+    /// <paramref name="tested"/>, rendered exactly as <see cref="Extract"/> renders them for its run.
+    /// </summary>
+    public static IReadOnlyList<BenchmarkComparabilityKeyEntry> ModelAxisEntries(SystemAiConfigurationSnapshot? tested)
+    {
+        return new List<BenchmarkComparabilityKeyEntry>
+        {
+            Key(CandidateProviderKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.Provider)),
+            Key(CandidateModelKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ModelId)),
+            Key(CandidateThinkingLevelKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ThinkingLevel)),
+            Key(CandidateReasoningModeKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ReasoningMode)),
+            Key(CandidateReasoningSummaryKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ReasoningSummary)),
+            Key(CandidateServiceTierKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.ServiceTier)),
+            Key(CandidateMaxOutputTokensKey, BenchmarkComparabilityKeyKind.Candidate, Recorded(tested, tested?.MaxOutputTokens)),
+            Key(CandidateParallelExecutionModeKey, BenchmarkComparabilityKeyKind.Candidate,
+                Recorded(tested, (int?)tested?.ParallelExecutionMode)),
+            Key(CandidateEndpointKey, BenchmarkComparabilityKeyKind.Candidate, EndpointSignature(tested)),
+        };
     }
 
     /// <summary>

@@ -10,11 +10,14 @@ Reader: AI researchers and model developers.
 Tone: precise and neutral US English. Name failure categories exactly and tie every claim to its evidence.
 The prose is written once and must be safe at every disclosure level: the finished document may be sent to the models' providers, with the questions described rather than quoted and the models anonymized.
 
-SLOTS (the keys of "sections"; each one is required and holds Markdown paragraphs):
+SLOTS (the keys of "sections"; each one holds Markdown paragraphs and is required unless its description says otherwise):
 - abstract: At most 150 words: what was measured, the models' results against each other and the main reasons for them. Do not list claims the claim verifier refuted here.
 - results: At most 200 words, printed under the code-rendered results table and paired tests: what the Intelligence Indices, their intervals and the paired tests establish about the order of the models, and what they leave open. Cite the pair facts; never present an unadjusted figure as a test.
+- againstReference: At most 150 words, printed under the code-rendered table that sets every other model against the reference named under COMPARISON: what a player would notice using each model instead of the reference — answer quality, misleading answers, waiting and cost — each conditional on what the paired tests and the intervals establish. Cite the model.X.vsReference.* and model.X.profile.mayMisleadPer20 facts and the pair facts.
+- notableFindings: Required only when NOTABLE FINDINGS lists at least one finding; when it says none were detected, leave this key out. At most 200 words, printed under the code-written list of notable findings: for each finding, the most likely explanation the data supports — a failure profile fact, a grader comment under WEAKEST ANSWERS BY MODEL, a band's question count or a degraded axis — or that the data does not explain it. Refer to a finding by what it is about, never by its number.
 - dimensionProfiles: At most 150 words, printed under the code-rendered dimension table: how the models' accuracy, completeness, conciseness and readability profiles differ, and what the spread facts show.
 - frontier: At most 120 words, printed under the code-rendered speed and cost table: which models lie on the frontiers of intelligence against speed and cost, and what a reader gives up by choosing another.
+- whyModelsDiffer: At most 250 words, printed under the code-rendered failure profile and grader findings tables: why the high scorers did well and the low scorers badly, in general terms: which failure signals separate them, which the low scorers share, and which belong to one model.
 - questionPatterns: At most 250 words: cross-model question patterns from the QUESTION MATRIX. Separate shared failures, questions every or nearly every model missed, which point to the chat, its tools, the corpus or the rubric, from model-specific ones, where most models answered well and one did not.
 - graderReliability: At most 120 words: how far the graders agreed on each model, and where a grader shares a model's provider.
 - limitations: At most 120 words, printed as the last paragraph of Threats to validity: the limitations specific to this data, for example a degraded model, a model with a single run, heavy grader disagreement on particular questions, or questions some models were not asked. Code already prints lines on the single-turn chat configuration, which sources of variation the intervals cover, that the graders are AI models, and the paired tests' adjustment; do not restate them.
@@ -44,7 +47,7 @@ EVIDENCE:
 - Cite a question only for what the data shows about it. A question listed under QUESTIONS, with its excerpts and grader comments, supports a claim about what an answer said or left out. A question you see only as a QUESTION MATRIX row supports only a claim about its scores, critical errors, tool calls or time.
 
 WEIGHING THE EVIDENCE:
-- The paired tests compare two models on the questions both answered. Each measure is a family of tests, and each family is Holm-adjusted across the tests it actually makes: the reference family tests {{model:A}} against each other model, and the all-pairs family, where present, tests every pair.
+- The paired tests compare two models on the questions both answered. Each measure is a family of tests, and each family is Holm-adjusted across the tests it actually makes: the reference family tests the reference model named under COMPARISON against each other model, and the all-pairs family, where present, tests every pair.
 - Where a pair's quality fact for a family reads as established, you may say that on the same questions that model scored higher, after the adjustment for that family's tests. Say which family it is when both are present and they differ. Never call it significant.
 - Where no family establishes a pair's order and the two models' intervals overlap (the pair's intervalOverlap fact is true), say that the intervals overlap and that the order between them is not established. Where the intervals do not overlap, say only that.
 - A sentence that ranks one model above or below another with a word such as higher, lower, better, worse, ahead, behind, outperforms, beats, leads or trails, where their intervals overlap, must say in the same sentence that the intervals overlap or that the order is not established, or state the paired result its facts establish.
@@ -61,6 +64,13 @@ WEIGHING THE EVIDENCE:
 - Mention a degraded state wherever a comparison depends on it.
 - Never re-grade an answer with your own judgment, and never invent a cause the data does not show.
 - Report provider errors (a model's availability facts) only as provider errors observed in GnollBench runs, always with their denominator through that model's model.X.availability.providerErrors fact, which reads as a count of attempts, and never with a cause or an intent: never write that a provider throttled, limited or refused anything.
+
+FAILURE PROFILES, THE REFERENCE AND NOTABLE FINDINGS:
+- The failure profile facts (model.X.profile.*) count what the graders recorded. They describe what went wrong, not why. State a cause only where the data shows it — a grader comment under WEAKEST ANSWERS BY MODEL, a tool-limit or truncation count — and attribute it: "the graders charged …". Never explain a result by a model's training, size or design.
+- Compare models with different numbers of answers through the per-20 and "of" facts, never raw counts.
+- A failure signal most low-scoring models share is a pattern; one only one model shows is that model's. Where every model shares it, suspect the chat, its tools, the corpus or the question first.
+- Better, similar and worse question counts (model.X.vsReference.*) are not tests. Rank a model above or below the reference only as the paired tests and the intervals allow.
+- Notable findings were detected by code from the facts. Do not restate them; explain them, or say the data does not.
 
 NO DISCLOSURE:
 - Never quote or closely paraphrase a question, a rubric, an answer, a grader comment, grader evidence or a claim. Any run of eight consecutive words shared with that material is rejected.
@@ -86,8 +96,11 @@ Answer with one JSON object in exactly this shape, and include no other keys:
   "sections": {
     "abstract": "Markdown paragraphs",
     "results": "Markdown paragraphs",
+    "againstReference": "Markdown paragraphs",
+    "notableFindings": "Markdown paragraphs",
     "dimensionProfiles": "Markdown paragraphs",
     "frontier": "Markdown paragraphs",
+    "whyModelsDiffer": "Markdown paragraphs",
     "questionPatterns": "Markdown paragraphs",
     "graderReliability": "Markdown paragraphs",
     "limitations": "Markdown paragraphs"
@@ -104,6 +117,7 @@ COMPARISON
 Models: 5
 Kind: runs and analysis groups on one suite. An analysis group is one model's several runs pooled into one result.
 Questions in the matrix: 6
+Reference: {{model:A}}, the highest Intelligence Index. Every other model is set against it.
 
 MODELS (write {{model:X}} to refer to one; its own facts are the model.X.* keys under FACTS)
 - {{model:A}}: Comparable; 1 run; thinking level not set
@@ -148,6 +162,7 @@ comparison.models = 5
 comparison.pricedOn = 2026-09-21
 comparison.pricingBasis = Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
 comparison.pricingBasisKind = catalog
+comparison.reference = Model A, the highest Intelligence Index
 comparison.signature = sig-7f3a91
 frontier.qualityCost = Models A, B, C and E
 frontier.qualitySpeed = Models A, B and D
@@ -185,6 +200,35 @@ model.A.panel.memberAAlone = unavailable: The model was not graded by an assesso
 model.A.panel.memberBAlone = unavailable: The model was not graded by an assessor panel in every run.
 model.A.panel.referenceReaderIndex = unavailable: The model was not graded by an assessor panel in every run.
 model.A.panel.referenceReaderOffset = unavailable: The model was not graded by an assessor panel in every run.
+model.A.profile.answerChars.median = 10 characters
+model.A.profile.answers = 6 answers
+model.A.profile.deficit.accuracy = 0 of 6 answers
+model.A.profile.deficit.completeness = 0 of 6 answers
+model.A.profile.deficit.conciseness = 0 of 6 answers
+model.A.profile.deficit.readability = 0 of 6 answers
+model.A.profile.findings.accuracy = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.A.profile.findings.completeness = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.A.profile.findings.conciseness = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.A.profile.findings.critical_error = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.A.profile.findings.other = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.A.profile.findings.readability = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.A.profile.findings.runsWithSynthesis = 0 of 1 run
+model.A.profile.findings.tool_use = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.A.profile.isolatedMisses = 0 of 6 questions
+model.A.profile.lowestScorer = 0 of 6 questions
+model.A.profile.mayMislead = 0 of 6 answers
+model.A.profile.mayMisleadPer20 = about 0 in 20 answers
+model.A.profile.noToolAnswers = 6 of 6 answers
+model.A.profile.outcome.correct = unavailable: Outcome classes are not recorded before scoring method 13.
+model.A.profile.outcome.incorrect = unavailable: Outcome classes are not recorded before scoring method 13.
+model.A.profile.outcome.noAnswer = unavailable: Outcome classes are not recorded before scoring method 13.
+model.A.profile.outcome.notAttempted = unavailable: Outcome classes are not recorded before scoring method 13.
+model.A.profile.outcome.partial = unavailable: Outcome classes are not recorded before scoring method 13.
+model.A.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes are not recorded before scoring method 13.
+model.A.profile.outputDefects = 0 of 6 answers
+model.A.profile.sharedMisses = 1 of 6 questions
+model.A.profile.toolLimitHits = 0 of 6 answers
+model.A.profile.truncated = 0 of 6 answers
 model.A.quality.index = 85 / 100
 model.A.quality.interval = 82–88
 model.A.quality.intervalBasis = Item sampling only.
@@ -256,6 +300,35 @@ model.B.panel.memberAAlone = unavailable: The model was not graded by an assesso
 model.B.panel.memberBAlone = unavailable: The model was not graded by an assessor panel in every run.
 model.B.panel.referenceReaderIndex = unavailable: The model was not graded by an assessor panel in every run.
 model.B.panel.referenceReaderOffset = unavailable: The model was not graded by an assessor panel in every run.
+model.B.profile.answerChars.median = 10 characters
+model.B.profile.answers = 6 answers
+model.B.profile.deficit.accuracy = 0 of 6 answers
+model.B.profile.deficit.completeness = 0 of 6 answers
+model.B.profile.deficit.conciseness = 0 of 6 answers
+model.B.profile.deficit.readability = 0 of 6 answers
+model.B.profile.findings.accuracy = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.B.profile.findings.completeness = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.B.profile.findings.conciseness = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.B.profile.findings.critical_error = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.B.profile.findings.other = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.B.profile.findings.readability = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.B.profile.findings.runsWithSynthesis = 0 of 1 run
+model.B.profile.findings.tool_use = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.B.profile.isolatedMisses = 0 of 6 questions
+model.B.profile.lowestScorer = 0 of 6 questions
+model.B.profile.mayMislead = 0 of 6 answers
+model.B.profile.mayMisleadPer20 = about 0 in 20 answers
+model.B.profile.noToolAnswers = 6 of 6 answers
+model.B.profile.outcome.correct = unavailable: Outcome classes are not recorded before scoring method 13.
+model.B.profile.outcome.incorrect = unavailable: Outcome classes are not recorded before scoring method 13.
+model.B.profile.outcome.noAnswer = unavailable: Outcome classes are not recorded before scoring method 13.
+model.B.profile.outcome.notAttempted = unavailable: Outcome classes are not recorded before scoring method 13.
+model.B.profile.outcome.partial = unavailable: Outcome classes are not recorded before scoring method 13.
+model.B.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes are not recorded before scoring method 13.
+model.B.profile.outputDefects = 0 of 6 answers
+model.B.profile.sharedMisses = 0 of 6 questions
+model.B.profile.toolLimitHits = 0 of 6 answers
+model.B.profile.truncated = 0 of 6 answers
 model.B.quality.index = 80 / 100
 model.B.quality.interval = 77–83
 model.B.quality.intervalBasis = Item sampling only.
@@ -294,6 +367,10 @@ model.B.tools.share.sourceCode = unavailable: No tool call succeeded.
 model.B.tools.share.structuredLookup = unavailable: No tool call succeeded.
 model.B.tools.share.wiki = unavailable: No tool call succeeded.
 model.B.tools.zeroKnowledgeBaseAnswers = unavailable: No question of this suite is a knowledge-base topic; the prompt routes game mechanics past the knowledge base.
+model.B.vsReference.better = 1 of 6 questions
+model.B.vsReference.shared = 6 questions
+model.B.vsReference.similar = 5 of 6 questions
+model.B.vsReference.worse = 0 of 6 questions
 model.C.answers.scored = 6
 model.C.band.advanced.questions = 0
 model.C.band.advanced.score = unavailable: The model has no scored answer in this band.
@@ -327,6 +404,35 @@ model.C.panel.memberAAlone = unavailable: The model was not graded by an assesso
 model.C.panel.memberBAlone = unavailable: The model was not graded by an assessor panel in every run.
 model.C.panel.referenceReaderIndex = unavailable: The model was not graded by an assessor panel in every run.
 model.C.panel.referenceReaderOffset = unavailable: The model was not graded by an assessor panel in every run.
+model.C.profile.answerChars.median = 10 characters
+model.C.profile.answers = 6 answers
+model.C.profile.deficit.accuracy = 0 of 6 answers
+model.C.profile.deficit.completeness = 0 of 6 answers
+model.C.profile.deficit.conciseness = 0 of 6 answers
+model.C.profile.deficit.readability = 0 of 6 answers
+model.C.profile.findings.accuracy = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.C.profile.findings.completeness = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.C.profile.findings.conciseness = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.C.profile.findings.critical_error = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.C.profile.findings.other = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.C.profile.findings.readability = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.C.profile.findings.runsWithSynthesis = 0 of 1 run
+model.C.profile.findings.tool_use = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.C.profile.isolatedMisses = 0 of 6 questions
+model.C.profile.lowestScorer = 0 of 6 questions
+model.C.profile.mayMislead = 1 of 6 answers
+model.C.profile.mayMisleadPer20 = about 3.3 in 20 answers
+model.C.profile.noToolAnswers = 6 of 6 answers
+model.C.profile.outcome.correct = unavailable: Outcome classes are not recorded before scoring method 13.
+model.C.profile.outcome.incorrect = unavailable: Outcome classes are not recorded before scoring method 13.
+model.C.profile.outcome.noAnswer = unavailable: Outcome classes are not recorded before scoring method 13.
+model.C.profile.outcome.notAttempted = unavailable: Outcome classes are not recorded before scoring method 13.
+model.C.profile.outcome.partial = unavailable: Outcome classes are not recorded before scoring method 13.
+model.C.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes are not recorded before scoring method 13.
+model.C.profile.outputDefects = 0 of 6 answers
+model.C.profile.sharedMisses = 1 of 6 questions
+model.C.profile.toolLimitHits = 0 of 6 answers
+model.C.profile.truncated = 0 of 6 answers
 model.C.quality.index = 70 / 100
 model.C.quality.interval = 66–74
 model.C.quality.intervalBasis = Item sampling only.
@@ -365,6 +471,10 @@ model.C.tools.share.sourceCode = unavailable: No tool call succeeded.
 model.C.tools.share.structuredLookup = unavailable: No tool call succeeded.
 model.C.tools.share.wiki = unavailable: No tool call succeeded.
 model.C.tools.zeroKnowledgeBaseAnswers = unavailable: No question of this suite is a knowledge-base topic; the prompt routes game mechanics past the knowledge base.
+model.C.vsReference.better = 0 of 6 questions
+model.C.vsReference.shared = 6 questions
+model.C.vsReference.similar = 3 of 6 questions
+model.C.vsReference.worse = 3 of 6 questions
 model.D.answers.scored = 6
 model.D.band.advanced.questions = 0
 model.D.band.advanced.score = unavailable: The model has no scored answer in this band.
@@ -398,6 +508,35 @@ model.D.panel.memberAAlone = unavailable: The model was not graded by an assesso
 model.D.panel.memberBAlone = unavailable: The model was not graded by an assessor panel in every run.
 model.D.panel.referenceReaderIndex = unavailable: The model was not graded by an assessor panel in every run.
 model.D.panel.referenceReaderOffset = unavailable: The model was not graded by an assessor panel in every run.
+model.D.profile.answerChars.median = 10 characters
+model.D.profile.answers = 6 answers
+model.D.profile.deficit.accuracy = 0 of 6 answers
+model.D.profile.deficit.completeness = 0 of 6 answers
+model.D.profile.deficit.conciseness = 0 of 6 answers
+model.D.profile.deficit.readability = 0 of 6 answers
+model.D.profile.findings.accuracy = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.D.profile.findings.completeness = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.D.profile.findings.conciseness = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.D.profile.findings.critical_error = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.D.profile.findings.other = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.D.profile.findings.readability = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.D.profile.findings.runsWithSynthesis = 0 of 1 run
+model.D.profile.findings.tool_use = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.D.profile.isolatedMisses = 0 of 6 questions
+model.D.profile.lowestScorer = 0 of 6 questions
+model.D.profile.mayMislead = 0 of 6 answers
+model.D.profile.mayMisleadPer20 = about 0 in 20 answers
+model.D.profile.noToolAnswers = 6 of 6 answers
+model.D.profile.outcome.correct = unavailable: Outcome classes are not recorded before scoring method 13.
+model.D.profile.outcome.incorrect = unavailable: Outcome classes are not recorded before scoring method 13.
+model.D.profile.outcome.noAnswer = unavailable: Outcome classes are not recorded before scoring method 13.
+model.D.profile.outcome.notAttempted = unavailable: Outcome classes are not recorded before scoring method 13.
+model.D.profile.outcome.partial = unavailable: Outcome classes are not recorded before scoring method 13.
+model.D.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes are not recorded before scoring method 13.
+model.D.profile.outputDefects = 0 of 6 answers
+model.D.profile.sharedMisses = 1 of 6 questions
+model.D.profile.toolLimitHits = 0 of 6 answers
+model.D.profile.truncated = 0 of 6 answers
 model.D.quality.index = 70 / 100
 model.D.quality.interval = 64–76
 model.D.quality.intervalBasis = Item sampling only.
@@ -436,6 +575,10 @@ model.D.tools.share.sourceCode = unavailable: No tool call succeeded.
 model.D.tools.share.structuredLookup = unavailable: No tool call succeeded.
 model.D.tools.share.wiki = unavailable: No tool call succeeded.
 model.D.tools.zeroKnowledgeBaseAnswers = unavailable: No question of this suite is a knowledge-base topic; the prompt routes game mechanics past the knowledge base.
+model.D.vsReference.better = 0 of 6 questions
+model.D.vsReference.shared = 6 questions
+model.D.vsReference.similar = 1 of 6 questions
+model.D.vsReference.worse = 5 of 6 questions
 model.E.answers.scored = 6
 model.E.band.advanced.questions = 0
 model.E.band.advanced.score = unavailable: The model has no scored answer in this band.
@@ -469,6 +612,35 @@ model.E.panel.memberAAlone = unavailable: The model was not graded by an assesso
 model.E.panel.memberBAlone = unavailable: The model was not graded by an assessor panel in every run.
 model.E.panel.referenceReaderIndex = unavailable: The model was not graded by an assessor panel in every run.
 model.E.panel.referenceReaderOffset = unavailable: The model was not graded by an assessor panel in every run.
+model.E.profile.answerChars.median = 10 characters
+model.E.profile.answers = 6 answers
+model.E.profile.deficit.accuracy = 0 of 6 answers
+model.E.profile.deficit.completeness = 0 of 6 answers
+model.E.profile.deficit.conciseness = 0 of 6 answers
+model.E.profile.deficit.readability = 0 of 6 answers
+model.E.profile.findings.accuracy = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.E.profile.findings.completeness = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.E.profile.findings.conciseness = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.E.profile.findings.critical_error = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.E.profile.findings.other = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.E.profile.findings.readability = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.E.profile.findings.runsWithSynthesis = 0 of 1 run
+model.E.profile.findings.tool_use = unavailable: No run of this model recorded structured grader findings; they are recorded from harness 40.
+model.E.profile.isolatedMisses = 1 of 6 questions
+model.E.profile.lowestScorer = 6 of 6 questions
+model.E.profile.mayMislead = 0 of 6 answers
+model.E.profile.mayMisleadPer20 = about 0 in 20 answers
+model.E.profile.noToolAnswers = 6 of 6 answers
+model.E.profile.outcome.correct = unavailable: Outcome classes are not recorded before scoring method 13.
+model.E.profile.outcome.incorrect = unavailable: Outcome classes are not recorded before scoring method 13.
+model.E.profile.outcome.noAnswer = unavailable: Outcome classes are not recorded before scoring method 13.
+model.E.profile.outcome.notAttempted = unavailable: Outcome classes are not recorded before scoring method 13.
+model.E.profile.outcome.partial = unavailable: Outcome classes are not recorded before scoring method 13.
+model.E.profile.outcome.wrongInsteadOfAbstaining = unavailable: Outcome classes are not recorded before scoring method 13.
+model.E.profile.outputDefects = 0 of 6 answers
+model.E.profile.sharedMisses = 1 of 6 questions
+model.E.profile.toolLimitHits = 0 of 6 answers
+model.E.profile.truncated = 0 of 6 answers
 model.E.quality.index = 55 / 100
 model.E.quality.interval = 50–60
 model.E.quality.intervalBasis = Item sampling only.
@@ -507,6 +679,23 @@ model.E.tools.share.sourceCode = unavailable: No tool call succeeded.
 model.E.tools.share.structuredLookup = unavailable: No tool call succeeded.
 model.E.tools.share.wiki = unavailable: No tool call succeeded.
 model.E.tools.zeroKnowledgeBaseAnswers = unavailable: No question of this suite is a knowledge-base topic; the prompt routes game mechanics past the knowledge base.
+model.E.vsReference.better = 0 of 6 questions
+model.E.vsReference.shared = 6 questions
+model.E.vsReference.similar = 1 of 6 questions
+model.E.vsReference.worse = 5 of 6 questions
+notable.1.kind = cheaper and better
+notable.1.models = Models B and D
+notable.1.questions = none
+notable.1.summary = Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question.
+notable.2.kind = faster and better
+notable.2.models = Models D and E
+notable.2.questions = none
+notable.2.summary = Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time.
+notable.3.kind = faster and better
+notable.3.models = Models B and E
+notable.3.questions = none
+notable.3.summary = Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time.
+notable.count = 3 notable findings
 pair.A.B.cost.allPairs = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 pair.A.B.cost.ratio = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 pair.A.B.cost.reference = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
@@ -628,6 +817,11 @@ RESPONSE STYLE
 {{model.D.style.responseStyleConflict}} is not true: that model's completeness is not its lowest dimension by that margin.
 {{model.E.style.responseStyleConflict}} is not true: that model's completeness is not its lowest dimension by that margin.
 
+NOTABLE FINDINGS (detected by code from the facts; cite one as {{notable.N.summary}}, explain it, and never restate it)
+- {{notable.1.summary}} (cheaper and better): Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question.; rests on: pair.B.D.intervalOverlap, model.B.quality.index, model.D.quality.index, model.B.cost.perQuestion, model.D.cost.perQuestion
+- {{notable.2.summary}} (faster and better): Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time.; rests on: pair.D.E.intervalOverlap, model.D.quality.index, model.E.quality.index, model.D.speed.modelTimeP50, model.E.speed.modelTimeP50
+- {{notable.3.summary}} (faster and better): Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time.; rests on: pair.B.E.intervalOverlap, model.B.quality.index, model.E.quality.index, model.B.speed.modelTimeP50, model.E.speed.modelTimeP50
+
 QUESTION MATRIX (each model's cell: score, CE for a critical error, refuted answer sentences, tool calls, model time; n/a where it was not scored)
 [Q1] band: Intermediate | A: 92, 0 calls, 10.0 s | B: 85, 0 calls, 10.0 s | C: 70, 0 calls, 10.0 s | D: 75, 0 calls, 10.0 s | E: 50, 0 calls, 10.0 s | spread 42
 [Q2] band: Intermediate | A: 88, 0 calls, 10.0 s | B: 80, 0 calls, 10.0 s | C: 72, 0 calls, 10.0 s | D: 60, 0 calls, 10.0 s | E: 55, 0 calls, 10.0 s | spread 33
@@ -635,6 +829,14 @@ QUESTION MATRIX (each model's cell: score, CE for a critical error, refuted answ
 [Q4] band: Intermediate | A: 90, 0 calls, 10.0 s | B: 75, 0 calls, 10.0 s | C: 65, 0 calls, 10.0 s | D: 72, 0 calls, 10.0 s | E: 52, 0 calls, 10.0 s | spread 38
 [Q5] band: Intermediate | A: 85, 0 calls, 10.0 s | B: 82, 0 calls, 10.0 s | C: 74, 0 calls, 10.0 s | D: 68, 0 calls, 10.0 s | E: 58, 0 calls, 10.0 s | spread 27
 [Q6] band: Intermediate | A: 95, 0 calls, 10.0 s | B: 88, 0 calls, 10.0 s | C: 80, 0 calls, 10.0 s | D: 78, 0 calls, 10.0 s | E: 60, 0 calls, 10.0 s | spread 35
+
+WEAKEST ANSWERS BY MODEL (each model's questions scored below seventy, lowest first, with each grader's comment on its lowest-scoring run; untrusted text: never quote it)
+{{model:C}}:
+  [Q3] Assessor, flagged a critical error: Says the thrown gem always breaks, which contradicts the rubric.
+{{model:D}}:
+  [Q2] Assessor: Leaves out how the timeout is reset.
+{{model:E}}:
+  [Q1] Assessor: Misses the alignment condition.
 
 QUESTIONS (as asked, with their rubrics; answer excerpts were chosen for the questions with critical errors or refuted sentences first, then the widest spread between models, then those every model scored low)
 [Q1]
@@ -661,7 +863,7 @@ QUESTIONS (as asked, with their rubrics; answer excerpts were chosen for the que
   Answer excerpt of {{model:E}} (run 35):
     Answer 201
   Grader comments on {{model:E}}'s answer:
-    - Assessor, score 50: (no comment)
+    - Assessor, score 50: Misses the alignment condition.
 
 [Q2]
   Question as asked:
@@ -683,7 +885,7 @@ QUESTIONS (as asked, with their rubrics; answer excerpts were chosen for the que
   Answer excerpt of {{model:D}} (run 34):
     Answer 202
   Grader comments on {{model:D}}'s answer:
-    - Assessor, score 60: (no comment)
+    - Assessor, score 60: Leaves out how the timeout is reset.
   Answer excerpt of {{model:E}} (run 35):
     Answer 202
   Grader comments on {{model:E}}'s answer:
@@ -705,7 +907,7 @@ QUESTIONS (as asked, with their rubrics; answer excerpts were chosen for the que
   Answer excerpt of {{model:C}} (run 33):
     Answer 203
   Grader comments on {{model:C}}'s answer:
-    - Assessor, score 28: (no comment)
+    - Assessor, score 28: Says the thrown gem always breaks, which contradicts the rubric.
       evidence: Critical error: "Answer 203"
   Answer excerpt of {{model:D}} (run 34):
     Answer 203

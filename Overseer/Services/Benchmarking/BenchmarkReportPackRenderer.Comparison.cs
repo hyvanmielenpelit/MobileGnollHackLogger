@@ -14,7 +14,10 @@ using Overseer.Services.Benchmarking.Pdf;
 /// model described as an equal, in letter order, with no subject. A named copy prints each model's
 /// label and provider and no letter in its prose; tables that list the models carry a Letter column
 /// under both namings, so a named and an anonymized copy can be matched. A copy covering a subset of
-/// the comparison says so, and counts the comparison's other models without naming them.
+/// the comparison says so, and counts the comparison's other models without naming them. From format
+/// version 14 a document also sets every model against its reference model, marking the reference and
+/// the baseline model in its tables, lists the notable findings code detected, and prints each model's
+/// failure profile; a document stored earlier renders without them.
 /// </summary>
 public static partial class BenchmarkReportPackRenderer
 {
@@ -104,6 +107,9 @@ public static partial class BenchmarkReportPackRenderer
         DimensionsTable(sb, ctx);
         Figures(sb, ctx, BenchmarkReportChartAnchor.HowTheyCompare);
 
+        ReferenceSection(sb, ctx, "## ", full: false);
+        AlsoWorthKnowing(sb, ctx);
+
         Heading(sb, "## Model by model");
         ModelPoints(sb, ctx, headingLevel: 0);
 
@@ -138,8 +144,11 @@ public static partial class BenchmarkReportPackRenderer
         Figures(sb, ctx, BenchmarkReportChartAnchor.ComparisonResults);
         Slot(sb, ctx, BenchmarkReportSlots.Results);
         PairedTestsSection(sb, ctx, "### Paired tests");
+        ReferenceSection(sb, ctx, "### ", full: true);
         ComparisonAvailabilityTable(sb, ctx);
         Figures(sb, ctx, BenchmarkReportChartAnchor.ProviderAvailability);
+
+        NotableSection(sb, ctx, "## Notable findings", withSlot: true);
 
         Heading(sb, "## Dimension profiles");
         DimensionsTable(sb, ctx);
@@ -154,6 +163,8 @@ public static partial class BenchmarkReportPackRenderer
 
         Heading(sb, "## Per-model analysis");
         ModelPoints(sb, ctx, headingLevel: 3);
+
+        WhyModelsDiffer(sb, ctx);
 
         Heading(sb, "## Cross-model question patterns");
         Slot(sb, ctx, BenchmarkReportSlots.QuestionPatterns);
@@ -185,12 +196,24 @@ public static partial class BenchmarkReportPackRenderer
 
         Heading(sb, "## 2. Model-specific gaps");
         Slot(sb, ctx, BenchmarkReportSlots.ModelGaps);
+        if (HasProfiles(ctx))
+        {
+            Heading(sb, "### Failure profile");
+            FailureProfileTable(sb, ctx);
+        }
 
         Heading(sb, "## 3. The benchmarking system");
         Slot(sb, ctx, BenchmarkReportSlots.BenchmarkSystem);
         PairedTestsSection(sb, ctx, "### Paired tests");
 
-        Heading(sb, "## 4. Leads");
+        // A sheet that keeps notable findings (format version 14) numbers them 4 and every later section one higher.
+        int section = 4;
+        if (ctx.Sheet.NotableFindings != null)
+        {
+            NotableSection(sb, ctx, "## " + Inv(section++) + ". Notable findings", withSlot: false);
+        }
+
+        Heading(sb, "## " + Inv(section++) + ". Leads");
         Line(sb, "*" + LeadsBanner + "*");
         Line(sb);
         if (ctx.Writer.Leads.Count == 0)
@@ -204,10 +227,10 @@ public static partial class BenchmarkReportPackRenderer
         }
         Line(sb);
 
-        MatrixTable(sb, ctx, "## 5. Per-question matrix");
+        MatrixTable(sb, ctx, "## " + Inv(section++) + ". Per-question matrix");
         ComparisonQuestionDetails(sb, ctx, grading: true, level: 3);
 
-        Heading(sb, "## 6. Fact sheet");
+        Heading(sb, "## " + Inv(section) + ". Fact sheet");
         if (!ctx.Options.IncludeFactSheet)
         {
             Line(sb, FactSheetElsewhere);
@@ -464,7 +487,7 @@ public static partial class BenchmarkReportPackRenderer
             int established = intelligence.Pairs.Count(p => p.Established && p.Favors != "None");
             string who = family.Mode == "AllPairs"
                 ? "Every pair of models was compared"
-                : NameOfLetter(ctx, family.ReferenceLetter ?? "A") + ", the highest Intelligence Index, was compared with each other model";
+                : NameOfLetter(ctx, family.ReferenceLetter ?? "A") + ", " + ReferenceRole(ctx, family.ReferenceLetter ?? "A") + ", was compared with each other model";
             string adjustment = intelligence.FamilySize > 1
                 ? "Holm-adjusted across " + Inv(intelligence.FamilySize) + " tests"
                 : intelligence.FamilySize == 1 ? "a single test" : "no test could be made";
@@ -496,7 +519,8 @@ public static partial class BenchmarkReportPackRenderer
         {
             string title = family.Mode == "AllPairs"
                 ? "Every pair"
-                : "Against " + NameOfLetter(ctx, family.ReferenceLetter ?? "A") + " (the reference)";
+                : "Against " + NameOfLetter(ctx, family.ReferenceLetter ?? "A")
+                  + (ctx.Sheet.ReferenceIsBaselineModel == true ? " (the reference, the baseline model)" : " (the reference)");
             Line(sb, "**" + title + "**");
             Line(sb);
 
@@ -694,7 +718,7 @@ public static partial class BenchmarkReportPackRenderer
         "state" => "Comparability state",
         "thinkingLevel" => "Thinking level",
         "frontier" => "Frontier",
-        _ => Label(rest)
+        _ => BenchmarkReportFactLabels.ModelSuffixLabel(rest)
     };
 
     private static string PairFactLabel(string rest) => rest switch
@@ -1197,6 +1221,269 @@ public static partial class BenchmarkReportPackRenderer
                 + ". A writer from the same provider may describe a model more favorably; the figures and tables were computed by Overseer, not by the writer.";
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // The reference, notable findings and failure profiles (format version 14)
+    // ---------------------------------------------------------------------------------------------
+
+    private const string ReferenceTableNote = "Paired difference: the mean per-question difference, the model minus the reference, on the "
+        + "questions both answered, with its 95 % interval. Better, similar and worse count the questions both scored on the same item "
+        + "revision on which the model scored more than 15 points above the reference, within 15 points of it, or more than 15 points "
+        + "below it; they are not tests. May mislead per 20: answers with an accuracy level below 4 or a critical error, per 20 answers. "
+        + "Time and cost ratios: the model's median answer time and cost per question divided by the reference's.";
+
+    private const string FailureProfileNote = "Counted over each model's scored answers in all its runs; in a panel run a level is the mean "
+        + "of both panel members' levels. May mislead: an accuracy level below 4 or a critical error. Outcomes are recorded from scoring "
+        + "method 13. Low levels: answers at level 2 or below on each dimension. Output defects: an empty, truncated or scrubbed answer, "
+        + "reasoning bleed, repeated fragments, or an answer that did not complete normally. Tool-limit hits: the tool budget or the "
+        + "iteration limit was reached. An isolated miss is a question the model scored 50 or less where the other models' median is 75 or "
+        + "more; a shared miss is one it scored below 50 along with at least half the others. Lowest scorer: questions where no other model "
+        + "scored lower. The counts say what the graders recorded, not why.";
+
+    private const string FindingsTableNote = "Of each model's runs whose final synthesis holds structured findings, how many raised a weakness "
+        + "of each category, by either panel member. A category says what the graders charged, not why.";
+
+    /// <summary>The sheet keeps a reference model's facts (format version 14 and later).</summary>
+    private static bool HasReference(Context ctx) => Fact(ctx, "comparison.reference") != null;
+
+    /// <summary>Some covered model has failure profile facts (format version 14 and later).</summary>
+    private static bool HasProfiles(Context ctx)
+        => OrderedPeers(ctx.Sheet).Any(p => Fact(ctx, ModelKey(p.Letter, "profile.answers")) != null);
+
+    /// <summary>
+    /// <c>Compared with the baseline model</c> (<c>… the reference model</c> without one): the reference,
+    /// then a table of every covered model against it, the reference first, and the writer's slot.
+    /// <paramref name="full"/> adds the questions both answered and the paired result. Nothing on a sheet
+    /// that keeps no reference.
+    /// </summary>
+    private static void ReferenceSection(StringBuilder sb, Context ctx, string headingPrefix, bool full)
+    {
+        if (!HasReference(ctx)) return;
+
+        string reference = ctx.Sheet.ReferenceLetter ?? OrderedPeers(ctx.Sheet).FirstOrDefault()?.Letter ?? "A";
+        Heading(sb, headingPrefix + (ctx.Sheet.ReferenceIsBaselineModel == true ? "Compared with the baseline model" : "Compared with the reference model"));
+        Line(sb, "**Reference:** " + D(ctx, "comparison.reference") + ".");
+        Line(sb);
+
+        var header = ModelColumns(ctx);
+        if (full) header.Add("Questions");
+        header.Add("Paired difference (95 % interval)");
+        if (full) header.Add("Result");
+        header.AddRange(new[] { "Better / similar / worse", "May mislead per 20", "Time ratio", "Cost ratio" });
+        TableHeaderOf(sb, header);
+
+        var rows = ComparisonRows(ctx);
+        var referenceEntry = rows.FirstOrDefault(r => r.Peer.Letter == reference).Entry;
+        foreach (var (entry, peer) in rows.OrderBy(r => r.Peer.Letter == reference ? 0 : 1))
+        {
+            bool isReference = peer.Letter == reference;
+            var pair = isReference ? null : ReferencePair(ctx, BenchmarkPairedTests.IntelligenceMeasure, peer.Letter, reference);
+            string prefix = ModelKey(peer.Letter, "vsReference.");
+
+            var cells = ModelCells(ctx, peer);
+            if (full) cells.Add(isReference ? NoValue : NumberOf(Fact(ctx, prefix + "shared")) is double shared ? Inv((int)shared) : NoValue);
+            cells.Add(isReference ? NoValue : DifferenceToReference(pair, peer.Letter));
+            if (full) cells.Add(isReference || pair == null ? NoValue : Cell(ResultText(ctx, pair, "scored higher")));
+            cells.Add(isReference ? NoValue : BetterSimilarWorse(ctx, prefix));
+            cells.Add(NumberOf(Fact(ctx, ModelKey(peer.Letter, "profile.mayMisleadPer20"))) is double per20 ? BenchmarkReportFormat.CompactDecimal(per20) : NoValue);
+            cells.Add(RatioToReference(Speed(entry), referenceEntry == null ? null : Speed(referenceEntry)));
+            cells.Add(RatioToReference(Cost(entry), referenceEntry == null ? null : Cost(referenceEntry)));
+            Line(sb, "| " + string.Join(" | ", cells) + " |");
+        }
+        Line(sb);
+        Line(sb, "*" + ReferenceTableNote + "*");
+        Line(sb);
+
+        OptionalSlot(sb, ctx, BenchmarkReportSlots.AgainstReference);
+    }
+
+    /// <summary>The reference family's test of one measure between a model and the reference, either way round; null when it has none.</summary>
+    private static BenchmarkReportPairedTest? ReferencePair(Context ctx, string measure, string letter, string reference)
+        => (ctx.Sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>())
+            .Where(f => f.Mode != "AllPairs")
+            .SelectMany(f => f.Measures.Where(m => m.Measure == measure))
+            .SelectMany(m => m.Pairs)
+            .FirstOrDefault(p => (p.FirstLetter == letter && p.SecondLetter == reference) || (p.FirstLetter == reference && p.SecondLetter == letter));
+
+    /// <summary>A pair's difference turned to read the model minus the reference: <c>-4.6 (-9.8 to +0.7)</c>.</summary>
+    private static string DifferenceToReference(BenchmarkReportPairedTest? pair, string letter)
+    {
+        if (pair?.Effect is not double effect) return NoValue;
+
+        bool first = pair.FirstLetter == letter;
+        double value = first ? effect : -effect;
+        string text = BenchmarkReportFormat.SignedOneDecimal(value);
+        if (pair.Lower is double lower && pair.Upper is double upper)
+        {
+            var (low, high) = first ? (lower, upper) : (-upper, -lower);
+            text += " (" + BenchmarkReportFormat.SignedOneDecimal(low) + " to " + BenchmarkReportFormat.SignedOneDecimal(high) + ")";
+        }
+        return text;
+    }
+
+    /// <summary><c>3 / 10 / 2</c> from a model's <c>vsReference.better</c>, <c>.similar</c> and <c>.worse</c> facts.</summary>
+    private static string BetterSimilarWorse(Context ctx, string prefix)
+    {
+        var counts = new[] { "better", "similar", "worse" }.Select(k => NumberOf(Fact(ctx, prefix + k))).ToList();
+        return counts.All(c => c.HasValue) ? string.Join(" / ", counts.Select(c => Inv((int)c!.Value))) : NoValue;
+    }
+
+    /// <summary>The model's figure divided by the reference's, <c>0.45×</c>; <see cref="NoValue"/> when either is missing.</summary>
+    private static string RatioToReference(double? own, double? reference)
+        => own is double o && reference is double r && r > 0
+            ? Math.Round(o / r, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture) + "×"
+            : NoValue;
+
+    private static double? Speed(BenchmarkReportEntryFigures entry) => entry.SpeedDegraded ? null : entry.ModelTimeP50Ms;
+
+    private static double? Cost(BenchmarkReportEntryFigures entry) => entry.CostDegraded ? null : entry.CostPerQuestionUsd;
+
+    /// <summary>The first three notable findings as code wrote them; nothing when there is none.</summary>
+    private static void AlsoWorthKnowing(StringBuilder sb, Context ctx)
+    {
+        var findings = ctx.Sheet.NotableFindings;
+        if (findings is not { Count: > 0 }) return;
+
+        Heading(sb, "## Also worth knowing");
+        foreach (var finding in findings.OrderBy(f => f.Number).Take(3))
+        {
+            Line(sb, "- " + NotableText(ctx, finding));
+        }
+        Line(sb);
+    }
+
+    /// <summary>
+    /// Every notable finding as a bullet, or that nothing was detected, then the rules that detect them
+    /// and, with <paramref name="withSlot"/> and at least one finding, the writer's slot. Nothing on a
+    /// sheet stored before format version 14.
+    /// </summary>
+    private static void NotableSection(StringBuilder sb, Context ctx, string heading, bool withSlot)
+    {
+        var findings = ctx.Sheet.NotableFindings;
+        if (findings == null) return;
+
+        Heading(sb, heading);
+        if (findings.Count == 0)
+        {
+            Line(sb, BenchmarkNotableFindings.NothingDetected);
+        }
+        foreach (var finding in findings.OrderBy(f => f.Number))
+        {
+            Line(sb, "- " + NotableText(ctx, finding));
+        }
+        Line(sb);
+        Line(sb, "*" + BenchmarkNotableFindings.RulesNote + "*");
+        Line(sb);
+
+        if (withSlot && findings.Count > 0) OptionalSlot(sb, ctx, BenchmarkReportSlots.NotableFindings);
+    }
+
+    /// <summary>A notable finding's sentence as this copy prints it, from its <c>notable.&lt;n&gt;.summary</c> fact.</summary>
+    private static string NotableText(Context ctx, BenchmarkReportNotableFinding finding)
+        => Fact(ctx, "notable." + Inv(finding.Number) + ".summary") is { Available: true } fact
+            ? Shown(ctx, fact)
+            : SheetText(ctx, finding.Summary);
+
+    /// <summary>
+    /// <c>Why the models differ</c>: the failure profile table, the grader findings by category, and the
+    /// writer's slot. Nothing on a sheet without failure profiles.
+    /// </summary>
+    private static void WhyModelsDiffer(StringBuilder sb, Context ctx)
+    {
+        if (!HasProfiles(ctx)) return;
+
+        Heading(sb, "## Why the models differ");
+        Heading(sb, "### Failure profile");
+        FailureProfileTable(sb, ctx);
+        Heading(sb, "### Grader findings by category");
+        FindingsTable(sb, ctx);
+        OptionalSlot(sb, ctx, BenchmarkReportSlots.WhyModelsDiffer);
+    }
+
+    /// <summary>Each covered model's failure profile counts, one row per model.</summary>
+    private static void FailureProfileTable(StringBuilder sb, Context ctx)
+    {
+        var header = ModelColumns(ctx);
+        header.AddRange(new[]
+        {
+            "Answers", "May mislead", "Correct / partial / incorrect / not attempted", "Wrong instead of abstaining",
+            "Level 2 or below: accuracy / completeness / conciseness / readability", "Truncated", "Output defects", "No tool call",
+            "Tool-limit hits", "Median answer length", "Isolated / shared misses", "Lowest scorer"
+        });
+        TableHeaderOf(sb, header);
+
+        foreach (var peer in OrderedPeers(ctx.Sheet))
+        {
+            string p = ModelKey(peer.Letter, BenchmarkComparisonModelProfile.KeyPrefix);
+            double? Value(string key) => NumberOf(Fact(ctx, p + key));
+            string Count(string key) => Value(key) is double v ? Inv((int)v) : NoValue;
+            string Joined(params string[] keys)
+            {
+                var values = keys.Select(Value).ToList();
+                return values.All(v => v.HasValue) ? string.Join(" / ", values.Select(v => Inv((int)v!.Value))) : NoValue;
+            }
+
+            string mislead = Value("mayMislead") is double count
+                ? Inv((int)count) + (Value("mayMisleadPer20") is double per ? " (" + BenchmarkReportFormat.CompactDecimal(per) + " per 20)" : string.Empty)
+                : NoValue;
+            string wrong = Value("outcome.wrongInsteadOfAbstaining") is double rate ? BenchmarkReportFormat.Percent(rate * 100) : NoValue;
+            string length = Value("answerChars.median") is double chars ? BenchmarkReportFormat.Count(chars) : NoValue;
+
+            var cells = ModelCells(ctx, peer);
+            cells.AddRange(new[]
+            {
+                Count("answers"), mislead,
+                Joined("outcome.correct", "outcome.partial", "outcome.incorrect", "outcome.notAttempted"), wrong,
+                Joined("deficit.accuracy", "deficit.completeness", "deficit.conciseness", "deficit.readability"),
+                Count("truncated"), Count("outputDefects"), Count("noToolAnswers"), Count("toolLimitHits"), length,
+                Joined("isolatedMisses", "sharedMisses"), Count("lowestScorer")
+            });
+            Line(sb, "| " + string.Join(" | ", cells) + " |");
+        }
+        Line(sb);
+        Line(sb, "*" + FailureProfileNote + "*");
+        Line(sb);
+    }
+
+    /// <summary>
+    /// Each covered model's runs with structured grader findings and, of them, how many raised a weakness of
+    /// each category; a sentence instead when no run of any model recorded them.
+    /// </summary>
+    private static void FindingsTable(StringBuilder sb, Context ctx)
+    {
+        var categories = new (string Key, string Name)[]
+        {
+            ("accuracy", "Accuracy"), ("completeness", "Completeness"), ("conciseness", "Conciseness"), ("readability", "Readability"),
+            ("critical_error", "Critical error"), ("tool_use", "Tool use"), ("other", "Other")
+        };
+        string Key(BenchmarkReportPeer peer, string rest) => ModelKey(peer.Letter, BenchmarkComparisonModelProfile.KeyPrefix + "findings." + rest);
+
+        var models = OrderedPeers(ctx.Sheet);
+        if (!models.Any(p => IsAvailable(ctx, Key(p, "accuracy"))))
+        {
+            Line(sb, "No run of these models recorded structured grader findings; they are recorded from harness 40.");
+            Line(sb);
+            return;
+        }
+
+        var header = ModelColumns(ctx);
+        header.Add("Runs with findings");
+        header.AddRange(categories.Select(c => c.Name));
+        TableHeaderOf(sb, header);
+        foreach (var peer in models)
+        {
+            var cells = ModelCells(ctx, peer);
+            double? runs = NumberOf(Fact(ctx, Key(peer, "runsWithSynthesis")));
+            cells.Add(Num(ctx, Key(peer, "runsWithSynthesis")));
+            cells.AddRange(categories.Select(c => NumberOf(Fact(ctx, Key(peer, c.Key))) is double count && runs is double of
+                ? Inv((int)count) + " of " + Inv((int)of)
+                : NoValue));
+            Line(sb, "| " + string.Join(" | ", cells) + " |");
+        }
+        Line(sb);
+        Line(sb, "*" + FindingsTableNote + "*");
+        Line(sb);
+    }
+
     /// <summary>A copy of the sheet with every covered model's name, model id and provider replaced by its letter.</summary>
     private static BenchmarkReportFactSheet ComparisonAnonymizedSheet(Context ctx)
     {
@@ -1227,7 +1514,35 @@ public static partial class BenchmarkReportPackRenderer
     private static List<string> ModelColumns(Context ctx) => ctx.Anonymized ? new List<string> { "Model" } : new List<string> { "Model", "Provider" };
 
     private static List<string> ModelCells(Context ctx, BenchmarkReportPeer peer)
-        => ctx.Anonymized ? new List<string> { "Model " + peer.Letter } : new List<string> { Cell(peer.Label), Cell(peer.Provider) };
+        => ctx.Anonymized
+            ? new List<string> { "Model " + peer.Letter + RoleMarks(ctx, peer.Letter) }
+            : new List<string> { Cell(peer.Label) + RoleMarks(ctx, peer.Letter), Cell(peer.Provider) };
+
+    /// <summary>
+    /// <c> (reference)</c>, <c> (baseline model)</c> or both as <c> (baseline model, reference)</c> after the
+    /// model's name in a table; nothing on a sheet stored before format version 14, which keeps no reference.
+    /// </summary>
+    private static string RoleMarks(Context ctx, string letter)
+    {
+        bool reference = ctx.Sheet.ReferenceLetter == letter;
+        bool baseline = ctx.Sheet.BaselineModelLetter == letter;
+        return (reference, baseline) switch
+        {
+            (true, true) => " (baseline model, reference)",
+            (true, false) => " (reference)",
+            (false, true) => " (baseline model)",
+            _ => string.Empty,
+        };
+    }
+
+    /// <summary>
+    /// The reference model's role in prose: <c>the baseline model</c>, <c>the highest Intelligence Index</c>
+    /// for the model lettered first (and on a sheet that keeps no reference), else <c>the reference</c>.
+    /// </summary>
+    private static string ReferenceRole(Context ctx, string letter)
+        => ctx.Sheet.ReferenceIsBaselineModel == true && ctx.Sheet.ReferenceLetter == letter
+            ? "the baseline model"
+            : letter == (OrderedPeers(ctx.Sheet).FirstOrDefault()?.Letter ?? "A") ? "the highest Intelligence Index" : "the reference";
 
     private static void TableHeaderOf(StringBuilder sb, IReadOnlyList<string> columns)
     {

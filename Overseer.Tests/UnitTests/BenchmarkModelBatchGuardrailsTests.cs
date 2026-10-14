@@ -7,6 +7,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.ChatConsistency;
 using Xunit;
 using ParallelExecutionMode = MobileGnollHackLogger.Data.ParallelExecutionMode;
 
@@ -151,9 +152,9 @@ public class BenchmarkModelBatchGuardrailsTests
     // --- The clean roster and the general rules -----------------------------------------------
 
     [Fact]
-    public void TheDefaultRoster_RaisesNothing()
+    public void TheDefaultRoster_RaisesOnlyTheComparisonDocumentsAdvice()
     {
-        Assert.Empty(Evaluate(Context()));
+        Assert.Equal(new[] { "MB-A13" }, Evaluate(Context()).Select(f => f.Code).ToArray());
     }
 
     [Fact]
@@ -174,7 +175,7 @@ public class BenchmarkModelBatchGuardrailsTests
 
         Assert.NotEmpty(findings);
         Assert.All(findings, f => Assert.True(f.Title.Length <= BenchmarkModelBatchGuardrails.TitleMaxLength, f.Title));
-        Assert.All(findings.Where(f => f.Code is not ("MB-B05" or "MB-B06" or "MB-B07" or "MB-B08")),
+        Assert.All(findings.Where(f => f.Code is not ("MB-B05" or "MB-B06" or "MB-B07" or "MB-B08" or "MB-A09" or "MB-A13")),
             f => Assert.True(f.Detail.Length <= BenchmarkModelBatchGuardrails.DetailMaxLength, f.Detail));
 
         var ranks = findings.Select(f => f.Severity switch { "Blocker" => 0, "Warning" => 1, _ => 2 }).ToList();
@@ -701,6 +702,59 @@ public class BenchmarkModelBatchGuardrailsTests
         Assert.DoesNotContain("MB-A09", Codes(Context(change: c => c with { Recommended = included })));
     }
 
+    private static string AxisKeyOf(SystemAiApiConfiguration configuration)
+        => ChatConsistencyComparability.ModelAxisKey(SystemAiConfigurationSnapshotStore.FromConfiguration(configuration));
+
+    private static readonly Dictionary<string, IReadOnlyList<RecommendedModel>> OtherRecommended =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Anthropic"] = new List<RecommendedModel> { new() { Model = "claude-opus-7", ThinkingLevel = "high" } }
+        };
+
+    [Fact]
+    public void A09_NoBaseline_NamesTheBaselineModel_WhenOneIsSet()
+    {
+        var baseline = Config(30, "Anthropic", "claude-opus-6", displayName: "Opus 6");
+
+        var finding = Single(Context(change: c => c with
+        {
+            BaselineModelAxisKey = AxisKeyOf(baseline),
+            BaselineModelName = "Opus 6",
+            Recommended = OtherRecommended
+        }), "MB-A09");
+
+        Assert.Equal(BenchmarkModelBatchSeverity.Advice, finding.Severity);
+        Assert.Equal("models", finding.Field);
+        Assert.Equal("No baseline model in the batch", finding.Title);
+        Assert.Equal(
+            "Add Opus 6 so the others are judged against it under the same graders. " +
+            "Otherwise Open in Model Comparison adds its latest comparable result, if there is one.",
+            finding.Detail);
+    }
+
+    [Fact]
+    public void A09_NoBaseline_IsSilent_WhenACandidateIsTheBaselineModel()
+    {
+        // A rename keeps the model-axis key; the recommended models are not consulted.
+        var renamed = Config(30, "Anthropic", "claude-opus-5", displayName: "Opus renamed");
+
+        Assert.DoesNotContain("MB-A09", Codes(Context(change: c => c with
+        {
+            BaselineModelAxisKey = AxisKeyOf(renamed),
+            BaselineModelName = "Opus renamed",
+            Recommended = OtherRecommended
+        })));
+    }
+
+    [Fact]
+    public void A09_NoBaseline_KeepsTheRecommendedModelsWording_WithoutABaselineModel()
+    {
+        var finding = Single(Context(change: c => c with { Recommended = OtherRecommended, BaselineModelAxisKey = null }), "MB-A09");
+
+        Assert.Equal("No current production model in the batch", finding.Title);
+        Assert.Equal("Add claude-opus-7 (high) as the baseline the others are judged against.", finding.Detail);
+    }
+
     [Fact]
     public void A10_RosterDiffersFromRecent()
     {
@@ -715,6 +769,7 @@ public class BenchmarkModelBatchGuardrailsTests
     {
         var finding = Single(Context(change: c => c with { ReportWriter = Config(20, "xAI", "grok") }), "MB-A11");
         Assert.Equal($"{4 * BenchmarkRunReportDocumentService.Audiences.Count} AI documents will be written", finding.Title);
+        Assert.Equal("For documents on the whole batch, follow the steps the batch dialog shows when it finishes.", finding.Detail);
         Assert.DoesNotContain("MB-A11", Codes(Context()));
     }
 
@@ -724,6 +779,23 @@ public class BenchmarkModelBatchGuardrailsTests
         Assert.Contains("MB-A12", Codes(Context(change: c => c with { CoAssessor = null, SecondOpinionBlind = false })));
         // A panel's reference reader is blinded by the service whatever the profile says.
         Assert.DoesNotContain("MB-A12", Codes(Context(change: c => c with { SecondOpinionBlind = false })));
+    }
+
+    [Fact]
+    public void A13_ComparisonDocumentsAreManual_ForTwoOrMoreModels()
+    {
+        var finding = Single(Context(), "MB-A13");
+        Assert.Equal("ComparisonDocumentsAreManual", finding.Name);
+        Assert.Equal(BenchmarkModelBatchSeverity.Advice, finding.Severity);
+        Assert.Null(finding.Field);
+        Assert.Null(finding.AcknowledgmentKey);
+        Assert.Equal("Comparison documents are written by you, after the batch", finding.Title);
+        Assert.Equal(
+            "When the batch finishes, its dialog shows the steps: Open in Model Comparison, then step 3, Write, " +
+            "with the wizard kept open so the charts are drawn.",
+            finding.Detail);
+
+        Assert.DoesNotContain("MB-A13", Codes(Context(new[] { CandidateA })));
     }
 
     // --- 3.4 Time and order ----------------------------------------------------------------------

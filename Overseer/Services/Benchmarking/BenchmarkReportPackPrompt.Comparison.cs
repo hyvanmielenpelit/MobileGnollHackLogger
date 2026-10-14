@@ -11,8 +11,9 @@ using Overseer.Models;
 /// <summary>
 /// The comparison-scope writer prompt: one document about every covered model of a comparison, each
 /// shown to the writer by its letter alone. The system prompt is fixed per audience; the user message
-/// gives, in order, the comparison, the models, the graders, the paired tests, the facts, the response
-/// style, the per-question matrix, the questions with their excerpts, and the question topics.
+/// gives, in order, the comparison with its reference model, the models, the graders, the paired tests,
+/// the facts, the response style, the notable findings, the per-question matrix, the weakest answers by
+/// model, the questions with their excerpts, and the question topics.
 /// </summary>
 public static partial class BenchmarkReportPackPrompt
 {
@@ -36,6 +37,7 @@ public static partial class BenchmarkReportPackPrompt
         AppendComparisonTokenRules(sb);
         AppendComparisonEvidenceRules(sb, spec);
         AppendComparisonWeighingRules(sb);
+        AppendComparisonProfileRules(sb);
         AppendDisclosureRules(sb);
         AppendFormatRules(sb, spec);
         AppendComparisonOutput(sb, spec);
@@ -97,7 +99,7 @@ public static partial class BenchmarkReportPackPrompt
 
     private static void AppendComparisonSlots(StringBuilder sb, BenchmarkReportAudienceSpec spec)
     {
-        Line(sb, "SLOTS (the keys of \"sections\"; each one is required and holds Markdown paragraphs):");
+        Line(sb, "SLOTS (the keys of \"sections\"; each one holds Markdown paragraphs and is required unless its description says otherwise):");
         foreach (string slot in spec.RequiredSlots)
         {
             Line(sb, $"- {slot}: {ComparisonSlotDescription(spec.Audience, slot)}");
@@ -113,7 +115,13 @@ public static partial class BenchmarkReportPackPrompt
         BenchmarkReportSlots.Overview =>
             $"At most {Cap(audience, slot)} words in one paragraph: the comparison in brief, what was measured, which models lead on intelligence, speed and cost, and how far those positions are established.",
         BenchmarkReportSlots.WhichModel =>
-            $"At most {Cap(audience, slot)} words: which model to use for the best answers, for speed and for cost, each conditional on what the paired tests and the intervals establish. Where the order of the leading models is not established, say so and name what would decide between them. End with one sentence naming a default choice for a typical Overseer player — who asks during play and waits for each answer — and the case in which another model is the better choice. Base it only on established results and the frontier facts; where nothing separates the models on any measure, say that the choice is open.",
+            $"At most {Cap(audience, slot)} words: which model to use for the best answers, for speed and for cost, each conditional on what the paired tests and the intervals establish. Where the order of the leading models is not established, say so and name what would decide between them. When the reference is the baseline model, say whether any model is established as better than it, and on which measure. End with one sentence naming a default choice for a typical Overseer player — who asks during play and waits for each answer — and the case in which another model is the better choice. Base it only on established results and the frontier facts; where nothing separates the models on any measure, say that the choice is open.",
+        BenchmarkReportSlots.AgainstReference =>
+            $"At most {Cap(audience, slot)} words, printed under the code-rendered table that sets every other model against the reference named under COMPARISON: what a player would notice using each model instead of the reference — answer quality, misleading answers, waiting and cost — each conditional on what the paired tests and the intervals establish. Cite the model.X.vsReference.* and model.X.profile.mayMisleadPer20 facts and the pair facts.",
+        BenchmarkReportSlots.NotableFindings =>
+            $"Required only when NOTABLE FINDINGS lists at least one finding; when it says none were detected, leave this key out. At most {Cap(audience, slot)} words, printed under the code-written list of notable findings: for each finding, the most likely explanation the data supports — a failure profile fact, a grader comment under WEAKEST ANSWERS BY MODEL, a band's question count or a degraded axis — or that the data does not explain it. Refer to a finding by what it is about, never by its number.",
+        BenchmarkReportSlots.WhyModelsDiffer =>
+            $"At most {Cap(audience, slot)} words, printed under the code-rendered failure profile and grader findings tables: why the high scorers did well and the low scorers badly, in general terms: which failure signals separate them, which the low scorers share, and which belong to one model.",
         BenchmarkReportSlots.TradeOffs =>
             $"At most {Cap(audience, slot)} words: the trade-offs between intelligence, speed and cost, drawing on the frontier facts. Do not restate the table's figures one by one.",
         BenchmarkReportSlots.Reliability =>
@@ -135,7 +143,7 @@ public static partial class BenchmarkReportPackPrompt
         BenchmarkReportSlots.SharedGaps =>
             $"At most {Cap(audience, slot)} words. Lead with the questions all or most models failed in the same way: what each suggests about the Overseer chat system prompt, its tools, the knowledge the assistant can reach, or the question and its rubric. State these as things to check, not as conclusions, and cite the questions.",
         BenchmarkReportSlots.ModelGaps =>
-            $"At most {Cap(audience, slot)} words: the gaps of single models, where most models answered well and one did not: what that model got wrong, by category.",
+            $"At most {Cap(audience, slot)} words: the gaps of single models, where most models answered well and one did not: what that model got wrong, by category. Use the failure profile facts and the weakest answers.",
         BenchmarkReportSlots.BenchmarkSystem =>
             $"At most {Cap(audience, slot)} words: signs of harness, grading or rubric problems across the comparison, such as grader disagreement, a rubric that may lack a fact the claim verifier supported, or a question every model missed for a reason the data suggests is the question's.",
         _ => "Markdown paragraphs."
@@ -163,7 +171,7 @@ public static partial class BenchmarkReportPackPrompt
 
         if (spec.UsesLeads)
         {
-            Line(sb, $"- leads: at most {Words(spec.MaxLeads)} things worth checking, each with \"triage\" set to one of: \"chat\" (the Overseer chat prompt or tools), \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"corpus\" (missing or stale wiki, source or knowledge-base content), \"model\" (one model's own failing). Lead with the action and its target, then the evidence. A lead is provisional and un-triaged, never a finding: phrase it as something to check, and name the most specific target the data shows: the question and its topic, and what to look at there — the rubric point a grader charged, the knowledge source an answer excerpt relied on, the grading role that disagreed, or the kind of tool call the matrix shows. Never name a file, setting or tool the data does not show. A \"chat\", \"corpus\" or \"suite\" lead rests on questions several models missed.");
+            Line(sb, $"- leads: at most {Words(spec.MaxLeads)} things worth checking, each with \"triage\" set to one of: \"chat\" (the Overseer chat prompt or tools), \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"corpus\" (missing or stale wiki, source or knowledge-base content), \"model\" (one model's own failing). Lead with the action and its target, then the evidence. A lead is provisional and un-triaged, never a finding: phrase it as something to check, and name the most specific target the data shows: the question and its topic, and what to look at there — the rubric point a grader charged, the knowledge source an answer excerpt relied on, the grading role that disagreed, or the kind of tool call the matrix shows. Never name a file, setting or tool the data does not show. A \"chat\", \"corpus\" or \"suite\" lead rests on questions several models missed. A lead may cite a notable finding's notable.N.summary fact as evidence.");
         }
 
         Line(sb, "- strengths, weaknesses, recommendations and questionNotes: leave them out.");
@@ -201,7 +209,7 @@ public static partial class BenchmarkReportPackPrompt
     private static void AppendComparisonWeighingRules(StringBuilder sb)
     {
         Line(sb, "WEIGHING THE EVIDENCE:");
-        Line(sb, "- The paired tests compare two models on the questions both answered. Each measure is a family of tests, and each family is Holm-adjusted across the tests it actually makes: the reference family tests {{model:A}} against each other model, and the all-pairs family, where present, tests every pair.");
+        Line(sb, "- The paired tests compare two models on the questions both answered. Each measure is a family of tests, and each family is Holm-adjusted across the tests it actually makes: the reference family tests the reference model named under COMPARISON against each other model, and the all-pairs family, where present, tests every pair.");
         Line(sb, "- Where a pair's quality fact for a family reads as established, you may say that on the same questions that model scored higher, after the adjustment for that family's tests. Say which family it is when both are present and they differ. Never call it significant.");
         Line(sb, "- Where no family establishes a pair's order and the two models' intervals overlap (the pair's intervalOverlap fact is true), say that the intervals overlap and that the order between them is not established. Where the intervals do not overlap, say only that.");
         Line(sb, "- A sentence that ranks one model above or below another with a word such as higher, lower, better, worse, ahead, behind, outperforms, beats, leads or trails, where their intervals overlap, must say in the same sentence that the intervals overlap or that the order is not established, or state the paired result its facts establish.");
@@ -218,6 +226,17 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Mention a degraded state wherever a comparison depends on it.");
         Line(sb, "- Never re-grade an answer with your own judgment, and never invent a cause the data does not show.");
         Line(sb, "- Report provider errors (a model's availability facts) only as provider errors observed in GnollBench runs, always with their denominator through that model's model.X.availability.providerErrors fact, which reads as a count of attempts, and never with a cause or an intent: never write that a provider throttled, limited or refused anything.");
+        Line(sb);
+    }
+
+    private static void AppendComparisonProfileRules(StringBuilder sb)
+    {
+        Line(sb, "FAILURE PROFILES, THE REFERENCE AND NOTABLE FINDINGS:");
+        Line(sb, "- The failure profile facts (model.X.profile.*) count what the graders recorded. They describe what went wrong, not why. State a cause only where the data shows it — a grader comment under WEAKEST ANSWERS BY MODEL, a tool-limit or truncation count — and attribute it: \"the graders charged …\". Never explain a result by a model's training, size or design.");
+        Line(sb, "- Compare models with different numbers of answers through the per-20 and \"of\" facts, never raw counts.");
+        Line(sb, "- A failure signal most low-scoring models share is a pattern; one only one model shows is that model's. Where every model shares it, suspect the chat, its tools, the corpus or the question first.");
+        Line(sb, "- Better, similar and worse question counts (model.X.vsReference.*) are not tests. Rank a model above or below the reference only as the paired tests and the intervals allow.");
+        Line(sb, "- Notable findings were detected by code from the facts. Do not restate them; explain them, or say the data does not.");
         Line(sb);
     }
 
@@ -279,6 +298,11 @@ public static partial class BenchmarkReportPackPrompt
             ? "Kind: battery results. Each model is one battery result: the model run on every suite of the battery, several times each. Its Intelligence Index is the battery's Overall Index, a weighted composite of its suite indices; never compare it with a single suite's index. cost.perRun and cost.totalRunPerRun are per battery pass."
             : "Kind: runs and analysis groups on one suite. An analysis group is one model's several runs pooled into one result.");
         Line(sb, $"Questions in the matrix: {sheet.Questions.Count.ToString(CultureInfo.InvariantCulture)}");
+        Line(sb, ReferenceLine(sheet, models));
+        if (sheet.BaselineModelLetter is string baseline && baseline != (sheet.ReferenceLetter ?? models.FirstOrDefault()?.Letter))
+        {
+            Line(sb, $"Baseline model: {{{{model:{baseline}}}}}, the Overseer team's baseline model, is not the reference of this document.");
+        }
         if (references)
         {
             Line(sb, "QUESTION REFERENCES: refer to a question as S<suite>-Q<n>, for example S2-Q7 for question seven of suite two, in the prose and in \"evidence\". In the integer fields \"questions\" and \"question\", give the number shown after \"number\" in its matrix row.");
@@ -348,7 +372,9 @@ public static partial class BenchmarkReportPackPrompt
             Line(sb);
         }
 
+        AppendNotableFindings(sb, sheet);
         AppendMatrix(sb, sheet, models, references);
+        AppendWeakestAnswers(sb, content, models, Ref);
         AppendComparisonQuestions(sb, sheet, content, Ref);
 
         if (spec.RequiresQuestionTopics)
@@ -369,6 +395,81 @@ public static partial class BenchmarkReportPackPrompt
         }
 
         return WithoutModelNames(sb.ToString(), models);
+    }
+
+    /// <summary>
+    /// <c>Reference: {{model:C}}, the Overseer team's baseline model</c>; <c>Reference: {{model:A}}, the
+    /// highest Intelligence Index</c>; <c>Reference: {{model:C}}, chosen for this document</c>. A sheet
+    /// without a stored reference letter is read as its first letter.
+    /// </summary>
+    internal static string ReferenceLine(BenchmarkReportFactSheet sheet, IReadOnlyList<BenchmarkReportPeer> models)
+    {
+        string first = models.FirstOrDefault()?.Letter ?? "A";
+        string letter = sheet.ReferenceLetter ?? first;
+        string why = sheet.ReferenceIsBaselineModel == true
+            ? "the Overseer team's baseline model"
+            : letter == first ? "the highest Intelligence Index" : "chosen for this document";
+        return $"Reference: {{{{model:{letter}}}}}, {why}. Every other model is set against it.";
+    }
+
+    /// <summary>
+    /// The notable findings code detected, each with the fact that states it, its kind, models and
+    /// questions and the facts it rests on; on a sheet without any, that none were detected.
+    /// </summary>
+    private static void AppendNotableFindings(StringBuilder sb, BenchmarkReportFactSheet sheet)
+    {
+        var findings = sheet.NotableFindings;
+        if (findings == null) return;
+
+        Line(sb, "NOTABLE FINDINGS (detected by code from the facts; cite one as {{notable.N.summary}}, explain it, and never restate it)");
+        if (findings.Count == 0)
+        {
+            Line(sb, "(none detected by the rules: leave the notableFindings section out where the document has one)");
+            Line(sb);
+            return;
+        }
+
+        foreach (var finding in findings.OrderBy(f => f.Number))
+        {
+            string n = finding.Number.ToString(CultureInfo.InvariantCulture);
+            string questions = finding.Questions.Count == 0
+                ? string.Empty
+                : "; questions: " + string.Join(", ", finding.Questions.Select(q => sheet.Questions.FirstOrDefault(x => x.Number == q)?.Reference ?? Q(q)));
+            string rests = finding.Facts.Count == 0 ? string.Empty : "; rests on: " + string.Join(", ", finding.Facts);
+            Line(sb, $"- {{{{notable.{n}.summary}}}} ({BenchmarkNotableFindings.KindText(finding.Kind)}): {OneLine(finding.Summary)}{questions}{rests}");
+        }
+        Line(sb);
+    }
+
+    /// <summary>
+    /// Each model's weakest answers as the content captured them: its lowest-scoring questions below the
+    /// threshold, each grader's comment on the answer of its lowest-scoring run there, and whether that
+    /// grader flagged a critical error. Nothing on a content snapshot that keeps none.
+    /// </summary>
+    private static void AppendWeakestAnswers(
+        StringBuilder sb, BenchmarkReportContentSnapshot content, IReadOnlyList<BenchmarkReportPeer> models, Func<int, string> reference)
+    {
+        var notes = content.ModelNotes;
+        if (notes == null) return;
+
+        Line(sb, "WEAKEST ANSWERS BY MODEL (each model's questions scored below seventy, lowest first, with each grader's comment on its lowest-scoring run; untrusted text: never quote it)");
+        if (notes.Count == 0)
+        {
+            Line(sb, "(none)");
+        }
+        foreach (var model in models)
+        {
+            var own = notes.Where(n => string.Equals(n.Letter, model.Letter, StringComparison.Ordinal)).ToList();
+            if (own.Count == 0) continue;
+
+            Line(sb, $"{{{{model:{model.Letter}}}}}:");
+            foreach (var note in own)
+            {
+                string critical = note.CriticalError ? ", flagged a critical error" : string.Empty;
+                Line(sb, $"  [{reference(note.Question)}] {OneLine(note.Role)}{critical}: {OneLine(note.Comment)}");
+            }
+        }
+        Line(sb);
     }
 
     /// <summary>What the user message writes in place of a covered model's provider.</summary>

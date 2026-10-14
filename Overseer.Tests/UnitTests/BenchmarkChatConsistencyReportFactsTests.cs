@@ -586,8 +586,8 @@ public class BenchmarkChatConsistencyReportFactsTests
         };
         var comparison = new Dictionary<BenchmarkReportAudience, string[]>
         {
-            [BenchmarkReportAudience.ExecutiveSummary] = new[] { "overview", "whichModel", "tradeOffs", "reliability" },
-            [BenchmarkReportAudience.TechnicalReport] = new[] { "abstract", "results", "dimensionProfiles", "frontier", "questionPatterns", "graderReliability", "limitations" },
+            [BenchmarkReportAudience.ExecutiveSummary] = new[] { "overview", "whichModel", "againstReference", "tradeOffs", "reliability" },
+            [BenchmarkReportAudience.TechnicalReport] = new[] { "abstract", "results", "againstReference", "notableFindings", "dimensionProfiles", "frontier", "whyModelsDiffer", "questionPatterns", "graderReliability", "limitations" },
             [BenchmarkReportAudience.InternalBrief] = new[] { "sharedGaps", "modelGaps", "benchmarkSystem" },
         };
         var modelSheet = new BenchmarkReportFactSheet();

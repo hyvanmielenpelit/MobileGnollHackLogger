@@ -356,6 +356,7 @@ public class BenchmarkReportPackPromptTests
 
         Assert.Contains("At most 150 words: which model to use for the best answers, for speed and for cost, each conditional on what the paired tests and the intervals establish. "
             + "Where the order of the leading models is not established, say so and name what would decide between them. "
+            + "When the reference is the baseline model, say whether any model is established as better than it, and on which measure. "
             + "End with one sentence naming a default choice for a typical Overseer player — who asks during play and waits for each answer — and the case in which another model is the better choice. "
             + "Base it only on established results and the frontier facts; where nothing separates the models on any measure, say that the choice is open.", slot);
     }
@@ -1300,6 +1301,103 @@ public class BenchmarkReportPackPromptTests
         Assert.DoesNotContain("{{model:C}}", message);
         Assert.DoesNotContain("model.C.", message);
         Assert.DoesNotContain("Family \"allPairs\"", message);
+    }
+
+    [Fact]
+    public void TheComparisonUserMessage_NamesItsReference_TheHighestIndexOrTheBaselineModel()
+    {
+        string highest = ComparisonPrompt(BenchmarkReportAudience.ExecutiveSummary).UserMessage;
+        Assert.Contains("Reference: {{model:A}}, the highest Intelligence Index. Every other model is set against it.\n", highest);
+        Assert.DoesNotContain("Baseline model:", highest);
+
+        var baseline = BenchmarkReportPackFixture.ComparisonFacts(referenceKey: BenchmarkReportPackFixture.BaselineKey, baselineKey: BenchmarkReportPackFixture.BaselineKey);
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, baseline.Sheet!, baseline.Content!).UserMessage;
+        Assert.Contains("Reference: {{model:C}}, the Overseer team's baseline model. Every other model is set against it.\n", message);
+        Assert.Contains("Family \"reference\": {{model:C}} against each other model.", message);
+
+        var other = BenchmarkReportPackFixture.ComparisonFacts(referenceKey: "run:32", baselineKey: BenchmarkReportPackFixture.BaselineKey);
+        string chosen = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, other.Sheet!, other.Content!).UserMessage;
+        Assert.Contains("Reference: {{model:B}}, chosen for this document.", chosen);
+        Assert.Contains("Baseline model: {{model:C}}, the Overseer team's baseline model, is not the reference of this document.\n", chosen);
+
+        // A sheet stored before the reference was kept reads as its first letter.
+        var stored = BenchmarkReportPackFixture.ComparisonFacts().Sheet!;
+        stored.ReferenceLetter = null;
+        stored.ReferenceIsBaselineModel = null;
+        Assert.Equal("Reference: {{model:A}}, the highest Intelligence Index. Every other model is set against it.",
+            BenchmarkReportPackPrompt.ReferenceLine(stored, BenchmarkReportPackPrompt.OrderedPeers(stored.Peers)));
+    }
+
+    [Fact]
+    public void TheComparisonUserMessage_GivesTheNotableFindings_AndTheWeakestAnswersByModel()
+    {
+        var built = BenchmarkReportPackFixture.ComparisonFacts();
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, built.Sheet!, built.Content!).UserMessage;
+
+        Assert.Contains("\nNOTABLE FINDINGS (detected by code from the facts; cite one as {{notable.N.summary}}, explain it, and never restate it)\n", message);
+        var first = built.Sheet!.NotableFindings![0];
+        Assert.Contains("- {{notable.1.summary}} (" + BenchmarkNotableFindings.KindText(first.Kind) + "): " + first.Summary, message);
+        Assert.Contains("\nWEAKEST ANSWERS BY MODEL (", message);
+        Assert.Contains("{{model:C}}:\n  [Q3] " + BenchmarkReportFacts.AssessorRole
+            + ", flagged a critical error: Says the thrown gem always breaks, which contradicts the rubric.\n", message);
+        Assert.Contains("{{model:E}}:\n  [Q1] " + BenchmarkReportFacts.AssessorRole + ": Misses the alignment condition.\n", message);
+
+        var blocks = new[] { "\nFACTS (", "\nNOTABLE FINDINGS (", "\nQUESTION MATRIX (", "\nWEAKEST ANSWERS BY MODEL (", "\nQUESTIONS (" };
+        var positions = blocks.Select(b => message.IndexOf(b, StringComparison.Ordinal)).ToList();
+        Assert.All(positions, p => Assert.True(p >= 0));
+        Assert.Equal(positions.OrderBy(p => p), positions);
+
+        // With nothing notable, the writer is told to leave the slot out.
+        var quiet = BenchmarkReportPackFixture.ComparisonFacts(new[] { "run:32", "run:33" });
+        string none = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, quiet.Sheet!, quiet.Content!).UserMessage;
+        Assert.Contains("(none detected by the rules: leave the notableFindings section out where the document has one)\n", none);
+    }
+
+    [Fact]
+    public void AModelNamedInAWeakestAnswersComment_IsLettered()
+    {
+        var built = BenchmarkReportPackFixture.ComparisonFacts();
+        built.Content!.ModelNotes![0].Comment = "Worse than Vega Pro from Southstar.";
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.InternalBrief, built.Sheet!, built.Content).UserMessage;
+
+        Assert.Contains("Worse than Model B from " + BenchmarkReportPackPrompt.ProviderWithheld + ".", message);
+        Assert.DoesNotContain("Vega Pro", message);
+    }
+
+    [Theory]
+    [MemberData(nameof(Audiences))]
+    public void TheComparisonSystemPrompt_StatesTheFailureProfileRules_AndTheReferenceWithoutAssumingModelA(BenchmarkReportAudience audience)
+    {
+        string system = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(audience);
+
+        Assert.Contains("\nFAILURE PROFILES, THE REFERENCE AND NOTABLE FINDINGS:\n", system);
+        Assert.Contains("They describe what went wrong, not why.", system);
+        Assert.Contains("Never explain a result by a model's training, size or design.", system);
+        Assert.Contains("- Compare models with different numbers of answers through the per-20 and \"of\" facts, never raw counts.", system);
+        Assert.Contains("Where every model shares it, suspect the chat, its tools, the corpus or the question first.", system);
+        Assert.Contains("- Better, similar and worse question counts (model.X.vsReference.*) are not tests.", system);
+        Assert.Contains("- Notable findings were detected by code from the facts. Do not restate them; explain them, or say the data does not.", system);
+        Assert.Contains("the reference family tests the reference model named under COMPARISON against each other model", system);
+        Assert.DoesNotContain("the reference family tests {{model:A}}", system);
+    }
+
+    [Fact]
+    public void TheNewComparisonSlots_AreAskedForWhereTheirAudiencesHaveThem()
+    {
+        string executive = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(BenchmarkReportAudience.ExecutiveSummary);
+        string technical = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(BenchmarkReportAudience.TechnicalReport);
+        string brief = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(BenchmarkReportAudience.InternalBrief);
+
+        Assert.Contains("- againstReference: At most 100 words, ", executive);
+        Assert.Contains("- againstReference: At most 150 words, ", technical);
+        Assert.Contains("- notableFindings: Required only when NOTABLE FINDINGS lists at least one finding", technical);
+        Assert.Contains("At most 200 words, printed under the code-written list of notable findings", technical);
+        Assert.Contains("- whyModelsDiffer: At most 250 words, ", technical);
+        Assert.DoesNotContain("- notableFindings:", executive);
+        Assert.DoesNotContain("- againstReference:", brief);
+        Assert.Contains("Use the failure profile facts and the weakest answers.", brief);
+        Assert.Contains("A lead may cite a notable finding's notable.N.summary fact as evidence.", brief);
     }
 
     [Fact]
