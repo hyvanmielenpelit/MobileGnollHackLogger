@@ -1,9 +1,5 @@
-<section class="del-section" aria-labelledby="del-title">
-  <div class="del-head">
-    <h4 id="del-title" tabindex="-1">Deletion requests</h4>
-    <!-- The list's one polite live region. -->
-    <p class="gh-list-status del-status" id="del-status" role="status">{{ listStatus }}</p>
-  </div>
+<section class="del-section" id="del-section" tabindex="-1" aria-labelledby="del-title">
+  <h4 id="del-title" class="visually-hidden">Deletion requests</h4>
 
   @if (loaded && !erasurePathsConfigured) {
     <p class="gh-field-warning del-erasure-warning">
@@ -47,6 +43,9 @@
       </div>
     }
   </div>
+
+  <!-- The list's one polite live region. -->
+  <p class="gh-list-status del-status" id="del-status" role="status">{{ listStatus }}</p>
 
   @if (error) {
     <p class="gh-field-error del-error" role="alert">

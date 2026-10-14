@@ -495,14 +495,14 @@ export class AdminUserListComponent implements OnInit, OnDestroy {
 
   /**
    * Focuses the title of the first card from `index` that is not a tombstone, else the nearest before
-   * `before` (default `index`), else the list heading.
+   * `before` (default `index`), else the list section.
    */
   private focusNear(index: number, before = index): void {
     const live = (i: number) => this.rows[i] && !this.tombstones[this.rows[i].id] ? this.rows[i] : null;
     let target: AdminUser | null = null;
     for (let i = Math.max(0, index); i < this.rows.length && !target; i++) target = live(i);
     for (let i = Math.min(before, this.rows.length) - 1; i >= 0 && !target; i--) target = live(i);
-    (target ? this.titleOf(target.id) : this.element('#au-title'))?.focus();
+    (target ? this.titleOf(target.id) : this.element('#au-section'))?.focus();
   }
 
   private titleOf(id: string): HTMLElement | null {

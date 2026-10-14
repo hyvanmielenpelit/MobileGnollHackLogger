@@ -1,7 +1,5 @@
-<section class="au-section" aria-labelledby="au-title">
-  <div class="au-head">
-    <h4 id="au-title" tabindex="-1">Users</h4>
-  </div>
+<section class="au-section" id="au-section" tabindex="-1" aria-labelledby="au-title">
+  <h4 id="au-title" class="visually-hidden">Users</h4>
 
   <app-user-criteria-bar idPrefix="au-criteria" [criteria]="criteria" [facetCounts]="facetCounts" [sort]="sort"
                          (criteriaChange)="onCriteriaChange($event)" (sortChange)="onSortChange($event)"></app-user-criteria-bar>

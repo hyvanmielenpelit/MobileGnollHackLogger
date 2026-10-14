@@ -132,8 +132,8 @@ export class DeletionRequestsComponent implements OnInit, OnDestroy {
   /** The search the status counts were taken for; null forces a recount. */
   private countedSearch: string | null = null;
   private returnFocus: HTMLElement | null = null;
-  /** After a decision the reload moves focus to the list heading. */
-  private focusHeadingAfterLoad = false;
+  /** After a decision the reload moves focus to the list section. */
+  private focusSectionAfterLoad = false;
 
   private statusOptionsMemo: { counts: StatusCounts | null; options: FilterFacetOption[] } | null = null;
   private selectedStatusesMemo: { status: string; selected: readonly string[] } | null = null;
@@ -302,21 +302,21 @@ export class DeletionRequestsComponent implements OnInit, OnDestroy {
         this.list.invalidate();
         this.pendingCountChange.emit(page.pendingCount);
 
-        const focusHeading = this.focusHeadingAfterLoad;
-        this.focusHeadingAfterLoad = false;
+        const focusSection = this.focusSectionAfterLoad;
+        this.focusSectionAfterLoad = false;
         const focusId = firstNew >= 0 ? this.rows[firstNew]?.id ?? null : null;
-        if (focusId === null && !focusHeading) {
+        if (focusId === null && !focusSection) {
           this.cdr.markForCheck();
           return;
         }
         this.cdr.detectChanges();
         refreshAnchorPositioning();
-        (focusId !== null ? this.element(`#del-${focusId}-title`) : this.element('#del-title'))?.focus();
+        (focusId !== null ? this.element(`#del-${focusId}-title`) : this.element('#del-section'))?.focus();
       },
       error: err => {
         this.loading = false;
         this.loaded = true;
-        this.focusHeadingAfterLoad = false;
+        this.focusSectionAfterLoad = false;
         this.error = 'The deletion requests could not be loaded: ' + DeletionRequestsComponent.errorText(err);
         this.cdr.markForCheck();
       }
@@ -341,9 +341,9 @@ export class DeletionRequestsComponent implements OnInit, OnDestroy {
     });
   }
 
-  /** Refetches page 1 and the counts after a decision, then focuses the list heading. */
+  /** Refetches page 1 and the counts after a decision, then focuses the list section. */
   private reloadAfterDecision(): void {
-    this.focusHeadingAfterLoad = true;
+    this.focusSectionAfterLoad = true;
     this.countedSearch = null;
     this.reload();
   }

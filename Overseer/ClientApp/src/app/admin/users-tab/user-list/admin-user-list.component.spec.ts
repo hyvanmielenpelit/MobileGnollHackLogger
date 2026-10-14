@@ -84,6 +84,10 @@ describe('AdminUserListComponent', () => {
       const list = el.querySelector('ul.au-cards')!;
       expect(list.getAttribute('role')).toBe('list');
       expect(list.getAttribute('aria-labelledby')).toBe('au-title');
+      const heading = el.querySelector('#au-title')!;
+      expect(textOf(heading)).toBe('Users');
+      expect(heading.classList).toContain('visually-hidden');
+      expect(heading.hasAttribute('tabindex')).toBe(false);
       expect(list.querySelectorAll(':scope > li > app-admin-user-card').length).toBe(2);
       expect(textOf(el.querySelector('#au-status'))).toBe('Showing 2 of 2 users · filtered from 9,102');
       expect(el.querySelector('#au-status')!.getAttribute('role')).toBe('status');
@@ -252,6 +256,18 @@ describe('AdminUserListComponent', () => {
       fixture.detectChanges();
       expect(el.querySelector('.au-tombstone')).toBeNull();
       expect(document.activeElement?.id).toBe('au-u-3-title');
+    });
+
+    it('focuses the list section when a delete leaves no live card', () => {
+      listSpy.mockReturnValue(of(buildUsersPage(userRange(1, 1))));
+      create();
+      const user = component.rows[0];
+
+      component.onDialogDone({ user, result: buildActionResult(null, ['GoodStanding'], 'In good standing', [], 'Deleted', 'user1 was deleted.'), erasedText: 'erased 0 game logs, 2 chats' });
+      fixture.detectChanges();
+
+      expect(document.activeElement?.id).toBe('au-section');
+      expect(el.querySelector('#au-title')!.classList).toContain('visually-hidden');
     });
 
     it('Security events asks the Security tab for the user', () => {

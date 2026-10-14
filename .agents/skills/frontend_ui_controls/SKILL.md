@@ -2356,13 +2356,18 @@ how a card list **fills a wizard step** and carries **sources that cannot be sel
 show three things: a card list whose **filters are server-side criteria**, a list of **records nobody
 edits**, and a review list whose **checkboxes decide what a bulk operation touches**.
 
+- **No visible panel heading.** The sub-tab names each panel, so the Users, Deletion requests and Admin log
+  panels each keep their `h4` only as a `.visually-hidden` label for the `section` and the card list, and as
+  the level above the `h5` card titles. The `h4` is **not** focusable: `.visually-hidden` reveals a focused
+  element, so a fallback focus target is the `section` itself (`tabindex="-1"`, `#au-section`,
+  `#del-section`). The status line follows the filter bar in all three.
 - **Server-side batching follows Deletion requests.** Each list fetches 20 rows, **Show 20 more** appends
   the next `skip` and focuses the first new card's title, and every filter, chip or sort change refetches
   page 1; the host holds `rows` and `totalCount`, calls `table.setRemoteTotal(totalCount)` and
   `list.invalidate()` after each fetch, and its status line counts the server's total (*Showing 20 of
   1,284 users · filtered from 9,102*, *Showing 20 of 134 actions*). Facet counts come from the server too
   and follow the search only, as in Deletion requests.
-- **The users** (`app-admin-user-list`): `section` labelled by `h4#au-title`; the shared
+- **The users** (`app-admin-user-list`): `section` labelled by the hidden `h4#au-title`; the shared
   `app-user-criteria-bar` (search by user name **or** email, facets *Status*, *Email*, *Registered*, *Last
   sign-in*, *Data*, Sort by, chips) that the Bulk Actions wizard's step 1 renders too, so the two cannot
   drift; then `ul.au-cards[role=list]` of `li > app-admin-user-card`. The card is
@@ -2375,7 +2380,7 @@ edits**, and a review list whose **checkboxes decide what a bulk operation touch
   the card is replaced by the server's copy and gains a `.gh-change-note` (*Changed just now by you: In good
   standing → Locked out until …*, with an icon-only **Dismiss**), and focus returns to its **Actions**;
   after a delete it becomes a tombstone and focus goes to the next card's title, else the previous one,
-  else `#au-title`.
+  else the section `#au-section`.
 - **The admin log** (`app-admin-user-log`): read-only cards, no selection and no actions group; the kicker
   is the action as a word in a `.gh-tag` (`data-tone` colors its outline, the word carries it) and a
   `<time>`, the title `h5#aul-{id}-title[tabindex=-1]` is the account, then *by {administrator}*, the

@@ -127,6 +127,14 @@ describe('DeletionRequestsComponent', () => {
       expect(facet.selected).toEqual(['Pending']);
       expect(facet.options.map(o => o.value)).toEqual(['Pending', 'Completed', 'Declined']);
       expect(el.querySelector('.del-chips .gh-filter-chip')!.getAttribute('aria-label')).toBe('Remove filter Status: Pending');
+
+      const heading = el.querySelector('#del-title')!;
+      expect(textOf(heading)).toBe('Deletion requests');
+      expect(heading.classList).toContain('visually-hidden');
+      expect(heading.hasAttribute('tabindex')).toBe(false);
+      expect(el.querySelector('.del-cards')!.getAttribute('aria-labelledby')).toBe('del-title');
+      const status = el.querySelector('#del-status')!;
+      expect(el.querySelector('.del-filter-bar')!.compareDocumentPosition(status) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     });
 
     it('refetches page 1 for every status when Any status is chosen', () => {
@@ -264,6 +272,7 @@ describe('DeletionRequestsComponent', () => {
       expect(message).toContain('The decision email was not sent: SMTP is down');
       expect(type).toBe('info');
       expect(listQueries().length).toBe(listCallsBefore + 1);
+      expect(document.activeElement?.id).toBe('del-section');
     });
 
     it('keeps the Approve dialog open with the server message when the approval is refused', () => {

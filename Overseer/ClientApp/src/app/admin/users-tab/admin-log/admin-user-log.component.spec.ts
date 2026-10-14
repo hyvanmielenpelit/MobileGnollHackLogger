@@ -118,6 +118,11 @@ describe('AdminUserLogComponent', () => {
       expect(list.getAttribute('aria-labelledby')).toBe('aul-title');
       expect(textOf(el.querySelector('#aul-status'))).toBe('Showing 2 of 2 actions');
       expect(el.querySelector('#aul-status')!.getAttribute('role')).toBe('status');
+      const heading = el.querySelector('#aul-title')!;
+      expect(textOf(heading)).toBe('Admin log');
+      expect(heading.classList).toContain('visually-hidden');
+      expect(heading.hasAttribute('tabindex')).toBe(false);
+      expect(el.querySelector('.aul-filter-bar')!.compareDocumentPosition(el.querySelector('#aul-status')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 
       const first = card(2);
       expect(first.getAttribute('aria-labelledby')).toBe('aul-2-title');

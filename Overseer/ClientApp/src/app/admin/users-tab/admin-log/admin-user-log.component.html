@@ -1,9 +1,5 @@
 <section class="aul-section" aria-labelledby="aul-title">
-  <div class="aul-head">
-    <h4 id="aul-title" tabindex="-1">Admin log</h4>
-    <!-- The list's one polite live region. -->
-    <p class="gh-list-status aul-status" id="aul-status" role="status">{{ listStatus }}</p>
-  </div>
+  <h4 id="aul-title" class="visually-hidden">Admin log</h4>
   <p class="aul-intro">Every administrator action on an account, newest first. Entries stay after the account is deleted.</p>
 
   <!-- Search, the Action facet and the active filters, the account and operation chips first. -->
@@ -43,6 +39,9 @@
       </div>
     }
   </div>
+
+  <!-- The list's one polite live region. -->
+  <p class="gh-list-status aul-status" id="aul-status" role="status">{{ listStatus }}</p>
 
   @if (error) {
     <p class="gh-field-error aul-error" role="alert">
