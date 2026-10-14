@@ -61,6 +61,8 @@ export class ModelsComponent implements OnInit {
   titleUserModels: UserAiModel[] = [];
   titleSystemModels: UserAiModel[] = [];
   loading = false;
+  /** True until the first list has arrived; later reloads keep the current list on screen. */
+  firstLoad = true;
   saving = false;
   titleModelSelection: string | null = null;
   savingTitleModel = false;
@@ -113,6 +115,7 @@ export class ModelsComponent implements OnInit {
         this.titleUserModels = models.filter(m => !m.isSystem && (m.modelRole === undefined || (m.modelRole & 2) === 2));
         this.titleSystemModels = models.filter(m => m.isSystem && (m.modelRole === undefined || (m.modelRole & 2) === 2));
         this.loading = false;
+        this.firstLoad = false;
         // The anchor-positioning polyfill does not observe DOM mutations, and the trust
         // indicators' tooltips were behind the loading @if until this render.
         setTimeout(() => refreshAnchorPositioning(), 0);
@@ -121,6 +124,7 @@ export class ModelsComponent implements OnInit {
       error: (err) => {
         console.error("Failed to load models", err);
         this.loading = false;
+        this.firstLoad = false;
       }
     });
   }

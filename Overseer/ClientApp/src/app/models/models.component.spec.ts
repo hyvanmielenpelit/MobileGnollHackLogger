@@ -3,7 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { of, throwError } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { ModelsComponent, SYSTEM_MODEL_ATTENTION_TEXT } from './models.component';
 import { SettingsService, UserAiModel } from '../services/settings.service';
 import { ModelAvailability, ModelResolutionResult } from '../shared/model-availability/model-availability';
@@ -232,6 +232,59 @@ describe('ModelsComponent', () => {
       expect(open).toHaveBeenCalledWith({
         id: 5, provider: 'Google', modelId: 'gemini-3.7-flash', displayName: 'Flash 3.7', availability: RETIRED
       });
+    });
+
+    it('keeps each row\'s element when a reload returns fresh objects for the same models', () => {
+      showModels([flash(RETIRED), gptX(AVAILABLE), { ...OLD_SYSTEM }]);
+      const flashRow = userRow(5);
+      const gptRow = userRow(7);
+      const oldSystemRow = systemRow();
+
+      showModels([flash(RETIRED), gptX(AVAILABLE), { ...OLD_SYSTEM }]);
+
+      expect(userRow(5)).toBe(flashRow);
+      expect(userRow(7)).toBe(gptRow);
+      expect(systemRow()).toBe(oldSystemRow);
+    });
+
+    it('keeps the list and each row\'s element on screen while a reload is pending', () => {
+      showModels([flash(RETIRED), gptX(AVAILABLE), { ...OLD_SYSTEM }]);
+      const flashRow = userRow(5);
+      const oldSystemRow = systemRow();
+      const pending = new Subject<UserAiModel[]>();
+      (settingsService.getUserModels as Mock).mockReturnValue(pending);
+
+      component.loadModels();
+      fixture.detectChanges();
+
+      expect(el().querySelector('.loading-state')).toBeNull();
+      expect(userRow(5)).toBe(flashRow);
+
+      pending.next([flash(RETIRED), gptX(AVAILABLE), { ...OLD_SYSTEM }]);
+      pending.complete();
+      fixture.detectChanges();
+
+      expect(userRow(5)).toBe(flashRow);
+      expect(systemRow()).toBe(oldSystemRow);
+    });
+
+    it('shows the loading state only until the first list arrives', () => {
+      const pending = new Subject<UserAiModel[]>();
+      (settingsService.getUserModels as Mock).mockReturnValue(pending);
+      const fresh = TestBed.createComponent(ModelsComponent);
+      const host = fresh.nativeElement as HTMLElement;
+
+      fresh.detectChanges();
+
+      expect(host.querySelector('.loading-state')).not.toBeNull();
+      expect(host.querySelector('#user-model-name-5')).toBeNull();
+
+      pending.next([flash(AVAILABLE)]);
+      pending.complete();
+      fresh.detectChanges();
+
+      expect(host.querySelector('.loading-state')).toBeNull();
+      expect(host.querySelector('#user-model-name-5')).not.toBeNull();
     });
 
     it('reloads after a switch, says so and focuses the next flagged row\'s Resolve…', async () => {

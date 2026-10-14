@@ -13,20 +13,20 @@
 
   <p class="models-status" role="status" [class.has-text]="!!resolutionStatus">{{ resolutionStatus }}</p>
 
-  @if (loading) {
+  @if (loading && firstLoad) {
     <div class="loading-state">
       <span class="sidebar-spinner"></span> Loading Models...
     </div>
   }
 
-  @if (!loading) {
+  @if (!(loading && firstLoad)) {
     <div class="models-list">
       @if (userModels.length === 0) {
         <div class="empty-state">
           You haven't added any models yet. Click "Add Model" to get started.
         </div>
       }
-      @for (model of userModels; track model; let i = $index) {
+      @for (model of userModels; track model.id; let i = $index) {
         <div
           class="model-item"
           draggable="true"
@@ -124,7 +124,7 @@
         </button>
       </div>
       <div class="models-list">
-        @for (model of systemModels; track model; let i = $index) {
+        @for (model of systemModels; track model.id; let i = $index) {
           <div 
             class="model-item system-model-item"
             draggable="true"
