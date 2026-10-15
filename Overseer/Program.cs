@@ -333,6 +333,8 @@ builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkBatteryRep
 builder.Services.AddScoped<Overseer.Services.Benchmarking.BenchmarkReportRenderService>();
 // Singleton: its per-document write locks must be shared by every request.
 builder.Services.AddSingleton<Overseer.Services.Benchmarking.BenchmarkReportChartStore>();
+// Singleton like the chart store it writes through; it holds no other state.
+builder.Services.AddSingleton<Overseer.Services.Benchmarking.Charts.RootCauseChartPublisher>();
 // Benchmark PDFs: the free Community license, and the embedded fonts registered once at startup.
 QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 Overseer.Services.Benchmarking.Pdf.BenchmarkPdfResources.EnsureRegistered();
@@ -672,6 +674,14 @@ using (var benchmarkCleanupScope = app.Services.CreateScope())
         await Overseer.Services.Benchmarking.BenchmarkBatteryReportDocumentService.SettleInterruptedAsync(db);
     }
     catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark battery-report document settlement failed."); }
+
+    // Documents of the retired audiences 2 and 3 are deleted with their charts, and their runs re-settled.
+    try
+    {
+        await Overseer.Services.Benchmarking.BenchmarkReportAudienceRetirement.RunAsync(
+            benchmarkCleanupScope.ServiceProvider, app.Logger, CancellationToken.None);
+    }
+    catch (Exception ex) { app.Logger.LogWarning(ex, "Benchmark retired-audience document cleanup failed."); }
 
     // Report documents stored without a comparison key get one from their stored comparison request.
     try

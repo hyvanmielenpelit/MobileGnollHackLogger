@@ -47,7 +47,6 @@ import {
   REPORT_DOCUMENT_AUDIENCE_OPTIONS,
   REPORT_DOCUMENT_SCOPES,
   REPORT_LIBRARY_ALL_TAKE,
-  REPORT_PACK_AUDIENCES,
   ReportDocumentLibraryScope,
   ReportDocumentScopeValue,
   audienceLabel,
@@ -63,6 +62,7 @@ import {
   ReportChartPublishResult,
   ReportChartSelection,
   ReportChartTarget,
+  isServerDrawnChartFigureKey,
   normalizeChartSelection,
   readStoredChartSelection
 } from '../report-pack/report-charts';
@@ -210,8 +210,7 @@ export type DownloadRowKind = 'pack' | 'runReport' | 'toolCallLog' | 'diagnostic
 /** What a remembered choice is keyed by: a pack document's audience, or a run or battery file's kind. */
 export type DownloadRowCategory =
   | 'executiveSummary'
-  | 'technicalReport'
-  | 'internalBrief'
+  | 'rootCauseAnalysis'
   | 'providerIssueReport'
   | 'runReport'
   | 'toolCallLog'
@@ -316,11 +315,15 @@ export const downloadCenterIo = {
 export const DOWNLOAD_CENTER_STORAGE_KEY = 'overseer.benchmark.downloadCenter';
 
 /**
- * The stored settings' version. Versions 2 and 3 are migrated on reading: every package gains the
- * Provider Issue Report's default choice, and version 2 loses the Internal package's remembered
- * formats. Settings of any other version read as absent.
+ * The stored settings' version. Versions 2 to 4 are migrated on reading: every package loses the
+ * choices remembered for the two retired document types (`technicalReport`, `internalBrief`);
+ * versions 2 and 3 also gain the Provider Issue Report's default choice, and version 2 loses the
+ * Internal package's remembered formats. Settings of any other version read as absent.
  */
-export const STORED_SETTINGS_VERSION = 4;
+export const STORED_SETTINGS_VERSION = 5;
+
+/** The remembered-choice categories of the retired document types, which a migrated version drops. */
+const RETIRED_ROW_CATEGORIES: readonly string[] = ['technicalReport', 'internalBrief'];
 
 /** The Provider Issue Report's default choice in every package: no field remembered, so each takes the package's preset. */
 const PROVIDER_ISSUE_REPORT_DEFAULT_CHOICE: Readonly<StoredChoice> = Object.freeze({});
@@ -353,7 +356,7 @@ export const DOWNLOAD_PACKAGES: readonly DownloadPackage[] = [
     name: 'External',
     fullName: 'External package',
     tagline: 'Shareable reports for a model’s provider',
-    description: 'The Executive Summary and the Report for AI Researchers and Developers as PDF, to send to a model’s provider: Summary disclosure (Detailed optional), peers anonymized (named optional). Internal-only files cannot be chosen.'
+    description: 'The Executive Summary and the Provider Issue Report as PDF, to send to a model’s provider: Summary disclosure (Detailed optional), peers anonymized (named optional). Internal-only files, the Root Cause Analysis among them, cannot be chosen.'
   },
   {
     id: 'custom',
@@ -365,7 +368,7 @@ export const DOWNLOAD_PACKAGES: readonly DownloadPackage[] = [
 ];
 
 export const INTERNAL_REASONS = {
-  internalBrief: 'Internal only: contains rubric text',
+  rootCauseAnalysis: 'Internal only: contains benchmark questions and rubrics',
   fullDisclosure: 'Internal only at Full: contains rubric text',
   runReport: 'Internal only: contains questions, rubrics and answers',
   toolCallLog: 'Internal only: contains every tool call’s arguments and results',
@@ -1915,13 +1918,15 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
    * have; a type none of them has charts for starts from the remembered selection.
    */
   private showChartsDialog(rows: DownloadRow[], returnFocus: HTMLElement | null): void {
-    const audiences = REPORT_PACK_AUDIENCES.map(option => option.audience)
+    const audiences = REPORT_DOCUMENT_AUDIENCE_OPTIONS.map(option => option.audience)
+      .filter(audience => audience !== BenchmarkReportAudience.ProviderIssueReport)
       .filter(audience => rows.some(row => row.doc?.audience === audience));
     const remembered = readStoredChartSelection();
     const draft: Partial<Record<BenchmarkReportAudience, readonly string[]>> = {};
     for (const audience of audiences) {
       const current = new Set(rows.filter(row => row.doc?.audience === audience)
-        .flatMap(row => row.doc?.chartFigureKeys ?? []));
+        .flatMap(row => row.doc?.chartFigureKeys ?? [])
+        .filter(key => !isServerDrawnChartFigureKey(key)));
       draft[audience] = current.size > 0 ? [...current] : [...(remembered[audience] ?? [])];
     }
     this.chartDialogRows = rows;
@@ -2521,7 +2526,7 @@ export class DownloadCenterPanelComponent implements OnInit, OnChanges, OnDestro
     if (pkg === 'provider') {
       return {
         selected: this.isSelectableIn(row, pkg)
-          && (row.category === 'executiveSummary' || row.category === 'technicalReport' || row.category === 'providerIssueReport'),
+          && (row.category === 'executiveSummary' || row.category === 'providerIssueReport'),
         disclosure: options.includes(BenchmarkReportDisclosure.Summary) ? BenchmarkReportDisclosure.Summary : (options[0] ?? BenchmarkReportDisclosure.Summary),
         naming: BenchmarkReportPeerNaming.Anonymized,
         formats: presetFormats(row, 'provider')
@@ -2986,19 +2991,18 @@ function batteryReportRow(context: DownloadCenterBatteryContext): DownloadRow {
 /** The levels a document renders at when the server sends none: its audience's own set. */
 function fallbackDisclosures(audience: BenchmarkReportAudience): BenchmarkReportDisclosure[] {
   switch (audience) {
-    case BenchmarkReportAudience.InternalBrief: return [BenchmarkReportDisclosure.Full];
+    case BenchmarkReportAudience.RootCauseAnalysis: return [BenchmarkReportDisclosure.Full];
     case BenchmarkReportAudience.ExecutiveSummary: return [BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Full];
     default: return [...ALL_DISCLOSURES];
   }
 }
 
-/** A pack document's remembered-choice category, by its audience; an unknown audience counts as an Internal Improvement Brief. */
+/** A pack document's remembered-choice category, by its audience; an unknown audience counts as a Root Cause Analysis, internal only. */
 function packCategory(audience: BenchmarkReportAudience): DownloadRowCategory {
   switch (audience) {
     case BenchmarkReportAudience.ExecutiveSummary: return 'executiveSummary';
-    case BenchmarkReportAudience.TechnicalReport: return 'technicalReport';
     case BenchmarkReportAudience.ProviderIssueReport: return 'providerIssueReport';
-    default: return 'internalBrief';
+    default: return 'rootCauseAnalysis';
   }
 }
 
@@ -3006,7 +3010,7 @@ function packRow(doc: BenchmarkReportDocumentListItemDto): DownloadRow {
   const allowed = doc.allowedDisclosures && doc.allowedDisclosures.length > 0
     ? doc.allowedDisclosures
     : fallbackDisclosures(doc.audience);
-  const shareable = doc.audience !== BenchmarkReportAudience.InternalBrief
+  const shareable = packCategory(doc.audience) !== 'rootCauseAnalysis'
     && allowed.some(d => d !== BenchmarkReportDisclosure.Full);
   const type = audienceLabel(doc.audience);
   const parts = [type, doc.writerDisplayName ? `written by ${doc.writerDisplayName}` : ''].filter(part => part);
@@ -3022,7 +3026,7 @@ function packRow(doc: BenchmarkReportDocumentListItemDto): DownloadRow {
     runChanged: !!doc.runChangedSinceGeneration,
     allowedDisclosures: allowed,
     formats: ['pdf', 'docx', 'md', 'html'],
-    internalReason: shareable ? null : INTERNAL_REASONS.internalBrief,
+    internalReason: shareable ? null : INTERNAL_REASONS.rootCauseAnalysis,
     subject: doc.subjectLabel,
     suite: doc.suiteName ?? '',
     documentType: type,
@@ -3107,9 +3111,6 @@ function changeValues(row: DownloadRow): string[] {
 // Names, times and messages
 // ---------------------------------------------------------------------------------------------
 
-/** The audience suffixes a Report for AI Researchers and Developers title can end in, current and earlier. */
-const RESEARCHER_REPORT_TITLE_SUFFIX = /\s+[—–-]\s+(?:Report for AI Researchers and Developers|Technical Report)\s*$/;
-
 /** A single run's subject key, `run:<digits>`, as the server's `BenchmarkPdfFileNames` matches it. */
 const RUN_SUBJECT_KEY = /^run:([0-9]+)$/;
 
@@ -3179,7 +3180,7 @@ function coveredSlug(doc: BenchmarkReportDocumentListItemDto, named: boolean): s
  * - a model subset: `comparison-12_subset-<covered slug>_<kind>`, the covered slug naming up to three
  *   models in a named copy and counting them otherwise (`2-of-5-models-3f9a0c`).
  *
- * The kind is `executive-summary`, `researcher-report` or `internal-brief`.
+ * The kind is `executive-summary` or `root-cause-analysis`.
  */
 export function comparisonFilePart(doc: BenchmarkReportDocumentListItemDto, naming: BenchmarkReportPeerNaming): string | null {
   const id = doc.comparisonId;
@@ -3226,9 +3227,8 @@ function peersFilePart(doc: BenchmarkReportDocumentListItemDto): string {
 /**
  * A report document's file-name stem at a peer naming (named unless given): the name the server's
  * `BenchmarkPdfFileNames.ForReportDocument` gives the PDF and Word files. A Report Pack document of
- * a numbered comparison is named by {@link comparisonFilePart}. Any other keeps the earlier form: a
- * Report for AI Researchers and Developers is named by its title without the audience suffix, then
- * `_Researcher_Report`; every other document by its title. A document about one run (subject
+ * a numbered comparison is named by {@link comparisonFilePart}. Any other keeps the earlier form: it
+ * is named by its title. A document about one run (subject
  * `run:<digits>`) is prefixed `run-<digits>_`, one about a battery run (`battery:<digits>`)
  * `battery-run-<digits>_`, and a document compared with peers by its peers part after that (first,
  * for a group subject): `vs-run-92_`, `vs-run-94-run-95_`, `vs-4-models-1a2b3c4d_`. A Chat Consistency Report
@@ -3253,10 +3253,7 @@ export function reportDocumentFileStem(
   const battery = BATTERY_SUBJECT_KEY.exec(doc.subjectKey ?? '');
   const prefix = (run ? `run-${run[1]}_` : battery ? `battery-run-${battery[1]}_` : '')
     + peersFilePart(doc);
-  if (doc.audience !== BenchmarkReportAudience.TechnicalReport) {
-    return `${prefix}${safeFileName(title)}`;
-  }
-  return `${prefix}${safeFileName(title.replace(RESEARCHER_REPORT_TITLE_SUFFIX, ''))}_Researcher_Report`;
+  return `${prefix}${safeFileName(title)}`;
 }
 
 /** The M of "2 of 5 models": the non-excluded entries when the document was written, else the stored request's entries. */
@@ -3495,8 +3492,9 @@ export function rememberedPdfPaper(): BenchmarkPdfPaper {
 
 /**
  * The stored settings, or null when absent, unreadable, corrupt or of another version. Versions 2
- * and 3 read as version 4 with the Provider Issue Report's default choice in every package; version 2
- * also without the formats remembered for the Internal package, so its rows take the Internal preset.
+ * to 4 read as version 5 without the choices remembered for the retired document types; versions 2
+ * and 3 also with the Provider Issue Report's default choice in every package, and version 2 also
+ * without the formats remembered for the Internal package, so its rows take the Internal preset.
  */
 function readStoredSettings(): StoredSettings | null {
   try {
@@ -3506,7 +3504,7 @@ function readStoredSettings(): StoredSettings | null {
     }
     const parsed = JSON.parse(raw) as { version?: unknown; package?: unknown; paper?: unknown; packages?: unknown } | null;
     if (!parsed || typeof parsed !== 'object'
-        || (parsed.version !== STORED_SETTINGS_VERSION && parsed.version !== 3 && parsed.version !== 2)) {
+        || (parsed.version !== STORED_SETTINGS_VERSION && parsed.version !== 4 && parsed.version !== 3 && parsed.version !== 2)) {
       return null;
     }
     const pkg = DOWNLOAD_PACKAGES.find(p => p.id === parsed.package)?.id;
@@ -3525,7 +3523,7 @@ function readStoredSettings(): StoredSettings | null {
       }
       packages = { ...packages, internal };
     }
-    if (parsed.version !== STORED_SETTINGS_VERSION) {
+    if (parsed.version === 3 || parsed.version === 2) {
       const migrated: NonNullable<StoredSettings['packages']> = { ...(packages ?? {}) };
       for (const { id } of DOWNLOAD_PACKAGES) {
         const choices = migrated[id];
@@ -3533,6 +3531,20 @@ function readStoredSettings(): StoredSettings | null {
           ...(choices && typeof choices === 'object' ? choices : {}),
           providerIssueReport: { ...PROVIDER_ISSUE_REPORT_DEFAULT_CHOICE }
         };
+      }
+      packages = migrated;
+    }
+    if (parsed.version !== STORED_SETTINGS_VERSION && packages) {
+      const migrated: NonNullable<StoredSettings['packages']> = { ...packages };
+      for (const { id } of DOWNLOAD_PACKAGES) {
+        const choices = migrated[id];
+        if (choices && typeof choices === 'object') {
+          const kept: Record<string, StoredChoice> = { ...choices };
+          for (const category of RETIRED_ROW_CATEGORIES) {
+            delete kept[category];
+          }
+          migrated[id] = kept as Partial<Record<DownloadRowCategory, StoredChoice>>;
+        }
       }
       packages = migrated;
     }

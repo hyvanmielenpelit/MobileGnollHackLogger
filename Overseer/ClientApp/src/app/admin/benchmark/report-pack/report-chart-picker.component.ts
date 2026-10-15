@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, EventEmitter, In
 
 import { BenchmarkReportAudience } from '../../../services/admin-benchmark.service';
 import { rovingTabIndex } from '../../../utils/roving-tab.util';
-import { REPORT_PACK_AUDIENCES, audienceLabel, audienceShortLabel } from './report-document-format';
+import { audienceLabel, audienceShortLabel, reportAudiencesFor } from './report-document-format';
 import {
   REPORT_CHART_FIGURES,
   REPORT_CHART_HEADINGS,
@@ -70,6 +70,10 @@ export const REPORT_CHART_LAYOUT_FIELDS: readonly ReportChartLayoutField[] =
 /** The Report Pack's figures, placed by `reportChartPlacementLabel`: the picker's figures by default. */
 export const REPORT_PACK_PICKER_FIGURES: readonly ReportChartPickerFigure<ReportChartFigureKey>[] =
   REPORT_CHART_FIGURES.map(figure => ({ key: figure.key, title: figure.title }));
+
+/** Shown under the Root Cause Analysis' figures: the four charts it carries that the picker does not list. */
+export const REPORT_CHART_SERVER_DRAWN_NOTE = 'The Root Cause Analysis also carries four charts drawn by Overseer: where the points '
+  + 'were lost, where the time goes, where the cost goes, and how sure each hypothesis is.';
 
 /** Why a column is unavailable: its document type is not checked under Documents of this comparison. */
 export const REPORT_CHART_COLUMN_DISABLED_REASON = 'Not checked under Documents of this comparison';
@@ -207,10 +211,10 @@ export class ReportChartPickerComponent {
     return this.figureList;
   }
 
-  /** The document types the picker knows, with their labels; the Report Pack's by default. */
+  /** The document types the picker knows, with their labels; by default those the Report Pack writes in the picker's scope. */
   @Input()
   set audienceOptions(value: readonly ReportChartPickerAudienceOption[]) {
-    this.audienceOptionList = value ?? REPORT_PACK_AUDIENCES;
+    this.hostAudienceOptions = value ?? null;
     this.renormalize();
   }
   get audienceOptions(): readonly ReportChartPickerAudienceOption[] {
@@ -297,7 +301,12 @@ export class ReportChartPickerComponent {
 
   private figureList: readonly ReportChartPickerFigure<string>[] = REPORT_PACK_PICKER_FIGURES;
 
-  private audienceOptionList: readonly ReportChartPickerAudienceOption[] = REPORT_PACK_AUDIENCES;
+  /** The host's document types; null takes the Report Pack's for the scope. */
+  private hostAudienceOptions: readonly ReportChartPickerAudienceOption[] | null = null;
+
+  private get audienceOptionList(): readonly ReportChartPickerAudienceOption[] {
+    return this.hostAudienceOptions ?? reportAudiencesFor(this.scope);
+  }
 
   private audienceList: readonly BenchmarkReportAudience[] | null = null;
 
@@ -428,6 +437,11 @@ export class ReportChartPickerComponent {
   /** The host's note on a figure, or ''. */
   note(row: ReportChartPickerRow): string {
     return this.notes[row.key] ?? '';
+  }
+
+  /** The note under the Root Cause Analysis' figures about the charts Overseer draws itself; '' for any other type. */
+  serverChartsNote(column: ReportChartPickerColumn): string {
+    return column.audience === BenchmarkReportAudience.RootCauseAnalysis ? REPORT_CHART_SERVER_DRAWN_NOTE : '';
   }
 
   /** Checked when selected and drawable; a figure the comparison cannot draw reads unchecked. */

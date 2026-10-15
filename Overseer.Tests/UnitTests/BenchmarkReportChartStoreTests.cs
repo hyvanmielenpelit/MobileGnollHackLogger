@@ -306,7 +306,7 @@ public class BenchmarkReportChartStoreTests
 
     [Theory]
     [InlineData("empty", "No charts were sent")]
-    [InlineData("too-many", "at most 16")]
+    [InlineData("too-many", "at most 24")]
     [InlineData("unknown-key", "unknown figure key")]
     [InlineData("crafted-key", "unknown figure key")]
     [InlineData("bad-naming", "must be \"named\" or \"anonymized\"")]
@@ -328,7 +328,7 @@ public class BenchmarkReportChartStoreTests
         var uploads = problem switch
         {
             "empty" => new List<ReportDocumentChartUpload>(),
-            "too-many" => Enumerable.Range(0, 17).Select(_ => Upload("p1a-quality")).ToList(),
+            "too-many" => Enumerable.Range(0, BenchmarkReportChartStore.MaxCharts + 1).Select(_ => Upload("p1a-quality")).ToList(),
             "unknown-key" => new List<ReportDocumentChartUpload> { Upload("p9-unknown") },
             "crafted-key" => new List<ReportDocumentChartUpload> { Upload("..\\..\\p1a-quality") },
             "bad-naming" => new List<ReportDocumentChartUpload> { Upload("p1a-quality", "Named") },

@@ -39,7 +39,7 @@ public static partial class BenchmarkReportPackPrompt
         AppendChatConsistencyTokenRules(sb);
         AppendChatConsistencyRepetitionRules(sb);
         AppendChatConsistencyClaimRules(sb, spec);
-        AppendFormatRules(sb, spec);
+        AppendFormatRules(sb);
         AppendChatConsistencyOutput(sb, spec);
 
         return sb.ToString();
@@ -126,16 +126,6 @@ public static partial class BenchmarkReportPackPrompt
                 Line(sb, "Reader: a manager or a non-specialist who wants to know whether the Overseer chat with this model is as good as before.");
                 Line(sb, "Tone: plain US English in short sentences, with no jargon. Explain any technical idea in everyday words.");
                 break;
-            case BenchmarkReportAudience.TechnicalReport:
-                Line(sb, "DOCUMENT: Report for AI Researchers and Developers on a chat consistency check.");
-                Line(sb, "Reader: AI researchers and model developers who want to judge the design and the evidence.");
-                Line(sb, "Tone: precise and neutral US English. Tie every claim to its fact token, and state each result with its interval, verdict and grade.");
-                break;
-            case BenchmarkReportAudience.InternalBrief:
-                Line(sb, "DOCUMENT: Internal Improvement Brief on a chat consistency check, for an AI agent of the Overseer team to act on.");
-                Line(sb, "Reader: the Overseer team and its AI agents. The document is internal.");
-                Line(sb, "Tone: direct and practical US English. Its purpose, in order of importance: first keeping the Overseer chat and its tools working at their best for players, then the benchmark runs, made by hand, and the analysis that check it, then a report to the model's provider where the evidence supports one.");
-                break;
             case BenchmarkReportAudience.ProviderIssueReport:
                 Line(sb, "DOCUMENT: Provider Issue Report.");
                 Line(sb, "Reader: engineers at the provider of {{subject}}, who have not seen our data and need to check their own side.");
@@ -181,34 +171,6 @@ public static partial class BenchmarkReportPackPrompt
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.NextRuns) =>
             $"At most {ChatCap(audience, slot)} words: the runs the analysis suggests next (the nextRuns.* facts) and what each would settle, in plain words. The runs are made by hand: say which to make.",
 
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.QuestionAndDesign) =>
-            $"At most {ChatCap(audience, slot)} words: the question the analysis answers, whether the Overseer chat with {{{{subject}}}} changed between the two periods, and its design: matched runs of the same suites in each period, the primary endpoints with their margins (protocol.margin.*), the protocol and its alpha, the control models and their difference in differences, and the evidence grades.",
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.RunsAndCoverage) =>
-            $"At most {ChatCap(audience, slot)} words: the runs, items and answers of each period, the common hours {{{{scope.hours}}}} and the share of answers left out of them (or, when the periods share none, the hours each ran), the strata, the runs without call telemetry, and the control runs.",
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.OverseerEvents) =>
-            $"At most {ChatCap(audience, slot)} words: what the Overseer updates between the periods (eventGroups.*, events.*) mean for the comparison: which part of the chat each changed, and whether it falls in the series of {{{{subject}}}} or of a control.",
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.EndpointResults) =>
-            $"At most {ChatCap(audience, slot)} words: what the endpoint results mean, endpoint by endpoint, and the reasons each grade records. For an inconclusive endpoint, give its minimum detectable effect and the runs per period that would reach its margin. Mention a secondary measure only where it bears on a primary endpoint.",
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Attribution) =>
-            $"At most {ChatCap(audience, slot)} words: each attribution with its side, grade, rule and endpoints and the evidence it records, and the difference-in-differences estimates against the control models. The total change is already stated under the results; here say only where it came from, as far as the grades go.",
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Robustness) =>
-            $"At most {ChatCap(audience, slot)} words: the robustness checks and their status, the common grader and the grader drift, and the secondary results where they bear on the primary endpoints.",
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Limitations) =>
-            $"At most {ChatCap(audience, slot)} words: what the recorded limitations and data-quality notes (limitation.*) mean for the result, and what the result does not cover, such as the hours outside those both periods share.",
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Reproducibility) =>
-            $"At most {ChatCap(audience, slot)} words: what someone needs to reproduce the analysis: its number {{{{analysis.id}}}}, the analysis code version, the protocol and any overrides, each period's battery runs or runs, and the price card. Never cite a hash.",
-
-        (BenchmarkReportAudience.InternalBrief, BenchmarkReportSlots.ChatFindings) =>
-            $"At most {ChatCap(audience, slot)} words. Lead with what the result says about the Overseer chat with {{{{subject}}}} itself, its system prompt, tools, corpora and agent loop, and what to check there, citing the endpoints and the tool-use facts. State these as things to check, not as conclusions.",
-        (BenchmarkReportAudience.InternalBrief, BenchmarkReportSlots.ChangeEffects) =>
-            $"At most {ChatCap(audience, slot)} words: which of our own changes in the period (events.*) helped or hurt, as far as the attribution grades them. Where none is graded, say that their effect is not established.",
-        (BenchmarkReportAudience.InternalBrief, BenchmarkReportSlots.InfrastructureIssues) =>
-            $"At most {ChatCap(audience, slot)} words: our own infrastructure: retries and our own waits (ownWaits.*), failures and rate limits (reliability.*), and calls served at another tier or by a fallback (serving.*).",
-        (BenchmarkReportAudience.InternalBrief, BenchmarkReportSlots.NextRuns) =>
-            $"At most {ChatCap(audience, slot)} words: the next runs the analysis suggests (nextRuns.*) and the control runs that are missing (controls.missing.*), each with what it would settle. Where the minimum sample is not met, state the shortfall with {{{{sample.shortfall}}}}. The runs are made by hand: say which to make.",
-        (BenchmarkReportAudience.InternalBrief, BenchmarkReportSlots.Actions) =>
-            $"At most {ChatCap(audience, slot)} words: concrete actions for the Overseer team, most important first: the chat, then the runs and the analysis, then a Provider Issue Report where a provider-side attribution is graded Established or Indicated. Lead each with the action, then its evidence. Never recommend acting on a secondary difference whose 95 % interval includes zero. When quality (P1) is not computable because the compared runs were not graded alike, the first action is to re-grade every compared run with one common grader.",
-
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.IssueSummary) =>
             $"At most {ChatCap(audience, slot)} words: what we observed, in plain and neutral terms: the endpoints whose verdict shows a change, with their estimates and intervals, the hours observed and the provider-side attribution with its grade.",
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.AffectedModel) =>
@@ -232,7 +194,7 @@ public static partial class BenchmarkReportPackPrompt
     {
         Line(sb, "FIELDS AND LISTS:");
         Line(sb, $"- headline: the result in one sentence, at most {Words(BenchmarkReportPackValidator.HeadlineMaxWords)} words: the total change of the Overseer chat with {{{{subject}}}}, citing {{{{verdict.overall}}}} or an endpoint's verdict token. It follows every claim rule below.");
-        Line(sb, "- strengths, weaknesses, recommendations, models, questionTopics, questionNotes and leads: leave them out.");
+        Line(sb, "- strengths, weaknesses, models and questionTopics: leave them out.");
         Line(sb);
     }
 

@@ -24,7 +24,7 @@ import {
   runReportWritingIo
 } from './run-report-writing-dialog.component';
 
-const { ExecutiveSummary, TechnicalReport } = BenchmarkReportAudience;
+const { ExecutiveSummary, RootCauseAnalysis } = BenchmarkReportAudience;
 const QUEUED_AT = '2026-09-29T12:00:00Z';
 
 /**
@@ -75,7 +75,7 @@ function packJob(overrides: Partial<BenchmarkReportPackJobDto> = {}): BenchmarkR
     inputTokens: 9000,
     outputTokens: 1200,
     costUsd: 0.05,
-    documents: [doc(ExecutiveSummary, 'Pending'), doc(TechnicalReport, 'Pending')],
+    documents: [doc(ExecutiveSummary, 'Pending'), doc(RootCauseAnalysis, 'Pending')],
     log: [],
     ...overrides
   };
@@ -94,7 +94,7 @@ function jobView(overrides: Partial<BenchmarkRunReportJobDto> = {},
     cancelRequestedAtUtc: null,
     jobsAhead: null,
     blockingJobLabel: null,
-    audiences: [ExecutiveSummary, TechnicalReport],
+    audiences: [ExecutiveSummary, RootCauseAnalysis],
     writerConfigId: 7,
     writerDisplayName: 'Claude Opus writer',
     writerProvider: 'Anthropic',
@@ -121,7 +121,7 @@ function finishedView(status = BenchmarkRunReportDocumentsStatus.Completed, mess
           documentId: 17, modelCalls: 1, startedAtUtc: '2026-09-29T12:00:06Z', completedAtUtc: '2026-09-29T12:01:00Z',
           inputTokens: 9000, outputTokens: 1500, costUsd: 0.12
         }),
-        doc(TechnicalReport, 'Completed', {
+        doc(RootCauseAnalysis, 'Completed', {
           documentId: 18, modelCalls: 1, startedAtUtc: '2026-09-29T12:01:00Z', completedAtUtc: '2026-09-29T12:03:05Z',
           inputTokens: 12000, outputTokens: 3000, costUsd: 0.3
         })
@@ -218,7 +218,7 @@ describe('RunReportWritingDialogComponent', () => {
   it('announces phase changes in the live region and keeps the ticking elapsed time outside it', fakeAsync(() => {
     const finished: (BenchmarkRunReportJobDto | null)[] = [];
     component.finished.subscribe(value => finished.push(value));
-    service.getRunReportJob.mockReturnValueOnce(of(jobView({ phase: 'Queued', slotAcquiredAtUtc: null, jobsAhead: 1, blockingJobLabel: 'Report Pack: GPT-6 Sol' }))).mockReturnValueOnce(of(jobView({ phase: 'Preparing' }))).mockReturnValueOnce(of(jobView({}, { documents: [doc(ExecutiveSummary, 'Writing'), doc(TechnicalReport, 'Pending')] }))).mockReturnValueOnce(of(jobView({}, { documents: [doc(ExecutiveSummary, 'Repairing'), doc(TechnicalReport, 'Pending')] }))).mockReturnValueOnce(of(finishedView()));
+    service.getRunReportJob.mockReturnValueOnce(of(jobView({ phase: 'Queued', slotAcquiredAtUtc: null, jobsAhead: 1, blockingJobLabel: 'Report Pack: GPT-6 Sol' }))).mockReturnValueOnce(of(jobView({ phase: 'Preparing' }))).mockReturnValueOnce(of(jobView({}, { documents: [doc(ExecutiveSummary, 'Writing'), doc(RootCauseAnalysis, 'Pending')] }))).mockReturnValueOnce(of(jobView({}, { documents: [doc(ExecutiveSummary, 'Repairing'), doc(RootCauseAnalysis, 'Pending')] }))).mockReturnValueOnce(of(finishedView()));
     open();
 
     const status = el('[role="status"].rw-status')!;
@@ -247,7 +247,7 @@ describe('RunReportWritingDialogComponent', () => {
     expect(current.querySelector('.visually-hidden')?.textContent).toContain('current');
     expect(host.querySelectorAll('.run-stage.is-done').length).toBe(2);
     expect(Array.from(host.querySelectorAll('.run-stage-name')).map(n => n.textContent?.trim()))
-      .toEqual(['Queued', 'Preparing', 'Executive Summary', 'Report for AI Researchers and Developers', 'Done']);
+      .toEqual(['Queued', 'Preparing', 'Executive Summary', 'Root Cause Analysis', 'Done']);
     expect(el('progress.job-progress')?.getAttribute('aria-label')).toBe('Writing progress');
     expect(el('progress.job-progress')?.hasAttribute('value')).toBe(false);
 
@@ -297,7 +297,7 @@ describe('RunReportWritingDialogComponent', () => {
   }));
 
   it('asks before canceling, then cancels and shows Canceling… until the job settles', fakeAsync(() => {
-    service.getRunReportJob.mockReturnValue(of(jobView({}, { documents: [doc(ExecutiveSummary, 'Writing'), doc(TechnicalReport, 'Pending')] })));
+    service.getRunReportJob.mockReturnValue(of(jobView({}, { documents: [doc(ExecutiveSummary, 'Writing'), doc(RootCauseAnalysis, 'Pending')] })));
     service.cancelRunReportJob.mockReturnValue(of(jobView({ cancelRequestedAtUtc: '2026-09-29T12:00:09Z' })));
     open();
 
@@ -331,7 +331,7 @@ describe('RunReportWritingDialogComponent', () => {
     }, {
       status: 'Canceled',
       costUsd: 0.12,
-      documents: [doc(ExecutiveSummary, 'Completed', { documentId: 17 }), doc(TechnicalReport, 'Canceled')]
+      documents: [doc(ExecutiveSummary, 'Completed', { documentId: 17 }), doc(RootCauseAnalysis, 'Canceled')]
     })));
     tick(2000);
     fixture.detectChanges();
@@ -424,7 +424,7 @@ describe('RunReportWritingDialogComponent', () => {
     const viewButtons = host.querySelectorAll<HTMLButtonElement>('.rw-view');
     expect(viewButtons.length).toBe(2);
     expect(viewButtons[0].getAttribute('aria-label')).toBe('View the Executive Summary');
-    expect(viewButtons[1].getAttribute('aria-label')).toBe('View the Report for AI Researchers and Developers');
+    expect(viewButtons[1].getAttribute('aria-label')).toBe('View the Root Cause Analysis');
     viewButtons[0].click();
     expect(viewed).toEqual([17]);
 
@@ -441,7 +441,7 @@ describe('RunReportWritingDialogComponent', () => {
   }));
 
   it('shows a failed document’s error inline', fakeAsync(() => {
-    service.getRunReportJob.mockReturnValue(of(jobView({ phase: 'Finished', status: BenchmarkRunReportDocumentsStatus.Failed, message: 'The writer failed.', finishedAtUtc: '2026-09-29T12:01:00Z' }, { documents: [doc(ExecutiveSummary, 'Failed', { errorMessage: 'The model refused.' }), doc(TechnicalReport, 'Canceled')] })));
+    service.getRunReportJob.mockReturnValue(of(jobView({ phase: 'Finished', status: BenchmarkRunReportDocumentsStatus.Failed, message: 'The writer failed.', finishedAtUtc: '2026-09-29T12:01:00Z' }, { documents: [doc(ExecutiveSummary, 'Failed', { errorMessage: 'The model refused.' }), doc(RootCauseAnalysis, 'Canceled')] })));
     open();
     expect(text('.rw-status')).toBe('Failed: The writer failed.');
     expect(text('.rw-document-row .rw-document-error')).toBe('The model refused.');

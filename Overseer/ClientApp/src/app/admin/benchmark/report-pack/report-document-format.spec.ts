@@ -1,9 +1,11 @@
 import { BenchmarkReportAudience, BenchmarkReportDisclosure, BenchmarkReportScope } from '../../../services/admin-benchmark.service';
 import {
+  CHAT_CONSISTENCY_REPORT_AUDIENCE_OPTIONS,
+  COMPARISON_REPORT_AUDIENCE_OPTIONS,
   PROVIDER_ISSUE_REPORT_OPTION,
   REPORT_DOCUMENT_AUDIENCE_OPTIONS,
   REPORT_DOCUMENT_SCOPES,
-  REPORT_PACK_AUDIENCES,
+  ReportAudienceScope,
   audienceLabel,
   audienceShortLabel,
   chatConsistencyAnalysisIdOf,
@@ -15,55 +17,67 @@ import {
   formatElapsed,
   formatUtc,
   peerCountLabel,
+  reportAudiencesFor,
   reportDocumentScope,
+  reportPackAudienceScope,
   reportKindSlug,
   reportScopeLabel,
   statusLabel
 } from './report-document-format';
 
 describe('report-document-format', () => {
-  it('names each audience, and falls back for an unknown one', () => {
+  it('names each audience, and falls back for an unknown or retired one', () => {
     expect(audienceLabel(BenchmarkReportAudience.ExecutiveSummary)).toBe('Executive Summary');
-    expect(audienceLabel(BenchmarkReportAudience.TechnicalReport)).toBe('Report for AI Researchers and Developers');
-    expect(audienceLabel(BenchmarkReportAudience.InternalBrief)).toBe('Internal Improvement Brief');
+    expect(audienceLabel(BenchmarkReportAudience.RootCauseAnalysis)).toBe('Root Cause Analysis');
+    expect(audienceLabel(2 as BenchmarkReportAudience)).toBe('Report document');
+    expect(audienceLabel(3 as BenchmarkReportAudience)).toBe('Report document');
     expect(audienceLabel(99 as BenchmarkReportAudience)).toBe('Report document');
   });
 
-  it('offers the three documents, the Internal Improvement Brief unchecked by default', () => {
-    expect(REPORT_PACK_AUDIENCES.map(option => option.audience)).toEqual([
+  it('offers each scope its own two documents', () => {
+    const audiences = (scope: ReportAudienceScope) => reportAudiencesFor(scope).map(option => option.audience);
+    const both = [BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis];
+    expect(audiences('comparison')).toEqual(both);
+    expect(audiences('model')).toEqual(both);
+    expect(audiences('run')).toEqual(both);
+    expect(audiences('battery')).toEqual(both);
+    expect(audiences('chatConsistency')).toEqual([
       BenchmarkReportAudience.ExecutiveSummary,
-      BenchmarkReportAudience.TechnicalReport,
-      BenchmarkReportAudience.InternalBrief
+      BenchmarkReportAudience.ProviderIssueReport
     ]);
-    expect(REPORT_PACK_AUDIENCES.map(option => option.checkedByDefault)).toEqual([true, true, false]);
+    expect(COMPARISON_REPORT_AUDIENCE_OPTIONS.map(option => option.checkedByDefault)).toEqual([true, true]);
+    expect(reportPackAudienceScope(BenchmarkReportScope.Comparison)).toBe('comparison');
+    expect(reportPackAudienceScope(BenchmarkReportScope.Model)).toBe('model');
+    expect(reportPackAudienceScope(undefined)).toBe('model');
   });
 
   it('gives each document a short label that is a word of its full label', () => {
-    expect(REPORT_PACK_AUDIENCES.map(option => option.shortLabel)).toEqual(['Executive', 'Researchers', 'Internal']);
-    for (const option of REPORT_PACK_AUDIENCES) {
+    expect(REPORT_DOCUMENT_AUDIENCE_OPTIONS.map(option => option.shortLabel)).toEqual(['Executive', 'Root Cause', 'Provider']);
+    for (const option of REPORT_DOCUMENT_AUDIENCE_OPTIONS) {
       expect(option.label).toContain(option.shortLabel);
     }
-    expect(audienceShortLabel(BenchmarkReportAudience.TechnicalReport)).toBe('Researchers');
+    expect(audienceShortLabel(BenchmarkReportAudience.RootCauseAnalysis)).toBe('Root Cause');
     expect(audienceShortLabel(99 as BenchmarkReportAudience)).toBe('Document');
   });
 
   it('spells each document kind once in a file name, as the server does', () => {
     expect(reportKindSlug(BenchmarkReportAudience.ExecutiveSummary)).toBe('executive-summary');
-    expect(reportKindSlug(BenchmarkReportAudience.TechnicalReport)).toBe('researcher-report');
-    expect(reportKindSlug(BenchmarkReportAudience.InternalBrief)).toBe('internal-brief');
+    expect(reportKindSlug(BenchmarkReportAudience.RootCauseAnalysis)).toBe('root-cause-analysis');
     expect(reportKindSlug(99 as BenchmarkReportAudience)).toBe('99');
   });
 
-  it('names the Provider Issue Report and spells its kind, without offering it in the Reports form', () => {
+  it('names the Provider Issue Report and spells its kind, offering it only in chat consistency', () => {
     expect(audienceLabel(BenchmarkReportAudience.ProviderIssueReport)).toBe('Provider Issue Report');
     expect(audienceShortLabel(BenchmarkReportAudience.ProviderIssueReport)).toBe('Provider');
     expect(PROVIDER_ISSUE_REPORT_OPTION.label).toContain(PROVIDER_ISSUE_REPORT_OPTION.shortLabel);
     expect(reportKindSlug(BenchmarkReportAudience.ProviderIssueReport)).toBe('provider-issue-report');
-    expect(REPORT_PACK_AUDIENCES.some(option => option.audience === BenchmarkReportAudience.ProviderIssueReport)).toBe(false);
+    for (const scope of ['comparison', 'model', 'run', 'battery'] as const) {
+      expect(reportAudiencesFor(scope).some(option => option.audience === BenchmarkReportAudience.ProviderIssueReport)).toBe(false);
+    }
+    expect(CHAT_CONSISTENCY_REPORT_AUDIENCE_OPTIONS.some(option => option.audience === BenchmarkReportAudience.RootCauseAnalysis)).toBe(false);
     expect(REPORT_DOCUMENT_AUDIENCE_OPTIONS.map(option => option.audience)).toEqual([
       BenchmarkReportAudience.ExecutiveSummary,
-      BenchmarkReportAudience.TechnicalReport,
-      BenchmarkReportAudience.InternalBrief,
+      BenchmarkReportAudience.RootCauseAnalysis,
       BenchmarkReportAudience.ProviderIssueReport
     ]);
   });

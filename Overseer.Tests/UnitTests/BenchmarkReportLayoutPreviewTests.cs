@@ -87,7 +87,7 @@ public class BenchmarkReportLayoutPreviewTests
         BenchmarkPdfTestSetup.Configure();
         var ct = TestContext.Current.CancellationToken;
         await using var h = await Harness.CreateAsync();
-        var request = h.ModelRequest(BenchmarkReportAudience.TechnicalReport, h.Seeded.RunIds[0], h.Seeded.RunIds[1]);
+        var request = h.ModelRequest(BenchmarkReportAudience.ExecutiveSummary, h.Seeded.RunIds[0], h.Seeded.RunIds[1]);
         request.SubjectKeys = new List<string> { $"run:{h.Seeded.RunIds[1]}", $"run:{h.Seeded.RunIds[0]}" };
         request.Paper = "letter";
         request.Naming = "anonymized";
@@ -98,8 +98,7 @@ public class BenchmarkReportLayoutPreviewTests
         Assert.Equal(612, reader.GetPage(1).Width, 0.5);
         string text = Squash(string.Concat(reader.GetPages().Select(p => p.Text)));
         Assert.Contains(Squash(BenchmarkReportLayoutPreview.Stamp), text);
-        Assert.Contains(Squash("text for " + BenchmarkReportSlots.WhyItScored + " appears here."), text);
-        Assert.Contains(Squash("topic for this question appears here."), text);
+        Assert.Contains(Squash("text for " + BenchmarkReportSlots.Meaning + " appears here."), text);
         Assert.Equal(0, h.WriterResolutions);
         Assert.Empty(await h.Db.BenchmarkReportDocuments.IgnoreAutoIncludes().ToListAsync(ct));
     }
@@ -158,7 +157,7 @@ public class BenchmarkReportLayoutPreviewTests
         many.Charts = Enumerable.Range(0, BenchmarkReportLayoutPreview.MaxCharts + 1)
             .Select(_ => new BenchmarkReportLayoutPreviewChart { FigureKey = "p1a-quality", AltText = "Alt." })
             .ToList();
-        Assert.Contains("at most 12", ErrorOf(await controller.LayoutPreview(Json(many), null, ct), 400), StringComparison.Ordinal);
+        Assert.Contains("at most 16", ErrorOf(await controller.LayoutPreview(Json(many), null, ct), 400), StringComparison.Ordinal);
 
         // Preparation refusals: a subject with no peer, and a comparison-wide document of one model.
         var single = h.ModelRequest(BenchmarkReportAudience.ExecutiveSummary, h.Seeded.RunIds[0]);
@@ -188,11 +187,7 @@ public class BenchmarkReportLayoutPreviewTests
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, false)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, false)]
-    [InlineData(BenchmarkReportAudience.InternalBrief, false)]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, true)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, true)]
-    [InlineData(BenchmarkReportAudience.InternalBrief, true)]
     public void ThePlaceholderOutput_FillsEverySlotAtATypicalLength_AndEveryListTheAudienceUses(BenchmarkReportAudience audience, bool comparison)
     {
         var document = comparison ? BenchmarkReportPackFixture.ComparisonDocument(audience) : BenchmarkReportPackFixture.Document(audience);
@@ -215,11 +210,6 @@ public class BenchmarkReportLayoutPreviewTests
 
         Assert.Equal(spec.UsesStrengthsAndWeaknesses, output.Strengths.Count > 0);
         Assert.Equal(spec.UsesStrengthsAndWeaknesses, output.Weaknesses.Count > 0);
-        Assert.Equal(spec.UsesRecommendations ? spec.RecommendationTargets.OrderBy(t => t) : Enumerable.Empty<string>(),
-            output.Recommendations.Select(r => r.For).Distinct().OrderBy(t => t));
-        Assert.True(output.Recommendations.Count <= BenchmarkReportPackValidator.MaxRecommendations(audience) || !spec.UsesRecommendations);
-        Assert.Equal(spec.UsesLeads, output.Leads.Count > 0);
-        Assert.All(output.Leads, l => Assert.Contains(l.Triage, spec.LeadTriages));
 
         if (spec.MaxModelPoints > 0)
         {

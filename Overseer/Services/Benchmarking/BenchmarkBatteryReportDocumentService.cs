@@ -14,14 +14,15 @@ using Overseer.Models;
 using Overseer.Services;
 
 /// <summary>
-/// Writes a battery run's three AI-written battery-completion documents, the Executive Summary, the
-/// Report for AI Researchers and Developers and the Internal Improvement Brief, once, after the
-/// battery finishes and its analysis is complete, with the report writer the battery run names.
+/// Writes a battery run's two AI-written battery-completion documents, the Executive Summary and the
+/// Root Cause Analysis, once, after the battery finishes and its analysis is complete, with the report
+/// writer the battery run names.
 ///
 /// <para>Each document is an immutable <see cref="BenchmarkReportDocument"/> row with
 /// <see cref="BenchmarkReportDocumentOrigin.BatteryCompletion"/> and subject <c>battery:&lt;id&gt;</c>:
-/// a one-entry Model Comparison of the battery result, with no peers. Nothing is rewritten: writing
-/// again means deleting the documents first.</para>
+/// a one-entry Model Comparison of the battery result, with no peers. Nothing is rewritten on its
+/// own: writing again means deleting the documents first, or naming them as replaced on a manual
+/// write (Rewrite with controls).</para>
 ///
 /// <para>A job shares the report-pack slot with the Report Pack and the run-completion documents: it
 /// queues behind a running job, checks the compliance guard and the writer, then writes whichever of
@@ -183,24 +184,28 @@ public sealed class BenchmarkBatteryReportDocumentService
     /// Starts a job with the writer already recorded on the battery run, for the requested audiences
     /// the battery run is missing, in <see cref="Audiences"/> order; null or empty requests every
     /// missing one. A writer of the candidate's provider needs <paramref name="sameProviderAcknowledged"/>,
-    /// or the job settles the battery run as Failed with the warning. False when this process already
-    /// holds a job for the battery run.
+    /// or the job settles the battery run as Failed with the warning. The documents of
+    /// <paramref name="replaceDocumentIds"/> (see <see cref="BenchmarkRunReportDocumentService.ReplaceableAudiencesAsync"/>)
+    /// are written again and replaced once their successors are stored. False when this process
+    /// already holds a job for the battery run.
     /// </summary>
     public bool TryStart(
         long batteryRunId,
         string? userId,
         IReadOnlyCollection<BenchmarkReportAudience>? audiences,
         bool sameProviderAcknowledged,
-        out Task completion)
+        out Task completion,
+        IReadOnlyCollection<long>? replaceDocumentIds = null)
     {
         var requested = audiences?.ToList();
+        var replace = replaceDocumentIds?.ToList();
         if (!TryClaim(batteryRunId, requested))
         {
             completion = Task.CompletedTask;
             return false;
         }
 
-        completion = Task.Run(() => RunClaimedAsync(batteryRunId, userId, requested, sameProviderAcknowledged));
+        completion = Task.Run(() => RunClaimedAsync(batteryRunId, userId, requested, sameProviderAcknowledged, replace));
         return true;
     }
 
@@ -354,6 +359,32 @@ public sealed class BenchmarkBatteryReportDocumentService
     }
 
     /// <summary>
+    /// Recomputes the battery run's documents status from the battery-completion documents it still
+    /// has, as <see cref="BenchmarkRunReportDocumentService.SettledStatus"/> decides; a battery run whose
+    /// documents are being written is left alone.
+    /// </summary>
+    public static async Task ResettleAsync(ApplicationDbContext db, long batteryRunId, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+
+        var batteryRun = await db.BenchmarkBatteryRuns.IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == batteryRunId, ct);
+        if (batteryRun == null || BenchmarkRunReportDocumentService.IsInProgress(batteryRun.ReportDocumentsStatus)) return;
+
+        string subjectKey = SubjectKeyOf(batteryRunId);
+        var present = await db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(d => d.SubjectKey == subjectKey && d.Origin == BenchmarkReportDocumentOrigin.BatteryCompletion)
+            .Select(d => new { d.Audience, d.Status })
+            .ToListAsync(ct);
+
+        var (status, message) = BenchmarkRunReportDocumentService.SettledStatus(present.Select(p => (p.Audience, p.Status)));
+        batteryRun.ReportDocumentsStatus = status;
+        batteryRun.ReportDocumentsMessage = message;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
     /// Clears what the battery run's documents leave behind when the battery run is deleted: cancels
     /// its job and waits up to <see cref="DeleteWaitTimeout"/> for it to stop, deletes every
     /// battery-completion document with subject <c>battery:&lt;id&gt;</c> together with its charts,
@@ -457,13 +488,14 @@ public sealed class BenchmarkBatteryReportDocumentService
     /// <paramref name="sameProviderAcknowledged"/> is the automatic job's: the battery start already asked.
     /// </summary>
     private async Task RunClaimedAsync(
-        long batteryRunId, string? userId, IReadOnlyCollection<BenchmarkReportAudience>? audiences, bool? sameProviderAcknowledged)
+        long batteryRunId, string? userId, IReadOnlyCollection<BenchmarkReportAudience>? audiences, bool? sameProviderAcknowledged,
+        IReadOnlyCollection<long>? replaceDocumentIds = null)
     {
         BatteryReportJobState? state = null;
         BenchmarkReportPackJob? job = null;
         try
         {
-            state = await CreateJobAsync(batteryRunId, userId, audiences, sameProviderAcknowledged);
+            state = await CreateJobAsync(batteryRunId, userId, audiences, sameProviderAcknowledged, replaceDocumentIds);
             if (state == null) return;
             job = state.Job;
             Register(state);
@@ -550,13 +582,15 @@ public sealed class BenchmarkBatteryReportDocumentService
     }
 
     /// <summary>
-    /// The job for the requested documents the battery run is missing, labeled <c>Battery run #N</c>,
-    /// with the writer identity the job view shows. Null when the battery run is gone, has none of the
-    /// requested documents missing, or names an unacknowledged writer of the candidate's provider;
-    /// each settles the battery run's status.
+    /// The job for the requested documents the battery run is missing, and those of
+    /// <paramref name="replaceDocumentIds"/> it writes again, labeled <c>Battery run #N</c>, with the
+    /// writer identity the job view shows. Null when the battery run is gone, has none of the requested
+    /// documents to write, names a document it cannot replace, or names an unacknowledged writer of
+    /// the candidate's provider; each settles the battery run's status.
     /// </summary>
     private async Task<BatteryReportJobState?> CreateJobAsync(
-        long batteryRunId, string? userId, IReadOnlyCollection<BenchmarkReportAudience>? audiences, bool? sameProviderAcknowledged)
+        long batteryRunId, string? userId, IReadOnlyCollection<BenchmarkReportAudience>? audiences, bool? sameProviderAcknowledged,
+        IReadOnlyCollection<long>? replaceDocumentIds = null)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -564,10 +598,19 @@ public sealed class BenchmarkBatteryReportDocumentService
         var batteryRun = await db.BenchmarkBatteryRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == batteryRunId);
         if (batteryRun == null) return null;
 
+        var (replaceable, replaceRefusal) = await BenchmarkRunReportDocumentService.ReplaceableAudiencesAsync(
+            db, SubjectKeyOf(batteryRunId), BenchmarkReportDocumentOrigin.BatteryCompletion, audiences, replaceDocumentIds, CancellationToken.None);
+        if (replaceRefusal != null)
+        {
+            await SetStatusAsync(batteryRunId, BenchmarkRunReportDocumentsStatus.Failed, replaceRefusal);
+            return null;
+        }
+
         var missing = await MissingAudiencesAsync(db, batteryRunId, CancellationToken.None);
-        var toWrite = audiences == null || audiences.Count == 0
-            ? missing
-            : missing.Where(audiences.Contains).ToList();
+        var toWrite = Audiences
+            .Where(a => missing.Contains(a) || replaceable.Contains(a))
+            .Where(a => audiences == null || audiences.Count == 0 || audiences.Contains(a))
+            .ToList();
         if (toWrite.Count == 0)
         {
             await SetStatusAsync(batteryRunId,
@@ -602,7 +645,8 @@ public sealed class BenchmarkBatteryReportDocumentService
             WriterDisplayName = writer?.DisplayName ?? string.Empty,
             // Only an acknowledged writer of the candidate's provider reaches this point.
             SameProviderAcknowledged = sameProvider,
-            Request = BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, toWrite, writerConfigId),
+            Request = BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, toWrite, writerConfigId,
+                replaceable.Count > 0 ? replaceDocumentIds : null),
             // Usage rows need a user: an automatic job is charged to the user who started the battery run.
             StartedByUserId = string.IsNullOrEmpty(userId) ? batteryRun.StartedByUserId : userId,
             Cts = new CancellationTokenSource(),

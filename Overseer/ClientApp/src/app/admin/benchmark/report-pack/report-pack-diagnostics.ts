@@ -1,7 +1,8 @@
 import {
   BenchmarkReportAudience,
   BenchmarkReportPackDocumentProgressDto,
-  BenchmarkReportPackJobDto
+  BenchmarkReportPackJobDto,
+  BenchmarkReportPackValidationIssueDto
 } from '../../../services/admin-benchmark.service';
 import { copyToClipboard } from '../../../utils/clipboard.util';
 import { downloadTextFile, safeFileName } from '../../../utils/download.util';
@@ -13,7 +14,7 @@ import {
 } from '../run-ai-reports/run-report-writing-diagnostics';
 import type { ReportPackContext } from './report-pack-panel.component';
 import { REPORT_CHART_FIGURES, ReportChartRowStatus, ReportChartSelection } from './report-charts';
-import { audienceLabel, formatCostUsd, formatElapsed } from './report-document-format';
+import { ReportCostRange, audienceLabel, formatCostRangeUsd, formatCostUsd, formatElapsed, isCostRange } from './report-document-format';
 
 /** The clipboard and file side effects of the Reports panel, held in an object so a spec can observe them. */
 export const reportPackIo = {
@@ -32,8 +33,8 @@ export interface ReportPackDiagnosticsInput {
   readonly chartStorageMissing: boolean;
   readonly chartAdvisory: string | null;
   readonly client: ClientPollState;
-  /** The estimate shown when the job was started here, or null. */
-  readonly estimateUsd: number | null;
+  /** The estimate shown when the job was started here, first calls alone to one repair turn per document, or null. */
+  readonly estimateUsd: ReportCostRange | null;
   readonly nowUtc: Date;
 }
 
@@ -132,6 +133,60 @@ function documentLines(
   ];
 }
 
+/** `17 issues (rule 2: 5, rule 16: 12)`, counts by rule in ascending rule order. */
+function issueCounts(issues: readonly BenchmarkReportPackValidationIssueDto[]): string {
+  const byRule = new Map<number, number>();
+  for (const issue of issues) {
+    byRule.set(issue.rule, (byRule.get(issue.rule) ?? 0) + 1);
+  }
+  const parts = [...byRule.entries()].sort((a, b) => a[0] - b[0]).map(([rule, n]) => `rule ${rule}: ${numberFormat.format(n)}`);
+  return `${numberFormat.format(issues.length)} ${issues.length === 1 ? 'issue' : 'issues'}${parts.length > 0 ? ` (${parts.join(', ')})` : ''}`;
+}
+
+/** `rule 16 at sections.abstract: …`, with `(dropped)` when the item was removed. */
+function issueLine(issue: BenchmarkReportPackValidationIssueDto): string {
+  return `    rule ${issue.rule} at ${orNotRecorded(issue.location)}: ${orNotRecorded(issue.message)}${issue.dropped ? ' (dropped)' : ''}`;
+}
+
+/**
+ * `== Validation ==`: per document that carries them, the first turn's issues counted by rule and
+ * listed, then the issues left after the last validation. Empty when no document carries any.
+ */
+function validationLines(documents: readonly BenchmarkReportPackDocumentProgressDto[]): string[] {
+  const lines: string[] = [];
+  documents.forEach((doc, index) => {
+    const first = doc.firstTurnIssues;
+    const final = doc.finalIssues;
+    if (!first && !final) {
+      return;
+    }
+    lines.push(`Document ${index + 1}: ${audienceLabel(doc.audience)}`);
+    if (first) {
+      lines.push(`  First turn: ${issueCounts(first)}`, ...first.map(issueLine));
+    }
+    if (final) {
+      lines.push(`  Final: ${issueCounts(final)}`, ...final.map(issueLine));
+    }
+  });
+  return lines.length > 0 ? ['', '== Validation ==', ...lines] : [];
+}
+
+/** `== Failed writer replies ==`: each failed document's last raw reply. Empty when none failed with one. */
+function failedReplyLines(documents: readonly BenchmarkReportPackDocumentProgressDto[]): string[] {
+  const lines: string[] = [];
+  documents.forEach((doc, index) => {
+    if (!doc.failedReply) {
+      return;
+    }
+    lines.push(
+      `Document ${index + 1}: ${audienceLabel(doc.audience)}`,
+      '--- reply ---',
+      ...doc.failedReply.split(/\r\n|\r|\n/),
+      '--- end of reply ---');
+  });
+  return lines.length > 0 ? ['', '== Failed writer replies ==', ...lines] : [];
+}
+
 /** `report-pack_gemini-flash_diagnostics_20260929-120005.txt`, the time in UTC. */
 export function reportPackDiagnosticsFileName(subjectLabel: string | null | undefined, nowUtc: Date): string {
   const iso = nowUtc.toISOString();
@@ -142,8 +197,10 @@ export function reportPackDiagnosticsFileName(subjectLabel: string | null | unde
 
 /**
  * The plain-text diagnostics of the Reports panel: the comparison, the job, one block per document
- * with its chart status, the totals, the client's polling and the job log. One fact per line, LF
- * line endings, absent facts reading "not recorded". The user who started the job is never included.
+ * with its chart status, the finished documents' validation issues and failed writer replies when
+ * there are any, the totals, the client's polling and the job log. One fact per line except a raw
+ * reply, LF line endings, absent facts reading "not recorded". The user who started the job is never
+ * included.
  */
 export function buildReportPackDiagnostics(input: ReportPackDiagnosticsInput): string {
   const { context, job, client } = input;
@@ -186,14 +243,18 @@ export function buildReportPackDiagnostics(input: ReportPackDiagnosticsInput): s
   } else {
     documents.forEach((doc, index) => lines.push(...documentLines(doc, index, serverNow, input)));
   }
+  lines.push(...validationLines(documents), ...failedReplyLines(documents));
 
   lines.push('', '== Totals ==');
   lines.push(`Model calls: ${count(job?.totalModelCalls)}`);
   lines.push(`Input tokens: ${count(job?.inputTokens)}`);
   lines.push(`Output tokens: ${count(job?.outputTokens)}`);
   lines.push(`Cost: ${cost(job?.costUsd)}`);
-  if (input.estimateUsd !== null && Number.isFinite(input.estimateUsd)) {
-    lines.push(`Estimate: ${formatCostUsd(input.estimateUsd)}`);
+  const estimate = input.estimateUsd;
+  if (estimate !== null && Number.isFinite(estimate.low)) {
+    lines.push(isCostRange(estimate.low, estimate.high)
+      ? `Estimate: ${formatCostRangeUsd(estimate.low, estimate.high)} (first call only, to one repair turn per document)`
+      : `Estimate: ${formatCostUsd(estimate.low)}`);
   }
 
   lines.push('', '== Client polling ==');

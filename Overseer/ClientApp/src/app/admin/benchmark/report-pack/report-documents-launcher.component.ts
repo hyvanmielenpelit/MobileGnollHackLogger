@@ -14,11 +14,16 @@ import {
 import { HttpErrorResponse } from '@angular/common/http';
 import type { Subscription } from 'rxjs';
 
-import { AdminBenchmarkService, BenchmarkReportDocumentListItemDto } from '../../../services/admin-benchmark.service';
+import {
+  AdminBenchmarkService,
+  BenchmarkReportAudience,
+  BenchmarkReportDocumentListItemDto
+} from '../../../services/admin-benchmark.service';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { BenchmarkDownloadCenterComponent } from '../download-center/benchmark-download-center.component';
 import { REPORT_LIBRARY_ALL_TAKE, formatUtc } from './report-document-format';
+import { RootCauseRunsComponent } from './root-cause-runs.component';
 
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
@@ -27,13 +32,14 @@ function plural(count: number, one: string, many: string): string {
 /**
  * The Model Comparison launcher's *Comparison reports* card: how many report documents the model
  * comparisons have written, how many of them changed since, and **Open Download Center** on every
- * one of them with nothing preselected. It reloads when the host bumps `reloadToken` (the wizard
- * closed), when the Download Center closes, and when a document is deleted in it.
+ * one of them with nothing preselected; then the next runs and checks of the latest Root Cause
+ * Analysis. It reloads when the host bumps `reloadToken` (the wizard closed), when the Download
+ * Center closes, and when a document is deleted in it.
  */
 @Component({
   selector: 'app-report-documents-launcher',
   standalone: true,
-  imports: [InfoTipComponent, BenchmarkDownloadCenterComponent],
+  imports: [InfoTipComponent, BenchmarkDownloadCenterComponent, RootCauseRunsComponent],
   templateUrl: './report-documents-launcher.component.html',
   styleUrls: ['./report-documents-launcher.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -102,6 +108,21 @@ export class ReportDocumentsLauncherComponent implements OnInit, OnChanges, OnDe
       }
     });
     this.cdr.markForCheck();
+  }
+
+  /** The newest Root Cause Analysis among the documents, or null. */
+  get latestRootCause(): BenchmarkReportDocumentListItemDto | null {
+    return this.documents
+      .filter(doc => doc.audience === BenchmarkReportAudience.RootCauseAnalysis)
+      .reduce<BenchmarkReportDocumentListItemDto | null>(
+        (latest, doc) => (!latest || (doc.createdAtUtc ?? '') > (latest.createdAtUtc ?? '') ? doc : latest), null);
+  }
+
+  /** `Root Cause Analysis #31 — GPT-6 Luna (high) · 2026-10-12 09:30 UTC`. */
+  latestRootCauseLabel(doc: BenchmarkReportDocumentListItemDto): string {
+    const subject = doc.title || doc.subjectLabel;
+    const written = formatUtc(doc.createdAtUtc);
+    return `Root Cause Analysis #${doc.id}${subject ? ` — ${subject}` : ''}${written ? ` · ${written}` : ''}`;
   }
 
   /** Documents whose subject run or a peer's run changed since they were written. */

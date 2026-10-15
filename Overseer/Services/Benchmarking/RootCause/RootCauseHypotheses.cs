@@ -1,0 +1,1595 @@
+namespace Overseer.Services.Benchmarking.RootCause;
+
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+
+/// <summary>Two analyzed models, the first earlier in letter order (or the subject).</summary>
+public sealed record RootCausePair(string First, string Second)
+{
+    public string Key => First + "|" + Second;
+}
+
+/// <summary>A hypothesis under construction, before its grade.</summary>
+internal sealed class RootCauseDraft
+{
+    public string Id { get; init; } = string.Empty;
+    public string Axis { get; init; } = string.Empty;
+    public string Kind { get; init; } = "pair";
+
+    /// <summary>The pair's key, or <c>within:&lt;token&gt;</c>, or <c>all</c>: the group the keep rule ranks in.</summary>
+    public string Group { get; init; } = string.Empty;
+
+    public List<string> Models { get; init; } = new();
+    public string Statement { get; set; } = string.Empty;
+    public string Short { get; set; } = string.Empty;
+    public List<string> Loci { get; init; } = new();
+    public List<string> For { get; } = new();
+    public List<string> Against { get; } = new();
+    public string RefutedIf { get; set; } = string.Empty;
+    public string ConfirmIf { get; set; } = string.Empty;
+
+    public bool Quantified { get; set; } = true;
+    public bool Established { get; set; }
+    public string EstablishedText { get; set; } = "its test is not established after adjustment";
+    public bool NotSupported { get; set; }
+    public bool? PairNullStands { get; set; }
+    public List<(string Cap, string Reason)> Caps { get; } = new();
+
+    public double? Share { get; set; }
+    public double? ShareLower { get; set; }
+    public double? ShareUpper { get; set; }
+
+    public List<RootCauseRobustnessCheck> Robustness { get; } = new();
+    public List<string> Confounds { get; } = new();
+
+    /// <summary>The run kind that would settle it; null when none.</summary>
+    public string? NextRunKind { get; set; }
+
+    /// <summary>The check that would settle it, in words; null when none.</summary>
+    public string? CheckText { get; set; }
+
+    public string CheckKind { get; set; } = "rubric";
+    public List<string> FactKeys { get; } = new();
+}
+
+/// <summary>
+/// The hypothesis rule tables of § A4: the pair rules (HQ1–HQ9, HS1–HS6, HC1–HC5) between two models,
+/// the within-model rules (WQ1–WQ6, WS1–WS5, WC1–WC3) of one model, the nulls H0-Q, H0-S, H0-C and
+/// H0-W, the control limit, the robustness checks and the grading of § A2. Each rule fires on its
+/// pre-declared condition and computes its evidence for and against; <see cref="Grade"/> turns the
+/// evidence into a grade and <see cref="Keep"/> bounds the list. Pure and deterministic.
+/// </summary>
+public static class RootCauseHypotheses
+{
+    /// <summary>Hypotheses kept per axis and group (a pair, or one model's own rules).</summary>
+    public const int KeepPerGroup = 3;
+
+    /// <summary>Non-null hypotheses kept per axis at most.</summary>
+    public const int MaxPerAxis = 12;
+
+    /// <summary>A question scored below this is a miss.</summary>
+    public const double MissBelow = 50.0;
+
+    /// <summary>A question scored at least this is answered well.</summary>
+    public const double WellAtLeast = 75.0;
+
+    public const string LeaveOneOut = "Leave one question out";
+    public const string AcrossSuites = "Across suites";
+    public const string Replicates = "Replicates";
+    public const string PanelAgreement = "Panel agreement";
+    public const string Configuration = "Configuration";
+
+    private static readonly string[] ThinkingOrder = { "none", "minimal", "low", "medium", "high", "xhigh", "max" };
+
+    // ---------------------------------------------------------------------------------------------
+    // Grading
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The grade of § A2. Not supported when the rule's own test refutes it. Otherwise Low when
+    /// qualitative only; else High with no condition, Moderate with exactly one, Low with two or more,
+    /// where each robustness check that failed or could not be assessed is a condition, and so is a test
+    /// (or share interval) not established. A pair whose null stands caps it at Low, and each other cap
+    /// (the control limit, a rule's own ceiling) applies with its reason.
+    /// </summary>
+    internal static RootCauseHypothesis Grade(RootCauseDraft draft, Func<string, string> name)
+    {
+        var reasons = new List<string>();
+        string grade;
+
+        if (draft.NotSupported)
+        {
+            grade = RootCauseGrades.NotSupported;
+            reasons.Add("the rule's own test refutes it" + (draft.Against.Count > 0 ? ": " + LowerFirst(draft.Against[0]) : string.Empty));
+        }
+        else if (!draft.Quantified)
+        {
+            grade = RootCauseGrades.Low;
+            reasons.Add("qualitative only");
+        }
+        else
+        {
+            foreach (var check in draft.Robustness)
+            {
+                if (check.Status == RootCauseCheckStatuses.Failed) reasons.Add(check.Name.ToLowerInvariant() + " failed: " + LowerFirst(check.Detail));
+                else if (check.Status == RootCauseCheckStatuses.NotAssessable) reasons.Add(check.Name.ToLowerInvariant() + " could not be assessed: " + LowerFirst(check.Detail));
+            }
+            if (!draft.Established) reasons.Add(draft.EstablishedText);
+            grade = reasons.Count == 0 ? RootCauseGrades.High : reasons.Count == 1 ? RootCauseGrades.Moderate : RootCauseGrades.Low;
+        }
+
+        if (grade != RootCauseGrades.NotSupported)
+        {
+            if (draft.PairNullStands == true && RootCauseGrades.Rank(grade) > RootCauseGrades.Rank(RootCauseGrades.Low))
+            {
+                grade = RootCauseGrades.Low;
+                reasons.Add("the pair's null hypothesis stands");
+            }
+            foreach (var (cap, reason) in draft.Caps)
+            {
+                if (RootCauseGrades.Rank(grade) > RootCauseGrades.Rank(cap))
+                {
+                    grade = cap;
+                    reasons.Add("capped at " + RootCauseGrades.Display(cap) + ": " + reason);
+                }
+            }
+        }
+
+        return new RootCauseHypothesis
+        {
+            Id = draft.Id,
+            Axis = draft.Axis,
+            Kind = draft.Kind,
+            Models = draft.Models.ToList(),
+            ModelsText = BenchmarkReportFormat.LetterList(draft.Models.Select(name).ToList()),
+            Statement = draft.Statement,
+            ShortStatement = draft.Short,
+            Loci = draft.Loci.ToList(),
+            Locus = draft.Loci.Count == 0 ? "—" : string.Join(" / ", draft.Loci),
+            For = draft.For.ToList(),
+            Against = draft.Against.ToList(),
+            RefutedIf = draft.RefutedIf,
+            Grade = grade,
+            GradeReasons = reasons,
+            Share = draft.Share,
+            ShareLower = draft.ShareLower,
+            ShareUpper = draft.ShareUpper,
+            Robustness = draft.Robustness.ToList(),
+            Confounds = draft.Confounds.ToList(),
+            FactKeys = draft.FactKeys.Where(k => !string.IsNullOrEmpty(k)).Distinct(StringComparer.Ordinal).ToList()
+        };
+    }
+
+    /// <summary>
+    /// The hypotheses kept: every null, then per axis and group the strongest <see cref="KeepPerGroup"/>
+    /// non-null hypotheses (by grade, then share, then rule id), and at most <see cref="MaxPerAxis"/> per
+    /// axis. Ordered by axis, nulls first, then grade, share and key; each numbered within its rule.
+    /// </summary>
+    internal static List<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> Keep(IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> graded)
+    {
+        var kept = new List<(RootCauseHypothesis, RootCauseDraft)>();
+        foreach (string axis in RootCauseAxes.All)
+        {
+            var nulls = graded.Where(g => g.Hypothesis.Axis == axis && g.Hypothesis.Kind == "null").ToList();
+            var ranked = graded
+                .Where(g => g.Hypothesis.Axis == axis && g.Hypothesis.Kind != "null")
+                .GroupBy(g => g.Draft.Group, StringComparer.Ordinal)
+                .SelectMany(group => Ranked(group).Take(KeepPerGroup));
+            kept.AddRange(nulls);
+            kept.AddRange(Ranked(ranked).Take(MaxPerAxis));
+        }
+
+        var counters = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var (hypothesis, _) in kept)
+        {
+            int n = counters.GetValueOrDefault(hypothesis.Id) + 1;
+            counters[hypothesis.Id] = n;
+            hypothesis.Number = n;
+            hypothesis.Key = hypothesis.Id + "." + n.ToString(CultureInfo.InvariantCulture);
+        }
+        return kept;
+
+        static IEnumerable<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> Ranked(IEnumerable<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> items)
+            => items
+                .OrderByDescending(g => RootCauseGrades.Rank(g.Hypothesis.Grade))
+                .ThenByDescending(g => Math.Abs(g.Hypothesis.Share ?? 0))
+                .ThenBy(g => g.Hypothesis.Id, StringComparer.Ordinal)
+                .ThenBy(g => g.Draft.Group, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// The status of an axis (§ A2): established when a non-null hypothesis is High and its null is
+    /// rejected; probable when the best is Moderate; otherwise not established.
+    /// </summary>
+    internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept)
+    {
+        var candidates = kept
+            .Where(k => k.Hypothesis.Axis == axis && k.Hypothesis.Kind != "null")
+            .ToList();
+        var best = candidates.FirstOrDefault();
+        if (best.Hypothesis == null)
+        {
+            return new RootCauseAxisStatus
+            {
+                Axis = axis,
+                Status = RootCauseStatuses.NotEstablished,
+                Reason = "No hypothesis fired on this axis."
+            };
+        }
+
+        var established = candidates.FirstOrDefault(k => k.Hypothesis.Grade == RootCauseGrades.High && k.Draft.PairNullStands != true);
+        if (established.Hypothesis != null)
+        {
+            return new RootCauseAxisStatus
+            {
+                Axis = axis,
+                Status = RootCauseStatuses.Established,
+                BestHypothesis = established.Hypothesis.Key,
+                Reason = established.Hypothesis.Key + " is graded High and its null hypothesis is rejected."
+            };
+        }
+
+        if (best.Hypothesis.Grade == RootCauseGrades.Moderate)
+        {
+            return new RootCauseAxisStatus
+            {
+                Axis = axis,
+                Status = RootCauseStatuses.Probable,
+                BestHypothesis = best.Hypothesis.Key,
+                Reason = best.Hypothesis.Key + " is the best hypothesis, graded Moderate: " + Reasons(best.Hypothesis) + "."
+            };
+        }
+
+        return new RootCauseAxisStatus
+        {
+            Axis = axis,
+            Status = RootCauseStatuses.NotEstablished,
+            BestHypothesis = best.Hypothesis.Key,
+            Reason = "The best hypothesis, " + best.Hypothesis.Key + ", is graded " + RootCauseGrades.Display(best.Hypothesis.Grade)
+                     + (best.Hypothesis.GradeReasons.Count > 0 ? ": " + Reasons(best.Hypothesis) : string.Empty) + "."
+        };
+
+        static string Reasons(RootCauseHypothesis hypothesis)
+            => string.Join("; ", hypothesis.GradeReasons.Select(r => r.TrimEnd('.')));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Nulls
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// H0-Q, H0-S or H0-C for a pair: the difference is within sampling noise. Rejected (graded Not
+    /// supported) when a paired test of the pair on the axis is established after its family's
+    /// adjustment, or, where no family test exists, when the 95 % bootstrap interval of the difference
+    /// excludes zero. When it stands it is graded Moderate, or Low when either side has a single run per
+    /// suite.
+    /// </summary>
+    internal static RootCauseDraft PairNull(RootCauseContext ctx, RootCausePair pair, string axis, out bool stands)
+    {
+        string id = axis switch { RootCauseAxes.Speed => "H0-S", RootCauseAxes.Cost => "H0-C", _ => "H0-Q" };
+        string measure = axis switch { RootCauseAxes.Speed => "model time", RootCauseAxes.Cost => "cost per question", _ => "Intelligence Index" };
+        var draft = new RootCauseDraft
+        {
+            Id = id,
+            Axis = axis,
+            Kind = "null",
+            Group = pair.Key,
+            Models = { pair.First, pair.Second },
+            Statement = "The " + measure + " difference between " + ctx.Name(pair.First) + " and " + ctx.Name(pair.Second) + " is within sampling noise.",
+            Short = "Noise: " + ctx.Name(pair.First) + " vs " + ctx.Name(pair.Second),
+            RefutedIf = "A paired test of the two on the " + measure + " is established after adjustment."
+        };
+
+        bool rejected = false;
+        var tests = ctx.TestsFor(pair, axis);
+        foreach (var test in tests)
+        {
+            if (test.FactKey != null) draft.FactKeys.Add(test.FactKey);
+            if (test.Established && test.Favors != "None")
+            {
+                rejected = true;
+                draft.Against.Add("A paired " + measure + " test is established" + FamilyText(test) + ".");
+            }
+            else if (test.NotTestedReason == null)
+            {
+                draft.For.Add("The paired " + measure + " test is not established" + FamilyText(test) + ".");
+            }
+        }
+
+        if (tests.Count == 0 || tests.All(t => t.NotTestedReason != null))
+        {
+            var decomposition = axis == RootCauseAxes.Speed ? ctx.SpeedPair(pair) : axis == RootCauseAxes.Cost ? ctx.CostPair(pair) : null;
+            if (decomposition?.DifferenceLower is double lo && decomposition.DifferenceUpper is double hi)
+            {
+                bool excludes = lo > 0 || hi < 0;
+                if (excludes)
+                {
+                    rejected = true;
+                    draft.Against.Add("No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).");
+                }
+                else
+                {
+                    draft.For.Add("No family test exists; the 95 % bootstrap interval of the per-question difference includes zero.");
+                }
+            }
+            else if (axis == RootCauseAxes.Intelligence && ctx.PairedBootstrapExcludesZero(pair) is bool pairedExcludes)
+            {
+                if (pairedExcludes)
+                {
+                    rejected = true;
+                    draft.Against.Add("The subject's paired-bootstrap interval against this peer excludes zero (unadjusted).");
+                }
+                else
+                {
+                    draft.For.Add("The subject's paired-bootstrap interval against this peer includes zero.");
+                }
+            }
+            else
+            {
+                draft.For.Add("No paired test could be made on this axis.");
+            }
+        }
+
+        if (axis == RootCauseAxes.Intelligence && ctx.IntervalsOverlap(pair) is bool overlap)
+        {
+            (overlap ? draft.For : draft.Against).Add(overlap ? "The two 95 % intervals overlap." : "The two 95 % intervals do not overlap.");
+        }
+
+        stands = !rejected;
+        if (rejected)
+        {
+            draft.NotSupported = true;
+        }
+        else
+        {
+            draft.Quantified = true;
+            draft.Established = true;
+            if (ctx.Model(pair.First).Evidence.RunsPerSuite < 2 || ctx.Model(pair.Second).Evidence.RunsPerSuite < 2)
+            {
+                draft.Caps.Add((RootCauseGrades.Low, "a single run per suite gives the tests little power"));
+            }
+            else
+            {
+                draft.Caps.Add((RootCauseGrades.Moderate, "the absence of an established difference is not proof of equality"));
+            }
+        }
+        return draft;
+    }
+
+    private static string FamilyText(RootCausePairTest test)
+        => test.FamilySize > 1
+            ? " after the Holm adjustment across " + Inv(test.FamilySize) + " tests"
+            : test.FamilySize == 1 ? " as a single test" : string.Empty;
+
+    // ---------------------------------------------------------------------------------------------
+    // Pair rules
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>The pair rules of § A4 for one pair, every axis the two are comparable on.</summary>
+    internal static List<RootCauseDraft> PairRules(RootCauseContext ctx, RootCausePair pair, IReadOnlyDictionary<string, bool> nullStands)
+    {
+        var drafts = new List<RootCauseDraft>();
+        var first = ctx.Model(pair.First);
+        var second = ctx.Model(pair.Second);
+
+        if (first.QualityIndex is double qa && second.QualityIndex is double qb && qa != qb)
+        {
+            bool stands = nullStands.GetValueOrDefault(pair.Key + "|" + RootCauseAxes.Intelligence, true);
+            var (worse, better) = qa < qb ? (first, second) : (second, first);
+            double gap = Math.Abs(qa - qb);
+            drafts.AddRange(IntelligencePairRules(ctx, pair, worse, better, gap, stands));
+        }
+
+        if (!first.SpeedDegraded && !second.SpeedDegraded && ctx.SpeedPair(pair) is { UnavailableReason: null, Difference: double dt } speed && dt != 0)
+        {
+            bool stands = nullStands.GetValueOrDefault(pair.Key + "|" + RootCauseAxes.Speed, true);
+            var (worse, better) = dt > 0 ? (first, second) : (second, first);
+            drafts.AddRange(SpeedPairRules(ctx, pair, speed, worse, better, stands));
+        }
+
+        if (!first.CostDegraded && !second.CostDegraded && ctx.CostPair(pair) is { UnavailableReason: null, Difference: double dc } cost && dc != 0)
+        {
+            bool stands = nullStands.GetValueOrDefault(pair.Key + "|" + RootCauseAxes.Cost, true);
+            var (worse, better) = dc > 0 ? (first, second) : (second, first);
+            drafts.AddRange(CostPairRules(ctx, pair, cost, worse, better, stands));
+        }
+
+        return drafts;
+    }
+
+    private static RootCauseDraft PairDraft(RootCauseContext ctx, RootCausePair pair, string id, string axis, RootCauseModelInput worse, RootCauseModelInput better,
+        string statement, string shortText, string refutedIf, string confirmIf, bool nullStands, params string[] loci)
+    {
+        var draft = new RootCauseDraft
+        {
+            Id = id,
+            Axis = axis,
+            Kind = "pair",
+            Group = pair.Key,
+            Models = { worse.Token, better.Token },
+            Statement = statement,
+            Short = shortText,
+            RefutedIf = refutedIf,
+            ConfirmIf = confirmIf,
+            PairNullStands = nullStands
+        };
+        draft.Loci.AddRange(loci);
+        return draft;
+    }
+
+    private static IEnumerable<RootCauseDraft> IntelligencePairRules(
+        RootCauseContext ctx, RootCausePair pair, RootCauseModelInput a, RootCauseModelInput b, double gap, bool stands)
+    {
+        string A = ctx.Name(a.Token), B = ctx.Name(b.Token);
+        var atA = ctx.AtRisk(a.Token);
+        var atB = ctx.AtRisk(b.Token);
+        var scoredA = a.Evidence.Scored.ToList();
+        var scoredB = b.Evidence.Scored.ToList();
+        bool testEstablished = ctx.TestsFor(pair, RootCauseAxes.Intelligence).Any(t => t.Established && t.Favors != "None");
+        string qualityKey = ctx.QualityFactKey(pair);
+
+        void Common(RootCauseDraft d, bool intelligenceConfound = true)
+        {
+            d.Robustness.Add(ctx.ReplicatesCheck(a, b));
+            d.Robustness.Add(ctx.PanelAgreementCheck(a, b));
+            var confounds = ctx.Confounds(a, b, RootCauseAxes.Intelligence, skipThinking: !intelligenceConfound);
+            d.Confounds.AddRange(confounds);
+            d.Robustness.Add(ConfigurationCheck(confounds));
+            d.FactKeys.Add(qualityKey);
+        }
+
+        // HQ1: answers without tools.
+        if (scoredA.Count > 0 && scoredB.Count > 0)
+        {
+            int noA = scoredA.Count(x => x.NoTool), noB = scoredB.Count(x => x.NoTool);
+            double rateA = noA / (double)scoredA.Count, rateB = noB / (double)scoredB.Count;
+            if (rateA > rateB)
+            {
+                var d = PairDraft(ctx, pair, "HQ1", RootCauseAxes.Intelligence, a, b,
+                    A + " scored lower than " + B + " because it answered without tools more often.",
+                    "Fewer tool calls: " + A,
+                    "Answers without tools score as well as those with tools, or the rate differs by fewer than two answers.",
+                    "the without-tool answers still score lower and stay more frequent",
+                    stands, RootCauseLoci.Model, RootCauseLoci.Chat);
+                d.For.Add(A + " answered " + Inv(noA) + " of " + Inv(scoredA.Count) + " scored questions without a tool call (" + Pct(rateA) + "); "
+                          + B + " " + Inv(noB) + " of " + Inv(scoredB.Count) + " (" + Pct(rateB) + ").");
+                var withA = scoredA.Where(x => !x.NoTool).Select(x => x.Quality!.Value).ToList();
+                var withoutA = scoredA.Where(x => x.NoTool).Select(x => x.Quality!.Value).ToList();
+                double extra = noA - rateB * scoredA.Count;
+                var mw = withA.Count > 0 && withoutA.Count > 0 ? RootCauseStatistics.MannWhitney(withoutA, withA) : null;
+                if (withA.Count > 0 && withoutA.Count > 0)
+                {
+                    string line = A + "'s answers without tools scored " + Whole(withoutA.Average()) + ", with tools " + Whole(withA.Average()) + ".";
+                    (withoutA.Average() < withA.Average() ? d.For : d.Against).Add(line);
+                }
+                if (withA.Count == 0 || withoutA.Count == 0 || withoutA.Average() >= withA.Average() || extra < 2)
+                {
+                    d.NotSupported = true;
+                    if (extra < 2) d.Against.Add("The rate differs by fewer than two answers.");
+                    else if (withA.Count == 0 || withoutA.Count == 0) d.Against.Add("There is no contrast between answers with and without tools.");
+                }
+                double points = atA.Points[0] - atB.Points[0];
+                d.Share = gap > 0 ? points / gap : null;
+                d.For.Add("Answers without tools put " + OneDecimal(atA.Points[0]) + " index points of " + A + " at risk (upper bound), " + OneDecimal(atB.Points[0]) + " of " + B + "'s.");
+                d.Established = testEstablished && mw != null && mw.PValue < RootCauseStatistics.SignificanceLevel;
+                d.EstablishedText = "the without-tool contrast or the pair's paired test is not established";
+                d.Robustness.Add(LeaveOneOutAtRisk(atA, atB, 0));
+                Common(d);
+                d.FactKeys.Add(ctx.Key(a.Token, "profile.noToolAnswers"));
+                d.NextRunKind = RootCauseRunKinds.Replicate;
+                yield return d;
+            }
+        }
+
+        // HQ2: confirmed critical errors.
+        if (atA.Points[2] > 0 && atA.Points[2] >= 0.5 * gap)
+        {
+            var d = PairDraft(ctx, pair, "HQ2", RootCauseAxes.Intelligence, a, b,
+                A + "'s shortfall against " + B + " is concentrated in confirmed critical errors.",
+                "Critical errors: " + A,
+                "The caps are unresolved or overturned, or the shortfall is spread across many questions.",
+                "the critical-error points at risk stay at least half the gap",
+                stands, RootCauseLoci.Model);
+            int critical = scoredA.Count(x => x.CriticalError);
+            d.For.Add("Confirmed critical errors put " + OneDecimal(atA.Points[2]) + " index points of " + A + " at risk (upper bound), against a gap of " + OneDecimal(gap) + " points.");
+            d.For.Add(A + " has " + Inv(critical) + " critical " + (critical == 1 ? "error" : "errors") + " in " + Inv(scoredA.Count) + " scored answers.");
+            if (!a.Evidence.CriticalErrorsConfirmed)
+            {
+                d.Against.Add("Before scoring method 13 the caps are graders' flags, not confirmed errors.");
+                d.Caps.Add((RootCauseGrades.Low, "the caps are not confirmed"));
+            }
+            if (critical < 2) d.Against.Add("A single critical error carries the whole effect.");
+            d.Share = gap > 0 ? atA.Points[2] / gap : null;
+            d.Established = testEstablished;
+            d.EstablishedText = "the pair's paired test is not established";
+            d.Robustness.Add(LeaveOneOutThreshold(atA, 2, 0.5 * gap));
+            Common(d);
+            d.FactKeys.Add(ctx.Key(a.Token, "errors.critical"));
+            d.NextRunKind = RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+
+        // HQ4: graders.
+        bool judgeDependent = ctx.JudgeDependent(pair);
+        var sharedGrader = ctx.Graders.Where(g => SameProvider(g.Provider, a.Provider) || SameProvider(g.Provider, b.Provider)).ToList();
+        double? rateDisagreeA = a.Evidence.PanelAnswers is > 0 ? a.Evidence.PanelDisagreements / (double)a.Evidence.PanelAnswers : null;
+        var rates = ctx.Models.Where(m => m.Evidence.PanelAnswers is > 0).Select(m => m.Evidence.PanelDisagreements!.Value / (double)m.Evidence.PanelAnswers!.Value).ToList();
+        bool highDisagreement = rateDisagreeA is double r && rates.Count >= 2 && RootCauseStatistics.Median(rates) is double med && med > 0 && r >= 2 * med;
+        if (judgeDependent || sharedGrader.Count > 0 || highDisagreement)
+        {
+            var d = PairDraft(ctx, pair, "HQ4", RootCauseAxes.Intelligence, a, b,
+                "The order of " + A + " and " + B + " depends on the graders.",
+                "Grader-dependent order",
+                "Both panel members rank the two alike and the reference reader agrees.",
+                "a panel from two other providers reverses or erases the gap",
+                stands, RootCauseLoci.Harness);
+            if (judgeDependent) d.For.Add("The panel members order the two differently (a judge-dependent pair).");
+            foreach (var grader in sharedGrader) d.For.Add("The " + grader.Role.ToLowerInvariant() + " shares a provider with " + (SameProvider(grader.Provider, a.Provider) ? A : B) + ".");
+            if (highDisagreement) d.For.Add(A + "'s panel disagreement rate is at least twice the models' median.");
+            if (!judgeDependent && a.MemberAIndex.HasValue && b.MemberAIndex.HasValue && a.MemberBIndex.HasValue && b.MemberBIndex.HasValue)
+            {
+                d.Against.Add("Both panel members order the two alike.");
+            }
+            d.Quantified = judgeDependent;
+            d.Established = judgeDependent;
+            d.EstablishedText = "no judge-dependent order is established";
+            d.Robustness.Add(ctx.ReplicatesCheck(a, b));
+            d.FactKeys.Add("panel.judgeDependentPairs");
+            d.NextRunKind = RootCauseRunKinds.PanelSwap;
+            yield return d;
+        }
+
+        // HQ5: the concise response style.
+        if (a.StyleConflict)
+        {
+            var d = PairDraft(ctx, pair, "HQ5", RootCauseAxes.Intelligence, a, b,
+                "Completeness was " + A + "'s lowest dimension under the concise response style.",
+                "Concise style: " + A,
+                "No comparison run covers the style; this states a condition, not a cause.",
+                "a Detailed run raises Completeness",
+                stands, RootCauseLoci.Chat);
+            d.For.Add(A + "'s response-style conflict is true: Completeness is its lowest dimension, well below Accuracy.");
+            d.Quantified = false;
+            d.Caps.Add((RootCauseGrades.Low, "no comparison run covers the response style"));
+            d.FactKeys.Add(ctx.Key(a.Token, "style.responseStyleConflict"));
+            d.NextRunKind = RootCauseRunKinds.StylePair;
+            yield return d;
+        }
+
+        // HQ6: guessing instead of abstaining.
+        var (wrongA, deniedA) = WrongInsteadOfAbstaining(a);
+        var (wrongB, deniedB) = WrongInsteadOfAbstaining(b);
+        if (deniedA > 0 && deniedB > 0 && wrongA / (double)deniedA > wrongB / (double)deniedB)
+        {
+            var d = PairDraft(ctx, pair, "HQ6", RootCauseAxes.Intelligence, a, b,
+                A + " guessed where it should have abstained more often than " + B + ".",
+                "Guessing: " + A,
+                "The two Wilson intervals overlap.",
+                "the wrong-instead-of-abstaining rates stay apart",
+                stands, RootCauseLoci.Model);
+            var wa = RootCauseStatistics.Wilson(wrongA, deniedA);
+            var wb = RootCauseStatistics.Wilson(wrongB, deniedB);
+            d.For.Add(A + " was wrong in " + Inv(wrongA) + " of " + Inv(deniedA) + " answers that were wrong or not attempted (" + Pct(wrongA / (double)deniedA) + "); "
+                      + B + " in " + Inv(wrongB) + " of " + Inv(deniedB) + " (" + Pct(wrongB / (double)deniedB) + ").");
+            bool apart = wa is { } x && wb is { } y && (x.Low > y.High || y.Low > x.High);
+            if (!apart)
+            {
+                d.NotSupported = true;
+                d.Against.Add("The two 95 % Wilson intervals overlap.");
+            }
+            d.Established = apart;
+            d.EstablishedText = "the Wilson intervals overlap";
+            Common(d);
+            d.FactKeys.Add(ctx.Key(a.Token, "profile.outcome.wrongInsteadOfAbstaining"));
+            d.NextRunKind = RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+
+        // HQ7: budget, truncation or output defects.
+        if (atA.Points[1] >= 1 && atA.Points[1] > atB.Points[1])
+        {
+            var d = PairDraft(ctx, pair, "HQ7", RootCauseAxes.Intelligence, a, b,
+                "Budget, truncation or output defects cost " + A + " points against " + B + ".",
+                "Defects and budget: " + A,
+                "There are no such signals, or they put under one point at risk.",
+                "the defect points at risk stay at least one point",
+                stands, RootCauseLoci.Harness, RootCauseLoci.Provider);
+            d.For.Add("Budget, truncation or output defects put " + OneDecimal(atA.Points[1]) + " index points of " + A + " at risk (upper bound), "
+                      + OneDecimal(atB.Points[1]) + " of " + B + "'s.");
+            d.Share = gap > 0 ? (atA.Points[1] - atB.Points[1]) / gap : null;
+            d.Established = testEstablished;
+            d.EstablishedText = "the pair's paired test is not established";
+            d.Robustness.Add(LeaveOneOutThreshold(atA, 1, 1.0));
+            Common(d);
+            d.FactKeys.Add(ctx.Key(a.Token, "profile.toolLimitHits"));
+            d.FactKeys.Add(ctx.Key(a.Token, "profile.outputDefects"));
+            d.NextRunKind = RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+
+        // HQ8: the same model at two thinking levels.
+        if (string.Equals(a.ModelId?.Trim(), b.ModelId?.Trim(), StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(a.ThinkingLevel?.Trim(), b.ThinkingLevel?.Trim(), StringComparison.OrdinalIgnoreCase)
+            && ThinkingRank(a.ThinkingLevel) >= 0 && ThinkingRank(b.ThinkingLevel) >= 0)
+        {
+            bool lowerIsWorse = ThinkingRank(a.ThinkingLevel) < ThinkingRank(b.ThinkingLevel);
+            var d = PairDraft(ctx, pair, "HQ8", RootCauseAxes.Intelligence, a, b,
+                A + "'s lower thinking level explains its gap to " + B + ".",
+                "Thinking level: " + A,
+                "The lower thinking level scores higher (a thinking-level inversion).",
+                "the higher level keeps scoring higher on the same questions",
+                stands, RootCauseLoci.Model);
+            d.For.Add(A + " and " + B + " are the same model at " + (a.ThinkingLevel ?? "no") + " and " + (b.ThinkingLevel ?? "no") + " thinking.");
+            if (!lowerIsWorse)
+            {
+                d.NotSupported = true;
+                d.Against.Add("The lower thinking level scored higher: a thinking-level inversion.");
+            }
+            d.Share = 1.0;
+            d.Established = testEstablished;
+            d.EstablishedText = "the pair's paired test is not established";
+            d.Robustness.Add(ctx.ReplicatesCheck(a, b));
+            d.Robustness.Add(ctx.PanelAgreementCheck(a, b));
+            var confounds = ctx.Confounds(a, b, RootCauseAxes.Intelligence, skipThinking: true);
+            d.Confounds.AddRange(confounds);
+            d.Robustness.Add(ConfigurationCheck(confounds));
+            d.FactKeys.Add(qualityKey);
+            d.NextRunKind = RootCauseRunKinds.ThinkingPair;
+            yield return d;
+        }
+
+        // HQ9: the verifier would clear part of the Accuracy shortfall.
+        if (a.VerificationClearedIndex is double cleared && a.QualityIndex is double index && Math.Abs(cleared - index) >= 0.5)
+        {
+            var d = PairDraft(ctx, pair, "HQ9", RootCauseAxes.Intelligence, a, b,
+                "The claim verifier would clear part of " + A + "'s Accuracy shortfall against " + B + ".",
+                "Verifier would clear: " + A,
+                "The verification-cleared sensitivity equals the index.",
+                "re-grading with the verifier's rulings narrows the gap",
+                stands, RootCauseLoci.Harness);
+            d.For.Add(A + "'s verification-cleared Overall Index is " + Whole(cleared) + " against its published " + Whole(index) + ".");
+            if (cleared <= index) { d.NotSupported = true; d.Against.Add("The verification-cleared sensitivity is not above the index."); }
+            d.Share = gap > 0 ? (cleared - index) / gap : null;
+            d.Established = false;
+            d.EstablishedText = "the sensitivity is advisory, not a test";
+            d.Robustness.Add(ctx.ReplicatesCheck(a, b));
+            d.FactKeys.Add(ctx.Key(a.Token, BenchmarkBatteryReportFacts.PanelVerificationClearedSensitivityKey));
+            d.NextRunKind = RootCauseRunKinds.PanelSwap;
+            yield return d;
+        }
+    }
+
+    private static IEnumerable<RootCauseDraft> SpeedPairRules(
+        RootCauseContext ctx, RootCausePair pair, RootCausePairDecomposition speed, RootCauseModelInput a, RootCauseModelInput b, bool stands)
+    {
+        string A = ctx.Name(a.Token), B = ctx.Name(b.Token);
+        var shares = speed.Components.Where(c => c.Share.HasValue).ToList();
+        if (shares.Count == 0) yield break;
+        var lead = shares.OrderByDescending(c => c.Share!.Value).First();
+        string total = BenchmarkReportFormat.Seconds(Math.Abs(speed.Difference ?? 0));
+        string decompositionKey = "rca.speed." + pair.First + "." + pair.Second;
+
+        RootCauseDraft Make(string id, string statement, string shortText, string refutedIf, string confirmIf, RootCauseComponent? component, params string[] loci)
+        {
+            var d = PairDraft(ctx, pair, id, RootCauseAxes.Speed, a, b, statement, shortText, refutedIf, confirmIf, stands, loci);
+            if (component != null)
+            {
+                d.Share = component.Share;
+                d.ShareLower = component.ShareLower;
+                d.ShareUpper = component.ShareUpper;
+                d.For.Add(Capitalize(component.Label) + " accounts for " + SharePct(component) + " of the " + total + " per-question difference in model time.");
+                d.Established = component.ShareLower is double lo && component.ShareUpper is double hi && (lo > 0 || hi < 0);
+                d.EstablishedText = "the share's 95 % interval includes zero";
+                d.Robustness.Add(ctx.LeaveOneOutSpeed(pair, component.Key));
+                if (ctx.Battery) d.Robustness.Add(ctx.AcrossSuitesSpeed(pair, component.Key));
+                d.FactKeys.Add(decompositionKey + "." + component.Key + ".share");
+            }
+            d.Robustness.Add(ctx.ReplicatesCheck(a, b));
+            var confounds = ctx.Confounds(a, b, RootCauseAxes.Speed, skipThinking: id == "HS3");
+            d.Confounds.AddRange(confounds);
+            d.Robustness.Add(ConfigurationCheck(confounds));
+            d.FactKeys.Add(decompositionKey + ".total");
+            return d;
+        }
+
+        switch (lead.Key)
+        {
+            case "callCount":
+            {
+                var d = Make("HS1", A + " is slower than " + B + " mainly from more model calls (tool rounds).", "More model calls: " + A,
+                    "The per-call latency or decode share is larger.", "the call-count share stays the largest", lead, RootCauseLoci.Model, RootCauseLoci.Chat);
+                d.FactKeys.Add(ctx.Key(a.Token, "speed.modelCallsPerAnswer"));
+                d.NextRunKind = RootCauseRunKinds.Replicate;
+                yield return d;
+                break;
+            }
+            case "perCallLatency":
+            {
+                var d = Make("HS2", A + " is slower than " + B + " mainly from longer latency per call (time to first token).", "Latency per call: " + A,
+                    "Decode or the call count dominates.", "the per-call latency share stays the largest at other times of day", lead, RootCauseLoci.Provider, RootCauseLoci.Model);
+                d.FactKeys.Add(ctx.Key(a.Token, "speed.ttftPerCallP50"));
+                d.NextRunKind = RootCauseRunKinds.TimeStratum;
+                yield return d;
+                break;
+            }
+            case "outputTokens":
+            {
+                var d = Make("HS3", A + " is slower than " + B + " mainly from more output (reasoning) tokens.", "More output tokens: " + A,
+                    "The decode-rate share is larger.", "the output-token share stays the largest", lead, RootCauseLoci.Model);
+                double? ra = ctx.ReasoningShare(a), rb = ctx.ReasoningShare(b);
+                if (ra is double x && rb is double y)
+                {
+                    (x > y ? d.For : d.Against).Add(A + "'s reasoning share of output is " + Pct(x) + ", " + B + "'s " + Pct(y) + ".");
+                }
+                d.FactKeys.Add(ctx.Key(a.Token, "tokens.reasoningShare"));
+                d.NextRunKind = RootCauseRunKinds.ThinkingPair;
+                yield return d;
+                break;
+            }
+            case "decodeRate":
+            {
+                var d = Make("HS4", A + " is slower than " + B + " mainly from a slower decode rate.", "Slower decoding: " + A,
+                    "The token share is larger.", "the decode-rate share stays the largest at other times of day", lead, RootCauseLoci.Provider);
+                d.FactKeys.Add(ctx.Key(a.Token, "speed.decodeRate"));
+                d.NextRunKind = RootCauseRunKinds.TimeStratum;
+                yield return d;
+                break;
+            }
+        }
+
+        // HS5: own waits or retries.
+        double? waitA = RootCauseEvidence.OwnWaitShare(a.Evidence);
+        var waitShares = ctx.Models.Select(m => RootCauseEvidence.OwnWaitShare(m.Evidence)).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        double? retriesA = ctx.RetriesPerAnswer(a);
+        var retries = ctx.Models.Select(ctx.RetriesPerAnswer).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        bool aboveWait = waitA is double w && waitShares.Count > 0 && w > (RootCauseStatistics.Median(waitShares) ?? 0);
+        bool aboveRetries = retriesA is double rt && retries.Count > 0 && rt > (RootCauseStatistics.Median(retries) ?? 0);
+        if (aboveWait || aboveRetries)
+        {
+            double? waitDifference = ctx.WaitDifference(pair, a.Token);
+            double? share = waitDifference is double wd && speed.Difference is double t && t != 0 ? wd / Math.Abs(t) : null;
+            var d = Make("HS5", "Own waits or retries inflated " + A + "'s time against " + B + ".", "Waits and retries: " + A,
+                "They account for under 5 % of the gap.", "the waits stay above the models' median", null, RootCauseLoci.Harness, RootCauseLoci.Provider);
+            if (aboveWait) d.For.Add(A + "'s own waits are " + Pct(waitA!.Value) + " of its model time, above the models' median.");
+            if (aboveRetries) d.For.Add(A + " retried " + OneDecimal(retriesA!.Value) + " attempts per answer, above the models' median.");
+            d.Share = share;
+            if (share is double s && s < 0.05)
+            {
+                d.NotSupported = true;
+                d.Against.Add("Own waits and retries account for " + Pct(s) + " of the gap, under 5 %.");
+            }
+            d.Established = share is double s2 && s2 >= 0.05;
+            d.EstablishedText = "the waits' share of the gap is not measured";
+            d.FactKeys.Add(ctx.Key(a.Token, "speed.ownWaitShare"));
+            d.NextRunKind = RootCauseRunKinds.TimeStratum;
+            yield return d;
+        }
+
+        // HS6: served at another tier.
+        int mismatchA = a.Evidence.Answers.Count(x => x.Ok && x.ServedTierMismatch);
+        int mismatchB = b.Evidence.Answers.Count(x => x.Ok && x.ServedTierMismatch);
+        if (mismatchA > mismatchB)
+        {
+            var d = Make("HS6", A + " was served at another tier than it requested.", "Tier mismatch: " + A,
+                "No answer was served at another tier.", "the mismatch recurs", null, RootCauseLoci.Provider);
+            d.For.Add(Inv(mismatchA) + " of " + A + "'s answers were served at another tier than requested; " + Inv(mismatchB) + " of " + B + "'s.");
+            d.Quantified = false;
+            d.FactKeys.Add(ctx.Key(a.Token, "speed.servedTierMismatch"));
+            d.NextRunKind = RootCauseRunKinds.TimeStratum;
+            yield return d;
+        }
+    }
+
+    private static IEnumerable<RootCauseDraft> CostPairRules(
+        RootCauseContext ctx, RootCausePair pair, RootCausePairDecomposition cost, RootCauseModelInput a, RootCauseModelInput b, bool stands)
+    {
+        string A = ctx.Name(a.Token), B = ctx.Name(b.Token);
+        string decompositionKey = "rca.cost." + pair.First + "." + pair.Second;
+        string total = BenchmarkReportFormat.Usd(Math.Abs(cost.Difference ?? 0));
+        var volume = cost.Components.FirstOrDefault(c => c.Key == "all" && c.Effect == "volume");
+        var price = cost.Components.FirstOrDefault(c => c.Key == "all" && c.Effect == "price");
+        if (volume?.Share == null || price?.Share == null) yield break;
+
+        // The component (volume plus price) with the largest share.
+        var byComponent = RootCauseSegments.CostComponents
+            .Select(k => (Key: k, Share: cost.Components.Where(c => c.Key == k).Sum(c => c.Share ?? 0)))
+            .OrderByDescending(x => x.Share)
+            .ToList();
+        string leadComponent = byComponent[0].Key;
+
+        RootCauseDraft Make(string id, string statement, string shortText, string refutedIf, string confirmIf, RootCauseComponent? component, params string[] loci)
+        {
+            var d = PairDraft(ctx, pair, id, RootCauseAxes.Cost, a, b, statement, shortText, refutedIf, confirmIf, stands, loci);
+            if (component != null)
+            {
+                d.Share = component.Share;
+                d.ShareLower = component.ShareLower;
+                d.ShareUpper = component.ShareUpper;
+                d.For.Add(Capitalize(component.Label) + " accounts for " + SharePct(component) + " of the " + total + " per-question cost difference.");
+                d.Established = component.ShareLower is double lo && component.ShareUpper is double hi && (lo > 0 || hi < 0);
+                d.EstablishedText = "the share's 95 % interval includes zero";
+                d.Robustness.Add(ctx.LeaveOneOutCost(pair, component.Key, component.Effect));
+                if (ctx.Battery) d.Robustness.Add(ctx.AcrossSuitesCost(pair, component.Key, component.Effect));
+                d.FactKeys.Add(decompositionKey + "." + component.Key + "." + component.Effect + ".share");
+            }
+            d.Robustness.Add(ctx.ReplicatesCheck(a, b));
+            var confounds = ctx.Confounds(a, b, RootCauseAxes.Cost, skipThinking: id == "HC3");
+            d.Confounds.AddRange(confounds);
+            d.Robustness.Add(ConfigurationCheck(confounds));
+            d.FactKeys.Add(decompositionKey + ".total");
+            return d;
+        }
+
+        if (volume.Share!.Value >= price.Share!.Value)
+        {
+            var d = Make("HC1", A + " costs more than " + B + " mainly from token volume.", "Token volume: " + A,
+                "The price effect is larger.", "the volume effect stays the larger", volume, RootCauseLoci.Model, RootCauseLoci.Chat);
+            d.Against.Add("The price effect is " + SharePct(price) + " of the difference.");
+            d.NextRunKind = RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+        else
+        {
+            var d = Make("HC2", A + " costs more than " + B + " mainly from its price per token.", "Price per token: " + A,
+                "The volume effect is larger.", "the price effect stays the larger", price, RootCauseLoci.Model);
+            d.Against.Add("The volume effect is " + SharePct(volume) + " of the difference.");
+            d.FactKeys.Add(ctx.Key(a.Token, "price.output.perMillion"));
+            yield return d;
+        }
+
+        if (leadComponent == RootCauseSegments.Reasoning)
+        {
+            var reasoningVolume = cost.Components.First(c => c.Key == RootCauseSegments.Reasoning && c.Effect == "volume");
+            var d = Make("HC3", "Reasoning tokens drive " + A + "'s higher cost against " + B + ".", "Reasoning cost: " + A,
+                "Another component is larger.", "the reasoning component stays the largest", reasoningVolume, RootCauseLoci.Model);
+            d.FactKeys.Add(ctx.Key(a.Token, "tokens.reasoningShare"));
+            d.NextRunKind = RootCauseRunKinds.ThinkingPair;
+            yield return d;
+        }
+
+        if (leadComponent == RootCauseSegments.UncachedInput)
+        {
+            var uncached = cost.Components.First(c => c.Key == RootCauseSegments.UncachedInput && c.Effect == "volume");
+            var d = Make("HC4", "Weak prompt caching raises " + A + "'s cost against " + B + ".", "Weak caching: " + A,
+                "The cache-read share is comparable to the other models'.", "the cache-read share stays low", uncached, RootCauseLoci.Chat, RootCauseLoci.Provider);
+            double? shareA = ctx.CacheReadShare(a);
+            var cacheShares = ctx.Models.Select(ctx.CacheReadShare).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+            double? median = RootCauseStatistics.Median(cacheShares);
+            if (shareA is double s && median is double m)
+            {
+                string line = A + "'s cache-read share is " + Pct(s) + " against the models' median of " + Pct(m) + ".";
+                if (s <= m - 0.20) d.For.Add(line);
+                else
+                {
+                    d.Against.Add(line);
+                    d.NotSupported = true;
+                }
+            }
+            else
+            {
+                d.Quantified = false;
+            }
+            d.FactKeys.Add(ctx.Key(a.Token, "tokens.cacheReadShare"));
+            d.NextRunKind = RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+
+        // HC5: tool rounds multiply input tokens.
+        double inputVolume = cost.Components
+            .Where(c => c.Effect == "volume" && c.Key is RootCauseSegments.UncachedInput or RootCauseSegments.CacheRead or RootCauseSegments.CacheWrite)
+            .Sum(c => c.Share ?? 0);
+        double outputVolume = cost.Components
+            .Where(c => c.Effect == "volume" && c.Key is RootCauseSegments.Output or RootCauseSegments.Reasoning)
+            .Sum(c => c.Share ?? 0);
+        if (inputVolume > outputVolume && inputVolume > price.Share!.Value)
+        {
+            double? callsA = ctx.CallsPerAnswer(a), callsB = ctx.CallsPerAnswer(b);
+            var d = Make("HC5", "More tool rounds multiply " + A + "'s input tokens against " + B + ".", "Tool rounds, input: " + A,
+                "The calls per answer are comparable.", "the input volume effect and the call count stay higher", null, RootCauseLoci.Chat, RootCauseLoci.Model);
+            d.Share = inputVolume;
+            d.For.Add("The input token volume accounts for " + Pct(inputVolume) + " of the cost difference.");
+            if (callsA is double x && callsB is double y)
+            {
+                string line = A + " made " + OneDecimal(x) + " model calls per answer, " + B + " " + OneDecimal(y) + ".";
+                if (x > y * 1.1) d.For.Add(line);
+                else
+                {
+                    d.Against.Add(line);
+                    d.NotSupported = true;
+                }
+                d.Established = x > y * 1.1;
+                d.EstablishedText = "the call counts are not compared by a test";
+            }
+            else
+            {
+                d.Quantified = false;
+            }
+            d.FactKeys.Add(ctx.Key(a.Token, "speed.modelCallsPerAnswer"));
+            d.NextRunKind = RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Shared failures (HQ3)
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// HQ3 across every analyzed model (comparison scope), or across the subject and its controls (a run or
+    /// battery completion): questions every model, or every model but one, scored below 50 point to the
+    /// instrument. A check is proposed for each.
+    /// </summary>
+    internal static RootCauseDraft? SharedFailures(RootCauseContext ctx, IReadOnlyList<(int Number, string Reference, int Low, int Scored, bool WellAnswered)> questions, IReadOnlyList<string> models)
+    {
+        var flagged = questions.Where(q => q.Scored >= 2 && q.Low >= q.Scored - 1).ToList();
+        if (flagged.Count == 0) return null;
+
+        var draft = new RootCauseDraft
+        {
+            Id = "HQ3",
+            Axis = RootCauseAxes.Intelligence,
+            Kind = "pair",
+            Group = "all",
+            Statement = "Shared failures on specific questions point to the instrument, not the models.",
+            Short = "Shared failures: instrument",
+            RefutedIf = "One model answered the question well.",
+            ConfirmIf = "the rubric or the corpus of the flagged questions is found wanting",
+            Quantified = false,
+            CheckKind = "rubric"
+        };
+        draft.Models.AddRange(models);
+        draft.Loci.AddRange(new[] { RootCauseLoci.Suite, RootCauseLoci.Corpus, RootCauseLoci.Chat });
+        foreach (var q in flagged.Take(8))
+        {
+            draft.For.Add(q.Reference + ": " + Inv(q.Low) + " of " + Inv(q.Scored) + " models scored below 50.");
+        }
+        foreach (var q in flagged.Where(q => q.WellAnswered).Take(4))
+        {
+            draft.Against.Add(q.Reference + ": one model scored 75 or above.");
+        }
+        draft.CheckText = "Check the rubric of " + BenchmarkReportFormat.LetterList(flagged.Take(6).Select(q => q.Reference).ToList())
+                          + " against the source, and whether the tools' corpus holds the facts the question needs.";
+        draft.FactKeys.Add("questions.sharedLow");
+        return draft;
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Within-model rules
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The within-model rules of § A4 for <paramref name="model"/> on <paramref name="axes"/>, and its H0-W
+    /// (the contrasts of WQ1 and WQ2, Holm-adjusted together). Intelligence hypotheses whose locus could be the
+    /// instrument as well as the model are capped by <paramref name="controlCap"/>.
+    /// </summary>
+    internal static List<RootCauseDraft> WithinRules(
+        RootCauseContext ctx, RootCauseModelInput model, IReadOnlyCollection<string> axes, (string? Cap, string? Reason) controlCap)
+    {
+        var drafts = new List<RootCauseDraft>();
+        if (axes.Contains(RootCauseAxes.Intelligence)) drafts.AddRange(WithinIntelligence(ctx, model, controlCap));
+        if (axes.Contains(RootCauseAxes.Speed) && !model.SpeedDegraded) drafts.AddRange(WithinSpeed(ctx, model));
+        if (axes.Contains(RootCauseAxes.Cost) && !model.CostDegraded) drafts.AddRange(WithinCost(ctx, model));
+        return drafts;
+    }
+
+    private static RootCauseDraft WithinDraft(RootCauseContext ctx, RootCauseModelInput model, string id, string axis,
+        string statement, string shortText, string refutedIf, string confirmIf, params string[] loci)
+    {
+        var draft = new RootCauseDraft
+        {
+            Id = id,
+            Axis = axis,
+            Kind = "within",
+            Group = "within:" + model.Token,
+            Models = { model.Token },
+            Statement = statement,
+            Short = shortText,
+            RefutedIf = refutedIf,
+            ConfirmIf = confirmIf
+        };
+        draft.Loci.AddRange(loci);
+        draft.Robustness.Add(ctx.ReplicatesCheck(model));
+        return draft;
+    }
+
+    private static IEnumerable<RootCauseDraft> WithinIntelligence(RootCauseContext ctx, RootCauseModelInput model, (string? Cap, string? Reason) controlCap)
+    {
+        string M = ctx.Name(model.Token);
+        var at = ctx.AtRisk(model.Token);
+        var scored = model.Evidence.Scored.ToList();
+        if (scored.Count == 0) yield break;
+
+        // The contrasts behind H0-W, Holm-adjusted together.
+        var withTools = scored.Where(a => !a.NoTool).Select(a => a.Quality!.Value).ToList();
+        var withoutTools = scored.Where(a => a.NoTool).Select(a => a.Quality!.Value).ToList();
+        var toolContrast = withoutTools.Count >= 3 && withTools.Count > 0 ? RootCauseStatistics.MannWhitney(withoutTools, withTools) : null;
+
+        bool battery = scored.Any(a => a.Suite.HasValue);
+        var groups = scored.GroupBy(a => battery ? "S" + Inv(a.Suite ?? 0) : a.Band, StringComparer.Ordinal)
+            .Select(g => (Name: g.Key, Answers: g.ToList(), Points: AtRiskOf(at, g.Select(x => x.QuestionKey).Distinct(StringComparer.Ordinal))))
+            .OrderByDescending(g => g.Points)
+            .ThenBy(g => g.Name, StringComparer.Ordinal)
+            .ToList();
+        var leadGroup = groups.Count >= 2 ? groups[0] : default;
+        RootCauseMannWhitney? groupContrast = null;
+        if (groups.Count >= 2)
+        {
+            var inGroup = leadGroup.Answers.Select(a => a.Quality!.Value).ToList();
+            var rest = groups.Skip(1).SelectMany(g => g.Answers).Select(a => a.Quality!.Value).ToList();
+            groupContrast = RootCauseStatistics.MannWhitney(inGroup, rest);
+        }
+
+        var pValues = new List<double>();
+        if (toolContrast != null) pValues.Add(toolContrast.PValue);
+        if (groupContrast != null) pValues.Add(groupContrast.PValue);
+        var adjusted = RootCauseStatistics.Holm(pValues);
+        double? toolP = toolContrast != null ? adjusted[0] : null;
+        double? groupP = groupContrast != null ? adjusted[toolContrast != null ? 1 : 0] : null;
+
+        var h0 = new RootCauseDraft
+        {
+            Id = "H0-W",
+            Axis = RootCauseAxes.Intelligence,
+            Kind = "null",
+            Group = "within:" + model.Token,
+            Models = { model.Token },
+            Statement = "The contrasts between groups of " + M + "'s own questions are within sampling noise.",
+            Short = "Noise within " + M,
+            RefutedIf = "A Mann–Whitney contrast is established after the Holm adjustment."
+        };
+        bool rejected = false;
+        if (toolP is double tp)
+        {
+            (tp < RootCauseStatistics.SignificanceLevel ? h0.Against : h0.For).Add("Answers without tools against answers with tools: adjusted p " + P(tp) + ".");
+            rejected |= tp < RootCauseStatistics.SignificanceLevel;
+        }
+        if (groupP is double gp)
+        {
+            (gp < RootCauseStatistics.SignificanceLevel ? h0.Against : h0.For).Add(GroupName(leadGroup.Name) + " against the rest: adjusted p " + P(gp) + ".");
+            rejected |= gp < RootCauseStatistics.SignificanceLevel;
+        }
+        if (pValues.Count == 0) h0.For.Add("No contrast could be made.");
+        if (rejected)
+        {
+            h0.NotSupported = true;
+        }
+        else
+        {
+            h0.Established = true;
+            h0.Caps.Add((model.Evidence.RunsPerSuite < 2 ? RootCauseGrades.Low : RootCauseGrades.Moderate,
+                model.Evidence.RunsPerSuite < 2 ? "a single run per suite gives the contrasts little power" : "the absence of an established contrast is not proof of equality"));
+        }
+        yield return h0;
+
+        void Cap(RootCauseDraft d)
+        {
+            if (controlCap.Cap != null) d.Caps.Add((controlCap.Cap, controlCap.Reason ?? "too few controls"));
+            if (ctx.ModelSpecificCount > 0) d.For.Add(Inv(ctx.ModelSpecificCount) + " questions were missed by " + M + " while every control scored 75 or above.");
+            if (ctx.InstrumentSuspectCount > 0) d.Against.Add(Inv(ctx.InstrumentSuspectCount) + " questions " + M + " missed were missed by every control too.");
+        }
+
+        // WQ1: points lost on answers without tool calls.
+        if (withoutTools.Count >= 3 && withTools.Count > 0 && withoutTools.Average() < withTools.Average())
+        {
+            var d = WithinDraft(ctx, model, "WQ1", RootCauseAxes.Intelligence,
+                M + " loses most of its points on answers without tool calls (where its points go, not a comparison).",
+                "No-tool answers: " + M,
+                "The contrast stands within noise, or fewer than three answers lack tools.",
+                "the no-tool answers keep losing the most points",
+                RootCauseLoci.Model, RootCauseLoci.Chat);
+            d.For.Add(M + "'s answers without tools scored " + Whole(withoutTools.Average()) + " (" + Inv(withoutTools.Count) + "), with tools " + Whole(withTools.Average()) + " (" + Inv(withTools.Count) + ").");
+            double share = at.Total > 0 ? at.Points[0] / at.Total : 0;
+            d.Share = share;
+            bool largest = at.Points[0] >= at.Points.Max() && at.Points[0] > 0;
+            (largest ? d.For : d.Against).Add("Answers without tools hold " + Pct(share) + " of the points at risk.");
+            if (toolP is double p && p >= RootCauseStatistics.SignificanceLevel)
+            {
+                d.NotSupported = true;
+                d.Against.Add("The contrast with answers that used tools is within noise (adjusted p " + P(p) + ").");
+            }
+            d.Established = toolP is double p2 && p2 < RootCauseStatistics.SignificanceLevel && largest;
+            d.EstablishedText = "the contrast is not established, or the no-tool share is not the largest";
+            d.Robustness.Add(LeaveOneOutLargest(at, 0));
+            d.Robustness.Add(ctx.WithinPanelCheck(model, a => a.NoTool));
+            if (battery) d.Robustness.Add(ctx.WithinAcrossSuites(model, a => a.NoTool));
+            Cap(d);
+            d.FactKeys.Add(ctx.Key(model.Token, "score.withoutTools"));
+            d.FactKeys.Add(ctx.Key(model.Token, "score.withTools"));
+            d.NextRunKind = ctx.NeedsControlRun ? RootCauseRunKinds.Control : RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+
+        // WQ2: points lost mostly in one band or suite.
+        if (groups.Count >= 2 && leadGroup.Points > 0)
+        {
+            string groupName = GroupName(leadGroup.Name);
+            var d = WithinDraft(ctx, model, "WQ2", RootCauseAxes.Intelligence,
+                M + "'s points are lost mostly in " + groupName + " (where its points go, not a comparison).",
+                "Lost in " + groupName,
+                "The contrast stands within noise, or the shares are even.",
+                "the same group keeps holding the largest share",
+                RootCauseLoci.Model, RootCauseLoci.Suite);
+            double share = at.Total > 0 ? leadGroup.Points / at.Total : 0;
+            d.Share = share;
+            d.For.Add(groupName + " holds " + Pct(share) + " of " + M + "'s points at risk.");
+            bool even = share < 1.0 / groups.Count + 0.10;
+            if (even) d.Against.Add("The shares are nearly even across the groups.");
+            if (groupP is double p && p >= RootCauseStatistics.SignificanceLevel)
+            {
+                d.Against.Add("Its contrast with the rest is within noise (adjusted p " + P(p) + ").");
+            }
+            d.NotSupported = even || (groupP is double p3 && p3 >= RootCauseStatistics.SignificanceLevel);
+            d.Established = groupP is double p4 && p4 < RootCauseStatistics.SignificanceLevel;
+            d.EstablishedText = "the group contrast is not established";
+            if (battery) d.Robustness.Add(ctx.LeaveOneSuiteOutCheck(leadGroup.Name));
+            else d.Robustness.Add(LeaveOneOutGroup(at, leadGroup.Answers.Select(a => a.QuestionKey).Distinct(StringComparer.Ordinal).ToList(), groups.Skip(1).Select(g => g.Points).DefaultIfEmpty(0).Max()));
+            d.Robustness.Add(ctx.WithinPanelCheck(model, a => (battery ? "S" + Inv(a.Suite ?? 0) : a.Band) == leadGroup.Name));
+            Cap(d);
+            d.NextRunKind = ctx.NeedsControlRun ? RootCauseRunKinds.Control : RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+
+        // WQ3: confirmed critical errors.
+        if (at.Points[2] > 0 && at.Points[2] >= at.Points.Max())
+        {
+            var d = WithinDraft(ctx, model, "WQ3", RootCauseAxes.Intelligence,
+                "Confirmed critical errors cost " + M + " most of its points (where its points go, not a comparison).",
+                "Critical errors: " + M,
+                "The caps are unconfirmed.",
+                "the critical-error share stays the largest",
+                RootCauseLoci.Model);
+            double share = at.Total > 0 ? at.Points[2] / at.Total : 0;
+            d.Share = share;
+            d.For.Add("Confirmed critical errors hold " + Pct(share) + " of the points at risk (" + OneDecimal(at.Points[2]) + " index points, upper bound).");
+            var lead = LeadOverNext(at, 2);
+            d.Established = lead?.ExcludesZero == true;
+            d.EstablishedText = "the lead of the critical-error share over the next is not established";
+            if (!model.Evidence.CriticalErrorsConfirmed)
+            {
+                d.Against.Add("Before scoring method 13 the caps are graders' flags, not confirmed errors.");
+                d.Caps.Add((RootCauseGrades.Low, "the caps are not confirmed"));
+            }
+            d.Robustness.Add(LeaveOneOutLargest(at, 2));
+            d.Robustness.Add(ctx.WithinPanelCheck(model, a => a.CriticalError));
+            d.FactKeys.Add(ctx.Key(model.Token, "outcome.confirmedCriticalRate"));
+            d.NextRunKind = RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+
+        // WQ4: guessing instead of abstaining.
+        var (wrong, denied) = WrongInsteadOfAbstaining(model);
+        if (denied > 0 && wrong / (double)denied > 0.5)
+        {
+            var d = WithinDraft(ctx, model, "WQ4", RootCauseAxes.Intelligence,
+                M + " guesses where it should abstain.",
+                "Guessing: " + M,
+                "The Wilson interval includes 0.33.",
+                "the rate stays above one half with its interval above one third",
+                RootCauseLoci.Model);
+            var wilson = RootCauseStatistics.Wilson(wrong, denied);
+            d.For.Add(M + " was wrong in " + Inv(wrong) + " of " + Inv(denied) + " answers that were wrong or not attempted (" + Pct(wrong / (double)denied) + ").");
+            bool above = wilson is { } w && w.Low > 0.33;
+            if (!above)
+            {
+                d.NotSupported = true;
+                d.Against.Add("The 95 % Wilson interval includes one third.");
+            }
+            d.Share = wrong / (double)denied;
+            d.Established = above;
+            d.EstablishedText = "the Wilson interval is not above one third";
+            Cap(d);
+            d.FactKeys.Add(ctx.Key(model.Token, "profile.outcome.wrongInsteadOfAbstaining"));
+            d.NextRunKind = RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+
+        // WQ5: budget, truncation or output defects.
+        if (at.Points[1] >= 1)
+        {
+            var d = WithinDraft(ctx, model, "WQ5", RootCauseAxes.Intelligence,
+                "Budget, truncation or output defects cost " + M + " points.",
+                "Defects and budget: " + M,
+                "There are no such signals.",
+                "the defect points stay at least one point",
+                RootCauseLoci.Harness, RootCauseLoci.Provider);
+            d.Share = at.Total > 0 ? at.Points[1] / at.Total : null;
+            d.For.Add("Budget, truncation or output defects put " + OneDecimal(at.Points[1]) + " index points at risk (upper bound).");
+            var interval = SegmentInterval(at, 1);
+            d.Established = interval is { Lower: > 0 };
+            d.EstablishedText = "the defect points' 95 % interval includes zero";
+            d.Robustness.Add(LeaveOneOutThreshold(at, 1, 1.0));
+            d.FactKeys.Add(ctx.Key(model.Token, "profile.toolLimitHits"));
+            d.FactKeys.Add(ctx.Key(model.Token, "profile.outputDefects"));
+            d.NextRunKind = RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+
+        // WQ6: grader disagreement.
+        double? disagreement = model.Evidence.PanelAnswers is > 0 ? model.Evidence.PanelDisagreements / (double)model.Evidence.PanelAnswers : null;
+        double? memberGap = model.MemberAIndex is double ma && model.MemberBIndex is double mb ? Math.Abs(ma - mb) : null;
+        double? halfWidth = model.QualityLower is double lo && model.QualityUpper is double hi ? (hi - lo) / 2 : null;
+        bool disagree = disagreement is > 0.15;
+        bool gapWide = memberGap is double g && halfWidth is double h && g > h;
+        if (disagree || gapWide)
+        {
+            var d = WithinDraft(ctx, model, "WQ6", RootCauseAxes.Intelligence,
+                "Grader disagreement makes " + M + "'s index uncertain.",
+                "Grader disagreement: " + M,
+                "The panel members agree.",
+                "the disagreement recurs under another panel",
+                RootCauseLoci.Harness);
+            if (disagreement is double dr) d.For.Add("The panel disagreed on " + Pct(dr) + " of the answers both members graded.");
+            if (memberGap is double mg) d.For.Add("The members' indices are " + OneDecimal(mg) + " points apart" + (halfWidth is double hw ? ", against an interval half-width of " + OneDecimal(hw) : string.Empty) + ".");
+            var wilson = disagreement.HasValue ? RootCauseStatistics.Wilson(model.Evidence.PanelDisagreements!.Value, model.Evidence.PanelAnswers!.Value) : null;
+            d.Established = (wilson is { } w && w.Low > 0.15) || gapWide;
+            d.EstablishedText = "neither the disagreement rate nor the member gap is established";
+            d.FactKeys.Add(ctx.Key(model.Token, "panel.disagreements"));
+            d.NextRunKind = RootCauseRunKinds.PanelSwap;
+            yield return d;
+        }
+    }
+
+    private static IEnumerable<RootCauseDraft> WithinSpeed(RootCauseContext ctx, RootCauseModelInput model)
+    {
+        string M = ctx.Name(model.Token);
+        var items = model.Evidence.SpeedItems;
+        if (items.Count < RootCauseDecomposition.MinSharedQuestions) yield break;
+        var shares = RootCauseDecomposition.ModelTimeShares(items);
+        if (shares is not { } s) yield break;
+        string[] names = { "time to first token", "output generation", "time outside the calls" };
+        int lead = Array.IndexOf(s.Shares, s.Shares.Max());
+        var leadInterval = s.LeadOverNext[0];
+
+        // WS1: deliberation before output.
+        if (lead == 0)
+        {
+            var d = WithinDraft(ctx, model, "WS1", RootCauseAxes.Speed,
+                "Most of " + M + "'s time is model deliberation before output (where its time goes, not a comparison).",
+                "Time to first token: " + M,
+                "The decode share is larger.",
+                "the time-to-first-token share stays the largest at other times of day",
+                RootCauseLoci.Provider, RootCauseLoci.Model);
+            FillShare(d, s.Shares[0], s.Intervals[0], names[0], "model time");
+            d.Established = leadInterval?.Lower > 0;
+            d.EstablishedText = "its lead over the next component is not established";
+            d.Robustness.Add(ctx.WithinLeaveOneOutTime(model, 0));
+            d.FactKeys.Add(ctx.WithinKey(model.Token, "time.ttft.share"));
+            d.NextRunKind = RootCauseRunKinds.TimeStratum;
+            yield return d;
+        }
+
+        // WS2: output generation driven by reasoning tokens.
+        if (lead == 1)
+        {
+            var d = WithinDraft(ctx, model, "WS2", RootCauseAxes.Speed,
+                "Most of " + M + "'s time is output generation, driven by reasoning tokens (where its time goes, not a comparison).",
+                "Output generation: " + M,
+                "The reasoning share is under one half.",
+                "the decode share stays the largest and reasoning stays at least half the output",
+                RootCauseLoci.Model);
+            FillShare(d, s.Shares[1], s.Intervals[1], names[1], "model time");
+            double? reasoning = ctx.ReasoningShare(model);
+            if (reasoning is double r)
+            {
+                (r >= 0.5 ? d.For : d.Against).Add("Reasoning is " + Pct(r) + " of " + M + "'s output tokens.");
+                if (r < 0.5) d.NotSupported = true;
+            }
+            else
+            {
+                d.Against.Add("The reasoning tokens are not recorded separately.");
+            }
+            d.Established = leadInterval?.Lower > 0 && reasoning is >= 0.5;
+            d.EstablishedText = "its lead is not established, or the reasoning share is unknown";
+            d.Robustness.Add(ctx.WithinLeaveOneOutTime(model, 1));
+            d.FactKeys.Add(ctx.WithinKey(model.Token, "time.outputGeneration.share"));
+            d.FactKeys.Add(ctx.Key(model.Token, "tokens.reasoningShare"));
+            d.NextRunKind = RootCauseRunKinds.ThinkingPair;
+            yield return d;
+        }
+
+        // WS3: tool rounds multiply the time.
+        var rho = RootCauseStatistics.Spearman(items.Select(i => i.ModelTimeMs).ToList(), items.Select(i => i.Calls).ToList());
+        if (rho != null && rho.Rho >= 0.5)
+        {
+            var d = WithinDraft(ctx, model, "WS3", RootCauseAxes.Speed,
+                "Tool rounds multiply " + M + "'s time (where its time goes, not a comparison).",
+                "Tool rounds, time: " + M,
+                "The ρ interval includes zero.",
+                "model time keeps rising with the calls per answer",
+                RootCauseLoci.Model, RootCauseLoci.Chat);
+            d.For.Add("Across " + M + "'s questions, model time rises with model calls per answer: Spearman ρ " + Two(rho.Rho) + " (95 % interval " + Two(rho.Lower) + " to " + Two(rho.Upper) + ", n " + Inv(rho.Count) + ").");
+            if (!rho.ExcludesZero)
+            {
+                d.NotSupported = true;
+                d.Against.Add("The interval of ρ includes zero.");
+            }
+            d.Established = rho.ExcludesZero;
+            d.EstablishedText = "the interval of ρ includes zero";
+            d.Robustness.Add(ctx.WithinLeaveOneOutRho(items, i => i.ModelTimeMs));
+            d.FactKeys.Add(ctx.Key(model.Token, "speed.modelCallsPerAnswer"));
+            d.NextRunKind = RootCauseRunKinds.Replicate;
+            yield return d;
+        }
+
+        // WS4: tool execution adds to the wall time.
+        double duration = items.Average(i => i.DurationMs);
+        double toolShare = duration > 0 ? items.Average(i => i.ToolMs) / duration : 0;
+        if (toolShare >= 0.25)
+        {
+            var d = WithinDraft(ctx, model, "WS4", RootCauseAxes.Speed,
+                "Tool execution adds materially to " + M + "'s wall time (where its time goes, not a comparison).",
+                "Tool execution: " + M,
+                "Tool time is under 10 % of the total.",
+                "tool time stays at least a quarter of the total",
+                RootCauseLoci.Chat, RootCauseLoci.Corpus);
+            var interval = RootCauseStatistics.Bootstrap(items.Count, sample =>
+            {
+                double total = sample.Average(i => items[i].DurationMs);
+                return total > 0 ? sample.Average(i => items[i].ToolMs) / total : null;
+            });
+            d.Share = toolShare;
+            d.ShareLower = interval?.Lower;
+            d.ShareUpper = interval?.Upper;
+            d.For.Add("Tool execution is " + Pct(toolShare) + IntervalText(interval) + " of " + M + "'s wall time per question.");
+            d.Established = interval?.Lower >= 0.10;
+            d.EstablishedText = "the tool share's interval reaches below 10 %";
+            d.FactKeys.Add(ctx.Key(model.Token, "speed.toolTimeP50"));
+            yield return d;
+        }
+
+        // WS5: own waits or retries.
+        double? waitShare = RootCauseEvidence.OwnWaitShare(model.Evidence);
+        var ok = model.Evidence.Answers.Where(a => a.Ok).ToList();
+        double retriedShare = ok.Count > 0 ? ok.Count(a => a.RetryAttempts is > 0) / (double)ok.Count : 0;
+        if (waitShare is >= 0.10 || retriedShare >= 0.10)
+        {
+            var d = WithinDraft(ctx, model, "WS5", RootCauseAxes.Speed,
+                "Own waits or retries inflate " + M + "'s time (where its time goes, not a comparison).",
+                "Waits and retries: " + M,
+                "Waits are under 10 % of model time and retries under 10 % of answers.",
+                "the waits or retries recur at other times of day",
+                RootCauseLoci.Harness, RootCauseLoci.Provider);
+            if (waitShare is double w) d.For.Add("Own waits and failed attempts are " + Pct(w) + " of " + M + "'s model time.");
+            d.For.Add(Pct(retriedShare) + " of " + M + "'s answers retried an attempt.");
+            d.Share = waitShare;
+            d.Established = true;
+            d.FactKeys.Add(ctx.Key(model.Token, "speed.ownWaitShare"));
+            d.FactKeys.Add(ctx.Key(model.Token, "speed.retriesPerAnswer"));
+            d.NextRunKind = RootCauseRunKinds.TimeStratum;
+            yield return d;
+        }
+    }
+
+    private static IEnumerable<RootCauseDraft> WithinCost(RootCauseContext ctx, RootCauseModelInput model)
+    {
+        string M = ctx.Name(model.Token);
+        var items = model.Evidence.CostItems;
+        if (!model.Evidence.Priced || items.Count < RootCauseDecomposition.MinSharedQuestions) yield break;
+        var shares = RootCauseDecomposition.CostShares(items);
+        if (shares is not { } s) yield break;
+
+        // Output with reasoning as one component, against uncached input, cache reads and cache writes.
+        double[] grouped = { s.Shares[0], s.Shares[1], s.Shares[2], s.Shares[3] + s.Shares[4] };
+        int lead = Array.IndexOf(grouped, grouped.Max());
+        int next = Enumerable.Range(0, 4).Where(k => k != lead).OrderByDescending(k => grouped[k]).First();
+        var leadInterval = RootCauseStatistics.Bootstrap(items.Count, sample =>
+        {
+            double total = sample.Average(i => items[i].TotalCost);
+            if (total <= 0) return null;
+            double Part(int k) => k == 3
+                ? (sample.Average(i => items[i].Cost[3]) + sample.Average(i => items[i].Cost[4])) / total
+                : sample.Average(i => items[i].Cost[k]) / total;
+            return Part(lead) - Part(next);
+        });
+
+        if (lead == 3)
+        {
+            var d = WithinDraft(ctx, model, "WC1", RootCauseAxes.Cost,
+                "Output (with reasoning) is " + M + "'s largest cost component (where its cost goes, not a comparison).",
+                "Output cost: " + M,
+                "Another component is larger.",
+                "the output share stays the largest",
+                RootCauseLoci.Model);
+            d.Share = grouped[3];
+            d.For.Add("Visible output and reasoning are " + Pct(grouped[3]) + " of " + M + "'s cost per question.");
+            d.Established = leadInterval?.Lower > 0;
+            d.EstablishedText = "its lead over the next component is not established";
+            d.FactKeys.Add(ctx.Key(model.Token, "cost.component.output.perQuestion"));
+            d.FactKeys.Add(ctx.Key(model.Token, "cost.component.reasoning.perQuestion"));
+            yield return d;
+        }
+
+        if (lead == 0)
+        {
+            double? cacheShare = ctx.CacheReadShare(model);
+            var d = WithinDraft(ctx, model, "WC2", RootCauseAxes.Cost,
+                "Uncached input is " + M + "'s largest cost component (where its cost goes, not a comparison).",
+                "Uncached input: " + M,
+                "The cache-read share is at least 70 %.",
+                "the uncached share stays the largest",
+                RootCauseLoci.Chat, RootCauseLoci.Provider);
+            d.Share = grouped[0];
+            d.ShareLower = s.Intervals[0]?.Lower;
+            d.ShareUpper = s.Intervals[0]?.Upper;
+            d.For.Add("Uncached input is " + Pct(grouped[0]) + IntervalText(s.Intervals[0]) + " of " + M + "'s cost per question.");
+            if (cacheShare is double c)
+            {
+                (c < 0.5 ? d.For : d.Against).Add(M + " read " + Pct(c) + " of its input from the cache.");
+                if (c >= 0.7) d.NotSupported = true;
+            }
+            d.Established = leadInterval?.Lower > 0 && cacheShare is < 0.5;
+            d.EstablishedText = "its lead is not established, or the cache-read share is not under one half";
+            d.FactKeys.Add(ctx.Key(model.Token, "tokens.cacheReadShare"));
+            d.FactKeys.Add(ctx.Key(model.Token, "cost.component.uncachedInput.perQuestion"));
+            yield return d;
+        }
+
+        var rho = RootCauseStatistics.Spearman(
+            items.Select(i => i.Cost[0] + i.Cost[1] + i.Cost[2]).ToList(),
+            items.Select(i => i.Calls).ToList());
+        if (rho != null && rho.Rho >= 0.5)
+        {
+            var d = WithinDraft(ctx, model, "WC3", RootCauseAxes.Cost,
+                "Tool rounds multiply " + M + "'s input cost (where its cost goes, not a comparison).",
+                "Tool rounds, cost: " + M,
+                "The ρ interval includes zero.",
+                "input cost keeps rising with the calls per answer",
+                RootCauseLoci.Chat, RootCauseLoci.Model);
+            d.For.Add("Across " + M + "'s questions, input cost rises with model calls per answer: Spearman ρ " + Two(rho.Rho) + " (95 % interval " + Two(rho.Lower) + " to " + Two(rho.Upper) + ").");
+            if (!rho.ExcludesZero)
+            {
+                d.NotSupported = true;
+                d.Against.Add("The interval of ρ includes zero.");
+            }
+            d.Established = rho.ExcludesZero;
+            d.EstablishedText = "the interval of ρ includes zero";
+            d.Robustness.Add(ctx.WithinLeaveOneOutRho(items, i => i.Cost[0] + i.Cost[1] + i.Cost[2]));
+            d.FactKeys.Add(ctx.Key(model.Token, "speed.modelCallsPerAnswer"));
+            yield return d;
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Robustness helpers on the points at risk
+    // ---------------------------------------------------------------------------------------------
+
+    internal static RootCauseRobustnessCheck ConfigurationCheck(IReadOnlyList<string> confounds)
+        => confounds.Count == 0
+            ? new RootCauseRobustnessCheck { Name = Configuration, Status = RootCauseCheckStatuses.Passed, Detail = "No configuration key differs beyond the model." }
+            : new RootCauseRobustnessCheck { Name = Configuration, Status = RootCauseCheckStatuses.Failed, Detail = "Open confounds: " + string.Join(", ", confounds) + "." };
+
+    /// <summary>The first model's points of a segment, minus the second's, keep their sign without the question contributing most to the first's.</summary>
+    private static RootCauseRobustnessCheck LeaveOneOutAtRisk(RootCauseAtRisk first, RootCauseAtRisk second, int segment)
+    {
+        if (first.ByQuestion.Count < 2) return NotAssessableLoo("too few questions put points at risk");
+        var top = first.ByQuestion.OrderByDescending(kv => kv.Value[segment]).ThenBy(kv => kv.Key, StringComparer.Ordinal).First();
+        double without = first.Points[segment] - top.Value[segment] - second.Points[segment];
+        return without > 0
+            ? new RootCauseRobustnessCheck { Name = LeaveOneOut, Status = RootCauseCheckStatuses.Passed, Detail = "The difference keeps its sign without the question that contributes most." }
+            : new RootCauseRobustnessCheck { Name = LeaveOneOut, Status = RootCauseCheckStatuses.Failed, Detail = "One question carries the difference." };
+    }
+
+    /// <summary>A segment's points stay at or above <paramref name="threshold"/> without the question contributing most.</summary>
+    private static RootCauseRobustnessCheck LeaveOneOutThreshold(RootCauseAtRisk at, int segment, double threshold)
+    {
+        var contributing = at.ByQuestion.Where(kv => kv.Value[segment] > 0).ToList();
+        if (contributing.Count == 0) return NotAssessableLoo("no question puts points at risk in this segment");
+        double top = contributing.Max(kv => kv.Value[segment]);
+        return at.Points[segment] - top >= threshold
+            ? new RootCauseRobustnessCheck { Name = LeaveOneOut, Status = RootCauseCheckStatuses.Passed, Detail = "The points stay above the threshold without the question that contributes most." }
+            : new RootCauseRobustnessCheck { Name = LeaveOneOut, Status = RootCauseCheckStatuses.Failed, Detail = "One question carries the points." };
+    }
+
+    /// <summary>A segment stays the largest without the question contributing most to it.</summary>
+    private static RootCauseRobustnessCheck LeaveOneOutLargest(RootCauseAtRisk at, int segment)
+    {
+        var contributing = at.ByQuestion.Where(kv => kv.Value[segment] > 0).ToList();
+        if (contributing.Count < 2) return NotAssessableLoo("fewer than two questions put points at risk in this segment");
+        var top = contributing.OrderByDescending(kv => kv.Value[segment]).ThenBy(kv => kv.Key, StringComparer.Ordinal).First();
+        var points = at.Points.ToArray();
+        for (int k = 0; k < 4; k++) points[k] -= top.Value[k];
+        return points[segment] >= points.Max() && points[segment] > 0
+            ? new RootCauseRobustnessCheck { Name = LeaveOneOut, Status = RootCauseCheckStatuses.Passed, Detail = "The segment stays the largest without the question that contributes most." }
+            : new RootCauseRobustnessCheck { Name = LeaveOneOut, Status = RootCauseCheckStatuses.Failed, Detail = "Without one question another segment is larger." };
+    }
+
+    /// <summary>A group stays above the next group's points without its question contributing most.</summary>
+    private static RootCauseRobustnessCheck LeaveOneOutGroup(RootCauseAtRisk at, IReadOnlyList<string> questions, double nextPoints)
+    {
+        var rows = questions.Where(at.ByQuestion.ContainsKey).Select(q => at.ByQuestion[q].Sum()).OrderByDescending(v => v).ToList();
+        if (rows.Count < 2) return NotAssessableLoo("fewer than two questions of the group put points at risk");
+        return rows.Sum() - rows[0] > nextPoints
+            ? new RootCauseRobustnessCheck { Name = LeaveOneOut, Status = RootCauseCheckStatuses.Passed, Detail = "The group stays the largest without its question that contributes most." }
+            : new RootCauseRobustnessCheck { Name = LeaveOneOut, Status = RootCauseCheckStatuses.Failed, Detail = "Without one question another group holds more points." };
+    }
+
+    private static RootCauseRobustnessCheck NotAssessableLoo(string detail)
+        => new() { Name = LeaveOneOut, Status = RootCauseCheckStatuses.NotAssessable, Detail = Capitalize(detail) + "." };
+
+    /// <summary>The bootstrap interval, over questions, of a segment's lead over the next largest.</summary>
+    private static RootCauseInterval? LeadOverNext(RootCauseAtRisk at, int segment)
+    {
+        var rows = at.ByQuestion.Values.ToList();
+        if (rows.Count < 2) return null;
+        return RootCauseStatistics.Bootstrap(rows.Count, sample =>
+        {
+            var sums = new double[4];
+            foreach (int i in sample) for (int k = 0; k < 4; k++) sums[k] += rows[i][k];
+            double next = Enumerable.Range(0, 4).Where(k => k != segment).Max(k => sums[k]);
+            return sums[segment] - next;
+        });
+    }
+
+    /// <summary>The bootstrap interval, over the questions that put points at risk, of one segment's points.</summary>
+    private static RootCauseInterval? SegmentInterval(RootCauseAtRisk at, int segment)
+    {
+        var rows = at.ByQuestion.Values.ToList();
+        if (rows.Count < 2) return null;
+        return RootCauseStatistics.Bootstrap(rows.Count, sample => sample.Sum(i => rows[i][segment]));
+    }
+
+    private static double AtRiskOf(RootCauseAtRisk at, IEnumerable<string> questions)
+        => questions.Where(at.ByQuestion.ContainsKey).Sum(q => at.ByQuestion[q].Sum());
+
+    // ---------------------------------------------------------------------------------------------
+    // Text helpers
+    // ---------------------------------------------------------------------------------------------
+
+    private static void FillShare(RootCauseDraft d, double share, RootCauseInterval? interval, string component, string of)
+    {
+        d.Share = share;
+        d.ShareLower = interval?.Lower;
+        d.ShareUpper = interval?.Upper;
+        d.For.Add(Capitalize(component) + " is " + Pct(share) + IntervalText(interval) + " of " + of + " per question.");
+    }
+
+    internal static (int Wrong, int Denominator) WrongInsteadOfAbstaining(RootCauseModelInput model)
+    {
+        int wrong = model.Evidence.Answers.Count(a => a.Outcome == BenchmarkOutcomeClass.Incorrect);
+        int notAttempted = model.Evidence.Answers.Count(a => a.Outcome == BenchmarkOutcomeClass.NotAttempted);
+        return (wrong, wrong + notAttempted);
+    }
+
+    internal static int ThinkingRank(string? level)
+        => Array.IndexOf(ThinkingOrder, (level ?? "none").Trim().ToLowerInvariant());
+
+    internal static bool SameProvider(string? a, string? b)
+        => !string.IsNullOrWhiteSpace(a) && string.Equals(a.Trim(), b?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static string GroupName(string group)
+        => group.StartsWith('S') && group.Length > 1 && char.IsAsciiDigit(group[1]) ? "suite " + group[1..] : "the " + group.ToLowerInvariant() + " band";
+
+    internal static string Pct(double value) => BenchmarkReportFormat.Percent(value * 100);
+
+    internal static string SharePct(RootCauseComponent component)
+        => component.Share is double s ? Pct(s) + (component.ShareLower is double lo && component.ShareUpper is double hi ? " (" + Interval(lo, hi) + ")" : string.Empty) : "an unknown share";
+
+    internal static string Interval(double lower, double upper)
+        => BenchmarkReportFormat.Whole(lower * 100) + "–" + BenchmarkReportFormat.Whole(upper * 100) + " %";
+
+    private static string IntervalText(RootCauseInterval? interval)
+        => interval == null ? string.Empty : " (" + Interval(interval.Lower, interval.Upper) + ")";
+
+    private static string Whole(double value) => BenchmarkReportFormat.Whole(value);
+
+    private static string OneDecimal(double value) => BenchmarkReportFormat.OneDecimal(value);
+
+    private static string Two(double value) => Math.Round(value, 2, MidpointRounding.AwayFromZero).ToString("0.00", CultureInfo.InvariantCulture);
+
+    private static string P(double p) => BenchmarkComparisonReportFacts.PValue(p);
+
+    internal static string Capitalize(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
+
+    /// <summary>The text with its first letter lower-cased, unless it opens with a name (<c>Model B</c>, <c>Orion Max</c>).</summary>
+    internal static string LowerFirst(string text)
+    {
+        if (text.Length < 2 || !char.IsUpper(text[0]) || char.IsUpper(text[1])) return text;
+        int space = text.IndexOf(' ');
+        if (space > 0 && space + 1 < text.Length && char.IsUpper(text[space + 1])) return text;
+        return char.ToLowerInvariant(text[0]) + text[1..];
+    }
+
+    private static string Inv(int value) => value.ToString(CultureInfo.InvariantCulture);
+}

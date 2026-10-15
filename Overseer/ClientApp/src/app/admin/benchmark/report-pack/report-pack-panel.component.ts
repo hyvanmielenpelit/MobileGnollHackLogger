@@ -70,12 +70,16 @@ import {
   ReportChartSelection
 } from './report-charts';
 import {
-  REPORT_PACK_AUDIENCES,
+  ReportCostRange,
+  ReportPackAudienceOption,
   audienceLabel,
   documentChipClass,
+  formatCostRangeUsd,
   formatCostUsd,
   formatElapsed,
   formatUtc,
+  isCostRange,
+  reportAudiencesFor,
   statusLabel
 } from './report-document-format';
 import { buildReportPackDiagnostics, reportPackDiagnosticsFileName, reportPackIo } from './report-pack-diagnostics';
@@ -446,7 +450,11 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   /** Whether a job is running, emitted on every change. */
   @Output() readonly busyChange = new EventEmitter<boolean>();
 
-  readonly audiences = REPORT_PACK_AUDIENCES;
+  /** The documents the chosen scope writes, in audience order. */
+  get audiences(): readonly ReportPackAudienceOption[] {
+    return reportAudiencesFor(this.scopeMode === 'comparison' ? 'comparison' : 'model');
+  }
+
   readonly scopeOptions = REPORT_PACK_SCOPE_OPTIONS;
   readonly modelScopeTip = REPORT_PACK_MODEL_SCOPE_TIP;
   readonly audienceLabel = audienceLabel;
@@ -541,8 +549,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   job: BenchmarkReportPackJobDto | null = null;
   /** When `job` was last read (client clock), to run the server's clock on between readings. */
   jobReadAt = 0;
-  /** The estimate when the job was started here, for its stat strip. */
-  jobEstimateUsd: number | null = null;
+  /** The estimate when the job was started here, for its stat strip: first calls alone to one repair turn per document. */
+  jobEstimateUsd: ReportCostRange | null = null;
   pollError: string | null = null;
   canceling = false;
 
@@ -1021,8 +1029,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     });
     const audiences = this.documentsView.state === 'ready'
       ? new Set(this.checkedRows.map(row => row.audience))
-      : new Set(REPORT_PACK_AUDIENCES.map(option => option.audience));
-    const next = REPORT_PACK_AUDIENCES.map(option => option.audience).filter(audience => audiences.has(audience));
+      : new Set(this.audiences.map(option => option.audience));
+    const next = this.audiences.map(option => option.audience).filter(audience => audiences.has(audience));
     if (next.join(',') !== this.checkedAudiences.join(',')) {
       this.checkedAudiences = next;
     }
@@ -1079,7 +1087,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
 
   /** The document type the chart picker shows, as it chooses it: the one chosen, else the first being written. */
   get chartPreviewAudience(): BenchmarkReportAudience {
-    return this.chartAudience ?? this.checkedAudiences[0] ?? REPORT_PACK_AUDIENCES[0].audience;
+    return this.chartAudience ?? this.checkedAudiences[0] ?? this.audiences[0].audience;
   }
 
   /** Why Preview layout cannot run for any document type, or null. */
@@ -1118,7 +1126,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       this.previewItemsSelection = this.chartSelection;
       this.previewItemsAvailable = this.chartsAvailable;
       this.previewItemsAudiences = this.checkedAudiences;
-      this.previewItemsCache = REPORT_PACK_AUDIENCES.map(option => {
+      this.previewItemsCache = this.audiences.map(option => {
         const count = this.previewFigureCount(option.audience);
         return {
           audience: option.audience,
@@ -1281,8 +1289,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     const ready = this.documentsView.state === 'ready';
     const checked = this.checkedRows;
     const audiences = ready || !options.preview
-      ? REPORT_PACK_AUDIENCES.map(option => option.audience).filter(audience => checked.some(row => row.audience === audience))
-      : REPORT_PACK_AUDIENCES.map(option => option.audience);
+      ? this.audiences.map(option => option.audience).filter(audience => checked.some(row => row.audience === audience))
+      : this.audiences.map(option => option.audience);
     const batteryRunIds = context.batteryRunIds ?? [];
     const base = {
       runIds: [...context.runIds],
@@ -1418,28 +1426,35 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (!preview || preview.refusal) {
       return null;
     }
-    const items = this.checkedEstimates;
-    if (items.length === 0 || items.some(item => item.estimate.estimatedCostUsd === null || item.estimate.estimatedCostUsd === undefined)) {
+    const range = this.estimateTotalUsd;
+    if (range === null) {
       return { state: 'noPrice', total: null, parts: [] };
     }
-    const total = items.reduce((sum, item) => sum + (item.estimate.estimatedCostUsd ?? 0), 0);
+    const items = this.checkedEstimates;
     const several = this.scopeMode === 'model' && new Set(items.map(item => item.row.entryKey)).size > 1;
     const parts = items.length > 1
       ? items.map(item => ({
         name: several ? `${item.row.name} — ${item.row.subjectLabel}` : item.row.name,
-        cost: formatCostUsd(item.estimate.estimatedCostUsd)
+        cost: formatCostRangeUsd(item.estimate.estimatedCostUsd, item.estimate.estimatedCostWithRepairUsd)
       }))
       : [];
-    return { state: 'ready', total: formatCostUsd(total), parts };
+    return { state: 'ready', total: formatCostRangeUsd(range.low, range.high), parts };
   }
 
-  /** The estimate's total in dollars, or null without one. */
-  private get estimateTotalUsd(): number | null {
+  /**
+   * The estimate's total in dollars, from the first calls alone to one repair turn per document, or
+   * null without a first-call price; `high` is null when any document has no repair-inclusive figure.
+   */
+  private get estimateTotalUsd(): ReportCostRange | null {
     const items = this.checkedEstimates;
     if (items.length === 0 || items.some(item => item.estimate.estimatedCostUsd === null || item.estimate.estimatedCostUsd === undefined)) {
       return null;
     }
-    return items.reduce((sum, item) => sum + (item.estimate.estimatedCostUsd ?? 0), 0);
+    const low = items.reduce((sum, item) => sum + (item.estimate.estimatedCostUsd ?? 0), 0);
+    const high = items.some(item => item.estimate.estimatedCostWithRepairUsd === null || item.estimate.estimatedCostWithRepairUsd === undefined)
+      ? null
+      : items.reduce((sum, item) => sum + (item.estimate.estimatedCostWithRepairUsd ?? 0), 0);
+    return { low, high };
   }
 
   /** What the estimate is for, under the total. */
@@ -1448,7 +1463,10 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (!preview) {
       return '';
     }
-    const repair = 'A repair turn can roughly double a document’s cost.';
+    const range = this.estimateTotalUsd;
+    const repair = range !== null && isCostRange(range.low, range.high)
+      ? 'From the first call alone to one repair turn per document.'
+      : 'A repair turn can roughly double a document’s cost.';
     if (this.scopeMode === 'comparison') {
       return `For ${this.coveredKeys.length} models, compared as equals. ${repair}`;
     }
@@ -1868,7 +1886,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   }
 
   get jobEstimate(): string | null {
-    return this.jobEstimateUsd === null ? null : `about ${formatCostUsd(this.jobEstimateUsd)}`;
+    return this.jobEstimateUsd === null ? null : `about ${formatCostRangeUsd(this.jobEstimateUsd.low, this.jobEstimateUsd.high)}`;
   }
 
   /** The finished job in one line: `Written: 2 documents, 1 min 12 s, $0.21`. */

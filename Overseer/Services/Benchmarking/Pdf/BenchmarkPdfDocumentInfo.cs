@@ -44,7 +44,7 @@ public sealed record BenchmarkPdfDocumentInfo
 
     public const string PaperError = "paper must be a4 or letter.";
 
-    /// <summary>Executive Summary, Report for AI Researchers and Developers, Internal Improvement Brief, Run report, Tool-call log or Run diagnostics.</summary>
+    /// <summary>Executive Summary, Root Cause Analysis, Provider Issue Report, Run report, Tool-call log or Run diagnostics.</summary>
     public required string DocumentKind { get; init; }
 
     public required string Title { get; init; }
@@ -230,7 +230,7 @@ public sealed record BenchmarkPdfDocumentInfo
                 ? BenchmarkReportPackRenderer.BuildComparisonTitle(document.Audience, sheet!, comparison, options.PeerNaming)
                 : string.IsNullOrWhiteSpace(document.Title)
                     ? audience + ": " + document.SubjectLabel
-                    : BenchmarkReportRenderService.CurrentTitle(document.Audience, document.Title),
+                    : document.Title,
             SubjectLine = subjectLine,
             HeaderText = comparison is { } headerComparison ? ComparisonHeading(headerComparison, options.PeerNaming) : null,
             Classification = full ? BenchmarkPdfClassification.Internal : BenchmarkPdfClassification.ProviderConfidential,

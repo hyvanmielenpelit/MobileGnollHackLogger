@@ -613,13 +613,16 @@ public static class BenchmarkModelBatchGuardrails
 
         if (ctx.ReportWriter != null)
         {
+            // Each run, or battery run, gets an Executive Summary and a Root Cause Analysis.
+            bool battery = request.TargetKind == BenchmarkModelBatchTargetKind.Battery;
             int perReport = BenchmarkRunReportDocumentService.Audiences.Count;
-            int documents = request.TargetKind == BenchmarkModelBatchTargetKind.Battery
+            int documents = battery
                 ? candidates.Count * perReport
                 : candidates.Count * Math.Max(1, request.RunsPerModel) * perReport;
             Add("MB-A11", "ReportWriterInBatch", Advice, FieldReportWriter,
                 $"{Inv(documents)} AI documents will be written",
-                "For documents on the whole batch, follow the steps the batch dialog shows when it finishes.");
+                (battery ? "Per battery run" : "Per run") + ": an Executive Summary and a Root Cause Analysis. "
+                + "For whole-batch documents, follow the steps the batch dialog shows.");
         }
 
         if (requestedCount >= 2)

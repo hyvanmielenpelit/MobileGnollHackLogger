@@ -7,10 +7,12 @@ import {
   BenchmarkModelBatchFindingDto,
   BenchmarkRunDetailDto,
   BenchmarkScoringProfileDto,
+  BenchmarkSecondOpinionMode,
   BenchmarkSuiteDto
 } from '../../../services/admin-benchmark.service';
 import { SystemAiConfigDto } from '../../../services/admin.service';
 import { BenchmarkLauncherState, MODEL_BATCH_PREFLIGHT_DEBOUNCE_MS } from './benchmark-launcher.state';
+import type { LauncherSetupPrefill } from './benchmark-shell-bridge.service';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 
@@ -653,5 +655,246 @@ describe('BenchmarkLauncherState: model batches', () => {
     expect(launcher.runMode).toBe('single');
     expect(launcher.batchModelKeys).toEqual([]);
     expect(launcher.batchOrder).toBe('randomized');
+  });
+});
+
+describe('BenchmarkLauncherState: prefillFromSetup', () => {
+  let launcher: BenchmarkLauncherState;
+  let workspace: BenchmarkWorkspaceStore;
+  let service: Record<string, Mock>;
+
+  const battery = (id: number, name: string): BenchmarkBatteryDto => ({
+    id, name, isArchived: false, brokenSuiteNames: [], validationErrors: [],
+    suites: [
+      { index: 0, suiteId: 1, suiteName: 'Default Suite', difficultyFullyAssessed: true },
+      { index: 1, suiteId: 2, suiteName: 'Second Suite', difficultyFullyAssessed: true }
+    ]
+  }) as unknown as BenchmarkBatteryDto;
+
+  /**
+   * A control run on suite 2: a batch of models 2 and 3, as listed, graded by a panel of 1 and 3 with 2
+   * as the reference reader reading every answer, and 2 verifying claims.
+   */
+  function setup(overrides: Partial<LauncherSetupPrefill> = {}): LauncherSetupPrefill {
+    return {
+      sourceLabel: 'Set up from Root Cause Analysis #12, run 1',
+      kind: 'control',
+      targetKind: 'Suite', suiteId: 2, suiteName: 'Second Suite', batteryId: null, batteryName: null,
+      runMode: 'Batch', testedModelConfigurationIds: [2, 3], modelNames: ['Model Two', 'Model Three'], order: 'AsListed',
+      runsPerModel: 2, runCount: 1, scoringProfileId: 2, verboseMode: true, allowSourceCodeReferences: true,
+      assessorModelConfigurationId: 1, coAssessorModelConfigurationId: 3, secondOpinionAssessorModelConfigurationId: 2,
+      secondOpinionMode: BenchmarkSecondOpinionMode.All, claimVerifierModelConfigurationId: 2, notes: [],
+      ...overrides
+    };
+  }
+
+  /** The server's note for graders the analyzed runs did not share. */
+  const NOT_SHARED = 'The analyzed runs differ on CoAssessorModelConfigurationId, so it is left for you to choose.';
+
+  function loadPage(): void {
+    launcher.restoreRunSettings();
+    workspace.suitesLoaded$.next();
+    workspace.profilesLoaded$.next();
+    launcher.setDefaultModelSelections();
+    workspace.batteriesLoaded$.next(true);
+  }
+
+  beforeEach(() => {
+    clearRunSettings();
+    service = {
+      getLastAssessor: vi.fn(() => of({})),
+      previewBatteryReuse: vi.fn(() => of(null)),
+      preflightModelBatch: vi.fn(() => of({ findings: [], projection: null, maxModels: 12 })),
+      startRun: vi.fn(),
+      startRunSeries: vi.fn(),
+      startBatteryRun: vi.fn(),
+      startModelBatch: vi.fn()
+    };
+    TestBed.configureTestingModule({
+      providers: [
+        BenchmarkLauncherState,
+        BenchmarkWorkspaceStore,
+        BenchmarkViewSync,
+        { provide: AdminBenchmarkService, useValue: service }
+      ]
+    });
+    launcher = TestBed.inject(BenchmarkLauncherState);
+    workspace = TestBed.inject(BenchmarkWorkspaceStore);
+    workspace.suites = [suite(1, 'Default Suite'), suite(2, 'Second Suite')];
+    workspace.scoringProfiles = [profile(1, 'Standard', true), profile(2, 'Strict')];
+    workspace.launcherBatteries = [battery(5, 'Core Battery')];
+    workspace.setSystemConfigs([
+      config(1, 'Model One'), config(2, 'Model Two', { provider: 'OpenAI' }), config(3, 'Model Three', { provider: 'Google' }),
+      config(4, 'Model Four', { isEnabled: false })
+    ]);
+  });
+
+  afterEach(clearRunSettings);
+
+  it('applies every setting, clears the report writer, labels the note and starts nothing', () => {
+    loadPage();
+    launcher.reportWriterConfigId = 1;
+    launcher.reuseEarlierRuns = true;
+
+    launcher.prefillFromSetup(setup());
+
+    expect(launcher.runTargetKind).toBe('suite');
+    expect(launcher.selectedSuiteId).toBe(2);
+    expect(launcher.selectedScoringProfileId).toBe(2);
+    expect(launcher.runMode).toBe('batch');
+    expect(launcher.batchModelKeys).toEqual([2, 3]);
+    expect(launcher.batchOrder).toBe('asListed');
+    expect(launcher.batchOrderKeys).toEqual([2, 3]);
+    expect(launcher.batchRunsPerModel).toBe(2);
+    expect(launcher.assessorConfigId).toBe(1);
+    expect(launcher.coAssessorConfigId).toBe(3);
+    expect(launcher.secondOpinionConfigId).toBe(2);
+    expect(launcher.claimVerifierConfigId).toBe(2);
+    expect(launcher.reportWriterConfigId).toBeNull();
+    expect(launcher.reuseEarlierRuns).toBe(false);
+    expect(launcher.candidateVerboseMode).toBe(true);
+    expect(launcher.candidateAllowSourceCodeReferences).toBe(true);
+    expect(launcher.prefillResult).toEqual({
+      runId: null, sourceLabel: 'Set up from Root Cause Analysis #12, run 1', notes: []
+    });
+    for (const start of ['startRun', 'startRunSeries', 'startBatteryRun', 'startModelBatch']) {
+      expect(service[start]).not.toHaveBeenCalled();
+    }
+  });
+
+  it('applies a single-model run with its Number of Runs and second-opinion coverage', () => {
+    loadPage();
+
+    launcher.prefillFromSetup(setup({
+      runMode: 'Single', testedModelConfigurationIds: [3], modelNames: ['Model Three'], runCount: 2, runsPerModel: 1,
+      coAssessorModelConfigurationId: null, secondOpinionMode: BenchmarkSecondOpinionMode.FlaggedAndOutliers
+    }));
+
+    expect(launcher.runMode).toBe('single');
+    expect(launcher.testedConfigId).toBe(3);
+    expect(launcher.runCount).toBe(2);
+    expect(launcher.coAssessorConfigId).toBeNull();
+    expect(launcher.secondOpinionMode).toBe(BenchmarkSecondOpinionMode.FlaggedAndOutliers);
+    expect(launcher.prefillResult!.notes).toEqual([]);
+  });
+
+  it('applies the grader set whole: a null grader is none and a null coverage follows the profile', () => {
+    loadPage();
+    launcher.coAssessorConfigId = 3;
+    launcher.secondOpinionConfigId = 2;
+    launcher.claimVerifierConfigId = 2;
+    launcher.secondOpinionMode = BenchmarkSecondOpinionMode.All;
+
+    launcher.prefillFromSetup(setup({
+      coAssessorModelConfigurationId: null, secondOpinionAssessorModelConfigurationId: null,
+      secondOpinionMode: null, claimVerifierModelConfigurationId: null
+    }));
+
+    expect(launcher.assessorConfigId).toBe(1);
+    expect(launcher.coAssessorConfigId).toBeNull();
+    expect(launcher.secondOpinionConfigId).toBeNull();
+    expect(launcher.claimVerifierConfigId).toBeNull();
+    // Profile 2's own coverage.
+    expect(launcher.secondOpinionMode).toBe(BenchmarkSecondOpinionMode.Flagged);
+    expect(launcher.prefillResult!.notes).toEqual([]);
+  });
+
+  it('keeps the current graders when the server notes that the analyzed runs did not share them, and shows that note', () => {
+    loadPage();
+    launcher.assessorConfigId = 2;
+    launcher.coAssessorConfigId = 3;
+    launcher.secondOpinionConfigId = 1;
+    launcher.claimVerifierConfigId = 1;
+
+    launcher.prefillFromSetup(setup({
+      assessorModelConfigurationId: 1, coAssessorModelConfigurationId: null, secondOpinionAssessorModelConfigurationId: null,
+      secondOpinionMode: null, claimVerifierModelConfigurationId: null, notes: [NOT_SHARED]
+    }));
+
+    expect(launcher.assessorConfigId).toBe(2);
+    expect(launcher.coAssessorConfigId).toBe(3);
+    expect(launcher.secondOpinionConfigId).toBe(1);
+    expect(launcher.claimVerifierConfigId).toBe(1);
+    expect(launcher.prefillResult!.notes).toEqual([NOT_SHARED]);
+    // The rest of the setup is still applied.
+    expect(launcher.selectedSuiteId).toBe(2);
+    expect(launcher.batchModelKeys).toEqual([2, 3]);
+  });
+
+  it('notes each missing suite, profile, model and grader by its stored name, and keeps those fields', () => {
+    loadPage();
+    const before = { suite: launcher.selectedSuiteId, profile: launcher.selectedScoringProfileId, claim: launcher.claimVerifierConfigId };
+
+    launcher.prefillFromSetup(setup({
+      suiteId: 9, suiteName: 'Deleted Suite', scoringProfileId: 8,
+      testedModelConfigurationIds: [2, 4, 77], modelNames: ['Model Two', 'Model Four', 'Retired Model'],
+      claimVerifierModelConfigurationId: 4
+    }));
+
+    expect(launcher.selectedSuiteId).toBe(before.suite);
+    expect(launcher.selectedScoringProfileId).toBe(before.profile);
+    expect(launcher.claimVerifierConfigId).toBe(before.claim);
+    expect(launcher.batchModelKeys).toEqual([2]);
+    const notes = launcher.prefillResult!.notes;
+    expect(notes).toEqual([
+      expect.stringContaining('Benchmark Suite: Deleted Suite'),
+      expect.stringContaining('Scoring Profile: profile #8'),
+      expect.stringContaining('Model Under Test: Model Four'),
+      expect.stringContaining('Model Under Test: Retired Model'),
+      expect.stringContaining('Claim Verifier: Model Four')
+    ]);
+  });
+
+  it('notes a missing battery by its stored name', () => {
+    loadPage();
+
+    launcher.prefillFromSetup(setup({ targetKind: 'Battery', batteryId: 6, batteryName: 'Archived Battery', suiteId: null, suiteName: null }));
+
+    expect(launcher.runTargetKind).toBe('battery');
+    expect(launcher.selectedBatteryId).toBe(5);
+    expect(launcher.prefillResult!.notes).toEqual([expect.stringContaining('Battery: Archived Battery')]);
+  });
+
+  it('sets Runs per Suite to 3 on a battery batch and says so', () => {
+    loadPage();
+
+    launcher.prefillFromSetup(setup({
+      kind: 'replicate', targetKind: 'Battery', batteryId: 5, batteryName: 'Core Battery', suiteId: null, suiteName: null,
+      runsPerModel: 3, runCount: 1
+    }));
+
+    expect(launcher.selectedBatteryId).toBe(5);
+    expect(launcher.runCount).toBe(3);
+    expect(launcher.prefillResult!.notes).toEqual(['Runs per Suite was set to 3 for this recommendation.']);
+  });
+
+  it('asks a time-of-day repeat to start at a different time of day once, beside the recommendation\'s own notes', () => {
+    loadPage();
+
+    launcher.prefillFromSetup(setup({ kind: 'timeStratum', runsPerModel: 1, notes: ['Run one in the evening.'] }));
+    const notes = launcher.prefillResult!.notes;
+    expect(notes[0]).toContain('different time of day');
+    expect(notes[1]).toBe('Run one in the evening.');
+
+    const serverNote = 'Start each of the 3 runs at a different time of day.';
+    launcher.prefillFromSetup(setup({ kind: 'timeStratum', runsPerModel: 1, notes: [serverNote] }));
+    expect(launcher.prefillResult!.notes).toEqual([serverNote]);
+  });
+
+  it('waits for the lists, then applies', () => {
+    launcher.restoreRunSettings();
+
+    launcher.prefillFromSetup(setup());
+
+    expect(launcher.pendingPrefillSetupLabel).toBe('Set up from Root Cause Analysis #12, run 1');
+    expect(launcher.prefillResult).toBeNull();
+
+    workspace.suitesLoaded$.next();
+    workspace.profilesLoaded$.next();
+    launcher.setDefaultModelSelections();
+
+    expect(launcher.pendingPrefillSetupLabel).toBeNull();
+    expect(launcher.prefillResult?.sourceLabel).toBe('Set up from Root Cause Analysis #12, run 1');
+    expect(launcher.selectedSuiteId).toBe(2);
   });
 });

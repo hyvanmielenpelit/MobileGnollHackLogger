@@ -23,7 +23,7 @@ import {
 } from './chat-consistency-report-chart-settings';
 import { ccEndpoint } from './chat-consistency-tab.testing';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport } = BenchmarkReportAudience;
+const { ExecutiveSummary, ProviderIssueReport } = BenchmarkReportAudience;
 const ALL = ['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline', 'cc5-availability'];
 
 describe('chat-consistency-report-chart-settings', () => {
@@ -40,21 +40,20 @@ describe('chat-consistency-report-chart-settings', () => {
     });
 
     it('places the measures and provider availability after the verdicts and the overview after the events, but in the Executive Summary', () => {
-      expect([ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport].map(audience => ccReportChartAnchor(audience, 'cc4-timeline')))
-        .toEqual(['Results', 'Events', 'Events', 'Events']);
-      expect(ccReportChartAnchor(TechnicalReport, 'cc1-quality')).toBe('Results');
-      expect([ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport].map(audience => ccReportChartAnchor(audience, 'cc5-availability')))
-        .toEqual(['Results', 'Results', 'Results', 'Results']);
+      expect([ExecutiveSummary, ProviderIssueReport].map(audience => ccReportChartAnchor(audience, 'cc4-timeline')))
+        .toEqual(['Results', 'Events']);
+      expect(ccReportChartAnchor(ProviderIssueReport, 'cc1-quality')).toBe('Results');
+      expect([ExecutiveSummary, ProviderIssueReport].map(audience => ccReportChartAnchor(audience, 'cc5-availability')))
+        .toEqual(['Results', 'Results']);
       const overview = CC_REPORT_CHART_PICKER_FIGURES[3].placement as Record<number, string>;
       expect(overview[ExecutiveSummary]).toBe('Results');
-      expect(overview[InternalBrief]).toBe('Events');
+      expect(overview[ProviderIssueReport]).toBe('Events');
+      expect(Object.keys(overview).map(Number)).toEqual([ExecutiveSummary, ProviderIssueReport]);
     });
 
-    it('offers the four documents with short labels, label size and maximum height, and its own reason', () => {
+    it('offers the two documents with short labels, label size and maximum height, and its own reason', () => {
       expect(CC_REPORT_CHART_PICKER_AUDIENCES.map(option => [option.audience, option.label, option.shortLabel])).toEqual([
         [ExecutiveSummary, 'Executive Summary', 'Executive'],
-        [TechnicalReport, 'Report for AI Researchers and Developers', 'Researchers'],
-        [InternalBrief, 'Internal Brief', 'Internal'],
         [ProviderIssueReport, 'Provider Issue Report', 'Provider']
       ]);
       expect(CC_REPORT_CHART_LAYOUT_FIELDS).toEqual(['labelPt', 'maxHeightPercent']);
@@ -78,11 +77,9 @@ describe('chat-consistency-report-chart-settings', () => {
   });
 
   describe('defaults', () => {
-    it('chooses two charts for the summary, all five for researchers, and two each for the brief and the provider', () => {
+    it('chooses two charts each for the summary and the provider', () => {
       expect(CC_DEFAULT_REPORT_CHART_SELECTION).toEqual({
         [ExecutiveSummary]: ['cc1-quality', 'cc2-speed'],
-        [TechnicalReport]: ALL,
-        [InternalBrief]: ['cc1-quality', 'cc3-work'],
         [ProviderIssueReport]: ['cc2-speed', 'cc4-timeline']
       });
     });
@@ -94,7 +91,7 @@ describe('chat-consistency-report-chart-settings', () => {
         labelPt: 8,
         maxHeightPercent: 50
       });
-      expect(Object.keys(CC_DEFAULT_REPORT_CHART_LAYOUT).map(Number)).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport]);
+      expect(Object.keys(CC_DEFAULT_REPORT_CHART_LAYOUT).map(Number)).toEqual([ExecutiveSummary, ProviderIssueReport]);
     });
 
     it('leaves out of the summary a figure whose endpoint the analysis could not compute', () => {
@@ -114,8 +111,6 @@ describe('chat-consistency-report-chart-settings', () => {
       expect(CC_REPORT_CHART_PICKER_FIGURES.filter(figure => neither[ExecutiveSummary]!.includes(figure.key)).map(figure => figure.title))
         .toEqual(['Work per turn (output tokens per answer)', 'Runs and events']);
       // The other documents keep their defaults.
-      expect(neither[TechnicalReport]).toEqual(ALL);
-      expect(neither[InternalBrief]).toEqual(['cc1-quality', 'cc3-work']);
       expect(neither[ProviderIssueReport]).toEqual(['cc2-speed', 'cc4-timeline']);
     });
 
@@ -130,10 +125,12 @@ describe('chat-consistency-report-chart-settings', () => {
   });
 
   describe('normalizing', () => {
-    it('keeps the five figures in document order, once each, for the four documents', () => {
+    it('keeps the five figures in document order, once each, for the two documents, dropping a retired type', () => {
       expect(normalizeCcReportChartSelection({
         [ExecutiveSummary]: ['cc4-timeline', 'p1a-quality', 'cc1-quality', 'cc4-timeline', 7],
         [ProviderIssueReport]: [],
+        2: ['cc1-quality'],
+        3: ['cc3-work'],
         9: ['cc1-quality']
       })).toEqual({ [ExecutiveSummary]: ['cc1-quality', 'cc4-timeline'], [ProviderIssueReport]: [] });
       expect(normalizeCcReportChartSelection('garbage')).toEqual({});
@@ -153,10 +150,14 @@ describe('chat-consistency-report-chart-settings', () => {
     });
 
     it('gives a missing document type the defaults', () => {
-      const layout = normalizeCcReportChartLayout({ [InternalBrief]: { ...CC_DEFAULT_DOCUMENT_CHART_LAYOUT, maxHeightPercent: 60 } });
-      expect(layout[InternalBrief]!.maxHeightPercent).toBe(60);
+      const layout = normalizeCcReportChartLayout({
+        [ProviderIssueReport]: { ...CC_DEFAULT_DOCUMENT_CHART_LAYOUT, maxHeightPercent: 60 },
+        3: { ...CC_DEFAULT_DOCUMENT_CHART_LAYOUT, maxHeightPercent: 40 }
+      });
+      expect(layout[ProviderIssueReport]!.maxHeightPercent).toBe(60);
       expect(layout[ExecutiveSummary]).toEqual(CC_DEFAULT_DOCUMENT_CHART_LAYOUT);
-      expect(layout[ProviderIssueReport]).toEqual(CC_DEFAULT_DOCUMENT_CHART_LAYOUT);
+      // A retired document type's stored layout is dropped.
+      expect(Object.keys(layout).map(Number)).toEqual([ExecutiveSummary, ProviderIssueReport]);
     });
   });
 
@@ -167,13 +168,13 @@ describe('chat-consistency-report-chart-settings', () => {
 
     it('stores version 1 under its own key and reads it back', () => {
       const selection = { ...CC_DEFAULT_REPORT_CHART_SELECTION, [ExecutiveSummary]: ['cc4-timeline'] as const };
-      const layout = { ...CC_DEFAULT_REPORT_CHART_LAYOUT, [TechnicalReport]: { ...CC_DEFAULT_DOCUMENT_CHART_LAYOUT, labelPt: 7.5 } };
+      const layout = { ...CC_DEFAULT_REPORT_CHART_LAYOUT, [ProviderIssueReport]: { ...CC_DEFAULT_DOCUMENT_CHART_LAYOUT, labelPt: 7.5 } };
       storeCcReportChartSettings({ selection, layout });
       const raw = JSON.parse(localStorage.getItem(CC_REPORT_CHART_STORAGE_KEY)!) as { version: number };
       expect(raw.version).toBe(1);
       const read = readStoredCcReportChartSettings();
       expect(read.selection[ExecutiveSummary]).toEqual(['cc4-timeline']);
-      expect(read.layout[TechnicalReport]!.labelPt).toBe(7.5);
+      expect(read.layout[ProviderIssueReport]!.labelPt).toBe(7.5);
       expect(localStorage.getItem('overseer.benchmark.reportCharts')).toBeNull();
     });
 
@@ -189,7 +190,7 @@ describe('chat-consistency-report-chart-settings', () => {
 
   describe('the server\'s layout', () => {
     it('pairs consecutive half-width figures at one anchor in a row, and places the rest alone', () => {
-      expect(ccReportDocumentChartLayout(TechnicalReport, ALL, CC_DEFAULT_DOCUMENT_CHART_LAYOUT)).toEqual({
+      expect(ccReportDocumentChartLayout(ProviderIssueReport, ALL, CC_DEFAULT_DOCUMENT_CHART_LAYOUT)).toEqual({
         version: 1,
         figures: [
           { key: 'cc1-quality', widthShare: 0.5, rowGroup: 1 },
@@ -212,7 +213,7 @@ describe('chat-consistency-report-chart-settings', () => {
         ...CC_DEFAULT_DOCUMENT_CHART_LAYOUT, widths: { 'cc3-work': 'half', 'cc4-timeline': 'half' }
       };
       expect(ccReportDocumentChartLayout(ExecutiveSummary, ['cc3-work', 'cc4-timeline'], halves).figures.map(figure => figure.rowGroup)).toEqual([1, 1]);
-      expect(ccReportDocumentChartLayout(InternalBrief, ['cc3-work', 'cc4-timeline'], halves).figures.map(figure => figure.rowGroup)).toEqual([null, null]);
+      expect(ccReportDocumentChartLayout(ProviderIssueReport, ['cc3-work', 'cc4-timeline'], halves).figures.map(figure => figure.rowGroup)).toEqual([null, null]);
     });
 
     it('places a width its label size refuses as full column, at the chosen maximum height', () => {

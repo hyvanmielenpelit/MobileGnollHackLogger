@@ -18,11 +18,13 @@ public sealed record BenchmarkComparisonModelItem(
     string QuestionKey, int? ItemRevisionUsed, double LowestScore, long RunId, IReadOnlyList<BenchmarkComparisonModelGraderNote> Notes);
 
 /// <summary>
-/// The failure profile of one covered model of a comparison-scope document, counted over its scored
+/// The failure profile of one covered model of a comparison-scope document, or of a per-model sheet's
+/// subject, counted over its scored
 /// answers in all its runs: what the graders recorded went wrong, never why. In a panel run a level is
 /// the mean of both members' levels, otherwise the assessor's own. Pure: no I/O, no clock, no culture.
 ///
-/// Fact keys, under <c>model.&lt;L&gt;.profile.</c> (<see cref="AddFacts"/> and <see cref="AddMatrixFacts"/>):
+/// Fact keys, under <c>model.&lt;L&gt;.profile.</c> (<see cref="AddFacts"/> and <see cref="AddMatrixFacts"/>), or
+/// <c>profile.</c> on a per-model sheet (<see cref="AddModelScopeFacts"/>):
 ///
 ///   answers                                        the scored answers, the denominator
 ///   mayMislead, mayMisleadPer20                    accuracy level below 4, or a critical error
@@ -352,7 +354,8 @@ public sealed class BenchmarkComparisonModelProfile
         if (Answers > 0)
         {
             double per = (double)MayMislead / Answers * Per;
-            facts.Add(p + "mayMisleadPer20", per, "about " + BenchmarkReportFormat.CompactDecimal(per) + " in " + Inv(Per) + " answers");
+            facts.Add(p + "mayMisleadPer20", per,
+                (MayMislead == 0 ? string.Empty : "about ") + BenchmarkReportFormat.CompactDecimal(per) + " in " + Inv(Per) + " answers");
         }
         else
         {
@@ -418,6 +421,23 @@ public sealed class BenchmarkComparisonModelProfile
             facts.Add(p + "findings." + category, count,
                 Inv(count) + " of " + Inv(RunsWithSynthesis) + (RunsWithSynthesis == 1 ? " run" : " runs"));
         }
+    }
+
+    /// <summary>Why the matrix counts are unavailable on a per-model sheet.</summary>
+    public const string ModelScopeMatrixReason = "A per-model report sets no miss against a question matrix of other models.";
+
+    /// <summary>
+    /// The profile's facts on a per-model sheet, unprefixed (<c>profile.*</c>): every fact of
+    /// <see cref="AddFacts"/>, with the matrix counts unavailable, because they need the question matrix
+    /// of at least <see cref="MatrixMinModels"/> covered models.
+    /// </summary>
+    internal void AddModelScopeFacts(BenchmarkReportFacts.FactList facts)
+    {
+        ArgumentNullException.ThrowIfNull(facts);
+        AddFacts(facts, string.Empty);
+        facts.Unavailable(KeyPrefix + "isolatedMisses", ModelScopeMatrixReason);
+        facts.Unavailable(KeyPrefix + "sharedMisses", ModelScopeMatrixReason);
+        facts.Unavailable(KeyPrefix + "lowestScorer", ModelScopeMatrixReason);
     }
 
     /// <summary>

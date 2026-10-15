@@ -289,7 +289,7 @@ describe('ModelComparisonComponent', () => {
       // A document type whose charts take step 2's theme prints the dark one badly: the advisory says so.
       component.onChartLayoutChange({
         ...DEFAULT_CHART_LAYOUT_SETTINGS,
-        [BenchmarkReportAudience.InternalBrief]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, theme: 'asInStep2' }
+        [BenchmarkReportAudience.RootCauseAnalysis]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, theme: 'asInStep2' }
       });
       fixture.detectChanges();
       expect(panel.chartAdvisory).toContain('dark theme');
@@ -436,7 +436,7 @@ describe('ModelComparisonComponent', () => {
       reportPanel()!.jobFinished.emit({
         documents: [
           { audience: BenchmarkReportAudience.ExecutiveSummary, status: 'Completed', documentId: 22, errorMessage: null, modelCalls: 1 },
-          { audience: BenchmarkReportAudience.TechnicalReport, status: 'Failed', documentId: null, errorMessage: 'x', modelCalls: 1 }
+          { audience: BenchmarkReportAudience.RootCauseAnalysis, status: 'Failed', documentId: null, errorMessage: 'x', modelCalls: 1 }
         ]
       });
       const context = component.documentsContext;
@@ -502,18 +502,19 @@ describe('ModelComparisonComponent', () => {
 
       it('takes the document type\'s own orientation over step 2\'s, and resolves Automatic at its label size', () => {
         render(buildDto(namedSet()), 2);
-        const { ExecutiveSummary, TechnicalReport } = BenchmarkReportAudience;
+        const { ExecutiveSummary, RootCauseAnalysis } = BenchmarkReportAudience;
         component.onChartLayoutChange({
           ...DEFAULT_CHART_LAYOUT_SETTINGS,
           [ExecutiveSummary]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, orientation: 'vertical' },
           // 481.9 pt × 11 / 7 pt = 757 layout px: at or above the breakpoint.
-          [TechnicalReport]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, labelPt: 7 }
+          [RootCauseAnalysis]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, labelPt: 7 }
         });
 
         expect(component.figureStyle.bar.orientation).toBe('auto');
         expect(component.documentChartOrientation('p1a-quality', ExecutiveSummary)).toBe('vertical');
-        expect(component.documentChartOrientation('p1a-quality', TechnicalReport)).toBe('vertical');
-        expect(component.documentChartOrientation('p1a-quality', BenchmarkReportAudience.InternalBrief)).toBe('horizontal');
+        expect(component.documentChartOrientation('p1a-quality', RootCauseAnalysis)).toBe('vertical');
+        // A document type without a layout of its own takes the defaults: 8 pt, so Automatic is horizontal.
+        expect(component.documentChartOrientation('p1a-quality', null)).toBe('horizontal');
       });
 
       it('composes a named chart at the document size with its caption and alt text', async () => {
@@ -572,14 +573,14 @@ describe('ModelComparisonComponent', () => {
 
       it('composes a half-width figure at 8 pt, never refused for its height', async () => {
         render(buildDto(namedSet()), 2);
-        const { InternalBrief } = BenchmarkReportAudience;
+        const { RootCauseAnalysis } = BenchmarkReportAudience;
         component.onChartLayoutChange({
           ...DEFAULT_CHART_LAYOUT_SETTINGS,
-          [InternalBrief]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, heading: 'titleAndBadges', widths: { 'p1a-quality': 'half', 's1-quality-speed': 'half' } }
+          [RootCauseAnalysis]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, heading: 'titleAndBadges', widths: { 'p1a-quality': 'half', 's1-quality-speed': 'half' } }
         });
 
         for (const key of ['p1a-quality', 's1-quality-speed'] as const) {
-          const chart = await component.composeReportChart(key, { kind: 'named' }, InternalBrief);
+          const chart = await component.composeReportChart(key, { kind: 'named' }, RootCauseAnalysis);
           // Half the A4 column, 241.0 pt, at 300 dpi; square at least.
           expect(chart.widthPx, key).toBe(1004);
           expect(chart.heightPx, key).toBeGreaterThanOrEqual(1004);
@@ -985,8 +986,8 @@ describe('ModelComparisonComponent', () => {
         // Preview layout composes through the wizard's own composeDocumentCharts.
         const compose = vi.spyOn(component, 'composeDocumentCharts').mockResolvedValue({ charts: [], failed: [], layout: { version: 1, figures: [], maxHeightShare: 0.6 } });
         const composer = panel.documentChartsComposer as (audience: BenchmarkReportAudience, variant: unknown, scope: unknown) => Promise<unknown>;
-        await composer(BenchmarkReportAudience.TechnicalReport, { kind: 'named', coveredKeys: ['run:1', 'run:2'] }, 'comparison');
-        expect(compose).toHaveBeenCalledWith(BenchmarkReportAudience.TechnicalReport, { kind: 'named', coveredKeys: ['run:1', 'run:2'] }, 'comparison');
+        await composer(BenchmarkReportAudience.RootCauseAnalysis, { kind: 'named', coveredKeys: ['run:1', 'run:2'] }, 'comparison');
+        expect(compose).toHaveBeenCalledWith(BenchmarkReportAudience.RootCauseAnalysis, { kind: 'named', coveredKeys: ['run:1', 'run:2'] }, 'comparison');
 
         // A delete on step 3 makes step 4 list afresh.
         const token = component.documentsReloadToken;

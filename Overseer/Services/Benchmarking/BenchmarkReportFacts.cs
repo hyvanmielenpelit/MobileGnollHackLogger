@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Overseer.Services.Benchmarking.RootCause;
 
 // The fact sheet of a report pack: every figure a report-pack document prints or cites, computed
 // here and never by the writer. Each fact has a stable dotted key, a raw value and a
@@ -124,6 +125,14 @@ using Overseer.Models;
 //   availability.oneIn                                  "about 1 in 123", prose only; unavailable at 0 and from 1 %
 //   A pool with no recorded run (started before harness 56) marks every key unavailable.
 //
+// Root cause (the evidence and result of the root-cause engine; kept off the Executive Summary's
+// prompt by WriterHidden)
+//   speed.ttftP90 … config.maxOutputTokens            the subject's per-model facts of RootCauseEvidence
+//   profile.*                                          the subject's failure profile (BenchmarkComparisonModelProfile);
+//                                                      the matrix counts are unavailable in model scope
+//   rca.*                                              RootCauseFacts, from the engine over the subject, its peers
+//                                                      and, for a run completion, its controls
+//
 // Each entry's Extra facts (BenchmarkReportEntryFigures.Extra) reuse dimension.<d>,
 // tools.callsPerQuestion and errors.critical for that entry alone; its provider availability fields
 // come from the input's summary for the subject and from each peer's comparison entry.
@@ -154,6 +163,24 @@ public sealed class BenchmarkReportFactsInput
     /// <c>availability.*</c> facts off the sheet.
     /// </summary>
     public ProviderAvailabilitySummary? Availability { get; init; }
+
+    /// <summary>
+    /// Each run's candidate price card on the comparison's pricing basis, by run id; a missing or null card
+    /// leaves the cost decomposition and the <c>cost.component.*</c> facts unavailable.
+    /// </summary>
+    public IReadOnlyDictionary<long, ModelPricing?>? CandidatePricing { get; init; }
+
+    /// <summary>
+    /// Whether the root-cause engine runs over the sheet (<see cref="BenchmarkReportFactSheet.RootCause"/> and
+    /// the <c>rca.*</c> facts); false for the per-model sheets a comparison-scope sheet is built from.
+    /// </summary>
+    public bool IncludeRootCause { get; init; } = true;
+
+    /// <summary>The controls of a run-completion analysis (<see cref="RootCauseControls.FindAsync"/>); null when none were sought.</summary>
+    public RootCauseControlSet? Controls { get; init; }
+
+    /// <summary>The configurations and recommended models the next runs are derived from; null for none.</summary>
+    public RootCauseCatalog? Catalog { get; init; }
 }
 
 /// <summary>A fact sheet, or the reason none can be built.</summary>
@@ -382,6 +409,52 @@ public static class BenchmarkReportFacts
         sheet.PairedDifferences = AddPairedDifferences(
             facts, sheet.Questions, peers, PairedSeed(comparison.Entries.Select(e => e.Key)));
 
+        var subjectEvidence = RootCauseEvidence.Build(subjectRuns, input.CandidatePricing);
+        RootCauseEvidence.AddFacts(facts, subjectEvidence,
+            subject.SpeedDegraded ? subject.Explanation : null,
+            subject.CostDegraded ? subject.Explanation : null,
+            PricingBasisKindOf(comparison));
+        BenchmarkComparisonModelProfile.FromRuns(subjectRuns).AddModelScopeFacts(facts);
+        SetQuestionColumns(sheet.Questions, subjectEvidence);
+
+        if (input.IncludeRootCause)
+        {
+            var models = new List<RootCauseModelInput>
+            {
+                RootCauseEvidence.ModelInput(subject, RootCauseEngine.SubjectToken, null, true, subjectRuns, subjectEvidence,
+                    Dimensions.Select(d => subjectStats.DimensionMean(d)).ToList(), StyleConflictOf(subjectRuns, subjectStats), comparison)
+            };
+            foreach (var (entry, letter, stats) in peers.Take(RootCauseEngine.MaxPeers))
+            {
+                var peerRuns = RunsOf(entry, runsById);
+                models.Add(RootCauseEvidence.ModelInput(entry, letter, letter, false, peerRuns, RootCauseEvidence.Build(peerRuns, input.CandidatePricing),
+                    Dimensions.Select(d => stats.DimensionMean(d)).ToList(), peerRuns.Count > 0 && StyleConflictOf(peerRuns, stats), comparison));
+            }
+
+            var tokenOf = new Dictionary<string, string>(StringComparer.Ordinal) { [subject.Key] = RootCauseEngine.SubjectToken };
+            foreach (var (entry, letter, _) in peers) tokenOf[entry.Key] = letter;
+
+            var result = RootCauseEngine.Compute(new RootCauseInput
+            {
+                Scope = RootCauseEngine.ModelScope,
+                Origin = input.Controls != null || peers.Count == 0 ? RootCauseOrigins.RunCompletion : RootCauseOrigins.ModelPack,
+                ComputedAtUtc = comparison.ComputedAtUtc,
+                PricingBasis = comparison.PricingBasisLabel,
+                PricingBasisKind = PricingBasisKindOf(comparison),
+                Models = models,
+                JudgeDependentPairs = RootCauseEvidence.JudgeDependentPairs(comparison, tokenOf),
+                PairedDifferences = sheet.PairedDifferences
+                    .Where(p => p.Lower.HasValue && p.Upper.HasValue)
+                    .ToDictionary(p => p.PeerLetter, p => (p.Lower!.Value, p.Upper!.Value), StringComparer.Ordinal),
+                Graders = sheet.Graders.Select(g => (g.Role, g.Provider)).ToList(),
+                Controls = input.Controls,
+                Catalog = input.Catalog ?? new RootCauseCatalog(),
+                Questions = RootCauseEvidence.QuestionRefs(sheet.Questions)
+            });
+            sheet.RootCause = result;
+            RootCauseFacts.Add(facts, result, t => t == RootCauseEngine.SubjectToken ? subject.Label : "Model " + t);
+        }
+
         if (peers.Count == 0)
         {
             facts.Withhold(IsPeerFact, StandaloneReason);
@@ -394,6 +467,51 @@ public static class BenchmarkReportFacts
         sheet.KnownNames = BuildKnownNames(sheet);
 
         return new BenchmarkReportFactsResult { Sheet = sheet };
+    }
+
+    /// <summary><see cref="PricingBasisCatalog"/> for the Current basis, <see cref="PricingBasisSnapshot"/> otherwise.</summary>
+    internal static string PricingBasisKindOf(BenchmarkModelComparisonDto comparison)
+        => string.Equals(comparison.PricingBasis, nameof(BenchmarkModelComparisonPricingBasis.Current), StringComparison.Ordinal)
+            ? PricingBasisCatalog
+            : PricingBasisSnapshot;
+
+    /// <summary>The response-style conflict of a model's runs, as <c>style.responseStyleConflict</c> states it.</summary>
+    internal static bool StyleConflictOf(IReadOnlyList<BenchmarkRun> runs, EntryStats stats)
+    {
+        if (runs.Count == 0) return false;
+        var probe = new FactList();
+        AddStyleFact(probe, runs, stats);
+        var fact = probe.Sorted().FirstOrDefault(f => f.Key == "style.responseStyleConflict");
+        return fact?.Value is JsonValue value && value.TryGetValue(out bool conflict) && conflict;
+    }
+
+    /// <summary>
+    /// Each question's <see cref="BenchmarkReportQuestion.InputTokens"/>, <see cref="BenchmarkReportQuestion.OutputTokens"/>,
+    /// <see cref="BenchmarkReportQuestion.CostUsd"/>, <see cref="BenchmarkReportQuestion.TtftMs"/> and
+    /// <see cref="BenchmarkReportQuestion.ModelCallCount"/>: means over the answers of its item that recorded them.
+    /// </summary>
+    internal static void SetQuestionColumns(IEnumerable<BenchmarkReportQuestion> questions, RootCauseModelEvidence evidence)
+    {
+        var byItem = evidence.Answers.GroupBy(a => a.ItemKey, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.ToList(), StringComparer.Ordinal);
+        foreach (var question in questions)
+        {
+            string key = long.TryParse(question.QuestionKey, NumberStyles.Integer, CultureInfo.InvariantCulture, out long id)
+                ? RootCauseControls.ItemKey(id, question.ItemRevisionUsed)
+                : "o" + Inv(question.OrderIndex) + "@" + (question.ItemRevisionUsed?.ToString(CultureInfo.InvariantCulture) ?? "?");
+            if (!byItem.TryGetValue(key, out var answers)) continue;
+
+            static double? Mean(IEnumerable<double> values)
+            {
+                var list = values.ToList();
+                return list.Count > 0 ? list.Average() : null;
+            }
+
+            question.InputTokens = Mean(answers.Where(a => a.InputTokens.HasValue).Select(a => (double)a.InputTokens!.Value));
+            question.OutputTokens = Mean(answers.Where(a => a.OutputTokens.HasValue).Select(a => (double)a.OutputTokens!.Value));
+            question.CostUsd = Mean(answers.Where(a => a.ComponentCost != null).Select(a => a.ComponentCost!.Sum()));
+            question.TtftMs = Mean(answers.Where(a => a.Ok && a.TtftAnswerMs.HasValue).Select(a => a.TtftAnswerMs!.Value));
+            question.ModelCallCount = Mean(answers.Where(a => a.ModelCalls.HasValue).Select(a => (double)a.ModelCalls!.Value));
+        }
     }
 
     /// <summary>
@@ -2068,6 +2186,13 @@ public static class BenchmarkReportFacts
             names.Add(grader.Provider);
         }
 
+        foreach (var control in sheet.RootCause?.Controls ?? new List<RootCauseControl>())
+        {
+            names.Add(control.ModelLabel);
+            names.Add(control.ModelId);
+            names.Add(control.Provider);
+        }
+
         return names
             .Where(n => !string.IsNullOrWhiteSpace(n))
             .Select(n => n!)
@@ -2081,6 +2206,12 @@ public static class BenchmarkReportFacts
     // ---------------------------------------------------------------------------------------------
 
     private static BenchmarkReportFactsResult Refuse(string reason) => new() { Refusal = reason };
+
+    /// <summary>
+    /// Whether a fact stays off the Executive Summary's fact list: the root-cause evidence and results only
+    /// the Root Cause Analysis reads (<see cref="RootCauseFacts.WriterHidden"/>). They stay on the sheet.
+    /// </summary>
+    public static bool WriterHidden(string? key) => RootCauseFacts.WriterHidden(key);
 
     /// <summary>A fact that compares the subject with its peers.</summary>
     public static bool IsPeerFact(string key)

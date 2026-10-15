@@ -7,6 +7,7 @@ using System.Threading;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking.Pdf;
+using Overseer.Services.Benchmarking.RootCause;
 
 /// <summary>
 /// The layout preview of a report-pack document: the document a request would write, built in memory
@@ -20,7 +21,7 @@ public static class BenchmarkReportLayoutPreview
     public const string Stamp = "LAYOUT PREVIEW — no AI text";
 
     /// <summary>The most charts one layout preview takes.</summary>
-    public const int MaxCharts = 12;
+    public const int MaxCharts = 16;
 
     /// <summary>The share of a slot's word limit its placeholder fills: the length a writer typically uses.</summary>
     public const double TypicalShareOfLimit = 0.8;
@@ -40,11 +41,11 @@ public static class BenchmarkReportLayoutPreview
     /// <summary>The words of a list item without a word limit.</summary>
     private const int ItemWords = 32;
 
-    /// <summary>The strengths and the weaknesses of a document that is not an Executive Summary.</summary>
+    /// <summary>The strengths and the weaknesses of a document that is not an Executive Summary, and a Root Cause Analysis' observations.</summary>
     private const int TypicalItems = 5;
 
-    /// <summary>The leads of a document that uses them.</summary>
-    private const int TypicalLeads = 4;
+    /// <summary>The writer hypotheses of a Root Cause Analysis' preview.</summary>
+    private const int TypicalWriterHypotheses = 2;
 
     private const int SentencesPerParagraph = 8;
 
@@ -66,9 +67,10 @@ public static class BenchmarkReportLayoutPreview
 
     /// <summary>
     /// The writer's output a preview prints: the headline, every slot the document requires, and the
-    /// lists the audience uses (strengths and weaknesses, recommendations per target, leads, the points
-    /// about each covered model, and a topic for every question where topics are required), each of
-    /// typical length.
+    /// lists the audience uses (strengths and weaknesses, the points about each covered model, a Root Cause
+    /// Analysis' observations, each citing one of the first questions, and its writer hypotheses, and a topic
+    /// for every question where topics are required: in a Root Cause Analysis, for the questions its
+    /// observations cite), each of typical length.
     /// </summary>
     public static BenchmarkReportWriterOutput PlaceholderOutput(BenchmarkReportAudience audience, BenchmarkReportFactSheet sheet)
     {
@@ -87,7 +89,9 @@ public static class BenchmarkReportLayoutPreview
             : BenchmarkReportScope.Model;
         foreach (string slot in spec.SlotsFor(comparison || sheet.Peers.Count > 0))
         {
-            int limit = BenchmarkReportPackValidator.SlotMaxWords(audience, slot, scope) ?? DefaultSlotWords;
+            int limit = (spec.IsRootCauseAnalysis
+                ? BenchmarkReportPackValidator.SlotMaxWords(audience, slot, sheet)
+                : BenchmarkReportPackValidator.SlotMaxWords(audience, slot, scope)) ?? DefaultSlotWords;
             output.Sections[slot] = PlaceholderText(slot, Typical(limit));
         }
 
@@ -96,29 +100,6 @@ public static class BenchmarkReportLayoutPreview
         {
             output.Strengths = Items<BenchmarkReportWriterItem>("a strength", executive ? spec.MaxStrengths : Math.Min(TypicalItems, spec.MaxStrengths), itemWords);
             output.Weaknesses = Items<BenchmarkReportWriterItem>("a weakness", executive ? spec.MaxWeaknesses : Math.Min(TypicalItems, spec.MaxWeaknesses), itemWords);
-        }
-
-        if (spec.UsesRecommendations && spec.RecommendationTargets.Count > 0)
-        {
-            int perTarget = Math.Max(1, Math.Min(3, BenchmarkReportPackValidator.MaxRecommendations(audience) / spec.RecommendationTargets.Count));
-            foreach (string target in spec.RecommendationTargets)
-            {
-                foreach (var item in Items<BenchmarkReportWriterRecommendation>("a recommendation", perTarget, ItemWords))
-                {
-                    item.For = target;
-                    output.Recommendations.Add(item);
-                }
-            }
-        }
-
-        if (spec.UsesLeads && spec.LeadTriages.Count > 0)
-        {
-            var leads = Items<BenchmarkReportLead>("a lead", Math.Min(TypicalLeads, spec.MaxLeads), ItemWords);
-            for (int i = 0; i < leads.Count; i++)
-            {
-                leads[i].Triage = spec.LeadTriages[i % spec.LeadTriages.Count];
-            }
-            output.Leads = leads;
         }
 
         if (spec.MaxModelPoints > 0)
@@ -134,10 +115,45 @@ public static class BenchmarkReportLayoutPreview
                 .ToList();
         }
 
+        var cited = new List<int>();
+        if (spec.MaxObservations > 0)
+        {
+            var numbers = sheet.Questions.Select(q => q.Number).Distinct().OrderBy(n => n).ToList();
+            var observations = Items<BenchmarkReportWriterItem>("an observation", Math.Min(TypicalItems, spec.MaxObservations),
+                Typical(BenchmarkReportPackValidator.RootCauseObservationMaxWords));
+            for (int i = 0; i < observations.Count && numbers.Count > 0; i++)
+            {
+                int number = numbers[i % numbers.Count];
+                observations[i].Questions.Add(number);
+                cited.Add(number);
+            }
+            output.Observations = observations;
+        }
+
+        if (spec.MaxWriterHypotheses > 0)
+        {
+            int partWords = Typical(BenchmarkReportPackValidator.WriterHypothesisPartMaxWords);
+            string Part(string label) => PlaceholderText(label, partWords).Replace("\n\n", " ", StringComparison.Ordinal);
+            output.WriterHypotheses = Enumerable.Range(0, Math.Min(TypicalWriterHypotheses, spec.MaxWriterHypotheses))
+                .Select(i => new BenchmarkReportWriterHypothesis
+                {
+                    Axis = RootCauseAxes.All[i % RootCauseAxes.All.Count],
+                    Locus = RootCauseLoci.Model,
+                    Statement = Part("a writer hypothesis"),
+                    For = new List<string> { Part("the evidence for it") },
+                    Against = new List<string> { Part("the evidence against it") },
+                    RefutedIf = Part("what would refute it"),
+                    Confidence = RootCauseGrades.Low
+                })
+                .ToList();
+        }
+
         if (spec.RequiresQuestionTopics)
         {
-            output.QuestionTopics = sheet.Questions
-                .Select(q => q.Number)
+            var topics = spec.IsRootCauseAnalysis
+                ? cited
+                : sheet.Questions.Select(q => q.Number);
+            output.QuestionTopics = topics
                 .Distinct()
                 .OrderBy(n => n)
                 .Select(n => new BenchmarkReportQuestionTopic { Question = n, Topic = TopicText })

@@ -16,8 +16,8 @@ using Overseer.Services.Benchmarking.Pdf;
 /// under both namings, so a named and an anonymized copy can be matched. A copy covering a subset of
 /// the comparison says so, and counts the comparison's other models without naming them. From format
 /// version 14 a document also sets every model against its reference model, marking the reference and
-/// the baseline model in its tables, lists the notable findings code detected, and prints each model's
-/// failure profile; a document stored earlier renders without them.
+/// the baseline model in its tables and lists the notable findings code detected; a document stored
+/// earlier renders without them.
 /// </summary>
 public static partial class BenchmarkReportPackRenderer
 {
@@ -75,12 +75,11 @@ public static partial class BenchmarkReportPackRenderer
             case BenchmarkReportAudience.ExecutiveSummary:
                 ComparisonExecutiveSummary(sb, ctx);
                 break;
-            case BenchmarkReportAudience.TechnicalReport:
-                ComparisonTechnicalReport(sb, ctx);
+            case BenchmarkReportAudience.RootCauseAnalysis:
+                RenderRootCauseAnalysis(sb, ctx);
                 break;
             default:
-                ComparisonInternalBrief(sb, ctx);
-                break;
+                throw new NotSupportedException($"A {AudienceName(ctx.Document.Audience)} is not written for comparison documents.");
         }
     }
 
@@ -128,119 +127,6 @@ public static partial class BenchmarkReportPackRenderer
         }
 
         ComparisonAboutBenchmark(sb, ctx);
-    }
-
-    private static void ComparisonTechnicalReport(StringBuilder sb, Context ctx)
-    {
-        ComparisonTitleBlock(sb, ctx);
-
-        Heading(sb, "## Abstract");
-        Slot(sb, ctx, BenchmarkReportSlots.Abstract);
-
-        ComparisonSetup(sb, ctx);
-
-        Heading(sb, "## Results");
-        ResultsTable(sb, ctx);
-        Figures(sb, ctx, BenchmarkReportChartAnchor.ComparisonResults);
-        Slot(sb, ctx, BenchmarkReportSlots.Results);
-        PairedTestsSection(sb, ctx, "### Paired tests");
-        ReferenceSection(sb, ctx, "### ", full: true);
-        ComparisonAvailabilityTable(sb, ctx);
-        Figures(sb, ctx, BenchmarkReportChartAnchor.ProviderAvailability);
-
-        NotableSection(sb, ctx, "## Notable findings", withSlot: true);
-
-        Heading(sb, "## Dimension profiles");
-        DimensionsTable(sb, ctx);
-        Figures(sb, ctx, BenchmarkReportChartAnchor.DimensionProfiles);
-        Slot(sb, ctx, BenchmarkReportSlots.DimensionProfiles);
-
-        Heading(sb, "## Speed and cost frontier");
-        SpeedAndCostTable(sb, ctx);
-        FrontierLines(sb, ctx);
-        Figures(sb, ctx, BenchmarkReportChartAnchor.SpeedAndCostFrontier);
-        Slot(sb, ctx, BenchmarkReportSlots.Frontier);
-
-        Heading(sb, "## Per-model analysis");
-        ModelPoints(sb, ctx, headingLevel: 3);
-
-        WhyModelsDiffer(sb, ctx);
-
-        Heading(sb, "## Cross-model question patterns");
-        Slot(sb, ctx, BenchmarkReportSlots.QuestionPatterns);
-        MatrixTable(sb, ctx, "### Per-question matrix");
-
-        Heading(sb, "## Grader reliability");
-        GraderTable(sb, ctx);
-        Slot(sb, ctx, BenchmarkReportSlots.GraderReliability);
-
-        ComparisonThreats(sb, ctx);
-        ComparisonReproducibility(sb, ctx);
-
-        if (ctx.Options.Disclosure >= BenchmarkReportDisclosure.Detailed)
-        {
-            ComparisonQuestionDetails(sb, ctx, grading: ctx.Options.Disclosure == BenchmarkReportDisclosure.Full, level: 2);
-        }
-    }
-
-    private static void ComparisonInternalBrief(StringBuilder sb, Context ctx)
-    {
-        ComparisonTitleBlock(sb, ctx);
-
-        Heading(sb, "## Models compared");
-        ModelsTable(sb, ctx);
-        Figures(sb, ctx, BenchmarkReportChartAnchor.ModelsCompared);
-
-        Heading(sb, "## 1. Shared gaps");
-        Slot(sb, ctx, BenchmarkReportSlots.SharedGaps);
-
-        Heading(sb, "## 2. Model-specific gaps");
-        Slot(sb, ctx, BenchmarkReportSlots.ModelGaps);
-        if (HasProfiles(ctx))
-        {
-            Heading(sb, "### Failure profile");
-            FailureProfileTable(sb, ctx);
-        }
-
-        Heading(sb, "## 3. The benchmarking system");
-        Slot(sb, ctx, BenchmarkReportSlots.BenchmarkSystem);
-        PairedTestsSection(sb, ctx, "### Paired tests");
-
-        // A sheet that keeps notable findings (format version 14) numbers them 4 and every later section one higher.
-        int section = 4;
-        if (ctx.Sheet.NotableFindings != null)
-        {
-            NotableSection(sb, ctx, "## " + Inv(section++) + ". Notable findings", withSlot: false);
-        }
-
-        Heading(sb, "## " + Inv(section++) + ". Leads");
-        Line(sb, "*" + LeadsBanner + "*");
-        Line(sb);
-        if (ctx.Writer.Leads.Count == 0)
-        {
-            Line(sb, "No leads were recorded.");
-        }
-        foreach (var lead in ctx.Writer.Leads)
-        {
-            string evidence = EvidenceText(ctx, lead);
-            Line(sb, "- **[" + lead.Triage + "]** " + Prose(ctx, lead.Text) + (evidence.Length > 0 ? " *(evidence: " + evidence + ")*" : string.Empty));
-        }
-        Line(sb);
-
-        MatrixTable(sb, ctx, "## " + Inv(section++) + ". Per-question matrix");
-        ComparisonQuestionDetails(sb, ctx, grading: true, level: 3);
-
-        Heading(sb, "## " + Inv(section) + ". Fact sheet");
-        if (!ctx.Options.IncludeFactSheet)
-        {
-            Line(sb, FactSheetElsewhere);
-            Line(sb);
-            return;
-        }
-        Line(sb, "```json");
-        Line(sb, BenchmarkReportJson.SerializeSorted(ctx.Anonymized ? ComparisonAnonymizedSheet(ctx) : ctx.Sheet));
-        Line(sb, "```");
-        Line(sb);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -818,13 +704,13 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
     }
 
-    private static void ComparisonSetup(StringBuilder sb, Context ctx)
+    private static void ComparisonSetup(StringBuilder sb, Context ctx, string heading = "## Setup and method")
     {
         var sheet = ctx.Sheet;
         var models = OrderedPeers(sheet);
         string first = models.Count > 0 ? models[0].Letter : "A";
 
-        Heading(sb, "## Setup and method");
+        Heading(sb, heading);
         Line(sb, "- **" + (IsBatteryComparison(ctx) ? "Battery" : "Suite") + ":** " + sheet.SuiteName + ", " + Inv(sheet.Questions.Count) + " questions in the per-question matrix.");
         Line(sb, "- **Coverage:** " + (CoverageText(ctx) ?? "every model of " + ComparisonNameText(ctx) + " that is not excluded."));
         Line(sb, "- **" + Label("config.chat") + ":** " + SharedOrPerModel(ctx, "config.chat"));
@@ -953,8 +839,6 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "- " + caveat);
         }
         Line(sb);
-
-        OptionalSlot(sb, ctx, BenchmarkReportSlots.Limitations);
     }
 
     /// <summary>
@@ -1011,12 +895,16 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// The questions whose text the writer was given: the question, and at Full its rubric; then each
     /// answer the writer was given as an excerpt, under its model, as the excerpt at Detailed and whole
-    /// at Full, with the graders and the claim verifier.
+    /// at Full, with the graders and the claim verifier. <paramref name="only"/>, when given, keeps the
+    /// questions it holds.
     /// </summary>
-    private static void ComparisonQuestionDetails(StringBuilder sb, Context ctx, bool grading, int level)
+    private static void ComparisonQuestionDetails(StringBuilder sb, Context ctx, bool grading, int level, IReadOnlySet<int>? only = null)
     {
         string prefix = new('#', level);
-        var questions = (ctx.Content.Questions ?? new List<BenchmarkReportContentQuestion>()).OrderBy(q => q.Number).ToList();
+        var questions = (ctx.Content.Questions ?? new List<BenchmarkReportContentQuestion>())
+            .Where(q => only == null || only.Contains(q.Number))
+            .OrderBy(q => q.Number)
+            .ToList();
         if (questions.Count == 0) return;
 
         Heading(sb, prefix + (grading ? " Question details" : " Questions and answers"));
@@ -1231,13 +1119,15 @@ public static partial class BenchmarkReportPackRenderer
         + "below it; they are not tests. May mislead per 20: answers with an accuracy level below 4 or a critical error, per 20 answers. "
         + "Time and cost ratios: the model's median answer time and cost per question divided by the reference's.";
 
-    private const string FailureProfileNote = "Counted over each model's scored answers in all its runs; in a panel run a level is the mean "
-        + "of both panel members' levels. May mislead: an accuracy level below 4 or a critical error. Outcomes are recorded from scoring "
-        + "method 13. Low levels: answers at level 2 or below on each dimension. Output defects: an empty, truncated or scrubbed answer, "
-        + "reasoning bleed, repeated fragments, or an answer that did not complete normally. Tool-limit hits: the tool budget or the "
-        + "iteration limit was reached. An isolated miss is a question the model scored 50 or less where the other models' median is 75 or "
-        + "more; a shared miss is one it scored below 50 along with at least half the others. Lowest scorer: questions where no other model "
-        + "scored lower. The counts say what the graders recorded, not why.";
+    private const string FailureProfileOutcomesNote = "Counted over each model's scored answers in all its runs; in a panel run a level is "
+        + "the mean of both panel members' levels. May mislead: an accuracy level below 4 or a critical error. Outcomes are recorded from "
+        + "scoring method 13. Low levels: answers at level 2 or below on each dimension.";
+
+    private const string FailureProfileSignalsNote = "Output defects: an empty, truncated or scrubbed answer, reasoning bleed, repeated "
+        + "fragments, or an answer that did not complete normally. Tool-limit hits: the tool budget or the iteration limit was reached. An "
+        + "isolated miss is a question the model scored 50 or less where the other models' median is 75 or more; a shared miss is one it "
+        + "scored below 50 along with at least half the others. Lowest scorer: questions where no other model scored lower. The counts say "
+        + "what the graders recorded, not why.";
 
     private const string FindingsTableNote = "Of each model's runs whose final synthesis holds structured findings, how many raised a weakness "
         + "of each category, by either panel member. A category says what the graders charged, not why.";
@@ -1351,32 +1241,6 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
     }
 
-    /// <summary>
-    /// Every notable finding as a bullet, or that nothing was detected, then the rules that detect them
-    /// and, with <paramref name="withSlot"/> and at least one finding, the writer's slot. Nothing on a
-    /// sheet stored before format version 14.
-    /// </summary>
-    private static void NotableSection(StringBuilder sb, Context ctx, string heading, bool withSlot)
-    {
-        var findings = ctx.Sheet.NotableFindings;
-        if (findings == null) return;
-
-        Heading(sb, heading);
-        if (findings.Count == 0)
-        {
-            Line(sb, BenchmarkNotableFindings.NothingDetected);
-        }
-        foreach (var finding in findings.OrderBy(f => f.Number))
-        {
-            Line(sb, "- " + NotableText(ctx, finding));
-        }
-        Line(sb);
-        Line(sb, "*" + BenchmarkNotableFindings.RulesNote + "*");
-        Line(sb);
-
-        if (withSlot && findings.Count > 0) OptionalSlot(sb, ctx, BenchmarkReportSlots.NotableFindings);
-    }
-
     /// <summary>A notable finding's sentence as this copy prints it, from its <c>notable.&lt;n&gt;.summary</c> fact.</summary>
     private static string NotableText(Context ctx, BenchmarkReportNotableFinding finding)
         => Fact(ctx, "notable." + Inv(finding.Number) + ".summary") is { Available: true } fact
@@ -1384,64 +1248,90 @@ public static partial class BenchmarkReportPackRenderer
             : SheetText(ctx, finding.Summary);
 
     /// <summary>
-    /// <c>Why the models differ</c>: the failure profile table, the grader findings by category, and the
-    /// writer's slot. Nothing on a sheet without failure profiles.
+    /// Each covered model's failure profile counts, one row per model, as two tables of at most nine columns
+    /// each so that both stay readable on a printed page: the outcomes, then the failure signals, each under
+    /// a bold lead-in and followed by the part of the note it needs.
     /// </summary>
-    private static void WhyModelsDiffer(StringBuilder sb, Context ctx)
-    {
-        if (!HasProfiles(ctx)) return;
-
-        Heading(sb, "## Why the models differ");
-        Heading(sb, "### Failure profile");
-        FailureProfileTable(sb, ctx);
-        Heading(sb, "### Grader findings by category");
-        FindingsTable(sb, ctx);
-        OptionalSlot(sb, ctx, BenchmarkReportSlots.WhyModelsDiffer);
-    }
-
-    /// <summary>Each covered model's failure profile counts, one row per model.</summary>
     private static void FailureProfileTable(StringBuilder sb, Context ctx)
     {
-        var header = ModelColumns(ctx);
-        header.AddRange(new[]
+        Line(sb, "**Outcomes**");
+        Line(sb);
+        var outcomes = ModelColumns(ctx);
+        outcomes.AddRange(new[]
         {
             "Answers", "May mislead", "Correct / partial / incorrect / not attempted", "Wrong instead of abstaining",
-            "Level 2 or below: accuracy / completeness / conciseness / readability", "Truncated", "Output defects", "No tool call",
-            "Tool-limit hits", "Median answer length", "Isolated / shared misses", "Lowest scorer"
+            "Level 2 or below: accuracy / completeness / conciseness / readability"
         });
-        TableHeaderOf(sb, header);
-
+        TableHeaderOf(sb, outcomes);
         foreach (var peer in OrderedPeers(ctx.Sheet))
         {
-            string p = ModelKey(peer.Letter, BenchmarkComparisonModelProfile.KeyPrefix);
-            double? Value(string key) => NumberOf(Fact(ctx, p + key));
-            string Count(string key) => Value(key) is double v ? Inv((int)v) : NoValue;
-            string Joined(params string[] keys)
-            {
-                var values = keys.Select(Value).ToList();
-                return values.All(v => v.HasValue) ? string.Join(" / ", values.Select(v => Inv((int)v!.Value))) : NoValue;
-            }
-
-            string mislead = Value("mayMislead") is double count
-                ? Inv((int)count) + (Value("mayMisleadPer20") is double per ? " (" + BenchmarkReportFormat.CompactDecimal(per) + " per 20)" : string.Empty)
+            var profile = new ProfileCells(ctx, peer.Letter);
+            string mislead = profile.Value("mayMislead") is double count
+                ? Inv((int)count) + (profile.Value("mayMisleadPer20") is double per ? " (" + BenchmarkReportFormat.CompactDecimal(per) + " per 20)" : string.Empty)
                 : NoValue;
-            string wrong = Value("outcome.wrongInsteadOfAbstaining") is double rate ? BenchmarkReportFormat.Percent(rate * 100) : NoValue;
-            string length = Value("answerChars.median") is double chars ? BenchmarkReportFormat.Count(chars) : NoValue;
+            string wrong = profile.Value("outcome.wrongInsteadOfAbstaining") is double rate ? BenchmarkReportFormat.Percent(rate * 100) : NoValue;
 
             var cells = ModelCells(ctx, peer);
             cells.AddRange(new[]
             {
-                Count("answers"), mislead,
-                Joined("outcome.correct", "outcome.partial", "outcome.incorrect", "outcome.notAttempted"), wrong,
-                Joined("deficit.accuracy", "deficit.completeness", "deficit.conciseness", "deficit.readability"),
-                Count("truncated"), Count("outputDefects"), Count("noToolAnswers"), Count("toolLimitHits"), length,
-                Joined("isolatedMisses", "sharedMisses"), Count("lowestScorer")
+                profile.Count("answers"), mislead,
+                profile.Joined("outcome.correct", "outcome.partial", "outcome.incorrect", "outcome.notAttempted"), wrong,
+                profile.Joined("deficit.accuracy", "deficit.completeness", "deficit.conciseness", "deficit.readability")
             });
             Line(sb, "| " + string.Join(" | ", cells) + " |");
         }
         Line(sb);
-        Line(sb, "*" + FailureProfileNote + "*");
+        Line(sb, "*" + FailureProfileOutcomesNote + "*");
         Line(sb);
+
+        Line(sb, "**Signals**");
+        Line(sb);
+        var signals = ModelColumns(ctx);
+        signals.AddRange(new[]
+        {
+            "Truncated", "Output defects", "No tool call", "Tool-limit hits", "Median answer length", "Isolated / shared misses", "Lowest scorer"
+        });
+        TableHeaderOf(sb, signals);
+        foreach (var peer in OrderedPeers(ctx.Sheet))
+        {
+            var profile = new ProfileCells(ctx, peer.Letter);
+            string length = profile.Value("answerChars.median") is double chars ? BenchmarkReportFormat.Count(chars) : NoValue;
+
+            var cells = ModelCells(ctx, peer);
+            cells.AddRange(new[]
+            {
+                profile.Count("truncated"), profile.Count("outputDefects"), profile.Count("noToolAnswers"), profile.Count("toolLimitHits"), length,
+                profile.Joined("isolatedMisses", "sharedMisses"), profile.Count("lowestScorer")
+            });
+            Line(sb, "| " + string.Join(" | ", cells) + " |");
+        }
+        Line(sb);
+        Line(sb, "*" + FailureProfileSignalsNote + "*");
+        Line(sb);
+    }
+
+    /// <summary>The cells of one model's failure profile facts (<c>model.X.profile.*</c>, or a per-model sheet's <c>profile.*</c>).</summary>
+    private sealed class ProfileCells
+    {
+        private readonly Context _ctx;
+        private readonly string _prefix;
+
+        /// <summary>A comparison-scope model's profile by its letter; a per-model sheet's own with a null letter.</summary>
+        public ProfileCells(Context ctx, string? letter)
+        {
+            _ctx = ctx;
+            _prefix = letter == null ? BenchmarkComparisonModelProfile.KeyPrefix : ModelKey(letter, BenchmarkComparisonModelProfile.KeyPrefix);
+        }
+
+        public double? Value(string key) => NumberOf(Fact(_ctx, _prefix + key));
+
+        public string Count(string key) => Value(key) is double v ? Inv((int)v) : NoValue;
+
+        public string Joined(params string[] keys)
+        {
+            var values = keys.Select(Value).ToList();
+            return values.All(v => v.HasValue) ? string.Join(" / ", values.Select(v => Inv((int)v!.Value))) : NoValue;
+        }
     }
 
     /// <summary>
@@ -1569,7 +1459,7 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// The Report for AI Researchers and Developers' per-model provider availability: valid attempts,
+    /// The per-model provider availability: valid attempts,
     /// provider errors, the rate with its interval, unattributed errors and re-runs needed, with the
     /// footnote defining the classes and the denominator; nothing on a sheet without the availability facts.
     /// </summary>

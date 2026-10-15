@@ -90,8 +90,8 @@ public class BenchmarkBatteryRun
     // Report writer.
     //
     // Null means no AI-written battery-completion documents are written automatically. When set, the
-    // configuration writes the battery run's Executive Summary and Report for AI Researchers and
-    // Developers once, after the battery finishes and its analysis is complete. Members are launched
+    // configuration writes the battery run's Executive Summary and Root Cause Analysis once, after
+    // the battery finishes and its analysis is complete. Members are launched
     // with no writer. Attribution only, not a foreign key.
     public long? ReportWriterModelConfigurationId { get; set; }
 

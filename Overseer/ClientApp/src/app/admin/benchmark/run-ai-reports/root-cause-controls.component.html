@@ -1,0 +1,66 @@
+<!--
+  The Root Cause Analysis' controls: before it is written, which earlier runs of other models it will
+  read (or none, with Set up a control run); after, whether more qualify now, with Rewrite with controls.
+-->
+<section class="rcc" [attr.aria-labelledby]="idPrefix + '-title'" [attr.aria-busy]="loading ? 'true' : null">
+  <h6 class="rcc-title" [id]="idPrefix + '-title'">Controls</h6>
+  <div class="rcc-live" role="status">
+    @if (loadError) {
+      <p class="gh-field-error rcc-error">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        <span>{{ loadError }}</span>
+      </p>
+    } @else if (!fresh) {
+      <p class="rcc-note">Looking up earlier runs of other models on these questions…</p>
+    } @else if (beforeWriting) {
+      <p class="rcc-line" [class.is-none]="controls.length === 0">{{ controlsLine }}</p>
+      @if (limitText) {
+        <p class="rcc-note rcc-limit">{{ limitText }}</p>
+      }
+    } @else {
+      <p class="rcc-line rcc-used">{{ usedLine }}</p>
+      @if (newControls.length > 0) {
+        <p class="rcc-line rcc-new" [id]="idPrefix + '-new'">New controls available since this document was written ({{ newControlsText }}).</p>
+      }
+    }
+  </div>
+
+  @if (loadError) {
+    <button type="button" class="btn-link rcc-retry" (click)="load()">Try again<span class="visually-hidden">: controls of {{ subjectRef }}</span></button>
+  }
+
+  @if (fresh && beforeWriting && offersControlRun) {
+    <div class="rcc-actions">
+      <button type="button" class="btn-ghost rcc-set-up"
+              [attr.aria-disabled]="controlRunUnavailable ? 'true' : null"
+              [attr.aria-describedby]="controlRunUnavailable ? idPrefix + '-control-unavailable' : (setUpRefusal ? idPrefix + '-control-refusal' : null)"
+              (click)="setUpControlRun()">Set up a control run<span class="visually-hidden"> for {{ subjectRef }} — fills Run Benchmark, starts nothing</span></button>
+      @if (controlRunUnavailable) {
+        <p class="rcc-note" [id]="idPrefix + '-control-unavailable'">{{ controlRunUnavailable }}</p>
+      }
+      @if (setUpRefusal) {
+        <p class="gh-field-error rcc-refusal" [id]="idPrefix + '-control-refusal'" role="status">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ setUpRefusal }}</span>
+        </p>
+      }
+    </div>
+  }
+
+  @if (fresh && !beforeWriting && newControls.length > 0) {
+    <div class="rcc-actions">
+      <button type="button" class="btn-ghost rcc-rewrite"
+              [attr.aria-disabled]="busy ? 'true' : null"
+              [attr.aria-describedby]="busy ? idPrefix + '-busy' : idPrefix + '-new'"
+              (click)="requestRewrite()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        Rewrite with controls
+      </button>
+      @if (busy) {
+        <p class="rcc-note" [id]="idPrefix + '-busy'">{{ busyReason }}</p>
+      }
+    </div>
+  }
+
+  <p class="rcc-note rcc-several">{{ severalModelsNote }}</p>
+</section>

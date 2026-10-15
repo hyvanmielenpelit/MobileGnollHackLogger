@@ -45,14 +45,12 @@ export function reportScopeLabel(value: string): string {
 
 /**
  * A Report Pack document's kind in a file name, as the server's `BenchmarkPdfFileNames.KindSlug` spells
- * it: `executive-summary`, `researcher-report` or `internal-brief`; `provider-issue-report` for the
- * Provider Issue Report.
+ * it: `executive-summary` or `root-cause-analysis`; `provider-issue-report` for the Provider Issue Report.
  */
 export function reportKindSlug(audience: BenchmarkReportAudience): string {
   switch (audience) {
     case BenchmarkReportAudience.ExecutiveSummary: return 'executive-summary';
-    case BenchmarkReportAudience.TechnicalReport: return 'researcher-report';
-    case BenchmarkReportAudience.InternalBrief: return 'internal-brief';
+    case BenchmarkReportAudience.RootCauseAnalysis: return 'root-cause-analysis';
     case BenchmarkReportAudience.ProviderIssueReport: return 'provider-issue-report';
     default: return safeFileName(BenchmarkReportAudience[audience] ?? String(audience));
   }
@@ -89,31 +87,24 @@ export interface ReportPackAudienceOption {
   readonly checkedByDefault: boolean;
 }
 
-export const REPORT_PACK_AUDIENCES: readonly ReportPackAudienceOption[] = [
-  {
-    audience: BenchmarkReportAudience.ExecutiveSummary,
-    label: 'Executive Summary',
-    shortLabel: 'Executive',
-    description: 'For a non-specialist at the model’s provider, or a manager: plain language, short.',
-    checkedByDefault: true
-  },
-  {
-    audience: BenchmarkReportAudience.TechnicalReport,
-    label: 'Report for AI Researchers and Developers',
-    shortLabel: 'Researchers',
-    description: 'For AI researchers and model developers: figures against the peers, strengths, weaknesses and recommendations.',
-    checkedByDefault: true
-  },
-  {
-    audience: BenchmarkReportAudience.InternalBrief,
-    label: 'Internal Improvement Brief',
-    shortLabel: 'Internal',
-    description: 'For the Overseer team: what to improve in the chat, the benchmark and the model. Internal only, at Full disclosure.',
-    checkedByDefault: false
-  }
-];
+export const EXECUTIVE_SUMMARY_OPTION: ReportPackAudienceOption = {
+  audience: BenchmarkReportAudience.ExecutiveSummary,
+  label: 'Executive Summary',
+  shortLabel: 'Executive',
+  description: 'For a non-specialist at the model’s provider, or a manager: plain language, short.',
+  checkedByDefault: true
+};
 
-/** The document a chat consistency analysis writes for the model's provider; the Reports form never offers it. */
+/** Why the models scored, ran and cost as they did; every scope but chat consistency. */
+export const ROOT_CAUSE_ANALYSIS_OPTION: ReportPackAudienceOption = {
+  audience: BenchmarkReportAudience.RootCauseAnalysis,
+  label: 'Root Cause Analysis',
+  shortLabel: 'Root Cause',
+  description: 'For the Overseer team: why the Intelligence Index, speed and cost came out as they did, with hypotheses graded by evidence and the runs that would settle them. Internal only, at Full disclosure.',
+  checkedByDefault: true
+};
+
+/** The document a chat consistency analysis writes for the model's provider; chat consistency only. */
 export const PROVIDER_ISSUE_REPORT_OPTION: ReportPackAudienceOption = {
   audience: BenchmarkReportAudience.ProviderIssueReport,
   label: 'Provider Issue Report',
@@ -122,9 +113,43 @@ export const PROVIDER_ISSUE_REPORT_OPTION: ReportPackAudienceOption = {
   checkedByDefault: false
 };
 
-/** Every type a stored document can be, in list order: the Reports form's three, then the Provider Issue Report. */
+/**
+ * Where documents are written: a comparison-scope or per-model Report Pack, a run's or a battery run's
+ * AI reports tab, or a saved chat consistency analysis.
+ */
+export type ReportAudienceScope = 'comparison' | 'model' | 'run' | 'battery' | 'chatConsistency';
+
+/** The documents a comparison-scope Report Pack writes. */
+export const COMPARISON_REPORT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [EXECUTIVE_SUMMARY_OPTION, ROOT_CAUSE_ANALYSIS_OPTION];
+
+/** The documents a per-model Report Pack writes. */
+export const MODEL_REPORT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [EXECUTIVE_SUMMARY_OPTION, ROOT_CAUSE_ANALYSIS_OPTION];
+
+/** The documents a run's or a battery run's Report Writer writes. */
+export const RUN_REPORT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [EXECUTIVE_SUMMARY_OPTION, ROOT_CAUSE_ANALYSIS_OPTION];
+
+/** The documents a saved chat consistency analysis writes. */
+export const CHAT_CONSISTENCY_REPORT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [EXECUTIVE_SUMMARY_OPTION, PROVIDER_ISSUE_REPORT_OPTION];
+
+/** The documents a scope offers, in audience order. */
+export function reportAudiencesFor(scope: ReportAudienceScope): readonly ReportPackAudienceOption[] {
+  switch (scope) {
+    case 'comparison': return COMPARISON_REPORT_AUDIENCE_OPTIONS;
+    case 'model': return MODEL_REPORT_AUDIENCE_OPTIONS;
+    case 'chatConsistency': return CHAT_CONSISTENCY_REPORT_AUDIENCE_OPTIONS;
+    default: return RUN_REPORT_AUDIENCE_OPTIONS;
+  }
+}
+
+/** The audience scope of a Report Pack scope: comparison-scope or per-model. */
+export function reportPackAudienceScope(scope: BenchmarkReportScope | null | undefined): ReportAudienceScope {
+  return scope === BenchmarkReportScope.Comparison ? 'comparison' : 'model';
+}
+
+/** Every type a stored document can be, in list order: the Executive Summary, the Root Cause Analysis, then the Provider Issue Report. */
 export const REPORT_DOCUMENT_AUDIENCE_OPTIONS: readonly ReportPackAudienceOption[] = [
-  ...REPORT_PACK_AUDIENCES,
+  EXECUTIVE_SUMMARY_OPTION,
+  ROOT_CAUSE_ANALYSIS_OPTION,
   PROVIDER_ISSUE_REPORT_OPTION
 ];
 
@@ -183,6 +208,27 @@ export function formatCostUsd(cost: number | null | undefined): string {
     return '$0.00';
   }
   return cost < 0.01 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`;
+}
+
+/** An estimate from the first calls alone (`low`) to one repair turn per document (`high`); `high` is null when unknown. */
+export interface ReportCostRange {
+  readonly low: number;
+  readonly high: number | null;
+}
+
+/** `$1.04 to $2.10` when both ends are known and print differently; otherwise the first-call cost alone. */
+export function formatCostRangeUsd(low: number | null | undefined, high: number | null | undefined): string {
+  const from = formatCostUsd(low);
+  if (high === null || high === undefined || !Number.isFinite(high) || from === 'Unknown') {
+    return from;
+  }
+  const to = formatCostUsd(high);
+  return to === from ? from : `${from} to ${to}`;
+}
+
+/** Whether a range prints as two ends: both are known and print differently. */
+export function isCostRange(low: number | null | undefined, high: number | null | undefined): boolean {
+  return formatCostRangeUsd(low, high) !== formatCostUsd(low);
 }
 
 /** `2026-09-21 16:00 UTC`, from a server timestamp; one without a zone is UTC. */

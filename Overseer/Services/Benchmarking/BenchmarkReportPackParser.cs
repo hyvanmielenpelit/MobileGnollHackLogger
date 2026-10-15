@@ -21,7 +21,7 @@ public sealed class BenchmarkReportParseResult
 /// case-insensitively, unknown properties are ignored, a null or missing list is empty, a question
 /// number may be written as <c>7</c>, <c>"7"</c> or <c>"Q7"</c>, and a list element written as a bare
 /// string becomes an item with that text. Section keys equal to a known slot id apart from case are
-/// written with the slot id's casing, and <c>for</c> and <c>triage</c> are lower-cased. A number that
+/// written with the slot id's casing. A number that
 /// cannot be read becomes <c>0</c>, which no exam contains, so the validator reports it rather than
 /// the parser hiding it. Whether the result satisfies the document rules is
 /// <see cref="BenchmarkReportPackValidator"/>'s concern.</para>
@@ -39,44 +39,17 @@ public static class BenchmarkReportPackParser
         BenchmarkReportSlots.Comparison,
         BenchmarkReportSlots.Meaning,
         BenchmarkReportSlots.Confidence,
-        BenchmarkReportSlots.Abstract,
-        BenchmarkReportSlots.WhyItScored,
-        BenchmarkReportSlots.WhatWorked,
-        BenchmarkReportSlots.Limitations,
-        BenchmarkReportSlots.OverseerChat,
-        BenchmarkReportSlots.BenchmarkSystem,
-        BenchmarkReportSlots.ModelResult,
         BenchmarkReportSlots.Overview,
         BenchmarkReportSlots.WhichModel,
         BenchmarkReportSlots.TradeOffs,
         BenchmarkReportSlots.Reliability,
-        BenchmarkReportSlots.Results,
-        BenchmarkReportSlots.DimensionProfiles,
-        BenchmarkReportSlots.Frontier,
-        BenchmarkReportSlots.QuestionPatterns,
-        BenchmarkReportSlots.GraderReliability,
-        BenchmarkReportSlots.SharedGaps,
-        BenchmarkReportSlots.ModelGaps,
         BenchmarkReportSlots.AgainstReference,
-        BenchmarkReportSlots.NotableFindings,
-        BenchmarkReportSlots.WhyModelsDiffer,
         BenchmarkReportSlots.AsGoodAsBefore,
         BenchmarkReportSlots.PlayerImpact,
         BenchmarkReportSlots.OurChanges,
         BenchmarkReportSlots.ProviderChanges,
         BenchmarkReportSlots.ConfidenceAndScope,
         BenchmarkReportSlots.NextRuns,
-        BenchmarkReportSlots.QuestionAndDesign,
-        BenchmarkReportSlots.RunsAndCoverage,
-        BenchmarkReportSlots.OverseerEvents,
-        BenchmarkReportSlots.EndpointResults,
-        BenchmarkReportSlots.Attribution,
-        BenchmarkReportSlots.Robustness,
-        BenchmarkReportSlots.Reproducibility,
-        BenchmarkReportSlots.ChatFindings,
-        BenchmarkReportSlots.ChangeEffects,
-        BenchmarkReportSlots.InfrastructureIssues,
-        BenchmarkReportSlots.Actions,
         BenchmarkReportSlots.IssueSummary,
         BenchmarkReportSlots.AffectedModel,
         BenchmarkReportSlots.Timeline,
@@ -85,6 +58,15 @@ public static class BenchmarkReportPackParser
         BenchmarkReportSlots.RuledOut,
         BenchmarkReportSlots.SampleRequestIds,
         BenchmarkReportSlots.ProviderRequest,
+        BenchmarkReportSlots.Scope,
+        BenchmarkReportSlots.EvidenceIntelligence,
+        BenchmarkReportSlots.EvidenceSpeed,
+        BenchmarkReportSlots.EvidenceCost,
+        BenchmarkReportSlots.HypothesesIntelligence,
+        BenchmarkReportSlots.HypothesesSpeed,
+        BenchmarkReportSlots.HypothesesCost,
+        BenchmarkReportSlots.Conclusions,
+        BenchmarkReportSlots.Limitations,
     };
 
     /// <summary>Never throws: every failure is a result with <see cref="BenchmarkReportParseResult.Error"/> set.</summary>
@@ -148,16 +130,6 @@ public static class BenchmarkReportPackParser
 
         output.Strengths = ReadList(root, "strengths", e => ReadItem(e, new BenchmarkReportWriterItem()), t => new BenchmarkReportWriterItem { Text = t });
         output.Weaknesses = ReadList(root, "weaknesses", e => ReadItem(e, new BenchmarkReportWriterItem()), t => new BenchmarkReportWriterItem { Text = t });
-        output.Recommendations = ReadList(
-            root,
-            "recommendations",
-            e =>
-            {
-                var item = ReadItem(e, new BenchmarkReportWriterRecommendation());
-                item.For = TryGet(e, "for", out var target) ? ReadString(target).ToLowerInvariant() : string.Empty;
-                return item;
-            },
-            t => new BenchmarkReportWriterRecommendation { Text = t });
         output.QuestionTopics = ReadList(
             root,
             "questionTopics",
@@ -167,25 +139,6 @@ public static class BenchmarkReportPackParser
                 Topic = TryGet(e, "topic", out var topic) ? ReadString(topic) : string.Empty
             },
             t => new BenchmarkReportQuestionTopic { Topic = t });
-        output.QuestionNotes = ReadList(
-            root,
-            "questionNotes",
-            e => new BenchmarkReportQuestionNote
-            {
-                Question = TryGet(e, "question", out var q) ? ReadInt(q) : 0,
-                Note = TryGet(e, "note", out var note) ? ReadString(note) : string.Empty
-            },
-            t => new BenchmarkReportQuestionNote { Note = t });
-        output.Leads = ReadList(
-            root,
-            "leads",
-            e =>
-            {
-                var item = ReadItem(e, new BenchmarkReportLead());
-                item.Triage = TryGet(e, "triage", out var triage) ? ReadString(triage).ToLowerInvariant() : string.Empty;
-                return item;
-            },
-            t => new BenchmarkReportLead { Text = t });
 
         // A comparison-scope document's points per model; absent on a per-model document.
         if (TryGet(root, "models", out var models) && models.ValueKind == JsonValueKind.Array)
@@ -201,8 +154,58 @@ public static class BenchmarkReportPackParser
                 t => new BenchmarkReportModelPoints { Model = ModelLetter(t) });
         }
 
+        // A Root Cause Analysis' observations and its own hypotheses; absent on every other document.
+        if (TryGet(root, "observations", out var observations) && observations.ValueKind == JsonValueKind.Array)
+        {
+            output.Observations = ReadList(root, "observations", e => ReadItem(e, new BenchmarkReportWriterItem()), t => new BenchmarkReportWriterItem { Text = t });
+        }
+        if (TryGet(root, "writerHypotheses", out var hypotheses) && hypotheses.ValueKind == JsonValueKind.Array)
+        {
+            output.WriterHypotheses = ReadList<BenchmarkReportWriterHypothesis>(root, "writerHypotheses", ReadWriterHypothesis, t => new BenchmarkReportWriterHypothesis { Statement = t });
+        }
+
         return output;
     }
+
+    private static BenchmarkReportWriterHypothesis ReadWriterHypothesis(JsonElement element) => new()
+    {
+        Axis = TryGet(element, "axis", out var axis) ? ReadString(axis).ToLowerInvariant() : string.Empty,
+        Models = TryGet(element, "models", out var models) ? ReadStringList(models).Select(ModelToken).Where(m => m.Length > 0).ToList() : new List<string>(),
+        Locus = TryGet(element, "locus", out var locus)
+            ? locus.ValueKind == JsonValueKind.Array ? string.Join(" / ", ReadStringList(locus)) : ReadString(locus)
+            : string.Empty,
+        Statement = TryGet(element, "statement", out var statement) ? ReadString(statement) : string.Empty,
+        For = TryGet(element, "for", out var support) ? ReadTextList(support) : new List<string>(),
+        Against = TryGet(element, "against", out var against) ? ReadTextList(against) : new List<string>(),
+        RefutedIf = TryGet(element, "refutedIf", out var refuted) ? ReadString(refuted) : string.Empty,
+        Confidence = TryGet(element, "confidence", out var confidence) ? ReadString(confidence) : string.Empty,
+        Evidence = TryGet(element, "evidence", out var evidence) ? ReadStringList(evidence) : new List<string>()
+    };
+
+    /// <summary>
+    /// A model token from <c>A</c>, <c>Model A</c>, <c>{{model:A}}</c> or <c>{{peer:A}}</c>, upper-cased;
+    /// <c>subject</c> from <c>subject</c> or <c>{{subject}}</c>, ignoring case.
+    /// </summary>
+    private static string ModelToken(string text)
+    {
+        string s = text.Trim();
+        if (s.StartsWith("{{", StringComparison.Ordinal) && s.EndsWith("}}", StringComparison.Ordinal)) s = s[2..^2].Trim();
+        if (s.Equals("subject", StringComparison.OrdinalIgnoreCase)) return "subject";
+        if (s.StartsWith("peer:", StringComparison.OrdinalIgnoreCase)) return s["peer:".Length..].Trim().ToUpperInvariant();
+        return ModelLetter(s);
+    }
+
+    /// <summary>An array of strings as items; a single string as one item; anything else empty.</summary>
+    private static List<string> ReadTextList(JsonElement element) => element.ValueKind switch
+    {
+        JsonValueKind.Array => element.EnumerateArray()
+            .Where(e => e.ValueKind == JsonValueKind.String)
+            .Select(e => (e.GetString() ?? string.Empty).Trim())
+            .Where(s => s.Length > 0)
+            .ToList(),
+        JsonValueKind.String => (element.GetString() ?? string.Empty).Trim() is { Length: > 0 } s ? new List<string> { s } : new List<string>(),
+        _ => new List<string>()
+    };
 
     private static T ReadItem<T>(JsonElement element, T item) where T : BenchmarkReportWriterItem
     {

@@ -16,6 +16,7 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Agents;
+using Overseer.Services.Benchmarking.RootCause;
 using Overseer.Services.ChatConsistency;
 using Overseer.Services.Privacy;
 using Overseer.Services.Providers;
@@ -114,11 +115,14 @@ public sealed class BenchmarkReportPackPreparation
 
     /// <summary>
     /// The report-pack request a battery run's battery-completion job writes, and its estimate prices:
-    /// the battery result alone, as its own subject.
+    /// the battery result alone, as its own subject, replacing the battery-completion documents of
+    /// <paramref name="replaceDocumentIds"/> once their successors are stored.
     /// </summary>
-    public static BenchmarkReportPackRequest BatteryRequest(long batteryRunId, IEnumerable<BenchmarkReportAudience> audiences, long writerConfigId)
+    public static BenchmarkReportPackRequest BatteryRequest(long batteryRunId, IEnumerable<BenchmarkReportAudience> audiences, long writerConfigId,
+        IEnumerable<long>? replaceDocumentIds = null)
     {
         ArgumentNullException.ThrowIfNull(audiences);
+        var replace = replaceDocumentIds?.Distinct().ToList();
         return new BenchmarkReportPackRequest
         {
             RunIds = new List<long>(),
@@ -126,7 +130,8 @@ public sealed class BenchmarkReportPackPreparation
             BatteryRunIds = new List<long> { batteryRunId },
             SubjectKey = BatterySubjectKeyOf(batteryRunId),
             Audiences = audiences.ToList(),
-            WriterModelConfigurationId = writerConfigId
+            WriterModelConfigurationId = writerConfigId,
+            ReplaceDocumentIds = replace is { Count: > 0 } ? replace : null
         };
     }
 
@@ -212,8 +217,8 @@ public sealed class BenchmarkReportPackPreparation
 
         var (prep, prepRefusal) = string.Equals(subject!.SourceKind, BenchmarkBatteryModelComparison.SourceKind, StringComparison.Ordinal)
             ? await PrepareBatteryAsync(db, comparison!, subject, answerExcerptChars,
-                BatteryDetailQuestionsPerSuite(configuration), BatteryMaxPromptChars(configuration), ct)
-            : await PrepareRunsAsync(db, comparison!, subject, answerExcerptChars, ct);
+                BatteryDetailQuestionsPerSuite(configuration), BatteryMaxPromptChars(configuration), ct, configuration)
+            : await PrepareRunsAsync(db, comparison!, subject, answerExcerptChars, ct, configuration);
         if (prep == null) return (null, prepRefusal);
 
         var covered = new[] { subject.Key };
@@ -247,13 +252,18 @@ public sealed class BenchmarkReportPackPreparation
         return (subject, null);
     }
 
-    /// <summary>A run or group subject: the comparison's runs loaded with their answers, the fact sheet and the content.</summary>
+    /// <summary>
+    /// A run or group subject: the comparison's runs loaded with their answers, tool calls and candidate
+    /// telemetry, their price cards on the comparison's basis, the fact sheet and the content. A run subject
+    /// without peers (a run-completion document) also gets its root-cause controls.
+    /// </summary>
     private static async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareRunsAsync(
         ApplicationDbContext db,
         BenchmarkModelComparisonDto comparison,
         BenchmarkModelComparisonEntryDto subject,
         int answerExcerptChars,
-        CancellationToken ct)
+        CancellationToken ct,
+        IConfiguration? configuration = null)
     {
         var runIds = comparison.Entries
             .Where(e => !e.Excluded)
@@ -267,14 +277,20 @@ public sealed class BenchmarkReportPackPreparation
             .Include(r => r.Answers).ThenInclude(a => a.ToolCalls)
             .Where(r => runIds.Contains(r.Id))
             .ToListAsync(ct);
+        await AttachCandidateTelemetryAsync(db, runs, ct);
         var runsById = runs.ToDictionary(r => r.Id);
 
+        bool runCompletion = !HasPeers(comparison, subject!)
+            && string.Equals(subject.SourceKind, "Run", StringComparison.Ordinal);
         var facts = BenchmarkReportFacts.Build(new BenchmarkReportFactsInput
         {
             Comparison = comparison,
-            SubjectKey = subject!.Key,
+            SubjectKey = subject.Key,
             Runs = runsById,
-            Availability = await AvailabilityOfAsync(new BenchmarkProviderAvailabilityService(db), subject, ct)
+            Availability = await AvailabilityOfAsync(new BenchmarkProviderAvailabilityService(db), subject, ct),
+            CandidatePricing = await CandidatePricingAsync(db, runs, comparison),
+            Controls = runCompletion ? await RootCauseControls.FindAsync(db, subject.Key, ct) : null,
+            Catalog = await RootCauseNextRuns.LoadCatalogAsync(db, configuration, ct)
         });
         if (facts.Sheet == null)
         {
@@ -313,8 +329,10 @@ public sealed class BenchmarkReportPackPreparation
 
     /// <summary>
     /// A battery subject: its battery results reloaded with their persisted analyses, the subject's
-    /// member runs with their answers, the battery fact sheet and the content of the questions given in
-    /// detail. The peers' member runs are loaded without answers, for their fingerprints only.
+    /// member runs with their answers, tool calls and candidate telemetry and their price cards on the
+    /// comparison's basis, the battery fact sheet and the content of the questions given in detail. The
+    /// peers' member runs are loaded without answers, for their fingerprints only. A battery subject without
+    /// peers (a battery-completion document) also gets its root-cause controls.
     /// </summary>
     private static async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareBatteryAsync(
         ApplicationDbContext db,
@@ -323,7 +341,8 @@ public sealed class BenchmarkReportPackPreparation
         int answerExcerptChars,
         int detailQuestionsPerSuite,
         int maxPromptChars,
-        CancellationToken ct)
+        CancellationToken ct,
+        IConfiguration? configuration = null)
     {
         var batteryRunIds = comparison.Entries
             .Where(e => e.BatteryRunId.HasValue)
@@ -337,7 +356,7 @@ public sealed class BenchmarkReportPackPreparation
         var subjectRuns = await db.BenchmarkRuns
             .AsNoTracking()
             .AsSplitQuery()
-            .Include(r => r.Answers)
+            .Include(r => r.Answers).ThenInclude(a => a.ToolCalls)
             .Where(r => subjectRunIds.Contains(r.Id))
             .OrderBy(r => r.Id)
             .ToListAsync(ct);
@@ -345,7 +364,10 @@ public sealed class BenchmarkReportPackPreparation
         {
             return (null, "The subject's runs no longer exist.");
         }
+        await AttachCandidateTelemetryAsync(db, subjectRuns, ct);
 
+        bool batteryCompletion = !HasPeers(comparison, subject);
+        var batteryIds = await BatteryIdsAsync(db, subject.BatteryRunId.HasValue ? new[] { subject.BatteryRunId.Value } : Array.Empty<long>(), ct);
         var built = BenchmarkBatteryReportFacts.Build(new BenchmarkBatteryReportFactsInput
         {
             Comparison = comparison,
@@ -356,7 +378,11 @@ public sealed class BenchmarkReportPackPreparation
             AnswerExcerptChars = answerExcerptChars,
             DetailQuestionsPerSuite = detailQuestionsPerSuite,
             MaxPromptChars = maxPromptChars,
-            Availability = await AvailabilityOfAsync(new BenchmarkProviderAvailabilityService(db), subject, ct)
+            Availability = await AvailabilityOfAsync(new BenchmarkProviderAvailabilityService(db), subject, ct),
+            CandidatePricing = await CandidatePricingAsync(db, subjectRuns, comparison),
+            Controls = batteryCompletion ? await RootCauseControls.FindAsync(db, subject.Key, ct) : null,
+            Catalog = await RootCauseNextRuns.LoadCatalogAsync(db, configuration, ct),
+            BatteryId = subject.BatteryRunId is long batteryRunId ? batteryIds.GetValueOrDefault(batteryRunId) : null
         });
         if (built.Sheet == null || built.Content == null)
         {
@@ -436,11 +462,12 @@ public sealed class BenchmarkReportPackPreparation
             pairedTests ?? new BenchmarkPairedTestsService(db, comparisonService), restricted, request.PricingBasis, referenceKey, ct);
 
         bool batteries = string.Equals(comparison.SubjectKind, BenchmarkModelComparisonSubjectKinds.Batteries, StringComparison.Ordinal);
+        var catalog = await RootCauseNextRuns.LoadCatalogAsync(db, configuration, ct);
         BenchmarkComparisonReportFactsResult built;
         List<BenchmarkRun> runs;
         if (batteries)
         {
-            var (entries, batteryRuns, batteryRefusal) = await BatteryEntriesAsync(db, restricted, answerExcerptChars, BatteryDetailQuestionsPerSuite(configuration), ct);
+            var (entries, batteryRuns, batteryRefusal, pricing) = await BatteryEntriesAsync(db, restricted, answerExcerptChars, BatteryDetailQuestionsPerSuite(configuration), ct);
             if (entries == null) return (null, batteryRefusal);
             runs = batteryRuns;
             built = BenchmarkComparisonReportFacts.Build(new BenchmarkComparisonReportFactsInput
@@ -452,7 +479,9 @@ public sealed class BenchmarkReportPackPreparation
                 AllPairsFamily = allPairs,
                 PairedTestsUnavailableReason = pairedUnavailable,
                 AnswerExcerptChars = answerExcerptChars,
-                ComparisonId = comparisonId
+                ComparisonId = comparisonId,
+                CandidatePricing = pricing,
+                Catalog = catalog
             });
         }
         else
@@ -465,6 +494,7 @@ public sealed class BenchmarkReportPackPreparation
                 .Where(r => runIds.Contains(r.Id))
                 .OrderBy(r => r.Id)
                 .ToListAsync(ct);
+            await AttachCandidateTelemetryAsync(db, runs, ct);
             var availabilityService = new BenchmarkProviderAvailabilityService(db);
             var availability = new Dictionary<string, ProviderAvailabilitySummary>(StringComparer.Ordinal);
             foreach (var entry in restricted.Entries)
@@ -473,7 +503,7 @@ public sealed class BenchmarkReportPackPreparation
             }
             built = BenchmarkComparisonReportFacts.BuildFromRuns(
                 comparison, covered, runs.ToDictionary(r => r.Id), answerExcerptChars, reference, allPairs, pairedUnavailable, comparisonId, availability,
-                referenceKey);
+                referenceKey, await CandidatePricingAsync(db, runs, comparison), catalog);
         }
         if (built.Sheet == null || built.Content == null) return (null, built.Refusal ?? "The fact sheet could not be computed.");
         if (runs.Count == 0) return (null, "The covered models' runs no longer exist.");
@@ -548,26 +578,30 @@ public sealed class BenchmarkReportPackPreparation
 
     /// <summary>
     /// Each covered battery result's own battery sheet and content over the covered results: the
-    /// battery analyses loaded once, the members' answers loaded once, each result's tool-call
-    /// outcomes, and its failure profile over its member runs' answers. The prompt budget is applied
-    /// over the whole comparison, so none is applied here.
+    /// battery analyses loaded once, the members' answers, tool calls and candidate telemetry loaded once
+    /// with their price cards on the comparison's basis, each result's tool-call outcomes, and its failure
+    /// profile over its member runs' answers. The prompt budget is applied over the whole comparison, so
+    /// none is applied here.
     /// </summary>
-    private static async Task<(List<BenchmarkComparisonReportEntry>? Entries, List<BenchmarkRun> Runs, string? Refusal)> BatteryEntriesAsync(
+    private static async Task<(List<BenchmarkComparisonReportEntry>? Entries, List<BenchmarkRun> Runs, string? Refusal, IReadOnlyDictionary<long, ModelPricing?>? Pricing)> BatteryEntriesAsync(
         ApplicationDbContext db, BenchmarkModelComparisonDto restricted, int answerExcerptChars, int detailQuestionsPerSuite, CancellationToken ct)
     {
         var batteryRunIds = restricted.Entries.Where(e => e.BatteryRunId.HasValue).Select(e => e.BatteryRunId!.Value).Distinct().ToList();
         var (sources, error) = await BenchmarkBatteryModelComparison.LoadAsync(db, batteryRunIds, ct);
-        if (sources == null) return (null, new List<BenchmarkRun>(), error ?? "The battery results could not be loaded.");
+        if (sources == null) return (null, new List<BenchmarkRun>(), error ?? "The battery results could not be loaded.", null);
 
         var runIds = restricted.Entries.SelectMany(e => e.RunIds).Distinct().ToList();
         var runs = await db.BenchmarkRuns
             .AsNoTracking()
             .AsSplitQuery()
-            .Include(r => r.Answers)
+            .Include(r => r.Answers).ThenInclude(a => a.ToolCalls)
             .Where(r => runIds.Contains(r.Id))
             .OrderBy(r => r.Id)
             .ToListAsync(ct);
+        await AttachCandidateTelemetryAsync(db, runs, ct);
         var runsById = runs.ToDictionary(r => r.Id);
+        var pricing = await CandidatePricingAsync(db, runs, restricted);
+        var batteryIds = await BatteryIdsAsync(db, batteryRunIds, ct);
 
         var availabilityService = new BenchmarkProviderAvailabilityService(db);
         var entries = new List<BenchmarkComparisonReportEntry>();
@@ -584,22 +618,140 @@ public sealed class BenchmarkReportPackPreparation
                 AnswerExcerptChars = answerExcerptChars,
                 DetailQuestionsPerSuite = detailQuestionsPerSuite,
                 MaxPromptChars = 0,
-                Availability = await AvailabilityOfAsync(availabilityService, entry, ct)
+                Availability = await AvailabilityOfAsync(availabilityService, entry, ct),
+                CandidatePricing = pricing,
+                IncludeRootCause = false
             });
             if (built.Sheet == null || built.Content == null)
             {
-                return (null, runs, entry.Label + ": " + (built.Refusal ?? "The fact sheet could not be computed."));
+                return (null, runs, entry.Label + ": " + (built.Refusal ?? "The fact sheet could not be computed."), pricing);
+            }
+
+            var memberRuns = memberIds.Where(runsById.ContainsKey).OrderBy(id => id).Select(id => runsById[id]).ToList();
+            var source = sources.FirstOrDefault(s => string.Equals(s.Key, entry.Key, StringComparison.Ordinal));
+            var suiteOfRun = new Dictionary<long, int>();
+            foreach (var suite in source?.Suites ?? Array.Empty<BenchmarkBatteryComparisonSourceSuite>())
+            {
+                foreach (var run in suite.Runs) suiteOfRun.TryAdd(run.Id, suite.SuiteIndex + 1);
             }
             entries.Add(new BenchmarkComparisonReportEntry
             {
                 Entry = entry,
                 Sheet = built.Sheet,
                 Content = built.Content,
-                Profile = BenchmarkComparisonModelProfile.FromRuns(memberIds.Where(runsById.ContainsKey).OrderBy(id => id).Select(id => runsById[id]).ToList())
+                Profile = BenchmarkComparisonModelProfile.FromRuns(memberRuns),
+                Runs = memberRuns,
+                SuiteOfRun = suiteOfRun,
+                BatteryId = entry.BatteryRunId is long batteryRunId ? batteryIds.GetValueOrDefault(batteryRunId) : null
             });
         }
 
-        return (entries, runs, null);
+        return (entries, runs, null, pricing);
+    }
+
+    /// <summary>
+    /// Attaches each answer's candidate <see cref="ModelCallTelemetry"/> rows to <see cref="BenchmarkRunAnswer.ModelCalls"/>,
+    /// loaded as a projection of the columns the root-cause evidence reads, never whole rows and never a
+    /// grader's calls. An answer without rows gets an empty list.
+    /// </summary>
+    private static async Task AttachCandidateTelemetryAsync(ApplicationDbContext db, IReadOnlyCollection<BenchmarkRun> runs, CancellationToken ct)
+    {
+        var runIds = runs.Select(r => r.Id).Distinct().ToList();
+        if (runIds.Count == 0) return;
+
+        var rows = await db.ModelCallTelemetry
+            .AsNoTracking()
+            .Where(c => c.Source == ModelCallSource.BenchmarkCandidate
+                        && c.BenchmarkRunAnswerId != null
+                        && runIds.Contains(c.BenchmarkRunAnswer!.BenchmarkRunId))
+            .Select(c => new ModelCallTelemetry
+            {
+                Id = c.Id,
+                Source = c.Source,
+                BenchmarkRunAnswerId = c.BenchmarkRunAnswerId,
+                Provider = c.Provider,
+                RequestedModelId = c.RequestedModelId,
+                ServiceTierRequested = c.ServiceTierRequested,
+                ServedServiceTier = c.ServedServiceTier,
+                IsRefusal = c.IsRefusal,
+                StartedAtUtc = c.StartedAtUtc,
+                CallIndex = c.CallIndex,
+                PermitWaitMs = c.PermitWaitMs,
+                BackoffWaitMs = c.BackoffWaitMs,
+                FailedAttemptMs = c.FailedAttemptMs,
+                AttemptCount = c.AttemptCount,
+                Http429Count = c.Http429Count,
+                Http5xxCount = c.Http5xxCount,
+                FirstEventMs = c.FirstEventMs,
+                FirstReasoningMs = c.FirstReasoningMs,
+                FirstOutputMs = c.FirstOutputMs,
+                LastDeltaMs = c.LastDeltaMs,
+                CompletedMs = c.CompletedMs,
+                StreamEndMs = c.StreamEndMs,
+                VisibleOutputChars = c.VisibleOutputChars,
+                Last80DecodeSpanMs = c.Last80DecodeSpanMs,
+                Last80VisibleChars = c.Last80VisibleChars,
+                InputTokens = c.InputTokens,
+                CachedInputTokens = c.CachedInputTokens,
+                CacheWriteTokens = c.CacheWriteTokens,
+                OutputTokens = c.OutputTokens,
+                ReasoningTokens = c.ReasoningTokens
+            })
+            .ToListAsync(ct);
+
+        var byAnswer = rows
+            .GroupBy(r => r.BenchmarkRunAnswerId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderBy(r => r.CallIndex).ThenBy(r => r.StartedAtUtc).ThenBy(r => r.Id).ToList());
+        foreach (var answer in runs.SelectMany(r => r.Answers ?? new List<BenchmarkRunAnswer>()))
+        {
+            answer.ModelCalls = byAnswer.TryGetValue(answer.Id, out var calls) ? calls : new List<ModelCallTelemetry>();
+        }
+    }
+
+    /// <summary>The model catalog the price cards of the Current basis are resolved from, loaded once.</summary>
+    private static readonly Lazy<ModelMetadataService> PricingMetadata = new(() => new ModelMetadataService());
+
+    /// <summary>
+    /// Each run's candidate price card on the comparison's pricing basis, as the comparison resolves it:
+    /// today's catalog card for the Current basis, the run's stored card (else its live configuration) for
+    /// As run. A card that cannot be resolved is null, which leaves that model's cost decomposition unavailable.
+    /// </summary>
+    private static async Task<IReadOnlyDictionary<long, ModelPricing?>> CandidatePricingAsync(
+        ApplicationDbContext db, IEnumerable<BenchmarkRun> runs, BenchmarkModelComparisonDto comparison)
+    {
+        var cards = new Dictionary<long, ModelPricing?>();
+        var pricing = new ModelPricingService(PricingMetadata.Value, db);
+        bool current = BenchmarkReportFacts.PricingBasisKindOf(comparison) == BenchmarkReportFacts.PricingBasisCatalog;
+        var today = DateOnly.FromDateTime(comparison.ComputedAtUtc == default ? DateTime.UtcNow : comparison.ComputedAtUtc);
+
+        foreach (var run in runs)
+        {
+            if (cards.ContainsKey(run.Id)) continue;
+            try
+            {
+                cards[run.Id] = current
+                    ? pricing.ResolveDefault(run.TestedModelSnapshot?.Provider, run.TestedModelSnapshot?.ModelId, today)
+                    : (await pricing.ResolveForRunAsync(run)).Candidate;
+            }
+            catch (Exception)
+            {
+                // An unresolvable card costs this run's cost decomposition, never the preparation.
+                cards[run.Id] = null;
+            }
+        }
+        return cards;
+    }
+
+    /// <summary>The battery each battery run ran (<see cref="BenchmarkBatteryRun.BenchmarkBatteryId"/>), by battery run id.</summary>
+    private static async Task<Dictionary<long, long?>> BatteryIdsAsync(ApplicationDbContext db, IReadOnlyCollection<long> batteryRunIds, CancellationToken ct)
+    {
+        if (batteryRunIds.Count == 0) return new Dictionary<long, long?>();
+        var ids = batteryRunIds.ToList();
+        return await db.BenchmarkBatteryRuns
+            .AsNoTracking()
+            .Where(b => ids.Contains(b.Id))
+            .Select(b => new { b.Id, b.BenchmarkBatteryId })
+            .ToDictionaryAsync(b => b.Id, b => b.BenchmarkBatteryId, ct);
     }
 
     /// <summary>
@@ -724,7 +876,7 @@ public interface IBenchmarkRunReportWriter
     /// Writes every document on the job's list about the battery run on its own, one after another,
     /// stored with <see cref="BenchmarkReportDocumentOrigin.BatteryCompletion"/>. The job's request is
     /// replaced by <see cref="BenchmarkReportPackPreparation.BatteryRequest"/> for the battery run, the
-    /// job's documents and its writer; the job must already hold the report-pack slot. A writer that
+    /// job's documents, its writer and the documents it replaces; the job must already hold the report-pack slot. A writer that
     /// writes run-completion documents only refuses with <see cref="NotSupportedException"/>.
     /// </summary>
     Task WriteBatteryCompletionDocumentsAsync(long batteryRunId, BenchmarkReportPackJob job, CancellationToken ct)
@@ -733,9 +885,10 @@ public interface IBenchmarkRunReportWriter
 
 /// <summary>
 /// Writes report-pack documents: one writer call per document, one repair turn when validation
-/// fails, then drop-and-notice. A job writes its subjects one after another: each subject of a
-/// model-scope job, sharing one computation of the comparison, or the one covered set of a
-/// comparison-scope job, whose question topics are written once and given to its later documents.
+/// fails, then drop-and-notice; a headline that alone stays invalid is rescued from the first draft
+/// or, in comparison scope, by one headline-only turn. A job writes its subjects one after another:
+/// each subject of a model-scope job, sharing one computation of the comparison, or the one covered
+/// set of a comparison-scope job. A Root Cause Analysis gets its server-drawn charts once stored.
 /// A document that replaces another is stored first, the replaced row removed in the same save and
 /// its chart folder after it, so a failed write deletes nothing. The only class of the feature that
 /// calls a model; rendering is <see cref="BenchmarkReportRenderService"/>'s and never calls one.
@@ -757,10 +910,18 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     private readonly ILogger<BenchmarkReportPackService> _logger;
     private readonly BenchmarkReportChartStore? _charts;
     private readonly IServiceScopeFactory? _scopeFactory;
+    private readonly Charts.RootCauseChartPublisher? _rootCauseCharts;
+
+    /// <summary>The tokens a repair turn's message adds to the first call's input, for the estimates.</summary>
+    public const int RepairMessageEstimatedTokens = 1000;
 
     /// <param name="scopeFactory">
     /// Opens the scope a chat consistency job writes in once its request has ended; without one (in
     /// tests) the job runs on this instance.
+    /// </param>
+    /// <param name="rootCauseCharts">
+    /// Draws a stored Root Cause Analysis's server charts; without one, a publisher over
+    /// <paramref name="charts"/>, and none when that is absent too.
     /// </param>
     public BenchmarkReportPackService(
         ApplicationDbContext db,
@@ -774,7 +935,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         IConfiguration configuration,
         ILogger<BenchmarkReportPackService> logger,
         BenchmarkReportChartStore? charts = null,
-        IServiceScopeFactory? scopeFactory = null)
+        IServiceScopeFactory? scopeFactory = null,
+        Charts.RootCauseChartPublisher? rootCauseCharts = null)
     {
         _db = db;
         _agentLoopRunner = agentLoopRunner;
@@ -788,6 +950,19 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         _logger = logger;
         _charts = charts;
         _scopeFactory = scopeFactory;
+        _rootCauseCharts = rootCauseCharts ?? (charts != null ? new Charts.RootCauseChartPublisher(charts) : null);
+    }
+
+    /// <summary>
+    /// The estimated cost of a document's first call and one repair turn: the repair's input is the first
+    /// input, its estimated output and <see cref="RepairMessageEstimatedTokens"/>; its output the same
+    /// estimated output.
+    /// </summary>
+    public static decimal EstimateCostWithRepair(ModelPricing pricing, long inputTokens, long outputTokens)
+    {
+        ArgumentNullException.ThrowIfNull(pricing);
+        return ModelPricingService.EstimateSingleRequestCost(pricing, inputTokens, outputTokens)
+               + ModelPricingService.EstimateSingleRequestCost(pricing, inputTokens + outputTokens + RepairMessageEstimatedTokens, outputTokens);
     }
 
     /// <summary>One writer turn: the raw reply, the terminal error, and what it cost.</summary>
@@ -812,7 +987,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         ArgumentNullException.ThrowIfNull(job);
 
         job.Request = BenchmarkReportPackPreparation.BatteryRequest(
-            batteryRunId, job.Documents.Select(d => d.Audience), job.WriterConfigId);
+            batteryRunId, job.Documents.Select(d => d.Audience), job.WriterConfigId, job.Request?.ReplaceDocumentIds);
         job.SubjectKey = job.Request.SubjectKey;
         if (string.IsNullOrWhiteSpace(job.SubjectLabel))
         {
@@ -1066,7 +1241,13 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         job.SetStatus(BenchmarkReportPackJobStatus.Failed);
     }
 
-    /// <summary>Writes, validates, repairs once, drops what still fails, and persists one document. True when stored.</summary>
+    /// <summary>
+    /// Writes, validates, repairs once, drops what still fails, and persists one document. True when
+    /// stored. When the headline is the only fatal cause after the repair, the first draft's headline is
+    /// kept if it passes; otherwise, in comparison scope, one headline-only turn on the same conversation
+    /// rewrites it. Every ending records the first-turn and final issues on the progress row, and a
+    /// failure its last reply. A stored Root Cause Analysis then gets its server-drawn charts.
+    /// </summary>
     private async Task<bool> WriteDocumentAsync(
         BenchmarkReportPackJob job,
         BenchmarkReportPackDocumentProgress progress,
@@ -1083,17 +1264,12 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     {
         var audience = progress.Audience;
         bool comparisonScope = prep.Scope == BenchmarkReportScope.Comparison;
-        var spec = BenchmarkReportSlots.For(audience, prep.Scope);
         string name = BenchmarkReportRenderService.AudienceName(audience) + (state.SeveralSubjects ? " about " + prep.Sheet.SubjectLabel : string.Empty);
+
         job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Writing);
         job.AddLog($"Writing the {name} with {config.DisplayName}...");
 
-        // A comparison-scope document set writes its question topics once and gives them to its later documents.
-        var sharedTopics = comparisonScope && spec.RequiresQuestionTopics && job.SharedTopics.TryGetValue(prep.Sheet.SubjectKey, out var topics)
-            ? topics
-            : null;
-
-        var prompt = BenchmarkReportPackPrompt.Build(audience, prep.Sheet, prep.Content, sharedTopics);
+        var prompt = BenchmarkReportPackPrompt.Build(audience, prep.Sheet, prep.Content);
         var runRequest = new AgentRunRequest
         {
             ProviderName = config.Provider,
@@ -1114,92 +1290,154 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             SystemModelId = config.Id,
             PromptCacheKey = $"benchmark:report-pack:{config.ModelId}",
             CacheConversationTail = false,
-            Budget = new AgentRunBudget { MaxTotalModelCalls = 2 },
+            // First turn, repair turn, headline-only turn.
+            Budget = new AgentRunBudget { MaxTotalModelCalls = 3 },
             SeedHistory = new List<object>
             {
                 new { role = "user", content = prompt.UserMessage }
             }
         };
 
-        var first = await RunTurnAsync(job, progress, runRequest, config, pricing, ct);
-        var turns = new List<WriterTurn> { first };
-        if (first.Error != null)
+        var turns = new List<WriterTurn>();
+        IReadOnlyList<BenchmarkReportValidationNote> firstIssues = Array.Empty<BenchmarkReportValidationNote>();
+        IReadOnlyList<BenchmarkReportValidationNote> finalIssues = Array.Empty<BenchmarkReportValidationNote>();
+
+        bool Fail(string message, bool log = true)
         {
-            job.AddLog($"{name}: provider error: {first.Error}", "error");
-            job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Failed, first.Error);
-            return false;
-        }
-
-        var (output, issues) = ParseAndValidate(audience, first.FinalText, prep, sharedTopics);
-        if (issues.Count > 0)
-        {
-            job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Repairing);
-            job.AddLog($"{name}: {issues.Count} validation issue(s); sending one repair turn.", "warning");
-
-            runRequest.SeedHistory.Add(new { role = "assistant", content = first.FinalText ?? string.Empty });
-            runRequest.SeedHistory.Add(new { role = "user", content = BenchmarkReportPackPrompt.BuildRepairMessage(issues, prep.Scope) });
-
-            var repair = await RunTurnAsync(job, progress, runRequest, config, pricing, ct);
-            turns.Add(repair);
-            if (repair.Error != null)
-            {
-                job.AddLog($"{name}: provider error on the repair turn: {repair.Error}", "error");
-                if (output == null)
-                {
-                    job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Failed, repair.Error);
-                    return false;
-                }
-            }
-            else
-            {
-                var (repairedOutput, repairedIssues) = ParseAndValidate(audience, repair.FinalText, prep, sharedTopics);
-                if (repairedOutput != null)
-                {
-                    output = repairedOutput;
-                    issues = repairedIssues;
-                }
-            }
-        }
-
-        if (output == null)
-        {
-            string message = issues.FirstOrDefault()?.Message ?? "The writer's reply could not be parsed.";
-            job.AddLog($"{name}: {message}", "error");
+            if (log) job.AddLog($"{name}: {message}", "error");
+            job.SetDocumentDiagnostics(progress, firstIssues, finalIssues, LastReply(turns));
             job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Failed, message);
             return false;
         }
 
+        BenchmarkReportWriterOutput output;
         var notes = new List<BenchmarkReportValidationNote>(prep.Notes);
-        if (issues.Count > 0)
+        try
         {
-            var cleaned = BenchmarkReportPackValidator.DropInvalid(audience, output, prep.Sheet, prep.Content, sharedTopics);
-            if (cleaned.Fatal)
+            var first = await RunTurnAsync(job, progress, runRequest, config, pricing, ct);
+            turns.Add(first);
+            if (first.Error != null)
             {
-                string reason = cleaned.FatalReason ?? "Required content failed validation after the repair turn.";
-                job.AddLog($"{name}: {reason}", "error");
-                job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Failed, reason);
-                return false;
+                job.AddLog($"{name}: provider error: {first.Error}", "error");
+                return Fail(first.Error, log: false);
             }
-            output = cleaned.Output;
-            notes.AddRange(cleaned.Notes);
-            job.AddLog($"{name}: {notes.Count(n => n.Dropped)} item(s) removed by validation.", "warning");
-        }
 
-        if (comparisonScope && spec.RequiresQuestionTopics)
+            var (parsed, issues) = ParseAndValidate(audience, first.FinalText, prep);
+            var firstOutput = parsed;
+            firstIssues = issues;
+            finalIssues = issues;
+            WriterTurn? repair = null;
+            if (issues.Count > 0)
+            {
+                job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Repairing);
+                job.AddLog($"{name}: {issues.Count} validation issue(s) ({RuleCounts(issues)}); sending one repair turn.", "warning");
+
+                runRequest.SeedHistory.Add(new { role = "assistant", content = first.FinalText ?? string.Empty });
+                runRequest.SeedHistory.Add(new { role = "user", content = RepairMessage(issues, prep.Scope, parsed?.Headline) });
+
+                repair = await RunTurnAsync(job, progress, runRequest, config, pricing, ct);
+                turns.Add(repair);
+                if (repair.Error != null)
+                {
+                    job.AddLog($"{name}: provider error on the repair turn: {repair.Error}", "error");
+                    if (parsed == null) return Fail(repair.Error, log: false);
+                }
+                else
+                {
+                    var (repairedOutput, repairedIssues) = ParseAndValidate(audience, repair.FinalText, prep);
+                    if (repairedOutput != null)
+                    {
+                        parsed = repairedOutput;
+                        issues = repairedIssues;
+                        finalIssues = repairedIssues;
+                    }
+                    else if (parsed != null)
+                    {
+                        string error = repairedIssues.FirstOrDefault()?.Message ?? "the reply is not a JSON object";
+                        job.AddLog($"{name}: the repair reply could not be parsed ({error.TrimEnd('.')}); the first reply is used.", "warning");
+                    }
+                    else
+                    {
+                        finalIssues = repairedIssues;
+                    }
+                }
+            }
+
+            if (parsed == null)
+            {
+                return Fail(issues.FirstOrDefault()?.Message ?? "The writer's reply could not be parsed.");
+            }
+
+            if (issues.Count > 0)
+            {
+                var cleaned = BenchmarkReportPackValidator.DropInvalid(audience, parsed, prep.Sheet, prep.Content);
+                BenchmarkReportValidationNote? rescued = null;
+                string? fatalReason = null;
+                if (cleaned.Fatal && cleaned.HeadlineOnlyFatal)
+                {
+                    string invalid = (BlockingHeadlineIssue(audience, parsed.Headline, prep)?.Message ?? "it is not valid").TrimEnd('.');
+                    if (firstOutput != null && BlockingHeadlineIssue(audience, firstOutput.Headline, prep) == null)
+                    {
+                        // The first draft's headline passes every blocking check: it replaces the repaired one.
+                        parsed.Headline = firstOutput.Headline;
+                        cleaned = BenchmarkReportPackValidator.DropInvalid(audience, parsed, prep.Sheet, prep.Content);
+                        rescued = HeadlineRescueNote($"The repaired headline was invalid ({invalid}); the first draft's headline was kept.");
+                    }
+                    else if (comparisonScope && repair is { Error: null })
+                    {
+                        // One headline-only turn on the same conversation.
+                        var headlineIssues = BenchmarkReportPackValidator.HeadlineIssues(audience, parsed.Headline, prep.Sheet, prep.Content);
+                        int words = BenchmarkReportPackValidator.WordCount(parsed.Headline ?? string.Empty);
+                        job.AddLog($"{name}: the repaired headline is invalid ({invalid}); sending one headline-only turn.", "warning");
+                        runRequest.SeedHistory.Add(new { role = "assistant", content = repair.FinalText ?? string.Empty });
+                        runRequest.SeedHistory.Add(new { role = "user", content = BenchmarkReportPackPrompt.BuildHeadlineRepairMessage(headlineIssues, words) });
+
+                        var headlineTurn = await RunTurnAsync(job, progress, runRequest, config, pricing, ct);
+                        turns.Add(headlineTurn);
+                        var (headline, failure, rewrittenIssues) = HeadlineFromTurn(audience, headlineTurn, prep);
+                        if (headline != null)
+                        {
+                            parsed.Headline = headline;
+                            cleaned = BenchmarkReportPackValidator.DropInvalid(audience, parsed, prep.Sheet, prep.Content);
+                            rescued = HeadlineRescueNote($"The repaired headline was invalid ({invalid}); it was rewritten in a headline-only turn.");
+                        }
+                        else
+                        {
+                            fatalReason = failure;
+                            finalIssues = rewrittenIssues.Count > 0
+                                ? rewrittenIssues.Concat(cleaned.Notes.Where(n => n.Location != "headline")).ToList()
+                                : cleaned.Notes;
+                        }
+                    }
+                }
+
+                if (cleaned.Fatal)
+                {
+                    if (fatalReason == null) finalIssues = cleaned.Notes;
+                    return Fail(fatalReason ?? cleaned.FatalReason ?? "Required content failed validation after the repair turn.");
+                }
+
+                parsed = cleaned.Output;
+                notes.AddRange(cleaned.Notes);
+                job.AddLog($"{name}: {notes.Count(n => n.Dropped)} item(s) removed by validation.", "warning");
+                if (rescued != null)
+                {
+                    notes.Add(rescued);
+                    job.AddLog($"{name}: {rescued.Message}", "warning");
+                }
+                finalIssues = rescued == null ? cleaned.Notes : cleaned.Notes.Append(rescued).ToList();
+            }
+
+            output = parsed;
+        }
+        catch (OperationCanceledException)
         {
-            if (sharedTopics != null)
-            {
-                output.QuestionTopics = sharedTopics.Select(t => new BenchmarkReportQuestionTopic { Question = t.Question, Topic = t.Topic }).ToList();
-            }
-            else if (output.QuestionTopics.Count > 0)
-            {
-                job.SharedTopics[prep.Sheet.SubjectKey] = output.QuestionTopics
-                    .Select(t => new BenchmarkReportQuestionTopic { Question = t.Question, Topic = t.Topic })
-                    .ToList();
-            }
+            job.SetDocumentDiagnostics(progress, firstIssues, finalIssues);
+            throw;
         }
+        job.SetDocumentDiagnostics(progress, firstIssues, finalIssues);
 
-        // A warning note (rules 12 to 19 and 21) keeps its text but still marks the document, and so does
+        // A warning note (BenchmarkReportPackValidator.IsWarningRule) keeps its text but still marks the document, and so does
         // a chat consistency document-level note (C6 or C7 recorded against the kept text).
         bool chatConsistency = prep.Scope == BenchmarkReportScope.ChatConsistency;
         var status = notes.Any(n => n.Dropped || BenchmarkReportPackValidator.IsWarningRule(n.Rule)
@@ -1271,8 +1509,9 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         };
 
         // Replace-after-persist: the replaced rows leave in the same save that stores the new one.
-        var replaced = reportPack
-            ? await ReplacedDocumentsAsync(job, prep, audience, document.SubjectKey, comparisonKey, ct)
+        bool completion = origin is BenchmarkReportDocumentOrigin.RunCompletion or BenchmarkReportDocumentOrigin.BatteryCompletion;
+        var replaced = reportPack || completion
+            ? await ReplacedDocumentsAsync(job, prep, origin, audience, document.SubjectKey, comparisonKey, ct)
             : new List<BenchmarkReportDocument>();
         _db.BenchmarkReportDocuments.Add(document);
         _db.BenchmarkReportDocuments.RemoveRange(replaced);
@@ -1290,19 +1529,46 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 : BenchmarkReportPackDocumentStatus.CompletedWithWarnings,
             documentId: document.Id);
         job.AddLog($"{name} stored as document #{document.Id}.");
+
+        // A drawing failure is logged and never fails the stored document.
+        if (audience == BenchmarkReportAudience.RootCauseAnalysis && _rootCauseCharts != null)
+        {
+            var drawn = await _rootCauseCharts.PublishAsync(document.Id, prep.Sheet, ct);
+            if (drawn.Succeeded)
+            {
+                job.AddLog($"Root Cause Analysis: {drawn.ChartCount.ToString(System.Globalization.CultureInfo.InvariantCulture)} charts drawn.");
+            }
+            else
+            {
+                job.AddLog($"Root Cause Analysis: the charts were not drawn: {drawn.Error}", "warning");
+            }
+        }
         return true;
     }
 
     /// <summary>
-    /// The documents of <c>ReplaceDocumentIds</c> this new document replaces: Report Pack documents of
-    /// the same audience and comparison, of the same covered set (comparison scope) or subject (model scope).
+    /// The documents of <c>ReplaceDocumentIds</c> this new document replaces, always of its audience:
+    /// for a Report Pack document, Report Pack documents of the same comparison and of the same covered
+    /// set (comparison scope) or subject (model scope); for a run- or battery-completion document,
+    /// run- or battery-completion documents of the same subject.
     /// </summary>
     private async Task<List<BenchmarkReportDocument>> ReplacedDocumentsAsync(
-        BenchmarkReportPackJob job, BenchmarkReportPackPreparation prep, BenchmarkReportAudience audience,
-        string subjectKey, string comparisonKey, CancellationToken ct)
+        BenchmarkReportPackJob job, BenchmarkReportPackPreparation prep, BenchmarkReportDocumentOrigin origin,
+        BenchmarkReportAudience audience, string subjectKey, string comparisonKey, CancellationToken ct)
     {
         var ids = (job.Request.ReplaceDocumentIds ?? new List<long>()).Distinct().ToList();
         if (ids.Count == 0) return new List<BenchmarkReportDocument>();
+
+        if (origin != BenchmarkReportDocumentOrigin.ReportPack)
+        {
+            return await _db.BenchmarkReportDocuments
+                .IgnoreAutoIncludes()
+                .Where(d => ids.Contains(d.Id)
+                            && (d.Origin == BenchmarkReportDocumentOrigin.RunCompletion || d.Origin == BenchmarkReportDocumentOrigin.BatteryCompletion)
+                            && d.Audience == audience
+                            && d.SubjectKey == subjectKey)
+                .ToListAsync(ct);
+        }
 
         var candidates = await _db.BenchmarkReportDocuments
             .IgnoreAutoIncludes()
@@ -1316,6 +1582,59 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 : d.Scope == BenchmarkReportScope.Model && string.Equals(d.SubjectKey, subjectKey, StringComparison.Ordinal))
             .ToList();
     }
+
+    /// <summary>The repair turn's message: a chat consistency document's own, else the per-model or comparison one with the headline as written.</summary>
+    private static string RepairMessage(IReadOnlyList<BenchmarkReportValidationNote> issues, BenchmarkReportScope scope, string? headline)
+        => scope == BenchmarkReportScope.ChatConsistency
+            ? BenchmarkReportPackPrompt.BuildRepairMessage(issues, scope)
+            : BenchmarkReportPackPrompt.BuildRepairMessage(issues, scope == BenchmarkReportScope.Comparison, headline);
+
+    /// <summary>The issues counted by rule, ascending: <c>rule 2: 5, rule 16: 12</c>.</summary>
+    private static string RuleCounts(IEnumerable<BenchmarkReportValidationNote> issues)
+        => string.Join(", ", issues
+            .GroupBy(i => i.Rule)
+            .OrderBy(g => g.Key)
+            .Select(g => "rule " + g.Key.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                         + ": " + g.Count().ToString(System.Globalization.CultureInfo.InvariantCulture)));
+
+    /// <summary>The headline's first blocking issue, or null when it passes every blocking check.</summary>
+    private static BenchmarkReportValidationNote? BlockingHeadlineIssue(BenchmarkReportAudience audience, string? headline, BenchmarkReportPackPreparation prep)
+        => BenchmarkReportPackValidator.HeadlineIssues(audience, headline, prep.Sheet, prep.Content)
+            .FirstOrDefault(BenchmarkReportPackValidator.BlocksText);
+
+    /// <summary>The note a rescued headline leaves: rule 7 at <c>headline</c>, marked dropped so the document carries a warning.</summary>
+    private static BenchmarkReportValidationNote HeadlineRescueNote(string message)
+        => new() { Rule = 7, Location = "headline", Dropped = true, Message = message };
+
+    /// <summary>
+    /// The headline of a headline-only turn when it passes every blocking check; otherwise the reason
+    /// the document fails, with the rewritten headline's issues when it was readable.
+    /// </summary>
+    private static (string? Headline, string? Failure, IReadOnlyList<BenchmarkReportValidationNote> Issues) HeadlineFromTurn(
+        BenchmarkReportAudience audience, WriterTurn turn, BenchmarkReportPackPreparation prep)
+    {
+        if (turn.Error != null)
+        {
+            return (null, "Provider error on the headline-only turn: " + turn.Error, Array.Empty<BenchmarkReportValidationNote>());
+        }
+
+        var parsed = BenchmarkReportPackParser.Parse(turn.FinalText);
+        if (!parsed.Success || parsed.Output == null)
+        {
+            return (null, "The headline-only reply could not be parsed: " + (parsed.Error ?? "it is not a JSON object."),
+                Array.Empty<BenchmarkReportValidationNote>());
+        }
+
+        var issues = BenchmarkReportPackValidator.HeadlineIssues(audience, parsed.Output.Headline, prep.Sheet, prep.Content);
+        var blocking = issues.FirstOrDefault(BenchmarkReportPackValidator.BlocksText);
+        return blocking == null
+            ? (parsed.Output.Headline, null, issues)
+            : (null, "The headline is invalid and cannot be dropped: " + blocking.Message, issues);
+    }
+
+    /// <summary>The last raw reply of the document's turns, for a failed document's diagnostics.</summary>
+    private static string? LastReply(IReadOnlyList<WriterTurn> turns)
+        => turns.LastOrDefault(t => !string.IsNullOrEmpty(t.FinalText))?.FinalText;
 
     /// <summary>Removes a replaced document's chart folder; a failure is logged and never fails the write.</summary>
     private async Task DeleteChartFolderAsync(long documentId)
@@ -1333,8 +1652,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 
     /// <summary>The parsed output (null when unparseable) and every validation issue, a parse failure included.</summary>
     private static (BenchmarkReportWriterOutput? Output, IReadOnlyList<BenchmarkReportValidationNote> Issues) ParseAndValidate(
-        BenchmarkReportAudience audience, string? rawText, BenchmarkReportPackPreparation prep,
-        IReadOnlyList<BenchmarkReportQuestionTopic>? sharedTopics)
+        BenchmarkReportAudience audience, string? rawText, BenchmarkReportPackPreparation prep)
     {
         var parsed = BenchmarkReportPackParser.Parse(rawText);
         if (!parsed.Success || parsed.Output == null)
@@ -1349,7 +1667,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 }
             });
         }
-        return (parsed.Output, BenchmarkReportPackValidator.Validate(audience, parsed.Output, prep.Sheet, prep.Content, sharedTopics));
+        return (parsed.Output, BenchmarkReportPackValidator.Validate(audience, parsed.Output, prep.Sheet, prep.Content));
     }
 
     /// <summary>Sends the request once and records the call's usage under <see cref="UsageRoleContext"/>.</summary>
@@ -1451,7 +1769,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     public const string ChatConsistencyAlreadyWritingMessage = "The reports of this analysis are already being written.";
     public const string ChatConsistencyAllWrittenMessage = "This analysis already has every AI-written report it can have. Delete one first to write it again.";
     public const string ChatConsistencyInvalidAudienceMessage =
-        "Only the Executive Summary, the Report for AI Researchers and Developers, the Internal Improvement Brief and the Provider Issue Report are written for a chat consistency analysis.";
+        "Only the Executive Summary and the Provider Issue Report are written for a chat consistency analysis.";
     public const string ChatConsistencyNothingInProgressMessage = "No report writing is in progress for this analysis.";
     public const string ChatConsistencyAnalysisGoneMessage = "The chat consistency analysis no longer exists.";
 
@@ -1459,8 +1777,6 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     private static readonly IReadOnlyDictionary<BenchmarkReportAudience, int> ChatConsistencyOutputTokens = new Dictionary<BenchmarkReportAudience, int>
     {
         [BenchmarkReportAudience.ExecutiveSummary] = 2500,
-        [BenchmarkReportAudience.TechnicalReport] = 5500,
-        [BenchmarkReportAudience.InternalBrief] = 3500,
         [BenchmarkReportAudience.ProviderIssueReport] = 4500
     };
 
@@ -1560,12 +1876,13 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 PromptChars = chars,
                 EstimatedInputTokens = input,
                 EstimatedOutputTokens = output,
-                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.EstimateSingleRequestCost(pricing, input, output)
+                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.EstimateSingleRequestCost(pricing, input, output),
+                EstimatedCostWithRepairUsd = pricing == null ? null : (double)EstimateCostWithRepair(pricing, input, output)
             });
         }
-        estimate.EstimatedTotalCostUsd = estimate.Estimates.Count == 0 || estimate.Estimates.Any(e => e.EstimatedCostUsd == null)
-            ? null
-            : estimate.Estimates.Sum(e => e.EstimatedCostUsd!.Value);
+        bool priced = estimate.Estimates.Count > 0 && estimate.Estimates.All(e => e.EstimatedCostUsd != null);
+        estimate.EstimatedTotalCostUsd = priced ? estimate.Estimates.Sum(e => e.EstimatedCostUsd!.Value) : null;
+        estimate.EstimatedTotalCostWithRepairUsd = priced ? estimate.Estimates.Sum(e => e.EstimatedCostWithRepairUsd!.Value) : null;
         return new(StatusCodes.Status200OK, estimate);
     }
 

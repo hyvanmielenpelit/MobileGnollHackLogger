@@ -22,7 +22,7 @@ using Overseer.Tests.Helpers;
 using Xunit;
 
 /// <summary>
-/// The run-completion documents: when a finished run's three AI-written documents are written, that
+/// The run-completion documents: when a finished run's two AI-written documents are written, that
 /// they are written once, how a busy report-pack slot, the compliance guard, a missing writer and a
 /// failed document settle the run's status, that a download never reaches the writer, the restart
 /// settlement, the write-now endpoint with its document choice and same-provider acknowledgment,
@@ -36,9 +36,11 @@ public class BenchmarkRunReportDocumentServiceTests
     private static readonly BenchmarkReportAudience[] AllAudiences =
     {
         BenchmarkReportAudience.ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport,
-        BenchmarkReportAudience.InternalBrief
+        BenchmarkReportAudience.RootCauseAnalysis
     };
+
+    /// <summary>The run-completion documents whose prompt can be built and estimated today.</summary>
+    private static readonly List<BenchmarkReportAudience> EstimableAudiences = new() { BenchmarkReportAudience.ExecutiveSummary };
 
     // --- Scheduling ----------------------------------------------------------------------------------
 
@@ -74,7 +76,7 @@ public class BenchmarkRunReportDocumentServiceTests
         await h.Service.ScheduleIfDue(h.RunId);
 
         var documents = await h.DocumentsAsync();
-        Assert.Equal(3, documents.Count);
+        Assert.Equal(2, documents.Count);
         Assert.All(documents, d =>
         {
             Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, d.Origin);
@@ -87,7 +89,7 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, run.ReportDocumentsStatus);
         Assert.Null(run.ReportDocumentsMessage);
         Assert.Equal(1, h.Writer.JobCalls);
-        Assert.Equal(3, h.Writer.Calls);
+        Assert.Equal(2, h.Writer.Calls);
         Assert.Equal(h.WriterConfig.Id, h.Writer.LastWriterConfigId);
     }
 
@@ -100,8 +102,8 @@ public class BenchmarkRunReportDocumentServiceTests
         await h.Service.ScheduleIfDue(h.RunId);
 
         Assert.Equal(1, h.Writer.JobCalls);
-        Assert.Equal(3, h.Writer.Calls);
-        Assert.Equal(3, (await h.DocumentsAsync()).Count);
+        Assert.Equal(2, h.Writer.Calls);
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
     }
 
     [Fact]
@@ -163,15 +165,15 @@ public class BenchmarkRunReportDocumentServiceTests
     public async Task OneFailedDocument_FailsTheRun_KeepsTheOthers_AndWriteNowWritesOnlyTheMissingOne()
     {
         await using var h = await Harness.CreateAsync();
-        h.Writer.FailAudience = BenchmarkReportAudience.TechnicalReport;
+        h.Writer.FailAudience = BenchmarkReportAudience.RootCauseAnalysis;
 
         await h.Service.ScheduleIfDue(h.RunId);
 
         var run = await h.RunAsync();
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Failed, run.ReportDocumentsStatus);
-        Assert.StartsWith("Report for AI Researchers and Developers: ", run.ReportDocumentsMessage);
+        Assert.StartsWith("Root Cause Analysis: ", run.ReportDocumentsMessage);
         Assert.Equal(
-            new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.InternalBrief },
+            new[] { BenchmarkReportAudience.ExecutiveSummary },
             (await h.DocumentsAsync()).Select(d => d.Audience));
 
         // A failed run is not written again automatically.
@@ -182,9 +184,9 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.True(h.Service.TryStart(h.RunId, "user-1", null, false, out var completion));
         await completion.WaitAsync(TimeSpan.FromSeconds(10), Ct);
 
-        Assert.Equal(4, h.Writer.Calls);
-        Assert.Equal(new[] { BenchmarkReportAudience.TechnicalReport }, h.Writer.LastAudiences);
-        Assert.Equal(3, (await h.DocumentsAsync()).Count);
+        Assert.Equal(3, h.Writer.Calls);
+        Assert.Equal(new[] { BenchmarkReportAudience.RootCauseAnalysis }, h.Writer.LastAudiences);
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
     }
 
@@ -208,7 +210,8 @@ public class BenchmarkRunReportDocumentServiceTests
 
         await using var db = new ApplicationDbContext(h.Options);
         var render = new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance);
-        foreach (var document in await h.DocumentsAsync())
+        // The Root Cause Analysis has no renderer yet; the Executive Summary carries the check.
+        foreach (var document in (await h.DocumentsAsync()).Where(d => d.Audience == BenchmarkReportAudience.ExecutiveSummary))
         {
             var (markdown, notFound, refusal) = await render.RenderAsync(document.Id, new BenchmarkReportRenderOptions
             {
@@ -218,14 +221,14 @@ public class BenchmarkRunReportDocumentServiceTests
 
             Assert.False(notFound);
             Assert.Null(refusal);
-            Assert.Contains(document.Audience == BenchmarkReportAudience.InternalBrief ? "## 6. Fact sheet" : "## Evaluation terms", markdown);
+            Assert.Contains("## Evaluation terms", markdown);
         }
 
         Assert.Equal(calls, h.Writer.Calls);
         Assert.Empty(await db.SystemAiUsageLogs.ToListAsync(Ct));
 
         var listed = await render.ListAsync(null, h.RunId, null, Ct);
-        Assert.Equal(3, listed.Count);
+        Assert.Equal(2, listed.Count);
         Assert.All(listed, d => Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, d.Origin));
     }
 
@@ -239,7 +242,7 @@ public class BenchmarkRunReportDocumentServiceTests
         await h.Service.ScheduleIfDue(h.RunId);
 
         var documents = await h.DocumentsAsync();
-        Assert.Equal(3, documents.Count);
+        Assert.Equal(2, documents.Count);
         Assert.All(documents, d =>
         {
             Assert.True(d.SameProviderAcknowledged);
@@ -339,7 +342,7 @@ public class BenchmarkRunReportDocumentServiceTests
                 new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.ExecutiveSummary, Status = BenchmarkReportPackDocumentStatus.CompletedWithWarnings },
                 new BenchmarkReportPackDocumentProgress
                 {
-                    Audience = BenchmarkReportAudience.TechnicalReport,
+                    Audience = BenchmarkReportAudience.RootCauseAnalysis,
                     Status = BenchmarkReportPackDocumentStatus.Failed,
                     ErrorMessage = "The writer's reply could not be parsed."
                 }
@@ -350,20 +353,20 @@ public class BenchmarkRunReportDocumentServiceTests
         var (status, message) = BenchmarkRunReportDocumentService.OutcomeOf(job);
 
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Failed, status);
-        Assert.Equal("Report for AI Researchers and Developers: The writer's reply could not be parsed.", message);
+        Assert.Equal("Root Cause Analysis: The writer's reply could not be parsed.", message);
     }
 
     [Fact]
     public void OutcomeOf_ACanceledJob_IsCanceled_NotFailed()
     {
-        BenchmarkReportPackJob Canceled(BenchmarkReportPackDocumentStatus executive, BenchmarkReportPackDocumentStatus researcher)
+        BenchmarkReportPackJob Canceled(BenchmarkReportPackDocumentStatus executive, BenchmarkReportPackDocumentStatus rootCause)
         {
             var job = new BenchmarkReportPackJob
             {
                 Documents =
                 {
                     new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.ExecutiveSummary, Status = executive },
-                    new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.TechnicalReport, Status = researcher }
+                    new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.RootCauseAnalysis, Status = rootCause }
                 }
             };
             job.SetStatus(BenchmarkReportPackJobStatus.Canceled);
@@ -378,23 +381,8 @@ public class BenchmarkRunReportDocumentServiceTests
             BenchmarkRunReportDocumentService.OutcomeOf(Canceled(BenchmarkReportPackDocumentStatus.Canceled, BenchmarkReportPackDocumentStatus.Canceled)));
         Assert.Equal(
             (BenchmarkRunReportDocumentsStatus.Canceled,
-                "Canceled while writing. The Executive Summary and the Report for AI Researchers and Developers were written and are kept."),
+                "Canceled while writing. The Executive Summary and the Root Cause Analysis were written and are kept."),
             BenchmarkRunReportDocumentService.OutcomeOf(Canceled(BenchmarkReportPackDocumentStatus.CompletedWithWarnings, BenchmarkReportPackDocumentStatus.Completed)));
-
-        var three = new BenchmarkReportPackJob
-        {
-            Documents =
-            {
-                new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.ExecutiveSummary, Status = BenchmarkReportPackDocumentStatus.Completed },
-                new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.TechnicalReport, Status = BenchmarkReportPackDocumentStatus.Completed },
-                new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.InternalBrief, Status = BenchmarkReportPackDocumentStatus.Completed }
-            }
-        };
-        three.SetStatus(BenchmarkReportPackJobStatus.Canceled);
-        Assert.Equal(
-            (BenchmarkRunReportDocumentsStatus.Canceled,
-                "Canceled while writing. The Executive Summary, the Report for AI Researchers and Developers and the Internal Improvement Brief were written and are kept."),
-            BenchmarkRunReportDocumentService.OutcomeOf(three));
     }
 
     // --- Writer checks -------------------------------------------------------------------------------
@@ -472,12 +460,12 @@ public class BenchmarkRunReportDocumentServiceTests
         var run = await h.RunAsync();
         Assert.Equal(h.WriterConfig.Id, run.ReportWriterModelConfigurationId);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, run.ReportDocumentsStatus);
-        Assert.Equal(3, (await h.DocumentsAsync()).Count);
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
     }
 
     [Theory]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    [InlineData(BenchmarkReportAudience.InternalBrief)]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
+    [InlineData(BenchmarkReportAudience.RootCauseAnalysis)]
     public async Task WriteNow_WritesOnlyTheRequestedDocument_AndLeavesTheOthersMissing(BenchmarkReportAudience audience)
     {
         await using var h = await Harness.CreateAsync(withWriter: false);
@@ -508,7 +496,7 @@ public class BenchmarkRunReportDocumentServiceTests
     public async Task WriteNow_RefusesARequestedDocumentThatIsAlreadyWritten_WithConflict()
     {
         await using var h = await Harness.CreateAsync();
-        h.Writer.FailAudience = BenchmarkReportAudience.TechnicalReport;
+        h.Writer.FailAudience = BenchmarkReportAudience.RootCauseAnalysis;
         await h.Service.ScheduleIfDue(h.RunId);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Failed, await h.StatusAsync());
 
@@ -528,9 +516,9 @@ public class BenchmarkRunReportDocumentServiceTests
 
         h.Writer.FailAudience = null;
         Assert.IsType<AcceptedResult>(await h.Controller().WriteRunReportDocuments(
-            h.RunId, Request(BenchmarkReportAudience.TechnicalReport), Ct));
+            h.RunId, Request(BenchmarkReportAudience.RootCauseAnalysis), Ct));
         await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
-        Assert.Equal(3, (await h.DocumentsAsync()).Count);
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
     }
 
@@ -576,16 +564,16 @@ public class BenchmarkRunReportDocumentServiceTests
         }
 
         await WriteAsync(h.WriterConfig.Id, BenchmarkReportAudience.ExecutiveSummary);
-        await WriteAsync(secondWriterId, BenchmarkReportAudience.TechnicalReport);
+        await WriteAsync(secondWriterId, BenchmarkReportAudience.RootCauseAnalysis);
 
         var documents = await h.DocumentsAsync();
         Assert.Equal(2, documents.Count);
         var executive = documents.Single(d => d.Audience == BenchmarkReportAudience.ExecutiveSummary);
-        var researcher = documents.Single(d => d.Audience == BenchmarkReportAudience.TechnicalReport);
+        var rootCause = documents.Single(d => d.Audience == BenchmarkReportAudience.RootCauseAnalysis);
         Assert.Equal(h.WriterConfig.Id, executive.WriterConfigId);
         Assert.Equal("Claude Opus 5.5", executive.WriterDisplayName);
-        Assert.Equal(secondWriterId, researcher.WriterConfigId);
-        Assert.Equal("Gemini 3.7 Pro", researcher.WriterDisplayName);
+        Assert.Equal(secondWriterId, rootCause.WriterConfigId);
+        Assert.Equal("Gemini 3.7 Pro", rootCause.WriterDisplayName);
         Assert.Equal(2, h.Writer.JobCalls);
 
         var run = await h.RunAsync();
@@ -594,7 +582,7 @@ public class BenchmarkRunReportDocumentServiceTests
 
         // The second round's job replaced the first in the job view.
         var view = h.Service.TryGetJob(h.RunId)!;
-        Assert.Equal(new[] { BenchmarkReportAudience.TechnicalReport }, view.Audiences);
+        Assert.Equal(new[] { BenchmarkReportAudience.RootCauseAnalysis }, view.Audiences);
         Assert.Equal(secondWriterId, view.WriterConfigId);
         Assert.Equal("Google", view.WriterProvider);
     }
@@ -651,7 +639,7 @@ public class BenchmarkRunReportDocumentServiceTests
         await WaitUntilAsync(() => !h.Service.IsActive(h.RunId));
 
         var documents = await h.DocumentsAsync();
-        Assert.Equal(3, documents.Count);
+        Assert.Equal(2, documents.Count);
         Assert.All(documents, d =>
         {
             Assert.True(d.SameProviderAcknowledged);
@@ -747,7 +735,6 @@ public class BenchmarkRunReportDocumentServiceTests
             new[]
             {
                 nameof(BenchmarkReportPackDocumentStatus.Completed),
-                nameof(BenchmarkReportPackDocumentStatus.Canceled),
                 nameof(BenchmarkReportPackDocumentStatus.Canceled)
             },
             view.Job.Documents.Select(d => d.Status));
@@ -848,7 +835,7 @@ public class BenchmarkRunReportDocumentServiceTests
             Assert.Equal(FakeWriter.OutputTokensPerDocument, d.OutputTokens);
             Assert.Equal((double)FakeWriter.CostPerDocument, d.CostUsd);
         });
-        Assert.Equal(3 * FakeWriter.InputTokensPerDocument, finished.Job.InputTokens);
+        Assert.Equal(2 * FakeWriter.InputTokensPerDocument, finished.Job.InputTokens);
         Assert.Equal("Finished", h.Service.TryGetJob(secondRunId)!.Phase);
     }
 
@@ -872,7 +859,7 @@ public class BenchmarkRunReportDocumentServiceTests
 
         // The persisted status and the documents remain.
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
-        Assert.Equal(3, (await h.DocumentsAsync()).Count);
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
     }
 
     [Fact]
@@ -881,7 +868,7 @@ public class BenchmarkRunReportDocumentServiceTests
         await using var h = await Harness.CreateAsync();
         var running = new BenchmarkReportPackJob { SubjectLabel = "Other", SuiteName = "Isolation Suite", Cts = new CancellationTokenSource() };
         Assert.True(h.Jobs.TryStart(running, out _));
-        var requested = new[] { BenchmarkReportAudience.TechnicalReport };
+        var requested = new[] { BenchmarkReportAudience.RootCauseAnalysis };
 
         Assert.True(h.Service.TryStart(h.RunId, "user-1", requested, false, out var completion));
         var view = h.Service.TryGetJob(h.RunId);
@@ -910,19 +897,79 @@ public class BenchmarkRunReportDocumentServiceTests
 
         var running = new BenchmarkReportPackJob { SubjectLabel = "Other", SuiteName = "Isolation Suite", Cts = new CancellationTokenSource() };
         Assert.True(h.Jobs.TryStart(running, out _));
-        Assert.True(h.Service.TryStart(h.RunId, "user-1", new[] { BenchmarkReportAudience.TechnicalReport }, false, out var second));
+        Assert.True(h.Service.TryStart(h.RunId, "user-1", new[] { BenchmarkReportAudience.RootCauseAnalysis }, false, out var second));
         var view = h.Service.TryGetJob(h.RunId);
 
         Assert.NotNull(view);
         Assert.NotEqual("Finished", view.Phase);
-        Assert.Equal(new[] { BenchmarkReportAudience.TechnicalReport }, view.Audiences);
+        Assert.Equal(new[] { BenchmarkReportAudience.RootCauseAnalysis }, view.Audiences);
 
         running.SetStatus(BenchmarkReportPackJobStatus.Completed);
         await second.WaitAsync(TimeSpan.FromSeconds(10), Ct);
         var finished = h.Service.TryGetJob(h.RunId)!;
         Assert.Equal("Finished", finished.Phase);
-        Assert.Equal(new[] { BenchmarkReportAudience.TechnicalReport }, finished.Audiences);
+        Assert.Equal(new[] { BenchmarkReportAudience.RootCauseAnalysis }, finished.Audiences);
         Assert.Equal(2, (await h.DocumentsAsync()).Count);
+    }
+
+    // --- The Root Cause Analysis: write missing, retired audiences and controls ---------------------
+
+    [Fact]
+    public async Task WriteMissing_ForARunWithItsExecutiveSummary_WritesOnlyTheRootCauseAnalysis()
+    {
+        await using var h = await Harness.CreateAsync();
+        Assert.True(h.Service.TryStart(h.RunId, "user-1", new[] { BenchmarkReportAudience.ExecutiveSummary }, false, out var first));
+        await first.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+
+        Assert.True(h.Service.TryStart(h.RunId, "user-1", null, false, out var missing));
+        await missing.WaitAsync(TimeSpan.FromSeconds(10), Ct);
+
+        Assert.Equal(new[] { BenchmarkReportAudience.RootCauseAnalysis }, h.Writer.LastAudiences);
+        Assert.Equal(new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis },
+            (await h.DocumentsAsync()).Select(d => d.Audience).OrderBy(a => a));
+        Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public async Task WriteNow_RefusesARetiredAudience(int retired)
+    {
+        await using var h = await Harness.CreateAsync();
+        var request = new WriteRunReportDocumentsRequest
+        {
+            WriterModelConfigurationId = h.WriterConfig.Id,
+            Audiences = new List<BenchmarkReportAudience> { (BenchmarkReportAudience)retired }
+        };
+
+        var result = await h.Controller().WriteRunReportDocuments(h.RunId, request, CancellationToken.None);
+
+        var bad = Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Contains(AdminBenchmarkReportPacksController.InvalidAudienceMessage, System.Text.Json.JsonSerializer.Serialize(bad.Value));
+        Assert.Equal(0, h.Writer.JobCalls);
+    }
+
+    [Fact]
+    public async Task TheControlsEndpoint_ReturnsTheControlsPreparationUses_And404ForAnUnknownRun()
+    {
+        await using var h = await Harness.CreateAsync();
+
+        var ok = Assert.IsType<OkObjectResult>(await h.Controller().GetRunRootCauseControls(h.RunId, CancellationToken.None));
+        var dto = Assert.IsType<RootCauseControlsDto>(ok.Value);
+
+        await using var db = new ApplicationDbContext(h.Options);
+        var found = await Overseer.Services.Benchmarking.RootCause.RootCauseControls.FindAsync(db, "run:" + h.RunId, Ct);
+        Assert.Equal(found.Controls.Select(c => c.RunId), dto.Controls.Select(c => c.RunId));
+        Assert.Equal(found.Controls.Select(c => c.DateUtc), dto.Controls.Select(c => c.CompletedAtUtc));
+        Assert.Contains(dto.ControlLimit, new[] { "None", "Moderate", "Low" });
+        if (dto.Controls.Count >= 2) Assert.Null(dto.ControlRun);
+        if (dto.ControlRun != null)
+        {
+            Assert.Equal(Overseer.Services.Benchmarking.RootCause.RootCauseRunKinds.Control, dto.ControlRun.Kind);
+            Assert.Null(dto.ControlRun.ReportWriterModelConfigurationId);
+        }
+
+        Assert.IsType<NotFoundResult>(await h.Controller().GetRunRootCauseControls(987654, CancellationToken.None));
     }
 
     // --- Estimate ------------------------------------------------------------------------------------
@@ -942,17 +989,17 @@ public class BenchmarkRunReportDocumentServiceTests
                     Audiences = audiences
                 }, Ct)).Value);
 
-        var estimate = await EstimateAsync(h.WriterConfig.Id);
+        var estimate = await EstimateAsync(h.WriterConfig.Id, EstimableAudiences);
         Assert.Null(estimate.Refusal);
         Assert.Null(estimate.SameProviderWarning);
-        Assert.Equal(AllAudiences, estimate.Estimates.Select(e => e.Audience));
+        Assert.Equal(EstimableAudiences, estimate.Estimates.Select(e => e.Audience));
 
         // The preview's arithmetic over the run's own prompts: input tokens are a quarter of the characters, rounded up.
         await using (var prepDb = new ApplicationDbContext(h.Options))
         {
             var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareAsync(
                 prepDb, new BenchmarkModelComparisonService(prepDb),
-                BenchmarkRunReportDocumentService.RunRequest(h.RunId, AllAudiences, h.WriterConfig.Id),
+                BenchmarkRunReportDocumentService.RunRequest(h.RunId, EstimableAudiences, h.WriterConfig.Id),
                 BenchmarkReportPackPreparation.AnswerExcerptChars(h.Configuration), Ct, h.Configuration);
             Assert.True(prep != null, prepRefusal);
             foreach (var e in estimate.Estimates)
@@ -979,18 +1026,13 @@ public class BenchmarkRunReportDocumentServiceTests
         Assert.Equal(BenchmarkReportPackPreparation.PeerlessReportRefusal, preview.Refusal);
         Assert.Empty(preview.Estimates);
 
-        var one = await EstimateAsync(h.WriterConfig.Id, new List<BenchmarkReportAudience> { BenchmarkReportAudience.TechnicalReport });
-        Assert.Equal(
-            estimate.Estimates.Single(e => e.Audience == BenchmarkReportAudience.TechnicalReport).PromptChars,
-            Assert.Single(one.Estimates).PromptChars);
-
-        var sameProvider = await EstimateAsync(sameProviderId);
+        var sameProvider = await EstimateAsync(sameProviderId, EstimableAudiences);
         Assert.Null(sameProvider.Refusal);
         Assert.Equal("reportWriter", sameProvider.SameProviderWarning?.Role);
         Assert.Equal("GPT Sol", sameProvider.SameProviderWarning?.AssessorModelDisplayName);
-        Assert.Equal(3, sameProvider.Estimates.Count);
+        Assert.Single(sameProvider.Estimates);
 
-        var sameModel = await EstimateAsync(sameModelId);
+        var sameModel = await EstimateAsync(sameModelId, EstimableAudiences);
         Assert.Equal(BenchmarkRunReportDocumentService.ModelUnderTestMessage, sameModel.Refusal);
         Assert.Null(sameModel.SameProviderWarning);
 
@@ -1059,7 +1101,7 @@ public class BenchmarkRunReportDocumentServiceTests
         await h.UpdateRunAsync(r => r.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Writing);
         var busy = Assert.IsType<ConflictObjectResult>(await h.Controller().DeleteRunReportDocument(h.RunId, executive.Id, Ct));
         Assert.Contains("Wait for the writing to finish, or cancel it, before deleting a report.", JsonSerializer.Serialize(busy.Value));
-        Assert.Equal(4, (await h.DocumentsAsync()).Count);
+        Assert.Equal(3, (await h.DocumentsAsync()).Count);
 
         await h.UpdateRunAsync(r => r.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Completed);
         Assert.IsType<NoContentResult>(await h.Controller().DeleteRunReportDocument(h.RunId, executive.Id, Ct));

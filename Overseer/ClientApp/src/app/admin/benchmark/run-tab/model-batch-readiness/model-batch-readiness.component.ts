@@ -58,7 +58,7 @@ export const MODEL_BATCH_FINDING_RATIONALE: Readonly<Record<string, string>> = {
   'MB-A08': 'A deliberating model measured against an interactive speed target scores low on Speed Index for its class, not for its own speed.',
   'MB-A09': 'A current production model in the batch gives the others a baseline measured on the same day under the same graders.',
   'MB-A10': 'Runs compare only under the same graders, so this batch starts a new comparison for these models.',
-  'MB-A11': 'Each member gets its own documents. One document over the whole batch comes from Model Comparison once it ends.',
+  'MB-A11': 'Each member gets its own Executive Summary and Root Cause Analysis. Documents over the whole batch come from Model Comparison once it ends.',
   'MB-A12': 'A second reader that sees the first verdict tends to agree with it. A blind one is an independent check.',
   'MB-T01': 'Provider speed varies by the hour. A random order keeps any model from always getting the same hours.',
   'MB-T02': 'Provider latency changes over the day, so the speed figures of models run hours apart include the hour.',

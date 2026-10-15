@@ -87,6 +87,9 @@
           </li>
         }
       </ul>
+      @if (serverChartsNote(column); as serverNote) {
+        <p class="rcp-note rcp-server-note">{{ serverNote }}</p>
+      }
       @if (layout) {
         <details class="gh-disclosure rcp-layout" [attr.data-audience]="column.audience">
           <summary>Layout<span class="visually-hidden"> of the charts in the {{ column.label }}</span></summary>

@@ -24,7 +24,7 @@ import {
 import { ccEndpoint, ccPoint, ccTimeline } from './chat-consistency-tab.testing';
 import { CcEvent } from './chat-consistency.models';
 
-const { ExecutiveSummary, TechnicalReport, ProviderIssueReport } = BenchmarkReportAudience;
+const { ExecutiveSummary, ProviderIssueReport } = BenchmarkReportAudience;
 const DEFAULTS: CcReportChartSettings = { selection: CC_DEFAULT_REPORT_CHART_SELECTION, layout: CC_DEFAULT_REPORT_CHART_LAYOUT };
 
 /** The pixel width and height a PNG's IHDR chunk records. */
@@ -195,11 +195,11 @@ describe('chat-consistency-report-charts', () => {
       } as unknown as AdminBenchmarkService;
       const settings: CcReportChartSettings = {
         ...DEFAULTS,
-        selection: { [ExecutiveSummary]: ['cc1-quality'], [TechnicalReport]: ['cc1-quality'] }
+        selection: { [ExecutiveSummary]: ['cc1-quality'], [ProviderIssueReport]: ['cc1-quality'] }
       };
       const result = await publishCcReportCharts(failing, [
         { id: 501, audience: ExecutiveSummary },
-        { id: 502, audience: TechnicalReport }
+        { id: 502, audience: ProviderIssueReport }
       ], input, settings);
       expect(result.failed).toEqual([{ documentId: 501, message: 'Chart storage is not configured.' }]);
       expect(result.published).toEqual([{ documentId: 502, chartCount: 1 }]);

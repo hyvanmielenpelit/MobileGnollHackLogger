@@ -683,7 +683,7 @@ public class AdminBenchmarkBatteriesControllerTests
         var other = await SeedBatteryRunAsync(f, null, BenchmarkRunSeriesStatus.Completed);
         f.Db.BenchmarkReportDocuments.AddRange(
             BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.ExecutiveSummary),
-            BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.TechnicalReport),
+            BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.RootCauseAnalysis),
             BatteryReportHarness.BatteryDocument(other.Id, BenchmarkReportAudience.ExecutiveSummary));
         await f.Db.SaveChangesAsync(ct);
 
@@ -925,7 +925,7 @@ public class AdminBenchmarkBatteriesControllerTests
 
         await BatteryReportHarness.WaitUntilAsync(() => h.Writer.JobCalls == 1 && !h.Service.IsActive(h.BatteryRunId));
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, await h.StatusAsync());
-        Assert.Equal(3, (await h.DocumentsAsync()).Count);
+        Assert.Equal(BenchmarkBatteryReportDocumentService.Audiences.Count, (await h.DocumentsAsync()).Count);
     }
 
     private static async Task SetAddedAtAsync(Fixture fixture, BenchmarkRun run, DateTime addedAtUtc, bool superseded = false)
@@ -1055,7 +1055,7 @@ public class AdminBenchmarkBatteriesControllerTests
         orphaned.ReportWriterModelConfigurationId = 99;
         f.Db.BenchmarkReportDocuments.AddRange(
             BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.ExecutiveSummary),
-            BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.TechnicalReport),
+            BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.RootCauseAnalysis),
             BatteryReportHarness.BatteryDocument(orphaned.Id, BenchmarkReportAudience.ExecutiveSummary));
         await f.Db.SaveChangesAsync(ct);
 
@@ -1245,11 +1245,11 @@ public class AdminBenchmarkBatteriesControllerTests
 
         var executive = BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.ExecutiveSummary);
         executive.CostUsd = 0.40m;
-        var technical = BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.TechnicalReport);
-        technical.CostUsd = 0.35m;
+        var rootCause = BatteryReportHarness.BatteryDocument(batteryRun.Id, BenchmarkReportAudience.RootCauseAnalysis);
+        rootCause.CostUsd = 0.35m;
         var otherDocument = BatteryReportHarness.BatteryDocument(otherBatteryRun.Id, BenchmarkReportAudience.ExecutiveSummary);
         otherDocument.CostUsd = 9.00m;
-        f.Db.BenchmarkReportDocuments.AddRange(executive, technical, otherDocument);
+        f.Db.BenchmarkReportDocuments.AddRange(executive, rootCause, otherDocument);
         await f.Db.SaveChangesAsync(ct);
 
         var estimator = new BenchmarkRunCostEstimator(new FixedPricingService(

@@ -1,30 +1,38 @@
 # Report Packs — AI-Written Documents about the Models of a Comparison
 
-A **report pack** is a set of up to three documents about the models of a Model Comparison. By default
+A **report pack** is a set of up to two documents about the models of a Model Comparison. By default
 they are **comparison-wide**: one document of each type covering every model of the comparison, or a
 chosen subset of two to twelve of them, each model described as an equal (§ 15). The secondary choice is
 a **per-model** set: documents about one model, written in the context of the other models compared with
 it — at least one other, since a pack compares models (§ 1a). Every comparison is numbered, *Comparison
-#N*, and its documents carry the number (§ 15). The documents are for three different readers: a model's
-provider or a manager, AI researchers and model developers, and the Overseer team itself.
+#N*, and its documents carry the number (§ 15). The documents are for two different readers: the
+**Executive Summary** for a model's provider or a manager, and the **Root Cause Analysis** (§ 17) for
+the Overseer team and its AI agents, explaining why a model, or the compared models, did well or badly
+on intelligence, speed and cost.
 
-The same machinery also writes a run's own **run-completion documents**: the Executive Summary, the
-Report for AI Researchers and Developers and the Internal Improvement Brief about one run on its own,
-with no peers, written once after the run is scored by the report writer the run names (§ 11).
+The same machinery also writes a run's own **run-completion documents**: the Executive Summary and the
+Root Cause Analysis about one run, written once after the run is scored by the report writer the run
+names (§ 11). The Executive Summary has no peers there; the Root Cause Analysis reads earlier runs of
+other models on the same exam as **controls** (§ 17).
+
+The *Report for AI Researchers and Developers* (audience 2) and the *Internal Improvement Brief*
+(audience 3) were retired on 2026-10-15, and their stored documents deleted (§ 17, *Retirement of
+audiences 2 and 3*).
 
 A **battery result** — one model's composite over the suites of a battery — can be a subject too: of a
 pack from a comparison of battery results, and of its own **battery-completion documents**, written once
 after the battery run finishes and is analyzed (§ 14).
 
 A saved **chat consistency analysis** — one model's Overseer chat across two periods of runs — is
-written up as **Chat Consistency Report** documents, among them a fourth audience, the **Provider Issue
-Report** (§ 16).
+written up as **Chat Consistency Report** documents: the Executive Summary and the **Provider Issue
+Report** (§ 16). A chat consistency analysis has no Root Cause Analysis.
 
 This document describes the feature for developers: what each document holds, how the figures and the
 prose are kept apart, how the prose is validated, what is stored, how a stored document is rendered
 at download, how its PDF and Word copies carry charts (§ 13), how a battery result is a subject
-(§ 14), and how comparisons are numbered and written about as a whole (§ 15). §§ 1–14 describe the
-per-model documents unless they say otherwise. It is the companion to [`ai-benchmark.md`](ai-benchmark.md), which describes the harness,
+(§ 14), how comparisons are numbered and written about as a whole (§ 15), and how the Root Cause
+Analysis is computed and written (§ 17). §§ 1–14 describe the per-model documents unless they say
+otherwise. It is the companion to [`ai-benchmark.md`](ai-benchmark.md), which describes the harness,
 the run report and Model Comparison. Read that first if you have not.
 
 The one design rule behind everything below: **numbers come from code, words come from the writer, and
@@ -51,13 +59,17 @@ Implementation:
 | Deterministic Markdown rendering | `BenchmarkReportPackRenderer` (pure, static), behind `BenchmarkReportRenderService` |
 | Chart images on disk: storage, validation, manifest, loading | `BenchmarkReportChartStore` (singleton), `Overseer/Models/BenchmarkReportChartModels.cs` |
 | Which figure goes where, and the figure markers | `BenchmarkReportChartPlacement` |
+| The root-cause engine: evidence, decompositions, known facts, hypotheses, grades, next runs, controls | `Overseer/Services/Benchmarking/RootCause/` (`RootCauseEngine`, `RootCauseEvidence`, `RootCauseDecomposition`, `RootCauseStatistics`, `RootCauseKnownFacts`, `RootCauseHypotheses`, `RootCauseNextRuns`, `RootCauseControls`, `RootCauseModels`) (§ 17) |
+| The Root Cause Analysis prompt, claim support and rendering | `BenchmarkReportPackPrompt.RootCause.cs`, `RootCauseClaimSupport`, `BenchmarkReportPackRenderer.RootCause.cs` (§ 17) |
+| The server-drawn Root Cause Analysis charts | `Overseer/Services/Benchmarking/Charts/` (`RootCauseChartRenderer`, `RootCauseChartPalette`) (§§ 13, 17) |
+| Deleting the retired audiences' documents at startup | `BenchmarkReportAudienceRetirement` (§ 17) |
 | Endpoints | `AdminBenchmarkReportPacksController` (the write-now endpoint included), `AdminBenchmarkReportDocumentsController` |
 | A chat consistency analysis's fact sheet, prompt, rendering and endpoints | `BenchmarkChatConsistencyReportFacts`, `BenchmarkReportPackPrompt.ChatConsistency.cs`, `BenchmarkReportPackRenderer.ChatConsistency.cs`, `AdminChatConsistencyController` (§ 16) |
 | Golden files | `Overseer.Tests/UnitTests/Golden/ReportPack/` |
 
 ---
 
-## 1. Purpose and the Three Documents
+## 1. Purpose and the Two Documents
 
 Step 3 of the Model Comparison wizard, **Write**, starts a report pack (§ 12). Under *Whole
 comparison*, the default, it writes the comparison-wide documents of § 15. Under *One model at a time*
@@ -73,95 +85,50 @@ axis is omitted from ranking, and the fact sheet marks the affected facts unavai
 | Document | Reader | Disclosure | Skeleton |
 |---|---|---|---|
 | **Executive Summary** | A non-specialist at the model's provider, or a manager. Plain language, short sentences, no jargon | Summary or Full (§ 6) | Headline (one sentence) · key figures (with peers, the *Intelligence* line carries the rank) · *How it compares* (peers only: a code-rendered table of every entry's Intelligence Index with its interval, median answer time, cost per question and critical errors, a compact table of the subject's dimensions against the peer mean, any charts (§ 13), then a paragraph of at most 70 words on where the model stands and whether that position is established) · *What it did well* (at most 3, each at most 30 words) · *Where it fell short* (at most 3, each at most 30 words) · *What this means for use as a game assistant* (at most 90 words) · *How reliable this result is* (at most 60 words, then the code-rendered interval sentence and, with peers, the one sentence on why no pair is tested for significance) · *Evaluation terms* |
-| **Report for AI Researchers and Developers** (stored as `TechnicalReport`) | AI researchers and model developers. Precise and neutral | Any level | Headline · abstract (at most 150 words) · *Setup and method*, with a *Compared models* table when there are peers (model, provider, kind, runs, thinking level, harness version, run dates) · figures against the peers, with each peer's *Paired difference* · *Speed and cost* · *Why it scored this way* (the patterns and causes behind the weaknesses, by category, at most 300 words) then *Weaknesses* · *What worked well* (the patterns behind the strengths, at most 150 words) then *Strengths* (at most 8 of each) · question topics for every question · a note for each question more than 15 points below the peer mean or with a critical error (with no peers: scoring below 50 or with a critical error) · at most 6 recommendations for the model's next iteration — only what a model developer can change in the model — each naming the change proposed and, in a few words, the weakness it answers, with its evidence · *Threats to validity*, ending in the writer's *limitations* paragraph (at most 120 words) · *Evaluation terms* |
-| **Internal Improvement Brief** | The Overseer team and its AI agents. Direct and practical | **Full only**; internal | Headline · three parts in the order of *What the Benchmark Is For*: the Overseer chat and its tools (at most 200 words), the benchmarking system (at most 150), the model's result (at most 150, then its key figures, the code-rendered interval sentence and any charts) · strengths and weaknesses (at most 8 of each) · question topics and notes · at most 8 recommendations for the chat, the benchmark or model developers · at most 6 **leads** · the fact sheet as JSON (in the Markdown and HTML copies; the PDF and Word copies say *"The fact sheet is in the Markdown copy of this document."*) |
+| **Root Cause Analysis** (`RootCauseAnalysis`, 5) | The Overseer team and its AI agents. Evidence first, then hypotheses graded by code | **Full only**; internal | Headline · *Scope and design* (with controls, in a run- or battery-completion document) · evidence for intelligence, speed and cost, with the server-drawn charts R1–R3 · *Known facts* and the writer's observations · *Hypotheses* per axis, with chart R4 · *Conclusions* · *Next runs and checks* · *Limitations* · *Threats to validity* · *Reproducibility appendix* · *Question details* · the fact sheet as JSON (in the Markdown copy only) · *Evaluation terms*. The full specification is § 17 |
 
 The writer fills named **slots** and **lists** only; the renderer supplies every heading, table and
 figure. The slot ids are in `BenchmarkReportSlots`: `comparison`, `meaning` and `confidence` (Executive
-Summary); `abstract`, `whyItScored`, `whatWorked` and `limitations` (Report for AI Researchers and
-Developers); `overseerChat`, `benchmarkSystem` and `modelResult` (Internal Brief). The slots are
+Summary); the Root Cause Analysis slots are listed in § 17. The slots are
 **peer-aware**: `comparison` is required only when the fact sheet has peers
 (`BenchmarkReportAudienceSpec.PeerOnlySlots`, `SlotsFor(hasPeers)`), and a stand-alone reply that
-supplies it has the extra slot dropped with a rule 1 note. `limitations` is required in both forms: it
-names limitations of this data that the code-rendered *Threats to validity* lines do not already state —
-a degraded peer, a single-run subject or peer, heavy grader disagreement on particular questions, a band
-with few questions — and the prompt lists those lines so the writer does not restate them. The *Why it scored this way* categories are domain knowledge, reading
-the game state, tool use, instruction following, completeness under the concise answer style, and
-calibration; a category the data does not support is left out. The renderer prints the weaknesses list
-right after the `whyItScored` text under `### Weaknesses`, and the strengths list after `whatWorked`
-under `### Strengths`, so the writer is told to explain patterns and causes there and not to restate the
-list items.
+supplies it has the extra slot dropped with a rule 1 note.
 
 The prose is written once and must be safe at every disclosure level: the same stored output renders
 for the provider, with questions described rather than quoted and peers anonymized, and for the team at
 Full. The writer is told to write in US English (*color, behavior, analyze, center, gray, labeled,
 canceled*), and rule 12 (§ 3) checks it.
 
-**The name of audience 2.** The document for AI researchers and model developers is shown everywhere —
-dialogs, the Download Center, the rendered title, the PDF and Word metadata — as **Report for AI
-Researchers and Developers**. Its stored type is still `BenchmarkReportAudience.TechnicalReport` (2), and
-a document stored under the earlier name *Technical Report* is relabeled on display
-(`BenchmarkReportRenderService.CurrentTitle`); its file names use the label `Researcher_Report` (§ 9).
-
-**The Internal Improvement Brief is also a completion document.** From 2026-10-06 it is the third
-run-completion document of a run (§ 11) and the third battery-completion document of a battery run
-(§ 14), written in the stand-alone form beside the other two. Its `modelResult` slot asks how the
-subject performed, *"against its peers when it has them"*, so one prompt serves both forms; the
-renderer golden files `internal_standalone.md` (a run subject) and `internal_battery_standalone.md` (a
-battery subject) pin the stand-alone brief.
-
-**The stand-alone (peerless) form.** A comparison with only the subject — every run-completion document
-(§ 11) and every battery-completion document (§ 14) — has no peers. The Report Pack no longer writes
-this form (§ 1a); Report Pack documents stored before 2026-10-06 may still have it. The fact sheet then marks every fact that compares the subject with peers
+**The stand-alone (peerless) form.** A comparison with only the subject — every run-completion
+Executive Summary (§ 11) and every battery-completion Executive Summary (§ 14) — has no peers. The
+Report Pack no longer writes this form (§ 1a); Report Pack documents stored before 2026-10-06 may still
+have it. The fact sheet then marks every fact that compares the subject with peers
 unavailable with the reason *"A stand-alone run report has no peers."*
 (`BenchmarkReportFacts.StandaloneReason`); the writer prompt says there are no peers, that `{{peer:X}}`
-tokens are unavailable and that the subject is never compared with other models; and a question needs a
-note when it scored below 50 (`BenchmarkReportPackPrompt.StandaloneNoteScore`) or carried a critical
-error, in place of the peer gap. The renderer prints *Peers: none; this is a stand-alone report* in the
-header, a results table of the subject's own dimensions and bands with no peer column, question tables
-without *Peer mean* and *Difference*, a comparability line that describes the model on its own, and
-no pairwise-significance statement.
+tokens are unavailable and that the subject is never compared with other models. The renderer prints
+*Peers: none; this is a stand-alone report* in the header, a results table of the subject's own
+dimensions and bands with no peer column, question tables without *Peer mean* and *Difference*, a
+comparability line that describes the model on its own, and no pairwise-significance statement. A
+run- or battery-completion Root Cause Analysis is stand-alone in the same sense — it has no peers — but
+reads its **controls**, earlier runs of other models on the same exam, as evidence (§ 17).
 
-**Evidence lines.** Under every strength, weakness and recommendation of the Report for AI Researchers
-and Developers at **Detailed and Full**, the renderer — never the writer — prints **one** compact,
-indented *Evidence:* line, its parts joined by ` · ` and each present only where it applies (at Summary
-the item keeps its support label and prints no evidence line):
+The Executive Summary prints no evidence lines under its items; it prints each item's support label in
+plain words instead (§ 2). Rule 9 (§ 3) binds the writer's prose.
 
-- the **finding rows** (`R3`) the item cites: each row's support label (§ 2) and category, and, for a
-  group subject, in how many of its runs it recurred;
-- the **facts** the item cites, by their human label (`BenchmarkReportFactLabels`) and display value, or
-  *not available*;
-- the **questions** the item is about — its own question list and the `Q` ids it cites, or, when it
-  names none itself, the questions of the rows it cites — each with its score, *Q6 (59 / 100)*; at most
-  six, the lowest scores first for a weakness or a recommendation and the highest first for a
-  strength, then *"and N more"*;
-- the **claim verifier**: *"the claim verifier refuted an answer sentence on Q6"* when a ruling on the
-  answer's own text among those questions was refuted (a document stored without ruling roles reads
-  *a claim*).
-
-For example *"Both graders — accuracy · Q6 (59 / 100), Q10 (57 / 100) · the claim verifier refuted an
-answer sentence on Q6"*. No question text, answer or grader note is expanded under an item at any
-disclosure: the grader notes appear once, under *Question details*, at Full. The Executive Summary and
-the Internal Improvement Brief print no evidence lines; the Executive Summary prints each item's support
-label in plain words instead (§ 2). Rule 9 (§ 3) still binds the writer's prose; the quoted evidence is
-content, not prose.
-
-**Evaluation terms.** The Executive Summary and the Report for AI Researchers and Developers end, after
-*Removed content* and before the footer, with an *Evaluation terms* block: the subject runs' purpose
+**Evaluation terms.** The Executive Summary and the Root Cause Analysis end, after *Removed content*
+(and, in the Root Cause Analysis, its Markdown fact sheet) and before the footer, with an *Evaluation
+terms* block: the subject runs' purpose
 statements (`PurposeStatementUsed`, deduplicated, carried in the fact sheet's `purposeStatements`); the
 distillation and training prohibition sentence as the run report prints it; and a third-party model
 content sentence naming the subject and its provider, the graders' providers and the writer and its
 provider. The subject is always named; under anonymized peer naming, a grader provider that is also a
-peer's provider (and not the subject's) reads *"a withheld provider"*. The Internal Improvement Brief has
-no such block.
+peer's provider (and not the subject's) reads *"a withheld provider"*.
 
-**Leads** (Internal Brief only) are things worth checking, each tagged `harness`, `suite`, `chat` or
-`corpus`. They are provisional, un-triaged inputs written by an AI from computed figures, never
-findings: each goes through the triage, evidence bar and tool-layer diagnostics of the
-`server_benchmark_to_chat_transfer` skill before anything is changed. Each names the most specific
-target the data shows: the question and its topic, and what to look at there (the rubric point a
-grader charged, the knowledge source an answer excerpt relied on, the grading role that disagreed,
-or the kind of tool call the matrix shows), and never a file, setting or tool the data does not show.
+**Leads are gone.** The Internal Improvement Brief's free-text *leads* were replaced by the Root Cause
+Analysis' **checks** (§ 17): each check is grounded in a hypothesis that a run cannot settle. Like the
+leads before them, a Root Cause Analysis' hypotheses and checks are provisional inputs to the triage,
+evidence bar and tool-layer diagnostics of the `server_benchmark_to_chat_transfer` skill, never
+findings.
 
 ---
 
@@ -193,8 +160,9 @@ What keeps each document in its home:
   document only once the new one is stored (§ 15), and a document can also be deleted, on step 3 or 4.
 - **The run and battery Download Centers list their own documents only**, by `Origin`, and point to the
   comparison documents about their subject with **Open comparison documents** (§ 8).
-- **The Internal Improvement Brief is a completion document** (§ 1), so a run's or battery run's brief
-  has a home without a one-entry comparison.
+- **The Root Cause Analysis is also a completion document** (§§ 11, 14, 17), so a run's or battery
+  run's analysis has a home without a one-entry comparison; its controls are evidence, not peers, and
+  do not make it a comparison document.
 - **Comparison file names carry the comparison** (§ 8): a Report Pack document of a numbered comparison
   is named `comparison-<N>_…`, and an older one without a number has a `vs-` part when it has peers;
   a completion document has neither, so the two kinds never share a file name.
@@ -231,8 +199,8 @@ overlaps those of Models B and C"*. The comparison runs **no significance test**
 says so once, in its own words, where the comparison left pairwise significance out: *"No pair of models
 is tested for significance: with N models, testing every pair would flag chance differences."* (*"The two
 models are not tested for significance, so a gap between them may be noise."* for two models), in the
-Executive Summary's *How reliable this result is* and in the researcher report's *Quality* block. The
-writer prompt carries the statement as its *NO SIGNIFICANCE TEST* block.
+Executive Summary's *How reliable this result is*. The writer prompt carries the statement as its *NO
+SIGNIFICANCE TEST* block.
 
 **The documents own this statement.** The sheet's `NoSignificanceSummary` and `NoSignificanceInstead`
 come from `BenchmarkReportFacts.NoSignificanceStatement`, whose wording is frozen in
@@ -244,7 +212,8 @@ it was. The *Instead* sentence is kept on the sheet and is never printed or show
 **Per-model documents do not cite the paired tests**: a per-model Report Pack document, a
 run-completion and a battery-completion document state that no pair is tested, even where the wizard
 has tested one. Comparison-wide documents cite the family-adjusted paired tests over their covered
-models instead, and carry no such statement (§ 15).
+models instead, and carry no such statement (§ 15). The Root Cause Analysis grades its hypotheses on
+those tests, or on the subject's paired bootstrap in model scope, and states which (§ 17).
 
 **Per-peer facts.** Each peer `X` has its own facts, so the writer can say how the subject compares with
 it: `peer.X.quality.index`, `peer.X.quality.interval`, `peer.X.quality.rank`,
@@ -272,9 +241,7 @@ caveat under the table that shows it (§ 7).
 `peer.X.pairedExcludesZero` (format 8) is a boolean: true when both bounds of the paired interval, **as
 printed** to one decimal, lie on the same side of zero. It displays *the paired interval excludes zero*
 or *the paired interval includes zero*, and is unavailable wherever the paired difference is. Where it is
-true the Report for AI Researchers and Developers prints, under its *Quality* table, *"On the same
-questions the paired difference with {peer} excludes zero (not adjusted for several comparisons)."*, and
-the writer may state the paired result for that pair instead of *not established* (§ 3, rule 16).
+true the writer may state the paired result for that pair instead of *not established* (§ 3, rule 16).
 
 **Comparison and per-question facts (format 8).** `comparison.peerRuns` states the peers' run counts in
 one clause — *"every peer has 1 run"*, or *"peers have 1 to 3 runs"* — and is withheld on a stand-alone
@@ -342,33 +309,36 @@ whether that member shares the subject's provider.
 
 ## 3. Validation, Repair and Drops
 
-`BenchmarkReportPackValidator` checks the writer's JSON against nineteen rules, and a comparison-wide
+`BenchmarkReportPackValidator` checks the writer's JSON against the rules below, a comparison-wide
 document against rule 21 too, with rules 2, 10 and 16 read for its tokens (§ 15); a chat consistency
-document is checked against rules 22 to 30 (C1 to C9, § 16) as well. Each failure is a
-`BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.abstract`,
+document is checked against rules 22 to 30 (C1 to C9, § 16) as well, and a Root Cause Analysis against
+rules 32 to 36 (§ 17). Each failure is a
+`BenchmarkReportValidationNote` with its rule number, location (`headline`, `sections.meaning`,
 `weaknesses[1]`…) and message. Rule 20 is not a check on the writer: it is the note a battery
-subject's preparation records when it left question detail out of the prompt (§ 14).
+subject's preparation records when it left question detail out of the prompt (§ 14). Rules 5 (evidence
+for recommendations), 15 (question notes) and 18 (`model_developers` recommendations) checked parts of
+the retired audiences (§ 17); their numbers stay unused.
 
 | # | Rule |
 |---|---|
 | 1 | The output is JSON of the expected shape, and every required slot is present and non-empty |
 | 2 | Every `{{…}}` token exists: a fact key, `{{subject}}` or a known peer letter |
 | 3 | No bare digits in prose after masking tokens, question references and known names |
-| 4 | Every question number exists, and the question topics cover every question where the document requires them |
-| 5 | Every evidence id exists, and every strength, weakness and lead cites at least one — and so does every recommendation of the Report for AI Researchers and Developers |
+| 4 | Every question number exists, and the question topics cover every question where the document requires them (the Root Cause Analysis: every question it cites) |
+| 5 | *Retired* (evidence for the retired audiences' recommendations) |
 | 6 | A strength may not cite a weakness row and a weakness may not cite a strength row; a finding citing only Conflicting rows must say the graders disagree |
-| 7 | Length limits: headline at most 35 words; abstract at most 150 words; a question topic at most 12 words; in the Executive Summary at most 3 strengths and 3 weaknesses, each at most 30 words, *What this means for use as a game assistant* (`meaning`) at most 90 words, *How reliable this result is* (`confidence`) at most 60 words and the *How it compares* paragraph (`comparison`) at most 70 words; in the Report for AI Researchers and Developers *Why it scored this way* (`whyItScored`) at most 300 words, *What worked well* (`whatWorked`) at most 150 words, `limitations` at most 120 words and at most 6 recommendations; in the Internal Improvement Brief `overseerChat` at most 200 words, `benchmarkSystem` and `modelResult` at most 150 each, at most 8 recommendations and at most 6 leads |
+| 7 | Length limits: headline at most 35 words; a question topic at most 12 words; in the Executive Summary at most 3 strengths and 3 weaknesses, each at most 30 words, *What this means for use as a game assistant* (`meaning`) at most 90 words, *How reliable this result is* (`confidence`) at most 60 words and the *How it compares* paragraph (`comparison`) at most 70 words; the Root Cause Analysis caps are in § 17 |
 | 8 | No headings, tables or HTML inside any text |
 | 9 | No run of 8 or more words shared with any question, rubric, answer or grader-evidence text, including a comparison's *weakest answers* grader comments (`ModelNotes`, § 15) |
 | 10 | No peer names, model ids or providers in prose |
 | 11 | No significance language: *significant*, *significantly*, *statistically*, *reliably better* or *worse*, *clearly outperforms* |
 | 12 | US English: no word of the fixed British-spelling list (`BenchmarkReportPackValidator.BritishSpellings`: *colour, behaviour, analyse, analysed, organise, recognise, favour, honour, centre, defence, catalogue, programme, grey, travelled, modelling, labelled, cancelled, judgement*), matched as whole words ignoring case, in any prose |
 | 13 | In the Executive Summary's `confidence` slot only: the quality interval is not called *narrow*, *narrower*, *wide*, *wider*, *tight*, *tighter* or *broad* (`BenchmarkReportPackValidator.IntervalWidthWords`, whole words ignoring case); the code-rendered sentence after the slot states the interval and its span |
-| 14 | The headline and the abstract do not mention the claim verifier: *verifier* or *verifiers*, as a whole word ignoring case (`VerifierInSummaryRule`). A claim-verifier ruling is advisory and belongs, attributed, among the weaknesses |
-| 15 | Every question the prompt lists under *QUESTIONS NEEDING A NOTE* has a note in `questionNotes` (`MissingQuestionNoteRule`) |
-| 16 | A sentence that holds `{{subject}}` and a `{{peer:X}}` token together with a comparative word (`ComparativeWords`: *higher, lower, better, worse, ahead, behind, outperform(s/ed), beat(s), leads, trails*), where `peer.X.intervalOverlap` says the two intervals overlap, also says *overlap* or *not established* (`OverlapHedgeRule`); where that peer's `peer.X.pairedExcludesZero` is true, stating the paired result — *paired* and *excludes zero* in the sentence, or the fact's token — satisfies it as well. Tokens are set aside before the text is split into sentences, so a fact key's dots never end one |
+| 14 | The headline does not mention the claim verifier: *verifier* or *verifiers*, as a whole word ignoring case (`VerifierInSummaryRule`). A claim-verifier ruling is advisory and belongs, attributed, among the weaknesses |
+| 15 | *Retired* (question notes of the retired audiences) |
+| 16 | A sentence that holds `{{subject}}` and a `{{peer:X}}` token together with a comparative word (`ComparativeWords`: *higher, lower, better, worse, ahead, behind, outperform(s/ed), beat(s), leads, trails*), where `peer.X.intervalOverlap` says the two intervals overlap, also says *overlap* or *not established* (`OverlapHedgeRule`); where that peer's `peer.X.pairedExcludesZero` is true, stating the paired result — *paired* and *excludes zero* in the sentence, or the fact's token — satisfies it as well. In comparison scope (§ 15) a comparative word relates only the nearest `{{model:X}}` before it and the nearest after it in the sentence, so a sentence naming several models is checked for the pairs its comparative words rank, not every pair it names; only when a comparative word has no model token on one side is every pair of the sentence read. Tokens are set aside before the text is split into sentences, so a fact key's dots never end one |
 | 17 | No hype or filler words (`HypeWords`: *impressive, remarkable, outstanding, stellar, exceptional, robust, seamless, leverage, delve, game-changing, cutting-edge*), as whole words ignoring case, in any prose (`HypeWordRule`) |
-| 18 | A `model_developers` recommendation mentions nothing a model developer cannot change (`OverseerOnlyTerms`: *rubric, retrieval, index, corpus, regression test, system prompt, tool guide, prompt the model, the assistant's prompt, GnollHack*, with their plural and inflected forms, as whole words ignoring case; `ModelDeveloperScopeRule`) |
+| 18 | *Retired* (`model_developers` recommendations of the retired audience 2) |
 | 19 | No negation — *no, none, never, without, zero*, ignoring case — among the four words before a token whose display value starts with `0` in the same sentence, as in *"no critical errors across {{errors.critical}}"* reading *"0 of 18 answers"* (format 9). Tokens are set aside before the text is split into sentences |
 | 20 | *Not a writer check.* A battery subject's prompt exceeded `Benchmark:ReportPack:BatteryMaxPromptChars`, so the full detail of the questions it names was left out and only their rows were given (`BenchmarkBatteryReportFacts.PromptBudgetRule`, location `prompt`, § 14). Recorded before the writer call, stored with the document and logged as a warning; it neither drops anything nor marks the document *Completed with warnings* |
 | 21 | A comparison-wide document's `models` list has an entry for every covered model (`ModelCoverageRule`, § 15). A warning, kept after the repair turn like rules 12 to 19 |
@@ -381,42 +351,68 @@ subject's preparation records when it left question detail out of the prompt (§
 | 28 | **C7**, Provider Issue Report only: a model or serving term (`ChatModelServingTerms`) needs a provider-side attribution token, except in `affectedModel` and `sampleRequestIds`; and `ruledOut` cites a token of every `events.<n>` (`ChatProviderReportRule`). An error; the second half cannot drop text and marks the document *Completed with warnings* |
 | 29 | **C8**, *readable text*, chat consistency only: the headline and every paragraph hold no run of twelve or more hex digits, no JSON (`{"`), no `OverseerEventKinds` identifier (`CandidateSystemPromptSha256`, `CorpusIndexFingerprintsJson`…) as a whole word, and no token of a fact kept from the writer (`BenchmarkChatConsistencyReportFacts.WriterHidden`: `analysis.inputSha256` and an older sheet's raw `events.<n>.from` / `.to`; and the sheet's own `WriterHiddenKeys`, § 16) (`ChatReadableTextRule`). One note names every offending token. An error: the paragraph is dropped |
 | 30 | **C9**, *repetition*, chat consistency only: read with every fact token replaced by its display value, the headline and every paragraph hold no *A and A, respectively* whose two operands are the same words, ignoring case, and no full stop followed by a lower-case *and* inside one sentence — a sentence-valued fact spliced into a sentence — outside abbreviations such as *e.g.*, *i.e.*, *etc.*, *vs.*, *cf.*, *approx.*, *incl.* and *resp.* (`ChatRepetitionRule`). One note per kind, quoting the offending text. A **warning**: it asks for the repair turn and marks the document *Completed with warnings*, but never drops a paragraph |
+| 31 | *Token shape* (`ComparisonTokenShapeRule`), comparison scope and every Root Cause Analysis (both scopes), not a per-model Executive Summary: read with every token resolved to its display (a model token to *Model X*), the text holds **(a)** no full stop followed by a lower-case letter, outside abbreviations such as *e.g.* and *vs.* — a sentence-valued fact continued after its full stop; **(b)** no sentence-valued fact (a display that starts with a capital and ends with a full stop, every `notable.<n>.summary` among them) placed anywhere but at the start of a sentence, a paragraph or a list item, or just before `)`; **(c)** no clause-valued fact (*"Model A took 1.49 times as long as Model F …"*) right after a model or its own verb (*"Model A took {{…}}"*); and **(d)** no run of two or more *N of M* counts separated only by commas or semicolons, which leaves the reader guessing what each counts. One note per kind found. A **warning**: it asks for the repair turn and keeps the text |
+| 32–36 | Root Cause Analysis only: the claim discipline of § 17 (`RootCauseEvidenceCausalRule`, `RootCauseCausalClaimRule`, `RootCauseCertaintyRule`, `RootCauseWriterHypothesisRule`, `RootCauseAxisStatusRule`; 36 is a warning) |
 
-Rules 2, 3, 8, 9, 10, 11, 12 and 17 apply to every prose string: the headline, each paragraph of each
-slot, and the text of every item, topic and note. Rule 13 applies to each paragraph of the Executive
-Summary's `confidence` slot, rule 14 to the headline and each paragraph of the abstract, rules 16 and 19
-to each sentence of the prose, and rule 18 to the text of each recommendation for `model_developers`.
+Rules 2, 3, 8, 9, 10, 11, 12, 16, 17 and 19 apply to every prose string: the headline, each paragraph of
+each slot, and the text of every item and topic. Rule 13 applies to each paragraph of the Executive
+Summary's `confidence` slot, rule 14 to the headline, rules 16 and 19 sentence by sentence, and rule 31
+to each prose string of a comparison-scope document or a Root Cause Analysis.
 
 **Readability.** The system prompt of every audience adds: one idea per sentence; sentences of at most
 about 25 words; active voice; a count from the facts rather than *many* or *several*; the category of a
 finding named rather than *"issues across many topics"*; and no hype words (the rule 17 list). The
-Executive Summary keeps its plain-language rule, and the Internal Brief adds *"Lead with the action,
-then the evidence."*
+Executive Summary keeps its plain-language rule. The comparison-scope prompts and the Root Cause
+Analysis prompt, and their repair messages, also carry the **token-shape reminders** rule 31 checks
+(`BenchmarkReportPackPrompt.TokenShapeReminders`): a sentence-valued fact is a sentence of its own, at
+most once, never inside parentheses and never continued after its full stop; a fact whose value names a
+model and a verb is written alone as the clause; and several *N of M* tokens are never listed in a row
+without saying what each counts.
 
 **Repair and drop policy.**
 
 1. When any rule fails, the writer gets **one repair turn**: every issue, then the output rules in brief
-   (`BenchmarkReportPackPrompt.BuildRepairMessage`).
+   (`BenchmarkReportPackPrompt.BuildRepairMessage`; with the headline's word count against its cap
+   when an issue is the headline's). The job log says how many issues the first reply had, counted per
+   rule (*"7 validation issue(s) (rule 2: 5, rule 16: 2); sending one repair turn."*). A repair reply
+   that cannot be parsed is logged as a warning, and the first reply is used instead.
 2. What still fails after the repair is **dropped** — the item or paragraph is removed from the stored
    output, the note records `Dropped`, and the document is stored as **CompletedWithWarnings**. An
-   over-cap slot with a word limit (the abstract, `meaning`, `confidence`, `comparison`, `whyItScored`,
-   `whatWorked`, `limitations`, `overseerChat`, `benchmarkSystem`, `modelResult`) loses its last
-   paragraphs until it fits.
+   over-cap slot with a word limit (`meaning`, `confidence`, `comparison`, and every Root Cause
+   Analysis slot) loses its last paragraphs until it fits.
 3. **Rules 12 to 19 never drop** (`BenchmarkReportPackValidator.IsWarningRule`); a zero-count token
-   after a negation (rule 19) is kept after the repair turn like the others. A missing question
-   note (rule 15) has nothing to drop. A spelling slip, an interval adjective, a mention of the claim
-   verifier, an unhedged comparison across overlapping intervals, a hype word or a model-developer
-   recommendation that strays into the Overseer is not worth losing a finding or the one paragraph of a
-   required slot: after the repair turn, text that still uses a British spelling, calls the interval
-   narrow or wide, names the verifier in the headline or the abstract, ranks the subject against an
-   overlapping peer without saying so, uses a hype word or recommends to model developers a change to a
-   rubric, the retrieval or the corpus is
-   **kept**, its note is recorded without `Dropped`, and the document is stored as
+   after a negation (rule 19) is kept after the repair turn like the others. A spelling slip, an
+   interval adjective, a mention of the claim verifier, an unhedged comparison across overlapping
+   intervals or a hype word is not worth losing a finding or the one paragraph of a required slot: after
+   the repair turn, text that still uses a British spelling, calls the interval narrow or wide, names
+   the verifier in the headline, ranks the subject against an overlapping peer without saying so or uses
+   a hype word is **kept**, its note is recorded without `Dropped`, and the document is stored as
    **CompletedWithWarnings**. The
    Executive Summary states the interval's span in a code-rendered sentence whatever the writer wrote
-   (§ 6). Rules 21, 26 (C5) and 30 (C9) are warning rules in the same way.
-4. A missing headline or an empty required slot cannot be dropped around: the **document fails** and no
-   row is stored. A headline whose only fault is rule 12 is kept.
+   (§ 6). Rules 21, 26 (C5), 30 (C9), 31 and 36 are warning rules in the same way.
+4. **The headline rescue.** A headline cannot be dropped like a paragraph. When, after the repair turn,
+   the headline is the **only** fatal cause — every required slot kept a paragraph
+   (`BenchmarkReportCleanResult.HeadlineOnlyFatal`) — the job tries to rescue it, checking each
+   candidate with `BenchmarkReportPackValidator.HeadlineIssues`:
+   1. **In every scope**, the first draft's headline is kept if it passes every blocking check; the
+      note reads *"The repaired headline was invalid (…); the first draft's headline was kept."*
+   2. **In comparison scope only**, when that fails too, one **headline-only turn** on the same
+      conversation asks for the headline alone, with its issues and word count
+      (`BenchmarkReportPackPrompt.BuildHeadlineRepairMessage`); a passing reply replaces it (*"… it was
+      rewritten in a headline-only turn."*).
+
+   A rescued headline leaves a rule 7 note marked dropped, so the document is stored *Completed with
+   warnings*. A document therefore takes **at most three model calls**
+   (`AgentRunBudget.MaxTotalModelCalls = 3`): the first, the repair turn and, in comparison scope, the
+   headline-only turn.
+5. A missing headline, a headline the rescue could not fix, or an empty required slot cannot be dropped
+   around: the **document fails** and no row is stored. A headline whose only fault is rule 12 is kept.
+
+**Progress and diagnostics.** Each document row of a job carries its first-turn issues, its final
+issues and, for a failed document, its last raw reply (cut at 200,000 characters), as
+`firstTurnIssues`, `finalIssues` and `failedReply`; the job view fills them **only once the job has
+ended**, and the Report Pack diagnostics print them as `== Validation ==` and `== Failed writer
+replies ==` (§ 12).
 
 The wizard's Write step marks such a document *Completed with warnings*, and the notes are stored with
 it (`ValidationNotesJson`, returned by the detail endpoint, § 9), so a dropped item is never silent.
@@ -425,12 +421,9 @@ it (`ValidationNotesJson`, returned by the detail endpoint, § 9), so a dropped 
 
 - **Peer-aware triage (R13).** Each question line carries the peers' spread (§ 2). Where most peers
   answered a question well and the subject missed it, that is evidence about the model; where every
-  model missed it, the writer suspects the chat, its tools, the corpus or the rubric first. The slots
-  `overseerChat`, `benchmarkSystem` and `whyItScored` and the leads are told to apply it, and strengths
-  and weaknesses prefer points where the subject differs from its peers.
-- **Model-developer recommendations (R12)** concern only the model — its knowledge, calibration,
-  instruction following, verbosity and tool-use habits — never the Overseer's prompts, tools, retrieval,
-  corpus, rubrics or tests. Rule 18 checks it.
+  model missed it, the writer suspects the chat, its tools, the corpus or the rubric first. Strengths
+  and weaknesses prefer points where the subject differs from its peers. The Root Cause Analysis turns
+  the same reasoning into code (HQ3 and the controls of § 17).
 - **Paired results (R14).** Where a peer's `pairedExcludesZero` is true, the writer says that on the
   same questions the higher-scoring model scored higher on average and that the paired interval excludes
   zero, not adjusted for comparing several models, and never *not established* for that pair; *significant*
@@ -439,22 +432,17 @@ it (`ValidationNotesJson`, returned by the detail endpoint, § 9), so a dropped 
   out would mislead, in plain words and never estimated; a fact key never appears outside its token, and
   the prose never describes the facts list or the fact sheet.
 - **Shared values (R16).** A value several peers share is stated once, for all of them.
-- The `modelResult` slot is told that code appends the interval sentence after it (§ 1) and not to
-  restate it (R11).
 
 **Writer rules added with harness 54** (2026-10-08, no format version change;
 `BenchmarkReportPackPrompt.SharedWritingRules`), at the end of WEIGHING THE EVIDENCE in the system prompt
 of every audience for a run, group or battery subject — run- and battery-completion documents included,
 the comparison-wide (§ 15) and chat consistency (§ 16) prompts not:
 
-- **Levers, not training.** *"Outside a recommendation for model developers, never recommend training,
-  fine-tuning or using outputs as training targets; recommend a lever the facts name — a tool, a tool
-  guide, the knowledge base, a wiki page, a rubric, the grading, or the model and its settings."* The
-  model-developer recommendations (R12) keep their own rule.
+- **Levers, not training.** *"Never recommend training, fine-tuning or using outputs as training
+  targets; recommend a lever the facts name — a tool, a tool guide, the knowledge base, a wiki page, a
+  rubric, the grading, or the model and its settings."*
 - **Disagreement means a panel disagreement.** *Disagreed* and *disagreement* are written only for an
   answer the facts mark as a panel disagreement; any other gap gives both members' scores.
-- **A wrong tool result is a source lead.** When an answer repeats a tool result the facts show to be
-  wrong, the lead is about that result's source (tag `corpus`), not about the model's knowledge.
 
 The rules reach documents written from now on, which record the new `WriterPromptSha256` (§ 7).
 
@@ -485,8 +473,8 @@ The rules reach documents written from now on, which record the new `WriterPromp
 Sol, not the provider's top tier (Claude Fable, GPT Astra)** — **from a family other than the subject's**,
 at **medium** thinking or reasoning effort. Use **high** only if its documents often need the repair turn
 or lose items to validation; never **low**, because the writer must follow a strict schema and token
-rules. Not an economy tier (Flash, Flash-Lite): the documents go to people outside the team, and one call
-per document keeps the cost small. The same recommendation is in `ai-benchmark.md` § 3 *Choosing grader
+rules. Not an economy tier (Flash, Flash-Lite): the documents go to people outside the team, and one to
+three calls per document keep the cost small. The same recommendation is in `ai-benchmark.md` § 3 *Choosing grader
 models and effort*, the *How the graders work* guide, the Write step's writer info tip and the
 report-writer info tip of the run report's **AI Reports** tab.
 
@@ -496,13 +484,12 @@ different model:
 - **Executive Summary** — short (about 2,400 output tokens) and plain-language, for decision-makers;
   clear, careful wording matters more than depth. A strong writing model — Claude Opus or GPT Sol — at
   medium effort; it is cheap even with a strong model.
-- **Report for AI Researchers and Developers** — long (about 7,400 output tokens) and number-dense, and it
-  must keep every figure exact and follow a strict schema. The strongest scoring-tier reasoning model you
-  trust with numbers — Claude Opus or GPT Sol — at medium effort, high if its documents often need the
-  repair turn. It costs roughly three to four times the summary.
-- **Internal Improvement Brief** — for the Overseer team; it weighs the whole fact sheet, rubrics and
-  grader notes included, and says what to improve in the chat, the benchmark and the model. The
-  strongest scoring-tier model — Claude Opus or GPT Sol — at medium effort.
+- **Root Cause Analysis** — long (estimated at 10,000 output tokens in model scope and 14,000 in
+  comparison scope, both marked for recalibration) and number-dense: it weighs the hypotheses code has
+  graded, the known facts and the grader notes, and must follow the claim rules of § 17. The strongest
+  scoring-tier reasoning model you trust with numbers — Claude Opus or GPT Sol — at medium effort, high
+  if its documents often need the repair turn. It costs several times the summary, roughly $0.3–0.8 per
+  run in model scope.
 - **Every document** — prefer a writer from another provider than the model under test (a same-provider
   writer is allowed after a warning), and, where the roster allows, one that shares a family with neither
   panel member either; avoid the economy tiers (Flash, Flash-Lite) and the top tiers (Claude Fable, GPT
@@ -534,7 +521,9 @@ Each document is one **immutable** `BenchmarkReportDocument` row; there is no up
   `origin`;
 - the writer's identity and its configuration snapshot, and `SameProviderAcknowledged`;
 - `ReportFormatVersion`, the writer prompt's SHA-256 and `AnswerExcerptChars`;
-- `FactsJson` — the fact sheet;
+- `FactsJson` — the fact sheet; on a comparison or model-scope sheet it also carries the root-cause
+  engine's stored result (`BenchmarkReportFactSheet.RootCause`), with the recommended runs and the
+  controls used, so a Root Cause Analysis needs no column of its own (§ 17);
 - `ContentJson` — the verbatim content the renderer may print: question text as asked, rubric as
   graded, answer excerpts cut at generation, the complete answer (`answerText`) wherever the excerpt was
   cut (from format version 5, § 7), grader evidence and verifier rulings (each with its role from format
@@ -615,21 +604,19 @@ Both are chosen **at download, per document**; the stored row is the same whatev
 The stamps are audience-aware (`BenchmarkReportPackRenderer.Stamp(audience, disclosure)`). The Executive
 Summary quotes no question or rubric at any level, so its Detailed stamp reads *Confidential. Prepared for
 the model's provider. Review before sharing.* and its Full stamp *INTERNAL — unpublished benchmark
-results. Do not share outside the Overseer team.*; its Summary stamp is the one above. The PDF and Word
-classification banners use the same text.
+results. Do not share outside the Overseer team.*; its Summary stamp is the one above. The Root Cause
+Analysis is Full only and carries the Full stamp, *INTERNAL — contains benchmark questions and
+rubrics*. The PDF and Word classification banners use the same text.
 
-In the Report for AI Researchers and Developers, Summary prints each finding's support label but no
-evidence line (§ 1). Detailed adds the evidence lines and prints every question and each run's answer
-excerpt in one *Questions and answers* section; Full prints the same section as *Question details*, with
-each run's **complete answer** under *Answer:*, each question's rubric, the graders' scores and notes and
-the claim verifier's rulings added. An answer short enough to be stored whole prints as its excerpt,
+The Root Cause Analysis' *Question details* (§ 17) print each question it cites with each run's
+**complete answer** under *Answer:*, the question's rubric, the graders' scores and notes and the claim
+verifier's rulings. An answer short enough to be stored whole prints as its excerpt,
 which is the whole answer; a cut excerpt on a document stored before complete answers were kept prints
 under *Answer excerpt:* with the note *"This document predates complete-answer capture; the answer is
-shown as the excerpt stored when it was written."* The notes on individual questions never quote them at
-any level: the section does. The size guard (`BenchmarkPdfRenderer.MaxSourceCharacters`, shared by Word)
-still applies to the rendered Markdown.
+shown as the excerpt stored when it was written."* The size guard
+(`BenchmarkPdfRenderer.MaxSourceCharacters`, shared by Word) still applies to the rendered Markdown.
 
-At every level the *Tool-use behavior* section says that a recorded success or failure describes only
+Where a document prints a *Tool-use behavior* section, it says that a recorded success or failure describes only
 whether a tool call executed — not whether the query was well chosen, the result relevant or the corpus
 current. At Full it adds where the per-call detail is: each run's Tool-call log, until the retention sweep
 prunes it, when the runs recorded per-call rows (`tools.failed` is available, harness 17 and later), or
@@ -637,9 +624,8 @@ that the runs did not record per-call arguments or results.
 
 **Writer independence.** When the stored writer provider equals the subject's provider (trimmed,
 case-insensitive, as `BenchmarkComplianceGuard.IsSameProvider` compares), the Executive Summary's *How
-reliable this result is* and the technical report's *Threats to validity* print a code-rendered caveat
-naming the writer and the shared provider, whatever the writer returned. The Internal Improvement Brief
-does not print it. The Executive Summary's reliability section also prints *"The 95 % interval is 73–82,
+reliable this result is* prints a code-rendered caveat naming the writer and the shared provider,
+whatever the writer returned. The Executive Summary's reliability section also prints *"The 95 % interval is 73–82,
 a span of 9 points, and rests on 4 of 4 questions with a scored answer."* from the `quality.interval`,
 `quality.intervalSpan` and `quality.scoredItems` facts; a document stored without the span fact, or whose
 reliability paragraph already places `{{quality.interval}}`, prints nothing there.
@@ -654,11 +640,12 @@ peer's label with no letter after it (*Grok 5*, not *Grok 5 (A)*). The *Compared
 *Letter* column under both namings, so a named and an anonymized copy can be matched. The subject is
 always named.
 
-The Report for AI Researchers and Developers renders at any level with either naming. The Executive
-Summary is **offered** at Summary and Full only (`BenchmarkReportPackRenderer.AllowedDisclosures`, which
-fills each list item's `allowedDisclosures`), since its Detailed text is its Summary text; it still
-**renders** at Detailed (`IsAllowed`), with its own stamp, so older links keep working. The Internal Brief
-renders at **Full only**; any other combination answers 400.
+The Executive Summary is **offered** at Summary and Full only
+(`BenchmarkReportPackRenderer.AllowedDisclosures`, which fills each list item's `allowedDisclosures`),
+since its Detailed text is its Summary text; it still **renders** at Detailed (`IsAllowed`), with its
+own stamp, so older links keep working. The Root Cause Analysis renders at **Full only**, named or, where
+peers exist, anonymized; any other combination answers 400. Its controls are always named: they are
+evidence, not peers of the document.
 
 Why provider copies default to Summary with anonymized peers is recorded in `ai-benchmark.md` § 7
 *Sharing Reports with AI Providers*.
@@ -690,10 +677,18 @@ A golden test fails on any change to the renderer's output.
 > the shapes stored as JSON are part of the format too, so renaming one of their properties is a format
 > change as well.
 
-**Format version 2** added the *Evidence* lines, the *Evaluation terms* block and the stand-alone form
-(§ 1), and the label *Report for AI Researchers and Developers*; the fact sheet gained
-`purposeStatements`. The Internal Improvement Brief changes only its format version and the embedded
-JSON. Format 1 had none of these.
+**Root Cause Analysis (2026-10-15)** moves per-model documents to **format 13** (`ReportFormatVersion`
+12 → 13) and comparison-wide documents to **format 15** (`ComparisonReportFormatVersion` 14 → 15) for the
+new facts: the per-model speed, token, cost and configuration facts, the per-question cost and timing
+columns, a model-scope subject's `profile.*`, and the `rca.*` facts with the stored `RootCause` result
+(§ 17). The `rca.*` facts and the evidence facts only the Root Cause Analysis reads are kept off the
+Executive Summary's prompt (`RootCauseFacts.WriterHidden`); they are computed for every comparison and
+model-scope sheet, so a later Root Cause Analysis of a stored subject reads the same sheet. Chat
+consistency documents stay at format 3. `BenchmarkPdfRenderer.LayoutVersion` moves 8 → 9 (§ 8). A
+stored document keeps rendering under its stored version.
+
+**Format version 2** added the *Evaluation terms* block and the stand-alone form (§ 1); the fact sheet
+gained `purposeStatements`. Format 1 had none of these.
 
 **Provider availability (2026-10-12, with harness 56 in `ai-benchmark.md`)** moves every scope:
 per-model documents to **format 12** (`ReportFormatVersion`), comparison-wide documents to **format 13**
@@ -702,18 +697,15 @@ per-model documents to **format 12** (`ReportFormatVersion`), comparison-wide do
 comparison-wide 12 of 2026-10-06. What the formats add
 ([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md) is the method):
 
-- **Key Figures** gains a fifth code-written bullet in all three audiences, *Provider availability:*
+- **Key Figures** gains a fifth code-written bullet, *Provider availability:*
   the rate *of attempts failed at the provider* (*k of n*; *95 % CI …*), *plus* the re-runs, from the
   facts' display values.
-- **A `### Provider availability` subsection**: in the Report for AI Researchers and Developers after
-  its key figures, and in the Internal Improvement Brief under *3. The model's result* after its key
-  figures (the brief's numbered `##` headings are pinned, so no new one is added). Each holds the table
-  *class · count · share* with a footnote that defines the classes and the denominator. The Executive
-  Summary has the bullet only.
-- **Threats to validity** (the Report for AI Researchers and Developers; `ComparisonThreats` in a
-  comparison) gains code-written lines when errors could not be attributed (*"N errors could not be
-  attributed; the upper bound including them is …"*), when the subject needed re-runs, and when
-  provider availability was not recorded.
+- **A `### Provider availability` subsection** holds the table *class · count · share* with a footnote
+  that defines the classes and the denominator, where a document prints one (the Root Cause Analysis,
+  § 17). The Executive Summary has the bullet only.
+- **Threats to validity** (`ComparisonThreats` in a comparison) gains code-written lines when errors
+  could not be attributed (*"N errors could not be attributed; the upper bound including them is …"*),
+  when the subject needed re-runs, and when provider availability was not recorded.
 - **Figure A1** (`a1-availability`, § 13) and, in chat consistency documents, endpoint P6, the
   `availability.<period>.*` facts and figure `cc5-availability` (§ 16).
 
@@ -764,7 +756,6 @@ written from now on; every document records the hash of the prompt it was writte
 - **P6, a default choice**: the Executive Summary's `whichModel` ends with one sentence naming a default
   choice for a typical Overseer player and the case for another model, based only on established results
   and the frontier facts; its cap is 150 words.
-- **P7, leads name a target**: each lead names the most specific target the data shows (§ 1, *Leads*).
 
 The same round changed the comparison renderer, which reaches stored documents on their next download:
 the matrix legend names each column's model in a named copy (*"Columns: A = …, B = …."*), says that *—*
@@ -840,11 +831,6 @@ key or `HarnessVersion`. Stored documents re-render with the new renderer on the
   *Authored*. The facts `bands.authored.simple|intermediate|advanced` (*Questions authored as …*) carry
   the authored counts, and the FACTS header tells the writer the bands are assessed difficulty, so it no
   longer writes "no simple-band questions" about a suite with authored Simple items.
-- **Question details last (N2)**: in the Report for AI Researchers and Developers, `## Question details`
-  (one `### Q<n>` per question, `#### Run` per run) follows the *Reproducibility appendix* and precedes
-  *Removed content* and *Evaluation terms*; *Per-question results* (the table and its note) stays where
-  it was, and the table of contents follows. The Internal Improvement Brief keeps its details under
-  section 5.
 - **Mean time (N4)**: the fact `speed.modelTimeMean` (*Mean answer time*, from
   `BenchmarkModelComparisonSpeedDto.ModelTimeMeanMs`, formatted like the median); *Key figures* reads
   *"median answer time 14.7 s, mean 17.2 s"* and *Speed and cost* adds *Mean answer time*.
@@ -852,11 +838,6 @@ key or `HarnessVersion`. Stored documents re-render with the new renderer on the
   `errors.critical`), a writer rule that an *N of M* token is a noun phrase — never after *no* or the
   object of *made*; to say none occurred, *"no critical errors across all {{answers.scored}} answers"* —
   and validator rule 19 (§ 3).
-- **Model-developer recommendations (R2)** name a general capability a model developer can train or
-  tune — stating the decisive mechanic behind a verdict, committing to a conclusion the inputs settle —
-  never a GnollHack fact, a change to the assistant's prompt or tools, or a rubric point; game-specific
-  gaps are Internal Brief leads (`corpus` or `chat`). It replaces format 8's R12 wording, and rule 18's
-  vocabulary grows (§ 3).
 - **Support labels (H3)**: a finding row carries `questionsA`, `questionsB` and `sharedQuestions` (the
   FINDING ROWS print *shared* / *A only* / *B only*). A strength or weakness citing a Convergent row
   reads *Both graders* only when its questions meet the row's shared questions; otherwise *One grader*
@@ -876,15 +857,12 @@ re-render with the new renderer on their next download; the prompt changes reach
 from now on.
 
 - **Significance, once (R1)**: one document-worded sentence (§ 2), in the Executive Summary's *How
-  reliable this result is* and the researcher report's *Quality* block; the *Significance* line of
-  *Threats to validity* is gone, and the comparison's *Instead* instruction is never printed.
+  reliable this result is*; the *Significance* line of *Threats to validity* is gone, and the
+  comparison's *Instead* instruction is never printed.
 - **Named peers (R2)**: a Named copy names the peers in the interval-overlap figure and in *Judge-dependent
   pairs* instead of giving their letters (§ 6).
 - **Whole-number differences (R3)**: every *Difference* — dimension, band and question — is the
   difference of the two whole numbers printed beside it (§ 2).
-- **Note heading (R4)**: *"Questions more than 15 points below the peer mean, or with a critical error"*.
-- **Evidence lines (R5)**: at most six questions each, weakest or strongest first, then *"and N more"*
-  (§ 1).
 - **Cover (R6)**: with peers, the PDF and Word cover's subject line reads *"{Suite} · run #68 · compared
   with 4 models"* (*group #N* for a group subject), and its facts table replaces the *Peers* row with
   *Compared with* — the peers' labels and *(4 models)* in a Named copy, *"4 models (A to D), identities
@@ -892,25 +870,23 @@ from now on.
   and *Pricing basis* in place of *Peers*. A stand-alone document's cover is unchanged (§ 8).
 - **File names (R7)**: `vs-<N>-models_` after `run-<id>_`, or first for a group subject, when the
   document has peers (§ 8; since 2026-10-06 the comparison part names the peers or the comparison key).
-- **Fact sheet in Markdown only (R8)**: the PDF and Word copies of the Internal Improvement Brief end
-  section 6 with *"The fact sheet is in the Markdown copy of this document."*
-  (`BenchmarkReportRenderOptions.IncludeFactSheet = false` for native renders); the Markdown copy keeps
-  the JSON.
+- **Fact sheet in Markdown only (R8)**: the PDF and Word copies of a document that carries the fact
+  sheet (today the Root Cause Analysis, § 17) say *"The fact sheet is in the Markdown copy of this
+  document."* (`BenchmarkReportRenderOptions.IncludeFactSheet = false` for native renders); the Markdown
+  copy keeps the JSON.
 - **No Rank line (R9)**: the Executive Summary's separate *Rank* line of format 7 is gone; the rank is
   on the *Intelligence* line.
 - **How it compares (R10)**: the table gains a *Critical errors* column and is followed by a compact
   *Dimensions* table (subject, peer mean, difference); the Executive Summary's items no longer print
   *(both graders agreed)* (§ 2).
-- **Internal Brief figures (R11)**: section 3 prints the interval sentence after *Key figures*.
-- **Paired results (R14)**: the `peer.X.pairedExcludesZero` fact and the researcher report's sentence for
-  each peer whose paired interval excludes zero (§ 2); validator rule 16 accepts the paired result for
-  that peer (§ 3).
+- **Paired results (R14)**: the `peer.X.pairedExcludesZero` fact (§ 2); validator rule 16 accepts the
+  paired result for that peer (§ 3).
 - **Withheld graders (R18)**: in an Anonymized copy a grader whose provider is withheld reads *a model
   from a withheld provider* (§ 6).
 - **New facts**: `peer.X.pairedExcludesZero`, `comparison.peerRuns`, and the per-question `peerMin`,
   `peerMax` and `peersAbove` (§ 2).
-- **Writer prompt**: the per-question peer spread, the peer-aware triage rule and rules R12 to R16 (§ 3);
-  validator rule 18, a warning, and the parser's `KnownSlots` gain `comparison` and `limitations`.
+- **Writer prompt**: the per-question peer spread, the peer-aware triage rule and rules R13 to R16 (§ 3);
+  the parser's `KnownSlots` gain `comparison`.
 - **Charts**: a `[[figure:<key>]]` marker at each anchor where the render is given a chart (§ 13), drawn
   by *PDF layout 3* and *Word layout 2* (§ 8).
 
@@ -929,29 +905,14 @@ grading prompt, comparability key or `HarnessVersion`.
   peer's. A code-rendered section **How it compares** follows *Key figures*: one row per entry — Model,
   Intelligence Index with its interval, Median answer time, Cost per question — the subject in bold, then
   the peers by letter, and under it the writer's `comparison` paragraph. Peer mode only.
-- **Report for AI Researchers and Developers**:
-  - *Setup and method* gains **Compared models** (peer mode only): Model, Provider, Kind (run or group),
-    Runs, Thinking level, Harness version and Run dates (UTC). The stand-alone form keeps its single-run
-    setup lines;
-  - the *Quality* table gains a **Paired difference** column (*"-4.6 points (-9.8 to +0.7)"*, *not
-    available* below the minimum, with the reasons listed under the table) and the code-rendered note
-    *"Paired difference: mean per-question difference, subject minus peer, over the questions both
-    answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for
-    comparing several models, and is not a significance test."*;
-  - *Threats to validity* ends with the writer's `limitations` paragraph, in both forms.
-- **Evidence lines** print a `peer.X.*` fact under its label with the peer's name put in when peers are
-  named (`FactLabel`).
 - **Writer prompt**: the PEERS block, the subject's explanation, the *NO SIGNIFICANCE TEST* block, the
-  readability rules (§ 3), the `comparison` and `limitations` slots and the Internal Brief's word caps.
-  Validator rules 15–17 (§ 3). The output-token estimates are 2,400 (Executive Summary), 7,400 (Report for
-  AI Researchers and Developers) and 7,000 (Internal Brief).
+  readability rules (§ 3) and the `comparison` slot. Validator rules 16–17 (§ 3). The Executive
+  Summary's output-token estimate is 2,400.
 - **Footer**: from format 7 the checks line names *interval-overlap wording* and *hype words* among the
   automatic checks; an older document keeps the wording of the checks it received.
 
 A document stored under format 6 renders as before: *How it compares* and the *Rank* line appear only when
-its sheet has `peer.*` facts, the *Paired difference* column only when a `peer.X.pairedDifference` fact
-exists, *Compared models* without the *Harness version* and *Run dates* columns it has no data for, and
-the `comparison` and `limitations` paragraphs only when the slot is present.
+its sheet has `peer.*` facts, and the `comparison` paragraph only when the slot is present.
 
 **Format version 6** (2026-09-29, with harness 43 in `ai-benchmark.md`) makes the
 documents read the same figures as the run report and tightens what the writer may say about the claim
@@ -982,7 +943,6 @@ verifier:
   is to be restated. The renderer skips its computed sentence when a stored document's confidence text
   already places `{{quality.interval}}`, as writers before format 6 were asked to. Rule 13's note no
   longer suggests writing the span.
-- **Strength evidence (R9)**: a strength's evidence line lists no refutation; only a weakness's does.
 - **PDF keep-with-next (R10)**: a run of consecutive headings is grouped and kept with what follows. Before
   a paragraph the group and the paragraph are one unbreakable block (`PreventPageBreak`); before anything
   else the group gets `EnsureSpace` for its own height plus three body lines
@@ -1002,9 +962,8 @@ verifier:
   panel families is an assumption."*
 - **Claim-verifier rulings (A1)**: a new writer rule — a claim-verifier ruling is an advisory judgment by
   an AI model that is sometimes wrong; attribute it (*"the claim verifier judged …"*), never state it as a
-  fact about the game, and never list refuted claims in the abstract or the one-sentence result. The
-  abstract's slot job says the same. Validator rule 14 (`VerifierInSummaryRule`, § 3) flags *verifier* in
-  the headline or the abstract. The warning rules — 12, 13 and 14 (`IsWarningRule`) — keep their text,
+  fact about the game, and never list refuted claims in the one-sentence result. Validator rule 14
+  (`VerifierInSummaryRule`, § 3) flags *verifier* in the headline. The warning rules — 12, 13 and 14 (`IsWarningRule`) — keep their text,
   ask for the repair turn and mark the document CompletedWithWarnings.
 - **Response-style note (A2)**: a new writer rule — the response-style note is Overseer's own
   observation, never attributed to a grader.
@@ -1014,23 +973,20 @@ reference reader's, say) the line is omitted, and where its confidence paragraph
 interval the computed sentence is not added.
 
 **Format version 5** (2026-09-29) comes from a review of the run-73 Executive Summary
-and technical report PDFs:
+and the PDFs of the since-retired technical report:
 
 - **Provider wording**: the single-grader support labels read *One grader — different provider* and *One
   grader — same provider as the model* (§ 2); *Setup and method* and *Threats to validity* speak of a
   grader's provider. A sheet stored under format 2–4 is normalized when it is read
   (`BenchmarkReportFacts.NormalizeSupportLabels`, in both the render and the anonymized appendix copy), so
   its items keep their single-grader label rather than falling to *Computed*. The stored property
-  `sameFamilyAsSubject` keeps its name, and the Internal Improvement Brief's raw fact-sheet appendix still
-  prints it.
+  `sameFamilyAsSubject` keeps its name, and a raw fact-sheet appendix still prints it.
 - **Writer independence**: a writer sharing the subject's provider gets a code-rendered caveat (§ 6),
   also on re-rendered format 2–4 documents.
 - **Interval span**: the new fact `quality.intervalSpan` (the printed upper bound minus the printed lower
   bound, *"9 points"*); the writer prompt's confidence slot names `{{quality.interval}}` and
   `{{quality.intervalSpan}}` instead of asking for the interval's width; validator rule 13 (§ 3); the
   Executive Summary's code-rendered span sentence (§ 6).
-- **Disclosure density**: the Report for AI Researchers and Developers prints evidence lines at Detailed
-  and Full only.
 - **Complete answers**: `ContentJson` keeps `answerText` for every cut excerpt, and Full prints it (§ 6).
 - **Tool use**: the execution-only note at every level and the Tool-call log pointer at Full (§ 6).
 - **Native framing**: the PDF and Word downloads render with `IncludeDocumentFooter = false` as well as
@@ -1043,26 +999,21 @@ and technical report PDFs:
 A format 4 document renders without the span sentence and with its excerpts at Full, under the note.
 Version-5 rows stay readable by version-4 code, which ignores `answerText`.
 
-**Format version 4** (2026-09-29) makes the disclosure levels differ visibly (§ 6): at
-Detailed the Report for AI Researchers and Developers prints every question and answer excerpt in a
-*Questions and answers* section, and the quote under each noted question is gone at Detailed and Full,
-where the section carries it. Nothing stored changed, so a format 3 document renders the same way.
+**Format version 4** (2026-09-29) made the disclosure levels of the since-retired audience 2 differ
+visibly. Nothing stored changed, so a format 3 document renders the same way.
 
 **Format version 3** (2026-09-29) came from a review of the run-completion documents
 written for run 73, which found the evidence repeated under every item, raw fact keys in the text, the
 quality index printed as *±* a half-width, refuted grader statements read as errors of the answer, rubric
 source notes and cut-off tables leaking into the writer's input, and the slots restating their lists:
 
-- **Evidence**: one compact line per item in the Report for AI Researchers and Developers, none in the
-  Executive Summary, which prints plain support labels (§§ 1–2); no question expansion under an item.
+- **Evidence**: the Executive Summary prints plain support labels (§§ 1–2); no question expansion under
+  an item.
 - **Labels**: a human label for every fact key (`BenchmarkReportFactLabels`); *Serious errors* became
   *Critical errors*.
-- **Researcher report**: *Why it scored this way* then `### Weaknesses`, *What worked well* then
-  `### Strengths`, the recommendations as a list only; a **Speed and cost** table (median and
-  90th-percentile answer time, cost per question, cost per run, the total cost per run with the graders
-  included, input and output tokens per question,
-  from the new facts `tokens.inputPerQuestion` and `tokens.outputPerQuestion`), each row only when its
-  fact is available.
+- **Speed and cost** table (median and 90th-percentile answer time, cost per question, cost per run, the
+  total cost per run with the graders included, input and output tokens per question, from the new facts
+  `tokens.inputPerQuestion` and `tokens.outputPerQuestion`), each row only when its fact is available.
 - **Figures**: the index reads *77 / 100 (interval 73–82)*, never *±* (the `quality.index` fact is the
   point alone, and its interval is rounded as the point is); *How confident are we* became *How reliable
   this result is*; the *About this benchmark* paragraph names a grader from the model under test's
@@ -1080,8 +1031,7 @@ source notes and cut-off tables leaking into the writer's input, and the slots r
   answer)"*).
 - **Writer prompt**: the one grader vocabulary (§ 2); a job for each slot; the reliability slot says when
   a grader shares the subject's provider; a Conflicting row whose two texts are about different things is
-  left out; a refuted grader's statement means the grader was wrong; the abstract names every error the
-  claim verifier refuted.
+  left out; a refuted grader's statement means the grader was wrong.
 - **Front matter**: the PDF and Word downloads render with `IncludeFrontMatter = false`, since their
   cover prints the stamp and the facts; Markdown and HTML keep it (§ 8).
 
@@ -1090,9 +1040,12 @@ falls back to what format 2 printed. Two observations of that review are deliber
 benchmark round: on one run-73 question the claim verifier's verdict contradicted its own rationale, and
 the synthesis can merge unrelated items into one Conflicting row.
 
-The goldens include two stand-alone ones, `exec_standalone.md` and `technical_standalone.md`, rendered
-from the fixture's single-run subject; the comparison-wide documents' `comparison_*.md` and
-`comparison_subset_*.md`; and the comparison-scope prompts' `prompt_*_comparison.txt`. To regenerate every golden after an intended change, set
+The goldens include the stand-alone `exec_standalone.md`, rendered from the fixture's single-run
+subject; the comparison-wide documents' `comparison_*.md` and `comparison_subset_*.md`; the
+comparison-scope prompts' `prompt_*_comparison.txt`; and the Root Cause Analysis goldens
+`comparison_rca_full_named.md`, `comparison_rca_full_anonymized.md`, `rca_full_named.md` (a per-model
+pack), `rca_run_with_controls.md` and `rca_run_no_controls.md` (run completion),
+`rca_battery_standalone.md`, `prompt_rca_comparison.txt` and `prompt_rca_standalone_run.txt`. To regenerate every golden after an intended change, set
 `$env:OVERSEER_UPDATE_GOLDENS = '1'` and run the normal test command (`ai-benchmark.md` and the
 `testing-guidelines` skill give it), then review each diff before keeping it.
 
@@ -1122,7 +1075,7 @@ comparison's charts (§ 13).
 | Package | Contents | Disclosure | Peers | Formats |
 |---|---|---|---|---|
 | **Internal** | Every available document: pack documents, the run report, the tool-call log, run diagnostics | Full | Named | PDF, Word and Markdown (PDF, Word and Text for the diagnostics) |
-| **External** | Executive Summary and Report for AI Researchers and Developers only; internal-only rows are listed but unselectable, with their reason | Summary (Detailed as an option) | Anonymized (Named as an option, with a warning) | PDF |
+| **External** | Executive Summary (and a chat consistency analysis' Provider Issue Report) only; internal-only rows, the Root Cause Analysis among them (*"Internal only: contains benchmark questions and rubrics"*), are listed but unselectable, with their reason | Summary (Detailed as an option) | Anonymized (Named as an option, with a warning) | PDF |
 | **Custom** | Any selection | Per document | Per document | Any, Word included |
 
 The summary line, the ZIP's `MANIFEST.md` and its file name call them *Internal package* and *External package*.
@@ -1269,9 +1222,12 @@ one row.
 
 Each row offers its formats PDF first, then Word: pack documents and the run report PDF, Word, Markdown
 and HTML; the tool-call log PDF, Word and Markdown; diagnostics PDF, Word and Text. The choices are
-remembered per browser in settings **version 3**. A stored version 2 is migrated: the package, the paper
-and every remembered choice are kept except the Internal package's remembered formats, which are dropped
-so every admin meets the Internal package's Word default once. Any older version is ignored. The
+remembered per browser in settings **version 5** (`STORED_SETTINGS_VERSION`), keyed by document category:
+`executiveSummary`, `rootCauseAnalysis`, `providerIssueReport` and the run and battery file kinds.
+Versions 2 to 4 are migrated: every package loses the choices remembered for the two retired document
+types (`technicalReport`, `internalBrief`); versions 2 and 3 also gain the Provider Issue Report's
+default choice, and version 2 loses the Internal package's remembered formats, so every admin meets the
+Internal package's Word default once. Any other version is ignored. The
 dialog's explanations — each package's description, the paper size, a row's note and the full reason a
 row is internal-only — sit behind click-mode info buttons, and the option meanings in the one *About
 document options* dialog; the red *Internal only*
@@ -1291,7 +1247,8 @@ diagnostics), gets an `_INTERNAL` file-name suffix. Every name ends
 
 **A Report Pack document of a numbered comparison** (§ 15) is named by its comparison
 (`BenchmarkPdfFileNames.ComparisonStem` on the server, `comparisonFilePart` in the client), with the kind
-slug `executive-summary`, `researcher-report` or `internal-brief`:
+slug `executive-summary` or `root-cause-analysis` (`BenchmarkPdfFileNames.KindSlug`; a chat consistency
+document's `provider-issue-report` is in § 16):
 
 | Document | Stem |
 |---|---|
@@ -1371,7 +1328,7 @@ still reaches no model client, clock or configuration, and the architecture pins
   drawing, embedded from `Overseer/Resources/Pdf/Fonts/` beside their license texts. The host's fonts are
   never used; a glyph none of them has (an emoji) prints as a replacement mark rather than failing.
 - **Page 1**: the wide GnollBench logo, the document kind, the title, the subject line, a facts table,
-  *Source {first 16 hex of the source hash} · PDF layout 8* (*PDF layout 8* alone for a chat consistency
+  *Source {first 16 hex of the source hash} · PDF layout 9* (*PDF layout 9* alone for a chat consistency
   document, whose cover and footer carry no hash, § 16), and a classification banner — amber
   *Confidential …* for a provider copy (the audience-aware stamp of § 6), red *INTERNAL …* for everything
   else, the text saying what the color says. A report document with peers has the subject line
@@ -1461,7 +1418,15 @@ still reaches no model client, clock or configuration, and the architecture pins
   full-width glyph 1.85, any other 1), and monospace code by its length.
 - **Inline code** keeps the space before and after it: a test measures the gaps around a code span in
   QuestPDF's own layout (review W4), and the composer passes literal text through unchanged, with no
-  workaround.
+  workaround. From *PDF layout 9* an inline code span is set at **0.86** of the surrounding text size
+  (`BenchmarkPdfStyle.InlineCodeScale`), so a long identifier no longer towers over its line.
+- **PDF layout 9** (2026-10-15, `BenchmarkPdfRenderer.LayoutVersion = 9`): besides the inline code size,
+  a short table that already sits in a no-break group with its headings or bold label (the three cases
+  of layouts 7 and 8) is composed with `keepTogether: false`, so no unbreakable block is nested inside
+  another and the heading is no longer left on a page of its own; and a server-drawn figure (§ 13)
+  prints full width in a row of its own, under the 60 % height cap, never in a figure row and never
+  placed by the chart layout. The Word writer reuses the composer's figure rule, so a server-drawn figure
+  is full width there too; the Word layout version stays 2.
 - **Source hash**: SHA-256 over the UTF-8 Markdown followed by each drawn chart's SHA-256 (lowercase hex)
   in figure order, so a changed chart changes the hash; with no chart drawn it equals the Markdown's own
   hash, as before layout 3. The cover and the footer print its first 16 hex characters.
@@ -1555,13 +1520,21 @@ The request of the preview, the start and the layout preview is
 - model scope reads `subjectKeys`, the subjects written one after another sharing one computation of the
   comparison, or `subjectKey` alone when that list is empty;
 - comparison scope reads `coveredEntryKeys`, empty or absent meaning every entry that is not Excluded;
-- `audiences` are numbers (1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal
-  Brief); `batteryRunIds` names battery results, and a request naming any may name no run or group;
+- `audiences` are numbers (1 Executive Summary, 5 Root Cause Analysis); each scope accepts only its own
+  list (`ScopeAudiences`: model and comparison scope 1 and 5, chat consistency 1 and 4), and any other
+  audience, a retired 2 or 3 included, is refused 400 with *"<name> is not written for <model |
+  comparison | chat consistency> documents."*; `batteryRunIds` names battery results, and a request
+  naming any may name no run or group;
 - `replaceDocumentIds` names the written documents the job replaces (§ 15).
 
 - `POST /api/admin/benchmark/report-packs/preview`: The fact sheets and prompts without a model call.
   Model scope: the first subject, its peers, the estimated tokens, cost and `contextWindowShare` per
-  document and subject, the same-provider warning and any refusal. A subject with no peer answers 200
+  document and subject, the same-provider warning and any refusal. Every estimate is a **range**: its
+  low end (`estimatedCostUsd`, `estimatedTotalCostUsd`) counts the first call only, its high end
+  (`estimatedCostWithRepairUsd`, `estimatedTotalCostWithRepairUsd`,
+  `BenchmarkReportPackService.EstimateCostWithRepair`) adds one repair turn per document, which resends
+  the prompt with the reply and the issues; the panels show *"first call only, to one repair turn per
+  document"*. The run, battery and chat consistency estimate endpoints return the same fields. A subject with no peer answers 200
   with the subject's fields, `refusal` set to `PeerlessReportRefusal` (§ 1a) and no estimates. Otherwise
   the preview also carries `writtenDocuments`: the Report Pack documents already stored for this
   comparison and its first subject (§ 5), the newest per audience, in audience order, each
@@ -1596,7 +1569,7 @@ The start's refusals in model scope, each subject checked in turn, in the order 
 4. A writer that is invalid, disabled, keyless, not of the Benchmark role, or refused by the endpoint
    policy — 400.
 5. A writer that is a subject's own model — 400.
-6. No audience — 400.
+6. No audience, or an audience model scope does not write — 400.
 7. A document whose prompt is above 90 % of the writer's context window — 400 (§ 15).
 8. An id in `replaceDocumentIds` that does not exist, or is not a requested Report Pack document of this
    comparison and of these subjects — 400.
@@ -1611,7 +1584,8 @@ The start's refusals in model scope, each subject checked in turn, in the order 
 In comparison scope: battery results mixed with runs or groups — 400; a comparison that cannot be
 computed — 400; a covered entry that is not in the comparison or is Excluded — 400; fewer than 2 or more
 than 12 covered models — 409; an unusable writer — 400; a writer that is a covered model's
-configuration (provider, model id and thinking level) — 400; no audience — 400; a prompt above 90 % of
+configuration (provider, model id and thinking level) — 400; no audience, or one comparison scope does
+not write — 400; a prompt above 90 % of
 the writer's context window — 400; an id in `replaceDocumentIds` this job does not write again — 400; a
 requested document already written for this covered set and not named in `replaceDocumentIds` — 409
 (*"The <document name> of these models is already written for this comparison. Delete it, or rewrite it
@@ -1620,16 +1594,19 @@ to replace it."*); the spend cap — 429; a writer sharing a covered model's pro
 Either scope numbers the comparison before the job starts (§ 15).
 
 - `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing
-  run-completion documents now (§ 11). Body `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`:
-  `audiences` names the documents to write (1 Executive Summary, 2 Report for AI Researchers and
-  Developers, 3 Internal Improvement Brief); null or empty writes every missing one. The writer is recorded on the run as its report
+  run-completion documents now (§ 11). Body `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider, replaceDocumentIds? }`:
+  `audiences` names the documents to write (1 Executive Summary, 5 Root Cause Analysis); null or empty
+  writes every missing one. `replaceDocumentIds` names the run's own Root Cause Analysis that a
+  **Rewrite with controls** replaces (§ 17): the new document replaces it once stored, through the same
+  replace-after-persist path as a Report Pack rewrite, matched on subject key and audience; the
+  automatic path never replaces anything. The writer is recorded on the run as its report
   writer, replacing an earlier one. Returns 202 `{ runId, status, audiences }` with the status Pending
   and the documents the job will write. Refusals, in order: no body — 400; an unknown run — 404; a run
   that has not finished (Completed, CompletedWithErrors or CompletedWithLimits) with a final synthesis —
   400; a job for the run Pending or Writing — 409; a requested audience that is not a run-completion
-  document — 400 (`InvalidAudienceMessage`, *"Only the Executive Summary, the Report for AI Researchers
-  and Developers and the Internal Improvement Brief are written for a run."*); a requested document
-  already written — 409 (*"The <name> is already written. Delete it first to write it again."*), or, with
+  document — 400 (`InvalidAudienceMessage`, *"Only the Executive Summary and the Root Cause Analysis are
+  written for a run."*); a requested document already written and not named in `replaceDocumentIds` —
+  409 (*"The <name> is already written. Delete it first to write it again."*), or, with
   none requested, every one written — 409 (`AllWrittenMessage`, *"This run already has every AI-written
   report. Delete one first to write it again."*); a writer that is unusable or
   the model under test — 400; a writer of the candidate's provider without `acknowledgeSameProvider` —
@@ -1654,6 +1631,16 @@ Either scope numbers the comparison before the job starts (§ 15).
   run-completion documents and settle the run's status (§ 11). 204; 404 when the run or the document is
   unknown, or the document is not this run's run-completion document; 409 while the run's documents are
   being written.
+- `GET /api/admin/benchmark/runs/{runId}/root-cause-controls`: The controls a Root Cause Analysis of the
+  run would use if written now (§ 17), as `RootCauseControlsDto`: `controls`, at most three, in the
+  order the analysis uses them, each `{ modelLabel, provider, runId, batteryRunId, completedAtUtc,
+  sharedQuestions }` (`completedAtUtc` carries the control's start time); `controlLimit`, `None`,
+  `Moderate` or `Low`, against the subject's provider; and `controlRun`, the `control` run the analysis
+  would propose when fewer than two controls qualify — taken from the same run-completion preparation
+  the Root Cause Analysis uses, and null when the run has no final synthesis yet or no other provider
+  has a configured Benchmark-role recommended model. The same `RootCauseControls.FindAsync` serves the
+  preparation, so the tab shows exactly the controls the document would use. No model call; 404 for an
+  unknown run; 499 when the client aborts.
 
 ### Battery-completion documents (`AdminBenchmarkBatteryReportsController`)
 
@@ -1664,10 +1651,10 @@ response shapes of the run endpoints above (§ 14):
   the writer in the body, which becomes the battery run's writer. 202 with the battery run's Pending
   status (its id in `runId`) and the documents to write. Refusals, in order: no body — 400; an unknown
   battery run — 404; a battery run that has not finished, or whose latest analysis is missing, stale or
-  incomplete — 400; a job for it Pending or Writing — 409; an audience other than the three — 400
-  (*"Only the Executive Summary, the Report for AI Researchers and Developers and the Internal
-  Improvement Brief are written for a battery run."*); a requested document already written, or with
-  none requested every one written — 409 (`AllWrittenMessage`, *"This battery run already has every
+  incomplete — 400; a job for it Pending or Writing — 409; an audience other than the two — 400
+  (*"Only the Executive Summary and the Root Cause Analysis are written for a battery run."*); a
+  requested document already written and not named in `replaceDocumentIds`, or with none requested
+  every one written — 409 (`AllWrittenMessage`, *"This battery run already has every
   AI-written report. Delete one first to write it again."*); a writer that is
   unusable or the model under test — 400; a writer of the candidate's provider without
   `acknowledgeSameProvider` — 409 with the warning; a writer refused by the endpoint policy — 400; the
@@ -1681,6 +1668,10 @@ response shapes of the run endpoints above (§ 14):
 - `DELETE …/report-documents/{documentId}`: Delete one of the battery run's own battery-completion
   documents and settle its status. 204; 404 when it is not one; 409 while its documents are being
   written.
+- `GET /api/admin/benchmark/batteries/runs/{batteryRunId}/root-cause-controls`: The battery run's
+  controls (§ 17), as the run endpoint returns them (`RootCauseControlsDto`), each with its
+  `batteryRunId`; `controlRun` comes from the battery-completion preparation and is null while the
+  battery result cannot be written about. 404 for an unknown battery run.
 
 ### Report documents (`AdminBenchmarkReportDocumentsController`)
 
@@ -1716,7 +1707,10 @@ response shapes of the run endpoints above (§ 14):
     `subject=chat-consistency:<id>&origin=chatConsistencyReport` (§ 16), and the comparison documents about either — the
     pointer's count and the `subject` library scope — with `origin=reportPack`;
   - `take` defaults to 200 and is capped at 500.
-- `GET /api/admin/benchmark/report-documents/{id}`: Detail: metadata, validation notes and the facts JSON.
+- `GET /api/admin/benchmark/report-documents/{id}`: Detail: metadata, validation notes and the facts JSON;
+  for a Root Cause Analysis also `recommendedRuns` and `checks`, read from the stored `RootCause` result,
+  and, for a run- or battery-completion one, the `controls` it used (`RootCauseControlDto`, § 17); null on
+  other documents.
 - `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`:
   The rendered Markdown (`text/markdown; charset=utf-8`), deterministic, with no model call; 400 for a
   refused combination.
@@ -1727,9 +1721,7 @@ response shapes of the run endpoints above (§ 14):
   subject and the comparison part for a document with peers, § 8; a `battery:<id>` subject takes
   `battery-run-<id>_` in place of `run-<id>_`, § 14). The document's charts of the requested naming are
   drawn in it, placed by its chart layout (§ 13); the same refusals as `render`, 400 for another `paper`,
-  413 over the size limit. Without a comparison number, a Report for AI Researchers and Developers is named
-  `[run-<id>_][vs-<comparison>_]<title without its "— <document name>" ending>_Researcher_Report_<disclosure>_<peers>[_INTERNAL].pdf`,
-  whether the stored title ends in the current name or the legacy *Technical Report*. With
+  413 over the size limit. With
   `inline=true` the response carries `Content-Disposition: inline` with the same file name, so a
   browser tab shows the PDF rather than saving it; the PDF viewer's *Open in new tab* uses it (§ 11).
 - `GET /api/admin/benchmark/report-documents/{id}/render/docx?disclosure=&peers=&paper=a4|letter`: The
@@ -1749,9 +1741,17 @@ response shapes of the run endpoints above (§ 14):
   400 `{ error }` for a stand-alone document (*"This document has no peers; charts are drawn only for
   documents that compare models."*; never a comparison-wide one), when chart storage is not configured
   (*"Chart storage is not configured. Set Benchmark:ReportPack:ChartsDataLocation to an absolute folder."*),
-  for any chart the validation refuses and for an invalid layout; 404 for an unknown document.
+  for any chart the validation refuses and for an invalid layout; 404 for an unknown document. A browser
+  upload carries browser-drawn keys only; the document's server-drawn charts (§ 13) are kept.
 - `DELETE /api/admin/benchmark/report-documents/{id}/charts`: Remove the document's charts. 204, also
   when there were none or chart storage is not configured; 404 for an unknown document.
+- `POST /api/admin/benchmark/report-documents/{id}/charts/redraw`: Redraw a stored Root Cause Analysis's
+  server-drawn charts R1–R4 from its `FactsJson` (§ 13), for a renderer change, replacing the ones drawn
+  before and keeping the uploaded charts; no model call. 200 with the stored set's summary; 400 `{ error }`
+  for a document that is not a Root Cause Analysis (*"Only a Root Cause Analysis has charts drawn by
+  Overseer."*), for chart storage that is not configured, for a fact sheet that cannot be read or holds
+  nothing to draw from, and for a drawing or storage failure; 404 for an unknown document; 499 when the
+  client aborts. The Root Cause Analysis rows offer it as **Redraw charts**.
 
 ### Run files as PDF and Word (`AdminBenchmarkController`)
 
@@ -1785,18 +1785,23 @@ The estimate, write, job and cancel routes of a chat consistency analysis's docu
 - It never re-writes a stored document. A changed run is flagged, not re-generated; generate a new pack
   if the old one is out of date — step 3's *Rewrite* replaces the old document of that type once the new
   one is stored, since a comparison holds one per subject (or covered set) and type (§§ 5, 15). A run's
-  run-completion documents are written again only after they are
-  deleted (§ 11). A document's charts can be replaced or removed at any time (§ 13), which changes its
-  PDF and Word copies but not the stored row, and involves no model call.
+  run-completion documents are written again only after they are deleted, or, for a Root Cause
+  Analysis, by **Rewrite with controls**, which replaces it once the new one is stored (§§ 11, 17). A
+  document's charts can be replaced or removed at any time (§ 13), and a Root Cause Analysis's
+  server-drawn charts redrawn from its stored facts; that changes its PDF and Word copies but not the
+  stored row, and involves no model call.
+- It never applies a change. A Root Cause Analysis' hypotheses, checks and recommended runs are inputs
+  to the triage of the `server_benchmark_to_chat_transfer` skill, never findings; **Set up this run**
+  pre-fills the launcher and never starts a run.
 
 ---
 
 ## 11. Run-Completion Documents
 
 A run can name a **report writer** when it is launched. Once the run is scored, that writer writes the
-run's **Executive Summary**, **Report for AI Researchers and Developers** and **Internal Improvement
-Brief** once, in the stand-alone form (§ 1), and stores them as ordinary `BenchmarkReportDocument` rows
-with `Origin = RunCompletion` and the
+run's **Executive Summary** and **Root Cause Analysis** once — the summary in the stand-alone form
+(§ 1), the analysis with the run's controls (§ 17) — and stores them as ordinary
+`BenchmarkReportDocument` rows with `Origin = RunCompletion` and the
 subject key `run:<id>`. From then on they behave like any other document: every download renders the
 stored row, with no model call.
 
@@ -1827,7 +1832,7 @@ stored row, with no model call.
 
 | Status | Meaning |
 |---|---|
-| NotRequested (0) | The default: no job has been asked for; also where a run returns after one of its documents is deleted |
+| NotRequested (0) | The default: no job has been asked for; also where a run returns after one of its documents is deleted, and where a run with an Executive Summary but no Root Cause Analysis settles, with the message *"Root Cause Analysis not written yet."* (`RootCauseNotWrittenMessage`) |
 | Pending (1) | A job is queued for the report-pack slot |
 | Writing (2) | The writer is writing |
 | Completed (3) | Every document the job wrote is stored |
@@ -1844,13 +1849,14 @@ returns at once, so the next run of a series is never held up by the writer. It 
 these hold: the run's status is exactly **Completed**; it names a report writer; its final synthesis
 exists; it has no run-completion document yet; and its documents are not already Pending or Writing.
 `RerunFinalSynthesisAsync` never calls it. Because of the last-but-one condition, a run that already has
-some run-completion documents — a run written before the Internal Improvement Brief became the third,
-for instance — never has its missing one written automatically; its **AI Reports** tab offers it.
+some run-completion documents — a run with only an Executive Summary, written before the Root Cause
+Analysis existed, for instance — never has its missing one written automatically; its **AI Reports**
+tab offers it as *write the missing documents*.
 
 **The job.** One job has one writer and writes the requested documents the run is missing, in
-`BenchmarkRunReportDocumentService.Audiences` order — the Executive Summary, the Report for AI
-Researchers and Developers, the Internal Improvement Brief; an automatic job requests every missing one
-(`audiences: null`), so it writes all three. Documents with different writers are separate jobs, one
+`BenchmarkRunReportDocumentService.Audiences` order — the Executive Summary, then the Root Cause
+Analysis; an automatic job requests every missing one (`audiences: null`), so it writes both. A model
+batch's guardrail MB-A11 counts two documents per run when the batch names a report writer. Documents with different writers are separate jobs, one
 after the other. `BenchmarkRunReportDocumentService` keeps a per-run, in-memory registry of
 jobs, and its **phases** — *Queued*, *Preparing*, *Writing*, *Finished* — are what the job endpoint
 (§ 9) reports:
@@ -1862,11 +1868,14 @@ jobs, and its **phases** — *Queued*, *Preparing*, *Writing*, *Finished* — ar
 2. **Preparing.** `BenchmarkComplianceGuard.CanSpendAsync` is checked; a refusal makes the run
    **Skipped** with the guard's reason. The writer configuration must still exist, be enabled and have a
    key; otherwise the run is **Failed** with *"The report writer configuration is no longer available."*
-3. **Writing.** The run becomes **Writing**. A single-run comparison is prepared and the documents are
-   written through the Report Pack's own path: parsing, validation, one repair turn, drops, storage and a
-   `SystemAiUsageLog` row with `RoleContext = 8`, charged to the user who launched the run (or who
-   pressed **Write Reports**). The job records each document's start and end times, model calls, tokens
-   and cost.
+3. **Writing.** The run becomes **Writing**. A single-run comparison is prepared — with the run's
+   controls found by `RootCauseControls.FindAsync` for the Root Cause Analysis (§ 17) — and the
+   documents are written through the Report Pack's own path: parsing, validation, one repair turn, the
+   headline rescue from the first draft (§ 3; the headline-only turn is comparison scope only), drops,
+   storage and a `SystemAiUsageLog` row with `RoleContext = 8`, charged to the
+   user who launched the run (or who pressed **Write Reports**). Right after a Root Cause Analysis is
+   stored its four server-drawn charts are drawn (§ 13). The job records each document's start and end
+   times, model calls, tokens and cost.
 4. **Finished.** The run ends **Completed**, **CompletedWithWarnings**, **Canceled**, or **Failed** with
    the first failed document's name and error. A document that was stored is kept, so a later **Write
    Reports** writes only the missing one.
@@ -1880,8 +1889,7 @@ message remain.
 the queue and the run becomes **Canceled** with *"Canceled before the writing began."* A job that is
 writing stops at once: the document in hand is discarded, the documents already written are kept, and
 the message names them (*"Canceled while writing. The Executive Summary was written and is kept."*,
-*"… The Executive Summary and the Report for AI Researchers and Developers were written and are kept."*,
-with three as *"The A, the B and the C were written and are kept."*, or *"… Nothing was written."*).
+or *"… Nothing was written."*).
 Tokens already used are still charged. A canceled job is always Canceled,
 never Failed.
 
@@ -1897,20 +1905,32 @@ from before this feature, or a run whose job failed or was canceled — with the
 it records on the run. The run report dialog's **AI Reports** tab (`app-run-ai-reports`) is where an
 administrator does it:
 
-- **The documents.** All three are listed, written or not: a written one with *Written* or *Written with
+- **The documents.** Both are listed, written or not: a written one with *Written* or *Written with
   warnings*, a line of meta — writer, date, duration, cost and *same provider, acknowledged* when the
   document records the acknowledgment — the *Run changed since this document was written* tag when
-  flagged, **View** and a **Delete** icon button; a missing one marked *Not written*. A status line above
+  flagged, **View** and a **Delete** icon button; a missing one marked *Not written*. Under a written
+  Root Cause Analysis the tab shows its next runs and checks (`root-cause-runs`, each run with **Set up
+  this run**) and a **Redraw charts** action (§ 17). A status line above
   says the job state (*Waiting for the report writer*, *Writing…*, *Failed: …*, *Skipped: …*, the
   cancellation message), with **Show Progress** while the run's documents are Pending or Writing, the
   automatic job's included. A *Downloads* notice with **Open Download Center** opens the Download Center
   on the run, and focus returns to the button when it closes.
+- **The Controls section** (`root-cause-controls`, § 17). Before writing, it names the controls the
+  Root Cause Analysis will use — *"The Root Cause Analysis will use 2 controls: <model>, run #812
+  (2026-10-10); <model>, run #807 (2026-10-09)."* — and the cap they leave, or says *"No earlier run of
+  another model answered these questions under the same graders. Speed and cost causes will be analyzed;
+  intelligence causes will stay undetermined."*; while fewer than two qualify it offers **Set up a
+  control run**. After writing, it says which controls the document used and, when a fresh lookup holds a
+  control the document did not use, *"New controls available since this document was written (run #…)."*
+  with **Rewrite with controls**. It also notes *"For several models, Model Comparison → Report Pack
+  gives a fuller analysis."*
 - **The write panel**, while a finished run lacks a document: one checkbox per missing document (the
   button reads **Write Report** for one and **Write Reports** for two or more; a written one is named as
   already written), the report writer picker with an (i) button that opens the per-document advice (§ 4)
-  — each of the three documents, then *Every document* — as a modal *Choosing a report writer* dialog,
+  — each of the two documents, then *Every document* — as a modal *Choosing a report writer* dialog,
   and a live cost estimate from the estimate endpoint, shown as an *Estimated cost* panel with the total
-  and, for two or more documents, the cost of each. The picker starts on the run's own writer, else on the launcher's
+  and, for two documents, the cost of each, each as the range of § 9 (first call only, to one repair
+  turn per document). The picker starts on the run's own writer, else on the launcher's
   *Report Writer* when it needs neither a refusal nor a warning for this run. A refusal (the model under
   test, an unusable configuration, a run without a final synthesis) shows in red and disables the button;
   a same-provider writer shows an amber warning and, on **Write Reports**, a *Same-Provider Report
@@ -1931,11 +1951,11 @@ administrator does it:
   what time and at what cost, with **Open Download Center** and **Done**.
 - **The PDF viewer** (`app-pdf-viewer-dialog`): **View** opens the stored document in a full-screen
   in-app viewer, rendered by pdf.js from the server's PDF with peers named, at the fullest disclosure the
-  document allows, and the others offered as *Summary* / *Detailed* / *Full* tabs (*Summary* / *Full*
-  for the Executive Summary; the Internal Improvement Brief opens at *Full*, its only level). An (i) button after the tabs opens a modal that explains what each offered
-  level contains in that document — Summary and Full for the Executive Summary; Summary, Detailed and
-  Full for the Report for AI Researchers and Developers (`report-disclosure-guide.ts`, whose
-  per-document texts the Download Center's *Disclosure* column also shows, one section per document).
+  document allows, and the others offered as disclosure tabs (*Summary* / *Full* for the Executive
+  Summary; the Root Cause Analysis opens at *Full*, its only level). An (i) button after the tabs opens
+  a modal that explains what each offered level contains in that document (`report-disclosure-guide.ts`,
+  whose per-document texts the Download Center's *Disclosure* column also shows, one section per
+  document).
   It has page
   navigation, zoom, a selectable text layer, **Download PDF** (under the server's file name) and **Open
   in new tab**, a real same-origin URL with `inline=true`. No PDF is framed or embedded, so the CSP is
@@ -1945,7 +1965,7 @@ administrator does it:
 **stage 4**, *Writing reports*: the dialog's labels read *Stage n of 4*, the stage is current while the
 Completed run's documents are Pending or Writing (and for up to 30 s while they are still NotRequested),
 the status line follows the job's phase (*"Stage 4 of 4 — Writing reports: waiting for the report writer
-(1 job ahead)"*) and then appends *"Reports written: 3 documents, 1m 48s."*, and the completion chime
+(1 job ahead)"*) and then appends *"Reports written: 2 documents, 1m 48s."*, and the completion chime
 waits for the stage to end. The run itself ends Completed when scoring ends. The full description —
 roster row, stat cell, cost panel rows, diagnostics block — is `ai-benchmark.md` § 1, *Run Progress
 Dialog*.
@@ -1965,7 +1985,9 @@ documents (§ 14).
 
 **Written once, rewritten after a delete.** A run-completion document is immutable like every other:
 downloads only render it. A later re-synthesis or re-score marks it *Run changed since this document was
-written* and does not rewrite it. To write it again, delete it — the tab's **Delete**, after a
+written* and does not rewrite it. A later comparable run of another model never changes a stored Root
+Cause Analysis either; it only makes **Rewrite with controls** appear (§ 17), which Overseer never
+starts by itself. To write it again otherwise, delete it — the tab's **Delete**, after a
 confirmation, or `DELETE /api/admin/benchmark/runs/{runId}/report-documents/{documentId}`, which is
 refused while the run's documents are being written — and use **Write Reports**. Deleting a run's
 run-completion document through either delete endpoint returns the run's status to **NotRequested** with
@@ -1978,7 +2000,8 @@ facts (§ 2), computed by `BenchmarkProviderAvailabilityService` from the run's 
 lineage predecessors when the job prepares the sheet, and the documents print them as § 7 describes
 (format 12). A run started before harness 56 has no ledger, and its documents say *not recorded*. A
 stored document's facts are never recomputed, so a document written before a later repair pass keeps
-the figures it was written with. A stand-alone document carries no chart, so it has no figure A1.
+the figures it was written with. A stand-alone document carries no browser-drawn chart, so it has no
+figure A1; a run-completion Root Cause Analysis carries only its four server-drawn charts (§ 13).
 
 ---
 
@@ -2052,7 +2075,7 @@ reports are written in the AI Reports tab of its report."*
     written document's reference, and an amber note names the documents written against another
     reference than the one chosen, which a **Rewrite** would change.
   - **Documents of this comparison** (`app-comparison-documents-status`): under *Whole comparison*,
-    three rows, one per document type, for the chosen set — the comparison-wide documents while every
+    two rows, *Executive Summary* and *Root Cause Analysis*, for the chosen set — the comparison-wide documents while every
     model is chosen, else that subset's — and below them a closed *Other model sets (n)* disclosure with
     every other covered set that has documents (*"GPT-5.6 Luna (max), GPT-6.1 Sol (medium) — 2 of 5
     models"*), each with its rows and a **Choose these models** link that sets the picker to that set
@@ -2063,22 +2086,27 @@ reports are written in the AI Reports tab of its report."*
     duration, the cost and *Charts: 3* (figures) or *No charts*, with icon-only **View** (*eye*, the PDF viewer) and
     **Delete** (*trash*, `.action-btn-danger`, a nested confirmation). Its checkbox reads *Write* for a
     document not written and *Rewrite — replaces the current document* for a written one; not-written
-    rows start checked, written ones unchecked. The other sets' rows have no checkbox. The list follows
+    rows start checked, written ones unchecked. The other sets' rows have no checkbox. Under a written
+    Root Cause Analysis row sit its recommended runs and checks (`root-cause-runs`, each run with **Set
+    up this run**) and a **Redraw charts** action (§ 17). The list follows
     the preview, asked 300 ms after the last change of scope, models, checks or writer, an answer for an
     older choice dropped.
   - **Charts in PDF and Word**: the chart picker with its per-figure width select (no visible caption;
     beside each figure, and under its title below a 20 rem picker width) and its *Layout* disclosure
-    (§ 13), 1 rem below the figures; on screen,
+    (§ 13), 1 rem below the figures, with the note *"The Root Cause Analysis also carries four charts
+    drawn by Overseer: where the points were lost, where the time goes, where the cost goes, and how
+    sure each hypothesis is."* when the Root Cause Analysis is shown; on screen,
     the print advisory when a document type's theme *As in step 2* would print badly and, while the
     `report-charts-location-missing` alert is present, *"Chart storage is not configured; documents will
     be written without charts."*
   - **Report writer**, with the dialog-mode info tip *Choosing a report writer*
-    (`run-ai-reports/report-writer-advice.ts`, shared with the run report's **AI Reports** tab, with an
-    Internal Brief entry) and the *How the graders work* link; the refusal or the amber same-provider
+    (`run-ai-reports/report-writer-advice.ts`, shared with the run report's **AI Reports** tab, with a
+    Root Cause Analysis entry) and the *How the graders work* link; the refusal or the amber same-provider
     warning (*Writer from a chosen model's provider*).
   - The *Estimated cost* panel (`.gh-estimate-panel`, shared with the AI Reports tab), summing the
-    checked rows, with an amber warning when a checked document's prompt would fill 70 % or more of the
-    writer's context window (refused from 90 %, § 15).
+    checked rows as a range, *first call only, to one repair turn per document* (§ 9), with an amber
+    warning when a checked document's prompt would fill 70 % or more of the writer's context window
+    (refused from 90 %, § 15).
   - **Preview layout** and **Generate**, two gold `.btn-gh` buttons in one action row at the bottom of
     the sidebar, Generate last. At the default sidebar width they stack, Preview layout above Generate,
     both full width; from a sidebar about 34 rem wide they sit side by side. Under the row, unless chart
@@ -2096,7 +2124,7 @@ reports are written in the AI Reports tab of its report."*
     `aria-disabled` with *"Every document listed is already written. Check Rewrite on one to replace it,
     or delete it."* A 409 from the start — a document written in the meantime (§ 9) — shows its `error`
     as any other start error.
-- **Preview layout** (*eye*, and a *chevron* that points up while open) opens a popover of the three
+- **Preview layout** (*eye*, and a *chevron* that points up while open) opens a popover of the two
   document types (`frontend_ui_controls` § 4f), each *Executive Summary · 2 charts*, offered whether or
   not it is checked under *Documents*. Focus moves to the type the chart picker shows, or the first one
   available; Escape closes the popover only, and focus returns to the trigger. Choosing a type composes
@@ -2118,7 +2146,13 @@ reports are written in the AI Reports tab of its report."*
   two counts differ), *Charts failed — retry* (a button that tries again) or *Charts: none*; and *Log and
   diagnostics*, a disclosure with the job log and icon-only **Copy diagnostics** and **Download
   diagnostics** (`report-pack_<subject>_diagnostics_<yyyyMMdd-HHmmss>.txt`, LF line endings, never naming
-  the user who started the job). Elapsed time ticks every second on the server's clock
+  the user who started the job). The diagnostics print the estimate as its range, *"Estimate: $1.04 to
+  $2.10 (first call only, to one repair turn per document)"*, and, once a document row carries them, two
+  sections after *Documents*: **`== Validation ==`**, per document its first-turn and final issues
+  (counts per rule, then each issue with its rule, location and message, *(dropped)* where it was), and
+  **`== Failed writer replies ==`**, the raw reply of each document that failed, between *--- reply ---*
+  and *--- end of reply ---*. A running job's rows carry neither, so neither section is written then.
+  Elapsed time ticks every second on the server's clock
   (`serverTimeUtc` of the job view, the browser's clock as a fallback). Once the job finishes, a summary
   with **See the documents**, which switches to step 4, and **Dismiss** sits above the stat strip.
 - Polling continues while the step is hidden and stops when the wizard is destroyed. There is no
@@ -2188,7 +2222,10 @@ open, the summary line saying why, and opens the Download Center dialog on every
 (`{ kind: 'all' }`) with **nothing preselected** and no chart actions. The summary loads when the tab is
 shown, not with the page, and again each time the tab is shown, the wizard closes (it may have written
 documents), a document is deleted in the Download Center or the Download Center closes; focus then
-returns to the button. The launcher still duplicates none of the wizard's controls.
+returns to the button. Below it, the newest Root Cause Analysis among the listed documents is named
+(*Root Cause Analysis #<id> — <title> · <time>*) with its next runs and checks (`root-cause-runs`, § 17),
+so its **Set up this run** is reachable without opening the wizard. The launcher still duplicates none
+of the wizard's controls.
 
 The run report's **Downloads** also opens the Download Center dialog, on the run, without chart actions.
 Both places, like step 4, show and download the charts a document already has in its PDF and Word
@@ -2202,10 +2239,14 @@ A comparison document's PDF and Word copies can carry the Model Comparison's own
 step 2, drawn for print. **Charts are drawn in the browser, from step 2's settings, and stored on the
 server as PNG files beside the document; rendering only places them.** No model call is involved, the
 stored document row never changes, and the Markdown and HTML copies never carry a chart. Only a document
-with peers can have charts — a comparison-wide document always covers two or more models, so it always
-can; a stand-alone document (every run-completion document) has none. Each chart is **composed for a
-target size in points** (below), and the server places it by the document's **chart layout**: its width
-share of the text column, rows of two, and a height cap.
+with peers can have browser-drawn charts — a comparison-wide document always covers two or more models,
+so it always can; a stand-alone document (a run- or battery-completion document) has none. Each chart is
+**composed for a target size in points** (below), and the server places it by the document's **chart
+layout**: its width share of the text column, rows of two, and a height cap.
+
+The one exception is the Root Cause Analysis: its four charts R1–R4 are **drawn on the server** with
+QuestPDF when the document is stored (§ 17, *Server-drawn charts*), so every Root Cause Analysis has
+them, a stand-alone one included.
 
 ### The figures and where they go
 
@@ -2223,23 +2264,37 @@ Eight figures can be chosen per document type (`BenchmarkReportChartPlacement`; 
 | `s3-speed-cost` | Speed against cost | Two plotted models |
 | `a1-availability` | Provider errors: each model's provider error rate with its cluster-adjusted 95 % interval, labeled *k/n* (format 12, [`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md)) | Two plotted models, one with provider attempts recorded |
 
+Four more figures are **drawn by the server**, never chosen in the picker, and carried by every Root
+Cause Analysis (`BenchmarkReportChartPlacement.ServerFigureKeys`, `IsServerDrawn(key)`; the full
+specification is in § 17, *Server-drawn charts*):
+
+| Key | Figure | Section of the Root Cause Analysis (anchor) |
+|---|---|---|
+| `r1-points-at-risk` | Where the points were lost | 2, *Evidence: intelligence* (`RcaIntelligence`) |
+| `r2-speed-decomposition` | Where the time goes | 3, *Evidence: speed* (`RcaSpeed`) |
+| `r3-cost-decomposition` | Where the cost goes | 4, *Evidence: cost* (`RcaCost`) |
+| `r4-hypothesis-confidence` | How sure each hypothesis is | 6, *Hypotheses* (`RcaHypotheses`) |
+
 | Document | Where the figures go |
 |---|---|
 | Executive Summary | All in *How it compares*, after the comparison and dimensions tables and before the writer's paragraph; Provider errors after the *Provider availability* Key Figures bullet (anchor `ProviderAvailability`) |
-| Report for AI Researchers and Developers | Intelligence at the end of *Results against peers → Quality*; Speed and Cost at the end of their blocks; Model profiles at the very end of *Results against peers*; the three trade-off charts after the *Speed and cost* table (and not at all when that section is absent); Provider errors after the *Provider availability* subsection |
-| Internal Improvement Brief | All in section 3, after *Key figures* and the interval sentence; Provider errors after the *Provider availability* subsection |
+| Root Cause Analysis | The four server-drawn figures at their anchors above. Where peers exist (a comparison or a per-model pack), the browser-drawn Intelligence, Speed, Cost, Intelligence against speed and Intelligence against cost may be chosen too: Intelligence in section 2, Speed and Intelligence against speed in section 3, Cost and Intelligence against cost in section 4 (anchors `RcaIntelligence`, `RcaSpeed`, `RcaCost`). Model profiles, Speed against cost and Provider errors are not drawn there |
 
-Several figures at one anchor appear in the order of the first table. Every model-scope audience has an
-anchor for A1, because the placement tables hold one entry per figure. A comparison-wide document has its
-own anchors (§ 15); the picker shows each figure's section for the scope being written. A chat
-consistency document has five figures of its own, `cc1-quality` … `cc5-availability`, kept in
-`BenchmarkReportChartPlacement.ChatConsistencyFigureKeys` apart from `FigureKeys` (`AllFigureKeys`
-joins both); they are chosen per document type in the same picker, on the Chat Consistency wizard's
+Several figures at one anchor appear in the order of the first table. Every model-scope audience has
+an entry for each browser figure key, because the placement tables hold one entry per key, `null` where a
+figure is not drawn (`RootCauseAnchors` holds the server keys' anchors apart). `AllFigureKeys` joins the eight browser keys,
+the five chat consistency keys and the four server keys, 17 in all, and `IsKnown` accepts every one. A
+comparison-wide document has its own anchors (§ 15); the picker shows each figure's section for the
+scope being written. A chat consistency document has five figures of its own, `cc1-quality` …
+`cc5-availability`, kept in `BenchmarkReportChartPlacement.ChatConsistencyFigureKeys` apart from
+`FigureKeys`; they are chosen per document type in the same picker, on the Chat Consistency wizard's
 step 5, with its own figures, document types and defaults (§ 16).
 
 **Markers.** The renderer writes a line `[[figure:<key>]]`, with a blank line before and after, at each
-anchor for each chart it is given (`BenchmarkReportRenderOptions.Charts`), and only for a document with
-peers — or for a chat consistency document, which has no peers and draws its own figures. The PDF and Word renderers draw the chart there (§ 8: `SemanticFigure` with the alternative text
+anchor for each chart it is given (`BenchmarkReportRenderOptions.Charts`). Browser-drawn keys get a
+marker only in a document with peers — or in a chat consistency document, which has no peers and draws
+its own figures; **server-drawn keys get one in every document**, a stand-alone run- or
+battery-completion Root Cause Analysis included. The PDF and Word renderers draw the chart there (§ 8: `SemanticFigure` with the alternative text
 and a `SemanticCaption` in the PDF, an inline picture with its description in Word, both captioned
 **Figure N.** *Title* — caption and numbered in order of appearance); a marker with no chart prints
 nothing. The Markdown and HTML downloads pass no charts, so they never carry a marker. The source hash of
@@ -2249,9 +2304,9 @@ and **Word layout 2**.
 ### Choosing charts: the picker and its defaults
 
 `app-report-chart-picker` is a group captioned *Charts in PDF and Word*: a segmented tab row of the
-document types (*Executive*, *Researchers*, *Internal*), each with the number of charts selected for it,
-or `—` for a document type not checked under *Documents*; beneath it the selected document's full name
-(*Executive Summary*, *Report for AI Researchers and Developers*, *Internal Improvement Brief*),
+document types the scope writes (*Executive*, *Root Cause* for a comparison or per-model pack), each
+with the number of charts selected for it, or `—` for a document type not checked under *Documents*;
+beneath it the selected document's full name (*Executive Summary*, *Root Cause Analysis*),
 **All** / **None**, and one checkbox per figure named *"Include Intelligence in the Executive Summary"*
 with its target section. With one document type (the Download Center's *Update charts* dialog on
 documents of one type) there is no tab row, only that document's list. A document type not being
@@ -2275,11 +2330,15 @@ A width or label size that would not fit (below) stays offered, `aria-disabled` 
 fit)*, its reason listed in the disclosure; choosing it keeps the current value and says why. The
 disclosure sits 1 rem below the figures; **Preview layout** is beside **Generate** (§ 12).
 
-The defaults are the Executive Summary's Intelligence and Intelligence against cost; every figure, A1
-included, for the Report for AI Researchers and Developers; and Intelligence, Speed and Cost for the
-Internal Improvement Brief. The last selection and every document type's layout are remembered per browser in
+The defaults are the Executive Summary's Intelligence and Intelligence against cost, and every figure
+the Root Cause Analysis draws: Intelligence, Speed, Cost, Intelligence against speed and Intelligence
+against cost. The Root Cause Analysis tab of the picker says *"The Root Cause
+Analysis also carries four charts drawn by Overseer: where the points were lost, where the time goes,
+where the cost goes, and how sure each hypothesis is."*; the server-drawn figures are not in its list.
+The last selection and every document type's layout are remembered per browser in
 `localStorage['overseer.benchmark.reportCharts']` (**version 2**, `{ selection, layout }`); a stored
-version 1 keeps its selection and takes the default layout.
+version 1 keeps its selection and takes the default layout, and the settings of the two retired document
+types are dropped when read.
 
 The picker is shared with the Chat Consistency Write step. Its optional inputs — `figures` (each with
 its title and its section, one name or one per document type), `audienceOptions` (the document types
@@ -2365,7 +2424,10 @@ draws only anonymized images; a missing variant is left out, never replaced by t
 figure of the document's type, both variants, drawn by that type's layout, converted to base64 and sent
 as the whole set in one `PUT` with the chart layout. It records a failure per document and carries on, can be canceled after the document in flight,
 and stops once — reported once, not per document — when the server says chart storage is not configured.
-The wizard owns one publisher and queues step 3's and step 4's work through it.
+The wizard owns one publisher and queues step 3's and step 4's work through it. **The publisher never
+uploads a server-drawn key** (`isDocumentChartFigureKey` ignores them), and Model Comparison's chart
+counts and document cards ignore them too, so a Root Cause Analysis's R1–R4 never read as browser charts
+that differ from step 2.
 
 ### When charts are attached
 
@@ -2375,6 +2437,12 @@ The wizard owns one publisher and queues step 3's and step 4's work through it.
 - **Otherwise** — the wizard closed during the job, a document written before charts existed, or charts
   to redraw after step 2 changed — step 4 shows *None* or *differs from step 2* and **Update charts…**
   adds or redraws them.
+- **Server-drawn charts** need no browser. `WriteDocumentAsync` draws R1–R4 right after a Root Cause
+  Analysis is stored, in the same job, from the stored `RootCause` result, and logs *"Root Cause
+  Analysis: N charts drawn."*; a drawing failure is logged as a warning and never fails the document.
+  This is what gives run- and battery-completion analyses, written with no browser present, their
+  charts. **Redraw charts** (`POST …/report-documents/{id}/charts/redraw`, § 9) draws them again from
+  the stored `FactsJson` after a renderer change.
 
 ### Managing charts on step 4
 
@@ -2410,20 +2478,25 @@ first write, never at startup.
 `<figureKey>.<named|anonymized>.png` per image; `<ChartsDataLocation>/.staging/<documentId>-<guid>/`
 exists only while a set is being written. The manifest is camelCase UTF-8 JSON without a BOM: `version`
 (1), `documentId`, `settingsHash`, `createdAtUtc` and `charts`, one entry per image with `figureKey`,
-`naming`, `file`, `sha256`, `widthPx`, `heightPx`, `title`, `caption` and `altText`, and, when the upload
-carried one, `layout`: `{ version: 1, figures: [{ key, widthShare, rowGroup }], maxHeightShare }`
+`naming`, `file`, `sha256`, `widthPx`, `heightPx`, `title`, `caption`, `altText` and the optional
+`origin`, `"server"` or `"browser"` (absent reads as `browser`, so the manifest stays version 1), and,
+when the upload carried one, `layout`: `{ version: 1, figures: [{ key, widthShare, rowGroup }], maxHeightShare }`
 (`BenchmarkReportChartLayout`). The upload's layout is validated (`ValidateLayout`): version 1 only; a
 `widthShare` above 0 and at most 1; a `maxHeightShare` from 0.2 to 0.9 or null; a figure of an unknown
 key dropped, and of a key given twice the first kept. An absent layout — every manifest written before
 it — renders every figure full width on its own row under the 60 % cap; a stored layout that no longer
-validates is logged and rendered as absent. **Update charts…** and a rewrite redraw the charts and send
+validates is logged and rendered as absent. Server-drawn figures are never in the layout: each renders
+full width, in its own row, under the height cap. **Update charts…** and a rewrite redraw the charts and send
 the layout again. Every path is built
 from the numeric document id, a known figure key and a fixed naming word, and is checked to lie inside
 the folder.
 
-**Atomic replace.** A `PUT` replaces the document's whole set, all or nothing, under a per-document lock:
-the files and the manifest are written to a staging folder, the old folder is deleted, and the staging
-folder is moved into place in one `Directory.Move`. A render reads the manifest and skips, with a logged
+**Atomic replace.** A `PUT` replaces the document's whole browser-drawn set, all or nothing, under a
+per-document lock: the files and the manifest are written to a staging folder, the old folder is
+deleted, and the staging folder is moved into place in one `Directory.Move`. Two writers share that
+path: `SetChartsAsync` (a browser upload) carries the server-drawn entries it does not replace into the
+new set, and `SetServerChartsAsync` (the server's drawing) replaces only the server-drawn entries, so
+neither wipes the other's images. A render reads the manifest and skips, with a logged
 warning, an image that is missing or whose SHA-256 differs from the manifest; **a render never fails
 because of its charts**. The list and detail DTOs read `chartCount`, `chartFigureKeys` and
 `chartSettingsHash` from the manifest alone, and the PDF and Word endpoints its layout
@@ -2431,7 +2504,7 @@ because of its charts**. The list and detail DTOs read `chartCount`, `chartFigur
 
 **Upload limits** (`BenchmarkReportChartStore.ValidateCharts`; every chart is checked before anything is
 written): a known figure key; naming `named` or `anonymized`; no figure and naming twice; at least one
-and at most 16 charts; one settings hash of 64 hex characters for the whole set; alternative text
+and at most 24 charts (`MaxCharts`: 8 browser kinds and 4 server kinds, two namings each); one settings hash of 64 hex characters for the whole set; alternative text
 present and at most 1,000 characters, a title of at most 200 and a caption of at most 500; valid base64
 (a `data:image/png;base64,` prefix is accepted) that decodes to a PNG — by its signature — of at most
 4 MB, whose IHDR width and height are each 320 to 4,096 pixels; and a request body of at most
@@ -2445,8 +2518,8 @@ chart image, keeping the documents (`POST /api/admin/maintenance/clear-report-ch
 
 **Not in the database backup.** The chart folder is outside the database, so a database backup does not
 contain it. Losing it loses only images: the documents and their text are intact, their PDF and Word
-copies simply have no charts, and **Update charts…** on step 4 draws them again from the comparison, with
-no AI call.
+copies simply have no charts, and **Update charts…** on step 4 draws them again from the comparison, and
+**Redraw charts** a Root Cause Analysis's server-drawn ones from its stored facts, with no AI call.
 
 ---
 
@@ -2487,7 +2560,7 @@ a battery document renders through the same code as a run's:
   withheld index*) when one or more subject runs withhold their own Intelligence Index because a
   question failed at the provider; the fact is **absent**, not unavailable, when none does, so every
   other sheet, prompt and document is unchanged. When it is present, each single-subject document —
-  the executive summary, the technical report and the internal brief — follows its key figures with
+  the Executive Summary and the Root Cause Analysis — follows its key figures with
   *1 of 3 runs withholds its own Intelligence Index because a question failed at the provider; the
   Intelligence figure above is over the scored questions.* (*withhold their own* when more than one
   run does). A comparison's per-model sheet carries the fact, prefixed `model.<letter>.`, for a model
@@ -2528,8 +2601,15 @@ a **confirmed** critical error (most rounds first, then the lowest mean); questi
 raised a critical error that was **not confirmed** — overturned by the claim verifier or unresolved,
 either member; questions the **panel disagreed** on (`BenchmarkRunAnswer.PanelDisagreed`, the flag the
 *Disagreements* count reads); then the lowest and the highest remaining mean scores, alternately. The two
-middle groups are ordered by mean ascending, then question key. Question topics and notes are asked for the questions in detail only, and a
-question needs a note when it scored below 50 or carried a critical error.
+middle groups are ordered by mean ascending, then question key. Question topics are asked for the
+questions in detail only.
+
+**The Root Cause Analysis of a battery subject** reads more than the Executive Summary does. Battery
+preparation loads the subject's member runs' tool calls and `ModelCallTelemetry` (as projections of the
+columns the engine needs, never whole entities), so the speed and cost decompositions and the
+no-tool-answer evidence are available; the within-model rules use the **suites** as WQ2's groups and
+leave-one-suite-out as its robustness check, and the chart rows of R1–R3 after the subject's own row are
+one per suite (§ 17).
 
 **The prompt budget.** When the largest writer prompt exceeds `Benchmark:ReportPack:BatteryMaxPromptChars`
 (default **360,000** characters, about 90,000 tokens), detail is left out in reverse priority until it
@@ -2570,12 +2650,17 @@ repair of a member run or a Continue finishes it (`ai-benchmark-multi-suite.md` 
 after a manual **Recompute analysis**, and returns at once. It writes when all of
 these hold: the battery run has finished; its latest analysis is complete and not stale; it names a
 writer; it has no battery-completion document yet; and no job for it is Pending or Writing. The
-automatic job writes every missing document — the Executive Summary, the Report for AI Researchers and
-Developers and the Internal Improvement Brief (`BenchmarkBatteryReportDocumentService.Audiences`, which
-is the run service's list); a battery run that already has some gets the missing ones only on request. Each document
+automatic job writes every missing document — the Executive Summary and the Root Cause Analysis
+(`BenchmarkBatteryReportDocumentService.Audiences`, which is the run service's list); a battery run
+that already has some gets the missing ones only on request. Each document
 is a one-entry comparison of the battery result, stored with `Origin = BatteryCompletion` (3) and the
 subject key `battery:<id>`; the writer call goes through `WriteBatteryCompletionDocumentsAsync` and the
-Report Pack's own path — parsing, validation, one repair turn, drops, storage.
+Report Pack's own path — parsing, validation, one repair turn, the headline rescue (the first draft's
+headline; the headline-only turn is comparison scope only), drops, storage. The
+Root Cause Analysis reads the battery run's **controls**, earlier battery runs of other models on the
+same battery revision (§ 17), and its server-drawn charts are drawn once it is stored. Its status
+settles as a run's does: an Executive Summary without a Root Cause Analysis reads NotRequested with
+*"Root Cause Analysis not written yet."*
 
 **The job** is the run-completion job's twin, keyed by battery run id: the same phases, the single
 report-pack slot (`BenchmarkReportPackJobManager.WaitForSlotAsync`), the compliance guard, the
@@ -2586,9 +2671,12 @@ deletes its battery-completion documents with their chart files (`SettleAfterDel
 document returns the battery run to NotRequested unless a job is in progress.
 
 **Writing on request.** The endpoints are in § 9. The Battery Run Report's **AI Reports** tab
-(`app-battery-ai-reports`) is the counterpart of a run's: all three documents listed, **View** in the PDF
+(`app-battery-ai-reports`) is the counterpart of a run's: both documents listed, **View** in the PDF
 viewer, **Delete** behind a confirmation, *Write missing reports* with the writer picker (starting on the
-battery run's own writer), the cost estimate, the same-provider confirmation and **Show Progress**.
+battery run's own writer), the cost estimate, the same-provider confirmation and **Show Progress**; the
+**Controls** line with **Set up a control run** (battery target), *New controls available* with
+**Rewrite with controls**, and under a written Root Cause Analysis its recommended runs with **Set up
+this run** and **Redraw charts** (§ 17).
 Both tabs extend `ReportDocumentsTabBase` (`run-ai-reports/report-documents-tab.base.ts`) and render
 `run-ai-reports.component.html`.
 
@@ -2703,7 +2791,7 @@ as a complete comparison of its models, and its cover and *Setup and method* cou
 other models without naming them.
 
 - **Letters** follow the Intelligence Index, highest first, an unmeasured model last, ties by entry key
-  (ordinal). They are the same in the three documents of one covered set.
+  (ordinal). They are the same in the two documents of one covered set.
 - **Per-model facts** `model.<L>.*`: every fact the per-model sheet has for its subject, the `subject.`
   prefix dropped (`subject.runs` becomes `model.A.runs`), plus `model.<L>.quality.rank` (the joint rank,
   below), `model.<L>.speed.rank`, `model.<L>.cost.rank` and `model.<L>.frontier` (*"on the intelligence
@@ -2768,7 +2856,7 @@ Over each model's scored answers in all its runs (a panel run's level is the mea
 | Key `model.<L>.profile.*` | Value | Unavailable when |
 |---|---|---|
 | `answers` | scored answers, the denominator | — |
-| `mayMislead`, `mayMisleadPer20` | answers with an accuracy level below 4 or a critical error; *about 3.5 in 20* | — |
+| `mayMislead`, `mayMisleadPer20` | answers with an accuracy level below 4 or a critical error; *0 in 20 answers* at zero, else *about 3.5 in 20 answers* | — |
 | `outcome.correct`, `.partial`, `.incorrect`, `.notAttempted`, `.noAnswer`, `.wrongInsteadOfAbstaining` | `BenchmarkOutcomeSummary` per answer | a run before scoring method 13 |
 | `deficit.accuracy`, `.completeness`, `.conciseness`, `.readability` | answers at level 2 or below on the dimension | — |
 | `truncated`, `outputDefects`, `noToolAnswers`, `toolLimitHits` | answers flagged Truncated; flagged Empty, Truncated, HarnessArtifacts, ReasoningBleed or RepeatedFragments or not Ok; with no tool call; that hit the tool budget or the iteration limit | — |
@@ -2840,37 +2928,27 @@ reference family names the reference instead of assuming model A.
   question; better, similar and worse counts are not tests, and a model is ranked above or below the
   reference only as the paired tests and intervals allow; notable findings are explained, or said to be
   unexplained by the data, never restated. `whichModel` adds: when the reference is the baseline model,
-  say whether any model is established as better than it, and on which measure; `modelGaps` uses the
-  failure profile facts and the weakest answers, and a lead may cite a notable finding.
+  say whether any model is established as better than it, and on which measure.
 
 - **Tokens.** `{{model:X}}` for a covered model and `{{key}}` for a fact; there is no `{{subject}}` and
   no `{{peer:X}}`. The validator accepts `{{model:X}}` for every letter of the sheet and the `model.<L>.*`
   and `pair.<L>.<M>.*` keys, and rejects any other letter.
 - **Slots** (word caps): Executive Summary `overview` (90), `whichModel` (150, ending with a default
-  choice for a typical Overseer player), `tradeOffs` (100) and
-  `reliability` (80); Report for AI Researchers and Developers `abstract` (150), `results` (200),
-  `dimensionProfiles` (150), `frontier` (120), `questionPatterns` (250), `graderReliability` (120) and
-  `limitations` (120); Internal Improvement Brief `sharedGaps` (250), `modelGaps` (200) and
-  `benchmarkSystem` (150). Format 14 adds `againstReference` (Executive Summary 100, researcher report
-  150: what a player would notice using each model instead of the reference — answer quality, misleading
-  answers, waiting, cost — each as far as the paired tests and intervals establish), `notableFindings`
-  (researcher report, 200: the most likely explanation the data supports for each notable finding, or
-  that it does not explain it, referring to a finding by what it is about) and `whyModelsDiffer`
-  (researcher report, 250: which failure signals separate the high scorers from the low ones, which the
-  low scorers share and which belong to one model). `notableFindings` is required only when
-  `notable.count` is above zero (`BenchmarkReportAudienceSpec.ComparisonSlotsFor`); the parser's
-  `KnownSlots` and the validator's caps include the three.
-- **Lists.** A `models` list with one entry per covered model, at most 2 points of at most 30 words in
-  the Executive Summary and at most 4 of at most 40 words in the researcher report, each citing evidence;
-  question topics in the researcher report and the brief; at most 8 leads in the brief, each tagged
-  `chat`, `harness`, `suite`, `corpus` or `model`. No strengths, weaknesses, recommendations or question
-  notes. A lead is still not a finding and goes through `server_benchmark_to_chat_transfer`.
+  choice for a typical Overseer player), `tradeOffs` (100), `reliability` (80) and, from format 14,
+  `againstReference` (100: what a player would notice using each model instead of the reference —
+  answer quality, misleading answers, waiting, cost — each as far as the paired tests and intervals
+  establish). The Root Cause Analysis slots are in § 17.
+- **Lists.** In the Executive Summary a `models` list with one entry per covered model, at most 2 points
+  of at most 30 words, each citing evidence; no strengths, weaknesses, recommendations or question notes.
+  The Root Cause Analysis' lists (`observations`, `writerHypotheses`, question topics) are in § 17.
 - **Validation.** The rules of § 3 apply, read for comparison scope: rule 10 treats every covered
-  model's name as a name; rule 16 reads two `{{model:X}}` tokens against the pair's `intervalOverlap`,
-  and a family's established result may be stated instead of *overlap*; **rule 21**, a warning, asks for
-  a `models` entry for every covered model.
-- **Topics are written once per job.** The first document of a comparison-scope job writes the question
-  topics; its later documents are given them and keep them, and their own topics are not checked.
+  model's name as a name; rule 16 reads two `{{model:X}}` tokens against the pair's `intervalOverlap` —
+  for each comparative word, the nearest model token before it and the nearest after it, every pair of
+  the sentence only when one side has none — and a family's established result may be stated instead of
+  *overlap*; **rule 21**, a warning, asks for a `models` entry for every covered model; rule 31 and, in
+  the Root Cause Analysis, rules 32–36 apply as well.
+- **Topics.** Only the Root Cause Analysis writes question topics, for every question it cites; no
+  topics are shared between the documents of a job.
 - **The writer** cannot be a covered model's configuration: the same provider, model id and thinking
   level (400). A writer sharing a covered model's provider gets the amber warning naming those models
   and the *Same-Provider Report Writer* confirmation (§ 4).
@@ -2890,38 +2968,38 @@ reference family names the reference instead of assuming model A.
 - **Already written.** A requested document already written for this covered set (comparison scope) or
   subject (model scope) and not named in `replaceDocumentIds` — **409**; an id in `replaceDocumentIds`
   that this job does not write again — **400**.
-- **The estimate** uses 3,800, 12,500 and 10,000 output tokens for the comparison-scope Executive
-  Summary, researcher report and brief (3,000, 9,500 and 9,000 before format 14). These are first
-  guesses, to be recalibrated after the first real jobs. A test holds an 11-model, 20-question
-  comparison's prompt below 70 % of a 200,000-token writer.
+- **The estimate** uses 3,800 output tokens for the comparison-scope Executive Summary and 14,000 for
+  the Root Cause Analysis (`ComparisonEstimatedOutputTokens`), and 2,400 and 10,000 in model scope
+  (`EstimatedOutputTokens`); the Root Cause Analysis figures are first guesses, to be recalibrated after
+  its first five jobs in each scope. Every estimate is shown as the range of § 9, first call only to one
+  repair turn per document. A test holds an 11-model, 20-question comparison's prompt below 70 % of a
+  200,000-token writer.
 
 ### Rewriting: replace after persist
 
 `ReplaceDocumentIds` names the documents a job replaces. For each document it writes, the job stores the
-new row and removes the replaced Report Pack rows of the same comparison, audience and covered set
-(comparison scope) or subject (model scope) **in the same `SaveChanges`**; only then is each replaced
+new row and removes the replaced rows of the same comparison, audience and covered set
+(comparison scope) or subject (model scope) — or, for a run- or battery-completion **Rewrite with
+controls** (§ 17), the replaced RunCompletion or BatteryCompletion row of the same subject key and
+audience (`ReplacedDocumentsAsync`) — **in the same `SaveChanges`**; only then is each replaced
 chart folder deleted (a failure there is logged and never fails the write). A write that fails deletes
 nothing. A single document is deleted with `DELETE report-documents/{id}`, which step 3 offers per row
 behind a confirmation.
 
 ### The rendered documents
 
-`ReportFormatVersion` for comparison scope is **14** (`ComparisonReportFormatVersion`); per-model
-documents are at 12 (§ 7). The sections, by audience:
+`ReportFormatVersion` for comparison scope is **15** (`ComparisonReportFormatVersion`); per-model
+documents are at 13 (§ 7). The sections, by audience:
 
 - **Executive Summary**: *The result in one sentence*, *The comparison in one paragraph*, *Which model to
   use*, *How they compare* (every model's Intelligence Index with its interval and joint rank, median
   answer time, cost per question and critical errors; a dimensions table; the figures), *Model by model*,
   *Trade-offs* (with the frontier lines), *How reliable this is* (with the interval-overlap sentence, the
   paired-test summary and the writer caveat), *About this benchmark* and *Evaluation terms*.
-- **Report for AI Researchers and Developers**: *Abstract*, *Setup and method* (with *Compared models*),
-  *Results* (the results table, figures, the writer's text and *Paired tests*), *Dimension profiles*,
-  *Speed and cost frontier*, *Per-model analysis*, *Cross-model question patterns* (with the per-question
-  matrix), *Grader reliability*, *Threats to validity*, *Reproducibility appendix*, and the question
-  details at Detailed and Full.
-- **Internal Improvement Brief**: *Models compared*, *1. Shared gaps*, *2. Model-specific gaps*, *3. The
-  benchmarking system* (with *Paired tests*), *4. Leads*, *5. Per-question matrix* with the question
-  details, and *6. Fact sheet*.
+- **Root Cause Analysis**: the sections of § 17, with the per-question matrix, the paired tests, the
+  failure profile (as **two tables**, *Outcomes* and *Signals*), the grader findings by category, the
+  threats to validity, the reproducibility appendix and the question details it reuses from the
+  comparison renderer, and the fact sheet in the Markdown copy.
 
 **Format 14** adds, each block only when its facts or sheet fields are there:
 
@@ -2930,14 +3008,6 @@ documents are at 12 (§ 7). The sections, by audience:
   of every model — paired difference with its 95 % interval, better / similar / worse questions, answers
   that may mislead per 20, time and cost ratio — its note, and the `againstReference` slot; then **Also
   worth knowing**, the first three notable findings as code wrote them.
-- **Report for AI Researchers and Developers**: the full reference table (with *Questions* and the paired
-  *Result*) and its slot in *Results* after *Paired tests*; **Notable findings** after *Results*, every
-  finding as a code-written bullet, the thresholds as a note, then the slot; **Why the models differ**
-  after *Per-model analysis*: the **Failure profile** table, the **Grader findings by category** table,
-  then the slot.
-- **Internal Improvement Brief**: the Failure profile table under *2. Model-specific gaps*, and **4.
-  Notable findings** before the leads, which renumbers the later sections to *5. Leads*, *6. Per-question
-  matrix* and *7. Fact sheet* when the sheet has notable findings.
 - **Marks.** In every table that lists the models, the reference row reads *(reference)*, the baseline
   model's *(baseline model)*, and one row that is both *(baseline model, reference)*, in named and
   anonymized copies alike; neither word names a model or a provider. The paired-test summary and the
@@ -2946,10 +3016,9 @@ documents are at 12 (§ 7). The sections, by audience:
 
 **Provider availability (format 13).** The results table (`ResultsTable`) gains a **Provider errors**
 column, *0.81 % (12/1,480)* or *not recorded*, from the entry figures; `Pdf/BenchmarkTableLayout.cs`
-abbreviates its header (`HeaderAbbreviations`) so the eleven-column table still fits. The Report for AI
-Researchers and Developers adds a per-model availability table, and `ComparisonThreats` gains the
-unattributed, re-run and not-recorded lines of § 7. Each block renders only when the sheet carries the
-facts.
+abbreviates its header (`HeaderAbbreviations`) so the eleven-column table still fits, and
+`ComparisonThreats` gains the unattributed, re-run and not-recorded lines of § 7. Each block renders only
+when the sheet carries the facts.
 
 *Paired tests* names the family, its adjustment and its size, and notes that another set of models gives
 another family: a subset document's adjusted *p* can differ from step 2's view over all models, and both
@@ -2988,8 +3057,7 @@ The per-model documents print the same way: a named peer reads *Grok 5*, never *
 | Document | Where the figures go |
 |---|---|
 | Executive Summary | All in *How they compare*, after its tables, except Provider errors (A1), which this audience does not place |
-| Report for AI Researchers and Developers | Intelligence in *Results*; Model profiles in *Dimension profiles*; Speed, Cost and the three trade-off charts in *Speed and cost frontier*; Provider errors (A1) with the per-model availability table |
-| Internal Improvement Brief | All in *Models compared*, after its table, Provider errors (A1) included |
+| Root Cause Analysis | As in model scope (§ 13): Intelligence in section 2, Speed and Intelligence against speed in section 3, Cost and Intelligence against cost in section 4, and the four server-drawn figures R1–R4 |
 
 A comparison-scope document plots its **covered models only**: the named variant is step 2's chart with
 *Show* limited to the covered set (step 2's *Highlight* kept where it falls inside it), and the
@@ -3001,9 +3069,10 @@ models, so the chart endpoints never refuse it as stand-alone.
 
 `POST report-packs/layout-preview` renders one document as it would print, with **no model call** and
 nothing stored. It is multipart: a `request` field holding JSON — a preview request (§ 9) with
-`audience`, `paper` (`a4` or `letter`; empty is A4), `naming` (`named` or `anonymized`; empty is named),
+`audience` (1 Executive Summary or 5 Root Cause Analysis; any other is refused with *"audience must be 1
+(Executive Summary) or 5 (Root Cause Analysis)."*), `paper` (`a4` or `letter`; empty is A4), `naming` (`named` or `anonymized`; empty is named),
 `layout` (as stored in the manifest, § 13) and `charts` (`figureKey`, `title`, `caption`, `altText`) — and
-up to **12** files named `<figureKey>.png`, in a request of at most 40,000,000 bytes, each image checked as
+up to **16** files named `<figureKey>.png` (`BenchmarkReportLayoutPreview.MaxCharts`), in a request of at most 40,000,000 bytes, each image checked as
 an uploaded chart is (§ 13). It prepares the request as the preview does (a model-scope request: its
 first subject), builds the document in memory with **placeholder text** in every slot and list the writer
 fills — *"The report writer's text for <slot> appears here."* repeated to **80 %** of the slot's word limit,
@@ -3044,14 +3113,15 @@ cover and no footer prints it, and the writer never receives it.
 
 ### Audiences and slots
 
-Four audiences (`ChatConsistencyAudiences`), each with prose slots only — no strengths, weaknesses,
-recommendations, question notes, topics or leads. The headline is at most 35 words.
+Two audiences (`ChatConsistencyAudiences`): the Executive Summary and the Provider Issue Report, each
+with prose slots only — no strengths, weaknesses, recommendations, question notes or topics. A chat
+consistency analysis has no Root Cause Analysis: a write naming one, or a retired audience, is refused
+with *"Only the Executive Summary and the Provider Issue Report are written for a chat consistency
+analysis."* (`ChatConsistencyInvalidAudienceMessage`). The headline is at most 35 words.
 
 | Audience | Slots (title, word limit) |
 |---|---|
 | Executive Summary | `asGoodAsBefore` *Is the Overseer chat with this model as good as before?* (120), `playerImpact` *What changed for players* (90), `ourChanges` *Our changes and their effect* (80), `providerChanges` *Provider-side changes* (80), `confidenceAndScope` *Confidence and scope* (90), `nextRuns` *Next runs* (60) |
-| Report for AI Researchers and Developers | `questionAndDesign` *Question and design* (200), `runsAndCoverage` *Runs, coverage and scope* (200), `overseerEvents` *Overseer events* (150), `endpointResults` *Results by endpoint* (250), `attribution` *Attribution* (250), `robustness` *Robustness* (150), `limitations` *Limitations* (150), `reproducibility` *Reproducibility* (150) |
-| Internal Improvement Brief | `chatFindings` *Findings for the chat* (150), `changeEffects` *Our changes that helped or hurt* (120), `infrastructureIssues` *Infrastructure issues* (100), `nextRuns` *Next runs* (100), `actions` *Actions* (150) |
 | Provider Issue Report | `issueSummary` *Summary* (120), `affectedModel` *Affected model and configuration* (80), `timeline` *Timeline* (150), `measurements` *Measurements with intervals* (200), `hoursObserved` *Hours observed* (80), `ruledOut` *What we ruled out (our changes, infrastructure)* (200), `sampleRequestIds` *Sample request ids* (60), `providerRequest` *Request to the provider* (100) |
 
 **The Provider Issue Report** (`BenchmarkReportAudience.ProviderIssueReport`, 4) exists only in this
@@ -3062,8 +3132,7 @@ it while it is unavailable is refused with 400 and *"No provider-side finding gr
 Indicated in this analysis."*; a write that names no audience leaves it out. It never names a control
 model — its peers are always anonymized, lettered *Model A* … — is stamped *Confidential. Prepared for
 the model's provider.*, and its `sampleRequestIds` slot draws on at most 10 request ids of the
-comparison period's candidate calls. Report Pack's own audience list (`REPORT_PACK_AUDIENCES`) does not
-include it.
+comparison period's candidate calls. The Report Pack's per-scope audience lists do not include it.
 
 ### The code-built blocks per audience
 
@@ -3072,24 +3141,23 @@ Every document opens with the title (and, in the Markdown, the stamp and the fro
 **Overall verdict**, *The result in one sentence* (the writer's headline), then the blocks no slot
 takes, then the slots in order, each code-built block printed under the slot that discusses it
 (`ChatBlocksOf`) or in its default place, then *How to read this*, the limitations and reproducibility
-list where no slot took them, *Removed content*, and *Evaluation terms* (not in the Internal
-Improvement Brief). **No block prints a hash, JSON or an internal field name**, and no table is wider
-than five columns; a table of one row becomes a sentence.
+list where no slot took them, *Removed content*, and *Evaluation terms*. **No block prints a hash, JSON
+or an internal field name**, and no table is wider than five columns; a table of one row becomes a
+sentence.
 
-| Block | Executive Summary | Researcher Report and Provider Issue Report | Internal Improvement Brief |
-|---|---|---|---|
-| Out-of-date box | under the title block when the analysis is out of date (below) | the same | the same |
-| Overall verdict | *Verdict* (`verdict.short`), one bullet per group of endpoints not computable with its reason in plain words (a grading change on quality, periods run at different hours), *Sample* (`sample.shortfall` when the minimum is not met, each part stated as met or missed: *1 battery run per period on 1 day, below the minimum of 2 battery runs on 2 days per period; paired items 32, above the minimum of 20*), *Hours*, *Controls* | the same with the technical not-computable reasons, plus *Time strata* | as the Researcher Report |
-| Verdicts | *Measure · Result · What it means* for the computed endpoints, named without P1–P5 ids, one line naming those not computable, and one sentence on where the change came from | *Endpoint · Change (95 % interval) · Margin · Verdict and grade · Smallest detectable* for the computed endpoints; under it one note line per endpoint (the 90 % interval, the Holm-adjusted p-value, the MDE note, the legacy-proxy note and the grade's reasons); the endpoints not computable as bullets with their reasons; and a *Secondary measures* table, *Measure · Baseline → comparison, or change (95 % interval) · Verdict* | as the Researcher Report, without the p-values in the note lines |
-| Where the chat stands | after the verdict table | the same | the same |
-| Overseer events | one sentence naming each update by its tag with its time and changes and no run ids (*Between the periods, Overseer was updated once: E1, 2026-10-08 14:49 UTC — harness 53 → 54.*), a count when there are more than three, and how many more the control models' runs show | *Event · When (UTC) · Run · What changed*, one row per update (`eventGroups.*`, below), the time reading from–to when the update's events span time, a control model's update naming its series | as the Researcher Report |
-| Control models | in the overall verdict | one bullet per control model with its runs, periods and difference-in-differences estimates, then the missing controls as a table, *Period · Battery run (suites) · What to do* (*Run (suite)* when the units are runs), its suggestions without an instrument note | as the Researcher Report |
-| Attribution | the sentence under the verdicts | one sentence for a single attribution, else *Endpoints · Side · Grade*; then each attribution's evidence | as the Researcher Report |
-| Robustness | — | *Check · P4 · P5*: one column per computed endpoint the checks ran on (at most four), then each check that did not pass with its detail (Researcher Report only) | — |
-| How to read this | what was measured, the five measures (quality, time to first answer text, answer streaming rate, work per turn, cost per question), the grades, the verdicts, the hours | the full list: what was measured, the endpoints, the verdicts, the evidence grades, the hours (the different-hours wording when the periods share none), attribution, control models when there are any, and what is never inferred | — |
-| Limitations | the analysis's data-quality notes only, and no section without one | every limitation and data-quality note | the data-quality notes only |
-| Reproducibility | — | analysis number, code version, protocol with overrides and alpha, *Saved*, the common grader, the price card, each period's battery runs with their member runs (or runs), the control runs and the report format version; **no hash** | as the Researcher Report, with the price card's source in place of its rates |
-| Evaluation terms | the distillation prohibition and the third-party content, *evaluated solely to check whether the Overseer chat with this model stays consistent over time* | the same | — |
+| Block | Executive Summary | Provider Issue Report |
+|---|---|---|
+| Out-of-date box | under the title block when the analysis is out of date (below) | the same |
+| Overall verdict | *Verdict* (`verdict.short`), one bullet per group of endpoints not computable with its reason in plain words (a grading change on quality, periods run at different hours), *Sample* (`sample.shortfall` when the minimum is not met, each part stated as met or missed: *1 battery run per period on 1 day, below the minimum of 2 battery runs on 2 days per period; paired items 32, above the minimum of 20*), *Hours*, *Controls* | the same with the technical not-computable reasons, plus *Time strata* |
+| Verdicts | *Measure · Result · What it means* for the computed endpoints, named without P1–P5 ids, one line naming those not computable, and one sentence on where the change came from | *Endpoint · Change (95 % interval) · Margin · Verdict and grade · Smallest detectable* for the computed endpoints; under it one note line per endpoint (the 90 % interval, the Holm-adjusted p-value, the MDE note, the legacy-proxy note and the grade's reasons); the endpoints not computable as bullets with their reasons; and a *Secondary measures* table, *Measure · Baseline → comparison, or change (95 % interval) · Verdict* |
+| Where the chat stands | after the verdict table | the same |
+| Overseer events | one sentence naming each update by its tag with its time and changes and no run ids (*Between the periods, Overseer was updated once: E1, 2026-10-08 14:49 UTC — harness 53 → 54.*), and how many more the control models' runs show; when there are more than three updates, the sentence gives their count and is followed by the **table of Overseer updates**, as the Provider Issue Report prints it, so the per-update detail stays in the Executive Summary | *Event · When (UTC) · Run · What changed*, one row per update (`eventGroups.*`, below), the time reading from–to when the update's events span time, a control model's update naming its series |
+| Control models | in the overall verdict | one bullet per control model with its runs, periods and difference-in-differences estimates, then the missing controls as a table, *Period · Battery run (suites) · What to do* (*Run (suite)* when the units are runs), its suggestions without an instrument note |
+| Attribution | the sentence under the verdicts | one sentence for a single attribution, else *Endpoints · Side · Grade*; then each attribution's evidence |
+| How to read this | what was measured, the five measures (quality, time to first answer text, answer streaming rate, work per turn, cost per question), the grades, the verdicts, the hours | the full list: what was measured, the endpoints, the verdicts, the evidence grades, the hours (the different-hours wording when the periods share none), attribution, control models when there are any, and what is never inferred |
+| Limitations | the analysis's data-quality notes only, and no section without one | every limitation and data-quality note |
+| Reproducibility | — | analysis number, code version, protocol with overrides and alpha, *Saved*, the common grader, the price card, each period's battery runs with their member runs (or runs), the control runs and the report format version; **no hash** |
+| Evaluation terms | the distillation prohibition and the third-party content, *evaluated solely to check whether the Overseer chat with this model stays consistent over time* | the same |
 
 **The out-of-date box.** A document whose analysis is out of date (`ai-benchmark-chat-consistency.md`
 § 16.1) prints, in every audience, directly under the title block: *This document comes from an
@@ -3212,8 +3280,7 @@ runs where the analysis compares battery runs; asks for the sample shortfall whe
 met; says that GnollBench runs are made by hand, never *monitored* or *watched*; and lists, before the
 slots and beside each slot, the code-built blocks printed above it (`ChatBlocksBeforeSlotsText`,
 `ChatBlocksAboveText`) with the rule *interpret them, never restate them*. The Executive Summary cites
-no run id, rule id or hash; `asGoodAsBefore` leads with `{{verdict.short}}`; the Internal Improvement
-Brief's `actions` never acts on a secondary difference whose interval includes zero.
+no run id, rule id or hash; `asGoodAsBefore` leads with `{{verdict.short}}`.
 
 A **REPETITION AND LENGTH** section holds the prose short: a sentence-valued fact (`limitation.*`, the
 data-quality notes, robustness details, missing-control suggestions, next-run reasons and suggestions,
@@ -3267,14 +3334,13 @@ chosen per document type on the wizard's step 5, and the server places what it i
 
 | Document | cc1, cc2, cc3, cc5 | cc4 |
 |---|---|---|
-| Executive Summary | after the verdict table | after the verdict table (it prints no events table) |
-| Report for AI Researchers and Developers, Internal Improvement Brief, Provider Issue Report | after the verdict table | after the events table |
+| Executive Summary | after the verdict table | after the verdict table (its events table, printed only for more than three updates, is not an anchor) |
+| Provider Issue Report | after the verdict table | after the events table |
 
-The verdict table sits under *Results by endpoint* in the researcher report and under *Measurements with
-intervals* in the Provider Issue Report, the events table under *Overseer events* and *What we ruled
-out* respectively, and, in the Internal Improvement Brief, under *Our changes that helped or hurt*;
-elsewhere under the default headings *Verdicts by endpoint* and *Overseer updates between the
-periods*. In the Executive Summary the events sentence stands under *Our changes and their effect*.
+The verdict table sits under *Measurements with intervals* in the Provider Issue Report and the events
+table under *What we ruled out*; elsewhere under the default headings *Verdicts by endpoint* and
+*Overseer updates between the periods*. In the Executive Summary the events sentence, and its table
+when there is one, stand under *Our changes and their effect*.
 
 **The legacy placement.** A document whose stored chart set has **no layout** — every chart set
 uploaded before the figures were chosen per document — is placed by the earlier per-audience table,
@@ -3283,8 +3349,6 @@ uploaded before the figures were chosen per document — is placed by the earlie
 | Document | Figures (legacy) |
 |---|---|
 | Executive Summary | cc1, cc2 after the verdict table |
-| Report for AI Researchers and Developers | cc1, cc2, cc3 after the verdict table; cc4 after the events table |
-| Internal Improvement Brief | cc1, cc3 after the verdict table |
 | Provider Issue Report | cc2 after the verdict table; cc4 after the events table |
 
 The legacy table places no cc5, which did not exist when those chart sets were uploaded.
@@ -3312,13 +3376,13 @@ up the value labels of each period's first and last point for a period name; and
 may not find room in its band, adds a one-line period legend under the time axis. A report chart
 tags its Overseer-event markers as the document's events table does (`ccReportFigureInput`, from the
 analysis's own events and its period split), whatever the timeline numbered them. The defaults:
-Executive Summary cc1, cc2; Researcher Report all four; Internal Improvement Brief cc1, cc3; Provider
-Issue Report cc2, cc4; cc1–cc3 half column and cc4 two-thirds; 8 pt labels; at most 50 % of the page
+Executive Summary cc1, cc2; Provider Issue Report cc2, cc4 (stored settings of the two retired document
+types are dropped when read); cc1–cc3 half column and cc4 two-thirds; 8 pt labels; at most 50 % of the page
 tall; stored per browser in `localStorage['overseer.benchmark.chatConsistency.reportCharts']`
 (`{ version: 1, selection, layout }`). In the picker the figures are *Intelligence per run*, *Time to
 first answer text*, *Output tokens per answer*, *Runs and events* and, from format 3, *Provider
 availability*, placed *Results* or *Events*; the
-document types *Executive*, *Researchers*, *Internal* and *Provider*; a not computable endpoint's
+document types *Executive* and *Provider*; a not computable endpoint's
 figure carries a note; the *Layout* disclosure offers only the label size and the maximum height; and
 a document type neither checked nor already written reads *Not chosen in New reports.* This scope is
 exempt from the stand-alone refusal and always renders the named variant.
@@ -3327,7 +3391,7 @@ exempt from the stand-alone refusal and always renders the named variant.
 
 `BenchmarkPdfFileNames` names a chat consistency document
 `chat-consistency-<analysis id>_<model slug>_<kind>_<disclosure>_<peers>[_INTERNAL].<pdf|docx>`, the kind
-being `executive-summary`, `researcher-report`, `internal-brief` or `provider-issue-report`, for example
+being `executive-summary` or `provider-issue-report`, for example
 `chat-consistency-12_<model slug>_provider-issue-report_summary_anonymized.pdf`. The Download Center
 mirrors the stem (`reportDocumentFileStem`).
 
@@ -3339,15 +3403,15 @@ dates and its battery runs or runs), *Controls* (as the naming allows, never by 
 Issue Report), *Hours* (`scope.hours`, or *none: the periods ran at different hours*), *Protocol*
 (*\<protocol label\>, α \<alpha\>*), *Analysis code* (*version 7*, or *version 4 — out of date (current:
 7)*, or *version 7 — out of date (its inputs changed)*, decided when the document is rendered), *Written*
-(the time and the writer) and *Provenance*; the line under the facts reads *PDF layout 8*
+(the time and the writer) and *Provenance*; the line under the facts reads *PDF layout 9*
 or *Word layout 2* without a source hash. The page footer reads the short classification, then *Chat
 consistency analysis #12 · Executive Summary · page 2 of 3* (`BenchmarkPdfDocumentInfo.FooterText`).
 The Word file still records the source hash in its *GnollBench Source SHA-256* custom property, as
-metadata only. Other scopes keep their cover and the *Source … · PDF layout 8* footer
-(`BenchmarkPdfRenderer.LayoutVersion` 8: a heading followed by a short table, at most 10 body rows,
-which is kept on one page, moves with the table instead of staying alone at a page foot, layout 7; and a
-bold label paragraph such as **Where the chat stands** does the same before its short table, layout 8,
-§ 8).
+metadata only. Other scopes keep their cover and the *Source … · PDF layout 9* footer
+(`BenchmarkPdfRenderer.LayoutVersion` 9: a heading followed by a short table, at most 10 body rows,
+which is kept on one page, moves with the table instead of staying alone at a page foot, layout 7; a
+bold label paragraph such as **Where the chat stands** does the same before its short table, layout 8;
+and the smaller inline code and full-width server-drawn figures of layout 9, § 8).
 `ChatConsistencyReportFormatVersion` is 3.
 
 ### Endpoints
@@ -3357,13 +3421,13 @@ report-documents contract (`writerModelConfigurationId`, `audiences`, `acknowled
 here `acknowledgeOutOfDate`; enums as numbers):
 
 - `POST analyses/{id}/report-documents/estimate` — the cost estimate with the Provider Issue Report's
-  availability; no model call; 404, 400 for an audience outside the four, 499.
+  availability; no model call; 404, 400 for an audience outside the two, 499.
 - `POST analyses/{id}/report-documents` — 202 with the job (`runId` is the analysis id); 404; 409 while
   its documents are being written, for a document already written, when every document exists, for
   an unacknowledged writer of the model's provider, and for an out-of-date analysis without
   `acknowledgeOutOfDate: true`, the last with `{ error, outOfDate: true }` and *"Analysis #\<id\> is out
   of date: \<reasons\>. Analyze again, or confirm to write from it anyway."* (the freshness check is `GET
-  analyses/{id}/freshness`, `ai-benchmark-chat-consistency.md` § 16.1); 400 for an audience outside the four, an
+  analyses/{id}/freshness`, `ai-benchmark-chat-consistency.md` § 16.1); 400 for an audience outside the two, an
   unavailable Provider Issue Report, an unusable writer or the model under report, and a refused
   endpoint; 429 at the spend guard. Usage rows use report-pack usage context 8.
 - `GET analyses/{id}/report-documents/job` — 200 with the job, 204 when this process knows none; jobs
@@ -3385,7 +3449,606 @@ shows them in the Download Center panel with the context `{ kind: 'chatConsisten
 where they can be viewed, downloaded and deleted too, and which lists them again when the host bumps
 its `reloadToken`. The Download Center dialog still titles that context *Chat consistency documents*,
 though the shell no longer opens it. The Download Center has a **Provider Issue Report** row (category `providerIssueReport`):
-the External preset selects it with the Executive Summary and the Report for AI Researchers and
-Developers, Internal selects every row. Its stored settings are **version 4**
-(`STORED_SETTINGS_VERSION`); versions 2 and 3 are read and migrated by giving every package the Provider
-Issue Report's empty default choice (`providerIssueReport: {}`), which the package preset fills.
+the External preset selects it with the Executive Summary, Internal selects every row. Its stored
+settings are **version 5** (`STORED_SETTINGS_VERSION`, § 8); versions 2 and 3 are read and migrated by
+giving every package the Provider Issue Report's empty default choice (`providerIssueReport: {}`), which
+the package preset fills, and versions 2 to 4 also lose the retired document types' choices.
+
+---
+
+## 17. The Root Cause Analysis
+
+The **Root Cause Analysis** (`BenchmarkReportAudience.RootCauseAnalysis`, 5) explains why a model, or
+the compared models, did well or badly on the **Intelligence Index, speed and cost**. It works through
+evidence, then known facts, then hypotheses with evidence for and against and a confidence grade, then
+conclusions; where a root cause is not established it names the next runs, with every launcher setting
+and a **Set up this run** button, and the checks a run cannot settle. It is written in every scope except
+chat consistency:
+
+| Origin | Subject | What it is set against |
+|---|---|---|
+| Comparison Report Pack (`ComparisonRootCauseAnalysis`) | The covered models, as equals | Each other: the pair rules, the reference and the first and last model on each axis |
+| Per-model Report Pack | One entry of a comparison | Its peers, the comparison's other non-excluded entries |
+| Run completion (`run:<id>`) | One run | Its **controls**: earlier runs of other models on the same exam |
+| Battery completion (`battery:<id>`) | One battery run | Its controls: earlier battery runs of other models on the same battery revision |
+
+**Numbers come from code, words from the writer** holds here more strictly than anywhere else. The
+root-cause engine (`Overseer/Services/Benchmarking/RootCause/`, `RootCauseEngine.Compute`) is pure: it
+takes plain inputs — the subject, zero or more peers, the comparison's pair statistics when present,
+and the controls — never a DbContext, so one engine serves every origin and is unit-tested directly. It
+computes the evidence, the known facts, every hypothesis and its grade, the status of each axis, the
+next runs and checks, and the chart rows. Its result, `RootCauseResult`, is stored on the fact sheet as
+`BenchmarkReportFactSheet.RootCause` inside `FactsJson` (no schema change), and flattened into the
+`rca.*` facts for the writer and the validator. **The writer cannot change a grade, add a figure or
+invent a run.** It weighs the hypotheses code graded, records grader-observed facts, and may add at
+most four qualitative hypotheses of its own, capped at *Low*.
+
+The facts are computed for every comparison and model-scope sheet, so a later Root Cause Analysis of a
+stored subject reads the same sheet; the Executive Summary's prompt never sees them
+(`RootCauseFacts.WriterHidden`: every `rca.*` fact, a per-model sheet's `profile.*`, the
+`pair.<L>.<M>.dimension.*` and `.configDifferences` facts, and the evidence facts below, bare or under a
+`model.<L>.` prefix).
+
+### Principles
+
+Each practice is enforced in code, not left to the writer:
+
+| Practice | How the document enforces it |
+|---|---|
+| Separate observation from inference | Evidence and known facts are computed by code. The validator removes any paragraph in an evidence slot that uses causal wording (rule 32) |
+| Test the null first | Every axis opens with hypothesis `H0`: the difference is within sampling noise (intervals overlap and no paired test established). No mechanism can be graded above *Low* for a pair whose `H0` stands |
+| Effect sizes with intervals, adjusted for multiplicity | Pair facts keep their Holm family; decomposition shares carry bootstrap intervals over questions |
+| Exact decompositions, not correlations | Speed and cost differences are split additively with the logarithmic-mean Divisia index (LMDI), which is exact. Intelligence is split by the scoring weights. No cross-model correlation is ever a known fact (n ≤ a dozen models) |
+| Name the confounds | A hypothesis lists the configuration keys that differ between the models it compares (thinking level, service tier, harness, scoring method, graders, prompt options). An open confound caps it at *Moderate* |
+| Instrument before model | Every hypothesis has a **locus**: `model`, `chat` (prompt or tools), `harness` (grading or instrument), `suite` (question or rubric), `corpus`, or `provider` (serving or infrastructure) — the triage categories of `server_benchmark_to_chat_transfer` § 2, plus model and provider. A `harness` or `suite` hypothesis graded Moderate or higher sets the **system first** flag (`rca.systemFirst`), which puts model-selection runs behind it, as `server_benchmark_runbook` § 4 orders them |
+| Falsifiability | Every hypothesis carries a *refuted if* statement. Every hypothesis below *High* names the next run, or the check, that would settle it |
+| Robustness | Code runs leave-one-question-out, leave-one-suite-out (battery), replicate stability and panel-member agreement checks on each hypothesis. Each one that fails or cannot be assessed lowers the grade, with a stated reason |
+| Grader neutrality | Judge-dependent pairs and same-provider graders become `harness`-locus hypotheses of their own (HQ4, WQ6), never footnotes |
+| No re-grading, no invention | The writer cannot change a grade, add a figure or invent a run. Its own hypotheses are capped at *Low* and validated (rule 35) |
+
+### Evidence and known facts
+
+**Per-model facts** (`RootCauseEvidence`), unprefixed on a model-scope sheet (`speed.ttftP90`) and as
+`model.<L>.*` on a comparison sheet, from `BenchmarkRunAnswer` columns and the candidate's
+`ModelCallTelemetry`, which comparison, model-scope run and battery preparation load as projections of
+the columns needed, never whole entities (battery preparation also loads the subject's tool calls):
+
+- **Speed** — `speed.ttftP90`, `.toolTimeP50`, `.modelCallsPerAnswer`, `.ttftPerCallP50`, `.decodeRate`
+  (visible tokens per second, `CallTelemetryMeasures.AnswerStreamingRate`), `.ownWaitShare`
+  (`CallTelemetryMeasures.OwnWaitShare`), `.retriesPerAnswer`, `.servedTierMismatch`;
+  `tokens.reasoningPerQuestion`, `.reasoningShare`.
+- **Cost** — `cost.component.<c>.perQuestion` for `c` ∈ {`uncachedInput`, `cacheRead`, `cacheWrite`,
+  `output`, `reasoning`}; `tokens.cacheReadShare`; `price.<c>.perMillion` from the run's
+  `PricingSnapshotJson` (the current card under the *Current* pricing basis); `servedTier`.
+- **Intelligence** — the per-dimension paired families (`pair.L.M.dimension.<d>.<family>`);
+  `score.withTools` and `.withoutTools` (the mean score of answers with and without tool calls);
+  `outcome.confirmedCriticalRate` with its Wilson interval; on a model-scope sheet the subject's failure
+  profile, `profile.*`, from `BenchmarkComparisonModelProfile.FromRuns` (the cross-model matrix counts —
+  isolated and shared misses, lowest scorer — need three models and stay unavailable there).
+- **Configuration** — `config.serviceTier`, `.reasoningMode`, `.parallelMode`, `.maxOutputTokens`, and
+  `pair.L.M.configDifferences` (the keys that differ, from `BenchmarkPairedTests.ClassifyRunPair` and the
+  entry's `Differences`).
+
+Each `sheet.Questions` row also carries the subject's per-question `InputTokens`, `OutputTokens`,
+`CostUsd`, `TtftMs` and `ModelCallCount`, means over runs, which the per-question decomposition reads.
+**A fact whose source columns are missing on a run** — an older `CallTelemetryVersion` or harness — is
+*Unavailable* with a reason, **never zero**; the hypotheses that need it do not fire, its chart row reads
+*not recorded*, and a `replicate` run may be proposed instead.
+
+**Decompositions** (`RootCauseDecomposition`), all exact, per pair — the reference against each model,
+plus the leader and the last model on each axis — and within one model by group (difficulty band, or
+suite on a battery), the overall model on one side and the group on the other:
+
+- **Speed.** Per question, `model time = Σ calls (TTFT + decode) + gap`. The difference splits into TTFT,
+  decode and gap; TTFT splits by LMDI into *call count* and *per-call latency*, decode into *output
+  tokens* (with the reasoning share) and *decode rate*. Facts `rca.speed.<T>.<T>.<component>.share` and
+  `.interval`, and `.total`.
+- **Cost.** `cost = Σ_k tokens_k × price_k`. LMDI splits the difference into a *volume* and a *price*
+  effect per component. Facts `rca.cost.<T>.<T>.<component>.<volume|price>.share`.
+- **Intelligence.** The index difference split by the scoring weights into dimension contributions,
+  plus `other` (the critical-error cap and difficulty weighting), summing exactly to the difference:
+  `rca.quality.<T>.<T>.dimension.<d>.points`. The **at-risk points** of each failure signal — answers
+  without tools; budget, truncation or output defects; confirmed critical errors; other low-scoring
+  answers — count the points lost on answers showing the signal, relative to the model's own median,
+  each answer once (`rca.atRisk.<T>.<segment>`). They are labeled *upper bound, not a causal estimate*.
+
+LMDI uses the logarithmic mean `L(a,b) = (a − b) / (ln a − ln b)`, with `L(a,a) = a`; a zero component
+takes the standard limit, its whole difference going to volume. Every share has a 95 % percentile
+bootstrap interval over questions: **2,000 resamples, fixed seed 20261015**, so the same inputs always
+print the same interval. Spearman's ρ (`RootCauseStatistics.Spearman`, with a Fisher-z interval over
+questions) and the Mann–Whitney test of the within-model contrasts are used only within one model,
+across its questions, never across models. *T* in a key is a model token: a letter, or `subject`.
+
+**Known facts** (`RootCauseKnownFacts`) are numbered sentences, `rca.known.<n>`, each produced by a rule
+and stating only what a test or a count proves, with its kind (`test`, `count`, `decomposition`,
+`configuration`) and the fact keys it rests on: *"Model A's median model time is 1.5 times Model F's on
+the same questions, established after Holm across 8 tests"*; *"Decode accounts for 71 % (58–80 %) of the
+per-question time difference between Model C and Model F"*; *"Model I answered 9 of 36 questions without
+a tool call"*.
+
+### Confidence grades and axis status
+
+| Grade | Code rule |
+|---|---|
+| **High** | The mechanism is quantified, and its paired test (or its share's 95 % interval) is established after adjustment. The pair's `H0` is rejected. No open confound. Every robustness check passed. At least 2 runs per suite on both sides |
+| **Moderate** | Quantified and directionally consistent, but exactly one of these holds: one robustness check failed or could not be assessed, a single run per suite, or one open confound |
+| **Low** | Qualitative only (grader comments or excerpts), or two or more of the *Moderate* conditions, or the pair's `H0` stands |
+| **Not supported** | The evidence against outweighs the evidence for, under the rule's own pre-declared test. Example: "slower because of more tool calls" when tool time is under 10 % of the time difference |
+
+In code (`RootCauseHypotheses.Grade`) each robustness check that failed or could not be assessed is one
+condition — the *Replicates* check carries the single-run condition and the *Configuration* check an
+open confound — and so is a test or share interval not established: no condition gives High, one gives
+Moderate, two or more give Low. A pair whose `H0` stands caps the grade at Low, and every other cap (the
+control limit, a rule's own ceiling) applies with its reason, listed in `gradeReasons`. A **null
+hypothesis** that is rejected is graded *Not supported*; one that stands is graded at most Moderate
+(*"the absence of an established difference is not proof of equality"*), or Low when either side has a
+single run per suite.
+
+The robustness checks, each `Passed`, `Failed` or `NotAssessable` with its detail: **Leave one question
+out** (the deciding share keeps its sign and stays the largest component after the question that
+contributes most is dropped); **Across suites** (battery: the same sign in every suite with at least 5
+questions); **Replicates** (at least 2 runs per suite on both sides, or on the subject for a
+within-model rule); **Panel agreement** (both panel members' per-member indices order the pair alike,
+or show the same within-model contrast); **Configuration** (no differing key other than the model axis;
+pair rules only).
+
+Each axis then gets a status, the fact `rca.axis.<axis>.status` with `rca.axis.<axis>.best`:
+**Root cause established** (a non-null hypothesis graded High and its `H0` rejected), **Probable cause**
+(the best hypothesis is Moderate), or **Not established** (otherwise, with the best hypothesis' grade
+and reasons, or *"No hypothesis fired on this axis."*).
+
+### The hypothesis rules
+
+Each rule fires on a pre-declared condition, names the models (the worse first), and computes its
+evidence for and against and its grade. Every pair rule is applied per axis to the pairs where the axis
+differs; excluded and degraded entries take part only on the axes they are comparable on.
+
+**Pair rules** (`RootCauseHypotheses.PairRules`):
+
+| Id | Axis | Hypothesis (template) | Locus | Evidence for | Evidence against / refuted if |
+|---|---|---|---|---|---|
+| H0-Q / H0-S / H0-C | each | The difference between A and B is within sampling noise | — | Intervals overlap; no family establishes the pair | A paired test established (where no family test exists, the difference's bootstrap interval excluding zero, unadjusted) |
+| HQ1 | Intelligence | A scored lower because it answered without tools more often | model / chat | Higher `noToolAnswers` rate; `score.withoutTools` below `.withTools` | Without-tool answers score as well; rate difference under 2 answers |
+| HQ2 | Intelligence | A's shortfall is concentrated in confirmed critical errors | model | Critical-error at-risk points at least half the gap | Caps unresolved or overturned (method 13); the shortfall is spread across many questions |
+| HQ3 | Intelligence | Shared failures on specific questions point to the instrument, not the models | suite / corpus / chat | `sharedLow` questions; every model or nearly every model below 50 | One model answered well |
+| HQ4 | Intelligence | The order depends on the graders | harness | Judge-dependent pair; same-provider grader; panel disagreement rate at least twice the median | Both members rank alike; the reference reader agrees |
+| HQ5 | Intelligence | Completeness was lowest under the concise style | chat | `responseStyleConflict` true for the models concerned | — (never graded above *Low*: no comparison run covers style; it states a condition, not a cause, as `server_benchmark_to_chat_transfer` § 3 requires) |
+| HQ6 | Intelligence | A guessed where it should have abstained | model | `wrongInsteadOfAbstaining` higher, with Wilson intervals not overlapping | Intervals overlap |
+| HQ7 | Intelligence | Budget, truncation or output defects cost A points | harness / provider | `toolLimitHits`, `truncated`, `outputDefects` at-risk points, at least 1 and above B's | Zero signals; points at risk under 1 |
+| HQ8 | Intelligence | A's lower thinking level explains the gap | model | Same model at two levels in the set; the dimension test at the lower level | Thinking-level inversion (the notable finding) |
+| HQ9 | Intelligence | The verifier would clear part of A's Accuracy shortfall | harness | Verification-cleared sensitivity above the index (by at least half a point) | Sensitivity equals the index |
+| HS1 | Speed | A is slower mainly from more model calls (tool rounds) | model / chat | Call-count share is the largest, with an interval excluding 0 | Per-call latency or decode share is larger |
+| HS2 | Speed | A is slower mainly from longer per-call latency (TTFT) | provider / model | TTFT share largest; `ttftPerCallP50` ratio established | Decode or call count dominates |
+| HS3 | Speed | A is slower mainly from more output (reasoning) tokens | model | Output-token share largest; `reasoningShare` higher | Decode-rate share larger |
+| HS4 | Speed | A is slower mainly from a slower decode rate | provider | Decode-rate share largest | Token share larger |
+| HS5 | Speed | Own waits or retries inflated A's time | harness / provider | `ownWaitShare` or `retriesPerAnswer` above the median | Under 5 % of the gap |
+| HS6 | Speed | Served tier differed from the requested tier | provider | `servedTierMismatch` | No mismatch |
+| HC1 | Cost | A costs more mainly from token volume | model / chat | Volume effect largest; tokens per question ratio established | Price effect larger |
+| HC2 | Cost | A costs more mainly from per-token price | model | Price effect largest | Volume larger |
+| HC3 | Cost | Reasoning tokens drive A's cost | model | Reasoning component largest | — |
+| HC4 | Cost | Weak prompt caching raises A's cost | chat / provider | `cacheReadShare` below the median by 20 points or more, and the uncached-input component is largest | Cache-read share comparable |
+| HC5 | Cost | More tool rounds multiply A's input tokens | chat / model | Input-volume effect largest and `modelCallsPerAnswer` higher | Calls per answer comparable |
+
+**Within-model rules** (`RootCauseHypotheses.WithinRules`) apply to a model on its own, in every scope:
+in comparison scope to the reference and to the first and last model on each axis, in model scope to the
+subject. Their null, `H0-W`, is that the contrast between two question groups of the same model is
+within sampling noise, tested by a Mann–Whitney test on the two groups' per-question values,
+Holm-adjusted across the contrasts the rules make for that model. A within-model hypothesis is a
+**decomposition statement** — where the time, the cost or the points go — never a comparison with other
+models, and its wording says so.
+
+| Id | Axis | Hypothesis (template) | Locus | Evidence for | Evidence against / refuted if |
+|---|---|---|---|---|---|
+| WQ1 | Intelligence | A loses most of its points on answers without tool calls | model / chat | `score.withoutTools` below `.withTools`, `H0-W` rejected; their at-risk share is the largest | `H0-W` stands, or fewer than 3 answers without tools |
+| WQ2 | Intelligence | A's points are lost mostly in one difficulty band (or, on a battery, one suite) | model / suite | That group's at-risk share is the largest and its contrast rejects `H0-W`; on a battery, the leave-one-suite-out index moves by more than the interval half-width | Contrast within noise; shares even |
+| WQ3 | Intelligence | Confirmed critical errors cost A most of its points | model | Critical-error at-risk share largest | Caps unconfirmed |
+| WQ4 | Intelligence | A guesses where it should abstain | model | `wrongInsteadOfAbstaining` above 0.5 with a Wilson interval above 0.33 | Interval includes 0.33 |
+| WQ5 | Intelligence | Budget, truncation or output defects cost A points | harness / provider | At-risk points of those signals at least 1 | — |
+| WQ6 | Intelligence | Grader disagreement makes A's index uncertain | harness | Panel disagreement rate above 0.15, or a member-index gap above the interval half-width | Members agree |
+| WS1 | Speed | Most of A's time is model deliberation before output (TTFT) | provider / model | TTFT share of model time is the largest component, with an interval excluding the next one | Decode share larger |
+| WS2 | Speed | Most of A's time is output generation (decode), driven by reasoning tokens | model | Decode share largest and `reasoningShare` ≥ 0.5 | Reasoning share under 0.5 |
+| WS3 | Speed | Tool rounds multiply A's time | model / chat | Call-count term largest; model time rises with model calls per answer across questions (Spearman ρ ≥ 0.5, confidence interval excluding 0) | ρ interval includes 0 |
+| WS4 | Speed | Tool execution adds materially to A's wall time | chat / corpus | `toolTimeP50` ≥ 25 % of total time | Under 10 % |
+| WS5 | Speed | Own waits or retries inflate A's time | harness / provider | `ownWaitShare` ≥ 10 % or retries on ≥ 10 % of answers | Below both |
+| WC1 | Cost | Output (with reasoning) is A's largest cost component | model | Output component share largest, interval excluding the next | — |
+| WC2 | Cost | Uncached input is A's largest cost component | chat / provider | Uncached-input share largest and `cacheReadShare` under 0.5 | Cache-read share ≥ 0.7 |
+| WC3 | Cost | Tool rounds multiply A's input cost | chat / model | Input cost rises with model calls per answer (ρ ≥ 0.5, interval excluding 0) | ρ interval includes 0 |
+
+**What is kept.** Every null hypothesis is kept; of the rest, the strongest three per axis and group (a
+pair, or one model's own rules), ranked by grade, then share, then rule id, and at most **12 per axis**
+in total (`KeepPerGroup`, `MaxPerAxis`), so the prompt stays bounded. Each kept hypothesis becomes the
+facts `rca.hypothesis.<id>.<n>.statement`, `.axis`, `.models`, `.locus`, `.grade`, `.gradeReasons`,
+`.for`, `.against`, `.refutedIf`, `.nextRun` or `.check`, and `.share` and `.interval` where it has a
+share; `<n>` numbers the hypotheses of one rule from 1.
+
+### The control limit
+
+Only other models' scores on the same questions separate the model from the instrument. A within-model
+intelligence hypothesis whose locus could be `suite`, `corpus` or `chat` as well as `model` — WQ1, WQ2
+and WQ4 — is graded with the controls, and capped by how many there are
+(`RootCauseControls.Limit`):
+
+| Controls found | Cap | Grade reason |
+|---|---|---|
+| 2 or more, at least one from another provider | none (graded as above) | — |
+| 1, or 2 or more all from the subject's provider | *Moderate* | "one control, or controls from one provider only" |
+| 0 | *Low* | "no other model answered these questions" |
+
+In a run- or battery-completion document the controls are those found below; in a per-model pack the
+subject's peers count as its controls, and in a comparison the other covered models. Each capped
+hypothesis also lists, for the model, the questions the controls answered well that it missed, and,
+against it, the questions every control missed too. With fewer than two qualifying controls the analysis
+proposes a `control` run. **Speed and cost hypotheses are never capped by controls**: they decompose the
+model's own time and cost, measured exactly. The limit is the fact `rca.controls.limit`.
+
+### Controls for a run or a battery run
+
+**What a control is.** An earlier, finished run of **another model** that answered the **same exam under
+the same instrument**, so that its per-question scores tell how hard each question was. Only the
+candidate differs.
+
+**Selection** (`RootCauseControls.FindAsync`, at preparation time; the newest 60 candidates are examined):
+
+| Subject | Candidate controls | Qualifies when |
+|---|---|---|
+| A single run | Completed runs (Completed, CompletedWithLimits, CompletedWithErrors) on the same suite, newest first | `BenchmarkPairedTests.ClassifyRunPair(subject, candidate, repriced: false).Kind == ModelComparison`, on the same item revisions. Every must-match key agrees: item revisions, assessed difficulties, board, harness and scoring method, profile, graders, prompt options. Only model-axis keys differ |
+| A battery run | Finished battery runs of the same battery revision with a current, complete analysis | `BenchmarkCrossModelComparability.Resolve` over the subject and the candidate gives the candidate a state other than *Excluded* — the same comparability class, built from each suite's `MustMatchSignature` — and the model axis differs |
+
+In both cases the candidate is a different `ModelId`, or the same model at another thinking level, which
+counts as a different model; its own index is not withheld (the `WithheldRunIds` rule of the model
+comparison service); and it shares at least **5** scored questions with the subject. Up to **three**
+controls are kept, one per model: first the best candidate of each provider other than the subject's,
+then the best remaining models, *best* meaning the most recent, then the most shared questions. Speed-
+and cost-degraded candidates are allowed, because controls serve intelligence only. With none, the
+reason is *"No earlier run of another model answered these questions under the same graders, scoring
+and prompt options."* (a battery: *"No earlier battery run of another model ran this battery revision
+with a current, complete analysis in the same comparability class."*).
+
+**What the controls feed** — intelligence only:
+
+- **Item-level difficulty.** For each shared question, the controls' mean score. The subject's deficit
+  is its score minus that mean, with a paired bootstrap interval over questions:
+  `rca.control.deficit.mean` and `.interval`. Section 2 prints the item-level control table: per
+  question, the subject's score, the controls' mean and the difference.
+- **Shared failure.** A question the subject scored below 50 **and** every control did too is marked
+  *instrument-suspect*; HQ3's rule then applies in model scope, with locus `suite`, `corpus` or `chat`,
+  and adds a check.
+- **Model-specific failure.** A question the subject scored below 50 while every control scored 75 or
+  above is marked *model-specific*, evidence for the `model` locus of WQ1, WQ2 and WQ4.
+- **The control limit** above. Two or more qualifying controls, one from another provider, lift it.
+
+**Recorded.** The facts `rca.controls.count`, `rca.controls.providers`, `rca.controls.limit` and
+`rca.controls.<n>.model`, `.runId` (or `.batteryRunId`), `.date`, `.provider`, `.sharedQuestions`, and
+`rca.control.instrumentSuspect` and `.modelSpecific`; the controls themselves go into `RootCauseResult`.
+Controls are **named** in every copy: they are evidence, not peers of the document. Speed and cost are
+never read from a control, because those keys may differ (time of day, service tier).
+
+**Never blocking.** Writing never waits for a control, and a document with none is complete: its
+intelligence status usually reads *Not established*, with the reason, and the `control` run is
+proposed.
+
+**The UI** (`root-cause-controls`, in the run's and the battery run's **AI Reports** tab, §§ 11, 14):
+
+- **Before writing**, a **Controls** block from `GET …/runs/{id}/root-cause-controls` or
+  `GET …/batteries/runs/{id}/root-cause-controls` (§ 9), the same `FindAsync` the preparation calls, so
+  it names exactly the controls the document will use: *"The Root Cause Analysis will use 2 controls:
+  GPT-6 Luna (high), run #812 (2026-10-10); Claude 5.5 Sonnet (medium), run #807 (2026-10-09)."*, then
+  the cap it leaves (*"With these controls, an intelligence cause can be graded at most Moderate."*, or
+  *"Without a qualifying control, an intelligence cause can be graded at most Low."*). With none: *"No
+  earlier run of another model answered these questions under the same graders. Speed and cost causes
+  will be analyzed; intelligence causes will stay undetermined."* While fewer than two controls qualify
+  and the endpoint returns a `controlRun`, **Set up a control run** pre-fills the launcher with that run
+  through the same prefill path as **Set up this run**, with the note heading *"Control run for run
+  #<id>"*; without one it is unavailable, with the reason *"No control run can be proposed: no other
+  provider has a recommended model with an enabled Benchmark configuration."*
+- **After writing**, the block reads *"This Root Cause Analysis used 2 controls: …"* (or that it used
+  none), from the document detail's `controls`, and compares them with a fresh `root-cause-controls`
+  call. When the fresh set holds a control the document did not use, it says *"New controls available
+  since this document was written (run #…)."* with **Rewrite with controls**, which confirms the
+  estimate in the writing dialog and then writes a new Root Cause Analysis for the same subject with
+  `replaceDocumentIds` naming the old one (§ 9). The new document replaces the old one only once it is
+  stored (§ 15, *Rewriting*; `ReplacedDocumentsAsync` matches a run- or battery-completion document of
+  the same subject key and audience); the Executive Summary is untouched. Both actions are unavailable
+  while the subject's documents are being written.
+- **For several models run together**, the tab notes *"For several models, Model Comparison → Report
+  Pack gives a fuller analysis."* A model batch's members are controls for each other, but a comparison
+  sets them side by side.
+
+**Not automatic.** A rewrite is never started by Overseer itself: it spends money, and only the
+developer decides when a document is worth redoing. A later run never changes a stored document; it
+only makes **Rewrite with controls** appear.
+
+### Next runs and checks
+
+`RootCauseNextRuns` proposes a run **only for a hypothesis below High that a run can settle**. A
+hypothesis a run cannot settle — every locus `suite` or `corpus`, or a shared failure — becomes a
+**check** instead (`rca.check.<n>`, kind `rubric`, `corpus`, `configuration` or `graders`): *"check the
+rubric of S1-Q12 against the source"*. So does a run that cannot be set up: a thinking pair with no
+configured model at another level, a panel swap without two configured graders of other providers, or a
+control run with no configured recommended model of another provider, each with what to add. A
+`replicate` is proposed only where it can settle something: a pair whose `H0` stands, or a hypothesis
+whose *Replicates* check failed.
+
+| Kind | Fires for | Run | Purpose |
+|---|---|---|---|
+| `replicate` | Any graded pair limited by a single run per suite, or an `H0` that stands | Model batch, same target (suite or battery), *Runs per Suite* / *Runs per model* 3, the hypothesis' models plus the reference (or the subject) | M; B when every hypothesis it settles points first to the `harness` |
+| `thinkingPair` | HQ8, HS3, HC3, WS2 | Model batch of the same model at two thinking levels: the pair already analyzed, else the model's configuration and the nearest configured, enabled Benchmark-role configuration of the same model id at another level | M |
+| `stylePair` | HQ5 | One single run of the model at the other *Response Style* (*Detailed* after *Concise*, or the reverse), everything else unchanged; the analyzed runs are the other half of the pair | C |
+| `panelSwap` | HQ4, HQ9, WQ6 | The same models graded by a panel from two other providers than the analyzed graders' (configured graders only) | B |
+| `timeStratum` | HS2, HS4, HS5, HS6, WS1, WS5 | The model's run repeated, *Number of Runs* 3, each started at a different time of day (the run's note says so) | C |
+| `control` | A run- or battery-completion document with fewer than 2 qualifying controls; a per-model pack whose subject has fewer than 2 comparable peers | Model batch, same target and graders, **without the subject** (its run already exists): the currently recommended model (`RecommendedModels` in `Overseer/appsettings.json`) of each other provider that has a configured, enabled Benchmark-role configuration, up to the controls needed. A finished run of it becomes a control automatically | B |
+
+A run is **Recommended** when it is a `control` run or settles an axis' best hypothesis, else
+**Optional**. Runs are ordered **C, then B, then M** (the chat, then the benchmark, then model selection,
+as `server_benchmark_runbook` § 4 orders a round's runs); with the *system first* flag set, every M run
+is marked *after the system hypotheses are settled* and its notes say so.
+
+Every run is a structured `RootCauseRecommendedRun`, stored in the document's `FactsJson`, its summary
+the fact `rca.run.<n>.summary`, and returned on the document detail as `recommendedRuns`:
+
+- `Number`, `Kind`, `Purpose` (C, B or M), `Mark` and `HypothesisIds`;
+- `Decides`: *"confirms H… if …, refutes it if …"*, stated before the run;
+- `PredictedTier`, from the keys the run changes;
+- `EstimatedCostUsd` and `EstimatedMinutes`, from the analyzed runs' own costs and durations (a model
+  without analyzed runs takes their mean, and a note says so);
+- every launcher setting, named as `StartBenchmarkRunRequest` and `StartBenchmarkModelBatchRequest` name
+  them so the prefill maps them one to one: `TargetKind` (*Suite* or *Battery*), `SuiteId` / `SuiteName`,
+  `BatteryId` / `BatteryName`, `RunMode` (*Single* or *Batch*), `TestedModelConfigurationIds` and
+  `ModelNames`, `Order`, `RunsPerModel`, `RunCount`, `ScoringProfileId`, `VerboseMode`,
+  `AllowSourceCodeReferences`, and the grader configuration ids — assessor, co-assessor, reference or
+  second reader, claim verifier — with the coverage mode. All are copied from the analyzed runs unless
+  the kind changes them; a setting the runs did not share is left null with a note
+  (*"The analyzed runs differ on …, so it is left for you to choose."*). `ReportWriterModelConfigurationId`
+  is always null: a recommended run never writes documents of its own.
+
+### Set up this run
+
+The recommended runs and checks of a written Root Cause Analysis are listed by `root-cause-runs`, a
+closed *Next runs and checks (2 runs, 8 checks)* disclosure under the document's row in the comparison's
+*Documents of this comparison* (§ 12) and the run's and the battery run's **AI Reports** tab (§§ 11, 14),
+and under the latest Root Cause Analysis in the launcher's **Comparison reports** (§ 12). It reads the
+document detail's `recommendedRuns` and `checks`. Each run is a card: *Run 2: Thinking-level pair*, tags
+for its purpose, its mark and the hypotheses it settles, its decision rule, *"Make this run after the
+system hypotheses are settled."* where that applies, its predicted tier, estimate and settings, its notes,
+and **Set up this run**; then the checks (*"No check by hand is needed."* with none).
+
+**Set up this run** calls the shell bridge's `prefillSetup(setup, sourceLabel)`; the shell closes the
+comparison wizard, the run report dialog or the battery dialog first (as *Repeat this run's setup*
+does), and the launcher's `prefillFromSetup` fills Run Benchmark, in the style of *Repeat this run's
+setup*:
+
+- every non-null setting is applied; a suite, battery, scoring profile or model that no longer resolves
+  keeps the current choice, or is left out, with a note naming it;
+- the **graders are applied as a set**, as the analyzed runs had them: a null grader role is set to
+  none, and a null coverage follows the profile; a grader that no longer qualifies keeps the current
+  choice with a note, and a run naming no assessor says to choose one. When the server's notes say the
+  analyzed runs differ on a grader field, no grader is applied at all and the note stands;
+- a runs field set to 3 says so (*"Runs per Suite was set to 3 for this recommendation."*), and one held
+  below the request by its limit says what it was set to; a time-stratum run adds that each run starts at
+  a different time of day;
+- the report writer is cleared, and the server's own notes follow;
+- the note heading reads *"Set up from Root Cause Analysis #<id>, run <k>"* (*"Control run for run
+  #<id>"* from **Set up a control run**).
+
+**It never starts a run.** While the active sub-tab cannot be left, or outside the GnollBench tab, the
+button is refused with its reason on the card.
+
+### The document
+
+Disclosure **Full** only, named and, where peers exist, anonymized. Stamp *"INTERNAL — contains
+benchmark questions and rubrics. Do not share outside the Overseer team."* Title *Root Cause Analysis*
+(*Comparison #12 — <name>: Root Cause Analysis*, or *<model> on the Overseer GnollHack Assistant
+Benchmark — Root Cause Analysis* in model scope); file kind slug `root-cause-analysis`. The `##`
+headings are unnumbered. The renderer (`BenchmarkReportPackRenderer.RootCause.cs`) prints, in order,
+each section's code-rendered blocks, then the section's server-drawn figure where it has one, then the
+writer's slot. The comparison form (`ComparisonRootCauseAnalysis`; golden
+`comparison_rca_full_named.md`):
+
+| Section | Code-rendered | Writer slot (word cap) |
+|---|---|---|
+| *The root causes in one sentence* | — | `headline` (35): which axes have an established root cause; under it, each axis' status (*"Intelligence: Not established; speed: Probable cause; cost: Probable cause."*) |
+| *Scope and design* | `### Setup and method` (suite, coverage, chat configuration, grading, graders, formulas, comparability, pricing basis, versions), `### Compared models` (letter, model, provider, kind, runs, thinking level, harness version, run dates, price card), `### Configuration differences` (per analyzed pair) and, where recorded, the provider availability subsection | `scope` (120): what this design can and cannot decide |
+| *Evidence: intelligence* | The models table (Intelligence Index, interval, ranks, median answer time, cost per question, critical errors), the dimensions table and spreads, `### Failure profile` as **two tables**, *Outcomes* and *Signals*, `### Grader findings by category`, `### Panel agreement`, `### Points at risk`, `### Intelligence Index difference by dimension`, `### Paired tests: intelligence, speed and cost`, `### Per-question matrix`; figure R1 | `evidenceIntelligence` (150), no causal words |
+| *Evidence: speed* | `### Where the time goes` (per model), `### Calls, latency and output`, `### Speed differences, decomposed` (pair LMDI with intervals), the speed and cost table; figure R2 | `evidenceSpeed` (150), no causal words |
+| *Evidence: cost* | `### Where the cost goes`, `### Tokens per question`, `### Cost differences, decomposed` (volume and price effects); figure R3 | `evidenceCost` (150), no causal words |
+| *Known facts* | The numbered `rca.known.<n>` list, then `### What the graders recorded` | `observations` (at most 8 items, each at most 35 words, citing a question and evidence): grader-recorded facts from the excerpts and comments, no causal words |
+| *Hypotheses* | A note on the grades, then per axis (`### Intelligence`, `### Speed`, `### Cost`) a five-column table — *Hypothesis* (the key, `HQ1.1`), *Statement*, *Models*, *Locus*, *Grade* — followed by one bullet block per hypothesis: *For*, *Against*, *Grade reasons*, *Refuted if*, *Open confounds* where any, and *Settled by: next run n* or *check n*; then figure R4 | `hypothesesIntelligence`, `hypothesesSpeed`, `hypothesesCost` (200 each, each after its axis' table): weigh them. Then `### The writer's hypotheses` (`writerHypotheses`, at most 4, each text at most 40 words: axis, models, locus, statement, `for[]`, `against[]`, `refutedIf`; confidence always *Low*) |
+| *Conclusions* | A table, *Axis · Status · Best hypothesis · Why*, then the statuses in one line | `conclusions` (200): per axis, the root cause and its confidence, or that it was not established and why |
+| *Next runs and checks* | A note on the order, then one `### Run n: <kind> (<purpose>, <mark>)` per run — *Decides*, *Predicted comparability*, *Estimate*, *Settles*, a two-column *Launcher field · Setting* table under the launcher's own labels (a setting the runs did not share reads *not shared by the analyzed runs: choose it*; *Report Writer* is always *none*), and the run's notes — then `### Checks`, numbered, each with its kind and the hypotheses it settles | `nextRuns` (120): why this order |
+| *Limitations* | What the benchmark does not measure (single-turn questions, the missing wiki context of live chat, the options graded), what the rule table and the decompositions can and cannot say, the pricing basis | `limitations` (120) |
+| *Threats to validity*, *Reproducibility appendix* | As the comparison renderer prints them | — |
+| *Question details* | The questions cited anywhere above (`### Q1: <topic>`, then `#### <model>, run <id>`), with rubric, complete answers and grading | `questionTopics` for every question cited whose text the writer was given |
+| *Fact sheet* | The anonymized JSON appendix, in the Markdown copy only (`IncludeFactSheet`) | — |
+| *Evaluation terms* | The purpose statements, the distillation prohibition and the third-party content sentence | — |
+
+**Model scope** — a per-model pack, a run completion and a battery completion (goldens
+`rca_full_named.md`, `rca_run_with_controls.md`, `rca_run_no_controls.md`, `rca_battery_standalone.md`)
+— keeps the sections in that order, with these differences:
+
+- *Scope and design* opens with what the analysis describes (*"This analysis describes run 31 of Orion
+  Max on its own. Other models enter only as controls: 2 qualified."*); a run- or battery-completion
+  document adds `### Controls`: what a control is, the table *Control · Provider · Run · Date (UTC) ·
+  Shared questions*, the **control limit** that applied (*"none: two or more controls, at least one from
+  another provider, so the intelligence hypotheses are graded as any other."*) and the subject's mean
+  difference against the controls with its interval; with none, it says that none qualified.
+- *Evidence: intelligence* shows `### Key figures`, `### Results`, `### Dimensions`, `### Difficulty
+  bands (assessed)`, `### Failure profile` (**one table**, *Measure* against the subject: a single row
+  is narrow), `### Grader findings and panel agreement`, `### Tool use`, `### Points at risk` and
+  `### Per-question results`; with peers (a per-model pack), also `### Compared models` and
+  `### Configuration differences` under *Scope and design*, `### Results against peers` (quality, speed
+  and cost against each peer, with the paired differences), `### Judge-dependent pairs` and `### Intelligence
+  Index difference by dimension`, and the pair decompositions under speed and cost; on a battery, the
+  `### Battery profile`, `### Weighting sensitivity` and `### Leave one suite out` blocks; and in a run-
+  or battery-completion document with controls, `### Item-level controls`: *Question · Topic · <subject> ·
+  Controls' mean · Difference · Controls · Mark*, the instrument-suspect and model-specific questions
+  marked.
+- *Evidence: speed* and *Evidence: cost* show the subject's own decomposition (`### Where the time goes`,
+  `### Calls, latency and output`, `### Speed and cost figures`; `### Where the cost goes`,
+  `### Tokens per question`), and with peers `### Speed differences, decomposed` and `### Cost
+  differences, decomposed`.
+- The `evidence*` slots are capped at **100** words in a run- or battery-completion document
+  (`RootCauseCompletionEvidenceMaxWords`).
+- In a per-model pack the pair rules run between the subject and each peer on the subject-centered keys
+  (`peer.X.*`, the paired bootstrap of `BenchmarkReportFacts`), and rule 16 reads `{{subject}}` against
+  `{{peer:X}}`.
+
+| Origin | Peers | Rules that run | Next runs |
+|---|---|---|---|
+| Run completion | none; controls | Within-model rules; the control limit; the item-level control rules | `control` when fewer than 2 qualifying controls (Recommended); `replicate` (*Number of Runs* 3) when a speed or cost hypothesis is Moderate only because of a single run; `thinkingPair`, `stylePair`, `timeStratum` as they fire |
+| Battery completion | none; controls | Within-model rules, with suites as WQ2's groups and leave-one-suite-out as its robustness check; the control limit; the item-level control rules | `control` (battery target) when fewer than 2 qualifying controls; `replicate` (*Runs per Suite* 3) when the battery has 1 run per suite |
+| Per-model Report Pack | the comparison's other non-excluded entries | Within-model rules for the subject, plus the pair rules between the subject and each peer | As above, centered on the subject |
+
+**Figures.** Every Root Cause Analysis carries the four server-drawn figures R1–R4 (below). Where peers
+exist (a comparison or a per-model pack) the browser-drawn Intelligence, Speed, Cost, Intelligence
+against speed and Intelligence against cost may be chosen as well (§ 13).
+
+**The prompt** (`BenchmarkReportPackPrompt.RootCause.cs`, in comparison and model-scope forms). The system
+prompt states the method, the grades, the control limit, the slot rules and the claim rules 32–36 in
+plain words. The user message lists SCOPE, MODELS (or SUBJECT and PEERS, and the controls),
+CONFIGURATION DIFFERENCES, FACTS (`rca.*` included), KNOWN FACTS, HYPOTHESES (each with for, against,
+grade, reasons and refuted if), NEXT RUNS, CHECKS, **CLAIM SUPPORT** (per claim kind, the exact token keys
+that qualify), the question matrix or per-question results, and the weakest answers and questions. The
+writer weighs; it does not re-grade.
+
+### Claim discipline
+
+Rules 32 to 36 apply to the Root Cause Analysis only, in both scopes. Like C1 to C9 (§ 16), each is
+built from one `RootCauseClaimSupport` object that the prompt and the validator share, so the prompt
+names exactly the tokens the validator accepts.
+
+| Rule | Check | Effect |
+|---|---|---|
+| 32 (`RootCauseEvidenceCausalRule`) | A causal word (`RootCauseClaimSupport.CausalWords`: *because*, *due to*, *caused*, *causes*, *explains*, *driven by*, *root cause*, *leads to*, *results in*, whole words and phrases ignoring case) in `scope`, an `evidence*` slot or an observation | The paragraph or item is dropped |
+| 33 (`RootCauseCausalClaimRule`) | A causal word in a `hypotheses*` slot, `conclusions` or `nextRuns` with no token of a hypothesis the sheet holds (`rca.hypothesis.<id>.<n>.*`) or of an axis (`rca.axis.<axis>.*`) in the same sentence | The paragraph is dropped |
+| 34 (`RootCauseCertaintyRule`) | A certainty word (`CertaintyWords`: *established*, *confirmed*, *proven*, *definitely*, *certainly*, *root cause was found*), anywhere, without a token of a *High* hypothesis, or the `rca.axis.<axis>.status` token of an axis whose root cause is established, in the same sentence; a certainty word after *not*, *never* or *cannot* does not count | The paragraph or item is dropped |
+| 35 (`RootCauseWriterHypothesisRule`) | A `writerHypotheses` item without an axis, a statement, evidence for, a refuted-if statement or a known locus (`model`, `chat`, `harness`, `suite`, `corpus`, `provider`), with a confidence other than *Low*, or citing a model or fact that does not exist; each of its texts is capped at 40 words | The item is dropped |
+| 36 (`RootCauseAxisStatusRule`) | `conclusions` does not cite each axis' `rca.axis.<axis>.status` | A **warning**, checked over the kept text |
+
+The caps (`BenchmarkReportPackValidator.RootCauseSlotMaxWords`): `scope`, `nextRuns` and `limitations`
+120 words; each `evidence*` slot 150, or 100 in a run- or battery-completion document; each
+`hypotheses*` slot and `conclusions` 200; at most 8 observations of at most 35 words; at most 4 writer
+hypotheses. Rules 2–4, 7–12, 16, 17, 19 and 31 apply as to every comparison document (§ 3), rule 4 asking
+for a topic for every question the document cites whose text the writer was given.
+
+### Server-drawn charts
+
+**Why on the server.** Every other chart is drawn in the browser while a wizard is open, then uploaded
+(§ 13), and only for a document with peers. A Root Cause Analysis written after a run, with no browser
+present and no peers, would never have a chart. So its four figures are drawn **on the server**, from
+the stored `RootCauseResult`, right after the document is stored: `WriteDocumentAsync` calls
+`RootCauseChartPublisher.PublishAsync` and logs *"Root Cause Analysis: N charts drawn."* (N counts each
+figure once, whatever its variants), or *"Root Cause Analysis: the charts were not drawn: <reason>"* as a
+warning; a drawing failure never fails the document.
+
+- Each chart is composed as a small one-page **QuestPDF** document whose page is the chart — rows of
+  proportional boxes, text in the embedded document fonts that `BenchmarkPdfResources` registers, and a
+  key.
+- It is rasterized with QuestPDF's own image generation,
+  `document.GenerateImages(new ImageGenerationSettings { ImageFormat = ImageFormat.Png, RasterDpi = 300 })`
+  (QuestPDF 2026.9.1), and stored through `BenchmarkReportChartStore.SetServerChartsAsync`, its manifest
+  entries marked `"origin": "server"`. With no row to draw in any chart, the server-drawn charts stored
+  before are removed.
+- No new package and no browser, and the same image appears in the PDF and in Word.
+
+`RootCauseChartRenderer.Draw(result, sheet, anonymized)` returns each chart's key, title, caption, alt
+text, PNG bytes and size; it is static and pure, so the same result always gives the same charts.
+Rejected alternatives: SkiaSharp or ScottPlot (a new native dependency for four
+bar charts); QuestPDF's `.Svg()` (vector output in the PDF only, so Word would still need a PNG); and
+drawing them in the browser, which cannot reach run- and battery-completion documents.
+
+| Key | Title | Section | Rows | Segments and marks |
+|---|---|---|---|---|
+| `r1-points-at-risk` | Where the points were lost | 2 | Each model (stand-alone: the subject, then one row per difficulty band, or per suite on a battery) | A stacked horizontal bar of at-risk index points: answers without tools · budget, truncation or output defects · confirmed critical errors · other low-scoring answers. The bar's end is labeled with the total; the axis is points out of 100 |
+| `r2-speed-decomposition` | Where the time goes | 3 | Each model (stand-alone: the subject, then per band or suite) | A stacked bar of the median seconds per question, split among time to first token · output generation · tool execution · own waits and retries · other in proportion to each segment's mean, so the segments sum to the median exactly |
+| `r3-cost-decomposition` | Where the cost goes | 4 | Each model (stand-alone: the subject, then per band or suite) | A stacked bar of cost per question: uncached input · cache reads · cache writes · visible output · reasoning |
+| `r4-hypothesis-confidence` | How sure each hypothesis is | 6 | One row per hypothesis shown in the document's tables, grouped by axis | A filled dot at its grade on an ordinal axis (Not supported · Low · Moderate · High), the hypothesis id and its short statement as the row label. Where the hypothesis has a share, a second column shows a bar with its 95 % interval whisker |
+
+Rules common to all four:
+
+- **Color is never the only carrier.** Every segment of 8 % of the bar or more carries its own text
+  label; smaller segments are named in the key, in stacking order. R4 prints its grade as text beside
+  the dot.
+- **Palette** (`RootCauseChartPalette`), for print on white; text always wears the ink (`#0b0b0b`, the
+  key and axis `#52514e`), never a segment or grade color:
+  - **Segments**, in stacking order, the `dataviz` reference slots yellow, green, magenta, violet and red:
+    `#eda100`, `#008300`, `#e87ba4`, `#4a3aa7`, `#e34948` (R1 uses the first four). None is one of the
+    three provider hues of the browser charts, because a segment is a cause, not a provider; the order is
+    the one of the 120 permutations that keeps the worst adjacent pair furthest apart. Validated on
+    2026-10-15 with the skill's `validate_palette.js` (`--mode light --surface "#ffffff"`): the lightness
+    band, chroma floor, color-vision-deficiency separation (worst adjacent ΔE 16.2, protan, green and
+    yellow) and normal-vision floor (worst adjacent ΔE 30.3) pass; contrast warns for yellow (2.17:1) and
+    magenta (2.69:1) on white, which the printed numbers and the key relieve. The number inside a segment
+    is in ink or white, whichever contrasts more, each at least 4.5:1.
+  - **Grades**, one blue hue in four lightness steps from Not supported to High: `#86b6ef`, `#3987e5`,
+    `#1c5cab`, `#0d366b` (`--ordinal`: monotone lightness, adjacent ΔL at least 0.06, light-end contrast
+    2.11:1, single hue, all pass). The grade is printed as text as well.
+
+  The validation commands and results are recorded beside the constants.
+- **Size.** Full column width (481.9 pt); height 40 pt plus 18 pt per row, **at least 78 pt** — so a
+  one- or two-row chart still rasterizes at least 320 px tall, the chart store's minimum — and at most
+  60 % of an A4 page's content height. Rows that would pass the cap are summarized as *"and N more rows,
+  in the tables"*. Text is 8 pt, the body font. A server-drawn figure prints full width in a row of its
+  own, never in a figure row, and the chart layout never lists it (PDF layout 9, § 8).
+- **Named and anonymized variants.** A document with peers, or of comparison scope, gets both — model
+  names, then letters as in the document; a stand-alone document gets the named variant only.
+- **Alt text.** The title, then one clause per row with its total and its largest segment — *"Model A:
+  14.1 points at risk, most from confirmed critical errors (6.0)"* — at most 1,000 characters, cut at a
+  row boundary with *"and N more rows"*.
+- **Caption.** What is plotted, for whom (*per model*, or *for the subject and per difficulty band* or
+  *per suite*) and its basis — the pricing basis for R3, *median per question* for R2 — then *"Drawn by
+  Overseer from the analysis computed <UTC>"*.
+- **Unavailable data.** A row whose decomposition is unavailable shows *"not recorded (<reason>)"*
+  instead of a bar. A chart with no available row is not drawn, and the document still stores.
+
+**Store, render and redraw.** `BenchmarkReportChartPlacement.ServerFigureKeys` holds R1–R4 with their own
+anchor table, `RootCauseAnchors` (`RcaIntelligence` 16, `RcaSpeed` 17, `RcaCost` 18, `RcaHypotheses` 19), and
+`IsServerDrawn(key)` tells them apart; `IsKnown` accepts them and `AllFigureKeys` counts 17.
+`BenchmarkReportChartStore.SetServerChartsAsync` replaces only a document's server-drawn entries, and a
+browser upload through `SetChartsAsync` keeps them; both use the staging and atomic-swap path, and
+`MaxCharts` is 24. The render service's stand-alone chart refusal stays for browser uploads only, and
+the renderer's `Figures` writes markers for server-drawn keys even in a stand-alone document.
+**Redraw charts** (`POST /api/admin/benchmark/report-documents/{id}/charts/redraw`,
+`BenchmarkReportRenderService.RedrawServerChartsAsync`) draws them again from the stored `FactsJson`
+after a renderer change, with no model call. The client's chart picker never lists them and its
+publisher never uploads one (§ 13).
+
+### Writing it
+
+- **Audiences.** `BenchmarkRunReportDocumentService.Audiences` and its battery counterpart are
+  `{ ExecutiveSummary, RootCauseAnalysis }`: a run or battery run with a *Report Writer* gets both, and
+  *write the missing documents* fills in a Root Cause Analysis for one that already has an Executive
+  Summary. A model batch's MB-A11 counts two documents per run. The per-model and comparison Report
+  Packs offer both audiences; chat consistency offers neither the Root Cause Analysis nor any retired
+  audience, and each scope refuses an audience it does not write (§ 9).
+- **The estimate.** 10,000 output tokens in model scope and 14,000 in comparison scope, both marked for
+  recalibration after the first five jobs of each; with the repair-turn range of § 9, roughly $0.3–0.8
+  per run in model scope.
+- **Calls.** The first call, one repair turn and, in comparison scope, a headline-only turn: at most
+  three per document (§ 3).
+
+### Retirement of audiences 2 and 3
+
+On **2026-10-15** the *Report for AI Researchers and Developers* (`TechnicalReport`, 2) and the
+*Internal Improvement Brief* (`InternalBrief`, 3) were retired from every scope — per-run and battery
+documents, per-model and comparison Report Packs, and chat consistency documents — and replaced by the
+Root Cause Analysis. **On the first Overseer start after the change, every stored document of either
+audience was deleted, with its run fingerprint rows and its chart folder**, by the startup step
+`BenchmarkReportAudienceRetirement.RunAsync`, called in its own try/catch in the benchmark cleanup block
+of `Program.cs`, after `SettleInterruptedAsync`. PDFs and Word files downloaded before then were not
+touched.
+
+How the step works, since it stays in place: it selects the documents whose stored `Audience` is in
+`RetiredAudienceValues` (`{ 2, 3 }`, integer literals, because the enum members no longer exist) in
+batches of 200; leaves any whose run or battery run is Pending or Writing for the next start; deletes
+each through the ordinary delete path (row, cascade, chart folder under the chart store's per-document
+lock; a chart folder that cannot be removed is logged and the row deletion stands); then re-settles each
+affected run and battery run once (`ResettleAsync`): Completed, or CompletedWithWarnings when a present
+document has warnings, with every audience present; NotRequested with *"Root Cause Analysis not written
+yet."* when the Executive Summary is present without it; NotRequested with no message when nothing
+remains. It logs *"Retired N documents (TechnicalReport a, InternalBrief b); charts removed c; d runs and
+e battery runs re-settled."* It is safe to keep forever: neither audience can be written any more, so a
+second start deletes nothing. No EF migration and no schema change were needed, since the audience is an
+`int` column. Values 2 and 3 are never reused; the enum's comment records them. Validator rules 5, 15 and
+18, which checked parts of the retired documents, keep their numbers unused, and rule 14 keeps only its
+headline half. The Download Center and chart settings stored in browsers drop the two document types when
+read (§§ 8, 13).

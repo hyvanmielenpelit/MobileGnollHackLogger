@@ -167,7 +167,9 @@ internal static class BenchmarkPdfMarkdownComposer
     internal readonly record struct FigureFrame(float Width, float MaxHeight, float PageHeight = 0);
 
     /// <summary><paramref name="CamelCaseBreaks"/>: a table header, whose identifiers may wrap between words.</summary>
-    private sealed record Context(Prepared Document, CancellationToken Token, FigureFrame Frame, bool CamelCaseBreaks = false);
+    /// <param name="TextSize">The size of the text being composed, in points, which inline code scales from.</param>
+    private sealed record Context(Prepared Document, CancellationToken Token, FigureFrame Frame, bool CamelCaseBreaks = false,
+        float TextSize = BenchmarkPdfStyle.BaseSize);
 
     public static MarkdownDocument Parse(string markdown) => Markdown.Parse(markdown ?? string.Empty, Pipeline);
 
@@ -222,7 +224,8 @@ internal static class BenchmarkPdfMarkdownComposer
             {
                 if (FigureKeyOf(paragraph, source) is string key && byKey.TryGetValue(key, out var chart))
                 {
-                    placements.TryGetValue(key, out var placement);
+                    // A server-drawn figure takes the full column width on its own row, whatever the layout says.
+                    var placement = BenchmarkReportChartPlacement.IsServerDrawn(key) ? null : placements.GetValueOrDefault(key);
                     double share = placement != null && placement.WidthShare > 0 && placement.WidthShare <= 1 ? placement.WidthShare : 1;
                     figures[paragraph] = new Figure(figures.Count + 1, chart, share, placement?.RowGroup);
                 }
@@ -478,7 +481,7 @@ internal static class BenchmarkPdfMarkdownComposer
                         group.Spacing(BenchmarkPdfStyle.BlockSpacing);
                         foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
                         group.Item().Element(c => ParagraphOrFigure(c, labelBlock, ctx));
-                        group.Item().Element(c => ComposeTable(c, labeled, ctx));
+                        group.Item().Element(c => ComposeTable(c, labeled, ctx, keepTogether: false));
                     });
                     i = labeledIndex!.Value;
                 }
@@ -510,7 +513,7 @@ internal static class BenchmarkPdfMarkdownComposer
                     {
                         group.Spacing(BenchmarkPdfStyle.BlockSpacing);
                         foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
-                        group.Item().Element(c => ComposeTable(c, shortTable, ctx));
+                        group.Item().Element(c => ComposeTable(c, shortTable, ctx, keepTogether: false));
                     });
                     i = nextIndex!.Value;
                 }
@@ -537,7 +540,7 @@ internal static class BenchmarkPdfMarkdownComposer
                     {
                         group.Spacing(BenchmarkPdfStyle.BlockSpacing);
                         group.Item().Element(c => ParagraphOrFigure(c, boldLabel, ctx));
-                        group.Item().Element(c => ComposeTable(c, labeledTable, ctx));
+                        group.Item().Element(c => ComposeTable(c, labeledTable, ctx, keepTogether: false));
                     });
                     i = afterIndex;
                 }
@@ -709,7 +712,7 @@ internal static class BenchmarkPdfMarkdownComposer
             .FontSize(size)
             .LineHeight(1.2f)
             .FontColor(BenchmarkPdfStyle.Teal));
-        Inlines(text, heading.Inline, default, ctx);
+        Inlines(text, heading.Inline, default, ctx with { TextSize = size });
     }
 
     private static void Paragraph(IContainer container, ContainerInline? inline, Context ctx, CellAlign align)
@@ -880,7 +883,8 @@ internal static class BenchmarkPdfMarkdownComposer
     internal static bool IsShortTable(MdTable table)
         => table.OfType<MdTableRow>().Count(r => !r.IsHeader) <= ShortTableMaxBodyRows;
 
-    private static void ComposeTable(IContainer container, MdTable table, Context ctx)
+    /// <param name="keepTogether">False inside a group that already keeps the short table on one page with its heading or label.</param>
+    private static void ComposeTable(IContainer container, MdTable table, Context ctx, bool keepTogether = true)
     {
         var rows = table.OfType<MdTableRow>().ToList();
         if (rows.Count == 0) return;
@@ -948,7 +952,7 @@ internal static class BenchmarkPdfMarkdownComposer
         });
 
         var target = layout.Constant ? container.AlignLeft() : container;
-        if (bodyRows.Count <= ShortTableMaxBodyRows) target = target.PreventPageBreak();
+        if (keepTogether && bodyRows.Count <= ShortTableMaxBodyRows) target = target.PreventPageBreak();
 
         if (layout.Legend is not string legend)
         {
@@ -1346,6 +1350,7 @@ internal static class BenchmarkPdfMarkdownComposer
         IContainer slot, MdTableCell? cell, CellAlign align, bool header, bool zebra, float fontSize, Context ctx,
         string? shortHeader = null)
     {
+        ctx = ctx with { TextSize = fontSize };
         IContainer c = slot;
         if (header) c = c.Background(BenchmarkPdfStyle.TableHeader);
         else if (zebra) c = c.Background(BenchmarkPdfStyle.Zebra);
@@ -1397,7 +1402,7 @@ internal static class BenchmarkPdfMarkdownComposer
                 if (label.Length > 0) BenchmarkPdfStyle.SemiboldSpan(t.Span(label + ": "));
                 if (cell is { Count: 1 } && cell[0] is ParagraphBlock paragraph)
                 {
-                    Inlines(t, paragraph.Inline, default, ctx);
+                    Inlines(t, paragraph.Inline, default, ctx with { TextSize = fontSize });
                 }
                 else if (cell != null)
                 {
@@ -1441,6 +1446,7 @@ internal static class BenchmarkPdfMarkdownComposer
                     break;
                 case CodeInline code:
                     var codeSpan = BenchmarkPdfStyle.MonoSpan(text.Span(code.Content));
+                    codeSpan.FontSize(ctx.TextSize * BenchmarkPdfStyle.InlineCodeScale);
                     codeSpan.BackgroundColor(BenchmarkPdfStyle.InlineCodeBackground);
                     Styled(codeSpan, style);
                     break;

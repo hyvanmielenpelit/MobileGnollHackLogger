@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Overseer.Services.Benchmarking.Charts;
 
 /// <summary>
 /// Lists, renders and deletes stored report-pack documents, and stores their chart images through
@@ -23,42 +24,32 @@ public class BenchmarkReportRenderService
     public const string StandaloneChartsRefusal =
         "This document has no peers; charts are drawn only for documents that compare models.";
 
+    public const string RedrawNotRootCauseRefusal = "Only a Root Cause Analysis has charts drawn by Overseer.";
+
+    public const string RedrawUnreadableFactsRefusal = "The document's stored fact sheet could not be read.";
+
     private readonly ApplicationDbContext _db;
     private readonly BenchmarkReportChartStore _charts;
+    private readonly RootCauseChartPublisher _publisher;
     private readonly ILogger<BenchmarkReportRenderService> _logger;
 
     public BenchmarkReportRenderService(
-        ApplicationDbContext db, BenchmarkReportChartStore charts, ILogger<BenchmarkReportRenderService> logger)
+        ApplicationDbContext db, BenchmarkReportChartStore charts, ILogger<BenchmarkReportRenderService> logger,
+        RootCauseChartPublisher? publisher = null)
     {
         _db = db;
         _charts = charts;
         _logger = logger;
+        _publisher = publisher ?? new RootCauseChartPublisher(charts);
     }
-
-    /// <summary>The name audience 2 was shown under before it was relabeled, still in older documents' stored titles.</summary>
-    public const string LegacyTechnicalReportName = "Technical Report";
 
     public static string AudienceName(BenchmarkReportAudience audience) => audience switch
     {
         BenchmarkReportAudience.ExecutiveSummary => "Executive Summary",
-        BenchmarkReportAudience.TechnicalReport => "Report for AI Researchers and Developers",
-        BenchmarkReportAudience.InternalBrief => "Internal Improvement Brief",
         BenchmarkReportAudience.ProviderIssueReport => "Provider Issue Report",
+        BenchmarkReportAudience.RootCauseAnalysis => "Root Cause Analysis",
         _ => audience.ToString()
     };
-
-    /// <summary>
-    /// A stored title as it is shown now: a Report for AI Researchers and Developers written under the
-    /// legacy name has its trailing <c>— Technical Report</c> replaced by the current one.
-    /// </summary>
-    public static string CurrentTitle(BenchmarkReportAudience audience, string? title)
-    {
-        title ??= string.Empty;
-        string legacySuffix = " — " + LegacyTechnicalReportName;
-        return audience == BenchmarkReportAudience.TechnicalReport && title.EndsWith(legacySuffix, StringComparison.Ordinal)
-            ? title[..^legacySuffix.Length] + " — " + AudienceName(audience)
-            : title;
-    }
 
     /// <summary>
     /// First 16 hex characters of SHA-256 over <c>AssessmentJson + "\n" + CoAssessorSynthesisJson</c>: part of a
@@ -472,7 +463,49 @@ public class BenchmarkReportRenderService
         var comparisonNames = await ComparisonNamesAsync(new[] { d.ComparisonId }, ct);
         FillScope(dto, d.Scope, d.ComparisonId, DisplayNameOf(comparisonNames, d.ComparisonId), d.CoveredEntryKeysJson, d.CoveredSetKey, d.ReferenceEntryKey, d.FactsJson);
         FillCharts(dto);
+        FillRootCause(dto, d.Audience, d.FactsJson, d.Id);
         return dto;
+    }
+
+    /// <summary>
+    /// A Root Cause Analysis's recommended runs, checks and controls, from its stored fact sheet; left
+    /// null on every other document and on one whose sheet holds no root-cause result.
+    /// </summary>
+    private void FillRootCause(BenchmarkReportDocumentDetailDto dto, BenchmarkReportAudience audience, string? factsJson, long id)
+    {
+        if (audience != BenchmarkReportAudience.RootCauseAnalysis) return;
+
+        var rootCause = ReadSheet(factsJson, id)?.RootCause;
+        if (rootCause == null) return;
+
+        dto.RecommendedRuns = rootCause.RecommendedRuns.ToList();
+        dto.Checks = rootCause.Checks.ToList();
+        dto.Controls = rootCause.Controls
+            .Select(c => new RootCauseControlDto
+            {
+                ModelLabel = c.ModelLabel,
+                Provider = c.Provider,
+                RunId = c.RunId,
+                BatteryRunId = c.BatteryRunId,
+                CompletedAtUtc = c.DateUtc,
+                SharedQuestions = c.SharedQuestions
+            })
+            .ToList();
+    }
+
+    /// <summary>The stored fact sheet, deserialized whole; null, with a warning, when absent or unreadable.</summary>
+    private BenchmarkReportFactSheet? ReadSheet(string? factsJson, long id)
+    {
+        if (string.IsNullOrWhiteSpace(factsJson)) return null;
+        try
+        {
+            return BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(factsJson);
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or NotSupportedException)
+        {
+            _logger.LogWarning(ex, "Report document {DocumentId} has an unreadable fact sheet.", id);
+            return null;
+        }
     }
 
     /// <summary>
@@ -539,13 +572,16 @@ public class BenchmarkReportRenderService
     }
 
     /// <summary>
-    /// Replaces a document's whole chart set and its layout; a request without a layout stores none.
-    /// NotFound for an unknown id; a refusal for a stand-alone document, for chart storage that is not
-    /// configured, for any upload <see cref="BenchmarkReportChartStore.ValidateCharts"/> refuses and for
-    /// a layout <see cref="BenchmarkReportChartStore.ValidateLayout"/> refuses. Everything is checked
-    /// before anything is written. A comparison-scope document always covers two or more models, so it
-    /// is never stand-alone; a chat consistency document plots the model under test over time, so it
-    /// takes charts with or without control models.
+    /// Replaces a document's uploaded chart set and its layout, keeping the charts Overseer drew; a
+    /// request without a layout stores none. NotFound for an unknown id; a refusal for a stand-alone
+    /// document, for chart storage that is not configured, for any upload
+    /// <see cref="BenchmarkReportChartStore.ValidateCharts"/> refuses (a server-drawn figure among them)
+    /// and for a layout <see cref="BenchmarkReportChartStore.ValidateLayout"/> refuses. Everything is
+    /// checked before anything is written. A comparison-scope document always covers two or more models,
+    /// so it is never stand-alone; a chat consistency document plots the model under test over time, so
+    /// it takes charts with or without control models. The stand-alone refusal is for uploads only: the
+    /// server-drawn charts of a stand-alone Root Cause Analysis are stored by <see cref="RedrawServerChartsAsync"/>
+    /// and when the document is written.
     /// </summary>
     public async Task<(ReportDocumentChartsSummaryDto? Summary, bool NotFound, string? Refusal)> SetChartsAsync(
         long documentId, PutReportDocumentChartsRequest? request, CancellationToken ct)
@@ -577,6 +613,37 @@ public class BenchmarkReportRenderService
     }
 
     /// <summary>
+    /// Draws a stored Root Cause Analysis's server charts again from its <c>FactsJson</c> and stores them
+    /// in place of the ones drawn before (<see cref="RootCauseChartPublisher"/>), keeping the uploaded
+    /// charts. Returns the stored set's summary; NotFound for an unknown id; a refusal for a document that
+    /// is not a Root Cause Analysis, for chart storage that is not configured, for a fact sheet that
+    /// cannot be read or holds no root-cause result, and for a drawing or storage failure.
+    /// </summary>
+    public async Task<(ReportDocumentChartsSummaryDto? Summary, bool NotFound, string? Refusal)> RedrawServerChartsAsync(
+        long documentId, CancellationToken ct)
+    {
+        var d = await _db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(x => x.Id == documentId)
+            .Select(x => new { x.Audience, x.FactsJson })
+            .FirstOrDefaultAsync(ct);
+        if (d == null) return (null, true, null);
+
+        if (d.Audience != BenchmarkReportAudience.RootCauseAnalysis) return (null, false, RedrawNotRootCauseRefusal);
+        if (!_charts.IsConfigured) return (null, false, BenchmarkReportChartStore.NotConfiguredMessage);
+
+        var sheet = ReadSheet(d.FactsJson, documentId);
+        if (sheet == null) return (null, false, RedrawUnreadableFactsRefusal);
+        if (sheet.RootCause == null) return (null, false, RootCauseChartPublisher.NoRootCauseMessage);
+
+        var published = await _publisher.PublishAsync(documentId, sheet, ct);
+        if (!published.Succeeded) return (null, false, published.Error);
+
+        return (_charts.ReadSummary(documentId) ?? new ReportDocumentChartsSummaryDto { DocumentId = documentId }, false, null);
+    }
+
+    /// <summary>
     /// Deletes a document's charts; false for an unknown id. With chart storage not configured there is
     /// nothing to delete.
     /// </summary>
@@ -595,16 +662,22 @@ public class BenchmarkReportRenderService
     /// <summary>
     /// A document's stored charts in one peer naming, for a PDF or Word render; empty when it has none.
     /// A chat consistency document's figures plot the model under test alone and are drawn once, named,
-    /// so every copy of it carries them.
+    /// so every copy of it carries them. A stand-alone model-scope document names no peer, so its only
+    /// charts, the server-drawn charts of a Root Cause Analysis, are drawn once, named, too.
     /// </summary>
     public async Task<IReadOnlyList<BenchmarkReportRenderChart>> LoadRenderChartsAsync(
         long documentId, BenchmarkReportPeerNaming naming, CancellationToken ct)
     {
-        bool chatConsistency = await _db.BenchmarkReportDocuments
+        var d = await _db.BenchmarkReportDocuments
             .AsNoTracking()
             .IgnoreAutoIncludes()
-            .AnyAsync(x => x.Id == documentId && x.Scope == BenchmarkReportScope.ChatConsistency, ct);
-        string variant = naming == BenchmarkReportPeerNaming.Anonymized && !chatConsistency
+            .Where(x => x.Id == documentId)
+            .Select(x => new { x.Scope, x.FactsJson })
+            .FirstOrDefaultAsync(ct);
+        bool namedOnly = d != null
+            && (d.Scope == BenchmarkReportScope.ChatConsistency
+                || (d.Scope != BenchmarkReportScope.Comparison && PeersOf(d.FactsJson).Count == 0));
+        string variant = naming == BenchmarkReportPeerNaming.Anonymized && !namedOnly
             ? BenchmarkReportChartStore.Anonymized
             : BenchmarkReportChartStore.Named;
         return await _charts.LoadAsync(documentId, variant, ct);
@@ -704,7 +777,7 @@ public class BenchmarkReportRenderService
         item.PackId = packId;
         item.Audience = audience;
         item.Origin = origin;
-        item.Title = CurrentTitle(audience, title);
+        item.Title = title ?? string.Empty;
         item.SubjectKey = subjectKey;
         item.SubjectLabel = subjectLabel;
         item.SubjectRunIds = DeserializeRunIds(subjectRunIdsJson);

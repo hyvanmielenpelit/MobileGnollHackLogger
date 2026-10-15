@@ -1271,7 +1271,7 @@ describe('AdminBenchmarkComponent', () => {
           cancelRequestedAtUtc: null,
           jobsAhead: null,
           blockingJobLabel: null,
-          audiences: [1, 2],
+          audiences: [1, 5],
           writerConfigId: 9,
           writerDisplayName: 'Report Writer Model',
           writerProvider: 'Anthropic',
@@ -1284,7 +1284,7 @@ describe('AdminBenchmarkComponent', () => {
             totalModelCalls: 1, inputTokens: 1000, outputTokens: 200, costUsd: 0.05,
             documents: [
               { audience: 1, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1 },
-              { audience: 2, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0 }
+              { audience: 5, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0 }
             ],
             log: []
           },

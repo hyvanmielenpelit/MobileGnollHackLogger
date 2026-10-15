@@ -2066,6 +2066,34 @@ describe('AdminBenchmarkComponent', () => {
       expect(prefillStatus().textContent?.trim()).toBe('');
     });
 
+    it('fills the launcher from a recommended run, closing the run report and the Battery Run Report first', () => {
+      component.viewRunDetail(55);
+      fixture.detectChanges();
+      component.selectSubTab('history');
+      ctx.refresh();
+      const closeBattery = vi.spyOn(component.batteryRunReport!, 'close');
+
+      ctx.bridge.prefillSetup({
+        number: 1, kind: 'control', purpose: 'B', mark: 'Recommended', hypothesisIds: ['HQ1'], decides: 'confirms HQ1 if …',
+        predictedTier: 'Comparable', estimatedCostUsd: 1.2, estimatedMinutes: 30, afterSystemHypotheses: false,
+        targetKind: 'Suite', suiteId: 1, suiteName: 'Default Suite', batteryId: null, batteryName: null,
+        runMode: 'Single', testedModelConfigurationIds: [2], modelNames: ['Model Two'], order: 'Randomized',
+        runsPerModel: 1, runCount: 1, scoringProfileId: 1, verboseMode: true, allowSourceCodeReferences: false,
+        assessorModelConfigurationId: 1, coAssessorModelConfigurationId: null, secondOpinionAssessorModelConfigurationId: null,
+        secondOpinionMode: null, claimVerifierModelConfigurationId: null, reportWriterModelConfigurationId: null, notes: []
+      }, 'Control run for run #55');
+      fixture.detectChanges();
+
+      expect(component.runDetailDialog.nativeElement.open).toBe(false);
+      expect(closeBattery).toHaveBeenCalled();
+      expect(component.activeSubTab).toBe('run');
+      expect(ctx.launcher.testedConfigId).toBe(2);
+      expect(ctx.launcher.candidateVerboseMode).toBe(true);
+      expect(benchmarkServiceMock.startRun).not.toHaveBeenCalled();
+      expect(benchmarkServiceMock.startRunSeries).not.toHaveBeenCalled();
+      expect(prefillStatus().querySelector('.alert-heading')?.textContent?.trim()).toBe('Control run for run #55');
+    });
+
     describe('while the active sub-tab refuses to be left', () => {
       const REFUSAL = 'Chat Consistency is exporting charts. Wait for it to finish, then try again.';
       let release: () => void;

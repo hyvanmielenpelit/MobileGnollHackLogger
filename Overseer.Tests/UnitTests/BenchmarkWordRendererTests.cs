@@ -839,7 +839,7 @@ public class BenchmarkWordRendererTests
     {
         var options = BenchmarkRunExamTests.InMemoryOptions();
         await using var db = new ApplicationDbContext(options);
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.InternalBrief);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -847,7 +847,6 @@ public class BenchmarkWordRendererTests
             new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
 
         Assert.IsType<NotFoundResult>(await controller.RenderDocx(document.Id + 1000, "full", "named", null, CancellationToken.None));
-        Assert.IsType<BadRequestObjectResult>(await controller.RenderDocx(document.Id, "summary", "named", null, CancellationToken.None));
         Assert.IsType<BadRequestObjectResult>(await controller.RenderDocx(document.Id, "everything", "named", null, CancellationToken.None));
         Assert.IsType<BadRequestObjectResult>(await controller.RenderDocx(document.Id, "3", "named", null, CancellationToken.None));
         Assert.IsType<BadRequestObjectResult>(await controller.RenderDocx(document.Id, "full", "pseudonymous", null, CancellationToken.None));
@@ -859,7 +858,7 @@ public class BenchmarkWordRendererTests
     {
         var options = BenchmarkRunExamTests.InMemoryOptions();
         await using var db = new ApplicationDbContext(options);
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -867,16 +866,16 @@ public class BenchmarkWordRendererTests
             new BenchmarkReportRenderService(db, TestChartStores.Unconfigured(), NullLogger<BenchmarkReportRenderService>.Instance));
 
         var provider = Assert.IsType<FileContentResult>(
-            await controller.RenderDocx(document.Id, "detailed", "anonymized", "letter", CancellationToken.None));
+            await controller.RenderDocx(document.Id, "summary", "anonymized", "letter", CancellationToken.None));
         var full = Assert.IsType<FileContentResult>(
             await controller.RenderDocx(document.Id, "Full", "Named", null, CancellationToken.None));
 
         Assert.Equal(BenchmarkWordRenderer.ContentType, provider.ContentType);
         Assert.Equal(
-            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.docx",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_anonymized.docx",
             provider.FileDownloadName);
         Assert.Equal(
-            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.docx",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_full_named_INTERNAL.docx",
             full.FileDownloadName);
         AssertValid(provider.FileContents);
         AssertValid(full.FileContents);
@@ -892,7 +891,7 @@ public class BenchmarkWordRendererTests
     {
         var options = BenchmarkRunExamTests.InMemoryOptions();
         await using var db = new ApplicationDbContext(options);
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -924,7 +923,7 @@ public class BenchmarkWordRendererTests
         Assert.DoesNotContain("Audience", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Date: 2026-09-28", text, StringComparison.Ordinal);
         Assert.DoesNotContain("Compared with: Model A = Grok 5", text, StringComparison.Ordinal);
-        const string stamp = "INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.";
+        const string stamp = "INTERNAL — unpublished benchmark results. Do not share outside the Overseer team.";
         Assert.Equal(text.IndexOf(stamp, StringComparison.Ordinal), text.LastIndexOf(stamp, StringComparison.Ordinal));
         Assert.Contains(stamp, text, StringComparison.Ordinal);
     }
@@ -945,7 +944,7 @@ public class BenchmarkWordRendererTests
         };
         db.BenchmarkComparisons.Add(comparison);
         await db.SaveChangesAsync(ct);
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         document.Id = 0;
         document.ComparisonId = comparison.Id;
         db.BenchmarkReportDocuments.Add(document);
@@ -956,7 +955,7 @@ public class BenchmarkWordRendererTests
 
         var full = Assert.IsType<FileContentResult>(await controller.RenderDocx(document.Id, "full", "named", null, CancellationToken.None));
 
-        Assert.Equal("comparison-" + comparison.Id.ToString(CultureInfo.InvariantCulture) + "_gpt-5.6-luna_researcher-report_full_named_INTERNAL.docx",
+        Assert.Equal("comparison-" + comparison.Id.ToString(CultureInfo.InvariantCulture) + "_gpt-5.6-luna_executive-summary_full_named_INTERNAL.docx",
             full.FileDownloadName);
         AssertValid(full.FileContents);
         using var package = Open(full.FileContents);

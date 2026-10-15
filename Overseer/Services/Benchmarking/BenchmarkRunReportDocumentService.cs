@@ -14,14 +14,14 @@ using Overseer.Models;
 using Overseer.Services;
 
 /// <summary>
-/// Writes a run's three AI-written run-completion documents, the Executive Summary, the Report for
-/// AI Researchers and Developers and the Internal Improvement Brief, once, after the run completes,
-/// with the report writer the run names.
+/// Writes a run's two AI-written run-completion documents, the Executive Summary and the Root Cause
+/// Analysis, once, after the run completes, with the report writer the run names.
 ///
 /// <para>Each document is an immutable <see cref="BenchmarkReportDocument"/> row with
 /// <see cref="BenchmarkReportDocumentOrigin.RunCompletion"/>, about the run alone, with no peers.
-/// Downloads render the stored row and never reach this service. Nothing is rewritten: a later
-/// re-synthesis only marks the documents as changed, and writing again means deleting them first.</para>
+/// Downloads render the stored row and never reach this service. Nothing is rewritten on its own: a
+/// later re-synthesis only marks the documents as changed, and writing again means deleting them
+/// first, or naming them as replaced on a manual write (Rewrite with controls).</para>
 ///
 /// <para>A job queues for the report-pack slot behind a running job, checks the compliance guard and
 /// the writer, then writes whichever of the requested documents the run does not have yet. One job has
@@ -51,9 +51,11 @@ public sealed class BenchmarkRunReportDocumentService
     public static readonly IReadOnlyList<BenchmarkReportAudience> Audiences = new[]
     {
         BenchmarkReportAudience.ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport,
-        BenchmarkReportAudience.InternalBrief
+        BenchmarkReportAudience.RootCauseAnalysis
     };
+
+    /// <summary>The message of a run that has some of its documents and not the Root Cause Analysis.</summary>
+    public const string RootCauseNotWrittenMessage = "Root Cause Analysis not written yet.";
 
     /// <summary>What <see cref="TryCancel"/> did.</summary>
     public enum CancelOutcome
@@ -214,18 +216,67 @@ public sealed class BenchmarkRunReportDocumentService
         };
     }
 
-    /// <summary>The report-pack request a run's job writes, and its estimate prices: the run alone, as its own subject.</summary>
-    public static BenchmarkReportPackRequest RunRequest(long runId, IEnumerable<BenchmarkReportAudience> audiences, long writerConfigId)
+    /// <summary>
+    /// The report-pack request a run's job writes, and its estimate prices: the run alone, as its own
+    /// subject, replacing the run-completion documents of <paramref name="replaceDocumentIds"/> once
+    /// their successors are stored.
+    /// </summary>
+    public static BenchmarkReportPackRequest RunRequest(long runId, IEnumerable<BenchmarkReportAudience> audiences, long writerConfigId,
+        IEnumerable<long>? replaceDocumentIds = null)
     {
         ArgumentNullException.ThrowIfNull(audiences);
+        var replace = replaceDocumentIds?.Distinct().ToList();
         return new BenchmarkReportPackRequest
         {
             RunIds = new List<long> { runId },
             GroupIds = new List<long>(),
             SubjectKey = SubjectKeyOf(runId),
             Audiences = audiences.ToList(),
-            WriterModelConfigurationId = writerConfigId
+            WriterModelConfigurationId = writerConfigId,
+            ReplaceDocumentIds = replace is { Count: > 0 } ? replace : null
         };
+    }
+
+    /// <summary>
+    /// The audiences that the stored documents of <paramref name="replaceDocumentIds"/> let a job write
+    /// again although they exist, in <see cref="Audiences"/> order, or the refusal when one id is not an
+    /// <paramref name="origin"/> document of <paramref name="subjectKey"/>, or its audience is not among
+    /// <paramref name="audiences"/> (null or empty: any of <see cref="Audiences"/>). Rewrite with controls
+    /// replaces a Root Cause Analysis this way; the automatic job never replaces.
+    /// </summary>
+    public static async Task<(List<BenchmarkReportAudience> Audiences, string? Refusal)> ReplaceableAudiencesAsync(
+        ApplicationDbContext db, string subjectKey, BenchmarkReportDocumentOrigin origin,
+        IReadOnlyCollection<BenchmarkReportAudience>? audiences, IReadOnlyCollection<long>? replaceDocumentIds, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+        var ids = (replaceDocumentIds ?? Array.Empty<long>()).Distinct().ToList();
+        if (ids.Count == 0) return (new List<BenchmarkReportAudience>(), null);
+
+        var found = await db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(d => ids.Contains(d.Id) && d.SubjectKey == subjectKey && d.Origin == origin)
+            .Select(d => new { d.Id, d.Audience })
+            .ToListAsync(ct);
+
+        string owner = origin == BenchmarkReportDocumentOrigin.BatteryCompletion ? "battery run" : "run";
+        var allowed = audiences == null || audiences.Count == 0 ? Audiences : audiences;
+        foreach (long id in ids)
+        {
+            string number = id.ToString(CultureInfo.InvariantCulture);
+            var document = found.FirstOrDefault(d => d.Id == id);
+            if (document == null)
+            {
+                return (new List<BenchmarkReportAudience>(), $"Document #{number} cannot be replaced: it is not one of this {owner}'s own AI-written reports.");
+            }
+            if (!allowed.Contains(document.Audience) || !Audiences.Contains(document.Audience))
+            {
+                return (new List<BenchmarkReportAudience>(),
+                    $"Document #{number} cannot be replaced: the {BenchmarkReportRenderService.AudienceName(document.Audience)} is not among the documents to write.");
+            }
+        }
+
+        return (Audiences.Where(a => found.Any(d => d.Audience == a)).ToList(), null);
     }
 
     /// <summary>The audiences of <see cref="Audiences"/> the run has no run-completion document for.</summary>
@@ -264,24 +315,27 @@ public sealed class BenchmarkRunReportDocumentService
     /// Starts a job with the writer already recorded on the run, for the requested audiences the run
     /// is missing, in <see cref="Audiences"/> order; null or empty requests every missing one. A writer
     /// of the candidate's provider needs <paramref name="sameProviderAcknowledged"/>, or the job
-    /// settles the run as Failed with the warning. False when this process already holds a job for
-    /// the run.
+    /// settles the run as Failed with the warning. The documents of <paramref name="replaceDocumentIds"/>
+    /// (see <see cref="ReplaceableAudiencesAsync"/>) are written again and replaced once their successors
+    /// are stored. False when this process already holds a job for the run.
     /// </summary>
     public bool TryStart(
         long runId,
         string? userId,
         IReadOnlyCollection<BenchmarkReportAudience>? audiences,
         bool sameProviderAcknowledged,
-        out Task completion)
+        out Task completion,
+        IReadOnlyCollection<long>? replaceDocumentIds = null)
     {
         var requested = audiences?.ToList();
+        var replace = replaceDocumentIds?.ToList();
         if (!TryClaim(runId, requested))
         {
             completion = Task.CompletedTask;
             return false;
         }
 
-        completion = Task.Run(() => RunClaimedAsync(runId, userId, requested, sameProviderAcknowledged));
+        completion = Task.Run(() => RunClaimedAsync(runId, userId, requested, sameProviderAcknowledged, replace));
         return true;
     }
 
@@ -432,6 +486,57 @@ public sealed class BenchmarkRunReportDocumentService
         await db.SaveChangesAsync(ct);
     }
 
+    /// <summary>
+    /// Recomputes the run's documents status from the run-completion documents it still has; a run
+    /// whose documents are being written is left alone. See <see cref="SettledStatus"/>.
+    /// </summary>
+    public static async Task ResettleAsync(ApplicationDbContext db, long runId, CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(db);
+
+        var run = await db.BenchmarkRuns.IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
+        if (run == null || IsInProgress(run.ReportDocumentsStatus)) return;
+
+        string subjectKey = SubjectKeyOf(runId);
+        var present = await db.BenchmarkReportDocuments
+            .AsNoTracking()
+            .IgnoreAutoIncludes()
+            .Where(d => d.SubjectKey == subjectKey && d.Origin == BenchmarkReportDocumentOrigin.RunCompletion)
+            .Select(d => new { d.Audience, d.Status })
+            .ToListAsync(ct);
+
+        var (status, message) = SettledStatus(present.Select(p => (p.Audience, p.Status)));
+        run.ReportDocumentsStatus = status;
+        run.ReportDocumentsMessage = message;
+        await db.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// The documents status a subject's present documents settle to: Completed (with warnings when one
+    /// carries them) when every audience of <see cref="Audiences"/> is present; NotRequested naming
+    /// what is missing (<see cref="RootCauseNotWrittenMessage"/> for the Root Cause Analysis) when only
+    /// some are; NotRequested with no message when none is.
+    /// </summary>
+    internal static (BenchmarkRunReportDocumentsStatus Status, string? Message) SettledStatus(
+        IEnumerable<(BenchmarkReportAudience Audience, BenchmarkReportDocumentStatus Status)> present)
+    {
+        var documents = present.Where(p => Audiences.Contains(p.Audience)).ToList();
+        if (documents.Count == 0) return (BenchmarkRunReportDocumentsStatus.NotRequested, null);
+
+        var missing = Audiences.Where(a => documents.All(d => d.Audience != a)).ToList();
+        if (missing.Count > 0)
+        {
+            return (BenchmarkRunReportDocumentsStatus.NotRequested,
+                missing is [BenchmarkReportAudience.RootCauseAnalysis]
+                    ? RootCauseNotWrittenMessage
+                    : string.Join(" and ", missing.Select(BenchmarkReportRenderService.AudienceName)) + " not written yet.");
+        }
+
+        return documents.Any(d => d.Status == BenchmarkReportDocumentStatus.CompletedWithWarnings)
+            ? (BenchmarkRunReportDocumentsStatus.CompletedWithWarnings, null)
+            : (BenchmarkRunReportDocumentsStatus.Completed, null);
+    }
+
     private async Task ScheduleIfDueCoreAsync(long runId)
     {
         try
@@ -474,13 +579,14 @@ public sealed class BenchmarkRunReportDocumentService
     /// <paramref name="sameProviderAcknowledged"/> is the automatic job's: its launch already asked.
     /// </summary>
     private async Task RunClaimedAsync(
-        long runId, string? userId, IReadOnlyCollection<BenchmarkReportAudience>? audiences, bool? sameProviderAcknowledged)
+        long runId, string? userId, IReadOnlyCollection<BenchmarkReportAudience>? audiences, bool? sameProviderAcknowledged,
+        IReadOnlyCollection<long>? replaceDocumentIds = null)
     {
         RunReportJobState? state = null;
         BenchmarkReportPackJob? job = null;
         try
         {
-            state = await CreateJobAsync(runId, userId, audiences, sameProviderAcknowledged);
+            state = await CreateJobAsync(runId, userId, audiences, sameProviderAcknowledged, replaceDocumentIds);
             if (state == null) return;
             job = state.Job;
             Register(state);
@@ -565,13 +671,15 @@ public sealed class BenchmarkRunReportDocumentService
     }
 
     /// <summary>
-    /// The job for the requested documents the run is missing, labeled as the Report Pack dialog shows
+    /// The job for the requested documents the run is missing, and those of
+    /// <paramref name="replaceDocumentIds"/> it writes again, labeled as the Report Pack dialog shows
     /// a job, with the writer identity the job view shows. Null when the run is gone, has none of the
-    /// requested documents missing, or names an unacknowledged writer of the candidate's provider;
-    /// each settles the run's status.
+    /// requested documents to write, names a document it cannot replace, or names an unacknowledged
+    /// writer of the candidate's provider; each settles the run's status.
     /// </summary>
     private async Task<RunReportJobState?> CreateJobAsync(
-        long runId, string? userId, IReadOnlyCollection<BenchmarkReportAudience>? audiences, bool? sameProviderAcknowledged)
+        long runId, string? userId, IReadOnlyCollection<BenchmarkReportAudience>? audiences, bool? sameProviderAcknowledged,
+        IReadOnlyCollection<long>? replaceDocumentIds = null)
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -579,10 +687,19 @@ public sealed class BenchmarkRunReportDocumentService
         var run = await db.BenchmarkRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId);
         if (run == null) return null;
 
+        var (replaceable, replaceRefusal) = await ReplaceableAudiencesAsync(
+            db, SubjectKeyOf(runId), BenchmarkReportDocumentOrigin.RunCompletion, audiences, replaceDocumentIds, CancellationToken.None);
+        if (replaceRefusal != null)
+        {
+            await SetStatusAsync(runId, BenchmarkRunReportDocumentsStatus.Failed, replaceRefusal);
+            return null;
+        }
+
         var missing = await MissingAudiencesAsync(db, runId, CancellationToken.None);
-        var toWrite = audiences == null || audiences.Count == 0
-            ? missing
-            : missing.Where(audiences.Contains).ToList();
+        var toWrite = Audiences
+            .Where(a => missing.Contains(a) || replaceable.Contains(a))
+            .Where(a => audiences == null || audiences.Count == 0 || audiences.Contains(a))
+            .ToList();
         if (toWrite.Count == 0)
         {
             await SetStatusAsync(runId,
@@ -614,7 +731,7 @@ public sealed class BenchmarkRunReportDocumentService
             WriterDisplayName = writer?.DisplayName ?? string.Empty,
             // Only an acknowledged writer of the candidate's provider reaches this point.
             SameProviderAcknowledged = sameProvider,
-            Request = RunRequest(runId, toWrite, writerConfigId),
+            Request = RunRequest(runId, toWrite, writerConfigId, replaceable.Count > 0 ? replaceDocumentIds : null),
             // Usage rows need a user: an automatic job is charged to the user who launched the run.
             StartedByUserId = string.IsNullOrEmpty(userId) ? run.StartedByUserId : userId,
             Cts = new CancellationTokenSource(),

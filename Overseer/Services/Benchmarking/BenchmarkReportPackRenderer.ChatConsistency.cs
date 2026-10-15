@@ -22,13 +22,9 @@ using ChatConsistencyEventText = global::Overseer.Services.ChatConsistency.ChatC
 /// <item>The Executive Summary: a three-column verdict table of the computed endpoints with one sentence
 /// for where the change came from, one sentence on the Overseer updates under "Our changes", a short
 /// "How to read this", the analysis's data-quality notes and the evaluation terms.</item>
-/// <item>The Report for AI Researchers and Developers and the Provider Issue Report: a five-column
-/// verdict table with a note line per endpoint and a secondary measures table, the table of Overseer
-/// updates, the control models per period, the attribution, the robustness table (researcher report
-/// only), the full "How to read this", every limitation and the reproducibility list.</item>
-/// <item>The Internal Improvement Brief: the researcher report's tables without p-values in the note
-/// lines, no "How to read this", the data-quality notes and the reproducibility list without the price
-/// card's rates.</item>
+/// <item>The Provider Issue Report: a five-column verdict table with a note line per endpoint and a
+/// secondary measures table, the table of Overseer updates, the control models per period, the
+/// attribution, the full "How to read this", every limitation and the reproducibility list.</item>
 /// </list>
 ///
 /// No block prints a hash, JSON or an internal field name; a document written before the readable
@@ -51,7 +47,6 @@ public static partial class BenchmarkReportPackRenderer
         Events,
         Controls,
         Attributions,
-        Robustness,
         Limitations,
         Reproducibility
     }
@@ -64,13 +59,6 @@ public static partial class BenchmarkReportPackRenderer
     private static ChatBlock[] ChatBlocksOf(BenchmarkReportAudience audience, string slot) => (audience, slot) switch
     {
         (BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.OurChanges) => new[] { ChatBlock.Events },
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.OverseerEvents) => new[] { ChatBlock.Events },
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.EndpointResults) => new[] { ChatBlock.Verdicts },
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Attribution) => new[] { ChatBlock.Attributions, ChatBlock.Controls },
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Robustness) => new[] { ChatBlock.Robustness },
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Limitations) => new[] { ChatBlock.Limitations },
-        (BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.Reproducibility) => new[] { ChatBlock.Reproducibility },
-        (BenchmarkReportAudience.InternalBrief, BenchmarkReportSlots.ChangeEffects) => new[] { ChatBlock.Events },
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.IssueSummary) => new[] { ChatBlock.Attributions },
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.Measurements) => new[] { ChatBlock.Verdicts },
         (BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.RuledOut) => new[] { ChatBlock.Events, ChatBlock.Controls },
@@ -79,13 +67,11 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// The blocks a document of the audience prints at all: the Executive Summary's controls stand in its
-    /// overall verdict and its attribution under its verdict table, and it has neither a robustness
-    /// table nor a reproducibility list; only the researcher report has a robustness table.
+    /// overall verdict and its attribution under its verdict table, and it has no reproducibility list.
     /// </summary>
     private static bool ChatPrints(BenchmarkReportAudience audience, ChatBlock block) => block switch
     {
         ChatBlock.Controls or ChatBlock.Attributions or ChatBlock.Reproducibility => audience != BenchmarkReportAudience.ExecutiveSummary,
-        ChatBlock.Robustness => audience == BenchmarkReportAudience.TechnicalReport,
         _ => true
     };
 
@@ -96,11 +82,10 @@ public static partial class BenchmarkReportPackRenderer
             ? "the verdict table with one sentence on where the change came from, and where the chat stands in each period"
             : "the verdict table with a note line per endpoint, the endpoints not computable, the secondary measures and where the chat stands in each period",
         ChatBlock.Events => audience == BenchmarkReportAudience.ExecutiveSummary
-            ? "one sentence listing the Overseer updates"
+            ? "one sentence listing the Overseer updates, followed by the table of them when there are more than three"
             : "the table of Overseer updates",
         ChatBlock.Controls => "the control models and the periods without a control",
         ChatBlock.Attributions => "the attribution",
-        ChatBlock.Robustness => "the robustness table",
         ChatBlock.Limitations => "the limitations the analysis recorded",
         _ => "the reproducibility list"
     };
@@ -170,20 +155,14 @@ public static partial class BenchmarkReportPackRenderer
             Slot(sb, ctx, slot);
         }
 
-        if (audience != BenchmarkReportAudience.InternalBrief)
-        {
-            ChatHowToRead(sb, ctx);
-        }
+        ChatHowToRead(sb, ctx);
         foreach (var block in new[] { ChatBlock.Limitations, ChatBlock.Reproducibility })
         {
             if (ChatPrints(audience, block) && !attached.Contains(block)) ChatBlockSection(sb, ctx, block, heading: true);
         }
 
         RemovedContent(sb, ctx);
-        if (ctx.PrintsEvaluationTerms)
-        {
-            ChatEvaluationTerms(sb, ctx);
-        }
+        ChatEvaluationTerms(sb, ctx);
         if (ctx.Options.IncludeDocumentFooter)
         {
             ChatFooter(sb, ctx);
@@ -217,10 +196,6 @@ public static partial class BenchmarkReportPackRenderer
             case ChatBlock.Attributions:
                 if (heading) Heading(sb, "## Where the change came from");
                 ChatAttributions(sb, ctx);
-                break;
-            case ChatBlock.Robustness:
-                if (heading) Heading(sb, "## Robustness");
-                ChatRobustnessTable(sb, ctx);
                 break;
             case ChatBlock.Limitations:
                 ChatLimitations(sb, ctx, heading);
@@ -537,7 +512,7 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// The verdicts outside the Executive Summary: <c>Endpoint · Change (95 % interval) · Margin · Verdict
     /// and grade · Smallest detectable</c> for the computed endpoints, a note line per endpoint (the 90 %
-    /// interval, the Holm-adjusted p-value except in the Internal Improvement Brief, the note on the
+    /// interval, the Holm-adjusted p-value, the note on the
     /// minimum detectable effect and the grade's reasons), the endpoints not computable with their
     /// reasons, and the secondary measures.
     /// </summary>
@@ -571,9 +546,8 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb);
             ChatOneUnitCaveat(sb, ctx);
 
-            bool pValues = ctx.Document.Audience != BenchmarkReportAudience.InternalBrief;
             var notes = computed
-                .Select(id => (Id: id, Parts: ChatNoteParts(ctx, id, pValues)))
+                .Select(id => (Id: id, Parts: ChatNoteParts(ctx, id)))
                 .Where(n => n.Parts.Count > 0)
                 .ToList();
             foreach (var (id, parts) in notes) Line(sb, "- **" + ChatEndpointName(ctx, id) + ":** " + string.Join("; ", parts));
@@ -596,12 +570,12 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>One computed endpoint's note line: its 90 % interval, adjusted p-value, minimum-detectable-effect note and grade reasons.</summary>
-    private static List<string> ChatNoteParts(Context ctx, string id, bool pValues)
+    private static List<string> ChatNoteParts(Context ctx, string id)
     {
         string p = "endpoint." + id + ".";
         var parts = new List<string>();
         if (IsAvailable(ctx, p + "ci90")) parts.Add("90 % interval " + ChatFigure(ctx, p + "ci90"));
-        if (pValues && IsAvailable(ctx, p + "adjustedP")) parts.Add("Holm-adjusted p " + D(ctx, p + "adjustedP"));
+        if (IsAvailable(ctx, p + "adjustedP")) parts.Add("Holm-adjusted p " + D(ctx, p + "adjustedP"));
         if (IsAvailable(ctx, p + "mdeNote")) parts.Add(OneLine(D(ctx, p + "mdeNote")).TrimEnd('.'));
         if (Fact(ctx, p + "legacyProxy") is { Available: true } proxy && BenchmarkReportPackPrompt.IsTrue(proxy)) parts.Add(OneLine(proxy.Display));
         if (Fact(ctx, p + "grade") is { Available: true } grade
@@ -698,8 +672,8 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// The Executive Summary's Overseer updates in one sentence: when Overseer was updated in the series
-    /// of the model under test, before which run, and what changed; a count when there are more than
-    /// three; and how many more the control models' runs show.
+    /// of the model under test, before which run, and what changed; a count followed by the table of
+    /// Overseer updates when there are more than three; and how many more the control models' runs show.
     /// </summary>
     private static void ChatEventsSummary(StringBuilder sb, Context ctx)
     {
@@ -714,7 +688,7 @@ public static partial class BenchmarkReportPackRenderer
         }
         else if (target.Count > 3)
         {
-            sentence = "Between the periods, Overseer was updated " + Inv(target.Count) + " times; the Report for AI Researchers and Developers lists each update.";
+            sentence = "Between the periods, Overseer was updated " + Inv(target.Count) + " times; the table of Overseer updates below lists each update.";
         }
         else
         {
@@ -729,6 +703,10 @@ public static partial class BenchmarkReportPackRenderer
 
         Line(sb, sentence);
         Line(sb);
+        if (target.Count > 3)
+        {
+            ChatEventsTable(sb, ctx);
+        }
     }
 
     /// <summary><c>once</c>, <c>twice</c>, <c>three times</c>.</summary>
@@ -1004,40 +982,6 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// The robustness checks as <c>Check · P4 · P5</c>: one row per check, one column per computed
-    /// endpoint it ran on (at most four), then the detail of each check that did not pass.
-    /// </summary>
-    private static void ChatRobustnessTable(StringBuilder sb, Context ctx)
-    {
-        var checks = ChatIndexes(ctx, "robustness.", ".name")
-            .Select(n => "robustness." + Inv(n) + ".")
-            .Select(p => (Endpoint: ChatValue(ctx, p + "endpoint") ?? D(ctx, p + "endpoint"), Name: D(ctx, p + "name"),
-                Status: D(ctx, p + "status"), Detail: IsAvailable(ctx, p + "detail") ? D(ctx, p + "detail") : null))
-            .ToList();
-        var computed = ChatComputedEndpoints(ctx);
-        var columns = computed.Where(id => checks.Any(c => c.Endpoint == id)).Take(4).ToList();
-        if (checks.Count == 0 || columns.Count == 0)
-        {
-            Line(sb, "The analysis ran no robustness check on a computed endpoint.");
-            Line(sb);
-            return;
-        }
-
-        Line(sb, "| Check | " + string.Join(" | ", columns) + " |");
-        Line(sb, "|---|" + string.Concat(columns.Select(_ => "---|")));
-        foreach (string name in checks.Where(c => columns.Contains(c.Endpoint)).Select(c => c.Name).Distinct(StringComparer.Ordinal))
-        {
-            var cells = columns.Select(id => checks.FirstOrDefault(c => c.Name == name && c.Endpoint == id).Status ?? NoValue);
-            Line(sb, "| " + Cell(name) + " | " + string.Join(" | ", cells.Select(Cell)) + " |");
-        }
-        Line(sb);
-
-        var details = checks.Where(c => columns.Contains(c.Endpoint) && c.Status != "passed" && !string.IsNullOrWhiteSpace(c.Detail)).ToList();
-        foreach (var c in details) Line(sb, "- **" + OneLine(c.Name) + ", " + c.Endpoint + ":** " + OneLine(c.Detail));
-        if (details.Count > 0) Line(sb);
-    }
-
-    /// <summary>
     /// What the document's terms mean. The Executive Summary gets three points: what was measured, the
     /// verdicts and the hours; the other documents the endpoints, the evidence grades, the attribution,
     /// the control models and what the analysis never infers too. Fixed text.
@@ -1106,13 +1050,12 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// The limitations: every one the analysis recorded in the researcher report and the Provider Issue
-    /// Report; in the Executive Summary and the Internal Improvement Brief only its data-quality notes,
-    /// and no section at all without one.
+    /// The limitations: every one the analysis recorded in the Provider Issue Report; in the Executive
+    /// Summary only its data-quality notes, and no section at all without one.
     /// </summary>
     private static void ChatLimitations(StringBuilder sb, Context ctx, bool heading)
     {
-        bool all = ctx.Document.Audience is BenchmarkReportAudience.TechnicalReport or BenchmarkReportAudience.ProviderIssueReport;
+        bool all = ctx.Document.Audience == BenchmarkReportAudience.ProviderIssueReport;
         var limitations = all ? ChatIndexes(ctx, "limitation.", string.Empty) : new List<int>();
         var dataQuality = ChatIndexes(ctx, "limitation.dataQuality.", string.Empty);
         if (!all && dataQuality.Count == 0) return;
@@ -1132,7 +1075,7 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// What identifies and reproduces the analysis: its number, code version, protocol, when it was
-    /// saved, the common grader, the price card (its source alone in the Internal Improvement Brief), each
+    /// saved, the common grader, the price card, each
     /// period's battery runs or runs with their member runs, the control runs and the format version.
     /// Never a hash.
     /// </summary>
@@ -1154,9 +1097,7 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb, "- **" + Label("quality.commonGrader") + ":** " + (IsAvailable(ctx, "quality.commonGrader")
             ? D(ctx, "quality.commonGrader")
             : "none. " + NotAvailableReason(Fact(ctx, "quality.commonGrader"))));
-        Line(sb, "- **" + Label("pricing.card") + ":** " + (ctx.Document.Audience == BenchmarkReportAudience.InternalBrief && IsAvailable(ctx, "pricing.source")
-            ? D(ctx, "pricing.source")
-            : D(ctx, "pricing.card")));
+        Line(sb, "- **" + Label("pricing.card") + ":** " + D(ctx, "pricing.card"));
         Line(sb, "- **Baseline:** " + ChatPeriodRuns(ctx, "baseline", subject.BaselineRunIds));
         Line(sb, "- **Comparison:** " + ChatPeriodRuns(ctx, "comparison", subject.ComparisonRunIds));
         Line(sb, "- **Control runs:** " + ChatRunList(subject.ControlRunIds));

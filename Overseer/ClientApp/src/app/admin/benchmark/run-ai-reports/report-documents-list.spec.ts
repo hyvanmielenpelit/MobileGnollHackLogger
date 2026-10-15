@@ -30,7 +30,7 @@ import {
   writtenReportLabels
 } from './report-documents-list';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport } = BenchmarkReportAudience;
+const { ExecutiveSummary, RootCauseAnalysis, ProviderIssueReport } = BenchmarkReportAudience;
 const { NotRequested, Pending, Writing, Completed, Failed, Skipped, Canceled } = BenchmarkRunReportDocumentsStatus;
 
 function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
@@ -47,8 +47,8 @@ function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<B
 }
 
 describe('report-documents-list', () => {
-  it('lists the Executive Summary, the Report for AI Researchers and Developers, then the Internal Improvement Brief', () => {
-    expect(REPORT_DOCUMENT_AUDIENCES).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief]);
+  it('lists the Executive Summary, then the Root Cause Analysis', () => {
+    expect(REPORT_DOCUMENT_AUDIENCES).toEqual([ExecutiveSummary, RootCauseAnalysis]);
     expect(BATTERY_COMPLETION_ORIGIN).toBe(3);
   });
 
@@ -64,38 +64,42 @@ describe('report-documents-list', () => {
 
   it('keeps one subject\'s completion documents of one origin, the newest per audience, in audience order', () => {
     const documents = [
-      doc(1, TechnicalReport, { createdAtUtc: '2026-10-01T00:00:00Z' }),
-      doc(2, TechnicalReport, { createdAtUtc: '2026-10-02T00:00:00Z' }),
+      doc(1, RootCauseAnalysis, { createdAtUtc: '2026-10-01T00:00:00Z' }),
+      doc(2, RootCauseAnalysis, { createdAtUtc: '2026-10-02T00:00:00Z' }),
       doc(3, ExecutiveSummary),
-      doc(9, InternalBrief),
+      // A document of a retired type is never listed.
+      doc(9, 3 as BenchmarkReportAudience),
       // A Report Pack document about the same battery run, and a completion document of another one.
       doc(4, ExecutiveSummary, { origin: BenchmarkReportDocumentOrigin.ReportPack, createdAtUtc: '2026-10-04T00:00:00Z' }),
       doc(5, ExecutiveSummary, { subjectKey: 'battery:8', createdAtUtc: '2026-10-04T00:00:00Z' })
     ];
-    expect(completionDocumentsOf(documents, 'battery:7', BATTERY_COMPLETION_ORIGIN).map(d => d.id)).toEqual([3, 2, 9]);
+    expect(completionDocumentsOf(documents, 'battery:7', BATTERY_COMPLETION_ORIGIN).map(d => d.id)).toEqual([3, 2]);
     expect(completionDocumentsOf(null, 'battery:7', BATTERY_COMPLETION_ORIGIN)).toEqual([]);
     expect(completionDocumentsOf([doc(6, ExecutiveSummary, { subjectKey: 'run:55', origin: BenchmarkReportDocumentOrigin.RunCompletion })],
       'run:55', BenchmarkReportDocumentOrigin.RunCompletion).map(d => d.id)).toEqual([6]);
   });
 
-  it('keeps chat consistency documents out of a run\'s documents, and lists an analysis\'s four with the Provider Issue Report', () => {
+  it('keeps chat consistency documents out of a run\'s documents, and lists an analysis\'s two with the Provider Issue Report', () => {
     const cc = (id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}) =>
       doc(id, audience, { subjectKey: 'chat-consistency:12', origin: CHAT_CONSISTENCY_REPORT_ORIGIN, ...overrides });
     const documents = [
       cc(21, ProviderIssueReport),
       cc(22, ExecutiveSummary),
       cc(23, ExecutiveSummary, { createdAtUtc: '2026-10-01T09:30:00Z' }),
-      cc(24, InternalBrief, { subjectKey: 'chat-consistency:13' }),
-      cc(25, TechnicalReport, { subjectKey: 'run:55' }),
-      doc(26, TechnicalReport, { subjectKey: 'run:55', origin: BenchmarkReportDocumentOrigin.RunCompletion })
+      cc(24, ExecutiveSummary, { subjectKey: 'chat-consistency:13' }),
+      // A chat consistency analysis never lists a Root Cause Analysis or a retired type.
+      cc(28, RootCauseAnalysis),
+      cc(29, 2 as BenchmarkReportAudience),
+      cc(25, RootCauseAnalysis, { subjectKey: 'run:55' }),
+      doc(26, RootCauseAnalysis, { subjectKey: 'run:55', origin: BenchmarkReportDocumentOrigin.RunCompletion })
     ];
 
     expect(CHAT_CONSISTENCY_REPORT_ORIGIN).toBe(BenchmarkReportDocumentOrigin.ChatConsistencyReport);
-    expect(CHAT_CONSISTENCY_DOCUMENT_AUDIENCES).toEqual([...REPORT_DOCUMENT_AUDIENCES, ProviderIssueReport]);
+    expect(CHAT_CONSISTENCY_DOCUMENT_AUDIENCES).toEqual([ExecutiveSummary, ProviderIssueReport]);
     expect(completionDocumentsOf(documents, 'chat-consistency:12', CHAT_CONSISTENCY_REPORT_ORIGIN).map(d => d.id)).toEqual([22, 21]);
     // A run's documents never take one of another origin, even about the same subject key.
     expect(completionDocumentsOf(documents, 'run:55', BenchmarkReportDocumentOrigin.RunCompletion).map(d => d.id)).toEqual([26]);
-    // A run's three audiences never include the Provider Issue Report.
+    // A run's two audiences never include the Provider Issue Report.
     expect(completionDocumentsOf([doc(27, ProviderIssueReport)], 'battery:7', BATTERY_COMPLETION_ORIGIN)).toEqual([]);
   });
 
@@ -103,12 +107,11 @@ describe('report-documents-list', () => {
     const documents = [doc(3, ExecutiveSummary)];
     expect(reportDocumentRows(documents)).toEqual([
       { audience: ExecutiveSummary, label: 'Executive Summary', doc: documents[0] },
-      { audience: TechnicalReport, label: 'Report for AI Researchers and Developers', doc: null },
-      { audience: InternalBrief, label: 'Internal Improvement Brief', doc: null }
+      { audience: RootCauseAnalysis, label: 'Root Cause Analysis', doc: null }
     ]);
-    expect(missingReportAudiences(documents)).toEqual([TechnicalReport, InternalBrief]);
+    expect(missingReportAudiences(documents)).toEqual([RootCauseAnalysis]);
     expect(writtenReportLabels(documents)).toEqual(['Executive Summary']);
-    expect(missingReportAudiences([])).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief]);
+    expect(missingReportAudiences([])).toEqual([ExecutiveSummary, RootCauseAnalysis]);
   });
 
   it('words the job state, and draws it by kind', () => {
@@ -151,7 +154,7 @@ describe('report-documents-list', () => {
     const estimate = {
       estimates: [
         { audience: ExecutiveSummary, promptChars: 1, estimatedInputTokens: 1, estimatedOutputTokens: 1, estimatedCostUsd: 0.04 },
-        { audience: TechnicalReport, promptChars: 1, estimatedInputTokens: 1, estimatedOutputTokens: 1, estimatedCostUsd: 0.14 }
+        { audience: RootCauseAnalysis, promptChars: 1, estimatedInputTokens: 1, estimatedOutputTokens: 1, estimatedCostUsd: 0.14 }
       ],
       estimatedTotalCostUsd: 0.18,
       refusal: null,
@@ -165,7 +168,7 @@ describe('report-documents-list', () => {
     expect(reportEstimateView(false, false, estimate)).toEqual({
       state: 'ready',
       total: '$0.18',
-      parts: [{ name: 'Executive Summary', cost: '$0.04' }, { name: 'Report for AI Researchers and Developers', cost: '$0.14' }]
+      parts: [{ name: 'Executive Summary', cost: '$0.04' }, { name: 'Root Cause Analysis', cost: '$0.14' }]
     });
   });
 

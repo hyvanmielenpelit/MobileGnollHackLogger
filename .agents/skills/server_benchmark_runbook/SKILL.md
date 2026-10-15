@@ -579,10 +579,21 @@ Rules for writing a `RUN` step:
   assessor".
 - **Choosing the grader models and effort** follows `docs/overseer/ai-benchmark.md` § 3 *Choosing
   grader models and effort*; a `RUN` step names the configured entries as the dropdowns print them.
-- **`Report Writer` is not a comparability key.** It writes the run's three AI-written reports once
-  the run is scored and grades nothing, so a `RUN` step may set or change it without moving the
-  predicted tier. The launcher refuses the model under test and any writer from its provider; the recommended
-  writer is in the same § 3 table.
+- **`Report Writer` is not a comparability key.** It writes the run's two AI-written reports — the
+  Executive Summary and the Root Cause Analysis — once the run is scored and grades nothing, so a
+  `RUN` step may set or change it without moving the predicted tier. The launcher refuses the model
+  under test and any writer from its provider; the recommended writer is in the same § 3 table.
+- **A `RUN` step may start from a Root Cause Analysis' *Set up this run*.** Each run a Root Cause
+  Analysis recommends (`docs/overseer/ai-benchmark-report-pack.md` § 17) carries every launcher setting
+  and a **Set up this run** button, and a run's or battery run's AI Reports tab offers **Set up a
+  control run** when the analysis has too few controls. The button **pre-fills the launcher and never
+  starts a run**; it adds a note for any suite, battery, profile, model or grader that no longer
+  resolves. A `RUN` step that uses it says which document and which run (*"Root Cause Analysis #<id>,
+  run <k>"*, as the note heading reads), tells the developer to press it, and still lists every field
+  of the launcher table above with the values it should show afterwards, so the developer checks the
+  prefill against the step rather than trusting it; the step's purpose, prediction and criteria are the
+  runbook's own, never copied from the document's *Decides* line unchecked. The recommended run is an
+  input to the round's plan like any hypothesis, not a decision.
 - **A battery `RUN` step** sets `Run Target` to *Battery* and fills the `Battery` row with the battery's
   name, its revision (the editor's subtitle and the progress dialog's heading show it) and its suites
   in run order, so the developer can tell a revised battery from the one the step meant; it lists
@@ -642,16 +653,15 @@ Rules for writing a `RUN` step:
 1. **The downloads.** For a single run: in the run's detail view, **Download Markdown Report** and
    **Tool-call log**; save both in the run's folder (**One folder per runbook**, below). If the
    round's analysis used the suite's YAML export or a diagnostics capture, say so and name the
-   buttons. When the `RUN` step asks for them, also download the three AI-written reports — the
-   Executive Summary, the Report for AI Researchers and Developers and the Internal Improvement
-   Brief — from the run's **Downloads** (the Download Center, or **View** in the run report's
-   **AI Reports** tab), after that tab shows them written.
+   buttons. When the `RUN` step asks for them, also download the two AI-written reports — the
+   Executive Summary and the Root Cause Analysis — from the run's **Downloads** (the Download Center,
+   or **View** in the run report's **AI Reports** tab), after that tab shows them written.
 
    **For a battery run, one download covers the battery.** Write the step as: open the Battery Run
    Report (Run History's battery card, **View details**), press **Downloads**, choose the package
    **Internal**, leave **Include member runs** checked (it is checked every time the dialog opens),
-   and press **Download**. The one ZIP holds the battery analysis report, the battery's three
-   AI-written reports (the Internal Improvement Brief among them) and every member run's run report,
+   and press **Download**. The one ZIP holds the battery analysis report, the battery's two
+   AI-written reports (the Root Cause Analysis among them) and every member run's run report,
    tool-call log and run diagnostics; save it, and its extracted files, in the battery's folder
    (`<model folder>\Battery`, **One folder per runbook**, below). A `SAVE` step never sends the
    developer to each member run for its files. A member run's own **Downloads** lists only that run's

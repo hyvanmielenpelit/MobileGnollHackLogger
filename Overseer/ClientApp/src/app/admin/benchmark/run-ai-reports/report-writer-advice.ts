@@ -25,20 +25,13 @@ export const REPORT_WRITER_ADVICE_BY_AUDIENCE: Readonly<Record<BenchmarkReportAu
       + 'wording matters more than depth. Use a strong writing model — Claude Opus or GPT Sol — at medium effort. It is '
       + 'cheap even with a strong model.'
   },
-  [BenchmarkReportAudience.TechnicalReport]: {
-    term: 'Report for AI Researchers and Developers',
-    badge: 'Long',
-    text: 'For specialists. A long, number-dense document (about 7,000 output tokens) that must keep every figure exact '
-      + 'and follow a strict schema. Use the strongest scoring-tier reasoning model you trust with numbers — Claude Opus '
-      + 'or GPT Sol — at medium effort, high if its documents often need repair. It costs roughly three to four times '
-      + 'the summary.'
-  },
-  [BenchmarkReportAudience.InternalBrief]: {
-    term: 'Internal Improvement Brief',
+  [BenchmarkReportAudience.RootCauseAnalysis]: {
+    term: 'Root Cause Analysis',
     badge: 'Internal',
-    text: 'For the Overseer team. It weighs the whole fact sheet, rubrics and grader notes included, and says what to '
-      + 'improve in the chat, the benchmark and the model. Use the strongest scoring-tier model — Claude Opus or GPT '
-      + 'Sol — at medium effort.'
+    text: 'For the Overseer team. A long document (about 10,000 output tokens, 14,000 for a comparison) that weighs '
+      + 'hypotheses graded by evidence, rubrics and grader notes included, and states only what that evidence supports. '
+      + 'Use the strongest scoring-tier reasoning model you trust with numbers — Claude Opus or GPT Sol — at medium '
+      + 'effort, high if its documents often need repair.'
   },
   [BenchmarkReportAudience.ProviderIssueReport]: {
     term: 'Provider Issue Report',
@@ -89,35 +82,30 @@ export const REPORT_WRITER_ADVICE_CHAT_CONSISTENCY_SHARED: ReportWriterAdviceEnt
     + 'document of an analysis is written once: to write it again, delete it first.'
 };
 
-/** The run report's AI Reports tab: its three documents, then what they share. */
+/** The run report's AI Reports tab: its two documents, then what they share. */
 export const RUN_REPORT_WRITER_ADVICE: readonly ReportWriterAdviceEntry[] = [
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.ExecutiveSummary],
-  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.TechnicalReport],
-  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.InternalBrief],
+  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.RootCauseAnalysis],
   REPORT_WRITER_ADVICE_RUN_SHARED
 ];
 
-/** The battery run report's AI Reports tab: its three documents, then what they share. */
+/** The battery run report's AI Reports tab: its two documents, then what they share. */
 export const BATTERY_REPORT_WRITER_ADVICE: readonly ReportWriterAdviceEntry[] = [
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.ExecutiveSummary],
-  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.TechnicalReport],
-  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.InternalBrief],
+  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.RootCauseAnalysis],
   REPORT_WRITER_ADVICE_BATTERY_SHARED
 ];
 
-/** The Report Pack dialog: its three documents, then what they share. */
+/** The Report Pack dialog: its two documents, then what they share. */
 export const REPORT_PACK_WRITER_ADVICE: readonly ReportWriterAdviceEntry[] = [
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.ExecutiveSummary],
-  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.TechnicalReport],
-  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.InternalBrief],
+  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.RootCauseAnalysis],
   REPORT_WRITER_ADVICE_PACK_SHARED
 ];
 
-/** The Chat Consistency wizard's Write step: its four documents, then what they share. */
+/** The Chat Consistency wizard's Write step: its two documents, then what they share. */
 export const CHAT_CONSISTENCY_REPORT_WRITER_ADVICE: readonly ReportWriterAdviceEntry[] = [
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.ExecutiveSummary],
-  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.TechnicalReport],
-  REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.InternalBrief],
   REPORT_WRITER_ADVICE_BY_AUDIENCE[BenchmarkReportAudience.ProviderIssueReport],
   REPORT_WRITER_ADVICE_CHAT_CONSISTENCY_SHARED
 ];

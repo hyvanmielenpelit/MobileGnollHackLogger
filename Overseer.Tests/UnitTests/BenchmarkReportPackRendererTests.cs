@@ -59,13 +59,13 @@ public class BenchmarkReportPackRendererTests
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public void AllowedDisclosures_AreEveryLevelForTheResearcherReport_AndFullAloneForTheInternalBrief()
+    public void AllowedDisclosures_AreEveryLevelForTheProviderIssueReport_AndFullAloneForTheRootCauseAnalysis()
     {
         var all = new[] { BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Detailed, BenchmarkReportDisclosure.Full };
 
-        Assert.Equal(all, BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.TechnicalReport));
-        Assert.Equal(new[] { BenchmarkReportDisclosure.Full }, BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.InternalBrief));
-        Assert.Equal(12, Combinations().Count());
+        Assert.Equal(all, BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.ProviderIssueReport));
+        Assert.Equal(new[] { BenchmarkReportDisclosure.Full }, BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.RootCauseAnalysis));
+        Assert.Equal(4, Combinations().Count());
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public class BenchmarkReportPackRendererTests
         }
 
         Assert.False(BenchmarkReportPackRenderer.IsAllowed(
-            BenchmarkReportAudience.InternalBrief,
+            BenchmarkReportAudience.RootCauseAnalysis,
             new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed }));
     }
 
@@ -105,13 +105,13 @@ public class BenchmarkReportPackRendererTests
     [InlineData(BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized)]
     [InlineData(BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named)]
     [InlineData(BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized)]
-    public void TheInternalBrief_BelowFull_IsRefused(BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming)
+    public void TheRootCauseAnalysis_BelowFull_IsRefused(BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming)
     {
         var options = new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming };
 
-        Assert.False(BenchmarkReportPackRenderer.IsAllowed(BenchmarkReportAudience.InternalBrief, options));
+        Assert.False(BenchmarkReportPackRenderer.IsAllowed(BenchmarkReportAudience.RootCauseAnalysis, options));
         Assert.Throws<ArgumentException>(() =>
-            BenchmarkReportPackRenderer.Render(Document(BenchmarkReportAudience.InternalBrief), options));
+            BenchmarkReportPackRenderer.Render(Document(BenchmarkReportAudience.RootCauseAnalysis), options));
     }
 
     [Fact]
@@ -120,9 +120,10 @@ public class BenchmarkReportPackRendererTests
         var badDisclosure = new BenchmarkReportRenderOptions { Disclosure = (BenchmarkReportDisclosure)99 };
         var badNaming = new BenchmarkReportRenderOptions { PeerNaming = (BenchmarkReportPeerNaming)99 };
 
-        Assert.False(BenchmarkReportPackRenderer.IsAllowed(BenchmarkReportAudience.TechnicalReport, badDisclosure));
-        Assert.False(BenchmarkReportPackRenderer.IsAllowed(BenchmarkReportAudience.TechnicalReport, badNaming));
-        Assert.False(BenchmarkReportPackRenderer.IsAllowed(BenchmarkReportAudience.TechnicalReport, null!));
+        Assert.False(BenchmarkReportPackRenderer.IsAllowed(BenchmarkReportAudience.ExecutiveSummary, badDisclosure));
+        Assert.False(BenchmarkReportPackRenderer.IsAllowed(BenchmarkReportAudience.ExecutiveSummary, badNaming));
+        Assert.False(BenchmarkReportPackRenderer.IsAllowed(BenchmarkReportAudience.ExecutiveSummary, null!));
+        Assert.False(BenchmarkReportPackRenderer.IsAllowed((BenchmarkReportAudience)2, new BenchmarkReportRenderOptions()));
         Assert.Throws<ArgumentException>(() =>
             BenchmarkReportPackRenderer.Render(Document(BenchmarkReportAudience.ExecutiveSummary), badNaming));
     }
@@ -141,7 +142,6 @@ public class BenchmarkReportPackRendererTests
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, "exec_standalone.md")]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, "technical_standalone.md")]
     public void TheStandaloneForm_MatchesItsGoldenFile(BenchmarkReportAudience audience, string file)
     {
         string rendered = BenchmarkReportPackRenderer.Render(
@@ -149,70 +149,6 @@ public class BenchmarkReportPackRendererTests
             new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
 
         AssertMatchesGolden(file, rendered);
-    }
-
-    /// <summary>
-    /// The run's stand-alone Internal Improvement Brief, a run-completion document: the stand-alone
-    /// writer output with a recommendation for every target and a lead, and no peer anywhere.
-    /// </summary>
-    [Fact]
-    public void TheStandaloneInternalBrief_MatchesItsGoldenFile_AndNamesNoPeer()
-    {
-        var document = StandaloneDocument(BenchmarkReportAudience.InternalBrief);
-        var writer = StandaloneWriter();
-        writer.Sections[BenchmarkReportSlots.ModelResult] = "{{subject}} scored {{quality.index}} at {{cost.perQuestion}} per question.";
-        writer.Recommendations.AddRange(Writer().Recommendations.Where(r => r.For != BenchmarkReportSlots.TargetModelDevelopers));
-        writer.Leads.AddRange(Writer().Leads);
-        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
-
-        string rendered = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
-
-        AssertMatchesGolden("internal_standalone.md", rendered);
-        Assert.Contains("- **Peers:** none; this is a stand-alone report\n", rendered);
-        Assert.DoesNotContain("Compared with", rendered);
-        Assert.DoesNotContain("Peer mean", rendered);
-        Assert.DoesNotContain("No recommendations were recorded.", rendered);
-        Assert.DoesNotContain("No leads were recorded.", rendered);
-    }
-
-    /// <summary>The battery run's stand-alone Internal Improvement Brief, a battery-completion document.</summary>
-    [Fact]
-    public void TheStandaloneBatteryInternalBrief_MatchesItsGoldenFile_AndNamesNoPeer()
-    {
-        var document = BatteryReportFixture.Document(BenchmarkReportAudience.InternalBrief);
-        var writer = BatteryReportFixture.Writer();
-        writer.Sections[BenchmarkReportSlots.BenchmarkSystem] = "Both panel members flagged the critical error on S2-Q1.";
-        writer.Sections[BenchmarkReportSlots.ModelResult] = "{{subject}} scored {{quality.index}} at {{cost.perQuestion}} per question.";
-        writer.Recommendations.Add(new BenchmarkReportWriterRecommendation
-        {
-            For = BenchmarkReportSlots.TargetOverseerChat,
-            Text = "Send item-destruction questions to the source code first.",
-            Evidence = new List<string> { "tools.share.sourceCode" }
-        });
-        writer.Recommendations.Add(new BenchmarkReportWriterRecommendation
-        {
-            For = BenchmarkReportSlots.TargetBenchmark,
-            Text = "Check the S2-Q1 rubric against the source before the next run.",
-            Questions = new List<int> { 3 },
-            Evidence = new List<string> { "S2-Q1" }
-        });
-        writer.Leads.Add(new BenchmarkReportLead
-        {
-            Triage = "suite",
-            Text = "The S2-Q1 rubric may understate how often a thrown gem survives.",
-            Questions = new List<int> { 3 },
-            Evidence = new List<string> { "S2-Q1" }
-        });
-        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
-
-        string rendered = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
-
-        AssertMatchesGolden("internal_battery_standalone.md", rendered);
-        Assert.Contains("- **Peers:** none; this is a stand-alone report\n", rendered);
-        Assert.Contains("### The suites of this battery\n", rendered);
-        Assert.DoesNotContain("Compared with", rendered);
     }
 
     /// <summary>The golden comparison, or with <c>OVERSEER_UPDATE_GOLDENS=1</c> the golden file written from the output.</summary>
@@ -232,7 +168,6 @@ public class BenchmarkReportPackRendererTests
     // ---------------------------------------------------------------------------------------------
 
     private const string Q1Text = "What happens if I throw a gem at a co-aligned unicorn?";
-    private const string Q1Excerpt = "A real gem of your alignment raises your Luck";
     private const string Q3Text = "Will my gem break if I throw it at a unicorn?";
     private const string Q3Excerpt = "A thrown gem always shatters on impact, so never throw";
     private const string Q1Rubric = "A valuable gem raises Luck; worthless glass does not.";
@@ -242,72 +177,15 @@ public class BenchmarkReportPackRendererTests
     [Fact]
     public void AtSummary_NoQuestionTextRubricAnswerOrGraderEvidenceIsPrinted()
     {
-        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport })
-        {
-            string text = Render(audience, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        string text = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
 
-            Assert.DoesNotContain(Q1Text, text);
-            Assert.DoesNotContain(Q3Text, text);
-            Assert.DoesNotContain(Q3Excerpt, text);
-            Assert.DoesNotContain(Q1Rubric, text);
-            Assert.DoesNotContain(Q1Evidence, text);
-            Assert.DoesNotContain(Q3Ruling, text);
-            Assert.Contains("Questions are described, not quoted.", text);
-        }
-
-        Assert.Contains("| Q3 | Breaking a thrown gem |",
-            Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named));
-    }
-
-    [Fact]
-    public void AtDetailed_EveryQuestionAndAnswerExcerptIsQuoted_AndNoRubricOrEvidence()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("\n## Questions and answers\n", text);
-        Assert.DoesNotContain("Question details", text);
-        foreach (var question in Content().Runs.SelectMany(r => r.Questions))
-        {
-            Assert.Single(AllIndexesOf(text, "> " + question.QuestionText + "\n"));
-            Assert.Single(AllIndexesOf(text, "> " + question.AnswerExcerpt + "\n"));
-        }
-        Assert.Contains(Q1Text, text);
-        Assert.Contains(Q1Excerpt, text);
-        Assert.Contains(Q3Text, text);
-        Assert.Contains(Q3Excerpt, text);
-        // A noted question keeps its note, and a finding's evidence line never quotes the question it cites.
-        Assert.Contains("Claimed a thrown gem always shatters; the rubric says it can survive.", text);
-        Assert.DoesNotContain("> **Question:**", text);
-        Assert.DoesNotContain("as asked", text);
-        Assert.DoesNotContain("**Rubric:**", text);
-        Assert.DoesNotContain("*Rubric not recorded for this answer.*", text);
+        Assert.DoesNotContain(Q1Text, text);
+        Assert.DoesNotContain(Q3Text, text);
+        Assert.DoesNotContain(Q3Excerpt, text);
         Assert.DoesNotContain(Q1Rubric, text);
-        Assert.DoesNotContain("\n**Graders:**\n", text);
         Assert.DoesNotContain(Q1Evidence, text);
-        Assert.DoesNotContain("**Claim verifier:**", text);
         Assert.DoesNotContain(Q3Ruling, text);
-        Assert.DoesNotContain("Slightly below the peers.", text);
-        Assert.Contains("Contains benchmark questions — do not publish.", text);
-    }
-
-    [Fact]
-    public void AtFull_EveryQuestionRubricGraderEvidenceAndRulingIsPrinted()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("\n## Question details\n", text);
-        Assert.DoesNotContain("Questions and answers", text);
-        foreach (var question in Content().Runs.SelectMany(r => r.Questions))
-        {
-            Assert.Single(AllIndexesOf(text, question.QuestionText));
-        }
-        Assert.Contains(Q1Text, text);
-        Assert.Contains(Q3Text, text);
-        Assert.Contains(Q1Rubric, text);
-        Assert.Contains(Q1Evidence, text);
-        Assert.Contains(Q3Ruling, text);
-        Assert.Contains("*Rubric not recorded for this answer.*", text);
-        Assert.Contains("INTERNAL — contains benchmark questions and rubrics.", text);
+        Assert.Contains("Questions are described, not quoted.", text);
     }
 
     [Fact]
@@ -364,26 +242,37 @@ public class BenchmarkReportPackRendererTests
     [Fact]
     public void PeerTokens_RenderAsTheNameOrTheLetter_AndFactTokensAsTheirDisplay()
     {
-        string named = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        string anonymized = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+        string named = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        string anonymized = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
 
-        Assert.Contains("GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking joint 1st of 3 (intervals overlap) against Grok 5 and Mistral Large 4.", named);
-        Assert.Contains("GPT-5.6 Luna scored 80 / 100 on 4 questions, ranking joint 1st of 3 (intervals overlap) against Model A and Model B.", anonymized);
+        Assert.Contains("GPT-5.6 Luna places joint 1st of 3 (intervals overlap) on intelligence, but its interval overlaps those of Grok 5 and Mistral Large 4, "
+            + "so the order is not established. Its paired difference from Grok 5 is -4.6 points.", named);
+        Assert.Contains("GPT-5.6 Luna places joint 1st of 3 (intervals overlap) on intelligence, but its interval overlaps those of Model A and Model B, "
+            + "so the order is not established. Its paired difference from Model A is -4.6 points.", anonymized);
     }
 
     [Fact]
     public void AnUnavailableFact_IsStatedAsNotAvailable_WithItsReason()
     {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
+        var sheet = Sheet();
+        var speed = sheet.Facts.Single(f => f.Key == "speed.modelTimeP50");
+        speed.Display = BenchmarkReportFacts.NotAvailable;
+        speed.Available = false;
+        speed.UnavailableReason = "Speed was measured with parallel execution disabled.";
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
 
-        Assert.Contains("Judge-dependent pairs: not available. The compared runs were not all graded by the same panel.", text);
+        string text = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named });
+
+        Assert.Contains("- **Speed:** not available. Speed was measured with parallel execution disabled.\n", text);
     }
 
     [Fact]
     public void TheRemovedContentNotice_ListsDroppedItems_OnlyWhenTheDocumentHasWarnings()
     {
-        string summary = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        string full = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
+        string summary = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        string full = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
         Assert.Contains("## Removed content", summary);
         Assert.Contains("- `weaknesses[2]` (rule 4)\n", summary);
@@ -391,7 +280,7 @@ public class BenchmarkReportPackRendererTests
         Assert.DoesNotContain("Cited R9", summary);
         Assert.Contains("- `weaknesses[2]` (rule 4): Cited R9, which does not exist.", full);
 
-        var completed = Document(BenchmarkReportAudience.TechnicalReport);
+        var completed = Document(BenchmarkReportAudience.ExecutiveSummary);
         completed.Status = BenchmarkReportDocumentStatus.Completed;
         string clean = BenchmarkReportPackRenderer.Render(completed, new BenchmarkReportRenderOptions());
         Assert.DoesNotContain("## Removed content", clean);
@@ -405,10 +294,10 @@ public class BenchmarkReportPackRendererTests
     public void Rule1_OutputDependsOnlyOnTheStoredColumnsTheRendererReads()
     {
         var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
-        var baseline = Document(BenchmarkReportAudience.TechnicalReport);
+        var baseline = Document(BenchmarkReportAudience.ExecutiveSummary);
 
         // Columns the renderer does not read: changing them changes nothing.
-        var other = Document(BenchmarkReportAudience.TechnicalReport);
+        var other = Document(BenchmarkReportAudience.ExecutiveSummary);
         other.Title = "A stale title";
         other.PackId = Guid.Empty;
         other.InputTokens = 1;
@@ -425,9 +314,9 @@ public class BenchmarkReportPackRendererTests
     {
         var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
 
-        var first = Document(BenchmarkReportAudience.TechnicalReport);
+        var first = Document(BenchmarkReportAudience.ExecutiveSummary);
         first.CreatedAtUtc = new DateTime(2001, 2, 3, 4, 5, 0, DateTimeKind.Utc);
-        var second = Document(BenchmarkReportAudience.TechnicalReport);
+        var second = Document(BenchmarkReportAudience.ExecutiveSummary);
         second.CreatedAtUtc = new DateTime(2011, 12, 13, 14, 15, 0, DateTimeKind.Utc);
 
         string a = BenchmarkReportPackRenderer.Render(first, options);
@@ -478,7 +367,7 @@ public class BenchmarkReportPackRendererTests
     public void Rule4_OutputOrderIsIndependentOfStoredCollectionOrder()
     {
         var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
-        string expected = BenchmarkReportPackRenderer.Render(Document(BenchmarkReportAudience.TechnicalReport), options);
+        string expected = BenchmarkReportPackRenderer.Render(Document(BenchmarkReportAudience.ExecutiveSummary), options);
 
         var sheet = Sheet();
         sheet.Peers.Reverse();
@@ -490,9 +379,8 @@ public class BenchmarkReportPackRendererTests
         var writer = Writer();
         writer.Sections = writer.Sections.Reverse().ToDictionary(kv => kv.Key, kv => kv.Value);
         writer.QuestionTopics.Reverse();
-        writer.QuestionNotes.Reverse();
 
-        var shuffled = Document(BenchmarkReportAudience.TechnicalReport);
+        var shuffled = Document(BenchmarkReportAudience.ExecutiveSummary);
         shuffled.FactsJson = BenchmarkReportJson.Serialize(sheet);
         shuffled.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
 
@@ -526,7 +414,7 @@ public class BenchmarkReportPackRendererTests
 
         await using (var db = new ApplicationDbContext(dbOptions))
         {
-            foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief })
+            foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary })
             {
                 var document = Document(audience);
                 document.Id = 100 + (int)audience;
@@ -575,82 +463,6 @@ public class BenchmarkReportPackRendererTests
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public void EveryStrengthWeaknessAndRecommendation_PrintsOneEvidenceLineBeneathIt()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("- Answers simple questions precisely and briefly. *(One grader — different provider)*\n"
-            + "  - *Evidence:* One grader — different provider — accuracy · Q1 (90 / 100)\n\n", text);
-        Assert.Contains("*(Both graders)*\n"
-            + "  - *Evidence:* Both graders — critical error · Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3\n", text);
-        Assert.Contains("  - *Evidence:* Intermediate band score: 49 · Q3 (25 / 100), Q2 (72 / 100) · the claim verifier refuted an answer sentence on Q3\n", text);
-        Assert.Contains("- Verify object-destruction rules before asserting them. *(Both graders)*\n"
-            + "  - *Evidence:* Both graders — critical error · Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3\n", text);
-    }
-
-    [Theory]
-    [InlineData(BenchmarkReportDisclosure.Summary)]
-    [InlineData(BenchmarkReportDisclosure.Detailed)]
-    [InlineData(BenchmarkReportDisclosure.Full)]
-    public void TheResearcherReport_ExpandsNoQuestionUnderAFinding(BenchmarkReportDisclosure disclosure)
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, disclosure, BenchmarkReportPeerNaming.Named);
-        var evidence = text.Split('\n').Where(l => l.StartsWith("  - *Evidence:*", StringComparison.Ordinal)).ToList();
-
-        // Evidence lines are printed at Detailed and Full only.
-        Assert.Equal(disclosure == BenchmarkReportDisclosure.Summary ? 0 : 4, evidence.Count);
-        Assert.DoesNotContain("as asked", text);
-        Assert.DoesNotContain(" on Q3:*", text);
-        Assert.All(evidence, line => Assert.DoesNotContain("R1", line));
-        // The finding sections hold no grader note; Question details at Full holds each once.
-        string findings = text[..text.IndexOf("## Recommendations for model developers", StringComparison.Ordinal)];
-        Assert.DoesNotContain("Accuracy: The gem does not always shatter.", findings);
-        if (disclosure == BenchmarkReportDisclosure.Full)
-        {
-            Assert.Single(AllIndexesOf(text, "  - Accuracy: The gem does not always shatter.\n"));
-        }
-    }
-
-    [Fact]
-    public void AFindingsQuestions_AreTheWritersOwn_NotItsRowsQuestions()
-    {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        var sheet = Sheet();
-        sheet.Rows.Add(new BenchmarkReportFindingRow
-        {
-            Id = "R4", Kind = "weakness", Category = "completeness", Questions = new List<int> { 2, 3 },
-            Status = "Convergent", SupportLabel = BenchmarkReportFacts.SupportBothGraders
-        });
-        var writer = Writer();
-        writer.Weaknesses = new List<BenchmarkReportWriterItem>
-        {
-            new() { Text = "Left out the survival chance on Q3.", Questions = new List<int> { 3 }, Evidence = new List<string> { "R4" } },
-            new() { Text = "Left out details across the exam.", Evidence = new List<string> { "R4" } }
-        };
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
-
-        string text = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = BenchmarkReportPeerNaming.Named });
-
-        Assert.Contains("- Left out the survival chance on Q3. *(Both graders)*\n"
-            + "  - *Evidence:* Both graders — completeness · Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3\n", text);
-        // An item naming no question takes its rows' questions.
-        Assert.Contains("- Left out details across the exam. *(Both graders)*\n"
-            + "  - *Evidence:* Both graders — completeness · Q3 (25 / 100), Q2 (72 / 100) · the claim verifier refuted an answer sentence on Q3\n", text);
-    }
-
-    [Fact]
-    public void ARefutedGradersStatement_IsNotAnAnswerSentence_InTheEvidenceLine()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-
-        // Q1's only refuted ruling is a grader's statement.
-        Assert.Contains("  - *Evidence:* One grader — different provider — accuracy · Q1 (90 / 100)\n", text);
-        Assert.DoesNotContain("refuted an answer sentence on Q1", text);
-    }
-
-    [Fact]
     public void TheExecutiveSummary_PrintsNoEvidenceLine_AndPlainSupportLabels_AtEveryLevel()
     {
         foreach (var disclosure in Enum.GetValues<BenchmarkReportDisclosure>())
@@ -692,8 +504,6 @@ public class BenchmarkReportPackRendererTests
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    [InlineData(BenchmarkReportAudience.InternalBrief)]
     public void WithoutFrontMatter_TheStampAndFactsListAreLeftOut(BenchmarkReportAudience audience)
     {
         var options = new BenchmarkReportRenderOptions
@@ -717,8 +527,6 @@ public class BenchmarkReportPackRendererTests
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    [InlineData(BenchmarkReportAudience.InternalBrief)]
     public void WithoutTheDocumentFooter_TheIdVersionAndProvenanceLinesAreLeftOut(BenchmarkReportAudience audience)
     {
         var options = new BenchmarkReportRenderOptions
@@ -741,10 +549,7 @@ public class BenchmarkReportPackRendererTests
             + "peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the "
             + "prose's interpretations.*\n", withFooter);
         Assert.DoesNotContain("generated under format version", withFooter);
-        if (audience != BenchmarkReportAudience.InternalBrief)
-        {
-            Assert.Contains("## Evaluation terms", text);
-        }
+        Assert.Contains("## Evaluation terms", text);
     }
 
     [Fact]
@@ -753,16 +558,18 @@ public class BenchmarkReportPackRendererTests
         string executiveFull = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         string executiveDetailed = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named);
         string executiveSummary = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        string researcherFull = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-        string researcherDetailed = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named);
 
         Assert.Contains("*INTERNAL — unpublished benchmark results. Do not share outside the Overseer team.*\n", executiveFull);
         Assert.Contains("*Confidential. Prepared for the model's provider. Review before sharing.*\n", executiveDetailed);
         Assert.Contains("*Confidential. Prepared for the model's provider. Questions are described, not quoted.*\n", executiveSummary);
         Assert.DoesNotContain("contains benchmark questions", executiveFull);
         Assert.DoesNotContain("Contains benchmark questions", executiveDetailed);
-        Assert.Contains("*INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.*\n", researcherFull);
-        Assert.Contains("*Confidential. Prepared for the model's provider. Contains benchmark questions — do not publish.*\n", researcherDetailed);
+
+        // A document that may quote questions and rubrics carries the stamps that say so.
+        Assert.Equal("INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.",
+            BenchmarkReportPackRenderer.Stamp(BenchmarkReportAudience.RootCauseAnalysis, BenchmarkReportDisclosure.Full));
+        Assert.Equal("Confidential. Prepared for the model's provider. Contains benchmark questions — do not publish.",
+            BenchmarkReportPackRenderer.Stamp(BenchmarkReportDisclosure.Detailed));
     }
 
     [Fact]
@@ -789,33 +596,25 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AWithheldRunsFact_AddsOneSentence_InEveryDocument()
+    public void AWithheldRunsFact_AddsOneSentence_AfterTheKeyFigures()
     {
         const string Sentence = "1 of 3 runs withholds its own Intelligence Index because a question failed at the provider; "
             + "the Intelligence figure above is over the scored questions.";
         const string Plural = "2 of 3 runs withhold their own Intelligence Index because a question failed at the provider; "
             + "the Intelligence figure above is over the scored questions.";
-        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief })
-        {
-            var options = new BenchmarkReportRenderOptions
-            {
-                PeerNaming = BenchmarkReportPeerNaming.Named,
-                Disclosure = audience == BenchmarkReportAudience.InternalBrief ? BenchmarkReportDisclosure.Full : BenchmarkReportDisclosure.Summary
-            };
-            string plain = BenchmarkReportPackRenderer.Render(Document(audience), options);
-            Assert.DoesNotContain("because a question failed at the provider", plain);
+        const BenchmarkReportAudience audience = BenchmarkReportAudience.ExecutiveSummary;
+        var options = new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Named, Disclosure = BenchmarkReportDisclosure.Summary };
+        string plain = BenchmarkReportPackRenderer.Render(Document(audience), options);
+        Assert.DoesNotContain("because a question failed at the provider", plain);
 
-            string text = RenderWithWithheldRuns(audience, options, 1, "1 of 3 runs");
-            Assert.Single(AllIndexesOf(text, Sentence));
-            Assert.InRange(text.IndexOf("- **Intelligence:**", StringComparison.Ordinal), 0, text.IndexOf(Sentence, StringComparison.Ordinal));
-            Assert.Contains("\n\n" + Sentence + "\n\n", text);
-            // The sentence is the only rendered difference: one paragraph, no extra blank line. The
-            // internal brief's embedded fact sheet carries the fact itself, so it is left out.
-            static string Rendered(string s) => s.Split("## 6. Fact sheet\n")[0];
-            AssertSameText(Rendered(plain), Rendered(text.Replace(Sentence + "\n\n", string.Empty)), audience + " without the sentence");
+        string text = RenderWithWithheldRuns(audience, options, 1, "1 of 3 runs");
+        Assert.Single(AllIndexesOf(text, Sentence));
+        Assert.InRange(text.IndexOf("- **Intelligence:**", StringComparison.Ordinal), 0, text.IndexOf(Sentence, StringComparison.Ordinal));
+        Assert.Contains("\n\n" + Sentence + "\n\n", text);
+        // The sentence is the only rendered difference: one paragraph, no extra blank line.
+        AssertSameText(plain, text.Replace(Sentence + "\n\n", string.Empty), audience + " without the sentence");
 
-            Assert.Single(AllIndexesOf(RenderWithWithheldRuns(audience, options, 2, "2 of 3 runs"), Plural));
-        }
+        Assert.Single(AllIndexesOf(RenderWithWithheldRuns(audience, options, 2, "2 of 3 runs"), Plural));
     }
 
     /// <summary>The fixture document of <paramref name="audience"/> with a <c>quality.withheldRuns</c> fact added.</summary>
@@ -848,16 +647,14 @@ public class BenchmarkReportPackRendererTests
     [Fact]
     public void TheCostSentence_FollowsThePricingBasis_AndAnOlderDocumentKeepsItsOwn()
     {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
         var options = new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Named };
 
-        string catalog = BenchmarkReportPackRenderer.Render(Document(BenchmarkReportAudience.ExecutiveSummary), options);
+        string catalog = BenchmarkReportPackRenderer.Render(document, options);
         Assert.Contains(" Cost is the model under test's price per question at the catalog prices of 2026-09-20, which is comparable "
             + "across dates but is not what was actually spent.\n", catalog);
-
-        string researcher = BenchmarkReportPackRenderer.Render(document, options);
-        Assert.Contains("- **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)\n", researcher);
-        Assert.DoesNotContain("- **Price card date:**", researcher);
+        Assert.Contains("- **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)\n", catalog);
+        Assert.DoesNotContain("- **Price card date:**", catalog);
 
         var sheet = Sheet();
         sheet.Facts.Single(f => f.Key == "comparison.pricingBasisKind").Display = BenchmarkReportFacts.PricingBasisSnapshot;
@@ -872,77 +669,7 @@ public class BenchmarkReportPackRendererTests
         string older = BenchmarkReportPackRenderer.Render(olderDocument, options);
         Assert.Contains(" Cost is list price for the model under test, on this basis: Priced from the catalog as of 2026-09-20. "
             + "Comparable across dates; not what was actually spent.\n", older);
-
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-        string olderResearcher = BenchmarkReportPackRenderer.Render(document, options);
-        Assert.Contains("- **Pricing basis:** Priced from the catalog as of 2026-09-20.", olderResearcher);
-        Assert.Contains("- **Price card date:** 2026-09-01\n", olderResearcher);
-    }
-
-    [Fact]
-    public void TheResearcherReport_HasASpeedAndCostTable_AfterItsResults()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("## Speed and cost\n\n| Measure | GPT-5.6 Luna |\n|---|---|\n"
-            + "| Median answer time | 12.3 s |\n"
-            + "| 90th-percentile answer time | 15.0 s |\n"
-            + "| Cost per question | $0.036 |\n"
-            + "| Cost per run | $0.144 |\n"
-            + "| Input tokens per question | 18,250 |\n"
-            + "| Output tokens per question | 1,140 |\n\n", text);
-        Assert.True(text.IndexOf("## Results against peers", StringComparison.Ordinal) < text.IndexOf("## Speed and cost", StringComparison.Ordinal));
-        Assert.True(text.IndexOf("## Speed and cost", StringComparison.Ordinal) < text.IndexOf("## Why it scored this way", StringComparison.Ordinal));
-        Assert.DoesNotContain("Total cost per run", text);
-    }
-
-    [Fact]
-    public void TheSpeedAndCostTable_IsLeftOut_WhenTheSheetStatesNoneOfItsFacts()
-    {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        var sheet = Sheet();
-        sheet.Facts.RemoveAll(f => BenchmarkReportPackRenderer.SpeedAndCostKeys().Contains(f.Key));
-        sheet.Facts.Add(new BenchmarkReportFact { Key = "cost.totalRunPerRun", Display = BenchmarkReportFacts.NotAvailable, Available = false, UnavailableReason = "Not recorded." });
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-
-        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
-
-        Assert.DoesNotContain("## Speed and cost", text);
-    }
-
-    [Fact]
-    public void TheResearcherReport_PrintsEachSlotBeforeItsList_UnderItsOwnHeading()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("## Why it scored this way\n\nOne critical error on Q3 capped that answer at 25.\n\nCompleteness was 70 against a peer mean of 78.\n\n### Weaknesses\n\n- Asserted", text);
-        Assert.Contains("## What worked well\n\nShort, accurate answers on simple questions (R2).\n\n### Strengths\n\n- Answers simple", text);
-        Assert.Contains("## Recommendations for model developers\n\n- Verify object-destruction rules", text);
-    }
-
-    [Fact]
-    public void ThePerQuestionTable_CountsRefutedAnswerSentences_AndPrintsWholeToolCalls()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("| Q | Topic | Assessed band | Authored | Score | Peer mean | Difference | Critical error | Refuted answer sentences | Tool calls | Model time |", text);
-        // The fixture's sheet records no authored band.
-        Assert.Contains("| Q3 | Breaking a thrown gem | Intermediate | — | 25 | 68 | -43 | yes | 1 | 5 | 15.2 s |", text);
-        Assert.DoesNotContain("| Refuted claims |", text);
-    }
-
-    [Fact]
-    public void AtFull_EachClaimRulingNamesItsRole()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("- **Grader's statement — refuted (the verifier sided with the answer):** \"Worthless glass angers the unicorn.\" — "
-            + "Glass is caught and returned without anger (dothrow.c).\n", text);
-        Assert.Contains("- **Answer sentence — supported:** \"The timeout is typically near 350.\"", text);
-        Assert.Contains("- **Answer sentence accused by a grader — refuted (the verifier sided with the grader):** \"A thrown gem always shatters on impact.\"", text);
-        Assert.DoesNotContain("(the grader was right)", text);
-        Assert.DoesNotContain("(the answer was right)", text);
-        Assert.Contains("- **R1:** Panel member A: States that a thrown gem always shatters. · Panel member B: Claims the gem is always destroyed.\n", text);
+        Assert.Contains("- **Pricing basis:** Priced from the catalog as of 2026-09-20.", older);
     }
 
     [Theory]
@@ -965,17 +692,11 @@ public class BenchmarkReportPackRendererTests
     public void AStoredVersion2Document_KeepsItsOlderWording()
     {
         string text = BenchmarkReportPackRenderer.Render(
-            StoredV2Document(BenchmarkReportAudience.TechnicalReport),
+            StoredV2Document(BenchmarkReportAudience.ExecutiveSummary),
             new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
 
-        Assert.Contains("| Refuted claims |", text);
-        Assert.Contains("  - *Evidence:* Both graders — critical error · Q3 (25 / 100) · the claim verifier refuted a claim on Q3\n", text);
-        Assert.Contains("- **refuted:** \"A thrown gem always shatters on impact.\"", text);
         Assert.Contains("- **Pricing basis:** Priced from the catalog as of 2026-09-20.", text);
-        Assert.Contains("- **Price card date:** 2026-09-01\n", text);
-        Assert.Contains("Cost is list price for the model under test, on this basis:", BenchmarkReportPackRenderer.Render(
-            StoredV2Document(BenchmarkReportAudience.ExecutiveSummary), new BenchmarkReportRenderOptions()));
-        Assert.Contains("| Median answer time | 12.3 s |\n| Cost per question | $0.036 |\n\n", text);
+        Assert.Contains("Cost is list price for the model under test, on this basis:", text);
     }
 
     private static List<int> AllIndexesOf(string text, string value)
@@ -989,20 +710,9 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void TheInternalBrief_PrintsNoEvidenceLinesAndNoEvaluationTerms()
+    public void TheExecutiveSummary_EndsWithTheEvaluationTerms_BeforeTheFooter()
     {
-        string text = Render(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-
-        Assert.DoesNotContain("*Evidence:*", text);
-        Assert.DoesNotContain("## Evaluation terms", text);
-    }
-
-    [Theory]
-    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    public void BothDocuments_EndWithTheEvaluationTerms_BeforeTheFooter(BenchmarkReportAudience audience)
-    {
-        string text = Render(audience, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+        string text = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
 
         int terms = text.IndexOf("## Evaluation terms\n", StringComparison.Ordinal);
         int footer = text.IndexOf("\n---\n", StringComparison.Ordinal);
@@ -1016,7 +726,7 @@ public class BenchmarkReportPackRendererTests
     [Fact]
     public void ADocumentWithoutPurposeStatements_SaysSo()
     {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
         var sheet = Sheet();
         sheet.PurposeStatements.Clear();
         document.FactsJson = BenchmarkReportJson.Serialize(sheet);
@@ -1026,11 +736,10 @@ public class BenchmarkReportPackRendererTests
         Assert.Contains("- **Purpose statement:** not recorded for this document.\n", text);
     }
 
-    [Theory]
-    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    public void TheStandaloneForm_HasNoPeerTablesColumnsOrSignificanceStatement(BenchmarkReportAudience audience)
+    [Fact]
+    public void TheStandaloneForm_HasNoPeerTablesColumnsOrSignificanceStatement()
     {
+        const BenchmarkReportAudience audience = BenchmarkReportAudience.ExecutiveSummary;
         foreach (var disclosure in BenchmarkReportPackRenderer.AllowedDisclosures(audience))
         {
             foreach (var naming in new[] { BenchmarkReportPeerNaming.Named, BenchmarkReportPeerNaming.Anonymized })
@@ -1050,46 +759,6 @@ public class BenchmarkReportPackRendererTests
                 Assert.Contains("## Evaluation terms", text);
             }
         }
-
-        if (audience == BenchmarkReportAudience.TechnicalReport)
-        {
-            string technical = BenchmarkReportPackRenderer.Render(StandaloneDocument(audience), new BenchmarkReportRenderOptions());
-            Assert.Contains("## Results\n", technical);
-            Assert.Contains("| Q | Topic | Assessed band | Authored | Score | Critical error | Refuted answer sentences | Tool calls | Model time |", technical);
-            Assert.Contains("### Questions scoring below 50 or with a critical error", technical);
-            Assert.Contains("**Q3** (Breaking a thrown gem): Claimed a thrown gem always shatters", technical);
-            Assert.Contains("describes the model on its own", technical);
-        }
-    }
-
-    [Fact]
-    public void TheResearcherReport_IsTitledWithItsNewName()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-
-        Assert.StartsWith("# GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Report for AI Researchers and Developers\n", text);
-        Assert.Equal("Report for AI Researchers and Developers", BenchmarkReportRenderService.AudienceName(BenchmarkReportAudience.TechnicalReport));
-        Assert.Equal(
-            "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Report for AI Researchers and Developers",
-            BenchmarkReportRenderService.CurrentTitle(BenchmarkReportAudience.TechnicalReport,
-                "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Technical Report"));
-        Assert.Equal(
-            "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Executive Summary",
-            BenchmarkReportRenderService.CurrentTitle(BenchmarkReportAudience.ExecutiveSummary,
-                "GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark — Executive Summary"));
-    }
-
-    [Fact]
-    public void TheInternalBrief_EmbedsTheFactSheet_WithSortedKeys_AndAnonymizedPeers()
-    {
-        string named = Render(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-        string anonymized = Render(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
-
-        Assert.Contains("```json\n{\n  \"entries\": [", named);
-        Assert.Contains("\"label\": \"Grok 5\"", named);
-        Assert.Contains("\"label\": \"Model A\"", anonymized);
-        Assert.Contains("\"knownNames\": [", anonymized);
-        Assert.Contains("\"GnollHack Core Suite\"", anonymized);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1102,23 +771,10 @@ public class BenchmarkReportPackRendererTests
     public void AStoredFamilySupportLabel_RendersInProviderWording_AndKeepsItsStrength(BenchmarkReportPeerNaming naming)
     {
         var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = naming };
-        string text = BenchmarkReportPackRenderer.Render(StoredV2Document(BenchmarkReportAudience.TechnicalReport), options);
+        string text = BenchmarkReportPackRenderer.Render(StoredV2Document(BenchmarkReportAudience.ExecutiveSummary), options);
 
-        Assert.Contains("  - Panel member A: Gemini 3.8 Flash (Google, gemini-3.8-flash), different provider from the model under test\n", text);
-        Assert.Contains("- Answers simple questions precisely and briefly. *(One grader — different provider)*\n"
-            + "  - *Evidence:* One grader — different provider — accuracy · Q1 (90 / 100)\n", text);
-        Assert.Contains("| R2 | strength · accuracy: Precise on the unicorn throwing rules. | Q1 | One grader — different provider |\n", text);
-        Assert.Contains("Each grader's provider relation to the model under test is stated under Setup and method; "
-            + "a grader from the model's own provider may read it more favorably.", text);
+        Assert.Contains("- Answers simple questions precisely and briefly. *(raised by one grader)*\n", text);
         Assert.DoesNotContain("family", text);
-        Assert.DoesNotContain("*(Computed)*\n  - *Evidence:* One grader", text);
-
-        string brief = BenchmarkReportPackRenderer.Render(
-            StoredV2Document(BenchmarkReportAudience.InternalBrief),
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = naming });
-        Assert.Contains("\"supportLabel\": \"One grader — different provider\"", brief);
-        Assert.DoesNotContain("different family", brief);
-        Assert.Contains("\"sameFamilyAsSubject\": false", brief);
     }
 
     [Fact]
@@ -1144,36 +800,21 @@ public class BenchmarkReportPackRendererTests
     {
         var executive = Document(BenchmarkReportAudience.ExecutiveSummary);
         executive.WriterProvider = writerProvider;
-        var technical = Document(BenchmarkReportAudience.TechnicalReport);
-        technical.WriterProvider = writerProvider;
-        var brief = Document(BenchmarkReportAudience.InternalBrief);
-        brief.WriterProvider = writerProvider;
         var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
 
         string executiveText = BenchmarkReportPackRenderer.Render(executive, options);
-        string technicalText = BenchmarkReportPackRenderer.Render(technical, options);
-        string briefText = BenchmarkReportPackRenderer.Render(brief, options);
 
         Assert.Contains("a span of 6 points, and rests on 4 of 4 questions with a scored answer.\n\n" + WriterCaveat + "\n\n", executiveText);
         int reliable = executiveText.IndexOf("## How reliable this result is", StringComparison.Ordinal);
         int about = executiveText.IndexOf("## About this benchmark", StringComparison.Ordinal);
         int caveat = executiveText.IndexOf(WriterCaveat, StringComparison.Ordinal);
         Assert.True(reliable < caveat && caveat < about);
-
-        int threats = technicalText.IndexOf("## Threats to validity", StringComparison.Ordinal);
-        int reproducibility = technicalText.IndexOf("## Reproducibility appendix", StringComparison.Ordinal);
-        int technicalCaveat = technicalText.IndexOf("- " + WriterCaveat + "\n", StringComparison.Ordinal);
-        Assert.True(threats < technicalCaveat && technicalCaveat < reproducibility);
-
-        Assert.DoesNotContain("the provider of the model under test", briefText);
     }
 
-    [Theory]
-    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    public void AnIndependentWriter_GetsNoIndependenceCaveat(BenchmarkReportAudience audience)
+    [Fact]
+    public void AnIndependentWriter_GetsNoIndependenceCaveat()
     {
-        string text = BenchmarkReportPackRenderer.Render(Document(audience), new BenchmarkReportRenderOptions());
+        string text = BenchmarkReportPackRenderer.Render(Document(BenchmarkReportAudience.ExecutiveSummary), new BenchmarkReportRenderOptions());
 
         Assert.DoesNotContain("the provider of the model under test", text);
         Assert.DoesNotContain("A writer from the same provider", text);
@@ -1190,249 +831,39 @@ public class BenchmarkReportPackRendererTests
         Assert.DoesNotContain("a span of", older);
     }
 
-    [Fact]
-    public void AtFull_ACutAnswerIsPrintedWhole_AndAnUncutOneAsItsExcerpt()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-        var q3 = Content().Runs[0].Questions.Single(q => q.Number == 3);
-        var q1 = Content().Runs[0].Questions.Single(q => q.Number == 1);
-
-        Assert.Contains("**Answer:**\n\n> Yes. A thrown gem always shatters on impact, so never throw your valuable gems at a unicorn; "
-            + "keep them for selling or for wishing instead.\n>\n> If you must throw something, throw worthless glass.\n", text);
-        Assert.DoesNotContain("> " + q3.AnswerExcerpt + "\n", text);
-        Assert.Contains("**Answer:**\n\n> " + q1.AnswerExcerpt + "\n", text);
-        Assert.DoesNotContain("**Answer excerpt:**", text);
-        Assert.DoesNotContain("predates complete-answer capture", text);
-    }
-
-    [Fact]
-    public void AtFull_ACutExcerptWithoutAStoredAnswer_CarriesTheOlderDocumentNote()
-    {
-        string text = BenchmarkReportPackRenderer.Render(
-            StoredV2Document(BenchmarkReportAudience.TechnicalReport),
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
-        var q3 = Content().Runs[0].Questions.Single(q => q.Number == 3);
-
-        Assert.Contains("**Answer excerpt:**\n\n> " + q3.AnswerExcerpt + "\n\n"
-            + "*This document predates complete-answer capture; the answer is shown as the excerpt stored when it was written.*\n", text);
-        Assert.Single(AllIndexesOf(text, "predates complete-answer capture"));
-        Assert.Single(AllIndexesOf(text, "**Answer excerpt:**"));
-        Assert.DoesNotContain("selling or for wishing", text);
-    }
-
-    [Fact]
-    public void AtDetailed_OnlyTheStoredExcerptIsPrinted()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named);
-
-        Assert.Equal(4, AllIndexesOf(text, "**Answer excerpt:**").Count);
-        Assert.DoesNotContain("**Answer:**", text);
-        Assert.DoesNotContain("selling or for wishing", text);
-        Assert.DoesNotContain("predates complete-answer capture", text);
-    }
-
-    private const string ExecutionOnlyNote = "*Recorded success or failure describes whether a tool call executed. It does not show that the "
-        + "query was well chosen, that the result was relevant, or that the corpus was current.*";
-
-    [Theory]
-    [InlineData(BenchmarkReportDisclosure.Summary)]
-    [InlineData(BenchmarkReportDisclosure.Detailed)]
-    [InlineData(BenchmarkReportDisclosure.Full)]
-    public void ToolUse_SaysSuccessMeansExecution_AndPointsToTheToolCallLogAtFullOnly(BenchmarkReportDisclosure disclosure)
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, disclosure, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("- **" + BenchmarkReportFactLabels.Label("tools.refusedByBudget") + ":** 0\n\n" + ExecutionOnlyNote + "\n\n", text);
-        const string pointer = "*Per-call arguments and results are in each run's Tool-call log until the retention sweep prunes them.*";
-        if (disclosure == BenchmarkReportDisclosure.Full)
-        {
-            Assert.Contains(ExecutionOnlyNote + "\n\n" + pointer + "\n\n", text);
-        }
-        else
-        {
-            Assert.DoesNotContain("Tool-call log", text);
-        }
-        Assert.DoesNotContain("did not record per-call", text);
-    }
-
-    [Fact]
-    public void ToolUse_AtFull_SaysWhenTheRunsRecordedNoPerCallRows()
-    {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        var sheet = Sheet();
-        foreach (var fact in sheet.Facts.Where(f => f.Key is "tools.failed" or "tools.refusedByBudget"))
-        {
-            fact.Display = BenchmarkReportFacts.NotAvailable;
-            fact.Available = false;
-            fact.UnavailableReason = "The runs recorded no per-call rows.";
-        }
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-
-        string text = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
-
-        Assert.Contains(ExecutionOnlyNote + "\n\n*These runs did not record per-call arguments or results.*\n\n", text);
-        Assert.DoesNotContain("Tool-call log", text);
-    }
-
     // ---------------------------------------------------------------------------------------------
     // Format version 6: support wording, findings table, reference reader, knowledge base, style
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public void ABatteryPerQuestionTable_LeavesOutTheRunsColumn_WhenOneRunScoredEachQuestion()
-    {
-        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
-        var document = BatteryReportFixture.Document(BenchmarkReportAudience.TechnicalReport);
-        var sheet = BatteryReportFixture.Sheet();
-        foreach (var question in sheet.Questions) question.RunCount = 1;
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-
-        string text = BenchmarkReportPackRenderer.Render(document, options);
-
-        Assert.Contains("| Question | Topic | Assessed band | Authored | Mean score | Critical errors | Refuted answer sentences | Tool calls | Model time |\n"
-            + "|---|---|---|---|---|---|---|---|---|\n", text);
-        Assert.Contains("| S2-Q1 | Breaking a thrown gem | Intermediate | — | 25 | 1 | 1 | 5 | 15.2 s |\n", text);
-        Assert.DoesNotContain("Runs scored", text);
-        Assert.Contains("*One member run scored each question, so each mean score is that run's score; its critical errors count whether that run had a critical error.*", text);
-
-        // Two runs per question keep the column and the pooled wording.
-        string pooled = BenchmarkReportPackRenderer.Render(BatteryReportFixture.Document(BenchmarkReportAudience.TechnicalReport), options);
-        Assert.Contains("| Mean score | Runs scored | Critical errors |", pooled);
-        Assert.Contains("| S2-Q1 | Breaking a thrown gem | Intermediate | — | 25 | 2 | 1 | 1 | 5 | 15.2 s |\n", pooled);
-        Assert.Contains("*Each question's mean score is over the member runs that scored it; its critical errors count those runs with a critical error.*", pooled);
-    }
-
-    [Fact]
     public void AnItemCitingNoRow_ReadsFromPerQuestionResults_WhileTheStoredLabelStaysComputed()
     {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named);
+        string text = Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named);
 
-        Assert.Contains("- Scored lowest on intermediate questions (49). *(From per-question results)*\n", text);
+        Assert.Contains("- Scored lowest on intermediate questions (49). *(from per-question results)*\n", text);
         Assert.DoesNotContain("(Computed)", text);
+        Assert.DoesNotContain("(computed)", text);
         Assert.Equal("Computed", BenchmarkReportFacts.SupportComputed);
         Assert.Equal("From per-question results", BenchmarkReportPackRenderer.SupportLabelText(BenchmarkReportFacts.SupportComputed));
         Assert.Equal(BenchmarkReportFacts.SupportBothGraders, BenchmarkReportPackRenderer.SupportLabelText(BenchmarkReportFacts.SupportBothGraders));
     }
 
     [Fact]
-    public void AStrengthsEvidenceLine_NeverListsARefutation()
+    public void AResponseStyleDisplayStoredWithYes_ReadsAsAClause_InProse()
     {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        var writer = Writer();
-        writer.Strengths = new List<BenchmarkReportWriterItem>
-        {
-            new() { Text = "Named the right object on Q3.", Questions = new List<int> { 3 }, Evidence = new List<string> { "Q3" } }
-        };
-        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
-
-        string text = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = BenchmarkReportPeerNaming.Named });
-
-        Assert.Contains("- Named the right object on Q3. *(From per-question results)*\n  - *Evidence:* Q3 (25 / 100)\n", text);
-        // A weakness citing the same question still lists it.
-        Assert.Contains("*(Both graders)*\n"
-            + "  - *Evidence:* Both graders — critical error · Q3 (25 / 100) · the claim verifier refuted an answer sentence on Q3\n", text);
-    }
-
-    [Fact]
-    public void AtSummary_TheFindingsTableIsLeftOut_AndSaysWhere()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-
-        Assert.DoesNotContain("| Row | Finding |", text);
-        Assert.DoesNotContain("States that a thrown gem always shatters.", text);
-        Assert.Contains("*The graders' findings are listed at Detailed and Full disclosure only, since their wording may quote the benchmark's questions and answers.*\n", text);
-    }
-
-    [Fact]
-    public void AtDetailed_TheFindingsTableCarriesEachFindingsTextCut_AndNoRecurrenceForOneRun()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("| Row | Finding | Questions | Support |\n|---|---|---|---|\n", text);
-        Assert.Contains("| R1 | weakness · critical error: States that a thrown gem always shatters. | Q3 | Both graders |\n", text);
-        Assert.Contains("| R3 | strength (A) vs weakness (B) · conciseness: A: Admirably brief. B: Too terse to be useful. | Q2 | Graders disagree |\n", text);
-        Assert.DoesNotContain("Recurrence", text);
-        Assert.DoesNotContain("1 of 1 run", text);
-
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        var sheet = Sheet();
-        sheet.Rows[0].MemberAText = string.Join(" ", Enumerable.Repeat("The answer states that a thrown gem always shatters.", 6));
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-        string cut = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = BenchmarkReportPeerNaming.Named });
-        string row = cut.Split('\n').Single(l => l.StartsWith("| R1 |", StringComparison.Ordinal));
-        string finding = row.Split(" | ")[1]["weakness · critical error: ".Length..];
-        Assert.True(finding.Length <= 162, "The finding text is not cut: " + finding);
-        Assert.EndsWith(BenchmarkReportContent.Ellipsis, finding);
-    }
-
-    [Fact]
-    public void AtFull_TheFindingsTableKeepsCategories_AndTheTextsFollowWhole_AndAGroupShowsRecurrence()
-    {
-        string single = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-        Assert.Contains("| R1 | weakness · critical error | Q3 | Both graders |\n", single);
-        Assert.Contains("- **R1:** Panel member A: States that a thrown gem always shatters. · Panel member B: Claims the gem is always destroyed.\n", single);
-
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        var sheet = Sheet();
-        sheet.SubjectRunIds = new List<long> { 12, 15 };
-        sheet.Rows[0].Recurrence = 2;
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-        string group = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
-
-        Assert.Contains("| Row | Finding | Questions | Support | Recurrence |\n|---|---|---|---|---|\n", group);
-        Assert.Contains("| R1 | weakness · critical error | Q3 | Both graders | 2 of 2 runs |\n", group);
-    }
-
-    [Fact]
-    public void GraderReliability_PrintsTheReferenceReader_WithItsCaveat()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("- **Panel member B alone:** 79 / 100\n"
-            + "- **Reference reader (advisory, third provider):** 90 / 100\n"
-            + "- **Reference reader's mean offset from the panel:** +16.8 points. Its scores do not count toward the score; its neutrality between the two panel families is an assumption.\n"
-            + "- **Response-style conflict:** none\n", text);
-        Assert.DoesNotContain("It never scores", text);
-
-        string older = BenchmarkReportPackRenderer.Render(StoredV2Document(BenchmarkReportAudience.TechnicalReport), new BenchmarkReportRenderOptions());
-        Assert.DoesNotContain("Reference reader (advisory", older);
-        Assert.DoesNotContain("Its scores do not count toward the score", older);
-        Assert.Contains("- **Response-style conflict:** none\n", older);
-    }
-
-    [Fact]
-    public void ToolUse_LeavesOutTheKnowledgeBaseCount_WhenNoQuestionIsAKnowledgeBaseTopic()
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        Assert.DoesNotContain(BenchmarkReportFactLabels.Label("tools.zeroKnowledgeBaseAnswers"), text);
-        Assert.Contains("- **" + BenchmarkReportFactLabels.Label("tools.share.other") + ":** 0 %\n- **" + BenchmarkReportFactLabels.Label("tools.failed") + ":** 0\n", text);
-
-        // A document stored before format version 6 prints the count it stored.
-        string older = BenchmarkReportPackRenderer.Render(StoredV2Document(BenchmarkReportAudience.TechnicalReport), new BenchmarkReportRenderOptions());
-        Assert.Contains("- **Answers without a knowledge-base article:** 4 of 4\n", older);
-    }
-
-    [Fact]
-    public void AResponseStyleDisplayStoredWithYes_ReadsAsAClause_InProseAndInTheSection()
-    {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
         var sheet = Sheet();
         var style = sheet.Facts.Single(f => f.Key == "style.responseStyleConflict");
         style.Display = "yes: Completeness is the lowest dimension, 13.5 points below Accuracy";
         style.Value = JsonValue.Create(true);
         var writer = Writer();
-        writer.Sections[BenchmarkReportSlots.WhyItScored] = "Because {{style.responseStyleConflict}}, completeness reads low.";
+        writer.Sections[BenchmarkReportSlots.Meaning] = "Because {{style.responseStyleConflict}}, completeness reads low.";
         document.FactsJson = BenchmarkReportJson.Serialize(sheet);
         document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
 
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
 
         Assert.Contains("Because Completeness is the lowest dimension, 13.5 points below Accuracy, completeness reads low.", text);
-        Assert.Contains("- **Response-style conflict:** Completeness is the lowest dimension, 13.5 points below Accuracy\n", text);
         Assert.DoesNotContain("yes: ", text);
     }
 
@@ -1481,10 +912,6 @@ public class BenchmarkReportPackRendererTests
     // Format version 7: how it compares, rank, paired differences, compared models, limitations
     // ---------------------------------------------------------------------------------------------
 
-    private const string PairedNote = "*Paired difference: mean per-question difference, subject minus peer, over the questions both answered; "
-        + "95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several models, and is "
-        + "not a significance test.*";
-
     [Fact]
     public void TheExecutiveSummary_SaysHowTheModelCompares_AfterItsKeyFigures()
     {
@@ -1511,18 +938,11 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void HowItCompares_BelongsToTheExecutiveSummaryWithPeers_Only_AndNoDocumentHasARankLine()
+    public void HowItCompares_IsLeftOutOfAStandaloneDocument_AndNoDocumentHasARankLine()
     {
         string standalone = BenchmarkReportPackRenderer.Render(StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary), new BenchmarkReportRenderOptions());
         Assert.DoesNotContain("## How it compares", standalone);
         Assert.DoesNotContain("- **Rank:**", standalone);
-
-        foreach (var audience in new[] { BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief })
-        {
-            string text = Render(audience, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-            Assert.DoesNotContain("## How it compares", text);
-            Assert.DoesNotContain("- **Rank:**", text);
-        }
 
         Assert.DoesNotContain("- **Rank:**", Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named));
     }
@@ -1572,14 +992,14 @@ public class BenchmarkReportPackRendererTests
     public void ANamedCopy_OfASheetWithoutPerPeerFacts_NamesTheLettersOfTheOverlapSentence()
     {
         string named = BenchmarkReportPackRenderer.Render(
-            StoredV6Document(BenchmarkReportAudience.TechnicalReport),
+            StoredV6Document(BenchmarkReportAudience.ExecutiveSummary),
             new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Named });
         string anonymized = BenchmarkReportPackRenderer.Render(
-            StoredV6Document(BenchmarkReportAudience.TechnicalReport),
+            StoredV6Document(BenchmarkReportAudience.ExecutiveSummary),
             new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Anonymized });
 
-        Assert.Contains("*GPT-5.6 Luna: its 95 % interval overlaps those of Grok 5 and Mistral Large 4. This describes where", named);
-        Assert.Contains("*GPT-5.6 Luna: its 95 % interval overlaps those of Models A and B. This describes where", anonymized);
+        Assert.Contains("; its 95 % interval overlaps those of Grok 5 and Mistral Large 4.\n", named);
+        Assert.Contains("; its 95 % interval overlaps those of Models A and B.\n", anonymized);
     }
 
     [Theory]
@@ -1587,7 +1007,7 @@ public class BenchmarkReportPackRendererTests
     [InlineData(BenchmarkReportPeerNaming.Anonymized, "with Model B", "Asked about Model B.")]
     public void JudgeDependentPairs_NameThePeer_InANamedCopy(BenchmarkReportPeerNaming naming, string pairs, string prose)
     {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
         var sheet = Sheet();
         var fact = sheet.Facts.Single(f => f.Key == "panel.judgeDependentPairs");
         fact.Available = true;
@@ -1595,130 +1015,15 @@ public class BenchmarkReportPackRendererTests
         fact.Display = "with Model B";
         fact.Value = JsonValue.Create(1);
         var writer = Writer();
-        writer.Sections[BenchmarkReportSlots.WhatWorked] = "Asked about {{peer:B}}.";
-        writer.Sections[BenchmarkReportSlots.WhyItScored] = "Pairs: {{panel.judgeDependentPairs}}.";
+        writer.Sections[BenchmarkReportSlots.Meaning] = "Asked about {{peer:B}}.";
+        writer.Sections[BenchmarkReportSlots.Confidence] = "Pairs: {{panel.judgeDependentPairs}}.";
         document.FactsJson = BenchmarkReportJson.Serialize(sheet);
         document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
 
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { PeerNaming = naming });
 
-        Assert.Contains("Pairs whose order depends on which panel member graded them, involving GPT-5.6 Luna: " + pairs + ".\n", text);
         Assert.Contains("Pairs: " + pairs + ".\n", text);
         Assert.Contains(prose, text);
-    }
-
-    [Theory]
-    [InlineData(BenchmarkReportPeerNaming.Named, "Grok 5", "Mistral Large 4", "| xAI ")]
-    [InlineData(BenchmarkReportPeerNaming.Anonymized, "Model A", "Model B", "")]
-    public void TheResearcherReport_PrintsThePairedDifference_OnceInItsResults_WithItsNote(
-        BenchmarkReportPeerNaming naming, string a, string b, string provider)
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, naming);
-
-        Assert.Contains(" | Intelligence Index | 95 % interval | Rank | Paired difference |\n", text);
-        Assert.Contains("| " + a + " " + provider + "| 85 | 81–89 | joint 1 | -4.6 points (-9.8 to +0.7) |\n", text);
-        Assert.Contains("| " + b + " ", text);
-        Assert.Contains(" | 78 | 74–83 | joint 1 | not available |\n", text);
-        Assert.Contains(" | 80 | 77–83 | joint 1 | — |\n", text);
-        Assert.Contains(PairedNote + "\n\nNo paired difference:\n\n- " + b + ": " + PairedTooFewReason + "\n\n", text);
-        Assert.Single(AllIndexesOf(text, PairedNote));
-
-        int results = text.IndexOf("## Results against peers", StringComparison.Ordinal);
-        int speed = text.IndexOf("### Speed", StringComparison.Ordinal);
-        int note = text.IndexOf(PairedNote, StringComparison.Ordinal);
-        Assert.True(results < note && note < speed);
-
-        Assert.DoesNotContain("Paired difference", Render(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, naming));
-        Assert.DoesNotContain("Paired difference", BenchmarkReportPackRenderer.Render(StandaloneDocument(BenchmarkReportAudience.TechnicalReport), new BenchmarkReportRenderOptions()));
-    }
-
-    [Theory]
-    [InlineData(BenchmarkReportPeerNaming.Named)]
-    [InlineData(BenchmarkReportPeerNaming.Anonymized)]
-    public void TheResearcherReport_ListsTheComparedModels_UnderSetupAndMethod(BenchmarkReportPeerNaming naming)
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, naming);
-
-        if (naming == BenchmarkReportPeerNaming.Named)
-        {
-            Assert.Contains("### Compared models\n\n"
-                + "| Model | Provider | Letter | Kind | Runs | Thinking level | Harness version | Run dates (UTC) |\n|---|---|---|---|---|---|---|---|\n"
-                + "| **GPT-5.6 Luna** | OpenAI | — | run | 1 | high | 41 | 2026-09-20 |\n"
-                + "| Grok 5 | xAI | A | run | 1 | high | 41 | 2026-09-19 |\n"
-                + "| Mistral Large 4 | Mistral | B | run | 1 | not set | 41 | 2026-09-12 |\n\n", text);
-        }
-        else
-        {
-            Assert.Contains("### Compared models\n\n"
-                + "| Model | Letter | Kind | Runs | Thinking level | Harness version | Run dates (UTC) |\n|---|---|---|---|---|---|---|\n"
-                + "| **GPT-5.6 Luna** | — | run | 1 | high | 41 | 2026-09-20 |\n"
-                + "| Model A | A | run | 1 | high | 41 | 2026-09-19 |\n"
-                + "| Model B | B | run | 1 | not set | 41 | 2026-09-12 |\n\n", text);
-        }
-
-        int setup = text.IndexOf("## Setup and method", StringComparison.Ordinal);
-        int compared = text.IndexOf("### Compared models", StringComparison.Ordinal);
-        int results = text.IndexOf("## Results against peers", StringComparison.Ordinal);
-        Assert.True(setup < compared && compared < results);
-
-        // The stand-alone form keeps its single-run setup lines.
-        string standalone = BenchmarkReportPackRenderer.Render(StandaloneDocument(BenchmarkReportAudience.TechnicalReport), new BenchmarkReportRenderOptions());
-        Assert.DoesNotContain("### Compared models", standalone);
-        Assert.Contains("- **Model under test:** GPT-5.6 Luna (OpenAI, gpt-5.6-luna), thinking level high; 1 run.\n", standalone);
-    }
-
-    [Fact]
-    public void ComparedModels_SpansTheRunDates_AndMarksAGroup()
-    {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        var sheet = Sheet();
-        var peer = sheet.Entries.Single(e => e.PeerLetter == "A");
-        peer.EntryKey = "group:4";
-        peer.RunCount = 3;
-        peer.HarnessVersion = BenchmarkReportFacts.MixedHarnessVersion;
-        peer.LastRunUtc = new DateTime(2026, 9, 22, 7, 0, 0, DateTimeKind.Utc);
-        sheet.Peers.Single(p => p.Letter == "A").EntryKey = "group:4";
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-
-        string text = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Anonymized });
-
-        Assert.Contains("| Model A | A | group | 3 | high | mixed | 2026-09-19 to 2026-09-22 |\n", text);
-    }
-
-    [Fact]
-    public void TheResearcherReport_EndsItsThreatsToValidity_WithTheWritersLimitations()
-    {
-        string named = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        string anonymized = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
-
-        Assert.Contains("a grader from the model's own provider may read it more favorably.\n\n"
-            + "Mistral Large 4 is degraded on speed, and every model rests on a single run, so no interval covers run-to-run variation.\n\n"
-            + "## Reproducibility appendix\n", named);
-        Assert.Contains("\n\nModel B is degraded on speed, and every model rests on a single run", anonymized);
-
-        string standalone = BenchmarkReportPackRenderer.Render(StandaloneDocument(BenchmarkReportAudience.TechnicalReport), new BenchmarkReportRenderOptions());
-        Assert.Contains("\n\nThe result rests on a single run, so its interval covers question sampling alone.\n\n## Reproducibility appendix\n", standalone);
-    }
-
-    [Theory]
-    [InlineData(BenchmarkReportPeerNaming.Named, "Grok 5's Intelligence Index: 85 / 100")]
-    [InlineData(BenchmarkReportPeerNaming.Anonymized, "Model A's Intelligence Index: 85 / 100")]
-    public void APeersOwnFact_InAnEvidenceLine_IsLabeledWithThePeerNaming(BenchmarkReportPeerNaming naming, string expected)
-    {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        var writer = Writer();
-        writer.Weaknesses[1].Evidence = new List<string> { "band.intermediate.score", "peer.A.quality.index" };
-        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
-
-        string text = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = naming });
-
-        Assert.Contains("  - *Evidence:* Intermediate band score: 49 · " + expected + " · Q3 (25 / 100), Q2 (72 / 100)", text);
-        if (naming == BenchmarkReportPeerNaming.Anonymized)
-        {
-            Assert.DoesNotContain("Grok 5", text);
-        }
     }
 
     [Theory]
@@ -1740,14 +1045,6 @@ public class BenchmarkReportPackRendererTests
         Assert.DoesNotContain("*Not written.*", text);
         Assert.DoesNotContain("{{", text);
         Assert.Contains("peer names, significance claims and spelling; the checks", text);
-        if (audience == BenchmarkReportAudience.TechnicalReport)
-        {
-            // The table keeps the columns a version 6 sheet has data for.
-            Assert.Contains("### Compared models\n\n", text);
-            Assert.Contains(naming == BenchmarkReportPeerNaming.Named
-                ? "| Model | Provider | Letter | Kind | Runs | Thinking level |\n"
-                : "| Model | Letter | Kind | Runs | Thinking level |\n", text);
-        }
         Assert.NotEmpty(file);
     }
 
@@ -1759,11 +1056,10 @@ public class BenchmarkReportPackRendererTests
     private const string NoSignificanceOfThree =
         "No pair of models is tested for significance: with 3 models, testing every pair would flag chance differences.";
 
-    [Theory]
-    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    public void TheSignificanceStatement_IsInTheDocumentsOwnWords_AndPrintedOnce(BenchmarkReportAudience audience)
+    [Fact]
+    public void TheSignificanceStatement_IsInTheDocumentsOwnWords_AndPrintedOnce()
     {
+        const BenchmarkReportAudience audience = BenchmarkReportAudience.ExecutiveSummary;
         foreach (var disclosure in BenchmarkReportPackRenderer.AllowedDisclosures(audience))
         {
             foreach (var naming in new[] { BenchmarkReportPeerNaming.Named, BenchmarkReportPeerNaming.Anonymized })
@@ -1781,16 +1077,8 @@ public class BenchmarkReportPackRendererTests
 
         string named = Render(audience, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
         int statement = named.IndexOf(NoSignificanceOfThree, StringComparison.Ordinal);
-        if (audience == BenchmarkReportAudience.ExecutiveSummary)
-        {
-            Assert.True(named.IndexOf("## How reliable this result is", StringComparison.Ordinal) < statement
-                        && statement < named.IndexOf("## About this benchmark", StringComparison.Ordinal));
-        }
-        else
-        {
-            Assert.True(named.IndexOf("### Quality", StringComparison.Ordinal) < statement
-                        && statement < named.IndexOf("### Speed", StringComparison.Ordinal));
-        }
+        Assert.True(named.IndexOf("## How reliable this result is", StringComparison.Ordinal) < statement
+                    && statement < named.IndexOf("## About this benchmark", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1809,111 +1097,6 @@ public class BenchmarkReportPackRendererTests
         sheet.NoSignificanceSummary = string.Empty;
         document.FactsJson = BenchmarkReportJson.Serialize(sheet);
         Assert.DoesNotContain("tested for significance", BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions()));
-    }
-
-    [Fact]
-    public void ThePerQuestionDifference_IsTheDifferenceOfThePrintedNumbers()
-    {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        var sheet = Sheet();
-        var q1 = sheet.Questions.Single(q => q.Number == 1);
-        q1.Score = 90.5;
-        q1.PeerMean = 85.4;
-        q1.Difference = q1.Score - q1.PeerMean;
-        var q2 = sheet.Questions.Single(q => q.Number == 2);
-        q2.Score = 80.4;
-        q2.PeerMean = 81.6;
-        q2.Difference = q2.Score - q2.PeerMean;
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-
-        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Named });
-
-        // 91 - 85 and 80 - 82, not the rounded +5.1 and -1.2.
-        Assert.Contains("| Q1 | Throwing gems at unicorns | Simple | — | 91 | 85 | +6 | no |", text);
-        Assert.Contains("| Q2 | Prayer timeout | Intermediate | — | 80 | 82 | -2 | no |", text);
-    }
-
-    [Theory]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary)]
-    [InlineData(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full)]
-    public void TheNotedQuestionsHeading_StatesItsThreshold(BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure)
-    {
-        string text = Render(audience, disclosure, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("### Questions more than 15 points below the peer mean, or with a critical error\n", text);
-        Assert.DoesNotContain("### Questions below the peer mean", text);
-    }
-
-    [Fact]
-    public void AnEvidenceLine_ListsAtMostSixQuestions_LowestFirstForAWeakness_AndHighestFirstForAStrength()
-    {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        var sheet = Sheet();
-        // Q5 to Q10 join Q1 90, Q2 72, Q3 25 and Q4 87.
-        double[] scores = { 60, 95, 40, 70, 55, 80 };
-        for (int i = 0; i < scores.Length; i++)
-        {
-            sheet.Questions.Add(new BenchmarkReportQuestion
-            {
-                Number = 5 + i,
-                QuestionKey = (105 + i).ToString(CultureInfo.InvariantCulture),
-                OrderIndex = 5 + i,
-                Band = "Simple",
-                Score = scores[i],
-                PeerMean = 70,
-                Difference = scores[i] - 70,
-                PeerCount = 2,
-                RunCount = 1
-            });
-        }
-        sheet.Rows.Add(new BenchmarkReportFindingRow
-        {
-            Id = "R4", Kind = "weakness", Category = "readability", Questions = new List<int>(),
-            Status = "Convergent", SupportLabel = BenchmarkReportFacts.SupportBothGraders
-        });
-        var all = Enumerable.Range(1, 10).ToList();
-        var writer = Writer();
-        writer.Strengths = new List<BenchmarkReportWriterItem>
-        {
-            new() { Text = "Precise throughout.", Questions = all, Evidence = new List<string> { "R2" } }
-        };
-        writer.Weaknesses = new List<BenchmarkReportWriterItem>
-        {
-            new() { Text = "Wrong throughout.", Questions = all, Evidence = new List<string> { "R1" } },
-            new() { Text = "Hard to scan.", Evidence = new List<string> { "R4" } }
-        };
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
-
-        string text = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = BenchmarkReportPeerNaming.Named });
-
-        Assert.Contains("- Precise throughout. *(One grader — different provider)*\n"
-            + "  - *Evidence:* One grader — different provider — accuracy · Q6 (95 / 100), Q1 (90 / 100), Q4 (87 / 100), Q10 (80 / 100), "
-            + "Q2 (72 / 100), Q8 (70 / 100) and 4 more\n", text);
-        Assert.Contains("- Wrong throughout. *(Both graders)*\n"
-            + "  - *Evidence:* Both graders — critical error · Q3 (25 / 100), Q7 (40 / 100), Q9 (55 / 100), Q5 (60 / 100), "
-            + "Q8 (70 / 100), Q2 (72 / 100) and 4 more · the claim verifier refuted an answer sentence on Q3\n", text);
-        // A row with no questions gives no question list.
-        Assert.Contains("- Hard to scan. *(Both graders)*\n  - *Evidence:* Both graders — readability\n", text);
-    }
-
-    [Fact]
-    public void WithoutTheFactSheet_TheInternalBriefSaysWhereItIs()
-    {
-        var options = new BenchmarkReportRenderOptions
-        {
-            Disclosure = BenchmarkReportDisclosure.Full,
-            PeerNaming = BenchmarkReportPeerNaming.Named,
-            IncludeFactSheet = false
-        };
-
-        string text = BenchmarkReportPackRenderer.Render(Document(BenchmarkReportAudience.InternalBrief), options);
-
-        Assert.Contains("## 6. Fact sheet\n\nThe fact sheet is in the Markdown copy of this document.\n\n", text);
-        Assert.DoesNotContain("```json", text);
-        Assert.True(new BenchmarkReportRenderOptions().IncludeFactSheet);
-        Assert.Contains("## 6. Fact sheet\n\n```json\n", Render(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named));
     }
 
     [Fact]
@@ -1937,50 +1120,9 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void TheInternalBriefsModelResult_StatesTheIntervalSpan_AfterItsKeyFigures()
-    {
-        string text = Render(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("- **Critical errors:** 1 of 4 answers.\n\n"
-            + "The 95 % interval is 77–83, a span of 6 points, and rests on 4 of 4 questions with a scored answer.\n\n### Strengths\n", text);
-        Assert.Single(AllIndexesOf(text, "The 95 % interval is"));
-    }
-
-    [Theory]
-    [InlineData(BenchmarkReportPeerNaming.Named, "Grok 5")]
-    [InlineData(BenchmarkReportPeerNaming.Anonymized, "Model A")]
-    public void TheQualityBlock_SaysWhereAPairedIntervalExcludesZero(BenchmarkReportPeerNaming naming, string name)
-    {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        var sheet = Sheet();
-        var excludes = new BenchmarkReportFact { Key = "peer.A.pairedExcludesZero", Display = "the paired interval excludes zero", Value = JsonValue.Create(true) };
-        sheet.Facts.Add(excludes);
-        sheet.Facts.Add(new BenchmarkReportFact
-        {
-            Key = "peer.B.pairedExcludesZero", Display = BenchmarkReportFacts.NotAvailable, Available = false, UnavailableReason = PairedTooFewReason
-        });
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-        var options = new BenchmarkReportRenderOptions { PeerNaming = naming };
-
-        string text = BenchmarkReportPackRenderer.Render(document, options);
-
-        string line = "On the same questions the paired difference with " + name + " excludes zero (not adjusted for several comparisons).";
-        Assert.Single(AllIndexesOf(text, "\n\n" + line + "\n\n"));
-        Assert.Single(AllIndexesOf(text, "excludes zero (not adjusted"));
-        int overlap = text.IndexOf("*GPT-5.6 Luna: its 95 % interval overlaps", StringComparison.Ordinal);
-        int at = text.IndexOf(line, StringComparison.Ordinal);
-        Assert.True(overlap < at && at < text.IndexOf("### Speed", StringComparison.Ordinal));
-
-        excludes.Display = "the paired interval includes zero";
-        excludes.Value = JsonValue.Create(false);
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-        Assert.DoesNotContain("excludes zero", BenchmarkReportPackRenderer.Render(document, options));
-    }
-
-    [Fact]
     public void AnAnonymizedCopy_WithholdsAGradersIdentity_WhereAPeerSharesItsProvider()
     {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
         var sheet = Sheet();
         sheet.Graders[1].Provider = "xAI";
         document.FactsJson = BenchmarkReportJson.Serialize(sheet);
@@ -1990,19 +1132,12 @@ public class BenchmarkReportPackRendererTests
         string named = BenchmarkReportPackRenderer.Render(document,
             new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
 
-        // Setup and method, the Reproducibility appendix and Full question details.
-        Assert.Contains("  - Panel member B: a model from a withheld provider, different provider from the model under test\n", anonymized);
-        Assert.Contains("  - Panel member A: Gemini 3.8 Flash (Google, gemini-3.8-flash), different provider from the model under test\n", anonymized);
-        Assert.Contains("; Panel member B: a model from a withheld provider; Reference reader: DeepSeek deepseek-v4;", anonymized);
-        Assert.Contains("- **Panel member B (a model from a withheld provider):** score 88.", anonymized);
+        // The evaluation terms name the graders' providers.
         Assert.Contains("graded by models from Google, a withheld provider and DeepSeek,", anonymized);
         Assert.DoesNotContain("xAI", anonymized);
         Assert.DoesNotContain("Claude Haiku 5", anonymized);
         Assert.DoesNotContain("claude-haiku-5", anonymized);
 
-        Assert.Contains("  - Panel member B: Claude Haiku 5 (xAI, claude-haiku-5), different provider from the model under test\n", named);
-        Assert.Contains("; Panel member B: xAI claude-haiku-5; ", named);
-        Assert.Contains("- **Panel member B (Claude Haiku 5):** score 88.", named);
         Assert.Contains("graded by models from Google, xAI and DeepSeek,", named);
         Assert.DoesNotContain("withheld provider", named);
     }
@@ -2080,34 +1215,13 @@ public class BenchmarkReportPackRendererTests
         int At(string key) => Pos(MarkerOf(key));
         var keys = BenchmarkReportChartPlacement.FigureKeys;
 
-        // Provider availability (keys[7]) follows the Key figures, or their Provider availability subsection.
-        switch (audience)
-        {
-            case BenchmarkReportAudience.ExecutiveSummary:
-                AssertInOrder(
-                    Pos("## Key figures"), Pos("- **Critical errors:**"), At(keys[7]),
-                    Pos("## How it compares"), Pos("| Readability | 90 | 89 | +1 |\n"),
-                    At(keys[0]), At(keys[1]), At(keys[2]), At(keys[3]), At(keys[4]), At(keys[5]), At(keys[6]),
-                    Pos("GPT-5.6 Luna places joint 1st of 3 (intervals overlap)"), Pos("## What it did well"));
-                break;
-            case BenchmarkReportAudience.TechnicalReport:
-                AssertInOrder(
-                    Pos("## Key figures"), Pos("- **Critical errors:**"), At(keys[7]), Pos("## Setup and method"),
-                    Pos("### Quality"), Pos("*GPT-5.6 Luna: its 95 % interval overlaps"), Pos("No pair of models"), At("p1a-quality"),
-                    Pos("### Speed"), Pos("Not ranked on speed:"), At("p1b-speed"),
-                    Pos("### Cost"), At("p1c-cost"), Pos("### Dimensions"),
-                    Pos("### Judge-dependent pairs"), At("p2-profile"),
-                    Pos("## Speed and cost"), Pos("| Output tokens per question |"),
-                    At("s1-quality-speed"), At("s2-quality-cost"), At("s3-speed-cost"), Pos("## Why it scored this way"));
-                break;
-            default:
-                AssertInOrder(
-                    Pos("## 3. The model's result"), Pos("### Key figures"), Pos("The 95 % interval is 77–83"),
-                    At(keys[7]),
-                    At(keys[0]), At(keys[1]), At(keys[2]), At(keys[3]), At(keys[4]), At(keys[5]), At(keys[6]),
-                    Pos("### Strengths"), Pos("## 4. Leads"));
-                break;
-        }
+        // Provider availability (keys[7]) follows the Key figures; the other seven stand in How it compares.
+        Assert.Equal(BenchmarkReportAudience.ExecutiveSummary, audience);
+        AssertInOrder(
+            Pos("## Key figures"), Pos("- **Critical errors:**"), At(keys[7]),
+            Pos("## How it compares"), Pos("| Readability | 90 | 89 | +1 |\n"),
+            At(keys[0]), At(keys[1]), At(keys[2]), At(keys[3]), At(keys[4]), At(keys[5]), At(keys[6]),
+            Pos("GPT-5.6 Luna places joint 1st of 3 (intervals overlap)"), Pos("## What it did well"));
         Assert.NotEmpty(file);
     }
 
@@ -2116,29 +1230,24 @@ public class BenchmarkReportPackRendererTests
     {
         // The golden files pin the default (chart-less) render of every combination.
         Assert.Empty(new BenchmarkReportRenderOptions().Charts);
-        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief })
-        {
-            Assert.DoesNotContain("[[figure:", RenderWithCharts(Document(audience), BenchmarkReportDisclosure.Full,
-                BenchmarkReportPeerNaming.Named, Array.Empty<BenchmarkReportRenderChart>()));
-        }
+        Assert.DoesNotContain("[[figure:", RenderWithCharts(Document(BenchmarkReportAudience.ExecutiveSummary), BenchmarkReportDisclosure.Full,
+            BenchmarkReportPeerNaming.Named, Array.Empty<BenchmarkReportRenderChart>()));
     }
 
     [Fact]
     public void OnlyTheChartsGiven_GetMarkers_AndAnUnknownKeyIsIgnored()
     {
-        string text = RenderWithCharts(Document(BenchmarkReportAudience.TechnicalReport), BenchmarkReportDisclosure.Summary,
+        string text = RenderWithCharts(Document(BenchmarkReportAudience.ExecutiveSummary), BenchmarkReportDisclosure.Summary,
             BenchmarkReportPeerNaming.Named, Charts("p1b-speed", "no-such-figure", "p1b-speed"));
 
         Assert.Single(AllIndexesOf(text, "[[figure:"));
-        Assert.Contains("\n\n" + MarkerOf("p1b-speed") + "\n\n### Cost\n", text);
+        Assert.Contains("| Readability | 90 | 89 | +1 |\n\n" + MarkerOf("p1b-speed") + "\n\nGPT-5.6 Luna places", text);
     }
 
-    [Theory]
-    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    public void AStandaloneDocument_GetsNoFigureMarker_EvenWithCharts(BenchmarkReportAudience audience)
+    [Fact]
+    public void AStandaloneDocument_GetsNoFigureMarker_EvenWithCharts()
     {
-        string text = RenderWithCharts(StandaloneDocument(audience), BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named,
+        string text = RenderWithCharts(StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary), BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named,
             Charts(BenchmarkReportChartPlacement.FigureKeys.ToArray()));
 
         Assert.DoesNotContain("[[figure:", text);
@@ -2156,39 +1265,27 @@ public class BenchmarkReportPackRendererTests
         Assert.False(BenchmarkReportChartPlacement.IsKnown("P1A-QUALITY"));
         Assert.False(BenchmarkReportChartPlacement.IsKnown("p9-other"));
 
+        var executive = BenchmarkReportAudience.ExecutiveSummary;
         var sevenFigures = BenchmarkReportChartPlacement.FigureKeys.Take(7).ToList();
+        Assert.Equal(sevenFigures, BenchmarkReportChartPlacement.KeysAt(executive, BenchmarkReportChartAnchor.HowItCompares));
+
+        // The model-scope Executive Summary draws provider availability after its Key figures.
+        Assert.Equal(new[] { "a1-availability" }, BenchmarkReportChartPlacement.KeysAt(executive, BenchmarkReportChartAnchor.ProviderAvailability));
+        Assert.Equal(BenchmarkReportChartAnchor.ProviderAvailability, BenchmarkReportChartPlacement.AnchorOf(executive, "a1-availability"));
+
+        // The comparison-scope Executive Summary draws the seven at How they compare, and no availability figure.
         Assert.Equal(sevenFigures,
-            BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportChartAnchor.HowItCompares));
-        Assert.Equal(sevenFigures,
-            BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.InternalBrief, BenchmarkReportChartAnchor.ModelResult));
+            BenchmarkReportChartPlacement.KeysAt(executive, BenchmarkReportChartAnchor.HowTheyCompare, BenchmarkReportScope.Comparison));
+        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(executive, "a1-availability", BenchmarkReportScope.Comparison));
+        Assert.Empty(BenchmarkReportChartPlacement.KeysAt(executive, BenchmarkReportChartAnchor.HowTheyCompare));
+        Assert.Empty(BenchmarkReportChartPlacement.KeysAt(executive, BenchmarkReportChartAnchor.HowItCompares, BenchmarkReportScope.Comparison));
 
-        // Every model-scope audience draws provider availability at its own anchor.
-        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief })
-        {
-            Assert.Equal(new[] { "a1-availability" }, BenchmarkReportChartPlacement.KeysAt(audience, BenchmarkReportChartAnchor.ProviderAvailability));
-            Assert.Equal(BenchmarkReportChartAnchor.ProviderAvailability, BenchmarkReportChartPlacement.AnchorOf(audience, "a1-availability"));
-        }
+        // An audience without a model-scope placement draws nothing.
+        Assert.Empty(BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportChartAnchor.HowItCompares));
+        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ProviderIssueReport, "p1a-quality"));
 
-        // A comparison-scope Executive Summary does not draw it; the other two audiences do.
-        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, "a1-availability", BenchmarkReportScope.Comparison));
-        Assert.Equal(BenchmarkReportChartAnchor.ProviderAvailability,
-            BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, "a1-availability", BenchmarkReportScope.Comparison));
-        Assert.Equal(BenchmarkReportChartAnchor.ModelsCompared,
-            BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.InternalBrief, "a1-availability", BenchmarkReportScope.Comparison));
-
-        var researcher = BenchmarkReportAudience.TechnicalReport;
-        Assert.Equal(new[] { "p1a-quality" }, BenchmarkReportChartPlacement.KeysAt(researcher, BenchmarkReportChartAnchor.QualityResults));
-        Assert.Equal(new[] { "p1b-speed" }, BenchmarkReportChartPlacement.KeysAt(researcher, BenchmarkReportChartAnchor.SpeedResults));
-        Assert.Equal(new[] { "p1c-cost" }, BenchmarkReportChartPlacement.KeysAt(researcher, BenchmarkReportChartAnchor.CostResults));
-        Assert.Equal(new[] { "p2-profile" }, BenchmarkReportChartPlacement.KeysAt(researcher, BenchmarkReportChartAnchor.ResultsAgainstPeersEnd));
-        Assert.Equal(new[] { "s1-quality-speed", "s2-quality-cost", "s3-speed-cost" },
-            BenchmarkReportChartPlacement.KeysAt(researcher, BenchmarkReportChartAnchor.SpeedAndCost));
-        Assert.Empty(BenchmarkReportChartPlacement.KeysAt(researcher, BenchmarkReportChartAnchor.HowItCompares));
-        Assert.Empty(BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportChartAnchor.QualityResults));
-
-        Assert.Equal(BenchmarkReportChartAnchor.SpeedAndCost, BenchmarkReportChartPlacement.AnchorOf(researcher, "s2-quality-cost"));
-        Assert.Equal(BenchmarkReportChartAnchor.ModelResult, BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.InternalBrief, "p1a-quality"));
-        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(researcher, "p9-other"));
+        Assert.Equal(BenchmarkReportChartAnchor.HowItCompares, BenchmarkReportChartPlacement.AnchorOf(executive, "s2-quality-cost"));
+        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(executive, "p9-other"));
 
         Assert.Equal("[[figure:p2-profile]]", BenchmarkReportChartPlacement.Marker("p2-profile"));
         Assert.True(BenchmarkReportChartPlacement.IsKnown("p2-profile"));
@@ -2227,146 +1324,32 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void TheDifficultyBands_AreTheAssessedOnes_WithTheAuthoredCountBeside()
-    {
-        string text = BenchmarkReportPackRenderer.Render(Version9Document(BenchmarkReportAudience.TechnicalReport),
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named });
-
-        Assert.Contains("### Difficulty bands (assessed)\n\n"
-            + "| Difficulty band | Questions | Authored questions | GPT-5.6 Luna | Peer mean | Difference |\n"
-            + "|---|---|---|---|---|---|\n"
-            + "| Simple | 1 | 2 | 90 | 85 | +5 |\n"
-            + "| Intermediate | 2 | 1 | 49 | 69 | -21 |\n"
-            + "| Advanced | 1 | 1 | 87 | 91 | -4 |\n\n", text);
-        Assert.DoesNotContain("### Difficulty bands\n", text);
-
-        // The per-question table names both bands.
-        Assert.Contains("| Q | Topic | Assessed band | Authored | Score | Peer mean | Difference |", text);
-        Assert.Contains("| Q2 | Prayer timeout | Intermediate | Simple | 72 | 70 | +2 | no | 0 | 3 | 11.0 s |\n", text);
-
-        var standalone = StandaloneDocument(BenchmarkReportAudience.TechnicalReport);
-        standalone.FactsJson = BenchmarkReportJson.Serialize(WithVersion9Facts(StandaloneSheet()));
-        string alone = BenchmarkReportPackRenderer.Render(standalone, new BenchmarkReportRenderOptions());
-        Assert.Contains("### Difficulty bands (assessed)\n\n"
-            + "| Difficulty band | Questions | Authored questions | GPT-5.6 Luna |\n"
-            + "|---|---|---|---|\n"
-            + "| Simple | 1 | 2 | 90 |\n", alone);
-        Assert.Contains("| Q | Topic | Assessed band | Authored | Score | Critical error |", alone);
-    }
-
-    [Fact]
-    public void TheDifficultyBands_WithNoBandScore_LeaveTheScoreColumnsOut()
-    {
-        static BenchmarkReportFactSheet WithoutBandScores(BenchmarkReportFactSheet sheet)
-        {
-            foreach (var fact in sheet.Facts.Where(f => f.Key.StartsWith("band.", StringComparison.Ordinal) && !f.Key.EndsWith(".questions", StringComparison.Ordinal)))
-            {
-                fact.Display = BenchmarkReportFacts.NotAvailable;
-                fact.Value = null;
-                fact.Available = false;
-                fact.UnavailableReason = BenchmarkBatteryReportFacts.BandReason;
-            }
-            return sheet;
-        }
-
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
-        document.FactsJson = BenchmarkReportJson.Serialize(WithoutBandScores(WithVersion9Facts(Sheet())));
-        string text = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named });
-        Assert.Contains("### Difficulty bands (assessed)\n\n"
-            + "| Difficulty band | Questions | Authored questions |\n"
-            + "|---|---|---|\n"
-            + "| Simple | 1 | 2 |\n"
-            + "| Intermediate | 2 | 1 |\n"
-            + "| Advanced | 1 | 1 |\n\n", text);
-
-        var standalone = StandaloneDocument(BenchmarkReportAudience.TechnicalReport);
-        standalone.FactsJson = BenchmarkReportJson.Serialize(WithoutBandScores(WithVersion9Facts(StandaloneSheet())));
-        string alone = BenchmarkReportPackRenderer.Render(standalone, new BenchmarkReportRenderOptions());
-        Assert.Contains("### Difficulty bands (assessed)\n\n"
-            + "| Difficulty band | Questions | Authored questions |\n"
-            + "|---|---|---|\n"
-            + "| Simple | 1 | 2 |\n", alone);
-    }
-
-    [Fact]
-    public void KeyFigures_AndSpeedAndCost_StateTheMeanAnswerTime()
+    public void KeyFigures_StateTheMeanAnswerTime()
     {
         string executive = BenchmarkReportPackRenderer.Render(Version9Document(BenchmarkReportAudience.ExecutiveSummary),
             new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Named });
         Assert.Contains("- **Speed:** median answer time 12.3 s, mean 14.0 s, 2nd of 2.\n", executive);
-
-        string researcher = BenchmarkReportPackRenderer.Render(Version9Document(BenchmarkReportAudience.TechnicalReport),
-            new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Named });
-        Assert.Contains("- **Speed:** median answer time 12.3 s, mean 14.0 s, 2nd of 2.\n", researcher);
-        Assert.Contains("| Median answer time | 12.3 s |\n| Mean answer time | 14.0 s |\n| 90th-percentile answer time | 15.0 s |\n", researcher);
     }
 
-    [Theory]
-    [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized)]
-    [InlineData(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named)]
-    public void ASheetWithoutTheFormatVersion9Facts_StillRenders_LeavingThemOut(
-        BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming)
+    [Fact]
+    public void ASheetWithoutTheFormatVersion9Facts_StillRenders_LeavingThemOut()
     {
         // The fixture's sheet carries none of them, as a document stored under format version 8 does.
-        var document = Document(audience);
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
         document.ReportFormatVersion = 8;
 
-        string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming });
+        string text = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named });
 
         Assert.Contains("- **Speed:** median answer time 12.3 s, 2nd of 2.\n", text);
         Assert.DoesNotContain("Mean answer time", text);
         Assert.DoesNotContain("{{", text);
-        if (audience != BenchmarkReportAudience.ExecutiveSummary)
-        {
-            Assert.Contains("| Q3 | Breaking a thrown gem | Intermediate | — | 25 |", text);
-        }
-        if (audience == BenchmarkReportAudience.TechnicalReport)
-        {
-            Assert.Contains("| Simple | 1 | — | 90 | 85 | +5 |\n", text);
-        }
-    }
-
-    [Theory]
-    [InlineData(BenchmarkReportDisclosure.Detailed, "Questions and answers")]
-    [InlineData(BenchmarkReportDisclosure.Full, "Question details")]
-    public void TheResearcherReport_PutsItsQuestionDetails_AfterTheReproducibilityAppendix(BenchmarkReportDisclosure disclosure, string details)
-    {
-        string text = Render(BenchmarkReportAudience.TechnicalReport, disclosure, BenchmarkReportPeerNaming.Named);
-
-        int Pos(string part) => text.IndexOf(part, StringComparison.Ordinal);
-        AssertInOrder(
-            Pos("## Per-question results\n"), Pos("### Questions more than 15 points below the peer mean"),
-            Pos("## Tool-use behavior\n"), Pos("## Grader reliability\n"), Pos("## Threats to validity\n"),
-            Pos("## Reproducibility appendix\n"), Pos("\n## " + details + "\n"), Pos("\n### Q1: Throwing gems at unicorns\n"),
-            Pos("\n### Q4: Wand of wishing charges\n"), Pos("## Removed content\n"), Pos("## Evaluation terms\n"));
-        Assert.DoesNotContain("#### Q1", text);
-
-        // The table of contents lists the sections in the same order.
-        var contents = Overseer.Services.Benchmarking.Pdf.BenchmarkPdfMarkdownComposer.Prepare(text, string.Empty)
-            .Contents.Select(c => c.Text).ToList();
-        int appendix = contents.IndexOf("Reproducibility appendix");
-        Assert.True(appendix > contents.IndexOf("Per-question results"));
-        Assert.Equal(new[] { "Reproducibility appendix", details, "Removed content", "Evaluation terms" }, contents.Skip(appendix));
-    }
-
-    [Fact]
-    public void AtSummary_TheResearcherReportHasNoQuestionDetails_AndTheInternalBriefKeepsThemUnderPerQuestionResults()
-    {
-        string summary = Render(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        Assert.DoesNotContain("Question details", summary);
-        Assert.DoesNotContain("Questions and answers", summary);
-
-        string brief = Render(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-        int Pos(string part) => brief.IndexOf(part, StringComparison.Ordinal);
-        AssertInOrder(Pos("## 5. Per-question results\n"), Pos("\n### Question details\n"), Pos("\n#### Q1: Throwing gems at unicorns\n"), Pos("## 6. Fact sheet\n"));
     }
 
     [Fact]
     public void AnItemCitingAConvergentRow_IsBothGraders_OnlyOnTheRowsSharedQuestions()
     {
-        var document = Document(BenchmarkReportAudience.TechnicalReport);
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
         var sheet = Sheet();
         var row = sheet.Rows.Single(r => r.Id == "R1");
         row.Questions = new List<int> { 3, 4 };
@@ -2380,25 +1363,18 @@ public class BenchmarkReportPackRendererTests
         document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
 
         string text = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = BenchmarkReportPeerNaming.Named });
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named });
 
-        // Q3 is shared: both graders.
-        Assert.Contains("- Asserted a false outcome on Q3, where Grok 5 scored well. *(Both graders)*\n"
-            + "  - *Evidence:* Both graders — critical error · Q3 (25 / 100)", text);
+        // Q3 is shared: both graders, which the Executive Summary leaves unlabeled.
+        Assert.Contains("- Asserted a false outcome on Q3, where Grok 5 scored well.\n", text);
         // Only member A named Q4: one grader, of another provider than the model.
-        Assert.Contains("- Overstated the wand's charges. *(One grader — different provider)*\n"
-            + "  - *Evidence:* One grader — different provider — critical error · Q4 (87 / 100)\n", text);
+        Assert.Contains("- Overstated the wand's charges. *(raised by one grader)*\n", text);
         // Citing no question, the item is about the row's questions, which include the shared one.
-        Assert.Contains("- Made destruction claims the graders flagged. *(Both graders)*\n", text);
-        // The findings table keeps the row's own label.
-        Assert.Contains("| R1 | weakness · critical error: States that a thrown gem always shatters. | Q3, Q4 | Both graders |\n", text);
+        Assert.Contains("- Made destruction claims the graders flagged.\n", text);
 
-        var executive = Document(BenchmarkReportAudience.ExecutiveSummary);
-        executive.FactsJson = document.FactsJson;
-        executive.WriterOutputJson = document.WriterOutputJson;
-        string plain = BenchmarkReportPackRenderer.Render(executive, new BenchmarkReportRenderOptions());
-        Assert.Contains("- Overstated the wand's charges. *(raised by one grader)*\n", plain);
-        Assert.Contains("- Asserted a false outcome on Q3, where Model A scored well.\n", plain);
+        string anonymized = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
+        Assert.Contains("- Overstated the wand's charges. *(raised by one grader)*\n", anonymized);
+        Assert.Contains("- Asserted a false outcome on Q3, where Model A scored well.\n", anonymized);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -2423,8 +1399,6 @@ public class BenchmarkReportPackRendererTests
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, "comparison_subset_exec_full_named.md")]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized, "comparison_subset_exec_summary_anonymized.md")]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, "comparison_subset_technical_full_named.md")]
-    [InlineData(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized, "comparison_subset_internal_full_anonymized.md")]
     public void TheSubsetComparison_MatchesItsGoldenFile(
         BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming, string file)
     {
@@ -2436,14 +1410,14 @@ public class BenchmarkReportPackRendererTests
     {
         Assert.StartsWith("# Comparison #12 — Spring model sweep: Executive Summary\n",
             RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named));
-        Assert.StartsWith("# Comparison #12: Report for AI Researchers and Developers\n",
-            RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized));
+        Assert.StartsWith("# Comparison #12: Executive Summary\n",
+            RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized));
         Assert.StartsWith("# Comparison #12 — Orion Max vs Zeta Prime: Executive Summary\n",
             RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, subset: true));
-        Assert.StartsWith("# Comparison #12 — 2 of 5 models: Internal Improvement Brief\n",
-            RenderComparison(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized, subset: true));
+        Assert.StartsWith("# Comparison #12 — 2 of 5 models: Executive Summary\n",
+            RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized, subset: true));
 
-        string anonymized = RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
+        string anonymized = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
         Assert.DoesNotContain(ComparisonName, anonymized);
     }
 
@@ -2462,25 +1436,18 @@ public class BenchmarkReportPackRendererTests
             }
         }
 
-        string technical = RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, subset: true);
-        Assert.Contains("- **Coverage:** 2 of 5 models of Comparison #12; the other 3 are not part of this document.\n", technical);
+        string executive = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, subset: true);
+        Assert.Contains("- **Coverage:** 2 of 5 models of Comparison #12; the other 3 are not part of this document.\n", executive);
     }
 
     [Fact]
-    public void ANamedComparisonCopy_NamesTheModels_AndKeepsLettersInTheTablesOnly()
+    public void ANamedComparisonCopy_NamesTheModels_AndAnAnonymizedCopyNamesNone()
     {
-        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport })
-        {
-            string named = RenderComparison(audience, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-            Assert.DoesNotContain("Model A", named, StringComparison.Ordinal);
-            Assert.DoesNotContain("Models A", named, StringComparison.Ordinal);
-            Assert.Contains("Orion Max", named, StringComparison.Ordinal);
-        }
-
-        string technical = RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-        Assert.Contains("| Letter | Model | Provider | Kind |", technical);
-        Assert.Contains("| A | Orion Max (reference) | Northwind | run |", technical);
-        Assert.Contains("joint 1", technical);
+        string named = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
+        Assert.DoesNotContain("Model A", named, StringComparison.Ordinal);
+        Assert.DoesNotContain("Models A", named, StringComparison.Ordinal);
+        Assert.Contains("Orion Max", named, StringComparison.Ordinal);
+        Assert.Contains("| Orion Max (reference) | Northwind | 85 (82–88) | joint 1 |", named);
 
         foreach (var combination in ComparisonCombinations().Where(c => (BenchmarkReportPeerNaming)c[2] == BenchmarkReportPeerNaming.Anonymized))
         {
@@ -2488,21 +1455,6 @@ public class BenchmarkReportPackRendererTests
             Assert.All(ComparisonModels, m => Assert.DoesNotContain(m.Label, anonymized, StringComparison.Ordinal));
             Assert.All(ComparisonModels, m => Assert.DoesNotContain(m.Provider, anonymized, StringComparison.Ordinal));
         }
-    }
-
-    [Fact]
-    public void AComparisonDocument_PrintsItsPairedTests_NamingTheFamilySize()
-    {
-        string technical = RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
-
-        Assert.Contains("### Paired tests\n", technical);
-        Assert.Contains("**Against Model A (the reference)**\n", technical);
-        Assert.Contains("**Every pair**\n", technical);
-        Assert.Contains("| Model A vs Model E | 6 | +", technical);
-        Assert.DoesNotContain("not tested for significance", technical);
-        Assert.Contains("### Per-question matrix\n", technical);
-        Assert.Contains("| Q3 | ", technical);
-        Assert.Contains(" CE |", technical);
     }
 
     [Fact]
@@ -2516,28 +1468,12 @@ public class BenchmarkReportPackRendererTests
             executive.IndexOf(MarkerOf(BenchmarkReportChartPlacement.QualityKey), StringComparison.Ordinal),
             executive.IndexOf(MarkerOf(BenchmarkReportChartPlacement.SpeedCostKey), StringComparison.Ordinal),
             executive.IndexOf("## Model by model\n", StringComparison.Ordinal));
+        Assert.DoesNotContain(MarkerOf(BenchmarkReportChartPlacement.AvailabilityKey), executive);
 
-        string technical = RenderWithCharts(ComparisonDocument(BenchmarkReportAudience.TechnicalReport), BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, all);
-        AssertInOrder(
-            technical.IndexOf("## Results\n", StringComparison.Ordinal),
-            technical.IndexOf(MarkerOf(BenchmarkReportChartPlacement.QualityKey), StringComparison.Ordinal),
-            technical.IndexOf("## Dimension profiles\n", StringComparison.Ordinal),
-            technical.IndexOf(MarkerOf(BenchmarkReportChartPlacement.ProfileKey), StringComparison.Ordinal),
-            technical.IndexOf("## Speed and cost frontier\n", StringComparison.Ordinal),
-            technical.IndexOf(MarkerOf(BenchmarkReportChartPlacement.SpeedKey), StringComparison.Ordinal),
-            technical.IndexOf(MarkerOf(BenchmarkReportChartPlacement.SpeedCostKey), StringComparison.Ordinal),
-            technical.IndexOf("## Per-model analysis\n", StringComparison.Ordinal));
-
-        string brief = RenderWithCharts(ComparisonDocument(BenchmarkReportAudience.InternalBrief), BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, all);
-        AssertInOrder(
-            brief.IndexOf("## Models compared\n", StringComparison.Ordinal),
-            brief.IndexOf(MarkerOf(BenchmarkReportChartPlacement.QualityKey), StringComparison.Ordinal),
-            brief.IndexOf("## 1. Shared gaps\n", StringComparison.Ordinal));
-
-        Assert.Equal(BenchmarkReportChartAnchor.SpeedAndCostFrontier,
-            BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, BenchmarkReportChartPlacement.CostKey, BenchmarkReportScope.Comparison));
-        Assert.Equal(BenchmarkReportChartAnchor.CostResults,
-            BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, BenchmarkReportChartPlacement.CostKey));
+        Assert.Equal(BenchmarkReportChartAnchor.HowTheyCompare,
+            BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportChartPlacement.CostKey, BenchmarkReportScope.Comparison));
+        Assert.Equal(BenchmarkReportChartAnchor.HowItCompares,
+            BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportChartPlacement.CostKey));
     }
 
     /// <summary>A comparison document over <paramref name="keys"/> of the fixture comparison.</summary>
@@ -2555,53 +1491,6 @@ public class BenchmarkReportPackRendererTests
 
     private static string RenderDocument(BenchmarkReportDocument document, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming)
         => BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming });
-
-    /// <summary>The technical report with a topic for every question of the matrix, or for every question but Q2.</summary>
-    private static BenchmarkReportDocument TechnicalWithTopics(bool everyQuestion)
-    {
-        var document = ComparisonDocument(BenchmarkReportAudience.TechnicalReport);
-        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
-        var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
-        writer.QuestionTopics = sheet.Questions
-            .Where(q => everyQuestion || q.Number != 2)
-            .Select(q => new BenchmarkReportQuestionTopic { Question = q.Number, Topic = "A question about topic " + q.Number.ToString(CultureInfo.InvariantCulture) })
-            .ToList();
-        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
-        return document;
-    }
-
-    [Fact]
-    public void TheMatrixLegend_NamesEachColumnInANamedCopy_AndPointsToTheModelsTableInAnAnonymizedOne()
-    {
-        var document = TechnicalWithTopics(everyQuestion: true);
-
-        string named = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        Assert.Contains("| Q | Topic | Band | A | B | C | D | E | Spread |\n", named);
-        Assert.Contains("*Columns: A = Orion Max, B = Vega Pro, C = Lyra Mini, D = Nova Lite, E = Zeta Prime. "
-            + "CE marks a critical error; Spread is the highest score minus the lowest. "
-            + "— under a model marks a question it was not asked or not scored on.*\n", named);
-        Assert.DoesNotContain("Each model's column is headed by its letter", named);
-
-        string anonymized = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
-        Assert.Contains("| Q | Topic | Band | A | B | C | D | E | Spread |\n", anonymized);
-        Assert.Contains("*Each model's column is headed by its letter in the models table. "
-            + "CE marks a critical error; Spread is the highest score minus the lowest. "
-            + "— under a model marks a question it was not asked or not scored on.*\n", anonymized);
-        Assert.DoesNotContain("Columns: A =", anonymized);
-    }
-
-    [Fact]
-    public void TheMatrixLegend_ExplainsAMissingTopic_OnlyWhenATopicIsMissing()
-    {
-        const string topicSentence = "— under Topic marks a question not given in detail.";
-
-        string every = RenderDocument(TechnicalWithTopics(everyQuestion: true), BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        Assert.DoesNotContain(topicSentence, every);
-
-        string missing = RenderDocument(TechnicalWithTopics(everyQuestion: false), BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        Assert.Contains("| Q2 | — | ", missing);
-        Assert.Contains("— under a model marks a question it was not asked or not scored on. " + topicSentence + "*\n", missing);
-    }
 
     [Fact]
     public void ATwoModelComparison_SaysWhetherTheTwoIntervalsOverlap_AndWhetherTheComparisonEstablishesTheOrder()
@@ -2639,47 +1528,12 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void ABatteryComparison_CountsTheQuestionsTheWriterWasGivenInFull_PerSuite()
-    {
-        var document = ComparisonDocument(BenchmarkReportAudience.TechnicalReport);
-        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
-        foreach (var q in sheet.Questions)
-        {
-            q.Suite = q.Number <= 3 ? 1 : 2;
-            q.Reference = "S" + q.Suite.Value.ToString(CultureInfo.InvariantCulture) + "-Q" + q.Number.ToString(CultureInfo.InvariantCulture);
-        }
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-
-        var content = BenchmarkReportJson.Deserialize<BenchmarkReportContentSnapshot>(document.ContentJson);
-        content.Questions = new[] { 1, 3, 5, 3 }
-            .Select(n => new BenchmarkReportContentQuestion { Number = n, QuestionText = "Question " + n.ToString(CultureInfo.InvariantCulture) + "?" })
-            .ToList();
-        document.ContentJson = BenchmarkReportJson.Serialize(content);
-
-        string text = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        Assert.Contains("- Detail: the writer was given the full text of 3 questions (2 of suite 1, 1 of suite 2), and the other questions as matrix rows.\n", text);
-
-        content.Questions = new List<BenchmarkReportContentQuestion> { new() { Number = 4, QuestionText = "Question 4?" } };
-        document.ContentJson = BenchmarkReportJson.Serialize(content);
-        string one = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        Assert.Contains("- Detail: the writer was given the full text of 1 question (0 of suite 1, 1 of suite 2), and the other questions as matrix rows.\n", one);
-
-        content.Questions = new List<BenchmarkReportContentQuestion>();
-        document.ContentJson = BenchmarkReportJson.Serialize(content);
-        string none = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        Assert.Contains("- Detail: the writer was given the full text of at most a few questions per suite, and the other questions as matrix rows.\n", none);
-
-        string single = RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        Assert.DoesNotContain("- Detail: ", single);
-    }
-
-    [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion14()
+    public void AComparisonDocument_IsCurrentAtFormatVersion15()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(14, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 14 · ", text);
+        Assert.Equal(15, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 15 · ", text);
         Assert.Contains(" · models named*", text);
     }
 
@@ -2701,11 +1555,11 @@ public class BenchmarkReportPackRendererTests
     public void TheBaselineComparison_SetsEveryModelAgainstTheBaselineModel_NamedOrAnonymized()
     {
         var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
-        string named = BenchmarkReportPackRenderer.Render(ComparisonDocument(BenchmarkReportAudience.TechnicalReport, baseline: true), options);
+        string named = BenchmarkReportPackRenderer.Render(ComparisonDocument(BenchmarkReportAudience.ExecutiveSummary, baseline: true), options);
 
-        Assert.Contains("### Compared with the baseline model\n\n**Reference:** Lyra Mini, the baseline model.\n", named);
+        Assert.Contains("## Compared with the baseline model\n\n**Reference:** Lyra Mini, the baseline model.\n", named);
         Assert.Contains("| Lyra Mini (baseline model, reference) | Eastgate |", named);
-        Assert.Contains("**Against Lyra Mini (the reference, the baseline model)**\n", named);
+        Assert.Contains("Lyra Mini, the baseline model, was compared with each other model", named);
         Assert.DoesNotContain("Model C", named, StringComparison.Ordinal);
         Assert.DoesNotContain("Model A", named, StringComparison.Ordinal);
 
@@ -2716,35 +1570,6 @@ public class BenchmarkReportPackRendererTests
         Assert.Contains("Model C, the baseline model, was compared with each other model", anonymized);
         Assert.All(ComparisonModels, m => Assert.DoesNotContain(m.Label, anonymized, StringComparison.Ordinal));
         Assert.All(ComparisonModels, m => Assert.DoesNotContain(m.Provider, anonymized, StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void AComparisonResearcherReport_PlacesTheReference_TheNotableFindings_AndWhyTheModelsDiffer()
-    {
-        string text = RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
-
-        AssertInOrder(
-            text.IndexOf("## Results\n", StringComparison.Ordinal),
-            text.IndexOf("### Paired tests\n", StringComparison.Ordinal),
-            text.IndexOf("### Compared with the reference model\n", StringComparison.Ordinal),
-            text.IndexOf("## Notable findings\n", StringComparison.Ordinal),
-            text.IndexOf("## Dimension profiles\n", StringComparison.Ordinal),
-            text.IndexOf("## Per-model analysis\n", StringComparison.Ordinal),
-            text.IndexOf("## Why the models differ\n", StringComparison.Ordinal),
-            text.IndexOf("### Failure profile\n", StringComparison.Ordinal),
-            text.IndexOf("### Grader findings by category\n", StringComparison.Ordinal),
-            text.IndexOf("## Cross-model question patterns\n", StringComparison.Ordinal));
-
-        Assert.Contains("**Reference:** Model A, the highest Intelligence Index.\n", text);
-        Assert.Contains("| Model | Questions | Paired difference (95 % interval) | Result | Better / similar / worse | May mislead per 20 | Time ratio | Cost ratio |\n", text);
-        Assert.Contains("| Model A (reference) | — | — | — | — | ", text);
-        Assert.Contains("| Model B | 6 | ", text);
-        Assert.Contains(" | 1 / 5 / 0 | ", text);
-        Assert.Contains("*" + BenchmarkNotableFindings.RulesNote + "*\n", text);
-        Assert.Contains("No run of these models recorded structured grader findings; they are recorded from harness 40.\n", text);
-        Assert.Contains("The table sets every other model against Model A", text);
-        Assert.Contains("Each finding follows from the tables above", text);
-        Assert.Contains("The failure profiles count what the graders recorded", text);
     }
 
     [Fact]
@@ -2768,38 +1593,18 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void TheInternalBrief_PrintsTheFailureProfileUnderTheModelGaps_AndNumbersTheNotableFindingsBeforeTheLeads()
+    public void ACoveredSetWithNothingNotable_PrintsNoAlsoWorthKnowing()
     {
-        string text = RenderComparison(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
+        string text = RenderDocument(ComparisonDocumentOver(BenchmarkReportAudience.ExecutiveSummary, new[] { "run:32", "run:33" }),
+            BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
 
-        AssertInOrder(
-            text.IndexOf("## 2. Model-specific gaps\n", StringComparison.Ordinal),
-            text.IndexOf("### Failure profile\n", StringComparison.Ordinal),
-            text.IndexOf("## 3. The benchmarking system\n", StringComparison.Ordinal),
-            text.IndexOf("## 4. Notable findings\n", StringComparison.Ordinal),
-            text.IndexOf("## 5. Leads\n", StringComparison.Ordinal),
-            text.IndexOf("## 6. Per-question matrix\n", StringComparison.Ordinal),
-            text.IndexOf("## 7. Fact sheet\n", StringComparison.Ordinal));
-        Assert.DoesNotContain("### Grader findings by category", text);
-    }
-
-    [Fact]
-    public void ACoveredSetWithNothingNotable_SaysSo_AndPrintsNoSlot()
-    {
-        var document = ComparisonDocumentOver(BenchmarkReportAudience.TechnicalReport, new[] { "run:32", "run:33" });
-
-        string text = RenderDocument(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-
-        Assert.Contains("## Notable findings\n\n" + BenchmarkNotableFindings.NothingDetected + "\n\n*" + BenchmarkNotableFindings.RulesNote + "*\n\n## Dimension profiles\n", text);
-        Assert.DoesNotContain("## Also worth knowing", RenderDocument(
-            ComparisonDocumentOver(BenchmarkReportAudience.ExecutiveSummary, new[] { "run:32", "run:33" }), BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named));
+        Assert.DoesNotContain("## Also worth knowing", text);
+        Assert.DoesNotContain(BenchmarkNotableFindings.NothingDetected, text);
     }
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized)]
-    [InlineData(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized)]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized)]
     public void AComparisonDocumentStoredUnderFormat13_RendersWithoutAnyFormat14Content(
         BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming)
     {
@@ -2814,16 +1619,10 @@ public class BenchmarkReportPackRendererTests
         {
             Assert.DoesNotContain(absent, text, StringComparison.Ordinal);
         }
-        Assert.Contains("generated under format version 13 · rendered with format version 14", text);
-        if (audience == BenchmarkReportAudience.InternalBrief)
-        {
-            Assert.Contains("## 4. Leads\n", text);
-            Assert.Contains("## 6. Fact sheet\n", text);
-        }
-        if (audience == BenchmarkReportAudience.ExecutiveSummary)
-        {
-            Assert.Contains("Orion Max, the highest Intelligence Index, was compared with each other model", text);
-        }
+        Assert.Contains("generated under format version 13 · rendered with format version "
+            + BenchmarkReportPackRenderer.ComparisonReportFormatVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), text);
+        Assert.Contains((naming == BenchmarkReportPeerNaming.Named ? "Orion Max" : "Model A")
+            + ", the highest Intelligence Index, was compared with each other model", text);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -2872,10 +1671,7 @@ public class BenchmarkReportPackRendererTests
     public static TheoryData<BenchmarkReportAudience, BenchmarkReportDisclosure, BenchmarkReportPeerNaming, string> ChatConsistencyGoldenCombinations => new()
     {
         { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized, "chatconsistency_exec.md" },
-        { BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized, "chatconsistency_technical.md" },
-        { BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized, "chatconsistency_internal.md" },
         { BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized, "chatconsistency_provider.md" },
-        { BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Named, "chatconsistency_technical_named.md" },
     };
 
     [Theory]
@@ -2898,21 +1694,22 @@ public class BenchmarkReportPackRendererTests
     {
         Assert.Equal(3, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
         Assert.Equal(3, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(12, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(14, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
-        Assert.Equal(12, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(14, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(13, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(15, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(13, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(15, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
-        string text = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
+        string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         Assert.Contains(" · format version 3 · ", text);
         Assert.Contains(" · controls named*", text);
-        Assert.Contains("- **Report format version:** 3\n", text);
+
+        string provider = RenderChatConsistency(BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
+        Assert.Contains(" · format version 3 · ", provider);
+        Assert.Contains("- **Report format version:** 3\n", provider);
     }
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    [InlineData(BenchmarkReportAudience.InternalBrief)]
     [InlineData(BenchmarkReportAudience.ProviderIssueReport)]
     public void ADocumentOfAnAnalysisSavedUnderEarlierCode_PrintsTheOutOfDateBox_DecidedWhenRendered(BenchmarkReportAudience audience)
     {
@@ -2981,14 +1778,15 @@ public class BenchmarkReportPackRendererTests
                 new Overseer.Services.ChatConsistency.ChatConsistencyUnitView { UnitId = 12, Kind = "batteryRun", Period = "comparison", MemberRunIds = new long[] { 20, 21 } }
             }
         };
-        var document = ChatConsistencyDocument(BenchmarkReportAudience.TechnicalReport);
-        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport));
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.ExecutiveSummary);
+        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary));
 
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
 
+        Assert.Contains("| Measure | Result | What it means |\n", text);
         Assert.Contains("*With one battery run per period, the intervals and smallest detectable changes reflect question-to-question variation only; "
             + "run-to-run variation is not included, so the true uncertainty is larger.*\n", text);
-        Assert.DoesNotContain("With one run per period", RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized));
+        Assert.DoesNotContain("With one run per period", RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized));
     }
 
     [Fact]
@@ -3008,8 +1806,9 @@ public class BenchmarkReportPackRendererTests
             Baseline = baseResult.Baseline with { StartUtc = day, EndUtc = split.AddMilliseconds(-1) },
             Comparison = baseResult.Comparison with { StartUtc = split, EndUtc = day.AddDays(1).AddMilliseconds(-1) }
         };
-        var document = ChatConsistencyDocument(BenchmarkReportAudience.TechnicalReport);
-        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport));
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.ProviderIssueReport);
+        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(
+            result, BenchmarkReportAudience.ProviderIssueReport, ChatConsistencyReportTestData.RequestIds));
 
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
 
@@ -3030,8 +1829,9 @@ public class BenchmarkReportPackRendererTests
                 Id = rate.Item1, Name = rate.Item2, Denominator = "answers",
                 BaselineCount = 0, BaselineTotal = 40, BaselineRate = 0, ComparisonCount = 0, ComparisonTotal = 40, ComparisonRate = 0, PValue = 1.0
             }).ToList();
-        var document = ChatConsistencyDocument(BenchmarkReportAudience.TechnicalReport);
-        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(baseResult with { Reliability = zero }, BenchmarkReportAudience.TechnicalReport));
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.ProviderIssueReport);
+        document.FactsJson = BenchmarkReportJson.Serialize(BenchmarkChatConsistencyReportFacts.Build(
+            baseResult with { Reliability = zero }, BenchmarkReportAudience.ProviderIssueReport, ChatConsistencyReportTestData.RequestIds));
 
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
 
@@ -3042,14 +1842,11 @@ public class BenchmarkReportPackRendererTests
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    [InlineData(BenchmarkReportAudience.InternalBrief)]
     [InlineData(BenchmarkReportAudience.ProviderIssueReport)]
     public void AChatConsistencyDocument_OpensWithTheOverallVerdict_ThenTheSlotsUnderTheirTitles_AndPrintsItsAudiencesBlocks(
         BenchmarkReportAudience audience)
     {
-        var disclosure = audience == BenchmarkReportAudience.InternalBrief ? BenchmarkReportDisclosure.Full : BenchmarkReportDisclosure.Summary;
-        string text = RenderChatConsistency(audience, disclosure, BenchmarkReportPeerNaming.Anonymized);
+        string text = RenderChatConsistency(audience, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
         int Pos(string part) => text.IndexOf(part, StringComparison.Ordinal);
         bool executive = audience == BenchmarkReportAudience.ExecutiveSummary;
 
@@ -3057,9 +1854,8 @@ public class BenchmarkReportPackRendererTests
         var slots = BenchmarkReportSlots.For(audience, BenchmarkReportScope.ChatConsistency).RequiredSlots;
         var order = new List<int> { Pos("## Overall verdict\n"), Pos("## The result in one sentence\n") };
         order.AddRange(slots.Select(slot => Pos("## " + BenchmarkReportSlots.ChatConsistencySlotTitles[slot] + "\n")));
-        if (audience != BenchmarkReportAudience.InternalBrief) order.Add(Pos("## How to read this\n"));
+        order.Add(Pos("## How to read this\n"));
         AssertInOrder(order.ToArray());
-        Assert.Equal(audience != BenchmarkReportAudience.InternalBrief, text.Contains("## How to read this\n", StringComparison.Ordinal));
 
         Assert.Contains("- **Verdict:** The chat changed\n", text);
         Assert.Contains(executive
@@ -3104,9 +1900,9 @@ public class BenchmarkReportPackRendererTests
             Assert.Contains("- **Baseline:** runs #10 and #11\n", text);
             Assert.Contains("- **Comparison:** runs #20 and #21\n", text);
             Assert.Contains("- **Control runs:** #30, #31\n", text);
-            Assert.Equal(audience == BenchmarkReportAudience.InternalBrief, !text.Contains("Holm-adjusted p ", StringComparison.Ordinal));
-            Assert.Equal(audience == BenchmarkReportAudience.TechnicalReport, text.Contains("| Check |", StringComparison.Ordinal)
-                || text.Contains("The analysis ran no robustness check on a computed endpoint.", StringComparison.Ordinal));
+            Assert.Contains("Holm-adjusted p ", text);
+            Assert.DoesNotContain("| Check |", text);
+            Assert.DoesNotContain("The analysis ran no robustness check on a computed endpoint.", text);
         }
 
         Assert.DoesNotContain("Input SHA-256", text);
@@ -3114,7 +1910,7 @@ public class BenchmarkReportPackRendererTests
         Assert.DoesNotContain("instrument", text);
         Assert.DoesNotContain("log ratio", text);
         Assert.DoesNotContain(" -4.2", text);
-        Assert.Equal(audience != BenchmarkReportAudience.InternalBrief, text.Contains("## Evaluation terms\n", StringComparison.Ordinal));
+        Assert.Contains("## Evaluation terms\n", text);
         Assert.DoesNotContain("*Not written.*", text);
         Assert.DoesNotContain("{{", text);
     }
@@ -3155,7 +1951,7 @@ public class BenchmarkReportPackRendererTests
     [Fact]
     public void AChatConsistencyDocumentWrittenBeforeReadableEvents_RendersItsEventsInWords_WithoutJsonOrHashes()
     {
-        var document = ChatConsistencyDocument(BenchmarkReportAudience.TechnicalReport);
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.ProviderIssueReport);
         var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
         var result = ChatConsistencyReportTestData.Result();
 
@@ -3177,8 +1973,8 @@ public class BenchmarkReportPackRendererTests
         sheet.Facts = sheet.Facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
         document.FactsJson = BenchmarkReportJson.Serialize(sheet);
 
-        var writer = ChatConsistencyReportTestData.ValidOutput(BenchmarkReportAudience.TechnicalReport);
-        writer.Sections[BenchmarkReportSlots.Reproducibility] = "Analysis {{analysis.id}} ran on input {{analysis.inputSha256}}, after {{events.1.from}}.";
+        var writer = ChatConsistencyReportTestData.ValidOutput(BenchmarkReportAudience.ProviderIssueReport);
+        writer.Sections[BenchmarkReportSlots.AffectedModel] = "Analysis {{analysis.id}} ran on input {{analysis.inputSha256}}, after {{events.1.from}}.";
         document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
 
         string text = BenchmarkReportPackRenderer.Render(document,
@@ -3229,33 +2025,32 @@ public class BenchmarkReportPackRendererTests
     [Fact]
     public void ANamedChatConsistencyCopy_NamesTheControlModel_AndAnAnonymizedOneLettersIt()
     {
-        string named = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
-        string anonymized = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+        string named = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named);
+        string anonymized = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
 
-        Assert.Contains("- **" + ChatConsistencyReportTestData.ControlName + " (" + ChatConsistencyReportTestData.ControlProvider + "):** 2 runs", named);
         Assert.Contains("- **Control models:** " + ChatConsistencyReportTestData.ControlName + "\n", named);
         Assert.Contains("- **Analysis:** #7 — Weekly check\n", named);
-        Assert.Contains("(in the runs of " + ChatConsistencyReportTestData.ControlName + ")", named);
+        Assert.Contains(" · controls named*", named);
 
         Assert.DoesNotContain(ChatConsistencyReportTestData.ControlName, anonymized, StringComparison.Ordinal);
         Assert.DoesNotContain(ChatConsistencyReportTestData.ControlProvider, anonymized, StringComparison.Ordinal);
-        Assert.Contains("- **Model A:** 2 runs", anonymized);
+        Assert.Contains("- **Controls:** 1 control model (A), identity withheld", anonymized);
         Assert.Contains("- **Analysis:** #7\n", anonymized);
     }
 
     [Fact]
     public void AChatConsistencyDocument_PrintsTheSameTextAtEveryDisclosure_UnderItsOwnStamp()
     {
-        string summary = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
-        string full = RenderChatConsistency(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
+        string summary = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
+        string full = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
 
         Assert.Contains("*Confidential. Unpublished chat consistency results. Review before sharing.*\n", summary);
         Assert.Contains("*INTERNAL — unpublished chat consistency results. Do not share outside the Overseer team.*\n", full);
         string sameBody = summary
-            .Replace(BenchmarkReportPackRenderer.ChatConsistencyStamp(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary),
-                BenchmarkReportPackRenderer.ChatConsistencyStamp(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full), StringComparison.Ordinal)
+            .Replace(BenchmarkReportPackRenderer.ChatConsistencyStamp(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary),
+                BenchmarkReportPackRenderer.ChatConsistencyStamp(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full), StringComparison.Ordinal)
             .Replace(" · disclosure Summary · ", " · disclosure Full · ", StringComparison.Ordinal);
-        AssertSameText(sameBody, full, "Report for AI Researchers and Developers at Full");
+        AssertSameText(sameBody, full, "Executive Summary at Full");
     }
 
     [Fact]
@@ -3267,22 +2062,19 @@ public class BenchmarkReportPackRendererTests
 
         Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc4-timeline", "cc5-availability" }, BenchmarkReportChartPlacement.ChatConsistencyFigureKeys);
         Assert.All(BenchmarkReportChartPlacement.ChatConsistencyFigureKeys, key => Assert.True(BenchmarkReportChartPlacement.IsKnown(key)));
-        Assert.Equal(13, BenchmarkReportChartPlacement.AllFigureKeys.Count);
+        Assert.Equal(17, BenchmarkReportChartPlacement.AllFigureKeys.Count);
 
         // With a layout every audience may draw every figure: provider availability with quality, speed
         // and work after the verdict table, the timeline after the events table, and in the Executive
         // Summary, which has none, after the verdict table.
         Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc4-timeline", "cc5-availability" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, results, chat));
         Assert.Empty(BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, events, chat));
-        foreach (var audience in new[] { BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief, BenchmarkReportAudience.ProviderIssueReport })
-        {
-            Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc5-availability" }, BenchmarkReportChartPlacement.KeysAt(audience, results, chat));
-            Assert.Equal(new[] { "cc4-timeline" }, BenchmarkReportChartPlacement.KeysAt(audience, events, chat));
-        }
+        Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc5-availability" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ProviderIssueReport, results, chat));
+        Assert.Equal(new[] { "cc4-timeline" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ProviderIssueReport, events, chat));
         Assert.Equal(results, BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, "cc4-timeline", chat));
 
         // No legacy chart set holds the provider availability figure.
-        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief, BenchmarkReportAudience.ProviderIssueReport })
+        foreach (var audience in BenchmarkReportSlots.ChatConsistencyAudiences)
         {
             Assert.Null(BenchmarkReportChartPlacement.AnchorOf(audience, "cc5-availability", chat, legacy: true));
         }
@@ -3290,34 +2082,29 @@ public class BenchmarkReportPackRendererTests
         // Without one, the legacy per-audience placement.
         Assert.Equal(new[] { "cc1-quality", "cc2-speed" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, results, chat, legacy: true));
         Assert.Empty(BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, events, chat, legacy: true));
-        Assert.Equal(new[] { "cc1-quality", "cc2-speed", "cc3-work" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.TechnicalReport, results, chat, legacy: true));
-        Assert.Equal(new[] { "cc4-timeline" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.TechnicalReport, events, chat, legacy: true));
-        Assert.Equal(new[] { "cc1-quality", "cc3-work" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.InternalBrief, results, chat, legacy: true));
         Assert.Equal(new[] { "cc2-speed" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ProviderIssueReport, results, chat, legacy: true));
         Assert.Equal(new[] { "cc4-timeline" }, BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ProviderIssueReport, events, chat, legacy: true));
         Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, "cc3-work", chat, legacy: true));
 
         // The legacy flag means nothing to the other scopes.
-        Assert.Equal(BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.TechnicalReport, BenchmarkReportChartAnchor.ComparisonResults, BenchmarkReportScope.Comparison),
-            BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.TechnicalReport, BenchmarkReportChartAnchor.ComparisonResults, BenchmarkReportScope.Comparison, legacy: true));
+        Assert.Equal(BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportChartAnchor.HowTheyCompare, BenchmarkReportScope.Comparison),
+            BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportChartAnchor.HowTheyCompare, BenchmarkReportScope.Comparison, legacy: true));
 
         Assert.Equal(results, BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, "cc3-work", chat));
         Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, "cc1-quality"));
-        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, "cc1-quality", BenchmarkReportScope.Comparison));
-        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, "p1a-quality", chat));
-        Assert.Equal(results, BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.TechnicalReport, "cc1-quality", chat));
+        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, "cc1-quality", BenchmarkReportScope.Comparison));
+        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ExecutiveSummary, "p1a-quality", chat));
+        Assert.Equal(results, BenchmarkReportChartPlacement.AnchorOf(BenchmarkReportAudience.ProviderIssueReport, "cc1-quality", chat));
         Assert.Empty(BenchmarkReportChartPlacement.KeysAt(BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportChartAnchor.HowItCompares));
         Assert.True(BenchmarkReportChartPlacement.IsKnown("cc4-timeline"));
     }
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, new[] { "cc1-quality", "cc2-speed" })]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, new[] { "cc1-quality", "cc2-speed", "cc3-work", "cc4-timeline" })]
-    [InlineData(BenchmarkReportAudience.InternalBrief, new[] { "cc1-quality", "cc3-work" })]
     [InlineData(BenchmarkReportAudience.ProviderIssueReport, new[] { "cc2-speed", "cc4-timeline" })]
     public void AChatConsistencyDocument_DrawsItsFiguresAfterTheirTables_AndNoComparisonFigure(BenchmarkReportAudience audience, string[] placed)
     {
-        var disclosure = audience == BenchmarkReportAudience.InternalBrief ? BenchmarkReportDisclosure.Full : BenchmarkReportDisclosure.Summary;
+        const BenchmarkReportDisclosure disclosure = BenchmarkReportDisclosure.Summary;
         var keys = BenchmarkReportChartPlacement.AllFigureKeys.Reverse().ToArray();
         string text = RenderWithCharts(ChatConsistencyDocument(audience), disclosure, BenchmarkReportPeerNaming.Anonymized, Charts(keys));
 
@@ -3366,22 +2153,24 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AChatConsistencyDocumentWithAChartLayout_DrawsEveryChosenFigure_InTheInternalBrief()
+    public void AChatConsistencyDocumentWithAChartLayout_DrawsEveryChosenFigure_InTheProviderIssueReport()
     {
-        var document = ChatConsistencyDocument(BenchmarkReportAudience.InternalBrief);
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.ProviderIssueReport);
         var options = new BenchmarkReportRenderOptions
         {
             Disclosure = BenchmarkReportDisclosure.Full,
             PeerNaming = BenchmarkReportPeerNaming.Anonymized,
-            Charts = Charts("cc2-speed", "cc4-timeline")
+            Charts = Charts("cc1-quality", "cc3-work")
         };
 
         string withLayout = BenchmarkReportPackRenderer.Render(document, options, chartLayoutPresent: true);
         string legacy = BenchmarkReportPackRenderer.Render(document, options, chartLayoutPresent: false);
 
-        Assert.Single(AllIndexesOf(withLayout, MarkerOf("cc2-speed")));
-        Assert.True(withLayout.IndexOf(MarkerOf("cc4-timeline"), StringComparison.Ordinal)
-            > withLayout.IndexOf("| When (UTC) | Run | What changed |", StringComparison.Ordinal));
+        int verdicts = withLayout.IndexOf("| Endpoint | Change (95 % interval) | Margin | Verdict and grade | Smallest detectable |", StringComparison.Ordinal);
+        Assert.Single(AllIndexesOf(withLayout, MarkerOf("cc1-quality")));
+        Assert.Single(AllIndexesOf(withLayout, MarkerOf("cc3-work")));
+        AssertInOrder(verdicts, withLayout.IndexOf(MarkerOf("cc1-quality"), StringComparison.Ordinal), withLayout.IndexOf(MarkerOf("cc3-work"), StringComparison.Ordinal));
+        // Without a layout, the Provider Issue Report draws neither.
         Assert.DoesNotContain("[[figure:", legacy);
     }
 
@@ -3422,78 +2211,14 @@ public class BenchmarkReportPackRendererTests
         => BenchmarkReportPackRenderer.Render(DocumentWithAvailability(audience, summary),
             new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
 
-    [Theory]
-    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    [InlineData(BenchmarkReportAudience.InternalBrief)]
-    public void KeyFigures_StateProviderAvailability_AsTheirFifthBullet(BenchmarkReportAudience audience)
+    [Fact]
+    public void KeyFigures_StateProviderAvailability_AsTheirFifthBullet()
     {
-        string text = RenderAvailability(audience, BenchmarkReportFactsTests.RecordedAvailability());
+        string text = RenderAvailability(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportFactsTests.RecordedAvailability());
 
         Assert.Contains("- **Critical errors:** 1 of 4 answers.\n" + AvailabilityBullet + "\n", text);
         Assert.Single(AllIndexesOf(text, "- **Provider availability:**"));
         Assert.DoesNotContain("throttl", text, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void TheInternalBriefsModelResult_StatesTheIntervalSpan_ThenItsProviderAvailability_AfterItsKeyFigures()
-    {
-        string text = RenderAvailability(BenchmarkReportAudience.InternalBrief, BenchmarkReportFactsTests.RecordedAvailability());
-
-        Assert.Contains("- **Critical errors:** 1 of 4 answers.\n" + AvailabilityBullet + "\n"
-            + "The 95 % interval is 77–83, a span of 6 points, and rests on 4 of 4 questions with a scored answer.\n\n"
-            + "### Provider availability\n\n| Class | Count | Share of valid attempts |\n", text);
-        AssertInOrder(
-            text.IndexOf("## 3. The model's result", StringComparison.Ordinal),
-            text.IndexOf("### Provider availability", StringComparison.Ordinal),
-            text.IndexOf("### Strengths", StringComparison.Ordinal),
-            text.IndexOf("## 4. Leads", StringComparison.Ordinal));
-        Assert.DoesNotContain("## 7.", text);
-    }
-
-    [Fact]
-    public void TheResearcherReport_PrintsTheProviderAvailabilitySubsection_WithItsTableAndFootnote_AfterItsKeyFigures()
-    {
-        string text = RenderAvailability(BenchmarkReportAudience.TechnicalReport, BenchmarkReportFactsTests.RecordedAvailability());
-
-        Assert.Contains(AvailabilityBullet + "\n### Provider availability\n\n"
-            + "| Class | Count | Share of valid attempts |\n"
-            + "|---|---|---|\n"
-            + "| Provider overloaded (HTTP 503 and 529) | 7 | 0.47 % |\n"
-            + "| Provider server errors (HTTP 5xx) | 4 | 0.27 % |\n"
-            + "| Provider timeouts | 0 | 0 % |\n"
-            + "| Provider stream failures | 1 | 0.068 % |\n"
-            + "| Provider errors, total | 12 | 0.81 % |\n"
-            + "| Rate limited, unattributed (HTTP 429) | 1 | 0.068 % |\n"
-            + "| Transport failures, unattributed | 2 | 0.14 % |\n"
-            + "| Unattributed errors, total | 3 | 0.20 % |\n"
-            + "| Rate limited by our own limits (HTTP 429, excluded) | 2 | excluded |\n"
-            + "| Our-side failures (excluded) | 5 | excluded |\n\n"
-            + "*Valid attempts: 1,480 attempts of the model under test, the denominator of every share. Provider errors are", text);
-        Assert.Contains("These are provider errors observed in GnollBench runs, counted over every pass of every run and every run they replaced.*\n\n"
-            + "- **Upper bound including unattributed errors:** 1.0 % (95 % CI 0.60–1.7 %)\n"
-            + "- **Questions lost to provider errors:** 1 question\n"
-            + "- **Re-runs needed:** 3 re-runs (2 for provider errors), including 1 replaced run\n\n"
-            + "## Setup and method\n", text);
-    }
-
-    [Fact]
-    public void TheResearcherReportsThreats_NameTheUnattributedErrorsAndTheReruns()
-    {
-        string text = RenderAvailability(BenchmarkReportAudience.TechnicalReport, BenchmarkReportFactsTests.RecordedAvailability());
-
-        Assert.Contains("- Provider availability: 3 errors could not be attributed to the provider or to Overseer; the upper bound "
-            + "including them is 1.0 % (95 % CI 0.60–1.7 %).\n", text);
-        Assert.Contains("- Provider availability: 3 re-runs (2 for provider errors) were needed before the benchmarking was complete; "
-            + "the attempts of every pass and of every replaced run are counted.\n", text);
-        AssertInOrder(
-            text.IndexOf("## Threats to validity", StringComparison.Ordinal),
-            text.IndexOf("- Provider availability: 3 errors", StringComparison.Ordinal),
-            text.IndexOf("## Reproducibility appendix", StringComparison.Ordinal));
-
-        string quiet = RenderAvailability(BenchmarkReportAudience.TechnicalReport,
-            BenchmarkReportFactsTests.RecordedAvailability() with { UnattributedErrors = 0, RerunsNeeded = 0, ProviderRerunsNeeded = 0 });
-        Assert.DoesNotContain("- Provider availability:", quiet);
     }
 
     [Fact]
@@ -3507,34 +2232,19 @@ public class BenchmarkReportPackRendererTests
         Assert.DoesNotContain("could not be attributed", text);
     }
 
-    [Theory]
-    [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    [InlineData(BenchmarkReportAudience.InternalBrief)]
-    public void ALegacyRun_RendersItsProviderAvailability_AsNotRecorded(BenchmarkReportAudience audience)
+    [Fact]
+    public void ALegacyRun_RendersItsProviderAvailability_AsNotRecorded()
     {
-        string text = RenderAvailability(audience, ProviderAvailabilitySummary.NotRecorded(1));
+        string text = RenderAvailability(BenchmarkReportAudience.ExecutiveSummary, ProviderAvailabilitySummary.NotRecorded(1));
 
         Assert.Contains("- **Critical errors:** 1 of 4 answers.\n- **Provider availability:** not recorded before harness 56.\n", text);
         Assert.DoesNotContain("| Class | Count |", text);
-        if (audience == BenchmarkReportAudience.ExecutiveSummary)
-        {
-            Assert.DoesNotContain("### Provider availability", text);
-            return;
-        }
-
-        Assert.Contains("### Provider availability\n\nProvider availability was not recorded before harness 56: these runs kept no record of "
-            + "their API attempts, so provider errors cannot be told apart from failures on Overseer's side.\n", text);
-        if (audience == BenchmarkReportAudience.TechnicalReport)
-        {
-            Assert.Contains("- Provider availability: not recorded before harness 56, so provider errors cannot be separated from failures on Overseer's side.\n", text);
-        }
+        Assert.DoesNotContain("### Provider availability", text);
     }
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized)]
-    [InlineData(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named)]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized)]
     public void ADocumentStoredUnderFormat11_RendersWithoutAnyProviderAvailabilityBlock(
         BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming)
     {
@@ -3573,72 +2283,15 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonResultsTable_GainsTheProviderErrorsColumn_OnlyWhenTheSheetCarriesTheFacts()
+    public void AComparisonExecutiveSummary_PrintsNoProviderAvailability_AndDrawsNoFigureA1()
     {
-        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Anonymized };
-        string text = BenchmarkReportPackRenderer.Render(ComparisonDocumentWithAvailability(BenchmarkReportAudience.TechnicalReport), options);
-
-        Assert.Contains("| Model | Intelligence Index | 95 % interval | Rank | Median answer time | Speed rank | Cost per question | Cost rank | Critical errors | Provider errors |\n"
-            + "|---|---|---|---|---|---|---|---|---|---|\n", text);
-        Assert.Equal(4, AllIndexesOf(text, " | 0.81 % (12/1,480) |\n").Count);
-        Assert.Contains(" | not recorded |\n", text);
-
-        string without = RenderComparison(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Anonymized);
-        Assert.Contains("| Model | Intelligence Index | 95 % interval | Rank | Median answer time | Speed rank | Cost per question | Cost rank | Critical errors |\n", without);
-        Assert.DoesNotContain("Provider errors", without);
-        Assert.DoesNotContain("Provider availability", without);
-    }
-
-    [Fact]
-    public void AComparisonResearcherReport_PrintsThePerModelAvailabilityTable_AndItsThreats()
-    {
-        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Anonymized };
-        string text = BenchmarkReportPackRenderer.Render(ComparisonDocumentWithAvailability(BenchmarkReportAudience.TechnicalReport), options);
-
-        Assert.Contains("### Provider availability\n\n"
-            + "| Model | Valid attempts | Provider errors | Provider error rate | Unattributed errors | Re-runs needed |\n"
-            + "|---|---|---|---|---|---|\n"
-            + "| Model A (reference) | 1,480 | 12 | 0.81 % (95 % CI 0.46–1.4 %) | 3 | 3 re-runs (2 for provider errors) |\n", text);
-        Assert.Contains("| Model E | not recorded before harness 56 | — | — | — | — |\n", text);
-        AssertInOrder(
-            text.IndexOf("## Results\n", StringComparison.Ordinal),
-            text.IndexOf("### Paired tests\n", StringComparison.Ordinal),
-            text.IndexOf("### Provider availability\n", StringComparison.Ordinal),
-            text.IndexOf("## Dimension profiles\n", StringComparison.Ordinal));
-
-        Assert.Contains("- Provider availability of Model A: 3 errors could not be attributed to the provider or to Overseer; "
-            + "the upper bound including them is 1.0 %.\n", text);
-        Assert.Contains("- Provider availability of Model E: not recorded before harness 56, so provider errors cannot be separated "
-            + "from failures on Overseer's side.\n", text);
-
-        string executive = BenchmarkReportPackRenderer.Render(ComparisonDocumentWithAvailability(BenchmarkReportAudience.ExecutiveSummary),
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Anonymized });
+        var options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Anonymized };
+        string executive = BenchmarkReportPackRenderer.Render(ComparisonDocumentWithAvailability(BenchmarkReportAudience.ExecutiveSummary), options);
         Assert.DoesNotContain("Provider availability", executive);
         Assert.DoesNotContain("Provider errors", executive);
-    }
 
-    [Fact]
-    public void AComparisonDocument_DrawsFigureA1_InTheResearcherReportAndTheBrief_NotTheExecutiveSummary()
-    {
-        var a1 = Charts(BenchmarkReportChartPlacement.AvailabilityKey);
-
-        string technical = RenderWithCharts(ComparisonDocumentWithAvailability(BenchmarkReportAudience.TechnicalReport),
-            BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, a1);
-        AssertInOrder(
-            technical.IndexOf("### Provider availability\n", StringComparison.Ordinal),
-            technical.IndexOf("\n\n" + MarkerOf("a1-availability") + "\n\n", StringComparison.Ordinal),
-            technical.IndexOf("## Dimension profiles\n", StringComparison.Ordinal));
-        Assert.Single(AllIndexesOf(technical, MarkerOf("a1-availability")));
-
-        string brief = RenderWithCharts(ComparisonDocumentWithAvailability(BenchmarkReportAudience.InternalBrief),
-            BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, a1);
-        AssertInOrder(
-            brief.IndexOf("## Models compared\n", StringComparison.Ordinal),
-            brief.IndexOf(MarkerOf("a1-availability"), StringComparison.Ordinal),
-            brief.IndexOf("## 1. Shared gaps\n", StringComparison.Ordinal));
-
-        string executive = RenderWithCharts(ComparisonDocumentWithAvailability(BenchmarkReportAudience.ExecutiveSummary),
-            BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, a1);
-        Assert.DoesNotContain(MarkerOf("a1-availability"), executive);
+        string withChart = RenderWithCharts(ComparisonDocumentWithAvailability(BenchmarkReportAudience.ExecutiveSummary),
+            BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, Charts(BenchmarkReportChartPlacement.AvailabilityKey));
+        Assert.DoesNotContain(MarkerOf("a1-availability"), withChart);
     }
 }

@@ -42,7 +42,7 @@ function context(overrides: Partial<CcReportDiagnosticsContext> = {}): CcReportD
 
 describe('cc-report-job-view', () => {
   it('names a document as the Write step does', () => {
-    expect(ccReportAudienceLabel(BenchmarkReportAudience.InternalBrief)).toBe('Internal Brief');
+    expect(ccReportAudienceLabel(BenchmarkReportAudience.ExecutiveSummary)).toBe('Executive Summary');
     expect(ccReportAudienceLabel(BenchmarkReportAudience.ProviderIssueReport)).toBe('Provider Issue Report');
   });
 
@@ -54,8 +54,7 @@ describe('cc-report-job-view', () => {
         'Queued:done',
         'Preparing:done',
         'Executive Summary:done',
-        'Report for AI Researchers and Developers:current',
-        'Internal Brief:pending',
+        'Provider Issue Report:current',
         'Done:pending'
       ]);
     });
@@ -67,10 +66,10 @@ describe('cc-report-job-view', () => {
 
     it('stands at the next pending document between two, and at Done once finished', () => {
       const between = ccReportJob({}, {
-        documents: ccReportJob().job.documents.map((doc, i) => (i === 1 ? { ...doc, status: 'Completed' } : doc))
+        documents: ccReportJob().job.documents.map((doc, i) => (i === 1 ? { ...doc, status: 'Pending' } : doc))
       });
-      expect(states(between)[4]).toBe('Internal Brief:current');
-      const done = states(finishedJob('Completed', ['Completed', 'Completed', 'Completed']));
+      expect(states(between)[3]).toBe('Provider Issue Report:current');
+      const done = states(finishedJob('Completed', ['Completed', 'Completed']));
       expect(done[done.length - 1]).toBe('Done:current');
       expect(done.slice(0, -1).every(state => state.endsWith(':done'))).toBe(true);
     });
@@ -105,13 +104,12 @@ describe('cc-report-job-view', () => {
       const rows = ccReportJobRows(ccReportJob(), NOW);
       expect(rows.map(row => [row.name, row.statusWord, row.chipClass, row.duration, row.modelCalls, row.documentId])).toEqual([
         ['Executive Summary', 'Completed', 'job-status-chip status-completed', '1 min 00 s', '2', 501],
-        ['Report for AI Researchers and Developers', 'Writing', 'job-status-chip status-generating', '25 s', '1', null],
-        ['Internal Brief', 'Pending', 'job-status-chip status-pending', '—', '0', null]
+        ['Provider Issue Report', 'Writing', 'job-status-chip status-generating', '25 s', '1', null]
       ]);
     });
 
     it('ends an unfinished document\'s duration at the job\'s end, and carries its error', () => {
-      const job = finishedJob('CompletedWithErrors', ['Completed', 'Failed', 'Canceled']);
+      const job = finishedJob('CompletedWithErrors', ['Completed', 'Failed']);
       job.job.documents[1].errorMessage = 'The writer failed validation twice.';
       const rows = ccReportJobRows(job, NOW);
       expect(rows[1].duration).toBe('12 s');
@@ -122,20 +120,20 @@ describe('cc-report-job-view', () => {
 
   describe('ccReportJobSummary', () => {
     it('sums up a finished job in one line', () => {
-      expect(ccReportJobSummary(finishedJob('Completed', ['Completed', 'Completed', 'Completed']), NOW))
-        .toBe('3 documents written · $0.21 · 1 min 12 s');
-      expect(ccReportJobSummary(finishedJob('CompletedWithErrors', ['Completed', 'Failed', 'Completed']), NOW))
-        .toBe('2 of 3 documents written, with errors · $0.21 · 1 min 12 s');
-      expect(ccReportJobSummary(finishedJob('Canceled', ['Completed', 'Canceled', 'Canceled']), NOW))
-        .toBe('Canceled: 1 of 3 documents written · $0.21 · 1 min 12 s');
-      expect(ccReportJobSummary(finishedJob('Failed', ['Failed', 'Pending', 'Pending']), NOW))
-        .toBe('Failed: 0 of 3 documents written · $0.21 · 1 min 12 s');
+      expect(ccReportJobSummary(finishedJob('Completed', ['Completed', 'Completed']), NOW))
+        .toBe('2 documents written · $0.21 · 1 min 12 s');
+      expect(ccReportJobSummary(finishedJob('CompletedWithErrors', ['Completed', 'Failed']), NOW))
+        .toBe('1 of 2 documents written, with errors · $0.21 · 1 min 12 s');
+      expect(ccReportJobSummary(finishedJob('Canceled', ['Completed', 'Canceled']), NOW))
+        .toBe('Canceled: 1 of 2 documents written · $0.21 · 1 min 12 s');
+      expect(ccReportJobSummary(finishedJob('Failed', ['Failed', 'Pending']), NOW))
+        .toBe('Failed: 0 of 2 documents written · $0.21 · 1 min 12 s');
     });
 
     it('leaves out an unknown cost, and words a job without documents by its status', () => {
-      const unpriced = finishedJob('Completed', ['Completed', 'Completed', 'Completed']);
+      const unpriced = finishedJob('Completed', ['Completed', 'Completed']);
       unpriced.job.costUsd = null;
-      expect(ccReportJobSummary(unpriced, NOW)).toBe('3 documents written · 1 min 12 s');
+      expect(ccReportJobSummary(unpriced, NOW)).toBe('2 documents written · 1 min 12 s');
       const empty = ccReportJob(
         { phase: 'Finished', status: BenchmarkRunReportDocumentsStatus.Failed, message: 'The writer is disabled.', finishedAtUtc: '2026-10-02T10:00:05Z' },
         { status: 'Failed', documents: [] }
@@ -164,14 +162,14 @@ describe('cc-report-job-view', () => {
       expect(lines).toContain('Provider / model: OpenAI / gpt-5');
       expect(lines).toContain('Status: Writing');
       expect(lines).toContain('Phase: Writing');
-      expect(lines).toContain('Requested documents: Executive Summary; Report for AI Researchers and Developers; Internal Brief');
+      expect(lines).toContain('Requested documents: Executive Summary; Provider Issue Report');
       expect(lines).toContain('Writer: Claude writer');
       expect(lines).toContain('Provider / model: Anthropic / claude-30');
       expect(lines).toContain('Queue wait: 5 s');
       expect(lines).toContain('Writing time: 1 min 25 s so far');
-      expect(lines).toContain('Document 2: Report for AI Researchers and Developers');
+      expect(lines).toContain('Document 2: Provider Issue Report');
       expect(lines).toContain('  Duration: 25 s so far');
-      expect(lines.filter(line => line.startsWith('  Charts: '))).toEqual(['  Charts: attached', '  Charts: none (not written)', '  Charts: none (not written)']);
+      expect(lines.filter(line => line.startsWith('  Charts: '))).toEqual(['  Charts: attached', '  Charts: none (not written)']);
       expect(lines).toContain('Estimate: $0.12');
       expect(lines).toContain('Polls: 4');
       expect(lines).toContain('[2026-10-02 10:00:05 UTC] [Info] Writing Executive Summary.');

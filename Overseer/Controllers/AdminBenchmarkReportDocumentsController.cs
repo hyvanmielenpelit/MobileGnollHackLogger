@@ -288,6 +288,29 @@ public class AdminBenchmarkReportDocumentsController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Draws a stored Root Cause Analysis's server charts again from its fact sheet, replacing the ones
+    /// drawn before and keeping the uploaded charts. 200 with the stored set's summary; 400 for a document
+    /// that is not a Root Cause Analysis, for chart storage that is not configured, for a fact sheet with
+    /// nothing to draw from and for a drawing or storage failure; 404 for an unknown document; 499 when
+    /// the client aborts.
+    /// </summary>
+    [HttpPost("report-documents/{id:long}/charts/redraw")]
+    public async Task<IActionResult> RedrawCharts(long id, CancellationToken ct)
+    {
+        try
+        {
+            var (summary, notFound, refusal) = await _renderService.RedrawServerChartsAsync(id, ct);
+            if (notFound) return NotFound(new { error = "Report document not found." });
+            if (refusal != null) return BadRequest(new { error = refusal });
+            return Ok(summary);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
     /// <summary>Deletes the document's charts: 204, 404 for an unknown document, or 499 when the client aborts.</summary>
     [HttpDelete("report-documents/{id:long}/charts")]
     public async Task<IActionResult> DeleteCharts(long id, CancellationToken ct)

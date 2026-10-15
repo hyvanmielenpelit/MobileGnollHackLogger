@@ -38,14 +38,32 @@ export const REPORT_CHART_FIGURES: readonly { readonly key: ReportChartFigureKey
 
 const FIGURE_KEYS: ReadonlySet<string> = new Set<string>(REPORT_CHART_FIGURES.map(figure => figure.key));
 
+/** The document types a Report Pack draws browser charts for; a stored setting of any other type is dropped on read. */
 const KNOWN_AUDIENCES: readonly BenchmarkReportAudience[] = [
   BenchmarkReportAudience.ExecutiveSummary,
-  BenchmarkReportAudience.TechnicalReport,
-  BenchmarkReportAudience.InternalBrief
+  BenchmarkReportAudience.RootCauseAnalysis
 ];
 
 export function isReportChartFigureKey(value: string): value is ReportChartFigureKey {
   return FIGURE_KEYS.has(value);
+}
+
+/**
+ * The four charts Overseer draws on the server into every Root Cause Analysis (R1–R4). The browser
+ * never draws, lays out or uploads them, and the chart settings do not list them.
+ */
+export const SERVER_DRAWN_CHART_FIGURE_KEYS: readonly string[] = Object.freeze([
+  'r1-points-at-risk',
+  'r2-speed-decomposition',
+  'r3-cost-decomposition',
+  'r4-hypothesis-confidence'
+]);
+
+const SERVER_DRAWN_FIGURE_KEYS: ReadonlySet<string> = new Set<string>(SERVER_DRAWN_CHART_FIGURE_KEYS);
+
+/** Whether a stored document's chart is one Overseer drew on the server. */
+export function isServerDrawnChartFigureKey(value: string): boolean {
+  return SERVER_DRAWN_FIGURE_KEYS.has(value);
 }
 
 /**
@@ -57,7 +75,10 @@ export const CHAT_CONSISTENCY_CHART_FIGURE_KEYS: readonly CcReportFigureKey[] = 
 
 const CHAT_CONSISTENCY_FIGURE_KEYS: ReadonlySet<string> = new Set<string>(CHAT_CONSISTENCY_CHART_FIGURE_KEYS);
 
-/** Whether a stored document's chart manifest can hold this figure: a Report Pack figure or a chat consistency one. */
+/**
+ * Whether the browser draws and uploads this figure into a stored document: a Report Pack figure or a
+ * chat consistency one. A server-drawn key is not one.
+ */
 export function isDocumentChartFigureKey(value: string): value is ReportChartFigureKey | CcReportFigureKey {
   return FIGURE_KEYS.has(value) || CHAT_CONSISTENCY_FIGURE_KEYS.has(value);
 }
@@ -81,23 +102,27 @@ function everyFigureIn(section: string, availability: string = section): Readonl
 }
 
 /**
- * Per-model documents; mirrors the server's placement table. A1 is drawn in every document type at
- * its own anchor: after the Key figures in the Executive Summary, after the Provider availability
- * subsection in the other two.
+ * The Root Cause Analysis' browser-drawn figures, the same in both scopes: Intelligence, Speed, Cost,
+ * Intelligence against speed and Intelligence against cost, each in its evidence section.
+ */
+const ROOT_CAUSE_CHART_PLACEMENTS: Readonly<Record<ReportChartFigureKey, string>> = Object.freeze({
+  'p1a-quality': 'Evidence: intelligence',
+  'p1b-speed': 'Evidence: speed',
+  'p1c-cost': 'Evidence: cost',
+  'p2-profile': REPORT_CHART_NOT_DRAWN,
+  's1-quality-speed': 'Evidence: speed',
+  's2-quality-cost': 'Evidence: cost',
+  's3-speed-cost': REPORT_CHART_NOT_DRAWN,
+  'a1-availability': REPORT_CHART_NOT_DRAWN
+});
+
+/**
+ * Per-model documents; mirrors the server's placement table. The Executive Summary draws A1 after
+ * its Key figures.
  */
 export const MODEL_SCOPE_CHART_PLACEMENTS: ReportChartPlacementTable = Object.freeze({
   [BenchmarkReportAudience.ExecutiveSummary]: everyFigureIn('How it compares', 'Key figures'),
-  [BenchmarkReportAudience.TechnicalReport]: Object.freeze({
-    'p1a-quality': 'Results against peers → Quality',
-    'p1b-speed': 'Results against peers → Speed',
-    'p1c-cost': 'Results against peers → Cost',
-    'p2-profile': 'Results against peers',
-    's1-quality-speed': 'Speed and cost',
-    's2-quality-cost': 'Speed and cost',
-    's3-speed-cost': 'Speed and cost',
-    'a1-availability': 'Key figures → Provider availability'
-  }),
-  [BenchmarkReportAudience.InternalBrief]: everyFigureIn('§3 Key figures', '§3 Provider availability')
+  [BenchmarkReportAudience.RootCauseAnalysis]: ROOT_CAUSE_CHART_PLACEMENTS
 });
 
 /**
@@ -107,17 +132,7 @@ export const MODEL_SCOPE_CHART_PLACEMENTS: ReportChartPlacementTable = Object.fr
  */
 export const COMPARISON_SCOPE_CHART_PLACEMENTS: ReportChartPlacementTable = Object.freeze({
   [BenchmarkReportAudience.ExecutiveSummary]: everyFigureIn('How they compare', REPORT_CHART_NOT_DRAWN),
-  [BenchmarkReportAudience.TechnicalReport]: Object.freeze({
-    'p1a-quality': 'Results',
-    'p1b-speed': 'Speed and cost frontier',
-    'p1c-cost': 'Speed and cost frontier',
-    'p2-profile': 'Dimension profiles',
-    's1-quality-speed': 'Speed and cost frontier',
-    's2-quality-cost': 'Speed and cost frontier',
-    's3-speed-cost': 'Speed and cost frontier',
-    'a1-availability': 'Results → Provider availability'
-  }),
-  [BenchmarkReportAudience.InternalBrief]: everyFigureIn('Models compared')
+  [BenchmarkReportAudience.RootCauseAnalysis]: ROOT_CAUSE_CHART_PLACEMENTS
 });
 
 export const REPORT_CHART_PLACEMENTS: Readonly<Record<ReportChartScope, ReportChartPlacementTable>> = Object.freeze({
@@ -154,8 +169,8 @@ export type ReportChartSelection<K extends string = ReportChartFigureKey> =
 
 export const DEFAULT_CHART_SELECTION: ReportChartSelection = Object.freeze({
   [BenchmarkReportAudience.ExecutiveSummary]: Object.freeze(['p1a-quality', 's2-quality-cost'] as ReportChartFigureKey[]),
-  [BenchmarkReportAudience.TechnicalReport]: Object.freeze(REPORT_CHART_FIGURES.map(figure => figure.key)),
-  [BenchmarkReportAudience.InternalBrief]: Object.freeze(['p1a-quality', 'p1b-speed', 'p1c-cost'] as ReportChartFigureKey[])
+  [BenchmarkReportAudience.RootCauseAnalysis]: Object.freeze(
+    ['p1a-quality', 'p1b-speed', 'p1c-cost', 's1-quality-speed', 's2-quality-cost'] as ReportChartFigureKey[])
 });
 
 /** Dedupes, puts in placement order and drops unknown keys and audiences. An audience present with no figures stays, as none. */
@@ -349,8 +364,7 @@ export type ReportChartLayoutSettings<K extends string = ReportChartFigureKey> =
 
 export const DEFAULT_CHART_LAYOUT_SETTINGS: ReportChartLayoutSettings = Object.freeze({
   [BenchmarkReportAudience.ExecutiveSummary]: DEFAULT_DOCUMENT_CHART_LAYOUT,
-  [BenchmarkReportAudience.TechnicalReport]: DEFAULT_DOCUMENT_CHART_LAYOUT,
-  [BenchmarkReportAudience.InternalBrief]: DEFAULT_DOCUMENT_CHART_LAYOUT
+  [BenchmarkReportAudience.RootCauseAnalysis]: DEFAULT_DOCUMENT_CHART_LAYOUT
 });
 
 /** Everything step 3 remembers about the document charts: the figures and their layout, per document type. */
@@ -563,8 +577,13 @@ export function readStoredChartSettings(): ReportChartSettings {
         || !parsed.selection || typeof parsed.selection !== 'object') {
       return DEFAULT_CHART_SETTINGS;
     }
+    // A record stored before the Root Cause Analysis existed takes its default figures; retired types are dropped.
+    const stored = parsed.selection as Record<string | number, unknown>;
+    const selection = BenchmarkReportAudience.RootCauseAnalysis in stored
+      ? stored
+      : { ...stored, [BenchmarkReportAudience.RootCauseAnalysis]: DEFAULT_CHART_SELECTION[BenchmarkReportAudience.RootCauseAnalysis] };
     return {
-      selection: normalizeChartSelection(parsed.selection as ReportChartSelection),
+      selection: normalizeChartSelection(selection as ReportChartSelection),
       layout: parsed.version === 1
         ? DEFAULT_CHART_LAYOUT_SETTINGS
         : normalizeChartLayoutSettings(parsed.layout as ReportChartLayoutSettings)

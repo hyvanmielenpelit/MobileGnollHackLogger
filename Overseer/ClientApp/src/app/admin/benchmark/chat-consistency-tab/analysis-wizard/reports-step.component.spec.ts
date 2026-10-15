@@ -216,13 +216,13 @@ describe('CcReportsStepComponent', () => {
     expect(textOf(el.querySelector('.rp-subtitle'))).toBe('Analysis #7 · Chat consistency: GPT-5');
   });
 
-  it('lists the four documents as not written, the first three checked to be written', () => {
+  it('lists the two documents as not written, the Executive Summary checked to be written', () => {
     const names = Array.from(el.querySelectorAll('.cc-rep-audiences .cds-doc-name')).map(name => textOf(name));
-    expect(names).toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Brief', 'Provider Issue Report']);
+    expect(names).toEqual(['Executive Summary', 'Provider Issue Report']);
     const tags = Array.from(el.querySelectorAll('.cc-rep-audiences .cds-status')).map(tag => textOf(tag));
-    expect(tags).toEqual(['Not written', 'Not written', 'Not written', 'Not written']);
+    expect(tags).toEqual(['Not written', 'Not written']);
     const boxes = Array.from(el.querySelectorAll<HTMLInputElement>('.cc-rep-audiences input[type="checkbox"]'));
-    expect(boxes.map(box => box.checked)).toEqual([true, true, true, false]);
+    expect(boxes.map(box => box.checked)).toEqual([true, false]);
     expect(textOf(row(BenchmarkReportAudience.ExecutiveSummary).querySelector('.cds-check'))).toBe('Write: the Executive Summary');
   });
 
@@ -250,9 +250,17 @@ describe('CcReportsStepComponent', () => {
     // Above the document list.
     expect(notice()?.nextElementSibling?.classList.contains('cds-list')).toBe(true);
 
+    const available = { providerIssueReportAvailable: true, providerIssueReportReason: null };
     const estimate = await chooseWriter();
-    expect(estimate.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 2, 3] });
-    estimate.flush(ccReportEstimate());
+    expect(estimate.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1] });
+    estimate.flush(ccReportEstimate(available));
+    fixture.detectChanges();
+    providerBox().click();
+    fixture.detectChanges();
+    await settle();
+    const both = http.expectOne(`${CC_API}/analyses/7/report-documents/estimate`);
+    expect(both.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 4] });
+    both.flush(ccReportEstimate(available));
     fixture.detectChanges();
 
     const button = notice()!.querySelector<HTMLButtonElement>('button.btn-ghost.cc-rep-summary-only')!;
@@ -261,7 +269,7 @@ describe('CcReportsStepComponent', () => {
     button.click();
     fixture.detectChanges();
     const boxes = Array.from(el.querySelectorAll<HTMLInputElement>('.cc-rep-audiences input[type="checkbox"]'));
-    expect(boxes.map(box => box.checked)).toEqual([true, false, false, false]);
+    expect(boxes.map(box => box.checked)).toEqual([true, false]);
     expect(textOf(el.querySelector('.cc-rep-audiences [role="status"]'))).toBe('Only the Executive Summary is checked.');
     // Not blocking: Write Report stays available, and the estimate follows the one document.
     expect(writeButton().disabled).toBe(false);
@@ -293,7 +301,7 @@ describe('CcReportsStepComponent', () => {
     expect(providerBox().getAttribute('aria-describedby')).toBe('cc-rep-provider-reason');
 
     const estimate = await chooseWriter();
-    expect(estimate.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 2, 3] });
+    expect(estimate.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1] });
     estimate.flush(ccReportEstimate());
     fixture.detectChanges();
 
@@ -313,7 +321,7 @@ describe('CcReportsStepComponent', () => {
     fixture.detectChanges();
     await settle();
     const again = http.expectOne(`${CC_API}/analyses/7/report-documents/estimate`);
-    expect(again.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 2, 3, 4] });
+    expect(again.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 4] });
     again.flush(ccReportEstimate({ providerIssueReportAvailable: true, providerIssueReportReason: null }));
   });
 
@@ -328,7 +336,7 @@ describe('CcReportsStepComponent', () => {
     expect(writeButton().disabled).toBe(false);
     expect(el.querySelector('#cc-rep-write-blocked')).toBeNull();
     expect(writeButton().getAttribute('aria-describedby')).toBe('cc-rep-estimate');
-    expect(textOf(writeButton())).toBe('Write Reports');
+    expect(textOf(writeButton())).toBe('Write Report');
   });
 
   it('writes the checked documents and follows the job, with Cancel', async () => {
@@ -341,8 +349,8 @@ describe('CcReportsStepComponent', () => {
     writeButton().click();
     const write = http.expectOne(`${CC_API}/analyses/7/report-documents`);
     expect(write.request.method).toBe('POST');
-    expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 2, 3] });
-    write.flush({ runId: 7, status: 1, audiences: [1, 2, 3] }, { status: 202, statusText: 'Accepted' });
+    expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1] });
+    write.flush({ runId: 7, status: 1, audiences: [1] }, { status: 202, statusText: 'Accepted' });
     fixture.detectChanges();
 
     expect(changes).toBe(1);
@@ -375,7 +383,7 @@ describe('CcReportsStepComponent', () => {
 
     dialog.querySelector<HTMLButtonElement>('.cc-rep-same-provider-confirm')!.click();
     const write = http.expectOne(`${CC_API}/analyses/7/report-documents`);
-    expect(write.request.body).toEqual({ writerModelConfigurationId: 31, audiences: [1, 2, 3], acknowledgeSameProvider: true });
+    expect(write.request.body).toEqual({ writerModelConfigurationId: 31, audiences: [1], acknowledgeSameProvider: true });
     write.flush({ error: 'The spending cap is reached.' }, { status: 429, statusText: 'Too Many Requests' });
     fixture.detectChanges();
     expect(textOf(el.querySelector('.cc-rep-write-error'))).toBe('The spending cap is reached.');
@@ -397,8 +405,8 @@ describe('CcReportsStepComponent', () => {
 
     dialog.querySelector<HTMLButtonElement>('.cc-rep-same-provider-confirm')!.click();
     const write = http.expectOne(`${CC_API}/analyses/7/report-documents`);
-    expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 2, 3], acknowledgeSameProvider: true });
-    write.flush({ runId: 7, status: 1, audiences: [1, 2, 3] }, { status: 202, statusText: 'Accepted' });
+    expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1], acknowledgeSameProvider: true });
+    write.flush({ runId: 7, status: 1, audiences: [1] }, { status: 202, statusText: 'Accepted' });
   });
 
   describe('an out-of-date analysis', () => {
@@ -444,8 +452,8 @@ describe('CcReportsStepComponent', () => {
       expect(textOf(outOfDateDialog().querySelector('.cc-rep-out-of-date-confirm'))).toBe('Write anyway');
       outOfDateDialog().querySelector<HTMLButtonElement>('.cc-rep-out-of-date-confirm')!.click();
       const write = http.expectOne(`${CC_API}/analyses/8/report-documents`);
-      expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 2, 3], acknowledgeOutOfDate: true });
-      write.flush({ runId: 8, status: 1, audiences: [1, 2, 3] }, { status: 202, statusText: 'Accepted' });
+      expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1], acknowledgeOutOfDate: true });
+      write.flush({ runId: 8, status: 1, audiences: [1] }, { status: 202, statusText: 'Accepted' });
     });
 
     it('asks both questions for a same-provider writer and sends both acknowledgments', async () => {
@@ -469,9 +477,9 @@ describe('CcReportsStepComponent', () => {
       outOfDateDialog().querySelector<HTMLButtonElement>('.cc-rep-out-of-date-confirm')!.click();
       const write = http.expectOne(`${CC_API}/analyses/8/report-documents`);
       expect(write.request.body).toEqual({
-        writerModelConfigurationId: 31, audiences: [1, 2, 3], acknowledgeSameProvider: true, acknowledgeOutOfDate: true
+        writerModelConfigurationId: 31, audiences: [1], acknowledgeSameProvider: true, acknowledgeOutOfDate: true
       });
-      write.flush({ runId: 8, status: 1, audiences: [1, 2, 3] }, { status: 202, statusText: 'Accepted' });
+      write.flush({ runId: 8, status: 1, audiences: [1] }, { status: 202, statusText: 'Accepted' });
     });
 
     it('asks when the server refuses a write as out of date, with its reason, and retries with the acknowledgment', async () => {
@@ -492,8 +500,8 @@ describe('CcReportsStepComponent', () => {
 
       outOfDateDialog().querySelector<HTMLButtonElement>('.cc-rep-out-of-date-confirm')!.click();
       const write = http.expectOne(`${CC_API}/analyses/7/report-documents`);
-      expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1, 2, 3], acknowledgeOutOfDate: true });
-      write.flush({ runId: 7, status: 1, audiences: [1, 2, 3] }, { status: 202, statusText: 'Accepted' });
+      expect(write.request.body).toEqual({ writerModelConfigurationId: 30, audiences: [1], acknowledgeOutOfDate: true });
+      write.flush({ runId: 7, status: 1, audiences: [1] }, { status: 202, statusText: 'Accepted' });
     });
   });
 
@@ -514,22 +522,20 @@ describe('CcReportsStepComponent', () => {
     expect(remove.disabled).toBe(false);
 
     const boxes = Array.from(el.querySelectorAll<HTMLInputElement>('.cc-rep-audiences input[type="checkbox"]'));
-    expect(boxes.map(box => box.id)).toEqual(['cc-rep-audience-2', 'cc-rep-audience-3', 'cc-rep-audience-4']);
-    expect(boxes.map(box => box.checked)).toEqual([true, true, false]);
-    expect(component().checkedAudiences).toEqual([2, 3]);
+    expect(boxes.map(box => box.id)).toEqual(['cc-rep-audience-4']);
+    expect(boxes.map(box => box.checked)).toEqual([false]);
+    expect(component().checkedAudiences).toEqual([]);
   });
 
   it('says when every document is written, and keeps Write Reports focusable with its reason', () => {
     listDocuments([
       ccDoc(501, BenchmarkReportAudience.ExecutiveSummary),
-      ccDoc(502, BenchmarkReportAudience.TechnicalReport, { status: 'CompletedWithWarnings' }),
-      ccDoc(503, BenchmarkReportAudience.InternalBrief),
-      ccDoc(504, BenchmarkReportAudience.ProviderIssueReport)
+      ccDoc(504, BenchmarkReportAudience.ProviderIssueReport, { status: 'CompletedWithWarnings' })
     ]);
 
     expect(textOf(el.querySelector('.cc-rep-all-written'))).toBe(CC_ALL_WRITTEN_TEXT);
     expect(el.querySelectorAll('.cc-rep-audiences input[type="checkbox"]').length).toBe(0);
-    expect(textOf(row(BenchmarkReportAudience.TechnicalReport).querySelector('.cds-status'))).toBe('Written with warnings');
+    expect(textOf(row(BenchmarkReportAudience.ProviderIssueReport).querySelector('.cds-status'))).toBe('Written with warnings');
     expect(writeButton().disabled).toBe(false);
     expect(writeButton().getAttribute('aria-disabled')).toBe('true');
     expect(textOf(el.querySelector('#cc-rep-write-blocked'))).toBe(CC_ALL_WRITTEN_REASON);
@@ -623,9 +629,9 @@ describe('CcReportsStepComponent', () => {
     expect(textOf(el.querySelector('.rp-job-title'))).toBe('Reports in progress');
     const stages = Array.from(el.querySelectorAll('.rp-job-rail .run-stage'));
     expect(stages.map(stage => textOf(stage.querySelector('.run-stage-name')))).toEqual([
-      'Queued', 'Preparing', 'Executive Summary', 'Report for AI Researchers and Developers', 'Internal Brief', 'Done'
+      'Queued', 'Preparing', 'Executive Summary', 'Provider Issue Report', 'Done'
     ]);
-    expect(textOf(el.querySelector('.rp-job-rail .run-stage.is-current .run-stage-name'))).toBe('Report for AI Researchers and Developers');
+    expect(textOf(el.querySelector('.rp-job-rail .run-stage.is-current .run-stage-name'))).toBe('Provider Issue Report');
 
     expect(textOf(el.querySelector('.rp-job-elapsed'))).toBe('1 min 25 s');
     expect(textOf(el.querySelector('.rp-job-writer .cc-rep-writer-name'))).toBe('Claude writer');
@@ -639,9 +645,9 @@ describe('CcReportsStepComponent', () => {
 
     const rows = Array.from(el.querySelectorAll('.rp-job-row'));
     expect(rows.map(r => textOf(r.querySelector('.rp-doc-name')))).toEqual([
-      'Executive Summary', 'Report for AI Researchers and Developers', 'Internal Brief'
+      'Executive Summary', 'Provider Issue Report'
     ]);
-    expect(rows.map(r => textOf(r.querySelector('.rp-doc-charts')))).toEqual(['—', '—', '—']);
+    expect(rows.map(r => textOf(r.querySelector('.rp-doc-charts')))).toEqual(['—', '—']);
     expect(el.querySelectorAll('.rp-job-log .rp-log-list li').length).toBe(2);
     expect(el.querySelector('.cc-rep-cancel-btn')).not.toBeNull();
     expect(el.querySelector('.rp-job-summary')).toBeNull();
@@ -662,7 +668,7 @@ describe('CcReportsStepComponent', () => {
     component().documentsRequested.subscribe(() => requested++);
 
     expect(textOf(el.querySelector('.rp-job-title'))).toBe('Last reports');
-    expect(textOf(el.querySelector('.rp-job-summary'))).toBe('3 documents written · $0.21 · 1 min 12 s');
+    expect(textOf(el.querySelector('.rp-job-summary'))).toBe('2 documents written · $0.21 · 1 min 12 s');
     expect(el.querySelector('.rp-job-rail')).toBeNull();
     expect(el.querySelector('.cc-rep-cancel-btn')).toBeNull();
     expect(textOf(el.querySelector('.rp-job-cost-label'))).toBe('Cost');
@@ -691,7 +697,7 @@ describe('CcReportsStepComponent', () => {
   });
 
   describe('charts in PDF and Word', () => {
-    const { ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport } = BenchmarkReportAudience;
+    const { ExecutiveSummary, ProviderIssueReport } = BenchmarkReportAudience;
     const picker = () => el.querySelector<HTMLElement>('fieldset.cc-rep-charts-choice app-report-chart-picker')!;
     const pill = (audience: BenchmarkReportAudience) => el.querySelector<HTMLButtonElement>(`#cc-rep-charts-tab-${audience}`)!;
     const box = (audience: BenchmarkReportAudience, key: string) => el.querySelector<HTMLInputElement>(`#cc-rep-charts-${audience}-${key}`)!;
@@ -705,11 +711,11 @@ describe('CcReportsStepComponent', () => {
       fixture.detectChanges();
     };
 
-    it('offers the five figures for the four documents, with the sections, widths and the two layout fields', () => {
+    it('offers the five figures for the two documents, with the sections, widths and the two layout fields', () => {
       expect(textOf(el.querySelector('fieldset.cc-rep-charts-choice legend'))).toBe('Charts in PDF and Word');
       const pills = Array.from(picker().querySelectorAll<HTMLElement>('[role="tab"]'));
-      expect(pills.map(item => textOf(item.querySelector('.rcp-tab-name')))).toEqual(['Executive', 'Researchers', 'Internal', 'Provider']);
-      expect(pills.map(item => textOf(item.querySelector('.rcp-tab-count')))).toEqual(['2', '5', '2', '—']);
+      expect(pills.map(item => textOf(item.querySelector('.rcp-tab-name')))).toEqual(['Executive', 'Provider']);
+      expect(pills.map(item => textOf(item.querySelector('.rcp-tab-count')))).toEqual(['2', '—']);
       expect(textOf(pill(ProviderIssueReport).querySelector('.visually-hidden'))).toBe(', not chosen in New reports');
 
       const titles = Array.from(picker().querySelectorAll('.rcp-figure-title')).map(title => textOf(title));
@@ -727,12 +733,9 @@ describe('CcReportsStepComponent', () => {
         expect(el.querySelector(`#cc-rep-charts-${ExecutiveSummary}-${field}`), field).toBeNull();
       }
 
-      pill(TechnicalReport).click();
-      fixture.detectChanges();
-      expect(sections()).toEqual(['Results', 'Results', 'Results', 'Events', 'Results']);
-
       pill(ProviderIssueReport).click();
       fixture.detectChanges();
+      expect(sections()).toEqual(['Results', 'Results', 'Results', 'Events', 'Results']);
       expect(box(ProviderIssueReport, 'cc2-speed').getAttribute('aria-disabled')).toBe('true');
       expect(textOf(el.querySelector(`#cc-rep-charts-col-${ProviderIssueReport}-reason`))).toBe('Not chosen in New reports.');
     });
@@ -742,12 +745,12 @@ describe('CcReportsStepComponent', () => {
       fixture.detectChanges();
       expect(stored().version).toBe(1);
       expect(stored().selection[ExecutiveSummary]).toEqual(['cc1-quality', 'cc2-speed', 'cc3-work']);
-      expect(stored().selection[InternalBrief]).toEqual(['cc1-quality', 'cc3-work']);
+      expect(stored().selection[ProviderIssueReport]).toEqual(['cc2-speed', 'cc4-timeline']);
 
       el.querySelector<HTMLDetailsElement>('details.rcp-layout')!.open = true;
       choose(el.querySelector<HTMLSelectElement>(`#cc-rep-charts-${ExecutiveSummary}-maxHeight`)!, '40');
       expect(stored().layout[ExecutiveSummary].maxHeightPercent).toBe(40);
-      expect(stored().layout[TechnicalReport].maxHeightPercent).toBe(50);
+      expect(stored().layout[ProviderIssueReport].maxHeightPercent).toBe(50);
 
       const another = TestBed.createComponent(CcReportsStepComponent);
       expect(another.componentInstance.chartSettings.selection[ExecutiveSummary]).toEqual(['cc1-quality', 'cc2-speed', 'cc3-work']);
@@ -819,7 +822,7 @@ describe('CcReportsStepComponent', () => {
     });
 
     it('draws every written document\'s chosen charts again and uploads only those, with their layout', async () => {
-      listDocuments([ccDoc(501, ExecutiveSummary), ccDoc(502, TechnicalReport)]);
+      listDocuments([ccDoc(501, ExecutiveSummary), ccDoc(502, ProviderIssueReport)]);
       // The Executive Summary keeps Intelligence alone.
       box(ExecutiveSummary, 'cc2-speed').click();
       fixture.detectChanges();
@@ -844,15 +847,12 @@ describe('CcReportsStepComponent', () => {
       first.flush({ chartCount: 1, figureKeys: ['cc1-quality'] });
 
       const second = await waitForPut(502);
-      // Provider availability is chosen too, but the fixture's runs recorded no provider attempts, so it has nothing to draw.
-      expect(keysOf(second)).toEqual(['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline']);
+      expect(keysOf(second)).toEqual(['cc2-speed', 'cc4-timeline']);
       expect(second.request.body.layout.figures).toEqual([
-        { key: 'cc1-quality', widthShare: 0.5, rowGroup: 1 },
-        { key: 'cc2-speed', widthShare: 0.5, rowGroup: 1 },
-        { key: 'cc3-work', widthShare: 0.5, rowGroup: null },
+        { key: 'cc2-speed', widthShare: 0.5, rowGroup: null },
         { key: 'cc4-timeline', widthShare: 2 / 3, rowGroup: null }
       ]);
-      second.flush({ chartCount: 4, figureKeys: ['cc1-quality', 'cc2-speed', 'cc3-work', 'cc4-timeline'] });
+      second.flush({ chartCount: 2, figureKeys: ['cc2-speed', 'cc4-timeline'] });
 
       await vi.waitFor(() => expect(component().chartState).toBe('done'), { timeout: 5_000, interval: 20 });
       fixture.detectChanges();

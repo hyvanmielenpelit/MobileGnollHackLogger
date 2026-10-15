@@ -64,7 +64,7 @@ public class ReportChartMaintenanceTests
 
     private static async Task SeedDocumentAsync(ApplicationDbContext db)
     {
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.InternalBrief);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         document.Id = ExistingDocumentId;
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);

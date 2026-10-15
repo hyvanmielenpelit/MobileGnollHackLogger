@@ -40,3 +40,20 @@
   margin: 0;
   color: var(--nav-color);
 }
+
+// The latest Root Cause Analysis and its next runs, the full width of the card.
+.rdl-launcher-rca {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-self: stretch;
+  min-inline-size: 0;
+}
+
+.rdl-launcher-rca-title {
+  margin: 0;
+  font-size: var(--text-secondary);
+  font-weight: 600;
+  color: var(--font-color);
+  overflow-wrap: break-word;
+}

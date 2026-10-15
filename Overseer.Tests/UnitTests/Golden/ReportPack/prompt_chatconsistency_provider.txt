@@ -33,7 +33,7 @@ Printed before every slot: the overall verdict (the outcome, the endpoints not c
 
 FIELDS AND LISTS:
 - headline: the result in one sentence, at most 35 words: the total change of the Overseer chat with {{subject}}, citing {{verdict.overall}} or an endpoint's verdict token. It follows every claim rule below.
-- strengths, weaknesses, recommendations, models, questionTopics, questionNotes and leads: leave them out.
+- strengths, weaknesses, models and questionTopics: leave them out.
 
 NUMBERS AND NAMES:
 - Every figure appears only as a fact token {{key}}, with a key from FACTS written exactly as listed and no spaces inside the braces. The document prints the fact's value in its place.

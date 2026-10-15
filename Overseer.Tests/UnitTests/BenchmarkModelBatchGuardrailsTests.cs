@@ -769,7 +769,9 @@ public class BenchmarkModelBatchGuardrailsTests
     {
         var finding = Single(Context(change: c => c with { ReportWriter = Config(20, "xAI", "grok") }), "MB-A11");
         Assert.Equal($"{4 * BenchmarkRunReportDocumentService.Audiences.Count} AI documents will be written", finding.Title);
-        Assert.Equal("For documents on the whole batch, follow the steps the batch dialog shows when it finishes.", finding.Detail);
+        Assert.Equal(
+            "Per run: an Executive Summary and a Root Cause Analysis. For whole-batch documents, follow the steps the batch dialog shows.",
+            finding.Detail);
         Assert.DoesNotContain("MB-A11", Codes(Context()));
     }
 

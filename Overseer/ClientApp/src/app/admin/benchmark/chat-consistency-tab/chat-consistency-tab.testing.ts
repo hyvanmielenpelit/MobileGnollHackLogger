@@ -709,8 +709,8 @@ export function ccUnitView(unitId: number, period: string, overrides: Partial<Cc
 
 /**
  * The report-writing job of analysis 7 with the writer *Claude writer* (configuration 30), writing: the
- * Executive Summary written (document 501), the Report for AI Researchers and Developers being written
- * and the Internal Brief pending, with a two-line log. `jobOverrides` apply to the wrapped pack job.
+ * Executive Summary written (document 501) and the Provider Issue Report being written, with a
+ * two-line log. `jobOverrides` apply to the wrapped pack job.
  */
 export function ccReportJob(
   overrides: Partial<BenchmarkRunReportJobDto> = {},
@@ -739,12 +739,8 @@ export function ccReportJob(
         startedAtUtc: '2026-10-02T10:00:05Z', completedAtUtc: '2026-10-02T10:01:05Z', inputTokens: 30_000, outputTokens: 6_000, costUsd: 0.15
       },
       {
-        audience: BenchmarkReportAudience.TechnicalReport, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1,
+        audience: BenchmarkReportAudience.ProviderIssueReport, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1,
         startedAtUtc: '2026-10-02T10:01:05Z', completedAtUtc: null, inputTokens: 12_000, outputTokens: 3_000, costUsd: 0.06
-      },
-      {
-        audience: BenchmarkReportAudience.InternalBrief, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0,
-        startedAtUtc: null, completedAtUtc: null, inputTokens: 0, outputTokens: 0, costUsd: null
       }
     ],
     log: [
@@ -765,7 +761,7 @@ export function ccReportJob(
     cancelRequestedAtUtc: null,
     jobsAhead: null,
     blockingJobLabel: null,
-    audiences: [BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief],
+    audiences: [BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.ProviderIssueReport],
     writerConfigId: 30,
     writerDisplayName: 'Claude writer',
     writerProvider: 'Anthropic',

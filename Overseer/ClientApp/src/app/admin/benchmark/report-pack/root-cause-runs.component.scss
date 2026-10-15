@@ -1,0 +1,165 @@
+// The disclosure is the global `gh-disclosure`, each card's facts the global `bm-summary-facts`.
+// The grid follows the component's own width, and each card its own.
+:host {
+  display: block;
+  min-width: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.rcr > summary {
+  padding-block: 6px;
+  font-size: var(--text-secondary);
+}
+
+.rcr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.rcr-note {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+.rcr-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+
+  > .gh-field-error {
+    margin: 0;
+  }
+}
+
+// --- Cards ------------------------------------------------------------------------------------
+
+.rcr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.rcr-item {
+  display: flex;
+  min-inline-size: 0;
+  container: rcr-card / inline-size;
+}
+
+// Tags, title, decision rule, facts, then the action at the foot, so the actions of a row line up.
+.rcr-card {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-inline-size: 0;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.rcr-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.rcr-purpose,
+.rcr-hypothesis {
+  border-color: var(--border-glass);
+  color: var(--nav-color);
+}
+
+.rcr-mark {
+  border-color: var(--border-glass);
+  color: var(--primary-color);
+
+  &[data-mark="Required"] {
+    border-color: var(--primary-color);
+  }
+}
+
+.rcr-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--font-color);
+}
+
+.rcr-decides {
+  margin: 0;
+  overflow-wrap: break-word;
+  color: var(--font-color);
+}
+
+.rcr-after-system {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--color-warning);
+}
+
+.rcr-facts {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+  gap: 0.5rem 1rem;
+
+  dd {
+    overflow-wrap: break-word;
+  }
+}
+
+.rcr-run-note {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+.rcr-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin-top: auto;
+  padding-top: 0.25rem;
+
+  > .gh-field-error {
+    margin: 0;
+  }
+}
+
+// A narrow card gives the button the full width.
+@container rcr-card (max-width: 18rem) {
+  .rcr-actions > .btn-ghost {
+    align-self: stretch;
+    justify-content: center;
+  }
+}
+
+// --- Checks -----------------------------------------------------------------------------------
+
+.rcr-checks-title {
+  margin: 0 0 0.375rem;
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--font-color);
+}
+
+.rcr-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin: 0;
+  padding-inline-start: 1.25rem;
+}
+
+.rcr-check {
+  overflow-wrap: break-word;
+  color: var(--font-color);
+}

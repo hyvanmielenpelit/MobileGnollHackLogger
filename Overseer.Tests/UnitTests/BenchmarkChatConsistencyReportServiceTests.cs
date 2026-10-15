@@ -154,8 +154,7 @@ public class BenchmarkChatConsistencyReportServiceTests
         Assert.Equal(StatusCodes.Status200OK, estimate.StatusCode);
         Assert.False(estimate.Value!.ProviderIssueReportAvailable);
         Assert.Equal(BenchmarkChatConsistencyReportFacts.ProviderIssueReportUnavailableReason, estimate.Value.ProviderIssueReportReason);
-        Assert.Equal(new[] { Es, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief },
-            estimate.Value.Estimates.Select(e => e.Audience));
+        Assert.Equal(new[] { Es }, estimate.Value.Estimates.Select(e => e.Audience));
     }
 
     [Fact]
@@ -224,6 +223,15 @@ public class BenchmarkChatConsistencyReportServiceTests
         Assert.Equal(StatusCodes.Status400BadRequest, unknown.StatusCode);
         Assert.Equal(BenchmarkReportPackService.ChatConsistencyInvalidAudienceMessage, unknown.Error);
 
+        // The Root Cause Analysis is not written for a chat consistency analysis, and 2 and 3 are retired.
+        foreach (var refused in new[] { BenchmarkReportAudience.RootCauseAnalysis, (BenchmarkReportAudience)2, (BenchmarkReportAudience)3 })
+        {
+            var result = await service.WriteChatConsistencyDocumentsAsync(
+                ChatConsistencyReportHarness.AnalysisId, h.Writer.Id, new[] { refused }, false, ChatConsistencyReportHarness.UserId, Ct);
+            Assert.Equal(StatusCodes.Status400BadRequest, result.StatusCode);
+            Assert.Equal(BenchmarkReportPackService.ChatConsistencyInvalidAudienceMessage, result.Error);
+        }
+
         await h.StoreDocumentAsync(Es);
         var written = await service.WriteChatConsistencyDocumentsAsync(
             ChatConsistencyReportHarness.AnalysisId, h.Writer.Id, new[] { Es }, false, ChatConsistencyReportHarness.UserId, Ct);
@@ -231,8 +239,7 @@ public class BenchmarkChatConsistencyReportServiceTests
         Assert.Equal("The Executive Summary is already written. Delete it first to write it again.", written.Error);
 
         var estimate = await service.EstimateChatConsistencyDocumentsAsync(ChatConsistencyReportHarness.AnalysisId, h.Writer.Id, null, Ct);
-        Assert.Equal(new[] { BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief, Pir },
-            estimate.Value!.Estimates.Select(e => e.Audience));
+        Assert.Equal(new[] { Pir }, estimate.Value!.Estimates.Select(e => e.Audience));
         Assert.Equal(0, h.Provider.Calls);
     }
 

@@ -50,7 +50,7 @@ import { DownloadCenterPanelComponent } from './download-center-panel.component'
 import { sha256Hex } from './text-archive';
 import { zipEntryTimes } from './zip-entry-times.testing';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
+const { ExecutiveSummary, ProviderIssueReport, RootCauseAnalysis } = BenchmarkReportAudience;
 const { Summary, Detailed, Full } = BenchmarkReportDisclosure;
 const { Named, Anonymized } = BenchmarkReportPeerNaming;
 
@@ -90,8 +90,8 @@ const DIAG_DOCX_NAME = 'Board_Suite_GPT_Model_X_run42_diagnostics_INTERNAL.docx'
 function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
   const titles: Record<number, string> = {
     [ExecutiveSummary]: 'Executive Summary: GPT Model X',
-    [TechnicalReport]: 'GPT Model X — Report for AI Researchers and Developers',
-    [InternalBrief]: 'Internal Improvement Brief: GPT Model X'
+    [ProviderIssueReport]: 'GPT Model X — Provider Issue Report',
+    [RootCauseAnalysis]: 'Root Cause Analysis: GPT Model X'
   };
   return {
     id,
@@ -117,7 +117,7 @@ function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<B
     costUsd: 0.12,
     runChangedSinceGeneration: false,
     missingRunIds: [],
-    allowedDisclosures: audience === InternalBrief ? [Full] : [Summary, Detailed, Full],
+    allowedDisclosures: audience === RootCauseAnalysis ? [Full] : [Summary, Detailed, Full],
     ...overrides
   };
 }
@@ -213,7 +213,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
   }
 
   function openRun(
-    documents: BenchmarkReportDocumentListItemDto[] = [doc(1, ExecutiveSummary), doc(2, TechnicalReport), doc(3, InternalBrief)],
+    documents: BenchmarkReportDocumentListItemDto[] = [doc(1, ExecutiveSummary), doc(2, ProviderIssueReport), doc(3, RootCauseAnalysis)],
     context: DownloadCenterContext = runContext,
     job: BenchmarkRunReportJobDto | null = null,
     comparison: BenchmarkReportDocumentListItemDto[] = []
@@ -478,12 +478,13 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(checked('doc:1')).toEqual(['pdf']);
     });
 
-    it('labels the second audience the Report for AI Researchers and Developers, in External as well', () => {
-      expect(audienceLabel(TechnicalReport)).toBe('Report for AI Researchers and Developers');
+    it('names the shareable documents in External, and the Root Cause Analysis as one it cannot choose', () => {
+      expect(audienceLabel(RootCauseAnalysis)).toBe('Root Cause Analysis');
       expect(audienceLabel(ExecutiveSummary)).toBe('Executive Summary');
       const external = DOWNLOAD_PACKAGES.find(p => p.id === 'provider')!.description;
-      expect(external).toContain('The Executive Summary and the Report for AI Researchers and Developers as PDF');
-      expect(external).not.toContain('Technical Report');
+      expect(external).toContain('The Executive Summary and the Provider Issue Report as PDF');
+      expect(external).toContain('Internal-only files, the Root Cause Analysis among them, cannot be chosen.');
+      expect(external).not.toContain('Researchers');
     });
 
     it('describes Internal’s formats as PDF, Word and Markdown', () => {
@@ -502,7 +503,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
         ['report:42', INTERNAL_REASONS.runReport],
         ['log:42', INTERNAL_REASONS.toolCallLog],
         ['diag:42', INTERNAL_REASONS.diagnostics],
-        ['doc:3', INTERNAL_REASONS.internalBrief]
+        ['doc:3', INTERNAL_REASONS.rootCauseAnalysis]
       ];
       for (const [key, reason] of expectations) {
         const element = rowElement(key);
@@ -518,7 +519,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
         expect(element.querySelector('.gh-tag-internal'), key).not.toBeNull();
         expect(element.querySelector('.dc-reason'), key).toBeNull();
       }
-      expect(INTERNAL_REASONS.internalBrief).toBe('Internal only: contains rubric text');
+      expect(INTERNAL_REASONS.rootCauseAnalysis).toBe('Internal only: contains benchmark questions and rubrics');
       expect(INTERNAL_REASONS.runReport).toBe('Internal only: contains questions, rubrics and answers');
 
       for (const key of ['doc:1', 'doc:2']) {
@@ -567,7 +568,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     });
 
     it('offers the Executive Summary at the levels the server allows, never adding Detailed', () => {
-      openRun([doc(1, ExecutiveSummary, { allowedDisclosures: [Summary, Full] }), doc(2, TechnicalReport)]);
+      openRun([doc(1, ExecutiveSummary, { allowedDisclosures: [Summary, Full] }), doc(2, ProviderIssueReport)]);
       const options = (key: string): string[] =>
         Array.from(rowElement(key).querySelectorAll<HTMLSelectElement>('select')[0].options).map(o => o.textContent!.trim());
 
@@ -583,7 +584,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     });
 
     it('falls back to Summary and Full for an Executive Summary listed without its levels', () => {
-      openRun([doc(1, ExecutiveSummary, { allowedDisclosures: [] }), doc(2, TechnicalReport, { allowedDisclosures: [] })]);
+      openRun([doc(1, ExecutiveSummary, { allowedDisclosures: [] }), doc(2, ProviderIssueReport, { allowedDisclosures: [] })]);
 
       expect(row('doc:1').allowedDisclosures).toEqual([Summary, Full]);
       expect(row('doc:2').allowedDisclosures).toEqual([Summary, Detailed, Full]);
@@ -673,11 +674,11 @@ describe('BenchmarkDownloadCenterComponent', () => {
       openRun();
 
       expect(rowElement('doc:2').querySelector('input[type="checkbox"]')!.getAttribute('aria-label'))
-        .toBe('Include GPT Model X — Report for AI Researchers and Developers');
+        .toBe('Include GPT Model X — Provider Issue Report');
     });
 
     it('tags a document whose run changed since it was written', () => {
-      openRun([doc(1, ExecutiveSummary, { runChangedSinceGeneration: true }), doc(2, TechnicalReport)]);
+      openRun([doc(1, ExecutiveSummary, { runChangedSinceGeneration: true }), doc(2, ProviderIssueReport)]);
 
       expect(rowElement('doc:1').querySelector('.gh-tag-changed')!.textContent!.trim())
         .toBe('Run changed since this document was written');
@@ -796,10 +797,10 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       const sections = Array.from(disclosure.querySelectorAll('section.dc-disclosure-guide-section'));
       expect(sections.map(section => section.querySelector('.dc-disclosure-guide-heading')!.textContent!.trim()))
-        .toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief']);
+        .toEqual(['Executive Summary', 'Root Cause Analysis', 'Provider Issue Report']);
       expect(sections.map(section => Array.from(section.querySelectorAll('dl > div > dt .gh-info-term'))
         .map(term => term.textContent!.trim())))
-        .toEqual([['Summary', 'Full', 'Both levels'], ['Summary', 'Detailed', 'Full'], ['Full']]);
+        .toEqual([['Summary', 'Full', 'Both levels'], ['Full'], ['Summary', 'Detailed', 'Full', 'Every level']]);
 
       const ddText = (dd: Element) => {
         const copy = dd.cloneNode(true) as Element;
@@ -841,21 +842,25 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(executive.note).toBe(REPORT_DISCLOSURE_NOTE);
       expect(executive.items).toEqual(reportDisclosureGuide(ExecutiveSummary).items.map(item => ({ ...item })));
 
-      const researcher = reportDisclosureInfo(TechnicalReport);
-      expect(researcher.title).toBe('What Summary, Detailed and Full contain');
-      expect(terms(TechnicalReport)).toEqual(['Summary', 'Detailed', 'Full']);
-      expect(researcher.note).toBe(REPORT_DISCLOSURE_NOTE);
+      const provider = reportDisclosureInfo(ProviderIssueReport);
+      expect(provider.title).toBe('What Summary, Detailed and Full contain');
+      expect(terms(ProviderIssueReport)).toEqual(['Summary', 'Detailed', 'Full', 'Every level']);
+      expect(provider.note).toBe(REPORT_DISCLOSURE_NOTE);
 
-      const brief = reportDisclosureInfo(InternalBrief);
-      expect(brief.title).toBe('What Full contains');
-      expect(terms(InternalBrief)).toEqual(['Full']);
+      const rootCause = reportDisclosureInfo(RootCauseAnalysis);
+      expect(rootCause.title).toBe('What Full contains');
+      expect(terms(RootCauseAnalysis)).toEqual(['Full']);
+
+      // A retired or unknown type reads as internal only, with the Root Cause Analysis' guide.
+      expect(reportDisclosureGuide(2 as BenchmarkReportAudience)).toBe(reportDisclosureGuide(RootCauseAnalysis));
+      expect(reportDisclosureGuide(3 as BenchmarkReportAudience)).toBe(reportDisclosureGuide(RootCauseAnalysis));
 
       // The returned items are copies: changing one leaves the guide as it was.
-      const original = reportDisclosureGuide(TechnicalReport).items[0];
+      const original = reportDisclosureGuide(ProviderIssueReport).items[0];
       const originalPoints = [...original.points!];
-      researcher.items[0].text = 'changed';
-      (researcher.items[0].points as string[]).push('changed');
-      expect(original.text).toBe('Safe to send to the model’s company.');
+      provider.items[0].text = 'changed';
+      (provider.items[0].points as string[]).push('changed');
+      expect(original.text).toBe('For the model’s provider.');
       expect(original.points).toEqual(originalPoints);
     });
 
@@ -865,8 +870,10 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       expect(allText(ExecutiveSummary).some(text => /topic/i.test(text))).toBe(false);
       expect(allText(ExecutiveSummary).some(text => text.includes('Evidence'))).toBe(false);
-      expect(allText(InternalBrief).some(text => /Evidence line under/.test(text))).toBe(false);
-      expect(allText(TechnicalReport).some(text => text.includes('An Evidence line'))).toBe(true);
+      expect(allText(RootCauseAnalysis).some(text => /Evidence line under/.test(text))).toBe(false);
+      expect(allText(RootCauseAnalysis).some(text => text.includes('INTERNAL — contains benchmark questions and rubrics'))).toBe(true);
+      expect(allText(RootCauseAnalysis).some(text => text.includes('Four charts drawn by Overseer'))).toBe(true);
+      expect(allText(ProviderIssueReport).some(text => text.includes('never by name'))).toBe(true);
 
       const executiveFull = reportDisclosureGuide(ExecutiveSummary).items.find(item => item.term === 'Full')!;
       expect(executiveFull.points!.join(' ')).toContain('“INTERNAL — unpublished benchmark results.');
@@ -876,8 +883,8 @@ describe('BenchmarkDownloadCenterComponent', () => {
       // BenchmarkReportPackRenderer.AllowedDisclosures, stated once here because the client cannot import it.
       const allowed: [BenchmarkReportAudience, string[]][] = [
         [ExecutiveSummary, ['Summary', 'Full']],
-        [TechnicalReport, ['Summary', 'Detailed', 'Full']],
-        [InternalBrief, ['Full']]
+        [RootCauseAnalysis, ['Full']],
+        [ProviderIssueReport, ['Summary', 'Detailed', 'Full']]
       ];
       const levelNames = ['Summary', 'Detailed', 'Full'];
 
@@ -1057,7 +1064,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     });
 
     it('migrates version 2, keeping the package, paper and choices but giving the Internal rows the new formats', async () => {
-      expect(STORED_SETTINGS_VERSION).toBe(4);
+      expect(STORED_SETTINGS_VERSION).toBe(5);
       const providerChoice = { selected: true, disclosure: Detailed, naming: Named, formats: ['html'] };
       localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({
         version: 2,
@@ -1088,7 +1095,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       await runDownload();
 
       const stored = JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!);
-      expect(stored.version).toBe(4);
+      expect(stored.version).toBe(5);
       expect(stored.paper).toBe('letter');
       expect(stored.packages.provider.executiveSummary).toEqual(providerChoice);
     });
@@ -1099,7 +1106,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(component.packageId).toBe('internal');
       wrapper.close();
 
-      localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({ version: 5, package: 'provider' }));
+      localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({ version: 6, package: 'provider' }));
       openRun();
       expect(component.packageId).toBe('internal');
       wrapper.close();
@@ -1118,11 +1125,12 @@ describe('BenchmarkDownloadCenterComponent', () => {
       await runDownload();
 
       const stored = JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!);
-      expect(stored.version).toBe(4);
+      expect(stored.version).toBe(5);
       expect(stored.package).toBe('provider');
       expect(stored.paper).toBe('a4');
       expect(stored.packages.provider.executiveSummary).toEqual({ selected: true, disclosure: Detailed, naming: Named, formats: ['md'] });
-      expect(stored.packages.provider.technicalReport.selected).toBe(false);
+      expect(stored.packages.provider.providerIssueReport.selected).toBe(false);
+      expect('technicalReport' in stored.packages.provider).toBe(false);
     });
   });
 
@@ -1192,12 +1200,12 @@ describe('BenchmarkDownloadCenterComponent', () => {
         'run-42_executive-summary-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
         'run-42_executive-summary-gpt-model-x_full_named_INTERNAL.docx': documentTime,
         'run-42_executive-summary-gpt-model-x_full_named_INTERNAL.md': documentTime,
-        'run-42_gpt-model-x_Researcher_Report_full_named_INTERNAL.pdf': documentTime,
-        'run-42_gpt-model-x_Researcher_Report_full_named_INTERNAL.docx': documentTime,
-        'run-42_gpt-model-x_Researcher_Report_full_named_INTERNAL.md': documentTime,
-        'run-42_internal-improvement-brief-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
-        'run-42_internal-improvement-brief-gpt-model-x_full_named_INTERNAL.docx': documentTime,
-        'run-42_internal-improvement-brief-gpt-model-x_full_named_INTERNAL.md': documentTime,
+        'run-42_gpt-model-x-provider-issue-report_full_named_INTERNAL.pdf': documentTime,
+        'run-42_gpt-model-x-provider-issue-report_full_named_INTERNAL.docx': documentTime,
+        'run-42_gpt-model-x-provider-issue-report_full_named_INTERNAL.md': documentTime,
+        'run-42_root-cause-analysis-gpt-model-x_full_named_INTERNAL.pdf': documentTime,
+        'run-42_root-cause-analysis-gpt-model-x_full_named_INTERNAL.docx': documentTime,
+        'run-42_root-cause-analysis-gpt-model-x_full_named_INTERNAL.md': documentTime,
         'MANIFEST.md': NOW.getTime()
       };
       expect(Object.keys(zip.files).sort()).toEqual(Object.keys(expected).sort());
@@ -1310,12 +1318,12 @@ describe('BenchmarkDownloadCenterComponent', () => {
 
       choose('custom', { 'doc:2': { disclosure: Detailed, naming: Named, formats: ['html'] } });
       await runDownload();
-      expect(vi.mocked(saveText).mock.lastCall![0]).toBe('run-42_gpt-model-x_Researcher_Report_detailed_named.html');
+      expect(vi.mocked(saveText).mock.lastCall![0]).toBe('run-42_gpt-model-x-provider-issue-report_detailed_named.html');
       expect(vi.mocked(saveText).mock.lastCall![2]).toBe('text/html;charset=utf-8');
 
       choose('provider', { 'doc:2': { formats: ['md'] } });
       await runDownload();
-      expect(vi.mocked(saveText).mock.lastCall![0]).toBe('run-42_gpt-model-x_Researcher_Report_summary_anonymized.md');
+      expect(vi.mocked(saveText).mock.lastCall![0]).toBe('run-42_gpt-model-x-provider-issue-report_summary_anonymized.md');
       expect(vi.mocked(saveText).mock.lastCall![0]).not.toContain('INTERNAL');
 
       choose('internal', { 'diag:42': { formats: ['txt'] } });
@@ -1357,29 +1365,25 @@ describe('BenchmarkDownloadCenterComponent', () => {
       }
     });
 
-    it('names a Report for AI Researchers and Developers by its title without the audience, then _Researcher_Report', () => {
-      expect(reportDocumentFileStem(doc(2, TechnicalReport, { title: 'GPT Model X — Report for AI Researchers and Developers' }), 'x'))
-        .toBe('run-42_gpt-model-x_Researcher_Report');
-      expect(reportDocumentFileStem(doc(2, TechnicalReport, { title: 'GPT Model X — Technical Report' }), 'x'))
-        .toBe('run-42_gpt-model-x_Researcher_Report');
-      expect(reportDocumentFileStem(doc(2, TechnicalReport, { title: '' }), 'Fallback Label')).toBe('run-42_fallback-label_Researcher_Report');
+    it('names every run document by its title, or the fallback label without one', () => {
+      expect(reportDocumentFileStem(doc(3, RootCauseAnalysis), 'x')).toBe('run-42_root-cause-analysis-gpt-model-x');
+      expect(reportDocumentFileStem(doc(2, ProviderIssueReport), 'x')).toBe('run-42_gpt-model-x-provider-issue-report');
+      expect(reportDocumentFileStem(doc(3, RootCauseAnalysis, { title: '' }), 'Fallback Label')).toBe('run-42_fallback-label');
       expect(reportDocumentFileStem(doc(1, ExecutiveSummary), 'x')).toBe('run-42_executive-summary-gpt-model-x');
     });
 
     it('prefixes a run subject with run-<id>_ and leaves every other subject unprefixed, as the server does', () => {
       const subject = 'GPT-5.6 Luna on the Overseer GnollHack Assistant Benchmark';
-      const researcher = (subjectKey: string) =>
-        reportDocumentFileStem(doc(2, TechnicalReport, { subjectKey, title: `${subject} — Report for AI Researchers and Developers` }), 'x');
+      const rootCause = (subjectKey: string) =>
+        reportDocumentFileStem(doc(3, RootCauseAnalysis, { subjectKey, title: `${subject} — Root Cause Analysis` }), 'x');
       const summary = (subjectKey: string) =>
         reportDocumentFileStem(doc(1, ExecutiveSummary, { subjectKey, title: `${subject} — Executive Summary` }), 'x');
 
       // The server's BenchmarkPdfFileNames fixtures for subject run:12, one for one.
-      expect(`${researcher('run:12')}_detailed_anonymized.pdf`)
-        .toBe('run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf');
-      expect(`${researcher('run:12')}_full_named_INTERNAL.pdf`)
-        .toBe('run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf');
-      expect(`${researcher('run:12')}_summary_named.pdf`)
-        .toBe('run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_summary_named.pdf');
+      expect(`${rootCause('run:12')}_full_named_INTERNAL.pdf`)
+        .toBe('run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-root-cause-analysis_full_named_INTERNAL.pdf');
+      expect(`${rootCause('run:12')}_full_anonymized_INTERNAL.pdf`)
+        .toBe('run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-root-cause-analysis_full_anonymized_INTERNAL.pdf');
       expect(`${summary('run:12')}_summary_named.pdf`)
         .toBe('run-12_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_summary_named.pdf');
 
@@ -1617,7 +1621,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
         cancelRequestedAtUtc: null,
         jobsAhead: phase === 'Queued' ? 1 : null,
         blockingJobLabel: null,
-        audiences: [ExecutiveSummary, TechnicalReport],
+        audiences: [ExecutiveSummary, ProviderIssueReport],
         writerConfigId: 7,
         writerDisplayName: 'Claude Opus',
         writerProvider: 'Anthropic',
@@ -1694,7 +1698,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       const reload = expectList('runCompletion');
       expect(reload.request.params.get('subject')).toBe('run:42');
       expect(reload.request.params.has('runId')).toBe(false);
-      reload.flush([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
+      reload.flush([doc(1, ExecutiveSummary), doc(2, ProviderIssueReport)]);
       render();
 
       expect(notice()).toBeNull();
@@ -1733,7 +1737,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     it('lists the chosen documents alone, with a notice for one no longer available', () => {
       openDocuments({
         1: doc(1, ExecutiveSummary, { subjectRunIds: [42, 43], missingRunIds: [43], runChangedSinceGeneration: true }),
-        2: doc(2, TechnicalReport, { subjectRunIds: [42, 43], missingRunIds: [43] }),
+        2: doc(2, ProviderIssueReport, { subjectRunIds: [42, 43], missingRunIds: [43] }),
         9: null
       });
 
@@ -1745,7 +1749,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     });
 
     it('makes no request but the allowed endpoints', async () => {
-      openDocuments({ 1: doc(1, ExecutiveSummary), 2: doc(2, TechnicalReport) });
+      openDocuments({ 1: doc(1, ExecutiveSummary), 2: doc(2, ProviderIssueReport) });
 
       await runDownload();
 
@@ -1758,7 +1762,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       const heading = (): string => (host().querySelector('.dialog-title-group h3')?.textContent ?? '').trim();
       const subtitle = (): string => (host().querySelector('.dialog-title-group .dialog-subtitle')?.textContent ?? '').trim();
 
-      openDocuments({ 1: doc(1, ExecutiveSummary), 2: doc(2, TechnicalReport) });
+      openDocuments({ 1: doc(1, ExecutiveSummary), 2: doc(2, ProviderIssueReport) });
       expect(heading()).toBe('Downloads');
       expect(subtitle()).toBe('2 report documents');
 
@@ -1805,14 +1809,14 @@ describe('BenchmarkDownloadCenterComponent', () => {
     });
 
     it('switches from a run to the comparison documents about it on Open comparison documents', () => {
-      openRun(undefined, undefined, undefined, [doc(5, ExecutiveSummary), doc(6, TechnicalReport)]);
+      openRun(undefined, undefined, undefined, [doc(5, ExecutiveSummary), doc(6, ProviderIssueReport)]);
       expect(component.rows.some(r => r.key === 'doc:5')).toBe(false);
 
       host().querySelector<HTMLButtonElement>('.dc-comparison-pointer .dc-open-comparison-documents')!.click();
       const list = expectList('reportPack');
       expect(list.request.params.get('subject')).toBe('run:42');
       expect(list.request.params.has('comparison')).toBe(false);
-      list.flush([doc(5, ExecutiveSummary), doc(6, TechnicalReport)]);
+      list.flush([doc(5, ExecutiveSummary), doc(6, ProviderIssueReport)]);
       render();
 
       expect(wrapper.dialog!.nativeElement.open).toBe(true);
@@ -1882,7 +1886,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     }
 
     it('names the ZIP of one comparison\'s documents after its number and name, and lists the comparison and models in the manifest', async () => {
-      openLibrary([numbered(1, ExecutiveSummary), aboutY(2, ExecutiveSummary), wholeComparison(3, TechnicalReport)]);
+      openLibrary([numbered(1, ExecutiveSummary), aboutY(2, ExecutiveSummary), wholeComparison(3, ProviderIssueReport)]);
       choose('internal', { 'doc:1': { formats: ['md'] }, 'doc:2': { formats: ['md'] }, 'doc:3': { formats: ['md'] } });
 
       await runDownload();
@@ -1891,7 +1895,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(zip.name).toBe('comparison-12_gpt-model-x-vs-gpt-model-y_internal-package_20260928_101502.zip');
       expect(Object.keys(zip.files).sort()).toEqual([
         'MANIFEST.md',
-        'comparison-12_gpt-model-x-vs-gpt-model-y_researcher-report_full_named_INTERNAL.md',
+        'comparison-12_gpt-model-x-vs-gpt-model-y_provider-issue-report_full_named_INTERNAL.md',
         'comparison-12_gpt-model-x_executive-summary_full_named_INTERNAL.md',
         'comparison-12_gpt-model-y_executive-summary_full_named_INTERNAL.md'
       ]);
@@ -1899,12 +1903,12 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(manifest).toContain('- **Files:** 3\n- **Comparison:** Comparison #12 — GPT Model X vs GPT Model Y\n');
       expect(manifestBlock(manifest, 'gpt-model-y_executive-summary'))
         .toContain('- **Audience:** Executive Summary\n- **Comparison:** Comparison #12 — GPT Model X vs GPT Model Y\n- **Model:** GPT Model Y\n');
-      expect(manifestBlock(manifest, 'researcher-report'))
+      expect(manifestBlock(manifest, 'provider-issue-report'))
         .toContain('- **Comparison:** Comparison #12 — GPT Model X vs GPT Model Y\n- **Models:** all 2\n');
     });
 
     it('names an anonymized package of one comparison by its number alone, and its manifest names neither the comparison nor a peer', async () => {
-      openLibrary([numbered(1, ExecutiveSummary), wholeComparison(3, TechnicalReport)]);
+      openLibrary([numbered(1, ExecutiveSummary), wholeComparison(3, ProviderIssueReport)]);
       choose('provider', { 'doc:1': { formats: ['md'] }, 'doc:3': { formats: ['md'] } });
       expect(component.stateOf(row('doc:1')).naming).toBe(Anonymized);
 
@@ -1915,7 +1919,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(Object.keys(zip.files).sort()).toEqual([
         'MANIFEST.md',
         'comparison-12_gpt-model-x_executive-summary_summary_anonymized.md',
-        'comparison-12_researcher-report_summary_anonymized.md'
+        'comparison-12_provider-issue-report_summary_anonymized.md'
       ]);
       const manifest = zip.files['MANIFEST.md'];
       expect(manifest).toContain('- **Files:** 2\n- **Comparison:** Comparison #12\n');
@@ -1923,7 +1927,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
       expect(manifest).not.toContain('GPT Model Y');
       // The subject of one model's document is named in both namings.
       expect(manifestBlock(manifest, 'gpt-model-x_executive-summary')).toContain('- **Comparison:** Comparison #12\n- **Model:** GPT Model X\n');
-      expect(manifestBlock(manifest, 'researcher-report')).toContain('- **Comparison:** Comparison #12\n- **Models:** all 2\n');
+      expect(manifestBlock(manifest, 'provider-issue-report')).toContain('- **Comparison:** Comparison #12\n- **Models:** all 2\n');
     });
 
     it('names the ZIP of several comparisons\' documents comparison-reports, listing every comparison in the manifest', async () => {
@@ -1941,7 +1945,7 @@ describe('BenchmarkDownloadCenterComponent', () => {
     it('names a package of one model\'s documents after that model, never after a newer document left out of it', async () => {
       openLibrary([
         doc(1, ExecutiveSummary),
-        doc(2, TechnicalReport),
+        doc(2, ProviderIssueReport),
         doc(5, ExecutiveSummary, { subjectKey: 'run:43', subjectLabel: 'GPT Model Y', title: 'Executive Summary: GPT Model Y', createdAtUtc: '2026-09-25T09:30:12Z' })
       ]);
       expect(component.rows[0].key).toBe('doc:5');

@@ -31,6 +31,7 @@ import {
   REPORT_CHART_FIGURES,
   REPORT_CHART_NOT_DRAWN,
   REPORT_CHART_STORAGE_KEY,
+  SERVER_DRAWN_CHART_FIGURE_KEYS,
   ReportChartDocumentLayout,
   ReportChartFigureKey,
   ReportChartPublishProgress,
@@ -51,6 +52,7 @@ import {
   documentTextStyle,
   isDocumentChartFigureKey,
   isReportChartFigureKey,
+  isServerDrawnChartFigureKey,
   normalizeChartSelection,
   normalizeDocumentChartLayout,
   printFigureAppearance,
@@ -65,7 +67,7 @@ import {
   storeChartSettings
 } from './report-charts';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
+const { ExecutiveSummary, RootCauseAnalysis } = BenchmarkReportAudience;
 
 const HASH = 'a'.repeat(64);
 
@@ -96,67 +98,78 @@ describe('report-charts', () => {
       expect(isDocumentChartFigureKey('cc9-nothing')).toBe(false);
     });
 
+    it('knows the four server-drawn figures, and never takes one for a browser-drawn figure', () => {
+      expect(SERVER_DRAWN_CHART_FIGURE_KEYS).toEqual([
+        'r1-points-at-risk', 'r2-speed-decomposition', 'r3-cost-decomposition', 'r4-hypothesis-confidence'
+      ]);
+      for (const key of SERVER_DRAWN_CHART_FIGURE_KEYS) {
+        expect(isServerDrawnChartFigureKey(key), key).toBe(true);
+        expect(isDocumentChartFigureKey(key), key).toBe(false);
+        expect(isReportChartFigureKey(key), key).toBe(false);
+      }
+      expect(isServerDrawnChartFigureKey('p1a-quality')).toBe(false);
+    });
+
     it('places each figure in the section the server draws it in', () => {
       const table = REPORT_CHART_FIGURES.map(figure => [
         reportChartPlacementLabel(ExecutiveSummary, figure.key),
-        reportChartPlacementLabel(TechnicalReport, figure.key),
-        reportChartPlacementLabel(InternalBrief, figure.key)
+        reportChartPlacementLabel(RootCauseAnalysis, figure.key)
       ]);
       expect(table).toEqual([
-        ['How it compares', 'Results against peers → Quality', '§3 Key figures'],
-        ['How it compares', 'Results against peers → Speed', '§3 Key figures'],
-        ['How it compares', 'Results against peers → Cost', '§3 Key figures'],
-        ['How it compares', 'Results against peers', '§3 Key figures'],
-        ['How it compares', 'Speed and cost', '§3 Key figures'],
-        ['How it compares', 'Speed and cost', '§3 Key figures'],
-        ['How it compares', 'Speed and cost', '§3 Key figures'],
-        ['Key figures', 'Key figures → Provider availability', '§3 Provider availability']
+        ['How it compares', 'Evidence: intelligence'],
+        ['How it compares', 'Evidence: speed'],
+        ['How it compares', 'Evidence: cost'],
+        ['How it compares', REPORT_CHART_NOT_DRAWN],
+        ['How it compares', 'Evidence: speed'],
+        ['How it compares', 'Evidence: cost'],
+        ['How it compares', REPORT_CHART_NOT_DRAWN],
+        ['Key figures', REPORT_CHART_NOT_DRAWN]
       ]);
-      // A1 is drawn in every model-scope document type.
-      for (const audience of [ExecutiveSummary, TechnicalReport, InternalBrief]) {
-        expect(reportChartDrawn(audience, 'a1-availability'), String(audience)).toBe(true);
-      }
+      // A1 is drawn in the model-scope Executive Summary only.
+      expect(reportChartDrawn(ExecutiveSummary, 'a1-availability')).toBe(true);
+      expect(reportChartDrawn(RootCauseAnalysis, 'a1-availability')).toBe(false);
     });
 
     it('places a comparison-scope figure by the comparison-scope table, falling back to the model-scope section', () => {
       const comparisonTable = COMPARISON_SCOPE_CHART_PLACEMENTS as unknown as Record<number, Record<string, string> | undefined>;
-      for (const audience of [ExecutiveSummary, TechnicalReport, InternalBrief]) {
+      for (const audience of [ExecutiveSummary, RootCauseAnalysis]) {
         for (const figure of REPORT_CHART_FIGURES) {
           const expected = comparisonTable[audience]?.[figure.key] ?? reportChartPlacementLabel(audience, figure.key);
           expect(reportChartPlacementLabel(audience, figure.key, 'comparison'), `${audience} ${figure.key}`).toBe(expected);
         }
       }
-      expect(reportChartPlacementLabel(TechnicalReport, 'p1b-speed', 'model')).toBe('Results against peers → Speed');
+      expect(reportChartPlacementLabel(RootCauseAnalysis, 'p1b-speed', 'model')).toBe('Evidence: speed');
     });
 
     it('places comparison-scope figures at the server\'s comparison-scope anchors', () => {
       const table = REPORT_CHART_FIGURES.map(figure => [
         reportChartPlacementLabel(ExecutiveSummary, figure.key, 'comparison'),
-        reportChartPlacementLabel(TechnicalReport, figure.key, 'comparison'),
-        reportChartPlacementLabel(InternalBrief, figure.key, 'comparison')
+        reportChartPlacementLabel(RootCauseAnalysis, figure.key, 'comparison')
       ]);
       expect(table).toEqual([
-        ['How they compare', 'Results', 'Models compared'],
-        ['How they compare', 'Speed and cost frontier', 'Models compared'],
-        ['How they compare', 'Speed and cost frontier', 'Models compared'],
-        ['How they compare', 'Dimension profiles', 'Models compared'],
-        ['How they compare', 'Speed and cost frontier', 'Models compared'],
-        ['How they compare', 'Speed and cost frontier', 'Models compared'],
-        ['How they compare', 'Speed and cost frontier', 'Models compared'],
-        [REPORT_CHART_NOT_DRAWN, 'Results → Provider availability', 'Models compared']
+        ['How they compare', 'Evidence: intelligence'],
+        ['How they compare', 'Evidence: speed'],
+        ['How they compare', 'Evidence: cost'],
+        ['How they compare', REPORT_CHART_NOT_DRAWN],
+        ['How they compare', 'Evidence: speed'],
+        ['How they compare', 'Evidence: cost'],
+        ['How they compare', REPORT_CHART_NOT_DRAWN],
+        [REPORT_CHART_NOT_DRAWN, REPORT_CHART_NOT_DRAWN]
       ]);
       // The comparison-scope Executive Summary does not place A1, with no fallback to its model-scope section.
       expect(reportChartDrawn(ExecutiveSummary, 'a1-availability', 'comparison')).toBe(false);
-      expect(reportChartDrawn(TechnicalReport, 'a1-availability', 'comparison')).toBe(true);
-      expect(reportChartDrawn(InternalBrief, 'a1-availability', 'comparison')).toBe(true);
+      expect(reportChartDrawn(RootCauseAnalysis, 'a1-availability', 'comparison')).toBe(false);
       expect(reportChartDrawn(ExecutiveSummary, 'p1a-quality', 'comparison')).toBe(true);
+      expect(reportChartDrawn(RootCauseAnalysis, 's1-quality-speed', 'comparison')).toBe(true);
     });
 
-    it('defaults to two charts in the Executive Summary, all eight in the researchers\' report and the three bars in the brief', () => {
+    it('defaults to two charts in the Executive Summary and the five offered kinds in the Root Cause Analysis', () => {
       expect(DEFAULT_CHART_SELECTION[ExecutiveSummary]).toEqual(['p1a-quality', 's2-quality-cost']);
-      expect(DEFAULT_CHART_SELECTION[TechnicalReport]).toEqual(REPORT_CHART_FIGURES.map(figure => figure.key));
-      expect(DEFAULT_CHART_SELECTION[TechnicalReport]).toContain('a1-availability');
-      expect(DEFAULT_CHART_SELECTION[InternalBrief]).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost']);
+      expect(DEFAULT_CHART_SELECTION[RootCauseAnalysis])
+        .toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost', 's1-quality-speed', 's2-quality-cost']);
+      for (const key of DEFAULT_CHART_SELECTION[RootCauseAnalysis] ?? []) {
+        expect(reportChartDrawn(RootCauseAnalysis, key), key).toBe(true);
+      }
     });
 
     it('draws full column at 300 dpi with 8 pt labels by default, taller as the width narrows', () => {
@@ -286,7 +299,7 @@ describe('report-charts', () => {
       ({ ...DEFAULT_DOCUMENT_CHART_LAYOUT, ...overrides });
 
     it('is every figure full column on its own row, at 60 %, by default', () => {
-      expect(reportDocumentChartLayout(TechnicalReport, ['p1b-speed', 'p1a-quality'], layout())).toEqual({
+      expect(reportDocumentChartLayout(RootCauseAnalysis, ['p1b-speed', 'p1a-quality'], layout())).toEqual({
         version: 1,
         figures: [
           { key: 'p1a-quality', widthShare: 1, rowGroup: null },
@@ -308,13 +321,13 @@ describe('report-charts', () => {
 
     it('places a half-width figure full column where its width is refused', () => {
       const halves = layout({ labelPt: 9, widths: { 'p1a-quality': 'half', 'p1b-speed': 'half' } });
-      expect(reportDocumentChartLayout(InternalBrief, ['p1a-quality', 'p1b-speed'], halves).figures)
+      expect(reportDocumentChartLayout(ExecutiveSummary, ['p1a-quality', 'p1b-speed'], halves).figures)
         .toEqual([{ key: 'p1a-quality', widthShare: 1, rowGroup: null }, { key: 'p1b-speed', widthShare: 1, rowGroup: null }]);
     });
 
     it('pairs two half-width figures at the same placement into one row group', () => {
       const halves = layout({ widths: { 'p1a-quality': 'half', 'p1b-speed': 'half' } });
-      expect(reportDocumentChartLayout(InternalBrief, ['p1a-quality', 'p1b-speed', 'p1c-cost'], halves).figures).toEqual([
+      expect(reportDocumentChartLayout(ExecutiveSummary, ['p1a-quality', 'p1b-speed', 'p1c-cost'], halves).figures).toEqual([
         { key: 'p1a-quality', widthShare: 0.5, rowGroup: 1 },
         { key: 'p1b-speed', widthShare: 0.5, rowGroup: 1 },
         { key: 'p1c-cost', widthShare: 1, rowGroup: null }
@@ -333,8 +346,8 @@ describe('report-charts', () => {
         { key: 's1-quality-speed', widthShare: 0.5, rowGroup: 2 },
         { key: 's2-quality-cost', widthShare: 1, rowGroup: null }
       ]);
-      // The researchers' report puts Quality, Speed and Cost in sections of their own: no pair forms.
-      expect(reportDocumentChartLayout(TechnicalReport, keys, halves).figures.map(figure => figure.rowGroup))
+      // The Root Cause Analysis puts intelligence, speed and cost in evidence sections of their own: no pair forms.
+      expect(reportDocumentChartLayout(RootCauseAnalysis, keys, halves).figures.map(figure => figure.rowGroup))
         .toEqual([null, null, null, null, null]);
       // Side by side off: every half alone.
       expect(reportDocumentChartLayout(ExecutiveSummary, keys, { ...halves, sideBySide: false }).figures
@@ -366,8 +379,7 @@ describe('report-charts', () => {
       });
       expect(DEFAULT_CHART_LAYOUT_SETTINGS).toEqual({
         [ExecutiveSummary]: DEFAULT_DOCUMENT_CHART_LAYOUT,
-        [TechnicalReport]: DEFAULT_DOCUMENT_CHART_LAYOUT,
-        [InternalBrief]: DEFAULT_DOCUMENT_CHART_LAYOUT
+        [RootCauseAnalysis]: DEFAULT_DOCUMENT_CHART_LAYOUT
       });
     });
   });
@@ -378,12 +390,28 @@ describe('report-charts', () => {
     it('normalizes: dedupes, orders by placement, drops unknown keys and audiences, keeps an explicit none', () => {
       const messy = {
         [ExecutiveSummary]: ['s2-quality-cost', 'p1a-quality', 's2-quality-cost', 'bogus'],
-        [InternalBrief]: [],
+        [RootCauseAnalysis]: [],
+        2: ['p1a-quality'],
+        3: ['p1b-speed'],
         9: ['p1a-quality']
       } as unknown as ReportChartSelection;
       expect(normalizeChartSelection(messy)).toEqual({
         [ExecutiveSummary]: ['p1a-quality', 's2-quality-cost'],
-        [InternalBrief]: []
+        [RootCauseAnalysis]: []
+      });
+    });
+
+    it('drops the stored settings of a retired document type on read, and gives a missing Root Cause Analysis its defaults', () => {
+      const retiredLayout = { ...DEFAULT_DOCUMENT_CHART_LAYOUT, labelPt: 7 };
+      localStorage.setItem(REPORT_CHART_STORAGE_KEY, JSON.stringify({
+        version: 2,
+        selection: { [ExecutiveSummary]: ['p1b-speed'], 2: ['p1a-quality'], 3: [] },
+        layout: { 2: retiredLayout, 3: retiredLayout }
+      }));
+
+      expect(readStoredChartSettings()).toEqual({
+        selection: { [ExecutiveSummary]: ['p1b-speed'], [RootCauseAnalysis]: DEFAULT_CHART_SELECTION[RootCauseAnalysis] },
+        layout: DEFAULT_CHART_LAYOUT_SETTINGS
       });
     });
 
@@ -397,23 +425,23 @@ describe('report-charts', () => {
     });
 
     it('stores a version-2 record and reads it back normalized', () => {
-      storeChartSelection({ [ExecutiveSummary]: ['p1c-cost', 'p1a-quality'], [TechnicalReport]: [] });
+      storeChartSelection({ [ExecutiveSummary]: ['p1c-cost', 'p1a-quality'], [RootCauseAnalysis]: [] });
       expect(JSON.parse(localStorage.getItem(REPORT_CHART_STORAGE_KEY)!)).toEqual({
         version: 2,
-        selection: { [ExecutiveSummary]: ['p1a-quality', 'p1c-cost'], [TechnicalReport]: [] },
+        selection: { [ExecutiveSummary]: ['p1a-quality', 'p1c-cost'], [RootCauseAnalysis]: [] },
         layout: DEFAULT_CHART_LAYOUT_SETTINGS
       });
-      expect(readStoredChartSelection()).toEqual({ [ExecutiveSummary]: ['p1a-quality', 'p1c-cost'], [TechnicalReport]: [] });
+      expect(readStoredChartSelection()).toEqual({ [ExecutiveSummary]: ['p1a-quality', 'p1c-cost'], [RootCauseAnalysis]: [] });
     });
 
     it('migrates a version-1 record with its figure selection intact and the default layout', () => {
       localStorage.setItem(REPORT_CHART_STORAGE_KEY, JSON.stringify({
         version: 1,
-        selection: { [ExecutiveSummary]: ['s3-speed-cost', 'p1b-speed'], [InternalBrief]: [] }
+        selection: { [ExecutiveSummary]: ['s3-speed-cost', 'p1b-speed'], [RootCauseAnalysis]: [] }
       }));
 
       expect(readStoredChartSettings()).toEqual({
-        selection: { [ExecutiveSummary]: ['p1b-speed', 's3-speed-cost'], [InternalBrief]: [] },
+        selection: { [ExecutiveSummary]: ['p1b-speed', 's3-speed-cost'], [RootCauseAnalysis]: [] },
         layout: DEFAULT_CHART_LAYOUT_SETTINGS
       });
       // The next store writes version 2.
@@ -428,15 +456,15 @@ describe('report-charts', () => {
       };
       storeChartSettings({
         selection: DEFAULT_CHART_SELECTION,
-        layout: { [InternalBrief]: { ...brief, heading: 'loud' } as unknown as ReportChartDocumentLayout }
+        layout: { [RootCauseAnalysis]: { ...brief, heading: 'loud' } as unknown as ReportChartDocumentLayout }
       });
 
       const read = readStoredChartSettings();
-      expect(read.layout[InternalBrief]).toEqual({ ...brief, heading: 'none' });
+      expect(read.layout[RootCauseAnalysis]).toEqual({ ...brief, heading: 'none' });
       expect(read.layout[ExecutiveSummary]).toEqual(DEFAULT_DOCUMENT_CHART_LAYOUT);
 
-      storeChartSelection({ [InternalBrief]: ['p1a-quality'] });
-      expect(readStoredChartSettings()).toEqual({ selection: { [InternalBrief]: ['p1a-quality'] }, layout: read.layout });
+      storeChartSelection({ [RootCauseAnalysis]: ['p1a-quality'] });
+      expect(readStoredChartSettings()).toEqual({ selection: { [RootCauseAnalysis]: ['p1a-quality'] }, layout: read.layout });
     });
 
     it('survives storage that throws', () => {
@@ -474,7 +502,7 @@ describe('report-charts', () => {
 
     it('hashes to 64 lowercase hex characters, pinned, whatever the key order', async () => {
       const hash = await chartSettingsHash(settings());
-      expect(hash).toBe('a96a276f21ec376190ea617df68188050f980844ef78d378278b853efe41f46c');
+      expect(hash).toBe('d063fd97cfc86bec6c8d31061ff224a77dc5a61544a70b6f07d202c02784c619');
       const reordered = await chartSettingsHash(settings({ figureStyle: { font: 'Lato', theme: 'dark' } }));
       expect(reordered).toBe(hash);
     });
@@ -494,7 +522,7 @@ describe('report-charts', () => {
       const base = await chartSettingsHash(settings());
       const changed = (patch: Partial<ReportChartDocumentLayout>): ReportChartSettingsInput => settings({
         layout: documentChartHashLayout({
-          ...DEFAULT_CHART_LAYOUT_SETTINGS, [InternalBrief]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, ...patch }
+          ...DEFAULT_CHART_LAYOUT_SETTINGS, [RootCauseAnalysis]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, ...patch }
         })
       });
       for (const patch of [
@@ -597,13 +625,13 @@ describe('report-charts', () => {
       const publisher = new ReportChartPublisher(service);
       const layout = {
         ...DEFAULT_CHART_LAYOUT_SETTINGS,
-        [TechnicalReport]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, widths: { 'p1c-cost': 'twoThirds' as const }, maxHeightPercent: 50 }
+        [RootCauseAnalysis]: { ...DEFAULT_DOCUMENT_CHART_LAYOUT, widths: { 'p1c-cost': 'twoThirds' as const }, maxHeightPercent: 50 }
       };
-      await publisher.publish([target(11, ExecutiveSummary, {}), target(12, TechnicalReport, {})],
-        { [ExecutiveSummary]: ['p1a-quality'], [TechnicalReport]: ['p1a-quality', 'p1b-speed', 'p1c-cost'] },
+      await publisher.publish([target(11, ExecutiveSummary, {}), target(12, RootCauseAnalysis, {})],
+        { [ExecutiveSummary]: ['p1a-quality'], [RootCauseAnalysis]: ['p1a-quality', 'p1b-speed', 'p1c-cost'] },
         compose, HASH, undefined, layout);
 
-      expect(composedAudiences).toEqual([ExecutiveSummary, TechnicalReport, TechnicalReport, TechnicalReport]);
+      expect(composedAudiences).toEqual([ExecutiveSummary, RootCauseAnalysis, RootCauseAnalysis, RootCauseAnalysis]);
       expect(puts[0].layout).toEqual({ version: 1, figures: [{ key: 'p1a-quality', widthShare: 1, rowGroup: null }], maxHeightShare: 0.6 });
       // Speed failed to draw, so the layout names the two figures uploaded.
       expect(puts[1].layout).toEqual({
@@ -650,10 +678,10 @@ describe('report-charts', () => {
       const progress: ReportChartPublishProgress[] = [];
       const selection: ReportChartSelection = {
         [ExecutiveSummary]: ['s2-quality-cost', 'p1a-quality'],
-        [InternalBrief]: ['p1b-speed']
+        [RootCauseAnalysis]: ['p1b-speed']
       };
 
-      const running = publisher.publish([target(11, ExecutiveSummary), target(12, InternalBrief, {})], selection, compose, HASH, p => progress.push(p));
+      const running = publisher.publish([target(11, ExecutiveSummary), target(12, RootCauseAnalysis, {})], selection, compose, HASH, p => progress.push(p));
       expect(publisher.running).toBe(true);
       const result = await running;
 
@@ -693,8 +721,8 @@ describe('report-charts', () => {
 
     it('skips a document whose selection is empty, uploading nothing for it', async () => {
       const publisher = new ReportChartPublisher(service);
-      const result = await publisher.publish([target(11, ExecutiveSummary), target(12, TechnicalReport)],
-        { [ExecutiveSummary]: [], [TechnicalReport]: ['p1c-cost'] }, compose, HASH);
+      const result = await publisher.publish([target(11, ExecutiveSummary), target(12, RootCauseAnalysis)],
+        { [ExecutiveSummary]: [], [RootCauseAnalysis]: ['p1c-cost'] }, compose, HASH);
 
       expect(result.skipped).toEqual([11]);
       expect(puts.map(put => put.id)).toEqual([12]);
@@ -713,6 +741,16 @@ describe('report-charts', () => {
       expect(puts[0].charts.map(chart => chart.figureKey)).not.toContain('a1-availability');
     });
 
+    it('never composes or uploads a server-drawn figure, even when a selection names one', async () => {
+      const publisher = new ReportChartPublisher(service);
+      const selection = { [RootCauseAnalysis]: ['r1-points-at-risk', 'p1a-quality', 'r4-hypothesis-confidence'] } as unknown as ReportChartSelection;
+      await publisher.publish([target(11, RootCauseAnalysis, {})], selection, compose, HASH, undefined, DEFAULT_CHART_LAYOUT_SETTINGS);
+
+      expect(composed).toEqual(['p1a-quality/named']);
+      expect(puts[0].charts.map(chart => chart.figureKey)).toEqual(['p1a-quality']);
+      expect(puts[0].layout?.figures.map(figure => figure.key)).toEqual(['p1a-quality']);
+    });
+
     it('stops after the document in flight when canceled', async () => {
       const publisher = new ReportChartPublisher(service);
       onCompose = () => publisher.cancel();
@@ -729,8 +767,8 @@ describe('report-charts', () => {
       rejectKeys = new Set(['p1b-speed']);
       const publisher = new ReportChartPublisher(service);
       const progress: ReportChartPublishProgress[] = [];
-      const result = await publisher.publish([target(11, ExecutiveSummary, {}), target(12, InternalBrief, {})],
-        { [ExecutiveSummary]: ['p1a-quality', 'p1b-speed'], [InternalBrief]: ['p1b-speed'] }, compose, HASH,
+      const result = await publisher.publish([target(11, ExecutiveSummary, {}), target(12, RootCauseAnalysis, {})],
+        { [ExecutiveSummary]: ['p1a-quality', 'p1b-speed'], [RootCauseAnalysis]: ['p1b-speed'] }, compose, HASH,
         p => progress.push(p));
 
       expect(puts.map(put => put.id)).toEqual([11]);
@@ -778,8 +816,8 @@ describe('report-charts', () => {
       putResponse = () => throwError(() => new HttpErrorResponse({ status: 400, statusText: 'Bad Request', error: { error: message } }));
       const publisher = new ReportChartPublisher(service);
       const progress: ReportChartPublishProgress[] = [];
-      const result = await publisher.publish([target(11, ExecutiveSummary), target(12, ExecutiveSummary), target(13, TechnicalReport)],
-        { [ExecutiveSummary]: ['p1a-quality'], [TechnicalReport]: ['p1a-quality'] }, compose, HASH, p => progress.push(p));
+      const result = await publisher.publish([target(11, ExecutiveSummary), target(12, ExecutiveSummary), target(13, RootCauseAnalysis)],
+        { [ExecutiveSummary]: ['p1a-quality'], [RootCauseAnalysis]: ['p1a-quality'] }, compose, HASH, p => progress.push(p));
 
       expect(puts.map(put => put.id)).toEqual([11]);
       expect(result.storageNotConfigured).toBe(message);
@@ -812,13 +850,13 @@ describe('report-charts', () => {
 
   describe('chart targets', () => {
     const doc = (overrides: Partial<BenchmarkReportDocumentListItemDto>): BenchmarkReportDocumentListItemDto => ({
-      id: 7, audience: TechnicalReport, title: 'Report 7', subjectKey: 'run:1', peerLetters: { 'run:2': 'A' },
+      id: 7, audience: RootCauseAnalysis, title: 'Report 7', subjectKey: 'run:1', peerLetters: { 'run:2': 'A' },
       ...overrides
     } as BenchmarkReportDocumentListItemDto);
 
     it('makes a per-model document a target without covered entries', () => {
       const target = reportChartTargetFor(doc({}));
-      expect(target).toEqual({ documentId: 7, audience: TechnicalReport, subjectKey: 'run:1', peerLetters: { 'run:2': 'A' }, label: 'Report 7' });
+      expect(target).toEqual({ documentId: 7, audience: RootCauseAnalysis, subjectKey: 'run:1', peerLetters: { 'run:2': 'A' }, label: 'Report 7' });
       expect(reportChartCoveredKeys(target)).toBeNull();
       expect(reportChartTargetFor(doc({}), 'Row label').label).toBe('Row label');
     });

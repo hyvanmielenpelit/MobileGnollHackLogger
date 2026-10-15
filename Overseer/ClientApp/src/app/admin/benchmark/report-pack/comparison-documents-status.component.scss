@@ -34,8 +34,13 @@
   color: #a1a1aa;
 }
 
-.cds-error {
+.cds-error,
+.cds-redraw-error {
   margin: 0;
+}
+
+.cds-rca-runs {
+  margin-top: 6px;
 }
 
 .cds-group-title {

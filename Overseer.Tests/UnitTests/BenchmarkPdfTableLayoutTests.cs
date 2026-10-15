@@ -25,7 +25,7 @@ public class BenchmarkPdfTableLayoutTests
 {
     private static readonly DateTime CreatedAt = new(2026, 10, 6, 9, 0, 0, DateTimeKind.Utc);
 
-    /// <summary>The battery profile of a researcher report, with a suite name as long as the review's.</summary>
+    /// <summary>A battery profile table, with a suite name as long as the review's.</summary>
     internal const string BatteryProfile =
         "| Suite | Weight | Intelligence Index | 95 % interval | Contribution | Scored questions | Runs | Speed Index | Cost per run, graders included | Critical-error rate |\n"
         + "|---|---|---|---|---|---|---|---|---|---|\n"

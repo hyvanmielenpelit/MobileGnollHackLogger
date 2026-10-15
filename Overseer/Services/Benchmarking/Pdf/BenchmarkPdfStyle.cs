@@ -39,6 +39,9 @@ internal static class BenchmarkPdfStyle
     public const float Heading3Size = 11.5f;
     public const float TableCellSize = 9.5f;
     public const float CodeSize = 8.5f;
+
+    /// <summary>Inline code's size as a share of the text around it: Source Code Pro reads larger than Source Sans at one size.</summary>
+    public const float InlineCodeScale = 0.86f;
     public const float CodeLineHeight = 1.25f;
 
     /// <summary>Space between consecutive blocks of the body, in points.</summary>

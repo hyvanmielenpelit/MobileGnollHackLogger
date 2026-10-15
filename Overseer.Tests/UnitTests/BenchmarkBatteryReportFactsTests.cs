@@ -154,12 +154,6 @@ internal static class BatteryReportFixture
     public static BenchmarkReportWriterOutput Writer()
     {
         var writer = BenchmarkReportPackFixture.StandaloneWriter();
-        writer.Sections[BenchmarkReportSlots.Abstract] =
-            "{{subject}} scored {{quality.index}} across the {{battery.suiteCount}} of the battery, with one critical error on S2-Q1.";
-        writer.Sections[BenchmarkReportSlots.WhyItScored] =
-            "One critical error on S2-Q1 capped that answer at {{scoring.criticalErrorCap}}.\n\nThe Hazards suite held the composite down at {{suite.2.index}}.";
-        writer.Sections[BenchmarkReportSlots.WhatWorked] = "Short, accurate answers on simple questions such as S1-Q1.";
-        writer.Sections[BenchmarkReportSlots.Limitations] = "The result rests on two runs per suite, so its interval covers question sampling alone.";
         writer.Strengths = new List<BenchmarkReportWriterItem>
         {
             new() { Text = "Answers simple item questions precisely and briefly.", Questions = new List<int> { 1 }, Evidence = new List<string> { "S1-Q1" } }
@@ -169,26 +163,11 @@ internal static class BatteryReportFixture
             new() { Text = "Asserted a false outcome on S2-Q1.", Questions = new List<int> { 3 }, Evidence = new List<string> { "S2-Q1" } },
             new() { Text = "Its weaker suite held the composite down ({{suite.2.index}}).", Evidence = new List<string> { "suite.2.index" } }
         };
-        writer.Recommendations = new List<BenchmarkReportWriterRecommendation>
-        {
-            new()
-            {
-                For = BenchmarkReportSlots.TargetModelDevelopers,
-                Text = "Asserting a destruction rule without checking it cost S2-Q1; verify object-destruction rules before stating them.",
-                Questions = new List<int> { 3 },
-                Evidence = new List<string> { "S2-Q1" }
-            }
-        };
         writer.QuestionTopics = new List<BenchmarkReportQuestionTopic>
         {
             new() { Question = 1, Topic = "Throwing gems at unicorns" },
             new() { Question = 3, Topic = "Breaking a thrown gem" }
         };
-        writer.QuestionNotes = new List<BenchmarkReportQuestionNote>
-        {
-            new() { Question = 3, Note = "Claimed a thrown gem always shatters; the rubric says it can survive." }
-        };
-        writer.Leads.Clear();
         return writer;
     }
 
@@ -259,9 +238,6 @@ public class BenchmarkBatteryReportFactsTests
         var spec = BenchmarkReportSlots.For(audience);
         var slots = spec.SlotsFor(hasPeers: false);
         writer.Sections = writer.Sections.Where(kv => slots.Contains(kv.Key)).ToDictionary(kv => kv.Key, kv => kv.Value);
-        if (!spec.UsesRecommendations) writer.Recommendations.Clear();
-        if (!spec.UsesQuestionNotes) writer.QuestionNotes.Clear();
-        if (!spec.UsesLeads) writer.Leads.Clear();
         return writer;
     }
 
@@ -290,7 +266,7 @@ public class BenchmarkBatteryReportFactsTests
     private static async Task<BenchmarkReportPackPreparation> PrepareAsync(
         ApplicationDbContext db, long batteryRunId, IConfiguration? configuration = null, params long[] peerBatteryRunIds)
     {
-        var request = BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, new[] { BenchmarkReportAudience.TechnicalReport }, 0);
+        var request = BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, new[] { BenchmarkReportAudience.ExecutiveSummary }, 0);
         request.BatteryRunIds.AddRange(peerBatteryRunIds);
         var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(
             db, new BenchmarkModelComparisonService(db), request, BenchmarkReportPackPreparation.DefaultAnswerExcerptChars, Ct, configuration);
@@ -522,9 +498,8 @@ public class BenchmarkBatteryReportFactsTests
         Assert.Equal(5, blocks[2].Number);
         Assert.Equal("S21Q3", blocks[1].QuestionText);
 
-        // Only the questions given in detail need a topic, and a note where they scored low or erred.
+        // Only the questions given in detail need a topic.
         Assert.Equal(new[] { 3, 5 }, BenchmarkReportPackPrompt.QuestionsNeedingTopic(prep.Sheet));
-        Assert.Equal(new[] { 3 }, BenchmarkReportPackPrompt.QuestionsNeedingNote(prep.Sheet));
     }
 
     /// <summary>
@@ -676,7 +651,7 @@ public class BenchmarkBatteryReportFactsTests
     /// <summary>The battery subject's sheet, built as the preparation builds it, with <paramref name="outcomes"/> as its tool-call outcomes.</summary>
     private static async Task<BenchmarkReportFactSheet> BuildSheetAsync(ApplicationDbContext db, long batteryRunId, BenchmarkBatteryAnswerOutcomes? outcomes)
     {
-        var request = BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, new[] { BenchmarkReportAudience.TechnicalReport }, 0);
+        var request = BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, new[] { BenchmarkReportAudience.ExecutiveSummary }, 0);
         var (comparison, subject, refusal) = await BenchmarkReportPackPreparation.CompareAsync(new BenchmarkModelComparisonService(db), request, Ct);
         Assert.True(refusal == null, refusal);
         var (sources, error) = await BenchmarkBatteryModelComparison.LoadAsync(db, new[] { batteryRunId }, Ct);
@@ -819,7 +794,7 @@ public class BenchmarkBatteryReportFactsTests
         Assert.Equal(sheet.Questions.Sum(q => q.RefutedAnswerSentences!.Value), Fact(sheet, "claims.refutedAnswerSentences").Value!.GetValue<int>());
         Assert.Equal("Refuted answer sentences, accused sentences included", BenchmarkReportFactLabels.Label("claims.refutedAnswerSentences"));
         Assert.Contains("claims.refutedAnswerSentences = 3\n",
-            BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, sheet, new BenchmarkReportContentSnapshot()).UserMessage);
+            BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, sheet, new BenchmarkReportContentSnapshot()).UserMessage);
     }
 
     [Fact]
@@ -914,7 +889,6 @@ public class BenchmarkBatteryReportFactsTests
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
     public void TheValidator_ResolvesSuiteQualifiedReferences(BenchmarkReportAudience audience)
     {
         var notes = BenchmarkReportPackValidator.Validate(
@@ -926,13 +900,13 @@ public class BenchmarkBatteryReportFactsTests
     [Fact]
     public void TheValidator_RefusesABareOrUnknownQuestionReference_OnABatterySheet()
     {
-        var writer = WriterFor(BenchmarkReportAudience.TechnicalReport);
+        var writer = WriterFor(BenchmarkReportAudience.ExecutiveSummary);
         writer.Weaknesses[0].Text = "Asserted a false outcome on Q3 and on S9-Q1.";
         writer.Weaknesses[0].Evidence = new List<string> { "Q3" };
         writer.Strengths[0].Evidence = new List<string> { "S3-Q1" };
 
         var notes = BenchmarkReportPackValidator.Validate(
-            BenchmarkReportAudience.TechnicalReport, writer, BatteryReportFixture.Sheet(), BatteryReportFixture.Content());
+            BenchmarkReportAudience.ExecutiveSummary, writer, BatteryReportFixture.Sheet(), BatteryReportFixture.Content());
 
         Assert.Contains(notes, n => n.Rule == 4 && n.Location == "weaknesses[0]" && n.Message.StartsWith("S9-Q1 is not a question of the battery", StringComparison.Ordinal));
         Assert.Contains(notes, n => n.Rule == 4 && n.Location == "weaknesses[0]" && n.Message.StartsWith("Q3 names no suite", StringComparison.Ordinal));
@@ -942,52 +916,22 @@ public class BenchmarkBatteryReportFactsTests
     }
 
     [Fact]
-    public void TheValidator_AsksTopicsAndNotes_OnlyForTheQuestionsGivenInDetail()
-    {
-        var writer = WriterFor(BenchmarkReportAudience.TechnicalReport);
-        writer.QuestionTopics.RemoveAll(t => t.Question == 3);
-        writer.QuestionNotes.Clear();
-
-        var notes = BenchmarkReportPackValidator.Validate(
-            BenchmarkReportAudience.TechnicalReport, writer, BatteryReportFixture.Sheet(), BatteryReportFixture.Content());
-
-        Assert.Contains(notes, n => n.Rule == 4 && n.Location == "questionTopics"
-            && n.Message == "No topic for S2-Q1: every question given in detail needs one.");
-        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.MissingQuestionNoteRule
-            && n.Message.StartsWith("No note for S2-Q1:", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void TheTechnicalReport_NamesTheBattery_ItsProfile_AndEveryQuestionByReference()
+    public void TheExecutiveSummary_NamesTheBattery_ItsSuites_AndEveryQuestionByReference()
     {
         string text = BenchmarkReportPackRenderer.Render(
-            BatteryReportFixture.Document(BenchmarkReportAudience.TechnicalReport),
+            BatteryReportFixture.Document(BenchmarkReportAudience.ExecutiveSummary),
             new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
 
         Assert.Contains("- **Battery:** Core knowledge, revision 2: 2 suites, 2 runs per suite, weighting scheme Questions and difficulty\n", text);
         Assert.Contains("- **Member runs:** 4 (battery run 9)\n", text);
-        Assert.Contains("\n## Battery profile\n", text);
-        Assert.Contains("| S1 · Item lore | 60.0 % | 84 / 100 | 78–90 | 50.4 points | 2 of 2 questions | 2 runs | 84 / 100 | $0.081 | 0 % |\n", text);
-        Assert.Contains("| S2 · Hazards | 40.0 % | 74 / 100 | — |", text);
-        Assert.Contains("\n### Weighting sensitivity\n", text);
-        Assert.Contains("- S2: 84 / 100 without Hazards, a change of +4.0 points\n", text);
-        Assert.Contains("| S2-Q1 | Breaking a thrown gem |", text);
-        Assert.Contains("| S1-Q2 | — |", text);
+        Assert.Contains("| S1 · Item lore | 60.0 % | 84 / 100 (78–90) |\n", text);
+        Assert.Contains("| S2 · Hazards | 40.0 % | 74 / 100 |\n", text);
+        Assert.Contains("- Asserted a false outcome on S2-Q1.", text);
         Assert.DoesNotContain("| Q1 |", text);
-        Assert.Contains("\n### S1-Q1: Throwing gems at unicorns\n", text);
-        Assert.Contains("\n### S2-Q1: Breaking a thrown gem\n", text);
-        Assert.DoesNotContain("### S1-Q2", text);
-        Assert.Contains("**S2-Q1** (Breaking a thrown gem): Claimed a thrown gem always shatters", text);
-        Assert.Contains("  - *Evidence:* S1-Q1 (90 / 100)" + "\n", text);
-        Assert.Contains("- Battery analysis: Fewer than three complete rounds: the interval covers item sampling only.\n", text);
-        Assert.Contains("A battery report lists no synthesis findings; each member run's report has its own.", text);
-        Assert.Contains("| Candidate cost per battery pass | $0.144 |", text);
-        Assert.Contains("| Candidate cost per question | $0.036 |", text);
     }
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, "exec_battery_standalone.md")]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, "technical_battery_standalone.md")]
     public void TheBatteryForm_MatchesItsGoldenFile(BenchmarkReportAudience audience, string file)
     {
         string rendered = BenchmarkReportPackRenderer.Render(

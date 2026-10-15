@@ -296,7 +296,7 @@ describe('AdminBenchmarkService', () => {
       groupIds: [3],
       pricingBasis: BenchmarkReportPackPricingBasis.Current,
       subjectKey: 'run:11',
-      audiences: [BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport],
+      audiences: [BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis],
       writerModelConfigurationId: 7,
       acknowledgeSameProvider: false
     };
@@ -309,7 +309,7 @@ describe('AdminBenchmarkService', () => {
       expect(req.request.method).toBe('POST');
       expect(req.request.body).toEqual(packRequest);
       expect(req.request.body.pricingBasis).toBe(1);
-      expect(req.request.body.audiences).toEqual([1, 2]);
+      expect(req.request.body.audiences).toEqual([1, 5]);
       req.flush({ subjectKey: 'run:11', refusal: null });
 
       expect(result).toEqual({ subjectKey: 'run:11', refusal: null });
@@ -398,6 +398,35 @@ describe('AdminBenchmarkService', () => {
       req.flush({ id: 9 });
     });
 
+    it('rewrites a run\'s Root Cause Analysis, replacing the stored one', () => {
+      service.writeRunReportDocuments(73, {
+        writerModelConfigurationId: 5, audiences: [BenchmarkReportAudience.RootCauseAnalysis], replaceDocumentIds: [90]
+      }).subscribe();
+
+      const req = httpMock.expectOne('/api/admin/benchmark/runs/73/report-documents');
+      expect(req.request.body).toEqual({ writerModelConfigurationId: 5, audiences: [5], replaceDocumentIds: [90] });
+      req.flush({ runId: 73, status: 1 }, { status: 202, statusText: 'Accepted' });
+    });
+
+    it('looks up the Root Cause Analysis controls of a run and of a battery run', () => {
+      service.getRunRootCauseControls(73).subscribe();
+      const run = httpMock.expectOne('/api/admin/benchmark/runs/73/root-cause-controls');
+      expect(run.request.method).toBe('GET');
+      run.flush({ controls: [], controlLimit: 'Low', controlRun: null });
+
+      service.getBatteryRootCauseControls(7).subscribe();
+      const battery = httpMock.expectOne('/api/admin/benchmark/batteries/runs/7/root-cause-controls');
+      expect(battery.request.method).toBe('GET');
+      battery.flush({ controls: [], controlLimit: 'Low', controlRun: null });
+    });
+
+    it('redraws a Root Cause Analysis\' server-drawn charts', () => {
+      service.redrawReportDocumentCharts(9).subscribe();
+      const req = httpMock.expectOne('/api/admin/benchmark/report-documents/9/charts/redraw');
+      expect(req.request.method).toBe('POST');
+      req.flush({ documentId: 9, chartCount: 8, figureKeys: [], settingsHash: null });
+    });
+
     it('renders a document as text with lower-case query names', () => {
       let text: string | undefined;
       service.renderReportDocument(9, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized)
@@ -473,10 +502,10 @@ describe('AdminBenchmarkService', () => {
     });
 
     it('estimates the run reports with the writer and the documents', () => {
-      service.estimateRunReports(73, { writerModelConfigurationId: 5, audiences: [2] }).subscribe();
+      service.estimateRunReports(73, { writerModelConfigurationId: 5, audiences: [5] }).subscribe();
       const req = httpMock.expectOne('/api/admin/benchmark/runs/73/report-documents/estimate');
       expect(req.request.method).toBe('POST');
-      expect(req.request.body).toEqual({ writerModelConfigurationId: 5, audiences: [2] });
+      expect(req.request.body).toEqual({ writerModelConfigurationId: 5, audiences: [5] });
       req.flush({ estimates: [], estimatedTotalCostUsd: null, refusal: null, sameProviderWarning: null });
     });
 

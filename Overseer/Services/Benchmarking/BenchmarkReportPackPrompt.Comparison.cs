@@ -20,6 +20,8 @@ public static partial class BenchmarkReportPackPrompt
     /// <summary>The fixed instruction text of a comparison-scope document for one audience.</summary>
     public static string BuildComparisonSystemPrompt(BenchmarkReportAudience audience)
     {
+        if (audience == BenchmarkReportAudience.RootCauseAnalysis) return BuildRootCauseSystemPrompt(comparisonScope: true);
+
         var spec = BenchmarkReportSlots.For(audience, BenchmarkReportScope.Comparison);
         var sb = new StringBuilder();
 
@@ -35,21 +37,32 @@ public static partial class BenchmarkReportPackPrompt
         AppendComparisonSlots(sb, spec);
         AppendComparisonLists(sb, spec);
         AppendComparisonTokenRules(sb);
-        AppendComparisonEvidenceRules(sb, spec);
+        AppendComparisonEvidenceRules(sb);
         AppendComparisonWeighingRules(sb);
         AppendComparisonProfileRules(sb);
         AppendDisclosureRules(sb);
-        AppendFormatRules(sb, spec);
+        AppendFormatRules(sb);
         AppendComparisonOutput(sb, spec);
 
         return sb.ToString();
     }
 
-    /// <summary>The user message of the one repair turn of a comparison-scope document.</summary>
-    public static string BuildRepairMessage(IReadOnlyList<BenchmarkReportValidationNote> issues, bool comparisonScope)
+    /// <summary>
+    /// The user message of the one repair turn of a per-model (<paramref name="comparisonScope"/> false) or
+    /// comparison-scope document. When an issue is the headline's, <paramref name="headline"/>, the headline
+    /// as written, adds its word count against the cap; a Root Cause Analysis' claim issues add its claim
+    /// reminders.
+    /// </summary>
+    public static string BuildRepairMessage(IReadOnlyList<BenchmarkReportValidationNote> issues, bool comparisonScope, string? headline = null)
     {
         ArgumentNullException.ThrowIfNull(issues);
-        if (!comparisonScope) return BuildRepairMessage(issues);
+        if (!comparisonScope)
+        {
+            var model = new StringBuilder(BuildRepairMessage(issues));
+            AppendRootCauseRepairReminders(model, issues);
+            AppendHeadlineCount(model, issues, headline);
+            return model.ToString();
+        }
 
         var sb = new StringBuilder();
         Line(sb, "Your previous answer broke the document rules. Fix every issue below and answer again with the complete, corrected JSON object only: no text before or after it and no code fence.");
@@ -63,13 +76,54 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "REMINDERS");
         Line(sb, "- Figures appear only as {{key}} with a key from FACTS exactly as written; a model only as {{model:X}} with its letter from MODELS. No other {{...}} tokens.");
         Line(sb, "- No digits in prose except question references as the QUESTION MATRIX shows them. Write counts as number words, and no numbered lists.");
-        Line(sb, "- Every question number, question reference and evidence id must exist in the data. Every point about a model, and every lead where the document has leads, cites at least one evidence id.");
+        Line(sb, "- Every question number, question reference and evidence id must exist in the data. Every point about a model cites at least one evidence id.");
         Line(sb, "- Never quote the questions, rubrics, answers or grader comments: no run of eight words may match them. Describe a question by its topic.");
         Line(sb, "- Never name a model, provider or product. Never call a difference significant, statistically anything, reliably better or worse, or say a model clearly outperforms another; say whether intervals overlap, or what a paired test established after its adjustment.");
         Line(sb, "- A sentence ranking one model above another whose interval overlaps it says that the intervals overlap or that the order is not established, unless it states the paired result that the pair's facts establish. No hype or filler words.");
+        foreach (string rule in TokenShapeReminders)
+        {
+            Line(sb, "- " + rule);
+        }
         Line(sb, "- Give every model listed under MODELS its entry in \"models\" where the document has that list.");
         Line(sb, "- No headings, tables or HTML inside any text. Keep the word and item limits.");
+        AppendRootCauseRepairReminders(sb, issues);
+        AppendHeadlineCount(sb, issues, headline);
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The user message of the headline-only turn: the headline's remaining issues, its word count, and the
+    /// request for one JSON object holding only a corrected headline.
+    /// </summary>
+    public static string BuildHeadlineRepairMessage(IReadOnlyList<BenchmarkReportValidationNote> headlineIssues, int words)
+    {
+        ArgumentNullException.ThrowIfNull(headlineIssues);
+
+        var sb = new StringBuilder();
+        string issues = headlineIssues.Count == 0
+            ? "it is not valid"
+            : string.Join("; ", headlineIssues.Select(i => "rule " + i.Rule.ToString(CultureInfo.InvariantCulture) + ": " + i.Message));
+        Line(sb, $"Your headline still breaks the rules: {issues}.");
+        Line(sb, $"It has {Words(words)} words; the limit is {Words(BenchmarkReportPackValidator.HeadlineMaxWords)}.");
+        Line(sb, $"Reply with one JSON object holding only \"headline\": the document's result in one sentence, at most {Words(BenchmarkReportPackValidator.HeadlineMaxWords)} words, with the same token rules. If a hedge would push it over the limit, name fewer models. No text before or after it and no code fence.");
+        return sb.ToString();
+    }
+
+    /// <summary>The token-shape rules (rule 31), each without its list marker, as the system prompt and the repair message state them.</summary>
+    public static IReadOnlyList<string> TokenShapeReminders => new[]
+    {
+        "A fact whose value is a whole sentence — every notable.N.summary, and any value that begins with a capital letter and ends with a full stop — is written as a sentence of its own, at most once, never inside parentheses, and never continued after its full stop.",
+        "A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took 1.49 times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.",
+        "Never list several 'N of M' tokens in a row: say what each counts."
+    };
+
+    /// <summary>When an issue is the headline's, its word count against the cap.</summary>
+    private static void AppendHeadlineCount(StringBuilder sb, IReadOnlyList<BenchmarkReportValidationNote> issues, string? headline)
+    {
+        if (headline == null || !issues.Any(i => string.Equals(i.Location, "headline", StringComparison.Ordinal))) return;
+
+        int words = BenchmarkReportPackValidator.WordCount(headline);
+        Line(sb, $"- The headline now has {Words(words)} words; after your fix it must still have at most {Words(BenchmarkReportPackValidator.HeadlineMaxWords)}. If a hedge would push it over, name fewer models.");
     }
 
     private static void AppendComparisonDocument(StringBuilder sb, BenchmarkReportAudienceSpec spec)
@@ -80,16 +134,6 @@ public static partial class BenchmarkReportPackPrompt
                 Line(sb, "DOCUMENT: Executive Summary of a model comparison.");
                 Line(sb, "Reader: a manager choosing a model, or a non-specialist at a model's provider.");
                 Line(sb, "Tone: plain US English in short sentences, with no jargon. Explain any technical idea in everyday words.");
-                break;
-            case BenchmarkReportAudience.TechnicalReport:
-                Line(sb, "DOCUMENT: Report for AI Researchers and Developers on a model comparison.");
-                Line(sb, "Reader: AI researchers and model developers.");
-                Line(sb, "Tone: precise and neutral US English. Name failure categories exactly and tie every claim to its evidence.");
-                break;
-            case BenchmarkReportAudience.InternalBrief:
-                Line(sb, "DOCUMENT: Internal Improvement Brief on a model comparison, for an AI agent of the Overseer team to act on.");
-                Line(sb, "Reader: the Overseer team and its AI agents. The document is internal.");
-                Line(sb, "Tone: direct and practical US English. Its purpose, in order of importance: first improving the Overseer chat assistant and its tools, then improving the benchmarking system, then understanding the models' results. Seeing every model's result on the same questions is what lets this brief tell a gap of the chat, the corpus or the suite, which every model shares, from a gap of one model.");
                 break;
         }
 
@@ -118,41 +162,17 @@ public static partial class BenchmarkReportPackPrompt
             $"At most {Cap(audience, slot)} words: which model to use for the best answers, for speed and for cost, each conditional on what the paired tests and the intervals establish. Where the order of the leading models is not established, say so and name what would decide between them. When the reference is the baseline model, say whether any model is established as better than it, and on which measure. End with one sentence naming a default choice for a typical Overseer player — who asks during play and waits for each answer — and the case in which another model is the better choice. Base it only on established results and the frontier facts; where nothing separates the models on any measure, say that the choice is open.",
         BenchmarkReportSlots.AgainstReference =>
             $"At most {Cap(audience, slot)} words, printed under the code-rendered table that sets every other model against the reference named under COMPARISON: what a player would notice using each model instead of the reference — answer quality, misleading answers, waiting and cost — each conditional on what the paired tests and the intervals establish. Cite the model.X.vsReference.* and model.X.profile.mayMisleadPer20 facts and the pair facts.",
-        BenchmarkReportSlots.NotableFindings =>
-            $"Required only when NOTABLE FINDINGS lists at least one finding; when it says none were detected, leave this key out. At most {Cap(audience, slot)} words, printed under the code-written list of notable findings: for each finding, the most likely explanation the data supports — a failure profile fact, a grader comment under WEAKEST ANSWERS BY MODEL, a band's question count or a degraded axis — or that the data does not explain it. Refer to a finding by what it is about, never by its number.",
-        BenchmarkReportSlots.WhyModelsDiffer =>
-            $"At most {Cap(audience, slot)} words, printed under the code-rendered failure profile and grader findings tables: why the high scorers did well and the low scorers badly, in general terms: which failure signals separate them, which the low scorers share, and which belong to one model.",
         BenchmarkReportSlots.TradeOffs =>
             $"At most {Cap(audience, slot)} words: the trade-offs between intelligence, speed and cost, drawing on the frontier facts. Do not restate the table's figures one by one.",
         BenchmarkReportSlots.Reliability =>
             $"At most {Cap(audience, slot)} words: how reliable this comparison is, in plain words: how far the graders agreed, whether the intervals overlap, what the paired tests established, and, when a grader shares a model's provider, that it may read that model more favorably. Do not call an interval narrow, wide, tight or broad.",
-        BenchmarkReportSlots.Abstract =>
-            $"At most {Cap(audience, slot)} words: what was measured, the models' results against each other and the main reasons for them. Do not list claims the claim verifier refuted here.",
-        BenchmarkReportSlots.Results =>
-            $"At most {Cap(audience, slot)} words, printed under the code-rendered results table and paired tests: what the Intelligence Indices, their intervals and the paired tests establish about the order of the models, and what they leave open. Cite the pair facts; never present an unadjusted figure as a test.",
-        BenchmarkReportSlots.DimensionProfiles =>
-            $"At most {Cap(audience, slot)} words, printed under the code-rendered dimension table: how the models' accuracy, completeness, conciseness and readability profiles differ, and what the spread facts show.",
-        BenchmarkReportSlots.Frontier =>
-            $"At most {Cap(audience, slot)} words, printed under the code-rendered speed and cost table: which models lie on the frontiers of intelligence against speed and cost, and what a reader gives up by choosing another.",
-        BenchmarkReportSlots.QuestionPatterns =>
-            $"At most {Cap(audience, slot)} words: cross-model question patterns from the QUESTION MATRIX. Separate shared failures, questions every or nearly every model missed, which point to the chat, its tools, the corpus or the rubric, from model-specific ones, where most models answered well and one did not.",
-        BenchmarkReportSlots.GraderReliability =>
-            $"At most {Cap(audience, slot)} words: how far the graders agreed on each model, and where a grader shares a model's provider.",
-        BenchmarkReportSlots.Limitations =>
-            $"At most {Cap(audience, slot)} words, printed as the last paragraph of Threats to validity: the limitations specific to this data, for example a degraded model, a model with a single run, heavy grader disagreement on particular questions, or questions some models were not asked. Code already prints lines on the single-turn chat configuration, which sources of variation the intervals cover, that the graders are AI models, and the paired tests' adjustment; do not restate them.",
-        BenchmarkReportSlots.SharedGaps =>
-            $"At most {Cap(audience, slot)} words. Lead with the questions all or most models failed in the same way: what each suggests about the Overseer chat system prompt, its tools, the knowledge the assistant can reach, or the question and its rubric. State these as things to check, not as conclusions, and cite the questions.",
-        BenchmarkReportSlots.ModelGaps =>
-            $"At most {Cap(audience, slot)} words: the gaps of single models, where most models answered well and one did not: what that model got wrong, by category. Use the failure profile facts and the weakest answers.",
-        BenchmarkReportSlots.BenchmarkSystem =>
-            $"At most {Cap(audience, slot)} words: signs of harness, grading or rubric problems across the comparison, such as grader disagreement, a rubric that may lack a fact the claim verifier supported, or a question every model missed for a reason the data suggests is the question's.",
         _ => "Markdown paragraphs."
     };
 
     private static void AppendComparisonLists(StringBuilder sb, BenchmarkReportAudienceSpec spec)
     {
         Line(sb, "FIELDS AND LISTS:");
-        Line(sb, $"- headline: the comparison's result in one sentence, at most {Words(BenchmarkReportPackValidator.HeadlineMaxWords)} words.");
+        Line(sb, $"- headline: the comparison's result in one sentence, at most {Words(BenchmarkReportPackValidator.HeadlineMaxWords)} words. Name only the models it ranks against each other; give the other leaders' figures in the sections.");
 
         if (spec.MaxModelPoints > 0)
         {
@@ -162,19 +182,14 @@ public static partial class BenchmarkReportPackPrompt
 
         if (spec.RequiresQuestionTopics)
         {
-            Line(sb, "- questionTopics: one entry for every question listed under QUESTIONS NEEDING A TOPIC. Each topic names what the question is about in at most twelve words, without quoting it. When the data gives QUESTION TOPICS instead, they are already written for this comparison: use them and leave \"questionTopics\" empty.");
+            Line(sb, "- questionTopics: one entry for every question listed under QUESTIONS NEEDING A TOPIC. Each topic names what the question is about in at most twelve words, without quoting it.");
         }
         else
         {
             Line(sb, "- questionTopics: leave it empty.");
         }
 
-        if (spec.UsesLeads)
-        {
-            Line(sb, $"- leads: at most {Words(spec.MaxLeads)} things worth checking, each with \"triage\" set to one of: \"chat\" (the Overseer chat prompt or tools), \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"corpus\" (missing or stale wiki, source or knowledge-base content), \"model\" (one model's own failing). Lead with the action and its target, then the evidence. A lead is provisional and un-triaged, never a finding: phrase it as something to check, and name the most specific target the data shows: the question and its topic, and what to look at there — the rubric point a grader charged, the knowledge source an answer excerpt relied on, the grading role that disagreed, or the kind of tool call the matrix shows. Never name a file, setting or tool the data does not show. A \"chat\", \"corpus\" or \"suite\" lead rests on questions several models missed. A lead may cite a notable finding's notable.N.summary fact as evidence.");
-        }
-
-        Line(sb, "- strengths, weaknesses, recommendations and questionNotes: leave them out.");
+        Line(sb, "- strengths and weaknesses: leave them out.");
         Line(sb);
     }
 
@@ -186,6 +201,10 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Any other {{...}} token is an error.");
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" or \"twice\" are allowed for a plain count, but prefer a fact token for any figure.");
         Line(sb, "- A token whose value reads 'N of M' is a noun phrase. Never put it after 'no' or make it the object of 'made'.");
+        foreach (string rule in TokenShapeReminders)
+        {
+            Line(sb, "- " + rule);
+        }
         Line(sb, "- Refer to a question exactly as the QUESTION MATRIX does, for example Q7. This is the only form in which a digit may appear.");
         Line(sb, "- Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader). In the Executive Summary say 'one grader' or 'both graders' instead.");
         Line(sb, "- Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.");
@@ -194,13 +213,11 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
     }
 
-    private static void AppendComparisonEvidenceRules(StringBuilder sb, BenchmarkReportAudienceSpec spec)
+    private static void AppendComparisonEvidenceRules(StringBuilder sb)
     {
         Line(sb, "EVIDENCE:");
         Line(sb, "- An evidence id is a fact key from FACTS or a question reference as the QUESTION MATRIX shows it. Use only ids that exist in the data. This document has no finding rows.");
-        Line(sb, spec.UsesLeads
-            ? "- Every lead cites at least one evidence id in \"evidence\"."
-            : "- Every point of the \"models\" list cites at least one evidence id in \"evidence\".");
+        Line(sb, "- Every point of the \"models\" list cites at least one evidence id in \"evidence\".");
         Line(sb, "- \"questions\" lists the question numbers an item is about, as integers from the QUESTION MATRIX.");
         Line(sb, "- Cite a question only for what the data shows about it. A question listed under QUESTIONS, with its excerpts and grader comments, supports a claim about what an answer said or left out. A question you see only as a QUESTION MATRIX row supports only a claim about its scores, critical errors, tool calls or time.");
         Line(sb);
@@ -260,10 +277,6 @@ public static partial class BenchmarkReportPackPrompt
             arrays.Add("  \"models\": [ { \"model\": \"<letter>\", \"points\": [ { \"text\": \"string\", \"questions\": [<question number>], \"evidence\": [\"<evidence id>\"] } ] } ]");
         }
         arrays.Add("  \"questionTopics\": [ { \"question\": <question number>, \"topic\": \"string\" } ]");
-        if (spec.UsesLeads)
-        {
-            arrays.Add("  \"leads\": [ { \"triage\": \"" + string.Join(" | ", spec.LeadTriages) + "\", \"text\": \"string\", \"questions\": [], \"evidence\": [\"<evidence id>\"] } ]");
-        }
 
         for (int i = 0; i < arrays.Count; i++)
         {
@@ -280,8 +293,7 @@ public static partial class BenchmarkReportPackPrompt
     private static string BuildComparisonUserMessage(
         BenchmarkReportAudience audience,
         BenchmarkReportFactSheet sheet,
-        BenchmarkReportContentSnapshot content,
-        IReadOnlyList<BenchmarkReportQuestionTopic>? sharedTopics)
+        BenchmarkReportContentSnapshot content)
     {
         var spec = BenchmarkReportSlots.For(audience, BenchmarkReportScope.Comparison);
         var sb = new StringBuilder();
@@ -351,7 +363,10 @@ public static partial class BenchmarkReportPackPrompt
 
         Line(sb, "FACTS (write {{key}} to place a figure; key = value as printed)");
         Line(sb, "Difficulty bands are assessed difficulty; the authored bands are model.X.bands.authored.*.");
-        foreach (var fact in sheet.Facts.OrderBy(f => f.Key, StringComparer.Ordinal))
+        // Root-cause facts are for the Root Cause Analysis alone.
+        foreach (var fact in sheet.Facts
+                     .Where(f => audience == BenchmarkReportAudience.RootCauseAnalysis || !BenchmarkComparisonReportFacts.WriterHidden(f.Key))
+                     .OrderBy(f => f.Key, StringComparer.Ordinal))
         {
             Line(sb, fact.Available
                 ? $"{fact.Key} = {OneLine(fact.Display)}"
@@ -379,19 +394,8 @@ public static partial class BenchmarkReportPackPrompt
 
         if (spec.RequiresQuestionTopics)
         {
-            if (sharedTopics is { Count: > 0 })
-            {
-                Line(sb, "QUESTION TOPICS (already written for this comparison; use them, and leave \"questionTopics\" empty)");
-                foreach (var topic in sharedTopics.OrderBy(t => t.Question))
-                {
-                    Line(sb, $"- {Ref(topic.Question)}: {OneLine(topic.Topic)}");
-                }
-            }
-            else
-            {
-                var all = QuestionsNeedingTopic(sheet);
-                Line(sb, $"QUESTIONS NEEDING A TOPIC: {(all.Count == 0 ? "none" : string.Join(", ", all.Select(Ref)))}");
-            }
+            var all = QuestionsNeedingTopic(sheet);
+            Line(sb, $"QUESTIONS NEEDING A TOPIC: {(all.Count == 0 ? "none" : string.Join(", ", all.Select(Ref)))}");
         }
 
         return WithoutModelNames(sb.ToString(), models);
@@ -424,7 +428,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "NOTABLE FINDINGS (detected by code from the facts; cite one as {{notable.N.summary}}, explain it, and never restate it)");
         if (findings.Count == 0)
         {
-            Line(sb, "(none detected by the rules: leave the notableFindings section out where the document has one)");
+            Line(sb, "(none detected by the rules)");
             Line(sb);
             return;
         }

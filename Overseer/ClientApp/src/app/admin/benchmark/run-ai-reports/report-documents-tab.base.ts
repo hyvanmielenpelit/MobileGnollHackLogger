@@ -55,6 +55,7 @@ import {
   writtenReportLabels
 } from './report-documents-list';
 import { ReportWriterAdviceEntry } from './report-writer-advice';
+import { RootCauseControlsSubjectKind, RootCauseRewriteRequest } from './root-cause-controls.component';
 import {
   ReportWriterCandidate,
   isSameProvider,
@@ -95,6 +96,13 @@ interface EstimateResult {
   failed: boolean;
 }
 
+/** A write of the Root Cause Analysis alone that replaces the stored one once the new one is stored. */
+interface RootCauseRewriteSend {
+  writerId: number;
+  documentId: number;
+  estimateUsd: number | null;
+}
+
 /**
  * The AI Reports tab of a report dialog, for a run (`app-run-ai-reports`) or a battery run
  * (`app-battery-ai-reports`): the job state, one row per completion document (written or not) with
@@ -123,6 +131,7 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
   @ViewChild(PdfViewerDialogComponent) pdfViewer?: PdfViewerDialogComponent;
   @ViewChild('deleteDialog') deleteDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('sameProviderDialog') sameProviderDialog?: ElementRef<HTMLDialogElement>;
+  @ViewChild('rewriteDialog') rewriteDialog?: ElementRef<HTMLDialogElement>;
   @ViewChild('writeButton') writeButton?: ElementRef<HTMLButtonElement>;
 
   /** The prefix of the element ids; see the id getters for the ones a subclass words differently. */
@@ -137,6 +146,11 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
   abstract readonly changedSinceText: string;
   /** The Downloads notice's sentence. */
   abstract readonly downloadsNoticeText: string;
+  /** Whose Root Cause Analysis controls the tab looks up. */
+  abstract readonly controlsSubjectKind: RootCauseControlsSubjectKind;
+
+  /** The Root Cause Analysis, for the template. */
+  readonly rootCauseAudience = BenchmarkReportAudience.RootCauseAnalysis;
 
   /**
    * The subject's AI-written (completion) documents, one per audience, from the document list.
@@ -175,6 +189,25 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
   /** The same-provider confirmation's sentence. */
   confirmWarningText = '';
 
+  /** The Root Cause Analysis whose charts are being redrawn. */
+  redrawingDocumentId: number | null = null;
+  /** Why the last redraw failed. */
+  redrawError: string | null = null;
+
+  /** What **Rewrite with controls** asked to replace; the rewrite confirmation is about it. */
+  rewriteTarget: RootCauseRewriteRequest | null = null;
+  /** The writer the rewrite sends. */
+  rewriteWriterId: number | null = null;
+  rewriteEstimate: BenchmarkRunReportEstimateDto | null = null;
+  rewriteEstimateLoading = false;
+  rewriteEstimateFailed = false;
+  rewriteSubmitting = false;
+  rewriteError: string | null = null;
+  /** The server asked for the same-provider acknowledgment, which the next confirmation sends. */
+  private rewriteAcknowledgeNeeded = false;
+  /** Bumped to make the Controls line read the controls again. */
+  controlsReloadToken = 0;
+
   /** The tab's own Download Center is rendered, for a subclass that opens one when no host answers. */
   ownDownloadCenter = false;
   /** Where focus returns when the tab's own Download Center closes. */
@@ -194,6 +227,8 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
   private writeSub: Subscription | null = null;
   private deleteSub: Subscription | null = null;
   private finishSub: Subscription | null = null;
+  private redrawSub: Subscription | null = null;
+  private rewriteEstimateSub: Subscription | null = null;
 
   constructor() {
     this.estimateSub = this.estimateRequests.pipe(
@@ -305,6 +340,28 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
     return `${this.idPrefix}-tip-delete-`;
   }
 
+  /** The Redraw charts button's tooltip id. */
+  get redrawTipId(): string {
+    return `${this.idPrefix}-tip-redraw`;
+  }
+
+  get rewriteTitleId(): string {
+    return `${this.idPrefix}RewriteTitle`;
+  }
+
+  get rewriteLabelId(): string {
+    return `${this.idPrefix}RewriteWriterLabel`;
+  }
+
+  get rewriteEstimateId(): string {
+    return `${this.idPrefix}RewriteEstimate`;
+  }
+
+  /** The prefix of the Controls line's ids. */
+  get controlsIdPrefix(): string {
+    return `${this.idPrefix}-rcc`;
+  }
+
   /** The progress dialog's id prefix. */
   get writingDialogIdPrefix(): string {
     return `${this.idPrefix}Rw`;
@@ -366,6 +423,21 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
   get documentsMissing(): boolean {
     return !!this.subject && this.documentsLoaded && this.documentsError === null && this.offersWritePanel &&
       this.missingAudiences.length > 0;
+  }
+
+  /** The stored Root Cause Analysis, if written. */
+  get rootCauseDocument(): BenchmarkReportDocumentListItemDto | undefined {
+    return this.documentFor(BenchmarkReportAudience.RootCauseAnalysis);
+  }
+
+  /** The write panel offers the Root Cause Analysis, so it shows which controls the analysis will use. */
+  get rootCauseMissing(): boolean {
+    return this.documentsMissing && this.missingAudiences.includes(BenchmarkReportAudience.RootCauseAnalysis);
+  }
+
+  /** The subject's id, for the Controls line. */
+  get subjectId(): number | null {
+    return this.subject?.id ?? null;
   }
 
   audienceLabel(audience: BenchmarkReportAudience): string {
@@ -511,26 +583,35 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
     }
   }
 
-  private sendWrite(acknowledgeSameProvider: boolean): void {
+  /** Writes the checked documents, or with `rewrite` the Root Cause Analysis alone, replacing the stored one. */
+  private sendWrite(acknowledgeSameProvider: boolean, rewrite: RootCauseRewriteSend | null = null): void {
     const subject = this.subject;
-    const writerId = this.writerConfigId;
+    const writerId = rewrite ? rewrite.writerId : this.writerConfigId;
     if (!subject || writerId == null || this.writeSubmitting) return;
     const subjectId = subject.id;
     const request: WriteRunReportDocumentsRequest = {
       writerModelConfigurationId: writerId,
-      audiences: this.checkedAudiences,
-      ...(acknowledgeSameProvider ? { acknowledgeSameProvider: true } : {})
+      audiences: rewrite ? [BenchmarkReportAudience.RootCauseAnalysis] : this.checkedAudiences,
+      ...(acknowledgeSameProvider ? { acknowledgeSameProvider: true } : {}),
+      ...(rewrite ? { replaceDocumentIds: [rewrite.documentId] } : {})
     };
-    const estimateUsd = this.estimate?.estimatedTotalCostUsd ?? null;
+    const estimateUsd = rewrite ? rewrite.estimateUsd : (this.estimate?.estimatedTotalCostUsd ?? null);
     this.writeSubmitting = true;
+    this.rewriteSubmitting = rewrite !== null;
     this.writeError = null;
+    this.rewriteError = null;
     this.announcement = '';
     this.cdr.markForCheck();
     this.writeSub?.unsubscribe();
     this.writeSub = this.api.write(subjectId, request).subscribe({
       next: response => {
         this.writeSubmitting = false;
+        this.rewriteSubmitting = false;
         if (this.subject?.id !== subjectId) return;
+        if (rewrite) {
+          this.rewriteDialog?.nativeElement.close();
+          this.rewriteTarget = null;
+        }
         const writer = this.configs.find(config => config.id === writerId);
         this.setSnapshot({
           status: reportDocumentsStatusOf(response?.status ?? BenchmarkRunReportDocumentsStatus.Pending),
@@ -546,7 +627,22 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
       },
       error: err => {
         this.writeSubmitting = false;
+        this.rewriteSubmitting = false;
         if (this.subject?.id !== subjectId) return;
+        if (rewrite) {
+          // The rewrite confirmation stays open with the reason; a same-provider writer is acknowledged on the next press.
+          if (err?.status === 409 && !acknowledgeSameProvider && isReportWriterSameProviderWarning(err.error)) {
+            this.rewriteAcknowledgeNeeded = true;
+            this.rewriteError = reportWriterWarningText(err.error.assessorModelDisplayName, err.error.provider);
+          } else {
+            this.rewriteError = this.writeErrorOf(err, subjectId);
+            if (err?.status === 409) {
+              this.loadDocuments();
+            }
+          }
+          this.cdr.markForCheck();
+          return;
+        }
         // The selection changed under the client's check: the server asks for the acknowledgment.
         if (err?.status === 409 && !acknowledgeSameProvider && isReportWriterSameProviderWarning(err.error)) {
           this.cdr.markForCheck();
@@ -602,9 +698,167 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
       this.setSnapshot(snapshot);
     }
     this.loadDocuments();
+    this.controlsReloadToken++;
     this.emitStatus();
     this.syncPoll();
     this.cdr.markForCheck();
+  }
+
+  // --- Rewriting the Root Cause Analysis with new controls ---
+
+  private get rewriteWriter(): SystemAiConfigDto | undefined {
+    return this.configs.find(config => config.id === this.rewriteWriterId);
+  }
+
+  /** Why the rewrite is refused for the chosen writer and this subject, or ''. */
+  get rewriteRefusal(): string {
+    if (!this.subject || !this.rewriteTarget) return '';
+    const own = this.notWritableReason || this.subjectRefusal;
+    if (own) return own;
+    if (this.rewriteWriterId == null) return 'Choose a report writer.';
+    const refusal = reportWriterRefusal(this.rewriteWriter, this.candidate);
+    if (refusal) return refusal;
+    return this.rewriteEstimate?.refusal?.trim() || '';
+  }
+
+  /** The same-provider warning the rewrite's writer carries, or ''; the rewrite then asks to write anyway. */
+  get rewriteWarning(): string {
+    if (this.rewriteWriterId == null || this.rewriteRefusal) return '';
+    const warning = reportWriterWarning(this.rewriteWriter, this.candidate);
+    if (warning) return warning;
+    const server = this.rewriteEstimate?.sameProviderWarning;
+    return server ? reportWriterWarningText(server.assessorModelDisplayName, server.provider) : '';
+  }
+
+  get rewriteConfirmLabel(): string {
+    if (this.rewriteSubmitting) return 'Requesting…';
+    return this.rewriteWarning || this.rewriteAcknowledgeNeeded ? 'Rewrite Anyway' : 'Rewrite';
+  }
+
+  get rewriteDisabled(): boolean {
+    return !!this.rewriteRefusal || this.jobInProgress || this.rewriteSubmitting;
+  }
+
+  /** The rewrite's cost estimate block, or null when there is nothing to say. */
+  get rewriteEstimateView(): ReportEstimateView | null {
+    return reportEstimateView(this.rewriteEstimateLoading, this.rewriteEstimateFailed, this.rewriteEstimate);
+  }
+
+  /**
+   * **Rewrite with controls**: the confirmation opens on the tab's writer, with the estimate of the Root
+   * Cause Analysis alone. Confirming writes it and deletes the stored one once the new one is stored; the
+   * Executive Summary is not touched.
+   */
+  requestRewrite(request: RootCauseRewriteRequest): void {
+    if (!this.subject || this.jobInProgress || this.writeSubmitting) return;
+    this.rewriteTarget = request;
+    this.rewriteWriterId = this.writerConfigId ?? this.defaultWriterId(this.subject);
+    this.rewriteError = null;
+    this.rewriteAcknowledgeNeeded = false;
+    this.estimateRewrite();
+    this.cdr.detectChanges();
+    const dialog = this.rewriteDialog?.nativeElement;
+    if (dialog && !dialog.open) {
+      dialog.showModal();
+    }
+  }
+
+  selectRewriteWriter(config: SystemAiConfigDto | null): void {
+    this.rewriteWriterId = config?.id ?? null;
+    this.rewriteError = null;
+    this.rewriteAcknowledgeNeeded = false;
+    this.estimateRewrite();
+    this.cdr.markForCheck();
+  }
+
+  cancelRewrite(): void {
+    this.rewriteDialog?.nativeElement.close();
+  }
+
+  /** The rewrite confirmation closed, however it closed. */
+  onRewriteDialogClosed(event: Event): void {
+    event.stopPropagation();
+    if (this.rewriteDialog?.nativeElement.open) return;
+    this.rewriteEstimateSub?.unsubscribe();
+    this.rewriteEstimateSub = null;
+    this.rewriteTarget = null;
+    this.cdr.markForCheck();
+  }
+
+  confirmRewrite(): void {
+    const target = this.rewriteTarget;
+    const writerId = this.rewriteWriterId;
+    if (!target || writerId == null || this.rewriteDisabled) return;
+    const acknowledge = !!this.rewriteWarning || this.rewriteAcknowledgeNeeded;
+    this.sendWrite(acknowledge, {
+      writerId,
+      documentId: target.documentId,
+      estimateUsd: this.rewriteEstimate?.estimatedTotalCostUsd ?? null
+    });
+  }
+
+  private estimateRewrite(): void {
+    this.rewriteEstimateSub?.unsubscribe();
+    this.rewriteEstimateSub = null;
+    this.rewriteEstimate = null;
+    this.rewriteEstimateFailed = false;
+    const subject = this.subject;
+    const writerId = this.rewriteWriterId;
+    if (!subject || writerId == null || this.notWritableReason) {
+      this.rewriteEstimateLoading = false;
+      return;
+    }
+    const subjectId = subject.id;
+    this.rewriteEstimateLoading = true;
+    this.rewriteEstimateSub = this.api.estimate(subjectId, {
+      writerModelConfigurationId: writerId,
+      audiences: [BenchmarkReportAudience.RootCauseAnalysis]
+    }).subscribe({
+      next: estimate => {
+        if (this.subject?.id !== subjectId || this.rewriteWriterId !== writerId) return;
+        this.rewriteEstimateLoading = false;
+        this.rewriteEstimate = estimate;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        if (this.subject?.id !== subjectId || this.rewriteWriterId !== writerId) return;
+        this.rewriteEstimateLoading = false;
+        this.rewriteEstimateFailed = true;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  // --- Redrawing a Root Cause Analysis' charts ---
+
+  /** Draws a stored Root Cause Analysis' server-drawn charts again from its stored facts. */
+  redrawCharts(doc: BenchmarkReportDocumentListItemDto): void {
+    if (this.redrawingDocumentId !== null || this.jobInProgress) return;
+    const subjectId = this.subject?.id;
+    const label = audienceLabel(doc.audience);
+    this.redrawingDocumentId = doc.id;
+    this.redrawError = null;
+    this.announcement = '';
+    this.cdr.markForCheck();
+    this.redrawSub?.unsubscribe();
+    this.redrawSub = this.benchmarkService.redrawReportDocumentCharts(doc.id).subscribe({
+      next: summary => {
+        this.redrawingDocumentId = null;
+        if (this.subject?.id !== subjectId) return;
+        const count = summary?.chartCount ?? 0;
+        this.announcement = `The charts of the ${label} were redrawn (${count} ${count === 1 ? 'image' : 'images'}).`;
+        this.cdr.markForCheck();
+      },
+      error: err => {
+        this.redrawingDocumentId = null;
+        if (this.subject?.id !== subjectId) return;
+        const reason = err?.status === 404 ? 'it no longer exists'
+          : err?.status === 0 ? 'the server could not be reached'
+            : (reportServerErrorText(err) ?? `HTTP ${err?.status ?? 'error'}`);
+        this.redrawError = `The charts of the ${label} could not be redrawn: ${reason.replace(/\.$/, '')}.`;
+        this.cdr.markForCheck();
+      }
+    });
   }
 
   // --- Viewing ---
@@ -861,10 +1115,20 @@ export abstract class ReportDocumentsTabBase<TSubject extends { id: number }> im
 
   protected reset(): void {
     this.stopPoll();
-    for (const sub of [this.documentsSub, this.writeSub, this.deleteSub, this.finishSub]) {
+    for (const sub of [this.documentsSub, this.writeSub, this.deleteSub, this.finishSub, this.redrawSub, this.rewriteEstimateSub]) {
       sub?.unsubscribe();
     }
-    this.documentsSub = this.writeSub = this.deleteSub = this.finishSub = null;
+    this.documentsSub = this.writeSub = this.deleteSub = this.finishSub = this.redrawSub = this.rewriteEstimateSub = null;
+    this.redrawingDocumentId = null;
+    this.redrawError = null;
+    this.rewriteTarget = null;
+    this.rewriteWriterId = null;
+    this.rewriteEstimate = null;
+    this.rewriteEstimateLoading = false;
+    this.rewriteEstimateFailed = false;
+    this.rewriteSubmitting = false;
+    this.rewriteError = null;
+    this.rewriteAcknowledgeNeeded = false;
     this.documents = [];
     this.documentsLoaded = false;
     this.documentsError = null;

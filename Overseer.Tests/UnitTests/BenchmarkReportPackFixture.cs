@@ -121,7 +121,6 @@ internal static class BenchmarkReportPackFixture
     {
         var writer = Writer();
         writer.Sections.Remove(BenchmarkReportSlots.Comparison);
-        writer.Sections.Remove(BenchmarkReportSlots.Limitations);
         return writer;
     }
 
@@ -521,14 +520,7 @@ internal static class BenchmarkReportPackFixture
         {
             [BenchmarkReportSlots.Comparison] = "{{subject}} places {{quality.rank}} on intelligence, but its interval overlaps those of {{peer:A}} and {{peer:B}}, so the order is not established. Its paired difference from {{peer:A}} is {{peer.A.pairedDifference}}.",
             [BenchmarkReportSlots.Meaning] = "{{subject}} is a capable assistant for everyday play, but its answers on item destruction need a source check.",
-            [BenchmarkReportSlots.Confidence] = "The result rests on {{suite.questions}} questions; {{quality.intervalOverlap}}.",
-            [BenchmarkReportSlots.Abstract] = "{{subject}} scored {{quality.index}} on {{suite.questions}} questions, ranking {{quality.rank}} against {{peer:A}} and {{peer:B}}.",
-            [BenchmarkReportSlots.WhyItScored] = "One critical error on Q3 capped that answer at {{scoring.criticalErrorCap}}.\n\nCompleteness was {{dimension.completeness}} against a peer mean of {{dimension.completeness.peerMean}}.",
-            [BenchmarkReportSlots.WhatWorked] = "Short, accurate answers on simple questions (R2).",
-            [BenchmarkReportSlots.Limitations] = "{{peer:B}} is degraded on speed, and every model rests on a single run, so no interval covers run-to-run variation.",
-            [BenchmarkReportSlots.OverseerChat] = "Most tool calls went to the source code ({{tools.share.sourceCode}}).",
-            [BenchmarkReportSlots.BenchmarkSystem] = "Both panel members flagged the Q3 error (R1).",
-            [BenchmarkReportSlots.ModelResult] = "{{subject}} ranks {{quality.rank}} at {{cost.perQuestion}} per question."
+            [BenchmarkReportSlots.Confidence] = "The result rests on {{suite.questions}} questions; {{quality.intervalOverlap}}."
         },
         Strengths = new List<BenchmarkReportWriterItem>
         {
@@ -539,27 +531,12 @@ internal static class BenchmarkReportPackFixture
             new() { Text = "Asserted a false outcome on Q3, where {{peer:A}} scored well.", Questions = new List<int> { 3 }, Evidence = new List<string> { "R1", "Q3" } },
             new() { Text = "Scored lowest on intermediate questions ({{band.intermediate.score}}).", Questions = new List<int> { 2, 3 }, Evidence = new List<string> { "band.intermediate.score" } }
         },
-        Recommendations = new List<BenchmarkReportWriterRecommendation>
-        {
-            new() { For = BenchmarkReportSlots.TargetModelDevelopers, Text = "Verify object-destruction rules before asserting them.", Evidence = new List<string> { "R1" } },
-            new() { For = BenchmarkReportSlots.TargetOverseerChat, Text = "Send item-destruction questions to the source code first.", Evidence = new List<string> { "tools.share.sourceCode" } },
-            new() { For = BenchmarkReportSlots.TargetBenchmark, Text = "Clarify the conciseness anchor that split the graders on Q2.", Evidence = new List<string> { "R3" } }
-        },
         QuestionTopics = new List<BenchmarkReportQuestionTopic>
         {
             new() { Question = 1, Topic = "Throwing gems at unicorns" },
             new() { Question = 2, Topic = "Prayer timeout" },
             new() { Question = 3, Topic = "Breaking a thrown gem" },
             new() { Question = 4, Topic = "Wand of wishing charges" }
-        },
-        QuestionNotes = new List<BenchmarkReportQuestionNote>
-        {
-            new() { Question = 3, Note = "Claimed a thrown gem always shatters; the rubric says it can survive." },
-            new() { Question = 4, Note = "Slightly below the peers." }
-        },
-        Leads = new List<BenchmarkReportLead>
-        {
-            new() { Triage = "suite", Text = "The Q3 rubric may understate how often a thrown gem survives.", Evidence = new List<string> { "R1" } }
         }
     };
 
@@ -606,31 +583,13 @@ internal static class BenchmarkReportPackFixture
         var writer = Writer();
         writer.Headline = "{{subject}} answers everyday GnollHack questions well but made one confident false claim about item destruction.";
         writer.Sections[BenchmarkReportSlots.Confidence] = "The result rests on {{suite.questions}} questions, so it should be read with care.";
-        writer.Sections[BenchmarkReportSlots.Abstract] = "{{subject}} scored {{quality.index}} on {{suite.questions}} questions, with one critical error on Q3.";
-        writer.Sections[BenchmarkReportSlots.WhyItScored] = "One critical error on Q3 capped that answer at {{scoring.criticalErrorCap}}.\n\nCompleteness was its lowest dimension at {{dimension.completeness}}.";
         writer.Sections.Remove(BenchmarkReportSlots.Comparison);
-        writer.Sections[BenchmarkReportSlots.Limitations] = "The result rests on a single run, so its interval covers question sampling alone.";
         writer.Weaknesses[0] = new BenchmarkReportWriterItem
         {
             Text = "Asserted a false outcome on Q3.",
             Questions = new List<int> { 3 },
             Evidence = new List<string> { "R1", "Q3" }
         };
-        writer.Recommendations = new List<BenchmarkReportWriterRecommendation>
-        {
-            new()
-            {
-                For = BenchmarkReportSlots.TargetModelDevelopers,
-                Text = "Asserting a destruction rule without checking it cost Q3; verify object-destruction rules before stating them.",
-                Questions = new List<int> { 3 },
-                Evidence = new List<string> { "R1", "Q3" }
-            }
-        };
-        writer.QuestionNotes = new List<BenchmarkReportQuestionNote>
-        {
-            new() { Question = 3, Note = "Claimed a thrown gem always shatters; the rubric says it can survive." }
-        };
-        writer.Leads.Clear();
         return writer;
     }
 
@@ -676,9 +635,7 @@ internal static class BenchmarkReportPackFixture
     {
         var audiences = new[]
         {
-            (BenchmarkReportAudience.ExecutiveSummary, "exec"),
-            (BenchmarkReportAudience.TechnicalReport, "technical"),
-            (BenchmarkReportAudience.InternalBrief, "internal")
+            (BenchmarkReportAudience.ExecutiveSummary, "exec")
         };
 
         foreach (var (audience, prefix) in audiences)
@@ -1062,7 +1019,7 @@ internal static class BenchmarkReportPackFixture
     /// <summary>
     /// A comparison-scope writer output for the audience over <paramref name="sheet"/> that passes every
     /// rule: each slot, one point per model where the document lists models, a topic for each question
-    /// whose text was given where topics are required, and a lead where the document has leads.
+    /// whose text was given where topics are required.
     /// </summary>
     public static BenchmarkReportWriterOutput ComparisonWriter(BenchmarkReportAudience audience, BenchmarkReportFactSheet sheet)
     {
@@ -1078,20 +1035,8 @@ internal static class BenchmarkReportPackFixture
             [BenchmarkReportSlots.WhichModel] = "For the best answers, choose " + T("model:" + a) + " or " + T("model:" + b) + "; their intervals overlap, so the order between them is not established.",
             [BenchmarkReportSlots.TradeOffs] = "The intelligence against cost frontier holds " + T("frontier.qualityCost") + ".",
             [BenchmarkReportSlots.Reliability] = "The graders agreed on most answers.",
-            [BenchmarkReportSlots.Abstract] = "The models answered the same questions, and " + T("model:" + a) + " scored " + T("model." + a + ".quality.index") + ".",
-            [BenchmarkReportSlots.Results] = T("model:" + a) + " and " + T("model:" + b) + " share a rank because their intervals overlap.",
-            [BenchmarkReportSlots.DimensionProfiles] = "Accuracy ranges " + T("spread.dimension.accuracy") + ".",
-            [BenchmarkReportSlots.Frontier] = "The intelligence against speed frontier holds " + T("frontier.qualitySpeed") + ".",
-            [BenchmarkReportSlots.QuestionPatterns] = "Most models scored low on Q3, which points to the question or the chat first.",
-            [BenchmarkReportSlots.GraderReliability] = "Panel member A graded every answer.",
-            [BenchmarkReportSlots.Limitations] = "Every model rests on a single run, so no interval covers run-to-run variation.",
-            [BenchmarkReportSlots.SharedGaps] = "Q3 is a shared gap: most models scored low on it, so check the chat and the corpus first.",
-            [BenchmarkReportSlots.ModelGaps] = T("model:" + b) + " gave the weakest answer on Q3.",
-            [BenchmarkReportSlots.BenchmarkSystem] = "The rubric of Q3 may need a review, since most models scored low on it.",
             [BenchmarkReportSlots.AgainstReference] = "The table sets every other model against " + T("model:" + reference)
-                + "; only the paired tests and the intervals decide where an order is established.",
-            [BenchmarkReportSlots.NotableFindings] = "Each finding follows from the tables above; the data does not explain them further.",
-            [BenchmarkReportSlots.WhyModelsDiffer] = "The failure profiles count what the graders recorded for each model; they do not say why."
+                + "; only the paired tests and the intervals decide where an order is established."
         };
 
         var spec = BenchmarkReportSlots.For(audience, BenchmarkReportScope.Comparison);
@@ -1126,20 +1071,6 @@ internal static class BenchmarkReportPackFixture
                 .ToList();
         }
 
-        if (spec.UsesLeads)
-        {
-            output.Leads = new List<BenchmarkReportLead>
-            {
-                new()
-                {
-                    Triage = "chat",
-                    Text = "Check how the chat routes the question most models scored low on.",
-                    Questions = new List<int> { 3 },
-                    Evidence = new List<string> { "Q3", "questions.anyCriticalError" }
-                }
-            };
-        }
-
         return output;
     }
 
@@ -1147,17 +1078,16 @@ internal static class BenchmarkReportPackFixture
     public static IEnumerable<object[]> ComparisonCombinations()
         => AllowedCombinations().Select(c => new[] { c[0], c[1], c[2], "comparison_" + (string)c[3] });
 
-    /// <summary>The baseline variant's golden combinations (<see cref="ComparisonDocument"/> with <c>baseline</c>): one named, one anonymized.</summary>
+    /// <summary>The baseline variant's golden combinations (<see cref="ComparisonDocument"/> with <c>baseline</c>).</summary>
     public static IEnumerable<object[]> ComparisonBaselineCombinations() => new[]
     {
-        new object[] { BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, "comparison_technical_full_named_baseline.md" },
         new object[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized, "comparison_exec_full_anonymized_baseline.md" }
     };
 
-    /// <summary>The writer slots comparison format version 14 added.</summary>
+    /// <summary>The writer slots comparison format version 14 added that a current audience still has.</summary>
     public static readonly IReadOnlyList<string> Format14Slots = new[]
     {
-        BenchmarkReportSlots.AgainstReference, BenchmarkReportSlots.NotableFindings, BenchmarkReportSlots.WhyModelsDiffer
+        BenchmarkReportSlots.AgainstReference
     };
 
     /// <summary>

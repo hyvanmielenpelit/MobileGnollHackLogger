@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using MobileGnollHackLogger.Data;
+using Overseer.Services.Benchmarking.RootCause;
 
 // Report packs: AI-written documents about one model of a model comparison, in the context of its
 // peers. Figures come from code (the fact sheet); the writer supplies only prose between them, and
@@ -59,7 +60,7 @@ public sealed class BenchmarkReportRenderOptions
     /// </summary>
     public bool IncludeDocumentFooter { get; init; } = true;
 
-    /// <summary>The fact sheet section of the Internal Improvement Brief. The PDF and Word downloads leave it out.</summary>
+    /// <summary>The fact sheet section, in a document that prints one. The PDF and Word downloads leave it out.</summary>
     public bool IncludeFactSheet { get; init; } = true;
 
     /// <summary>The chart figures placed in the document; empty for none.</summary>
@@ -79,11 +80,7 @@ public sealed record BenchmarkReportAudienceSpec(
     IReadOnlyList<string> RequiredSlots,
     int MaxStrengths,
     int MaxWeaknesses,
-    bool UsesRecommendations,
-    IReadOnlyList<string> RecommendationTargets,
-    bool UsesQuestionNotes,
-    bool RequiresQuestionTopics,
-    bool UsesLeads)
+    bool RequiresQuestionTopics)
 {
     /// <summary>Slots of <see cref="RequiredSlots"/> that a document with peers requires and a stand-alone one never has.</summary>
     public IReadOnlyList<string> PeerOnlySlots { get; init; } = Array.Empty<string>();
@@ -109,11 +106,17 @@ public sealed record BenchmarkReportAudienceSpec(
     /// <summary>The most points each model gets in the <c>models</c> list; 0 when the document has no such list.</summary>
     public int MaxModelPoints { get; init; }
 
-    /// <summary>The leads the document holds where it uses them.</summary>
-    public int MaxLeads { get; init; } = 6;
+    /// <summary>The most items of the <c>observations</c> list; 0 when the document has no such list.</summary>
+    public int MaxObservations { get; init; }
 
-    /// <summary>The values a lead's <c>triage</c> may take.</summary>
-    public IReadOnlyList<string> LeadTriages { get; init; } = new[] { "harness", "suite", "chat", "corpus" };
+    /// <summary>The most items of the <c>writerHypotheses</c> list; 0 when the document has no such list.</summary>
+    public int MaxWriterHypotheses { get; init; }
+
+    /// <summary>The document ends in the fact sheet as a JSON appendix, in its Markdown copy only.</summary>
+    public bool IncludeFactSheet { get; init; }
+
+    /// <summary>A Root Cause Analysis, in comparison or model scope: rules 32 to 36 apply.</summary>
+    public bool IsRootCauseAnalysis => Audience == BenchmarkReportAudience.RootCauseAnalysis;
 
     /// <summary>The slots a document requires: every slot with peers, the slots outside <see cref="PeerOnlySlots"/> without.</summary>
     public IReadOnlyList<string> SlotsFor(bool hasPeers)
@@ -131,36 +134,12 @@ public static class BenchmarkReportSlots
     public const string Meaning = "meaning";         // What this means for use as a game assistant
     public const string Confidence = "confidence";   // How reliable this result is
 
-    // Report for AI Researchers and Developers (the TechnicalReport audience)
-    public const string Abstract = "abstract";       // ≤ 150 words
-    public const string WhyItScored = "whyItScored"; // patterns behind the weaknesses, ≤ 300 words
-    public const string WhatWorked = "whatWorked";   // patterns behind the strengths, ≤ 150 words
-    public const string Limitations = "limitations"; // the last paragraph of Threats to validity, ≤ 120 words
-
-    // Internal Improvement Brief, in the order of What the Benchmark Is For
-    public const string OverseerChat = "overseerChat";       // ≤ 200 words
-    public const string BenchmarkSystem = "benchmarkSystem"; // ≤ 150 words
-    public const string ModelResult = "modelResult";         // ≤ 150 words
-
     // Comparison scope: Executive Summary
     public const string Overview = "overview";               // The comparison in one paragraph
     public const string WhichModel = "whichModel";           // Which model to use
     public const string TradeOffs = "tradeOffs";             // Trade-offs
     public const string Reliability = "reliability";         // How reliable this is
-    public const string AgainstReference = "againstReference"; // Compared with the baseline or reference model (also in the researcher report)
-
-    // Comparison scope: Report for AI Researchers and Developers (abstract and limitations as above)
-    public const string Results = "results";                     // after the results table and paired tests
-    public const string NotableFindings = "notableFindings";     // Notable findings, only when code detected one
-    public const string DimensionProfiles = "dimensionProfiles";
-    public const string Frontier = "frontier";                   // Speed and cost frontier
-    public const string WhyModelsDiffer = "whyModelsDiffer";     // Why the models differ
-    public const string QuestionPatterns = "questionPatterns";   // Cross-model question patterns
-    public const string GraderReliability = "graderReliability";
-
-    // Comparison scope: Internal Improvement Brief (benchmarkSystem as above)
-    public const string SharedGaps = "sharedGaps";
-    public const string ModelGaps = "modelGaps";
+    public const string AgainstReference = "againstReference"; // Compared with the baseline or reference model
 
     // Chat consistency scope: Executive Summary
     public const string AsGoodAsBefore = "asGoodAsBefore";     // Is the Overseer chat with this model as good as before?
@@ -168,22 +147,7 @@ public static class BenchmarkReportSlots
     public const string OurChanges = "ourChanges";             // Our changes and their effect
     public const string ProviderChanges = "providerChanges";   // Provider-side changes
     public const string ConfidenceAndScope = "confidenceAndScope"; // Confidence and scope
-    public const string NextRuns = "nextRuns";                 // Next runs (also in the Internal Brief)
-
-    // Chat consistency scope: Report for AI Researchers and Developers (limitations as above)
-    public const string QuestionAndDesign = "questionAndDesign";   // Question and design
-    public const string RunsAndCoverage = "runsAndCoverage";       // Runs, coverage and scope
-    public const string OverseerEvents = "overseerEvents";         // Overseer events
-    public const string EndpointResults = "endpointResults";       // Results by endpoint
-    public const string Attribution = "attribution";               // Attribution
-    public const string Robustness = "robustness";                 // Robustness
-    public const string Reproducibility = "reproducibility";       // Reproducibility
-
-    // Chat consistency scope: Internal Brief (nextRuns as above)
-    public const string ChatFindings = "chatFindings";             // Findings for the chat
-    public const string ChangeEffects = "changeEffects";           // Our changes that helped or hurt
-    public const string InfrastructureIssues = "infrastructureIssues"; // Infrastructure issues
-    public const string Actions = "actions";                       // Actions
+    public const string NextRuns = "nextRuns";                 // Next runs
 
     // Chat consistency scope: Provider Issue Report
     public const string IssueSummary = "issueSummary";             // Summary
@@ -195,110 +159,70 @@ public static class BenchmarkReportSlots
     public const string SampleRequestIds = "sampleRequestIds";     // Sample request ids
     public const string ProviderRequest = "providerRequest";       // Request to the provider
 
-    public const string TargetModelDevelopers = "model_developers";
-    public const string TargetOverseerChat = "overseer_chat";
-    public const string TargetBenchmark = "benchmark";
+    // Root Cause Analysis, comparison and model scope; its next-runs slot is NextRuns.
+    public const string Scope = "scope";                                   // Scope and design: what this design can and cannot decide
+    public const string EvidenceIntelligence = "evidenceIntelligence";     // Evidence: intelligence, no causal words
+    public const string EvidenceSpeed = "evidenceSpeed";                   // Evidence: speed, no causal words
+    public const string EvidenceCost = "evidenceCost";                     // Evidence: cost, no causal words
+    public const string HypothesesIntelligence = "hypothesesIntelligence"; // Weighing the intelligence hypotheses
+    public const string HypothesesSpeed = "hypothesesSpeed";               // Weighing the speed hypotheses
+    public const string HypothesesCost = "hypothesesCost";                 // Weighing the cost hypotheses
+    public const string Conclusions = "conclusions";                       // Per axis: the root cause and its confidence, or why it is not established
+    public const string Limitations = "limitations";                       // Limitations
 
-    /// <summary>A comparison-scope lead about one model rather than the system.</summary>
-    public const string LeadTriageModel = "model";
+    /// <summary>The most items of a Root Cause Analysis' <c>observations</c> list.</summary>
+    public const int RootCauseMaxObservations = 8;
+
+    /// <summary>The most items of a Root Cause Analysis' <c>writerHypotheses</c> list.</summary>
+    public const int RootCauseMaxWriterHypotheses = 4;
+
+    /// <summary>A Root Cause Analysis' slots, in document order.</summary>
+    public static IReadOnlyList<string> RootCauseSlotOrder { get; } = new[]
+    {
+        Scope, EvidenceIntelligence, EvidenceSpeed, EvidenceCost, HypothesesIntelligence, HypothesesSpeed, HypothesesCost,
+        Conclusions, NextRuns, Limitations
+    };
+
+    /// <summary>The section title of each Root Cause Analysis slot.</summary>
+    public static IReadOnlyDictionary<string, string> RootCauseSlotTitles { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        [Scope] = "Scope and design",
+        [EvidenceIntelligence] = "Evidence: intelligence",
+        [EvidenceSpeed] = "Evidence: speed",
+        [EvidenceCost] = "Evidence: cost",
+        [HypothesesIntelligence] = "Hypotheses: intelligence",
+        [HypothesesSpeed] = "Hypotheses: speed",
+        [HypothesesCost] = "Hypotheses: cost",
+        [Conclusions] = "Conclusions",
+        [NextRuns] = "Next runs and checks",
+        [Limitations] = "Limitations",
+    };
 
     public static readonly BenchmarkReportAudienceSpec ExecutiveSummary = new(
         BenchmarkReportAudience.ExecutiveSummary,
         new[] { Comparison, Meaning, Confidence },
         MaxStrengths: 3,
         MaxWeaknesses: 3,
-        UsesRecommendations: false,
-        RecommendationTargets: Array.Empty<string>(),
-        UsesQuestionNotes: false,
-        RequiresQuestionTopics: false,
-        UsesLeads: false)
+        RequiresQuestionTopics: false)
     {
         PeerOnlySlots = new[] { Comparison }
     };
-
-    public static readonly BenchmarkReportAudienceSpec TechnicalReport = new(
-        BenchmarkReportAudience.TechnicalReport,
-        new[] { Abstract, WhyItScored, WhatWorked, Limitations },
-        MaxStrengths: 8,
-        MaxWeaknesses: 8,
-        UsesRecommendations: true,
-        RecommendationTargets: new[] { TargetModelDevelopers },
-        UsesQuestionNotes: true,
-        RequiresQuestionTopics: true,
-        UsesLeads: false);
-
-    public static readonly BenchmarkReportAudienceSpec InternalBrief = new(
-        BenchmarkReportAudience.InternalBrief,
-        new[] { OverseerChat, BenchmarkSystem, ModelResult },
-        MaxStrengths: 8,
-        MaxWeaknesses: 8,
-        UsesRecommendations: true,
-        RecommendationTargets: new[] { TargetOverseerChat, TargetBenchmark, TargetModelDevelopers },
-        UsesQuestionNotes: true,
-        RequiresQuestionTopics: true,
-        UsesLeads: true);
 
     public static readonly BenchmarkReportAudienceSpec ComparisonExecutiveSummary = new(
         BenchmarkReportAudience.ExecutiveSummary,
         new[] { Overview, WhichModel, AgainstReference, TradeOffs, Reliability },
         MaxStrengths: 0,
         MaxWeaknesses: 0,
-        UsesRecommendations: false,
-        RecommendationTargets: Array.Empty<string>(),
-        UsesQuestionNotes: false,
-        RequiresQuestionTopics: false,
-        UsesLeads: false)
+        RequiresQuestionTopics: false)
     {
         ComparisonScope = true,
         UsesStrengthsAndWeaknesses = false,
         MaxModelPoints = 2
     };
 
-    public static readonly BenchmarkReportAudienceSpec ComparisonTechnicalReport = new(
-        BenchmarkReportAudience.TechnicalReport,
-        new[] { Abstract, Results, AgainstReference, NotableFindings, DimensionProfiles, Frontier, WhyModelsDiffer, QuestionPatterns, GraderReliability, Limitations },
-        MaxStrengths: 0,
-        MaxWeaknesses: 0,
-        UsesRecommendations: false,
-        RecommendationTargets: Array.Empty<string>(),
-        UsesQuestionNotes: false,
-        RequiresQuestionTopics: true,
-        UsesLeads: false)
-    {
-        ComparisonScope = true,
-        UsesStrengthsAndWeaknesses = false,
-        MaxModelPoints = 4,
-        NotableOnlySlots = new[] { NotableFindings }
-    };
-
-    public static readonly BenchmarkReportAudienceSpec ComparisonInternalBrief = new(
-        BenchmarkReportAudience.InternalBrief,
-        new[] { SharedGaps, ModelGaps, BenchmarkSystem },
-        MaxStrengths: 0,
-        MaxWeaknesses: 0,
-        UsesRecommendations: false,
-        RecommendationTargets: Array.Empty<string>(),
-        UsesQuestionNotes: false,
-        RequiresQuestionTopics: true,
-        UsesLeads: true)
-    {
-        ComparisonScope = true,
-        UsesStrengthsAndWeaknesses = false,
-        MaxLeads = 8,
-        LeadTriages = new[] { "chat", "harness", "suite", "corpus", LeadTriageModel }
-    };
-
     public static readonly BenchmarkReportAudienceSpec ChatConsistencyExecutiveSummary = ChatConsistencySpec(
         BenchmarkReportAudience.ExecutiveSummary,
         AsGoodAsBefore, PlayerImpact, OurChanges, ProviderChanges, ConfidenceAndScope, NextRuns);
-
-    public static readonly BenchmarkReportAudienceSpec ChatConsistencyTechnicalReport = ChatConsistencySpec(
-        BenchmarkReportAudience.TechnicalReport,
-        QuestionAndDesign, RunsAndCoverage, OverseerEvents, EndpointResults, Attribution, Robustness, Limitations, Reproducibility);
-
-    public static readonly BenchmarkReportAudienceSpec ChatConsistencyInternalBrief = ChatConsistencySpec(
-        BenchmarkReportAudience.InternalBrief,
-        ChatFindings, ChangeEffects, InfrastructureIssues, NextRuns, Actions);
 
     public static readonly BenchmarkReportAudienceSpec ChatConsistencyProviderIssueReport = ChatConsistencySpec(
         BenchmarkReportAudience.ProviderIssueReport,
@@ -308,8 +232,6 @@ public static class BenchmarkReportSlots
     public static IReadOnlyList<BenchmarkReportAudience> ChatConsistencyAudiences { get; } = new[]
     {
         BenchmarkReportAudience.ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport,
-        BenchmarkReportAudience.InternalBrief,
         BenchmarkReportAudience.ProviderIssueReport
     };
 
@@ -322,18 +244,6 @@ public static class BenchmarkReportSlots
         [ProviderChanges] = "Provider-side changes",
         [ConfidenceAndScope] = "Confidence and scope",
         [NextRuns] = "Next runs",
-        [QuestionAndDesign] = "Question and design",
-        [RunsAndCoverage] = "Runs, coverage and scope",
-        [OverseerEvents] = "Overseer events",
-        [EndpointResults] = "Results by endpoint",
-        [Attribution] = "Attribution",
-        [Robustness] = "Robustness",
-        [Limitations] = "Limitations",
-        [Reproducibility] = "Reproducibility",
-        [ChatFindings] = "Findings for the chat",
-        [ChangeEffects] = "Our changes that helped or hurt",
-        [InfrastructureIssues] = "Infrastructure issues",
-        [Actions] = "Actions",
         [IssueSummary] = "Summary",
         [AffectedModel] = "Affected model and configuration",
         [Timeline] = "Timeline",
@@ -350,31 +260,49 @@ public static class BenchmarkReportSlots
         slots,
         MaxStrengths: 0,
         MaxWeaknesses: 0,
-        UsesRecommendations: false,
-        RecommendationTargets: Array.Empty<string>(),
-        UsesQuestionNotes: false,
-        RequiresQuestionTopics: false,
-        UsesLeads: false)
+        RequiresQuestionTopics: false)
     {
         ChatConsistencyScope = true,
         UsesStrengthsAndWeaknesses = false
+    };
+
+    /// <summary>
+    /// The Root Cause Analysis of a per-model document: of a run or battery run on its own (with its
+    /// controls), or of a subject among its peers. Its slots are the same with or without peers; topics are
+    /// required for every question it cites, and its Markdown copy ends in the fact sheet.
+    /// </summary>
+    public static readonly BenchmarkReportAudienceSpec RootCauseAnalysis = RootCauseSpec(comparisonScope: false);
+
+    /// <summary>The Root Cause Analysis of a comparison-scope document: every covered model as an equal.</summary>
+    public static readonly BenchmarkReportAudienceSpec ComparisonRootCauseAnalysis = RootCauseSpec(comparisonScope: true);
+
+    private static BenchmarkReportAudienceSpec RootCauseSpec(bool comparisonScope) => new(
+        BenchmarkReportAudience.RootCauseAnalysis,
+        RootCauseSlotOrder,
+        MaxStrengths: 0,
+        MaxWeaknesses: 0,
+        RequiresQuestionTopics: true)
+    {
+        ComparisonScope = comparisonScope,
+        UsesStrengthsAndWeaknesses = false,
+        MaxObservations = RootCauseMaxObservations,
+        MaxWriterHypotheses = RootCauseMaxWriterHypotheses,
+        IncludeFactSheet = true
     };
 
     /// <summary>The audience's slots for a chat consistency document.</summary>
     public static BenchmarkReportAudienceSpec ForChatConsistency(BenchmarkReportAudience audience) => audience switch
     {
         BenchmarkReportAudience.ExecutiveSummary => ChatConsistencyExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport => ChatConsistencyTechnicalReport,
-        BenchmarkReportAudience.InternalBrief => ChatConsistencyInternalBrief,
         BenchmarkReportAudience.ProviderIssueReport => ChatConsistencyProviderIssueReport,
         _ => throw new ArgumentOutOfRangeException(nameof(audience), audience, null)
     };
 
+    /// <summary>The audience's slots for a per-model document.</summary>
     public static BenchmarkReportAudienceSpec For(BenchmarkReportAudience audience) => audience switch
     {
         BenchmarkReportAudience.ExecutiveSummary => ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport => TechnicalReport,
-        BenchmarkReportAudience.InternalBrief => InternalBrief,
+        BenchmarkReportAudience.RootCauseAnalysis => RootCauseAnalysis,
         _ => throw new ArgumentOutOfRangeException(nameof(audience), audience, null)
     };
 
@@ -387,8 +315,7 @@ public static class BenchmarkReportSlots
             : audience switch
             {
                 BenchmarkReportAudience.ExecutiveSummary => ComparisonExecutiveSummary,
-                BenchmarkReportAudience.TechnicalReport => ComparisonTechnicalReport,
-                BenchmarkReportAudience.InternalBrief => ComparisonInternalBrief,
+                BenchmarkReportAudience.RootCauseAnalysis => ComparisonRootCauseAnalysis,
                 _ => throw new ArgumentOutOfRangeException(nameof(audience), audience, null)
             };
 
@@ -554,6 +481,24 @@ public sealed class BenchmarkReportQuestion
 
     /// <summary>The letters whose answer excerpts the writer was given (comparison scope); null on a per-model sheet.</summary>
     public List<string>? ExcerptLetters { get; set; }
+
+    /// <summary>
+    /// The subject's mean input tokens on this item, over its answers that recorded them; null when none did,
+    /// on a comparison-scope sheet's matrix rows and on a document stored before model-scope format version 13.
+    /// </summary>
+    public double? InputTokens { get; set; }
+
+    /// <summary>The subject's mean output tokens on this item; null as for <see cref="InputTokens"/>.</summary>
+    public double? OutputTokens { get; set; }
+
+    /// <summary>The subject's mean candidate cost on this item, in USD on the comparison's pricing basis; null without a price card, and as for <see cref="InputTokens"/>.</summary>
+    public double? CostUsd { get; set; }
+
+    /// <summary>The subject's mean time to first token on this item over its Ok answers, in milliseconds; null as for <see cref="InputTokens"/>.</summary>
+    public double? TtftMs { get; set; }
+
+    /// <summary>The subject's mean model calls per answer on this item; null as for <see cref="InputTokens"/>.</summary>
+    public double? ModelCallCount { get; set; }
 }
 
 /// <summary>One covered model's figures on one question of a comparison-scope sheet.</summary>
@@ -769,6 +714,14 @@ public sealed class BenchmarkReportFactSheet
     /// document stored before format version 14.
     /// </summary>
     public List<BenchmarkReportNotableFinding>? NotableFindings { get; set; }
+
+    /// <summary>
+    /// What the root-cause engine computed over the sheet: evidence, known facts, graded hypotheses, the axis
+    /// statuses, the recommended runs and checks, the controls used and the chart-ready rows. Null on a chat
+    /// consistency sheet, on the per-model sheets a comparison-scope sheet is built from, and on a document
+    /// stored before comparison format version 15 or model-scope format version 13.
+    /// </summary>
+    public RootCauseResult? RootCause { get; set; }
 }
 
 /// <summary>One notable finding of a comparison-scope sheet: what code detected, and the facts it rests on.</summary>
@@ -1174,21 +1127,62 @@ public sealed class BenchmarkReportWriterOutput
     [JsonPropertyName("weaknesses")]
     public List<BenchmarkReportWriterItem> Weaknesses { get; set; } = new();
 
-    [JsonPropertyName("recommendations")]
-    public List<BenchmarkReportWriterRecommendation> Recommendations { get; set; } = new();
-
     [JsonPropertyName("questionTopics")]
     public List<BenchmarkReportQuestionTopic> QuestionTopics { get; set; } = new();
-
-    [JsonPropertyName("questionNotes")]
-    public List<BenchmarkReportQuestionNote> QuestionNotes { get; set; } = new();
-
-    [JsonPropertyName("leads")]
-    public List<BenchmarkReportLead> Leads { get; set; } = new();
 
     /// <summary>A comparison-scope document's points about each covered model, by letter; null on a per-model document.</summary>
     [JsonPropertyName("models")]
     public List<BenchmarkReportModelPoints>? Models { get; set; }
+
+    /// <summary>
+    /// A Root Cause Analysis' grader-recorded observations, each citing a question and an evidence id and
+    /// using no causal word; null on every other document.
+    /// </summary>
+    [JsonPropertyName("observations")]
+    public List<BenchmarkReportWriterItem>? Observations { get; set; }
+
+    /// <summary>A Root Cause Analysis' own qualitative hypotheses, their confidence fixed at Low; null on every other document.</summary>
+    [JsonPropertyName("writerHypotheses")]
+    public List<BenchmarkReportWriterHypothesis>? WriterHypotheses { get; set; }
+}
+
+/// <summary>
+/// One hypothesis the writer of a Root Cause Analysis adds to the code's rule table: qualitative, from the
+/// grader comments and excerpts, so its confidence is always Low and code never grades it.
+/// </summary>
+public sealed class BenchmarkReportWriterHypothesis
+{
+    /// <summary><c>intelligence</c>, <c>speed</c> or <c>cost</c>.</summary>
+    [JsonPropertyName("axis")]
+    public string Axis { get; set; } = string.Empty;
+
+    /// <summary>The models it names, by token: a letter, or <c>subject</c> in a per-model document.</summary>
+    [JsonPropertyName("models")]
+    public List<string> Models { get; set; } = new();
+
+    /// <summary>One or more of <c>model</c>, <c>chat</c>, <c>harness</c>, <c>suite</c>, <c>corpus</c> and <c>provider</c>, joined by <c> / </c>.</summary>
+    [JsonPropertyName("locus")]
+    public string Locus { get; set; } = string.Empty;
+
+    [JsonPropertyName("statement")]
+    public string Statement { get; set; } = string.Empty;
+
+    [JsonPropertyName("for")]
+    public List<string> For { get; set; } = new();
+
+    [JsonPropertyName("against")]
+    public List<string> Against { get; set; } = new();
+
+    [JsonPropertyName("refutedIf")]
+    public string RefutedIf { get; set; } = string.Empty;
+
+    /// <summary>Always <c>Low</c> once validated.</summary>
+    [JsonPropertyName("confidence")]
+    public string Confidence { get; set; } = string.Empty;
+
+    /// <summary>The fact keys and question references it rests on.</summary>
+    [JsonPropertyName("evidence")]
+    public List<string> Evidence { get; set; } = new();
 }
 
 /// <summary>The writer's points about one covered model of a comparison-scope document.</summary>
@@ -1214,20 +1208,6 @@ public class BenchmarkReportWriterItem
     public List<string> Evidence { get; set; } = new();
 }
 
-public sealed class BenchmarkReportWriterRecommendation : BenchmarkReportWriterItem
-{
-    /// <summary><c>model_developers</c>, <c>overseer_chat</c> or <c>benchmark</c>.</summary>
-    [JsonPropertyName("for")]
-    public string For { get; set; } = string.Empty;
-}
-
-public sealed class BenchmarkReportLead : BenchmarkReportWriterItem
-{
-    /// <summary><c>harness</c>, <c>suite</c>, <c>chat</c> or <c>corpus</c>.</summary>
-    [JsonPropertyName("triage")]
-    public string Triage { get; set; } = string.Empty;
-}
-
 public sealed class BenchmarkReportQuestionTopic
 {
     [JsonPropertyName("question")]
@@ -1235,15 +1215,6 @@ public sealed class BenchmarkReportQuestionTopic
 
     [JsonPropertyName("topic")]
     public string Topic { get; set; } = string.Empty;
-}
-
-public sealed class BenchmarkReportQuestionNote
-{
-    [JsonPropertyName("question")]
-    public int Question { get; set; }
-
-    [JsonPropertyName("note")]
-    public string Note { get; set; } = string.Empty;
 }
 
 /// <summary>One validation problem, and whether the offending item was dropped (stored as ValidationNotesJson).</summary>
@@ -1389,6 +1360,9 @@ public class BenchmarkReportPackAudienceEstimateDto
     /// <summary>Null when the writer has no resolvable price.</summary>
     public double? EstimatedCostUsd { get; set; }
 
+    /// <summary>The first call plus one repair turn; null under the same rule as <see cref="EstimatedCostUsd"/>.</summary>
+    public double? EstimatedCostWithRepairUsd { get; set; }
+
     /// <summary>
     /// The estimated input tokens as a share of the writer's context window, 0 to 1 and above; null
     /// when the window is unknown. Above <c>0.9</c> the start is refused.
@@ -1407,6 +1381,9 @@ public class BenchmarkReportPackPreviewDto
 
     /// <summary>Sum over <see cref="Estimates"/> of the first call; a repair turn can roughly double a document.</summary>
     public double? EstimatedTotalCostUsd { get; set; }
+
+    /// <summary>Sum over <see cref="Estimates"/> of the first call plus one repair turn.</summary>
+    public double? EstimatedTotalCostWithRepairUsd { get; set; }
 
     public string? WriterDisplayName { get; set; }
 
@@ -1550,6 +1527,24 @@ public class BenchmarkReportPackDocumentProgressDto
 
     /// <summary>Null when no call of the document had a resolvable price.</summary>
     public double? CostUsd { get; set; }
+
+    /// <summary>The first turn's validation issues, at most 80; null while the job runs.</summary>
+    public List<BenchmarkReportPackValidationIssueDto>? FirstTurnIssues { get; set; }
+
+    /// <summary>The issues left after the last validation, at most 80; null while the job runs.</summary>
+    public List<BenchmarkReportPackValidationIssueDto>? FinalIssues { get; set; }
+
+    /// <summary>The last reply's raw text of a Failed document, cut at 200,000 characters; null otherwise and while the job runs.</summary>
+    public string? FailedReply { get; set; }
+}
+
+/// <summary>One validation issue of a writer turn, as the job diagnostics show it.</summary>
+public class BenchmarkReportPackValidationIssueDto
+{
+    public int Rule { get; set; }
+    public string Location { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+    public bool Dropped { get; set; }
 }
 
 public class BenchmarkReportPackJobLogEntryDto
@@ -1741,6 +1736,44 @@ public class BenchmarkReportDocumentDetailDto : BenchmarkReportDocumentListItemD
     public string WriterPromptSha256 { get; set; } = string.Empty;
     public List<BenchmarkReportValidationNote> ValidationNotes { get; set; } = new();
     public string FactsJson { get; set; } = string.Empty;
+
+    /// <summary>A Root Cause Analysis's recommended runs, from its stored fact sheet; null on other documents.</summary>
+    public List<Overseer.Services.Benchmarking.RootCause.RootCauseRecommendedRun>? RecommendedRuns { get; set; }
+
+    /// <summary>A Root Cause Analysis's checks, from its stored fact sheet; null on other documents.</summary>
+    public List<Overseer.Services.Benchmarking.RootCause.RootCauseCheck>? Checks { get; set; }
+
+    /// <summary>The controls a run- or battery-completion Root Cause Analysis used; null on other documents.</summary>
+    public List<RootCauseControlDto>? Controls { get; set; }
+}
+
+/// <summary>One control of a run- or battery-completion Root Cause Analysis, as the AI reports tabs show it.</summary>
+public class RootCauseControlDto
+{
+    public string ModelLabel { get; set; } = string.Empty;
+    public string Provider { get; set; } = string.Empty;
+
+    /// <summary>The control run of a run subject; null for a battery control.</summary>
+    public long? RunId { get; set; }
+
+    /// <summary>The control battery run of a battery subject; null for a run control.</summary>
+    public long? BatteryRunId { get; set; }
+
+    public DateTime CompletedAtUtc { get; set; }
+    public int SharedQuestions { get; set; }
+}
+
+/// <summary>The controls a Root Cause Analysis of a run or battery run would use if written now.</summary>
+public class RootCauseControlsDto
+{
+    /// <summary>At most three, in the order the analysis uses them.</summary>
+    public List<RootCauseControlDto> Controls { get; set; } = new();
+
+    /// <summary><c>None</c>, <c>Moderate</c> or <c>Low</c>: the cap the control limit puts on model-versus-instrument hypotheses.</summary>
+    public string ControlLimit { get; set; } = "Low";
+
+    /// <summary>The <c>control</c> run to make when fewer than two controls qualify; null otherwise.</summary>
+    public Overseer.Services.Benchmarking.RootCause.RootCauseRecommendedRun? ControlRun { get; set; }
 }
 
 /// <summary>Writes a finished run's missing run-completion documents now, with the given writer.</summary>
@@ -1756,6 +1789,12 @@ public class WriteRunReportDocumentsRequest
 
     /// <summary>The operator confirmed writing from an out-of-date chat consistency analysis; read by the chat consistency endpoint only.</summary>
     public bool AcknowledgeOutOfDate { get; set; }
+
+    /// <summary>
+    /// Stored documents of the same subject and audience that the new documents replace, each deleted
+    /// once its replacement is stored (Rewrite with controls); null or empty replaces nothing.
+    /// </summary>
+    public List<long>? ReplaceDocumentIds { get; set; }
 }
 
 public class WriteRunReportDocumentsResponse
@@ -1826,6 +1865,9 @@ public class BenchmarkRunReportEstimateDto
 
     /// <summary>Sum over <see cref="Estimates"/> of the first call; null when the writer has no resolvable price.</summary>
     public double? EstimatedTotalCostUsd { get; set; }
+
+    /// <summary>Sum over <see cref="Estimates"/> of the first call plus one repair turn.</summary>
+    public double? EstimatedTotalCostWithRepairUsd { get; set; }
 
     /// <summary>Why the documents cannot be written with this writer, or null when they can.</summary>
     public string? Refusal { get; set; }

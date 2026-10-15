@@ -1,7 +1,6 @@
 <!--
   The AI-written reports of a run (app-run-ai-reports) or a battery run (app-battery-ai-reports):
-  an Executive Summary, a Report for AI Researchers and Developers and an Internal Improvement Brief,
-  written by a report writer and stored. One row per document, written or not; View renders the
+  an Executive Summary and a Root Cause Analysis, written by a report writer and stored. One row per document, written or not; View renders the
   stored text as a PDF and only Write Reports calls a model. Every id comes from the component, so
   each battery run tab's ids take its own prefix (ReportDocumentsTabBase).
 -->
@@ -64,7 +63,29 @@
               </button>
               <div popover="hint" class="gh-tooltip" [id]="deleteTipIdPrefix + row.audience"
                    [attr.style]="'position-anchor: --' + deleteTipIdPrefix + row.audience">{{ jobInProgress ? 'Wait for the writing to finish, or cancel it' : 'Delete' }}</div>
+              @if (row.audience === rootCauseAudience) {
+                <button type="button" class="action-btn rr-ai-doc-redraw"
+                        [attr.aria-label]="'Redraw the charts of the ' + row.label"
+                        [attr.aria-disabled]="jobInProgress || redrawingDocumentId !== null ? 'true' : null"
+                        [attr.aria-busy]="redrawingDocumentId === doc.id ? 'true' : null"
+                        [attr.interestfor]="redrawTipId"
+                        [attr.style]="'anchor-name: --' + redrawTipId"
+                        (click)="redrawCharts(doc)">
+                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                </button>
+                <div popover="hint" class="gh-tooltip" [id]="redrawTipId"
+                     [attr.style]="'position-anchor: --' + redrawTipId">{{ jobInProgress ? 'Wait for the writing to finish, or cancel it' : (redrawingDocumentId !== null ? 'Redrawing the charts…' : 'Redraw charts') }}</div>
+              }
             </div>
+            @if (row.audience === rootCauseAudience && subjectId !== null) {
+              <div class="rr-ai-doc-extra">
+                <app-root-cause-controls [subjectKind]="controlsSubjectKind" [subjectId]="subjectId"
+                                         [rcaDocumentId]="doc.id" [busy]="jobInProgress || writeSubmitting"
+                                         [reloadToken]="controlsReloadToken" [idPrefix]="controlsIdPrefix"
+                                         (rewriteRequested)="requestRewrite($event)"></app-root-cause-controls>
+                <app-root-cause-runs [documentId]="doc.id"></app-root-cause-runs>
+              </div>
+            }
           }
         </li>
       }
@@ -75,6 +96,13 @@
     <div class="alert alert-danger rr-ai-alert" role="alert">
       <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
       <div class="alert-content"><div class="alert-body">{{ viewError }}</div></div>
+    </div>
+  }
+
+  @if (redrawError) {
+    <div class="alert alert-danger rr-ai-alert rr-ai-redraw-error" role="alert">
+      <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <div class="alert-content"><div class="alert-body">{{ redrawError }}</div></div>
     </div>
   }
 
@@ -118,6 +146,12 @@
           <p class="form-hint rr-ai-written-hint">{{ label }} is already written. Delete it to write it again.</p>
         }
       </fieldset>
+
+      @if (rootCauseMissing && subjectId !== null) {
+        <app-root-cause-controls class="rr-ai-controls" [subjectKind]="controlsSubjectKind" [subjectId]="subjectId"
+                                 [rcaDocumentId]="null" [reloadToken]="controlsReloadToken"
+                                 [idPrefix]="controlsIdPrefix"></app-root-cause-controls>
+      }
 
       <div class="rr-ai-writer">
         <label [id]="labelId">Report writer</label>
@@ -273,6 +307,86 @@
       </button>
     </div>
   </div>
+</dialog>
+
+<!-- REWRITE WITH CONTROLS: the Root Cause Analysis alone, replacing the stored one once the new one is stored. -->
+<dialog #rewriteDialog class="gh-dialog rr-ai-confirm-dialog rr-ai-rewrite-dialog" [attr.aria-labelledby]="rewriteTitleId"
+        (cancel)="stopNestedEvent($event)" (close)="onRewriteDialogClosed($event)">
+  @if (rewriteTarget; as target) {
+  <div class="dialog-content">
+    <div class="dialog-header">
+      <div class="dialog-title-group">
+        <h3 [id]="rewriteTitleId">Rewrite the Root Cause Analysis?</h3>
+      </div>
+    </div>
+    <div class="dialog-body">
+      <p class="rr-ai-rewrite-text">
+        A new Root Cause Analysis is written with the {{ target.controls.length }}
+        {{ target.controls.length === 1 ? 'control' : 'controls' }} available now. It replaces the current one
+        once it is stored. The Executive Summary is not changed.
+      </p>
+      <div class="rr-ai-writer">
+        <label [id]="rewriteLabelId">Report writer</label>
+        <app-model-picker class="rr-ai-rewrite-writer" [labelledBy]="rewriteLabelId"
+                          placeholder="Select a model" [emptyHint]="emptyHint" [showPrice]="true"
+                          [options]="options" [selectedKey]="rewriteWriterId"
+                          (selectionChange)="selectRewriteWriter($event.model)"></app-model-picker>
+      </div>
+      @if (rewriteRefusal) {
+        <p class="gh-field-error rr-ai-rewrite-blocked">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ rewriteRefusal }}</span>
+        </p>
+      }
+      @if (rewriteWarning) {
+        <div class="alert alert-warning rr-ai-rewrite-warning" role="note">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+          <div class="alert-content"><div class="alert-body">{{ rewriteWarning }}</div></div>
+        </div>
+      }
+      <div [id]="rewriteEstimateId" class="gh-estimate-panel rr-ai-rewrite-estimate" role="status"
+           [class.is-empty]="!rewriteEstimateView"
+           [class.is-muted]="rewriteEstimateView !== null && rewriteEstimateView.state !== 'ready'"
+           [attr.aria-busy]="rewriteEstimateView?.state === 'loading' ? 'true' : null">
+        @if (rewriteEstimateView; as est) {
+          @switch (est.state) {
+            @case ('ready') {
+              <div class="gh-estimate-head">
+                <span class="gh-estimate-label">Estimated cost</span>
+                <span class="gh-estimate-total">about {{ est.total }}</span>
+              </div>
+              <p class="gh-estimate-note">The actual cost is shown while the document is written.</p>
+            }
+            @case ('loading') {
+              <p class="gh-estimate-note">Estimating…</p>
+            }
+            @case ('failed') {
+              <p class="gh-estimate-note">The cost could not be estimated.</p>
+            }
+            @default {
+              <p class="gh-estimate-note">No price card for this model; the cost cannot be estimated.</p>
+            }
+          }
+        }
+      </div>
+      @if (rewriteError) {
+        <div class="alert alert-danger rr-ai-alert rr-ai-rewrite-error" role="alert">
+          <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <div class="alert-content"><div class="alert-body">{{ rewriteError }}</div></div>
+        </div>
+      }
+    </div>
+    <div class="dialog-footer">
+      <button type="button" class="btn-gh btn-gh-cancel rr-ai-rewrite-cancel" (click)="cancelRewrite()">Cancel</button>
+      <button type="button" class="btn-gh rr-ai-rewrite-confirm" [disabled]="rewriteDisabled"
+              [attr.aria-describedby]="rewriteEstimateId"
+              [attr.aria-busy]="rewriteSubmitting ? 'true' : null" (click)="confirmRewrite()">
+        <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+        {{ rewriteConfirmLabel }}
+      </button>
+    </div>
+  </div>
+  }
 </dialog>
 
 <app-run-report-writing-dialog [idPrefix]="writingDialogIdPrefix"

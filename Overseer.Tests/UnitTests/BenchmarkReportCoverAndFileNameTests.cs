@@ -82,7 +82,7 @@ public class BenchmarkReportCoverAndFileNameTests
     [InlineData(BenchmarkReportPeerNaming.Anonymized, "4 models (A to D), identities withheld")]
     public void ACoverWithFourPeers_CountsThem(BenchmarkReportPeerNaming naming, string comparedWith)
     {
-        var document = WithSheet(BenchmarkReportAudience.TechnicalReport, AddPeers);
+        var document = WithSheet(BenchmarkReportAudience.ExecutiveSummary, AddPeers);
 
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, Options(naming), BenchmarkPdfPaper.A4);
 
@@ -150,7 +150,7 @@ public class BenchmarkReportCoverAndFileNameTests
     [InlineData(BenchmarkReportPeerNaming.Anonymized)]
     public void ABatteryCover_NamesTheBatteryRun_ItsSuitesAndItsRounds(BenchmarkReportPeerNaming naming)
     {
-        var document = BatteryReportFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var document = BatteryReportFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
 
         var info = BenchmarkPdfDocumentInfo.ForReportDocument(document, Options(naming, BenchmarkReportDisclosure.Full), BenchmarkPdfPaper.A4);
 
@@ -193,10 +193,6 @@ public class BenchmarkReportCoverAndFileNameTests
 
         Assert.Equal("battery-run-9_" + BenchmarkPdfFileNames.SafeFileName(document.Title) + "_full_named_INTERNAL.pdf", name);
         Assert.Equal(name[..^".pdf".Length] + ".docx", BenchmarkPdfFileNames.ForReportDocument(document, options, "docx"));
-
-        var researcher = BatteryReportFixture.Document(BenchmarkReportAudience.TechnicalReport);
-        Assert.StartsWith("battery-run-9_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_",
-            BenchmarkPdfFileNames.ForReportDocument(researcher, options));
     }
 
     [Fact]
@@ -213,15 +209,7 @@ public class BenchmarkReportCoverAndFileNameTests
     [Fact]
     public void AComparisonDocumentsName_NamesThePeersInLetterOrder_AfterTheRunNumber()
     {
-        var researcher = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
         var executive = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
-
-        Assert.Equal(
-            "run-12_vs-run-14-run-13_" + SheetTitleBase + "_Researcher_Report_detailed_anonymized.pdf",
-            BenchmarkPdfFileNames.ForReportDocument(researcher, Options(BenchmarkReportPeerNaming.Anonymized, BenchmarkReportDisclosure.Detailed)));
-        Assert.Equal(
-            "run-12_vs-run-14-run-13_" + SheetTitleBase + "_Researcher_Report_full_named_INTERNAL.pdf",
-            BenchmarkPdfFileNames.ForReportDocument(researcher, Options(BenchmarkReportPeerNaming.Named, BenchmarkReportDisclosure.Full)));
 
         string pdf = BenchmarkPdfFileNames.ForReportDocument(executive, Options(BenchmarkReportPeerNaming.Named));
         Assert.Equal("run-12_vs-run-14-run-13_" + SheetTitleBase + "-executive-summary_summary_named.pdf", pdf);
@@ -471,12 +459,8 @@ public class BenchmarkReportCoverAndFileNameTests
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named, "pdf",
         "comparison-12_gpt-5.6-luna_executive-summary_summary_named.pdf")]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, "pdf",
-        "comparison-12_gpt-5.6-luna_researcher-report_full_named_INTERNAL.pdf")]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Detailed, BenchmarkReportPeerNaming.Anonymized, "pdf",
-        "comparison-12_gpt-5.6-luna_researcher-report_detailed_anonymized.pdf")]
-    [InlineData(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized, "docx",
-        "comparison-12_gpt-5.6-luna_internal-brief_full_anonymized_INTERNAL.docx")]
+    [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized, "docx",
+        "comparison-12_gpt-5.6-luna_executive-summary_full_anonymized_INTERNAL.docx")]
     public void APerModelDocumentOfAComparison_IsNamedAfterTheComparisonAndTheModel(
         BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure, BenchmarkReportPeerNaming naming, string extension, string expected)
     {
@@ -516,8 +500,8 @@ public class BenchmarkReportCoverAndFileNameTests
         Assert.Equal("comparison-12_subset-2-of-5-models-3f9a0c_executive-summary_summary_anonymized.pdf",
             BenchmarkPdfFileNames.ForReportDocument(two, Options(BenchmarkReportPeerNaming.Anonymized)));
 
-        var four = ComparisonScope(BenchmarkReportAudience.InternalBrief, coversAll: false, FiveModels[0], FiveModels[1], FiveModels[2], FiveModels[3]);
-        Assert.Equal("comparison-12_subset-4-of-5-models-3f9a0c_internal-brief_full_named_INTERNAL.pdf",
+        var four = ComparisonScope(BenchmarkReportAudience.ExecutiveSummary, coversAll: false, FiveModels[0], FiveModels[1], FiveModels[2], FiveModels[3]);
+        Assert.Equal("comparison-12_subset-4-of-5-models-3f9a0c_executive-summary_full_named_INTERNAL.pdf",
             BenchmarkPdfFileNames.ForReportDocument(four, Options(BenchmarkReportPeerNaming.Named, BenchmarkReportDisclosure.Full)));
     }
 

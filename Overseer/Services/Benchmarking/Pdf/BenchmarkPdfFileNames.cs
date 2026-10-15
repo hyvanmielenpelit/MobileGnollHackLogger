@@ -52,9 +52,6 @@ public static class BenchmarkPdfFileNames
         return name.Length == 0 ? "export" : name;
     }
 
-    /// <summary>The file-name label of a Report for AI Researchers and Developers, in place of its long name.</summary>
-    public const string ResearcherReportLabel = "Researcher_Report";
-
     /// <summary>
     /// <c>[run-&lt;id&gt;_][vs-&lt;peers&gt;_]&lt;title&gt;_&lt;disclosure&gt;_&lt;peers&gt;[_INTERNAL].&lt;extension&gt;</c>, as
     /// the Download Center names a pack document: <c>run-&lt;id&gt;_</c> when the subject is the run
@@ -66,11 +63,6 @@ public static class BenchmarkPdfFileNames
     /// stand-alone document, <c>battery-run-9_vs-battery-run-10_…_summary_named.pdf</c> for one compared
     /// with one peer and <c>run-68_vs-4-models-3f9a0c21_claude-5.5-opus-…_summary_named.pdf</c> for one
     /// compared with four.
-    ///
-    /// <para>A Report for AI Researchers and Developers is named
-    /// <c>[run-&lt;id&gt;_]&lt;title without its "— &lt;audience name&gt;" ending&gt;_Researcher_Report_…</c>, the
-    /// ending being either the current name or the legacy <c>Technical Report</c>; with no title, the
-    /// subject label takes the title's place.</para>
     ///
     /// <para>A Report Pack document of a numbered comparison is named by <see cref="ComparisonStem"/>
     /// instead: <c>comparison-12_gpt-5.6-luna-max_executive-summary_full_named_INTERNAL.pdf</c>.</para>
@@ -104,12 +96,6 @@ public static class BenchmarkPdfFileNames
         string title = string.IsNullOrEmpty(document.Title)
             ? BenchmarkReportRenderService.AudienceName(document.Audience) + ": " + document.SubjectLabel
             : document.Title;
-        string label = string.Empty;
-        if (document.Audience == BenchmarkReportAudience.TechnicalReport)
-        {
-            title = string.IsNullOrEmpty(document.Title) ? document.SubjectLabel : WithoutAudienceEnding(document.Title);
-            label = "_" + ResearcherReportLabel;
-        }
 
         var runSubject = RunSubject.Match(document.SubjectKey ?? string.Empty);
         var batterySubject = BatterySubject.Match(document.SubjectKey ?? string.Empty);
@@ -118,7 +104,7 @@ public static class BenchmarkPdfFileNames
             : string.Empty;
         string comparisonPrefix = ComparisonPart(document.FactsJson, document.ComparisonKey);
 
-        return runPrefix + comparisonPrefix + SafeFileName(title) + label + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
+        return runPrefix + comparisonPrefix + SafeFileName(title) + "_" + disclosure + "_" + peers + internalSuffix + "." + extension;
     }
 
     /// <summary>The longest comparison-name or covered-models slug a comparison file name carries.</summary>
@@ -200,15 +186,14 @@ public static class BenchmarkPdfFileNames
     }
 
     /// <summary>
-    /// A document kind in a file name: <c>executive-summary</c>, <c>researcher-report</c>,
-    /// <c>internal-brief</c> or <c>provider-issue-report</c>.
+    /// A document kind in a file name: <c>executive-summary</c>, <c>provider-issue-report</c> or
+    /// <c>root-cause-analysis</c>.
     /// </summary>
     public static string KindSlug(BenchmarkReportAudience audience) => audience switch
     {
         BenchmarkReportAudience.ExecutiveSummary => "executive-summary",
-        BenchmarkReportAudience.TechnicalReport => "researcher-report",
-        BenchmarkReportAudience.InternalBrief => "internal-brief",
         BenchmarkReportAudience.ProviderIssueReport => "provider-issue-report",
+        BenchmarkReportAudience.RootCauseAnalysis => "root-cause-analysis",
         _ => SafeFileName(audience.ToString())
     };
 
@@ -329,21 +314,6 @@ public static class BenchmarkPdfFileNames
             }
         }
         return null;
-    }
-
-    /// <summary>The title without a trailing <c> — Report for AI Researchers and Developers</c> or <c> — Technical Report</c>.</summary>
-    private static string WithoutAudienceEnding(string title)
-    {
-        foreach (string name in new[]
-                 {
-                     BenchmarkReportRenderService.AudienceName(BenchmarkReportAudience.TechnicalReport),
-                     BenchmarkReportRenderService.LegacyTechnicalReportName
-                 })
-        {
-            string ending = " — " + name;
-            if (title.EndsWith(ending, StringComparison.Ordinal)) return title[..^ending.Length];
-        }
-        return title;
     }
 
     /// <summary>A run file's server name with <c>_INTERNAL</c> before a <c>.pdf</c> extension that replaces its own.</summary>

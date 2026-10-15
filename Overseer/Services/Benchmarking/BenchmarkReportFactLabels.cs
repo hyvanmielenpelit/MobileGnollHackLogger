@@ -77,6 +77,38 @@ public static class BenchmarkReportFactLabels
         ["tokens.inputPerQuestion"] = "Input tokens per question",
         ["tokens.outputPerQuestion"] = "Output tokens per question",
 
+        // Root-cause evidence (RootCauseEvidence)
+        ["speed.ttftP90"] = "90th-percentile time to first token",
+        ["speed.toolTimeP50"] = "Median tool time per answer",
+        ["speed.modelCallsPerAnswer"] = "Model calls per answer",
+        ["speed.ttftPerCallP50"] = "Median time to first token per model call",
+        ["speed.decodeRate"] = "Median visible decode rate",
+        ["speed.ownWaitShare"] = "Own waits and retries, share of model time",
+        ["speed.retriesPerAnswer"] = "Retried attempts per answer",
+        ["speed.servedTierMismatch"] = "Answers served at another tier than requested",
+        ["tokens.reasoningPerQuestion"] = "Reasoning tokens per question",
+        ["tokens.reasoningShare"] = "Reasoning share of output tokens",
+        ["tokens.cacheReadShare"] = "Cache-read share of input tokens",
+        ["servedTier"] = "Served service tier",
+        ["score.withTools"] = "Mean score of answers with a tool call",
+        ["score.withoutTools"] = "Mean score of answers without a tool call",
+        ["outcome.confirmedCriticalRate"] = "Confirmed critical-error rate",
+        ["config.serviceTier"] = "Requested service tier",
+        ["config.reasoningMode"] = "Reasoning mode",
+        ["config.parallelMode"] = "Parallel execution mode",
+        ["config.maxOutputTokens"] = "Output token cap",
+
+        // Root cause (RootCauseFacts)
+        ["rca.controls.count"] = "Controls",
+        ["rca.controls.providers"] = "Providers of the controls",
+        ["rca.controls.limit"] = "Control limit",
+        ["rca.control.deficit.mean"] = "Mean difference from the controls",
+        ["rca.control.deficit.interval"] = "95 % interval of the mean difference from the controls",
+        ["rca.control.instrumentSuspect"] = "Questions every control also missed",
+        ["rca.control.modelSpecific"] = "Questions only the model under test missed",
+        ["rca.systemFirst"] = "System hypotheses first",
+        ["rca.pricingBasis"] = "Pricing basis of the cost decomposition",
+
         // Errors and claims
         ["answers.scored"] = "Scored answers",
         ["errors.critical"] = "Critical errors",
@@ -450,6 +482,7 @@ public static class BenchmarkReportFactLabels
         ["quality.interval"] = "Paired interval",
         ["speed.ratio"] = "Time ratio",
         ["cost.ratio"] = "Spend ratio",
+        ["configDifferences"] = "Configuration differences",
     };
 
     /// <summary>The axes of a pair's paired-test results, with their names.</summary>
@@ -541,6 +574,23 @@ public static class BenchmarkReportFactLabels
             return true;
         }
 
+        // profile.*: a per-model sheet's failure profile
+        if (parts[0] == "profile" && TryProfileLabel(key, out label)) return true;
+
+        // cost.component.<c>.perQuestion, price.<c>.perMillion
+        if (parts.Length == 4 && parts[0] == "cost" && parts[1] == "component" && parts[3] == "perQuestion" && CostComponentNames.TryGetValue(parts[2], out var costComponent))
+        {
+            label = "Cost per question: " + costComponent;
+            return true;
+        }
+        if (parts.Length == 3 && parts[0] == "price" && parts[2] == "perMillion" && CostComponentNames.TryGetValue(parts[1], out var priceComponent))
+        {
+            label = "Price per million tokens: " + priceComponent;
+            return true;
+        }
+
+        if (parts[0] == "rca" && TryRootCauseLabel(parts, out label)) return true;
+
         // peer.<letter>.<key>: another model's own figure
         if (parts[0] == "peer" && parts.Length >= 3 && parts[1].Length > 0 && parts[1].All(char.IsAsciiLetterUpper))
         {
@@ -571,6 +621,13 @@ public static class BenchmarkReportFactLabels
         => TryModelSuffixLabel(suffix, out string label) ? label : Fallback(suffix);
 
     private static bool TryModelSuffixLabel(string suffix, out string label)
+        => TryProfileLabel(suffix, out label) || TryLabel(suffix, out label);
+
+    /// <summary>
+    /// The label of a comparison-scope model suffix of <see cref="ModelLabels"/>, or of a failure-profile key
+    /// (<c>profile.*</c>), which a per-model sheet carries bare; false for any other key.
+    /// </summary>
+    private static bool TryProfileLabel(string suffix, out string label)
     {
         if (ModelLabels.TryGetValue(suffix, out var own))
         {
@@ -578,6 +635,7 @@ public static class BenchmarkReportFactLabels
             return true;
         }
 
+        label = string.Empty;
         string[] parts = suffix.Split('.');
 
         // profile.deficit.<d>
@@ -594,7 +652,210 @@ public static class BenchmarkReportFactLabels
             return true;
         }
 
-        return TryLabel(suffix, out label);
+        return false;
+    }
+
+    /// <summary>The cost components of the root-cause evidence, as a label names them.</summary>
+    private static readonly IReadOnlyDictionary<string, string> CostComponentNames = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["uncachedInput"] = "uncached input",
+        ["cacheRead"] = "cache reads",
+        ["cacheWrite"] = "cache writes",
+        ["output"] = "visible output",
+        ["reasoning"] = "reasoning",
+    };
+
+    /// <summary>The parts of a root-cause hypothesis's facts (<c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.&lt;part&gt;</c>).</summary>
+    private static readonly IReadOnlyDictionary<string, string> HypothesisParts = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["statement"] = "statement",
+        ["axis"] = "axis",
+        ["models"] = "models",
+        ["locus"] = "locus",
+        ["grade"] = "confidence grade",
+        ["gradeReasons"] = "reasons for the grade",
+        ["for"] = "evidence for",
+        ["against"] = "evidence against",
+        ["refutedIf"] = "refuted if",
+        ["nextRun"] = "next run",
+        ["check"] = "check",
+        ["share"] = "share of the difference",
+        ["interval"] = "95 % interval of the share",
+    };
+
+    /// <summary>The parts of a control's facts (<c>rca.controls.&lt;n&gt;.&lt;part&gt;</c>).</summary>
+    private static readonly IReadOnlyDictionary<string, string> ControlParts = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["model"] = "model",
+        ["runId"] = "run",
+        ["batteryRunId"] = "battery run",
+        ["date"] = "date",
+        ["provider"] = "provider",
+        ["sharedQuestions"] = "shared questions",
+    };
+
+    /// <summary>The axes of the root cause, as a label names them.</summary>
+    private static readonly IReadOnlyDictionary<string, string> RootCauseAxisNames = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["intelligence"] = "Intelligence",
+        ["speed"] = "Speed",
+        ["cost"] = "Cost",
+    };
+
+    /// <summary>The components of a speed decomposition, as a label names them.</summary>
+    private static readonly IReadOnlyDictionary<string, string> SpeedComponentNames = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["callCount"] = "number of model calls",
+        ["perCallLatency"] = "latency per call",
+        ["outputTokens"] = "output tokens",
+        ["decodeRate"] = "decode rate",
+        ["gap"] = "time outside the calls",
+    };
+
+    /// <summary>The segments of the points at risk and of the time per question, as a label names them.</summary>
+    private static readonly IReadOnlyDictionary<string, string> SegmentNames = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["noTool"] = "answers without tools",
+        ["budgetOrDefect"] = "budget, truncation or output defects",
+        ["criticalError"] = "confirmed critical errors",
+        ["otherLow"] = "other low-scoring answers",
+        ["ttft"] = "time to first token",
+        ["outputGeneration"] = "output generation",
+        ["toolExecution"] = "tool execution",
+        ["ownWaits"] = "own waits and retries",
+        ["other"] = "other time",
+    };
+
+    /// <summary>A model token as a label names it: <c>Model C</c>, or the model under test for <c>subject</c>; null for anything else.</summary>
+    private static string? TokenName(string token)
+        => token == "subject" ? "the model under test" : IsLetter(token) ? "Model " + token : null;
+
+    /// <summary>The patterned <c>rca.*</c> keys of <see cref="Overseer.Services.Benchmarking.RootCause.RootCauseFacts"/>.</summary>
+    private static bool TryRootCauseLabel(string[] parts, out string label)
+    {
+        label = string.Empty;
+        if (parts.Length < 2) return false;
+
+        switch (parts[1])
+        {
+            // rca.axis.<axis>.status, rca.axis.<axis>.best
+            case "axis" when parts.Length == 4 && RootCauseAxisNames.TryGetValue(parts[2], out var axis):
+                label = parts[3] switch
+                {
+                    "status" => "Root cause, " + axis + ": status",
+                    "best" => "Root cause, " + axis + ": best hypothesis",
+                    _ => string.Empty
+                };
+                return label.Length > 0;
+
+            // rca.known.<n>
+            case "known" when parts.Length == 3 && IsIndex(parts[2]):
+                label = "Known fact " + parts[2];
+                return true;
+
+            // rca.hypothesis.<id>.<n>.<part>
+            case "hypothesis" when parts.Length == 5 && IsIndex(parts[3]) && HypothesisParts.TryGetValue(parts[4], out var part):
+                label = "Hypothesis " + parts[2] + " (" + parts[3] + "): " + part;
+                return true;
+
+            // rca.speed.<F>.<S>.total, rca.speed.<F>.<S>.<component>.share or .interval
+            case "speed" when parts.Length >= 5 && TokenName(parts[2]) is string first && TokenName(parts[3]) is string second:
+                if (parts.Length == 5 && parts[4] == "total")
+                {
+                    label = "Model time difference per question, " + first + " against " + second;
+                    return true;
+                }
+                if (parts.Length == 6 && SpeedComponentNames.TryGetValue(parts[4], out var speedComponent) && parts[5] is "share" or "interval")
+                {
+                    label = "Speed decomposition, " + first + " against " + second + ": " + speedComponent + (parts[5] == "share" ? " share" : " share, 95 % interval");
+                    return true;
+                }
+                return false;
+
+            // rca.cost.<F>.<S>.total, rca.cost.<F>.<S>.<component>.<volume|price>.share or .interval
+            case "cost" when parts.Length >= 5 && TokenName(parts[2]) is string first && TokenName(parts[3]) is string second:
+                if (parts.Length == 5 && parts[4] == "total")
+                {
+                    label = "Cost difference per question, " + first + " against " + second;
+                    return true;
+                }
+                if (parts.Length == 7 && parts[5] is "volume" or "price" && parts[6] is "share" or "interval"
+                    && (parts[4] == "all" || CostComponentNames.ContainsKey(parts[4])))
+                {
+                    string component = parts[4] == "all" ? "every component" : CostComponentNames[parts[4]];
+                    label = "Cost decomposition, " + first + " against " + second + ": " + component + ", " + (parts[5] == "volume" ? "token volume" : "price per token")
+                            + (parts[6] == "share" ? " share" : " share, 95 % interval");
+                    return true;
+                }
+                return false;
+
+            // rca.quality.<F>.<S>.total, rca.quality.<F>.<S>.dimension.<d>.points, rca.quality.<F>.<S>.other.points
+            case "quality" when parts.Length >= 5 && TokenName(parts[2]) is string first && TokenName(parts[3]) is string second:
+                if (parts.Length == 5 && parts[4] == "total")
+                {
+                    label = "Intelligence Index difference, " + first + " against " + second;
+                    return true;
+                }
+                if (parts.Length == 7 && parts[4] == "dimension" && DimensionNames.TryGetValue(parts[5], out var dimension) && parts[6] == "points")
+                {
+                    label = "Intelligence Index difference, " + first + " against " + second + ": " + dimension + " contribution";
+                    return true;
+                }
+                if (parts.Length == 6 && parts[4] == "other" && parts[5] == "points")
+                {
+                    label = "Intelligence Index difference, " + first + " against " + second + ": critical-error cap, weighting and spread";
+                    return true;
+                }
+                return false;
+
+            // rca.atRisk.<T>.<segment>, rca.atRisk.<T>.total
+            case "atRisk" when parts.Length == 4 && TokenName(parts[2]) is string model:
+                if (parts[3] == "total")
+                {
+                    label = "Index points at risk, " + model;
+                    return true;
+                }
+                if (SegmentNames.TryGetValue(parts[3], out var segment))
+                {
+                    label = "Index points at risk, " + model + ": " + segment;
+                    return true;
+                }
+                return false;
+
+            // rca.within.<T>.time.total, .time.<segment>.seconds or .share, .cost.total, .cost.<component>.share
+            case "within" when parts.Length >= 5 && TokenName(parts[2]) is string own:
+                if (parts.Length == 5 && parts[4] == "total" && parts[3] is "time" or "cost")
+                {
+                    label = (parts[3] == "time" ? "Time per question, " : "Cost per question, ") + own;
+                    return true;
+                }
+                if (parts.Length == 6 && parts[3] == "time" && SegmentNames.TryGetValue(parts[4], out var timeSegment) && parts[5] is "seconds" or "share")
+                {
+                    label = "Time per question, " + own + ": " + timeSegment + (parts[5] == "share" ? " share" : string.Empty);
+                    return true;
+                }
+                if (parts.Length == 6 && parts[3] == "cost" && CostComponentNames.TryGetValue(parts[4], out var costComponent) && parts[5] == "share")
+                {
+                    label = "Cost per question, " + own + ": " + costComponent + " share";
+                    return true;
+                }
+                return false;
+
+            // rca.controls.<n>.<part>
+            case "controls" when parts.Length == 4 && IsIndex(parts[2]) && ControlParts.TryGetValue(parts[3], out var controlPart):
+                label = "Control " + parts[2] + ": " + controlPart;
+                return true;
+
+            // rca.run.<n>.summary, rca.check.<n>
+            case "run" when parts.Length == 4 && IsIndex(parts[2]) && parts[3] == "summary":
+                label = "Recommended run " + parts[2];
+                return true;
+            case "check" when parts.Length == 3 && IsIndex(parts[2]):
+                label = "Check " + parts[2];
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -620,13 +881,10 @@ public static class BenchmarkReportFactLabels
             string? pair = PairLabels.TryGetValue(suffix, out var fixedLabel)
                 ? fixedLabel
                 : parts.Length == 5 && PairAxisNames.TryGetValue(parts[3], out var axis)
-                    ? parts[4] switch
-                    {
-                        BenchmarkComparisonReportFacts.ReferenceFamilyName => axis + " result against the reference",
-                        BenchmarkComparisonReportFacts.AllPairsFamilyName => axis + " result among all pairs",
-                        _ => null
-                    }
-                    : null;
+                    ? FamilyResult(axis, parts[4])
+                    : parts.Length == 6 && parts[3] == "dimension" && DimensionNames.TryGetValue(parts[4], out var pairDimension)
+                        ? FamilyResult(pairDimension, parts[5])
+                        : null;
             if (pair == null) return false;
             label = "Model " + parts[1] + " against Model " + parts[2] + ": " + LowerFirst(pair);
             return true;
@@ -639,15 +897,23 @@ public static class BenchmarkReportFactLabels
             return true;
         }
 
-        // notable.<n>.<part>
+        // notable.<n>.<part>; the summary is the finding itself
         if (parts[0] == "notable" && parts.Length == 3 && IsIndex(parts[1]) && NotableParts.TryGetValue(parts[2], out var part))
         {
-            label = "Notable finding " + parts[1] + ": " + part;
+            label = parts[2] == "summary" ? "Notable finding " + parts[1] : "Notable finding " + parts[1] + ": " + part;
             return true;
         }
 
         return false;
     }
+
+    /// <summary>A paired-test result's label in one family: <c>Speed result against the reference</c>; null for an unknown family.</summary>
+    private static string? FamilyResult(string name, string family) => family switch
+    {
+        BenchmarkComparisonReportFacts.ReferenceFamilyName => name + " result against the reference",
+        BenchmarkComparisonReportFacts.AllPairsFamilyName => name + " result among all pairs",
+        _ => null
+    };
 
     /// <summary>A model letter: <c>A</c> to <c>Z</c>, <c>AA</c>, ….</summary>
     private static bool IsLetter(string part) => part.Length > 0 && part.All(char.IsAsciiLetterUpper);
@@ -823,8 +1089,13 @@ public static class BenchmarkReportFactLabels
         return char.ToUpper(text[0], CultureInfo.InvariantCulture) + text[1..];
     }
 
+    /// <summary>Terms <see cref="LowerFirst"/> leaves capitalized at the start of a label.</summary>
+    private static readonly string[] ProperTerms = { "Intelligence Index" };
+
     private static string LowerFirst(string text)
-        => text.Length > 1 && char.IsUpper(text[0]) && !char.IsUpper(text[1])
-            ? char.ToLowerInvariant(text[0]) + text[1..]
-            : text;
+        => ProperTerms.Any(t => text.StartsWith(t, StringComparison.Ordinal))
+            ? text
+            : text.Length > 1 && char.IsUpper(text[0]) && !char.IsUpper(text[1])
+                ? char.ToLowerInvariant(text[0]) + text[1..]
+                : text;
 }

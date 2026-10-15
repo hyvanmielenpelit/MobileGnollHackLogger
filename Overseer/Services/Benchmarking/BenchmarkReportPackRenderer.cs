@@ -86,25 +86,21 @@ public static class BenchmarkReportJson
 /// facts by key, writer sections in the audience's slot order).
 ///
 /// <para>A sheet with no peers renders the stand-alone form: no peer tables, no pairwise-significance
-/// statement and no peer columns. The Report for AI Researchers and Developers prints one evidence
-/// line beneath each strength, weakness and recommendation at Detailed and Full, and its question
-/// details at those levels as a section of their own after the Reproducibility appendix; the Executive
-/// Summary and the Report for AI Researchers and Developers end with the evaluation terms. Fact keys
+/// statement and no peer columns. The Executive Summary ends with the evaluation terms. Fact keys
 /// are printed only through <see cref="BenchmarkReportFactLabels"/>.</para>
 ///
 /// <para>With peers, the Executive Summary adds a How it compares section (the models' figures and
-/// critical errors, a compact dimensions table and the writer's comparison paragraph), and the Report
-/// for AI Researchers and Developers adds a Compared models table and a paired-difference column. Both
-/// appear only on a sheet that carries the per-peer facts (format version 7 and later). Named copies
-/// print peers' names wherever a fact states them by letter.</para>
+/// critical errors, a compact dimensions table and the writer's comparison paragraph). It appears only
+/// on a sheet that carries the per-peer facts (format version 7 and later). Named copies print peers'
+/// names wherever a fact states them by letter.</para>
 ///
 /// <para>With <see cref="BenchmarkReportRenderOptions.Charts"/>, a document with peers carries one
 /// <c>[[figure:&lt;key&gt;]]</c> line per chart at the anchor <see cref="BenchmarkReportChartPlacement"/>
-/// gives it; the PDF and Word writers draw the chart there.</para>
+/// gives it, and a stand-alone document one per chart Overseer draws on the server; the PDF and Word
+/// writers draw the chart there.</para>
 ///
 /// <para>A battery sheet (<see cref="BenchmarkReportFactSheet.Battery"/>) names the battery instead of a
-/// suite, adds the suites of the composite (and in the Report for AI Researchers and Developers the
-/// battery profile, its weighting sensitivity and leave-one-suite-out figures), refers to every question
+/// suite, adds the suites of the composite, refers to every question
 /// as <c>S&lt;suite&gt;-Q&lt;n&gt;</c>, and prints question details only for the questions given in detail.</para>
 ///
 /// <para>A document stored under an earlier format version renders with what it stored: a missing
@@ -113,10 +109,10 @@ public static class BenchmarkReportJson
 /// </summary>
 public static partial class BenchmarkReportPackRenderer
 {
-    public const int ReportFormatVersion = 12;
+    public const int ReportFormatVersion = 13;
 
     /// <summary>The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>).</summary>
-    public const int ComparisonReportFormatVersion = 14;
+    public const int ComparisonReportFormatVersion = 15;
 
     /// <summary>The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.</summary>
     public const int ChatConsistencyReportFormatVersion = 3;
@@ -133,7 +129,7 @@ public static partial class BenchmarkReportPackRenderer
         + "both answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several "
         + "models, and is not a significance test.";
 
-    /// <summary>Section 6 of the Internal Improvement Brief when the fact sheet is left out.</summary>
+    /// <summary>A fact sheet section's text when the fact sheet is left out.</summary>
     private const string FactSheetElsewhere = "The fact sheet is in the Markdown copy of this document.";
 
     /// <summary>A question evidence line lists at most this many questions.</summary>
@@ -169,18 +165,14 @@ public static partial class BenchmarkReportPackRenderer
     private const string SameCompanySentenceOfTwo = "One of them is from the same company as the model under test, which may read it more favorably.";
     private const string SameCompanySentenceBoth = "Both are from the same company as the model under test, which may read it more favorably.";
 
-    private const string LeadsBanner = "Provisional and un-triaged. A lead is not a finding: it must go through the triage, "
-        + "evidence bar and tool-layer diagnostics of `server_benchmark_to_chat_transfer` before anything is changed.";
-
     /// <summary>
-    /// The levels offered for an audience: every level for the Report for AI Researchers and
-    /// Developers, Summary and Full for the Executive Summary, whose Detailed text is its Summary
-    /// text, and Full alone for the Internal Improvement Brief. <see cref="IsAllowed"/> also accepts
-    /// the Executive Summary at Detailed.
+    /// The levels offered for an audience: Summary and Full for the Executive Summary, whose Detailed
+    /// text is its Summary text, Full alone for the Root Cause Analysis, and every level for the
+    /// Provider Issue Report. <see cref="IsAllowed"/> also accepts the Executive Summary at Detailed.
     /// </summary>
     public static IReadOnlyList<BenchmarkReportDisclosure> AllowedDisclosures(BenchmarkReportAudience audience) => audience switch
     {
-        BenchmarkReportAudience.InternalBrief => new[] { BenchmarkReportDisclosure.Full },
+        BenchmarkReportAudience.RootCauseAnalysis => new[] { BenchmarkReportDisclosure.Full },
         BenchmarkReportAudience.ExecutiveSummary => new[] { BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Full },
         _ => new[] { BenchmarkReportDisclosure.Summary, BenchmarkReportDisclosure.Detailed, BenchmarkReportDisclosure.Full }
     };
@@ -188,7 +180,7 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// The levels a document renders at: those <see cref="AllowedDisclosures"/> offers, and the
     /// Executive Summary at Detailed too, which prints its Summary text under its own Detailed stamp.
-    /// Either peer naming is allowed for all three audiences.
+    /// Either peer naming is allowed for every audience.
     /// </summary>
     public static bool IsAllowed(BenchmarkReportAudience audience, BenchmarkReportRenderOptions options)
     {
@@ -271,21 +263,17 @@ public static partial class BenchmarkReportPackRenderer
                 case BenchmarkReportAudience.ExecutiveSummary:
                     RenderExecutiveSummary(sb, ctx);
                     break;
-                case BenchmarkReportAudience.TechnicalReport:
-                    RenderTechnicalReport(sb, ctx);
+                case BenchmarkReportAudience.RootCauseAnalysis:
+                    RenderRootCauseAnalysis(sb, ctx);
                     break;
                 default:
-                    RenderInternalBrief(sb, ctx);
-                    break;
+                    throw new NotSupportedException($"A {AudienceName(document.Audience)} is not written for model-scope documents.");
             }
         }
 
         RemovedContent(sb, ctx);
-        if (ctx.PrintsEvaluationTerms)
-        {
-            if (ctx.Comparison) ComparisonEvaluationTerms(sb, ctx);
-            else EvaluationTerms(sb, ctx);
-        }
+        if (ctx.Comparison) ComparisonEvaluationTerms(sb, ctx);
+        else EvaluationTerms(sb, ctx);
         if (options.IncludeDocumentFooter)
         {
             Footer(sb, ctx);
@@ -340,122 +328,6 @@ public static partial class BenchmarkReportPackRenderer
         }
 
         AboutBenchmark(sb, ctx);
-    }
-
-    private static void RenderTechnicalReport(StringBuilder sb, Context ctx)
-    {
-        TitleBlock(sb, ctx);
-
-        Heading(sb, "## Abstract");
-        Slot(sb, ctx, BenchmarkReportSlots.Abstract);
-
-        KeyFigures(sb, ctx, "## Key figures");
-        WithheldRunsLine(sb, ctx);
-        ProviderAvailabilitySection(sb, ctx);
-        Figures(sb, ctx, BenchmarkReportChartAnchor.ProviderAvailability);
-        SetupAndMethod(sb, ctx);
-        if (ctx.Battery)
-        {
-            BatteryProfile(sb, ctx);
-        }
-        if (ctx.Standalone)
-        {
-            StandaloneResults(sb, ctx);
-        }
-        else
-        {
-            ResultsAgainstPeers(sb, ctx);
-        }
-        SpeedAndCost(sb, ctx);
-
-        Heading(sb, "## Why it scored this way");
-        Slot(sb, ctx, BenchmarkReportSlots.WhyItScored);
-        Heading(sb, "### Weaknesses");
-        Items(sb, ctx, ctx.Writer.Weaknesses, "No weaknesses were recorded.");
-
-        Heading(sb, "## What worked well");
-        Slot(sb, ctx, BenchmarkReportSlots.WhatWorked);
-        Heading(sb, "### Strengths");
-        Items(sb, ctx, ctx.Writer.Strengths, "No strengths were recorded.", strengths: true);
-
-        Heading(sb, "## Recommendations for model developers");
-        Recommendations(sb, ctx, BenchmarkReportSlots.TargetModelDevelopers);
-
-        PerQuestion(sb, ctx, "## Per-question results", withDetails: false);
-        ToolUse(sb, ctx);
-        GraderReliability(sb, ctx);
-        ThreatsToValidity(sb, ctx);
-        Reproducibility(sb, ctx);
-
-        if (ctx.Options.Disclosure >= BenchmarkReportDisclosure.Detailed)
-        {
-            QuestionDetails(sb, ctx, ctx.Sheet.Questions.OrderBy(q => q.Number).ToList(),
-                grading: ctx.Options.Disclosure == BenchmarkReportDisclosure.Full, level: 2);
-        }
-    }
-
-    private static void RenderInternalBrief(StringBuilder sb, Context ctx)
-    {
-        TitleBlock(sb, ctx);
-
-        Heading(sb, "## 1. The Overseer chat and its tools");
-        Slot(sb, ctx, BenchmarkReportSlots.OverseerChat);
-        Heading(sb, "### Recommendations for the Overseer chat");
-        Recommendations(sb, ctx, BenchmarkReportSlots.TargetOverseerChat);
-
-        Heading(sb, "## 2. The benchmarking system");
-        Slot(sb, ctx, BenchmarkReportSlots.BenchmarkSystem);
-        Heading(sb, "### Recommendations for the benchmarking system");
-        Recommendations(sb, ctx, BenchmarkReportSlots.TargetBenchmark);
-
-        Heading(sb, "## 3. The model's result");
-        Slot(sb, ctx, BenchmarkReportSlots.ModelResult);
-        KeyFigures(sb, ctx, "### Key figures");
-        WithheldRunsLine(sb, ctx);
-        IntervalSpanLine(sb, ctx);
-        ProviderAvailabilitySection(sb, ctx);
-        Figures(sb, ctx, BenchmarkReportChartAnchor.ProviderAvailability);
-        if (ctx.Battery)
-        {
-            BatterySuites(sb, ctx, "### The suites of this battery");
-        }
-        Figures(sb, ctx, BenchmarkReportChartAnchor.ModelResult);
-        Heading(sb, "### Strengths");
-        Items(sb, ctx, ctx.Writer.Strengths, "No strengths were recorded.", strengths: true);
-        Heading(sb, "### Weaknesses");
-        Items(sb, ctx, ctx.Writer.Weaknesses, "No weaknesses were recorded.");
-        Heading(sb, "### Recommendations for model developers");
-        Recommendations(sb, ctx, BenchmarkReportSlots.TargetModelDevelopers);
-
-        Heading(sb, "## 4. Leads");
-        Line(sb, "*" + LeadsBanner + "*");
-        Line(sb);
-        if (ctx.Writer.Leads.Count == 0)
-        {
-            Line(sb, "No leads were recorded.");
-        }
-        else
-        {
-            foreach (var lead in ctx.Writer.Leads)
-            {
-                Line(sb, "- **[" + lead.Triage + "]** " + Prose(ctx, lead.Text) + " *(" + SupportText(ctx, lead) + ")*");
-            }
-        }
-        Line(sb);
-
-        PerQuestion(sb, ctx, "## 5. Per-question results");
-
-        Heading(sb, "## 6. Fact sheet");
-        if (!ctx.Options.IncludeFactSheet)
-        {
-            Line(sb, FactSheetElsewhere);
-            Line(sb);
-            return;
-        }
-        Line(sb, "```json");
-        Line(sb, BenchmarkReportJson.SerializeSorted(ctx.Anonymized ? AnonymizedSheet(ctx) : ctx.Sheet));
-        Line(sb, "```");
-        Line(sb);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -995,12 +867,12 @@ public static partial class BenchmarkReportPackRenderer
     private static string? PricingBasisKind(BenchmarkReportFactSheet sheet)
         => SheetFact(sheet, "comparison.pricingBasisKind") is { Available: true } kind ? kind.Display : null;
 
-    private static void SetupAndMethod(StringBuilder sb, Context ctx)
+    private static void SetupAndMethod(StringBuilder sb, Context ctx, string heading = "## Setup and method")
     {
         var sheet = ctx.Sheet;
         int runs = sheet.SubjectRunIds.Count;
 
-        Heading(sb, "## Setup and method");
+        Heading(sb, heading);
         if (sheet.Battery is { } battery)
         {
             Line(sb, "- **Battery:** " + BatteryDescription(battery) + "; " + D(ctx, "suite.questions") + " questions in all.");
@@ -1116,12 +988,12 @@ public static partial class BenchmarkReportPackRenderer
         return string.Equals(a, b, StringComparison.Ordinal) ? a : a + " to " + b;
     }
 
-    private static void ResultsAgainstPeers(StringBuilder sb, Context ctx)
+    private static void ResultsAgainstPeers(StringBuilder sb, Context ctx, string heading = "## Results against peers")
     {
         var sheet = ctx.Sheet;
         var rows = OrderedEntries(sheet);
 
-        Heading(sb, "## Results against peers");
+        Heading(sb, heading);
 
         // The paired-difference column exists on sheets stored from format version 7.
         bool paired = sheet.Peers.Any(p => Fact(ctx, BenchmarkReportFacts.PeerPrefix(p.Letter) + "pairedDifference") != null);
@@ -1181,7 +1053,6 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb);
         }
         NoSignificance(sb, ctx);
-        Figures(sb, ctx, BenchmarkReportChartAnchor.QualityResults);
 
         Heading(sb, "### Speed");
         TableHeader(sb, ctx, new[] { Label("speed.modelTimeP50"), "Rank" });
@@ -1194,7 +1065,6 @@ public static partial class BenchmarkReportPackRenderer
         }
         Line(sb);
         DegradedNotes(sb, ctx, rows, "Not ranked on speed:", e => e.SpeedDegraded);
-        Figures(sb, ctx, BenchmarkReportChartAnchor.SpeedResults);
 
         Heading(sb, "### Cost");
         TableHeader(sb, ctx, new[] { Label("cost.perQuestion"), "Rank" });
@@ -1207,7 +1077,6 @@ public static partial class BenchmarkReportPackRenderer
         }
         Line(sb);
         DegradedNotes(sb, ctx, rows, "Not ranked on cost:", e => e.CostDegraded);
-        Figures(sb, ctx, BenchmarkReportChartAnchor.CostResults);
 
         Heading(sb, "### Dimensions");
         Line(sb, "| Dimension | " + Cell(sheet.SubjectLabel) + " | Peer mean | Difference |");
@@ -1240,8 +1109,6 @@ public static partial class BenchmarkReportPackRenderer
             ? "Pairs whose order depends on which panel member graded them, involving " + sheet.SubjectLabel + ": " + Shown(ctx, pairs) + "."
             : Label("panel.judgeDependentPairs") + ": " + NotAvailableText(pairs));
         Line(sb);
-
-        Figures(sb, ctx, BenchmarkReportChartAnchor.ResultsAgainstPeersEnd);
     }
 
     private static void DegradedNotes(
@@ -1262,11 +1129,11 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>The stand-alone form of the results: the subject's own dimensions and bands, with no peer column.</summary>
-    private static void StandaloneResults(StringBuilder sb, Context ctx)
+    private static void StandaloneResults(StringBuilder sb, Context ctx, string heading = "## Results")
     {
         var sheet = ctx.Sheet;
 
-        Heading(sb, "## Results");
+        Heading(sb, heading);
 
         Heading(sb, "### Dimensions");
         Line(sb, "| Dimension | " + Cell(sheet.SubjectLabel) + " |");
@@ -1329,10 +1196,10 @@ public static partial class BenchmarkReportPackRenderer
     /// The battery's profile: each suite's row of the persisted analysis, the battery-wide figures, the
     /// index under the other weighting schemes and with each suite left out.
     /// </summary>
-    private static void BatteryProfile(StringBuilder sb, Context ctx)
+    private static void BatteryProfile(StringBuilder sb, Context ctx, string heading = "## Battery profile")
     {
         var battery = ctx.Sheet.Battery!;
-        Heading(sb, "## Battery profile");
+        Heading(sb, heading);
         Line(sb, "The Overall Index is the sum over the suites of each suite's weight times its Intelligence Index, under the "
             + battery.Scheme + " scheme. It is not comparable with a single suite's Intelligence Index.");
         Line(sb);
@@ -1428,7 +1295,7 @@ public static partial class BenchmarkReportPackRenderer
     private static string AuthoredKey(string band) => "bands.authored." + band;
 
     /// <summary>The speed and cost facts the sheet states, one row each; nothing when it states none.</summary>
-    private static void SpeedAndCost(StringBuilder sb, Context ctx)
+    private static void SpeedAndCost(StringBuilder sb, Context ctx, string heading = "## Speed and cost")
     {
         var facts = SpeedAndCostKeys()
             .Select(key => Fact(ctx, key))
@@ -1437,7 +1304,7 @@ public static partial class BenchmarkReportPackRenderer
             .ToList();
         if (facts.Count == 0) return;
 
-        Heading(sb, "## Speed and cost");
+        Heading(sb, heading);
         Line(sb, "| Measure | " + Cell(ctx.Sheet.SubjectLabel) + " |");
         Line(sb, "|---|---|");
         foreach (var fact in facts)
@@ -1445,8 +1312,6 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "| " + Cell(SpeedAndCostLabel(ctx, fact.Key)) + " | " + Cell(fact.Display) + " |");
         }
         Line(sb);
-
-        Figures(sb, ctx, BenchmarkReportChartAnchor.SpeedAndCost);
     }
 
     /// <summary>A Speed and cost row's label: a battery's per-run costs are per battery pass.</summary>
@@ -1468,19 +1333,9 @@ public static partial class BenchmarkReportPackRenderer
         "tokens.inputPerQuestion", "tokens.outputPerQuestion"
     };
 
-    private static void Recommendations(StringBuilder sb, Context ctx, string target)
-    {
-        var items = ctx.Writer.Recommendations
-            .Where(r => string.Equals(r.For, target, StringComparison.Ordinal))
-            .Cast<BenchmarkReportWriterItem>()
-            .ToList();
-        Items(sb, ctx, items, "No recommendations were recorded.");
-    }
-
     /// <summary>
-    /// The per-question table, with each question's assessed and authored band, and the notes on the
-    /// questions that need one; with <paramref name="withDetails"/>, the question details at Detailed
-    /// and Full as a subsection.
+    /// The per-question table, with each question's assessed and authored band; with
+    /// <paramref name="withDetails"/>, the question details at Detailed and Full as a subsection.
     /// </summary>
     private static void PerQuestion(StringBuilder sb, Context ctx, string heading, bool withDetails = true)
     {
@@ -1495,9 +1350,22 @@ public static partial class BenchmarkReportPackRenderer
         if (ctx.Battery)
         {
             BatteryQuestionTable(sb, ctx, questions, sentences, refutedHeader);
-            BatteryNotesAndDetails(sb, ctx, questions, withDetails);
-            return;
         }
+        else
+        {
+            QuestionTable(sb, ctx, questions, sentences, refutedHeader);
+        }
+
+        if (withDetails && ctx.Options.Disclosure >= BenchmarkReportDisclosure.Detailed)
+        {
+            QuestionDetails(sb, ctx, questions, grading: ctx.Options.Disclosure == BenchmarkReportDisclosure.Full, level: 3);
+        }
+    }
+
+    /// <summary>A per-model document's per-question table, with the peer mean and difference when peers exist.</summary>
+    private static void QuestionTable(
+        StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions, bool sentences, string refutedHeader)
+    {
         if (ctx.Standalone)
         {
             Line(sb, "| Q | Topic | Assessed band | Authored | Score | Critical error | " + refutedHeader + " | Tool calls | Model time |");
@@ -1531,43 +1399,6 @@ public static partial class BenchmarkReportPackRenderer
                 + " |");
         }
         Line(sb);
-
-        var needingNote = BenchmarkReportPackPrompt.QuestionsNeedingNote(sheet);
-        var noted = questions.Where(q => needingNote.Contains(q.Number)).ToList();
-        if (ctx.Standalone)
-        {
-            string below = BenchmarkReportFormat.Whole(BenchmarkReportPackPrompt.StandaloneNoteScore);
-            Heading(sb, "### Questions scoring below " + below + " or with a critical error");
-            if (noted.Count == 0)
-            {
-                Line(sb, "No question scored below " + below + " or carried a critical error.");
-                Line(sb);
-            }
-        }
-        else
-        {
-            string gap = BenchmarkReportFormat.Whole(BenchmarkReportPackPrompt.QuestionNoteGapPoints);
-            Heading(sb, "### Questions more than " + gap + " points below the peer mean, or with a critical error");
-            if (noted.Count == 0)
-            {
-                Line(sb, "No question was more than " + gap + " points below the peer mean or carried a critical error.");
-                Line(sb);
-            }
-        }
-
-        foreach (var q in noted)
-        {
-            string? topic = Topic(ctx, q.Number);
-            var note = ctx.Writer.QuestionNotes.FirstOrDefault(n => n.Question == q.Number);
-            Line(sb, "**" + ctx.QuestionLabel(q.Number) + "**" + (topic != null ? " (" + topic + ")" : string.Empty) + ": "
-                + (note != null ? Prose(ctx, note.Note) : "No note was written for this question."));
-            Line(sb);
-        }
-
-        if (withDetails && ctx.Options.Disclosure >= BenchmarkReportDisclosure.Detailed)
-        {
-            QuestionDetails(sb, ctx, questions, grading: ctx.Options.Disclosure == BenchmarkReportDisclosure.Full, level: 3);
-        }
     }
 
     /// <summary>
@@ -1601,39 +1432,6 @@ public static partial class BenchmarkReportPackRenderer
             ? "*One member run scored each question, so each mean score is that run's score; its critical errors count whether that run had a critical error.*"
             : "*Each question's mean score is over the member runs that scored it; its critical errors count those runs with a critical error.*");
         Line(sb);
-    }
-
-    /// <summary>
-    /// A battery's notes, on the questions given in detail that scored below
-    /// <see cref="BenchmarkReportPackPrompt.StandaloneNoteScore"/> or carried a critical error, and, with
-    /// <paramref name="withDetails"/> at Detailed and Full, the questions given in detail.
-    /// </summary>
-    private static void BatteryNotesAndDetails(
-        StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions, bool withDetails)
-    {
-        var needingNote = BenchmarkReportPackPrompt.QuestionsNeedingNote(ctx.Sheet);
-        var noted = questions.Where(q => needingNote.Contains(q.Number)).ToList();
-        string below = BenchmarkReportFormat.Whole(BenchmarkReportPackPrompt.StandaloneNoteScore);
-
-        Heading(sb, "### Questions given in detail that scored below " + below + " or had a critical error");
-        if (noted.Count == 0)
-        {
-            Line(sb, "No question given in detail scored below " + below + " or had a critical error.");
-            Line(sb);
-        }
-        foreach (var q in noted)
-        {
-            string? topic = Topic(ctx, q.Number);
-            var note = ctx.Writer.QuestionNotes.FirstOrDefault(n => n.Question == q.Number);
-            Line(sb, "**" + ctx.QuestionLabel(q.Number) + "**" + (topic != null ? " (" + topic + ")" : string.Empty) + ": "
-                + (note != null ? Prose(ctx, note.Note) : "No note was written for this question."));
-            Line(sb);
-        }
-
-        if (withDetails && ctx.Options.Disclosure >= BenchmarkReportDisclosure.Detailed)
-        {
-            QuestionDetails(sb, ctx, questions, grading: ctx.Options.Disclosure == BenchmarkReportDisclosure.Full, level: 3);
-        }
     }
 
     /// <summary>
@@ -1763,9 +1561,9 @@ public static partial class BenchmarkReportPackRenderer
         }
     }
 
-    private static void ToolUse(StringBuilder sb, Context ctx)
+    private static void ToolUse(StringBuilder sb, Context ctx, string heading = "## Tool-use behavior")
     {
-        Heading(sb, "## Tool-use behavior");
+        Heading(sb, heading);
         Line(sb, "- **" + Label("tools.callsPerQuestion") + ":** " + D(ctx, "tools.callsPerQuestion")
             + (ctx.Standalone ? string.Empty : " (peer mean " + D(ctx, "tools.callsPerQuestion.peerMean") + ")"));
         foreach (string key in new[]
@@ -1797,12 +1595,12 @@ public static partial class BenchmarkReportPackRenderer
         }
     }
 
-    private static void GraderReliability(StringBuilder sb, Context ctx)
+    private static void GraderReliability(StringBuilder sb, Context ctx, string heading = "## Grader reliability")
     {
         var sheet = ctx.Sheet;
         int runCount = sheet.SubjectRunIds.Count;
 
-        Heading(sb, "## Grader reliability");
+        Heading(sb, heading);
         foreach (string key in new[] { "panel.meanAbsDelta", "panel.icc", "panel.disagreements", "panel.memberAAlone", "panel.memberBAlone" })
         {
             LabeledLine(sb, ctx, key);
@@ -1951,8 +1749,6 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "- " + caveat);
         }
         Line(sb);
-
-        OptionalSlot(sb, ctx, BenchmarkReportSlots.Limitations);
     }
 
     private static void Reproducibility(StringBuilder sb, Context ctx)
@@ -2637,21 +2433,25 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// One <c>[[figure:&lt;key&gt;]]</c> line, between blank lines, for each chart of
     /// <see cref="BenchmarkReportRenderOptions.Charts"/> placed at <paramref name="anchor"/> in this
-    /// audience, in placement order; nothing without charts or in a stand-alone document. A chat
-    /// consistency document plots the model under test over time, so it carries its charts with or
-    /// without control models, placed by the legacy table while its chart set has no layout.
+    /// audience, in placement order; nothing without charts. A stand-alone document carries only the
+    /// figures Overseer draws on the server (<see cref="BenchmarkReportChartPlacement.IsServerDrawn"/>),
+    /// which need no peers. A chat consistency document plots the model under test over time, so it
+    /// carries its charts with or without control models, placed by the legacy table while its chart set
+    /// has no layout.
     /// </summary>
     private static void Figures(StringBuilder sb, Context ctx, BenchmarkReportChartAnchor anchor)
     {
         var charts = ctx.Options.Charts;
-        if ((ctx.Standalone && !ctx.ChatConsistency) || charts == null || charts.Count == 0) return;
+        if (charts == null || charts.Count == 0) return;
 
+        bool standalone = ctx.Standalone && !ctx.ChatConsistency;
         var scope = ctx.ChatConsistency ? BenchmarkReportScope.ChatConsistency
             : ctx.Comparison ? BenchmarkReportScope.Comparison
             : BenchmarkReportScope.Model;
         bool legacy = ctx.ChatConsistency && !ctx.ChartLayoutPresent;
         foreach (string key in BenchmarkReportChartPlacement.KeysAt(ctx.Document.Audience, anchor, scope, legacy))
         {
+            if (standalone && !BenchmarkReportChartPlacement.IsServerDrawn(key)) continue;
             if (!charts.Any(c => c != null && string.Equals(c.FigureKey, key, StringComparison.Ordinal))) continue;
 
             if (sb.Length > 0 && !(sb.Length >= 2 && sb[sb.Length - 1] == '\n' && sb[sb.Length - 2] == '\n')) Line(sb);
@@ -2766,12 +2566,9 @@ public static partial class BenchmarkReportPackRenderer
         /// <summary>The sheet has peers and their own facts, as sheets from format version 7 do.</summary>
         public bool ComparesPeers => !Standalone && Sheet.Facts.Any(f => f.Key.StartsWith("peer.", StringComparison.Ordinal));
 
-        /// <summary>Evidence lines belong to the Report for AI Researchers and Developers alone, at Detailed and Full.</summary>
-        public bool PrintsEvidence => Document.Audience == BenchmarkReportAudience.TechnicalReport
+        /// <summary>Evidence lines belong to the Root Cause Analysis alone, at Detailed and Full.</summary>
+        public bool PrintsEvidence => Document.Audience == BenchmarkReportAudience.RootCauseAnalysis
                                       && Options.Disclosure >= BenchmarkReportDisclosure.Detailed;
-
-        /// <summary>The evaluation terms belong to every audience but the Internal Improvement Brief.</summary>
-        public bool PrintsEvaluationTerms => Document.Audience != BenchmarkReportAudience.InternalBrief;
 
         /// <summary>The sheet is a battery result's.</summary>
         public bool Battery => Sheet.Battery != null;

@@ -16,8 +16,6 @@ public class BenchmarkReportPackPromptTests
     public static TheoryData<BenchmarkReportAudience> Audiences => new()
     {
         BenchmarkReportAudience.ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport,
-        BenchmarkReportAudience.InternalBrief,
     };
 
     private static BenchmarkReportWriterPrompt Build(BenchmarkReportAudience audience, BenchmarkReportFactSheet? sheet = null)
@@ -48,51 +46,6 @@ public class BenchmarkReportPackPromptTests
         Assert.DoesNotContain("questionNotes", system);
         Assert.DoesNotContain("\"leads\"", system);
         Assert.DoesNotContain("triage", system);
-    }
-
-    [Fact]
-    public void TechnicalReport_AsksOnlyForItsSlotsAndLists()
-    {
-        string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
-
-        Assert.Contains("\"abstract\"", system);
-        Assert.Contains("\"whyItScored\"", system);
-        Assert.Contains("\"whatWorked\"", system);
-        Assert.Contains("\"recommendations\"", system);
-        Assert.Contains("\"questionNotes\"", system);
-        Assert.Contains("\"questionTopics\"", system);
-        Assert.Contains(BenchmarkReportSlots.TargetModelDevelopers, system);
-        Assert.Contains("every question of the exam", system);
-        Assert.Contains("domain knowledge", system);
-        Assert.Contains("calibration", system);
-
-        Assert.DoesNotContain("\"meaning\"", system);
-        Assert.DoesNotContain("overseerChat", system);
-        Assert.DoesNotContain(BenchmarkReportSlots.TargetOverseerChat, system);
-        Assert.DoesNotContain("\"leads\"", system);
-        Assert.DoesNotContain("triage", system);
-    }
-
-    [Fact]
-    public void InternalBrief_AsksOnlyForItsSlotsAndLists()
-    {
-        string system = Build(BenchmarkReportAudience.InternalBrief).SystemPrompt;
-
-        Assert.Contains("\"overseerChat\"", system);
-        Assert.Contains("\"benchmarkSystem\"", system);
-        Assert.Contains("\"modelResult\"", system);
-        Assert.Contains("\"recommendations\"", system);
-        Assert.Contains("\"questionNotes\"", system);
-        Assert.Contains("\"leads\"", system);
-        Assert.Contains(BenchmarkReportSlots.TargetOverseerChat, system);
-        Assert.Contains("\"benchmark\"", system);
-        Assert.Contains(BenchmarkReportSlots.TargetModelDevelopers, system);
-        Assert.Contains("harness | suite | chat | corpus", system);
-        Assert.Contains("never findings", system);
-
-        Assert.DoesNotContain("\"abstract\"", system);
-        Assert.DoesNotContain("\"meaning\"", system);
-        Assert.DoesNotContain("whyItScored", system);
     }
 
     [Theory]
@@ -180,19 +133,6 @@ public class BenchmarkReportPackPromptTests
         Assert.Equal(expected, sha);
     }
 
-    [Fact]
-    public void PromptSha256_DiffersPerAudience()
-    {
-        var hashes = new[]
-        {
-            BenchmarkReportPackPrompt.PromptSha256(BenchmarkReportAudience.ExecutiveSummary),
-            BenchmarkReportPackPrompt.PromptSha256(BenchmarkReportAudience.TechnicalReport),
-            BenchmarkReportPackPrompt.PromptSha256(BenchmarkReportAudience.InternalBrief),
-        };
-
-        Assert.Equal(3, hashes.Distinct(StringComparer.Ordinal).Count());
-    }
-
     [Theory]
     [MemberData(nameof(Audiences))]
     public void PromptSha256_IsIndependentOfTheData(BenchmarkReportAudience audience)
@@ -230,7 +170,7 @@ public class BenchmarkReportPackPromptTests
     [Fact]
     public void UserMessage_ListsFactsSortedByKeyWithUnavailableReasons()
     {
-        string message = Build(BenchmarkReportAudience.TechnicalReport).UserMessage;
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary).UserMessage;
 
         string[] lines =
         {
@@ -265,7 +205,7 @@ public class BenchmarkReportPackPromptTests
     [Fact]
     public void TheWeighingRules_CallTheConciseStyleTheProductionDefault()
     {
-        string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
+        string system = Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt;
 
         Assert.Contains("- When the response-style conflict fact is true, {{subject}}'s completeness is its lowest dimension, well below its accuracy, and it answered under the production chat's concise response style — the default every Overseer user receives, which the benchmark grades as it is. Where completeness is discussed, say that it was graded under that style. Never say that the style caused the gap or a part of it: the run does not compare response styles. Never present the gap as the model's failing alone either. Never call the style the benchmark's instruction.", system);
     }
@@ -300,7 +240,7 @@ public class BenchmarkReportPackPromptTests
         sheet.Facts.Add(new BenchmarkReportFact { Key = "model.A.style.responseStyleConflict", Value = System.Text.Json.Nodes.JsonValue.Create(true), Display = "yes" });
         sheet.Facts.Add(new BenchmarkReportFact { Key = "model.B.style.responseStyleConflict", Value = System.Text.Json.Nodes.JsonValue.Create(false), Display = "no" });
 
-        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, sheet, built.Content!, null).UserMessage;
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, sheet, built.Content!).UserMessage;
 
         Assert.Contains("RESPONSE STYLE\n"
             + "{{model.A.style.responseStyleConflict}} is true: that model's completeness is its lowest dimension, well below its accuracy, under the production chat's concise response style. This states a condition, not a cause.\n"
@@ -361,26 +301,6 @@ public class BenchmarkReportPackPromptTests
             + "Base it only on established results and the frontier facts; where nothing separates the models on any measure, say that the choice is open.", slot);
     }
 
-    [Fact]
-    public void LeadsInBothPrompts_NameTheMostSpecificTargetTheDataShows()
-    {
-        const string target = "Name the most specific target the data shows: the question and its topic, and what to look at there — the rubric point a grader charged, "
-            + "the knowledge source an answer excerpt relied on, the grading role that disagreed, or the kind of tool call the matrix shows. "
-            + "Never name a file, setting or tool the data does not show.";
-
-        string comparison = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(BenchmarkReportAudience.InternalBrief);
-        string comparisonLeads = comparison.Split('\n').Single(l => l.StartsWith("- leads:", StringComparison.Ordinal));
-        Assert.Contains("Lead with the action and its target, then the evidence. A lead is provisional and un-triaged, never a finding: "
-            + "phrase it as something to check, and name the most specific target the data shows: the question and its topic, and what to look at there — the rubric point a grader charged, "
-            + "the knowledge source an answer excerpt relied on, the grading role that disagreed, or the kind of tool call the matrix shows. "
-            + "Never name a file, setting or tool the data does not show.", comparisonLeads);
-        Assert.DoesNotContain("phrase each as something to check.", comparisonLeads);
-
-        string system = Build(BenchmarkReportAudience.InternalBrief).SystemPrompt;
-        string leads = system.Split('\n').Single(l => l.StartsWith("- leads:", StringComparison.Ordinal));
-        Assert.Contains("phrase each as something to check, not as a conclusion. " + target + " Where the subject has peers,", leads);
-    }
-
     [Theory]
     [MemberData(nameof(Audiences))]
     public void TheReadabilityLine_NamesOverclaimingWords_InBothPrompts(BenchmarkReportAudience audience)
@@ -397,7 +317,7 @@ public class BenchmarkReportPackPromptTests
     [Fact]
     public void UserMessage_ShowsPeersOnlyByLetterAndGradersOnlyByRole()
     {
-        string message = Build(BenchmarkReportAudience.InternalBrief).UserMessage;
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary).UserMessage;
 
         Assert.Contains("- {{peer:A}}: Comparable", message);
         Assert.Contains("- {{peer:B}}: Degraded; speed figures degraded", message);
@@ -412,7 +332,7 @@ public class BenchmarkReportPackPromptTests
     [Fact]
     public void UserMessage_CarriesRowsAndPerQuestionMaterial()
     {
-        string message = Build(BenchmarkReportAudience.TechnicalReport).UserMessage;
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary).UserMessage;
 
         Assert.Contains("R3 | kind: weakness | category: accuracy | questions: Q3 | status: Conflicting | support: Graders disagree | in 1 of 1 runs", message);
         Assert.Contains("raised only by panel member B, which shares the subject's provider", message);
@@ -431,16 +351,12 @@ public class BenchmarkReportPackPromptTests
     }
 
     [Fact]
-    public void UserMessage_NamesTheQuestionsNeedingNotesAndTopics()
+    public void UserMessage_OfTheExecutiveSummary_AsksForNoQuestionNotesOrTopics()
     {
-        string technical = Build(BenchmarkReportAudience.TechnicalReport).UserMessage;
         string executive = Build(BenchmarkReportAudience.ExecutiveSummary).UserMessage;
 
-        Assert.Contains("QUESTIONS NEEDING A NOTE: Q2, Q3", technical);
-        Assert.Contains("QUESTIONS NEEDING A TOPIC: Q1, Q2, Q3, Q4", technical);
         Assert.DoesNotContain("QUESTIONS NEEDING A NOTE", executive);
         Assert.DoesNotContain("QUESTIONS NEEDING A TOPIC", executive);
-        Assert.Equal(new[] { 2, 3 }, BenchmarkReportPackPrompt.QuestionsNeedingNote(ReportPackWriterTestData.Sheet()));
     }
 
     [Fact]
@@ -453,7 +369,7 @@ public class BenchmarkReportPackPromptTests
             Status = "MemberAOnly", SupportLabel = BenchmarkReportFacts.SupportOneGraderDifferentProvider, MemberAText = "Few lookups."
         });
 
-        string message = Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage;
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary, sheet).UserMessage;
 
         Assert.Contains("raised only by panel member B, which shares the subject's provider", message);
         Assert.Contains("raised only by panel member A, which does not share the subject's provider", message);
@@ -466,13 +382,13 @@ public class BenchmarkReportPackPromptTests
         sheet.Graders[0].Role = "Assessor";
         sheet.Graders[1].Role = "Co-assessor";
 
-        string message = Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage;
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary, sheet).UserMessage;
 
         Assert.Contains("raised only by the co-assessor, which shares the subject's provider", message);
     }
 
     [Fact]
-    public void AStandaloneSheet_SaysThereAreNoPeers_AndNotesWeakQuestionsByScore()
+    public void AStandaloneSheet_SaysThereAreNoPeers()
     {
         var sheet = ReportPackWriterTestData.Sheet();
         sheet.Peers.Clear();
@@ -482,15 +398,10 @@ public class BenchmarkReportPackPromptTests
             q.Difference = null;
         }
 
-        string message = Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage;
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary, sheet).UserMessage;
 
         Assert.Contains("(no peers: this is a stand-alone run report", message);
         Assert.DoesNotContain("{{peer:A}}", message);
-        // Q2 scored 50, which is not below 50; Q3 carries a critical error.
-        Assert.Equal(new[] { 3 }, BenchmarkReportPackPrompt.QuestionsNeedingNote(sheet));
-
-        sheet.Questions[1].Score = 49;
-        Assert.Equal(new[] { 2, 3 }, BenchmarkReportPackPrompt.QuestionsNeedingNote(sheet));
     }
 
     [Theory]
@@ -516,26 +427,12 @@ public class BenchmarkReportPackPromptTests
     }
 
     [Fact]
-    public void ResearcherReport_AsksForEvidencedRecommendations_AndUsesItsNewName()
-    {
-        string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
-
-        Assert.Contains("DOCUMENT: Report for AI Researchers and Developers.", system);
-        Assert.Contains("recommendations: at most six items", system);
-        Assert.Contains("Name the change proposed and, in a few words, the weakness it answers; do not restate the weakness.", system);
-        Assert.Contains("Every recommendation cites at least one evidence id", system);
-        Assert.DoesNotContain("A recommendation may cite evidence as well.", system);
-
-        Assert.Contains("A recommendation may cite evidence as well.", Build(BenchmarkReportAudience.InternalBrief).SystemPrompt);
-    }
-
-    [Fact]
     public void UserMessage_OmitsTheResponseStyleBlockWithoutTheFact()
     {
         var sheet = ReportPackWriterTestData.Sheet();
         sheet.Facts.RemoveAll(f => f.Key.Contains("responseStyleConflict", StringComparison.OrdinalIgnoreCase));
 
-        Assert.DoesNotContain("RESPONSE STYLE", Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage);
+        Assert.DoesNotContain("RESPONSE STYLE", Build(BenchmarkReportAudience.ExecutiveSummary, sheet).UserMessage);
     }
 
     [Theory]
@@ -555,25 +452,12 @@ public class BenchmarkReportPackPromptTests
     [Fact]
     public void UserMessage_NamesTheGradersInTheSameVocabulary()
     {
-        string message = Build(BenchmarkReportAudience.TechnicalReport).UserMessage;
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary).UserMessage;
 
         Assert.Contains("GRADERS (by role; write each role name in lower case)", message);
         Assert.DoesNotContain("the co-assessor)", message);
         Assert.DoesNotContain("\n  member A:", message);
         Assert.DoesNotContain("\n  member B:", message);
-    }
-
-    [Fact]
-    public void ResearcherReport_SlotsExplainPatterns_AndLeaveTheListsToThemselves()
-    {
-        string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
-
-        Assert.Contains("- whyItScored: Explain the patterns and causes across the weaknesses, grouped by category", system);
-        Assert.Contains("in at most 300 words.", system);
-        Assert.Contains("The weaknesses list is printed right after this text; do not restate its items.", system);
-        Assert.Contains("- whatWorked: Explain the patterns and causes across the strengths, grouped by category, in at most 150 words.", system);
-        Assert.Contains("The strengths list is printed right after this text; do not restate its items.", system);
-        Assert.Contains("Do not list claims the claim verifier refuted here", system);
     }
 
     [Fact]
@@ -583,7 +467,7 @@ public class BenchmarkReportPackPromptTests
         content.Runs[0].Questions[0].ExpectedPoints =
             "- A lawful character may receive Excalibur.\n\nSOURCE — fountain.c:212 dipfountain() rolls the chance.\nsee also artifact.c:88\n\n- The chance is one in six per dip.";
 
-        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, ReportPackWriterTestData.Sheet(), content).UserMessage;
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, ReportPackWriterTestData.Sheet(), content).UserMessage;
 
         Assert.Contains("    - A lawful character may receive Excalibur.\n    \n    - The chance is one in six per dip.\n", message);
         Assert.DoesNotContain("SOURCE", message);
@@ -607,7 +491,7 @@ public class BenchmarkReportPackPromptTests
             new() { Claim = "The prayer timeout is always one thousand turns.", Verdict = "refuted", Role = BenchmarkReportContent.AssessorStatementRole }
         };
 
-        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, sheet, content).UserMessage;
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, sheet, content).UserMessage;
 
         Assert.Contains("| critical error: yes | refuted answer sentences: 1 |", message);
         Assert.Contains("| critical error: no | refuted claims: 0 |", message);
@@ -630,16 +514,6 @@ public class BenchmarkReportPackPromptTests
     }
 
     [Fact]
-    public void TheAbstract_NeverListsTheClaimVerifiersRefutations()
-    {
-        string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
-        string abstractSlot = system.Split('\n').Single(l => l.StartsWith("- abstract:", StringComparison.Ordinal));
-
-        Assert.Contains("Do not list claims the claim verifier refuted here; they belong in the weaknesses, attributed to the claim verifier.", abstractSlot);
-        Assert.DoesNotContain("Name every error", system);
-    }
-
-    [Fact]
     public void UserMessage_QuotesTheExcerpt_NeverTheCompleteAnswer()
     {
         const string sentinel = "SENTINEL-AFTER-THE-CUT";
@@ -648,7 +522,7 @@ public class BenchmarkReportPackPromptTests
         question.AnswerExcerptCut = true;
         question.AnswerText = question.AnswerExcerpt + " " + sentinel;
 
-        var prompt = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.InternalBrief, ReportPackWriterTestData.Sheet(), content);
+        var prompt = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, ReportPackWriterTestData.Sheet(), content);
 
         Assert.Contains(question.AnswerExcerpt, prompt.UserMessage);
         Assert.DoesNotContain(sentinel, prompt.UserMessage);
@@ -671,43 +545,7 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("\"comparison\": \"Markdown paragraph, only when PEERS lists peers\"", system);
         Assert.Contains("a slot marked as for peers only is left out of a stand-alone run report", system);
 
-        Assert.DoesNotContain("\"comparison\"", Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt);
-        Assert.DoesNotContain("\"comparison\"", Build(BenchmarkReportAudience.InternalBrief).SystemPrompt);
         Assert.Equal(new[] { BenchmarkReportSlots.Comparison }, BenchmarkReportSlots.ExecutiveSummary.PeerOnlySlots);
-        Assert.Empty(BenchmarkReportSlots.TechnicalReport.PeerOnlySlots);
-        Assert.Empty(BenchmarkReportSlots.InternalBrief.PeerOnlySlots);
-    }
-
-    [Fact]
-    public void TechnicalReport_AsksForTheLimitationsSlot_AndListsTheCodeLinesItMustNotRestate()
-    {
-        string system = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
-        string limitations = system.Split('\n').Single(l => l.StartsWith("- limitations:", StringComparison.Ordinal));
-
-        Assert.Contains("At most 120 words, printed as the last paragraph of Threats to validity", limitations);
-        Assert.Contains("a degraded peer, a subject or peer with a single run, heavy grader disagreement on particular questions, or a difficulty band with few questions", limitations);
-        Assert.Contains("single-turn questions under one chat configuration", limitations);
-        Assert.Contains("which sources of variation the interval covers", limitations);
-        Assert.Contains("the graders are AI models", limitations);
-        Assert.Contains("do not restate any of them", limitations);
-        Assert.DoesNotContain("For peers only", limitations);
-        Assert.Contains("\"limitations\": \"Markdown paragraphs\"", system);
-
-        Assert.DoesNotContain("\"limitations\"", Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt);
-    }
-
-    [Fact]
-    public void InternalBrief_StatesItsWordAndItemCaps()
-    {
-        string system = Build(BenchmarkReportAudience.InternalBrief).SystemPrompt;
-
-        Assert.Contains("- overseerChat: At most 200 words. The brief's first part", system);
-        Assert.Contains("- benchmarkSystem: At most 150 words. The brief's second part", system);
-        Assert.Contains("- modelResult: At most 150 words. The brief's third part", system);
-        Assert.Contains("- recommendations: at most eight concrete next steps.", system);
-        Assert.Contains("- leads: at most six things worth checking", system);
-        Assert.Contains("- strengths: at most eight items", system);
-        Assert.Contains("- weaknesses: at most eight items", system);
     }
 
     [Theory]
@@ -726,14 +564,7 @@ public class BenchmarkReportPackPromptTests
             Assert.Contains(word, system);
         }
 
-        if (audience == BenchmarkReportAudience.InternalBrief)
-        {
-            Assert.Contains("- Lead with the action, then the evidence.", system);
-        }
-        else
-        {
-            Assert.DoesNotContain("Lead with the action", system);
-        }
+        Assert.DoesNotContain("Lead with the action", system);
 
         if (audience == BenchmarkReportAudience.ExecutiveSummary)
         {
@@ -803,7 +634,7 @@ public class BenchmarkReportPackPromptTests
     }
 
     [Fact]
-    public void RepairMessage_RemindsOfTheOverlapHypeAndNoteRules()
+    public void RepairMessage_RemindsOfTheOverlapAndHypeRules()
     {
         string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>());
 
@@ -811,8 +642,10 @@ public class BenchmarkReportPackPromptTests
             + "it says instead that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero. "
             + "No hype or filler words.", message);
         Assert.Contains("say only whether intervals overlap, or whether a paired interval excludes zero.", message);
-        Assert.Contains("A recommendation for model_developers concerns only what a model developer can change in the model", message);
-        Assert.Contains("Every question under QUESTIONS NEEDING A NOTE gets a note", message);
+        Assert.Contains("- Every question number, Q reference and evidence id must exist in the data. Every strength and weakness cites at least one evidence id.\n", message);
+        Assert.DoesNotContain("recommendation", message);
+        Assert.DoesNotContain("QUESTIONS NEEDING A NOTE", message);
+        Assert.DoesNotContain("every lead", message);
     }
 
     // Report quality round: operator text, triage, paired result, unavailable and repeated facts ----
@@ -839,7 +672,7 @@ public class BenchmarkReportPackPromptTests
         sheet.Questions[0].PeerMax = 90;
         sheet.Questions[0].PeersAbove = 0;
 
-        string message = Build(BenchmarkReportAudience.InternalBrief, sheet).UserMessage;
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary, sheet).UserMessage;
 
         Assert.Contains("[Q2] band: Intermediate | score: 50 | peer mean: 72 | difference: -22 | peers: min 64, max 80, 2 of 2 scored clearly higher | critical error: no", message);
         Assert.Contains("[Q1] band: Simple | score: 90 | peer mean: 85 | difference: +5 | peers: min 80, max 90, 0 of 2 scored clearly higher | critical error: no", message);
@@ -859,62 +692,19 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("strengths and weaknesses prefer points where {{subject}} differs from its peers", system);
     }
 
-    [Fact]
-    public void TheSlotsThatTriage_ApplyThePeerRule()
-    {
-        string brief = Build(BenchmarkReportAudience.InternalBrief).SystemPrompt;
-        string Slot(string system, string name) => system.Split('\n').Single(l => l.StartsWith("- " + name + ":", StringComparison.Ordinal));
-
-        Assert.Contains("a question most peers answered well is evidence about the model, not the chat", Slot(brief, "overseerChat"));
-        Assert.Contains("suspect a question or its rubric first when every model missed it", Slot(brief, "benchmarkSystem"));
-        Assert.Contains("a \"chat\", \"corpus\" or \"suite\" lead rests on questions the peers missed as well", Slot(brief, "leads"));
-
-        string researcher = Build(BenchmarkReportAudience.TechnicalReport).SystemPrompt;
-        Assert.Contains("tell a miss of the model from one every model shared", Slot(researcher, "whyItScored"));
-    }
-
-    [Fact]
-    public void TheModelResultSlot_LeavesTheIntervalToTheAppendedSentence()
-    {
-        string system = Build(BenchmarkReportAudience.InternalBrief).SystemPrompt;
-        string modelResult = system.Split('\n').Single(l => l.StartsWith("- modelResult:", StringComparison.Ordinal));
-
-        Assert.Contains("Code appends one sentence right after this paragraph that states the quality interval, its span and what it rests on; do not restate it.", modelResult);
-    }
-
-    [Theory]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    [InlineData(BenchmarkReportAudience.InternalBrief)]
-    public void ModelDeveloperRecommendations_ConcernOnlyTheModel(BenchmarkReportAudience audience)
-    {
-        string system = Build(audience).SystemPrompt;
-
-        Assert.Contains("- A recommendation for model developers names a general capability a model developer can train or tune — for example "
-            + "stating the decisive mechanic behind a verdict, or committing to a conclusion the inputs already settle. Never a GnollHack fact, "
-            + "a change to the assistant's prompt or tools, or a rubric point; game-specific gaps are leads of the Internal Brief (`corpus` or `chat`).\n", system);
-        Assert.DoesNotContain("its knowledge, calibration", system);
-    }
-
     [Theory]
     [MemberData(nameof(Audiences))]
     public void SystemPrompt_StatesTheSharedWritingRules(BenchmarkReportAudience audience)
     {
         string system = Build(audience).SystemPrompt;
 
-        Assert.Contains("- Outside a recommendation for model developers, never recommend training, fine-tuning or using outputs as training targets; recommend a lever the facts name — "
+        Assert.Contains("- Never recommend training, fine-tuning or using outputs as training targets; recommend a lever the facts name — "
             + "a tool, a tool guide, the knowledge base, a wiki page, a rubric, the grading, or the model and its settings.\n", system);
         Assert.Contains("- Write 'disagreed' or 'disagreement' only for an answer the facts mark as a panel disagreement; "
             + "for any other gap, give both members' scores.\n", system);
-        Assert.Contains("- When an answer repeats a tool result the facts show to be wrong, write the lead about the source of that result "
-            + "(tag `corpus`), not about the model's knowledge.\n", system);
-        Assert.Equal(3, BenchmarkReportPackPrompt.SharedWritingRules.Count);
+        Assert.Equal(2, BenchmarkReportPackPrompt.SharedWritingRules.Count);
         Assert.All(BenchmarkReportPackPrompt.SharedWritingRules, rule => Assert.Contains("- " + rule + "\n", system));
-    }
-
-    [Fact]
-    public void ExecutiveSummary_HasNoRecommendationRule()
-    {
-        Assert.DoesNotContain("A recommendation for model developers names a general capability", Build(BenchmarkReportAudience.ExecutiveSummary).SystemPrompt);
+        Assert.DoesNotContain("A recommendation for model developers names a general capability", system);
     }
 
     [Theory]
@@ -928,11 +718,10 @@ public class BenchmarkReportPackPromptTests
     }
 
     [Fact]
-    public void RepairMessage_RemindsOfTheNounPhraseAndGameFactRules()
+    public void RepairMessage_RemindsOfTheNounPhraseRule()
     {
         string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>());
 
-        Assert.Contains("never a GnollHack fact or the Overseer's prompts", message);
         Assert.Contains("A token whose value reads 'N of M' is a noun phrase; never put it after 'no' or make it the object of 'made'.", message);
     }
 
@@ -964,7 +753,7 @@ public class BenchmarkReportPackPromptTests
             QuestionsA = new List<int>(), QuestionsB = new List<int>(), SharedQuestions = new List<int>()
         });
 
-        string message = Build(BenchmarkReportAudience.TechnicalReport, sheet).UserMessage;
+        string message = Build(BenchmarkReportAudience.ExecutiveSummary, sheet).UserMessage;
 
         Assert.Contains("R5 | kind: weakness | category: tool_use | questions: Q1, Q2, Q3 | status: Convergent | support: Both graders | in 1 of 1 runs\n"
             + "  shared: Q1 | A only: Q2 | B only: Q3\n", message);
@@ -1038,7 +827,6 @@ public class BenchmarkReportPackPromptTests
     /// </summary>
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, "prompt_exec_standalone_run.txt")]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, "prompt_technical_standalone_run.txt")]
     public void TheStandaloneRunPrompt_IsPinned(BenchmarkReportAudience audience, string file)
     {
         var prompt = BenchmarkReportPackPrompt.Build(audience, BenchmarkReportPackFixture.StandaloneSheet(), BenchmarkReportPackFixture.Content());
@@ -1075,7 +863,7 @@ public class BenchmarkReportPackPromptTests
     public void ABatteryUserMessage_ExplainsTheComposite_AndHowToReferToAQuestion()
     {
         string message = BenchmarkReportPackPrompt.Build(
-            BenchmarkReportAudience.TechnicalReport, BatteryReportFixture.Sheet(), BatteryReportFixture.Content()).UserMessage;
+            BenchmarkReportAudience.ExecutiveSummary, BatteryReportFixture.Sheet(), BatteryReportFixture.Content()).UserMessage;
 
         Assert.Contains("Kind: Battery\nRuns: 4\n", message);
         Assert.Contains("\nBATTERY\nName: Core knowledge (revision 2)\nSuites: 2; runs per suite: 2; member runs: 4\nWeighting scheme: Questions and difficulty\n", message);
@@ -1091,7 +879,7 @@ public class BenchmarkReportPackPromptTests
     public void ABatteryUserMessage_GivesEveryQuestionARow_AndTheDetailOnlyWhereItWasKept()
     {
         string message = BenchmarkReportPackPrompt.Build(
-            BenchmarkReportAudience.TechnicalReport, BatteryReportFixture.Sheet(), BatteryReportFixture.Content()).UserMessage;
+            BenchmarkReportAudience.ExecutiveSummary, BatteryReportFixture.Sheet(), BatteryReportFixture.Content()).UserMessage;
 
         Assert.Contains("[S1-Q1] number 1 | band: Simple | mean score: 90 | scored in 2 runs | critical errors: 0 | refuted answer sentences: 0 | tool calls: 2 | in detail\n"
             + "  Question as asked:\n    What happens if I throw a gem at a co-aligned unicorn?\n", message);
@@ -1101,8 +889,7 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("  Grader comments (run 12):\n", message);
         Assert.DoesNotContain("How long is the prayer timeout", message);
         Assert.DoesNotContain("[Q1]", message);
-        Assert.Contains("QUESTIONS NEEDING A NOTE: S2-Q1\n", message);
-        Assert.Contains("QUESTIONS NEEDING A TOPIC: S1-Q1, S2-Q1\n", message);
+        Assert.Equal(new[] { 1, 3 }, BenchmarkReportPackPrompt.QuestionsNeedingTopic(BatteryReportFixture.Sheet()));
         Assert.Contains("FINDING ROWS (cite as evidence by id)\n(none)\n", message);
     }
 
@@ -1147,15 +934,12 @@ public class BenchmarkReportPackPromptTests
     public static TheoryData<BenchmarkReportAudience, string> ComparisonPromptFiles => new()
     {
         { BenchmarkReportAudience.ExecutiveSummary, "prompt_exec_comparison.txt" },
-        { BenchmarkReportAudience.TechnicalReport, "prompt_technical_comparison.txt" },
-        { BenchmarkReportAudience.InternalBrief, "prompt_internal_comparison.txt" },
     };
 
-    private static BenchmarkReportWriterPrompt ComparisonPrompt(BenchmarkReportAudience audience, bool subset = false,
-        IReadOnlyList<BenchmarkReportQuestionTopic>? sharedTopics = null)
+    private static BenchmarkReportWriterPrompt ComparisonPrompt(BenchmarkReportAudience audience, bool subset = false)
     {
         var built = BenchmarkReportPackFixture.ComparisonFacts(subset ? BenchmarkReportPackFixture.SubsetKeys : null);
-        return BenchmarkReportPackPrompt.Build(audience, built.Sheet!, built.Content!, sharedTopics);
+        return BenchmarkReportPackPrompt.Build(audience, built.Sheet!, built.Content!);
     }
 
     /// <summary>
@@ -1245,7 +1029,7 @@ public class BenchmarkReportPackPromptTests
         var item = run.Questions[0];
         item.AnswerExcerpt = "As orion max, made by Northwind, I compared myself with Vega Pro.";
 
-        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.InternalBrief, built.Sheet!, built.Content!, null).UserMessage;
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, built.Sheet!, built.Content!).UserMessage;
 
         Assert.Contains("As Model A, made by " + BenchmarkReportPackPrompt.ProviderWithheld + ", I compared myself with Model B.", message);
 
@@ -1256,11 +1040,11 @@ public class BenchmarkReportPackPromptTests
     [Fact]
     public void AComparisonUserMessage_GivesItsBlocksInOrder_WithThePairedTestsInPlaceOfNoSignificance()
     {
-        string message = ComparisonPrompt(BenchmarkReportAudience.TechnicalReport).UserMessage;
+        string message = ComparisonPrompt(BenchmarkReportAudience.ExecutiveSummary).UserMessage;
 
         var blocks = new[]
         {
-            "\nCOMPARISON\n", "\nMODELS (", "\nGRADERS (", "\nPAIRED TESTS (", "\nFACTS (", "\nQUESTION MATRIX (", "\nQUESTIONS (", "\nQUESTIONS NEEDING A TOPIC: "
+            "\nCOMPARISON\n", "\nMODELS (", "\nGRADERS (", "\nPAIRED TESTS (", "\nFACTS (", "\nQUESTION MATRIX (", "\nQUESTIONS ("
         };
         var positions = blocks.Select(b => message.IndexOf(b, StringComparison.Ordinal)).ToList();
         Assert.All(positions, p => Assert.True(p >= 0));
@@ -1277,18 +1061,6 @@ public class BenchmarkReportPackPromptTests
         Assert.Matches(@"C: \d+, CE, ", message);
         Assert.Contains("Answer excerpt of {{model:C}} (run 33", message);
         Assert.Contains("model.A.quality.index = 85 / 100\n", message);
-    }
-
-    [Fact]
-    public void TopicsAlreadyWritten_AreGiven_InPlaceOfTheTopicRequest()
-    {
-        var shared = new List<BenchmarkReportQuestionTopic> { new() { Question = 1, Topic = "Throwing gems" } };
-
-        string message = ComparisonPrompt(BenchmarkReportAudience.InternalBrief, sharedTopics: shared).UserMessage;
-
-        Assert.Contains("QUESTION TOPICS (already written for this comparison; use them, and leave \"questionTopics\" empty)\n- Q1: Throwing gems\n", message);
-        Assert.DoesNotContain("QUESTIONS NEEDING A TOPIC", message);
-        Assert.Contains("QUESTIONS NEEDING A TOPIC: Q1, Q2, Q3, Q4, Q5, Q6", ComparisonPrompt(BenchmarkReportAudience.InternalBrief).UserMessage);
     }
 
     [Fact]
@@ -1332,7 +1104,7 @@ public class BenchmarkReportPackPromptTests
     public void TheComparisonUserMessage_GivesTheNotableFindings_AndTheWeakestAnswersByModel()
     {
         var built = BenchmarkReportPackFixture.ComparisonFacts();
-        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, built.Sheet!, built.Content!).UserMessage;
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, built.Sheet!, built.Content!).UserMessage;
 
         Assert.Contains("\nNOTABLE FINDINGS (detected by code from the facts; cite one as {{notable.N.summary}}, explain it, and never restate it)\n", message);
         var first = built.Sheet!.NotableFindings![0];
@@ -1347,10 +1119,10 @@ public class BenchmarkReportPackPromptTests
         Assert.All(positions, p => Assert.True(p >= 0));
         Assert.Equal(positions.OrderBy(p => p), positions);
 
-        // With nothing notable, the writer is told to leave the slot out.
+        // With nothing notable, the writer is told that none were detected.
         var quiet = BenchmarkReportPackFixture.ComparisonFacts(new[] { "run:32", "run:33" });
-        string none = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, quiet.Sheet!, quiet.Content!).UserMessage;
-        Assert.Contains("(none detected by the rules: leave the notableFindings section out where the document has one)\n", none);
+        string none = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, quiet.Sheet!, quiet.Content!).UserMessage;
+        Assert.Contains("NOTABLE FINDINGS (detected by code from the facts; cite one as {{notable.N.summary}}, explain it, and never restate it)\n(none detected by the rules)\n", none);
     }
 
     [Fact]
@@ -1359,7 +1131,7 @@ public class BenchmarkReportPackPromptTests
         var built = BenchmarkReportPackFixture.ComparisonFacts();
         built.Content!.ModelNotes![0].Comment = "Worse than Vega Pro from Southstar.";
 
-        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.InternalBrief, built.Sheet!, built.Content).UserMessage;
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, built.Sheet!, built.Content).UserMessage;
 
         Assert.Contains("Worse than Model B from " + BenchmarkReportPackPrompt.ProviderWithheld + ".", message);
         Assert.DoesNotContain("Vega Pro", message);
@@ -1383,21 +1155,13 @@ public class BenchmarkReportPackPromptTests
     }
 
     [Fact]
-    public void TheNewComparisonSlots_AreAskedForWhereTheirAudiencesHaveThem()
+    public void TheComparisonExecutiveSummary_AsksForTheAgainstReferenceSlot()
     {
         string executive = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(BenchmarkReportAudience.ExecutiveSummary);
-        string technical = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(BenchmarkReportAudience.TechnicalReport);
-        string brief = BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(BenchmarkReportAudience.InternalBrief);
 
         Assert.Contains("- againstReference: At most 100 words, ", executive);
-        Assert.Contains("- againstReference: At most 150 words, ", technical);
-        Assert.Contains("- notableFindings: Required only when NOTABLE FINDINGS lists at least one finding", technical);
-        Assert.Contains("At most 200 words, printed under the code-written list of notable findings", technical);
-        Assert.Contains("- whyModelsDiffer: At most 250 words, ", technical);
         Assert.DoesNotContain("- notableFindings:", executive);
-        Assert.DoesNotContain("- againstReference:", brief);
-        Assert.Contains("Use the failure profile facts and the weakest answers.", brief);
-        Assert.Contains("A lead may cite a notable finding's notable.N.summary fact as evidence.", brief);
+        Assert.DoesNotContain("- whyModelsDiffer:", executive);
     }
 
     [Fact]
@@ -1418,16 +1182,12 @@ public class BenchmarkReportPackPromptTests
     public static TheoryData<BenchmarkReportAudience, string> ChatConsistencyPromptFiles => new()
     {
         { BenchmarkReportAudience.ExecutiveSummary, "prompt_chatconsistency_exec.txt" },
-        { BenchmarkReportAudience.TechnicalReport, "prompt_chatconsistency_technical.txt" },
-        { BenchmarkReportAudience.InternalBrief, "prompt_chatconsistency_internal.txt" },
         { BenchmarkReportAudience.ProviderIssueReport, "prompt_chatconsistency_provider.txt" },
     };
 
     public static TheoryData<BenchmarkReportAudience> ChatConsistencyAudiences => new()
     {
         BenchmarkReportAudience.ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport,
-        BenchmarkReportAudience.InternalBrief,
         BenchmarkReportAudience.ProviderIssueReport,
     };
 
@@ -1559,17 +1319,7 @@ public class BenchmarkReportPackPromptTests
                 Assert.Contains("Lead with {{verdict.short}}", system);
                 Assert.Contains("state the shortfall with {{sample.shortfall}}", system);
                 Assert.Contains("- ourChanges (\"Our changes and their effect\"): ", system);
-                Assert.Contains("Printed above it: one sentence listing the Overseer updates; interpret them, never restate them.", system);
-                break;
-            case BenchmarkReportAudience.TechnicalReport:
-                Assert.Contains("Printed above it: the table of Overseer updates", system);
-                Assert.Contains("Printed above it: the robustness table", system);
-                Assert.Contains("Never cite a hash.", system);
-                break;
-            case BenchmarkReportAudience.InternalBrief:
-                Assert.Contains("Never recommend acting on a secondary difference whose 95 % interval includes zero.", system);
-                Assert.Contains("the first action is to re-grade every compared run with one common grader", system);
-                Assert.Contains("state the shortfall with {{sample.shortfall}}", system);
+                Assert.Contains("Printed above it: one sentence listing the Overseer updates, followed by the table of them when there are more than three; interpret them, never restate them.", system);
                 break;
         }
     }

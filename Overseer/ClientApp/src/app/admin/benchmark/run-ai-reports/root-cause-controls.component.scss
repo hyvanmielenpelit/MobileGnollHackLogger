@@ -1,0 +1,61 @@
+// A muted panel beside the tab's document rows; the buttons are the global `.btn-ghost`.
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.rcc {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.375rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border-glass);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.12);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+
+.rcc-title {
+  margin: 0;
+  font-size: var(--text-body);
+  font-weight: 700;
+  color: var(--font-color);
+}
+
+.rcc-live {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+
+  > p {
+    margin: 0;
+  }
+}
+
+.rcc-line {
+  overflow-wrap: break-word;
+  color: var(--font-color);
+}
+
+.rcc-new {
+  color: var(--primary-color);
+}
+
+.rcc-note {
+  margin: 0;
+  font-size: var(--text-secondary);
+  color: var(--nav-color);
+}
+
+.rcc-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+
+  > .gh-field-error {
+    margin: 0;
+  }
+}

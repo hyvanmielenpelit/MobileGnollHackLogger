@@ -3,7 +3,7 @@
 
   One row per document the chosen models can have, written or not. A row's checkbox says what the
   next job does with it: Write, or Rewrite (which replaces the current document). View and Delete are
-  icon-only; Delete asks first. The confirmation and the PDF viewer are nested in the wizard's dialog
+  icon-only; Delete asks first. A written Root Cause Analysis adds Redraw charts and its next runs. The confirmation and the PDF viewer are nested in the wizard's dialog
   and stop their own close and cancel events.
 -->
 <ng-template #rowTemplate let-row>
@@ -60,9 +60,25 @@
             </button>
             <div popover="hint" class="gh-tooltip" [id]="rid + '-delete-tip'"
                  [attr.style]="'position-anchor: --' + rid + '-delete-tip'">{{ busy ? busyReason : 'Delete' }}</div>
+            @if (row.audience === rootCauseAudience) {
+              <button type="button" class="action-btn cds-redraw-btn" [id]="rid + '-redraw'"
+                      [attr.aria-label]="'Redraw the charts of ' + rowName(row)"
+                      [attr.aria-disabled]="busy || redrawingDocumentId !== null ? 'true' : null"
+                      [attr.aria-busy]="redrawingDocumentId === row.document.documentId ? 'true' : null"
+                      [attr.interestfor]="rid + '-redraw-tip'"
+                      [attr.style]="'anchor-name: --' + rid + '-redraw-tip'"
+                      (click)="redrawCharts(row)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              </button>
+              <div popover="hint" class="gh-tooltip" [id]="rid + '-redraw-tip'"
+                   [attr.style]="'position-anchor: --' + rid + '-redraw-tip'">{{ busy ? busyReason : (redrawingDocumentId !== null ? 'Redrawing the charts…' : 'Redraw charts') }}</div>
+            }
           </div>
         }
       </div>
+    }
+    @if (row.document && row.audience === rootCauseAudience) {
+      <app-root-cause-runs class="cds-rca-runs" [documentId]="row.document.documentId"></app-root-cause-runs>
     }
   </li>
 </ng-template>
@@ -70,6 +86,12 @@
 <section class="cds" [attr.aria-labelledby]="headingId" [attr.aria-busy]="view?.state === 'loading' ? 'true' : null">
   <h6 class="cds-heading" [id]="headingId" tabindex="-1">Documents of this comparison</h6>
   <p class="cds-live visually-hidden" role="status" aria-live="polite">{{ statusMessage }}</p>
+  @if (redrawError) {
+    <p class="gh-field-error cds-redraw-error" role="alert">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+      <span>{{ redrawError }}</span>
+    </p>
+  }
 
   @switch (view?.state ?? 'loading') {
     @case ('error') {

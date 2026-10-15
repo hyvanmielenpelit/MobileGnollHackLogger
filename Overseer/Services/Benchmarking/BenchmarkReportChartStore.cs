@@ -23,7 +23,10 @@ using Overseer.Models;
 /// <c>Benchmark:ReportPack:ChartsDataLocation</c>: <c>&lt;root&gt;/&lt;documentId&gt;/manifest.json</c> plus
 /// <c>&lt;figureKey&gt;.&lt;named|anonymized&gt;.png</c>. Every path is built from a numeric id, a known figure
 /// key and a fixed naming word, and must resolve inside the root. A document's set is replaced whole,
-/// through a staging folder, under a per-document lock.
+/// through a staging folder, under a per-document lock. The set holds two kinds of chart, told apart by
+/// each manifest entry's <c>origin</c>: browser uploads (<see cref="SetChartsAsync(long, IReadOnlyList{ValidatedChart}, BenchmarkReportChartLayout?, CancellationToken)"/>)
+/// and the charts Overseer draws itself (<see cref="SetServerChartsAsync"/>); each write replaces its own
+/// kind and carries the other over.
 /// </summary>
 public class BenchmarkReportChartStore
 {
@@ -38,7 +41,8 @@ public class BenchmarkReportChartStore
     public const string ManifestFileName = "manifest.json";
     public const string StagingFolderName = ".staging";
 
-    public const int MaxCharts = 16;
+    /// <summary>The most images one document stores: eight browser kinds and four server kinds, in two namings each.</summary>
+    public const int MaxCharts = 24;
     public const int MaxTitleChars = 200;
     public const int MaxCaptionChars = 500;
     public const int MaxAltTextChars = 1000;
@@ -136,6 +140,11 @@ public class BenchmarkReportChartStore
             if (figureKey.Length == 0 || !BenchmarkReportChartPlacement.IsKnown(figureKey))
             {
                 throw new ChartStoreException($"Chart {i + 1} has an unknown figure key \"{Clip(figureKey)}\".");
+            }
+
+            if (BenchmarkReportChartPlacement.IsServerDrawn(figureKey))
+            {
+                throw new ChartStoreException($"Chart {i + 1} ({figureKey}) is drawn by Overseer and cannot be uploaded.");
             }
 
             string label = $"Chart {i + 1} ({figureKey}, {Clip(naming)})";
@@ -269,6 +278,52 @@ public class BenchmarkReportChartStore
             Title = titleText,
             Caption = captionText,
             AltText = alt,
+            Png = png,
+            WidthPx = width,
+            HeightPx = height,
+            Sha256 = Sha256Hex(png)
+        };
+    }
+
+    /// <summary>
+    /// One chart Overseer drew, checked as an upload's chart is: a server-drawn figure key
+    /// (<see cref="BenchmarkReportChartPlacement.IsServerDrawn"/>), a known naming, its text within the
+    /// limits, and a PNG within the size limits. It carries no settings hash.
+    /// </summary>
+    public static ValidatedChart ValidateServerChart(
+        string? figureKey, string? naming, string? title, string? caption, string? altText, byte[]? png)
+    {
+        string key = figureKey ?? string.Empty;
+        if (!BenchmarkReportChartPlacement.IsServerDrawn(key))
+        {
+            throw new ChartStoreException($"\"{Clip(key)}\" is not a server-drawn figure key.");
+        }
+
+        string label = $"Chart {key}, {Clip(naming ?? string.Empty)}";
+        if (!IsKnownNaming(naming))
+        {
+            throw new ChartStoreException($"{label} has the naming \"{Clip(naming ?? string.Empty)}\"; it must be \"{Named}\" or \"{Anonymized}\".");
+        }
+
+        string titleText = title ?? string.Empty;
+        string captionText = caption ?? string.Empty;
+        string alt = altText ?? string.Empty;
+        CheckText(label, titleText, captionText, alt);
+
+        if (png == null || png.Length == 0)
+        {
+            throw new ChartStoreException($"{label} has no image data.");
+        }
+
+        var (width, height) = CheckImage(label, png);
+        return new ValidatedChart
+        {
+            FigureKey = key,
+            Naming = naming!,
+            Title = titleText,
+            Caption = captionText,
+            AltText = alt,
+            SettingsHash = string.Empty,
             Png = png,
             WidthPx = width,
             HeightPx = height,
@@ -461,9 +516,10 @@ public class BenchmarkReportChartStore
         => File.WriteAllBytesAsync(path, contents, cancellationToken);
 
     /// <summary>
-    /// Replaces a document's whole chart set: everything is written into a staging folder, the old
-    /// folder is deleted and the staging folder moved into its place. A failure removes the staging
-    /// folder and leaves the old set as it was.
+    /// Replaces a document's browser-drawn charts: everything is written into a staging folder, the old
+    /// folder is deleted and the staging folder moved into its place. The server-drawn charts already
+    /// stored are carried over unchanged. A failure removes the staging folder and leaves the old set as
+    /// it was.
     /// </summary>
     public Task<ReportDocumentChartsSummaryDto> SetChartsAsync(
         long documentId,
@@ -481,23 +537,116 @@ public class BenchmarkReportChartStore
         BenchmarkReportChartLayout? layout,
         CancellationToken cancellationToken = default)
     {
-        string target = GetDocumentFolder(documentId);
+        _ = GetDocumentFolder(documentId);
         if (validated == null || validated.Count == 0)
         {
             throw new ChartStoreException("No charts were sent. To remove a document's charts, delete them instead.");
         }
 
-        var manifest = new BenchmarkReportChartManifest
+        if (validated.Any(c => BenchmarkReportChartPlacement.IsServerDrawn(c.FigureKey)))
         {
-            DocumentId = documentId,
-            SettingsHash = validated[0].SettingsHash,
-            CreatedAtUtc = DateTime.UtcNow,
-            Layout = ValidateLayout(layout)
-        };
+            throw new ChartStoreException("A server-drawn chart cannot be stored as an upload.");
+        }
 
-        foreach (var chart in validated)
+        var storedLayout = ValidateLayout(layout);
+        var uploaded = Entries(validated, BenchmarkReportChartManifestEntry.BrowserOrigin);
+
+        var gate = LockFor(documentId);
+        await gate.WaitAsync(cancellationToken);
+        try
         {
-            manifest.Charts.Add(new BenchmarkReportChartManifestEntry
+            var kept = await KeptChartsAsync(documentId, ReadManifest(documentId), serverDrawn: true, cancellationToken);
+            var manifest = new BenchmarkReportChartManifest
+            {
+                DocumentId = documentId,
+                SettingsHash = validated[0].SettingsHash,
+                CreatedAtUtc = DateTime.UtcNow,
+                Layout = storedLayout
+            };
+            var contents = new List<byte[]>();
+            foreach (var (entry, png) in uploaded.Concat(kept))
+            {
+                manifest.Charts.Add(entry);
+                contents.Add(png);
+            }
+
+            await WriteSetUnderLockAsync(documentId, manifest, contents, cancellationToken);
+            _logger.LogInformation("Stored {Count} report charts for document {DocumentId} ({Kept} drawn by Overseer kept).",
+                manifest.Charts.Count, documentId, kept.Count);
+            return Summarize(manifest);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Replaces a document's server-drawn charts with <paramref name="validated"/>
+    /// (<see cref="ValidateServerChart"/>), through the same staging folder and lock as an upload. The
+    /// browser-drawn charts, the settings hash and the layout already stored are carried over unchanged.
+    /// An empty list removes the server-drawn charts; when nothing remains, the document's folder is
+    /// deleted and the summary counts no chart.
+    /// </summary>
+    public async Task<ReportDocumentChartsSummaryDto> SetServerChartsAsync(
+        long documentId,
+        IReadOnlyList<ValidatedChart> validated,
+        CancellationToken cancellationToken = default)
+    {
+        string target = GetDocumentFolder(documentId);
+        validated ??= Array.Empty<ValidatedChart>();
+        if (validated.Any(c => !BenchmarkReportChartPlacement.IsServerDrawn(c.FigureKey)))
+        {
+            throw new ChartStoreException("Only server-drawn charts can be stored as charts drawn by Overseer.");
+        }
+
+        var drawn = Entries(validated, BenchmarkReportChartManifestEntry.ServerOrigin);
+
+        var gate = LockFor(documentId);
+        await gate.WaitAsync(cancellationToken);
+        try
+        {
+            var previous = ReadManifest(documentId);
+            var kept = await KeptChartsAsync(documentId, previous, serverDrawn: false, cancellationToken);
+            var manifest = new BenchmarkReportChartManifest
+            {
+                DocumentId = documentId,
+                SettingsHash = previous?.SettingsHash ?? string.Empty,
+                CreatedAtUtc = DateTime.UtcNow,
+                Layout = previous?.Layout
+            };
+            var contents = new List<byte[]>();
+            foreach (var (entry, png) in kept.Concat(drawn))
+            {
+                manifest.Charts.Add(entry);
+                contents.Add(png);
+            }
+
+            if (manifest.Charts.Count == 0)
+            {
+                if (Directory.Exists(target))
+                {
+                    Directory.Delete(target, recursive: true);
+                }
+                return new ReportDocumentChartsSummaryDto { DocumentId = documentId };
+            }
+
+            await WriteSetUnderLockAsync(documentId, manifest, contents, cancellationToken);
+            _logger.LogInformation("Stored {Count} report charts drawn by Overseer for document {DocumentId} ({Kept} uploaded kept).",
+                drawn.Count, documentId, kept.Count);
+            return Summarize(manifest);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>The manifest entry and image of each chart, tagged with <paramref name="origin"/>; refuses the same file twice.</summary>
+    private static List<(BenchmarkReportChartManifestEntry Entry, byte[] Png)> Entries(IReadOnlyList<ValidatedChart> charts, string origin)
+    {
+        var entries = charts
+            .Select(chart => (Entry: new BenchmarkReportChartManifestEntry
             {
                 FigureKey = chart.FigureKey,
                 Naming = chart.Naming,
@@ -507,8 +656,93 @@ public class BenchmarkReportChartStore
                 HeightPx = chart.HeightPx,
                 Title = chart.Title,
                 Caption = chart.Caption,
-                AltText = chart.AltText
-            });
+                AltText = chart.AltText,
+                Origin = origin
+            }, Png: chart.Png))
+            .ToList();
+
+        if (entries.Select(e => e.Entry.File).Distinct(StringComparer.OrdinalIgnoreCase).Count() != entries.Count)
+        {
+            throw new ChartStoreException("The same chart appears more than once.");
+        }
+
+        return entries;
+    }
+
+    /// <summary>
+    /// The stored charts of one kind, read back for a write that replaces the other kind: server-drawn
+    /// when <paramref name="serverDrawn"/>, browser-drawn otherwise. A missing or altered file is left out
+    /// with a warning. Called under the document's lock.
+    /// </summary>
+    private async Task<List<(BenchmarkReportChartManifestEntry Entry, byte[] Png)>> KeptChartsAsync(
+        long documentId, BenchmarkReportChartManifest? manifest, bool serverDrawn, CancellationToken cancellationToken)
+    {
+        var kept = new List<(BenchmarkReportChartManifestEntry Entry, byte[] Png)>();
+        if (manifest == null) return kept;
+
+        foreach (var entry in manifest.Charts.Where(c => c.IsServerDrawn == serverDrawn))
+        {
+            if (!BenchmarkReportChartPlacement.IsKnown(entry.FigureKey) || !IsKnownNaming(entry.Naming)
+                || BenchmarkReportChartPlacement.IsServerDrawn(entry.FigureKey) != serverDrawn)
+            {
+                _logger.LogWarning("Report chart {File} of document {DocumentId} has an unknown key or naming; it is not kept.", entry.File, documentId);
+                continue;
+            }
+
+            string path = GetChartFilePath(documentId, entry.FigureKey, entry.Naming);
+            if (!File.Exists(path))
+            {
+                _logger.LogWarning("Report chart {File} of document {DocumentId} is missing; it is not kept.", entry.File, documentId);
+                continue;
+            }
+
+            byte[] png;
+            try
+            {
+                png = await File.ReadAllBytesAsync(path, cancellationToken);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "Report chart {File} of document {DocumentId} could not be read; it is not kept.", entry.File, documentId);
+                continue;
+            }
+
+            if (!string.Equals(Sha256Hex(png), entry.Sha256, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Report chart {File} of document {DocumentId} does not match its manifest checksum; it is not kept.", entry.File, documentId);
+                continue;
+            }
+
+            kept.Add((new BenchmarkReportChartManifestEntry
+            {
+                FigureKey = entry.FigureKey,
+                Naming = entry.Naming,
+                File = CheckedFileName(entry.FigureKey, entry.Naming),
+                Sha256 = entry.Sha256,
+                WidthPx = entry.WidthPx,
+                HeightPx = entry.HeightPx,
+                Title = entry.Title ?? string.Empty,
+                Caption = entry.Caption ?? string.Empty,
+                AltText = entry.AltText ?? string.Empty,
+                Origin = serverDrawn ? BenchmarkReportChartManifestEntry.ServerOrigin : entry.Origin
+            }, png));
+        }
+
+        return kept;
+    }
+
+    /// <summary>
+    /// Writes <paramref name="manifest"/> and its images into a staging folder, deletes the document's
+    /// folder and moves the staging folder into its place; refuses a set over <see cref="MaxCharts"/>. A
+    /// failure removes the staging folder and leaves the old set as it was. The caller holds the
+    /// document's lock.
+    /// </summary>
+    private async Task WriteSetUnderLockAsync(
+        long documentId, BenchmarkReportChartManifest manifest, IReadOnlyList<byte[]> contents, CancellationToken cancellationToken)
+    {
+        if (manifest.Charts.Count > MaxCharts)
+        {
+            throw new ChartStoreException($"The document would hold {manifest.Charts.Count} charts; at most {MaxCharts} are allowed.");
         }
 
         if (manifest.Charts.Select(c => c.File).Distinct(StringComparer.OrdinalIgnoreCase).Count() != manifest.Charts.Count)
@@ -516,16 +750,15 @@ public class BenchmarkReportChartStore
             throw new ChartStoreException("The same chart appears more than once.");
         }
 
+        string target = GetDocumentFolder(documentId);
         string staging = Contain(Path.Combine(StagingRoot(), $"{documentId.ToString(CultureInfo.InvariantCulture)}-{Guid.NewGuid():N}"));
-        var gate = LockFor(documentId);
-        await gate.WaitAsync(cancellationToken);
         try
         {
             Directory.CreateDirectory(staging);
 
-            for (int i = 0; i < validated.Count; i++)
+            for (int i = 0; i < manifest.Charts.Count; i++)
             {
-                await WriteFileAsync(Contain(Path.Combine(staging, manifest.Charts[i].File)), validated[i].Png, cancellationToken);
+                await WriteFileAsync(Contain(Path.Combine(staging, manifest.Charts[i].File)), contents[i], cancellationToken);
             }
 
             byte[] manifestBytes = Utf8NoBom.GetBytes(JsonSerializer.Serialize(manifest, ManifestJsonOptions));
@@ -543,13 +776,6 @@ public class BenchmarkReportChartStore
             TryDeleteFolder(staging);
             throw;
         }
-        finally
-        {
-            gate.Release();
-        }
-
-        _logger.LogInformation("Stored {Count} report charts for document {DocumentId}.", manifest.Charts.Count, documentId);
-        return Summarize(manifest);
     }
 
     /// <summary>Deletes a document's chart folder. Returns whether there was one.</summary>

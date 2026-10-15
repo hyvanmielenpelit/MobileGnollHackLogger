@@ -335,7 +335,7 @@ public class BenchmarkReportPackServiceTests
         await using var h = await Harness.CreateAsync();
         long batteryRunId = await h.SeedBatteryAsync();
         var request = BenchmarkReportPackPreparation.BatteryRequest(
-            batteryRunId, new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport }, h.Writer.Id);
+            batteryRunId, new[] { BenchmarkReportAudience.ExecutiveSummary }, h.Writer.Id);
 
         var ok = Assert.IsType<OkObjectResult>(await h.Controller().Preview(request, CancellationToken.None));
         var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(ok.Value);
@@ -415,12 +415,12 @@ public class BenchmarkReportPackServiceTests
     public async Task Start_RefusesADocumentAlreadyWrittenForTheComparisonAndSubject_With409_BeforeTheSpendCap()
     {
         await using var h = await Harness.CreateAsync(maxRunsPerHour: 0);
-        var request = h.Request(audiences: new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport });
-        await h.StoreDocumentAsync(BenchmarkReportAudience.TechnicalReport, request);
+        var request = h.Request(audiences: new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis });
+        await h.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, request);
 
         var conflict = Assert.IsType<ConflictObjectResult>(await h.Controller().Start(request, CancellationToken.None));
         string? error = ErrorOf(conflict.Value);
-        Assert.StartsWith("The Report for AI Researchers and Developers about ", error);
+        Assert.StartsWith("The Root Cause Analysis about ", error);
         Assert.EndsWith(" is already written for this comparison. Delete it in step 4 to write it again.", error);
 
         // Another audience of the same comparison goes on to the spend cap.
@@ -546,32 +546,6 @@ public class BenchmarkReportPackServiceTests
         Assert.True(facts.CoversAllEntries);
         Assert.Equal(3, facts.ComparisonEntryCount);
         Assert.Equal(3, facts.PeerLetters.Count);
-    }
-
-    [Fact]
-    public async Task AComparisonJob_WritesItsTopicsOnce_AndGivesThemToItsLaterDocuments()
-    {
-        await using var h = await Harness.CreateAsync();
-        var audiences = new[] { BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief };
-        var request = h.ComparisonRequest(audiences: audiences);
-        var prep = await h.PrepareComparisonAsync(request);
-        var technical = BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.TechnicalReport, prep.Sheet);
-        var brief = BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.InternalBrief, prep.Sheet);
-        foreach (var topic in brief.QuestionTopics) topic.Topic = "A different wording";
-        h.Provider.Replies.Enqueue(Reply(technical));
-        h.Provider.Replies.Enqueue(Reply(brief));
-
-        var job = await h.RunComparisonAsync(request);
-
-        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
-        var documents = await h.Db.BenchmarkReportDocuments.OrderBy(d => d.Audience).ToListAsync(TestContext.Current.CancellationToken);
-        Assert.Equal(2, documents.Count);
-        var topics = documents
-            .Select(d => BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(d.WriterOutputJson).QuestionTopics.Select(t => (t.Question, t.Topic)).ToList())
-            .ToList();
-        Assert.Equal(technical.QuestionTopics.Select(t => (t.Question, t.Topic)), topics[0]);
-        Assert.Equal(topics[0], topics[1]);
-        Assert.Equal(2, h.Provider.MessageCounts.Length);
     }
 
     [Fact]
@@ -763,10 +737,7 @@ public class BenchmarkReportPackServiceTests
     public async Task PreviewComparison_LettersTheCoveredModels_AndEstimatesWithTheComparisonOutputSizes()
     {
         await using var h = await Harness.CreateAsync();
-        var request = h.ComparisonRequest(audiences: new[]
-        {
-            BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief
-        });
+        var request = h.ComparisonRequest(audiences: new[] { BenchmarkReportAudience.ExecutiveSummary });
 
         var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(Assert.IsType<OkObjectResult>(
             await h.Controller().Preview(request, CancellationToken.None)).Value);
@@ -777,7 +748,7 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(3, preview.ComparisonEntryCount);
         Assert.True(preview.CoversAllEntries);
         Assert.Equal(new[] { "A", "B", "C" }, preview.CoveredModels.Select(m => m.Letter));
-        Assert.Equal(new[] { 3800, 12500, 10000 }, preview.Estimates.Select(e => e.EstimatedOutputTokens));
+        Assert.Equal(new[] { 3800 }, preview.Estimates.Select(e => e.EstimatedOutputTokens));
         Assert.All(preview.Estimates, e => Assert.Equal(preview.SubjectKey, e.SubjectKey));
         Assert.Equal(3, preview.SubjectDocuments.Count);
         Assert.Empty(preview.OtherModelSets);
@@ -900,12 +871,9 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(questions, built.Sheet.Questions.Count);
 
         const int window = 200_000;
-        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief })
-        {
-            var prompt = BenchmarkReportPackPrompt.Build(audience, built.Sheet, built.Content!);
-            int tokens = (prompt.SystemPrompt.Length + prompt.UserMessage.Length + 3) / 4;
-            Assert.True(tokens < window * 0.7, $"{audience}: {tokens} estimated tokens, {(double)tokens / window:P0} of the window.");
-        }
+        var prompt = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, built.Sheet, built.Content!);
+        int tokens = (prompt.SystemPrompt.Length + prompt.UserMessage.Length + 3) / 4;
+        Assert.True(tokens < window * 0.7, $"{tokens} estimated tokens, {(double)tokens / window:P0} of the window.");
     }
 
     // --- Preview ----------------------------------------------------------------------------------------
@@ -914,7 +882,7 @@ public class BenchmarkReportPackServiceTests
     public async Task Preview_NamesThePeers_EstimatesEachDocument_AndMakesNoModelCall()
     {
         await using var h = await Harness.CreateAsync();
-        var request = h.Request(audiences: new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport });
+        var request = h.Request(audiences: new[] { BenchmarkReportAudience.ExecutiveSummary });
 
         var ok = Assert.IsType<OkObjectResult>(await h.Controller().Preview(request, CancellationToken.None));
         var preview = Assert.IsType<BenchmarkReportPackPreviewDto>(ok.Value);
@@ -923,8 +891,7 @@ public class BenchmarkReportPackServiceTests
         Assert.Null(preview.SameProviderWarning);
         Assert.Equal($"run:{h.Seeded.RunIds[0]}", preview.SubjectKey);
         Assert.Equal("A", Assert.Single(preview.Peers).Letter);
-        Assert.Equal(2, preview.Estimates.Count);
-        Assert.All(preview.Estimates, e => Assert.True(e.EstimatedInputTokens > 0));
+        Assert.True(Assert.Single(preview.Estimates).EstimatedInputTokens > 0);
         Assert.Empty(preview.WrittenDocuments);
         Assert.Equal(0, h.Provider.Calls);
     }
@@ -950,9 +917,9 @@ public class BenchmarkReportPackServiceTests
     {
         await using var h = await Harness.CreateAsync();
         var request = h.Request();
-        long older = await h.StoreDocumentAsync(BenchmarkReportAudience.TechnicalReport, request, createdAtUtc: new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc));
-        long newer = await h.StoreDocumentAsync(BenchmarkReportAudience.TechnicalReport, request, createdAtUtc: new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Utc));
-        long brief = await h.StoreDocumentAsync(BenchmarkReportAudience.InternalBrief, request, createdAtUtc: new DateTime(2026, 10, 3, 9, 0, 0, DateTimeKind.Utc));
+        long older = await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, createdAtUtc: new DateTime(2026, 10, 1, 9, 0, 0, DateTimeKind.Utc));
+        long newer = await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, createdAtUtc: new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Utc));
+        long rootCause = await h.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, request, createdAtUtc: new DateTime(2026, 10, 3, 9, 0, 0, DateTimeKind.Utc));
         await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, comparisonKey: new string('f', 64));
         await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request, origin: BenchmarkReportDocumentOrigin.RunCompletion);
 
@@ -961,7 +928,7 @@ public class BenchmarkReportPackServiceTests
 
         Assert.Null(preview.Refusal);
         Assert.Equal(
-            new[] { (BenchmarkReportAudience.TechnicalReport, newer), (BenchmarkReportAudience.InternalBrief, brief) },
+            new[] { (BenchmarkReportAudience.ExecutiveSummary, newer), (BenchmarkReportAudience.RootCauseAnalysis, rootCause) },
             preview.WrittenDocuments.Select(d => (d.Audience, d.DocumentId)));
         Assert.NotEqual(older, newer);
         Assert.Equal(new DateTime(2026, 10, 2, 9, 0, 0, DateTimeKind.Utc), preview.WrittenDocuments[0].CreatedAtUtc);
@@ -991,7 +958,8 @@ public class BenchmarkReportPackServiceTests
     {
         var options = BenchmarkRunExamTests.InMemoryOptions();
         await using var db = new ApplicationDbContext(options);
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.InternalBrief);
+        // A Root Cause Analysis renders at Full alone; every request here is refused before rendering.
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.RootCauseAnalysis);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -1010,7 +978,7 @@ public class BenchmarkReportPackServiceTests
     {
         var options = BenchmarkRunExamTests.InMemoryOptions();
         await using var db = new ApplicationDbContext(options);
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -1037,7 +1005,8 @@ public class BenchmarkReportPackServiceTests
         BenchmarkPdfTestSetup.Configure();
         var options = BenchmarkRunExamTests.InMemoryOptions();
         await using var db = new ApplicationDbContext(options);
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.InternalBrief);
+        // A Root Cause Analysis renders at Full alone; every request here is refused before rendering.
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.RootCauseAnalysis);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -1058,7 +1027,7 @@ public class BenchmarkReportPackServiceTests
         BenchmarkPdfTestSetup.Configure();
         var options = BenchmarkRunExamTests.InMemoryOptions();
         await using var db = new ApplicationDbContext(options);
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -1072,11 +1041,11 @@ public class BenchmarkReportPackServiceTests
 
         Assert.Equal("application/pdf", provider.ContentType);
         Assert.Equal(
-            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_detailed_anonymized.pdf",
             provider.FileDownloadName);
         Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(provider.FileContents, 0, 5));
         Assert.Equal(
-            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_full_named_INTERNAL.pdf",
+            "run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_full_named_INTERNAL.pdf",
             full.FileDownloadName);
     }
 
@@ -1086,7 +1055,7 @@ public class BenchmarkReportPackServiceTests
         BenchmarkPdfTestSetup.Configure();
         var options = BenchmarkRunExamTests.InMemoryOptions();
         await using var db = new ApplicationDbContext(options);
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         document.Id = 0;
         db.BenchmarkReportDocuments.Add(document);
         await db.SaveChangesAsync(TestContext.Current.CancellationToken);
@@ -1103,7 +1072,7 @@ public class BenchmarkReportPackServiceTests
         Assert.True(string.IsNullOrEmpty(pdf.FileDownloadName));
         Assert.Equal("%PDF-", System.Text.Encoding.ASCII.GetString(pdf.FileContents, 0, 5));
         Assert.Equal(
-            "inline; filename*=UTF-8''run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark_Researcher_Report_detailed_anonymized.pdf",
+            "inline; filename*=UTF-8''run-12_vs-run-14-run-13_gpt-5.6-luna-on-the-overseer-gnollhack-assistant-benchmark-executive-summary_detailed_anonymized.pdf",
             controller.Response.Headers.ContentDisposition.ToString());
     }
 
@@ -1116,7 +1085,7 @@ public class BenchmarkReportPackServiceTests
         var run = await h.Db.BenchmarkRuns.SingleAsync(r => r.Id == runId, ct);
         run.ReportWriterModelConfigurationId = h.Writer.Id;
         run.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Failed;
-        run.ReportDocumentsMessage = "Report for AI Researchers and Developers: it could not be written.";
+        run.ReportDocumentsMessage = "Root Cause Analysis: it could not be written.";
 
         BenchmarkReportDocument Stored(BenchmarkReportAudience audience, BenchmarkReportDocumentOrigin origin)
         {
@@ -1128,9 +1097,9 @@ public class BenchmarkReportPackServiceTests
             h.Db.BenchmarkReportDocuments.Add(document);
             return document;
         }
-        var packDocument = Stored(BenchmarkReportAudience.InternalBrief, BenchmarkReportDocumentOrigin.ReportPack);
+        var packDocument = Stored(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDocumentOrigin.ReportPack);
         var executive = Stored(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDocumentOrigin.RunCompletion);
-        var researcher = Stored(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDocumentOrigin.RunCompletion);
+        var rootCause = Stored(BenchmarkReportAudience.RootCauseAnalysis, BenchmarkReportDocumentOrigin.RunCompletion);
         await h.Db.SaveChangesAsync(ct);
 
         var controller = new AdminBenchmarkReportDocumentsController(
@@ -1149,7 +1118,7 @@ public class BenchmarkReportPackServiceTests
         // While the documents are being written, a delete leaves the status to the job.
         run.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Writing;
         await h.Db.SaveChangesAsync(ct);
-        Assert.IsType<NoContentResult>(await controller.Delete(researcher.Id, ct));
+        Assert.IsType<NoContentResult>(await controller.Delete(rootCause.Id, ct));
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Writing, (await RunNowAsync()).ReportDocumentsStatus);
 
         run.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Completed;
@@ -1299,7 +1268,7 @@ public class BenchmarkReportPackServiceTests
         groupDocument.Runs = new List<BenchmarkReportDocumentRun>();
         var battery7 = BatteryReportHarness.BatteryDocument(7, BenchmarkReportAudience.ExecutiveSummary);
         battery7.Runs = new List<BenchmarkReportDocumentRun>();
-        var battery8 = BatteryReportHarness.BatteryDocument(8, BenchmarkReportAudience.TechnicalReport);
+        var battery8 = BatteryReportHarness.BatteryDocument(8, BenchmarkReportAudience.ExecutiveSummary);
         battery8.Runs = new List<BenchmarkReportDocumentRun>();
         db.BenchmarkReportDocuments.AddRange(runDocument, groupDocument, battery7, battery8);
         await db.SaveChangesAsync(ct);
@@ -1376,11 +1345,16 @@ public class BenchmarkReportPackServiceTests
     // --- The download path cannot reach a model (D13) -------------------------------------------------
 
     [Fact]
-    public void TheRenderService_TakesOnlyTheDbContextTheChartStoreAndALogger()
+    public void TheRenderService_TakesOnlyTheDbContextTheChartStoreALoggerAndTheChartPublisher()
     {
+        // The chart publisher draws with QuestPDF from the stored fact sheet; it holds no provider either.
         var constructor = Assert.Single(typeof(BenchmarkReportRenderService).GetConstructors());
         Assert.Equal(
-            new[] { typeof(ApplicationDbContext), typeof(BenchmarkReportChartStore), typeof(ILogger<BenchmarkReportRenderService>) },
+            new[]
+            {
+                typeof(ApplicationDbContext), typeof(BenchmarkReportChartStore), typeof(ILogger<BenchmarkReportRenderService>),
+                typeof(Overseer.Services.Benchmarking.Charts.RootCauseChartPublisher)
+            },
             constructor.GetParameters().Select(p => p.ParameterType));
     }
 
@@ -1395,6 +1369,199 @@ public class BenchmarkReportPackServiceTests
         Assert.NotEmpty(actions);
         Assert.All(actions.SelectMany(a => a.GetParameters()), p =>
             Assert.Null(p.GetCustomAttribute<FromServicesAttribute>()));
+    }
+
+    // --- Headline rescue and diagnostics -----------------------------------------------------------------
+
+    private static string Overlong(string headline) => headline.TrimEnd('.') + string.Concat(Enumerable.Repeat(" and still more words", 8)) + ".";
+
+    [Fact]
+    public async Task ARepairedHeadlineTooLong_TakesTheFirstDraftsValidHeadline_AndCompletesWithWarnings()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string valid = "{{subject}} gave accurate and readable answers across the benchmark.";
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, headline: valid, extraStrength: "It handled 7 hard questions."));
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, headline: Overlong(valid)));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        Assert.Equal(2, h.Provider.Calls);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
+        Assert.Equal(valid, BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson).Headline);
+        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson);
+        Assert.Contains(notes, n => n.Rule == 7 && n.Location == "headline" && n.Dropped && n.Message.Contains("first draft", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AComparisonWhoseHeadlinesAreBothTooLong_GetsAHeadlineOnlyTurn_AndStoresItsHeadline()
+    {
+        await using var h = await Harness.CreateAsync();
+        var request = h.ComparisonRequest();
+        var prep = await h.PrepareComparisonAsync(request);
+        var writer = BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, prep.Sheet);
+        string valid = writer.Headline;
+        writer.Headline = Overlong(valid);
+        h.Provider.Replies.Enqueue(Reply(writer));
+        h.Provider.Replies.Enqueue(Reply(writer));
+        h.Provider.Replies.Enqueue(JsonSerializer.Serialize(new { headline = valid }));
+
+        var job = await h.RunComparisonAsync(request);
+
+        Assert.Equal(3, h.Provider.Calls);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(valid, BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson).Headline);
+        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
+        Assert.Equal(3, (await h.Db.SystemAiUsageLogs.ToListAsync(TestContext.Current.CancellationToken)).Count);
+        Assert.Contains(job.ToDto().Log, l => l.Severity == "warning" && l.Message.Contains("headline", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task AHeadlineOnlyTurnThatFailsToo_FailsTheDocument_AndKeepsItsReply()
+    {
+        await using var h = await Harness.CreateAsync();
+        var request = h.ComparisonRequest();
+        var prep = await h.PrepareComparisonAsync(request);
+        var writer = BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, prep.Sheet);
+        writer.Headline = Overlong(writer.Headline);
+        string stillTooLong = JsonSerializer.Serialize(new { headline = writer.Headline });
+        h.Provider.Replies.Enqueue(Reply(writer));
+        h.Provider.Replies.Enqueue(Reply(writer));
+        h.Provider.Replies.Enqueue(stillTooLong);
+
+        var job = await h.RunComparisonAsync(request);
+
+        Assert.Equal(3, h.Provider.Calls);
+        Assert.Empty(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        var progress = Assert.Single(job.ToDto().Documents);
+        Assert.Equal(nameof(BenchmarkReportPackDocumentStatus.Failed), progress.Status);
+        Assert.Equal(stillTooLong, progress.FailedReply);
+        Assert.NotNull(progress.FirstTurnIssues);
+        Assert.Contains(progress.FinalIssues!, i => i.Rule == 7 && i.Location == "headline");
+    }
+
+    [Fact]
+    public async Task TheFirstTurnLogLine_CountsTheIssuesByRule()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, extraStrength: "It handled 7 hard questions."));
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Contains(job.ToDto().Log, l => System.Text.RegularExpressions.Regex.IsMatch(l.Message,
+            @"\d+ validation issue\(s\) \(rule \d+: \d+(, rule \d+: \d+)*\); sending one repair turn\."));
+    }
+
+    [Fact]
+    public async Task AnUnparseableRepairReply_KeepsTheFirstReply_AndSaysSo()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, extraStrength: "It handled 7 hard questions."));
+        h.Provider.Replies.Enqueue("this is not JSON at all");
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Contains(job.ToDto().Log, l => l.Severity == "warning" && l.Message.Contains("the repair reply could not be parsed", StringComparison.Ordinal)
+                                              && l.Message.Contains("the first reply is used", StringComparison.Ordinal));
+        Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task TheValidationDiagnostics_AreNullWhileTheJobRuns_AndFilledOnceItEnds()
+    {
+        var running = new BenchmarkReportPackJob
+        {
+            Request = new BenchmarkReportPackRequest(),
+            Cts = new CancellationTokenSource(),
+            Documents = new List<BenchmarkReportPackDocumentProgress> { new() { Audience = BenchmarkReportAudience.ExecutiveSummary } }
+        };
+        var note = new BenchmarkReportValidationNote { Rule = 7, Location = "headline", Message = "Too long.", Dropped = false };
+        running.SetDocumentDiagnostics(running.Documents[0], new[] { note }, new[] { note }, "raw reply");
+
+        var whileRunning = Assert.Single(running.ToDto().Documents);
+        Assert.Null(whileRunning.FirstTurnIssues);
+        Assert.Null(whileRunning.FinalIssues);
+        Assert.Null(whileRunning.FailedReply);
+
+        running.SetStatus(BenchmarkReportPackJobStatus.CompletedWithErrors);
+        var after = Assert.Single(running.ToDto().Documents);
+        Assert.Equal(7, Assert.Single(after.FirstTurnIssues!).Rule);
+        Assert.Equal("headline", Assert.Single(after.FinalIssues!).Location);
+        Assert.Equal("raw reply", after.FailedReply);
+
+        await Task.CompletedTask;
+    }
+
+    // --- The Root Cause Analysis of a run completion ------------------------------------------------------
+
+    private async Task<(long ExecutiveSummary, long RootCause)> StoreRunCompletionDocumentsAsync(Harness h)
+    {
+        var request = h.StandaloneRequest(new[] { BenchmarkReportAudience.ExecutiveSummary });
+        long es = await h.StoreDocumentAsync(BenchmarkReportAudience.ExecutiveSummary, request,
+            subjectKey: request.SubjectKey, origin: BenchmarkReportDocumentOrigin.RunCompletion);
+        long rca = await h.StoreDocumentAsync(BenchmarkReportAudience.RootCauseAnalysis, request,
+            subjectKey: request.SubjectKey, origin: BenchmarkReportDocumentOrigin.RunCompletion);
+        return (es, rca);
+    }
+
+    [Fact]
+    public async Task RewritingWithControls_ReplacesTheOldRootCauseAnalysis_AndLeavesTheExecutiveSummary()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync(standalone: true);
+        Assert.NotNull(prep.Sheet.RootCause);
+        var (es, oldRca) = await StoreRunCompletionDocumentsAsync(h);
+        string reply = Reply(RootCauseReportFixture.Writer(prep.Sheet, comparison: false));
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(reply);
+
+        var job = await h.RunCompletionAsync(BenchmarkReportAudience.RootCauseAnalysis, replace: new[] { oldRca });
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        var documents = await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken);
+        Assert.Contains(documents, d => d.Id == es && d.Audience == BenchmarkReportAudience.ExecutiveSummary);
+        Assert.DoesNotContain(documents, d => d.Id == oldRca);
+        var written = Assert.Single(documents, d => d.Audience == BenchmarkReportAudience.RootCauseAnalysis);
+        Assert.Equal(BenchmarkReportDocumentOrigin.RunCompletion, written.Origin);
+        Assert.NotNull(BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(written.FactsJson).RootCause);
+    }
+
+    [Fact]
+    public async Task AJobWithoutReplaceIds_ReplacesNothing()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync(standalone: true);
+        var (es, oldRca) = await StoreRunCompletionDocumentsAsync(h);
+        string reply = Reply(RootCauseReportFixture.Writer(prep.Sheet, comparison: false));
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(reply);
+
+        await h.RunCompletionAsync(BenchmarkReportAudience.RootCauseAnalysis);
+
+        var documents = await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken);
+        Assert.Contains(documents, d => d.Id == es);
+        Assert.Contains(documents, d => d.Id == oldRca);
+        Assert.Equal(2, documents.Count(d => d.Audience == BenchmarkReportAudience.RootCauseAnalysis));
+    }
+
+    [Fact]
+    public async Task AReplaceIdOfAnotherAudience_IsNotDeleted()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync(standalone: true);
+        var (es, _) = await StoreRunCompletionDocumentsAsync(h);
+        string reply = Reply(RootCauseReportFixture.Writer(prep.Sheet, comparison: false));
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(reply);
+
+        await h.RunCompletionAsync(BenchmarkReportAudience.RootCauseAnalysis, replace: new[] { es });
+
+        Assert.Contains(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken), d => d.Id == es);
     }
 
     // --- Replies -----------------------------------------------------------------------------------------
@@ -1592,10 +1759,11 @@ public class BenchmarkReportPackServiceTests
         };
 
         /// <summary>Runs one run-completion job for the first seeded run through the service, over the fake writer.</summary>
-        public async Task<BenchmarkReportPackJob> RunCompletionAsync(BenchmarkReportAudience audience)
+        public async Task<BenchmarkReportPackJob> RunCompletionAsync(BenchmarkReportAudience audience, IEnumerable<long>? replace = null)
         {
             var snapshot = await SystemAiConfigurationSnapshotStore.CaptureAndSaveAsync(Db, Writer, CancellationToken.None);
             var request = StandaloneRequest(new[] { audience });
+            request.ReplaceDocumentIds = replace?.ToList();
             var job = new BenchmarkReportPackJob
             {
                 SubjectKey = request.SubjectKey,

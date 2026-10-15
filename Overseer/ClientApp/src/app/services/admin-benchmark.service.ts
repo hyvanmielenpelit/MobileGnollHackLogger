@@ -742,8 +742,8 @@ export interface StartBenchmarkRunRequest {
    */
   claimVerifierModelConfigurationId?: number | null;
   /**
-   * Optional. When set, this configuration writes the run's Executive Summary and Report for AI
-   * Researchers and Developers once, after the run is scored. It may be neither the model under
+   * Optional. When set, this configuration writes the run's Executive Summary and Root Cause
+   * Analysis once, after the run is scored. It may be neither the model under
    * test nor of its provider. Null means no AI-written reports. Not a comparability key.
    */
   reportWriterModelConfigurationId?: number | null;
@@ -3200,10 +3200,11 @@ export interface BenchmarkGroupAnalysisDto {
 /** The reader a report-pack document is written for. */
 export enum BenchmarkReportAudience {
   ExecutiveSummary = 1,
-  TechnicalReport = 2,
-  InternalBrief = 3,
+  /* 2 and 3 are retired audiences; never reuse them. */
   /** A chat consistency finding written for the model's provider; chat consistency documents only. */
-  ProviderIssueReport = 4
+  ProviderIssueReport = 4,
+  /** Why the models scored, ran and cost as they did, with hypotheses and the runs that would settle them. Not in chat consistency. */
+  RootCauseAnalysis = 5
 }
 
 /** How much verbatim benchmark content a rendered document prints. */
@@ -3253,6 +3254,11 @@ export interface WriteRunReportDocumentsRequest {
   audiences?: BenchmarkReportAudience[];
   /** The operator acknowledged that the writer shares the model under test's provider. */
   acknowledgeSameProvider?: boolean;
+  /**
+   * Documents of this subject the job replaces, each deleted once the new document of the same
+   * audience is stored; absent or empty replaces nothing.
+   */
+  replaceDocumentIds?: number[];
 }
 
 export interface WriteRunReportDocumentsResponse {
@@ -3304,6 +3310,8 @@ export interface BenchmarkRunReportEstimateDto {
   estimates: BenchmarkReportPackAudienceEstimateDto[];
   /** Null when the writer has no resolvable price. */
   estimatedTotalCostUsd: number | null;
+  /** Each estimate's first call plus one repair turn, summed; null under the same rule. */
+  estimatedTotalCostWithRepairUsd?: number | null;
   /** Why the writer cannot write this run's reports, or null. */
   refusal: string | null;
   /** The same-provider warning writing would ask to acknowledge, or null. */
@@ -3398,6 +3406,8 @@ export interface BenchmarkReportPackAudienceEstimateDto {
   estimatedOutputTokens: number;
   /** Null when the writer has no resolvable price. */
   estimatedCostUsd: number | null;
+  /** The first call plus one repair turn; null when the writer has no resolvable price. Absent from a server that predates it. */
+  estimatedCostWithRepairUsd?: number | null;
   /** The subject the estimate is for: a model's entry key or the comparison-scope subject key. */
   subjectKey?: string | null;
   /** Estimated input tokens as a share of the writer's context window; null when the window is unknown. Above 0.9 is refused. */
@@ -3413,6 +3423,8 @@ export interface BenchmarkReportPackPreviewDto {
   estimates: BenchmarkReportPackAudienceEstimateDto[];
   /** Sum of the first call of each estimate; a repair turn can roughly double a document. */
   estimatedTotalCostUsd: number | null;
+  /** Sum of each estimate's first call plus one repair turn; null under the same rule. */
+  estimatedTotalCostWithRepairUsd?: number | null;
   writerDisplayName: string | null;
   /** The same-provider warning, or null. Starting requires acknowledging it. */
   sameProviderWarning: string | null;
@@ -3503,6 +3515,21 @@ export interface BenchmarkReportPackDocumentProgressDto {
   /** The subject the document is written for: a model's entry key or the comparison-scope subject key. */
   subjectKey?: string;
   subjectLabel?: string;
+  /** The first turn's validation issues (at most 80); null while the job runs. */
+  firstTurnIssues?: BenchmarkReportPackValidationIssueDto[] | null;
+  /** The issues left after the last validation (at most 80); null while the job runs. */
+  finalIssues?: BenchmarkReportPackValidationIssueDto[] | null;
+  /** A failed document's last raw writer reply, capped at 200,000 characters; null otherwise. */
+  failedReply?: string | null;
+}
+
+/** One validation issue of a writer turn, as a finished job's progress row reports it. */
+export interface BenchmarkReportPackValidationIssueDto {
+  rule: number;
+  location: string;
+  message: string;
+  /** The offending item was removed from the output. */
+  dropped: boolean;
 }
 
 export interface BenchmarkReportPackJobLogEntryDto {
@@ -3721,6 +3748,100 @@ export interface BenchmarkReportDocumentDetailDto extends BenchmarkReportDocumen
   writerPromptSha256: string;
   validationNotes: BenchmarkReportValidationNote[];
   factsJson: string;
+  /** A Root Cause Analysis' recommended runs, in order (C, then B, then M); null or absent for other documents. */
+  recommendedRuns?: RecommendedRun[] | null;
+  /** A Root Cause Analysis' checks that no run can settle; null or absent for other documents. */
+  checks?: RootCauseCheck[] | null;
+  /** The controls a run- or battery-completion Root Cause Analysis used; null or absent for other documents. */
+  controls?: RootCauseControlDto[] | null;
+}
+
+/** An earlier run of another model on the same questions and graders, read as a control. */
+export interface RootCauseControlDto {
+  /** The model and its thinking level, e.g. "GPT-6 Luna (high)". */
+  modelLabel: string;
+  provider: string;
+  /** Set for a run subject. */
+  runId: number | null;
+  /** Set for a battery subject. */
+  batteryRunId: number | null;
+  completedAtUtc: string;
+  sharedQuestions: number;
+}
+
+/** The controls a Root Cause Analysis of a run or battery run would use now. */
+export interface RootCauseControlsDto {
+  /** At most three, in the order the analysis uses them. */
+  controls: RootCauseControlDto[];
+  /** The confidence cap these controls put on the intelligence hypotheses. */
+  controlLimit: 'None' | 'Moderate' | 'Low';
+  /** The `control` run to make when fewer than two controls qualify; otherwise null. */
+  controlRun: RecommendedRun | null;
+}
+
+/** What a recommended run is for: C (the chat), B (the benchmark itself) or M (the models). */
+export type RecommendedRunPurpose = 'C' | 'B' | 'M';
+
+/**
+ * A run a Root Cause Analysis recommends, with every launcher setting (`RootCauseRecommendedRun`). The
+ * setting names follow `StartBenchmarkRunRequest` and `StartBenchmarkModelBatchRequest`. A null setting
+ * is one the analyzed runs did not share or that no longer resolves; a note says which.
+ */
+export interface RecommendedRun {
+  /** 1-based, in the document's order. */
+  number: number;
+  /** `replicate`, `thinkingPair`, `stylePair`, `panelSwap`, `timeStratum` or `control`. */
+  kind: string;
+  purpose: RecommendedRunPurpose;
+  /** `Required`, `Recommended` or `Optional`. */
+  mark: string;
+  hypothesisIds: string[];
+  /** The decision rule, stated before the run: "confirms H… if …, refutes it if …". */
+  decides: string;
+  /** The comparability the run is predicted to have against the analyzed runs. */
+  predictedTier: string;
+  estimatedCostUsd: number | null;
+  estimatedMinutes: number | null;
+  /** A model-selection run to make only after the system hypotheses are settled. */
+  afterSystemHypotheses: boolean;
+  targetKind: 'Suite' | 'Battery';
+  suiteId: number | null;
+  suiteName: string | null;
+  batteryId: number | null;
+  batteryName: string | null;
+  /** One model under test, or a model batch. */
+  runMode: 'Single' | 'Batch';
+  /** The models under test, in order. */
+  testedModelConfigurationIds: number[];
+  /** The models' names, aligned with `testedModelConfigurationIds`. */
+  modelNames: string[];
+  order: 'Randomized' | 'AsListed';
+  /** Runs per model on a suite, or runs per suite on a battery, of a model batch. */
+  runsPerModel: number;
+  /** The Number of Runs of a single-model run (Runs per Suite on a battery). */
+  runCount: number;
+  scoringProfileId: number | null;
+  verboseMode: boolean | null;
+  allowSourceCodeReferences: boolean | null;
+  assessorModelConfigurationId: number | null;
+  coAssessorModelConfigurationId: number | null;
+  /** The second reader, or a panel's reference reader. */
+  secondOpinionAssessorModelConfigurationId: number | null;
+  /** The second-opinion coverage, as `StartBenchmarkRunRequest.secondOpinionMode` takes it. */
+  secondOpinionMode: number | null;
+  claimVerifierModelConfigurationId: number | null;
+  /** Always null: a recommended run writes no reports. */
+  reportWriterModelConfigurationId: number | null;
+  notes: string[];
+}
+
+/** A Root Cause Analysis check: something to verify by hand that no run can settle. */
+export interface RootCauseCheck {
+  number: number;
+  /** `rubric`, `corpus`, `configuration` or `graders`. */
+  kind: string;
+  text: string;
+  hypothesisIds: string[];
 }
 
 /** Which stored documents to list; every field is optional. */
@@ -4799,7 +4920,7 @@ export class AdminBenchmarkService {
     return this.http.delete<void>(`/api/admin/benchmark/report-documents/${id}`);
   }
 
-  /** Replaces a report document's whole chart set, and the layout the server places it with. */
+  /** Replaces a report document's browser-drawn chart set, and the layout the server places it with; server-drawn charts are kept. */
   putReportDocumentCharts(id: number, charts: ReportDocumentChartUpload[], layout: ReportDocumentChartLayout | null = null):
     Observable<ReportDocumentChartsSummaryDto> {
     return this.http.put<ReportDocumentChartsSummaryDto>(`/api/admin/benchmark/report-documents/${id}/charts`,
@@ -4809,6 +4930,12 @@ export class AdminBenchmarkService {
   /** Removes every chart of a report document. */
   deleteReportDocumentCharts(id: number): Observable<void> {
     return this.http.delete<void>(`/api/admin/benchmark/report-documents/${id}/charts`);
+  }
+
+  /** Re-draws a stored Root Cause Analysis' server-drawn charts from its stored facts; its browser charts are kept. */
+  redrawReportDocumentCharts(documentId: number): Observable<ReportDocumentChartsSummaryDto> {
+    return this.http.post<ReportDocumentChartsSummaryDto>(
+      `/api/admin/benchmark/report-documents/${documentId}/charts/redraw`, {});
   }
 
   /**
@@ -4838,6 +4965,11 @@ export class AdminBenchmarkService {
   /** What writing the run's documents with this writer would cost, and whether it is refused or warned. No model call. */
   estimateRunReports(runId: number, request: BenchmarkRunReportEstimateRequest): Observable<BenchmarkRunReportEstimateDto> {
     return this.http.post<BenchmarkRunReportEstimateDto>(`/api/admin/benchmark/runs/${runId}/report-documents/estimate`, request);
+  }
+
+  /** The controls a Root Cause Analysis of this run would use now, and the control run to make when too few qualify. */
+  getRunRootCauseControls(runId: number): Observable<RootCauseControlsDto> {
+    return this.http.get<RootCauseControlsDto>(`/api/admin/benchmark/runs/${runId}/root-cause-controls`);
   }
 
   /** Deletes one of the run's AI-written documents. 204; 409 `{ error }` while the run's reports are being written. */
@@ -4870,6 +5002,11 @@ export class AdminBenchmarkService {
   /** What writing the battery run's documents with this writer would cost, and whether it is refused or warned. No model call. */
   estimateBatteryReports(batteryRunId: number, request: BenchmarkRunReportEstimateRequest): Observable<BenchmarkRunReportEstimateDto> {
     return this.http.post<BenchmarkRunReportEstimateDto>(`${BATTERIES_ENDPOINT}/runs/${batteryRunId}/report-documents/estimate`, request);
+  }
+
+  /** The controls a Root Cause Analysis of this battery run would use now, and the control run to make when too few qualify. */
+  getBatteryRootCauseControls(batteryRunId: number): Observable<RootCauseControlsDto> {
+    return this.http.get<RootCauseControlsDto>(`${BATTERIES_ENDPOINT}/runs/${batteryRunId}/root-cause-controls`);
   }
 
   /** Deletes one of the battery run's AI-written documents. 204; 409 `{ error }` while they are being written. */

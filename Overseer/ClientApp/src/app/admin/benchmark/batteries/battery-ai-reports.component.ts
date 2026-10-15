@@ -39,6 +39,8 @@ import {
 } from '../run-ai-reports/report-documents-tab.base';
 import { BATTERY_REPORT_WRITER_ADVICE } from '../run-ai-reports/report-writer-advice';
 import { ReportWriterCandidate } from '../run-ai-reports/report-writer-policy';
+import { RootCauseControlsComponent } from '../run-ai-reports/root-cause-controls.component';
+import { RootCauseRunsComponent } from '../report-pack/root-cause-runs.component';
 import {
   ReportJobSource,
   RunReportWritingContext,
@@ -94,7 +96,9 @@ let nextInstanceId = 0;
     InfoTipComponent,
     RunReportWritingDialogComponent,
     PdfViewerDialogComponent,
-    BenchmarkDownloadCenterComponent
+    BenchmarkDownloadCenterComponent,
+    RootCauseControlsComponent,
+    RootCauseRunsComponent
   ],
   templateUrl: '../run-ai-reports/run-ai-reports.component.html',
   styleUrls: ['../run-ai-reports/run-ai-reports.component.scss', './battery-ai-reports.component.scss'],
@@ -138,6 +142,7 @@ export class BatteryAiReportsComponent extends ReportDocumentsTabBase<BenchmarkB
   override readonly changedSinceText = 'A member run changed since this document was written';
   override readonly downloadsNoticeText = 'These reports can be downloaded from the Download Center as PDF, Word or Markdown, ' +
     'at Summary, Detailed or Full disclosure, one by one or together in a ZIP with the battery\'s analysis report.';
+  override readonly controlsSubjectKind = 'battery';
 
   protected override readonly subjectNoun = 'battery run';
   protected override readonly api: ReportDocumentsApi<BenchmarkBatteryRunDto> = {

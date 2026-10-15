@@ -187,7 +187,7 @@ function chartDocumentOf(doc: BenchmarkReportDocumentListItemDto): CcReportChart
 
 /**
  * Step 5 of the Chat Consistency wizard, *Reports*, in Model Comparison step 3's layout: a resizable
- * sidebar with the analysis's four documents (a written one with View and Delete, an unwritten one
+ * sidebar with the analysis's two documents (a written one with View and Delete, an unwritten one
  * with its Write checkbox) and Update charts, the charts each document type carries
  * (`app-report-chart-picker`, remembered per browser), the report writer, its estimate and Write
  * Reports; and a main area that follows the job (the stage rail, the stat strip, one row per document,
@@ -430,7 +430,7 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   /**
-   * Nothing is left to write: the three documents every analysis has are written, and the Provider
+   * Nothing is left to write: the Executive Summary every analysis has is written, and the Provider
    * Issue Report is written or, by the estimate, cannot be.
    */
   get allWritten(): boolean {

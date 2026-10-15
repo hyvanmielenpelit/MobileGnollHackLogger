@@ -318,6 +318,10 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
     estimateRunReports: vi.fn().mockName("AdminBenchmarkService.estimateRunReports"),
     deleteRunReportDocument: vi.fn().mockName("AdminBenchmarkService.deleteRunReportDocument"),
     reportDocumentPdfUrl: vi.fn().mockName("AdminBenchmarkService.reportDocumentPdfUrl"),
+    getRunRootCauseControls: vi.fn().mockName("AdminBenchmarkService.getRunRootCauseControls"),
+    getBatteryRootCauseControls: vi.fn().mockName("AdminBenchmarkService.getBatteryRootCauseControls"),
+    getReportDocument: vi.fn().mockName("AdminBenchmarkService.getReportDocument"),
+    redrawReportDocumentCharts: vi.fn().mockName("AdminBenchmarkService.redrawReportDocumentCharts"),
     getBatteries: vi.fn().mockName("AdminBenchmarkService.getBatteries"),
     getBattery: vi.fn().mockName("AdminBenchmarkService.getBattery"),
     createBattery: vi.fn().mockName("AdminBenchmarkService.createBattery"),
@@ -422,6 +426,11 @@ export async function createAdminBenchmarkFixture(): Promise<AdminBenchmarkSpecC
   }));
   benchmarkServiceMock.deleteRunReportDocument.mockReturnValue(of(undefined));
   benchmarkServiceMock.reportDocumentPdfUrl.mockReturnValue('/api/admin/benchmark/report-documents/0/render/pdf');
+  // Its Controls line looks up the Root Cause Analysis' controls; none qualify and no control run is proposed.
+  benchmarkServiceMock.getRunRootCauseControls.mockReturnValue(of({ controls: [], controlLimit: 'Low' as const, controlRun: null }));
+  benchmarkServiceMock.getBatteryRootCauseControls.mockReturnValue(of({ controls: [], controlLimit: 'Low' as const, controlRun: null }));
+  benchmarkServiceMock.getReportDocument.mockReturnValue(of({ controls: [], recommendedRuns: [], checks: [] } as any));
+  benchmarkServiceMock.redrawReportDocumentCharts.mockReturnValue(of({ documentId: 0, chartCount: 0, figureKeys: [], settingsHash: null }));
   benchmarkServiceMock.getBoardFactsCheck.mockReturnValue(of(null));
 
   benchmarkServiceMock.getActiveDifficultyAssessment.mockReturnValue(of(null));

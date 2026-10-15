@@ -297,8 +297,8 @@ public class StartBenchmarkRunRequest
     public long? ClaimVerifierModelConfigurationId { get; set; }
 
     /// <summary>
-    /// Optional. When set, this configuration writes the run's Executive Summary and Report for AI
-    /// Researchers and Developers once, after the run completes. It may not be the model under test;
+    /// Optional. When set, this configuration writes the run's Executive Summary and Root Cause
+    /// Analysis once, after the run completes. It may not be the model under test;
     /// another model of its provider needs <see cref="AcknowledgeSameProviderReportWriter"/>. Null
     /// writes nothing; the run report dialog can write them later. Not a comparability key.
     /// </summary>

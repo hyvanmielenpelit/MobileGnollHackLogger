@@ -23,11 +23,15 @@ import { BenchmarkLauncherRunMode, BenchmarkModelBatchOrderChoice, BenchmarkRunS
 import { parsePromptOptions, refusalText } from '../benchmark-run-format';
 import { BenchmarkWorkspaceStore } from './benchmark-workspace.store';
 import { BenchmarkViewSync } from './benchmark-view-sync.service';
-import type { ModelBatchPrefill } from './benchmark-shell-bridge.service';
+import type { LauncherSetupPrefill, ModelBatchPrefill } from './benchmark-shell-bridge.service';
 
-/** A run whose setup the launcher took over, and each recorded setting it could not take over. */
+/**
+ * A setup the launcher took over, and each setting it could not take over: a run's recorded setup
+ * (`runId`), or a recommended run's settings (`sourceLabel`, the note's heading).
+ */
 export interface BenchmarkRunPrefillResult {
-  runId: number;
+  runId: number | null;
+  sourceLabel?: string;
   notes: string[];
 }
 
@@ -186,8 +190,8 @@ export class BenchmarkLauncherState implements OnDestroy {
   claimVerifierConfigId: number | null = null;
 
   /**
-   * Optional model: writes the run's Executive Summary and Report for AI Researchers and Developers
-   * once, after the run is scored. Null means no AI-written reports, which is the default.
+   * Optional model: writes the run's Executive Summary and Root Cause Analysis once, after the run
+   * is scored. Null means no AI-written reports, which is the default.
    */
   reportWriterConfigId: number | null = null;
 
@@ -676,12 +680,20 @@ export class BenchmarkLauncherState implements OnDestroy {
   /** The run whose setup waits for prefillReady. */
   private pendingPrefillRun: BenchmarkRunDetailDto | null = null;
 
+  /** The recommended run whose settings wait for prefillReady. */
+  private pendingPrefillSetup: LauncherSetupPrefill | null = null;
+
   /** The last applied prefill, for the note on the Run Benchmark panel; null when there is none to show. */
   prefillResult: BenchmarkRunPrefillResult | null = null;
 
   /** The run whose setup is waiting to be applied, or null. */
   get pendingPrefillRunId(): number | null {
     return this.pendingPrefillRun?.id ?? null;
+  }
+
+  /** The note heading of the recommended run waiting to be applied, or null. */
+  get pendingPrefillSetupLabel(): string | null {
+    return this.pendingPrefillSetup?.sourceLabel ?? null;
   }
 
   /**
@@ -697,7 +709,20 @@ export class BenchmarkLauncherState implements OnDestroy {
   /** Fills the launcher from the run's recorded setup, now or once prefillReady holds. */
   prefillFromRun(run: BenchmarkRunDetailDto): void {
     this.prefillResult = null;
+    this.pendingPrefillSetup = null;
     this.pendingPrefillRun = run;
+    this.applyPendingPrefill();
+  }
+
+  /**
+   * Fills the launcher from a recommended run's settings, now or once prefillReady holds. Every
+   * non-null setting is applied; one the lists no longer offer keeps the field as it is and adds a
+   * note naming it. The report writer is cleared. Nothing starts.
+   */
+  prefillFromSetup(setup: LauncherSetupPrefill): void {
+    this.prefillResult = null;
+    this.pendingPrefillRun = null;
+    this.pendingPrefillSetup = setup;
     this.applyPendingPrefill();
   }
 
@@ -707,11 +732,20 @@ export class BenchmarkLauncherState implements OnDestroy {
   }
 
   private applyPendingPrefill(): void {
+    if (!this.prefillReady) return;
     const run = this.pendingPrefillRun;
-    if (!run || !this.prefillReady) return;
-    this.pendingPrefillRun = null;
-    this.prefillResult = { runId: run.id, notes: this.applyRunSetup(run) };
-    // The run's setup replaces the restored selections the notes describe.
+    const setup = this.pendingPrefillSetup;
+    if (run) {
+      this.pendingPrefillRun = null;
+      this.prefillResult = { runId: run.id, notes: this.applyRunSetup(run) };
+    } else if (setup) {
+      this.pendingPrefillSetup = null;
+      this.prefillResult = { runId: null, sourceLabel: setup.sourceLabel, notes: this.applySetup(setup) };
+      this.requestPreflight();
+    } else {
+      return;
+    }
+    // The applied setup replaces the restored selections the notes describe.
     this.restoreNotes = [];
     this.persistRunSettings();
     this.loadLastAssessor();
@@ -807,6 +841,166 @@ export class BenchmarkLauncherState implements OnDestroy {
     this.runTargetKind = 'suite';
     this.runMode = 'single';
     return notes;
+  }
+
+  /** A configuration's name for a note: the stored name, else the configuration's own, else its id. */
+  private configName(id: number, storedName?: string | null): string {
+    const stored = (storedName ?? '').trim();
+    if (stored) return stored;
+    const config = this.workspace.systemConfigs.find(c => c.id === id);
+    return config?.displayName || config?.modelId || `configuration #${id}`;
+  }
+
+  /**
+   * The server's note for a field the analyzed runs did not share: *The analyzed runs differ on
+   * AssessorModelConfigurationId, so it is left for you to choose.*
+   */
+  private static readonly DIFFERING_GRADER_NOTE =
+    /differ on (AssessorModelConfigurationId|CoAssessorModelConfigurationId|SecondOpinionAssessorModelConfigurationId|SecondOpinionMode|ClaimVerifierModelConfigurationId)\b/;
+
+  /**
+   * Copies a recommended run's settings into the form; returns a note per setting it kept back, then the
+   * recommendation's own. The graders are one set, applied whole with null as none, so the run is graded
+   * as the analyzed runs were; when the server notes that the runs did not share a grader, the current
+   * graders are kept and that note says why. Every other setting is applied only when it is not null.
+   */
+  private applySetup(setup: LauncherSetupPrefill): string[] {
+    const notes: string[] = [];
+    const capable = this.workspace.benchmarkCapableConfigs;
+    const qualifies = (id: number | null | undefined): id is number => id != null && capable.some(c => c.id === id);
+
+    // Earlier runs are never reused, and a recommended run writes no reports.
+    this.reuseEarlierRuns = false;
+    this.reportWriterConfigId = null;
+    this.batchModelsHint = null;
+
+    this.runTargetKind = setup.targetKind === 'Battery' ? 'battery' : 'suite';
+    if (setup.suiteId != null) {
+      if (this.workspace.suites.some(s => s.id === setup.suiteId)) {
+        this.selectedSuiteId = setup.suiteId;
+      } else {
+        notes.push(`Benchmark Suite: ${setup.suiteName || `suite #${setup.suiteId}`} no longer exists, so the selected suite was kept.`);
+      }
+    }
+    if (setup.batteryId != null) {
+      if (this.runnableBatteries.some(b => b.id === setup.batteryId)) {
+        this.selectedBatteryId = setup.batteryId;
+      } else {
+        notes.push(`Battery: ${setup.batteryName || `battery #${setup.batteryId}`} cannot be run now (deleted, archived or with a broken suite), so the selected battery was kept.`);
+        if (this.selectedBatteryId == null) {
+          this.selectedBatteryId = this.runnableBatteries[0]?.id ?? null;
+        }
+      }
+    }
+
+    if (setup.scoringProfileId != null) {
+      if (this.workspace.scoringProfiles.some(p => p.id === setup.scoringProfileId)) {
+        this.selectedScoringProfileId = setup.scoringProfileId;
+      } else {
+        notes.push(`Scoring Profile: profile #${setup.scoringProfileId} no longer exists, so the selected profile was kept.`);
+      }
+    }
+
+    this.runMode = setup.runMode === 'Batch' ? 'batch' : 'single';
+    const ids = setup.testedModelConfigurationIds ?? [];
+    if (ids.length > 0) {
+      const names = setup.modelNames ?? [];
+      const kept = ids.filter(qualifies);
+      ids.forEach((id, i) => {
+        if (!qualifies(id)) {
+          notes.push(`Model Under Test: ${this.configName(id, names[i])} is no longer available for benchmark runs, so it was left out.`);
+        }
+      });
+      if (this.isModelBatch) {
+        this.setBatchModels(kept);
+        if (setup.order === 'AsListed') {
+          this.batchOrder = 'asListed';
+          this.setBatchOrderKeys(kept);
+        } else {
+          this.batchOrder = 'randomized';
+        }
+      } else if (kept.length > 0) {
+        this.testedConfigId = kept[0];
+      }
+    }
+
+    if (!setup.notes.some(note => BenchmarkLauncherState.DIFFERING_GRADER_NOTE.test(note))) {
+      this.applyGraders(setup, notes);
+    }
+
+    if (setup.verboseMode != null) {
+      this.candidateVerboseMode = setup.verboseMode;
+    }
+    if (setup.allowSourceCodeReferences != null) {
+      this.candidateAllowSourceCodeReferences = setup.allowSourceCodeReferences;
+    }
+
+    // A batch's runs are Runs per model (Runs per Suite on a battery); a single model's, Number of Runs (Runs per Suite).
+    if (this.isModelBatch && !this.isBatteryTarget) {
+      this.applyRunsField('Runs per model', setup.runsPerModel, notes, v => { this.batchRunsPerModel = v; },
+        () => this.effectiveBatchRunsPerModel);
+    } else {
+      this.applyRunsField(this.isBatteryTarget ? 'Runs per Suite' : 'Number of Runs',
+        this.isModelBatch ? setup.runsPerModel : setup.runCount, notes, v => { this.runCount = v; },
+        () => this.effectiveRunCount);
+    }
+
+    const serverNotes = setup.notes.filter(note => note.trim() !== '');
+    if (setup.kind === 'timeStratum' && !serverNotes.some(note => note.includes('different time of day'))) {
+      notes.push('Start each of these runs at a different time of day from the earlier ones: this recommendation compares times of day.');
+    }
+    notes.push(...serverNotes);
+    return notes;
+  }
+
+  /**
+   * Applies the grader set as the analyzed runs had it: a null role is none, and a null coverage follows
+   * the profile. A role whose configuration no longer qualifies keeps the current choice, with a note.
+   */
+  private applyGraders(setup: LauncherSetupPrefill, notes: string[]): void {
+    const capable = this.workspace.benchmarkCapableConfigs;
+    const role = (label: string, id: number | null, assign: (value: number | null) => void): void => {
+      if (id == null) {
+        assign(null);
+      } else if (capable.some(c => c.id === id)) {
+        assign(id);
+      } else {
+        notes.push(`${label}: ${this.configName(id)} is no longer available for benchmark runs, so the current choice was kept.`);
+      }
+    };
+    if (setup.assessorModelConfigurationId == null) {
+      notes.push('Assessor: the recommendation names none, so choose one before starting.');
+    }
+    role('Assessor', setup.assessorModelConfigurationId, v => { this.assessorConfigId = v; });
+    role('Co-Assessor', setup.coAssessorModelConfigurationId, v => { this.coAssessorConfigId = v; });
+    role(this.isPanelLaunch ? 'Reference Reader' : 'Second Reader', setup.secondOpinionAssessorModelConfigurationId,
+      v => { this.secondOpinionConfigId = v; });
+    role('Claim Verifier', setup.claimVerifierModelConfigurationId, v => { this.claimVerifierConfigId = v; });
+
+    const mode = setup.secondOpinionMode;
+    if (mode == null) {
+      this.secondOpinionModeOverride = null;
+    } else if (this.secondOpinionModeOptions.some(o => o.value === mode)) {
+      this.secondOpinionModeOverride = mode;
+    } else {
+      notes.push(`Second-opinion coverage: mode ${mode} is not one the launcher offers, so the current coverage was kept.`);
+    }
+  }
+
+  /** Sets a runs field and clamps it to its limit; a field set to 3, or held below the request by its limit, gets a note. */
+  private applyRunsField(label: string, requested: number | null, notes: string[], assign: (value: number) => void,
+                         effective: () => number): void {
+    if (requested == null || !Number.isFinite(requested) || requested < 1) return;
+    const value = Math.floor(requested);
+    assign(value);
+    this.clampRunCountToTarget();
+    const applied = effective();
+    if (applied < value) {
+      assign(applied);
+      notes.push(`${label} was set to ${applied}, the most allowed; this recommendation asks for ${value}.`);
+    } else if (value === 3) {
+      notes.push(`${label} was set to 3 for this recommendation.`);
+    }
   }
 
   // --- Run Execution ---

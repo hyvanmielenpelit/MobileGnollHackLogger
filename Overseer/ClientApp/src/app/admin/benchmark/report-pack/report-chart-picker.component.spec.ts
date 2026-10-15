@@ -4,12 +4,13 @@ import { BenchmarkReportAudience } from '../../../services/admin-benchmark.servi
 import {
   REPORT_CHART_COLUMN_DISABLED_REASON,
   REPORT_CHART_LAYOUT_FIELDS,
+  REPORT_CHART_SERVER_DRAWN_NOTE,
   REPORT_PACK_PICKER_FIGURES,
   ReportChartPickerAudienceOption,
   ReportChartPickerComponent,
   ReportChartPickerFigure
 } from './report-chart-picker.component';
-import { REPORT_PACK_AUDIENCES } from './report-document-format';
+import { COMPARISON_REPORT_AUDIENCE_OPTIONS, MODEL_REPORT_AUDIENCE_OPTIONS } from './report-document-format';
 import {
   DEFAULT_CHART_LAYOUT_SETTINGS,
   DEFAULT_CHART_SELECTION,
@@ -22,8 +23,10 @@ import {
   documentChartRefusal
 } from './report-charts';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
+const { ExecutiveSummary, RootCauseAnalysis } = BenchmarkReportAudience;
 const ALL_KEYS = REPORT_CHART_FIGURES.map(figure => figure.key);
+/** The browser-drawn figures the Root Cause Analysis places, in placement order. */
+const RCA_KEYS = ['p1a-quality', 'p1b-speed', 'p1c-cost', 's1-quality-speed', 's2-quality-cost'];
 
 describe('ReportChartPickerComponent', () => {
   let fixture: ComponentFixture<ReportChartPickerComponent>;
@@ -79,9 +82,9 @@ describe('ReportChartPickerComponent', () => {
     expect(q('table')).toBeNull();
 
     const tabs = Array.from(host.querySelectorAll<HTMLElement>('[role="tablist"] [role="tab"]'));
-    expect(tabs.map(t => text(t.querySelector('.rcp-tab-name')))).toEqual(['Executive', 'Researchers', 'Internal']);
-    expect(tabs.map(t => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
-    expect(tabs.map(t => t.getAttribute('tabindex'))).toEqual(['0', '-1', '-1']);
+    expect(tabs.map(t => text(t.querySelector('.rcp-tab-name')))).toEqual(['Executive', 'Root Cause']);
+    expect(tabs.map(t => t.getAttribute('aria-selected'))).toEqual(['true', 'false']);
+    expect(tabs.map(t => t.getAttribute('tabindex'))).toEqual(['0', '-1']);
     expect(tabs[0].getAttribute('aria-controls')).toBe(`rcp-panel-${ExecutiveSummary}`);
 
     const panel = q('[role="tabpanel"]')!;
@@ -104,20 +107,28 @@ describe('ReportChartPickerComponent', () => {
     const placement = q(`#${exec.getAttribute('aria-describedby')}`)!;
     expect(text(placement)).toBe('How it compares');
 
-    select(TechnicalReport);
-    expect(cell(TechnicalReport, 's1-quality-speed').getAttribute('aria-label'))
-      .toBe('Include Intelligence against speed in the Report for AI Researchers and Developers');
-    expect(text(q(`#rcp-${TechnicalReport}-p1a-quality-placement`))).toBe('Results against peers → Quality');
-
-    select(InternalBrief);
-    expect(cell(InternalBrief, 'p1c-cost').getAttribute('aria-label')).toBe('Include Cost in the Internal Improvement Brief');
-    expect(text(q(`#rcp-${InternalBrief}-p2-profile-placement`))).toBe('§3 Key figures');
+    select(RootCauseAnalysis);
+    expect(cell(RootCauseAnalysis, 's1-quality-speed').getAttribute('aria-label'))
+      .toBe('Include Intelligence against speed in the Root Cause Analysis');
+    expect(text(q(`#rcp-${RootCauseAnalysis}-p1a-quality-placement`))).toBe('Evidence: intelligence');
+    expect(cell(RootCauseAnalysis, 'p1c-cost').getAttribute('aria-label')).toBe('Include Cost in the Root Cause Analysis');
+    expect(text(q(`#rcp-${RootCauseAnalysis}-p2-profile-placement`))).toBe(REPORT_CHART_NOT_DRAWN);
   });
 
   it('shows the default selection', () => {
     expect(checkedIn(ExecutiveSummary)).toEqual(['p1a-quality', 's2-quality-cost']);
-    expect(checkedIn(TechnicalReport)).toEqual(ALL_KEYS);
-    expect(checkedIn(InternalBrief)).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost']);
+    expect(checkedIn(RootCauseAnalysis)).toEqual(RCA_KEYS);
+  });
+
+  it('notes the Root Cause Analysis\' four server-drawn charts under its figures, and nowhere else', () => {
+    expect(q('.rcp-server-note')).toBeNull();
+
+    select(RootCauseAnalysis);
+    expect(text(q('.rcp-server-note'))).toBe(REPORT_CHART_SERVER_DRAWN_NOTE);
+    expect(REPORT_CHART_SERVER_DRAWN_NOTE).toBe('The Root Cause Analysis also carries four charts drawn by Overseer: where the points '
+      + 'were lost, where the time goes, where the cost goes, and how sure each hypothesis is.');
+    // The server-drawn charts are never listed as figures to choose.
+    expect(host.querySelector('[data-figure^="r1-"], [data-figure^="r4-"]')).toBeNull();
   });
 
   it('emits the normalized selection when a checkbox changes', () => {
@@ -126,7 +137,7 @@ describe('ReportChartPickerComponent', () => {
 
     expect(emitted.length).toBe(1);
     expect(emitted[0][ExecutiveSummary]).toEqual(['p1a-quality', 'p1c-cost', 's2-quality-cost']);
-    expect(emitted[0][TechnicalReport]).toEqual(ALL_KEYS);
+    expect(emitted[0][RootCauseAnalysis]).toEqual(RCA_KEYS);
 
     cell(ExecutiveSummary, 'p1a-quality').click();
     fixture.detectChanges();
@@ -137,13 +148,13 @@ describe('ReportChartPickerComponent', () => {
   it('offers All and None per document, each named for its document', () => {
     expect(text(button('all', ExecutiveSummary))).toBe('All charts in the Executive Summary');
 
-    select(TechnicalReport);
-    const none = button('none', TechnicalReport);
-    expect(text(none)).toBe('None of the charts in the Report for AI Researchers and Developers');
+    select(RootCauseAnalysis);
+    const none = button('none', RootCauseAnalysis);
+    expect(text(none)).toBe('None of the charts in the Root Cause Analysis');
     none.click();
     fixture.detectChanges();
-    expect(emitted[0][TechnicalReport]).toEqual([]);
-    expect(checkedIn(TechnicalReport)).toEqual([]);
+    expect(emitted[0][RootCauseAnalysis]).toEqual([]);
+    expect(checkedIn(RootCauseAnalysis)).toEqual([]);
 
     select(ExecutiveSummary);
     button('all', ExecutiveSummary).click();
@@ -153,22 +164,22 @@ describe('ReportChartPickerComponent', () => {
   });
 
   it('switches documents by click and by the keyboard', () => {
-    select(TechnicalReport);
-    expect(selectedTab()).toBe(String(TechnicalReport));
-    expect(q('[role="tabpanel"]')!.id).toBe(`rcp-panel-${TechnicalReport}`);
-    expect(text(q('.rcp-panel-title'))).toBe('Report for AI Researchers and Developers');
-    expect(tab(TechnicalReport).getAttribute('tabindex')).toBe('0');
+    select(RootCauseAnalysis);
+    expect(selectedTab()).toBe(String(RootCauseAnalysis));
+    expect(q('[role="tabpanel"]')!.id).toBe(`rcp-panel-${RootCauseAnalysis}`);
+    expect(text(q('.rcp-panel-title'))).toBe('Root Cause Analysis');
+    expect(tab(RootCauseAnalysis).getAttribute('tabindex')).toBe('0');
     expect(tab(ExecutiveSummary).getAttribute('tabindex')).toBe('-1');
 
     const steps: [string, BenchmarkReportAudience][] = [
-      ['ArrowRight', InternalBrief],
       ['ArrowRight', ExecutiveSummary],
-      ['ArrowLeft', InternalBrief],
+      ['ArrowLeft', RootCauseAnalysis],
       ['Home', ExecutiveSummary],
-      ['End', InternalBrief],
-      ['ArrowLeft', TechnicalReport]
+      ['End', RootCauseAnalysis],
+      ['ArrowLeft', ExecutiveSummary],
+      ['ArrowRight', RootCauseAnalysis]
     ];
-    tab(TechnicalReport).focus();
+    tab(RootCauseAnalysis).focus();
     for (const [key, expected] of steps) {
       const event = press(document.activeElement as HTMLElement, key);
       expect(event.defaultPrevented, key).toBe(true);
@@ -177,29 +188,30 @@ describe('ReportChartPickerComponent', () => {
       expect(q('[role="tabpanel"]')!.id, key).toBe(`rcp-panel-${expected}`);
     }
 
-    const other = press(tab(TechnicalReport), 'Enter');
+    const other = press(tab(RootCauseAnalysis), 'Enter');
     expect(other.defaultPrevented).toBe(false);
-    expect(selectedTab()).toBe(String(TechnicalReport));
+    expect(selectedTab()).toBe(String(RootCauseAnalysis));
     expect(emitted).toEqual([]);
   });
 
   it('counts the selection on each segment', () => {
     const counts = (): string[] => Array.from(host.querySelectorAll('.rcp-tab-count')).map(count => text(count));
-    expect(counts()).toEqual(['2', '8', '3']);
+    expect(counts()).toEqual(['2', '5']);
     expect(q('.rcp-tab-count')!.getAttribute('aria-hidden')).toBe('true');
     expect(text(tab(ExecutiveSummary).querySelector('.visually-hidden'))).toBe(', 2 of 8 charts');
+    expect(text(tab(RootCauseAnalysis).querySelector('.visually-hidden'))).toBe(', 5 of 5 charts');
 
     cell(ExecutiveSummary, 'p1c-cost').click();
     fixture.detectChanges();
-    expect(counts()).toEqual(['3', '8', '3']);
+    expect(counts()).toEqual(['3', '5']);
     expect(text(tab(ExecutiveSummary).querySelector('.visually-hidden'))).toBe(', 3 of 8 charts');
   });
 
   it('keeps an unchecked document selectable but inert, with the reason', () => {
-    fixture.componentRef.setInput('enabledAudiences', [ExecutiveSummary, TechnicalReport]);
+    fixture.componentRef.setInput('enabledAudiences', [ExecutiveSummary]);
     fixture.detectChanges();
 
-    const briefTab = tab(InternalBrief);
+    const briefTab = tab(RootCauseAnalysis);
     expect(briefTab.classList).toContain('is-unchecked');
     expect(text(briefTab.querySelector('.rcp-tab-count'))).toBe('—');
     expect(text(briefTab.querySelector('.visually-hidden'))).toBe(', not checked under Documents of this comparison');
@@ -208,45 +220,45 @@ describe('ReportChartPickerComponent', () => {
     expect(button('all', ExecutiveSummary).hasAttribute('aria-disabled')).toBe(false);
     expect(q(`#rcp-col-${ExecutiveSummary}-reason`)).toBeNull();
 
-    select(InternalBrief);
-    const brief = cell(InternalBrief, 'p1a-quality');
+    select(RootCauseAnalysis);
+    const brief = cell(RootCauseAnalysis, 'p1a-quality');
     expect(brief.disabled).toBe(false);
     expect(brief.getAttribute('aria-disabled')).toBe('true');
-    const reason = q(`#rcp-col-${InternalBrief}-reason`)!;
+    const reason = q(`#rcp-col-${RootCauseAnalysis}-reason`)!;
     expect(text(reason)).toBe('Not checked under Documents of this comparison');
-    expect(brief.getAttribute('aria-describedby')).toContain(`rcp-col-${InternalBrief}-reason`);
-    expect(button('all', InternalBrief).getAttribute('aria-disabled')).toBe('true');
-    expect(button('none', InternalBrief).getAttribute('aria-describedby')).toBe(`rcp-col-${InternalBrief}-reason`);
+    expect(brief.getAttribute('aria-describedby')).toContain(`rcp-col-${RootCauseAnalysis}-reason`);
+    expect(button('all', RootCauseAnalysis).getAttribute('aria-disabled')).toBe('true');
+    expect(button('none', RootCauseAnalysis).getAttribute('aria-describedby')).toBe(`rcp-col-${RootCauseAnalysis}-reason`);
 
     // Inert: the click changes nothing and emits nothing.
     brief.click();
-    button('none', InternalBrief).click();
-    button('all', InternalBrief).click();
+    button('none', RootCauseAnalysis).click();
+    button('all', RootCauseAnalysis).click();
     fixture.detectChanges();
     expect(brief.checked).toBe(true);
     expect(emitted).toEqual([]);
   });
 
   it('defaults to the first document being written', () => {
-    fixture.componentRef.setInput('enabledAudiences', [TechnicalReport]);
+    fixture.componentRef.setInput('enabledAudiences', [RootCauseAnalysis]);
     fixture.detectChanges();
-    expect(selectedTab()).toBe(String(TechnicalReport));
-    expect(q('[role="tabpanel"]')!.id).toBe(`rcp-panel-${TechnicalReport}`);
+    expect(selectedTab()).toBe(String(RootCauseAnalysis));
+    expect(q('[role="tabpanel"]')!.id).toBe(`rcp-panel-${RootCauseAnalysis}`);
   });
 
   it('lists a figure the comparison cannot draw, unchecked and aria-disabled, with the reason', () => {
     fixture.componentRef.setInput('available', ALL_KEYS.filter(key => key !== 'p2-profile' && key !== 's3-speed-cost'));
     fixture.componentRef.setInput('unavailableReasons', { 's3-speed-cost': 'no cost measured' });
     fixture.detectChanges();
-    select(TechnicalReport);
+    select(ExecutiveSummary);
 
-    const profile = cell(TechnicalReport, 'p2-profile');
+    const profile = cell(ExecutiveSummary, 'p2-profile');
     expect(profile.getAttribute('aria-disabled')).toBe('true');
     expect(profile.checked).toBe(false);
     expect(text(q('#rcp-row-p2-profile-reason'))).toBe('needs three or more models');
     expect(profile.getAttribute('aria-describedby')).toContain('rcp-row-p2-profile-reason');
     expect(text(q('#rcp-row-s3-speed-cost-reason'))).toBe('no cost measured');
-    expect(text(tab(TechnicalReport).querySelector('.visually-hidden'))).toBe(', 6 of 6 charts');
+    expect(text(tab(ExecutiveSummary).querySelector('.visually-hidden'))).toBe(', 2 of 6 charts');
 
     profile.click();
     fixture.detectChanges();
@@ -254,13 +266,13 @@ describe('ReportChartPickerComponent', () => {
     expect(emitted).toEqual([]);
 
     // All takes only the figures the comparison can draw.
-    button('all', TechnicalReport).click();
+    button('all', ExecutiveSummary).click();
     fixture.detectChanges();
-    expect(emitted[0][TechnicalReport]).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost', 's1-quality-speed', 's2-quality-cost', 'a1-availability']);
+    expect(emitted[0][ExecutiveSummary]).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost', 's1-quality-speed', 's2-quality-cost', 'a1-availability']);
   });
 
   it('shows one document type without a tab row', () => {
-    fixture.componentRef.setInput('audiences', [InternalBrief]);
+    fixture.componentRef.setInput('audiences', [RootCauseAnalysis]);
     fixture.detectChanges();
 
     expect(q('[role="tablist"]')).toBeNull();
@@ -269,34 +281,33 @@ describe('ReportChartPickerComponent', () => {
     expect(panel.getAttribute('role')).toBe('group');
     expect(panel.hasAttribute('tabindex')).toBe(false);
     const title = q(`#${panel.getAttribute('aria-labelledby')}`)!;
-    expect(text(title)).toBe('Internal Improvement Brief');
+    expect(text(title)).toBe('Root Cause Analysis');
     expect(panel.querySelectorAll('input[type="checkbox"]').length).toBe(8);
-    expect(cell(InternalBrief, 'p1a-quality').checked).toBe(true);
+    expect(cell(RootCauseAnalysis, 'p1a-quality').checked).toBe(true);
   });
 
   it('falls back when the active document leaves', () => {
-    select(InternalBrief);
-    expect(selectedTab()).toBe(String(InternalBrief));
+    select(RootCauseAnalysis);
+    expect(selectedTab()).toBe(String(RootCauseAnalysis));
 
-    fixture.componentRef.setInput('audiences', [ExecutiveSummary, TechnicalReport]);
+    fixture.componentRef.setInput('audiences', [ExecutiveSummary]);
     fixture.detectChanges();
-    expect(selectedTab()).toBe(String(ExecutiveSummary));
-    expect(q('[role="tabpanel"]')!.id).toBe(`rcp-panel-${ExecutiveSummary}`);
+    expect(q('.rcp-doc-panel')!.id).toBe(`rcp-panel-${ExecutiveSummary}`);
   });
 
   it('takes a new selection from its host', () => {
     fixture.componentRef.setInput('selection', { [ExecutiveSummary]: ['p1b-speed'] });
     fixture.detectChanges();
     expect(checkedIn(ExecutiveSummary)).toEqual(['p1b-speed']);
-    expect(checkedIn(TechnicalReport)).toEqual([]);
+    expect(checkedIn(RootCauseAnalysis)).toEqual([]);
   });
 
   it('never touches localStorage; the host stores the selection', () => {
     const setItem = vi.spyOn(localStorage, 'setItem');
     const getItem = vi.spyOn(localStorage, 'getItem');
     cell(ExecutiveSummary, 'p1c-cost').click();
-    select(InternalBrief);
-    button('none', InternalBrief).click();
+    select(RootCauseAnalysis);
+    button('none', RootCauseAnalysis).click();
     fixture.detectChanges();
     expect(setItem).not.toHaveBeenCalled();
     expect(getItem).not.toHaveBeenCalled();
@@ -317,19 +328,21 @@ describe('ReportChartPickerComponent', () => {
   it('says which document type is shown when the admin switches', () => {
     const shown: BenchmarkReportAudience[] = [];
     fixture.componentInstance.activeAudienceChange.subscribe(audience => shown.push(audience));
-    select(InternalBrief);
-    select(InternalBrief);
+    select(RootCauseAnalysis);
+    select(RootCauseAnalysis);
     select(ExecutiveSummary);
-    expect(shown).toEqual([InternalBrief, ExecutiveSummary]);
+    expect(shown).toEqual([RootCauseAnalysis, ExecutiveSummary]);
   });
 
-  it('shows the comparison-scope sections when told the scope', () => {
+  it('shows the comparison-scope sections and document types when told the scope', () => {
     fixture.componentRef.setInput('scope', 'comparison');
     fixture.detectChanges();
-    select(TechnicalReport);
-    expect(text(q(`#rcp-${TechnicalReport}-p1a-quality-placement`))).toBe('Results');
-    expect(text(q(`#rcp-${TechnicalReport}-p2-profile-placement`))).toBe('Dimension profiles');
-    expect(text(q(`#rcp-${TechnicalReport}-a1-availability-placement`))).toBe('Results → Provider availability');
+    expect(fixture.componentInstance.audienceOptions).toBe(COMPARISON_REPORT_AUDIENCE_OPTIONS);
+    expect(text(q(`#rcp-${ExecutiveSummary}-p1a-quality-placement`))).toBe('How they compare');
+    select(RootCauseAnalysis);
+    expect(text(q(`#rcp-${RootCauseAnalysis}-p1a-quality-placement`))).toBe('Evidence: intelligence');
+    expect(text(q(`#rcp-${RootCauseAnalysis}-s2-quality-cost-placement`))).toBe('Evidence: cost');
+    expect(text(q(`#rcp-${RootCauseAnalysis}-a1-availability-placement`))).toBe(REPORT_CHART_NOT_DRAWN);
   });
 
   it('never offers or selects A1 in a comparison-scope Executive Summary, which does not place it', () => {
@@ -347,9 +360,13 @@ describe('ReportChartPickerComponent', () => {
     fixture.detectChanges();
     expect(emitted).toEqual([]);
 
-    select(TechnicalReport);
-    expect(cell(TechnicalReport, 'a1-availability').checked).toBe(true);
-    expect(cell(TechnicalReport, 'a1-availability').getAttribute('aria-disabled')).toBeNull();
+    select(RootCauseAnalysis);
+    expect(cell(RootCauseAnalysis, 's1-quality-speed').checked).toBe(true);
+    expect(cell(RootCauseAnalysis, 's1-quality-speed').getAttribute('aria-disabled')).toBeNull();
+    // Neither does the Root Cause Analysis place A1, the profile or speed against cost.
+    for (const key of ['a1-availability', 'p2-profile', 's3-speed-cost']) {
+      expect(cell(RootCauseAnalysis, key).getAttribute('aria-disabled'), key).toBe('true');
+    }
   });
 
   it('gives A1 its own reason when the comparison cannot draw it', () => {
@@ -479,7 +496,7 @@ describe('ReportChartPickerComponent', () => {
       choose(width(ExecutiveSummary, 'p1a-quality'), 'twoThirds');
       expect(layouts.length).toBe(1);
       expect(layouts[0][ExecutiveSummary]).toEqual({ ...DEFAULT_DOCUMENT_CHART_LAYOUT, labelPt: 9, widths: { 'p1a-quality': 'twoThirds' } });
-      expect(layouts[0][TechnicalReport]).toEqual(DEFAULT_DOCUMENT_CHART_LAYOUT);
+      expect(layouts[0][RootCauseAnalysis]).toEqual(DEFAULT_DOCUMENT_CHART_LAYOUT);
       expect(q(`#rcp-${ExecutiveSummary}-p1a-quality-width-refused`)).toBeNull();
     });
 
@@ -511,18 +528,18 @@ describe('ReportChartPickerComponent', () => {
     });
 
     it('emits each field\'s change for the document shown alone', () => {
-      select(InternalBrief);
-      choose(field<HTMLSelectElement>(InternalBrief, 'orientation'), 'vertical');
-      choose(field<HTMLSelectElement>(InternalBrief, 'maxHeight'), '40');
-      choose(field<HTMLSelectElement>(InternalBrief, 'heading'), 'titleAndBadges');
-      choose(field<HTMLSelectElement>(InternalBrief, 'theme'), 'asInStep2');
-      choose(field<HTMLSelectElement>(InternalBrief, 'label'), '10');
-      field<HTMLInputElement>(InternalBrief, 'logo').click();
-      field<HTMLInputElement>(InternalBrief, 'sideBySide').click();
+      select(RootCauseAnalysis);
+      choose(field<HTMLSelectElement>(RootCauseAnalysis, 'orientation'), 'vertical');
+      choose(field<HTMLSelectElement>(RootCauseAnalysis, 'maxHeight'), '40');
+      choose(field<HTMLSelectElement>(RootCauseAnalysis, 'heading'), 'titleAndBadges');
+      choose(field<HTMLSelectElement>(RootCauseAnalysis, 'theme'), 'asInStep2');
+      choose(field<HTMLSelectElement>(RootCauseAnalysis, 'label'), '10');
+      field<HTMLInputElement>(RootCauseAnalysis, 'logo').click();
+      field<HTMLInputElement>(RootCauseAnalysis, 'sideBySide').click();
       fixture.detectChanges();
 
       expect(layouts.length).toBe(7);
-      expect(layouts[6][InternalBrief]).toEqual({
+      expect(layouts[6][RootCauseAnalysis]).toEqual({
         ...DEFAULT_DOCUMENT_CHART_LAYOUT,
         orientation: 'vertical', maxHeightPercent: 40, heading: 'titleAndBadges', theme: 'asInStep2', labelPt: 10,
         logo: true, sideBySide: false
@@ -569,8 +586,8 @@ describe('ReportChartPickerComponent', () => {
     const picker = fixture.componentInstance;
     expect(picker.figures).toBe(REPORT_PACK_PICKER_FIGURES);
     expect(picker.figures.map(figure => figure.key)).toEqual(ALL_KEYS);
-    expect(picker.audienceOptions).toBe(REPORT_PACK_AUDIENCES);
-    expect(picker.audiences).toEqual([ExecutiveSummary, TechnicalReport, InternalBrief]);
+    expect(picker.audienceOptions).toBe(MODEL_REPORT_AUDIENCE_OPTIONS);
+    expect(picker.audiences).toEqual([ExecutiveSummary, RootCauseAnalysis]);
     expect(picker.columnDisabledReason).toBe(REPORT_CHART_COLUMN_DISABLED_REASON);
     expect(picker.layoutFields).toEqual(REPORT_CHART_LAYOUT_FIELDS);
     expect(picker.notes).toEqual({});
@@ -601,7 +618,7 @@ describe('ReportChartPickerComponent', () => {
       own.componentInstance.layoutChange.subscribe(layout => ownLayouts.push(layout));
       own.componentRef.setInput('idPrefix', 'own');
       own.componentRef.setInput('selection', {
-        [ExecutiveSummary]: ['x2', 'p1a-quality', 'x1', 'x2'], [ProviderIssueReport]: ['x2'], [TechnicalReport]: ['x1']
+        [ExecutiveSummary]: ['x2', 'p1a-quality', 'x1', 'x2'], [ProviderIssueReport]: ['x2'], [RootCauseAnalysis]: ['x1']
       });
       own.componentRef.setInput('figures', FIGURES);
       own.componentRef.setInput('audienceOptions', AUDIENCES);
@@ -687,7 +704,7 @@ describe('ReportChartPickerComponent', () => {
       expect(ownLayouts.length).toBe(1);
       expect(ownLayouts[0][ExecutiveSummary]).toEqual({ ...DEFAULT_DOCUMENT_CHART_LAYOUT, widths: { x1: 'half' }, maxHeightPercent: 40 });
       expect(ownLayouts[0][ProviderIssueReport]!.widths).toEqual({ x2: 'twoThirds' });
-      expect(ownLayouts[0][TechnicalReport]).toBeUndefined();
+      expect(ownLayouts[0][RootCauseAnalysis]).toBeUndefined();
     });
   });
 });

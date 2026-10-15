@@ -1257,7 +1257,8 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
    beside the report progress area (no visible heading), each scrolling on its own; the sidebar's width
    is remembered in this browser (`localStorage['overseer.benchmark.chatConsistency.reports']`,
    `{ version: 1, sidebarWidth }`).
-   - **Documents** — the four documents. A written one shows *Written* (or *Written with warnings*),
+   - **Documents** — the two documents, the Executive Summary and the Provider Issue Report (a chat
+     consistency analysis has no Root Cause Analysis). A written one shows *Written* (or *Written with warnings*),
      its writer, date, duration and cost, and icon-only **View** (the PDF viewer at the fullest
      disclosure it allows, the others offered as versions) and **Delete** (*Delete Document*, a
      confirmation: it cannot be undone, the document can be written again afterwards, and the analysis
@@ -1282,7 +1283,7 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      reports its outcome in its own status line (*Charts updated on 3 documents.*). It is how a document
      written earlier, whose prose is still wanted, gets the current charts.
    - **Charts in PDF and Word** — which charts each document type carries, in Model Comparison's chart
-     picker: one segment per document type (*Executive*, *Researchers*, *Internal*, *Provider*), each
+     picker: one segment per document type (*Executive*, *Provider*), each
      listing the five figures *Intelligence per run* (`cc1-quality`), *Time to first answer text*
      (`cc2-speed`), *Output tokens per answer* (`cc3-work`), *Runs and events* (`cc4-timeline`) and
      *Provider availability* (`cc5-availability`, drawn in the form chosen on the Charts step, § 17.3;
@@ -1293,7 +1294,7 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      endpoint the analysis could not compute carries a note (*P1 was not computable in this analysis;
      the chart's caption says it is not comparable.*). A document type neither checked nor written
      cannot be changed (*Not chosen in New reports.*). The defaults: Executive Summary cc1 and cc2;
-     Researcher Report all five; Internal Brief cc1 and cc3; Provider Issue Report cc2 and cc4; cc1–cc3
+     Provider Issue Report cc2 and cc4; cc1–cc3
      and cc5 half column, so two in a row at one place share it, cc4 two-thirds; 8 pt labels; at most 50 % of
      the page tall. The charts always use the light print theme, no heading inside the image and no
      logo. The choices are remembered in this browser
@@ -1316,7 +1317,7 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
      started here), one row per document (status, duration, model calls, charts), *Log and
      diagnostics* (icon-only *Copy diagnostics* and *Download diagnostics*,
      `chat-consistency-reports_<id>_diagnostics_<yyyyMMdd-HHmmss>.txt`, and the job log) and *Cancel
-     Writing*. A finished job is summarized as *Last reports* (*3 documents written · $0.04 · 1 min
+     Writing*. A finished job is summarized as *Last reports* (*2 documents written · $0.04 · 1 min
      12 s*) with **See the documents**, which opens step 6, and *Dismiss*, which returns focus to *New
      reports*. When a job ends, the documents without charts get the charts chosen for their type,
      drawn off-screen (`chat-consistency-report-charts.ts`) and uploaded with the document's chart
@@ -1723,9 +1724,13 @@ availability chart of § 17.3; a V1 analysis's documents render its five endpoin
 | Audience | For |
 |----------|-----|
 | Executive Summary | is the chat with this model as good as before, for players, with confidence and scope |
-| Report for AI Researchers and Developers | design, coverage, events, results, attribution, robustness, limitations, reproducibility |
-| Internal Improvement Brief | findings for the chat, our changes that helped or hurt, infrastructure, next runs, actions |
 | Provider Issue Report | for the model's provider: the finding, its measurements, the hours observed, what we ruled out, sample request ids and the request |
+
+Those are the only two. The *Report for AI Researchers and Developers* and the *Internal Improvement
+Brief* were retired on 2026-10-15 and their stored documents deleted, and the Root Cause Analysis that
+replaced them elsewhere is not written for a chat consistency analysis (`ai-benchmark-report-pack.md` § 17);
+a write naming any other audience is refused with *"Only the Executive Summary and the Provider Issue
+Report are written for a chat consistency analysis."*
 
 The **Provider Issue Report** is available only when at least one attribution is **provider-side and
 graded Established or Indicated**; otherwise it is refused with the reason *"No provider-side finding
@@ -1746,9 +1751,10 @@ internal event-field name.
 
 **The documents are written for readers.** The blocks the code prints differ per audience: the
 Executive Summary keeps the verdict, why nothing is decided yet, what was compared, the chosen charts,
-the written sections, this analysis's data-quality limitations and the evaluation terms; the Researcher
-Report keeps the method detail in compact tables of at most five columns; the Internal Brief keeps the
-team's detail without the reader's guide. No fact display carries a hash, JSON or an internal
+the written sections, this analysis's data-quality limitations and the evaluation terms, and its one
+sentence on the Overseer updates between the periods is followed by the **table of Overseer updates**
+when there are more than three; the Provider Issue Report keeps the method detail in compact tables of
+at most five columns. No fact display carries a hash, JSON or an internal
 identifier: an Overseer event is shown in words (*harness 53 → 54*, *wiki revision a8fa85a → 4bb80dc*,
 *game snapshot: off → on*, *re-indexed: GnollHack wiki (file counts unchanged)*), formatted from the
 stored values, so

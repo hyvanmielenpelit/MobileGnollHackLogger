@@ -48,8 +48,8 @@
   <!-- TAB 1: RUN BENCHMARK -->
   @if (activeSubTab === 'run') {
     <div class="benchmark-tab-content" role="tabpanel" id="bm-panel-run" aria-labelledby="bm-tab-run" tabindex="0">
-      <!-- Repeat this run's setup: what was copied into the launcher below, and every recorded
-           selection it kept back. Always rendered, so the status is announced when it fills. -->
+      <!-- Repeat this run's setup, or a recommended run's: what was copied into the launcher below,
+           and every setting it kept back. Always rendered, so the status is announced when it fills. -->
       <div class="bm-prefill-status" role="status">
         @if (repeatRunSetupError) {
           <div class="alert alert-danger bm-prefill-card">
@@ -61,10 +61,16 @@
               <div class="alert-body">Copying the setup of run #{{ launcher.pendingPrefillRunId }} once the launcher has loaded its lists.</div>
             </div>
           </div>
+        } @else if (launcher.pendingPrefillSetupLabel != null) {
+          <div class="alert alert-info bm-prefill-card">
+            <div class="alert-content">
+              <div class="alert-body">{{ launcher.pendingPrefillSetupLabel }}: applying the settings once the launcher has loaded its lists.</div>
+            </div>
+          </div>
         } @else if (launcher.prefillResult; as prefill) {
           <div class="alert alert-info bm-prefill-card">
             <div class="alert-content">
-              <div class="alert-heading">Set up from run #{{ prefill.runId }}</div>
+              <div class="alert-heading">{{ prefill.sourceLabel || ('Set up from run #' + prefill.runId) }}</div>
               <div class="alert-body">Check the settings below, then press Start. Nothing starts on its own.</div>
               @if (prefill.notes.length > 0) {
                 <ul class="alert-body bm-prefill-notes">

@@ -11,6 +11,8 @@ import {
   BenchmarkReportScope
 } from '../../../services/admin-benchmark.service';
 import type { PdfViewerRequest } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
+import { BenchmarkShellBridge, LauncherSetupPrefill } from '../state/benchmark-shell-bridge.service';
+import { recommendedRun } from './root-cause.testing';
 import {
   ComparisonDocumentsStatusComponent,
   ComparisonDocumentsViewInput,
@@ -19,7 +21,7 @@ import {
   writerPhrase
 } from './comparison-documents-status.component';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
+const { ExecutiveSummary, RootCauseAnalysis } = BenchmarkReportAudience;
 
 const LABELS: Record<string, string> = {
   'run:1': 'GPT-6.1 Sol (medium)',
@@ -101,10 +103,10 @@ function preview(overrides: Partial<BenchmarkReportPackPreviewDto> = {}): Benchm
         { entryKey: 'run:1', label: 'GPT-6.1 Sol (medium)', provider: 'OpenAI', letter: 'A' },
         { entryKey: 'run:2', label: 'GPT-5.6 Luna (max)', provider: 'OpenAI', letter: 'B' }
       ],
-      documents: [written(InternalBrief, 44, { status: 'CompletedWithWarnings' })]
+      documents: [written(RootCauseAnalysis, 44, { status: 'CompletedWithWarnings' })]
     }],
     subjectDocuments: [
-      { subjectKey: 'run:1', subjectLabel: 'GPT-6.1 Sol (medium)', documents: [written(TechnicalReport, 51)] },
+      { subjectKey: 'run:1', subjectLabel: 'GPT-6.1 Sol (medium)', documents: [written(RootCauseAnalysis, 51)] },
       { subjectKey: 'run:2', subjectLabel: 'GPT-5.6 Luna (max)', documents: [] }
     ],
     ...overrides
@@ -126,7 +128,7 @@ function input(overrides: Partial<ComparisonDocumentsViewInput> = {}): Compariso
 }
 
 describe('comparisonDocumentsView', () => {
-  it('lists the chosen set\'s three documents, written ones unchecked and the rest checked, then the other sets', () => {
+  it('lists the chosen set\'s two documents, written ones unchecked and the rest checked, then the other sets', () => {
     const view = comparisonDocumentsView(input());
 
     expect(view.state).toBe('ready');
@@ -134,9 +136,9 @@ describe('comparisonDocumentsView', () => {
     const rows = view.groups[0].rows;
     expect(rows.map(row => [row.key, row.document?.documentId ?? null, row.checked, row.checkable])).toEqual([
       [`comparison|${ExecutiveSummary}`, 41, false, true],
-      [`comparison|${TechnicalReport}`, null, true, true],
-      [`comparison|${InternalBrief}`, null, true, true]
+      [`comparison|${RootCauseAnalysis}`, null, true, true]
     ]);
+    expect(rows.map(row => row.name)).toEqual(['Executive Summary', 'Root Cause Analysis']);
     expect(rows[0].listItem?.id).toBe(41);
     expect(rows[0].entryKey).toBeNull();
 
@@ -145,14 +147,22 @@ describe('comparisonDocumentsView', () => {
     expect(other.label).toBe('GPT-6.1 Sol (medium), GPT-5.6 Luna (max) — 2 of 3 models');
     expect(other.entryKeys).toEqual(['run:1', 'run:2']);
     expect(other.chooseRefusal).toBeNull();
-    expect(other.rows.map(row => [row.audience, row.checkable])).toEqual([[InternalBrief, false]]);
+    expect(other.rows.map(row => [row.audience, row.checkable])).toEqual([[RootCauseAnalysis, false]]);
+  });
+
+  it('never lists a document of a retired type', () => {
+    const view = comparisonDocumentsView(input({
+      preview: preview({ writtenDocuments: [written(2 as BenchmarkReportAudience, 42), written(3 as BenchmarkReportAudience, 43)] })
+    }));
+    expect(view.groups[0].rows.map(row => row.audience)).toEqual([ExecutiveSummary, RootCauseAnalysis]);
+    expect(view.groups[0].rows.every(row => row.document === null)).toBe(true);
   });
 
   it('follows the admin\'s Write and Rewrite choices', () => {
     const view = comparisonDocumentsView(input({
-      checks: new Map([[`comparison|${ExecutiveSummary}`, true], [`comparison|${InternalBrief}`, false]])
+      checks: new Map([[`comparison|${ExecutiveSummary}`, true], [`comparison|${RootCauseAnalysis}`, false]])
     }));
-    expect(view.groups[0].rows.map(row => row.checked)).toEqual([true, true, false]);
+    expect(view.groups[0].rows.map(row => row.checked)).toEqual([true, false]);
   });
 
   it('refuses to choose another set whose model is Excluded now', () => {
@@ -167,8 +177,7 @@ describe('comparisonDocumentsView', () => {
     expect(view.groups.map(group => group.heading)).toEqual(['GPT-6.1 Sol (medium)', 'GPT-5.6 Luna (max)']);
     expect(view.groups[0].rows.map(row => [row.key, row.document?.documentId ?? null, row.checked])).toEqual([
       [`run:1|${ExecutiveSummary}`, null, true],
-      [`run:1|${TechnicalReport}`, 51, false],
-      [`run:1|${InternalBrief}`, null, true]
+      [`run:1|${RootCauseAnalysis}`, 51, false]
     ]);
     expect(view.groups[1].rows.every(row => row.entryKey === 'run:2' && row.document === null)).toBe(true);
   });
@@ -198,7 +207,7 @@ describe('ComparisonDocumentsStatusComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ComparisonDocumentsStatusComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting()]
+      providers: [BenchmarkShellBridge, provideHttpClient(), provideHttpClientTesting()]
     }).compileComponents();
     fixture = TestBed.createComponent(ComparisonDocumentsStatusComponent);
     component = fixture.componentInstance;
@@ -240,7 +249,7 @@ describe('ComparisonDocumentsStatusComponent', () => {
     expect(text(time)).toBe('2026-10-05 14:30 UTC');
     expect(Array.from(executive.querySelectorAll('.cds-meta-part')).map(text)).toEqual(['1 min 12 s', '$0.21', 'Charts: 3']);
 
-    const technical = row(`comparison|${TechnicalReport}`);
+    const technical = row(`comparison|${RootCauseAnalysis}`);
     expect(text(technical.querySelector('.cds-status'))).toBe('Not written');
     expect(technical.querySelector('.cds-meta')).toBeNull();
     expect(technical.querySelector('.cds-view-btn')).toBeNull();
@@ -254,15 +263,15 @@ describe('ComparisonDocumentsStatusComponent', () => {
     const rewrite = row(`comparison|${ExecutiveSummary}`).querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     expect(rewrite.checked).toBe(false);
     expect(text(rewrite.closest('label'))).toBe('Rewrite — replaces the current document: the Executive Summary of GPT-6.1 Sol (medium), GPT-5.6 Luna (max), Claude 5 Opus (high)');
-    const write = row(`comparison|${TechnicalReport}`).querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    const write = row(`comparison|${RootCauseAnalysis}`).querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     expect(write.checked).toBe(true);
-    expect(text(write.closest('label'))).toContain('Write: the Report for AI Researchers and Developers');
+    expect(text(write.closest('label'))).toContain('Write: the Root Cause Analysis');
 
     rewrite.click();
     write.click();
     expect(changes).toEqual([
       { key: `comparison|${ExecutiveSummary}`, checked: true },
-      { key: `comparison|${TechnicalReport}`, checked: false }
+      { key: `comparison|${RootCauseAnalysis}`, checked: false }
     ]);
 
     fixture.componentRef.setInput('busy', true);
@@ -389,7 +398,7 @@ describe('ComparisonDocumentsStatusComponent', () => {
     const lists = Array.from(host.querySelectorAll<HTMLElement>('ul.cds-list'));
     expect(lists.length).toBe(2);
     expect(lists[0].getAttribute('aria-labelledby')).toBe(host.querySelectorAll('.cds-group-title')[0].id);
-    expect(lists[0].querySelectorAll('.cds-row').length).toBe(3);
+    expect(lists[0].querySelectorAll('.cds-row').length).toBe(2);
     expect(q('details.cds-other-sets')).toBeNull();
   });
 
@@ -412,5 +421,57 @@ describe('ComparisonDocumentsStatusComponent', () => {
       dialog.dispatchEvent(new Event('close', { bubbles: true }));
     }
     expect(heard).toEqual([]);
+  });
+
+  const withRootCause = (): Partial<ComparisonDocumentsViewInput> => ({
+    preview: preview({ writtenDocuments: [written(ExecutiveSummary, 41), written(RootCauseAnalysis, 42)] })
+  });
+
+  it('adds an icon-only Redraw charts to a written Root Cause Analysis only, and redraws through the service', () => {
+    show(withRootCause());
+
+    expect(row(`comparison|${ExecutiveSummary}`).querySelector('.cds-redraw-btn')).toBeNull();
+    const redraw = row(`comparison|${RootCauseAnalysis}`).querySelector<HTMLButtonElement>('.cds-redraw-btn')!;
+    expect(redraw.classList).toContain('action-btn');
+    expect(redraw.getAttribute('aria-label')).toContain('Redraw the charts of the Root Cause Analysis');
+    expect(redraw.hasAttribute('title')).toBe(false);
+    expect(q(`#${redraw.getAttribute('interestfor')}`)!.getAttribute('popover')).toBe('hint');
+    redraw.click();
+
+    const request = http.expectOne('/api/admin/benchmark/report-documents/42/charts/redraw');
+    expect(request.request.method).toBe('POST');
+    request.flush({ documentId: 42, chartCount: 8, figureKeys: [], settingsHash: null });
+    fixture.detectChanges();
+
+    expect(text(q('.cds-live'))).toContain('Redrew the charts of the Root Cause Analysis');
+    expect(text(q('.cds-live'))).toContain('(8 images)');
+  });
+
+  it('shows a refused redraw', () => {
+    show(withRootCause());
+    row(`comparison|${RootCauseAnalysis}`).querySelector<HTMLButtonElement>('.cds-redraw-btn')!.click();
+    http.expectOne('/api/admin/benchmark/report-documents/42/charts/redraw')
+      .flush({ error: 'The document has no stored facts.' }, { status: 400, statusText: 'Bad Request' });
+    fixture.detectChanges();
+
+    expect(text(q('.cds-redraw-error'))).toBe('The document has no stored facts.');
+  });
+
+  it('hosts the next runs under a written Root Cause Analysis and sets one up through the bridge', () => {
+    const prefills: LauncherSetupPrefill[] = [];
+    TestBed.inject(BenchmarkShellBridge).prefillSetup$.subscribe(prefill => prefills.push(prefill));
+    show(withRootCause());
+
+    expect(row(`comparison|${ExecutiveSummary}`).querySelector('app-root-cause-runs')).toBeNull();
+    const rca = row(`comparison|${RootCauseAnalysis}`);
+    const details = rca.querySelector<HTMLDetailsElement>('app-root-cause-runs details')!;
+    expect(details.open).toBe(false);
+    details.open = true;
+    details.dispatchEvent(new Event('toggle'));
+    http.expectOne('/api/admin/benchmark/report-documents/42').flush({ recommendedRuns: [recommendedRun()], checks: [] });
+    fixture.detectChanges();
+    rca.querySelector<HTMLButtonElement>('.rcr-set-up')!.click();
+
+    expect(prefills.map(prefill => prefill.sourceLabel)).toEqual(['Set up from Root Cause Analysis #42, run 1']);
   });
 });

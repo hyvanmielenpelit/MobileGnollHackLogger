@@ -27,39 +27,24 @@ public sealed record BenchmarkReportWriterPrompt(string SystemPrompt, string Use
 /// </summary>
 public static partial class BenchmarkReportPackPrompt
 {
-    /// <summary>A question more than this many points below the peer mean gets a question note.</summary>
-    public const double QuestionNoteGapPoints = 15.0;
-
-    /// <summary>With no peers, a question scoring below this gets a question note.</summary>
-    public const double StandaloneNoteScore = 50.0;
-
     /// <summary>A fact whose key contains this, ignoring case, states the response-style conflict.</summary>
     public const string ResponseStyleConflictKeyFragment = "responseStyleConflict";
 
+    /// <summary>The prompt for the sheet's scope.</summary>
     public static BenchmarkReportWriterPrompt Build(
         BenchmarkReportAudience audience,
         BenchmarkReportFactSheet sheet,
         BenchmarkReportContentSnapshot content)
-        => Build(audience, sheet, content, sharedTopics: null);
-
-    /// <summary>
-    /// The prompt for the sheet's scope. A comparison-scope sheet is given the question topics already
-    /// written for its covered set in <paramref name="sharedTopics"/>, so they are written once per
-    /// job; a per-model or chat consistency sheet ignores them.
-    /// </summary>
-    public static BenchmarkReportWriterPrompt Build(
-        BenchmarkReportAudience audience,
-        BenchmarkReportFactSheet sheet,
-        BenchmarkReportContentSnapshot content,
-        IReadOnlyList<BenchmarkReportQuestionTopic>? sharedTopics)
     {
         ArgumentNullException.ThrowIfNull(sheet);
         ArgumentNullException.ThrowIfNull(content);
 
         return sheet.IsChatConsistency
             ? new BenchmarkReportWriterPrompt(BuildChatConsistencySystemPrompt(audience), BuildChatConsistencyUserMessage(audience, sheet))
+            : audience == BenchmarkReportAudience.RootCauseAnalysis
+            ? new BenchmarkReportWriterPrompt(BuildRootCauseSystemPrompt(sheet.IsComparison), BuildRootCauseUserMessage(sheet, content))
             : sheet.IsComparison
-            ? new BenchmarkReportWriterPrompt(BuildComparisonSystemPrompt(audience), BuildComparisonUserMessage(audience, sheet, content, sharedTopics))
+            ? new BenchmarkReportWriterPrompt(BuildComparisonSystemPrompt(audience), BuildComparisonUserMessage(audience, sheet, content))
             : new BenchmarkReportWriterPrompt(BuildSystemPrompt(audience), BuildUserMessage(audience, sheet, content));
     }
 
@@ -92,42 +77,14 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "REMINDERS");
         Line(sb, "- Figures appear only as {{key}} with a key from FACTS exactly as written; the subject is {{subject}}; another model only {{peer:X}} with its letter from PEERS. No other {{...}} tokens.");
         Line(sb, "- No digits in prose except question references such as Q7. Write counts as number words, and no numbered lists.");
-        Line(sb, "- Every question number, Q reference and evidence id must exist in the data. Every strength and weakness, and every lead where the document has leads, cites at least one evidence id.");
+        Line(sb, "- Every question number, Q reference and evidence id must exist in the data. Every strength and weakness cites at least one evidence id.");
         Line(sb, "- A strength never cites a weakness row and a weakness never cites a strength row. A finding resting only on Conflicting rows says the graders disagree.");
         Line(sb, "- Never quote the questions, rubrics, answers or grader comments: no run of eight words may match them. Describe a question by its topic.");
         Line(sb, "- Never name a model, provider or product. Never call a difference significant, statistically anything, reliably better or worse, or say a model clearly outperforms another; say only whether intervals overlap, or whether a paired interval excludes zero.");
         Line(sb, "- A sentence ranking {{subject}} against a peer whose interval overlaps it says that the intervals overlap or that the order is not established; where that peer's pairedExcludesZero fact is true, it says instead that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero. No hype or filler words.");
-        Line(sb, "- A recommendation for model_developers concerns only what a model developer can change in the model, never a GnollHack fact or the Overseer's prompts, tools, retrieval, corpus, rubrics or tests.");
         Line(sb, "- A token whose value reads 'N of M' is a noun phrase; never put it after 'no' or make it the object of 'made'.");
-        Line(sb, "- Every question under QUESTIONS NEEDING A NOTE gets a note where the document has notes.");
         Line(sb, "- No headings, tables or HTML inside any text. Keep the word and item limits.");
         return sb.ToString();
-    }
-
-    /// <summary>
-    /// The questions that get a question note: more than <see cref="QuestionNoteGapPoints"/> below the
-    /// peer mean, or a critical error. On a sheet with no peers, a score below
-    /// <see cref="StandaloneNoteScore"/> takes the place of the peer gap. On a battery sheet, whose
-    /// questions carry no peer figures, the score takes its place too, and only a question given in
-    /// detail gets a note.
-    /// </summary>
-    public static IReadOnlyList<int> QuestionsNeedingNote(BenchmarkReportFactSheet sheet)
-    {
-        ArgumentNullException.ThrowIfNull(sheet);
-        if (sheet.IsComparison) return Array.Empty<int>();
-        bool battery = sheet.Battery != null;
-        bool standalone = battery || sheet.Peers.Count == 0;
-
-        return sheet.Questions
-            .Where(q => !battery || q.Detailed == true)
-            .Where(q => q.CriticalError
-                || (standalone
-                    ? q.Score.HasValue && q.Score.Value < StandaloneNoteScore
-                    : q.Difference.HasValue && q.Difference.Value < -QuestionNoteGapPoints))
-            .Select(q => q.Number)
-            .Distinct()
-            .OrderBy(n => n)
-            .ToList();
     }
 
     /// <summary>
@@ -173,9 +130,11 @@ public static partial class BenchmarkReportPackPrompt
     // System prompt
     // -----------------------------------------------------------------------------------------
 
-    /// <summary>The fixed instruction text for one audience.</summary>
+    /// <summary>The fixed instruction text for one audience of a per-model document.</summary>
     public static string BuildSystemPrompt(BenchmarkReportAudience audience)
     {
+        if (audience == BenchmarkReportAudience.RootCauseAnalysis) return BuildRootCauseSystemPrompt(comparisonScope: false);
+
         var spec = BenchmarkReportSlots.For(audience);
         var sb = new StringBuilder();
 
@@ -191,10 +150,10 @@ public static partial class BenchmarkReportPackPrompt
         AppendSlots(sb, spec);
         AppendLists(sb, spec);
         AppendTokenRules(sb);
-        AppendEvidenceRules(sb, spec);
+        AppendEvidenceRules(sb);
         AppendWeighingRules(sb);
         AppendDisclosureRules(sb);
-        AppendFormatRules(sb, spec);
+        AppendFormatRules(sb);
         AppendOutput(sb, spec);
 
         return sb.ToString();
@@ -208,16 +167,6 @@ public static partial class BenchmarkReportPackPrompt
                 Line(sb, "DOCUMENT: Executive Summary.");
                 Line(sb, "Reader: a non-specialist at the model's provider, or a manager.");
                 Line(sb, "Tone: plain US English in short sentences, with no jargon. Explain any technical idea in everyday words.");
-                break;
-            case BenchmarkReportAudience.TechnicalReport:
-                Line(sb, "DOCUMENT: Report for AI Researchers and Developers.");
-                Line(sb, "Reader: AI researchers and model developers.");
-                Line(sb, "Tone: precise and neutral US English. Name failure categories exactly and tie every claim to its evidence.");
-                break;
-            case BenchmarkReportAudience.InternalBrief:
-                Line(sb, "DOCUMENT: Internal Improvement Brief.");
-                Line(sb, "Reader: the Overseer team and its AI agents. The document is internal.");
-                Line(sb, "Tone: direct and practical US English. Its purpose, in order of importance: first improving the Overseer chat assistant and its tools, then improving the benchmarking system, then understanding the model's result.");
                 break;
         }
 
@@ -248,67 +197,22 @@ public static partial class BenchmarkReportPackPrompt
             $"At most {BenchmarkReportPackValidator.MeaningMaxWords.ToString(CultureInfo.InvariantCulture)} words: what this means for use as a game assistant, that is, what a player relying on {{{{subject}}}} could expect, drawn from the facts and findings.",
         BenchmarkReportSlots.Confidence =>
             $"At most {BenchmarkReportPackValidator.ConfidenceMaxWords.ToString(CultureInfo.InvariantCulture)} words: how reliable this result is. Code appends one sentence right after this paragraph that states the quality interval, its span and how many questions the result rests on; do not restate any of them. Say how far the graders agreed (in plain words) and whether the subject's interval overlaps its peers' intervals when it has peers, without calling the interval narrow, wide, tight or broad; and, when a grader shares the subject's provider, say so in plain words and that it may read the subject more favorably.",
-        BenchmarkReportSlots.Abstract =>
-            $"At most {BenchmarkReportPackValidator.AbstractMaxWords.ToString(CultureInfo.InvariantCulture)} words: what was measured, the subject's result against its peers, and the main reasons for it. Do not list claims the claim verifier refuted here; they belong in the weaknesses, attributed to the claim verifier.",
-        BenchmarkReportSlots.WhyItScored =>
-            $"Explain the patterns and causes across the weaknesses, grouped by category (domain knowledge, reading the game state, tool use, instruction following, completeness under the concise answer style, calibration), in at most {BenchmarkReportPackValidator.WhyItScoredMaxWords.ToString(CultureInfo.InvariantCulture)} words. Leave out a category the data does not support. Where the subject has peers, use the per-question peer figures to tell a miss of the model from one every model shared, as WEIGHING THE EVIDENCE describes. The weaknesses list is printed right after this text; do not restate its items.",
-        BenchmarkReportSlots.WhatWorked =>
-            $"Explain the patterns and causes across the strengths, grouped by category, in at most {BenchmarkReportPackValidator.WhatWorkedMaxWords.ToString(CultureInfo.InvariantCulture)} words. The strengths list is printed right after this text; do not restate its items.",
-        BenchmarkReportSlots.Limitations =>
-            $"At most {BenchmarkReportPackValidator.LimitationsMaxWords.ToString(CultureInfo.InvariantCulture)} words, printed as the last paragraph of Threats to validity: the limitations specific to this data, for example a degraded peer, a subject or peer with a single run, heavy grader disagreement on particular questions, or a difficulty band with few questions. Code already prints lines stating that the benchmark asks single-turn questions under one chat configuration, which sources of variation the interval covers, that the comparison runs no significance test when there are peers, that the graders are AI models whose provider relation to the subject is stated, the subject's degraded state when it has one, and the caveat of a writer from the subject's provider; do not restate any of them.",
-        BenchmarkReportSlots.OverseerChat =>
-            $"At most {BenchmarkReportPackValidator.OverseerChatMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's first part, the Overseer chat and its tools: what the result suggests about the chat system prompt, the tools and the knowledge the assistant can reach, such as tool calls that found nothing or missing wiki, source or knowledge-base content. State these as things to check, not as conclusions. Where the subject has peers, point only to questions the peers missed as well: a question most peers answered well is evidence about the model, not the chat, as WEIGHING THE EVIDENCE describes.",
-        BenchmarkReportSlots.BenchmarkSystem =>
-            $"At most {BenchmarkReportPackValidator.BenchmarkSystemMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's second part, the benchmarking system: signs of harness, grading or rubric problems, such as grader disagreement, a rubric that may lack a fact the claim verifier supported, or a question the data suggests is ambiguous. Where the subject has peers, suspect a question or its rubric first when every model missed it, not when most peers answered it well, as WEIGHING THE EVIDENCE describes.",
-        BenchmarkReportSlots.ModelResult =>
-            $"At most {BenchmarkReportPackValidator.ModelResultMaxWords.ToString(CultureInfo.InvariantCulture)} words. The brief's third part, the model's result: how the subject performed, against its peers when it has them, and why, as far as the data shows. Code appends one sentence right after this paragraph that states the quality interval, its span and what it rests on; do not restate it.",
         _ => "Markdown paragraphs."
     };
 
     private static void AppendLists(StringBuilder sb, BenchmarkReportAudienceSpec spec)
     {
-        bool plain = spec.Audience == BenchmarkReportAudience.ExecutiveSummary;
+        string itemCap = $", each at most {Words(BenchmarkReportPackValidator.ExecutiveItemMaxWords)} words";
 
         Line(sb, "FIELDS AND LISTS:");
         Line(sb, "- headline: the result in one sentence, at most 35 words.");
-        string itemCap = plain
-            ? $", each at most {Words(BenchmarkReportPackValidator.ExecutiveItemMaxWords)} words"
-            : string.Empty;
-        Line(sb, plain
-            ? $"- strengths: at most {Words(spec.MaxStrengths)} items{itemCap}, shown under \"What it did well\"."
-            : $"- strengths: at most {Words(spec.MaxStrengths)} items, the behaviors that earned points.");
-        Line(sb, plain
-            ? $"- weaknesses: at most {Words(spec.MaxWeaknesses)} items{itemCap}, shown under \"Where it fell short\"."
-            : $"- weaknesses: at most {Words(spec.MaxWeaknesses)} items, the failures that cost points.");
+        Line(sb, $"- strengths: at most {Words(spec.MaxStrengths)} items{itemCap}, shown under \"What it did well\".");
+        Line(sb, $"- weaknesses: at most {Words(spec.MaxWeaknesses)} items{itemCap}, shown under \"Where it fell short\".");
         Line(sb, "- When PEERS lists peers, strengths and weaknesses prefer points where {{subject}} differs from its peers, such as a dimension, band or question well above or below the peer mean, over points that would read the same in a stand-alone report.");
-
-        if (spec.UsesRecommendations)
-        {
-            if (spec.RecommendationTargets.Count == 1 && spec.RecommendationTargets[0] == BenchmarkReportSlots.TargetModelDevelopers)
-            {
-                Line(sb, $"- recommendations: at most {Words(BenchmarkReportPackValidator.MaxRecommendations(spec.Audience))} items for the model's next iteration. Name the change proposed and, in a few words, the weakness it answers; do not restate the weakness. Cite the evidence for it in \"evidence\". \"for\" is always \"{BenchmarkReportSlots.TargetModelDevelopers}\".");
-            }
-            else
-            {
-                Line(sb, $"- recommendations: at most {Words(BenchmarkReportPackValidator.MaxRecommendations(spec.Audience))} concrete next steps. \"for\" is one of: \"{BenchmarkReportSlots.TargetOverseerChat}\" (the chat system prompt, tools or knowledge base), \"{BenchmarkReportSlots.TargetBenchmark}\" (the benchmarking system: harness, graders, questions or rubrics), \"{BenchmarkReportSlots.TargetModelDevelopers}\" (the model's developers).");
-            }
-
-            Line(sb, "- A recommendation for model developers names a general capability a model developer can train or tune — for example stating the decisive mechanic behind a verdict, or committing to a conclusion the inputs already settle. Never a GnollHack fact, a change to the assistant's prompt or tools, or a rubric point; game-specific gaps are leads of the Internal Brief (`corpus` or `chat`).");
-        }
 
         Line(sb, spec.RequiresQuestionTopics
             ? "- questionTopics: one entry for every question of the exam, listed in the data. Each topic names what the question is about in at most 12 words, without quoting it."
             : "- questionTopics: optional; one entry per question you describe. Each topic names what the question is about in at most 12 words, without quoting it.");
-
-        if (spec.UsesQuestionNotes)
-        {
-            Line(sb, "- questionNotes: one line for each question listed under QUESTIONS NEEDING A NOTE (more than fifteen points below the peer mean, or a critical error; with no peers, a score below fifty or a critical error), saying in your own words what went wrong. Other questions get no note.");
-        }
-
-        if (spec.UsesLeads)
-        {
-            Line(sb, $"- leads: at most {Words(BenchmarkReportPackValidator.MaxLeads)} things worth checking, each with \"triage\" set to one of: \"harness\" (the benchmark harness or grading), \"suite\" (a question or its rubric), \"chat\" (the Overseer chat prompt or tools), \"corpus\" (missing or stale wiki, source or knowledge-base content). Leads are provisional and un-triaged, never findings: phrase each as something to check, not as a conclusion. Name the most specific target the data shows: the question and its topic, and what to look at there — the rubric point a grader charged, the knowledge source an answer excerpt relied on, the grading role that disagreed, or the kind of tool call the matrix shows. Never name a file, setting or tool the data does not show. Where the subject has peers, a \"chat\", \"corpus\" or \"suite\" lead rests on questions the peers missed as well, as WEIGHING THE EVIDENCE describes.");
-        }
 
         Line(sb);
     }
@@ -329,19 +233,11 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
     }
 
-    private static void AppendEvidenceRules(StringBuilder sb, BenchmarkReportAudienceSpec spec)
+    private static void AppendEvidenceRules(StringBuilder sb)
     {
         Line(sb, "EVIDENCE:");
         Line(sb, "- An evidence id is a fact key from FACTS, a question reference such as Q7, or a finding row id such as R2. Use only ids that exist in the data.");
-        Line(sb, spec.UsesLeads
-            ? "- Every strength, weakness and lead cites at least one evidence id in \"evidence\"."
-            : "- Every strength and weakness cites at least one evidence id in \"evidence\".");
-        if (spec.UsesRecommendations)
-        {
-            Line(sb, BenchmarkReportPackValidator.RecommendationsRequireEvidence(spec.Audience)
-                ? "- Every recommendation cites at least one evidence id in \"evidence\"."
-                : "- A recommendation may cite evidence as well.");
-        }
+        Line(sb, "- Every strength and weakness cites at least one evidence id in \"evidence\".");
         Line(sb, "- \"questions\" lists the question numbers an item is about, as integers from the QUESTIONS block.");
         Line(sb, "- A strength never cites a weakness row, and a weakness never cites a strength row.");
         Line(sb, "- A finding that rests only on Conflicting rows must say in its text that the graders disagree.");
@@ -379,7 +275,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
     }
 
-    /// <summary>The rules on recommended levers, disagreement wording and leads about a wrong tool result.</summary>
+    /// <summary>The rules on recommended levers and disagreement wording.</summary>
     private static void AppendSharedWritingRules(StringBuilder sb)
     {
         foreach (string rule in SharedWritingRules)
@@ -391,9 +287,8 @@ public static partial class BenchmarkReportPackPrompt
     /// <summary>The rules <see cref="AppendSharedWritingRules"/> writes, each without its list marker.</summary>
     public static IReadOnlyList<string> SharedWritingRules => new[]
     {
-        "Outside a recommendation for model developers, never recommend training, fine-tuning or using outputs as training targets; recommend a lever the facts name — a tool, a tool guide, the knowledge base, a wiki page, a rubric, the grading, or the model and its settings.",
-        "Write 'disagreed' or 'disagreement' only for an answer the facts mark as a panel disagreement; for any other gap, give both members' scores.",
-        "When an answer repeats a tool result the facts show to be wrong, write the lead about the source of that result (tag `corpus`), not about the model's knowledge."
+        "Never recommend training, fine-tuning or using outputs as training targets; recommend a lever the facts name — a tool, a tool guide, the knowledge base, a wiki page, a rubric, the grading, or the model and its settings.",
+        "Write 'disagreed' or 'disagreement' only for an answer the facts mark as a panel disagreement; for any other gap, give both members' scores."
     };
 
     private static void AppendDisclosureRules(StringBuilder sb)
@@ -404,7 +299,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
     }
 
-    private static void AppendFormatRules(StringBuilder sb, BenchmarkReportAudienceSpec spec)
+    private static void AppendFormatRules(StringBuilder sb)
     {
         Line(sb, "FORMAT OF THE TEXT:");
         Line(sb, "- Slots hold Markdown paragraphs separated by blank lines. Bullet lists and emphasis are allowed.");
@@ -419,10 +314,6 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Prefer a count from the facts to vague words such as many or several.");
         Line(sb, "- Name the category of a finding, for example tool use or reading the game state, rather than writing \"issues across many topics\".");
         Line(sb, $"- No hype, filler or overclaiming words: {string.Join(", ", BenchmarkReportPackValidator.HypeWords)}.");
-        if (spec.Audience == BenchmarkReportAudience.InternalBrief)
-        {
-            Line(sb, "- Lead with the action, then the evidence.");
-        }
         Line(sb);
     }
 
@@ -448,20 +339,7 @@ public static partial class BenchmarkReportPackPrompt
             "  \"strengths\": [ { \"text\": \"string\", \"questions\": [<question number>], \"evidence\": [\"<evidence id>\"] } ]",
             "  \"weaknesses\": [ { \"text\": \"string\", \"questions\": [<question number>], \"evidence\": [\"<evidence id>\"] } ]"
         };
-        if (spec.UsesRecommendations)
-        {
-            string targets = string.Join(" | ", spec.RecommendationTargets);
-            arrays.Add($"  \"recommendations\": [ {{ \"for\": \"{targets}\", \"text\": \"string\", \"questions\": [], \"evidence\": [] }} ]");
-        }
         arrays.Add("  \"questionTopics\": [ { \"question\": <question number>, \"topic\": \"string\" } ]");
-        if (spec.UsesQuestionNotes)
-        {
-            arrays.Add("  \"questionNotes\": [ { \"question\": <question number>, \"note\": \"string\" } ]");
-        }
-        if (spec.UsesLeads)
-        {
-            arrays.Add("  \"leads\": [ { \"triage\": \"harness | suite | chat | corpus\", \"text\": \"string\", \"questions\": [], \"evidence\": [\"<evidence id>\"] } ]");
-        }
 
         for (int i = 0; i < arrays.Count; i++)
         {
@@ -558,7 +436,11 @@ public static partial class BenchmarkReportPackPrompt
 
         Line(sb, "FACTS (write {{key}} to place a figure; key = value as printed)");
         Line(sb, "Difficulty bands are assessed difficulty; the authored bands are bands.authored.*.");
-        var facts = sheet.Facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
+        // Root-cause facts are for the Root Cause Analysis alone.
+        var facts = sheet.Facts
+            .Where(f => audience == BenchmarkReportAudience.RootCauseAnalysis || !BenchmarkReportFacts.WriterHidden(f.Key))
+            .OrderBy(f => f.Key, StringComparer.Ordinal)
+            .ToList();
         if (facts.Count == 0)
         {
             Line(sb, "(none)");
@@ -600,14 +482,6 @@ public static partial class BenchmarkReportPackPrompt
             .ToDictionary(g => g.Key, g => g.First().Reference!);
         string Reference(int number) => references.TryGetValue(number, out string? reference) ? reference : Q(number);
 
-        if (spec.UsesQuestionNotes)
-        {
-            var needing = QuestionsNeedingNote(sheet);
-            Line(sb, needing.Count == 0
-                ? "QUESTIONS NEEDING A NOTE: none"
-                : $"QUESTIONS NEEDING A NOTE: {string.Join(", ", needing.Select(Reference))}");
-        }
-
         if (spec.RequiresQuestionTopics)
         {
             var all = QuestionsNeedingTopic(sheet);
@@ -638,7 +512,7 @@ public static partial class BenchmarkReportPackPrompt
             Line(sb, $"- S{suite.Number.ToString(CultureInfo.InvariantCulture)}: {OneLine(suite.Name)}, {suite.QuestionCount.ToString(CultureInfo.InvariantCulture)} questions");
         }
         Line(sb, "QUESTION REFERENCES: refer to a question as S<suite>-Q<n>, for example S2-Q7 for question seven of suite two. In this battery report that form replaces the Q7 form everywhere, in the prose and in \"evidence\", and it is the only form in which a digit may appear in the prose. In the integer fields \"questions\" and \"question\", give the question's number shown after \"number\" in its QUESTIONS row.");
-        Line(sb, "DETAIL: every question has a one-line row with its mean score over the runs that scored it. Only the rows marked \"in detail\" are followed by the question as asked, its rubric, one answer excerpt from the run whose score was the median of its rounds, and the graders' comments on that answer. Describe any other question only from its row. Topics and notes are asked for the questions in detail only.");
+        Line(sb, "DETAIL: every question has a one-line row with its mean score over the runs that scored it. Only the rows marked \"in detail\" are followed by the question as asked, its rubric, one answer excerpt from the run whose score was the median of its rounds, and the graders' comments on that answer. Describe any other question only from its row. Topics are asked for the questions in detail only.");
         Line(sb, "A battery report has no finding rows: cite fact keys and question references as evidence.");
         Line(sb);
     }

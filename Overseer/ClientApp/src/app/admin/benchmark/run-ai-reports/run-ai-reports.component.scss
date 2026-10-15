@@ -124,6 +124,19 @@
   gap: 8px;
 }
 
+// The Root Cause Analysis row's controls and next runs take a line of their own under it.
+.rr-ai-doc-extra {
+  display: flex;
+  flex: 1 1 100%;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rr-ai-controls {
+  margin-bottom: 12px;
+}
+
 .rr-ai-alert,
 .rr-ai-download-notice {
   margin: 10px 0 0;

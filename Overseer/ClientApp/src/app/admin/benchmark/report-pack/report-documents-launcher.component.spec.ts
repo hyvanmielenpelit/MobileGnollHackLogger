@@ -187,4 +187,24 @@ describe('ReportDocumentsLauncherComponent', () => {
     expect(document.activeElement).toBe(button);
     expect(text('.rdl-launcher-summary')).toContain('1 report document from 1 comparison');
   });
+
+  it('shows the latest Root Cause Analysis with its next runs, read only when opened', () => {
+    render([
+      doc(11),
+      doc(12, { audience: BenchmarkReportAudience.RootCauseAnalysis, title: 'Older analysis', createdAtUtc: '2026-09-20T10:00:00Z' }),
+      doc(13, { audience: BenchmarkReportAudience.RootCauseAnalysis, title: 'Sol vs Luna', createdAtUtc: '2026-09-24T10:00:00Z' })
+    ]);
+
+    const rca = el.querySelector<HTMLElement>('.rdl-launcher-rca')!;
+    expect(rca.getAttribute('data-document-id')).toBe('13');
+    expect(text('.rdl-launcher-rca-title')).toBe('Root Cause Analysis #13 — Sol vs Luna · 2026-09-24 10:00 UTC');
+    expect(rca.querySelector('app-root-cause-runs details')).not.toBeNull();
+    http.expectNone(r => r.url === `${DOCUMENTS_URL}/13`);
+  });
+
+  it('shows no Root Cause Analysis when none was written', () => {
+    render([doc(11)]);
+
+    expect(el.querySelector('.rdl-launcher-rca')).toBeNull();
+  });
 });

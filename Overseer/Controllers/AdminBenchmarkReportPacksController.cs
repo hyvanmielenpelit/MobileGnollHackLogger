@@ -21,12 +21,14 @@ using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Benchmarking.Pdf;
+using Overseer.Services.Benchmarking.RootCause;
 using Overseer.Services.Privacy;
 
 /// <summary>
 /// Report-pack generation, per model (one or several subjects) or comparison-wide over the covered
 /// models: preview and layout preview (no model call), start, progress and cancel; and for a finished
-/// run's own run-completion documents, write on request, estimate, progress, cancel and delete. The
+/// run's own run-completion documents, write on request, estimate, progress, cancel and delete, and the
+/// controls its Root Cause Analysis would use. The
 /// writer call runs in <see cref="BenchmarkReportPackService"/>, resolved per job from a fresh scope; stored documents
 /// are served by <see cref="AdminBenchmarkReportDocumentsController"/>, which cannot reach a model.
 /// </summary>
@@ -39,28 +41,37 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     private static readonly IReadOnlyDictionary<BenchmarkReportAudience, int> EstimatedOutputTokens = new Dictionary<BenchmarkReportAudience, int>
     {
         [BenchmarkReportAudience.ExecutiveSummary] = 2400,
-        [BenchmarkReportAudience.TechnicalReport] = 7400,
-        [BenchmarkReportAudience.InternalBrief] = 7000
+        // To be recalibrated after the first real Root Cause Analysis jobs.
+        [BenchmarkReportAudience.RootCauseAnalysis] = 10000
     };
 
     /// <summary>Rough output sizes per comparison-scope document, to be recalibrated after the first real jobs.</summary>
     private static readonly IReadOnlyDictionary<BenchmarkReportAudience, int> ComparisonEstimatedOutputTokens = new Dictionary<BenchmarkReportAudience, int>
     {
         [BenchmarkReportAudience.ExecutiveSummary] = 3800,
-        [BenchmarkReportAudience.TechnicalReport] = 12500,
-        [BenchmarkReportAudience.InternalBrief] = 10000
+        // To be recalibrated after the first real Root Cause Analysis jobs.
+        [BenchmarkReportAudience.RootCauseAnalysis] = 14000
     };
+
+    /// <summary>The audiences a document of each scope is written for, in audience order.</summary>
+    private static readonly IReadOnlyDictionary<BenchmarkReportScope, BenchmarkReportAudience[]> ScopeAudiences =
+        new Dictionary<BenchmarkReportScope, BenchmarkReportAudience[]>
+        {
+            [BenchmarkReportScope.Model] = new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis },
+            [BenchmarkReportScope.Comparison] = new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis },
+            [BenchmarkReportScope.ChatConsistency] = new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.ProviderIssueReport },
+        };
 
     /// <summary>A prompt above this share of the writer configuration's context window is refused.</summary>
     public const double ContextWindowRefusalShare = 0.9;
 
     public const string AllWrittenMessage = "This run already has every AI-written report. Delete one first to write it again.";
     public const string InvalidAudienceMessage =
-        "Only the Executive Summary, the Report for AI Researchers and Developers and the Internal Improvement Brief are written for a run.";
+        "Only the Executive Summary and the Root Cause Analysis are written for a run.";
 
     public const string LayoutPreviewMissingRequest = "The layout preview needs its request field.";
     public const string LayoutPreviewInvalidRequest = "The request field is not a valid layout preview request.";
-    public const string LayoutPreviewAudienceError = "audience must be 1 (Executive Summary), 2 (Report for AI Researchers and Developers) or 3 (Internal Improvement Brief).";
+    public const string LayoutPreviewAudienceError = "audience must be 1 (Executive Summary) or 5 (Root Cause Analysis).";
     public const string LayoutPreviewNamingError = "naming must be named or anonymized.";
 
     /// <summary>The layout preview's <c>request</c> field: the web defaults, enums by number or by name.</summary>
@@ -173,7 +184,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         if (body == null) return BadRequest(new { error = LayoutPreviewInvalidRequest });
 
         if (BenchmarkReportPackPreparation.MixesSources(body)) return BadRequest(new { error = BenchmarkBatteryModelComparison.MixedSourcesError });
-        if (!Enum.IsDefined(body.Audience)) return BadRequest(new { error = LayoutPreviewAudienceError });
+        if (!ScopeAudiences[BenchmarkReportScope.Model].Contains(body.Audience)) return BadRequest(new { error = LayoutPreviewAudienceError });
         if (!BenchmarkPdfDocumentInfo.TryParsePaper(body.Paper, out var paper)) return BadRequest(new { error = BenchmarkPdfDocumentInfo.PaperError });
         if (!TryParseNaming(body.Naming, out var naming)) return BadRequest(new { error = LayoutPreviewNamingError });
 
@@ -377,13 +388,16 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             }
         }
 
-        var audiences = (request.Audiences ?? new List<BenchmarkReportAudience>()).Distinct().OrderBy(a => a).ToList();
+        var (audiences, audienceRefusal) = RequestedReportAudiences(request, BenchmarkReportScope.Model);
+        preview.Refusal ??= audienceRefusal;
+        if (audienceRefusal != null) audiences.Clear();
         foreach (var p in preps)
         {
             preview.Estimates.AddRange(EstimateAudiences(p, writer, audiences, p.Subject.Key));
         }
         preview.Refusal ??= ContextWindowRefusal(preview.Estimates, writer);
         preview.EstimatedTotalCostUsd = TotalCost(preview.Estimates);
+        preview.EstimatedTotalCostWithRepairUsd = TotalCostWithRepair(preview.Estimates);
 
         return preview;
     }
@@ -456,18 +470,21 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             }
         }
 
-        var audiences = (request.Audiences ?? new List<BenchmarkReportAudience>()).Distinct().OrderBy(a => a).ToList();
+        var (audiences, audienceRefusal) = RequestedReportAudiences(request, BenchmarkReportScope.Comparison);
+        preview.Refusal ??= audienceRefusal;
+        if (audienceRefusal != null) audiences.Clear();
         preview.Estimates.AddRange(EstimateAudiences(prep, writer, audiences, prep.Sheet.SubjectKey));
         preview.Refusal ??= ContextWindowRefusal(preview.Estimates, writer);
         preview.EstimatedTotalCostUsd = TotalCost(preview.Estimates);
+        preview.EstimatedTotalCostWithRepairUsd = TotalCostWithRepair(preview.Estimates);
         return preview;
     }
 
     /// <summary>
     /// Starts a job. Model scope, each subject checked in turn; refusals, in order: battery results
     /// mixed with runs or groups (400); unknown or Excluded subject (400); a subject with no peer
-    /// (400); unusable writer (400); the writer is a subject's model (400); no document (400); a
-    /// prompt above 90 % of the writer's context window (400); a document named in
+    /// (400); unusable writer (400); the writer is a subject's model (400); a document the scope does
+    /// not write (400); no document (400); a prompt above 90 % of the writer's context window (400); a document named in
     /// <c>replaceDocumentIds</c> that this job does not write again (400); a requested document already
     /// written for this comparison and subject and not named in <c>replaceDocumentIds</c> (409); spend
     /// cap (429); same provider, unacknowledged (409 with the warning); a job already running (409 with
@@ -505,7 +522,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             string? writerRefusal = subjects.Select(s => WriterRefusal(writer, s)).FirstOrDefault(r => r != null);
             if (writerRefusal != null) return BadRequest(new { error = writerRefusal });
 
-            var audiences = RequestedReportAudiences(request);
+            var (audiences, audienceRefusal) = RequestedReportAudiences(request, BenchmarkReportScope.Model);
+            if (audienceRefusal != null) return BadRequest(new { error = audienceRefusal });
             if (audiences.Count == 0) return BadRequest(new { error = "Choose at least one document to write." });
 
             if (ContextWindowOf(writer) != null)
@@ -596,7 +614,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// Refusals, in order: the comparison cannot be computed (400); a covered entry is not in the
     /// comparison or is Excluded (400); fewer than two or more than twelve covered models (409); a
     /// reference model that is not a covered model (400); unusable writer (400); the writer is a covered model,
-    /// with its provider, model id and thinking level (400); no document (400); a prompt above 90 % of the
+    /// with its provider, model id and thinking level (400); a document the scope does not write (400);
+    /// no document (400); a prompt above 90 % of the
     /// writer's context window (400); a document named in <c>replaceDocumentIds</c> that this job does not
     /// write again (400); a requested document already written for this covered set and not named in
     /// <c>replaceDocumentIds</c> (409); spend cap (429); a writer sharing a covered model's provider,
@@ -620,7 +639,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         string? writerRefusal = ComparisonWriterRefusal(writer, covered);
         if (writerRefusal != null) return BadRequest(new { error = writerRefusal });
 
-        var audiences = RequestedReportAudiences(request);
+        var (audiences, audienceRefusal) = RequestedReportAudiences(request, BenchmarkReportScope.Comparison);
+        if (audienceRefusal != null) return BadRequest(new { error = audienceRefusal });
         if (audiences.Count == 0) return BadRequest(new { error = "Choose at least one document to write." });
 
         var numberedBefore = await FindComparisonAsync(request, ct);
@@ -750,8 +770,10 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// the run's report writer: the requested ones, or every missing one when none is named. Answers 202
     /// with the run's Pending status and the documents the job will write. Refusals, in order: no body
     /// (400); unknown run (404); the run has no final synthesis yet (400); a job for the run is Pending
-    /// or Writing (409); a requested document that is not a run-completion document (400); a requested
-    /// document already written (409), or with none requested, every one written (409); an unusable writer or
+    /// or Writing (409); a requested document that is not a run-completion document (400); a
+    /// <c>replaceDocumentIds</c> entry that is not this run's run-completion document of a requested
+    /// audience (400); a requested document already written and not replaced (409), or with none
+    /// requested, every one written and none replaced (409); an unusable writer or
     /// the model under test (400); a writer of the candidate's provider, unacknowledged (409 with the
     /// warning); a refused endpoint (400); the spend cap (429). A request the client aborts is a 499.
     /// </summary>
@@ -779,19 +801,24 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
             if (invalidAudience != null) return invalidAudience;
 
+            var (replaceable, replaceRefusal) = await BenchmarkRunReportDocumentService.ReplaceableAudiencesAsync(
+                _db, BenchmarkRunReportDocumentService.SubjectKeyOf(runId), BenchmarkReportDocumentOrigin.RunCompletion,
+                requested, request.ReplaceDocumentIds, ct);
+            if (replaceRefusal != null) return BadRequest(new { error = replaceRefusal });
+
             var missing = await BenchmarkRunReportDocumentService.MissingAudiencesAsync(_db, runId, ct);
             List<BenchmarkReportAudience> toWrite;
             if (requested == null)
             {
-                if (missing.Count == 0)
+                toWrite = BenchmarkRunReportDocumentService.Audiences.Where(a => missing.Contains(a) || replaceable.Contains(a)).ToList();
+                if (toWrite.Count == 0)
                 {
                     return Conflict(new { error = AllWrittenMessage });
                 }
-                toWrite = missing;
             }
             else
             {
-                var written = requested.Where(a => !missing.Contains(a)).ToList();
+                var written = requested.Where(a => !missing.Contains(a) && !replaceable.Contains(a)).ToList();
                 if (written.Count > 0)
                 {
                     return Conflict(new { error = $"The {BenchmarkReportRenderService.AudienceName(written[0])} is already written. Delete it first to write it again." });
@@ -824,7 +851,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             await _db.SaveChangesAsync(ct);
 
             string? userId = User?.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!_runReportDocuments.TryStart(runId, userId, toWrite, request.AcknowledgeSameProvider, out _))
+            if (!_runReportDocuments.TryStart(runId, userId, toWrite, request.AcknowledgeSameProvider, out _,
+                    replaceable.Count > 0 ? request.ReplaceDocumentIds : null))
             {
                 return Conflict(new { error = "The reports of this run are already being written." });
             }
@@ -949,12 +977,78 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
             estimate.Estimates.AddRange(EstimateAudiences(prep, writer, audiences));
             estimate.EstimatedTotalCostUsd = TotalCost(estimate.Estimates);
+            estimate.EstimatedTotalCostWithRepairUsd = TotalCostWithRepair(estimate.Estimates);
             return Ok(estimate);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             return StatusCode(StatusCodes.Status499ClientClosedRequest);
         }
+    }
+
+    /// <summary>
+    /// The controls a Root Cause Analysis of the run would use if written now, found by
+    /// <see cref="RootCauseControls.FindAsync"/> as the run-completion preparation finds them, with the
+    /// control limit they set and, when fewer than two qualify, the <c>control</c> run that analysis would
+    /// propose, taken from the same preparation (null when the run has no final synthesis yet or no
+    /// other provider has a configured Benchmark model). Makes no model call. 404 for an unknown run;
+    /// 499 when the client aborts.
+    /// </summary>
+    [HttpGet("runs/{runId:long}/root-cause-controls")]
+    public async Task<IActionResult> GetRunRootCauseControls(long runId, CancellationToken ct)
+    {
+        try
+        {
+            var run = await _db.BenchmarkRuns.AsNoTracking().IgnoreAutoIncludes().FirstOrDefaultAsync(r => r.Id == runId, ct);
+            if (run == null) return NotFound();
+
+            var controls = await RootCauseControls.FindAsync(_db, BenchmarkRunReportDocumentService.SubjectKeyOf(runId), ct);
+            RootCauseRecommendedRun? controlRun = null;
+            if (controls.Controls.Count < 2 && BenchmarkRunReportDocumentService.IsFinishedWithSynthesis(run))
+            {
+                var (prep, _) = await BenchmarkReportPackPreparation.PrepareAsync(
+                    _db, _comparisonService,
+                    BenchmarkRunReportDocumentService.RunRequest(runId, BenchmarkRunReportDocumentService.Audiences, 0),
+                    BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration), ct, _configuration);
+                controlRun = ControlRunOf(prep);
+            }
+            return Ok(RootCauseControlsDtoOf(controls, controlRun));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>The <c>control</c> run a preparation's root-cause analysis proposes; null when it proposes none.</summary>
+    internal static RootCauseRecommendedRun? ControlRunOf(BenchmarkReportPackPreparation? prep)
+        => prep?.Sheet?.RootCause?.RecommendedRuns?.FirstOrDefault(r => string.Equals(r.Kind, RootCauseRunKinds.Control, StringComparison.Ordinal));
+
+    /// <summary>
+    /// A control set as the AI reports tabs show it: each control with its start as
+    /// <see cref="RootCauseControlDto.CompletedAtUtc"/>, the control limit against the subject's provider
+    /// (<c>None</c> when it does not cap), and the proposed control run.
+    /// </summary>
+    internal static RootCauseControlsDto RootCauseControlsDtoOf(RootCauseControlSet set, RootCauseRecommendedRun? controlRun)
+    {
+        ArgumentNullException.ThrowIfNull(set);
+        int otherProviders = set.Controls.Count(c => !string.Equals(
+            (c.Provider ?? string.Empty).Trim(), (set.SubjectProvider ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase));
+        var (cap, _) = RootCauseControls.Limit(set.Controls.Count, otherProviders);
+        return new RootCauseControlsDto
+        {
+            Controls = set.Controls.Select(c => new RootCauseControlDto
+            {
+                ModelLabel = c.ModelLabel,
+                Provider = c.Provider,
+                RunId = c.RunId,
+                BatteryRunId = c.BatteryRunId,
+                CompletedAtUtc = c.DateUtc,
+                SharedQuestions = c.SharedQuestions
+            }).ToList(),
+            ControlLimit = cap ?? "None",
+            ControlRun = set.Controls.Count < 2 ? controlRun : null
+        };
     }
 
     /// <summary>
@@ -1044,13 +1138,33 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         ReplaceDocumentIds = request.ReplaceDocumentIds
     };
 
-    /// <summary>The request's defined audiences, distinct, in audience order.</summary>
-    private static List<BenchmarkReportAudience> RequestedReportAudiences(BenchmarkReportPackRequest request)
-        => (request.Audiences ?? new List<BenchmarkReportAudience>())
-            .Where(a => Enum.IsDefined(a))
-            .Distinct()
-            .OrderBy(a => a)
-            .ToList();
+    /// <summary>
+    /// The request's audiences, distinct, in audience order; the refusal <c>"&lt;name&gt; is not written for
+    /// &lt;scope&gt; documents."</c> for the first one that <paramref name="scope"/> does not write.
+    /// </summary>
+    private static (List<BenchmarkReportAudience> Audiences, string? Refusal) RequestedReportAudiences(
+        BenchmarkReportPackRequest request, BenchmarkReportScope scope)
+    {
+        var requested = (request.Audiences ?? new List<BenchmarkReportAudience>()).Distinct().OrderBy(a => a).ToList();
+        var allowed = ScopeAudiences.TryGetValue(scope, out var list) ? list : Array.Empty<BenchmarkReportAudience>();
+        foreach (var audience in requested)
+        {
+            if (!allowed.Contains(audience)) return (requested, AudienceRefusal(audience, scope));
+        }
+        return (requested, null);
+    }
+
+    /// <summary><c>"Provider Issue Report is not written for comparison documents."</c></summary>
+    private static string AudienceRefusal(BenchmarkReportAudience audience, BenchmarkReportScope scope)
+    {
+        string scopeName = scope switch
+        {
+            BenchmarkReportScope.Comparison => "comparison",
+            BenchmarkReportScope.ChatConsistency => "chat consistency",
+            _ => "model"
+        };
+        return BenchmarkReportRenderService.AudienceName(audience) + " is not written for " + scopeName + " documents.";
+    }
 
     private static List<BenchmarkReportPackPeerDto> PeerDtos(BenchmarkReportFactSheet sheet)
         => sheet.Peers.Select(p => new BenchmarkReportPackPeerDto
@@ -1323,7 +1437,8 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     }
 
     /// <summary>
-    /// Each document's prompt size, estimated tokens, first-call cost and share of the writer's context
+    /// Each document's prompt size, estimated tokens, first-call cost and first call plus one repair turn
+    /// (<see cref="BenchmarkReportPackService.EstimateCostWithRepair"/>), and share of the writer's context
     /// window, for <paramref name="subjectKey"/>; comparison scope uses its own output sizes. Makes no
     /// model call.
     /// </summary>
@@ -1349,6 +1464,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
                 EstimatedInputTokens = input,
                 EstimatedOutputTokens = output,
                 EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.EstimateSingleRequestCost(pricing, input, output),
+                EstimatedCostWithRepairUsd = pricing == null ? null : (double)BenchmarkReportPackService.EstimateCostWithRepair(pricing, input, output),
                 ContextWindowShare = window is int size ? (double)input / size : null
             };
         }).ToArray();
@@ -1357,6 +1473,10 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// <summary>The sum of the estimates' costs; null when there is none or a document has no price.</summary>
     private static double? TotalCost(IReadOnlyCollection<BenchmarkReportPackAudienceEstimateDto> estimates)
         => estimates.Count == 0 || estimates.Any(e => e.EstimatedCostUsd == null) ? null : estimates.Sum(e => e.EstimatedCostUsd!.Value);
+
+    /// <summary>The sum of the estimates' first call plus one repair turn; null under the same rule as <see cref="TotalCost"/>.</summary>
+    private static double? TotalCostWithRepair(IReadOnlyCollection<BenchmarkReportPackAudienceEstimateDto> estimates)
+        => estimates.Count == 0 || estimates.Any(e => e.EstimatedCostWithRepairUsd == null) ? null : estimates.Sum(e => e.EstimatedCostWithRepairUsd!.Value);
 
     private static string EndpointRefusal(SystemAiApiConfiguration writer, string? endpointError)
         => $"Report writer configuration '{writer.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpointError}";

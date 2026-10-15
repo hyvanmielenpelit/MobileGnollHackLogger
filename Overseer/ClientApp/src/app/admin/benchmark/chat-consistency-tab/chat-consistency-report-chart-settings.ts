@@ -26,7 +26,7 @@ import {
 import { CC_FIGURE_ENDPOINTS, CC_REPORT_FIGURES, ccFigureTitle } from './chat-consistency-charts';
 import { CC_REPORT_AUDIENCES, CC_REPORT_FIGURE_KEYS, CcEndpointResult, CcReportFigureKey } from './chat-consistency.models';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport } = BenchmarkReportAudience;
+const { ExecutiveSummary, ProviderIssueReport } = BenchmarkReportAudience;
 
 /** Per document type, the chat consistency figures to include, in document order. */
 export type CcReportChartSelection = ReportChartSelection<CcReportFigureKey>;
@@ -43,13 +43,11 @@ export interface CcReportChartSettings {
   readonly layout: CcReportChartLayout;
 }
 
-/** The four document types, in the Write step's order. */
+/** The two document types, in the Write step's order; a stored setting of any other type is dropped on read. */
 export const CC_REPORT_CHART_AUDIENCE_KEYS: readonly BenchmarkReportAudience[] = CC_REPORT_AUDIENCES.map(entry => entry.audience);
 
 const SHORT_LABELS: Readonly<Partial<Record<BenchmarkReportAudience, string>>> = {
   [ExecutiveSummary]: 'Executive',
-  [TechnicalReport]: 'Researchers',
-  [InternalBrief]: 'Internal',
   [ProviderIssueReport]: 'Provider'
 };
 
@@ -88,8 +86,6 @@ export const CC_REPORT_CHART_COLUMN_DISABLED_REASON = 'Not chosen in New reports
 
 export const CC_DEFAULT_REPORT_CHART_SELECTION: CcReportChartSelection = Object.freeze({
   [ExecutiveSummary]: Object.freeze(['cc1-quality', 'cc2-speed'] as CcReportFigureKey[]),
-  [TechnicalReport]: Object.freeze([...CC_REPORT_FIGURE_KEYS]),
-  [InternalBrief]: Object.freeze(['cc1-quality', 'cc3-work'] as CcReportFigureKey[]),
   [ProviderIssueReport]: Object.freeze(['cc2-speed', 'cc4-timeline'] as CcReportFigureKey[])
 });
 
@@ -149,7 +145,7 @@ export function ccDefaultReportChartSettings(endpoints: readonly CcEndpointResul
     : Object.freeze({ selection, layout: CC_DEFAULT_REPORT_CHART_LAYOUT });
 }
 
-/** The five figures and four document types only, each figure once, in document order. */
+/** The five figures and two document types only, each figure once, in document order. */
 export function normalizeCcReportChartSelection(selection: unknown): CcReportChartSelection {
   return normalizePickerSelection(selection, CC_REPORT_FIGURE_KEYS, CC_REPORT_CHART_AUDIENCE_KEYS);
 }

@@ -36,6 +36,15 @@ public class BenchmarkReportPackDocumentProgress
     public long InputTokens { get; set; }
     public long OutputTokens { get; set; }
     public decimal? CostUsd { get; set; }
+
+    /// <summary>The first turn's validation issues, at most <see cref="BenchmarkReportPackJob.MaxDiagnosticIssues"/>; null until the document ends.</summary>
+    public List<BenchmarkReportValidationNote>? FirstTurnIssues { get; set; }
+
+    /// <summary>The issues left after the last validation, at most <see cref="BenchmarkReportPackJob.MaxDiagnosticIssues"/>; null until the document ends.</summary>
+    public List<BenchmarkReportValidationNote>? FinalIssues { get; set; }
+
+    /// <summary>A Failed document's last raw reply, cut at <see cref="BenchmarkReportPackJob.MaxFailedReplyChars"/>; null otherwise.</summary>
+    public string? FailedReply { get; set; }
 }
 
 public class BenchmarkReportPackJobLogEntry
@@ -52,6 +61,15 @@ public class BenchmarkReportPackJobLogEntry
 /// </summary>
 public class BenchmarkReportPackJob
 {
+    /// <summary>The validation issues a document's diagnostics keep per list.</summary>
+    public const int MaxDiagnosticIssues = 80;
+
+    /// <summary>The characters of a failed document's last reply the diagnostics keep.</summary>
+    public const int MaxFailedReplyChars = 200_000;
+
+    /// <summary>Ends a failed reply cut at <see cref="MaxFailedReplyChars"/>.</summary>
+    public const string TruncatedMarker = "[truncated]";
+
     private readonly object _lock = new();
 
     public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -67,12 +85,6 @@ public class BenchmarkReportPackJob
 
     /// <summary>The numbered comparison every document of a Report Pack job belongs to; null for a completion job.</summary>
     public int? ComparisonId { get; set; }
-
-    /// <summary>
-    /// Question topics written once per covered set of a comparison-scope job, by subject key, and
-    /// given to every later document of that set.
-    /// </summary>
-    public Dictionary<string, List<BenchmarkReportQuestionTopic>> SharedTopics { get; } = new(StringComparer.Ordinal);
     public long? SuiteId { get; set; }
     public string SuiteName { get; set; } = string.Empty;
 
@@ -179,6 +191,44 @@ public class BenchmarkReportPackJob
         }
     }
 
+    /// <summary>
+    /// A document's validation record once it has ended: its first-turn and final issues, each cut at
+    /// <see cref="MaxDiagnosticIssues"/>, and the last raw reply of a failed one, cut at
+    /// <see cref="MaxFailedReplyChars"/> with <see cref="TruncatedMarker"/>.
+    /// </summary>
+    public void SetDocumentDiagnostics(BenchmarkReportPackDocumentProgress document,
+        IEnumerable<BenchmarkReportValidationNote>? firstTurnIssues, IEnumerable<BenchmarkReportValidationNote>? finalIssues,
+        string? failedReply = null)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        var first = CopyIssues(firstTurnIssues);
+        var final = CopyIssues(finalIssues);
+        string? reply = failedReply == null || failedReply.Length <= MaxFailedReplyChars
+            ? failedReply
+            : failedReply[..MaxFailedReplyChars] + TruncatedMarker;
+        lock (_lock)
+        {
+            document.FirstTurnIssues = first;
+            document.FinalIssues = final;
+            document.FailedReply = reply;
+        }
+    }
+
+    private static List<BenchmarkReportValidationNote> CopyIssues(IEnumerable<BenchmarkReportValidationNote>? issues)
+        => (issues ?? Enumerable.Empty<BenchmarkReportValidationNote>())
+            .Take(MaxDiagnosticIssues)
+            .Select(n => new BenchmarkReportValidationNote { Rule = n.Rule, Location = n.Location, Message = n.Message, Dropped = n.Dropped })
+            .ToList();
+
+    private static List<BenchmarkReportPackValidationIssueDto>? IssueDtos(List<BenchmarkReportValidationNote>? issues)
+        => issues?.Select(n => new BenchmarkReportPackValidationIssueDto
+        {
+            Rule = n.Rule,
+            Location = n.Location,
+            Message = n.Message,
+            Dropped = n.Dropped
+        }).ToList();
+
     public void SetStatus(BenchmarkReportPackJobStatus status)
     {
         lock (_lock)
@@ -195,6 +245,8 @@ public class BenchmarkReportPackJob
     {
         lock (_lock)
         {
+            // The validation detail travels once the job has ended, never on a running job's polls.
+            bool terminal = Status != BenchmarkReportPackJobStatus.Running;
             return new BenchmarkReportPackJobDto
             {
                 Id = Id,
@@ -228,7 +280,10 @@ public class BenchmarkReportPackJob
                     CompletedAtUtc = d.CompletedAtUtc,
                     InputTokens = d.InputTokens,
                     OutputTokens = d.OutputTokens,
-                    CostUsd = d.CostUsd == null ? null : (double)d.CostUsd.Value
+                    CostUsd = d.CostUsd == null ? null : (double)d.CostUsd.Value,
+                    FirstTurnIssues = terminal ? IssueDtos(d.FirstTurnIssues) : null,
+                    FinalIssues = terminal ? IssueDtos(d.FinalIssues) : null,
+                    FailedReply = terminal ? d.FailedReply : null
                 }).ToList(),
                 Log = Log.Select(l => new BenchmarkReportPackJobLogEntryDto
                 {

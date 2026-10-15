@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Overseer.Services.Benchmarking.RootCause;
 
 // The fact sheet of a battery subject: a battery run's result as one entry of a comparison of
 // battery results. It carries every generic key the renderer, the validator and the prompt read, so
@@ -65,6 +66,12 @@ using Overseer.Models;
 //                                                    absent when no member is a panel run
 //   loo.<n>                                          the Overall Index with suite n left out
 //
+// Root cause keys (kept off the Executive Summary's prompt by RootCauseFacts.WriterHidden):
+//   speed.ttftP90 … config.maxOutputTokens           the per-model facts of RootCauseEvidence over the member runs
+//   profile.*                                        the failure profile over the member runs' answers
+//   rca.*                                            the root-cause engine, with suites as the groups of WQ2 and
+//                                                    leave-one-suite-out as its robustness check
+//
 // Questions are numbered 1..N across the battery, suite by suite, and each carries its suite-qualified
 // reference S<n>-Q<m>, m counting the suite's questions by order index. Every question has a one-line
 // row; at most DetailQuestionsPerSuite questions of each suite also carry their verbatim content
@@ -106,6 +113,24 @@ public sealed class BenchmarkBatteryReportFactsInput
     /// null leaves the <c>availability.*</c> facts off the sheet.
     /// </summary>
     public ProviderAvailabilitySummary? Availability { get; init; }
+
+    /// <summary>Each member run's candidate price card on the comparison's pricing basis, by run id.</summary>
+    public IReadOnlyDictionary<long, ModelPricing?>? CandidatePricing { get; init; }
+
+    /// <summary>
+    /// Whether the root-cause engine runs over the sheet; false for the per-battery sheets a comparison-scope
+    /// sheet is built from.
+    /// </summary>
+    public bool IncludeRootCause { get; init; } = true;
+
+    /// <summary>The controls of a battery-completion analysis (<see cref="RootCauseControls.FindAsync"/>); null when none were sought.</summary>
+    public RootCauseControlSet? Controls { get; init; }
+
+    /// <summary>The configurations and recommended models the next runs are derived from; null for none.</summary>
+    public RootCauseCatalog? Catalog { get; init; }
+
+    /// <summary>The battery the battery run ran, for the next runs' settings; null when unknown.</summary>
+    public long? BatteryId { get; init; }
 }
 
 /// <summary>A battery subject's fact sheet, its content snapshot and the notes of its preparation, or the reason none can be built.</summary>
@@ -433,6 +458,65 @@ public static class BenchmarkBatteryReportFacts
         AddSensitivityFacts(facts, result);
         BenchmarkReportFacts.AddAvailabilityFacts(facts, input.Availability);
 
+        var suiteOfRun = new Dictionary<long, int>();
+        foreach (var suite in source.Suites)
+        {
+            foreach (var run in suite.Runs) suiteOfRun.TryAdd(run.Id, suite.SuiteIndex + 1);
+        }
+        var subjectEvidence = RootCauseEvidence.Build(subjectRuns, input.CandidatePricing, suiteOfRun, input.BatteryId, source.BatteryName);
+        RootCauseEvidence.AddFacts(facts, subjectEvidence,
+            subject.SpeedDegraded ? subject.Explanation : null,
+            subject.CostDegraded ? subject.Explanation : null,
+            BenchmarkReportFacts.PricingBasisKindOf(comparison));
+        BenchmarkComparisonModelProfile.FromRuns(subjectRuns).AddModelScopeFacts(facts);
+        BenchmarkReportFacts.SetQuestionColumns(questions, subjectEvidence);
+
+        if (input.IncludeRootCause)
+        {
+            string[] dimensionNames = DimensionKeys.Select(d => d.Name).ToArray();
+            var models = new List<RootCauseModelInput>
+            {
+                RootCauseEvidence.ModelInput(subject, RootCauseEngine.SubjectToken, null, true, subjectRuns, subjectEvidence,
+                    dimensionNames.Select(n => DimensionOf(result, n)).ToList(),
+                    BenchmarkReportFacts.StyleConflictOf(subjectRuns, subjectStats), comparison, result.PanelVerificationClearedOverall)
+            };
+            foreach (var (entry, letter, _) in peers.Take(RootCauseEngine.MaxPeers))
+            {
+                // A comparison of battery results does not load the peers' answers: their evidence is empty.
+                var peerResult = sources.GetValueOrDefault(entry.Key)?.Result;
+                models.Add(RootCauseEvidence.ModelInput(entry, letter, letter, false, Array.Empty<BenchmarkRun>(),
+                    RootCauseEvidence.Build(Array.Empty<BenchmarkRun>(), input.CandidatePricing),
+                    dimensionNames.Select(n => peerResult == null ? null : DimensionOf(peerResult, n)).ToList(),
+                    false, comparison, peerResult?.PanelVerificationClearedOverall));
+            }
+
+            var tokenOf = new Dictionary<string, string>(StringComparer.Ordinal) { [subject.Key] = RootCauseEngine.SubjectToken };
+            foreach (var (entry, letter, _) in peers) tokenOf[entry.Key] = letter;
+
+            var rootCause = RootCauseEngine.Compute(new RootCauseInput
+            {
+                Scope = RootCauseEngine.ModelScope,
+                Origin = input.Controls != null || peers.Count == 0 ? RootCauseOrigins.BatteryCompletion : RootCauseOrigins.ModelPack,
+                ComputedAtUtc = comparison.ComputedAtUtc,
+                PricingBasis = comparison.PricingBasisLabel,
+                PricingBasisKind = BenchmarkReportFacts.PricingBasisKindOf(comparison),
+                Models = models,
+                JudgeDependentPairs = RootCauseEvidence.JudgeDependentPairs(comparison, tokenOf),
+                Graders = sheet.Graders.Select(g => (g.Role, g.Provider)).ToList(),
+                Controls = input.Controls,
+                Catalog = input.Catalog ?? new RootCauseCatalog(),
+                Battery = true,
+                Questions = RootCauseEvidence.QuestionRefs(questions),
+                LeaveOneSuiteOutChanges = result.LeaveOneSuiteOut
+                    .Where(r => r.Change.HasValue)
+                    .GroupBy(r => r.SuiteIndex + 1)
+                    .ToDictionary(g => g.Key, g => g.First().Change!.Value),
+                SuiteNames = suites.GroupBy(s => s.SuiteIndex + 1).ToDictionary(g => g.Key, g => g.First().SuiteName)
+            });
+            sheet.RootCause = rootCause;
+            RootCauseFacts.Add(facts, rootCause, t => t == RootCauseEngine.SubjectToken ? subject.Label : "Model " + t);
+        }
+
         if (peers.Count == 0)
         {
             facts.Withhold(BenchmarkReportFacts.IsPeerFact, StandaloneReason);
@@ -458,15 +542,15 @@ public static class BenchmarkBatteryReportFacts
     }
 
     /// <summary>
-    /// The largest writer prompt of the three audiences for this sheet and content, system prompt and
-    /// user message together, in characters.
+    /// The larger writer prompt of the Executive Summary and the Root Cause Analysis for this sheet and
+    /// content, system prompt and user message together, in characters.
     /// </summary>
     public static int PromptChars(BenchmarkReportFactSheet sheet, BenchmarkReportContentSnapshot content)
     {
         ArgumentNullException.ThrowIfNull(sheet);
         ArgumentNullException.ThrowIfNull(content);
 
-        return new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief }
+        return new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis }
             .Select(a => BenchmarkReportPackPrompt.Build(a, sheet, content))
             .Max(p => p.SystemPrompt.Length + p.UserMessage.Length);
     }

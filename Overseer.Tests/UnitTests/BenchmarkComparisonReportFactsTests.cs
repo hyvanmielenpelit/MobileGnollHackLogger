@@ -331,7 +331,7 @@ public class BenchmarkComparisonReportFactsTests
 
         Assert.Equal(new[] { "A", "B", "C", "D", "E" }, sheet.Peers.Select(p => p.Letter));
         Assert.Equal("C", sheet.ReferenceLetter);
-        Assert.Equal("Model C, chosen as the reference", Display(sheet, "comparison.reference"));
+        Assert.Equal("Model C, chosen for this comparison", Display(sheet, "comparison.reference"));
         var reference = Assert.Single(sheet.PairedTests!, f => f.Mode == "Reference");
         Assert.Equal("C", reference.ReferenceLetter);
         Assert.All(Assert.Single(reference.Measures, m => m.Measure == BenchmarkPairedTests.IntelligenceMeasure).Pairs,
@@ -349,7 +349,7 @@ public class BenchmarkComparisonReportFactsTests
         Assert.Equal("B", other.ReferenceLetter);
         Assert.Equal("C", other.BaselineModelLetter);
         Assert.False(other.ReferenceIsBaselineModel);
-        Assert.Equal("Model B, chosen as the reference", Display(other, "comparison.reference"));
+        Assert.Equal("Model B, chosen for this comparison", Display(other, "comparison.reference"));
 
         var baseline = ComparisonFacts(referenceKey: BaselineKey, baselineKey: BaselineKey).Sheet!;
         Assert.Equal("C", baseline.ReferenceLetter);
@@ -442,7 +442,9 @@ public class BenchmarkComparisonReportFactsTests
         Assert.Empty(unlabeled);
         Assert.Equal("Model B: questions scored more than 15 points above the reference", BenchmarkReportFactLabels.Label("model.B.vsReference.better"));
         Assert.Equal("Model A against Model B: intelligence result among all pairs", BenchmarkReportFactLabels.Label("pair.A.B.quality.allPairs"));
-        Assert.Equal("Notable finding 1: summary", BenchmarkReportFactLabels.Label("notable.1.summary"));
+        Assert.Equal("Notable finding 1", BenchmarkReportFactLabels.Label("notable.1.summary"));
+        Assert.Equal("Notable finding 1: kind", BenchmarkReportFactLabels.Label("notable.1.kind"));
+        Assert.Equal("Model A: Intelligence Index", BenchmarkReportFactLabels.Label("model.A.quality.index"));
         Assert.Equal("Model A: runs with a critical-error weakness in the grader findings", BenchmarkReportFactLabels.Label("model.A.profile.findings.critical_error"));
     }
 

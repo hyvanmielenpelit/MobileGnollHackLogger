@@ -13,6 +13,8 @@ import {
 } from '../../../services/admin-benchmark.service';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import {
+  CHAT_CONSISTENCY_REPORT_AUDIENCE_OPTIONS,
+  RUN_REPORT_AUDIENCE_OPTIONS,
   audienceLabel,
   formatCostUsd,
   formatElapsed,
@@ -25,12 +27,9 @@ import {
  * its tag and meta line, the job status line, and the cost estimate block.
  */
 
-/** The three AI-written completion documents of a run or a battery run, in the order the panels list them. */
-export const REPORT_DOCUMENT_AUDIENCES: readonly BenchmarkReportAudience[] = [
-  BenchmarkReportAudience.ExecutiveSummary,
-  BenchmarkReportAudience.TechnicalReport,
-  BenchmarkReportAudience.InternalBrief
-];
+/** The two AI-written completion documents of a run or a battery run, in the order the panels list them. */
+export const REPORT_DOCUMENT_AUDIENCES: readonly BenchmarkReportAudience[] =
+  RUN_REPORT_AUDIENCE_OPTIONS.map(option => option.audience);
 
 /** A battery-completion document's origin. */
 export const BATTERY_COMPLETION_ORIGIN = BenchmarkReportDocumentOrigin.BatteryCompletion;
@@ -38,11 +37,9 @@ export const BATTERY_COMPLETION_ORIGIN = BenchmarkReportDocumentOrigin.BatteryCo
 /** A chat consistency document's origin. */
 export const CHAT_CONSISTENCY_REPORT_ORIGIN = BenchmarkReportDocumentOrigin.ChatConsistencyReport;
 
-/** The four documents of a saved chat consistency analysis: a run's three, then the Provider Issue Report. */
-export const CHAT_CONSISTENCY_DOCUMENT_AUDIENCES: readonly BenchmarkReportAudience[] = [
-  ...REPORT_DOCUMENT_AUDIENCES,
-  BenchmarkReportAudience.ProviderIssueReport
-];
+/** The two documents of a saved chat consistency analysis: the Executive Summary, then the Provider Issue Report. */
+export const CHAT_CONSISTENCY_DOCUMENT_AUDIENCES: readonly BenchmarkReportAudience[] =
+  CHAT_CONSISTENCY_REPORT_AUDIENCE_OPTIONS.map(option => option.audience);
 
 /** One row of the document list: an audience and its stored document, if any. */
 export interface ReportDocumentRow {
@@ -105,8 +102,8 @@ export function reportStatusSnapshotOfJob(job: BenchmarkRunReportJobDto): Report
 
 /**
  * The completion documents of one subject (`run:<id>`, `battery:<id>` or `chat-consistency:<id>`)
- * of the given origin, the newest one per audience, in audience order: a run's three, and for the
- * chat consistency origin the Provider Issue Report after them. Documents of any other origin about
+ * of the given origin, the newest one per audience, in audience order: a run's two, or for the chat
+ * consistency origin the Executive Summary and the Provider Issue Report. Documents of any other origin about
  * the same subject are left out, so a chat consistency document is never a run's or a battery run's.
  */
 export function completionDocumentsOf(

@@ -21,6 +21,7 @@ import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { ModelPickerComponent, ModelPickerOption } from '../../../shared/model-picker/model-picker.component';
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { BenchmarkDownloadCenterComponent } from '../download-center/benchmark-download-center.component';
+import { RootCauseRunsComponent } from '../report-pack/root-cause-runs.component';
 import {
   REPORT_DOCUMENT_AUDIENCES,
   ReportDocumentRow,
@@ -38,6 +39,7 @@ import {
 } from './report-documents-tab.base';
 import { ReportWriterCandidate, reportWriterRefusal, reportWriterWarning } from './report-writer-policy';
 import { RUN_REPORT_WRITER_ADVICE } from './report-writer-advice';
+import { RootCauseControlsComponent } from './root-cause-controls.component';
 import { RunReportWritingContext, RunReportWritingDialogComponent } from './run-report-writing-dialog.component';
 
 export { reportDocumentsStatusOf } from './report-documents-list';
@@ -48,7 +50,7 @@ export const RUN_REPORT_DOCUMENTS_POLL_MS = REPORT_DOCUMENTS_POLL_MS;
 /** The pause after the last change of writer or documents before the cost is estimated. */
 export const RUN_REPORT_ESTIMATE_DEBOUNCE_MS = REPORT_ESTIMATE_DEBOUNCE_MS;
 
-/** The three AI-written documents of a run, in the order the tab lists them. */
+/** The two AI-written documents of a run, the Executive Summary and the Root Cause Analysis, in the order the tab lists them. */
 export const RUN_REPORT_AUDIENCES: readonly BenchmarkReportAudience[] = REPORT_DOCUMENT_AUDIENCES;
 
 /** The run's report fields as the tab last read them, for the host to keep its copy of the run current. */
@@ -119,7 +121,9 @@ function runCompletionDocumentsOf(
     InfoTipComponent,
     RunReportWritingDialogComponent,
     PdfViewerDialogComponent,
-    BenchmarkDownloadCenterComponent
+    BenchmarkDownloadCenterComponent,
+    RootCauseControlsComponent,
+    RootCauseRunsComponent
   ],
   templateUrl: './run-ai-reports.component.html',
   styleUrls: ['./run-ai-reports.component.scss'],
@@ -155,6 +159,7 @@ export class RunAiReportsComponent extends ReportDocumentsTabBase<BenchmarkRunDe
   override readonly changedSinceText = 'Run changed since this document was written';
   override readonly downloadsNoticeText = 'These reports, and the rest of this run, can be downloaded from the Download Center ' +
     'as PDF, Word or Markdown, at Summary, Detailed or Full disclosure, one by one or together in a ZIP.';
+  override readonly controlsSubjectKind = 'run';
 
   protected override readonly subjectNoun = 'run';
   protected override readonly api: ReportDocumentsApi<BenchmarkRunDetailDto> = {

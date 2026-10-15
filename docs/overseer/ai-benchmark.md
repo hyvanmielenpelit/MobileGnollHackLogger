@@ -27,7 +27,7 @@ The benchmark framework consists of:
 - **Exportable Markdown Reports**: Generates comprehensive 7-section Markdown reports containing run manifests, results summaries with Intelligence and Speed indices, question replies, tool traces, scoring methodology, and final qualitative synthesis.
 - **Multi-Suite Batteries**: A battery is a named, fixed set of two or more suites with declared weights. A battery run tests one model on every suite of the battery, one suite after another, *R* times each, and combines the per-suite results into an **Overall Intelligence Index** with an uncertainty interval, a suite profile, weighting-sensitivity figures, speed and cost composites, a leaderboard per comparability class and a paired comparison of two results. See [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md).
 - **Model Batches**: several models under test run one after another under one settings set — a single run, a replicate series or a battery run per model — with guardrails the server evaluates before Start (blockers, warnings to acknowledge, advice), a whole-batch run-limit calculation, run-time guards that stop the batch when the instrument moves, and one progress dialog that opens each member's own. See [`ai-benchmark-model-batches.md`](ai-benchmark-model-batches.md).
-- **Report Packs and the Download Center**: For one Model Comparison entry, a separately chosen writer model writes an Executive Summary, a Report for AI Researchers and Developers and an Internal Improvement Brief from computed figures; stored documents render deterministically at a chosen disclosure level and peer naming, and download singly or as a ZIP with a manifest. Their PDF and Word copies can carry the comparison's own charts, drawn in the browser from the wizard's chart settings and stored beside the document. The Model Comparison wizard's step 3, *Write*, writes them, and its step 4, *Documents*, lists, views, charts, downloads and deletes the documents of the comparison that is open; the Model Comparison launcher, under its **Open Comparison Wizard** button, sums up every comparison document as **Comparison reports** and opens them in the Download Center. See [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
+- **Report Packs and the Download Center**: For a Model Comparison, or one of its entries, a separately chosen writer model writes an Executive Summary and a Root Cause Analysis from computed figures — the Root Cause Analysis explaining, with hypotheses graded by code, why the models did well or badly on intelligence, speed and cost; stored documents render deterministically at a chosen disclosure level and peer naming, and download singly or as a ZIP with a manifest. Their PDF and Word copies can carry the comparison's own charts, drawn in the browser from the wizard's chart settings and stored beside the document, and every Root Cause Analysis carries four charts drawn on the server. The Model Comparison wizard's step 3, *Write*, writes them, and its step 4, *Documents*, lists, views, charts, downloads and deletes the documents of the comparison that is open; the Model Comparison launcher, under its **Open Comparison Wizard** button, sums up every comparison document as **Comparison reports** and opens them in the Download Center. See [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md).
 
 ### Run Target: One Suite or a Battery
 
@@ -45,7 +45,7 @@ The launcher's *Test Setup* fieldset opens with **Run Target**, a radio group:
 
 *Start* then starts a battery run (`POST /api/admin/benchmark/batteries/runs`) instead of a run or a
 series, and a battery banner follows it. Every launcher setting is remembered across reloads as soon as
-it is changed, Run Target and the battery included; the reuse choice is not. A *Report Writer* chosen in battery mode writes the battery's three documents once it
+it is changed, Run Target and the battery included; the reuse choice is not. A *Report Writer* chosen in battery mode writes the battery's two documents, the Executive Summary and the Root Cause Analysis, once it
 has finished and been analyzed, and the member runs write none. Batteries are defined on the
 **Multi-Suite** tab, and battery runs are listed in **Run History**. Everything about batteries is in
 [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md).
@@ -78,8 +78,8 @@ The stage comes from the server's `BenchmarkRunDetailDto.Stage` whenever there i
 **Stage 4 — Writing reports.** When the run names a report writer (`reportWriterModelConfigurationId`), the roster has a *Report writer* row (name, thinking level, provider badge, from `ReportWriterDisplayName`, `ReportWriterThinkingLevel` and `ReportWriterProvider`), the stage rail has a fourth item, *Writing reports*, and every stage label reads *Stage n of 4* (*of 3* without a writer, the diagnostics' `Stage:` line included). The run itself is not in this stage: it ends **Completed** when scoring ends, and stage 4 follows it, driven by the run's `reportDocumentsStatus` (the automatic run-completion documents of [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 11).
 
 - **Current** while a Completed run's status is *Pending* or *Writing*, and — because the server queues the job just after scoring — while it is still *NotRequested* for up to `RUN_REPORT_STAGE_GRACE_MS` = 30 s after the dialog first saw the run terminal. Stages 1–3 then show as done. The dialog keeps polling the run, and polls the run's report job (`GET …/runs/{runId}/report-documents/job`) beside it; the status line reads, for example, *"Stage 4 of 4 — Writing reports: waiting for the report writer (1 job ahead)"*, *"… preparing the fact sheet"* or *"… writing the Executive Summary (1 of 2)"* (*repairing* during a repair turn).
-- **Done** at *Completed* or *CompletedWithWarnings*: the status line appends *"Reports written: 3 documents, 1m 48s."* (*"Reports written with warnings: …"*) to the run's own result. *Failed*, *Skipped* and *Canceled* end the stage without marking it done, and the status line appends *"Report writing failed: <message>."*, *"Report writing skipped: <message>."* or *"Report writing canceled: <message>."*. A run that did not end Completed, or whose writing never appeared within the grace, gets no stage-4 sentence.
-- **The stat strip** has a *Reports* cell: *Waiting*, then the live elapsed time since the writer took the report-pack slot (*"1m 05s · writing"*, on the server's clock from the job view), then the stored count and duration (*"3 documents, 1m 48s"*), *None written* or *Not written*.
+- **Done** at *Completed* or *CompletedWithWarnings*: the status line appends *"Reports written: 2 documents, 1m 48s."* (*"Reports written with warnings: …"*) to the run's own result. *Failed*, *Skipped* and *Canceled* end the stage without marking it done, and the status line appends *"Report writing failed: <message>."*, *"Report writing skipped: <message>."* or *"Report writing canceled: <message>."*. A run that did not end Completed, or whose writing never appeared within the grace, gets no stage-4 sentence.
+- **The stat strip** has a *Reports* cell: *Waiting*, then the live elapsed time since the writer took the report-pack slot (*"1m 05s · writing"*, on the server's clock from the job view), then the stored count and duration (*"2 documents, 1m 48s"*), *None written* or *Not written*.
 - **The cost panel** has a *Report writer* row — the job's running cost while writing, then `ReportDocumentsCostUsd` — and *Run total with reports*, in a block of its own under the note that the AI-written reports are outside the benchmark's own cost. The run's stored `EstimatedCost` and every figure above that block are unchanged.
 - **Completion signal.** One user action starts one chain of server work, and the chime, the tab-title mark and the desktop notification fire once, at its end: when stage 4 ends (or its 30-s grace passes with nothing queued), not when scoring ends. A battery member's terminal poll reads its battery run fresh; when that battery run is live, still has post-run work (`postRunWork` not `None`), changed status while the run ran, or is already watched, the battery run takes the signal and the member does not chime on its own. The run's signal key carries its generation (`run:<id>:<rerunCompletedAtUtc ?? completedAtUtc>`), so one settled state signals once and a later re-run of the same run signals again (§ *Harness Version 52 Updates*). Which sound plays follows one end rule for every run kind: the completion chime for a run that ends `Completed` or `CompletedWithLimits`, the *AI Benchmarking Failed* sound for one that ends `Failed` or `CompletedWithErrors`, nothing for a cancel (§ *Model Batches, the Failure Sound and Chat Consistency v16*).
 - **Diagnostics** gain a `--- REPORTS ---` block: writer (provider / model id, thinking), status, message, documents written, duration, tokens and cost, marked as outside the run's own cost.
@@ -3154,7 +3154,8 @@ tables. The full description is [`ai-benchmark-report-pack.md`](ai-benchmark-rep
 entry that is not Excluded (the *subject*), a separately chosen **report writer** writes up to three
 documents in the context of the other entries, lettered A, B, C… in quality-rank order: an **Executive
 Summary**, a **Technical Report** and an **Internal Improvement Brief** (Full disclosure only, internal).
-The writer references figures as `{{key}}` tokens into a computed fact sheet and never writes a digit
+*The Technical Report and the Internal Improvement Brief were retired on 2026-10-15, replaced by the
+Root Cause Analysis; see `ai-benchmark-report-pack.md` § 17.* The writer references figures as `{{key}}` tokens into a computed fact sheet and never writes a digit
 except in a question reference; a validator with eleven rules gives it one repair turn and drops what
 still fails, storing the document as *CompletedWithWarnings*. The subject's own model is refused as
 writer, a same-provider writer needs an acknowledgment, and the call is recorded under
@@ -3299,7 +3300,8 @@ stay put and the panel scrolls. The key figures' **Copy** and **Download** sit b
 heading; the old collapsed-state key `overseer.benchmark.runReport.figuresCollapsed` is no longer read.
 
 **AI Reports.** The tab lists both run-completion documents, *Executive Summary* and *Report for AI
-Researchers and Developers*, whether written or not: a written one with *Written* or *Written with
+Researchers and Developers* (since 2026-10-15 the Executive Summary and the *Root Cause Analysis*),
+whether written or not: a written one with *Written* or *Written with
 warnings*, its writer and date, the *Run changed since this document was written* tag when flagged, and
 **View**; a missing one with *Not written*. The status line above says only the job state (waiting,
 writing, failed, skipped, or not written yet during a run). The section's own **Downloads** button is
@@ -3375,8 +3377,8 @@ remembered. The acknowledgment is stored on each document as `SameProviderAcknow
 evidence repeated under every item, raw fact keys printed as labels, the index given as *±* a half-width,
 refuted grader statements read as errors of the answer, the rubric's source notes and cut-off answer
 tables reaching the writer, and slots that restated their lists. Now: one compact evidence line per item in
-the Report for AI Researchers and Developers and none in the Executive Summary, which prints plain support
-labels; a human label for every fact key; *Why it scored this way* and *What worked well* explain patterns
+the Report for AI Researchers and Developers (retired 2026-10-15) and none in the Executive Summary, which
+prints plain support labels; a human label for every fact key; *Why it scored this way* and *What worked well* explain patterns
 (at most 300 and 150 words) above their *Weaknesses* and *Strengths* lists; a *Speed and cost* table; the
 index as *77 / 100 (interval 73–82)* under *How reliable this result is*; claim rulings that say what was
 checked and who was right, and a *Refuted answer sentences* column that counts only the answer's own
@@ -3403,13 +3405,14 @@ gains the provider wording and, where it applies, the writer-independence caveat
   earlier formats are normalized when read. "Family" for a grader's provider stays in the run report, the
   run-detail grader list, the launcher, the grader guide and the writer warnings.
 - **Writer independence**: a writer from the subject's provider gets a code-rendered caveat in the
-  Executive Summary and the technical report.
+  Executive Summary and the technical report (retired 2026-10-15).
 - **Interval span**: the new fact `quality.intervalSpan`, a code-rendered span sentence in the Executive
   Summary, a confidence-slot instruction that names the interval and span tokens, and validator rule 13,
   which asks for a repair when the slot calls the interval narrow, wide, tight or broad, and keeps the
   text with a note if the repair does not fix it.
-- **Disclosure**: the technical report's evidence lines at Detailed and Full only; complete answers at
-  Full for every cut excerpt, with a note on older documents that kept only the excerpt.
+- **Disclosure**: the technical report's evidence lines at Detailed and Full only (the report was retired
+  on 2026-10-15); complete answers at Full for every cut excerpt, with a note on older documents that kept
+  only the excerpt.
 - **Tool use**: a note at every level that a recorded success or failure describes execution only, and at
   Full a pointer to the runs' Tool-call logs when they recorded per-call rows.
 - **Native framing**: PDF and Word leave out the Markdown footer; their cover prints *Generated format*,
@@ -3440,7 +3443,7 @@ the rows stored before it. The full description is
 - **The Report Pack dialog**: the form sits in a resizable sidebar, and the main area lists this
   comparison's documents in a shared library — sort, filter, select, **View** in the PDF viewer with a
   *Peer names* row, **Download** through the Download Center, **Delete**. It gains the AI Reports tab's
-  writer advice (with an Internal Brief entry), *Estimated cost* panel, same-provider confirmation
+  writer advice (with an Internal Brief entry, a Root Cause Analysis entry since 2026-10-15), *Estimated cost* panel, same-provider confirmation
   (**Write Anyway**, asked on every write, replacing the acknowledgment checkbox), job stage rail and
   *Downloads* notice. The Markdown preview is gone.
 - **The Model Comparison launcher** leads with **Open Comparison Wizard**; *How the comparison works* is a
@@ -3450,7 +3453,8 @@ the rows stored before it. The full description is
   Summary's *Rank* line and *How it compares*; the researcher report's *Compared models*, *Paired
   difference* column and writer-authored *Limitations*; word caps for the Internal Brief; readability
   rules in every writer prompt; validator rules 15–17 (a note for every question needing one, overlap
-  wording in comparative sentences, no hype words), all warnings.
+  wording in comparative sentences, no hype words), all warnings. (The researcher report and the Internal
+  Brief, and rule 15 with them, were retired on 2026-10-15.)
 
 ### Model Comparison: Four Steps, Charts in PDF and Word, and the Download Center Table (2026-09-30) — No Harness Version Bump
 
@@ -3502,7 +3506,8 @@ written stays selectable but inert; a figure the comparison cannot draw is liste
 its reason. The defaults are Intelligence and Intelligence
 against cost for the Executive Summary, all seven for the Report for AI Researchers and Developers, and
 Intelligence, Speed and Cost for the Internal Improvement Brief; the last selection is remembered per
-browser.
+browser. (Since 2026-10-15 the picker offers the Executive Summary and the Root Cause Analysis; see
+`ai-benchmark-report-pack.md` § 13.)
 
 **Step 2's settings are used as is (D10).** A document chart is composed off-screen from step 2's active
 settings — theme, background, font, weights, colors, border, logo, per-family styles, Show, Highlight,
@@ -5310,7 +5315,9 @@ run-completion documents (below), which need one EF Core migration, `AddBenchmar
 **Run-completion documents.** A run can now carry its own two AI-written documents, the **Executive
 Summary** and the **Report for AI Researchers and Developers** (the Report Pack's *Technical Report*,
 relabeled everywhere it is shown; its stored type `BenchmarkReportAudience.TechnicalReport` is
-unchanged). The full description — trigger, queue, statuses, the write-now endpoint, restart handling and
+unchanged). *Since 2026-10-15 the two run-completion documents are the Executive Summary and the Root
+Cause Analysis; the Report for AI Researchers and Developers was retired (`ai-benchmark-report-pack.md`
+§ 17).* The full description — trigger, queue, statuses, the write-now endpoint, restart handling and
 the once-only rule — is [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 11; the writer
 prompt, validation and rendering changes are its §§ 1, 3 and 7.
 
@@ -5344,7 +5351,8 @@ prompt, validation and rendering changes are its §§ 1, 3 and 7.
   both now. **H8**: report-pack documents carried no purpose statement or distillation prohibition,
   although § 7 says every exportable Markdown report includes the purpose statement; the Executive
   Summary and the Report for AI Researchers and Developers now end with an *Evaluation terms* block that
-  carries both, with a third-party model content sentence.
+  carries both, with a third-party model content sentence. (Rule 5 and the evidence lines went with the
+  Report for AI Researchers and Developers on 2026-10-15.)
 
 **Comparability.** Only the Instrument key `HarnessVersion` moves (41 → 42), so a run after this round,
 on run 73's configuration, is **Tier C** against run 73. The report writer is **not** a comparability
@@ -6121,7 +6129,8 @@ among them a **Paired Test** tab. **New Battery**'s *Create Battery* stays unava
 on screen, until two suites are checked.
 
 **AI-written battery documents.** A battery run started with a *Report Writer* gets its Executive
-Summary and Report for AI Researchers and Developers once it has finished and been analyzed; its member
+Summary and Report for AI Researchers and Developers (since 2026-10-15 its Executive Summary and Root
+Cause Analysis) once it has finished and been analyzed; its member
 runs are launched with no writer. They can also be written on request from the Battery Run Report's AI
 Reports tab, and they are listed with the battery's Markdown report by the Download Center's `battery`
 context.
@@ -7341,6 +7350,8 @@ alternatives are [`ai-benchmark-multi-suite.md`](ai-benchmark-multi-suite.md) §
   now **three**: the **Internal Improvement Brief** is the third completion document beside the
   Executive Summary and the Report for AI Researchers and Developers, and the automatic job writes every
   missing one. A run or battery run that already has some gets the rest from its **AI Reports** tab.
+  *Since 2026-10-15 they are two, the Executive Summary and the Root Cause Analysis (see* Root Cause
+  Analysis, Server-Drawn Charts and Two Retired Documents *below).*
 - **Comparison documents** — one subject, at least one peer — are written on the Model Comparison
   wizard's step 3 and listed on step 4 and in the launcher's **Comparison reports**. Step 3 needs two
   entries that are not Excluded; its summary reads *"Write AI reports that compare the models of this
@@ -7853,6 +7864,54 @@ differently. Numbers still come from code, words from the writer, and rendering 
   documents* guide say that the comparison documents are written by hand in Model Comparison, with the
   wizard kept open so their charts are drawn. Nothing writes them automatically.
 
+### Root Cause Analysis, Server-Drawn Charts and Two Retired Documents (2026-10-15) — No Harness Version Bump
+
+*Why a model did well or badly, with hypotheses graded by code, and charts that need no browser.* No
+`HarnessVersion`, `ScoringMethodVersion` or comparability key moves, and no run is graded or scored
+differently: the report writer is not part of the graded instrument. No EF migration: the new audience
+is a value of the existing `int` column, and everything else lives in `FactsJson`. The full description
+is [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 17, with §§ 1, 3, 8, 9, 11, 13–16.
+
+- **The Root Cause Analysis** (`BenchmarkReportAudience.RootCauseAnalysis = 5`) is written for a
+  comparison, a per-model pack, a run and a battery run — every scope but chat consistency. A pure engine
+  (`Overseer/Services/Benchmarking/RootCause/`) computes exact LMDI decompositions of speed and cost, the
+  intelligence difference split by the scoring weights, the points at risk, numbered known facts, and the
+  hypotheses of a pre-declared rule table with evidence for and against, robustness checks and a grade
+  (*High*, *Moderate*, *Low*, *Not supported*), then each axis' status and the next runs and checks. The
+  writer weighs them under claim rules 32–36 and cannot re-grade. A run or battery run is set against
+  **controls**, earlier runs of other models on the same exam under the same graders, found
+  automatically; with fewer than two (one from another provider) its model-versus-instrument
+  intelligence hypotheses are capped and a control run is proposed. Each recommended run carries every
+  launcher setting and a **Set up this run** button that pre-fills Run Benchmark and never starts a run;
+  the run's AI Reports tab names the controls before writing and offers **Rewrite with controls** when
+  later runs supply more.
+- **Server-drawn charts.** Beside the browser-drawn chart kinds of *Model Comparison: Provider Colors, a
+  Dotted Frontier and Profile Small Multiples* (2026-09-27), *Model Comparison: Four Steps, Charts in PDF
+  and Word, and the Download Center Table* (2026-09-30) and *Numbered Comparisons, Comparison-Wide
+  Documents and Document Charts in Points* (2026-10-06), four new kinds are drawn **on the server**, so a
+  document written with no browser present gets them too: R1 *Where the points were lost*, R2 *Where the
+  time goes*, R3 *Where the cost goes* and R4 *How sure each hypothesis is*. Each is composed as a
+  one-page QuestPDF document and rasterized to PNG at 300 DPI when a Root Cause Analysis is stored, with
+  no new package; the chart manifest marks them `"origin": "server"`, a browser upload keeps them,
+  `MaxCharts` is 24, and **Redraw charts** redraws them from the stored facts. They are not in the chart
+  picker, and every Root Cause Analysis carries them.
+- **Retired.** The *Report for AI Researchers and Developers* (2) and the *Internal Improvement Brief*
+  (3) are retired from every scope; on the first Overseer start after the change a startup step deleted
+  every stored document of either, with its chart folder, and re-settled the affected runs' and battery
+  runs' report status. A run's *Report Writer* now writes two documents, the Executive Summary and the
+  Root Cause Analysis, and a chat consistency analysis writes the Executive Summary and the Provider
+  Issue Report only.
+- **Report Pack fixes.** A headline that alone stays invalid after the repair turn is rescued from the
+  first draft and, in comparison scope, by one headline-only turn, so a document takes at most three
+  model calls; in comparison scope rule 16 checks, for each comparative word, the nearest model before it
+  and after it rather than every pair in the sentence; the new rule 31 (comparison scope and the Root
+  Cause Analysis) catches a sentence-valued fact spliced into a sentence or continued after its full
+  stop, a clause-valued fact after its own model or verb, and unlabeled runs of *N of M* counts; the
+  estimate is a range, first call only to one repair turn per document; the Report Pack diagnostics keep
+  each document's validation issues and any failed writer reply; inline code prints smaller and a
+  server-drawn figure takes the full width (**PDF layout 9**). Per-model documents move to format 13 and
+  comparison-wide documents to format 15.
+
 ---
 
 ## 3. Assessor Strategy
@@ -8140,7 +8199,7 @@ release, while a family name lasts.
 | Second Reader | **Gemini Flash** (not Flash-Lite) | `medium` | A different provider from the assessor. When the candidate is a Gemini Flash model, use a different Flash version, and expect the weaker same-family pairing the launcher warns about |
 | Reference Reader | **Gemini Flash** (not Flash-Lite) | `medium` | The same model on every run you compare. Google is the third family beside the Anthropic and OpenAI members |
 | Claim Verifier | **Gemini Flash** (not Flash-Lite) | `medium` (`high` if its rulings are often wrong; never `low`) | The same as the reader. The report already notes that one model in both roles makes their findings correlated |
-| Report writer | **Claude Opus** or **GPT Sol**, from a family other than the model under report; not Claude Fable or GPT Astra, and not an economy tier (Flash, Flash-Lite) | `medium` (`high` if its documents often need the repair turn or lose items to validation; never `low`) | Never the model under report: it is refused, and a writer from the same provider needs a warning acknowledged. Chosen on the Model Comparison wizard's Write step, in the launcher's optional **Report Writer** field for a run's own three documents, and in the run report's **AI Reports** tab; for a run's documents a writer from the candidate's provider is allowed after a warning and an explicit confirmation, but prefer another provider — the assessor's model is a good choice, and one sharing a family with neither panel member is better where the roster allows. The Executive Summary is short prose, the Report for AI Researchers and Developers long and number-dense, so give the latter the model you trust most with exact figures (`high` if it often needs repair); each document can have a different writer. Not a comparability key. It scores nothing and writes from computed figures; its documents go to readers outside the team, and one call per document keeps the cost small. See `ai-benchmark-report-pack.md` |
+| Report writer | **Claude Opus** or **GPT Sol**, from a family other than the model under report; not Claude Fable or GPT Astra, and not an economy tier (Flash, Flash-Lite) | `medium` (`high` if its documents often need the repair turn or lose items to validation; never `low`) | Never the model under report: it is refused, and a writer from the same provider needs a warning acknowledged. Chosen on the Model Comparison wizard's Write step, in the launcher's optional **Report Writer** field for a run's own two documents (the Executive Summary and the Root Cause Analysis), and in the run report's **AI Reports** tab; for a run's documents a writer from the candidate's provider is allowed after a warning and an explicit confirmation, but prefer another provider — the assessor's model is a good choice, and one sharing a family with neither panel member is better where the roster allows. The Executive Summary is short prose, the Root Cause Analysis long and number-dense, so give the latter the model you trust most with exact figures (`high` if it often needs repair); each document can have a different writer. Not a comparability key. It scores nothing and writes from computed figures; its documents go to readers outside the team, and one to three calls per document (the first, a repair turn, a headline rescue) keep the cost small. See `ai-benchmark-report-pack.md` |
 
 All roles avoid `xhigh` and `max`. Today's roster matches — Claude 5.5 Opus, GPT-6 Sol and Gemini 3.8
 Flash, all at `medium` — for a set whose candidates include neither Claude 5.5 Opus nor GPT-6 Sol. A set
@@ -8152,8 +8211,8 @@ guide (its section *Choosing grader models*) and the Model Comparison Write step
 **families** — Claude Opus, GPT Sol, Gemini Flash — and the top tiers not to use, Claude Fable and GPT
 Astra, with price ratios but no versions or prices. The run report's **AI Reports** tab has a report
 writer info tip with per-document advice — the Executive Summary short, for a strong writing model at
-medium; the Report for AI Researchers and Developers long and number-dense, for the strongest
-scoring-tier model trusted with numbers, at medium or high, at three to four times the cost — naming Claude
+medium; the Root Cause Analysis long and number-dense, for the strongest scoring-tier model trusted
+with numbers, at medium or high, at several times the cost — naming Claude
 Opus and GPT Sol, the economy tiers (Flash, Flash-Lite) and the top tiers to avoid. The launcher's **Report
 Writer** info tip names no family: it asks for a strong model from another provider than the model under
 test, such as the one used as an assessor. The table in **The roster today, and why Anthropic is primary**
@@ -9248,22 +9307,24 @@ All under `/api/admin/benchmark/batteries`; the full table, with bodies and stat
 
 #### Report Packs and Documents
 - `POST /api/admin/benchmark/report-packs/preview`: The fact sheets and writer prompts for a report pack, without a model call (body as for the start). Per-model scope: the first subject, the lettered peers, `writtenDocuments` (the Report Pack documents already stored for this comparison and that subject, the newest per audience) and each subject's per-model documents. Comparison scope: the covered models with their letters, the covered set's `writtenDocuments` and `otherModelSets`. Both: the numbered comparison once identified (`comparisonId`, `comparisonName`; never created here), the estimated tokens, cost and share of the writer's context window per document, the same-provider warning and any refusal. A subject with no peer is answered with the peerless refusal and no estimate.
-- `POST /api/admin/benchmark/report-packs`: Start a report-pack job. Body `{ runIds, groupIds, batteryRunIds, pricingBasis, scope, subjectKey, subjectKeys, coveredEntryKeys, audiences[], writerModelConfigurationId, acknowledgeSameProvider, replaceDocumentIds }`: `scope` 1 writes per-model documents for each of `subjectKeys` (else `subjectKey`), `scope` 2 comparison-wide documents over `coveredEntryKeys` (empty means every entry that is not Excluded); audiences 1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal Brief; `replaceDocumentIds` names written documents to replace once the new ones are stored. Returns 202 `{ jobId }`; the comparison is numbered before the job starts. Per-model refusals, in order: 400 for battery results mixed with runs or groups; 400 for an unknown entry or an Excluded subject; 400 for a subject with no peer (*"A comparison report compares one model with at least one other. …"*); 400 for a writer that is invalid, disabled, keyless, not Benchmark role or refused by the endpoint policy; 400 when the writer is a subject's own model; 400 for no audience; 400 for a prompt above 90 % of the writer's context window; 400 for a `replaceDocumentIds` entry the job does not write again; 409 `{ error }` when a requested document is already written for this comparison and subject and not replaced (*"The <document name> about <subject> is already written for this comparison. Delete it in step 4 to write it again."*); 429 at the spend cap (`BenchmarkComplianceGuard.CanSpendAsync`); 409 for a same-provider writer without `acknowledgeSameProvider`; 409 with the running job while another job runs. Comparison scope adds 400 for a covered entry outside the comparison or Excluded, 409 for fewer than 2 or more than 12 covered models, and 400 for a writer that is a covered model's configuration; its full order is in `ai-benchmark-report-pack.md` § 9.
+- `POST /api/admin/benchmark/report-packs`: Start a report-pack job. Body `{ runIds, groupIds, batteryRunIds, pricingBasis, scope, subjectKey, subjectKeys, coveredEntryKeys, audiences[], writerModelConfigurationId, acknowledgeSameProvider, replaceDocumentIds }`: `scope` 1 writes per-model documents for each of `subjectKeys` (else `subjectKey`), `scope` 2 comparison-wide documents over `coveredEntryKeys` (empty means every entry that is not Excluded); audiences 1 Executive Summary and 5 Root Cause Analysis (each scope refuses an audience it does not write, the retired 2 and 3 included); `replaceDocumentIds` names written documents to replace once the new ones are stored. Returns 202 `{ jobId }`; the comparison is numbered before the job starts. Per-model refusals, in order: 400 for battery results mixed with runs or groups; 400 for an unknown entry or an Excluded subject; 400 for a subject with no peer (*"A comparison report compares one model with at least one other. …"*); 400 for a writer that is invalid, disabled, keyless, not Benchmark role or refused by the endpoint policy; 400 when the writer is a subject's own model; 400 for no audience, or one the scope does not write; 400 for a prompt above 90 % of the writer's context window; 400 for a `replaceDocumentIds` entry the job does not write again; 409 `{ error }` when a requested document is already written for this comparison and subject and not replaced (*"The <document name> about <subject> is already written for this comparison. Delete it in step 4 to write it again."*); 429 at the spend cap (`BenchmarkComplianceGuard.CanSpendAsync`); 409 for a same-provider writer without `acknowledgeSameProvider`; 409 with the running job while another job runs. Comparison scope adds 400 for a covered entry outside the comparison or Excluded, 409 for fewer than 2 or more than 12 covered models, and 400 for a writer that is a covered model's configuration; its full order is in `ai-benchmark-report-pack.md` § 9.
 - `POST /api/admin/benchmark/report-packs/layout-preview`: Multipart: a `request` field (a preview request with `audience`, `paper`, `naming`, `layout` and `charts`) and up to 12 files `<figureKey>.png`, at most 40,000,000 bytes. Returns one document as `application/pdf`, rendered by the real PDF renderer with placeholder text in the writer's slots, the real tables and the given charts and layout; no model call, nothing stored. 400 for an invalid request or chart, 409 for a covered set outside 2 to 12, 413 for a document too large. See `ai-benchmark-report-pack.md` § 15.
-- `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing run-completion documents (Executive Summary, Report for AI Researchers and Developers and Internal Improvement Brief) with the writer in the body, `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`, which is recorded on the run as its report writer; `audiences` names the documents to write, and null or empty writes every missing one. Returns 202 with the run's Pending status and the documents the job will write. 400 when the run has no final synthesis, an audience is not a run-completion document, or the writer is refused (unusable, the model under test, the endpoint policy); 404 for an unknown run; 409 when a requested document is already written (or, with none requested, every one is), when a job for the run is Pending or Writing, or, with a `SameProviderWarningDto` of role `reportWriter`, for a writer of the candidate's provider without `acknowledgeSameProvider`; 429 at the spend cap. See `ai-benchmark-report-pack.md` § 11.
+- `POST /api/admin/benchmark/runs/{runId}/report-documents`: Write a finished run's missing run-completion documents (Executive Summary and Root Cause Analysis) with the writer in the body, `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider, replaceDocumentIds? }`, which is recorded on the run as its report writer; `audiences` names the documents to write, and null or empty writes every missing one; `replaceDocumentIds` names the run's Root Cause Analysis a **Rewrite with controls** replaces once the new one is stored. Returns 202 with the run's Pending status and the documents the job will write. 400 when the run has no final synthesis, an audience is not a run-completion document, or the writer is refused (unusable, the model under test, the endpoint policy); 404 for an unknown run; 409 when a requested document is already written (or, with none requested, every one is), when a job for the run is Pending or Writing, or, with a `SameProviderWarningDto` of role `reportWriter`, for a writer of the candidate's provider without `acknowledgeSameProvider`; 429 at the spend cap. See `ai-benchmark-report-pack.md` § 11.
 - `GET /api/admin/benchmark/runs/{runId}/report-documents/job`: The run's current or last run-completion job: phase (Queued, Preparing, Writing, Finished), queue position and blocking job, writer, per-document times, tokens and cost, the log, the persisted status and message, and the server's time. 204 when this process knows no job for the run (none since a restart, or a finished job older than 6 hours); 404 for an unknown run.
 - `POST /api/admin/benchmark/runs/{runId}/report-documents/cancel`: Cancel the run's job, queued or writing; documents already written are kept and the run's status becomes Canceled. 202 with the job view; 409 when nothing is in progress; 404 for an unknown run.
-- `POST /api/admin/benchmark/runs/{runId}/report-documents/estimate`: Per-document and total cost estimates for writing the run's documents with a writer (body `{ writerModelConfigurationId, audiences? }`), with its refusal or same-provider warning. No model call.
+- `POST /api/admin/benchmark/runs/{runId}/report-documents/estimate`: Per-document and total cost estimates for writing the run's documents with a writer (body `{ writerModelConfigurationId, audiences? }`), each as a range — the first call only (`estimatedCostUsd`, `estimatedTotalCostUsd`) to one repair turn per document (`estimatedCostWithRepairUsd`, `estimatedTotalCostWithRepairUsd`) — with its refusal or same-provider warning. No model call.
 - `DELETE /api/admin/benchmark/runs/{runId}/report-documents/{documentId}`: Delete one of the run's own run-completion documents; the run's status returns to NotRequested. 204; 404 when it is not this run's run-completion document; 409 while the run's documents are being written.
+- `GET /api/admin/benchmark/runs/{runId}/root-cause-controls` (and `GET …/batteries/runs/{id}/root-cause-controls`): The controls a Root Cause Analysis of the run or battery run would use, as `RootCauseControlsDto { controls: [{ modelLabel, provider, runId, batteryRunId, completedAtUtc, sharedQuestions }], controlLimit: "None" | "Moderate" | "Low", controlRun }` — at most three earlier runs of other models on the same exam under the same graders, the cap they leave, and, when fewer than two qualify, the `control` run from the same preparation the Root Cause Analysis uses; the same lookup the document's preparation makes. No model call; 404 for an unknown run or battery run. See `ai-benchmark-report-pack.md` § 17.
 - `GET /api/admin/benchmark/report-packs/jobs/{jobId}`: Job progress, per document.
 - `GET /api/admin/benchmark/report-packs/jobs/active`: The running report-pack job, or 204.
 - `POST /api/admin/benchmark/report-packs/jobs/{jobId}/cancel`: Cancel a report-pack job.
 - `GET /api/admin/benchmark/report-documents?suiteId=&runId=&comparison=&comparisonId=&origin=&subject=&take=`: List stored documents without rendered text, each with `runChangedSinceGeneration` and `peersChangedSinceGeneration` from its runs' scoring fingerprints, its comparison key, peer count, pricing basis and peer letters, its numbered comparison (`comparisonId`, `comparisonName`), `scope`, `coversAllEntries`, `coveredSetKey`, `comparisonModelCount` and `coveredModels`, and its charts' `chartCount`, `chartFigureKeys` and `chartSettingsHash` read from the chart manifest. `origin` takes `reportPack`, `runCompletion` or `batteryCompletion`, `comparison` takes `run:`/`group:` keys or `battery:` keys, `comparisonId` a comparison number, and `subject` one `run:`, `group:` or `battery:` key matched exactly. The filters are in `ai-benchmark-report-pack.md` § 9.
-- `GET /api/admin/benchmark/report-documents/{id}`: Document detail: metadata, validation notes and the facts JSON.
-- `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`: Render a stored document as `text/markdown; charset=utf-8`, deterministically and with no model call. 400 for a refused combination (the Internal Brief renders at `full` only).
+- `GET /api/admin/benchmark/report-documents/{id}`: Document detail: metadata, validation notes and the facts JSON; a Root Cause Analysis also returns its `recommendedRuns` and `checks`, and a run- or battery-completion one the `controls` it used.
+- `GET /api/admin/benchmark/report-documents/{id}/render?disclosure=summary|detailed|full&peers=named|anonymized`: Render a stored document as `text/markdown; charset=utf-8`, deterministically and with no model call. 400 for a refused combination (the Root Cause Analysis renders at `full` only).
 - `DELETE /api/admin/benchmark/report-documents/{id}`: Delete a document; its `BenchmarkReportDocumentRuns` rows cascade and its chart folder is removed. Deleting a run never deletes a document. Deleting a run's run-completion document returns the run's status to NotRequested when no job is in progress.
-- `PUT /api/admin/benchmark/report-documents/{id}/charts`: Replace a document's whole chart set with the PNGs the browser drew (at most 16 images, 4 MB each, 40,000,000 bytes per request), and its layout: an optional `layout` `{ version: 1, figures: [{ key, widthShare, rowGroup }], maxHeightShare }` stored in the chart manifest, absent meaning every figure full width on its own row under a 60 % height cap. 400 for a stand-alone document, for chart storage that is not configured, for any chart refused and for an invalid layout; 404 for an unknown document.
+- `PUT /api/admin/benchmark/report-documents/{id}/charts`: Replace a document's whole chart set with the PNGs the browser drew (at most 24 images, 4 MB each, 40,000,000 bytes per request), and its layout: an optional `layout` `{ version: 1, figures: [{ key, widthShare, rowGroup }], maxHeightShare }` stored in the chart manifest, absent meaning every figure full width on its own row under a 60 % height cap. 400 for a stand-alone document, for chart storage that is not configured, for any chart refused and for an invalid layout; 404 for an unknown document. A Root Cause Analysis's server-drawn charts are kept.
 - `DELETE /api/admin/benchmark/report-documents/{id}/charts`: Remove a document's charts. 204; 404 for an unknown document.
+- `POST /api/admin/benchmark/report-documents/{id}/charts/redraw`: Redraw a stored Root Cause Analysis's four server-drawn charts from its facts JSON. No model call.
 
 The PDF and Word renderings of a document (`…/render/pdf`, `…/render/docx`, and `inline=true` on the PDF for viewing in a browser tab), with its charts drawn in them, and the chart endpoints' bodies and limits are in `ai-benchmark-report-pack.md` §§ 9 and 13. Clearing every chart image is a Database tab maintenance action, `POST /api/admin/maintenance/clear-report-charts` (`chat-data-retention.md`).
 
@@ -9311,7 +9372,7 @@ The benchmark performs domain evaluation:
    - The administrator must review and explicitly acknowledge the same-provider methodological notice (`acknowledgeSameProvider: true`).
    - Acknowledged status is persisted on `BenchmarkRun.SameProviderAcknowledged` and disclosed in generated reports.
 3. **Auditable Purpose Statement**:
-   - `Benchmark:Compliance:PurposeStatement` is recorded at execution time on `BenchmarkRun.PurposeStatementUsed` and included in every exportable Markdown report. The Executive Summary and the Report for AI Researchers and Developers carry it, with the distillation prohibition, in their *Evaluation terms* block (`ai-benchmark-report-pack.md` § 1).
+   - `Benchmark:Compliance:PurposeStatement` is recorded at execution time on `BenchmarkRun.PurposeStatementUsed` and included in every exportable Markdown report. The Executive Summary carries it, with the distillation prohibition, in its *Evaluation terms* block (`ai-benchmark-report-pack.md` § 1).
 4. **Visible Footprint & Manual Bulk Deletion**:
    - Retention is indefinite by design to maintain historical evaluation records without automated purges.
    - To keep storage visible and actionable, each suite displays its stored footprint (run count and total answer character count) alongside a bulk deletion control (`DELETE /api/admin/benchmark/suites/{id}/runs`).
@@ -9329,7 +9390,7 @@ Compliance review must be revisited if:
 4. AI providers update commercial use or evaluation terms.
 
 ### Sharing Reports with AI Providers
-Report Pack documents (see [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md)) can be sent to a model's provider. A provider copy is an Executive Summary or a Technical Report rendered at **Summary** or **Detailed** disclosure, with **anonymized peers** by default; the Internal Improvement Brief and every Full rendering are internal only.
+Report Pack documents (see [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md)) can be sent to a model's provider. A provider copy is an Executive Summary rendered at **Summary** or **Detailed** disclosure, with **anonymized peers** by default; the Root Cause Analysis and every Full rendering are internal only.
 - **Suite text never reaches a provider below Detailed, and rubrics never do.** Summary describes questions by topic; Detailed quotes every question, with answer excerpts, and carries a *do not publish* stamp. A rubric is the suite's answer key: once it leaves the team, the questions it grades can no longer measure any model that may have seen it.
 - **Peers are anonymized by default** because a document naming competing models beside ranked results reads as a comparison between them. Sent to one provider privately it is not a publication, but a copy that is forwarded or quoted becomes one, and publishing benchmark results or comparisons externally as competitive claims is re-evaluation trigger 1 above. Naming peers in a provider copy is an explicit option with a warning, and an operator who uses it should treat the copy as potentially public.
 - The documents state interval overlap descriptively and make no significance claim, and each states, in its own frozen wording (`BenchmarkReportFacts.NoSignificanceStatement`), that no pair of models was tested for significance, so a quoted sentence cannot be read as a claim the benchmark did not test. Since 2026-10-03 that wording no longer copies the Model Comparison wizard's *Pairwise significance* text, which now points to the wizard's Paired tests view; documents do not yet cite those tests.

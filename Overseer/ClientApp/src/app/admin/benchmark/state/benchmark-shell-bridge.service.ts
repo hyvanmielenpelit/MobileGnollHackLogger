@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { Subject } from 'rxjs';
-import { BenchmarkQuestionDto, BenchmarkSuiteDto } from '../../../services/admin-benchmark.service';
+import { BenchmarkQuestionDto, BenchmarkSuiteDto, RecommendedRun } from '../../../services/admin-benchmark.service';
 import { GraderGuideProfile, GraderGuideSection } from '../grader-guide/benchmark-grader-guide.component';
 
 /** The Benchmark tab's sub-tabs, in tab order. */
@@ -53,6 +53,50 @@ export interface ModelBatchPrefill {
   controlSuggested: boolean;
 }
 
+/** The settings of a recommended run the launcher takes over, named as the server names them. */
+export type LauncherSetupFields = Pick<RecommendedRun,
+  'kind' | 'targetKind' | 'suiteId' | 'suiteName' | 'batteryId' | 'batteryName' | 'runMode' |
+  'testedModelConfigurationIds' | 'modelNames' | 'order' | 'runsPerModel' | 'runCount' | 'scoringProfileId' |
+  'verboseMode' | 'allowSourceCodeReferences' | 'assessorModelConfigurationId' | 'coAssessorModelConfigurationId' |
+  'secondOpinionAssessorModelConfigurationId' | 'secondOpinionMode' | 'claimVerifierModelConfigurationId' | 'notes'>;
+
+/**
+ * A recommended run's launcher settings, as a Root Cause Analysis or a control-run suggestion gives
+ * them, and the heading of the note that says where they came from. Nothing starts.
+ */
+export interface LauncherSetupPrefill extends LauncherSetupFields {
+  /** The heading of the launcher's note: *Set up from Root Cause Analysis #12, run 2*. */
+  sourceLabel: string;
+}
+
+/** The launcher settings of a recommended run, with the note heading `sourceLabel`. */
+export function launcherSetupFromRecommendedRun(run: RecommendedRun, sourceLabel: string): LauncherSetupPrefill {
+  return {
+    sourceLabel,
+    kind: run.kind,
+    targetKind: run.targetKind,
+    suiteId: run.suiteId ?? null,
+    suiteName: run.suiteName ?? null,
+    batteryId: run.batteryId ?? null,
+    batteryName: run.batteryName ?? null,
+    runMode: run.runMode,
+    testedModelConfigurationIds: [...(run.testedModelConfigurationIds ?? [])],
+    modelNames: [...(run.modelNames ?? [])],
+    order: run.order,
+    runsPerModel: run.runsPerModel,
+    runCount: run.runCount,
+    scoringProfileId: run.scoringProfileId ?? null,
+    verboseMode: run.verboseMode ?? null,
+    allowSourceCodeReferences: run.allowSourceCodeReferences ?? null,
+    assessorModelConfigurationId: run.assessorModelConfigurationId ?? null,
+    coAssessorModelConfigurationId: run.coAssessorModelConfigurationId ?? null,
+    secondOpinionAssessorModelConfigurationId: run.secondOpinionAssessorModelConfigurationId ?? null,
+    secondOpinionMode: run.secondOpinionMode ?? null,
+    claimVerifierModelConfigurationId: run.claimVerifierModelConfigurationId ?? null,
+    notes: [...(run.notes ?? [])]
+  };
+}
+
 /**
  * Requests from the sub-tabs and the state services to the dialogs and the tab row AdminBenchmarkComponent
  * hosts. The methods keep the names the shell's own handlers have, so a template reads the same either way.
@@ -74,6 +118,8 @@ export class BenchmarkShellBridge {
   readonly repeatRunSetup$ = new Subject<number>();
   /** A model batch setup the Run Benchmark launcher takes over. */
   readonly prefillModelBatch$ = new Subject<ModelBatchPrefill>();
+  /** A recommended run's settings the Run Benchmark launcher takes over. */
+  readonly prefillSetup$ = new Subject<LauncherSetupPrefill>();
 
   private leaveGuard: (() => string | null) | null = null;
 
@@ -146,5 +192,10 @@ export class BenchmarkShellBridge {
   /** Opens Run Benchmark as a model batch with this target and model; nothing starts. */
   prefillModelBatch(prefill: ModelBatchPrefill): void {
     this.prefillModelBatch$.next(prefill);
+  }
+
+  /** Opens Run Benchmark with a recommended run's settings filled in, under the note heading `sourceLabel`; nothing starts. */
+  prefillSetup(setup: RecommendedRun, sourceLabel: string): void {
+    this.prefillSetup$.next(launcherSetupFromRecommendedRun(setup, sourceLabel));
   }
 }

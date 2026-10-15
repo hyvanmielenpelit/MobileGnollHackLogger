@@ -170,7 +170,13 @@ import { BenchmarkDifficultyJobService } from './state/benchmark-difficulty-job.
 import { BenchmarkComparisonState } from './state/benchmark-comparison.state';
 import { BenchmarkActiveRunMonitor } from './state/benchmark-active-run.monitor';
 import { BenchmarkViewSync } from './state/benchmark-view-sync.service';
-import { BenchmarkShellBridge, BenchmarkSubTab, ComparisonWizardPreset, ModelBatchPrefill } from './state/benchmark-shell-bridge.service';
+import {
+  BenchmarkShellBridge,
+  BenchmarkSubTab,
+  ComparisonWizardPreset,
+  LauncherSetupPrefill,
+  ModelBatchPrefill
+} from './state/benchmark-shell-bridge.service';
 import { BenchmarkRunTabComponent } from './run-tab/benchmark-run-tab.component';
 import { BenchmarkHistoryTabComponent } from './history-tab/benchmark-history-tab.component';
 import { BenchmarkSuitesTabComponent } from './suites-tab/benchmark-suites-tab.component';
@@ -292,6 +298,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     });
     bridge.repeatRunSetup$.pipe(takeUntilDestroyed()).subscribe(runId => this.applyRepeatRunSetup(runId));
     bridge.prefillModelBatch$.pipe(takeUntilDestroyed()).subscribe(prefill => this.applyModelBatchPrefill(prefill));
+    bridge.prefillSetup$.pipe(takeUntilDestroyed()).subscribe(prefill => this.applySetupPrefill(prefill));
   }
 
   /** The admin page's configurations; the workspace store holds them for every sub-tab. */
@@ -805,6 +812,26 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     this.selectSubTab('run');
     this.repeatRunSetupError = null;
     this.launcher.prefillModelBatch(prefill);
+    this.viewSync.notify();
+  }
+
+  /**
+   * Closes the run report, the Battery Run Report and the comparison wizard, whichever asked, shows
+   * Run Benchmark and fills its launcher from a recommended run's settings; nothing starts. Refused
+   * while the active sub-tab cannot be left, and while the comparison wizard cannot close.
+   */
+  private applySetupPrefill(prefill: LauncherSetupPrefill): void {
+    if (this.refuseLeaving()) return;
+    if (this.comparisonWizardDialog?.nativeElement.open) {
+      if (this.comparisonWizard?.closeBlocked) return;
+      this.closeComparisonWizard();
+    }
+    this.closeRunDetail();
+    this.batteryRunReport?.close();
+    this.selectSubTab('run');
+    this.launcher.clearPrefillResult();
+    this.repeatRunSetupError = null;
+    this.launcher.prefillFromSetup(prefill);
     this.viewSync.notify();
   }
 

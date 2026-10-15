@@ -426,8 +426,8 @@ public class BenchmarkRun
     // Report writer.
     //
     // Null means no AI-written run-completion documents are written automatically. When set, the
-    // configuration writes the run's Executive Summary and Report for AI Researchers and Developers
-    // once, after the run completes. Not a grading role and not a comparability key.
+    // configuration writes the run's Executive Summary and Root Cause Analysis once, after the run
+    // completes. Not a grading role and not a comparability key.
     // Attribution only, not a foreign key: deleting a configuration never touches history.
     public long? ReportWriterModelConfigurationId { get; set; }
 

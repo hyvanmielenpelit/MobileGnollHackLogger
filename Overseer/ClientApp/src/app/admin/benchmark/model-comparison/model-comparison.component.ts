@@ -217,6 +217,7 @@ import {
   documentChartWidth,
   documentFigureLayout,
   documentTextStyle,
+  isReportChartFigureKey,
   normalizeChartSelection,
   printFigureAppearance,
   readStoredChartSettings,
@@ -2378,9 +2379,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * charts are drawn as chosen.
    */
   get chartAdvisory(): string | null {
-    const followsStep2 = [
-      BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief
-    ].some(audience => documentChartLayoutFor(this.chartLayout, audience).theme === 'asInStep2');
+    const followsStep2 = [BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.RootCauseAnalysis]
+      .some(audience => documentChartLayoutFor(this.chartLayout, audience).theme === 'asInStep2');
     if (!followsStep2) {
       return null;
     }
@@ -2648,7 +2648,10 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     });
   }
 
-  /** The figures a document can carry: enough plotted models, and for A1 one of them recording provider errors. */
+  /**
+   * The figures a document can carry: enough plotted models, and for A1 one of them recording provider
+   * errors. Only browser-drawn figures; the server-drawn ones are never offered or drawn here.
+   */
   private refreshChartsAvailable(): void {
     const plotted = this.plotted.length;
     const recorded = this.plotted.some(entry => entry.availability?.recorded === true);
@@ -2999,12 +3002,12 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * One figure of a set as a card, or null where the set plots too few models for it, or for A1 where
-   * no plotted model records provider errors.
+   * One figure of a set as a card, or null where the set plots too few models for it, for A1 where no
+   * plotted model records provider errors, or for a key the browser does not draw (a server-drawn one).
    */
   private documentCard(figures: ComparisonFigureSet, key: ReportChartFigureKey): ComparisonFigureCard | null {
     const plotted = figures.selection.plotted.length;
-    if (plotted < 2 || (key === 'p2-profile' && plotted < 3)) {
+    if (plotted < 2 || (key === 'p2-profile' && plotted < 3) || !isReportChartFigureKey(key)) {
       return null;
     }
     switch (key) {

@@ -15,11 +15,12 @@ using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.Benchmarking.RootCause;
 using Overseer.Services.Privacy;
 
 /// <summary>
 /// A finished battery run's own battery-completion documents: write on request, estimate, progress,
-/// cancel and delete, with the request and response shapes of a run's run-completion documents
+/// cancel and delete, and the Root Cause Analysis controls, with the request and response shapes of a run's run-completion documents
 /// (<see cref="AdminBenchmarkReportPacksController"/>). The writer call runs in
 /// <see cref="BenchmarkBatteryReportDocumentService"/>; stored documents are served by
 /// <see cref="AdminBenchmarkReportDocumentsController"/>, which cannot reach a model.
@@ -33,14 +34,14 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
     private static readonly IReadOnlyDictionary<BenchmarkReportAudience, int> EstimatedOutputTokens = new Dictionary<BenchmarkReportAudience, int>
     {
         [BenchmarkReportAudience.ExecutiveSummary] = 2400,
-        [BenchmarkReportAudience.TechnicalReport] = 7400,
-        [BenchmarkReportAudience.InternalBrief] = 7000
+        // To be recalibrated after the first real Root Cause Analysis jobs.
+        [BenchmarkReportAudience.RootCauseAnalysis] = 10000
     };
 
     public const string AlreadyWritingMessage = "The reports of this battery run are already being written.";
     public const string AllWrittenMessage = "This battery run already has every AI-written report. Delete one first to write it again.";
     public const string InvalidAudienceMessage =
-        "Only the Executive Summary, the Report for AI Researchers and Developers and the Internal Improvement Brief are written for a battery run.";
+        "Only the Executive Summary and the Root Cause Analysis are written for a battery run.";
     public const string NothingInProgressMessage = "No report writing is in progress for this battery run.";
     public const string DeleteWhileWritingMessage = "Wait for the writing to finish, or cancel it, before deleting a report.";
 
@@ -77,8 +78,10 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
     /// <see cref="WriteRunReportDocumentsResponse.RunId"/>) and the documents the job will write.
     /// Refusals, in order: no body (400); unknown battery run (404); the battery run has not finished,
     /// or has no complete, current analysis (400); a job for it is Pending or Writing (409); a
-    /// requested document that is not a battery-completion document (400); a requested document
-    /// already written (409), or with none requested, every one written (409); an unusable writer or the
+    /// requested document that is not a battery-completion document (400); a <c>replaceDocumentIds</c>
+    /// entry that is not this battery run's battery-completion document of a requested audience (400);
+    /// a requested document already written and not replaced (409), or with none requested, every one
+    /// written and none replaced (409); an unusable writer or the
     /// model under test (400); a writer of the candidate's provider, unacknowledged (409 with the
     /// warning); a refused endpoint (400); the spend cap (429). A request the client aborts is a 499.
     /// </summary>
@@ -107,16 +110,21 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
             var (requested, invalidAudience) = RequestedAudiences(request.Audiences);
             if (invalidAudience != null) return invalidAudience;
 
+            var (replaceable, replaceRefusal) = await BenchmarkRunReportDocumentService.ReplaceableAudiencesAsync(
+                _db, BenchmarkBatteryReportDocumentService.SubjectKeyOf(batteryRunId), BenchmarkReportDocumentOrigin.BatteryCompletion,
+                requested, request.ReplaceDocumentIds, ct);
+            if (replaceRefusal != null) return BadRequest(new { error = replaceRefusal });
+
             var missing = await BenchmarkBatteryReportDocumentService.MissingAudiencesAsync(_db, batteryRunId, ct);
             List<BenchmarkReportAudience> toWrite;
             if (requested == null)
             {
-                if (missing.Count == 0) return Conflict(new { error = AllWrittenMessage });
-                toWrite = missing;
+                toWrite = BenchmarkBatteryReportDocumentService.Audiences.Where(a => missing.Contains(a) || replaceable.Contains(a)).ToList();
+                if (toWrite.Count == 0) return Conflict(new { error = AllWrittenMessage });
             }
             else
             {
-                var written = requested.Where(a => !missing.Contains(a)).ToList();
+                var written = requested.Where(a => !missing.Contains(a) && !replaceable.Contains(a)).ToList();
                 if (written.Count > 0)
                 {
                     return Conflict(new { error = $"The {BenchmarkReportRenderService.AudienceName(written[0])} is already written. Delete it first to write it again." });
@@ -149,7 +157,8 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
             await _db.SaveChangesAsync(ct);
 
             string? userId = User?.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (!_batteryReportDocuments.TryStart(batteryRunId, userId, toWrite, request.AcknowledgeSameProvider, out _))
+            if (!_batteryReportDocuments.TryStart(batteryRunId, userId, toWrite, request.AcknowledgeSameProvider, out _,
+                    replaceable.Count > 0 ? request.ReplaceDocumentIds : null))
             {
                 return Conflict(new { error = AlreadyWritingMessage });
             }
@@ -276,10 +285,44 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
             }
 
             estimate.Estimates.AddRange(EstimateAudiences(prep, writer, audiences));
-            estimate.EstimatedTotalCostUsd = estimate.Estimates.Count == 0 || estimate.Estimates.Any(e => e.EstimatedCostUsd == null)
-                ? null
-                : estimate.Estimates.Sum(e => e.EstimatedCostUsd!.Value);
+            bool priced = estimate.Estimates.Count > 0 && estimate.Estimates.All(e => e.EstimatedCostUsd != null);
+            estimate.EstimatedTotalCostUsd = priced ? estimate.Estimates.Sum(e => e.EstimatedCostUsd!.Value) : null;
+            estimate.EstimatedTotalCostWithRepairUsd = priced ? estimate.Estimates.Sum(e => e.EstimatedCostWithRepairUsd!.Value) : null;
             return Ok(estimate);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
+    }
+
+    /// <summary>
+    /// The controls a Root Cause Analysis of the battery run would use if written now, found by
+    /// <see cref="RootCauseControls.FindAsync"/> as the battery-completion preparation finds them, with
+    /// the control limit they set and, when fewer than two qualify, the <c>control</c> run that analysis
+    /// would propose, taken from the same preparation (null when the battery result cannot be written
+    /// about yet or no other provider has a configured Benchmark model). Makes no model call. 404 for an
+    /// unknown battery run; 499 when the client aborts.
+    /// </summary>
+    [HttpGet("~/api/admin/benchmark/batteries/runs/{batteryRunId:long}/root-cause-controls")]
+    public async Task<IActionResult> GetRootCauseControls(long batteryRunId, CancellationToken ct)
+    {
+        try
+        {
+            var source = await BenchmarkBatteryReportDocumentService.LoadSourceAsync(_db, batteryRunId, ct);
+            if (source == null) return NotFound();
+
+            var controls = await RootCauseControls.FindAsync(_db, BenchmarkBatteryReportDocumentService.SubjectKeyOf(batteryRunId), ct);
+            RootCauseRecommendedRun? controlRun = null;
+            if (controls.Controls.Count < 2 && BenchmarkBatteryReportDocumentService.SubjectRefusal(source) == null)
+            {
+                var (prep, _) = await BenchmarkReportPackPreparation.PrepareAsync(
+                    _db, _comparisonService,
+                    BenchmarkReportPackPreparation.BatteryRequest(batteryRunId, BenchmarkBatteryReportDocumentService.Audiences, 0),
+                    BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration), ct, _configuration);
+                controlRun = AdminBenchmarkReportPacksController.ControlRunOf(prep);
+            }
+            return Ok(AdminBenchmarkReportPacksController.RootCauseControlsDtoOf(controls, controlRun));
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -345,7 +388,10 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
         return view;
     }
 
-    /// <summary>Each document's prompt size, estimated tokens and first-call cost; makes no model call.</summary>
+    /// <summary>
+    /// Each document's prompt size, estimated tokens, first-call cost and first call plus one repair turn
+    /// (<see cref="BenchmarkReportPackService.EstimateCostWithRepair"/>); makes no model call.
+    /// </summary>
     private BenchmarkReportPackAudienceEstimateDto[] EstimateAudiences(
         BenchmarkReportPackPreparation prep, SystemAiApiConfiguration? writer, IEnumerable<BenchmarkReportAudience> audiences)
     {
@@ -363,7 +409,8 @@ public class AdminBenchmarkBatteryReportsController : ControllerBase
                 PromptChars = chars,
                 EstimatedInputTokens = input,
                 EstimatedOutputTokens = output,
-                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.EstimateSingleRequestCost(pricing, input, output)
+                EstimatedCostUsd = pricing == null ? null : (double)ModelPricingService.EstimateSingleRequestCost(pricing, input, output),
+                EstimatedCostWithRepairUsd = pricing == null ? null : (double)BenchmarkReportPackService.EstimateCostWithRepair(pricing, input, output)
             };
         }).ToArray();
     }

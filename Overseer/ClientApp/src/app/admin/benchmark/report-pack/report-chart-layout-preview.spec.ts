@@ -22,7 +22,7 @@ import {
   renderLayoutPreview
 } from './report-chart-layout-preview';
 
-const { ExecutiveSummary, TechnicalReport } = BenchmarkReportAudience;
+const { ExecutiveSummary, RootCauseAnalysis } = BenchmarkReportAudience;
 
 const REQUEST: BenchmarkReportPackRequest = {
   runIds: [1, 2, 3],
@@ -31,7 +31,7 @@ const REQUEST: BenchmarkReportPackRequest = {
   subjectKey: '',
   scope: BenchmarkReportScope.Comparison,
   coveredEntryKeys: ['run:1', 'run:2'],
-  audiences: [ExecutiveSummary, TechnicalReport],
+  audiences: [ExecutiveSummary, RootCauseAnalysis],
   writerModelConfigurationId: 0,
   acknowledgeSameProvider: false
 };
@@ -63,20 +63,20 @@ describe('report-chart-layout-preview', () => {
 
   it('titles and names the preview after the document type', () => {
     expect(layoutPreviewTitle(ExecutiveSummary)).toBe('Layout preview — Executive Summary');
-    expect(layoutPreviewFileName(TechnicalReport)).toBe('layout-preview_report-for-ai-researchers-and-developers.pdf');
+    expect(layoutPreviewFileName(RootCauseAnalysis)).toBe('layout-preview_root-cause-analysis.pdf');
   });
 
   it('composes the covered models\' charts, sends them with the document\'s request and layout, and returns the PDF', async () => {
     const result = await renderLayoutPreview(service, compose as unknown as DocumentChartsComposer, {
-      request: REQUEST, audience: TechnicalReport, paper: 'letter', scope: 'comparison', coveredKeys: ['run:1', 'run:2']
+      request: REQUEST, audience: RootCauseAnalysis, paper: 'letter', scope: 'comparison', coveredKeys: ['run:1', 'run:2']
     });
 
-    expect(compose).toHaveBeenCalledWith(TechnicalReport, { kind: 'named', coveredKeys: ['run:1', 'run:2'] }, 'comparison');
+    expect(compose).toHaveBeenCalledWith(RootCauseAnalysis, { kind: 'named', coveredKeys: ['run:1', 'run:2'] }, 'comparison');
     expect(sent.length).toBe(1);
     expect(sent[0].request).toEqual({
       ...REQUEST,
-      audiences: [TechnicalReport],
-      audience: TechnicalReport,
+      audiences: [RootCauseAnalysis],
+      audience: RootCauseAnalysis,
       paper: 'letter',
       naming: 'named',
       layout: COMPOSED.layout

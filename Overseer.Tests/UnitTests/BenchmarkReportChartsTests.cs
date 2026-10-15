@@ -44,7 +44,7 @@ public class BenchmarkReportChartsTests
         var ct = TestContext.Current.CancellationToken;
         using var charts = TestChartStores.InTempFolder();
         await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
-        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport));
+        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary));
         var controller = Controller(db, charts.Store);
 
         var ok = Assert.IsType<OkObjectResult>(await controller.PutCharts(id, Request(
@@ -68,7 +68,7 @@ public class BenchmarkReportChartsTests
         var ct = TestContext.Current.CancellationToken;
         using var charts = TestChartStores.InTempFolder();
         await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
-        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport));
+        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary));
         var controller = Controller(db, charts.Store);
 
         var named = BenchmarkReportChartStore.Named;
@@ -110,7 +110,7 @@ public class BenchmarkReportChartsTests
         var ct = TestContext.Current.CancellationToken;
         using var charts = TestChartStores.InTempFolder();
         await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
-        long compared = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport));
+        long compared = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary));
         long standalone = await AddAsync(db, BenchmarkReportPackFixture.StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary));
         var request = Request(Upload("p1a-quality", BenchmarkReportChartStore.Named));
 
@@ -147,7 +147,7 @@ public class BenchmarkReportChartsTests
         var ct = TestContext.Current.CancellationToken;
         using var charts = TestChartStores.InTempFolder();
         await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
-        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport));
+        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary));
         var controller = Controller(db, charts.Store);
         Assert.IsType<OkObjectResult>(await controller.PutCharts(id, Request(Upload("p1a-quality", BenchmarkReportChartStore.Named)), ct));
 
@@ -169,7 +169,7 @@ public class BenchmarkReportChartsTests
         var ct = TestContext.Current.CancellationToken;
         using var charts = TestChartStores.InTempFolder();
         await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
-        long deleted = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport));
+        long deleted = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary));
         long kept = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary));
         var controller = Controller(db, charts.Store);
         Assert.IsType<OkObjectResult>(await controller.PutCharts(deleted, Request(Upload("p1a-quality", BenchmarkReportChartStore.Named)), ct));
@@ -190,7 +190,7 @@ public class BenchmarkReportChartsTests
         var ct = TestContext.Current.CancellationToken;
         using var charts = TestChartStores.InTempFolder();
         await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
-        long withCharts = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport));
+        long withCharts = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary));
         long without = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary));
         long standalone = await AddAsync(db, BenchmarkReportPackFixture.StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary));
         var service = Service(db, charts.Store);
@@ -206,7 +206,7 @@ public class BenchmarkReportChartsTests
         Assert.Equal(new[] { "s1-quality-speed", "p2-profile" }, charted.ChartFigureKeys);
         Assert.Equal(SettingsHash, charted.ChartSettingsHash);
 
-        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport).FactsJson);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary).FactsJson);
         var expectedLetters = sheet.Peers.ToDictionary(p => p.EntryKey, p => p.Letter);
         Assert.Equal(new Dictionary<string, string> { ["run:14"] = "A", ["run:13"] = "B" }, expectedLetters);
         Assert.Equal(expectedLetters, charted.PeerLetters);
@@ -238,7 +238,7 @@ public class BenchmarkReportChartsTests
         var ct = TestContext.Current.CancellationToken;
         using var charts = TestChartStores.InTempFolder();
         await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
-        long id = await AddAsync(db, BenchmarkReportPackFixture.ComparisonDocument(BenchmarkReportAudience.TechnicalReport, subset: true));
+        long id = await AddAsync(db, BenchmarkReportPackFixture.ComparisonDocument(BenchmarkReportAudience.ExecutiveSummary, subset: true));
 
         Assert.IsType<OkObjectResult>(await Controller(db, charts.Store).PutCharts(id, Request(
             Upload("p1a-quality", BenchmarkReportChartStore.Named),
@@ -290,7 +290,7 @@ public class BenchmarkReportChartsTests
         var ct = TestContext.Current.CancellationToken;
         using var charts = TestChartStores.InTempFolder();
         await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
-        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport));
+        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary));
         var controller = Controller(db, charts.Store);
 
         var layouts = new[]
@@ -394,7 +394,7 @@ public class BenchmarkReportChartsTests
 
         // The first stored document and disclosure whose anonymized render places a figure.
         (long Id, BenchmarkReportDisclosure Disclosure, int Markers)? found = null;
-        foreach (var audience in new[] { BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.InternalBrief })
+        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary })
         {
             var document = BenchmarkReportPackFixture.Document(audience);
             long id = await AddAsync(db, document);
@@ -451,11 +451,11 @@ public class BenchmarkReportChartsTests
         using var charts = TestChartStores.InTempFolder();
         await using var db = new ApplicationDbContext(BenchmarkRunExamTests.InMemoryOptions());
         var controller = Controller(db, charts.Store);
-        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport));
+        long id = await AddAsync(db, BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary));
         Assert.IsType<OkObjectResult>(await controller.PutCharts(id, Request(
             FigureKeys.Select(key => Upload(key, BenchmarkReportChartStore.Anonymized)).ToArray()), ct));
 
-        foreach (var disclosure in BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.TechnicalReport))
+        foreach (var disclosure in BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.ExecutiveSummary))
         {
             string name = disclosure.ToString().ToLowerInvariant();
             var docx = Assert.IsType<FileContentResult>(await controller.RenderDocx(id, name, "named", null, ct));

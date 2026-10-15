@@ -28,9 +28,11 @@ public class AdminBenchmarkBatteryReportsControllerTests
     private static readonly BenchmarkReportAudience[] AllAudiences =
     {
         BenchmarkReportAudience.ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport,
-        BenchmarkReportAudience.InternalBrief
+        BenchmarkReportAudience.RootCauseAnalysis
     };
+
+    /// <summary>The battery-completion documents whose prompt can be built and estimated today.</summary>
+    private static readonly List<BenchmarkReportAudience> EstimableAudiences = new() { BenchmarkReportAudience.ExecutiveSummary };
 
     private static WriteRunReportDocumentsRequest Request(long writerId, params BenchmarkReportAudience[] audiences) => new()
     {
@@ -66,7 +68,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
         Assert.Equal(h.WriterConfig.Id, batteryRun.ReportWriterModelConfigurationId);
         Assert.Equal(BenchmarkRunReportDocumentsStatus.Completed, batteryRun.ReportDocumentsStatus);
         var documents = await h.DocumentsAsync();
-        Assert.Equal(3, documents.Count);
+        Assert.Equal(2, documents.Count);
         Assert.All(documents, d => Assert.Equal(BenchmarkReportDocumentOrigin.BatteryCompletion, d.Origin));
         Assert.Equal(h.BatteryRunId, h.Writer.LastBatteryRunId);
     }
@@ -77,20 +79,20 @@ public class AdminBenchmarkBatteryReportsControllerTests
         await using var h = await BatteryReportHarness.CreateAsync(withWriter: false);
 
         var accepted = Assert.IsType<AcceptedResult>(await h.Controller().Write(
-            h.BatteryRunId, Request(h.WriterConfig.Id, BenchmarkReportAudience.TechnicalReport), Ct));
-        Assert.Equal(new[] { BenchmarkReportAudience.TechnicalReport }, Assert.IsType<WriteRunReportDocumentsResponse>(accepted.Value).Audiences);
+            h.BatteryRunId, Request(h.WriterConfig.Id, BenchmarkReportAudience.RootCauseAnalysis), Ct));
+        Assert.Equal(new[] { BenchmarkReportAudience.RootCauseAnalysis }, Assert.IsType<WriteRunReportDocumentsResponse>(accepted.Value).Audiences);
         await BatteryReportHarness.WaitUntilAsync(() => !h.Service.IsActive(h.BatteryRunId));
-        Assert.Equal(BenchmarkReportAudience.TechnicalReport, Assert.Single(await h.DocumentsAsync()).Audience);
+        Assert.Equal(BenchmarkReportAudience.RootCauseAnalysis, Assert.Single(await h.DocumentsAsync()).Audience);
 
         var written = Assert.IsType<ConflictObjectResult>(await h.Controller().Write(
-            h.BatteryRunId, Request(h.WriterConfig.Id, BenchmarkReportAudience.TechnicalReport), Ct));
+            h.BatteryRunId, Request(h.WriterConfig.Id, BenchmarkReportAudience.RootCauseAnalysis), Ct));
         Assert.Contains(
-            "The Report for AI Researchers and Developers is already written. Delete it first to write it again.",
+            "The Root Cause Analysis is already written. Delete it first to write it again.",
             JsonSerializer.Serialize(written.Value));
 
         Assert.IsType<AcceptedResult>(await h.Controller().Write(h.BatteryRunId, Request(h.WriterConfig.Id), Ct));
         await BatteryReportHarness.WaitUntilAsync(() => !h.Service.IsActive(h.BatteryRunId));
-        Assert.Equal(3, (await h.DocumentsAsync()).Count);
+        Assert.Equal(2, (await h.DocumentsAsync()).Count);
 
         var all = Assert.IsType<ConflictObjectResult>(await h.Controller().Write(h.BatteryRunId, Request(h.WriterConfig.Id), Ct));
         Assert.Contains(AdminBenchmarkBatteryReportsController.AllWrittenMessage, JsonSerializer.Serialize(all.Value));
@@ -186,7 +188,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
         await BatteryReportHarness.WaitUntilAsync(() => !h.Service.IsActive(h.BatteryRunId));
 
         var documents = await h.DocumentsAsync();
-        Assert.Equal(3, documents.Count);
+        Assert.Equal(2, documents.Count);
         Assert.All(documents, d =>
         {
             Assert.True(d.SameProviderAcknowledged);
@@ -269,23 +271,18 @@ public class AdminBenchmarkBatteryReportsControllerTests
                     Audiences = audiences
                 }, Ct)).Value);
 
-        var estimate = await EstimateAsync(h.WriterConfig.Id);
+        var estimate = await EstimateAsync(h.WriterConfig.Id, EstimableAudiences);
         Assert.Null(estimate.Refusal);
         Assert.Null(estimate.SameProviderWarning);
-        Assert.Equal(AllAudiences, estimate.Estimates.Select(e => e.Audience));
+        Assert.Equal(EstimableAudiences, estimate.Estimates.Select(e => e.Audience));
         Assert.All(estimate.Estimates, e => Assert.True(e.PromptChars > 0));
 
-        var one = await EstimateAsync(h.WriterConfig.Id, new List<BenchmarkReportAudience> { BenchmarkReportAudience.TechnicalReport });
-        Assert.Equal(
-            estimate.Estimates.Single(e => e.Audience == BenchmarkReportAudience.TechnicalReport).PromptChars,
-            Assert.Single(one.Estimates).PromptChars);
-
-        var sameProvider = await EstimateAsync(sameProviderId);
+        var sameProvider = await EstimateAsync(sameProviderId, EstimableAudiences);
         Assert.Null(sameProvider.Refusal);
         Assert.Equal("reportWriter", sameProvider.SameProviderWarning?.Role);
-        Assert.Equal(3, sameProvider.Estimates.Count);
+        Assert.Single(sameProvider.Estimates);
 
-        var sameModel = await EstimateAsync(sameModelId);
+        var sameModel = await EstimateAsync(sameModelId, EstimableAudiences);
         Assert.Equal(BenchmarkRunReportDocumentService.ModelUnderTestMessage, sameModel.Refusal);
         Assert.Null(sameModel.SameProviderWarning);
 
@@ -324,7 +321,7 @@ public class AdminBenchmarkBatteryReportsControllerTests
         await h.UpdateBatteryRunAsync(b => b.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Writing);
         var busy = Assert.IsType<ConflictObjectResult>(await h.Controller().DeleteDocument(h.BatteryRunId, executive.Id, Ct));
         Assert.Contains(AdminBenchmarkBatteryReportsController.DeleteWhileWritingMessage, JsonSerializer.Serialize(busy.Value));
-        Assert.Equal(4, (await h.DocumentsAsync()).Count);
+        Assert.Equal(3, (await h.DocumentsAsync()).Count);
 
         await h.UpdateBatteryRunAsync(b => b.ReportDocumentsStatus = BenchmarkRunReportDocumentsStatus.Completed);
         Assert.IsType<NoContentResult>(await h.Controller().DeleteDocument(h.BatteryRunId, executive.Id, Ct));

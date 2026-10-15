@@ -550,8 +550,8 @@ for the battery run:
 3. **AI-written reports**, only with a writer: pending (*Follows the analysis*) while a member is
    repaired or the analysis is computed; current while `postRunWork` is `WritingReports` — *Waiting for
    the report writer*, with the queue position, or *Writing the AI-written reports* once the battery
-   run's `reportDocumentsStatus` is *Writing*; afterwards from that status: done at *Completed* (*3
-   documents written* when the automatic job wrote all three, *N documents written* or *1 document
+   run's `reportDocumentsStatus` is *Writing*; afterwards from that status: done at *Completed* (*2
+   documents written* when the automatic job wrote both, *N documents written* or *1 document
    written* after a partial write, or *Written* when the count is 0) or
    *CompletedWithWarnings* (*Written with warnings*); ended with the message at *Failed*, *Skipped* or
    *Canceled*, and with *Not started* at *NotRequested*. While the stage is current the dialog also polls
@@ -773,7 +773,7 @@ leaderboard and from the progress dialog's **Open Analysis**.
   | **Dimensions**, **Speed**, **Cost** | The composite figures of M5 and M6; *Cost* adds token and tool usage |
   | **Configuration** | Definition and class hashes, weights and scheme, the start settings and each suite's instrument fingerprints |
   | **Paired Test** | This battery run against another result of the same definition (§ 7.3) |
-  | **AI Reports** | The battery's three AI-written documents (§ 7.2) |
+  | **AI Reports** | The battery's two AI-written documents, the Executive Summary and the Root Cause Analysis (§ 7.2) |
 
 ### 4.8 The battery editor
 
@@ -836,10 +836,11 @@ request and response shapes of a run's run-completion documents:
 
 | Method | Route | Purpose |
 |---|---|---|
-| POST | `runs/{id}/report-documents` | Write the finished battery run's missing documents (body `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider }`); the writer becomes the battery run's writer. 202 with the Pending status and the documents to write. Refusals, in order: no body 400; unknown 404; not finished, or no complete, current analysis 400; a job Pending or Writing 409; an audience other than the three (1 Executive Summary, 2 Report for AI Researchers and Developers, 3 Internal Improvement Brief) 400; a document already written, or with none requested every one, 409; an unusable writer or the model under test 400; an unacknowledged same-provider writer 409 with the warning; the endpoint policy 400; the spend cap 429 |
+| POST | `runs/{id}/report-documents` | Write the finished battery run's missing documents (body `{ writerModelConfigurationId, audiences?, acknowledgeSameProvider, replaceDocumentIds? }`, `replaceDocumentIds` naming the Root Cause Analysis a **Rewrite with controls** replaces); the writer becomes the battery run's writer. 202 with the Pending status and the documents to write. Refusals, in order: no body 400; unknown 404; not finished, or no complete, current analysis 400; a job Pending or Writing 409; an audience other than the two (1 Executive Summary, 5 Root Cause Analysis) 400; a document already written and not replaced, or with none requested every one, 409; an unusable writer or the model under test 400; an unacknowledged same-provider writer 409 with the warning; the endpoint policy 400; the spend cap 429 |
 | POST | `runs/{id}/report-documents/estimate` | Per-document and total cost for a writer, with its refusal or warning. No model call |
 | GET | `runs/{id}/report-documents/job` | The current or last job (`BenchmarkRunReportJobDto`, labeled *Battery run #N*); 204 when this process knows none |
 | POST | `runs/{id}/report-documents/cancel` | Cancel the job; documents already written are kept. 202; 409 when nothing is in progress |
+| GET | `runs/{id}/root-cause-controls` | The controls a Root Cause Analysis of the battery run would use: earlier battery runs of other models on the same battery revision, in the same comparability class (`ai-benchmark-report-pack.md` § 17). No model call |
 | DELETE | `runs/{id}/report-documents/{documentId}` | Delete one of the battery run's own battery-completion documents. 204; 404 when it is not one; 409 while its documents are being written |
 
 The stored documents are listed and rendered by the shared report-document endpoints, with
@@ -1305,9 +1306,11 @@ A practical reading order:
 
 ### 7.2 The AI-written battery documents
 
-A finished, analyzed battery run can have the three documents a single run has: the **Executive
-Summary**, the **Report for AI Researchers and Developers** and, from 2026-10-06, the **Internal
-Improvement Brief**, written by a report writer model in the stand-alone form. The Markdown report of § 7.1 stays, unchanged and deterministic. The mechanics —
+A finished, analyzed battery run can have the two documents a single run has: the **Executive
+Summary**, in the stand-alone form, and the **Root Cause Analysis**, set against the battery run's
+controls, written by a report writer model. (Until 2026-10-15 they were the Executive Summary, the
+*Report for AI Researchers and Developers* and, from 2026-10-06, the *Internal Improvement Brief*;
+the last two were retired and their stored documents deleted.) The Markdown report of § 7.1 stays, unchanged and deterministic. The mechanics —
 fact sheet, prompt, validation, cover, file names, endpoints — are in
 [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 14.
 
@@ -1322,17 +1325,16 @@ immutable, so a battery document cannot contradict its own figures any more than
 result is also the figure a model is chosen by, so it is the result most worth explaining to a reader
 outside the team. The deterministic Markdown report is kept as the reproducible instrument.
 
-**Decision D3 (2026-10-03, amended 2026-10-06): the battery's writer writes the battery's documents —
-two, and three since the Internal Improvement Brief became a completion document (D8); the members
-write none.** A run request's report writer, sent with a battery start, is checked at start against the
+**Decision D3 (2026-10-03, amended 2026-10-06 and 2026-10-15): the battery's writer writes the
+battery's documents — the Executive Summary and the Root Cause Analysis; the members write none.** A run request's report writer, sent with a battery start, is checked at start against the
 tested model (§ 3.3), stored on the battery run, and cleared from every member's request.
 `BenchmarkBatteryReportDocumentService.ScheduleIfDue` runs after every analysis the battery run's
 finish computes — at the end of the drive loop, after a repair or a Continue that finishes the battery
 run (§§ 3.4, 3.5) — and after a manual **Recompute analysis** (§ 4.7), and writes every missing document
-(the three) once the battery run has finished, its latest analysis is complete and current, it names a
+(both) once the battery run has finished, its latest analysis is complete and current, it names a
 writer, and it has no battery-completion document yet; a battery run that already has some gets the
 missing ones only from its **AI Reports** tab. *Why:* a battery of K suites and R rounds would
-otherwise queue up to 3·K·R member documents for the single report-writer slot, each about one run of
+otherwise queue up to 2·K·R member documents for the single report-writer slot, each about one run of
 one suite, when the reader needs one account of the composite. A member's own documents can still be
 written on demand from that run's **AI Reports** tab.
 
@@ -1343,9 +1345,11 @@ included*, beside `claims.refuted`, which counts only the answers' own claims. T
 table leaves out its score columns when no band has a score. While the documents are written, the battery
 progress dialog shows an *AI-written reports* stage (§ 4.3), and the completion chime waits for it.
 
-The Battery Run Report's **AI Reports** tab lists the three documents, written or not, with **View**,
+The Battery Run Report's **AI Reports** tab lists the two documents, written or not, with **View**,
 **Delete**, *Write missing reports* (the writer picker starts on the battery run's own writer), the cost
-estimate, the same-provider confirmation and **Show Progress**, as a single run's tab does.
+estimate, the same-provider confirmation and **Show Progress**, as a single run's tab does, and the
+Root Cause Analysis' **Controls** line, **Set up a control run**, **Rewrite with controls** and its
+recommended runs with **Set up this run** (`ai-benchmark-report-pack.md` § 17).
 
 **Decision D8 (2026-10-06): one home per AI document.** A document's home is decided by whether it has
 peers ([`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 1a):
@@ -1360,7 +1364,8 @@ So the wizard's step 3 writes comparison documents only, and needs two entries t
 the server refuses a peerless Report Pack preview and start; a comparison holds one document per subject
 and type, and a duplicate is refused with 409; step 4 lists only what the wizard wrote; the run and
 battery Download Centers list their own origin and point to the comparison documents about them; the
-Internal Improvement Brief is the third completion document of a run and of a battery run; and a
+Root Cause Analysis (the Internal Improvement Brief until 2026-10-15) is a completion document of a run
+and of a battery run; and a
 comparison document's file name carries its peers or its comparison key. A battery's member runs' files
 are not documents of the battery, but its Download Center can list them beside its own (**Include member
 runs**, § 4.7), so a battery of many runs downloads in one action.
@@ -1385,6 +1390,7 @@ No stored row was overwritten — `MissingAudiencesAsync` and `ScheduleIfDue` fi
 risk was in the listings and the file names, not the database. The Internal Improvement Brief had to
 become a completion document: removing the one-entry comparison would otherwise have removed the only way
 to write a brief about one battery run, and the brief is the team's input to every benchmark analysis.
+The same reasoning made its successor, the Root Cause Analysis, a completion document on 2026-10-15.
 
 *Rejected alternatives,* so they are not proposed again:
 

@@ -61,68 +61,59 @@ export const REPORT_DISCLOSURE_GUIDES: readonly ReportDisclosureGuide[] = [
     ]
   },
   {
-    audience: BenchmarkReportAudience.TechnicalReport,
-    heading: 'Report for AI Researchers and Developers',
-    title: 'What Summary, Detailed and Full contain',
-    items: [
-      {
-        term: 'Summary',
-        text: 'Safe to send to the model’s company.',
-        points: [
-          'Every section: abstract, key figures, setup and method, results against peers, speed and cost, strengths and '
-            + 'weaknesses, recommendations, per-question results, tool use, grader reliability, threats to validity and '
-            + 'the reproducibility appendix.',
-          'Per-question results name each question by its topic, never its text, with its score and peer comparison, '
-            + 'critical error, refuted answer sentences, tool calls and model time, plus the writer’s note on each '
-            + 'question it flags.',
-          'Strengths, weaknesses and recommendations carry only their support label.',
-          SUMMARY_BANNER + ' Removed content, when present, lists location and rule number only.'
-        ]
-      },
-      {
-        term: 'Detailed',
-        text: 'For the model’s company, not for publishing: it reveals the benchmark’s questions. Everything in Summary, plus:',
-        points: [
-          'An Evidence line under each strength, weakness and recommendation: the grading rows and facts it cites, the '
-            + 'questions it cites with their scores, and any of them on which the claim verifier refuted an answer sentence.',
-          'Questions and answers: every question word for word, and each run’s answer excerpt. The excerpt is the '
-            + 'answer’s opening, cut at the length set when the document was written (600 characters by default); a '
-            + 'shorter answer appears whole.',
-          'Page 1 banner: “Confidential. Prepared for the model’s provider. Contains benchmark questions — do not publish.”',
-          'Still no rubrics, individual graders’ scores or notes, or claim verifier rulings.'
-        ]
-      },
-      {
-        term: 'Full',
-        text: 'Internal only; never share it outside the Overseer team. Everything in Detailed, plus:',
-        points: [
-          'Question details, in place of Questions and answers: each question’s rubric, each run’s complete answer, '
-            + 'every grader’s score, comment and evidence, and every claim the verifier checked with its ruling and '
-            + 'reason. A document written before complete answers were kept shows the excerpt, with a note saying so.',
-          'Grader reliability: each grader’s own note on every finding row.',
-          'Tool use: whether each call’s arguments and results are in the runs’ tool-call logs.',
-          'Removed content: the validator’s reason for each removed item.',
-          FULL_QUESTIONS_BANNER + ' ' + FULL_MARKING + ' ' + INTERNAL_FILE_NAME
-        ]
-      }
-    ]
-  },
-  {
-    audience: BenchmarkReportAudience.InternalBrief,
-    heading: 'Internal Improvement Brief',
+    audience: BenchmarkReportAudience.RootCauseAnalysis,
+    heading: 'Root Cause Analysis',
     title: 'What Full contains',
     items: [
       {
         term: 'Full',
         text: 'The only level; internal only, never share it outside the Overseer team.',
         points: [
-          'Sections on the Overseer chat and its tools, the benchmarking system, the model’s result, and leads, with '
-            + 'their recommendations.',
-          'Per-question results with the same question details as the researcher report at Full: rubrics, complete '
-            + 'answers, every grader’s verdict and every claim verifier ruling.',
-          'The whole fact sheet as JSON, including each grader’s note on every finding row.',
-          'No Evidence lines, tool use, grader reliability or evaluation terms sections.',
-          FULL_QUESTIONS_BANNER + ' ' + FULL_MARKING
+          'Scope and design; the evidence on intelligence, speed and cost; the known facts; the hypotheses, each with '
+            + 'its evidence for and against and a confidence grade; the conclusions; the next runs and checks; and the '
+            + 'limitations.',
+          'Four charts drawn by Overseer: where the points were lost, where the time goes, where the cost goes, and how '
+            + 'sure each hypothesis is.',
+          'Question details for every question it cites: the rubric, the answer excerpts and the grading.',
+          'Peers by name, or by letter in the anonymized copy where the document has peers. The Markdown file adds the '
+            + 'anonymized fact sheet as JSON.',
+          FULL_QUESTIONS_BANNER + ' ' + FULL_MARKING + ' ' + INTERNAL_FILE_NAME
+        ]
+      }
+    ]
+  },
+  {
+    audience: BenchmarkReportAudience.ProviderIssueReport,
+    heading: 'Provider Issue Report',
+    title: 'What Summary, Detailed and Full contain',
+    items: [
+      {
+        term: 'Summary',
+        text: 'For the model’s provider.',
+        points: [
+          'Page 1 banner: “Confidential. Prepared for the model’s provider.”'
+        ]
+      },
+      {
+        term: 'Detailed',
+        text: 'For the model’s provider; the same text as Summary, under the same banner.'
+      },
+      {
+        term: 'Full',
+        text: 'Internal only; never share it outside the Overseer team.',
+        points: [
+          'Page 1 banner: “INTERNAL — unpublished chat consistency results. Do not share outside the Overseer team.” '
+            + FULL_MARKING + ' ' + INTERNAL_FILE_NAME
+        ]
+      },
+      {
+        term: 'Every level',
+        text: 'The text is identical; only the banner and the markings change.',
+        points: [
+          'The overall verdict, the verdict table with a note line per endpoint and the secondary measures, the Overseer '
+            + 'updates, the control models per period, the attribution, how to read it, every limitation the analysis '
+            + 'recorded and the reproducibility list.',
+          'The control models are always named by letter, never by name.'
         ]
       }
     ]
@@ -151,10 +142,10 @@ export const REPORT_DISCLOSURE_FORMATS_NOTE = 'Banners, footers and the watermar
 
 export const DOWNLOAD_CENTER_DISCLOSURE_TITLE = 'What each disclosure level contains';
 
-/** The guide for one document type; the researcher report's for an unknown audience. */
+/** The guide for one document type; the Root Cause Analysis' for an unknown audience, so it reads as internal only. */
 export function reportDisclosureGuide(audience: BenchmarkReportAudience): ReportDisclosureGuide {
   return REPORT_DISCLOSURE_GUIDES.find(guide => guide.audience === audience)
-    ?? REPORT_DISCLOSURE_GUIDES.find(guide => guide.audience === BenchmarkReportAudience.TechnicalReport)!;
+    ?? REPORT_DISCLOSURE_GUIDES.find(guide => guide.audience === BenchmarkReportAudience.RootCauseAnalysis)!;
 }
 
 /**

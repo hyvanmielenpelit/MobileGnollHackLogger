@@ -1,0 +1,88 @@
+<!--
+  A Root Cause Analysis' next runs and checks, closed by default under its document row. Each card ends
+  in Set up this run, which fills Run Benchmark and starts nothing. &ngsp; keeps the spaces between
+  inline parts that flex layouts separate only visually.
+-->
+<details class="gh-disclosure rcr" [open]="open" (toggle)="onToggle($event)">
+  <summary>{{ summaryText }}<span class="visually-hidden">: Root Cause Analysis #{{ documentId }}</span></summary>
+  <div class="gh-disclosure-body rcr-body" [attr.aria-busy]="loading ? 'true' : null">
+    @if (loadError) {
+      <div class="rcr-error">
+        <p class="gh-field-error">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+          <span>{{ loadError }}</span>
+        </p>
+        <button type="button" class="btn-link rcr-retry" (click)="load()">Try again<span class="visually-hidden">: recommended runs of Root Cause Analysis #{{ documentId }}</span></button>
+      </div>
+    } @else if (!loaded) {
+      <p class="rcr-note" role="status">Reading the recommended runs…</p>
+    } @else {
+      @if (cards.length === 0) {
+        <p class="rcr-note">No run is recommended: no hypothesis below High can be settled by a run.</p>
+      } @else {
+        <ol class="rcr-grid" role="list" [attr.aria-label]="'Recommended runs of Root Cause Analysis #' + documentId">
+          @for (card of cards; track card.key) {
+            <li class="rcr-item">
+              <article class="rcr-card" [attr.data-kind]="card.run.kind" [attr.data-purpose]="card.run.purpose"
+                       [attr.aria-labelledby]="card.titleId">
+                <div class="rcr-tags">
+                  <span class="gh-tag rcr-purpose" [attr.data-purpose]="card.run.purpose">{{ card.purpose }}</span>
+                  &ngsp;<span class="gh-tag rcr-mark" [attr.data-mark]="card.mark">{{ card.mark }}</span>
+                  @for (id of card.hypothesisIds; track id) {
+                    &ngsp;<span class="gh-tag rcr-hypothesis">{{ id }}</span>
+                  }
+                </div>
+                <h6 class="rcr-title" [id]="card.titleId">{{ card.title }}</h6>
+                @if (card.decides) {
+                  <p class="rcr-decides">{{ card.decides }}</p>
+                }
+                @if (card.afterSystemHypotheses) {
+                  <p class="rcr-after-system">Make this run after the system hypotheses are settled.</p>
+                }
+                <dl class="bm-summary-facts rcr-facts">
+                  <div data-fact="tier"><dt>Predicted tier</dt><dd>{{ card.predictedTier }}</dd></div>
+                  <div data-fact="estimate"><dt>Estimate</dt><dd>{{ card.estimate }}</dd></div>
+                  @for (setting of card.settings; track setting.key) {
+                    <div [attr.data-fact]="setting.key"><dt>{{ setting.term }}</dt><dd>{{ setting.value }}</dd></div>
+                  }
+                </dl>
+                @for (note of card.notes; track $index) {
+                  <p class="rcr-run-note">{{ note }}</p>
+                }
+                <div class="rcr-actions">
+                  <button type="button" class="btn-ghost rcr-set-up" [attr.data-run]="card.number"
+                          [attr.aria-describedby]="refusals.has(card.key) ? card.titleId + '-refusal' : null"
+                          (click)="setUp(card)">Set up this run<span class="visually-hidden">: {{ card.title }} — fills Run Benchmark, starts nothing</span></button>
+                  @if (refusals.get(card.key); as refusal) {
+                    <p class="gh-field-error rcr-refusal" [id]="card.titleId + '-refusal'" role="status">
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+                      <span>{{ refusal }}</span>
+                    </p>
+                  }
+                </div>
+              </article>
+            </li>
+          }
+        </ol>
+      }
+
+      <section class="rcr-checks" [attr.aria-labelledby]="idPrefix + '-checks'">
+        <h6 class="rcr-checks-title" [id]="idPrefix + '-checks'">Checks</h6>
+        @if (checkList.length === 0) {
+          <p class="rcr-note">No check by hand is needed.</p>
+        } @else {
+          <ul class="rcr-check-list">
+            @for (check of checkList; track $index) {
+              <li class="rcr-check">
+                <span class="rcr-check-text">{{ check.text }}</span>
+                @for (id of check.hypothesisIds; track id) {
+                  &ngsp;<span class="gh-tag rcr-hypothesis">{{ id }}</span>
+                }
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    }
+  </div>
+</details>

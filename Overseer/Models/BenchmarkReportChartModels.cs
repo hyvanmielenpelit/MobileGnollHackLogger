@@ -135,6 +135,11 @@ public class BenchmarkReportChartManifest
 
 public class BenchmarkReportChartManifestEntry
 {
+    /// <summary>Who drew the chart: <see cref="ServerOrigin"/> or <see cref="BrowserOrigin"/>.</summary>
+    public const string ServerOrigin = "server";
+
+    public const string BrowserOrigin = "browser";
+
     public string FigureKey { get; set; } = string.Empty;
     public string Naming { get; set; } = string.Empty;
 
@@ -149,6 +154,17 @@ public class BenchmarkReportChartManifestEntry
     public string Title { get; set; } = string.Empty;
     public string Caption { get; set; } = string.Empty;
     public string AltText { get; set; } = string.Empty;
+
+    /// <summary>
+    /// <see cref="ServerOrigin"/> for a chart Overseer drew, <see cref="BrowserOrigin"/> for an upload;
+    /// absent, as in every manifest stored before server-drawn charts, reads as browser.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Origin { get; set; }
+
+    /// <summary>Whether <see cref="Origin"/> is <see cref="ServerOrigin"/>.</summary>
+    [JsonIgnore]
+    public bool IsServerDrawn => string.Equals(Origin, ServerOrigin, StringComparison.Ordinal);
 }
 
 /// <summary>What clearing the chart storage deleted, or in a dry run would delete.</summary>

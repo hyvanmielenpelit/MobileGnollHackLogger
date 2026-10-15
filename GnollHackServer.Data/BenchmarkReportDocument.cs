@@ -4,15 +4,19 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 
-/// <summary>The reader a report-pack document is written for.</summary>
+/// <summary>
+/// The reader a report-pack document is written for. 2 (Report for AI Researchers and Developers) and
+/// 3 (Internal Improvement Brief) are retired: never reuse.
+/// </summary>
 public enum BenchmarkReportAudience
 {
     ExecutiveSummary = 1,
-    TechnicalReport = 2,
-    InternalBrief = 3,
 
     /// <summary>A chat consistency finding written for the model's provider. Chat consistency scope only.</summary>
     ProviderIssueReport = 4,
+
+    /// <summary>Why a model, or the compared models, did well or badly on intelligence, speed and cost. Every scope except chat consistency.</summary>
+    RootCauseAnalysis = 5,
 }
 
 public enum BenchmarkReportDocumentStatus
@@ -53,7 +57,7 @@ public enum BenchmarkReportScope
 }
 
 /// <summary>
-/// Where a run's two AI-written run-completion documents stand. Stored on the run as
+/// Where a run's AI-written run-completion documents, the Executive Summary and the Root Cause Analysis, stand. Stored on the run as
 /// <c>ReportDocumentsStatus</c>; the documents themselves are <see cref="BenchmarkReportDocument"/> rows.
 /// </summary>
 public enum BenchmarkRunReportDocumentsStatus
@@ -68,7 +72,7 @@ public enum BenchmarkRunReportDocumentsStatus
 
     Completed = 3,
 
-    /// <summary>Both documents were stored, and at least one carries validation warnings.</summary>
+    /// <summary>Every document was stored, and at least one carries validation warnings.</summary>
     CompletedWithWarnings = 4,
 
     /// <summary>At least one document could not be written; any document that was stored is kept.</summary>

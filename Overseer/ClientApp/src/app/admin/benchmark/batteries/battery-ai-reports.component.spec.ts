@@ -17,7 +17,9 @@ import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-
 import { PDFJS_LOADER } from '../../../shared/pdf-viewer/pdfjs-loader';
 import { BenchmarkDownloadCenterComponent, rememberedPdfPaper } from '../download-center/benchmark-download-center.component';
 import { reportDisclosureInfo } from '../report-disclosure-guide';
+import { recommendedRun, rootCauseControl, rootCauseControls } from '../report-pack/root-cause.testing';
 import { RunAiReportsComponent } from '../run-ai-reports/run-ai-reports.component';
+import { BenchmarkShellBridge, LauncherSetupPrefill } from '../state/benchmark-shell-bridge.service';
 import { RunReportWritingDialogComponent } from '../run-ai-reports/run-report-writing-dialog.component';
 import {
   BATTERY_REPORT_DOCUMENTS_POLL_MS,
@@ -84,7 +86,7 @@ function jobView(status: number, overrides: Partial<BenchmarkRunReportJobDto> = 
   return {
     runId: 7, status, message: null, phase: status >= 3 ? 'Finished' : 'Writing',
     queuedAtUtc: '2026-10-02T10:00:00Z', slotAcquiredAtUtc: null, finishedAtUtc: null, cancelRequestedAtUtc: null,
-    jobsAhead: null, blockingJobLabel: null, audiences: [1, 2], writerConfigId: 1, writerDisplayName: 'Test Writer',
+    jobsAhead: null, blockingJobLabel: null, audiences: [1, 5], writerConfigId: 1, writerDisplayName: 'Test Writer',
     writerProvider: 'Anthropic', writerModelId: 'claude-3-5-sonnet', writerThinkingLevel: null,
     job: null as any, serverTimeUtc: '2026-10-02T10:00:10Z',
     ...overrides
@@ -95,7 +97,7 @@ function estimateDto(overrides: Partial<BenchmarkRunReportEstimateDto> = {}): Be
   return {
     estimates: [
       { audience: 1, promptChars: 1000, estimatedInputTokens: 900, estimatedOutputTokens: 2000, estimatedCostUsd: 0.06 },
-      { audience: 2, promptChars: 3000, estimatedInputTokens: 2700, estimatedOutputTokens: 7000, estimatedCostUsd: 0.2 }
+      { audience: 5, promptChars: 3000, estimatedInputTokens: 2700, estimatedOutputTokens: 7000, estimatedCostUsd: 0.2 }
     ],
     estimatedTotalCostUsd: 0.26,
     refusal: null,
@@ -146,9 +148,16 @@ describe('BatteryAiReportsComponent', () => {
       getBatteryRun: vi.fn().mockName("AdminBenchmarkService.getBatteryRun"),
       estimateBatteryReports: vi.fn().mockName("AdminBenchmarkService.estimateBatteryReports"),
       deleteBatteryReportDocument: vi.fn().mockName("AdminBenchmarkService.deleteBatteryReportDocument"),
-      getBatteryReportUrl: vi.fn().mockName("AdminBenchmarkService.getBatteryReportUrl")
+      getBatteryReportUrl: vi.fn().mockName("AdminBenchmarkService.getBatteryReportUrl"),
+      getRunRootCauseControls: vi.fn().mockName("AdminBenchmarkService.getRunRootCauseControls"),
+      getBatteryRootCauseControls: vi.fn().mockName("AdminBenchmarkService.getBatteryRootCauseControls"),
+      getReportDocument: vi.fn().mockName("AdminBenchmarkService.getReportDocument"),
+      redrawReportDocumentCharts: vi.fn().mockName("AdminBenchmarkService.redrawReportDocumentCharts")
     } as unknown as MockedObject<AdminBenchmarkService>;
     service.listReportDocuments.mockReturnValue(of([]));
+    service.getRunRootCauseControls.mockReturnValue(of(rootCauseControls({ controlRun: null })));
+    service.getBatteryRootCauseControls.mockReturnValue(of(rootCauseControls({ controlRun: null })));
+    service.getReportDocument.mockReturnValue(of({ controls: [], recommendedRuns: [], checks: [] } as any));
     service.getBatteryReportJob.mockReturnValue(of(null));
     service.getBatteryRun.mockReturnValue(of(batteryRun()));
     service.estimateBatteryReports.mockReturnValue(of(estimateDto()));
@@ -164,6 +173,7 @@ describe('BatteryAiReportsComponent', () => {
     await TestBed.configureTestingModule({
       imports: [BatteryAiReportsComponent, AiReportsTabsHostComponent],
       providers: [
+        BenchmarkShellBridge,
         { provide: AdminBenchmarkService, useValue: service },
         { provide: PDFJS_LOADER, useValue: () => Promise.reject(new Error('pdf.js is not loaded in specs')) },
         provideHttpClient(),
@@ -238,7 +248,7 @@ describe('BatteryAiReportsComponent', () => {
     expect(service.listReportDocuments).toHaveBeenCalledWith({ subject: 'battery:7', origin: 'batteryCompletion' });
     expect(status()).toBe('');
     expect(rows().map(row => rowText(row, '.rr-ai-doc-name')))
-      .toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief']);
+      .toEqual(['Executive Summary', 'Root Cause Analysis']);
     for (const row of rows()) {
       expect(rowText(row, '.rr-ai-doc-status.is-missing')).toBe('Not written');
       expect(row.querySelector('button')).toBeNull();
@@ -251,11 +261,12 @@ describe('BatteryAiReportsComponent', () => {
 
   it('lists stored reports with their tags and meta, each with a View and a Delete named for it', () => {
     service.listReportDocuments.mockReturnValue(of([
-      aiDoc(72, 2, {
+      aiDoc(72, 5, {
         runChangedSinceGeneration: true, createdAtUtc: '2026-10-02T11:00:00Z', writerDisplayName: 'Writer B',
         status: 'CompletedWithWarnings', durationMs: 72000, costUsd: 0.08, sameProviderAcknowledged: true
       }),
       aiDoc(71, 1),
+      // A document of a retired type is never listed.
       aiDoc(74, 3),
       // A Report Pack document about the same battery run is not one of its AI-written reports.
       aiDoc(73, 1, { origin: 1, createdAtUtc: '2026-10-03T00:00:00Z' })
@@ -264,19 +275,18 @@ describe('BatteryAiReportsComponent', () => {
     load(batteryRun({ reportDocumentsStatus: 4 }));
 
     const list = rows();
-    expect(list.map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Written with warnings', 'Written']);
+    expect(list.map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Written', 'Written with warnings']);
     expect(list[1].querySelector('.rr-ai-doc-status')?.classList).toContain('is-warning');
-    expect(list.map(row => row.getAttribute('data-document-id'))).toEqual(['71', '72', '74']);
+    expect(list.map(row => row.getAttribute('data-document-id'))).toEqual(['71', '72']);
     expect(list.map(row => rowText(row, '.rr-ai-doc-meta'))).toEqual([
       'by Test Writer on 2026-10-02 10:15 UTC',
-      'by Writer B on 2026-10-02 11:00 UTC · 1 min 12 s · $0.08 · same provider, acknowledged',
-      'by Test Writer on 2026-10-02 10:15 UTC'
+      'by Writer B on 2026-10-02 11:00 UTC · 1 min 12 s · $0.08 · same provider, acknowledged'
     ]);
     expect(list[0].querySelector('.gh-tag-changed')).toBeNull();
     expect(list[1].querySelector('.gh-tag-changed')?.textContent?.trim()).toBe('A member run changed since this document was written');
     const views = list.map(row => row.querySelector('button.rr-ai-doc-view') as HTMLButtonElement);
     expect(views.map(button => button.getAttribute('aria-label')))
-      .toEqual(['View the Executive Summary', 'View the Report for AI Researchers and Developers', 'View the Internal Improvement Brief']);
+      .toEqual(['View the Executive Summary', 'View the Root Cause Analysis']);
     const deletes = list.map(row => row.querySelector('button.rr-ai-doc-delete') as HTMLButtonElement);
     for (const button of deletes) {
       expect(button.classList).toContain('action-btn-danger');
@@ -343,7 +353,7 @@ describe('BatteryAiReportsComponent', () => {
       expect(service.deleteBatteryReportDocument).toHaveBeenCalledWith(7, 71);
       expect(confirm.open).toBe(false);
       expect(status()).toBe('The Executive Summary was deleted.');
-      expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Not written', 'Not written', 'Not written']);
+      expect(rows().map(row => rowText(row, '.rr-ai-doc-status'))).toEqual(['Not written', 'Not written']);
       expect(component.writerConfigId).toBeNull();
       expect(section().querySelector('.rr-ai-writer-note')?.textContent?.trim())
         .toBe('Choose a report writer. The deleted document was written by Test Writer.');
@@ -379,7 +389,7 @@ describe('BatteryAiReportsComponent', () => {
     const tip = byId('ReportWriterHint') as HTMLElement;
     const groups = Array.from(tip.querySelectorAll('dl > div')) as HTMLElement[];
     expect(groups.map(group => group.querySelector('.gh-info-term')?.textContent?.trim()))
-      .toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief', 'Every document']);
+      .toEqual(['Executive Summary', 'Root Cause Analysis', 'Every document']);
     expect((tip.textContent ?? '').replace(/\s+/g, ' ')).toContain('composite index over several suites');
   });
 
@@ -395,7 +405,7 @@ describe('BatteryAiReportsComponent', () => {
     expect((byId('WriteEstimate')?.textContent ?? '').trim()).toBe('Estimating…');
     tick(BATTERY_REPORT_ESTIMATE_DEBOUNCE_MS);
     fixture.detectChanges();
-    expect(service.estimateBatteryReports).toHaveBeenCalledWith(7, { writerModelConfigurationId: 1, audiences: [1, 2, 3] });
+    expect(service.estimateBatteryReports).toHaveBeenCalledWith(7, { writerModelConfigurationId: 1, audiences: [1, 5] });
     const estimate = byId('WriteEstimate') as HTMLElement;
     expect(estimate.classList).toContain('gh-estimate-panel');
     expect(estimate.getAttribute('role')).toBe('status');
@@ -407,7 +417,7 @@ describe('BatteryAiReportsComponent', () => {
     writeButton().click();
     fixture.detectChanges();
 
-    expect(service.writeBatteryReportDocuments).toHaveBeenCalledWith(7, { writerModelConfigurationId: 1, audiences: [1, 2, 3] });
+    expect(service.writeBatteryReportDocuments).toHaveBeenCalledWith(7, { writerModelConfigurationId: 1, audiences: [1, 5] });
     expect(status()).toBe('Waiting for the report writer');
     expect(writeButton().disabled).toBe(true);
     expect(changes.map(change => change.status)).toEqual([1]);
@@ -429,11 +439,11 @@ describe('BatteryAiReportsComponent', () => {
 
     // The status poll sees the job finish and lists the documents again.
     service.getBatteryReportJob.mockReturnValue(of(jobView(3)));
-    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1), aiDoc(72, 2), aiDoc(74, 3)]));
+    service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1), aiDoc(72, 5)]));
     tick(BATTERY_REPORT_DOCUMENTS_POLL_MS);
     fixture.detectChanges();
     expect(status()).toBe('');
-    expect(section().querySelectorAll('.rr-ai-doc-view').length).toBe(3);
+    expect(section().querySelectorAll('.rr-ai-doc-view').length).toBe(2);
     expect(section().querySelector('.rr-ai-write')).toBeNull();
     expect(changes.map(change => change.status)).toEqual([1, 3]);
     flush();
@@ -631,11 +641,78 @@ describe('BatteryAiReportsComponent', () => {
     const ids = (Array.from(host.nativeElement.querySelectorAll('[id]')) as HTMLElement[])
       .map(element => element.id)
       .filter(id => id !== '');
-    for (const id of ['rrAudience2', 'rrWriteEstimate', 'rr-ai-tip-delete-1', 'rrAiDeleteTitle', 'rwTitle',
-      `${batteries[0].idPrefix}Audience2`, `${batteries[0].idPrefix}-tip-delete-1`, `${batteries[0].idPrefix}RwTitle`,
+    for (const id of ['rrAudience5', 'rrWriteEstimate', 'rr-ai-tip-delete-1', 'rrAiDeleteTitle', 'rwTitle',
+      `${batteries[0].idPrefix}Audience5`, `${batteries[0].idPrefix}-tip-delete-1`, `${batteries[0].idPrefix}RwTitle`,
       `${batteries[1].idPrefix}NotWritable`, `${batteries[1].idPrefix}DeleteTitle`]) {
       expect(ids).toContain(id);
     }
     expect(ids.filter((id, index) => ids.indexOf(id) !== index)).toEqual([]);
+  });
+
+  // --- The Root Cause Analysis ---
+
+  describe('the Root Cause Analysis', () => {
+    let prefills: LauncherSetupPrefill[];
+
+    beforeEach(() => {
+      prefills = [];
+      TestBed.inject(BenchmarkShellBridge).prefillSetup$.subscribe(prefill => prefills.push(prefill));
+    });
+
+    it('labels the control run by the battery run', () => {
+      service.getBatteryRootCauseControls.mockReturnValue(of(rootCauseControls()));
+      service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1)]));
+      setUp();
+      load(batteryRun());
+
+      expect(service.getBatteryRootCauseControls).toHaveBeenCalledWith(7);
+      (section().querySelector('.rr-ai-write .rcc-set-up') as HTMLButtonElement).click();
+
+      expect(prefills.map(prefill => prefill.sourceLabel)).toEqual(['Control run for battery run #7']);
+    });
+
+    it('names battery-run controls before writing', () => {
+      service.getBatteryRootCauseControls.mockReturnValue(of(rootCauseControls({
+        controls: [rootCauseControl({ runId: null, batteryRunId: 31 })], controlLimit: 'Moderate', controlRun: null
+      })));
+      setUp();
+      load(batteryRun());
+
+      expect(section().querySelector('.rr-ai-write .rcc-line')?.textContent?.trim())
+        .toBe('The Root Cause Analysis will use 1 control: GPT-6 Luna (high), battery run #31 (2026-10-10).');
+    });
+
+    it('hosts the next runs, redraws the charts and rewrites with controls on the written Root Cause Analysis', () => {
+      service.listReportDocuments.mockReturnValue(of([aiDoc(71, 1), aiDoc(72, 5)]));
+      service.getReportDocument.mockReturnValue(of({ controls: [], recommendedRuns: [recommendedRun()], checks: [] } as any));
+      service.getBatteryRootCauseControls.mockReturnValue(of(rootCauseControls({
+        controls: [rootCauseControl({ runId: null, batteryRunId: 31 })], controlLimit: 'Moderate', controlRun: null
+      })));
+      service.redrawReportDocumentCharts.mockReturnValue(of({ documentId: 72, chartCount: 8, figureKeys: [], settingsHash: null }));
+      service.writeBatteryReportDocuments.mockReturnValue(of({ runId: 7, status: 1 }));
+      setUp();
+      load(batteryRun({ reportWriterModelConfigurationId: 1 }));
+      const row = rows()[1];
+
+      const details = row.querySelector('app-root-cause-runs details') as HTMLDetailsElement;
+      details.open = true;
+      details.dispatchEvent(new Event('toggle'));
+      fixture.detectChanges();
+      (row.querySelector('.rcr-set-up') as HTMLButtonElement).click();
+      expect(prefills.map(prefill => prefill.sourceLabel)).toEqual(['Set up from Root Cause Analysis #72, run 1']);
+
+      (row.querySelector('.rr-ai-doc-redraw') as HTMLButtonElement).click();
+      expect(service.redrawReportDocumentCharts).toHaveBeenCalledWith(72);
+
+      expect(row.querySelector('.rcc-new')?.textContent).toContain('(battery run #31)');
+      (row.querySelector('.rcc-rewrite') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(service.estimateBatteryReports).toHaveBeenLastCalledWith(7, { writerModelConfigurationId: 1, audiences: [5] });
+      buttonIn(fixture.nativeElement.querySelector('.rr-ai-rewrite-dialog'), 'Rewrite').click();
+
+      expect(service.writeBatteryReportDocuments).toHaveBeenCalledWith(7, {
+        writerModelConfigurationId: 1, audiences: [5], replaceDocumentIds: [72]
+      });
+    });
   });
 });

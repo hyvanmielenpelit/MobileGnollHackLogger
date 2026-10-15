@@ -33,6 +33,18 @@ and do not silently skip the requirement either: say in chat which of the two ap
 > they target standalone generated pages, not an existing Angular application with its own design
 > system. Use them only if the task really is a chart or a standalone artifact.
 
+> [!IMPORTANT]
+> **Not every GnollBench document chart is the browser's.** The four Root Cause Analysis charts — R1
+> *Where the points were lost*, R2 *Where the time goes*, R3 *Where the cost goes*, R4 *How sure each
+> hypothesis is* (`r1-points-at-risk` … `r4-hypothesis-confidence`) — are **drawn on the server with
+> QuestPDF**, when the document is stored, not by Chart.js in the browser
+> (`docs/overseer/ai-benchmark-report-pack.md` § 17). The client never draws, lists or uploads them:
+> the chart picker leaves them out (it only notes that the Root Cause Analysis carries them),
+> `isDocumentChartFigureKey` ignores them, Model Comparison's chart counts and document cards skip them,
+> and **the browser publisher never uploads a server key**. Their palette was chosen and validated with
+> the `dataviz` skill on the server side (`RootCauseChartPalette`); a change to how they look is a
+> server change followed by **Redraw charts**, never a client one.
+
 ## Modern Web Baseline
 
 Harness-neutral, and the floor for any Overseer frontend work.
@@ -1110,13 +1122,13 @@ To find specific popups, look in the corresponding component's `.html` template:
       `app-report-chart-picker` (`idPrefix="cc-rep-charts"`, caption hidden) with the four figures
       (`CC_REPORT_CHART_PICKER_FIGURES`: *cc1-quality*, *cc2-speed*, *cc3-work*, *cc4-timeline*, each
       placed *Results*, or *Events* for cc4 outside the Executive Summary), the four document types
-      (`CC_REPORT_CHART_PICKER_AUDIENCES`, short labels *Executive*, *Researchers*, *Internal*,
-      *Provider*), a note on each figure whose endpoint the analysis could not compute
+      (`CC_REPORT_CHART_PICKER_AUDIENCES`, short labels *Executive* and *Provider*: a chat consistency
+      analysis writes only the Executive Summary and the Provider Issue Report), a note on each figure whose endpoint the analysis could not compute
       (`ccReportChartNotes`), the layout fields *label size* and *maximum height* only, and the column
       reason *Not chosen in New reports.* Its enabled document types are those checked **and** those
       already written, so Update charts can use their new choices. The pure
       `chat-consistency-report-chart-settings.ts` holds the normalizers, the defaults (Executive
-      cc1, cc2; Researchers all four; Internal cc1, cc3; Provider cc2, cc4; cc1–cc3 *Half column*,
+      cc1, cc2; Provider cc2, cc4; stored settings of the retired document types dropped on reading; cc1–cc3 *Half column*,
       cc4 *Two-thirds column*; 8 pt labels; at most 50 % of the page; the light print theme, no heading,
       no logo), the storage and `ccReportDocumentChartLayout`, which builds the layout the server
       places a document's charts by (`{ version: 1, figures: [{ key, widthShare, rowGroup }],
@@ -1472,7 +1484,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     *Written with warnings* tag, a meta line (*by <writer> on <date>*, then duration, cost and *same
     provider, acknowledged* where known), a *Run changed since this document was written* badge when
     the list item says so, a **View** button (`btn-gh btn-gh-small` with the *eye* glyph, named *View
-    the Executive Summary* / *View the Report for AI Researchers and Developers*) that opens the
+    the Executive Summary* / *View the Root Cause Analysis*) that opens the
     document in `app-pdf-viewer-dialog`, and a **Delete** icon button (`.action-btn-danger`, *trash*,
     `aria-disabled` with a tooltip saying why while a job is Pending or Writing) behind a confirmation;
     a missing one with a neutral *Not written* tag (no tag at all until the list answers). A
@@ -1497,7 +1509,31 @@ To find specific popups, look in the corresponding component's `.html` template:
     is Pending or Writing. After a delete the picker is cleared, with a note, if it held the model that
     wrote the deleted document. Two documents with two writers are two rounds. The nested
     confirmations stop their own `close` and `cancel` events so the run report dialog never sees them.
-    The section is not a run action.
+    The section is not a run action. Two Root Cause Analysis components sit in it, shared with the
+    battery run's tab (`docs/overseer/ai-benchmark-report-pack.md` § 17): `app-root-cause-controls`
+    (`run-ai-reports/root-cause-controls.component.*`), a *Controls* section (`h6`, a `role="status"`
+    live block) fed by `GET …/root-cause-controls` (`RootCauseControlsDto`) — before writing, who the
+    controls will be (or the none-found sentence) and the cap the control limit leaves, with a
+    `.btn-ghost` **Set up a control run** while the endpoint returns a `controlRun`; after writing, *This
+    Root Cause Analysis used …* from the document detail's `controls` and, when the fresh lookup holds a
+    control the document did not use, *New controls available since this document was written (…).*
+    with **Rewrite with controls** (*zap*), both `aria-disabled` with a reason while the documents are
+    being written — plus the note that Model Comparison's Report Pack gives a fuller analysis of several
+    models; and, under a written Root Cause Analysis row, `app-root-cause-runs`
+    (`report-pack/root-cause-runs.component.*`, also hosted by the comparison documents status and, for
+    the latest Root Cause Analysis, the launcher's **Comparison reports**): a closed
+    `details.gh-disclosure` *Next runs and checks (n runs, m checks)* holding one card per recommended
+    run (purpose, mark and hypothesis tags, decision rule, a `bm-summary-facts` list of tier, estimate and
+    settings, notes, **Set up this run**), then the checks. A written Root Cause Analysis row also has a
+    **Redraw charts** action (run tab and comparison documents status). **Set up this run** and **Set
+    up a control run** call `BenchmarkShellBridgeService.prefillSetup(setup, sourceLabel)` (refused with
+    a reason on the card while the sub-tab cannot be left or outside the GnollBench tab); the shell
+    closes the comparison wizard, the run report or the battery dialog and calls the launcher state's
+    `prefillFromSetup`: it fills every non-null field, notes each missing entity by name, applies the
+    **graders as a set** — a null role is none, a null coverage follows the profile — unless the
+    server's notes say the analyzed runs differ on a grader field, in which case no grader is applied,
+    clears the report writer, heads the note *Set up from Root Cause Analysis #<id>, run <k>*
+    (*Control run for run #<id>*) and **never starts a run**.
     The **Difficulty**, **Tools** and **Cost** panels are capped at 48 rem (`.rr-panel-narrow`) and
     **Configuration**, **AI Reports**, **Calibration** and **Paired Test** at 60 rem
     (`.rr-panel-medium`), each centered in the dialog (`margin-inline: auto`); the other tabs are full
@@ -1523,8 +1559,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     (`#bmReportWriterRefusal`, added to the picker's `aria-describedby`) that holds Start back; a
     writer from the model under test's provider is an amber `alert-warning report-writer-advisory`
     that does not. Both rules come from `run-ai-reports/report-writer-policy.ts`, which the AI Reports
-    tab shares; the server stays authoritative. Audience 2 is shown everywhere as **Report for AI
-    Researchers and Developers** (its stored type is still `TechnicalReport`).
+    tab shares; the server stays authoritative. The writer writes the run's two documents, the
+    Executive Summary and the Root Cause Analysis (`BenchmarkReportAudience.RootCauseAnalysis = 5`);
+    audiences 2 and 3 are retired, and a stored client setting that names them is dropped on reading.
   - `#sameProviderDialog` (`run-tab/`): the same-provider confirmation on Start, **role-aware** by the 409's
     `role`. For `assessor` it is the *Same-Provider Assessment Warning* (*Model Under Test / Assessor
     Model / Provider Family*); for `reportWriter` the title is *Same-Provider Report Writer*, the lines
@@ -1640,8 +1677,9 @@ To find specific popups, look in the corresponding component's `.html` template:
     overlay; documents without peers, from another comparison or on another pricing basis are listed
     under *Not charted* with their reason, and a storage-not-configured stop shows a visible warning.
     Package presets *Internal*,
-    *External* (the Executive Summary and the Report for AI Researchers and Developers; internal-only
-    rows listed but unselectable, with their reason) and *Custom*; a run context lists the run's files
+    *External* (the Executive Summary, and a chat consistency analysis' Provider Issue Report;
+    internal-only rows — the Root Cause Analysis among them — listed but unselectable, with their
+    reason) and *Custom*; a run context lists the run's files
     and the run's own documents — every document whose subject **is** the run,
     `listReportDocuments({ subject: 'run:<id>' })`, run-completion documents included, never a group's
     or a battery result's that merely includes it — and, for a battery member, an `alert-info` pointer
@@ -1656,8 +1694,8 @@ To find specific popups, look in the corresponding component's `.html` template:
     comparison by `comparisonFilePart` — `comparison-12_<model slug>_<kind>` per model,
     `comparison-12_<name slug ≤ 40>_<kind>` comparison-wide (`comparison-12_<kind>` anonymized),
     `comparison-12_subset-<up to three model slugs joined by -vs->_<kind>` for a subset, or
-    `subset-2-of-5-models-<6 hex>` (always when anonymized), the kind `executive-summary`,
-    `researcher-report` or `internal-brief` (`reportKindSlug`) — and any other document by its title with a
+    `subset-2-of-5-models-<6 hex>` (always when anonymized), the kind `executive-summary` or
+    `root-cause-analysis` (`reportKindSlug`) — and any other document by its title with a
     `run-<id>_` or `battery-run-<id>_` prefix and a `vs-` part; several files as one ZIP named by
     `downloadZipStem` from the **chosen** rows (one comparison: `comparison-12_<name slug>`, its name only
     when every chosen document of it is named; several: `comparison-reports`; a run or battery context:
@@ -1667,13 +1705,15 @@ To find specific popups, look in the corresponding component's `.html` template:
     HTML converter owns private `marked` and DOMPurify instances — **never** the chat pipe's global
     ones. Every row offers **PDF** first, then **Word** (both rendered server-side, see
     `ai-benchmark-report-pack.md` § 8); the External preset is PDF only and Internal PDF, Word and
-    Markdown, with a remembered *A4* / *US Letter* paper size (stored settings version 4,
-    `STORED_SETTINGS_VERSION`; versions 2 and 3 are migrated on reading — every package gains the
-    Provider Issue Report row's default choice, `PROVIDER_ISSUE_REPORT_DEFAULT_CHOICE`, an empty choice
-    the package preset fills, and version 2 also loses the Internal package's remembered formats). The
-    **Provider Issue Report** row (`DownloadRowCategory` `providerIssueReport`) exists only for chat
-    consistency documents; the External preset selects it with the Executive Summary and the Report for
-    AI Researchers and Developers, and Internal selects every row. The `chatConsistency` context
+    Markdown, with a remembered *A4* / *US Letter* paper size (stored settings version 5,
+    `STORED_SETTINGS_VERSION`; versions 2 to 4 are migrated on reading — every package loses the choices
+    remembered for the retired document types, `technicalReport` and `internalBrief`; versions 2 and 3
+    also gain the Provider Issue Report row's default choice, `PROVIDER_ISSUE_REPORT_DEFAULT_CHOICE`, an
+    empty choice the package preset fills; and version 2 also loses the Internal package's remembered
+    formats). The pack categories are `executiveSummary`, `rootCauseAnalysis` (internal only, *Internal
+    only: contains benchmark questions and rubrics*) and `providerIssueReport`. The **Provider Issue
+    Report** row exists only for chat consistency documents; the External preset selects it with the
+    Executive Summary, and Internal selects every row. The `chatConsistency` context
     (`{ kind: 'chatConsistency', analysisId }`, title *Chat consistency documents*, subtitle *Chat
     consistency analysis #N*, the title and subtitle the dialog wrapper's, which nothing opens on it
     now) lists the documents of one analysis by subject key `chat-consistency:<id>` and origin
@@ -2140,7 +2180,8 @@ To find specific popups, look in the corresponding component's `.html` template:
       picker's `aria-describedby`.
     - **Documents of this comparison**: `app-comparison-documents-status`
       (`report-pack/comparison-documents-status.component.*`, view built by `comparisonDocumentsView`):
-      whole comparison, three rows for the chosen set and a closed `details.gh-disclosure` *Other model
+      whole comparison, two rows (Executive Summary, Root Cause Analysis) for the chosen set, a written
+      Root Cause Analysis row adding **Redraw charts** and hosting `app-root-cause-runs`, and a closed `details.gh-disclosure` *Other model
       sets (n)* (each set's label, rows, and a **Choose these models** `.btn-link`, `aria-disabled` with
       its reason when a model of it is Excluded now or it is outside 2 to 12); one model at a time, a
       group per chosen model. Each row: the document name, a `.gh-tag` *Written* / *Written with
@@ -2206,7 +2247,8 @@ To find specific popups, look in the corresponding component's `.html` template:
     `docs/overseer/ai-benchmark-report-pack.md` §§ 12 and 15.
   - **`app-report-chart-picker`** (`report-pack/report-chart-picker.component.*`): a group captioned
     *Charts in PDF and Word* holding a `.gh-tabs-segmented` tab row (`frontend_ui_controls` §5) of the
-    document types — short labels *Executive* / *Researchers* / *Internal*, each with a count badge of
+    document types the scope writes — short labels *Executive* / *Root Cause* (per-scope audience lists
+    in `report-document-format.ts`), each with a count badge of
     the charts selected, or `—` when not checked under *Documents* — over the selected document's
     panel: its full name, **All** / **None**, and one checkbox per figure named *Include <figure> in
     the <document>* with the target section under it. Only the selected document's checkboxes are in
@@ -2226,8 +2268,11 @@ To find specific popups, look in the corresponding component's `.html` template:
     says why, and the reasons are listed in the disclosure. It never touches storage: the wizard
     remembers the selection and the layout in `localStorage['overseer.benchmark.reportCharts']`
     (**version 2**, `{ selection, layout }`; version 1 keeps its selection with the default layout),
-    defaulting to Intelligence and Intelligence against cost for the Executive Summary, all seven for
-    the researcher report, and Intelligence, Speed and Cost for the Internal Improvement Brief, and to
+    defaulting to Intelligence and Intelligence against cost for the Executive Summary and to
+    Intelligence, Speed, Cost, Intelligence against speed and Intelligence against cost for the Root
+    Cause Analysis (its only browser-drawn figures; it also always carries the four server-drawn
+    charts, which the picker notes and never lists), dropping stored settings of the retired document
+    types on reading, and to
     `DEFAULT_DOCUMENT_CHART_LAYOUT` (*As in step 2*, full column, side by side, 8 pt, 60 %, no heading,
     no logo, *Light, for print*).
     **It has two hosts**: Model Comparison (step 3 and the Download Center's *Update charts* dialog)

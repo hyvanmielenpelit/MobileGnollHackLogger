@@ -696,7 +696,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(picker.parentElement!.classList).toContain('gh-field-row');
       expect(picker.nextElementSibling).toBe(hint.closest('app-info-tip'));
       const text = (hint.textContent ?? '').replace(/\s+/g, ' ');
-      expect(text).toContain('this model writes an Executive Summary and a Report for AI Researchers and Developers once');
+      expect(text).toContain('this model writes an Executive Summary and a Root Cause Analysis once');
       expect(text).toContain('Downloads render them without calling it again');
       expect(text).toContain('from another provider than the model under test');
     });

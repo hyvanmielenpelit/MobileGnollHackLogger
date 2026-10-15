@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
+using Overseer.Services.Benchmarking.RootCause;
 
 // The fact sheet of a comparison-scope document: every covered model of a comparison described as an
 // equal, by its letter, and nothing about the comparison's other entries. Letters go to the covered
@@ -47,7 +48,14 @@ using Overseer.Models;
 //                                                  reference or allPairs)
 //   pair.<L>.<M>.speed.ratio, .cost.ratio          L's model time and spend per question relative to M's
 //   pair.<L>.<M>.speed.<family>, .cost.<family>    established after the family's Holm adjustment
+//   pair.<L>.<M>.dimension.<d>.<family>            a quality dimension's paired test, established after its family's
+//                                                  Holm adjustment
+//   pair.<L>.<M>.configDifferences                 the configuration keys that differ between the two
 //   notable.count, notable.<n>.kind, .models, .questions, .summary   the notable findings (BenchmarkNotableFindings)
+//   rca.*                                          the root-cause engine over the covered models (RootCauseFacts)
+//
+// Every model.<L>.* fact of RootCauseEvidence, the dimension and configuration pair facts and rca.* are kept
+// off the Executive Summary's prompt (RootCauseFacts.WriterHidden).
 //
 // L is always the earlier letter of a pair.
 
@@ -64,6 +72,18 @@ public sealed class BenchmarkComparisonReportEntry
 
     /// <summary>The model's failure profile over its runs' answers; null when it was not computed, and its facts are then left out.</summary>
     public BenchmarkComparisonModelProfile? Profile { get; init; }
+
+    /// <summary>
+    /// The model's runs with their answers, tool calls and candidate telemetry, for the root-cause engine;
+    /// empty when not loaded, which leaves its evidence unavailable.
+    /// </summary>
+    public IReadOnlyList<BenchmarkRun> Runs { get; init; } = Array.Empty<BenchmarkRun>();
+
+    /// <summary>A battery result's member runs' suite numbers (from 1), by run id; null for a run or group.</summary>
+    public IReadOnlyDictionary<long, int>? SuiteOfRun { get; init; }
+
+    /// <summary>The battery a battery result ran, for the next runs' settings; null for a run or group.</summary>
+    public long? BatteryId { get; init; }
 }
 
 /// <summary>What <see cref="BenchmarkComparisonReportFacts.Build"/> reads.</summary>
@@ -91,6 +111,12 @@ public sealed class BenchmarkComparisonReportFactsInput
 
     /// <summary>The numbered comparison, for the subject key; null when it has no number yet.</summary>
     public int? ComparisonId { get; init; }
+
+    /// <summary>Each run's candidate price card on the comparison's pricing basis, by run id; null leaves the cost decomposition unavailable.</summary>
+    public IReadOnlyDictionary<long, ModelPricing?>? CandidatePricing { get; init; }
+
+    /// <summary>The configurations and recommended models the next runs are derived from; null for none.</summary>
+    public RootCauseCatalog? Catalog { get; init; }
 }
 
 /// <summary>A comparison-scope sheet and its content, or the reason none can be built.</summary>
@@ -281,7 +307,9 @@ public static class BenchmarkComparisonReportFacts
         string? pairedTestsUnavailableReason = null,
         int? comparisonId = null,
         IReadOnlyDictionary<string, ProviderAvailabilitySummary>? availability = null,
-        string? referenceKey = null)
+        string? referenceKey = null,
+        IReadOnlyDictionary<long, ModelPricing?>? candidatePricing = null,
+        RootCauseCatalog? catalog = null)
     {
         ArgumentNullException.ThrowIfNull(comparison);
         ArgumentNullException.ThrowIfNull(coveredKeys);
@@ -300,7 +328,9 @@ public static class BenchmarkComparisonReportFacts
                 Comparison = restricted,
                 SubjectKey = entry.Key,
                 Runs = runs,
-                Availability = availability?.GetValueOrDefault(entry.Key)
+                Availability = availability?.GetValueOrDefault(entry.Key),
+                CandidatePricing = candidatePricing,
+                IncludeRootCause = false
             });
             if (built.Sheet == null) return new BenchmarkComparisonReportFactsResult { Refusal = entry.Label + ": " + built.Refusal };
 
@@ -310,7 +340,8 @@ public static class BenchmarkComparisonReportFacts
                 Entry = entry,
                 Sheet = built.Sheet,
                 Content = BenchmarkReportContent.Build(entryRuns, answerExcerptChars),
-                Profile = BenchmarkComparisonModelProfile.FromRuns(entryRuns)
+                Profile = BenchmarkComparisonModelProfile.FromRuns(entryRuns),
+                Runs = entryRuns
             });
         }
 
@@ -323,7 +354,9 @@ public static class BenchmarkComparisonReportFacts
             AllPairsFamily = allPairsFamily,
             PairedTestsUnavailableReason = pairedTestsUnavailableReason,
             AnswerExcerptChars = answerExcerptChars,
-            ComparisonId = comparisonId
+            ComparisonId = comparisonId,
+            CandidatePricing = candidatePricing,
+            Catalog = catalog
         });
     }
 
@@ -479,6 +512,8 @@ public static class BenchmarkComparisonReportFacts
         if (Family(input.AllPairsFamily, "AllPairs", letterOf) is { } allPairs) families.Add(allPairs);
         sheet.PairedTests = families;
         AddPairFacts(facts, families);
+        AddDimensionPairFacts(facts, input.ReferenceFamily, ReferenceFamilyName, letterOf);
+        AddDimensionPairFacts(facts, input.AllPairsFamily, AllPairsFamilyName, letterOf);
 
         var (questions, maps) = BuildMatrix(lettered.Select(l => (l.Letter, l.Item.Sheet)).ToList());
         AddQuestionFacts(facts, questions);
@@ -506,6 +541,33 @@ public static class BenchmarkComparisonReportFacts
             ? BenchmarkNotableFindings.QuestionLabel(found)
             : "Q" + Inv(n));
         sheet.NotableFindings = notable;
+
+        var modelInputs = lettered.Select(l => RootCauseEvidence.ModelInput(
+            l.Item.Entry, l.Letter, l.Letter, false, l.Item.Runs,
+            RootCauseEvidence.Build(l.Item.Runs, input.CandidatePricing, l.Item.SuiteOfRun, l.Item.BatteryId, l.Item.Entry.BatteryName),
+            Dimensions.Select(d => NumberOf(l.Item.Sheet, "dimension." + d)).ToList(),
+            BoolOf(l.Item.Sheet, "style.responseStyleConflict"),
+            comparison,
+            NumberOf(l.Item.Sheet, BenchmarkBatteryReportFacts.PanelVerificationClearedSensitivityKey))).ToList();
+        var rootCause = RootCauseEngine.Compute(new RootCauseInput
+        {
+            Scope = RootCauseEngine.ComparisonScope,
+            Origin = RootCauseOrigins.Comparison,
+            ComputedAtUtc = comparison.ComputedAtUtc,
+            PricingBasis = comparison.PricingBasisLabel,
+            PricingBasisKind = BenchmarkReportFacts.PricingBasisKindOf(comparison),
+            Models = modelInputs,
+            ReferenceToken = referenceLetter,
+            PairTests = PairTestsOf(families, input, letterOf),
+            JudgeDependentPairs = JudgeDependentPairsOf(comparison, letterOf).Select(p => new RootCausePair(p.First, p.Second)).ToList(),
+            Graders = sheet.Graders.Select(g => (g.Role, g.Provider)).ToList(),
+            Catalog = input.Catalog ?? new RootCauseCatalog(),
+            Battery = batteries,
+            Questions = RootCauseEvidence.QuestionRefs(questions)
+        });
+        sheet.RootCause = rootCause;
+        RootCauseFacts.Add(facts, rootCause, t => "Model " + t);
+        AddConfigDifferenceFacts(facts, rootCause, modelInputs);
 
         sheet.Questions = questions;
         sheet.Facts = facts.Sorted();
@@ -575,6 +637,13 @@ public static class BenchmarkComparisonReportFacts
         if (!string.IsNullOrWhiteSpace(suiteName)) facts.Add("suite.name", suiteName, suiteName);
     }
 
+    /// <summary>
+    /// Whether a fact stays off the comparison Executive Summary's fact list: the root-cause evidence and
+    /// results only the Root Cause Analysis reads (<see cref="RootCauseFacts.WriterHidden"/>), under a model's
+    /// letter or not. They stay on the sheet.
+    /// </summary>
+    public static bool WriterHidden(string? key) => RootCauseFacts.WriterHidden(key);
+
     /// <summary>The prefix of a covered model's own facts: <c>model.A.</c>.</summary>
     public static string ModelPrefix(string letter) => "model." + letter + ".";
 
@@ -583,11 +652,14 @@ public static class BenchmarkComparisonReportFacts
 
     /// <summary>
     /// Whether a per-model fact describes the subject alone and is copied under its letter. Of the
-    /// provider availability facts only the headline keys are.
+    /// provider availability facts only the headline keys are; the per-model sheet's failure profile and
+    /// root-cause facts are not, because the comparison-scope sheet states its own.
     /// </summary>
     public static bool IsModelFact(string key)
         => !BenchmarkReportFacts.IsPeerFact(key)
            && !key.StartsWith("comparison.", StringComparison.Ordinal)
+           && !key.StartsWith(BenchmarkComparisonModelProfile.KeyPrefix, StringComparison.Ordinal)
+           && !key.StartsWith(RootCauseFacts.Prefix, StringComparison.Ordinal)
            && key is not ("subject.label" or "subject.provider" or "subject.modelId" or "suite.name")
            && (!key.StartsWith(BenchmarkReportFacts.AvailabilityPrefix, StringComparison.Ordinal) || BenchmarkReportFacts.IsAvailabilityHeadlineKey(key));
 
@@ -819,11 +891,11 @@ public static class BenchmarkComparisonReportFacts
 
     /// <summary>
     /// <c>comparison.reference</c>: <c>Model C, the baseline model</c>, <c>Model A, the highest Intelligence
-    /// Index</c>, or <c>Model C, chosen as the reference</c>.
+    /// Index</c>, or <c>Model C, chosen for this comparison</c>.
     /// </summary>
     private static void AddReferenceFact(BenchmarkReportFacts.FactList facts, string letter, bool baselineModel, bool highestIndex)
     {
-        string why = baselineModel ? "the baseline model" : highestIndex ? "the highest Intelligence Index" : "chosen as the reference";
+        string why = baselineModel ? "the baseline model" : highestIndex ? "the highest Intelligence Index" : "chosen for this comparison";
         facts.Add("comparison.reference", letter, "Model " + letter + ", " + why);
     }
 
@@ -1190,10 +1262,131 @@ public static class BenchmarkComparisonReportFacts
             _ => winner + " scored higher on the same questions"
         };
 
+        string noDifference = axis switch
+        {
+            "speed" => "no speed difference",
+            "cost" => "no cost difference",
+            _ => "no difference in score"
+        };
         string display = pair.Established && pair.Favors != "None"
             ? result + ", established " + adjustment + " " + p
-            : "no difference established " + adjustment + " " + p;
+            : noDifference + " established " + adjustment + " " + p;
         facts.Add(key, pair.Established, display);
+    }
+
+    /// <summary>
+    /// The quality dimensions' paired tests of one family, oriented by letter, as
+    /// <c>pair.&lt;L&gt;.&lt;M&gt;.dimension.&lt;d&gt;.&lt;family&gt;</c>: established or not after the family's adjustment.
+    /// </summary>
+    private static void AddDimensionPairFacts(
+        BenchmarkReportFacts.FactList facts, BenchmarkPairedComparisonDto? dto, string familyName, IReadOnlyDictionary<string, string> letterOf)
+    {
+        if (dto == null) return;
+        foreach (var (dimension, measure, test) in DimensionTests(dto, letterOf))
+        {
+            string key = PairPrefix(test.FirstLetter, test.SecondLetter) + "dimension." + dimension + "." + familyName;
+            if (test.NotTestedReason != null || test.AdjustedPValue == null)
+            {
+                facts.Unavailable(key, test.NotTestedReason ?? measure.NotTestedReason ?? "The pair was not tested.");
+                continue;
+            }
+
+            string adjustment = measure.FamilySize > 1
+                ? "after the Holm adjustment across " + Inv(measure.FamilySize) + " tests"
+                : "as a single test";
+            string p = "(adjusted p " + PValue(test.AdjustedPValue.Value) + ")";
+            string name = char.ToUpperInvariant(dimension[0]) + dimension[1..];
+            string winner = test.Favors == "First" ? "Model " + test.FirstLetter : "Model " + test.SecondLetter;
+            string display = test.Established && test.Favors != "None"
+                ? winner + " scored higher on " + name + " on the same questions, established " + adjustment + " " + p
+                : "no " + name + " difference established " + adjustment + " " + p;
+            facts.Add(key, test.Established, display);
+        }
+    }
+
+    /// <summary>A paired-test response's dimension tests, each oriented by letter, with its lower-case dimension and its measure.</summary>
+    private static IEnumerable<(string Dimension, BenchmarkPairedMeasureDto Measure, BenchmarkReportPairedTest Test)> DimensionTests(
+        BenchmarkPairedComparisonDto dto, IReadOnlyDictionary<string, string> letterOf)
+    {
+        foreach (string name in BenchmarkPairedTests.DimensionMeasures)
+        {
+            var measure = dto.Measures.FirstOrDefault(m => string.Equals(m.Measure, name, StringComparison.Ordinal));
+            if (measure == null) continue;
+            foreach (var test in measure.Pairs)
+            {
+                if (!letterOf.TryGetValue(test.BaselineKey, out var baseline) || !letterOf.TryGetValue(test.TreatmentKey, out var treatment)) continue;
+                yield return (name.ToLowerInvariant(), measure, Oriented(test, baseline, treatment));
+            }
+        }
+    }
+
+    /// <summary>
+    /// The paired tests the root-cause engine reads: the sheet families' Intelligence, Speed and Cost tests and
+    /// the dimension tests of both families, each with the fact key of its verdict.
+    /// </summary>
+    private static List<RootCausePairTest> PairTestsOf(
+        IReadOnlyList<BenchmarkReportPairedFamily> families, BenchmarkComparisonReportFactsInput input, IReadOnlyDictionary<string, string> letterOf)
+    {
+        var tests = new List<RootCausePairTest>();
+        foreach (var family in families)
+        {
+            string familyName = family.Mode == "AllPairs" ? AllPairsFamilyName : ReferenceFamilyName;
+            foreach (var measure in family.Measures)
+            {
+                string axis = measure.Measure switch
+                {
+                    BenchmarkPairedTests.SpeedMeasure => "speed",
+                    BenchmarkPairedTests.CostMeasure => "cost",
+                    _ => "quality"
+                };
+                foreach (var pair in measure.Pairs)
+                {
+                    tests.Add(TestOf(pair, measure.Measure, familyName, measure.FamilySize, PairPrefix(pair.FirstLetter, pair.SecondLetter) + axis + "." + familyName));
+                }
+            }
+        }
+
+        foreach (var (dto, familyName) in new[] { (input.ReferenceFamily, ReferenceFamilyName), (input.AllPairsFamily, AllPairsFamilyName) })
+        {
+            if (dto == null) continue;
+            foreach (var (dimension, measure, test) in DimensionTests(dto, letterOf))
+            {
+                tests.Add(TestOf(test, measure.Measure, familyName, measure.FamilySize,
+                    PairPrefix(test.FirstLetter, test.SecondLetter) + "dimension." + dimension + "." + familyName));
+            }
+        }
+        return tests;
+
+        static RootCausePairTest TestOf(BenchmarkReportPairedTest test, string measure, string family, int familySize, string factKey) => new()
+        {
+            First = test.FirstLetter,
+            Second = test.SecondLetter,
+            Measure = measure,
+            Family = family,
+            Effect = test.Effect,
+            Lower = test.Lower,
+            Upper = test.Upper,
+            Established = test.Established,
+            AdjustedPValue = test.AdjustedPValue,
+            FamilySize = familySize,
+            Favors = test.Favors,
+            NotTestedReason = test.NotTestedReason,
+            FactKey = factKey
+        };
+    }
+
+    /// <summary><c>pair.&lt;L&gt;.&lt;M&gt;.configDifferences</c> of every pair the root-cause engine analyzed.</summary>
+    private static void AddConfigDifferenceFacts(
+        BenchmarkReportFacts.FactList facts, RootCauseResult rootCause, IReadOnlyList<RootCauseModelInput> models)
+    {
+        var byToken = models.ToDictionary(m => m.Token, StringComparer.Ordinal);
+        foreach (var pair in rootCause.SpeedPairs)
+        {
+            if (!byToken.TryGetValue(pair.First, out var first) || !byToken.TryGetValue(pair.Second, out var second)) continue;
+            var differences = RootCauseContext.ConfigDifferences(first, second);
+            facts.Add(PairPrefix(pair.First, pair.Second) + "configDifferences", differences.Count,
+                differences.Count == 0 ? "no configuration key differs" : BenchmarkReportFormat.LetterList(differences));
+        }
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1491,6 +1684,13 @@ public static class BenchmarkComparisonReportFacts
     {
         var fact = sheet.Facts.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.Ordinal));
         return fact is { Available: true, Value: JsonValue value } && value.TryGetValue(out double number) ? number : null;
+    }
+
+    /// <summary>An available fact's boolean value; false when it is missing, unavailable or not a boolean.</summary>
+    private static bool BoolOf(BenchmarkReportFactSheet sheet, string key)
+    {
+        var fact = sheet.Facts.FirstOrDefault(f => string.Equals(f.Key, key, StringComparison.Ordinal));
+        return fact is { Available: true, Value: JsonValue value } && value.TryGetValue(out bool flag) && flag;
     }
 
     /// <summary>An available fact's value as a number, whether stored as a floating-point or a whole number; null otherwise.</summary>

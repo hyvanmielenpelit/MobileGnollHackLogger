@@ -36,14 +36,15 @@ import {
   MIN_COMPARISON_DOCUMENT_ENTRIES
 } from './comparison-model-options';
 import {
-  REPORT_PACK_AUDIENCES,
   audienceLabel,
   disclosureLabel,
   documentStatusLabel,
   formatCostUsd,
   formatElapsed,
-  formatUtc
+  formatUtc,
+  reportAudiencesFor
 } from './report-document-format';
+import { RootCauseRunsComponent } from './root-cause-runs.component';
 
 /** Step 3's document scope: comparison-wide (or model subset) documents, or per-model ones. */
 export type ReportDocumentScopeMode = 'comparison' | 'model';
@@ -164,7 +165,7 @@ export function comparisonDocumentsView(input: ComparisonDocumentsViewInput): Co
       otherSets: []
     };
   }
-  const audiences = REPORT_PACK_AUDIENCES.map(option => option.audience);
+  const audiences = reportAudiencesFor(input.mode).map(option => option.audience);
   if (input.mode === 'comparison') {
     const written = preview.writtenDocuments ?? [];
     const label = input.chosenKeys.map(key => input.labelOf(key)).join(', ');
@@ -253,16 +254,17 @@ function serverMessage(error: HttpErrorResponse): string | null {
 /**
  * Step 3's *Documents of this comparison*: every document the chosen models can have, written or not,
  * with its writer, date, duration, cost and charts, a Write or Rewrite checkbox the host turns into
- * the next job, and icon-only View (the PDF viewer) and Delete (after a confirmation). In comparison
- * scope, the other covered sets with documents follow in a closed disclosure, each with
+ * the next job, and icon-only View (the PDF viewer) and Delete (after a confirmation). A written Root
+ * Cause Analysis adds an icon-only Redraw charts and, under its row, its next runs and checks. In
+ * comparison scope, the other covered sets with documents follow in a closed disclosure, each with
  * **Choose these models**.
  *
- * The host owns the rows and the checks; this component owns the viewer and the delete.
+ * The host owns the rows and the checks; this component owns the viewer, the delete and the redraw.
  */
 @Component({
   selector: 'app-comparison-documents-status',
   standalone: true,
-  imports: [NgTemplateOutlet, PdfViewerDialogComponent],
+  imports: [NgTemplateOutlet, PdfViewerDialogComponent, RootCauseRunsComponent],
   templateUrl: './comparison-documents-status.component.html',
   styleUrls: ['./comparison-documents-status.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -297,16 +299,23 @@ export class ComparisonDocumentsStatusComponent implements OnInit, OnDestroy {
   readonly formatUtc = formatUtc;
   readonly formatCostUsd = formatCostUsd;
   readonly busyReason = 'Wait for the report pack to finish, or cancel it.';
+  readonly rootCauseAudience = BenchmarkReportAudience.RootCauseAnalysis;
 
   deleteTarget: ComparisonDocumentRow | null = null;
   deleting = false;
   deleteError: string | null = null;
-  /** The last delete, for the live line. */
+  /** The last delete or redraw, for the live line. */
   statusMessage = '';
+
+  /** The document whose charts are being redrawn. */
+  redrawingDocumentId: number | null = null;
+  /** Why the last redraw failed. */
+  redrawError: string | null = null;
 
   private returnFocus: HTMLElement | null = null;
   private focusHeadingAfterDelete = false;
   private deleteSub: Subscription | null = null;
+  private redrawSub: Subscription | null = null;
   private destroyed = false;
 
   get headingId(): string {
@@ -325,6 +334,8 @@ export class ComparisonDocumentsStatusComponent implements OnInit, OnDestroy {
     this.destroyed = true;
     this.deleteSub?.unsubscribe();
     this.deleteSub = null;
+    this.redrawSub?.unsubscribe();
+    this.redrawSub = null;
   }
 
   /** A row's id stem: unique within the list. */
@@ -457,6 +468,42 @@ export class ComparisonDocumentsStatusComponent implements OnInit, OnDestroy {
   /** A nested dialog's close or cancel event, stopped so it never reaches the wizard's dialog. */
   stopNestedEvent(event: Event): void {
     event.stopPropagation();
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Redraw
+  // -------------------------------------------------------------------------------------------
+
+  /** Draws a written Root Cause Analysis' server-drawn charts again from its stored facts. */
+  redrawCharts(row: ComparisonDocumentRow): void {
+    const doc = row.document;
+    if (!doc || this.busy || this.redrawingDocumentId !== null) {
+      return;
+    }
+    this.redrawingDocumentId = doc.documentId;
+    this.redrawError = null;
+    this.statusMessage = '';
+    this.redrawSub?.unsubscribe();
+    this.redrawSub = this.benchmarkService.redrawReportDocumentCharts(doc.documentId).subscribe({
+      next: summary => {
+        if (this.destroyed) {
+          return;
+        }
+        this.redrawingDocumentId = null;
+        const count = summary?.chartCount ?? 0;
+        this.statusMessage = `Redrew the charts of ${this.rowName(row)} (${count} ${count === 1 ? 'image' : 'images'}).`;
+        this.cdr.markForCheck();
+      },
+      error: (error: HttpErrorResponse) => {
+        if (this.destroyed) {
+          return;
+        }
+        this.redrawingDocumentId = null;
+        this.redrawError = serverMessage(error) ?? `The charts of ${this.rowName(row)} could not be redrawn.`;
+        this.cdr.markForCheck();
+      }
+    });
+    this.cdr.markForCheck();
   }
 
   // -------------------------------------------------------------------------------------------

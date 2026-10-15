@@ -132,7 +132,7 @@ public class BenchmarkReportComparisonIdentityRenderTests
     [Fact]
     public void ASeparateRank_KeepsItsStoredWording()
     {
-        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport);
+        var document = BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary);
         var sheet = BenchmarkReportPackFixture.Sheet();
         var subject = sheet.Entries.Single(e => e.IsSubject);
         subject.QualityLower = 79.2;
@@ -149,7 +149,7 @@ public class BenchmarkReportComparisonIdentityRenderTests
         string markdown = BenchmarkReportPackRenderer.Render(document, Options(BenchmarkReportPeerNaming.Named));
 
         Assert.Contains("- **Intelligence:** 80 / 100 (interval 77–83), 2nd of 3;", markdown, StringComparison.Ordinal);
-        Assert.Contains("| 80 | 79–81 | 2 |", markdown, StringComparison.Ordinal);
+        Assert.Contains("| **GPT-5.6 Luna** | 80 (79–81) |", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("joint ", markdown, StringComparison.Ordinal);
     }
 
@@ -159,8 +159,6 @@ public class BenchmarkReportComparisonIdentityRenderTests
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportDisclosure.Full)]
-    [InlineData(BenchmarkReportAudience.InternalBrief, BenchmarkReportDisclosure.Full)]
     public void ANamedCopy_PrintsPeersWithoutTheirLetters(BenchmarkReportAudience audience, BenchmarkReportDisclosure disclosure)
     {
         string markdown = BenchmarkReportPackRenderer.Render(
@@ -268,7 +266,7 @@ public class BenchmarkReportComparisonIdentityRenderTests
 
         var perModel = Stored(BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary), first.Id);
         var subset = StoredSubset(first.Id);
-        var other = Stored(BenchmarkReportPackFixture.Document(BenchmarkReportAudience.TechnicalReport), second.Id);
+        var other = Stored(BenchmarkReportPackFixture.Document(BenchmarkReportAudience.ExecutiveSummary), second.Id);
         var standalone = Stored(BenchmarkReportPackFixture.StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary), null);
         db.BenchmarkReportDocuments.AddRange(perModel, subset, other, standalone);
         await db.SaveChangesAsync(ct);

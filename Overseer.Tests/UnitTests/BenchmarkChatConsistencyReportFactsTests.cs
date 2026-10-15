@@ -348,7 +348,7 @@ public class BenchmarkChatConsistencyReportFactsTests
     [Fact]
     public void Endpoints_StateTheirFigures_AndANotComputedEndpointKeepsItsKeys()
     {
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal("\u22124.2\u00A0index points", Fact(sheet, "endpoint.P1.estimate").Display);
         Assert.Equal("\u22126.0 to \u22123.1\u00A0index points", Fact(sheet, "endpoint.P1.ci95").Display);
@@ -379,17 +379,14 @@ public class BenchmarkChatConsistencyReportFactsTests
         Assert.Equal("request-10", Fact(provider, "requestIds.sample.10").Display);
         Assert.DoesNotContain(provider.Facts, f => f.Key == "requestIds.sample.11");
 
-        foreach (var audience in new[] { BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportAudience.TechnicalReport, BenchmarkReportAudience.InternalBrief })
-        {
-            var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), audience, RequestIds());
-            Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("requestIds.", StringComparison.Ordinal));
-        }
+        var executive = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary, RequestIds());
+        Assert.DoesNotContain(executive.Facts, f => f.Key.StartsWith("requestIds.", StringComparison.Ordinal));
     }
 
     [Fact]
     public void IndexedKeys_CountFromOne()
     {
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.InternalBrief);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
         var keys = sheet.Facts.Select(f => f.Key).ToList();
 
         Assert.Contains("events.1.at", keys);
@@ -453,7 +450,7 @@ public class BenchmarkChatConsistencyReportFactsTests
             UnitKind = ChatConsistencyComparisonSetKinds.BatteryRunUnit,
             Units = new[] { Unit(101, "baseline", 10, 40), Unit(102, "baseline", 11, 41), Unit(103, "comparison", 20, 50), Unit(104, "comparison", 21, 51) }
         };
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(battery, BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(battery, BenchmarkReportAudience.ExecutiveSummary);
         var compared = Fact(sheet, "analysis.compared");
         Assert.Equal("Battery Two initial suites (revision 1), 4 battery runs", compared.Display);
         Assert.Equal("battery:abc", compared.Value!.GetValue<string>());
@@ -465,12 +462,12 @@ public class BenchmarkChatConsistencyReportFactsTests
         {
             ComparisonSet = new ChatConsistencyComparedSet { Kind = ChatConsistencyComparisonSetKinds.Suite, Key = "suite:id:7", Label = "Core suite" }
         };
-        Assert.Equal("Suite Core suite, 4 runs", Fact(BenchmarkChatConsistencyReportFacts.Build(suite, BenchmarkReportAudience.TechnicalReport), "analysis.compared").Display);
+        Assert.Equal("Suite Core suite, 4 runs", Fact(BenchmarkChatConsistencyReportFacts.Build(suite, BenchmarkReportAudience.ExecutiveSummary), "analysis.compared").Display);
 
         // Before code version 4, and without a set, there is no such fact.
         foreach (var result in new[] { battery with { AnalysisCodeVersion = 3 }, battery with { ComparisonSet = null } })
         {
-            Assert.DoesNotContain(BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport).Facts, f => f.Key == "analysis.compared");
+            Assert.DoesNotContain(BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary).Facts, f => f.Key == "analysis.compared");
         }
     }
 
@@ -543,13 +540,11 @@ public class BenchmarkChatConsistencyReportFactsTests
     }
 
     [Fact]
-    public void ChatConsistencySlots_ExistForTheFourAudiences()
+    public void ChatConsistencySlots_ExistForBothAudiences()
     {
         var expected = new Dictionary<BenchmarkReportAudience, string[]>
         {
             [BenchmarkReportAudience.ExecutiveSummary] = new[] { "asGoodAsBefore", "playerImpact", "ourChanges", "providerChanges", "confidenceAndScope", "nextRuns" },
-            [BenchmarkReportAudience.TechnicalReport] = new[] { "questionAndDesign", "runsAndCoverage", "overseerEvents", "endpointResults", "attribution", "robustness", "limitations", "reproducibility" },
-            [BenchmarkReportAudience.InternalBrief] = new[] { "chatFindings", "changeEffects", "infrastructureIssues", "nextRuns", "actions" },
             [BenchmarkReportAudience.ProviderIssueReport] = new[] { "issueSummary", "affectedModel", "timeline", "measurements", "hoursObserved", "ruledOut", "sampleRequestIds", "providerRequest" },
         };
         var chatSheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
@@ -565,8 +560,6 @@ public class BenchmarkChatConsistencyReportFactsTests
             Assert.True(spec.ChatConsistencyScope);
             Assert.False(spec.ComparisonScope);
             Assert.False(spec.UsesStrengthsAndWeaknesses);
-            Assert.False(spec.UsesRecommendations);
-            Assert.False(spec.UsesLeads);
             Assert.False(spec.RequiresQuestionTopics);
             foreach (string slot in slots) Assert.False(string.IsNullOrWhiteSpace(BenchmarkReportSlots.ChatConsistencySlotTitles[slot]));
         }
@@ -581,14 +574,10 @@ public class BenchmarkChatConsistencyReportFactsTests
         var model = new Dictionary<BenchmarkReportAudience, string[]>
         {
             [BenchmarkReportAudience.ExecutiveSummary] = new[] { "comparison", "meaning", "confidence" },
-            [BenchmarkReportAudience.TechnicalReport] = new[] { "abstract", "whyItScored", "whatWorked", "limitations" },
-            [BenchmarkReportAudience.InternalBrief] = new[] { "overseerChat", "benchmarkSystem", "modelResult" },
         };
         var comparison = new Dictionary<BenchmarkReportAudience, string[]>
         {
             [BenchmarkReportAudience.ExecutiveSummary] = new[] { "overview", "whichModel", "againstReference", "tradeOffs", "reliability" },
-            [BenchmarkReportAudience.TechnicalReport] = new[] { "abstract", "results", "againstReference", "notableFindings", "dimensionProfiles", "frontier", "whyModelsDiffer", "questionPatterns", "graderReliability", "limitations" },
-            [BenchmarkReportAudience.InternalBrief] = new[] { "sharedGaps", "modelGaps", "benchmarkSystem" },
         };
         var modelSheet = new BenchmarkReportFactSheet();
         var comparisonSheet = new BenchmarkReportFactSheet { Scope = BenchmarkReportFactSheet.ComparisonScopeValue };
@@ -651,7 +640,7 @@ public class BenchmarkChatConsistencyReportFactsTests
             }
         };
 
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal(OverseerEventKinds.Wiki, Fact(sheet, "events.2.kind").Value!.GetValue<string>());
         Assert.Equal("wiki revision", Fact(sheet, "events.2.kind").Display);
@@ -714,7 +703,7 @@ public class BenchmarkChatConsistencyReportFactsTests
     [Fact]
     public void TheInputHash_StaysOnTheSheet_ButIsHiddenFromTheWriter()
     {
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal(string.Concat(Enumerable.Repeat("0123456789abcdef", 4)), Fact(sheet, BenchmarkChatConsistencyReportFacts.InputSha256Key).Value!.GetValue<string>());
         Assert.True(BenchmarkChatConsistencyReportFacts.WriterHidden("analysis.inputSha256"));
@@ -723,7 +712,7 @@ public class BenchmarkChatConsistencyReportFactsTests
         Assert.False(BenchmarkChatConsistencyReportFacts.WriterHidden("events.3.change"));
         Assert.False(BenchmarkChatConsistencyReportFacts.WriterHidden("analysis.id"));
 
-        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.TechnicalReport, sheet, new BenchmarkReportContentSnapshot()).UserMessage;
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, sheet, new BenchmarkReportContentSnapshot()).UserMessage;
         Assert.DoesNotContain("analysis.inputSha256", message, StringComparison.Ordinal);
         Assert.DoesNotContain("0123456789abcdef", message, StringComparison.Ordinal);
     }
@@ -793,7 +782,7 @@ public class BenchmarkChatConsistencyReportFactsTests
             }
         };
 
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.InternalBrief);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal("one run per period: run-to-run noise not estimable", Fact(sheet, "endpoint.P1.mdeNote").Display);
         Assert.DoesNotContain(sheet.Facts, f => f.Key == "endpoint.P2.mdeNote");
@@ -935,7 +924,7 @@ public class BenchmarkChatConsistencyReportFactsTests
             }
         };
 
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal(1, Fact(sheet, "eventGroups.count").Value!.GetValue<int>());
         Assert.Equal("E1", Fact(sheet, "eventGroups.1.tag").Display);
@@ -956,7 +945,7 @@ public class BenchmarkChatConsistencyReportFactsTests
             }
         };
 
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal("Not assessable for P4 and P5: no decisive verdict to check; failed for P1: without run #10 the verdict does not hold.",
             Fact(sheet, "robustness.leaveOneRunOutStability.summary").Display);
@@ -965,7 +954,7 @@ public class BenchmarkChatConsistencyReportFactsTests
     [Fact]
     public void ServedModelIDs_AreWrittenInCapitals()
     {
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal("the served model IDs are the same in both periods", Fact(sheet, "identity.changed").Display);
     }
@@ -1024,7 +1013,7 @@ public class BenchmarkChatConsistencyReportFactsTests
             }
         };
 
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal("battery run #12 (run #20)", Fact(sheet, "events.1.run").Display);
         Assert.Equal("battery run #11 (run #11)", Fact(sheet, "events.1.previousRun").Display);
@@ -1032,7 +1021,7 @@ public class BenchmarkChatConsistencyReportFactsTests
         Assert.Equal("run #31", Fact(sheet, "eventGroups.2.run").Display);
 
         // A comparison of runs keeps the run.
-        Assert.Equal("run #20", Fact(BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.TechnicalReport), "events.1.run").Display);
+        Assert.Equal("run #20", Fact(BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary), "events.1.run").Display);
     }
 
     [Theory]
@@ -1066,7 +1055,7 @@ public class BenchmarkChatConsistencyReportFactsTests
             }
         };
 
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.InternalBrief);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(result, BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal("claude-haiku-5-5 in both periods (203 and 210 calls)", Fact(sheet, "identity.servedModels").Display);
         Assert.Equal("standard in both periods", Fact(sheet, "serving.speeds").Display);
@@ -1080,13 +1069,13 @@ public class BenchmarkChatConsistencyReportFactsTests
             Assert.True(Fact(sheet, baseline).Available);
         }
 
-        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.InternalBrief, sheet, new BenchmarkReportContentSnapshot()).UserMessage;
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, sheet, new BenchmarkReportContentSnapshot()).UserMessage;
         Assert.Contains("identity.servedModels = claude-haiku-5-5 in both periods (203 and 210 calls)\n", message);
         Assert.DoesNotContain("identity.baseline.servedModels", message, StringComparison.Ordinal);
         Assert.DoesNotContain("ownWaits.comparison.retries", message, StringComparison.Ordinal);
 
         // Values that differ keep their pair, and no combined fact is stated.
-        var differing = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.InternalBrief);
+        var differing = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
         Assert.DoesNotContain(differing.Facts, f => f.Key is "ownWaits.retries" or "ownWaits.share" or "serving.speeds");
         Assert.False(BenchmarkChatConsistencyReportFacts.WriterHidden(differing, "ownWaits.comparison.retries"));
     }
@@ -1151,7 +1140,7 @@ public class BenchmarkChatConsistencyReportFactsTests
     [Fact]
     public void AV2Analysis_StatesEachPeriodsAvailability_WithItsDenominator_AndP6InPercentagePoints()
     {
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(V2Result(), BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(V2Result(), BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal("0.81 % (12 of 1,480 attempts; 95 % CI 0.46–1.4 %)", Fact(sheet, "availability.baseline.providerErrorRate").Display);
         Assert.Equal("12 of 1,480 attempts", Fact(sheet, "availability.baseline.providerErrors").Display);
@@ -1175,7 +1164,7 @@ public class BenchmarkChatConsistencyReportFactsTests
     [Fact]
     public void AV1Analysis_HasNoAvailabilityFacts()
     {
-        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.TechnicalReport);
+        var sheet = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("availability.", StringComparison.Ordinal));
         Assert.DoesNotContain(sheet.Facts, f => f.Key == "protocol.margin.P6");

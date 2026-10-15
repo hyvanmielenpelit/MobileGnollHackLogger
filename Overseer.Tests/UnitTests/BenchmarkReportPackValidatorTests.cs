@@ -162,64 +162,9 @@ internal static class ReportPackWriterTestData
                     "The quality result is {{quality.index}}, and the graders mostly agreed. Its interval overlaps that of {{peer:A}}, so their order is not established.";
                 output.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = 1, Topic = "dipping a sword into a fountain" });
                 break;
-
-            case BenchmarkReportAudience.TechnicalReport:
-                output.Sections[BenchmarkReportSlots.Abstract] =
-                    "The benchmark measured how well {{subject}} answers questions about the game. Its quality result, {{quality.index}}, places it close to {{peer:A}}, with overlapping intervals.";
-                output.Sections[BenchmarkReportSlots.WhyItScored] =
-                    "Reading the game state was the main weakness, most visibly on Q2.\n\nOn Q3 the graders disagree about whether the advice was safe.";
-                output.Sections[BenchmarkReportSlots.WhatWorked] = "Item lore was consistently accurate, as on Q1.";
-                output.Sections[BenchmarkReportSlots.Limitations] =
-                    "{{peer:B}} is degraded on speed, and each model rests on a single run.";
-                output.Recommendations.Add(new BenchmarkReportWriterRecommendation
-                {
-                    For = BenchmarkReportSlots.TargetModelDevelopers,
-                    Text = "Check the board before answering questions about item status.",
-                    Evidence = { "R2" }
-                });
-                AddAllTopics(output);
-                AddNotes(output);
-                break;
-
-            case BenchmarkReportAudience.InternalBrief:
-                output.Sections[BenchmarkReportSlots.OverseerChat] =
-                    "Check whether the chat assistant reads inventory status from the board before suggesting tests.";
-                output.Sections[BenchmarkReportSlots.BenchmarkSystem] =
-                    "The graders disagree on Q3, which may point to an ambiguous rubric.";
-                output.Sections[BenchmarkReportSlots.ModelResult] = "{{subject}} performed close to {{peer:A}} on quality.";
-                output.Recommendations.Add(new BenchmarkReportWriterRecommendation
-                {
-                    For = BenchmarkReportSlots.TargetOverseerChat,
-                    Text = "Remind the assistant to read item status from the board first.",
-                    Evidence = { "R2" }
-                });
-                output.Leads.Add(new BenchmarkReportLead
-                {
-                    Triage = "suite",
-                    Text = "Check whether the rubric for Q3 is too strict; the graders disagree.",
-                    Questions = { 3 },
-                    Evidence = { "R3" }
-                });
-                AddAllTopics(output);
-                AddNotes(output);
-                break;
         }
 
         return output;
-    }
-
-    private static void AddAllTopics(BenchmarkReportWriterOutput output)
-    {
-        output.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = 1, Topic = "dipping a sword into a fountain" });
-        output.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = 2, Topic = "spotting cursed items in the inventory" });
-        output.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = 3, Topic = "whether to pray now" });
-        output.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = 4, Topic = "zapping a digging wand downward" });
-    }
-
-    private static void AddNotes(BenchmarkReportWriterOutput output)
-    {
-        output.QuestionNotes.Add(new BenchmarkReportQuestionNote { Question = 2, Note = "Relied on a general test instead of what the board already showed." });
-        output.QuestionNotes.Add(new BenchmarkReportQuestionNote { Question = 3, Note = "Recommended an unsafe prayer." });
     }
 }
 
@@ -468,27 +413,6 @@ internal static class ChatConsistencyReportTestData
                 s[BenchmarkReportSlots.NextRuns] = "The analysis suggests one more run: {{nextRuns.1.suggestion}}";
                 break;
 
-            case BenchmarkReportAudience.TechnicalReport:
-                output.Headline = "Quality of the Overseer chat with {{subject}} degraded by {{endpoint.P1.estimate}} within {{scope.hours}}.";
-                s[BenchmarkReportSlots.QuestionAndDesign] = "The analysis asks whether the Overseer chat with {{subject}} changed between a baseline and a comparison period. It compares matched runs of the same suites under {{protocol.label}}.";
-                s[BenchmarkReportSlots.RunsAndCoverage] = "The baseline holds {{period.baseline.runs}} and the comparison {{period.comparison.runs}}, within {{scope.hours}}.";
-                s[BenchmarkReportSlots.OverseerEvents] = "Two Overseer events fall between the periods: {{events.1.label}} and {{events.2.label}}.";
-                s[BenchmarkReportSlots.EndpointResults] = "Quality degraded by {{endpoint.P1.estimate}}, with an interval of {{endpoint.P1.ci95}}, graded {{endpoint.P1.grade}}. Time to first answer text is {{endpoint.P2.verdict}}, graded {{endpoint.P2.grade}}.";
-                s[BenchmarkReportSlots.Attribution] = "The analysis places the quality change on the provider's side, graded {{attribution.1.grade}} under {{attribution.1.rule}}.";
-                s[BenchmarkReportSlots.Robustness] = "The analysis ran {{robustness.count}}, and {{robustness.failed}} failed.";
-                s[BenchmarkReportSlots.Limitations] = "The analysis records one limitation: {{limitation.1}}";
-                s[BenchmarkReportSlots.Reproducibility] = "Analysis {{analysis.id}} used code version {{analysis.codeVersion}} under {{protocol.label}}.";
-                break;
-
-            case BenchmarkReportAudience.InternalBrief:
-                output.Headline = "Quality of the Overseer chat with {{subject}} degraded by {{endpoint.P1.estimate}} within {{scope.hours}}.";
-                s[BenchmarkReportSlots.ChatFindings] = "Check the chat tools first: quality degraded by {{endpoint.P1.estimate}} within {{scope.hours}}.";
-                s[BenchmarkReportSlots.ChangeEffects] = "The effect of {{events.1.label}} is not established, graded {{attribution.2.grade}}.";
-                s[BenchmarkReportSlots.InfrastructureIssues] = "Our own waits took {{ownWaits.comparison.share}} of model time in the comparison period.";
-                s[BenchmarkReportSlots.NextRuns] = "Run the suggested follow-up: {{nextRuns.1.suggestion}}";
-                s[BenchmarkReportSlots.Actions] = "Prepare a Provider Issue Report on {{attribution.1.label}}, graded {{attribution.1.grade}}.";
-                break;
-
             case BenchmarkReportAudience.ProviderIssueReport:
                 output.Headline = "Answer quality of the Overseer chat with {{subject}} degraded by {{endpoint.P1.estimate}} within {{scope.hours}}.";
                 s[BenchmarkReportSlots.IssueSummary] = "Answer quality degraded by {{endpoint.P1.estimate}}, and the analysis places it on the provider's side as {{attribution.1.grade}}.";
@@ -508,8 +432,6 @@ internal static class ChatConsistencyReportTestData
 public class BenchmarkReportPackValidatorTests
 {
     private const BenchmarkReportAudience Es = BenchmarkReportAudience.ExecutiveSummary;
-    private const BenchmarkReportAudience Tr = BenchmarkReportAudience.TechnicalReport;
-    private const BenchmarkReportAudience Ib = BenchmarkReportAudience.InternalBrief;
     private const string MeaningP1 = "sections.meaning[p1]";
 
     private static IReadOnlyList<BenchmarkReportValidationNote> Validate(
@@ -530,8 +452,6 @@ public class BenchmarkReportPackValidatorTests
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    [InlineData(BenchmarkReportAudience.InternalBrief)]
     public void ValidOutput_HasNoIssues(BenchmarkReportAudience audience)
     {
         var notes = Validate(audience, ReportPackWriterTestData.ValidOutput(audience));
@@ -567,52 +487,26 @@ public class BenchmarkReportPackValidatorTests
     public void Rule1_SlotOfAnotherAudience()
     {
         var output = ReportPackWriterTestData.ValidOutput(Es);
-        output.Sections[BenchmarkReportSlots.Abstract] = "A short summary.";
+        output.Sections[BenchmarkReportSlots.Overview] = "A short summary.";
 
         var notes = Validate(Es, output);
 
         var note = Assert.Single(notes);
         Assert.Equal(1, note.Rule);
-        Assert.Equal("sections.abstract", note.Location);
+        Assert.Equal("sections.overview", note.Location);
     }
 
     [Fact]
     public void Rule1_ListTheAudienceDoesNotUse()
     {
         var output = ReportPackWriterTestData.ValidOutput(Es);
-        output.Recommendations.Add(new BenchmarkReportWriterRecommendation { For = "model_developers", Text = "Improve board reading." });
-        output.Leads.Add(new BenchmarkReportLead { Triage = "chat", Text = "Check the tools.", Evidence = { "R2" } });
+        output.Models = new List<BenchmarkReportModelPoints> { new() { Model = "A", Points = { new() { Text = "Fine.", Evidence = { "Q1" } } } } };
 
         var notes = Validate(Es, output);
 
-        Assert.Contains(notes, n => n.Rule == 1 && n.Location == "recommendations");
-        Assert.Contains(notes, n => n.Rule == 1 && n.Location == "leads");
-    }
-
-    [Fact]
-    public void Rule1_RecommendationTargetOutsideTheAudience()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.Recommendations[0].For = BenchmarkReportSlots.TargetOverseerChat;
-
-        var notes = Validate(Tr, output);
-
         var note = Assert.Single(notes);
         Assert.Equal(1, note.Rule);
-        Assert.Equal("recommendations[0]", note.Location);
-    }
-
-    [Fact]
-    public void Rule1_UnknownLeadTriage()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Ib);
-        output.Leads[0].Triage = "finding";
-
-        var notes = Validate(Ib, output);
-
-        var note = Assert.Single(notes);
-        Assert.Equal(1, note.Rule);
-        Assert.Equal("leads[0]", note.Location);
+        Assert.Equal("models", note.Location);
     }
 
     // Rule 2 ------------------------------------------------------------------------------------
@@ -729,20 +623,6 @@ public class BenchmarkReportPackValidatorTests
     }
 
     [Fact]
-    public void Rule4_TechnicalReportNeedsATopicForEveryQuestion()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.QuestionTopics.RemoveAll(t => t.Question == 4);
-
-        var notes = Validate(Tr, output);
-
-        var note = Assert.Single(notes);
-        Assert.Equal(4, note.Rule);
-        Assert.Equal("questionTopics", note.Location);
-        Assert.Contains("Q4", note.Message);
-    }
-
-    [Fact]
     public void Rule4_ExecutiveSummaryTopicsAreOptional()
     {
         var output = ReportPackWriterTestData.ValidOutput(Es);
@@ -754,14 +634,14 @@ public class BenchmarkReportPackValidatorTests
     [Fact]
     public void Rule4_DuplicateTopic()
     {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = 2, Topic = "reading item status" });
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = 1, Topic = "reading item status" });
 
-        var notes = Validate(Tr, output);
+        var notes = Validate(Es, output);
 
         var note = Assert.Single(notes);
         Assert.Equal(4, note.Rule);
-        Assert.Equal("questionTopics[4]", note.Location);
+        Assert.Equal("questionTopics[1]", note.Location);
     }
 
     // Rule 5 ------------------------------------------------------------------------------------
@@ -792,39 +672,6 @@ public class BenchmarkReportPackValidatorTests
 
         var note = Assert.Single(notes);
         Assert.Equal(5, note.Rule);
-    }
-
-    [Fact]
-    public void Rule5_LeadWithoutEvidence()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Ib);
-        output.Leads[0].Evidence.Clear();
-
-        var notes = Validate(Ib, output);
-
-        var note = Assert.Single(notes);
-        Assert.Equal(5, note.Rule);
-        Assert.Equal("leads[0]", note.Location);
-    }
-
-    [Fact]
-    public void Rule5_AResearcherReportRecommendationMustCiteEvidence()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.Recommendations[0].Evidence.Clear();
-
-        var note = Assert.Single(Validate(Tr, output));
-        Assert.Equal(5, note.Rule);
-        Assert.Equal("recommendations[0]", note.Location);
-    }
-
-    [Fact]
-    public void Rule5_AnInternalBriefRecommendationMayCiteNothing()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Ib);
-        output.Recommendations[0].Evidence.Clear();
-
-        Assert.Empty(Validate(Ib, output));
     }
 
     [Fact]
@@ -945,16 +792,9 @@ public class BenchmarkReportPackValidatorTests
     }
 
     [Theory]
-    [InlineData(Tr, BenchmarkReportSlots.Abstract, 150)]
     [InlineData(Es, BenchmarkReportSlots.Meaning, 90)]
     [InlineData(Es, BenchmarkReportSlots.Confidence, 60)]
     [InlineData(Es, BenchmarkReportSlots.Comparison, 70)]
-    [InlineData(Tr, BenchmarkReportSlots.WhyItScored, 300)]
-    [InlineData(Tr, BenchmarkReportSlots.WhatWorked, 150)]
-    [InlineData(Tr, BenchmarkReportSlots.Limitations, 120)]
-    [InlineData(Ib, BenchmarkReportSlots.OverseerChat, 200)]
-    [InlineData(Ib, BenchmarkReportSlots.BenchmarkSystem, 150)]
-    [InlineData(Ib, BenchmarkReportSlots.ModelResult, 150)]
     public void Rule7_SlotWordLimits_AskForTheRepairTurn_AndDropTheLastParagraphs(BenchmarkReportAudience audience, string slot, int limit)
     {
         var output = ReportPackWriterTestData.ValidOutput(audience);
@@ -982,37 +822,11 @@ public class BenchmarkReportPackValidatorTests
     }
 
     [Fact]
-    public void Rule7_TheExecutiveSummaryHasNoCapOnTheResearcherSlots()
+    public void Rule7_APerModelExecutiveSummaryHasNoCapOnTheSlotsOfOtherDocuments()
     {
-        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.WhyItScored, comparisonScope: false));
-        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Ib, BenchmarkReportSlots.WhatWorked, comparisonScope: false));
-        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.OverseerChat, comparisonScope: false));
-    }
-
-    [Fact]
-    public void Rule7_TheInternalBriefHoldsEightRecommendationsAndSixLeads()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Ib);
-        var recommendation = output.Recommendations[0];
-        var lead = output.Leads[0];
-        for (int i = 0; i < 7; i++) output.Recommendations.Add(recommendation);
-        for (int i = 0; i < 5; i++) output.Leads.Add(lead);
-        Assert.Empty(Validate(Ib, output));
-
-        output.Recommendations.Add(recommendation);
-        output.Leads.Add(lead);
-        var notes = Validate(Ib, output);
-        Assert.Equal(2, notes.Count);
-        Assert.Contains(notes, n => n.Rule == 7 && n.Location == "recommendations[8]");
-        Assert.Contains(notes, n => n.Rule == 7 && n.Location == "leads[6]");
-
-        var cleaned = Drop(Ib, output);
-        Assert.Equal(8, cleaned.Output.Recommendations.Count);
-        Assert.Equal(6, cleaned.Output.Leads.Count);
-        Assert.Contains(cleaned.Notes, n => n.Rule == 7 && n.Dropped && n.Location == "recommendations[8]");
-        Assert.Contains(cleaned.Notes, n => n.Rule == 7 && n.Dropped && n.Location == "leads[6]");
-        Assert.Equal(8, BenchmarkReportPackValidator.MaxRecommendations(Ib));
-        Assert.Equal(6, BenchmarkReportPackValidator.MaxLeads);
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.Overview, comparisonScope: false));
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.WhichModel, comparisonScope: false));
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportSlots.Meaning, comparisonScope: false));
     }
 
     [Fact]
@@ -1027,29 +841,6 @@ public class BenchmarkReportPackValidatorTests
         var note = Assert.Single(Validate(Es, output));
         Assert.Equal(7, note.Rule);
         Assert.Equal("strengths[0]", note.Location);
-    }
-
-    [Fact]
-    public void Rule7_TheResearcherReportItemsHaveNoThirtyWordCap()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.Strengths[0].Text = string.Join(" ", Enumerable.Repeat("lore", 31));
-
-        Assert.Empty(Validate(Tr, output));
-    }
-
-    [Fact]
-    public void Rule7_TheResearcherReportHoldsSixRecommendations()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        var recommendation = output.Recommendations[0];
-        for (int i = 0; i < 5; i++) output.Recommendations.Add(recommendation);
-        Assert.Empty(Validate(Tr, output));
-
-        output.Recommendations.Add(recommendation);
-        var note = Assert.Single(Validate(Tr, output));
-        Assert.Equal(7, note.Rule);
-        Assert.Equal("recommendations[6]", note.Location);
     }
 
     // Rule 8 ------------------------------------------------------------------------------------
@@ -1121,14 +912,21 @@ public class BenchmarkReportPackValidatorTests
     }
 
     [Fact]
-    public void Rule9_AppliesToItemsTopicsAndNotes()
+    public void Rule9_AppliesToItemsAndTopics()
     {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.QuestionNotes[0].Note = "Should the player pray right now given the board state";
+        var topicOutput = ReportPackWriterTestData.ValidOutput(Es);
+        topicOutput.QuestionTopics[0].Topic = "Should the player pray right now given the board state";
 
-        var note = Assert.Single(Validate(Tr, output));
-        Assert.Equal(9, note.Rule);
-        Assert.Equal("questionNotes[0]", note.Location);
+        var topicNote = Assert.Single(Validate(Es, topicOutput));
+        Assert.Equal(9, topicNote.Rule);
+        Assert.Equal("questionTopics[0]", topicNote.Location);
+
+        var itemOutput = ReportPackWriterTestData.ValidOutput(Es);
+        itemOutput.Strengths[0].Text = "Should the player pray right now given the board state";
+
+        var itemNote = Assert.Single(Validate(Es, itemOutput));
+        Assert.Equal(9, itemNote.Rule);
+        Assert.Equal("strengths[0]", itemNote.Location);
     }
 
     // Rule 10 -----------------------------------------------------------------------------------
@@ -1228,10 +1026,10 @@ public class BenchmarkReportPackValidatorTests
     [Fact]
     public void Rule12_AppliesToItems()
     {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        var output = ReportPackWriterTestData.ValidOutput(Es);
         output.Weaknesses[0].Text = "Overlooked the colour of cursed items on the board.";
 
-        var note = Assert.Single(Validate(Tr, output));
+        var note = Assert.Single(Validate(Es, output));
         Assert.Equal(12, note.Rule);
         Assert.Equal("weaknesses[0]", note.Location);
     }
@@ -1240,8 +1038,6 @@ public class BenchmarkReportPackValidatorTests
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    [InlineData(BenchmarkReportAudience.InternalBrief)]
     public void Drop_ValidOutputIsCopiedUnchanged(BenchmarkReportAudience audience)
     {
         var output = ReportPackWriterTestData.ValidOutput(audience);
@@ -1277,19 +1073,19 @@ public class BenchmarkReportPackValidatorTests
     [Fact]
     public void Drop_RemovesOnlyTheOffendingItems()
     {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        var output = ReportPackWriterTestData.ValidOutput(Es);
         output.Strengths.Add(new BenchmarkReportWriterItem { Text = "Handled tools well.", Evidence = { "R99" } });
         output.Strengths.Add(new BenchmarkReportWriterItem { Text = "Wrote clearly.", Questions = { 4 }, Evidence = { "R4" } });
-        output.QuestionNotes.Add(new BenchmarkReportQuestionNote { Question = 2, Note = "A second note." });
+        output.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = 9, Topic = "a second topic" });
         string before = JsonSerializer.Serialize(output);
 
-        var result = Drop(Tr, output);
+        var result = Drop(Es, output);
 
         Assert.False(result.Fatal);
         Assert.Equal(new[] { "Explained item lore accurately.", "Wrote clearly." }, result.Output.Strengths.Select(s => s.Text));
-        Assert.Equal(2, result.Output.QuestionNotes.Count);
+        Assert.Single(result.Output.QuestionTopics);
         Assert.Contains(result.Notes, n => n.Rule == 5 && n.Location == "strengths[1]" && n.Dropped);
-        Assert.Contains(result.Notes, n => n.Rule == 4 && n.Location == "questionNotes[2]" && n.Dropped);
+        Assert.Contains(result.Notes, n => n.Rule == 4 && n.Location == "questionTopics[1]" && n.Dropped);
         Assert.Equal(before, JsonSerializer.Serialize(output));
         Assert.Equal(3, output.Strengths.Count);
     }
@@ -1314,21 +1110,20 @@ public class BenchmarkReportPackValidatorTests
     public void Drop_RemovesListsAndSlotsTheAudienceDoesNotUse()
     {
         var output = ReportPackWriterTestData.ValidOutput(Es);
-        output.Recommendations.Add(new BenchmarkReportWriterRecommendation { For = "model_developers", Text = "Improve board reading." });
-        output.Sections[BenchmarkReportSlots.Abstract] = "A short summary.";
+        output.Models = new List<BenchmarkReportModelPoints> { new() { Model = "A", Points = { new() { Text = "Fine.", Evidence = { "Q1" } } } } };
+        output.Sections[BenchmarkReportSlots.Overview] = "A short summary.";
 
         var result = Drop(Es, output);
 
         Assert.False(result.Fatal);
-        Assert.Empty(result.Output.Recommendations);
-        Assert.False(result.Output.Sections.ContainsKey(BenchmarkReportSlots.Abstract));
-        Assert.Contains(result.Notes, n => n.Rule == 1 && n.Location == "recommendations" && n.Dropped);
-        Assert.Contains(result.Notes, n => n.Rule == 1 && n.Location == "sections.abstract" && n.Dropped);
-        Assert.Single(output.Recommendations);
+        Assert.Null(result.Output.Models);
+        Assert.False(result.Output.Sections.ContainsKey(BenchmarkReportSlots.Overview));
+        Assert.Contains(result.Notes, n => n.Rule == 1 && n.Location == "models" && n.Dropped);
+        Assert.Contains(result.Notes, n => n.Rule == 1 && n.Location == "sections.overview" && n.Dropped);
+        Assert.Single(output.Models!);
     }
 
     [Theory]
-    [InlineData(Tr, BenchmarkReportSlots.Abstract, "result", 100, "outcome", 100)]
     [InlineData(Es, BenchmarkReportSlots.Meaning, "advice", 60, "guidance", 40)]
     public void Drop_TrimsAnOverlongSectionByParagraph(
         BenchmarkReportAudience audience, string slot, string firstWord, int firstCount, string secondWord, int secondCount)
@@ -1379,13 +1174,13 @@ public class BenchmarkReportPackValidatorTests
     [Fact]
     public void Drop_MissingRequiredSlotIsFatal()
     {
-        var output = ReportPackWriterTestData.ValidOutput(Ib);
-        output.Sections.Remove(BenchmarkReportSlots.ModelResult);
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.Sections.Remove(BenchmarkReportSlots.Meaning);
 
-        var result = Drop(Ib, output);
+        var result = Drop(Es, output);
 
         Assert.True(result.Fatal);
-        Assert.Contains(result.Notes, n => n.Rule == 1 && n.Location == "sections.modelResult" && !n.Dropped);
+        Assert.Contains(result.Notes, n => n.Rule == 1 && n.Location == "sections.meaning" && !n.Dropped);
     }
 
     [Fact]
@@ -1436,9 +1231,9 @@ public class BenchmarkReportPackValidatorTests
         output.Sections[BenchmarkReportSlots.Confidence] = "The graders agreed broadly, and the answers were widely accepted.";
         Assert.Empty(Validate(Es, output));
 
-        var technical = ReportPackWriterTestData.ValidOutput(Tr);
-        technical.Sections[BenchmarkReportSlots.WhyItScored] = "A narrow reading of the board was the main weakness, most visibly on Q2.";
-        Assert.Empty(Validate(Tr, technical));
+        var comparison = ReportPackWriterTestData.ValidOutput(Es);
+        comparison.Sections[BenchmarkReportSlots.Comparison] = "A narrow reading of the board separates {{subject}} from {{peer:A}}, most visibly on Q2.";
+        Assert.Empty(Validate(Es, comparison));
     }
 
     [Fact]
@@ -1478,19 +1273,14 @@ public class BenchmarkReportPackValidatorTests
     }
 
     [Fact]
-    public void Rule14_TheAbstractNeverMentionsTheClaimVerifier_ButOtherSlotsMay()
+    public void Rule14_OnlyTheHeadlineIsChecked_SectionsAndItemsMayMentionTheClaimVerifier()
     {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.Sections[BenchmarkReportSlots.Abstract] = "{{subject}} scored {{quality.index}} on the benchmark."
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.Meaning] = "A player asking {{subject}} about item lore will usually get sound advice."
             + "\n\nThe claim verifier judged one answer sentence false on Q3.";
+        output.Weaknesses[0].Text = "The claim verifier refuted its advice about cursed items.";
 
-        var note = Assert.Single(Validate(Tr, output));
-        Assert.Equal(BenchmarkReportPackValidator.VerifierInSummaryRule, note.Rule);
-        Assert.Equal("sections.abstract[p2]", note.Location);
-
-        var elsewhere = ReportPackWriterTestData.ValidOutput(Tr);
-        elsewhere.Sections[BenchmarkReportSlots.WhyItScored] = "The claim verifier judged one answer sentence false on Q3.";
-        Assert.Empty(Validate(Tr, elsewhere));
+        Assert.Empty(Validate(Es, output));
 
         // A word merely containing the letters is not the verifier.
         var unrelated = ReportPackWriterTestData.ValidOutput(Es);
@@ -1501,18 +1291,19 @@ public class BenchmarkReportPackValidatorTests
     [Fact]
     public void Drop_KeepsAMentionOfTheVerifier_AndRecordsItsNote()
     {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        var output = ReportPackWriterTestData.ValidOutput(Es);
         output.Headline = "{{subject}} answered well, but the claim verifier refuted two of its claims.";
-        output.Sections[BenchmarkReportSlots.Abstract] = "The claim verifier judged one answer sentence false on Q3.";
+        output.Sections[BenchmarkReportSlots.Meaning] = "The claim verifier judged one answer sentence false on Q3.";
 
-        var result = Drop(Tr, output);
+        var result = Drop(Es, output);
 
         Assert.False(result.Fatal);
         Assert.Equal(output.Headline, result.Output.Headline);
-        Assert.Equal("The claim verifier judged one answer sentence false on Q3.", result.Output.Sections[BenchmarkReportSlots.Abstract]);
-        Assert.Contains(result.Notes, n => n.Rule == 14 && n.Location == "headline" && !n.Dropped);
-        Assert.Contains(result.Notes, n => n.Rule == 14 && n.Location == "sections.abstract[p1]" && !n.Dropped);
-        Assert.DoesNotContain(result.Notes, n => n.Dropped);
+        Assert.Equal("The claim verifier judged one answer sentence false on Q3.", result.Output.Sections[BenchmarkReportSlots.Meaning]);
+        var note = Assert.Single(result.Notes);
+        Assert.Equal(14, note.Rule);
+        Assert.Equal("headline", note.Location);
+        Assert.False(note.Dropped);
         Assert.True(BenchmarkReportPackValidator.IsWarningRule(14));
         Assert.True(BenchmarkReportPackValidator.IsWarningRule(12));
         Assert.True(BenchmarkReportPackValidator.IsWarningRule(13));
@@ -1520,20 +1311,19 @@ public class BenchmarkReportPackValidatorTests
     }
 
     [Fact]
-    public void Drop_MissingTopicIsRecordedButNotFatal()
+    public void Drop_AnInvalidTopicIsDropped_ButNotFatal()
     {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.QuestionTopics[3].Topic = "zapping the 2nd wand";
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.QuestionTopics[0].Topic = "dipping the 2nd sword";
 
-        var result = Drop(Tr, output);
+        var result = Drop(Es, output);
 
         Assert.False(result.Fatal);
-        Assert.Equal(3, result.Output.QuestionTopics.Count);
-        Assert.Contains(result.Notes, n => n.Rule == 3 && n.Location == "questionTopics[3]" && n.Dropped);
-        var coverage = Assert.Single(result.Notes, n => n.Location == "questionTopics");
-        Assert.Equal(4, coverage.Rule);
-        Assert.False(coverage.Dropped);
-        Assert.Contains("Q4", coverage.Message);
+        Assert.Empty(result.Output.QuestionTopics);
+        var note = Assert.Single(result.Notes);
+        Assert.Equal(3, note.Rule);
+        Assert.Equal("questionTopics[0]", note.Location);
+        Assert.True(note.Dropped);
     }
 
     // The comparison slot and the stand-alone form ---------------------------------------------
@@ -1598,76 +1388,6 @@ public class BenchmarkReportPackValidatorTests
         Assert.Equal(
             new[] { BenchmarkReportSlots.Comparison, BenchmarkReportSlots.Meaning, BenchmarkReportSlots.Confidence },
             BenchmarkReportSlots.ExecutiveSummary.SlotsFor(hasPeers: true));
-    }
-
-    [Fact]
-    public void AStandaloneInternalBrief_WithLeadsAndRecommendations_HasNoIssues()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Ib);
-        output.Sections[BenchmarkReportSlots.ModelResult] = "{{subject}} scored {{quality.index}}, held back by how it read the board on Q2.";
-        output.Recommendations.Add(new BenchmarkReportWriterRecommendation
-        {
-            For = BenchmarkReportSlots.TargetBenchmark,
-            Text = "Review whether the rubric for Q3 is ambiguous; the graders disagree.",
-            Evidence = { "R3" }
-        });
-        output.Recommendations.Add(new BenchmarkReportWriterRecommendation
-        {
-            For = BenchmarkReportSlots.TargetModelDevelopers,
-            Text = "Check the board state before answering questions about item status.",
-            Evidence = { "R2" }
-        });
-
-        Assert.NotEmpty(output.Leads);
-        Assert.Empty(Validate(Ib, output, StandaloneSheet()));
-        Assert.Equal(BenchmarkReportSlots.InternalBrief.RequiredSlots, BenchmarkReportSlots.InternalBrief.SlotsFor(hasPeers: false));
-    }
-
-    [Fact]
-    public void TheLimitationsSlot_IsRequiredInBothForms()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.Sections.Remove(BenchmarkReportSlots.Limitations);
-        Assert.Contains(Validate(Tr, output), n => n.Rule == 1 && n.Location == "sections.limitations");
-        Assert.Contains(Validate(Tr, output, StandaloneSheet()), n => n.Rule == 1 && n.Location == "sections.limitations");
-
-        Assert.Contains(BenchmarkReportSlots.Limitations, BenchmarkReportSlots.TechnicalReport.SlotsFor(hasPeers: false));
-        Assert.Contains(BenchmarkReportSlots.Limitations, BenchmarkReportSlots.TechnicalReport.SlotsFor(hasPeers: true));
-    }
-
-    // Rule 15 -----------------------------------------------------------------------------------
-
-    [Fact]
-    public void Rule15_EveryQuestionNeedingANote_HasOne()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.QuestionNotes.RemoveAll(n => n.Question == 3);
-
-        var note = Assert.Single(Validate(Tr, output));
-
-        Assert.Equal(BenchmarkReportPackValidator.MissingQuestionNoteRule, note.Rule);
-        Assert.Equal(15, note.Rule);
-        Assert.Equal("questionNotes", note.Location);
-        Assert.Contains("Q3", note.Message);
-        Assert.DoesNotContain("Q2", note.Message);
-        Assert.True(BenchmarkReportPackValidator.IsWarningRule(15));
-        Assert.Contains("- rule 15 at questionNotes:", BenchmarkReportPackPrompt.BuildRepairMessage(new[] { note }));
-    }
-
-    [Fact]
-    public void Rule15_ANoteDroppedByAnotherRule_LeavesItsQuestionWithoutOne_WhichIsRecordedButNotFatal()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Ib);
-        output.QuestionNotes[1].Note = "Should the player pray right now given the board state";
-
-        var result = Drop(Ib, output);
-
-        Assert.False(result.Fatal);
-        Assert.Single(result.Output.QuestionNotes);
-        Assert.Contains(result.Notes, n => n.Rule == 9 && n.Location == "questionNotes[1]" && n.Dropped);
-        var missing = Assert.Single(result.Notes, n => n.Rule == 15);
-        Assert.False(missing.Dropped);
-        Assert.Contains("Q3", missing.Message);
     }
 
     // Rule 16 -----------------------------------------------------------------------------------
@@ -1766,14 +1486,14 @@ public class BenchmarkReportPackValidatorTests
     [Fact]
     public void Rule17_AppliesToItems_AndKeepsTheText()
     {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
+        var output = ReportPackWriterTestData.ValidOutput(Es);
         output.Weaknesses[0].Text = "Overlooked the board, despite outstanding lore elsewhere.";
 
-        var note = Assert.Single(Validate(Tr, output));
+        var note = Assert.Single(Validate(Es, output));
         Assert.Equal(17, note.Rule);
         Assert.Equal("weaknesses[0]", note.Location);
 
-        var result = Drop(Tr, output);
+        var result = Drop(Es, output);
         Assert.Equal("Overlooked the board, despite outstanding lore elsewhere.", result.Output.Weaknesses[0].Text);
         Assert.DoesNotContain(result.Notes, n => n.Dropped);
     }
@@ -1823,98 +1543,6 @@ public class BenchmarkReportPackValidatorTests
         Assert.Contains("{{peer:A}}", note.Message);
         Assert.Contains("the paired interval excludes zero", note.Message);
         Assert.DoesNotContain("not established", note.Message);
-    }
-
-    // Rule 18 -----------------------------------------------------------------------------------
-
-    [Theory]
-    [InlineData("Use a rubric-coverage pass before answering.", "rubric")]
-    [InlineData("Add GnollHack-specific retrieval prioritization.", "retrieval")]
-    [InlineData("Add regression tests for branch layout and temple services.", "regression tests")]
-    [InlineData("Ground answers in the corpus before stating a rule.", "corpus")]
-    [InlineData("Follow the System Prompt more closely.", "system prompt")]
-    [InlineData("Read the tool guides before calling a tool.", "tool guides")]
-    [InlineData("Rebuild the search index for version-specific code.", "index")]
-    [InlineData("Prompt the model to name conduct-safe fallbacks such as prayer.", "prompt the model")]
-    [InlineData("Strengthen knowledge of which NPC provides which service in GnollHack towns.", "GnollHack")]
-    [InlineData("Add a rule to the assistant's prompt about shop prices.", "the assistant's prompt")]
-    [InlineData("Add a rule to the assistant’s prompt about shop prices.", "the assistant's prompt")]
-    public void Rule18_AModelDeveloperRecommendation_AboutTheOverseerOrTheGame_AsksForRepair(string text, string term)
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.Recommendations[0].Text = text;
-
-        var note = Assert.Single(Validate(Tr, output));
-
-        Assert.Equal(BenchmarkReportPackValidator.ModelDeveloperScopeRule, note.Rule);
-        Assert.Equal(18, note.Rule);
-        Assert.Equal("recommendations[0]", note.Location);
-        Assert.Contains("\"" + term + "\"", note.Message);
-        Assert.Contains("general capability a model developer can train or tune", note.Message);
-        Assert.True(BenchmarkReportPackValidator.IsWarningRule(18));
-    }
-
-    [Fact]
-    public void Rule18_KeepsTheText_AndRecordsItsNote()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.Recommendations[0].Text = "Use a rubric-coverage pass before answering.";
-
-        var result = Drop(Tr, output);
-
-        Assert.False(result.Fatal);
-        Assert.Equal("Use a rubric-coverage pass before answering.", Assert.Single(result.Output.Recommendations).Text);
-        var note = Assert.Single(result.Notes);
-        Assert.Equal(18, note.Rule);
-        Assert.False(note.Dropped);
-    }
-
-    [Fact]
-    public void Rule18_DoesNotApplyToOtherTargets()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Ib);
-        output.Recommendations[0].Text = "Add regression tests and a retrieval check to the system prompt's rubric coverage.";
-        output.Recommendations.Add(new BenchmarkReportWriterRecommendation
-        {
-            For = BenchmarkReportSlots.TargetBenchmark,
-            Text = "Review the rubric of Q3.",
-            Evidence = { "R3" }
-        });
-
-        Assert.Equal(BenchmarkReportSlots.TargetOverseerChat, output.Recommendations[0].For);
-        Assert.Empty(Validate(Ib, output));
-    }
-
-    [Fact]
-    public void Rule18_AppliesToModelDevelopersInTheInternalBrief_AndIgnoresTokens()
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Ib);
-        output.Recommendations.Add(new BenchmarkReportWriterRecommendation
-        {
-            For = BenchmarkReportSlots.TargetModelDevelopers,
-            Text = "Calibrate confidence on prayer rules; {{quality.index}} reflects the misses.",
-            Evidence = { "quality.index" }
-        });
-        Assert.Empty(Validate(Ib, output));
-
-        output.Recommendations[1].Text = "Calibrate confidence against the rubric.";
-        var note = Assert.Single(Validate(Ib, output));
-        Assert.Equal(18, note.Rule);
-        Assert.Equal("recommendations[1]", note.Location);
-    }
-
-    [Theory]
-    [InlineData("Check the board state before answering questions about item status.")]
-    [InlineData("Keep answers shorter where the question asks for a single fact.")]
-    [InlineData("Call a lookup tool before stating an item's weight.")]
-    [InlineData("State the decisive mechanic behind a verdict before the verdict itself.")]
-    [InlineData("Commit to a conclusion the inputs already settle instead of hedging.")]
-    public void Rule18_ModelLevelRecommendationsPass(string text)
-    {
-        var output = ReportPackWriterTestData.ValidOutput(Tr);
-        output.Recommendations[0].Text = text;
-
-        Assert.Empty(Validate(Tr, output));
     }
 
     // Rule 19 -----------------------------------------------------------------------------------
@@ -1988,11 +1616,11 @@ public class BenchmarkReportPackValidatorTests
     }
 
     [Fact]
-    public void TheWarningRules_AreTwelveToNineteen()
+    public void TheWarningRules_AreTwelveToNineteen_ExceptTheRetiredFifteenAndEighteen()
     {
         for (int rule = 1; rule <= 19; rule++)
         {
-            Assert.Equal(rule >= 12, BenchmarkReportPackValidator.IsWarningRule(rule));
+            Assert.Equal(rule >= 12 && rule != 15 && rule != 18, BenchmarkReportPackValidator.IsWarningRule(rule));
         }
         Assert.False(BenchmarkReportPackValidator.IsWarningRule(20));
     }
@@ -2015,7 +1643,7 @@ public class BenchmarkReportPackParserTests
         Assert.Equal(new[] { 1 }, strength.Questions);
         Assert.Equal(new[] { "R1" }, strength.Evidence);
         Assert.Empty(result.Output.Weaknesses);
-        Assert.Empty(result.Output.Leads);
+        Assert.Empty(result.Output.QuestionTopics);
     }
 
     [Fact]
@@ -2070,13 +1698,10 @@ public class BenchmarkReportPackParserTests
         const string json = """
             {
               "Headline": "H",
-              "SECTIONS": { "WhyItScored": "w", "custom": "c", "meaning": ["first", "second"] },
+              "SECTIONS": { "Confidence": "w", "custom": "c", "meaning": ["first", "second"] },
               "Strengths": [ { "Text": "t", "Questions": ["Q7", "3", 5], "Evidence": "R1, Q2" }, "bare text" ],
               "weaknesses": null,
-              "recommendations": [ { "for": "Model_Developers", "text": "r" } ],
-              "leads": [ { "triage": " Suite ", "text": "l", "questions": "Q1, Q2" } ],
-              "questionTopics": [ { "question": "Q4", "topic": "x" }, { "question": "four", "topic": "y" } ],
-              "questionNotes": [ { "question": 2.0, "note": "n" } ],
+              "questionTopics": [ { "question": "Q4", "topic": "x" }, { "question": "four", "topic": "y" }, { "question": 2.0, "topic": "z" } ],
               "extra": { "ignored": true },
             }
             """;
@@ -2086,7 +1711,7 @@ public class BenchmarkReportPackParserTests
         Assert.True(result.Success);
         var output = result.Output!;
         Assert.Equal("H", output.Headline);
-        Assert.Equal("w", output.Sections[BenchmarkReportSlots.WhyItScored]);
+        Assert.Equal("w", output.Sections[BenchmarkReportSlots.Confidence]);
         Assert.Equal("c", output.Sections["custom"]);
         Assert.Equal("first\n\nsecond", output.Sections[BenchmarkReportSlots.Meaning]);
         Assert.Equal(2, output.Strengths.Count);
@@ -2095,34 +1720,29 @@ public class BenchmarkReportPackParserTests
         Assert.Equal("bare text", output.Strengths[1].Text);
         Assert.NotNull(output.Weaknesses);
         Assert.Empty(output.Weaknesses);
-        Assert.Equal("model_developers", Assert.Single(output.Recommendations).For);
-        var lead = Assert.Single(output.Leads);
-        Assert.Equal("suite", lead.Triage);
-        Assert.Equal(new[] { 1, 2 }, lead.Questions);
-        Assert.Equal(new[] { 4, 0 }, output.QuestionTopics.Select(t => t.Question));
-        Assert.Equal(2, Assert.Single(output.QuestionNotes).Question);
+        Assert.Equal(new[] { 4, 0, 2 }, output.QuestionTopics.Select(t => t.Question));
     }
 
     [Fact]
-    public void Parse_NormalizesEverySlotId_ComparisonAndLimitationsIncluded()
+    public void Parse_NormalizesEverySlotId_ComparisonAndConfidenceIncluded()
     {
         var result = BenchmarkReportPackParser.Parse(
-            "{\"headline\":\"H\",\"sections\":{\"Comparison\":\"c\",\"LIMITATIONS\":\"l\",\"ModelResult\":\"m\"}}");
+            "{\"headline\":\"H\",\"sections\":{\"Comparison\":\"c\",\"CONFIDENCE\":\"l\",\"Overview\":\"m\"}}");
 
         Assert.True(result.Success);
         var sections = result.Output!.Sections;
         Assert.Equal("c", sections[BenchmarkReportSlots.Comparison]);
-        Assert.Equal("l", sections[BenchmarkReportSlots.Limitations]);
-        Assert.Equal("m", sections[BenchmarkReportSlots.ModelResult]);
+        Assert.Equal("l", sections[BenchmarkReportSlots.Confidence]);
+        Assert.Equal("m", sections[BenchmarkReportSlots.Overview]);
         Assert.Equal(
-            new[] { BenchmarkReportSlots.Comparison, BenchmarkReportSlots.Limitations, BenchmarkReportSlots.ModelResult }.OrderBy(k => k, StringComparer.Ordinal),
+            new[] { BenchmarkReportSlots.Comparison, BenchmarkReportSlots.Confidence, BenchmarkReportSlots.Overview }.OrderBy(k => k, StringComparer.Ordinal),
             sections.Keys.OrderBy(k => k, StringComparer.Ordinal));
     }
 
     [Fact]
     public void Parse_OutputOfAValidDocumentValidates()
     {
-        var expected = ReportPackWriterTestData.ValidOutput(BenchmarkReportAudience.InternalBrief);
+        var expected = ReportPackWriterTestData.ValidOutput(BenchmarkReportAudience.ExecutiveSummary);
         string json = JsonSerializer.Serialize(expected);
 
         var result = BenchmarkReportPackParser.Parse(json);
@@ -2130,7 +1750,7 @@ public class BenchmarkReportPackParserTests
         Assert.True(result.Success);
         Assert.Equal(json, JsonSerializer.Serialize(result.Output));
         Assert.Empty(BenchmarkReportPackValidator.Validate(
-            BenchmarkReportAudience.InternalBrief,
+            BenchmarkReportAudience.ExecutiveSummary,
             result.Output!,
             ReportPackWriterTestData.Sheet(),
             ReportPackWriterTestData.Content()));
@@ -2140,15 +1760,13 @@ public class BenchmarkReportPackParserTests
 /// <summary>
 /// The validator on a comparison-scope sheet: <c>{{model:X}}</c> for the sheet's letters only, the
 /// <c>model.&lt;L&gt;.*</c> and <c>pair.&lt;L&gt;.&lt;M&gt;.*</c> keys, the <c>models</c> list, the names of
-/// every covered model, rule 16 across two models, and topics written once per job.
+/// every covered model, and rule 16 across two models.
 /// </summary>
 public class BenchmarkReportPackComparisonValidatorTests
 {
     public static TheoryData<BenchmarkReportAudience> Audiences => new()
     {
         BenchmarkReportAudience.ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport,
-        BenchmarkReportAudience.InternalBrief,
     };
 
     private static (BenchmarkReportFactSheet Sheet, BenchmarkReportContentSnapshot Content) Data(bool subset = false)
@@ -2158,11 +1776,10 @@ public class BenchmarkReportPackComparisonValidatorTests
     }
 
     private static IReadOnlyList<BenchmarkReportValidationNote> Validate(
-        BenchmarkReportAudience audience, BenchmarkReportWriterOutput output, bool subset = false,
-        IReadOnlyList<BenchmarkReportQuestionTopic>? sharedTopics = null)
+        BenchmarkReportAudience audience, BenchmarkReportWriterOutput output, bool subset = false)
     {
         var (sheet, content) = Data(subset);
-        return BenchmarkReportPackValidator.Validate(audience, output, sheet, content, sharedTopics);
+        return BenchmarkReportPackValidator.Validate(audience, output, sheet, content);
     }
 
     private static BenchmarkReportWriterOutput Valid(BenchmarkReportAudience audience, bool subset = false)
@@ -2195,11 +1812,11 @@ public class BenchmarkReportPackComparisonValidatorTests
     [Fact]
     public void ModelAndPairFactKeys_AreValidEvidence_AndUnknownOnesAreNot()
     {
-        var output = Valid(BenchmarkReportAudience.TechnicalReport);
+        var output = Valid(BenchmarkReportAudience.ExecutiveSummary);
         output.Models![0].Points[0].Evidence = new List<string> { "model.A.dimension.accuracy", "pair.A.E.quality.difference", "Q3" };
         output.Models[1].Points[0].Evidence = new List<string> { "model.Q.quality.index" };
 
-        var notes = Validate(BenchmarkReportAudience.TechnicalReport, output);
+        var notes = Validate(BenchmarkReportAudience.ExecutiveSummary, output);
 
         var unknown = Assert.Single(notes);
         Assert.Equal(5, unknown.Rule);
@@ -2299,9 +1916,6 @@ public class BenchmarkReportPackComparisonValidatorTests
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportSlots.AgainstReference, 100)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.AgainstReference, 150)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.NotableFindings, 200)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport, BenchmarkReportSlots.WhyModelsDiffer, 250)]
     public void TheNewSlots_HoldTheirWordCaps(BenchmarkReportAudience audience, string slot, int cap)
     {
         Assert.Equal(cap, BenchmarkReportPackValidator.SlotMaxWords(audience, slot, comparisonScope: true));
@@ -2319,43 +1933,12 @@ public class BenchmarkReportPackComparisonValidatorTests
     }
 
     [Fact]
-    public void TheNotableFindingsSlot_IsRequired_OnlyWhenTheSheetHasNotableFindings()
-    {
-        var (sheet, content) = Data();
-        Assert.True(BenchmarkNotableFindings.CountOf(sheet) > 0);
-        var output = Valid(BenchmarkReportAudience.TechnicalReport);
-        Assert.True(output.Sections.ContainsKey(BenchmarkReportSlots.NotableFindings));
-
-        output.Sections.Remove(BenchmarkReportSlots.NotableFindings);
-        var missing = Assert.Single(BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.TechnicalReport, output, sheet, content));
-        Assert.Equal(1, missing.Rule);
-        Assert.Equal("sections." + BenchmarkReportSlots.NotableFindings, missing.Location);
-
-        // A sheet with nothing notable does not ask for the slot, and a writer who supplies it anyway breaks rule 1.
-        var quiet = BenchmarkReportPackFixture.ComparisonFacts(new[] { "run:32", "run:33" });
-        Assert.Equal(0, BenchmarkNotableFindings.CountOf(quiet.Sheet!));
-        var quietOutput = BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.TechnicalReport, quiet.Sheet!);
-        Assert.False(quietOutput.Sections.ContainsKey(BenchmarkReportSlots.NotableFindings));
-        Assert.Empty(BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.TechnicalReport, quietOutput, quiet.Sheet!, quiet.Content!));
-
-        quietOutput.Sections[BenchmarkReportSlots.NotableFindings] = "Nothing to explain.";
-        var extra = Assert.Single(BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.TechnicalReport, quietOutput, quiet.Sheet!, quiet.Content!));
-        Assert.Equal(1, extra.Rule);
-        Assert.Equal("sections." + BenchmarkReportSlots.NotableFindings, extra.Location);
-
-        var spec = BenchmarkReportSlots.For(BenchmarkReportAudience.TechnicalReport, BenchmarkReportScope.Comparison);
-        Assert.Contains(BenchmarkReportSlots.NotableFindings, spec.ComparisonSlotsFor(hasNotableFindings: true));
-        Assert.DoesNotContain(BenchmarkReportSlots.NotableFindings, spec.ComparisonSlotsFor(hasNotableFindings: false));
-        Assert.Contains(BenchmarkReportSlots.WhyModelsDiffer, spec.ComparisonSlotsFor(hasNotableFindings: false));
-    }
-
-    [Fact]
     public void AWeakestAnswersComment_IsDisclosureSourceText()
     {
-        var output = Valid(BenchmarkReportAudience.InternalBrief);
-        output.Sections[BenchmarkReportSlots.ModelGaps] = "On Q3 the grader said it says the thrown gem always breaks, which contradicts the rubric.";
+        var output = Valid(BenchmarkReportAudience.ExecutiveSummary);
+        output.Sections[BenchmarkReportSlots.Overview] = "On Q3 the grader said it says the thrown gem always breaks, which contradicts the rubric.";
 
-        var note = Assert.Single(Validate(BenchmarkReportAudience.InternalBrief, output), n => n.Rule == 9);
+        var note = Assert.Single(Validate(BenchmarkReportAudience.ExecutiveSummary, output), n => n.Rule == 9);
 
         Assert.Contains("a grader comment on Q3", note.Message);
     }
@@ -2364,50 +1947,25 @@ public class BenchmarkReportPackComparisonValidatorTests
     public void TheParser_KnowsTheNewComparisonSlots()
     {
         var result = BenchmarkReportPackParser.Parse(
-            "{\"headline\":\"H\",\"sections\":{\"AgainstReference\":\"a\",\"NOTABLEFINDINGS\":\"n\",\"whymodelsdiffer\":\"w\"}}");
+            "{\"headline\":\"H\",\"sections\":{\"AgainstReference\":\"a\",\"TRADEOFFS\":\"n\",\"whichmodel\":\"w\"}}");
 
         Assert.True(result.Success);
         Assert.Equal("a", result.Output!.Sections[BenchmarkReportSlots.AgainstReference]);
-        Assert.Equal("n", result.Output.Sections[BenchmarkReportSlots.NotableFindings]);
-        Assert.Equal("w", result.Output.Sections[BenchmarkReportSlots.WhyModelsDiffer]);
+        Assert.Equal("n", result.Output.Sections[BenchmarkReportSlots.TradeOffs]);
+        Assert.Equal("w", result.Output.Sections[BenchmarkReportSlots.WhichModel]);
     }
 
     [Fact]
     public void ListsTheComparisonDocumentsDoNotUse_AreRule1()
     {
-        var output = Valid(BenchmarkReportAudience.InternalBrief);
+        var output = Valid(BenchmarkReportAudience.ExecutiveSummary);
         output.Strengths.Add(new BenchmarkReportWriterItem { Text = "Strong.", Evidence = new List<string> { "Q1" } });
-        output.Models = new List<BenchmarkReportModelPoints> { new() { Model = "A", Points = { new() { Text = "Fine.", Evidence = { "Q1" } } } } };
+        output.Weaknesses.Add(new BenchmarkReportWriterItem { Text = "Weak.", Evidence = new List<string> { "Q1" } });
 
-        var notes = Validate(BenchmarkReportAudience.InternalBrief, output);
+        var notes = Validate(BenchmarkReportAudience.ExecutiveSummary, output);
 
         Assert.Contains(notes, n => n.Rule == 1 && n.Location == "strengths");
-        Assert.Contains(notes, n => n.Rule == 1 && n.Location == "models");
-    }
-
-    [Fact]
-    public void AModelLead_IsATriageOfTheComparisonBrief()
-    {
-        var output = Valid(BenchmarkReportAudience.InternalBrief);
-        output.Leads[0].Triage = BenchmarkReportSlots.LeadTriageModel;
-
-        Assert.Empty(Validate(BenchmarkReportAudience.InternalBrief, output));
-    }
-
-    [Fact]
-    public void TopicsWrittenOncePerJob_AreNotCheckedAgain_AndReplaceTheWritersOwn()
-    {
-        var output = Valid(BenchmarkReportAudience.InternalBrief);
-        output.QuestionTopics = new List<BenchmarkReportQuestionTopic> { new() { Question = 99, Topic = "No such question" } };
-        var shared = new List<BenchmarkReportQuestionTopic> { new() { Question = 1, Topic = "Throwing gems" } };
-
-        Assert.Contains(Validate(BenchmarkReportAudience.InternalBrief, output), n => n.Location.StartsWith("questionTopics", StringComparison.Ordinal));
-        Assert.Empty(Validate(BenchmarkReportAudience.InternalBrief, output, sharedTopics: shared));
-
-        var (sheet, content) = Data();
-        output.Leads[0].Evidence = new List<string> { "nope" };
-        var cleaned = BenchmarkReportPackValidator.DropInvalid(BenchmarkReportAudience.InternalBrief, output, sheet, content, shared);
-        Assert.Equal(new[] { (1, "Throwing gems") }, cleaned.Output.QuestionTopics.Select(t => (t.Question, t.Topic)));
+        Assert.Contains(notes, n => n.Rule == 1 && n.Location == "weaknesses");
     }
 
     [Fact]
@@ -2433,7 +1991,6 @@ public class BenchmarkReportPackComparisonValidatorTests
 public class BenchmarkReportPackChatConsistencyValidatorTests
 {
     private const BenchmarkReportAudience Es = BenchmarkReportAudience.ExecutiveSummary;
-    private const BenchmarkReportAudience Tr = BenchmarkReportAudience.TechnicalReport;
     private const BenchmarkReportAudience Pir = BenchmarkReportAudience.ProviderIssueReport;
 
     private static IReadOnlyList<BenchmarkReportValidationNote> ValidateModelScope(BenchmarkReportAudience audience, BenchmarkReportWriterOutput output)
@@ -2445,8 +2002,6 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
     public static TheoryData<BenchmarkReportAudience> ChatConsistencyAudiences => new()
     {
         BenchmarkReportAudience.ExecutiveSummary,
-        BenchmarkReportAudience.TechnicalReport,
-        BenchmarkReportAudience.InternalBrief,
         BenchmarkReportAudience.ProviderIssueReport,
     };
 
@@ -2675,7 +2230,7 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
         AssertChatRule(notes, BenchmarkReportPackValidator.ChatProviderReportRule, "C7", "sections.ruledOut", "events.2.*");
 
         // Another document's slots need no event list.
-        Assert.Empty(ValidateChatSlot(Tr, BenchmarkReportSlots.OverseerEvents, "One Overseer event matters here: {{events.1.label}}."));
+        Assert.Empty(ValidateChatSlot(Es, BenchmarkReportSlots.OurChanges, "One Overseer event matters here: {{events.1.label}}."));
     }
 
     [Theory]
@@ -2696,12 +2251,12 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
     [InlineData("The input was {{analysis.inputSha256}}.", "{{analysis.inputSha256}}")]
     public void C8_HashesJsonAndInternalFieldNames_AreErrors(string text, string token)
     {
-        var notes = ValidateChatSlot(Tr, BenchmarkReportSlots.OverseerEvents, text + " Within {{scope.hours}}.")
+        var notes = ValidateChatSlot(Es, BenchmarkReportSlots.OurChanges, text + " Within {{scope.hours}}.")
             .Where(n => n.Rule == BenchmarkReportPackValidator.ChatReadableTextRule)
             .ToList();
 
         var note = Assert.Single(notes);
-        Assert.Equal("sections.overseerEvents[p1]", note.Location);
+        Assert.Equal("sections.ourChanges[p1]", note.Location);
         Assert.StartsWith("C8: ", note.Message, StringComparison.Ordinal);
         Assert.Contains(token, note.Message, StringComparison.Ordinal);
         Assert.False(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
@@ -2710,7 +2265,7 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
     [Fact]
     public void C8_ReadableEventTokens_Pass_AndAHashInTheHeadline_IsFatal()
     {
-        Assert.Empty(ValidateChatSlot(Tr, BenchmarkReportSlots.OverseerEvents,
+        Assert.Empty(ValidateChatSlot(Es, BenchmarkReportSlots.OurChanges,
             "Two Overseer updates fall between the periods: {{eventGroups.1.changes}} and {{events.2.change}}."));
 
         var output = ChatConsistencyReportTestData.ValidOutput(Es);
@@ -2724,12 +2279,12 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
     public void C8_APairStatedOnceForBothPeriods_IsKeptFromTheWriter()
     {
         // The served model ID is the same in both periods, so the pair is stated once and the two halves are hidden.
-        var note = Assert.Single(ValidateChatSlot(Tr, BenchmarkReportSlots.OverseerEvents,
+        var note = Assert.Single(ValidateChatSlot(Es, BenchmarkReportSlots.OurChanges,
             "The served model was {{identity.baseline.servedModels}}, within {{scope.hours}}."));
         Assert.Equal(BenchmarkReportPackValidator.ChatReadableTextRule, note.Rule);
         Assert.Contains("{{identity.baseline.servedModels}}", note.Message, StringComparison.Ordinal);
 
-        Assert.Empty(ValidateChatSlot(Tr, BenchmarkReportSlots.OverseerEvents, "The served model was {{identity.servedModels}}, within {{scope.hours}}."));
+        Assert.Empty(ValidateChatSlot(Es, BenchmarkReportSlots.OurChanges, "The served model was {{identity.servedModels}}, within {{scope.hours}}."));
     }
 
     [Fact]
@@ -2765,12 +2320,12 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
     [InlineData("The checks report {{limitation.1}} and more.", "sampled. and more")]
     public void C9_ARepeatedPairOrASplicedSentence_IsAWarning(string text, string excerpt)
     {
-        var notes = ValidateChatSlot(Tr, BenchmarkReportSlots.EndpointResults, text + " Within {{scope.hours}}.")
+        var notes = ValidateChatSlot(Es, BenchmarkReportSlots.OurChanges, text + " Within {{scope.hours}}.")
             .Where(n => n.Rule == BenchmarkReportPackValidator.ChatRepetitionRule)
             .ToList();
 
         var note = Assert.Single(notes);
-        Assert.Equal("sections.endpointResults[p1]", note.Location);
+        Assert.Equal("sections.ourChanges[p1]", note.Location);
         Assert.StartsWith("C9: ", note.Message, StringComparison.Ordinal);
         Assert.Contains(excerpt, note.Message, StringComparison.Ordinal);
         Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
@@ -2779,13 +2334,13 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
     [Fact]
     public void C9_KeepsItsParagraph_AfterTheRepairTurn()
     {
-        var output = ChatConsistencyReportTestData.ValidOutput(Tr);
-        output.Sections[BenchmarkReportSlots.EndpointResults] = "The checks report {{limitation.1}} and more. Within {{scope.hours}}.";
+        var output = ChatConsistencyReportTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.OurChanges] = "The checks report {{limitation.1}} and more. Within {{scope.hours}}.";
 
-        var cleaned = BenchmarkReportPackValidator.DropInvalid(Tr, output, ChatConsistencyReportTestData.Sheet(Tr), ChatConsistencyReportTestData.Content());
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Es, output, ChatConsistencyReportTestData.Sheet(Es), ChatConsistencyReportTestData.Content());
 
         Assert.False(cleaned.Fatal);
-        Assert.Equal(output.Sections[BenchmarkReportSlots.EndpointResults], cleaned.Output.Sections[BenchmarkReportSlots.EndpointResults]);
+        Assert.Equal(output.Sections[BenchmarkReportSlots.OurChanges], cleaned.Output.Sections[BenchmarkReportSlots.OurChanges]);
         var note = Assert.Single(cleaned.Notes);
         Assert.Equal(BenchmarkReportPackValidator.ChatRepetitionRule, note.Rule);
         Assert.False(note.Dropped);
@@ -2798,7 +2353,7 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
     [InlineData("The analysis records a limitation. And it names the hours.")]
     public void C9_DistinctValues_AnAbbreviation_OrANewSentence_Pass(string text)
     {
-        Assert.DoesNotContain(ValidateChatSlot(Tr, BenchmarkReportSlots.EndpointResults, text + " Within {{scope.hours}}."),
+        Assert.DoesNotContain(ValidateChatSlot(Es, BenchmarkReportSlots.OurChanges, text + " Within {{scope.hours}}."),
             n => n.Rule == BenchmarkReportPackValidator.ChatRepetitionRule);
     }
 
@@ -2822,8 +2377,6 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
 
     [Theory]
     [InlineData(BenchmarkReportAudience.ExecutiveSummary)]
-    [InlineData(BenchmarkReportAudience.TechnicalReport)]
-    [InlineData(BenchmarkReportAudience.InternalBrief)]
     public void AModelScopeDocument_IsUnaffectedByTheChatConsistencyRules(BenchmarkReportAudience audience)
     {
         const string claims = "Answers degraded because the provider deliberately throttled them at all hours, which is established and publishable.";
@@ -2846,9 +2399,11 @@ public class BenchmarkReportPackChatConsistencyValidatorTests
         Assert.Equal("sections.asGoodAsBefore", note.Location);
         Assert.Contains("\"Is the Overseer chat with this model as good as before?\"", note.Message, StringComparison.Ordinal);
 
-        Assert.Equal(150, BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.Limitations, BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(BenchmarkReportPackValidator.LimitationsMaxWords, BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.Limitations, BenchmarkReportScope.Model));
-        Assert.Equal(BenchmarkReportPackValidator.LimitationsMaxWords, BenchmarkReportPackValidator.SlotMaxWords(Tr, BenchmarkReportSlots.Limitations, BenchmarkReportScope.Comparison));
+        Assert.Equal(120, BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.AsGoodAsBefore, BenchmarkReportScope.ChatConsistency));
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.AsGoodAsBefore, BenchmarkReportScope.Model));
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.AsGoodAsBefore, BenchmarkReportScope.Comparison));
+        Assert.Equal(BenchmarkReportPackValidator.MeaningMaxWords, BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.Meaning, BenchmarkReportScope.Model));
+        Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.Meaning, BenchmarkReportScope.ChatConsistency));
         Assert.Null(BenchmarkReportPackValidator.SlotMaxWords(Es, BenchmarkReportSlots.AsGoodAsBefore, comparisonScope: false));
         Assert.Equal(60, BenchmarkReportPackValidator.SlotMaxWords(Pir, BenchmarkReportSlots.SampleRequestIds, BenchmarkReportScope.ChatConsistency));
         foreach (var audience in BenchmarkReportSlots.ChatConsistencyAudiences)

@@ -51,7 +51,7 @@ import {
   reportDocumentFileStem
 } from './download-center-panel.component';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief, ProviderIssueReport } = BenchmarkReportAudience;
+const { ExecutiveSummary, RootCauseAnalysis, ProviderIssueReport } = BenchmarkReportAudience;
 const { Summary, Detailed, Full } = BenchmarkReportDisclosure;
 
 const DOCUMENTS_URL = '/api/admin/benchmark/report-documents';
@@ -62,8 +62,8 @@ const OTHER_HASH = 'b'.repeat(64);
 function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<BenchmarkReportDocumentListItemDto> = {}): BenchmarkReportDocumentListItemDto {
   const titles: Record<number, string> = {
     [ExecutiveSummary]: 'Executive Summary: Gemini Flash',
-    [TechnicalReport]: 'Gemini Flash — Report for AI Researchers and Developers',
-    [InternalBrief]: 'Internal Improvement Brief: Gemini Flash'
+    [ProviderIssueReport]: 'Gemini Flash — Provider Issue Report',
+    [RootCauseAnalysis]: 'Root Cause Analysis: Gemini Flash'
   };
   return {
     id,
@@ -89,7 +89,7 @@ function doc(id: number, audience: BenchmarkReportAudience, overrides: Partial<B
     costUsd: 0.05,
     runChangedSinceGeneration: false,
     missingRunIds: [],
-    allowedDisclosures: audience === InternalBrief ? [Full] : [Summary, Detailed, Full],
+    allowedDisclosures: audience === RootCauseAnalysis ? [Full] : [Summary, Detailed, Full],
     origin: BenchmarkReportDocumentOrigin.ReportPack,
     comparisonKey: 'cmp-1',
     comparisonEntryCount: 3,
@@ -328,7 +328,7 @@ describe('DownloadCenterPanelComponent', () => {
     it('lists a comparison\'s documents by one list call, and no run reports', () => {
       const request = render([
         doc(11, ExecutiveSummary, { missingRunIds: [3], subjectRunIds: [1, 3] }),
-        doc(12, TechnicalReport, { subjectKey: 'run:2', subjectRunIds: [2] })
+        doc(12, ProviderIssueReport, { subjectKey: 'run:2', subjectRunIds: [2] })
       ]);
 
       expect(request.request.params.get('comparison')).toBe('run:1,run:2,group:4');
@@ -342,7 +342,7 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('lists the comparison documents about one subject, by subject and origin', () => {
-      const request = render([doc(11, ExecutiveSummary), doc(12, TechnicalReport)], {
+      const request = render([doc(11, ExecutiveSummary), doc(12, ProviderIssueReport)], {
         kind: 'library',
         scope: { kind: 'subject', subjectKey: 'run:1', label: 'run #1 · Board Suite · Gemini Flash' },
         preselect: 'none'
@@ -367,7 +367,7 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('preselects only the listed documents, as the package chooses them, and keeps that on a reload', () => {
-      render([doc(11, ExecutiveSummary), doc(12, TechnicalReport), doc(13, InternalBrief)], library({ ids: [12, 13] }));
+      render([doc(11, ExecutiveSummary), doc(12, ProviderIssueReport), doc(13, RootCauseAnalysis)], library({ ids: [12, 13] }));
 
       const included = (): string[] => panel().rows.filter(r => panel().isIncluded(r)).map(r => r.key);
       expect(included().sort()).toEqual(['doc:12', 'doc:13']);
@@ -376,7 +376,7 @@ describe('DownloadCenterPanelComponent', () => {
 
       hostComponent.reloadToken++;
       fixture.detectChanges();
-      expectList().flush([doc(11, ExecutiveSummary), doc(12, TechnicalReport), doc(13, InternalBrief), doc(14, ExecutiveSummary)]);
+      expectList().flush([doc(11, ExecutiveSummary), doc(12, ProviderIssueReport), doc(13, RootCauseAnalysis), doc(14, ExecutiveSummary)]);
       fixture.detectChanges();
       // The rows still listed keep their choices; a document new on the reload starts chosen only when listed.
       expect(included().sort()).toEqual(['doc:12', 'doc:13']);
@@ -384,9 +384,9 @@ describe('DownloadCenterPanelComponent', () => {
 
     it('preselects a listed document only where the package chooses it', () => {
       localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({ version: 3, package: 'provider' }));
-      render([doc(11, ExecutiveSummary), doc(13, InternalBrief)], library({ ids: [11, 13] }));
+      render([doc(11, ExecutiveSummary), doc(13, RootCauseAnalysis)], library({ ids: [11, 13] }));
 
-      // External never chooses the Internal Improvement Brief, listed or not.
+      // External never chooses the Root Cause Analysis, listed or not.
       expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:11')!)).toBe(true);
       expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:13')!)).toBe(false);
     });
@@ -399,26 +399,26 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('preselects nothing from the launcher and every row from the wizard', () => {
-      render([doc(11, ExecutiveSummary), doc(12, TechnicalReport)], library('none'));
+      render([doc(11, ExecutiveSummary), doc(12, ProviderIssueReport)], library('none'));
       expect(panel().selectedCount).toBe(0);
       expect(panel().summaryLine).toBe('No files chosen · Internal package');
       expect(text('.dc-selection-count')).toBe('Nothing selected');
 
       hostComponent.context = library('all');
       fixture.detectChanges();
-      expectList().flush([doc(11, ExecutiveSummary), doc(12, TechnicalReport)]);
+      expectList().flush([doc(11, ExecutiveSummary), doc(12, ProviderIssueReport)]);
       fixture.detectChanges();
       expect(panel().selectedCount).toBe(2);
       expect(rowEl('doc:11').querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(true);
     });
 
     it('lists again on the reload token, keeping the choices made on the rows still listed', () => {
-      render([doc(11, ExecutiveSummary), doc(12, TechnicalReport)], library('none'));
+      render([doc(11, ExecutiveSummary), doc(12, ProviderIssueReport)], library('none'));
       check('doc:11');
 
       hostComponent.reloadToken++;
       fixture.detectChanges();
-      expectList().flush([doc(11, ExecutiveSummary), doc(13, InternalBrief)]);
+      expectList().flush([doc(11, ExecutiveSummary), doc(13, RootCauseAnalysis)]);
       fixture.detectChanges();
 
       expect(panel().rows.map(r => r.key)).toEqual(['doc:13', 'doc:11']);
@@ -445,13 +445,13 @@ describe('DownloadCenterPanelComponent', () => {
       const harbor = { subjectLabel: 'Claude Harbor', subjectKey: 'run:2', subjectRunIds: [2], suiteName: 'Wiki Suite' };
       return [
         doc(11, ExecutiveSummary),
-        doc(12, TechnicalReport, { ...harbor, writerDisplayName: 'Gemini writer' }),
+        doc(12, ProviderIssueReport, { ...harbor, writerDisplayName: 'Gemini writer' }),
         doc(13, ExecutiveSummary, harbor)
       ];
     }
 
     it('renders one card per row in a list, each titled by the label of its checkbox', () => {
-      render([doc(11, ExecutiveSummary), doc(12, TechnicalReport)]);
+      render([doc(11, ExecutiveSummary), doc(12, ProviderIssueReport)]);
 
       const list = q('ul.dc-card-list')!;
       expect(list.getAttribute('role')).toBe('list');
@@ -490,7 +490,7 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('sorts with Sort by, remembering the order for the next panel', () => {
-      render([doc(11, TechnicalReport), doc(13, ExecutiveSummary), doc(12, InternalBrief, { runChangedSinceGeneration: true })]);
+      render([doc(11, ProviderIssueReport), doc(13, ExecutiveSummary), doc(12, RootCauseAnalysis, { runChangedSinceGeneration: true })]);
 
       const select = byId<HTMLSelectElement>('mc-dc-sort')!;
       const label = q(`label[for="mc-dc-sort"]`)!;
@@ -510,7 +510,7 @@ describe('DownloadCenterPanelComponent', () => {
       const second = TestBed.createComponent(PanelHostComponent);
       second.componentInstance.context = library();
       second.detectChanges();
-      expectList().flush([doc(11, TechnicalReport), doc(13, ExecutiveSummary), doc(12, InternalBrief, { runChangedSinceGeneration: true })]);
+      expectList().flush([doc(11, ProviderIssueReport), doc(13, ExecutiveSummary), doc(12, RootCauseAnalysis, { runChangedSinceGeneration: true })]);
       second.detectChanges();
       const secondEl = second.nativeElement as HTMLElement;
       expect(secondEl.querySelector<HTMLSelectElement>('[id="mc-dc-sort"]')!.value).toBe('changed-first');
@@ -522,7 +522,7 @@ describe('DownloadCenterPanelComponent', () => {
       const third = TestBed.createComponent(PanelHostComponent);
       third.componentInstance.context = library();
       third.detectChanges();
-      expectList().flush([doc(11, TechnicalReport)]);
+      expectList().flush([doc(11, ProviderIssueReport)]);
       third.detectChanges();
       expect((third.nativeElement as HTMLElement).querySelector<HTMLSelectElement>('[id="mc-dc-sort"]')!.value).toBe('created-desc');
       third.destroy();
@@ -575,7 +575,7 @@ describe('DownloadCenterPanelComponent', () => {
       // Every row is unchanged, so Changes has one value and is not offered.
       expect(byId('mc-dc-facet-changes-trigger')).toBeNull();
       expect(facetOptions('document').map(option => option.label))
-        .toEqual(['Executive Summary, 2 documents', 'Report for AI Researchers and Developers, 1 document']);
+        .toEqual(['Executive Summary, 2 documents', 'Provider Issue Report, 1 document']);
       expect(facetOptions('writer').map(option => option.label))
         .toEqual(['Claude Opus writer, 2 documents', 'Gemini writer, 1 document']);
 
@@ -596,14 +596,14 @@ describe('DownloadCenterPanelComponent', () => {
       pickFacet('suite', 'Wiki Suite');
       expect(rowKeys()).toEqual(['doc:13']);
       expect(facetOptions('document').map(option => option.label))
-        .toEqual(['Executive Summary, 1 document', 'Report for AI Researchers and Developers, 1 document']);
+        .toEqual(['Executive Summary, 1 document', 'Provider Issue Report, 1 document']);
       expect(facetOptions('suite').map(option => option.label)).toEqual(['Board Suite, 1 document', 'Wiki Suite, 1 document']);
       expect(text('#mc-dc-list-status')).toBe('One document · filtered from 3');
     });
 
     it('filters by creation time in single mode, against the Download Center clock', () => {
       vi.spyOn(downloadCenterIo, 'now').mockReturnValue(new Date('2026-09-24T00:00:00Z'));
-      render([doc(11, ExecutiveSummary, { createdAtUtc: '2026-09-01T16:00:00Z' }), doc(12, TechnicalReport), doc(13, InternalBrief)]);
+      render([doc(11, ExecutiveSummary, { createdAtUtc: '2026-09-01T16:00:00Z' }), doc(12, ProviderIssueReport), doc(13, RootCauseAnalysis)]);
 
       const created = facetOptions('created');
       expect(created.map(option => option.input.type)).toEqual(['radio', 'radio', 'radio', 'radio']);
@@ -621,7 +621,7 @@ describe('DownloadCenterPanelComponent', () => {
       useSearchClock();
       render(twoSuites());
       pickFacet('document', 'Executive Summary');
-      pickFacet('document', 'Report for AI Researchers and Developers');
+      pickFacet('document', 'Provider Issue Report');
       pickFacet('suite', 'Wiki Suite');
       typeInto(byId<HTMLInputElement>('mc-dc-search')!, 'harbor');
       await pauseTyping();
@@ -631,14 +631,14 @@ describe('DownloadCenterPanelComponent', () => {
       expect(chipList.getAttribute('aria-label')).toBe('Active filters');
       expect(chipNames()).toEqual([
         'Remove filter Document: Executive Summary',
-        'Remove filter Document: Report for AI Researchers and Developers',
+        'Remove filter Document: Provider Issue Report',
         'Remove filter Suite: Wiki Suite',
         'Remove filter Search: “harbor”'
       ]);
 
       chips()[0].click();
       fixture.detectChanges();
-      expect(chipNames()[0]).toBe('Remove filter Document: Report for AI Researchers and Developers');
+      expect(chipNames()[0]).toBe('Remove filter Document: Provider Issue Report');
       expect(document.activeElement).toBe(chips()[0]);
       expect(rowKeys()).toEqual(['doc:12']);
 
@@ -662,11 +662,11 @@ describe('DownloadCenterPanelComponent', () => {
       expect(q('.dc-no-matches button')!.textContent!.trim()).toBe('Clear all filters');
     });
 
-    /** Twelve Executive Summaries and one older Report for AI Researchers and Developers. */
+    /** Twelve Executive Summaries and one older Provider Issue Report. */
     function thirteen(): BenchmarkReportDocumentListItemDto[] {
       return [
         ...Array.from({ length: 12 }, (_, i) => doc(100 + i, ExecutiveSummary, { createdAtUtc: `2026-09-${10 + i}T16:00:00Z` })),
-        doc(300, TechnicalReport, { createdAtUtc: '2026-09-01T16:00:00Z' })
+        doc(300, ProviderIssueReport, { createdAtUtc: '2026-09-01T16:00:00Z' })
       ];
     }
 
@@ -693,7 +693,7 @@ describe('DownloadCenterPanelComponent', () => {
 
       const more = [
         ...Array.from({ length: 24 }, (_, i) => doc(200 + i, ExecutiveSummary, { createdAtUtc: `2026-09-10T${String(i).padStart(2, '0')}:00:00Z` })),
-        doc(301, TechnicalReport, { createdAtUtc: '2026-09-01T16:00:00Z' })
+        doc(301, ProviderIssueReport, { createdAtUtc: '2026-09-01T16:00:00Z' })
       ];
       // A context that lists other documents loads afresh; an equal one keeps the loaded list.
       render(more, library('none'));
@@ -773,12 +773,12 @@ describe('DownloadCenterPanelComponent', () => {
     it('views a pack document at its highest disclosure, peers named, with the Peer names row', () => {
       const service = TestBed.inject(AdminBenchmarkService);
       const pdf = vi.spyOn(service, 'getReportDocumentPdf').mockReturnValue(of({ bytes: new Uint8Array([1]), fileName: null }));
-      render([doc(11, TechnicalReport, { allowedDisclosures: [Detailed, Summary] })]);
+      render([doc(11, ProviderIssueReport, { allowedDisclosures: [Detailed, Summary] })]);
       const open = vi.spyOn(panel().pdfViewer!, 'open').mockReturnValue(undefined);
 
       const rid = panel().rowId(panel().rows[0]);
       const button = byId<HTMLButtonElement>(`${rid}-view`)!;
-      expect(button.getAttribute('aria-label')).toBe('View Gemini Flash — Report for AI Researchers and Developers, 2026-09-21 16:00 UTC');
+      expect(button.getAttribute('aria-label')).toBe('View Gemini Flash — Provider Issue Report, 2026-09-21 16:00 UTC');
       expect(button.getAttribute('interestfor')).toBe(`${rid}-view-tip`);
       expect(button.hasAttribute('title')).toBe(false);
       button.click();
@@ -788,7 +788,7 @@ describe('DownloadCenterPanelComponent', () => {
       expect(request.initialVariant).toBe('detailed');
       expect(request.secondaryVariants?.label).toBe('Peer names');
       expect(request.secondaryVariants?.initial).toBe('named');
-      expect(request.fallbackFileName).toBe('run-1_vs-run-2-group-4_gemini-flash_Researcher_Report.pdf');
+      expect(request.fallbackFileName).toBe('run-1_vs-run-2-group-4_gemini-flash-provider-issue-report.pdf');
       request.load('summary', 'anonymized').subscribe();
       expect(pdf).toHaveBeenCalledWith(11, Summary, BenchmarkReportPeerNaming.Anonymized, expect.any(String));
 
@@ -799,8 +799,8 @@ describe('DownloadCenterPanelComponent', () => {
     it('offers Delete on Report Pack and chat consistency documents, never on a run\'s own', () => {
       render([
         doc(11, ExecutiveSummary),
-        doc(12, TechnicalReport, { origin: BenchmarkReportDocumentOrigin.RunCompletion }),
-        doc(14, InternalBrief, { origin: BenchmarkReportDocumentOrigin.ChatConsistencyReport, subjectKey: 'chat-consistency:12' })
+        doc(12, ProviderIssueReport, { origin: BenchmarkReportDocumentOrigin.RunCompletion }),
+        doc(14, RootCauseAnalysis, { origin: BenchmarkReportDocumentOrigin.ChatConsistencyReport, subjectKey: 'chat-consistency:12' })
       ]);
 
       expect(byId('mc-dc-doc-11-delete')).not.toBeNull();
@@ -811,13 +811,13 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('deletes after the confirmation, moves focus to the next row and says so', async () => {
-      render([doc(11, ExecutiveSummary), doc(12, TechnicalReport), doc(13, InternalBrief)]);
+      render([doc(11, ExecutiveSummary), doc(12, ProviderIssueReport), doc(13, RootCauseAnalysis)]);
       const confirm = q<HTMLDialogElement>('dialog.dc-delete-dialog')!;
 
       byId<HTMLButtonElement>('mc-dc-doc-12-delete')!.click();
       fixture.detectChanges();
       expect(confirm.open).toBe(true);
-      expect(text('.dc-delete-text')).toContain('Gemini Flash — Report for AI Researchers and Developers');
+      expect(text('.dc-delete-text')).toContain('Gemini Flash — Provider Issue Report');
 
       const canceled = new Promise<void>(resolve => confirm.addEventListener('close', () => resolve(), { once: true }));
       q<HTMLButtonElement>('.dc-delete-cancel')!.click();
@@ -839,7 +839,7 @@ describe('DownloadCenterPanelComponent', () => {
       expect(rowKeys()).toEqual(['doc:13', 'doc:11']);
       // Newest first: the row after the deleted one is document 11.
       expect(document.activeElement).toBe(byId('mc-dc-doc-11-view'));
-      expect(text('.dc-status')).toBe('Deleted Gemini Flash — Report for AI Researchers and Developers, 2026-09-22 16:00 UTC.');
+      expect(text('.dc-status')).toBe('Deleted Gemini Flash — Provider Issue Report, 2026-09-22 16:00 UTC.');
       expect(hostComponent.changes).toBe(1);
     });
 
@@ -890,8 +890,11 @@ describe('DownloadCenterPanelComponent', () => {
         .toBe('run-92_vs-run-94-run-95_executive-summary-gemini-flash');
       expect(stem({ subjectKey: 'group:3', peerCount: 3, peerLetters: { 'run:5': 'C', 'battery:6': 'A', 'group:7': 'B' } }))
         .toBe('vs-battery-run-6-group-7-run-5_executive-summary-gemini-flash');
-      expect(stem({ peerCount: 1, peerLetters: { 'run:2': 'A' } }, TechnicalReport))
-        .toBe('run-1_vs-run-2_gemini-flash_Researcher_Report');
+      // Every document is named by its title, whatever its type.
+      expect(stem({ peerCount: 1, peerLetters: { 'run:2': 'A' } }, ProviderIssueReport))
+        .toBe('run-1_vs-run-2_gemini-flash-provider-issue-report');
+      expect(stem({ peerCount: 1, peerLetters: { 'run:2': 'A' } }, RootCauseAnalysis))
+        .toBe('run-1_vs-run-2_root-cause-analysis-gemini-flash');
     });
 
     it('names a chat consistency document as the server does: chat-consistency-<id>_<model>_<kind>', () => {
@@ -904,8 +907,8 @@ describe('DownloadCenterPanelComponent', () => {
       };
       expect(stem(chat, BenchmarkReportAudience.ProviderIssueReport))
         .toBe('chat-consistency-12_gpt-5.6-luna-medium_provider-issue-report');
-      expect(stem({ ...chat, chatConsistencyAnalysisId: 14 }, TechnicalReport))
-        .toBe('chat-consistency-14_gpt-5.6-luna-medium_researcher-report');
+      expect(stem({ ...chat, chatConsistencyAnalysisId: 14 }, ExecutiveSummary))
+        .toBe('chat-consistency-14_gpt-5.6-luna-medium_executive-summary');
     });
 
     it('names more than three peers, or peers it cannot spell, by their count and the comparison key', () => {
@@ -952,14 +955,14 @@ describe('DownloadCenterPanelComponent', () => {
     function fourDocuments(): BenchmarkReportDocumentListItemDto[] {
       return [
         coveringDoc(31, ExecutiveSummary, true, [LUNA, GROK, MISTRAL]),
-        coveringDoc(32, TechnicalReport, false, [LUNA, GROK]),
+        coveringDoc(32, ProviderIssueReport, false, [LUNA, GROK]),
         numberedDoc(33, ExecutiveSummary, {
           comparisonId: 14,
           comparisonName: 'Second comparison',
           subjectLabel: 'GPT-5.6 Luna',
           coveredModels: [{ entryKey: 'run:1', label: 'GPT-5.6 Luna', provider: 'OpenAI', letter: null }]
         }),
-        doc(34, InternalBrief)
+        doc(34, RootCauseAnalysis)
       ];
     }
 
@@ -972,9 +975,9 @@ describe('DownloadCenterPanelComponent', () => {
       expect(byEntries.request.params.get('comparison')).toBe('run:1,run:2,group:4');
       expect(byEntries.request.params.get('origin')).toBe('reportPack');
       expect(byEntries.request.params.has('comparisonId')).toBe(false);
-      byNumber.flush([numberedDoc(11, ExecutiveSummary), numberedDoc(12, TechnicalReport)]);
+      byNumber.flush([numberedDoc(11, ExecutiveSummary), numberedDoc(12, ProviderIssueReport)]);
       // By its entry keys: a numbered document again, one without a number, and one of another comparison.
-      byEntries.flush([numberedDoc(11, ExecutiveSummary), doc(13, InternalBrief), numberedDoc(14, ExecutiveSummary, { comparisonId: 14 })]);
+      byEntries.flush([numberedDoc(11, ExecutiveSummary), doc(13, RootCauseAnalysis), numberedDoc(14, ExecutiveSummary, { comparisonId: 14 })]);
       fixture.detectChanges();
 
       expect(panel().rows.map(r => r.key)).toEqual(['doc:13', 'doc:12', 'doc:11']);
@@ -996,7 +999,7 @@ describe('DownloadCenterPanelComponent', () => {
       hostComponent.context = comparisonContext();
       fixture.detectChanges();
       const { byNumber, byEntries } = expectComparisonLists();
-      byNumber.flush([numberedDoc(11, ExecutiveSummary), numberedDoc(12, TechnicalReport)]);
+      byNumber.flush([numberedDoc(11, ExecutiveSummary), numberedDoc(12, ProviderIssueReport)]);
       byEntries.flush([]);
       fixture.detectChanges();
 
@@ -1061,13 +1064,13 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('lists the Comparison facet only with documents of two comparisons, and never while one comparison\'s are listed', () => {
-      render([numberedDoc(31, ExecutiveSummary), numberedDoc(32, TechnicalReport)], library('none', 'all'));
+      render([numberedDoc(31, ExecutiveSummary), numberedDoc(32, ProviderIssueReport)], library('none', 'all'));
       expect(facetLabels()).not.toContain('Comparison');
 
       // A comparison's list, even holding documents of another number, offers no Comparison facet.
       hostComponent.context = library();
       fixture.detectChanges();
-      expectList().flush([numberedDoc(31, ExecutiveSummary), numberedDoc(32, ExecutiveSummary, { comparisonId: 14 }), doc(33, TechnicalReport)]);
+      expectList().flush([numberedDoc(31, ExecutiveSummary), numberedDoc(32, ExecutiveSummary, { comparisonId: 14 }), doc(33, ProviderIssueReport)]);
       fixture.detectChanges();
       expect(facetLabels()).not.toContain('Comparison');
       expect(byId('mc-dc-facet-comparison-trigger')).toBeNull();
@@ -1114,12 +1117,12 @@ describe('DownloadCenterPanelComponent', () => {
 
       expect(`${reportDocumentFileStem(perModel(ExecutiveSummary), 'x', Named)}_summary_named.pdf`)
         .toBe('comparison-12_gpt-5.6-luna_executive-summary_summary_named.pdf');
-      expect(`${reportDocumentFileStem(perModel(TechnicalReport), 'x', Named)}_full_named_INTERNAL.pdf`)
-        .toBe('comparison-12_gpt-5.6-luna_researcher-report_full_named_INTERNAL.pdf');
-      expect(`${reportDocumentFileStem(perModel(TechnicalReport), 'x', Anonymized)}_detailed_anonymized.pdf`)
-        .toBe('comparison-12_gpt-5.6-luna_researcher-report_detailed_anonymized.pdf');
-      expect(`${reportDocumentFileStem(perModel(InternalBrief), 'x', Anonymized)}_full_anonymized_INTERNAL.docx`)
-        .toBe('comparison-12_gpt-5.6-luna_internal-brief_full_anonymized_INTERNAL.docx');
+      expect(`${reportDocumentFileStem(perModel(RootCauseAnalysis), 'x', Named)}_full_named_INTERNAL.pdf`)
+        .toBe('comparison-12_gpt-5.6-luna_root-cause-analysis_full_named_INTERNAL.pdf');
+      expect(`${reportDocumentFileStem(perModel(ExecutiveSummary), 'x', Anonymized)}_summary_anonymized.pdf`)
+        .toBe('comparison-12_gpt-5.6-luna_executive-summary_summary_anonymized.pdf');
+      expect(`${reportDocumentFileStem(perModel(RootCauseAnalysis), 'x', Anonymized)}_full_anonymized_INTERNAL.docx`)
+        .toBe('comparison-12_gpt-5.6-luna_root-cause-analysis_full_anonymized_INTERNAL.docx');
 
       // Named unless told otherwise; the comparison's number alone is needed.
       expect(reportDocumentFileStem(perModel(ExecutiveSummary, 'GPT-5.6 Luna (max)'), 'x'))
@@ -1148,9 +1151,9 @@ describe('DownloadCenterPanelComponent', () => {
       expect(`${reportDocumentFileStem(two, 'x', Anonymized)}_summary_anonymized.pdf`)
         .toBe('comparison-12_subset-2-of-5-models-3f9a0c_executive-summary_summary_anonymized.pdf');
 
-      const four = coveringDoc(1, InternalBrief, false, [LUNA, GROK, MISTRAL, QWEN]);
+      const four = coveringDoc(1, RootCauseAnalysis, false, [LUNA, GROK, MISTRAL, QWEN]);
       expect(`${reportDocumentFileStem(four, 'x', Named)}_full_named_INTERNAL.pdf`)
-        .toBe('comparison-12_subset-4-of-5-models-3f9a0c_internal-brief_full_named_INTERNAL.pdf');
+        .toBe('comparison-12_subset-4-of-5-models-3f9a0c_root-cause-analysis_full_named_INTERNAL.pdf');
 
       // A covered model the list knows only by its entry key is counted, as the server counts it.
       const unlabeled = coveringDoc(1, ExecutiveSummary, false, [LUNA, { entryKey: 'run:9', label: 'run:9', provider: null, letter: 'B' }]);
@@ -1158,7 +1161,7 @@ describe('DownloadCenterPanelComponent', () => {
 
       // The count of models not Excluded when the document was written wins over the request's entry count.
       const afterExclusion = { ...four, comparisonModelCount: 4 };
-      expect(reportDocumentFileStem(afterExclusion, 'x', Named)).toBe('comparison-12_subset-4-of-4-models-3f9a0c_internal-brief');
+      expect(reportDocumentFileStem(afterExclusion, 'x', Named)).toBe('comparison-12_subset-4-of-4-models-3f9a0c_root-cause-analysis');
     });
 
     it('cuts a long covered slug at a hyphen within forty characters, without a dangling -vs', () => {
@@ -1205,10 +1208,10 @@ describe('DownloadCenterPanelComponent', () => {
       const lunaVsSol = 'GPT-5.6 Luna (max) vs GPT-6.1 Sol (medium)';
       render([
         numberedDoc(31, ExecutiveSummary, { subjectLabel: 'GPT-5.6 Luna', comparisonName: lunaVsSol }),
-        numberedDoc(32, TechnicalReport, { subjectLabel: 'GPT-6.1 Sol', comparisonName: lunaVsSol }),
+        numberedDoc(32, ProviderIssueReport, { subjectLabel: 'GPT-6.1 Sol', comparisonName: lunaVsSol }),
         numberedDoc(33, ExecutiveSummary, { comparisonId: 14, comparisonName: 'Second comparison' }),
         doc(34, ExecutiveSummary, { subjectLabel: 'Claude Harbor' }),
-        doc(35, TechnicalReport, { subjectLabel: 'Claude Harbor' }),
+        doc(35, ProviderIssueReport, { subjectLabel: 'Claude Harbor' }),
         doc(36, ExecutiveSummary)
       ], library('none', 'all'));
       const context = hostComponent.context!;
@@ -1240,7 +1243,7 @@ describe('DownloadCenterPanelComponent', () => {
     it('lists the manifest\'s comparisons by number, each named only while every chosen document of it is named', () => {
       render([
         numberedDoc(31, ExecutiveSummary),
-        numberedDoc(32, TechnicalReport),
+        numberedDoc(32, ProviderIssueReport),
         numberedDoc(33, ExecutiveSummary, { comparisonId: 14, comparisonName: 'Second comparison' }),
         doc(34, ExecutiveSummary)
       ], library('none', 'all'));
@@ -1261,7 +1264,7 @@ describe('DownloadCenterPanelComponent', () => {
 
   describe('charts', () => {
     it('shows no chart option, facet or action without chart actions', () => {
-      render([doc(11, ExecutiveSummary), doc(12, TechnicalReport, { chartCount: 2, chartFigureKeys: ['p1a-quality'], chartSettingsHash: HASH })]);
+      render([doc(11, ExecutiveSummary), doc(12, ProviderIssueReport, { chartCount: 2, chartFigureKeys: ['p1a-quality'], chartSettingsHash: HASH })]);
 
       expect(q('.dc-option-charts')).toBeNull();
       expect(byId('mc-dc-facet-charts-trigger')).toBeNull();
@@ -1274,8 +1277,8 @@ describe('DownloadCenterPanelComponent', () => {
     it('says None, current or differs from step 2 in the Charts option, and filters by it', () => {
       render([
         doc(11, ExecutiveSummary),
-        doc(12, TechnicalReport, { chartCount: 6, chartFigureKeys: ['p1a-quality', 'p1b-speed', 'p1c-cost'], chartSettingsHash: HASH }),
-        doc(13, InternalBrief, { chartCount: 6, chartFigureKeys: ['p1a-quality', 'p1b-speed', 'p1c-cost'], chartSettingsHash: OTHER_HASH })
+        doc(12, ProviderIssueReport, { chartCount: 6, chartFigureKeys: ['p1a-quality', 'p1b-speed', 'p1c-cost'], chartSettingsHash: HASH }),
+        doc(13, RootCauseAnalysis, { chartCount: 6, chartFigureKeys: ['p1a-quality', 'p1b-speed', 'p1c-cost'], chartSettingsHash: OTHER_HASH })
       ], library(), chartActions());
 
       const state = (key: string): HTMLElement => rowEl(key).querySelector<HTMLElement>('.dc-charts-state')!;
@@ -1313,7 +1316,7 @@ describe('DownloadCenterPanelComponent', () => {
     it('opens Update charts on the chosen documents\' types, prefilled from their figures, with the advisory', () => {
       render([
         doc(11, ExecutiveSummary, { chartFigureKeys: ['s2-quality-cost'], chartCount: 2 }),
-        doc(12, InternalBrief)
+        doc(12, RootCauseAnalysis)
       ], library('none'), chartActions({ advisory: 'The dark theme prints poorly.' }));
       check('doc:11');
       check('doc:12');
@@ -1324,11 +1327,24 @@ describe('DownloadCenterPanelComponent', () => {
       expect(q<HTMLDialogElement>('dialog.dc-charts-dialog')!.open).toBe(true);
       expect(text('.dc-charts-advisory')).toContain('The dark theme prints poorly.');
       const picker = fixture.debugElement.query(By.directive(ReportChartPickerComponent)).componentInstance as ReportChartPickerComponent;
-      expect(picker.audiences).toEqual([ExecutiveSummary, InternalBrief]);
-      expect(picker.enabledAudiences).toEqual([ExecutiveSummary, InternalBrief]);
+      expect(picker.audiences).toEqual([ExecutiveSummary, RootCauseAnalysis]);
+      expect(picker.enabledAudiences).toEqual([ExecutiveSummary, RootCauseAnalysis]);
       expect(panel().chartDraft[ExecutiveSummary]).toEqual(['s2-quality-cost']);
       // No figure yet: the remembered selection, here the defaults.
-      expect(panel().chartDraft[InternalBrief]).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost']);
+      expect(panel().chartDraft[RootCauseAnalysis]).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost', 's1-quality-speed', 's2-quality-cost']);
+    });
+
+    it('prefills Update charts from a document\'s browser-drawn figures alone, never its server-drawn ones', () => {
+      render([
+        doc(12, RootCauseAnalysis, { chartFigureKeys: ['r1-points-at-risk', 'r2-speed-decomposition'], chartCount: 4 })
+      ], library('none'), chartActions());
+      check('doc:12');
+
+      q<HTMLButtonElement>('.dc-update-charts')!.click();
+      fixture.detectChanges();
+
+      // Only server-drawn charts so far: the remembered selection, here the defaults.
+      expect(panel().chartDraft[RootCauseAnalysis]).toEqual(['p1a-quality', 'p1b-speed', 'p1c-cost', 's1-quality-speed', 's2-quality-cost']);
     });
 
     it('cancels Update charts without publishing', async () => {
@@ -1360,12 +1376,12 @@ describe('DownloadCenterPanelComponent', () => {
       });
       render([
         doc(11, ExecutiveSummary),
-        doc(12, TechnicalReport, { pricingBasis: 'AsRun' }),
-        doc(13, InternalBrief, { comparisonKey: 'cmp-other' })
+        doc(12, ProviderIssueReport, { pricingBasis: 'AsRun' }),
+        doc(13, RootCauseAnalysis, { comparisonKey: 'cmp-other' })
       ], library(), actions);
       q<HTMLButtonElement>('.dc-update-charts')!.click();
       fixture.detectChanges();
-      const draft: ReportChartSelection = { [ExecutiveSummary]: ['p1a-quality'], [TechnicalReport]: ['p1b-speed'], [InternalBrief]: ['p1c-cost'] };
+      const draft: ReportChartSelection = { [ExecutiveSummary]: ['p1a-quality'], [ProviderIssueReport]: ['p1b-speed'], [RootCauseAnalysis]: ['p1c-cost'] };
       panel().onChartDraftChange(draft);
 
       const applying = panel().applyCharts();
@@ -1441,7 +1457,7 @@ describe('DownloadCenterPanelComponent', () => {
     it('removes a document\'s charts from its More popover', () => {
       render([
         doc(11, ExecutiveSummary, { chartFigureKeys: ['p1a-quality'], chartCount: 2, chartSettingsHash: HASH }),
-        doc(12, TechnicalReport)
+        doc(12, ProviderIssueReport)
       ], library(), chartActions());
 
       const trigger = byId<HTMLButtonElement>('mc-dc-doc-11-more-trigger')!;
@@ -1462,7 +1478,7 @@ describe('DownloadCenterPanelComponent', () => {
       expect(request.request.url).toBe(`${DOCUMENTS_URL}/11/charts`);
       request.flush(null);
       fixture.detectChanges();
-      expectList().flush([doc(11, ExecutiveSummary), doc(12, TechnicalReport)]);
+      expectList().flush([doc(11, ExecutiveSummary), doc(12, ProviderIssueReport)]);
       fixture.detectChanges();
 
       expect(text('.dc-status')).toBe('Removed the charts of Executive Summary: Gemini Flash, 2026-09-21 16:00 UTC.');
@@ -1502,7 +1518,7 @@ describe('DownloadCenterPanelComponent', () => {
       return {
         runId: 7, status, message: null, phase,
         queuedAtUtc: '2026-10-03T08:00:00Z', slotAcquiredAtUtc: null, finishedAtUtc: null, cancelRequestedAtUtc: null,
-        jobsAhead: null, blockingJobLabel: null, audiences: [ExecutiveSummary, TechnicalReport],
+        jobsAhead: null, blockingJobLabel: null, audiences: [ExecutiveSummary, RootCauseAnalysis],
         writerConfigId: 7, writerDisplayName: 'Claude Opus writer', writerProvider: 'Anthropic', writerModelId: 'claude-opus',
         writerThinkingLevel: null, job: null as unknown as BenchmarkRunReportJobDto['job'], serverTimeUtc: '2026-10-03T08:00:10Z'
       };
@@ -1568,12 +1584,12 @@ describe('DownloadCenterPanelComponent', () => {
     }
 
     it('lists the analysis report and the battery run\'s own documents, by subject and origin', () => {
-      const list = openBattery([batteryDoc(21, ExecutiveSummary), batteryDoc(22, TechnicalReport), batteryDoc(23, InternalBrief)]);
+      const list = openBattery([batteryDoc(21, ExecutiveSummary), batteryDoc(22, RootCauseAnalysis)]);
 
       expect(list.request.params.get('subject')).toBe('battery:7');
       expect(list.request.params.get('origin')).toBe('batteryCompletion');
       expect(list.request.params.has('runId')).toBe(false);
-      expect([...rowKeys()].sort()).toEqual(['battery-report:7', 'doc:21', 'doc:22', 'doc:23']);
+      expect([...rowKeys()].sort()).toEqual(['battery-report:7', 'doc:21', 'doc:22']);
       expect(panel().rows.some(row => row.runId !== null)).toBe(false);
 
       const report = rowEl('battery-report:7');
@@ -1594,7 +1610,7 @@ describe('DownloadCenterPanelComponent', () => {
       openBattery([batteryDoc(21, ExecutiveSummary)], null, {
         comparison: [
           batteryDoc(31, ExecutiveSummary, { origin: BenchmarkReportDocumentOrigin.ReportPack, peerCount: 1 }),
-          batteryDoc(32, TechnicalReport, { origin: BenchmarkReportDocumentOrigin.ReportPack, peerCount: 1 })
+          batteryDoc(32, RootCauseAnalysis, { origin: BenchmarkReportDocumentOrigin.ReportPack, peerCount: 1 })
         ]
       });
 
@@ -1641,9 +1657,7 @@ describe('DownloadCenterPanelComponent', () => {
     it('names a battery run\'s documents after it', () => {
       const unprefixed = reportDocumentFileStem(batteryDoc(21, ExecutiveSummary, { subjectKey: 'group:4' }), '');
       expect(reportDocumentFileStem(batteryDoc(21, ExecutiveSummary), '')).toBe(`battery-run-7_${unprefixed}`);
-      const researcher = reportDocumentFileStem(batteryDoc(22, TechnicalReport), '');
-      expect(researcher.startsWith('battery-run-7_')).toBe(true);
-      expect(researcher.endsWith('_Researcher_Report')).toBe(true);
+      expect(reportDocumentFileStem(batteryDoc(22, RootCauseAnalysis), '')).toBe('battery-run-7_root-cause-analysis-gemini-flash');
       expect(reportDocumentFileStem(batteryDoc(23, ExecutiveSummary, { peerCount: 2 }), '')).toBe(`battery-run-7_vs-2-models_${unprefixed}`);
     });
 
@@ -1710,7 +1724,7 @@ describe('DownloadCenterPanelComponent', () => {
       flushJob(job('Finished', BenchmarkRunReportDocumentsStatus.Completed));
       const reload = expectList('batteryCompletion');
       expect(reload.request.params.get('subject')).toBe('battery:7');
-      reload.flush([batteryDoc(21, ExecutiveSummary), batteryDoc(22, TechnicalReport)]);
+      reload.flush([batteryDoc(21, ExecutiveSummary), batteryDoc(22, RootCauseAnalysis)]);
       fixture.detectChanges();
 
       expect(q('.dc-report-job-notice')).toBeNull();
@@ -1902,7 +1916,7 @@ describe('DownloadCenterPanelComponent', () => {
         comparisonEntryCount: 0,
         peerCount: 0,
         peerLetters: {},
-        allowedDisclosures: audience === InternalBrief ? [Full] : [Summary, Detailed, Full],
+        allowedDisclosures: audience === RootCauseAnalysis ? [Full] : [Summary, Detailed, Full],
         ...overrides
       });
     }
@@ -1962,7 +1976,7 @@ describe('DownloadCenterPanelComponent', () => {
       fixture.detectChanges();
       const request = expectList('chatConsistencyReport');
       expect(request.request.params.get('subject')).toBe('chat-consistency:12');
-      request.flush([ccDoc(31, ExecutiveSummary), ccDoc(33, InternalBrief)]);
+      request.flush([ccDoc(31, ExecutiveSummary), ccDoc(33, ExecutiveSummary)]);
       fixture.detectChanges();
 
       expect(panel().rows.map(r => r.key).sort()).toEqual(['doc:31', 'doc:33']);
@@ -1976,7 +1990,8 @@ describe('DownloadCenterPanelComponent', () => {
     });
 
     it('labels the Provider Issue Report row, shareable, and chooses it in the Internal and External packages', () => {
-      render([ccDoc(32, ProviderIssueReport), ccDoc(33, InternalBrief)], CC_CONTEXT);
+      // Document 33 renders at Full alone, so it is internal only.
+      render([ccDoc(32, ProviderIssueReport), ccDoc(33, ExecutiveSummary, { allowedDisclosures: [Full] })], CC_CONTEXT);
 
       const row = panel().rows.find(r => r.key === 'doc:32')!;
       expect(row.category).toBe('providerIssueReport');
@@ -1992,12 +2007,12 @@ describe('DownloadCenterPanelComponent', () => {
       expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:33')!)).toBe(false);
     });
 
-    it('migrates stored version-3 settings to version 4, giving the Provider Issue Report its defaults', async () => {
+    it('migrates stored version-3 settings to version 5, giving the Provider Issue Report its defaults', async () => {
       localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({
         version: 3,
         package: 'provider',
         paper: 'letter',
-        packages: { provider: { executiveSummary: { selected: false } } }
+        packages: { provider: { executiveSummary: { selected: false }, technicalReport: { selected: false } } }
       }));
       render([ccDoc(31, ExecutiveSummary), ccDoc(32, ProviderIssueReport)], CC_CONTEXT);
 
@@ -2010,19 +2025,46 @@ describe('DownloadCenterPanelComponent', () => {
       await persistByDownloading();
 
       const stored = JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!);
-      expect(stored.version).toBe(4);
+      expect(stored.version).toBe(5);
       expect(stored.paper).toBe('letter');
       expect(stored.packages.provider.providerIssueReport)
         .toEqual({ selected: true, disclosure: Summary, naming: BenchmarkReportPeerNaming.Anonymized, formats: ['pdf'] });
+      expect('technicalReport' in stored.packages.provider).toBe(false);
       // The packages not used keep the migrated default: nothing remembered, so their preset applies.
       expect(stored.packages.internal.providerIssueReport).toEqual({});
       expect(stored.packages.custom.providerIssueReport).toEqual({});
     });
 
-    it('round-trips stored version-4 settings, the Provider Issue Report\'s choice included', async () => {
+    it('migrates stored version-4 settings to version 5, keeping the Provider Issue Report\'s choice and dropping the retired types\'', async () => {
       const choice = { selected: true, disclosure: Detailed, naming: BenchmarkReportPeerNaming.Named, formats: ['md'] };
       localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({
         version: 4,
+        package: 'provider',
+        paper: 'a4',
+        packages: {
+          provider: { providerIssueReport: choice, technicalReport: { selected: true }, internalBrief: { selected: false } },
+          custom: { internalBrief: { formats: ['md'] } }
+        }
+      }));
+      render([ccDoc(32, ProviderIssueReport)], CC_CONTEXT);
+
+      expect(panel().stateOf(panel().rows.find(r => r.key === 'doc:32')!)).toEqual(choice);
+
+      await persistByDownloading();
+
+      const stored = JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!);
+      expect(stored.version).toBe(5);
+      expect(stored.package).toBe('provider');
+      expect(stored.packages.provider).toEqual({ providerIssueReport: choice });
+      expect(stored.packages.custom).toEqual({});
+      // A version-4 object gains no default: none is added to a package it does not hold.
+      expect(stored.packages.internal).toBeUndefined();
+    });
+
+    it('round-trips stored version-5 settings as they are', async () => {
+      const choice = { selected: true, disclosure: Detailed, naming: BenchmarkReportPeerNaming.Named, formats: ['md'] };
+      localStorage.setItem(DOWNLOAD_CENTER_STORAGE_KEY, JSON.stringify({
+        version: 5,
         package: 'provider',
         paper: 'a4',
         packages: { provider: { providerIssueReport: choice } }
@@ -2034,10 +2076,8 @@ describe('DownloadCenterPanelComponent', () => {
       await persistByDownloading();
 
       const stored = JSON.parse(localStorage.getItem(DOWNLOAD_CENTER_STORAGE_KEY)!);
-      expect(stored.version).toBe(4);
-      expect(stored.package).toBe('provider');
+      expect(stored.version).toBe(5);
       expect(stored.packages.provider.providerIssueReport).toEqual(choice);
-      // A version-4 object is read as it is: no default is added to a package it does not hold.
       expect(stored.packages.internal).toBeUndefined();
     });
   });
@@ -2215,7 +2255,7 @@ describe('DownloadCenterPanelComponent', () => {
     }
 
     it('is absent while no download is prepared', () => {
-      render([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
+      render([doc(1, ExecutiveSummary), doc(2, ProviderIssueReport)]);
 
       expect(cancelButton()).toBeNull();
       expect(downloadButton()).not.toBeNull();
@@ -2223,7 +2263,7 @@ describe('DownloadCenterPanelComponent', () => {
 
     it('appears while a download is prepared; it stops the download, keeps the panel, saves nothing and says so', async () => {
       const saves = spySaves();
-      render([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
+      render([doc(1, ExecutiveSummary), doc(2, ProviderIssueReport)]);
       const keys = rowKeys();
       expect(panel().plannedFiles.length).toBeGreaterThan(1);
 
@@ -2266,7 +2306,7 @@ describe('DownloadCenterPanelComponent', () => {
 
     it('aborts a download in preparation when the host takes the context away, without announcing a cancel', async () => {
       const saves = spySaves();
-      render([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
+      render([doc(1, ExecutiveSummary), doc(2, ProviderIssueReport)]);
 
       const done = panel().download();
       const pending = http.match(() => true);
@@ -2289,7 +2329,7 @@ describe('DownloadCenterPanelComponent', () => {
 
     it('aborts a download in preparation when the panel is destroyed', async () => {
       const saves = spySaves();
-      render([doc(1, ExecutiveSummary), doc(2, TechnicalReport)]);
+      render([doc(1, ExecutiveSummary), doc(2, ProviderIssueReport)]);
 
       const done = panel().download();
       const pending = http.match(() => true);

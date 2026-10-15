@@ -43,8 +43,8 @@ import {
   ReportPackPanelComponent
 } from './report-pack-panel.component';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
-const ALL_AUDIENCES = [ExecutiveSummary, TechnicalReport, InternalBrief];
+const { ExecutiveSummary, RootCauseAnalysis } = BenchmarkReportAudience;
+const ALL_AUDIENCES = [ExecutiveSummary, RootCauseAnalysis];
 
 const SYSTEM_CONFIGS_URL = '/api/admin/systemconfigs';
 const DOCUMENTS_URL = '/api/admin/benchmark/report-documents';
@@ -121,7 +121,7 @@ function estimate(audience: BenchmarkReportAudience, cost: number | null, subjec
   return { audience, promptChars: 20000, estimatedInputTokens: 6000, estimatedOutputTokens: 1500, estimatedCostUsd: cost, subjectKey, contextWindowShare: share };
 }
 
-const COMPARISON_ESTIMATES = [estimate(ExecutiveSummary, 0.05), estimate(TechnicalReport, 0.07), estimate(InternalBrief, 0.09)];
+const COMPARISON_ESTIMATES = [estimate(ExecutiveSummary, 0.05), estimate(RootCauseAnalysis, 0.16)];
 
 function writtenDoc(audience: BenchmarkReportAudience, documentId: number, subjectKey = 'comparison:12'): BenchmarkReportPackWrittenDocumentDto {
   return {
@@ -182,7 +182,7 @@ function modelPreview(subjects: string[] = ['run:1'], overrides: Partial<Benchma
     coversAllEntries: false,
     coveredSetKey: null,
     coveredModels: subjects.map(key => ({ entryKey: key, label: key, provider: null })),
-    estimates: subjects.flatMap(key => [estimate(ExecutiveSummary, 0.05, key), estimate(TechnicalReport, 0.07, key), estimate(InternalBrief, 0.09, key)]),
+    estimates: subjects.flatMap(key => [estimate(ExecutiveSummary, 0.05, key), estimate(RootCauseAnalysis, 0.16, key)]),
     writtenDocuments: [],
     subjectDocuments: subjects.map(key => ({ subjectKey: key, subjectLabel: key, documents: [] })),
     ...overrides
@@ -209,7 +209,7 @@ function jobDto(overrides: Partial<BenchmarkReportPackJobDto> = {}): BenchmarkRe
     costUsd: null,
     documents: [
       { audience: ExecutiveSummary, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1 },
-      { audience: TechnicalReport, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0 }
+      { audience: RootCauseAnalysis, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0 }
     ],
     log: [{ timestampUtc: '2026-09-28T10:00:00Z', message: 'Started.', severity: 'Info' }],
     ...overrides
@@ -537,7 +537,7 @@ describe('ReportPackPanelComponent', () => {
 
     const request = answerPreview(comparisonPreview({ coversAllEntries: false, coveredSetKey: 'set-2', coveredModels: [] }));
     expect(request.request.body.coveredEntryKeys).toEqual(['run:1', 'group:4']);
-    expect(host.querySelectorAll('.cds-row').length).toBe(3);
+    expect(host.querySelectorAll('.cds-row').length).toBe(2);
     fixture.destroy();
   }));
 
@@ -627,15 +627,14 @@ describe('ReportPackPanelComponent', () => {
     const executive = docRow(`comparison|${ExecutiveSummary}`);
     expect(executive.querySelector('.cds-status')!.textContent!.trim()).toBe('Written');
     expect(docCheck(`comparison|${ExecutiveSummary}`).checked).toBe(false);
-    expect(docCheck(`comparison|${TechnicalReport}`).checked).toBe(true);
-    expect(docCheck(`comparison|${InternalBrief}`).checked).toBe(true);
+    expect(docCheck(`comparison|${RootCauseAnalysis}`).checked).toBe(true);
     expect(text('#rp-estimate')).toBe('Estimating…');
 
     const second = answerPreview(comparisonPreview({
       estimates: COMPARISON_ESTIMATES.slice(1),
       writtenDocuments: [writtenDoc(ExecutiveSummary, 41)]
     }));
-    expect(second.request.body.audiences).toEqual([TechnicalReport, InternalBrief]);
+    expect(second.request.body.audiences).toEqual([RootCauseAnalysis]);
     expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.16');
     expect(generateButton().disabled).toBe(false);
 
@@ -677,7 +676,7 @@ describe('ReportPackPanelComponent', () => {
 
   it('keeps Generate focusable and aria-disabled, with the reason, when every document is written and none is checked', fakeAsync(() => {
     openPanel();
-    const all = [writtenDoc(ExecutiveSummary, 41), writtenDoc(TechnicalReport, 42), writtenDoc(InternalBrief, 43)];
+    const all = [writtenDoc(ExecutiveSummary, 41), writtenDoc(RootCauseAnalysis, 42)];
     chooseWriter(7, comparisonPreview({ writtenDocuments: all }));
     answerPreview(comparisonPreview({ estimates: [], writtenDocuments: all }));
 
@@ -697,22 +696,22 @@ describe('ReportPackPanelComponent', () => {
     chooseModels(['run:1', 'group:4']);
     const preview = modelPreview(['run:1', 'group:4'], {
       subjectDocuments: [
-        { subjectKey: 'run:1', subjectLabel: 'Gemini Flash', documents: [writtenDoc(InternalBrief, 51, 'run:1')] },
-        { subjectKey: 'group:4', subjectLabel: 'GPT Sol group', documents: [writtenDoc(InternalBrief, 52, 'group:4')] }
+        { subjectKey: 'run:1', subjectLabel: 'Gemini Flash', documents: [writtenDoc(RootCauseAnalysis, 51, 'run:1')] },
+        { subjectKey: 'group:4', subjectLabel: 'GPT Sol group', documents: [writtenDoc(RootCauseAnalysis, 52, 'group:4')] }
       ]
     });
     const first = chooseWriter(7, preview);
     expect(first.request.body.scope).toBe(BenchmarkReportScope.Model);
     expect(first.request.body.subjectKeys).toEqual(['run:1', 'group:4']);
     const second = answerPreview(preview);
-    expect(second.request.body.audiences).toEqual([ExecutiveSummary, TechnicalReport]);
+    expect(second.request.body.audiences).toEqual([ExecutiveSummary]);
 
     expect(Array.from(host.querySelectorAll('.cds-group-title')).map(title => title.textContent!.trim()))
       .toEqual(['Gemini Flash (medium)', 'GPT Sol group (medium)']);
-    expect(docCheck(`group:4|${InternalBrief}`).checked).toBe(false);
-    // Two models of two documents each: four parts.
-    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.24');
-    expect(host.querySelectorAll('#rp-estimate .gh-estimate-parts > div').length).toBe(4);
+    expect(docCheck(`group:4|${RootCauseAnalysis}`).checked).toBe(false);
+    // Two models of one document each: two parts.
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $0.10');
+    expect(host.querySelectorAll('#rp-estimate .gh-estimate-parts > div').length).toBe(2);
     expect(text('#rp-estimate .gh-estimate-note')).toContain('For 2 models, each against the others.');
 
     generateButton().click();
@@ -724,7 +723,7 @@ describe('ReportPackPanelComponent', () => {
       subjectKey: 'run:1',
       scope: BenchmarkReportScope.Model,
       subjectKeys: ['run:1', 'group:4'],
-      audiences: [ExecutiveSummary, TechnicalReport],
+      audiences: [ExecutiveSummary],
       writerModelConfigurationId: 7,
       acknowledgeSameProvider: false,
       replaceDocumentIds: []
@@ -848,7 +847,7 @@ describe('ReportPackPanelComponent', () => {
     const request = answerPreview();
     expect(request.request.body.writerModelConfigurationId).toBe(0);
     expect(q('#rp-estimate')!.classList).toContain('is-empty');
-    expect(host.querySelectorAll('.cds-row').length).toBe(3);
+    expect(host.querySelectorAll('.cds-row').length).toBe(2);
     fixture.destroy();
   }));
 
@@ -982,12 +981,36 @@ describe('ReportPackPanelComponent', () => {
       .map(part => [part.querySelector('dt')!.textContent!.trim(), part.querySelector('dd')!.textContent!.trim()]);
     expect(parts).toEqual([
       ['Executive Summary', '$0.05'],
-      ['Report for AI Researchers and Developers', '$0.07'],
-      ['Internal Improvement Brief', '$0.09']
+      ['Root Cause Analysis', '$0.16']
     ]);
     expect(text('#rp-estimate .gh-estimate-note')).toContain('For 3 models, compared as equals.');
+    expect(text('#rp-estimate .gh-estimate-note')).toContain('A repair turn can roughly double a document’s cost.');
     expect(generateButton().getAttribute('aria-describedby')).toBe('rp-estimate');
     expect(generateButton().disabled).toBe(false);
+    fixture.destroy();
+  }));
+
+  it('shows the estimate as a range from the first call to one repair turn per document, when both are known and differ', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7, comparisonPreview({
+      estimates: [
+        { ...estimate(ExecutiveSummary, 0.34), estimatedCostWithRepairUsd: 0.69 },
+        { ...estimate(RootCauseAnalysis, 0.7), estimatedCostWithRepairUsd: 1.41 }
+      ]
+    }));
+
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $1.04 to $2.10');
+    const parts = Array.from(host.querySelectorAll('#rp-estimate .gh-estimate-parts > div'))
+      .map(part => part.querySelector('dd')!.textContent!.trim());
+    expect(parts).toEqual(['$0.34 to $0.69', '$0.70 to $1.41']);
+    expect(text('#rp-estimate .gh-estimate-note')).toContain('From the first call alone to one repair turn per document.');
+
+    // One document without a repair-inclusive figure: the first-call total alone.
+    chooseWriter(8, comparisonPreview({
+      estimates: [{ ...estimate(ExecutiveSummary, 0.34), estimatedCostWithRepairUsd: 0.69 }, estimate(RootCauseAnalysis, 0.7)]
+    }));
+    expect(text('#rp-estimate .gh-estimate-total')).toBe('about $1.04');
+    expect(text('#rp-estimate .gh-estimate-note')).toContain('A repair turn can roughly double a document’s cost.');
     fixture.destroy();
   }));
 
@@ -1043,7 +1066,7 @@ describe('ReportPackPanelComponent', () => {
     chooseWriter(7);
 
     // Two quick changes make one request.
-    docCheck(`comparison|${InternalBrief}`).click();
+    docCheck(`comparison|${RootCauseAnalysis}`).click();
     fixture.detectChanges();
     tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS / 2);
     chooseModels(['run:1', 'run:2']);
@@ -1062,27 +1085,27 @@ describe('ReportPackPanelComponent', () => {
     expect(newer.request.body.writerModelConfigurationId).toBe(8);
     newer.flush(comparisonPreview({ coversAllEntries: false }));
     fixture.detectChanges();
-    expect(host.querySelectorAll('.cds-row').length).toBe(3);
+    expect(host.querySelectorAll('.cds-row').length).toBe(2);
     fixture.destroy();
   }));
 
   it('warns from 70 % of the writer\'s context window', fakeAsync(() => {
     openPanel();
     chooseWriter(7, comparisonPreview({
-      estimates: [estimate(ExecutiveSummary, 0.05), estimate(TechnicalReport, 0.07, 'comparison:12', 0.78), estimate(InternalBrief, 0.09)]
+      estimates: [estimate(ExecutiveSummary, 0.05), estimate(RootCauseAnalysis, 0.16, 'comparison:12', 0.78)]
     }));
 
     const warning = q('.rp-context-warning')!;
     expect(warning.classList).toContain('alert-warning');
     expect(warning.textContent!.replace(/\s+/g, ' ').trim()).toBe(
-      'The Report for AI Researchers and Developers\'s prompt would fill about 78 % of the writer\'s context window; '
+      'The Root Cause Analysis\'s prompt would fill about 78 % of the writer\'s context window; '
       + 'from 90 % it is refused. Fewer models, or a writer with a larger context window, leaves the writer more room.');
     expect(generateButton().disabled).toBe(false);
 
     // An unchecked document's prompt does not count.
-    docCheck(`comparison|${TechnicalReport}`).click();
+    docCheck(`comparison|${RootCauseAnalysis}`).click();
     fixture.detectChanges();
-    answerPreview(comparisonPreview({ estimates: [estimate(ExecutiveSummary, 0.05), estimate(InternalBrief, 0.09)] }));
+    answerPreview(comparisonPreview({ estimates: [estimate(ExecutiveSummary, 0.05)] }));
     expect(q('.rp-context-warning')).toBeNull();
     fixture.destroy();
   }));
@@ -1261,7 +1284,7 @@ describe('ReportPackPanelComponent', () => {
     expect(cellText(ExecutiveSummary, '.rp-doc-name')).toBe('Executive Summary');
     expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Writing');
     expect(cellText(ExecutiveSummary, '.rp-doc-calls')).toBe('Model calls: 1');
-    expect(cellText(TechnicalReport, '.job-status-chip')).toBe('Pending');
+    expect(cellText(RootCauseAnalysis, '.job-status-chip')).toBe('Pending');
     expect(q('.rp-job-status')!.getAttribute('role')).toBe('status');
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Gemini Flash: 0 of 2 finished.');
     expect(q('.rp-job-log')).not.toBeNull();
@@ -1272,7 +1295,7 @@ describe('ReportPackPanelComponent', () => {
     const stages = Array.from(host.querySelectorAll('.rp-job-rail .run-stage'));
     expect(q('.rp-job-rail')!.classList).toContain('run-stage-rail');
     expect(stages.map(stage => stage.querySelector('.run-stage-name')!.textContent!.trim()))
-      .toEqual(['Queued', 'Preparing', 'Executive Summary', 'Report for AI Researchers and Developers', 'Done']);
+      .toEqual(['Queued', 'Preparing', 'Executive Summary', 'Root Cause Analysis', 'Done']);
     expect(stages.map(stage => stage.classList.contains('is-done'))).toEqual([true, true, false, false, false]);
     expect(stages[2].classList).toContain('is-current');
     expect(stages[2].getAttribute('aria-current')).toBe('step');
@@ -1291,15 +1314,15 @@ describe('ReportPackPanelComponent', () => {
       totalModelCalls: 3,
       documents: [
         { audience: ExecutiveSummary, status: 'Completed', documentId: 21, errorMessage: null, modelCalls: 1 },
-        { audience: TechnicalReport, status: 'Repairing', documentId: null, errorMessage: null, modelCalls: 2 }
+        { audience: RootCauseAnalysis, status: 'Repairing', documentId: null, errorMessage: null, modelCalls: 2 }
       ]
     }));
     fixture.detectChanges();
     expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Completed');
-    expect(cellText(TechnicalReport, '.job-status-chip')).toBe('Repairing');
-    expect(cellText(TechnicalReport, '.rp-doc-calls')).toBe('Model calls: 2');
+    expect(cellText(RootCauseAnalysis, '.job-status-chip')).toBe('Repairing');
+    expect(cellText(RootCauseAnalysis, '.rp-doc-calls')).toBe('Model calls: 2');
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Gemini Flash: 1 of 2 finished.');
-    expect(text('.rp-job-rail .run-stage.is-current .run-stage-name')).toBe('Report for AI Researchers and Developers');
+    expect(text('.rp-job-rail .run-stage.is-current .run-stage-name')).toBe('Root Cause Analysis');
 
     tick(REPORT_PACK_POLL_MS);
     http.expectOne(jobUrl('job-1')).flush(jobDto({
@@ -1308,7 +1331,7 @@ describe('ReportPackPanelComponent', () => {
       costUsd: 0.13,
       documents: [
         { audience: ExecutiveSummary, status: 'Completed', documentId: 21, errorMessage: null, modelCalls: 1 },
-        { audience: TechnicalReport, status: 'CompletedWithWarnings', documentId: 22, errorMessage: null, modelCalls: 2 }
+        { audience: RootCauseAnalysis, status: 'CompletedWithWarnings', documentId: 22, errorMessage: null, modelCalls: 2 }
       ]
     }));
     fixture.detectChanges();
@@ -1416,7 +1439,7 @@ describe('ReportPackPanelComponent', () => {
     openPanel({
       activeJob: jobDto({
         id: 'job-5',
-        documents: [written(ExecutiveSummary, 31), { audience: TechnicalReport, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1 }]
+        documents: [written(ExecutiveSummary, 31), { audience: RootCauseAnalysis, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1 }]
       })
     });
     expect(announced.map(doc => doc.documentId)).toEqual([31]);
@@ -1424,7 +1447,7 @@ describe('ReportPackPanelComponent', () => {
     tick(REPORT_PACK_POLL_MS);
     http.expectOne(jobUrl('job-5')).flush(jobDto({
       id: 'job-5',
-      documents: [written(ExecutiveSummary, 31), { audience: TechnicalReport, status: 'Failed', documentId: null, errorMessage: 'Refused.', modelCalls: 2 }]
+      documents: [written(ExecutiveSummary, 31), { audience: RootCauseAnalysis, status: 'Failed', documentId: null, errorMessage: 'Refused.', modelCalls: 2 }]
     }));
     expect(announced.map(doc => doc.documentId)).toEqual([31]);
 
@@ -1433,7 +1456,7 @@ describe('ReportPackPanelComponent', () => {
       id: 'job-5',
       status: 'CompletedWithErrors',
       completedAtUtc: '2026-09-28T10:03:00Z',
-      documents: [written(ExecutiveSummary, 31), written(TechnicalReport, 32, 'CompletedWithWarnings')]
+      documents: [written(ExecutiveSummary, 31), written(RootCauseAnalysis, 32, 'CompletedWithWarnings')]
     }));
     expect(announced.map(doc => doc.documentId)).toEqual([31, 32]);
     expect(announced[1].status).toBe('CompletedWithWarnings');
@@ -1441,7 +1464,7 @@ describe('ReportPackPanelComponent', () => {
     // A comparison change that finds the same job again announces nothing twice.
     fixture.componentRef.setInput('context', { ...CONTEXT, entryKeys: ['run:1', 'run:2'] });
     fixture.detectChanges();
-    answerActiveJob(jobDto({ id: 'job-5', status: 'CompletedWithErrors', documents: [written(ExecutiveSummary, 31), written(TechnicalReport, 32)] }));
+    answerActiveJob(jobDto({ id: 'job-5', status: 'CompletedWithErrors', documents: [written(ExecutiveSummary, 31), written(RootCauseAnalysis, 32)] }));
     expect(announced.map(doc => doc.documentId)).toEqual([31, 32]);
     fixture.destroy();
   }));
@@ -1480,7 +1503,7 @@ describe('ReportPackPanelComponent', () => {
         serverTimeUtc: '2026-09-28T10:01:00Z',
         documents: [
           { audience: ExecutiveSummary, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1, startedAtUtc: '2026-09-28T10:00:30Z' },
-          { audience: TechnicalReport, status: 'Failed', documentId: null, errorMessage: 'The writer refused.', modelCalls: 2 }
+          { audience: RootCauseAnalysis, status: 'Failed', documentId: null, errorMessage: 'The writer refused.', modelCalls: 2 }
         ]
       })
     });
@@ -1498,14 +1521,14 @@ describe('ReportPackPanelComponent', () => {
 
     const chip = q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .job-status-chip`)!;
     expect(chip.classList).toContain('status-generating');
-    expect(q(`.rp-job-row[data-audience="${TechnicalReport}"] .job-status-chip`)!.classList).toContain('status-failed');
-    expect(cellText(TechnicalReport, '.rp-job-row-error')).toBe('The writer refused.');
+    expect(q(`.rp-job-row[data-audience="${RootCauseAnalysis}"] .job-status-chip`)!.classList).toContain('status-failed');
+    expect(cellText(RootCauseAnalysis, '.rp-job-row-error')).toBe('The writer refused.');
     expect(cellText(ExecutiveSummary, '.rp-doc-status')).toBe('Status: Writing');
     expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-calls`)!.classList).toContain('rp-num');
 
     // On the server's clock: 30 s at its last reading, one more second later.
     expect(cellText(ExecutiveSummary, '.rp-doc-duration')).toBe('Duration: 30 s');
-    expect(cellText(TechnicalReport, '.rp-doc-duration')).toBe('Duration: —');
+    expect(cellText(RootCauseAnalysis, '.rp-doc-duration')).toBe('Duration: —');
     tick(1000);
     fixture.detectChanges();
     expect(cellText(ExecutiveSummary, '.rp-doc-duration')).toBe('Duration: 31 s');
@@ -1535,21 +1558,26 @@ describe('ReportPackPanelComponent', () => {
     openPanel({
       activeJob: jobDto({
         id: 'job-5',
-        documents: [written(ExecutiveSummary, 31), written(TechnicalReport, 32), written(InternalBrief, 33)]
+        documents: [
+          written(ExecutiveSummary, 31),
+          { ...written(ExecutiveSummary, 32), subjectKey: 'group:4', subjectLabel: 'GPT Sol group' },
+          written(RootCauseAnalysis, 33)
+        ]
       })
     });
+    const groupCharts = (): string => q('.rp-job-row[data-subject="group:4"] .rp-doc-charts')!.textContent!.replace(/\s+/g, ' ').trim();
 
     expect(cellText(ExecutiveSummary, '.rp-doc-charts')).toBe('Charts: attaching…');
-    expect(cellText(TechnicalReport, '.rp-doc-charts')).toBe('Charts: 3');
-    const retry = q<HTMLButtonElement>(`.rp-job-row[data-audience="${InternalBrief}"] .rp-chart-retry`)!;
-    expect(retry.textContent!.replace(/\s+/g, ' ').trim()).toBe('Charts failed — retry for the Internal Improvement Brief of Gemini Flash');
+    expect(groupCharts()).toBe('Charts: 3');
+    const retry = q<HTMLButtonElement>(`.rp-job-row[data-audience="${RootCauseAnalysis}"] .rp-chart-retry`)!;
+    expect(retry.textContent!.replace(/\s+/g, ' ').trim()).toBe('Charts failed — retry for the Root Cause Analysis of Gemini Flash');
     retry.click();
     expect(retries.map(doc => doc.documentId)).toEqual([33]);
 
     // No chart selected for a document type: none.
-    fixture.componentRef.setInput('chartSelection', { ...DEFAULT_CHART_SELECTION, [TechnicalReport]: [] } as ReportChartSelection);
+    fixture.componentRef.setInput('chartSelection', { ...DEFAULT_CHART_SELECTION, [ExecutiveSummary]: [] } as ReportChartSelection);
     fixture.detectChanges();
-    expect(cellText(TechnicalReport, '.rp-doc-charts')).toBe('Charts: none');
+    expect(groupCharts()).toBe('Charts: none');
 
     // No chart storage: none everywhere.
     fixture.componentRef.setInput('chartStorageMissing', true);
@@ -1671,28 +1699,30 @@ describe('ReportPackPanelComponent', () => {
 
   it('holds the chart picker between the documents and Report writer, its segments following the documents checked', fakeAsync(() => {
     openPanel();
-    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(InternalBrief, 43)] }));
-    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(InternalBrief, 43)] }));
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(RootCauseAnalysis, 43)] }));
+    answerPreview(comparisonPreview({ writtenDocuments: [writtenDoc(RootCauseAnalysis, 43)] }));
     const selections: ReportChartSelection[] = [];
     component.chartSelectionChange.subscribe(selection => selections.push(selection));
 
     const fieldset = q('fieldset.rp-charts-choice')!;
     expect(fieldset.querySelector('legend')!.textContent!.trim()).toBe('Charts in PDF and Word');
     const chartPicker = fixture.debugElement.query(By.directive(ReportChartPickerComponent)).componentInstance as ReportChartPickerComponent;
-    expect(chartPicker.enabledAudiences).toEqual([ExecutiveSummary, TechnicalReport]);
+    expect(chartPicker.enabledAudiences).toEqual([ExecutiveSummary]);
+    expect(chartPicker.audiences).toEqual(ALL_AUDIENCES);
     expect(chartPicker.available).toEqual(REPORT_CHART_FIGURES.map(figure => figure.key));
     expect(chartPicker.idPrefix).toBe('rp-charts');
     expect(chartPicker.scope).toBe('comparison');
-    q<HTMLButtonElement>(`#rp-charts-tab-${InternalBrief}`)!.click();
+    q<HTMLButtonElement>(`#rp-charts-tab-${RootCauseAnalysis}`)!.click();
     fixture.detectChanges();
-    expect(q(`#rp-charts-${InternalBrief}-p1a-quality`)!.getAttribute('aria-disabled')).toBe('true');
-    expect(text(`#rp-charts-${InternalBrief}-p1a-quality-placement`)).toBe('Models compared');
+    expect(q(`#rp-charts-${RootCauseAnalysis}-p1a-quality`)!.getAttribute('aria-disabled')).toBe('true');
+    expect(text(`#rp-charts-${RootCauseAnalysis}-p1a-quality-placement`)).toBe('Evidence: intelligence');
+    expect(text('.rcp-server-note')).toContain('four charts drawn by Overseer');
 
-    // Rewrite the brief: its charts can be chosen.
-    docCheck(`comparison|${InternalBrief}`).click();
+    // Rewrite the Root Cause Analysis: its charts can be chosen.
+    docCheck(`comparison|${RootCauseAnalysis}`).click();
     fixture.detectChanges();
     expect(chartPicker.enabledAudiences).toEqual(ALL_AUDIENCES);
-    expect(q(`#rp-charts-${InternalBrief}-p1a-quality`)!.hasAttribute('aria-disabled')).toBe(false);
+    expect(q(`#rp-charts-${RootCauseAnalysis}-p1a-quality`)!.hasAttribute('aria-disabled')).toBe(false);
 
     q<HTMLButtonElement>(`#rp-charts-tab-${ExecutiveSummary}`)!.click();
     fixture.detectChanges();
@@ -1726,10 +1756,10 @@ describe('ReportPackPanelComponent', () => {
   it('lists a figure the comparison cannot draw with the reason', () => {
     fixture.componentRef.setInput('chartsAvailable', REPORT_CHART_FIGURES.map(figure => figure.key).filter(key => key !== 'p2-profile'));
     openPanel();
-    q<HTMLButtonElement>(`#rp-charts-tab-${TechnicalReport}`)!.click();
+    q<HTMLButtonElement>(`#rp-charts-tab-${ExecutiveSummary}`)!.click();
     fixture.detectChanges();
 
-    expect(q(`#rp-charts-${TechnicalReport}-p2-profile`)!.getAttribute('aria-disabled')).toBe('true');
+    expect(q(`#rp-charts-${ExecutiveSummary}-p2-profile`)!.getAttribute('aria-disabled')).toBe('true');
     expect(text('#rp-charts-row-p2-profile-reason')).toBe('needs three or more models');
   });
 
@@ -1815,7 +1845,7 @@ describe('ReportPackPanelComponent', () => {
     }));
 
     it('lists every document type with its chart count, and holds back one without a chosen chart', async () => {
-      fixture.componentRef.setInput('chartSelection', { ...DEFAULT_CHART_SELECTION, [InternalBrief]: [] } as ReportChartSelection);
+      fixture.componentRef.setInput('chartSelection', { ...DEFAULT_CHART_SELECTION, [RootCauseAnalysis]: [] } as ReportChartSelection);
       const open = vi.fn();
       usablePanel();
       vi.spyOn(component.layoutViewer!, 'open').mockImplementation(open);
@@ -1828,14 +1858,13 @@ describe('ReportPackPanelComponent', () => {
         .map(span => (span.textContent ?? '').replace(/\s+/g, ' ').trim());
       expect(labels).toEqual([
         'Executive Summary · 2 charts',
-        `Report for AI Researchers and Developers · ${REPORT_CHART_FIGURES.length} charts`,
-        `${component.audienceLabel(InternalBrief)} · 0 charts`
+        `${component.audienceLabel(RootCauseAnalysis)} · 0 charts`
       ]);
 
-      const held = previewItem(InternalBrief);
+      const held = previewItem(RootCauseAnalysis);
       expect(held.getAttribute('aria-disabled')).toBe('true');
       expect(held.querySelector('.gh-action-popover-item-reason')!.textContent!.trim())
-        .toBe(`No chart is chosen for the ${component.audienceLabel(InternalBrief)}.`);
+        .toBe(`No chart is chosen for the ${component.audienceLabel(RootCauseAnalysis)}.`);
       expect(previewItem(ExecutiveSummary).hasAttribute('aria-disabled')).toBe(false);
 
       await openPreviewMenu();
@@ -1873,12 +1902,12 @@ describe('ReportPackPanelComponent', () => {
       const open = vi.spyOn(component.layoutViewer!, 'open').mockReturnValue(undefined);
 
       await openPreviewMenu();
-      previewItem(TechnicalReport).click();
+      previewItem(RootCauseAnalysis).click();
       fixture.detectChanges();
       expect(open).toHaveBeenCalledTimes(1);
       expect(menuOpen()).toBe(false);
       const request = vi.mocked(open).mock.lastCall![0] as PdfViewerRequest;
-      expect(request.title).toBe('Layout preview — Report for AI Researchers and Developers');
+      expect(request.title).toBe('Layout preview — Root Cause Analysis');
 
       // Composed and sent as the viewer loads it.
       let bytes: Uint8Array | null = null;
@@ -1888,13 +1917,13 @@ describe('ReportPackPanelComponent', () => {
         post = http.match(LAYOUT_PREVIEW_URL)[0] ?? null;
         return post !== null;
       });
-      expect(compose).toHaveBeenCalledWith(TechnicalReport, { kind: 'named', coveredKeys: ['run:1', 'group:4'] }, 'comparison');
+      expect(compose).toHaveBeenCalledWith(RootCauseAnalysis, { kind: 'named', coveredKeys: ['run:1', 'group:4'] }, 'comparison');
       const sent = post! as TestRequest;
       const body = JSON.parse((sent.request.body as FormData).get('request') as string);
       expect(body.scope).toBe(BenchmarkReportScope.Comparison);
       expect(body.coveredEntryKeys).toEqual(['run:1', 'group:4']);
-      expect(body.audience).toBe(TechnicalReport);
-      expect(body.audiences).toEqual([TechnicalReport]);
+      expect(body.audience).toBe(RootCauseAnalysis);
+      expect(body.audiences).toEqual([RootCauseAnalysis]);
       expect(body.naming).toBe('named');
       expect(body.layout).toEqual(COMPOSED.layout);
       expect((sent.request.body as FormData).getAll('files').length).toBe(1);
@@ -1986,7 +2015,7 @@ describe('ReportPackPanelComponent', () => {
       openPanel({ context: BASELINE_CONTEXT });
       const written = [
         { ...writtenDoc(ExecutiveSummary, 41), referenceEntryKey: 'group:4' },
-        { ...writtenDoc(TechnicalReport, 42), referenceEntryKey: null }
+        { ...writtenDoc(RootCauseAnalysis, 42), referenceEntryKey: null }
       ];
       chooseWriter(7, comparisonPreview({ writtenDocuments: written }));
       answerPreview(comparisonPreview({ estimates: COMPARISON_ESTIMATES.slice(2), writtenDocuments: written }));
@@ -1994,16 +2023,16 @@ describe('ReportPackPanelComponent', () => {
       expect(text('#rp-written-references-title')).toBe('Reference of the written documents');
       const rows = Array.from(host.querySelectorAll('.rp-written-reference'));
       expect(rows.map(row => row.querySelector('dt')!.textContent!.trim()))
-        .toEqual(['Executive Summary', 'Report for AI Researchers and Developers']);
+        .toEqual(['Executive Summary', 'Root Cause Analysis']);
       expect(text(`.rp-written-reference[data-row="comparison|${ExecutiveSummary}"] dd`)).toBe('GPT Sol group (medium) (baseline model)');
-      expect(text(`.rp-written-reference[data-row="comparison|${TechnicalReport}"] dd`))
+      expect(text(`.rp-written-reference[data-row="comparison|${RootCauseAnalysis}"] dd`))
         .toBe('Highest Intelligence Index · not the one chosen');
       const note = q('.rp-reference-mismatch')!;
       expect(note.classList).toContain('alert-warning');
       expect(note.getAttribute('role')).toBe('note');
       expect(text('.rp-reference-mismatch')).toBe(
-        'A written document was written against another reference model than the one chosen: Report for AI Researchers '
-        + 'and Developers (Highest Intelligence Index). Check Rewrite to write it against GPT Sol group (medium) (baseline model).');
+        'A written document was written against another reference model than the one chosen: Root Cause Analysis '
+        + '(Highest Intelligence Index). Check Rewrite to write it against GPT Sol group (medium) (baseline model).');
 
       // The same reference as the newer document's: the note names the other one.
       chooseReference('');
@@ -2062,9 +2091,9 @@ describe('ReportPackPanelComponent', () => {
     expect(infoButton.getAttribute('aria-haspopup')).toBe('dialog');
     const tip = q('#rp-writer-tip')!;
     const terms = Array.from(tip.querySelectorAll('dl > div .gh-info-term')).map(term => term.textContent!.trim());
-    expect(terms).toEqual(['Executive Summary', 'Report for AI Researchers and Developers', 'Internal Improvement Brief', 'Every document']);
-    const brief = Array.from(tip.querySelectorAll('dl > div'))[2].textContent!.replace(/\s+/g, ' ');
-    expect(brief).toContain('strongest scoring-tier model');
+    expect(terms).toEqual(['Executive Summary', 'Root Cause Analysis', 'Every document']);
+    const brief = Array.from(tip.querySelectorAll('dl > div'))[1].textContent!.replace(/\s+/g, ' ');
+    expect(brief).toContain('strongest scoring-tier reasoning model');
     expect(brief).toContain('medium effort');
     expect(q('#rp-writer-tip-title')!.textContent!.trim()).toBe('Choosing a report writer');
   });

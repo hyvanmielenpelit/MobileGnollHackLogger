@@ -12,7 +12,7 @@ import {
 } from './report-pack-diagnostics';
 import type { ReportPackContext } from './report-pack-panel.component';
 
-const { ExecutiveSummary, TechnicalReport, InternalBrief } = BenchmarkReportAudience;
+const { ExecutiveSummary, RootCauseAnalysis } = BenchmarkReportAudience;
 
 const CONTEXT: ReportPackContext = {
   runIds: [1, 2],
@@ -52,10 +52,10 @@ function job(overrides: Partial<BenchmarkReportPackJobDto> = {}): BenchmarkRepor
         startedAtUtc: '2026-09-28T10:00:05Z', completedAtUtc: '2026-09-28T10:00:50Z', inputTokens: 6000, outputTokens: 1500, costUsd: 0.05
       },
       {
-        audience: TechnicalReport, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 2,
+        audience: RootCauseAnalysis, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 2,
         startedAtUtc: '2026-09-28T10:00:50', completedAtUtc: null
       },
-      { audience: InternalBrief, status: 'Failed', documentId: 23, errorMessage: 'The writer\nrefused.', modelCalls: 1 }
+      { audience: RootCauseAnalysis, status: 'Failed', documentId: 23, errorMessage: 'The writer\nrefused.', modelCalls: 1 }
     ],
     log: [
       { timestampUtc: '2026-09-28T10:00:00Z', message: 'Started.', severity: 'Info' },
@@ -81,7 +81,7 @@ function input(overrides: Partial<ReportPackDiagnosticsInput> = {}): ReportPackD
       consecutiveFailures: 0,
       lastError: { httpStatus: 503, message: 'Service Unavailable' }
     },
-    estimateUsd: 0.12,
+    estimateUsd: { low: 0.12, high: null },
     nowUtc: new Date('2026-09-28T10:01:12Z'),
     ...overrides
   };
@@ -119,7 +119,7 @@ describe('report-pack-diagnostics', () => {
     expect(lines).toContain('  Cost: $0.05');
     expect(lines).toContain('  Charts selected: Intelligence; Intelligence against cost');
     expect(lines).toContain('  Charts: 4 attached');
-    expect(lines).toContain('Document 2: Report for AI Researchers and Developers');
+    expect(lines).toContain('Document 2: Root Cause Analysis');
     // An offset-less server time reads as UTC; an unfinished document runs to the server's clock.
     expect(lines).toContain('  Duration: 20 s so far');
     expect(lines).toContain('  Charts: not recorded');
@@ -132,6 +132,65 @@ describe('report-pack-diagnostics', () => {
     expect(lines).toContain('Polls: 7');
     expect(lines).toContain('Last error: HTTP 503: Service Unavailable');
     expect(lines).toContain('[2026-09-28 10:00:50 UTC] [Warning] Repaired once.');
+  });
+
+  it('prints the estimate as a range from the first call to one repair turn per document, when both ends are known and differ', () => {
+    const lines = (estimateUsd: ReportPackDiagnosticsInput['estimateUsd']) => buildReportPackDiagnostics(input({ estimateUsd })).split('\n');
+    expect(lines({ low: 1.04, high: 2.1 })).toContain('Estimate: $1.04 to $2.10 (first call only, to one repair turn per document)');
+    expect(lines({ low: 1.04, high: null })).toContain('Estimate: $1.04');
+    expect(lines({ low: 1.04, high: 1.0401 })).toContain('Estimate: $1.04');
+  });
+
+  it('adds the validation issues and the failed writer replies after the documents, only when a document carries them', () => {
+    const issue = (rule: number, location: string, message: string, dropped = false) => ({ rule, location, message, dropped });
+    const finished = job({
+      status: 'CompletedWithErrors',
+      documents: [
+        {
+          audience: ExecutiveSummary, status: 'Completed', documentId: 21, errorMessage: null, modelCalls: 2,
+          firstTurnIssues: [issue(16, 'sections.abstract', 'A token-shaped name.'), issue(2, 'headline', 'Too long.'),
+            issue(16, 'weaknesses[1]', 'A token-shaped name.', true)],
+          finalIssues: [issue(16, 'weaknesses[1]', 'A token-shaped name.', true)],
+          failedReply: null
+        },
+        {
+          audience: RootCauseAnalysis, status: 'Failed', documentId: null, errorMessage: 'Still invalid.', modelCalls: 3,
+          firstTurnIssues: [], finalIssues: [issue(7, 'headline', 'Missing.')],
+          failedReply: '{"headline":\r\n""}'
+        }
+      ]
+    });
+    const lines = buildReportPackDiagnostics(input({ job: finished })).split('\n');
+
+    expect(lines.filter(line => line.startsWith('== '))).toEqual([
+      '== Comparison ==', '== Job ==', '== Charts ==', '== Documents ==', '== Validation ==', '== Failed writer replies ==',
+      '== Totals ==', '== Client polling ==', '== Job log =='
+    ]);
+    const validation = lines.slice(lines.indexOf('== Validation =='), lines.indexOf('== Failed writer replies =='));
+    expect(validation).toEqual([
+      '== Validation ==',
+      'Document 1: Executive Summary',
+      '  First turn: 3 issues (rule 2: 1, rule 16: 2)',
+      '    rule 16 at sections.abstract: A token-shaped name.',
+      '    rule 2 at headline: Too long.',
+      '    rule 16 at weaknesses[1]: A token-shaped name. (dropped)',
+      '  Final: 1 issue (rule 16: 1)',
+      '    rule 16 at weaknesses[1]: A token-shaped name. (dropped)',
+      'Document 2: Root Cause Analysis',
+      '  First turn: 0 issues',
+      '  Final: 1 issue (rule 7: 1)',
+      '    rule 7 at headline: Missing.',
+      ''
+    ]);
+    const replies = lines.slice(lines.indexOf('== Failed writer replies =='), lines.indexOf('== Totals =='));
+    expect(replies).toEqual([
+      '== Failed writer replies ==', 'Document 2: Root Cause Analysis', '--- reply ---', '{"headline":', '""}', '--- end of reply ---', ''
+    ]);
+
+    // A running job's rows carry neither, so neither section is written.
+    const running = buildReportPackDiagnostics(input());
+    expect(running).not.toContain('== Validation ==');
+    expect(running).not.toContain('== Failed writer replies ==');
   });
 
   it('never includes the user who started the job', () => {
