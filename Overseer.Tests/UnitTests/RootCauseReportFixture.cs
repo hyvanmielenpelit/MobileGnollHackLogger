@@ -384,7 +384,7 @@ internal static class RootCauseReportFixture
     /// <summary>
     /// A Root Cause Analysis writer output over <paramref name="sheet"/> meant to pass every rule: each slot
     /// citing the axis statuses and a hypothesis where it weighs one, an answer to each research question the
-    /// sheet asks citing its status and a hypothesis label, observations citing a question and an evidence id,
+    /// sheet asks citing its status and a hypothesis' reference (<c>.ref</c>), observations citing a question and an evidence id,
     /// one writer hypothesis at Low, and a topic for each question it cites whose text was given.
     /// </summary>
     public static BenchmarkReportWriterOutput Writer(BenchmarkReportFactSheet sheet, bool comparison)
@@ -423,17 +423,17 @@ internal static class RootCauseReportFixture
             [BenchmarkReportSlots.Limitations] = "The benchmark asks single questions, so longer conversations are not measured."
         };
 
-        // One answer per research question the sheet asks, citing its status and, where one fired, a hypothesis label.
+        // One answer per research question the sheet asks, citing its status and, where one fired, a hypothesis reference.
         foreach (var question in sheet.RootCause?.Questions ?? new List<RootCauseQuestion>())
         {
             string prefix = "rca.question." + question.Number + ".";
             if (!keys.Contains(prefix + "text")) continue;
-            string? label = question.HypothesisKeys
-                .Select(k => "rca.hypothesis." + k + ".label")
+            string? reference = question.HypothesisKeys
+                .Select(k => "rca.hypothesis." + k + ".ref")
                 .FirstOrDefault(keys.Contains);
             sections[BenchmarkReportSlots.RootCauseAnswerSlots[question.Number - 1]] =
                 "For " + T(prefix + "model") + " the measured signals are " + T(prefix + "signals") + ". The answer strength is " + T(prefix + "status") + "."
-                + (label != null ? " The leading hypothesis is " + T(label) + "." : string.Empty);
+                + (reference != null ? " The leading hypothesis is " + T(reference) + "." : string.Empty);
         }
 
         return new BenchmarkReportWriterOutput

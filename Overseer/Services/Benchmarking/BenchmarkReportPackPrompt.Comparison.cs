@@ -585,13 +585,15 @@ public static partial class BenchmarkReportPackPrompt
 
     /// <summary>
     /// The questions whose text the writer is given, each with its rubric, then the answer excerpts
-    /// chosen under the document's excerpt budget, each with the graders' comments and the claim
-    /// rulings on it.
+    /// chosen under the document's excerpt budget, each with the graders' comments, the critical-error
+    /// resolution and the claim rulings on it.
     /// </summary>
     private static void AppendComparisonQuestions(
         StringBuilder sb, BenchmarkReportFactSheet sheet, BenchmarkReportContentSnapshot content, Func<int, string> reference)
     {
-        Line(sb, "QUESTIONS (as asked, with their rubrics; answer excerpts were chosen for the questions with critical errors or refuted sentences first, then the widest spread between models, then those every model scored low)");
+        Line(sb, $"QUESTIONS (as asked, with their rubrics; answer excerpts were allotted in up to {Words(BenchmarkReportContent.MaxExcerptsPerQuestion)} rounds, each round giving every question one more model's excerpt while the budget lasted: "
+            + "the questions with critical errors or refuted sentences first, then those with the widest spread between models, then those every model scored low, then the rest, the suites taking turns within each group; "
+            + "within a question, a model with a critical error or a refuted sentence first, then the lowest score, an unscored answer last. An excerpt longer than the budget left was skipped and not replaced, so a question may have fewer excerpts than others, or none)");
         var questions = (content.Questions ?? new List<BenchmarkReportContentQuestion>()).OrderBy(q => q.Number).ToList();
         if (questions.Count == 0)
         {
@@ -634,6 +636,7 @@ public static partial class BenchmarkReportPackPrompt
                         Line(sb, $"      evidence: {OneLine(evidence)}");
                     }
                 }
+                AppendCriticalErrorResolution(sb, item, "  ");
 
                 if (item.ClaimRulings.Count > 0)
                 {

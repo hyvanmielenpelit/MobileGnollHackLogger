@@ -57,7 +57,7 @@ public class BenchmarkReportComparisonIdentityRenderTests
     }
 
     [Fact]
-    public void AChainOfOverlappingNeighbors_IsOneGroup_EvenWhereItsEndsDoNotOverlap()
+    public void AChainOfOverlappingNeighbors_GivesEachEntryItsOwnSpan_WhereItsEndsDoNotOverlap()
     {
         var ranks = BenchmarkReportFacts.JointRanks(new List<(string Key, double Score, double? Lower, double? Upper)>
         {
@@ -66,7 +66,12 @@ public class BenchmarkReportComparisonIdentityRenderTests
             ("b", 84, 80, 87)
         });
 
-        Assert.All(new[] { "a", "b", "c" }, key => Assert.Equal(new BenchmarkReportFacts.JointRank(1, true, 3), ranks[key]));
+        Assert.Equal(new BenchmarkReportFacts.JointRank(1, true, 2), ranks["a"]);
+        Assert.Equal(new BenchmarkReportFacts.JointRank(1, true, 3), ranks["b"]);
+        Assert.Equal(new BenchmarkReportFacts.JointRank(2, true, 2), ranks["c"]);
+        Assert.Equal("1–2", BenchmarkReportFacts.TiedRankSpan(ranks["a"]));
+        Assert.Equal("1–3", BenchmarkReportFacts.TiedRankSpan(ranks["b"]));
+        Assert.Equal("2–3 of 3 (tied: intervals overlap)", BenchmarkReportFacts.JointRankText(ranks["c"], 3));
     }
 
     [Fact]

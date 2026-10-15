@@ -802,7 +802,8 @@ describe('figure-export', () => {
         canvas,
         chrome: figureChrome({
           key: [
-            { glyph: 'solid', text: 'Mean of 2+ runs' },
+            { glyph: 'solid', text: 'Mean of 2+ runs per suite' },
+            { glyph: 'hollow', text: 'One run per suite' },
             { glyph: 'interval', text: '95% interval' },
             { glyph: 'frontier', text: 'Pareto frontier' },
             { glyph: 'faded', text: 'Faded: another model is better on both axes' },

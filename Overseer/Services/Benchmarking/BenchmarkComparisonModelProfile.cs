@@ -68,6 +68,9 @@ public sealed class BenchmarkComparisonModelProfile
     /// <summary>The answers per which <c>mayMisleadPer20</c> is stated.</summary>
     public const int Per = 20;
 
+    /// <summary><c>outcome.wrongInsteadOfAbstaining</c> is stated over at least this many incorrect or not attempted answers.</summary>
+    public const int WrongInsteadOfAbstainingMinAnswers = 3;
+
     /// <summary>The dimension keys, in report order.</summary>
     public static readonly IReadOnlyList<string> Dimensions = new[] { "accuracy", "completeness", "conciseness", "readability" };
 
@@ -378,6 +381,11 @@ public sealed class BenchmarkComparisonModelProfile
         else if (Incorrect + NotAttempted == 0)
         {
             facts.Unavailable(p + "outcome.wrongInsteadOfAbstaining", "No answer was incorrect or not attempted.");
+        }
+        else if (Incorrect + NotAttempted < WrongInsteadOfAbstainingMinAnswers)
+        {
+            facts.Unavailable(p + "outcome.wrongInsteadOfAbstaining", "Fewer than " + Inv(WrongInsteadOfAbstainingMinAnswers)
+                + " answers were incorrect or not attempted (" + Inv(Incorrect + NotAttempted) + "), too few for a rate.");
         }
         else
         {

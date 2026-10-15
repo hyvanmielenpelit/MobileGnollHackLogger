@@ -166,7 +166,7 @@ public static class BenchmarkNotableFindings
         + "at least two critical errors, or three panel disagreements counted over the answers both panel members graded, at twice the other models' median rate or more; "
         + "a pair whose order depends on which panel member grades; "
         + "truncated answers and tool-limit hits on at least 10% of a model's answers; "
-        + "tool calls per question or median answer length at most half or at least twice the median of all models, with three models or more; "
+        + "tool calls per question or median answer length that is half the median of all models or less than half, or at least twice it, with three models or more; "
         + "and a provider error rate of at least 2% and five times the other models' median.";
 
     /// <summary>What a section prints when no rule found anything.</summary>
@@ -572,6 +572,13 @@ public static class BenchmarkNotableFindings
                ? AboutTimes(rate / othersMedian) + " the other models' median of " + BenchmarkReportFormat.Percent(othersMedian * 100)
                : "while the other models' median is zero");
 
+    /// <summary>
+    /// <c>panel disagreement 19% (others' median 6%)</c>: the compact noun phrase of a Root Cause Analysis model
+    /// profile, whose note states the rule once.
+    /// </summary>
+    public static string ProfileDisagreementPhrase(double rate, double othersMedian)
+        => "panel disagreement " + BenchmarkReportFormat.Percent(rate * 100) + " (others' median " + BenchmarkReportFormat.Percent(othersMedian * 100) + ")";
+
     /// <summary><c>about the same as</c>, <c>about twice</c>, <c>about three times</c> … <c>about 15 times</c>: the ratio to the nearest whole.</summary>
     public static string AboutTimes(double ratio)
     {
@@ -662,7 +669,9 @@ public static class BenchmarkNotableFindings
             bool high = own >= median / AtMostHalf;
             if (!low && !high) continue;
 
-            string side = low ? "at most half" : "at least twice";
+            string side = !low ? "at least twice"
+                : Math.Abs(own - median * AtMostHalf) <= 1e-9 * Math.Max(1.0, median) ? "half"
+                : "less than half";
             string summary = tools
                 ? $"Model {m.Letter} made {BenchmarkReportFormat.OneDecimal(own)} tool calls per question, {side} the median of all {Inv(values.Count)} models ({BenchmarkReportFormat.OneDecimal(median)})."
                 : $"Model {m.Letter}'s median answer is {BenchmarkReportFormat.Count(own)} characters, {side} the median of all {Inv(values.Count)} models ({BenchmarkReportFormat.Count(median)}).";

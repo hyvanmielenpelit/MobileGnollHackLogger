@@ -34,7 +34,7 @@ For the best answers, choose Model A or Model B; their intervals overlap, so the
 | Model D | 70 (64–76) | 3–4 (tied) | 8.0 s | $0.060 | 0 of 6 answers |
 | Model E | 55 (50–60) | 5 | 20.0 s | $0.010 | 0 of 6 answers |
 
-*Each model's Intelligence Index is followed by its 95% interval. A rank shown as a span, such as 2–4 (tied), means the model's interval overlaps a neighbor's, so the intervals alone cannot put them in order.*
+*Each model's Intelligence Index is followed by its 95% interval. A rank shown as a span, such as 5–9 (tied), means the model's interval overlaps others', so its rank is the span of places the interval allows. Interval bounds are rounded to whole numbers, so two intervals printed as touching may not overlap; ranks use the unrounded bounds.*
 
 | Model | Accuracy | Completeness | Conciseness | Readability |
 |---|---|---|---|---|
@@ -131,6 +131,6 @@ What it does not measure: conversations longer than one question, the wiki text 
 
 ---
 
-*Document ID 212 · format version 19 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models anonymized*
+*Document ID 212 · format version 20 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

@@ -7938,6 +7938,30 @@ per-model and chat consistency documents keep their formats. The full descriptio
 A document stored earlier keeps its stored facts and renders as before, apart from the comparison
 footer.
 
+### Root Cause Analysis: Correct, Complete and Concise (2026-10-15, Comparison #4 Review) — No Harness Version Bump
+
+No `HarnessVersion`, `ScoringMethodVersion` or comparability key moves, and no run is graded or scored
+differently. `RootCauseEngine.Version` moves 4 → 5, comparison-wide documents move to format 20 and
+per-model documents to format 15; chat consistency documents keep format 4. The full description is
+[`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) §§ 7, 15 and 17.
+
+- **Engine**: an Anthropic model's thinking is *Unavailable*, never zero, and its cost reads *output,
+  thinking included*; HQ4 counts only scoring graders and is refuted when both members and the reference
+  reader order a pair alike, and the panel diagnostics' grader-family interaction contrast quantifies it;
+  a null no family test covers is judged by its paired-bootstrap interval; the thinking level explains a
+  difference between two levels of one model instead of confounding it; a price effect needs no replicate.
+- **Next runs**: a standing null joins the replicate; a thinking pair uses the analyzed sibling and never
+  serves a cross-model hypothesis; at most one response-style pair, always optional.
+- **Document**: per-model rank spans in place of chained ties; excerpts allotted in rounds with the suites
+  interleaved; critical-error resolutions printed; summary findings and the grader-family sentence;
+  repetition, constant columns and the comparison's browser *Intelligence* figure dropped; hypotheses cited
+  in prose by their `.ref` token.
+- **Model Comparison charts**: leader lines on every displaced label, the runs-per-suite legend, and the
+  median model time in Report Pack captures.
+
+A document stored earlier keeps its stored facts and renders with its old wording where a new fact is
+absent; its tied-rank text changes, because ranks are recomputed at render time.
+
 ---
 
 ## 3. Assessor Strategy

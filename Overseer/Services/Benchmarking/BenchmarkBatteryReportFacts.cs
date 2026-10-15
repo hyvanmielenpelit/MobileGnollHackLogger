@@ -503,6 +503,7 @@ public static class BenchmarkBatteryReportFacts
                 Models = models,
                 JudgeDependentPairs = RootCauseEvidence.JudgeDependentPairs(comparison, tokenOf),
                 Graders = sheet.Graders.Select(g => (g.Role, g.Provider)).ToList(),
+                FamilyGaps = RootCauseEvidence.FamilyGaps(comparison),
                 Controls = input.Controls,
                 Catalog = input.Catalog ?? new RootCauseCatalog(),
                 Battery = true,

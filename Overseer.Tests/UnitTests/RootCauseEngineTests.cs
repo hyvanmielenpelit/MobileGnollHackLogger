@@ -5,13 +5,17 @@ using System.Collections.Generic;
 using System.Linq;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Benchmarking.RootCause;
+using Overseer.Services.Telemetry;
 using Xunit;
 
 /// <summary>
 /// The root-cause engine end to end for a run-completion subject: the control limit with no, one and two
 /// controls, the control run it proposes, the order of the recommended runs and the runs a replicate folds
 /// in, the item-level control table, the chart rows and determinism; and for three compared models: which
-/// differences are decomposed, the research questions, the model profiles and the hypothesis labels.
+/// differences are decomposed, the research questions and their signals, the model profiles, the hypothesis
+/// labels and references, the grader rules and family gaps, nulls without a family test, the thinking level as a
+/// configuration, price effects, the next runs a standing null, a thinking hypothesis and a style hypothesis
+/// propose, and reasoning a provider does not report separately.
 /// </summary>
 public class RootCauseEngineTests
 {
@@ -117,23 +121,34 @@ public class RootCauseEngineTests
     /// factors, Completeness ten points below its Accuracy, and every fourth question answered without tools.
     /// With <paramref name="quality"/>, each answer's score instead, none critical, the answers
     /// <paramref name="noTool"/> picks without tools and the rest with them, its Completeness
-    /// <paramref name="completenessGap"/> below its Accuracy.
+    /// <paramref name="completenessGap"/> below its Accuracy. The provider, model id and thinking level default to
+    /// the letter's and <c>high</c>; with <paramref name="panel"/> it was graded by a panel, with the member and
+    /// reference-reader indices given. Without <paramref name="reasoningReported"/> its provider counts thinking
+    /// inside output (the reasoning cost moves into the output slot). <paramref name="price"/> scales its cost
+    /// without its tokens.
     /// </summary>
     private static RootCauseModelInput Compared(string letter, int number, double index, double speed, double cost,
-        Func<int, double>? quality = null, double completenessGap = 0, double? cleared = null, Func<int, bool>? noTool = null)
+        Func<int, double>? quality = null, double completenessGap = 0, double? cleared = null, Func<int, bool>? noTool = null,
+        string? provider = null, string? modelId = null, string? thinkingLevel = null,
+        bool panel = false, double? memberA = null, double? memberB = null, double? reader = null,
+        bool reasoningReported = true, double price = 1.0, bool styleConflict = false)
     {
         var questions = Enumerable.Range(1, 12).ToList();
         var answers = quality != null
             ? questions.Select(q => Answer(q, quality(q), BandOf(q), noTool: noTool?.Invoke(q) ?? false, completenessGap: completenessGap)).ToList()
             : questions.Select(q => Answer(q, q % 4 == 0 ? 30 : index - 10 + 2 * (q % 5), BandOf(q), noTool: q % 4 == 0, critical: letter == "C" && q == 3)).ToList();
+
+        // Output and reasoning as one slot, as the evidence records a provider that does not report reasoning.
+        double[] Slots(double[] values) => reasoningReported ? values : new[] { values[0], values[1], values[2], values[3] + values[4], 0 };
+
         return new RootCauseModelInput
         {
             Token = letter,
             Letter = letter,
             Label = "Model label " + letter,
-            Provider = "Provider " + letter,
-            ModelId = "model-" + letter.ToLowerInvariant(),
-            ThinkingLevel = "high",
+            Provider = provider ?? (reasoningReported ? "Provider " + letter : "Anthropic"),
+            ModelId = modelId ?? "model-" + letter.ToLowerInvariant(),
+            ThinkingLevel = thinkingLevel ?? "high",
             EntryKey = "run:" + (600 + number),
             RunIds = new long[] { 600 + number },
             QualityIndex = index,
@@ -142,14 +157,20 @@ public class RootCauseEngineTests
             VerificationClearedIndex = cleared,
             Dimensions = new double?[] { index, index - 10, index - 3, index - 2 },
             ModelTimeP50Ms = 18000 * speed,
-            CostPerQuestionUsd = 0.0183 * cost,
-            CostPerRunUsd = 0.22 * cost,
+            CostPerQuestionUsd = 0.0183 * cost * price,
+            CostPerRunUsd = 0.22 * cost * price,
+            StyleConflict = styleConflict,
+            MemberAIndex = memberA,
+            MemberBIndex = memberB,
+            ReferenceReaderIndex = reader,
             Evidence = new RootCauseModelEvidence
             {
                 Answers = answers,
                 RunCount = 1,
                 RunsPerSuite = 1,
+                Panel = panel,
                 Priced = true,
+                ReasoningReported = reasoningReported,
                 CriticalErrorsConfirmed = true,
                 MeanMinutesPerRun = 9 * speed,
                 Settings = new RootCauseRunSettings
@@ -186,8 +207,8 @@ public class RootCauseEngineTests
                     {
                         Key = item.Key,
                         Band = item.Band,
-                        Tokens = item.Tokens.Select(t => t * cost).ToArray(),
-                        Cost = item.Cost.Select((c, k) => c * cost * (1 + 0.01 * (q % 4) * k)).ToArray()
+                        Tokens = Slots(item.Tokens.Select(t => t * cost).ToArray()),
+                        Cost = Slots(item.Cost.Select((c, k) => c * cost * price * (1 + 0.01 * (q % 4) * k)).ToArray())
                     };
                 }).ToList()
             }
@@ -236,6 +257,48 @@ public class RootCauseEngineTests
         PairTests = tests,
         Catalog = input.Catalog,
         Questions = input.Questions
+    };
+
+    /// <summary>
+    /// <paramref name="input"/> with <paramref name="graders"/> as its grading roles, <paramref name="familyGaps"/> as its
+    /// panel diagnostics' grader-family gaps and, when given, <paramref name="reference"/> as its reference model.
+    /// </summary>
+    private static RootCauseInput WithGraders(RootCauseInput input, IReadOnlyList<(string Role, string Provider)>? graders = null,
+        IReadOnlyList<RootCauseFamilyGap>? familyGaps = null, string? reference = null) => new()
+    {
+        Scope = input.Scope,
+        Origin = input.Origin,
+        ComputedAtUtc = input.ComputedAtUtc,
+        PricingBasis = input.PricingBasis,
+        PricingBasisKind = input.PricingBasisKind,
+        Models = input.Models,
+        ReferenceToken = reference ?? input.ReferenceToken,
+        PairTests = input.PairTests,
+        Graders = graders ?? input.Graders,
+        FamilyGaps = familyGaps ?? input.FamilyGaps,
+        Catalog = input.Catalog,
+        Questions = input.Questions
+    };
+
+    /// <summary>A grader-family gap of the members' own provider pair, Northwind minus Contoso, with its interaction contrast.</summary>
+    private static RootCauseFamilyGap MemberPairGap(double gapA, double gapB, double contrast, double contrastLower, double contrastUpper) => new()
+    {
+        Provider1 = "Northwind",
+        Provider2 = "Contoso",
+        PairedQuestionCount = 12,
+        IsMemberProviderPair = true,
+        GapA = new RootCauseGapEstimate { Value = gapA, Lower = gapA - 3, Upper = gapA + 3 },
+        GapB = new RootCauseGapEstimate { Value = gapB, Lower = gapB - 3, Upper = gapB + 3 },
+        GapPanel = new RootCauseGapEstimate { Value = (gapA + gapB) / 2, Lower = (gapA + gapB) / 2 - 2, Upper = (gapA + gapB) / 2 + 2 },
+        Contrast = new RootCauseGapEstimate { Value = contrast, Lower = contrastLower, Upper = contrastUpper }
+    };
+
+    private static readonly (string Role, string Provider)[] NorthwindContosoPanel =
+    {
+        (BenchmarkReportFacts.PanelMemberARole, "Northwind"),
+        (BenchmarkReportFacts.PanelMemberBRole, "Contoso"),
+        (BenchmarkReportFacts.ReferenceReaderRole, "Contoso"),
+        (BenchmarkReportFacts.ClaimVerifierRole, "Northwind")
     };
 
     /// <summary>An established paired Intelligence Index test of the pair, favoring <paramref name="favors"/> (<c>First</c> or <c>Second</c>).</summary>
@@ -641,9 +704,9 @@ public class RootCauseEngineTests
     }
 
     [Fact]
-    public void TheEngineVersion_IsFour()
+    public void TheEngineVersion_IsFive()
     {
-        Assert.Equal(4, RootCauseEngine.Version);
+        Assert.Equal(5, RootCauseEngine.Version);
     }
 
     [Fact]
@@ -879,5 +942,406 @@ public class RootCauseEngineTests
         Assert.All(result.SpeedRows, r => Assert.NotNull(r.UnavailableReason));
         Assert.All(result.CostRows, r => Assert.NotNull(r.UnavailableReason));
         Assert.All(result.SpeedRows, r => Assert.Empty(r.Segments));
+    }
+
+    // --- Graders (HQ4 and the grader-family gap) ---------------------------------------------------------
+
+    private static RootCauseDraft PairDraft(RootCauseInput input, string id)
+    {
+        var ctx = new RootCauseContext(input);
+        return Assert.Single(RootCauseHypotheses.PairRules(ctx, new RootCausePair("A", "B"), new Dictionary<string, bool>()), d => d.Id == id);
+    }
+
+    [Fact]
+    public void HQ4_IsRuledOut_WhenBothMembersAndTheReferenceReaderOrderThePairAlike_AndOnlyScoringGradersCount()
+    {
+        var input = WithGraders(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0, provider: "Northwind", panel: true, memberA: 86, memberB: 84, reader: 85),
+            Compared("B", 2, 75, 1.6, 1.2, provider: "Contoso", panel: true, memberA: 74, memberB: 76, reader: 75)), NorthwindContosoPanel);
+
+        var hq4 = PairDraft(input, "HQ4");
+
+        Assert.True(hq4.NotSupported);
+        Assert.Equal("Both panel members and the reference reader order the two alike.", hq4.Against[0]);
+        Assert.DoesNotContain("Both panel members order the two alike.", hq4.Against);
+        Assert.Contains("Panel member A shares a provider with Model A.", hq4.For);
+        Assert.Contains("Panel member B shares a provider with Model B.", hq4.For);
+        Assert.DoesNotContain(hq4.For, line => line.StartsWith("Reference reader", StringComparison.Ordinal) || line.StartsWith("Claim verifier", StringComparison.Ordinal));
+        var graded = RootCauseHypotheses.Grade(hq4, t => "Model " + t);
+        Assert.Equal(RootCauseGrades.NotSupported, graded.Grade);
+        Assert.Equal(RootCauseHypotheses.RefutedReason + ": both panel members and the reference reader order the two alike", graded.GradeReasons[0]);
+
+        // Without the reference reader, the members' agreement is evidence against, not a refutation.
+        var open = PairDraft(WithGraders(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0, provider: "Northwind", panel: true, memberA: 86, memberB: 84),
+            Compared("B", 2, 75, 1.6, 1.2, provider: "Contoso", panel: true, memberA: 74, memberB: 76)), NorthwindContosoPanel), "HQ4");
+        Assert.False(open.NotSupported);
+        Assert.Contains("Both panel members order the two alike.", open.Against);
+    }
+
+    [Fact]
+    public void HQ4_IsQuantifiedByTheMembersInteractionContrast_AndTheFamilyGapsAreFacts()
+    {
+        var models = new[]
+        {
+            Compared("A", 1, 85, 1.0, 1.0, provider: "Northwind"),
+            Compared("B", 2, 75, 1.6, 1.2, provider: "Contoso")
+        };
+        var input = WithGraders(ComparisonInput(models), NorthwindContosoPanel, new[] { MemberPairGap(6, -2, 8, 4, 12) });
+
+        // A contrast of 8 moves the panel's gap by about 4 of the pair's 10 points.
+        var hq4 = PairDraft(input, "HQ4");
+        Assert.True(hq4.Quantified);
+        Assert.True(hq4.Established);
+        Assert.False(hq4.NotSupported);
+        Assert.Equal(0.4, hq4.Share!.Value, 9);
+        Assert.Equal(0.2, hq4.ShareLower!.Value, 9);
+        Assert.Equal(0.6, hq4.ShareUpper!.Value, 9);
+        Assert.Contains(hq4.For, line => line.Contains("an interaction contrast of +8.0 points (95% interval +4.0 to +12.0)", StringComparison.Ordinal));
+
+        // A contrast whose interval includes zero measures the hypothesis without establishing it.
+        var weak = PairDraft(WithGraders(ComparisonInput(models), NorthwindContosoPanel, new[] { MemberPairGap(3, 1, 2, -1, 5) }), "HQ4");
+        Assert.True(weak.Quantified);
+        Assert.False(weak.Established);
+        Assert.Equal("the interaction contrast's 95% interval includes zero", weak.EstablishedText);
+
+        var result = RootCauseEngine.Compute(input);
+        var facts = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(facts, result, t => "Model " + t);
+        var byKey = facts.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
+        Assert.Equal(1, byKey["rca.graders.familyGap.count"].Value!.GetValue<int>());
+        Assert.Equal("Northwind − Contoso", byKey["rca.graders.familyGap.1.providers"].Display);
+        Assert.Equal("+6.0 points (95% interval +3.0 to +9.0)", byKey["rca.graders.familyGap.1.underA"].Display);
+        Assert.Equal("-2.0 points (95% interval -5.0 to +1.0)", byKey["rca.graders.familyGap.1.underB"].Display);
+        Assert.Equal("+8.0 points (95% interval +4.0 to +12.0)", byKey["rca.graders.familyGap.1.contrast"].Display);
+        Assert.True(byKey["rca.graders.familyGap.1.notable"].Value!.GetValue<bool>());
+        Assert.All(byKey.Keys.Where(k => k.StartsWith("rca.graders.", StringComparison.Ordinal)), key =>
+        {
+            Assert.True(BenchmarkReportFactLabels.TryLabel(key, out string label), "No label for " + key);
+            Assert.DoesNotContain(".", label.TrimEnd('.'));
+            Assert.True(RootCauseFacts.WriterHidden(key), key);
+        });
+
+        // Too few paired questions: the estimates are unavailable and nothing is notable.
+        var thin = MemberPairGap(6, -2, 8, 4, 12);
+        thin.InsufficientData = true;
+        var sparse = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(sparse, RootCauseEngine.Compute(WithGraders(ComparisonInput(models), NorthwindContosoPanel, new[] { thin })), t => "Model " + t);
+        var sparseByKey = sparse.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
+        Assert.False(sparseByKey["rca.graders.familyGap.1.contrast"].Available);
+        Assert.Equal(RootCauseFacts.FamilyGapInsufficientReason, sparseByKey["rca.graders.familyGap.1.contrast"].UnavailableReason);
+        Assert.False(sparseByKey["rca.graders.familyGap.1.notable"].Value!.GetValue<bool>());
+
+        // Without panel diagnostics there are no family-gap facts.
+        var none = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(none, RootCauseEngine.Compute(ComparisonInput(models)), t => "Model " + t);
+        Assert.DoesNotContain(none.Sorted(), f => f.Key.StartsWith("rca.graders.", StringComparison.Ordinal));
+    }
+
+    // --- Nulls without a family test ---------------------------------------------------------------------
+
+    [Fact]
+    public void H0Q_WithoutAFamilyTest_IsRejectedByThePairedBootstrap_AndItsGradeReadsAsANull()
+    {
+        var result = RootCauseEngine.Compute(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0, q => 85 + q % 3),
+            Compared("B", 2, 60, 1.6, 1.2, q => 60 + q % 3)));
+
+        var h0 = Assert.Single(result.Hypotheses, h => h.Id == "H0-Q");
+        Assert.Equal(RootCauseGrades.NotSupported, h0.Grade);
+        Assert.Contains("No family test covers this pair; the 95% paired-bootstrap interval of the per-question difference excludes zero (not adjusted).", h0.Against);
+        Assert.Null(h0.NextRunNumber);
+
+        var facts = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(facts, result, t => "Model " + t);
+        var byKey = facts.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
+        Assert.Equal("Rejected — a real difference (Not supported)", byKey["rca.hypothesis." + h0.Key + ".grade"].Display);
+        Assert.Equal(RootCauseGrades.NotSupported, byKey["rca.hypothesis." + h0.Key + ".grade"].Value!.GetValue<string>());
+        Assert.Equal(h0.Key + " (no intelligence difference)", byKey["rca.hypothesis." + h0.Key + ".ref"].Display);
+        Assert.All(result.Hypotheses, h =>
+        {
+            Assert.Equal(h.Key + " (" + RootCauseLabels.Topic(h) + ")", byKey["rca.hypothesis." + h.Key + ".ref"].Display);
+            Assert.DoesNotContain("Model ", RootCauseLabels.Topic(h), StringComparison.Ordinal);
+            Assert.True(BenchmarkReportFactLabels.TryLabel("rca.hypothesis." + h.Key + ".ref", out _));
+        });
+    }
+
+    // --- Thinking level and configuration ----------------------------------------------------------------
+
+    [Fact]
+    public void TheSameModelAtTwoLevels_HasNoThinkingConfound_AndSaysTheLevelIsTheOnlyDifference()
+    {
+        var input = ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0, provider: "Northwind", modelId: "orion", thinkingLevel: "high"),
+            Compared("B", 2, 75, 1.6, 1.2, provider: "Northwind", modelId: "orion", thinkingLevel: "max"));
+        var ctx = new RootCauseContext(input);
+
+        var drafts = RootCauseHypotheses.PairRules(ctx, new RootCausePair("A", "B"), new Dictionary<string, bool>())
+            .Where(d => d.Axis is RootCauseAxes.Speed or RootCauseAxes.Cost)
+            .ToList();
+
+        Assert.Contains(drafts, d => d.Axis == RootCauseAxes.Speed);
+        Assert.Contains(drafts, d => d.Axis == RootCauseAxes.Cost);
+        Assert.All(drafts, d =>
+        {
+            Assert.DoesNotContain(d.Confounds, c => c.StartsWith("thinking level", StringComparison.Ordinal));
+            var configuration = Assert.Single(d.Robustness, r => r.Name == RootCauseHypotheses.Configuration);
+            Assert.Equal(RootCauseCheckStatuses.Passed, configuration.Status);
+            Assert.Equal("Beyond the model, only its thinking level differs (max vs high), which is part of its configuration.", configuration.Detail);
+            Assert.Contains("Model B and Model A are the same model at max and high thinking; the thinking level is the only configuration difference.", d.For);
+        });
+    }
+
+    [Fact]
+    public void TwoModelsAtDifferentLevels_PassTheConfigurationCheck_WithADetailNamingTheLevels()
+    {
+        var input = ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0, thinkingLevel: "high"),
+            Compared("B", 2, 75, 1.6, 1.2, thinkingLevel: "max"));
+        var ctx = new RootCauseContext(input);
+
+        var drafts = RootCauseHypotheses.PairRules(ctx, new RootCausePair("A", "B"), new Dictionary<string, bool>())
+            .Where(d => d.Robustness.Any(r => r.Name == RootCauseHypotheses.Configuration))
+            .ToList();
+
+        Assert.NotEmpty(drafts);
+        Assert.All(drafts, d =>
+        {
+            var configuration = Assert.Single(d.Robustness, r => r.Name == RootCauseHypotheses.Configuration);
+            Assert.Equal(RootCauseCheckStatuses.Passed, configuration.Status);
+            Assert.Equal("Beyond the model, only its thinking level differs (max vs high), which is part of its configuration.", configuration.Detail);
+            Assert.DoesNotContain(d.For, line => line.Contains("same model", StringComparison.Ordinal));
+        });
+        Assert.Equal("No configuration key differs beyond the model.", RootCauseHypotheses.ConfigurationCheck(Array.Empty<string>()).Detail);
+    }
+
+    // --- Price effects (HC2) -----------------------------------------------------------------------------
+
+    [Fact]
+    public void APriceEffect_HasNoReplicatesCheck_IsSettledByTheCards_AndIsExemptFromTheGradeCap()
+    {
+        // Model B reads and writes as many tokens as Model A at twice the price.
+        var input = ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0),
+            Compared("B", 2, 75, 1.6, 1.0, price: 2.0));
+
+        var hc2 = PairDraft(input, "HC2");
+        Assert.DoesNotContain(hc2.Robustness, r => r.Name == RootCauseHypotheses.Replicates);
+        Assert.Equal("configuration", hc2.CheckKind);
+        Assert.Equal("Compare the two models' price cards; the price effect follows from them.", hc2.CheckText);
+        Assert.Null(hc2.NextRunKind);
+
+        var result = RootCauseEngine.Compute(input);
+        var kept = Assert.Single(result.Hypotheses, h => h.Id == "HC2");
+        Assert.Null(kept.NextRunNumber);
+        if (kept.Grade != RootCauseGrades.High)
+        {
+            var check = Assert.Single(result.Checks, c => c.Number == kept.CheckNumber);
+            Assert.Equal("configuration", check.Kind);
+        }
+        Assert.EndsWith("until a second run of each suite is made, apart from a price effect, which follows from the price cards.", result.GradeCap);
+        Assert.EndsWith("until a second run of each suite is made.", RootCauseEngine.Compute(ComparisonInput()).GradeCap);
+    }
+
+    // --- Next runs -----------------------------------------------------------------------------------------
+
+    [Fact]
+    public void ANullThatStands_PutsItsModelsInTheReplicate()
+    {
+        var result = RootCauseEngine.Compute(ComparisonInput());
+
+        var standing = result.Hypotheses.Where(h => h.Kind == "null" && h.Grade != RootCauseGrades.NotSupported).ToList();
+        Assert.NotEmpty(standing);
+        var replicate = Assert.Single(result.RecommendedRuns, r => r.Kind == RootCauseRunKinds.Replicate);
+        Assert.Equal(RootCauseNextRuns.ReplicateRuns, replicate.RunsPerModel);
+        foreach (var h in standing)
+        {
+            Assert.Contains(h.Key, replicate.HypothesisIds);
+            Assert.Equal(replicate.Number, h.NextRunNumber);
+            Assert.All(h.Models, token => Assert.Contains(200L + (token[0] - 'A' + 1), replicate.TestedModelConfigurationIds));
+        }
+        Assert.Contains("if the paired test still finds no difference with three runs per model", replicate.Decides, StringComparison.Ordinal);
+        Assert.Equal(replicate.Decides, string.Join(" ", replicate.DecidesItems!));
+        Assert.All(result.Hypotheses.Where(h => h.Grade == RootCauseGrades.NotSupported), h => Assert.Null(h.NextRunNumber));
+    }
+
+    [Fact]
+    public void ACrossModelThinkingHypothesis_NeverYieldsAThinkingPair()
+    {
+        var result = RootCauseEngine.Compute(ComparisonInput());
+        var modelIds = result.Models.ToDictionary(m => m.Token, m => m.ModelId, StringComparer.Ordinal);
+
+        var crossModel = result.Hypotheses
+            .Where(h => h.Id is "HS3" or "HC3" && h.Models.Count == 2 && modelIds[h.Models[0]] != modelIds[h.Models[1]])
+            .ToList();
+        Assert.NotEmpty(crossModel);
+        Assert.All(crossModel, h =>
+        {
+            Assert.DoesNotContain(result.RecommendedRuns, r => r.Kind == RootCauseRunKinds.ThinkingPair && r.HypothesisIds.Contains(h.Key));
+            Assert.DoesNotContain(result.Checks, c => c.HypothesisIds.Contains(h.Key) && c.Text.Contains("another thinking level", StringComparison.Ordinal));
+        });
+    }
+
+    [Fact]
+    public void AnAnalyzedSiblingAtAnotherLevel_IsTheThinkingPair_AndTheSlowestModelsNeighbor()
+    {
+        // Model C is Model B's model at medium thinking; no configuration of it is in the catalog.
+        var result = RootCauseEngine.Compute(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0),
+            Compared("B", 2, 75, 1.6, 1.2),
+            Compared("C", 3, 60, 0.9, 2.0, modelId: "model-b", thinkingLevel: "medium")));
+
+        var ws2 = Assert.Single(result.Hypotheses, h => h.Id == "WS2" && h.Models[0] == "B");
+        var run = Assert.Single(result.RecommendedRuns, r => r.Number == ws2.NextRunNumber);
+        Assert.Contains(202L, run.TestedModelConfigurationIds);
+        Assert.Contains(203L, run.TestedModelConfigurationIds);
+        Assert.DoesNotContain(result.Checks, c => c.Text.Contains("of Model B exists at another thinking level", StringComparison.Ordinal));
+
+        var slowest = Assert.Single(result.Questions, q => q.Number == 3);
+        Assert.Equal("B", slowest.Token);
+        Assert.Contains(slowest.Signals, s => s.StartsWith("against Model C: ", StringComparison.Ordinal));
+
+        // Without the sibling, the missing level is a check.
+        var alone = RootCauseEngine.Compute(ComparisonInput());
+        var own = Assert.Single(alone.Hypotheses, h => h.Id == "WS2" && h.Models[0] == "B");
+        Assert.Contains(alone.Checks, c => c.Kind == "configuration" && c.HypothesisIds.Contains(own.Key)
+                                           && c.Text.Contains("another thinking level", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheStyleHypotheses_ShareOneOptionalRunOfTheReferenceModel()
+    {
+        var input = ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0),
+            Compared("B", 2, 75, 1.6, 1.2, styleConflict: true),
+            Compared("C", 3, 60, 0.9, 2.0, styleConflict: true));
+        var ctx = new RootCauseContext(input);
+        var graded = ctx.Pairs
+            .SelectMany(p => RootCauseHypotheses.PairRules(ctx, p, new Dictionary<string, bool>()))
+            .Where(d => d.Id == "HQ5")
+            .Select(d => (Hypothesis: RootCauseHypotheses.Grade(d, ctx.Name), Draft: d))
+            .ToList();
+        Assert.True(graded.Count >= 2);
+        var kept = RootCauseHypotheses.Keep(graded);
+
+        var (runs, _) = RootCauseNextRuns.Build(ctx, kept, systemFirst: false);
+
+        var style = Assert.Single(runs, r => r.Kind == RootCauseRunKinds.StylePair);
+        Assert.Equal(RootCauseMarks.Optional, style.Mark);
+        Assert.Equal(new long[] { 201 }, style.TestedModelConfigurationIds);
+        Assert.Equal(kept.Select(k => k.Hypothesis.Key).OrderBy(k => k, StringComparer.Ordinal), style.HypothesisIds.OrderBy(k => k, StringComparer.Ordinal));
+        Assert.True(style.VerboseMode);
+    }
+
+    // --- Research questions' signals ---------------------------------------------------------------------
+
+    [Fact]
+    public void TheHighestModelsSignal_NamesTheDimensionCarryingItsLead_EvenWhenItsRunnerUpIsNoAnalyzedPair()
+    {
+        const string lead = "the largest part of the lead over Model B is Completeness (+2.7 of +10.0 points)";
+
+        var result = RootCauseEngine.Compute(ComparisonInput());
+        Assert.Equal(lead, Assert.Single(result.Questions, q => q.Number == 1).Signals[0]);
+
+        // With Model C as the reference, Model A and Model B are no analyzed pair; their split is added for the question.
+        var other = RootCauseEngine.Compute(WithGraders(ComparisonInput(), reference: "C"));
+        Assert.Contains(other.QualitySplits, s => s.First == "A" && s.Second == "B");
+        Assert.Equal(lead, Assert.Single(other.Questions, q => q.Number == 1).Signals[0]);
+        var facts = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(facts, other, t => "Model " + t);
+        Assert.Contains(facts.Sorted(), f => f.Key == "rca.quality.A.B.total");
+        Assert.Empty(RootCauseClaimSupport.CausalPhrases(lead));
+    }
+
+    [Fact]
+    public void TheSlowestModelsSignal_NamesTheComponentCarryingItsGapToTheReference()
+    {
+        var result = RootCauseEngine.Compute(ComparisonInput());
+
+        var slowest = Assert.Single(result.Questions, q => q.Number == 3);
+        var signal = Assert.Single(slowest.Signals, s => s.StartsWith("against ", StringComparison.Ordinal));
+        Assert.StartsWith("against Model A: ", signal, StringComparison.Ordinal);
+        Assert.Contains(" carries ", signal, StringComparison.Ordinal);
+        Assert.EndsWith(" s difference", signal, StringComparison.Ordinal);
+        Assert.Empty(RootCauseClaimSupport.CausalPhrases(signal));
+    }
+
+    // --- Reasoning a provider does not report separately -------------------------------------------------
+
+    [Fact]
+    public void APairWithUnreportedReasoning_WritesOneOutputRow_ThatSumsExactly()
+    {
+        var result = RootCauseEngine.Compute(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0),
+            Compared("B", 2, 75, 1.6, 1.2, reasoningReported: false)));
+
+        var pair = Assert.Single(result.CostPairs, p => p.First == "A" && p.Second == "B");
+        Assert.False(pair.NotEstablished);
+        Assert.DoesNotContain(pair.Components, c => c.Key is RootCauseSegments.Output or RootCauseSegments.Reasoning);
+        Assert.Equal(new[] { "volume", "price" }, pair.Components.Where(c => c.Key == RootCauseSegments.OutputWithThinking).Select(c => c.Effect));
+        Assert.Equal(pair.Difference!.Value, pair.Components.Where(c => c.Key != "all").Sum(c => c.Amount), 12);
+        Assert.DoesNotContain(result.Hypotheses, h => h.Id == "HC3");
+
+        var row = Assert.Single(result.CostRows, r => r.Token == "B");
+        var merged = new[] { RootCauseSegments.UncachedInput, RootCauseSegments.CacheRead, RootCauseSegments.CacheWrite, RootCauseSegments.OutputWithThinking };
+        Assert.Equal(merged, row.Segments.Select(s => s.Key));
+        Assert.Equal(row.Total!.Value, row.Segments.Sum(s => s.Value), 12);
+        Assert.Equal("output, thinking included", row.Segments[^1].Label);
+        Assert.Equal(RootCauseSegments.CostComponents, Assert.Single(result.CostRows, r => r.Token == "A").Segments.Select(s => s.Key));
+        Assert.Equal(merged, Assert.Single(result.Evidence, e => e.Token == "B").Cost.Select(s => s.Key));
+        Assert.Equal(merged, Assert.Single(result.Evidence, e => e.Token == "B").Tokens.Select(s => s.Key));
+
+        var facts = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(facts, result, t => "Model " + t);
+        var keys = facts.Sorted().Select(f => f.Key).ToList();
+        Assert.Contains("rca.cost.A.B.outputWithThinking.volume.share", keys);
+        Assert.Contains("rca.within.B.cost.outputWithThinking.share", keys);
+        Assert.All(keys.Where(k => k.Contains("outputWithThinking", StringComparison.Ordinal)), key =>
+        {
+            Assert.True(BenchmarkReportFactLabels.TryLabel(key, out string label), "No label for " + key);
+            Assert.DoesNotContain(".", label.TrimEnd('.'));
+        });
+    }
+
+    [Fact]
+    public void AProviderThatCountsThinkingInOutput_HasItsReasoningFactsUnavailable_AndItsOutputFactsSaySo()
+    {
+        var evidence = new RootCauseModelEvidence
+        {
+            Answers = Enumerable.Range(1, 4).Select(q => new RootCauseAnswerRecord
+            {
+                ItemKey = "q" + q + "@1",
+                QuestionKey = "q" + q,
+                Ok = true,
+                InputTokens = 1000,
+                OutputTokens = 800,
+                ReasoningReported = false,
+                ComponentTokens = new double[] { 1000, 0, 0, 800, 0 },
+                ComponentCost = new double[] { 0.002, 0, 0, 0.008, 0 }
+            }).ToList(),
+            RunCount = 1,
+            RunsPerSuite = 1,
+            Priced = true,
+            ReasoningReported = false,
+            PricesPerMillion = new double?[] { 2, 0.2, null, 10, 10 }
+        };
+        var facts = new BenchmarkReportFacts.FactList();
+        facts.Add("tokens.outputPerQuestion", 800.0, "800");
+
+        RootCauseEvidence.AddFacts(facts, evidence);
+
+        var byKey = facts.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
+        foreach (string key in new[] { "tokens.reasoningPerQuestion", "tokens.reasoningShare", "cost.component.reasoning.perQuestion", "price.reasoning.perMillion" })
+        {
+            Assert.False(byKey[key].Available, key);
+            Assert.Equal(RootCauseEvidence.ReasoningNotReportedReason, byKey[key].UnavailableReason);
+        }
+        Assert.EndsWith(RootCauseEvidence.ThinkingIncluded, byKey["cost.component.output.perQuestion"].Display, StringComparison.Ordinal);
+        Assert.EndsWith(RootCauseEvidence.ThinkingIncluded, byKey["tokens.outputPerQuestion"].Display, StringComparison.Ordinal);
+        Assert.Equal(800.0, byKey["tokens.outputPerQuestion"].Value!.GetValue<double>(), 9);
+        Assert.True(byKey["price.output.perMillion"].Available);
+        Assert.False(CallTelemetryMeasures.ReportsReasoningSeparately(" anthropic "));
+        Assert.True(CallTelemetryMeasures.ReportsReasoningSeparately("OpenAI"));
+        Assert.True(CallTelemetryMeasures.ReportsReasoningSeparately(null));
     }
 }

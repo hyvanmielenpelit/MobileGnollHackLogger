@@ -189,6 +189,12 @@ public static class RootCauseSegments
     public const string Output = "output";
     public const string Reasoning = "reasoning";
 
+    /// <summary>
+    /// Output and reasoning as one component, for a model whose provider counts thinking inside its output
+    /// tokens (<see cref="Overseer.Services.Telemetry.CallTelemetryMeasures.ReportsReasoningSeparately"/>).
+    /// </summary>
+    public const string OutputWithThinking = "outputWithThinking";
+
     public static readonly IReadOnlyList<string> AtRisk = new[] { NoTool, BudgetOrDefect, CriticalError, OtherLow };
     public static readonly IReadOnlyList<string> Time = new[] { Ttft, OutputGeneration, ToolExecution, OwnWaits, Other };
     public static readonly IReadOnlyList<string> CostComponents = new[] { UncachedInput, CacheRead, CacheWrite, Output, Reasoning };
@@ -210,6 +216,7 @@ public static class RootCauseSegments
         CacheWrite => "cache writes",
         Output => "visible output",
         Reasoning => "reasoning",
+        OutputWithThinking => "output, thinking included",
         _ => key
     };
 }
@@ -291,16 +298,25 @@ public sealed class RootCauseResult
     /// <summary>R2: seconds per question, split into time to first token, output generation, tools, waits and other.</summary>
     public List<RootCauseChartRow> SpeedRows { get; set; } = new();
 
-    /// <summary>R3: cost per question, split into uncached input, cache reads and writes, visible output and reasoning.</summary>
+    /// <summary>
+    /// R3: cost per question, split into uncached input, cache reads and writes, visible output and reasoning; output
+    /// and reasoning as one segment for a model whose provider does not report reasoning separately.
+    /// </summary>
     public List<RootCauseChartRow> CostRows { get; set; } = new();
 
     /// <summary>The LMDI speed decomposition of each analyzed pair.</summary>
     public List<RootCausePairDecomposition> SpeedPairs { get; set; } = new();
 
-    /// <summary>The LMDI cost decomposition of each analyzed pair.</summary>
+    /// <summary>
+    /// The LMDI cost decomposition of each analyzed pair; output and reasoning as one component when either side
+    /// does not report reasoning separately.
+    /// </summary>
     public List<RootCausePairDecomposition> CostPairs { get; set; } = new();
 
-    /// <summary>The Intelligence Index difference of each analyzed pair split by the scoring weights.</summary>
+    /// <summary>
+    /// The Intelligence Index difference of each analyzed pair split by the scoring weights, and of the highest-scoring
+    /// model and the runner-up when they are not an analyzed pair.
+    /// </summary>
     public List<RootCauseQualitySplit> QualitySplits { get; set; } = new();
 
     /// <summary>Each model's own timing, token, cost and failure figures, in <see cref="Models"/> order.</summary>
@@ -314,6 +330,12 @@ public sealed class RootCauseResult
 
     /// <summary>The highest grade the run counts allow, in a sentence; null when every model has two or more runs per suite.</summary>
     public string? GradeCap { get; set; }
+
+    /// <summary>
+    /// The panel diagnostics' grader-family gaps, one per pair of candidate providers, as the comparison computed
+    /// them; null when the diagnostics do not apply, and in a result written before engine version 5.
+    /// </summary>
+    public List<RootCauseFamilyGap>? FamilyGaps { get; set; }
 
     /// <summary>What the computation could not do and why, in words.</summary>
     public List<string> Notes { get; set; } = new();
@@ -407,6 +429,43 @@ public sealed class RootCauseProfileEntry
 
     /// <summary>The questions it rests on, as the sheet refers to them.</summary>
     public List<string> Questions { get; set; } = new();
+}
+
+/// <summary>A point estimate in quality points with its 95% interval; each part null when it was not computed.</summary>
+public sealed class RootCauseGapEstimate
+{
+    public double? Value { get; set; }
+    public double? Lower { get; set; }
+    public double? Upper { get; set; }
+
+    /// <summary>Both bounds are known and lie on the same side of zero.</summary>
+    public bool ExcludesZero() => Lower is double lo && Upper is double hi && (lo > 0 || hi < 0);
+}
+
+/// <summary>
+/// The mean per-question quality gap between the candidates of two providers (<see cref="Provider1"/> minus
+/// <see cref="Provider2"/>) under each panel member alone and under the panel, from
+/// <c>BenchmarkPanelDiagnostics</c>. <see cref="Contrast"/>, member A's gap minus member B's per question,
+/// exists only for the pair of the two members' own providers.
+/// </summary>
+public sealed class RootCauseFamilyGap
+{
+    public string Provider1 { get; set; } = string.Empty;
+    public string Provider2 { get; set; } = string.Empty;
+    public int PairedQuestionCount { get; set; }
+
+    /// <summary>Fewer paired questions than the diagnostics need; the estimates are then null.</summary>
+    public bool InsufficientData { get; set; }
+
+    /// <summary>The two providers are the panel members' own.</summary>
+    public bool IsMemberProviderPair { get; set; }
+
+    public RootCauseGapEstimate GapA { get; set; } = new();
+    public RootCauseGapEstimate GapB { get; set; } = new();
+    public RootCauseGapEstimate GapPanel { get; set; } = new();
+
+    /// <summary>The interaction contrast; null when the providers are not the members' own.</summary>
+    public RootCauseGapEstimate? Contrast { get; set; }
 }
 
 /// <summary>One analyzed model.</summary>
@@ -633,6 +692,12 @@ public sealed class RootCauseRecommendedRun
     /// <summary>"Confirms … if …; refutes it if …", stated before the run.</summary>
     public string Decides { get; set; } = string.Empty;
 
+    /// <summary>
+    /// <see cref="Decides"/> as one sentence per group of hypotheses that share a confirm-if and a refuted-if
+    /// statement; null in a result written before engine version 5.
+    /// </summary>
+    public List<string>? DecidesItems { get; set; }
+
     /// <summary>The comparability the run is predicted to have against the analyzed runs, from the keys it changes.</summary>
     public string PredictedTier { get; set; } = string.Empty;
 
@@ -682,6 +747,14 @@ public sealed class RootCauseRecommendedRun
     public int? SecondOpinionMode { get; set; }
 
     public long? ClaimVerifierModelConfigurationId { get; set; }
+
+    // The names of the profile and the graders above, as the analyzed runs' snapshots name them; null where the
+    // runs do not share one, and in a result written before engine version 5.
+    public string? ScoringProfileName { get; set; }
+    public string? AssessorName { get; set; }
+    public string? CoAssessorName { get; set; }
+    public string? ReferenceReaderName { get; set; }
+    public string? ClaimVerifierName { get; set; }
 
     /// <summary>Always null: a recommended run never writes documents of its own.</summary>
     public long? ReportWriterModelConfigurationId { get; set; }
@@ -833,7 +906,10 @@ public sealed class RootCauseModelEvidenceSummary
     public double? OutputTokens { get; set; }
     public double? ReasoningTokens { get; set; }
 
-    /// <summary>Mean USD per question by component (<see cref="RootCauseSegments.CostComponents"/>).</summary>
+    /// <summary>
+    /// Mean USD per question by component (<see cref="RootCauseSegments.CostComponents"/>); for a provider that does not
+    /// report reasoning separately, output and reasoning as one <see cref="RootCauseSegments.OutputWithThinking"/> segment.
+    /// </summary>
     public List<RootCauseSegment> Cost { get; set; } = new();
 
     /// <summary>Mean tokens per question by component.</summary>

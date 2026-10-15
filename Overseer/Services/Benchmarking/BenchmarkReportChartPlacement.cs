@@ -123,16 +123,17 @@ public static class BenchmarkReportChartPlacement
         {
             [BenchmarkReportAudience.ExecutiveSummary] = Enumerable.Repeat((BenchmarkReportChartAnchor?)BenchmarkReportChartAnchor.HowTheyCompare, 7)
                 .Append(null).ToArray(),
-            [BenchmarkReportAudience.RootCauseAnalysis] = RootCauseBrowserAnchors(),
+            [BenchmarkReportAudience.RootCauseAnalysis] = RootCauseBrowserAnchors(intelligence: false),
         };
 
     // The browser figures a Root Cause Analysis draws where peers exist, in the order of FigureKeys:
-    // intelligence in its intelligence evidence, speed and intelligence against speed in its speed
-    // evidence, cost and intelligence against cost in its cost evidence. It draws no profile, speed
-    // against cost or availability figure.
-    private static BenchmarkReportChartAnchor?[] RootCauseBrowserAnchors() => new BenchmarkReportChartAnchor?[]
+    // with intelligence, the intelligence figure in its intelligence evidence; speed and intelligence
+    // against speed in its speed evidence; cost and intelligence against cost in its cost evidence. It
+    // draws no profile, speed against cost or availability figure. The comparison scope draws no
+    // intelligence figure.
+    private static BenchmarkReportChartAnchor?[] RootCauseBrowserAnchors(bool intelligence = true) => new BenchmarkReportChartAnchor?[]
     {
-        BenchmarkReportChartAnchor.RcaIntelligence, BenchmarkReportChartAnchor.RcaSpeed, BenchmarkReportChartAnchor.RcaCost,
+        intelligence ? BenchmarkReportChartAnchor.RcaIntelligence : null, BenchmarkReportChartAnchor.RcaSpeed, BenchmarkReportChartAnchor.RcaCost,
         null,
         BenchmarkReportChartAnchor.RcaSpeed, BenchmarkReportChartAnchor.RcaCost,
         null, null

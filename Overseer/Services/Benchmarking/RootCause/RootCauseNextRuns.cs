@@ -12,8 +12,9 @@ using MobileGnollHackLogger.Data;
 using Overseer.Services;
 
 /// <summary>
-/// The next runs and checks of § A5. Code proposes a run only for a hypothesis below High that a run can
-/// settle; a hypothesis with a suite or corpus locus, and a shared failure, becomes a check. Every run
+/// The next runs and checks of § A5. Code proposes a run only for a hypothesis below High, and not ruled out,
+/// that a run can settle, and a replicate for every null that stands; a hypothesis with a suite or corpus locus,
+/// a shared failure and a price effect become checks. Every run
 /// carries its launcher settings, copied from the analyzed runs unless its kind changes them, and is
 /// ordered C, then B, then M. <see cref="LoadCatalogAsync"/> is the settings derivation's only database
 /// access; <see cref="Build"/> is pure.
@@ -192,7 +193,8 @@ public static class RootCauseNextRuns
     // Building
     // ---------------------------------------------------------------------------------------------
 
-    private sealed record RunModel(long? ConfigurationId, string Name, double? CostPerRun, double? MinutesPerRun);
+    /// <summary>A model of a run; <paramref name="Analyzed"/> when it is one of the analyzed models, not a configuration picked from the catalog.</summary>
+    private sealed record RunModel(long? ConfigurationId, string Name, double? CostPerRun, double? MinutesPerRun, bool Analyzed = false);
 
     private sealed class Plan
     {
@@ -207,6 +209,8 @@ public static class RootCauseNextRuns
         public bool? VerboseModeOverride { get; set; }
         public long? AssessorOverride { get; set; }
         public long? CoAssessorOverride { get; set; }
+        public string? AssessorOverrideName { get; set; }
+        public string? CoAssessorOverrideName { get; set; }
         public List<string> Notes { get; } = new();
         public string? Decides { get; set; }
         public int Insertion { get; init; }
@@ -251,7 +255,21 @@ public static class RootCauseNextRuns
 
         foreach (var (h, d) in kept)
         {
-            if (h.Kind == "null" || h.Grade == RootCauseGrades.High) continue;
+            // A rejected null is settled, and so is a hypothesis its own test rules out. A null that stands joins the
+            // replicate: more runs per model are what can show a difference it missed.
+            if (h.Grade == RootCauseGrades.NotSupported || (h.Kind != "null" && h.Grade == RootCauseGrades.High)) continue;
+            if (h.Kind == "null")
+            {
+                var pairModels = h.Models.Where(t => ctx.Models.Any(m => m.Token == t)).Select(ctx.Model).ToList();
+                var standing = GetOrAdd("replicate", RootCauseRunKinds.Replicate, p =>
+                {
+                    p.Batch = true;
+                    p.RunsPerModel = ReplicateRuns;
+                });
+                foreach (var m in pairModels.Append(anchor)) AddModel(standing, m);
+                standing.Hypotheses.Add((h, d));
+                continue;
+            }
 
             if (d.CheckText != null)
             {
@@ -267,11 +285,17 @@ public static class RootCauseNextRuns
             string? kind = d.NextRunKind;
             bool replicateSettles = d.PairNullStands == true
                 || h.Robustness.Any(r => r.Name == RootCauseHypotheses.Replicates && r.Status == RootCauseCheckStatuses.Failed);
+            var models = h.Models.Where(t => ctx.Models.Any(m => m.Token == t)).Select(ctx.Model).ToList();
+
+            // A thinking-level pair of one model cannot settle a claim that compares two different models.
+            if (kind == RootCauseRunKinds.ThinkingPair && models.Count >= 2 && RootCauseHypotheses.DifferentModels(models[0], models[1]))
+            {
+                kind = RootCauseRunKinds.Replicate;
+            }
             if (kind == RootCauseRunKinds.Replicate && !replicateSettles) kind = null;
             if (kind == RootCauseRunKinds.Control && !ctx.NeedsControlRun) kind = replicateSettles ? RootCauseRunKinds.Replicate : null;
             if (kind == null) continue;
 
-            var models = h.Models.Where(t => ctx.Models.Any(m => m.Token == t)).Select(ctx.Model).ToList();
             var worse = models.FirstOrDefault() ?? anchor;
             Plan? plan = null;
 
@@ -296,16 +320,17 @@ public static class RootCauseNextRuns
                     break;
 
                 case RootCauseRunKinds.StylePair:
-                    plan = GetOrAdd("style:" + worse.Token, kind, p =>
+                    // One run of the reference model in the other style settles every style hypothesis of the document.
+                    plan = GetOrAdd("style:" + anchor.Token, kind, p =>
                     {
                         p.Purpose = RootCausePurposes.Chat;
                         p.RunCount = 1;
-                        bool concise = worse.Evidence.Settings.VerboseMode != true;
+                        bool concise = anchor.Evidence.Settings.VerboseMode != true;
                         p.VerboseModeOverride = concise;
                         p.Notes.Add("Response Style " + (concise ? "Detailed" : "Concise") + "; the analyzed runs used "
                             + (concise ? "Concise" : "Detailed") + " and are the other half of the pair. Everything else is unchanged.");
                     });
-                    AddModel(plan, worse);
+                    AddModel(plan, anchor);
                     break;
 
                 case RootCauseRunKinds.PanelSwap:
@@ -365,10 +390,11 @@ public static class RootCauseNextRuns
     }
 
     /// <summary>
-    /// Folds every time-of-day repeat and thinking-level pair whose models all belong to a replicate of
+    /// Folds every time-of-day repeat and thinking-level pair whose analyzed models all belong to a replicate of
     /// <see cref="ReplicateRuns"/> or more runs per suite into that replicate: it settles their hypotheses too,
-    /// starts each run at a different time of day when a time-of-day repeat was folded, and takes the most
-    /// urgent purpose among them (the chat, then the benchmark, then model selection).
+    /// runs the plan's models from the catalog as well, starts each run at a different time of day when a
+    /// time-of-day repeat was folded, and takes the most urgent purpose among them (the chat, then the benchmark,
+    /// then model selection).
     /// </summary>
     private static void Fold(Dictionary<string, Plan> plans)
     {
@@ -378,11 +404,13 @@ public static class RootCauseNextRuns
             => replicate.Models.Any(m => (model.ConfigurationId.HasValue && m.ConfigurationId == model.ConfigurationId) || m.Name == model.Name);
 
         var folded = plans.Values
-            .Where(p => p.Kind is RootCauseRunKinds.TimeStratum or RootCauseRunKinds.ThinkingPair && p.Models.Count > 0 && p.Models.All(Covers))
+            .Where(p => p.Kind is RootCauseRunKinds.TimeStratum or RootCauseRunKinds.ThinkingPair
+                        && p.Models.Any(m => m.Analyzed) && p.Models.Where(m => m.Analyzed).All(Covers))
             .OrderBy(p => p.Insertion)
             .ToList();
         foreach (var plan in folded)
         {
+            foreach (var model in plan.Models.Where(m => !m.Analyzed && !Covers(m)).ToList()) replicate.Models.Add(model);
             foreach (var hypothesis in plan.Hypotheses)
             {
                 if (!replicate.Hypotheses.Any(x => x.Hypothesis.Key == hypothesis.Hypothesis.Key)) replicate.Hypotheses.Add(hypothesis);
@@ -397,7 +425,7 @@ public static class RootCauseNextRuns
     {
         long? id = model.Evidence.Settings.TestedModelConfigurationId;
         if (plan.Models.Any(m => (id.HasValue && m.ConfigurationId == id) || m.Name == model.Label)) return;
-        plan.Models.Add(new RunModel(id, model.Label, model.CostPerRunUsd, model.Evidence.MeanMinutesPerRun));
+        plan.Models.Add(new RunModel(id, model.Label, model.CostPerRunUsd, model.Evidence.MeanMinutesPerRun, Analyzed: true));
     }
 
     private static void AddOption(Plan plan, RootCauseConfigOption option)
@@ -408,7 +436,8 @@ public static class RootCauseNextRuns
 
     /// <summary>
     /// The model at two thinking levels: the pair already analyzed when the hypothesis names one model at two
-    /// levels, else its configuration and another configured one of the same model id at another level.
+    /// levels; else the model and an analyzed model of the same id at another level, the nearest level first;
+    /// else its configuration and another configured one of the same model id at another level.
     /// </summary>
     private static Plan? ThinkingPair(RootCauseContext ctx, RootCauseModelInput worse, IReadOnlyList<RootCauseModelInput> models,
         RootCauseHypothesis hypothesis, Func<string, string, Action<Plan>, Plan> getOrAdd)
@@ -418,6 +447,21 @@ public static class RootCauseNextRuns
         {
             var plan = getOrAdd("thinking:" + worse.ModelId.Trim().ToLowerInvariant(), RootCauseRunKinds.ThinkingPair, p => Init(p, worse));
             foreach (var m in sameModel) AddModel(plan, m);
+            return plan;
+        }
+
+        var sibling = ctx.Models
+            .Where(m => m.Token != worse.Token
+                        && string.Equals(m.ModelId?.Trim(), worse.ModelId?.Trim(), StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(m.ThinkingLevel?.Trim(), worse.ThinkingLevel?.Trim(), StringComparison.OrdinalIgnoreCase))
+            .OrderBy(m => Math.Abs(RootCauseHypotheses.ThinkingRank(m.ThinkingLevel) - RootCauseHypotheses.ThinkingRank(worse.ThinkingLevel)))
+            .ThenBy(m => m.Token, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (sibling != null)
+        {
+            var plan = getOrAdd("thinking:" + worse.ModelId.Trim().ToLowerInvariant(), RootCauseRunKinds.ThinkingPair, p => Init(p, worse));
+            AddModel(plan, worse);
+            AddModel(plan, sibling);
             return plan;
         }
 
@@ -469,6 +513,8 @@ public static class RootCauseNextRuns
             p.RunsPerModel = Math.Max(1, models.Min(m => m.Evidence.RunsPerSuite));
             p.AssessorOverride = picks[0].Id;
             p.CoAssessorOverride = picks[1].Id;
+            p.AssessorOverrideName = picks[0].Label;
+            p.CoAssessorOverrideName = picks[1].Label;
             p.Notes.Add("Graded by a panel of " + picks[0].Label + " and " + picks[1].Label + ", from two providers other than the analyzed graders'.");
         });
         foreach (var m in models) AddModel(plan, m);
@@ -537,7 +583,9 @@ public static class RootCauseNextRuns
             Number = number,
             Kind = plan.Kind,
             Purpose = plan.Purpose,
-            Mark = plan.Kind == RootCauseRunKinds.Control || plan.Hypotheses.Any(x => bestKeys.Contains(x.Hypothesis.Key))
+            // A response-style pair states a condition, not a cause, so it is never more than optional.
+            Mark = plan.Kind != RootCauseRunKinds.StylePair
+                   && (plan.Kind == RootCauseRunKinds.Control || plan.Hypotheses.Any(x => bestKeys.Contains(x.Hypothesis.Key)))
                 ? RootCauseMarks.Recommended
                 : RootCauseMarks.Optional,
             HypothesisIds = plan.Hypotheses.Select(x => x.Hypothesis.Key).Distinct(StringComparer.Ordinal).ToList(),
@@ -558,6 +606,11 @@ public static class RootCauseNextRuns
             SecondOpinionAssessorModelConfigurationId = settings.SecondOpinionAssessorModelConfigurationId,
             SecondOpinionMode = settings.SecondOpinionMode,
             ClaimVerifierModelConfigurationId = settings.ClaimVerifierModelConfigurationId,
+            ScoringProfileName = settings.ScoringProfileName,
+            AssessorName = plan.AssessorOverride.HasValue ? plan.AssessorOverrideName : settings.AssessorName,
+            CoAssessorName = plan.CoAssessorOverride.HasValue ? plan.CoAssessorOverrideName : settings.CoAssessorName,
+            ReferenceReaderName = settings.ReferenceReaderName,
+            ClaimVerifierName = settings.ClaimVerifierName,
             ReportWriterModelConfigurationId = null,
             AfterSystemHypotheses = systemFirst && plan.Purpose == RootCausePurposes.ModelSelection,
             When = plan.TimeOfDay ? "start each run at a different time of day" : null
@@ -597,7 +650,8 @@ public static class RootCauseNextRuns
         };
         if (plan.TimeOfDay && plan.Kind == RootCauseRunKinds.Replicate) run.PredictedTier += "; time of day differs, which the speed comparison discloses";
 
-        run.Decides = plan.Decides ?? Decides(plan.Hypotheses);
+        run.DecidesItems = plan.Decides != null ? new List<string> { plan.Decides } : Decides(plan.Hypotheses);
+        run.Decides = string.Join(" ", run.DecidesItems);
 
         var (cost, minutes, estimated) = Estimate(ctx, plan, batch);
         run.EstimatedCostUsd = cost;
@@ -611,7 +665,7 @@ public static class RootCauseNextRuns
     /// statement, in the order of each group's first hypothesis: <c>Confirms HQ2.1 and HQ2.2 if …; refutes
     /// each if ….</c>, or <c>… refutes it if ….</c> for a group of one.
     /// </summary>
-    private static string Decides(IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> hypotheses)
+    private static List<string> Decides(IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> hypotheses)
     {
         var groups = hypotheses
             .Select(x => (x.Hypothesis.Key,
@@ -620,9 +674,9 @@ public static class RootCauseNextRuns
             .GroupBy(x => (x.Confirm, x.Refute))
             .Select(g => (Keys: g.Select(x => x.Key).Distinct(StringComparer.Ordinal).ToList(), g.Key.Confirm, g.Key.Refute));
 
-        return string.Join(" ", groups.Select(g =>
+        return groups.Select(g =>
             "Confirms " + BenchmarkReportFormat.LetterList(g.Keys) + " if " + g.Confirm
-            + "; refutes " + (g.Keys.Count == 1 ? "it" : "each") + " if " + g.Refute + "."));
+            + "; refutes " + (g.Keys.Count == 1 ? "it" : "each") + " if " + g.Refute + ".").ToList();
     }
 
     /// <summary>

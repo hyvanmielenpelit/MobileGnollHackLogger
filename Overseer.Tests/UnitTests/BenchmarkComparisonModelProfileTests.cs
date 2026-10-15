@@ -104,8 +104,24 @@ public class BenchmarkComparisonModelProfileTests
         var facts = FactsOf(profile);
         Assert.Equal("1 of 4 answers", Fact(facts, "model.A.profile.outcome.correct").Display);
         var wrong = Fact(facts, "model.A.profile.outcome.wrongInsteadOfAbstaining");
+        Assert.False(wrong.Available);
+        Assert.Equal("Fewer than 3 answers were incorrect or not attempted (2), too few for a rate.", wrong.UnavailableReason);
+    }
+
+    [Fact]
+    public void WrongInsteadOfAbstaining_IsARate_FromThreeIncorrectOrNotAttemptedAnswers()
+    {
+        var run = FourAnswerRun();
+        run.ScoringMethodVersion = 13;
+        AnswerAt(run, 2).AccuracyLevel = 2;
+        AnswerAt(run, 3).AccuracyLevel = 2;
+        AnswerAt(run, 4).AccuracyLevel = 3;
+        AnswerAt(run, 4).NotAttempted = true;
+
+        var wrong = Fact(FactsOf(BenchmarkComparisonModelProfile.FromRuns(new[] { run })), "model.A.profile.outcome.wrongInsteadOfAbstaining");
+
         Assert.True(wrong.Available);
-        Assert.Equal("50% (1 of the 2 answers that were incorrect or not attempted)", wrong.Display);
+        Assert.Equal("67% (2 of the 3 answers that were incorrect or not attempted)", wrong.Display);
     }
 
     [Fact]

@@ -850,6 +850,21 @@ graded Low or higher, hedged when Low; an axis in a document with pairs needs a 
 median of all models, three or more (§§ 15 and 17). A document stored earlier keeps its stored facts:
 its research questions render as before, apart from its footer.
 
+**Root Cause Analysis correctness, completeness and concision (2026-10-15, Comparison #4 review)** move
+comparison-wide documents to **format 20** (`ComparisonReportFormatVersion` 19 → 20), per-model
+documents to **format 15** (`ReportFormatVersion` 14 → 15) and `RootCauseEngine.Version` 4 → 5; chat
+consistency documents stay at 4 and `BenchmarkReportChartLayout.CurrentVersion` does not move. Tied ranks
+are per-model spans (§ 15); a provider that counts thinking inside its output (Anthropic) has its
+reasoning *Unavailable*, never zero, and one *output, thinking included* row; the grader-family
+interaction contrast of the panel diagnostics becomes HQ4's measured evidence; a null with no family
+test is judged by its paired-bootstrap interval; the thinking level is the explanation between two
+levels of one model, not a confound; a standing null joins the replicate run; at most one response-style
+pair, always optional; excerpts are allocated in rounds across questions with suites interleaved;
+critical-error resolutions are printed; and the body, appendices and server figures drop repetition and
+constant columns (§ 17). A document stored earlier keeps its stored facts and renders with its old
+wording where a new fact or field is absent; **its tied-rank text changes**, because ranks are recomputed
+from the stored entries at render time.
+
 **Comparison format version 14** (2026-10-14) moves comparison-wide documents only
 (`ComparisonReportFormatVersion` 13 → 14); per-model documents stay at 12 and chat consistency documents
 at 3. It adds the reference model and the baseline model, the failure profile, the comparison with the
@@ -2997,13 +3012,16 @@ other models without naming them.
   `spread.quality`, `spread.dimension.<d>`, `spread.speed` and `spread.cost` (*"from 62 (Model D) to 85
   (Model A), 23 points apart"*), and `questions.anyCriticalError`, `questions.wideSpread` and
   `questions.sharedLow`.
-- **Joint ranks.** `BenchmarkReportFacts.JointRanks` ranks by Intelligence Index and joins a model to the
-  group of the model just above it when their 95 % intervals overlap (touching counts) or their scores
-  are equal. Groups are **transitive overlap chains**: A–B and B–C overlapping make A, B and C one group
-  even when A and C do not overlap. A tied rank prints the span of its group, *"2–9 of 9 (tied: intervals
-  overlap)"* (`JointRankText`, span from `BenchmarkReportFacts.TiedRankSpan`), and a table cell *2–9
-  (tied)*; the word *joint* is not used in document text. The same helper words the per-model documents'
-  ranks (W2, below).
+- **Joint ranks.** `BenchmarkReportFacts.JointRanks` gives each model the **span of places its 95 %
+  interval allows**: first = 1 + the number of models above it, last = N − the number below it. X is
+  *above* Y when both have intervals and X's lower bound is above Y's upper bound, or when either has no
+  interval and X's score is higher; equal scores and touching bounds are never *above*. Spans are per
+  model, not transitive chains: with A–B and B–C overlapping and A above C, A reads 1–2, B 1–3 and C 2–3.
+  A tied rank prints its span, *"5–9 of 9 (tied: intervals overlap)"* (`JointRankText`, span from
+  `BenchmarkReportFacts.TiedRankSpan`), and a table cell *5–9 (tied)*; the word *joint* is not used in
+  document text. The same helper words the per-model documents' ranks (W2, below). Ranks are recomputed
+  from the stored entries at render time, so a document stored before 2026-10-15's format 20 shows the
+  spans too; its stored `quality.rank` fact keeps the old group rank.
 - **The paired-test family** comes from the service step 2's *Paired tests* view uses, requested for the
   covered models only, so each Holm adjustment counts exactly the tests the document reports: *Against a
   reference* with the document's **reference model** (below; model A when none was chosen), plus *All pairs* when there are **3 to 6** covered
@@ -3022,12 +3040,17 @@ other models without naming them.
   column is headed by its letter in the models table."*; it then says that *—* under a model marks a
   question it was not asked or not scored on and, when any topic is missing, that *—* under Topic marks
   a question not given in detail.
-- **Excerpts** share one total budget, `AnswerExcerptChars` × the number of questions, allotted in this
-  order: questions where any model made a critical error or had a refuted answer sentence; then those
-  whose scores span at least 20 points, widest first; then those every model scored below 50 (a shared
-  gap: chat, corpus or suite); then the rest. Within a question the models with a critical error or a
-  refuted sentence come first, then the lowest scores; each excerpt is from the model's run whose score
-  is closest to its score on the question. Each question's text and rubric are given once.
+- **Excerpts** share one total budget, `AnswerExcerptChars` × the number of questions. Questions are
+  ordered in four groups: those where any model made a critical error or had a refuted answer sentence;
+  then those whose scores span at least 20 points, widest first; then those every model scored below 50
+  (a shared gap: chat, corpus or suite); then the rest. Within a group the suites are **interleaved**:
+  the first question of every suite by the group's key, then the second, and so on. Within a question the
+  models with a critical error or a refuted sentence come first, then scored before unscored, then the
+  lowest scores. The budget is spent in **rounds**, at most three: round *r* gives each question, in that
+  order, its *r*-th excerpt while the budget lasts, so every question of the first group has an excerpt
+  before any question has a second. An excerpt longer than the remaining budget is skipped. Each excerpt
+  is from the model's run whose score is closest to its score on the question. Each question's text and
+  rubric are given once.
 
 **The reference model and the baseline model (format 14).** `BenchmarkReportPackRequest.ReferenceEntryKey`
 names the covered model the documents compare the others with; null means model A, the highest
@@ -3180,8 +3203,8 @@ behind a confirmation.
 
 ### The rendered documents
 
-`ReportFormatVersion` for comparison scope is **18** (`ComparisonReportFormatVersion`); per-model
-documents are at 14 (§ 7). Both comparison document types open with the document type as a bold kicker
+`ReportFormatVersion` for comparison scope is **20** (`ComparisonReportFormatVersion`); per-model
+documents are at 15 (§ 7). Both comparison document types open with the document type as a bold kicker
 (*EXECUTIVE SUMMARY*, *ROOT CAUSE ANALYSIS*), then the comparison's name as the H1
 (`BenchmarkPdfDocumentInfo.ComparisonDocumentHeading`: *Comparison #12 — Spring model sweep*), then a
 *Comparison:* line with only what the name does not say (*5 models · computed 2026-09-21*); the stored
@@ -3695,10 +3718,10 @@ Each practice is enforced in code, not left to the writer:
 | Practice | How the document enforces it |
 |---|---|
 | Separate observation from inference | Evidence and known facts are computed by code. The validator removes any paragraph in an evidence slot that uses causal wording (rule 32) |
-| Test the null first | Every axis opens with hypothesis `H0`: the difference is within sampling noise (intervals overlap and no paired test established). No mechanism can be graded above *Low* for a pair whose `H0` stands |
+| Test the null first | Every axis opens with hypothesis `H0`: the difference is within sampling noise (intervals overlap and no paired test established). No mechanism can be graded above *Low* for a pair whose `H0` stands. A pair no family tests is judged by the 95 % paired-bootstrap interval of its per-question differences over at least 5 shared questions (`RootCauseContext.PairedBootstrapExcludesZero`, not adjusted), engine version 5 |
 | Effect sizes with intervals, adjusted for multiplicity | Pair facts keep their Holm family; decomposition shares carry bootstrap intervals over questions |
 | Exact decompositions, not correlations | Speed and cost differences are split additively with the logarithmic-mean Divisia index (LMDI), which is exact. Intelligence is split by the scoring weights. No cross-model correlation is ever a known fact (n ≤ a dozen models) |
-| Name the confounds | A hypothesis lists the configuration keys that differ between the models it compares (thinking level, service tier, harness, scoring method, graders, prompt options). An open confound caps it at *Moderate* |
+| Name the confounds | A hypothesis lists the configuration keys that differ between the models it compares (thinking level, service tier, harness, scoring method, graders, prompt options). An open confound caps it at *Moderate*. For **one model at two thinking levels** (`RootCauseHypotheses.SameModelAtTwoLevels`) the level is the explanation, not a confound: the hypothesis says so in a *For* line. Between two different models the *Configuration* check passes and names the level as part of the model's configuration, so it never contradicts Appendix A |
 | Instrument before model | Every hypothesis has a **locus**: `model`, `chat` (prompt or tools), `harness` (grading or instrument), `suite` (question or rubric), `corpus`, or `provider` (serving or infrastructure) — the triage categories of `server_benchmark_to_chat_transfer` § 2, plus model and provider. A `harness` or `suite` hypothesis graded Moderate or higher sets the **system first** flag (`rca.systemFirst`), which puts model-selection runs behind it, as `server_benchmark_runbook` § 4 orders them |
 | Falsifiability | Every hypothesis carries a *refuted if* statement. Every hypothesis below *High* names the next run, or the check, that would settle it |
 | Robustness | Code runs leave-one-question-out, leave-one-suite-out (battery), replicate stability and panel-member agreement checks on each hypothesis. Each one that fails or cannot be assessed lowers the grade, with a stated reason |
@@ -3733,6 +3756,26 @@ Each `sheet.Questions` row also carries the subject's per-question `InputTokens`
 **A fact whose source columns are missing on a run** — an older `CallTelemetryVersion` or harness — is
 *Unavailable* with a reason, **never zero**; the hypotheses that need it do not fire, its chart row reads
 *not recorded*, and a `replicate` run may be proposed instead.
+
+**A provider that counts thinking inside its output tokens** (Anthropic,
+`CallTelemetryMeasures.ReportsReasoningSeparately` false) stores `ReasoningTokens = 0`, which is not a
+measurement. Its answers carry `ReasoningReported = false`: `tokens.reasoningPerQuestion`,
+`.reasoningShare`, `cost.component.reasoning.perQuestion` and `price.reasoning.perMillion` are
+*Unavailable* (*"This provider counts thinking inside its output tokens and does not report it
+separately."*), and `cost.component.output.perQuestion` and `tokens.outputPerQuestion` end *(thinking
+included)*. The cost rows and the chart's R3 segments show one *output, thinking included* component
+(`RootCauseSegments.OutputWithThinking`). The pair decompositions keep their five components for the
+rules; a written cost pair in which either side does not report merges output and reasoning into one row
+whose effects are the sums, so it still sums exactly (`RootCauseContext.WrittenCostPair`). HS3 is not
+established for such a pair and says why; HC3 does not fire.
+
+**Grader-family gaps** come from the panel diagnostics, unchanged (`BenchmarkPanelDiagnostics.BuildFamilyGaps`,
+copied by `RootCauseEvidence.FamilyGaps`): per provider pair, the quality gap under member A, under member
+B and under the panel, and for the two members' own provider pair the **interaction contrast** (member A's
+gap minus member B's, per question) with its 95 % interval, withheld under 5 paired questions. Facts
+`rca.graders.familyGap.count` and per gap `rca.graders.familyGap.<n>.providers`, `.underA`, `.underB`,
+`.contrast` and `.notable` (the contrast's interval excludes zero). A panel score is the mean of two
+members, so a contrast of *d* moves a cross-provider pair by about *d* ÷ 2.
 
 **Decompositions** (`RootCauseDecomposition`), all exact, per pair — the reference against each model,
 plus the leader and the last model on each axis — and within one model by group (difficulty band, or
@@ -3822,21 +3865,21 @@ differs; excluded and degraded entries take part only on the axes they are compa
 | HQ1 | Intelligence | A scored lower because it answered without tools more often | model / chat | Higher `noToolAnswers` rate; `score.withoutTools` below `.withTools` | Without-tool answers score as well; rate difference under 2 answers |
 | HQ2 | Intelligence | A's shortfall is concentrated in confirmed critical errors | model | Critical-error at-risk points at least half the gap | Caps unresolved or overturned (method 13); the shortfall is spread across many questions |
 | HQ3 | Intelligence | Shared failures on specific questions point to the instrument, not the models | suite / corpus / chat | `sharedLow` questions; every model or nearly every model below 50 | One model answered well |
-| HQ4 | Intelligence | The order depends on the graders | harness | Judge-dependent pair; same-provider grader; panel disagreement rate at least twice the median | Both members rank alike; the reference reader agrees |
+| HQ4 | Intelligence | The order depends on the graders | harness | Judge-dependent pair; a scoring grader (member A, member B, or the assessor of a single-assessor run) whose provider matches exactly one side — the reference reader, second reader and claim verifier never count; panel disagreement rate at least twice the median. For a pair of the members' own two providers with an available interaction contrast it is **quantified**: share 0.5 × \|contrast\| ÷ the pair's gap, interval from the halved contrast bounds, established when the contrast's interval excludes zero | Both members and the reference reader order the two alike, and the pair is not judge-dependent (`PanelAgreementCheck` plus both reader indices); without a reader the rule is not refuted |
 | HQ5 | Intelligence | Completeness was lowest under the concise style | chat | `responseStyleConflict` true for the models concerned | — (never graded above *Low*: no comparison run covers style; it states a condition, not a cause, as `server_benchmark_to_chat_transfer` § 3 requires) |
-| HQ6 | Intelligence | A guessed where it should have abstained | model | `wrongInsteadOfAbstaining` higher, with Wilson intervals not overlapping | Intervals overlap |
+| HQ6 | Intelligence | A guessed where it should have abstained | model | `wrongInsteadOfAbstaining` higher, with Wilson intervals not overlapping (the measure is *Unavailable* under 3 incorrect or not-attempted outcomes) | Intervals overlap |
 | HQ7 | Intelligence | Budget, truncation or output defects cost A points | harness / provider | `toolLimitHits`, `truncated`, `outputDefects` at-risk points, at least 1 and above B's | Zero signals; points at risk under 1 |
 | HQ8 | Intelligence | A's lower thinking level explains the gap | model | Same model at two levels in the set; the dimension test at the lower level | Thinking-level inversion (the notable finding) |
 | HQ9 | Intelligence | The verifier would clear part of A's Accuracy shortfall | harness | Verification-cleared sensitivity above the index (by at least half a point) | Sensitivity equals the index |
 | HS1 | Speed | A is slower mainly from more model calls (tool rounds) | model / chat | Call-count share is the largest, with an interval excluding 0 | Per-call latency or decode share is larger |
 | HS2 | Speed | A is slower mainly from longer per-call latency (TTFT) | provider / model | TTFT share largest; `ttftPerCallP50` ratio established | Decode or call count dominates |
-| HS3 | Speed | A is slower mainly from more output (reasoning) tokens | model | Output-token share largest; `reasoningShare` higher | Decode-rate share larger |
+| HS3 | Speed | A is slower mainly from more output (reasoning) tokens | model | Output-token share largest; `reasoningShare` higher. Not established, with an *Against* line, when either side does not report reasoning separately | Decode-rate share larger |
 | HS4 | Speed | A is slower mainly from a slower decode rate | provider | Decode-rate share largest | Token share larger |
 | HS5 | Speed | Own waits or retries inflated A's time | harness / provider | `ownWaitShare` or `retriesPerAnswer` above the median | Under 5 % of the gap |
 | HS6 | Speed | Served tier differed from the requested tier | provider | `servedTierMismatch` | No mismatch |
 | HC1 | Cost | A costs more mainly from token volume | model / chat | Volume effect largest; tokens per question ratio established | Price effect larger |
-| HC2 | Cost | A costs more mainly from per-token price | model | Price effect largest | Volume larger |
-| HC3 | Cost | Reasoning tokens drive A's cost | model | Reasoning component largest | — |
+| HC2 | Cost | A costs more mainly from per-token price | model | Price effect largest. Under catalog pricing, or when neither side's prices differ between runs, it carries no *Replicates* check but a *configuration* check (*"Compare the two models' price cards; the price effect follows from them."*), and the single-run grade cap exempts it | Volume larger |
+| HC3 | Cost | Reasoning tokens drive A's cost | model | Reasoning component largest; both sides report reasoning separately | — |
 | HC4 | Cost | Weak prompt caching raises A's cost | chat / provider | `cacheReadShare` below the median by 20 points or more, and the uncached-input component is largest | Cache-read share comparable |
 | HC5 | Cost | More tool rounds multiply A's input tokens | chat / model | Input-volume effect largest and `modelCallsPerAnswer` higher | Calls per answer comparable |
 
@@ -3886,8 +3929,11 @@ where it has a share; `<n>` numbers the hypotheses of one rule from 1. The **lab
 models: a pair's is *"{first}'s {topic}, compared with {second}"* (*"Model F's critical errors, compared
 with Model E"*, *"Vega Pro's higher price per token, compared with Orion Max"*) and a within-model one
 *"{model}'s {topic}"* (*"Model D's time spent on tool rounds"*). `MaxWords` (10) caps the topic only, so
-a model name is never cut. A reader meets a name, not only an id, and the writer can cite a cause inside
-its own sentence; tables print the id in front (*HQ1.1: …*).
+a model name is never cut. Labels appear in Conclusions and Appendix C; the hypothesis tables print the
+id alone in their first cell. From engine version 5 each hypothesis also has
+`rca.hypothesis.<id>.<n>.ref`, the id with the rule's topic and no model names (*"HQ1.1 (answers without
+tools)"*, `RootCauseLabels.Topic`), and the writer cites a hypothesis in prose by its `.ref` token, never
+by chaining labels into a sentence; rule 33 accepts any token under the hypothesis prefix.
 
 **Null hypotheses** keep their grade value and sort order, but documents print their grade as what it
 means: a rejected null as *Rejected — a real difference (Not supported)*, a null that stands as *Stands —
@@ -3920,7 +3966,12 @@ comparative first, then within-model, *"none fired"* without one), `.status` (th
 words: *Established (High)*, *Probable (Moderate)*, *Suggestive (Low)*, or *Unknown*), `.signals` (the
 model's top measured signals, from its profile), `.withinOnly` (no comparative hypothesis graded Low or
 higher answers it) and, for questions 1 and 2, `.orderEstablished`. Question 1 takes the pair hypotheses
-where the model is the **better** side, and only its strengths as signals; questions 2 to 4 take the pair
+where the model is the **better** side, and as its first signal the dimension split of its lead over the
+runner-up (*"most of the lead over {runner-up} is Completeness (+2.7 of +4.4 points)"*, or *"the largest
+part"* under half), computed beside the analyzed pairs when that pair is not one of them; then its
+strengths. Question 3's signals add, when such a decomposed speed pair exists, the slowest model against
+its analyzed sibling at another thinking level, else the reference, else the fastest model: *"against
+{other}: {component} carries {share} of the {x} s difference"*; questions 2 to 4 take the pair
 hypotheses where it is the **worse** side and its own within-model hypotheses. HQ3 (shared failures)
 answers none of them. The strength is the best **comparative** grade at Low or higher; when there is
 none it is the best within-model grade capped at Low, so a question answered only by the model's own
@@ -4060,27 +4111,31 @@ rubric of S1-Q12 against the source"*. So does a run that cannot be set up: a th
 configured model at another level, a panel swap without two configured graders of other providers, or a
 control run with no configured recommended model of another provider, each with what to add. A
 `replicate` is proposed only where it can settle something: a pair whose `H0` stands, or a hypothesis
-whose *Replicates* check failed.
+whose *Replicates* check failed. **A null that stands** (any `H0` not rejected, `H0-W` included) joins
+the replicate with its models, confirming *"if the paired test still finds no difference with three runs
+per model"* (engine version 5), so no analyzed model is left out of it. A hypothesis graded *Not
+supported* proposes nothing.
 
 | Kind | Fires for | Run | Purpose |
 |---|---|---|---|
 | `replicate` | Any graded pair limited by a single run per suite, or an `H0` that stands | Model batch, same target (suite or battery), *Runs per Suite* / *Runs per model* 3, the hypothesis' models plus the reference (or the subject) | M; B when every hypothesis it settles points first to the `harness` |
-| `thinkingPair` | HQ8, HS3, HC3, WS2 | Model batch of the same model at two thinking levels: the pair already analyzed, else the model's configuration and the nearest configured, enabled Benchmark-role configuration of the same model id at another level | M |
-| `stylePair` | HQ5 | One single run of the model at the other *Response Style* (*Detailed* after *Concise*, or the reverse), everything else unchanged; the analyzed runs are the other half of the pair | C |
+| `thinkingPair` | HQ8, HS3, HC3, WS2, only for a hypothesis about **one** model id (a hypothesis comparing two different models takes the replicate, or nothing) | Model batch of the same model at two thinking levels: an **analyzed** sibling first (same model id, another level, nearest rank), else the model's configuration and the nearest configured, enabled Benchmark-role configuration of the same model id at another level | M |
+| `stylePair` | HQ5 | **At most one per document**: one single run of the reference model at the other *Response Style* (*Detailed* after *Concise*, or the reverse), everything else unchanged, serving every HQ5; always **Optional** (an isolated pair showed no style effect, and the controlled verbose pair was declined on 2026-09-27) | C |
 | `panelSwap` | HQ4, HQ9, WQ6 | The same models graded by a panel from two other providers than the analyzed graders' (configured graders only) | B |
 | `timeStratum` | HS2, HS4, HS5, HS6, WS1, WS5 | The model's run repeated, *Number of Runs* 3, each started at a different time of day (the run's note says so) | C |
 | `control` | A run- or battery-completion document with fewer than 2 qualifying controls; a per-model pack whose subject has fewer than 2 comparable peers | Model batch, same target and graders, **without the subject** (its run already exists): the currently recommended model (`RecommendedModels` in `Overseer/appsettings.json`) of each other provider that has a configured, enabled Benchmark-role configuration, up to the controls needed. A finished run of it becomes a control automatically | B |
 
-**Folding.** After the plans are merged by key, a `timeStratum` or `thinkingPair` plan whose models all
-belong to a `replicate` of three or more runs per suite is folded into it (`RootCauseNextRuns.Fold`):
-the replicate takes over its hypotheses, gains the instruction *"start each run at a different time of
+**Folding.** After the plans are merged by key, a `timeStratum` or `thinkingPair` plan whose **analyzed**
+models all belong to a `replicate` of three or more runs per suite is folded into it
+(`RootCauseNextRuns.Fold`); a model the plan adds that has no analyzed runs is appended to the replicate.
+The replicate takes over its hypotheses, gains the instruction *"start each run at a different time of
 day"* (`When`) when a time-of-day repeat was folded, and takes the most urgent purpose among them (C
 before B before M). Three passes started at different times of day settle what the separate repeats
 would, for a fraction of the cost: in Comparison #4's analysis under engine version 1, the nine-model
 replicate covered the seven other proposed runs (eight in all, about $450).
 
 A run is **Recommended** when it is a `control` run or settles an axis' best hypothesis, else
-**Optional**. Runs are ordered **C, then B, then M** (the chat, then the benchmark, then model selection,
+**Optional**; a `stylePair` is always Optional. Runs are ordered **C, then B, then M** (the chat, then the benchmark, then model selection,
 as `server_benchmark_runbook` § 4 orders a round's runs); with the *system first* flag set, every M run
 is marked *after the system hypotheses are settled* and its notes say so.
 
@@ -4090,7 +4145,9 @@ the fact `rca.run.<n>.summary` — a short line, *"Run 1, a replicate of all nin
 
 - `Number`, `Kind`, `Purpose` (C, B or M), `Mark` and `HypothesisIds`;
 - `Decides`: one sentence per group of hypotheses with the same confirm and refute conditions,
-  *"Confirms HQ2.1, HQ2.2 and HQ2.3 if …; refutes each if …"*, stated before the run;
+  *"Confirms HQ2.1, HQ2.2 and HQ2.3 if …; refutes each if …"*, stated before the run; from engine
+  version 5 also `DecidesItems`, the same sentences as a list, which Appendix D prints as nested bullets
+  (a stored run without it prints the joined `Decides`);
 - `PredictedTier`, from the keys the run changes;
 - `EstimatedCostUsd` and `EstimatedMinutes`, from the analyzed runs' own costs and durations (a model
   without analyzed runs takes their mean, and a note says so);
@@ -4099,7 +4156,10 @@ the fact `rca.run.<n>.summary` — a short line, *"Run 1, a replicate of all nin
   `BatteryId` / `BatteryName`, `RunMode` (*Single* or *Batch*), `TestedModelConfigurationIds` and
   `ModelNames`, `Order`, `RunsPerModel`, `RunCount`, `ScoringProfileId`, `VerboseMode`,
   `AllowSourceCodeReferences`, and the grader configuration ids — assessor, co-assessor, reference or
-  second reader, claim verifier — with the coverage mode. All are copied from the analyzed runs unless
+  second reader, claim verifier — with the coverage mode, and from engine version 5 their names
+  (`ScoringProfileName`, `AssessorName`, `CoAssessorName`, `ReferenceReaderName`, `ClaimVerifierName`,
+  from the snapshots' labels), which Appendix D prints beside the ids and an anonymized copy withholds.
+  All are copied from the analyzed runs unless
   the kind changes them; a setting the runs did not share is left null with a note
   (*"The analyzed runs differ on …, so it is left for you to choose."*). `ReportWriterModelConfigurationId`
   is always null: a recommended run never writes documents of its own.
@@ -4157,7 +4217,7 @@ caveats and conclusions are callouts (§ 7). The comparison form (`ComparisonRoo
 | *Key terms* | Format 18: a two-sentence lead, then *Term · What it means*, one row per term the document actually uses, alphabetical, with the term's short gloss (`RootCause/RootCauseGlossary.cs`, the one term registry). Each less familiar term is also glossed in parentheses where template text first uses it (the render `Context`'s `GlossedTerms`), for example *Holm-adjusted across 4 tests (a correction for running many comparisons at once)* | — |
 | *Why each model scored as it did* | The profile table, one row per model in rank order: *Model · Index · Strengths · Lost points on · Flags*, with a note that every entry is measured and none says why | — |
 | *Scope and design* | `### Setup and method`, the grader roster, the availability table (one sentence when every model's is unrecorded); the compared models and configuration differences move to Appendix A | `scope` (120) |
-| *Evidence: intelligence* | A five-column scoreboard (*Model · Intelligence Index · 95% interval · Rank · Critical errors*, a tied rank as *2–9 (tied)*), the dimensions table, figure R1, `### Paired tests against <reference>` with the adjustment family stated once under it, `### What the graders recorded` (the `observations`), one grouped response-style line | `evidenceIntelligence` (100), no causal words: what stands out and why it matters for choosing a model |
+| *Evidence: intelligence* | A five-column scoreboard (*Model · Intelligence Index · 95% interval · Rank · Critical errors*, a tied rank as its span, such as *5–9 (tied)*), the dimensions table, figure R1, `### Paired tests against <reference>` with the adjustment family stated once under it, `### What the graders recorded` (the `observations`), one grouped response-style line | `evidenceIntelligence` (100), no causal words: what stands out and why it matters for choosing a model |
 | *Evidence: speed* | `### Where the time goes` and figure R2, the paired tests, `### Time differences between the models`: one line per decomposed pair (its leading component in seconds and its share with interval), the pairs not decomposed in one line | `evidenceSpeed` (100) |
 | *Evidence: cost* | The same, in dollars (figure R3) | `evidenceCost` (100) |
 | *Hypotheses* | Per axis a table of the kept non-null hypotheses — *Hypothesis (id and label) · Statement · Grade · Share · Settled by* — the null hypotheses in one sentence (where it stands, where a paired result rejects it), the id legend under the first table (H0 null, H between two models, W within one; Q, S, C), figure R4; the writer's hypotheses in a *Not tested by code* caveat callout | `hypothesesIntelligence`, `hypothesesSpeed`, `hypothesesCost` (120 each), each after its axis' table |
@@ -4166,6 +4226,32 @@ caveats and conclusions are callouts (§ 7). The comparison form (`ComparisonRoo
 | *Limitations and threats to validity* | One merged, deduplicated list; the availability threats grouped by reason (*"Provider availability is not recorded for any of the 9 models (runs before harness 56), …"*) | `limitations` (120) |
 | *Appendices* | The list of A–H, then **A** Intelligence detail (compared models, configuration differences, failure profile, grader findings, panel agreement, points at risk, the index difference by dimension, every paired test, the per-question matrix); **B** Speed and cost decompositions (decomposed pairs only); **C** Hypothesis details (*For*, *Against*, *Grade reasons*, *Refuted if*, *Robustness*, *Settled by* per hypothesis; the nulls as one table *Hypothesis · Pair · Paired result · Grade*, the grade read as *Stands — may be chance* or *Rejected — a real difference*); **D** Run settings (each run's *Launcher field · Setting* table); **E** Known facts; **F** Reproducibility; **G** Question details (every claim-verifier ruling that is not a supported answer sentence, then *"N further answer sentences supported."*; a grader evidence line that only says *&lt;Dimension&gt;: Matches rubric.* is left out); **H** Glossary: from format 18 every term the document uses, alphabetical, with its full definition from `RootCauseGlossary` (before, nine fixed bullets) | `questionTopics` for every question cited whose text the writer was given |
 | *Fact sheet*, *Removed content*, *Evaluation terms* | As before (the fact sheet in the Markdown copy only, with no section at all in the PDF and Word); *Removed content* names each removal's location in words and its rule, and at Full disclosure prints the removed text with its tokens resolved under the document's peer naming (withheld names, ids and providers as letters in an anonymized copy) | — |
+
+**From format 20** (per-model format 15) the table above changes as follows. *What we found* adds up to
+four code-built bullets under the Key finding: the models the paired tests establish above or below the
+reference; the cheapest model and how many models its intelligence interval overlaps; the weakest
+dimension when it is the same for at least two thirds of the models (with how many are at least 13 points
+below Accuracy, `BenchmarkChatTransfer.HasResponseStyleConflict`); and the models that answered 20 % or
+more of their scored questions without a tool call. *How sure are we?* adds a *Grader family* sentence when
+the members' provider pair has an interaction contrast whose interval excludes zero (§ 17, *Evidence and
+known facts*), and prints the single-run caveat only when no grade cap says it. *Key terms* lists only the
+terms the Summary and Conclusions use (Appendix H keeps every term), and the renderer removes a gloss
+already printed (`Prose`, the RCA's `TracksTerms`). The profile flags are compact (*"panel disagreement
+19% (others' median 6%)"*), with the no-tool median and the isolated-miss rule stated once in the note.
+The tied-rank notes describe the per-model span and add that interval bounds are rounded while ranks use
+the unrounded bounds. Paired tests list the reference second. *Where the time goes* heads its total
+*Wall time per question (median, tools included)* and says it differs from the median model time.
+A column, or a decomposition row, that is zero or not recorded in every row is dropped
+(`DropConstantColumns`) with one sentence naming it; a share above 100 % says, on its first occurrence,
+that another component pulls the other way. The hypothesis tables print the id alone. Appendix A has no
+*Results* block in comparison scope and prints only the all-pairs family the body did not print, or a
+pointer sentence; Appendix D prints *Decides* as bullets and the grader and profile names beside their ids
+(withheld in an anonymized copy); Appendix E lists only the `count` and `configuration` facts, keeping
+their numbers; Appendix G prints only the questions the writer cited, the disputed and critical-error
+questions and the control items, each answer as the excerpt the writer was given, rubrics without
+their `SOURCE` paragraphs, and each flagged answer's *Critical error:* resolution. The comparison RCA
+places no browser *Intelligence* figure at *Evidence: intelligence* (server and client placement). A
+stored document missing a new fact or field renders with the wording it had.
 
 The table below is the structure **before format 16**, kept for reading a PDF or Word file downloaded
 then. A stored document opened now renders in the structure above, its answer callouts saying to
@@ -4252,9 +4338,14 @@ names exactly the tokens the validator accepts.
 | 35 (`RootCauseWriterHypothesisRule`) | A `writerHypotheses` item without an axis, a statement, evidence for, a refuted-if statement or a known locus (`model`, `chat`, `harness`, `suite`, `corpus`, `provider`), with a confidence other than *Low*, or citing a model or fact that does not exist; each of its texts is capped at 40 words | The item is dropped |
 | 36 (`RootCauseAxisStatusRule`) | `conclusions` does not cite each axis' `rca.axis.<axis>.status`. An answer slot need not cite its question's `rca.question.<n>.status`: code prints the answer strength above it | A **warning**, checked over the kept text |
 
-A hypothesis' **label** is a noun phrase, so rule 31 lets it sit inside a sentence, while it still
-carries a cause for rule 33 and, for a *High* hypothesis, certainty for rule 34; its **statement** is a
-sentence and stands alone. CLAIM SUPPORT lists only the hypotheses graded Low or higher as support for a
+A hypothesis' **label** is a noun phrase that appears in tables; the writer cites a hypothesis in prose
+by its **`.ref`** token (*HQ1.1 (answers without tools)*, engine version 5), which carries a cause for
+rule 33 and, for a *High* hypothesis, certainty for rule 34 like any other token under the hypothesis
+prefix; the rule-33 and rule-34 examples in CHECK are built from it, and the repair message for rule 33
+names it. Its **statement** is a sentence and stands alone. The writer names a cause for "the gaps" only
+when the best hypotheses cover more than one pair, and gives its share when it names one; it writes each
+axis status once (*"Cost: {{rca.axis.cost.status}}."*) and never repeats the status words beside it; it
+does not gloss terms, which the document glosses. CLAIM SUPPORT lists only the hypotheses graded Low or higher as support for a
 cause, and says that a *Not supported* hypothesis' tokens support only a negated one (*not due to*, *not
 because*). A *Low* hypothesis is a lead, not a cause, which is why rule 33 asks for the hedge. The answer slots exist only for the questions the sheet asks: an answer slot
 is required when `rca.question.<n>.text` is on the sheet, and a filled slot for a question not asked is a
@@ -4304,14 +4395,18 @@ drawing them in the browser, which cannot reach run- and battery-completion docu
 |---|---|---|---|---|
 | `r1-points-at-risk` | Where the points were lost | 2 | Each model (stand-alone: the subject, then one row per difficulty band, or per suite on a battery) | A stacked horizontal bar of at-risk index points: answers without tools · budget, truncation or output defects · confirmed critical errors · other low-scoring answers. The bar's end is labeled with the total; the axis is points out of 100 |
 | `r2-speed-decomposition` | Where the time goes | 3 | Each model (stand-alone: the subject, then per band or suite) | A stacked bar of the median seconds per question, split among time to first token · output generation · tool execution · own waits and retries · other in proportion to each segment's mean, so the segments sum to the median exactly |
-| `r3-cost-decomposition` | Where the cost goes | 4 | Each model (stand-alone: the subject, then per band or suite) | A stacked bar of cost per question: uncached input · cache reads · cache writes · visible output · reasoning |
-| `r4-hypothesis-confidence` | How sure each hypothesis is | 6 | One row per hypothesis shown in the document's tables, grouped by axis | A filled dot at its grade on an ordinal axis (Not supported · Low · Moderate · High), the hypothesis id and its short statement as the row label. Where the hypothesis has a share, a second column shows a bar with its 95 % interval whisker |
+| `r3-cost-decomposition` | Where the cost goes | 4 | Each model (stand-alone: the subject, then per band or suite) | A stacked bar of cost per question: uncached input · cache reads · cache writes · visible output · reasoning; a model whose provider counts thinking inside output has one *output, thinking included* segment, in the visible-output color slot |
+| `r4-hypothesis-confidence` | How sure each hypothesis is | 6 | One row per non-null hypothesis shown in the document's tables, grouped by axis (null hypotheses are not plotted) | A filled dot at its grade on an ordinal axis (Not supported · Low · Moderate · High), the hypothesis id and its short statement as the row label; the named variant prints each model's name where the statement says *Model X*. Where the hypothesis has a share, a second column shows a bar with its 95 % interval whisker |
 
 Rules common to all four:
 
-- **Color is never the only carrier.** Every segment of 8 % of the bar or more carries its own text
-  label; smaller segments are named in the key, in stacking order. R4 prints its grade as text beside
-  the dot.
+- **Color is never the only carrier.** A segment prints its **value** (one decimal for points and
+  seconds, dollars for cost) when its width is at least the label's estimated width (4.5 pt per
+  character) plus 4 pt; the key names every segment present by color, in stacking order, without
+  numbers. R4 prints its grade as text beside the dot.
+- **Axis.** The scale's ceiling steps through 1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8 and 10 times a power of
+  ten (`NiceCeiling`), so a 60 s maximum keeps a 60 s axis; the axis title has a row of its own under the
+  ticks (R1–R3 are 11 pt taller for it).
 - **Palette** (`RootCauseChartPalette`), for print on white; text always wears the ink (`#0b0b0b`, the
   key and axis `#52514e`), never a segment or grade color:
   - **Segments**, in stacking order, the `dataviz` reference slots yellow, green, magenta, violet and red:

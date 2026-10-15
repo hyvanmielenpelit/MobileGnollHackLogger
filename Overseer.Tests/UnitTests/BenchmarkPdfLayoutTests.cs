@@ -295,8 +295,9 @@ public class BenchmarkPdfLayoutTests
     // --- Tied ranks ----------------------------------------------------------------------------------
 
     [Fact]
-    public void ATiedRank_PrintsTheSpanOfItsTieGroup()
+    public void ATiedRank_PrintsTheSpanOfPlacesItCanPlausiblyHold()
     {
+        // m2 (79 to 85) is clearly above m9 (72 to 78); every other pair among m2..m9 overlaps.
         var entries = new List<(string Key, double Score, double? Lower, double? Upper)> { ("m1", 90, 88, 92) };
         for (int i = 2; i <= 9; i++)
         {
@@ -307,9 +308,10 @@ public class BenchmarkPdfLayoutTests
         var ranks = BenchmarkReportFacts.JointRanks(entries);
 
         Assert.Equal("1st of 9", BenchmarkReportFacts.JointRankText(ranks["m1"], 9));
-        Assert.Equal("2–9 of 9 (tied: intervals overlap)", BenchmarkReportFacts.JointRankText(ranks["m2"], 9));
-        Assert.Equal("2–9 of 9 (tied: intervals overlap)", BenchmarkReportFacts.JointRankText(ranks["m9"], 9));
-        Assert.Equal("2–9", BenchmarkReportFacts.TiedRankSpan(ranks["m9"]));
+        Assert.Equal("2–8 of 9 (tied: intervals overlap)", BenchmarkReportFacts.JointRankText(ranks["m2"], 9));
+        Assert.Equal("2–9 of 9 (tied: intervals overlap)", BenchmarkReportFacts.JointRankText(ranks["m5"], 9));
+        Assert.Equal("3–9 of 9 (tied: intervals overlap)", BenchmarkReportFacts.JointRankText(ranks["m9"], 9));
+        Assert.Equal("3–9", BenchmarkReportFacts.TiedRankSpan(ranks["m9"]));
         Assert.Equal("1", BenchmarkReportFacts.TiedRankSpan(ranks["m1"]));
         Assert.DoesNotContain("joint", BenchmarkReportFacts.JointRankText(ranks["m5"], 9), StringComparison.OrdinalIgnoreCase);
     }

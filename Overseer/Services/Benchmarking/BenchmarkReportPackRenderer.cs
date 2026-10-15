@@ -109,7 +109,12 @@ public static class BenchmarkReportJson
 /// </summary>
 public static partial class BenchmarkReportPackRenderer
 {
-    public const int ReportFormatVersion = 14;
+    /// <summary>
+    /// The format version of a per-model document. From version 15 its Root Cause Analysis gives each cited
+    /// question's answer excerpts and rubric without its source paragraphs, states the wall time per question
+    /// with tools included, and glosses each term once.
+    /// </summary>
+    public const int ReportFormatVersion = 15;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
@@ -121,11 +126,17 @@ public static partial class BenchmarkReportPackRenderer
     /// From version 19 a research question is asked only when its model is strictly first or last, says when that
     /// order is not established, and separates comparative from within-model hypotheses; a causal word cites a
     /// hypothesis graded Low or higher.
+    /// From version 20 the Root Cause Analysis states its main findings in code under What we found, gives each
+    /// tied rank as the span of places the model's interval allows, and prints each table, paired test and
+    /// known fact once.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 19;
+    public const int ComparisonReportFormatVersion = 20;
 
     /// <summary>The comparison format version whose Root Cause Analysis writer output first carries the answer slots.</summary>
     private const int AnswerSlotsFormatVersion = 16;
+
+    /// <summary>The comparison format version whose answer excerpts were first allotted in rounds across the questions.</summary>
+    private const int RoundExcerptsFormatVersion = 20;
 
     /// <summary>The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.</summary>
     public const int ChatConsistencyReportFormatVersion = 4;
@@ -1505,12 +1516,16 @@ public static partial class BenchmarkReportPackRenderer
     /// Every question with each run's answer excerpt; with <paramref name="grading"/>, the complete
     /// answer where it was captured, and also the rubric, the graders' verdicts and the claim
     /// verifier's rulings. The section's heading is at <paramref name="level"/>, each question's one
-    /// level below it and each run's two.
+    /// level below it and each run's two. With <paramref name="excerpts"/>, as a Root Cause Analysis prints
+    /// them: only the questions with captured content, each answer as its excerpt, the rubric without its
+    /// <c>SOURCE</c> paragraphs, and a flagged answer's critical-error resolution.
     /// </summary>
     private static void QuestionDetails(
-        StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions, bool grading, int level, string? title = null)
+        StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions, bool grading, int level, string? title = null,
+        bool excerpts = false)
     {
         string prefix = new('#', level);
+        if (excerpts) questions = questions.Where(q => ContentFor(ctx, q.Number).Count > 0).ToList();
         Heading(sb, prefix + " " + (title ?? (grading ? "Question details" : "Questions and answers")));
 
         if (ctx.Battery)
@@ -1555,7 +1570,7 @@ public static partial class BenchmarkReportPackRenderer
                 }
                 else
                 {
-                    Quote(sb, first.ExpectedPoints);
+                    Quote(sb, excerpts ? BenchmarkReportPackPrompt.WithoutSourceParagraphs(first.ExpectedPoints) : first.ExpectedPoints);
                 }
                 Line(sb);
             }
@@ -1576,7 +1591,11 @@ public static partial class BenchmarkReportPackRenderer
                     continue;
                 }
 
-                if (item.AnswerText != null || !item.AnswerExcerptCut)
+                if (excerpts)
+                {
+                    AnswerExcerptBlock(sb, item);
+                }
+                else if (item.AnswerText != null || !item.AnswerExcerptCut)
                 {
                     Line(sb, "**Answer:**");
                     Line(sb);
@@ -1592,6 +1611,7 @@ public static partial class BenchmarkReportPackRenderer
                     Line(sb, "*This document predates complete-answer capture; the answer is shown as the excerpt stored when it was written.*");
                     Line(sb);
                 }
+                if (excerpts) CriticalErrorResolutionLine(sb, item);
 
                 Line(sb, "**Graders:**");
                 Line(sb);
@@ -1627,6 +1647,27 @@ public static partial class BenchmarkReportPackRenderer
             }
         }
     }
+
+    /// <summary>An answer as its excerpt: under <c>Answer excerpt:</c> when it was cut, under <c>Answer:</c> when the excerpt is the whole answer.</summary>
+    private static void AnswerExcerptBlock(StringBuilder sb, BenchmarkReportContentQuestion item)
+    {
+        Line(sb, item.AnswerExcerptCut ? "**Answer excerpt:**" : "**Answer:**");
+        Line(sb);
+        Quote(sb, item.AnswerExcerpt);
+        Line(sb);
+    }
+
+    /// <summary><c>**Critical error:** upheld by the claim verifier (cap applied).</c> for a flagged answer; nothing without a stored resolution.</summary>
+    private static void CriticalErrorResolutionLine(StringBuilder sb, BenchmarkReportContentQuestion item)
+    {
+        if (CriticalErrorResolutionText(item.CriticalErrorResolution) is not string text) return;
+        Line(sb, "**Critical error:** " + text + ".");
+        Line(sb);
+    }
+
+    /// <summary>How an answer's critical-error flags were resolved, in the writer prompt's words.</summary>
+    internal static string? CriticalErrorResolutionText(string? resolution) =>
+        BenchmarkReportPackPrompt.CriticalErrorResolutionText(resolution);
 
     private static void ToolUse(StringBuilder sb, Context ctx, string heading = "## Tool-use behavior")
     {
@@ -2257,8 +2298,9 @@ public static partial class BenchmarkReportPackRenderer
     private static string RankCell(int? rank) => rank.HasValue ? Inv(rank.Value) : NoValue;
 
     /// <summary>
-    /// An entry's quality rank cell: where its interval overlaps a neighbor's, the span of places its tie group
-    /// covers, <c>2–9 (tied)</c>; else <see cref="RankCell"/>.
+    /// An entry's quality rank cell: where its interval overlaps another's, the span of places its interval allows,
+    /// from one below the entries clearly above it to one above those clearly below it, <c>5–9 (tied)</c>; else
+    /// <see cref="RankCell"/>.
     /// </summary>
     private static string QualityRankCell(Context ctx, BenchmarkReportEntryFigures entry)
     {
@@ -2303,6 +2345,85 @@ public static partial class BenchmarkReportPackRenderer
 
         var ranks = QualityJointRanks(ctx.Sheet);
         return ranks.TryGetValue(entryKey, out var rank) && rank.Joint ? BenchmarkReportFacts.JointRankText(rank, ranks.Count) : null;
+    }
+
+    /// <summary>
+    /// A table without the columns whose every cell reads as zero or as missing: <c>0</c>, <c>0.0 s</c>, <c>0%</c>,
+    /// <c>$0.0000</c>, <see cref="NoValue"/>, <c>not available</c>, <c>0 of N</c>, or text starting <c>not recorded</c>.
+    /// The first <paramref name="keepFirst"/> columns are always kept, and nothing is dropped from a table of fewer
+    /// than two rows. <c>Dropped</c> holds the headers left out.
+    /// </summary>
+    private static (List<string> Header, List<List<string>> Rows, List<string> Dropped) DropConstantColumns(
+        IReadOnlyList<string> header, IReadOnlyList<IReadOnlyList<string>> rows, int keepFirst)
+    {
+        var keep = new List<int>();
+        var dropped = new List<string>();
+        for (int c = 0; c < header.Count; c++)
+        {
+            int column = c;
+            bool constant = column >= keepFirst
+                            && rows.Count >= 2
+                            && rows.All(r => IsZeroLikeCell(column < r.Count ? r[column] : NoValue));
+            if (constant) dropped.Add(header[c]);
+            else keep.Add(c);
+        }
+        return (keep.Select(c => header[c]).ToList(),
+            rows.Select(r => keep.Select(c => c < r.Count ? r[c] : NoValue).ToList()).ToList(),
+            dropped);
+    }
+
+    /// <summary>A table cell that reads as zero or as missing, as <see cref="DropConstantColumns"/> counts it.</summary>
+    private static bool IsZeroLikeCell(string? cell)
+    {
+        string text = (cell ?? string.Empty).Trim();
+        return text is "0" or "0.0" or "0.0 s" or "0%" or "$0" or "$0.0000" or "$0.000" or NoValue or BenchmarkReportFacts.NotAvailable
+               || text.StartsWith("not recorded", StringComparison.Ordinal)
+               || Regex.IsMatch(text, @"^0 of \d+$", RegexOptions.CultureInvariant);
+    }
+
+    /// <summary>
+    /// <c>Left out because they are zero or not recorded in every row: own waits and retries and other.</c>; empty
+    /// for none.
+    /// </summary>
+    private static string DroppedColumnsSentence(IReadOnlyList<string> dropped)
+        => dropped.Count == 0
+            ? string.Empty
+            : (dropped.Count == 1 ? "Left out because it is" : "Left out because they are") + " zero or not recorded in every row: "
+              + BenchmarkReportFormat.LetterList(dropped.Select(LowerFirst).ToList()) + ".";
+
+    /// <summary>
+    /// <paramref name="test"/> with <paramref name="reference"/> as its second model: unchanged when it already is;
+    /// otherwise its letters swapped, <c>Favors</c> turned, and a difference and its bounds negated or a ratio and
+    /// its bounds inverted. The p-values and the result are the pair's own either way. A test stored without its
+    /// effect kind is a ratio when <paramref name="ratio"/> says so.
+    /// </summary>
+    internal static BenchmarkReportPairedTest ReferenceSecond(BenchmarkReportPairedTest test, string reference, bool ratio = false)
+    {
+        ArgumentNullException.ThrowIfNull(test);
+        if (!string.Equals(test.FirstLetter, reference, StringComparison.Ordinal)) return test;
+
+        ratio = string.IsNullOrEmpty(test.EffectKind) ? ratio : string.Equals(test.EffectKind, "Ratio", StringComparison.Ordinal);
+        double? Turn(double? value)
+        {
+            if (value is not double v) return null;
+            if (!ratio) return -v;
+            return v != 0 ? 1 / v : (double?)null;
+        }
+        return new BenchmarkReportPairedTest
+        {
+            FirstLetter = test.SecondLetter,
+            SecondLetter = test.FirstLetter,
+            PairedItems = test.PairedItems,
+            EffectKind = test.EffectKind,
+            Effect = Turn(test.Effect),
+            Lower = Turn(test.Upper),
+            Upper = Turn(test.Lower),
+            PValue = test.PValue,
+            AdjustedPValue = test.AdjustedPValue,
+            Established = test.Established,
+            Favors = test.Favors switch { "First" => "Second", "Second" => "First", _ => test.Favors },
+            NotTestedReason = test.NotTestedReason
+        };
     }
 
     /// <summary>A peer's paired difference with its interval, <c>+4.2 points (-1.3 to +9.8)</c>; <see cref="NoValue"/> for the subject.</summary>
@@ -2479,15 +2600,43 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// Writer prose with its tokens resolved: <c>{{subject}}</c>, <c>{{peer:X}}</c> and <c>{{fact.key}}</c>;
     /// on a comparison-scope sheet <c>{{model:X}}</c> as a peer's. A resolved value that ends in a period,
-    /// followed by the prose's own period, prints one.
+    /// followed by the prose's own period, prints one. In a document that explains its terms, a term's gloss
+    /// in parentheses is printed once: a gloss the document has already printed is left out.
     /// </summary>
     private static string Prose(Context ctx, string? text)
-        => Regex.Replace(ProseLetters(ctx, Normalize(text)), TokenPattern + @"(\.)?", match =>
+    {
+        string resolved = Regex.Replace(ProseLetters(ctx, Normalize(text)), TokenPattern + @"(\.)?", match =>
         {
-            string resolved = Resolve(ctx, match);
-            if (!match.Groups[2].Success) return resolved;
-            return resolved.EndsWith('.') ? resolved : resolved + ".";
+            string value = Resolve(ctx, match);
+            if (!match.Groups[2].Success) return value;
+            return value.EndsWith('.') ? value : value + ".";
         }, RegexOptions.CultureInvariant);
+        return ctx.TracksTerms ? WithoutRepeatedGlosses(ctx, resolved) : resolved;
+    }
+
+    /// <summary>
+    /// <paramref name="text"/> without the <c> (gloss)</c> of any term the document has already glossed; the first
+    /// gloss of a term not yet glossed stays, and marks the term as used and glossed, so no later text repeats it.
+    /// </summary>
+    private static string WithoutRepeatedGlosses(Context ctx, string text)
+    {
+        foreach (var term in RootCause.RootCauseGlossary.Terms)
+        {
+            string gloss = " (" + term.Gloss + ")";
+            int at = text.IndexOf(gloss, StringComparison.Ordinal);
+            if (at < 0) continue;
+
+            int keepUntil = 0;
+            if (!ctx.GlossedTerms.Contains(term.Key))
+            {
+                UseTerms(ctx, term.Key);
+                ctx.GlossedTerms.Add(term.Key);
+                keepUntil = at + gloss.Length;
+            }
+            text = text[..keepUntil] + text[keepUntil..].Replace(gloss, string.Empty, StringComparison.Ordinal);
+        }
+        return text;
+    }
 
     /// <summary>
     /// In a named comparison copy, the writer's own <c>Model X</c> and <c>Models X and Y</c> by the models'
@@ -2681,6 +2830,12 @@ public static partial class BenchmarkReportPackRenderer
 
         /// <summary>The glossary keys whose gloss the template text has printed: each term is glossed once, at its first use.</summary>
         public HashSet<string> GlossedTerms { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>The glossary keys the Summary and the Conclusions use, for the Key terms section.</summary>
+        public HashSet<string> KeyTerms { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Whether a term marked as used now also goes into <see cref="KeyTerms"/>: while the Summary or the Conclusions render.</summary>
+        public bool RecordsKeyTerms { get; set; }
 
         private Dictionary<int, string>? _labels;
         private Dictionary<string, int>? _numbers;

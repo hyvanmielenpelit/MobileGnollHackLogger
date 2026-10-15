@@ -2598,6 +2598,15 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   // --- The document charts ---
 
+  /**
+   * The speed measure the document charts plot: the median model time per question where step 2
+   * shows the mean, so a figure gives the median the document's tables give; any other measure as
+   * step 2 shows it.
+   */
+  get documentSpeedMeasure(): SpeedMeasure {
+    return this.speedMeasure === 'meanModelTime' ? 'medianModelTime' : this.speedMeasure;
+  }
+
   /** What shapes the document charts, as the settings hash reads it. */
   chartSettingsInput(): ReportChartSettingsInput {
     const { bar, scatter, profile, numbers, appearance, availability } = this.figureStyle;
@@ -2611,7 +2620,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       show: [...this.includedKeys].sort(),
       highlight: [...this.emphasisKeys].sort(),
       order: this.sort,
-      measures: { speed: this.speedMeasure, cost: this.costMeasure },
+      measures: { speed: this.documentSpeedMeasure, cost: this.costMeasure },
       pricingBasis: this.chartPricingBasis,
       computedAtUtc: this.comparison?.computedAtUtc ?? null
     };
@@ -2773,18 +2782,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   /**
-   * A document chart caption's note on the measure it plots, where the document's own tables give
-   * another: the speed figures' time measure (none for the Speed Index), and the cost panel's cost
-   * per pass. Empty for every other figure.
+   * A document chart caption's note on the measure it plots: for the speed figures, the time measure
+   * beside the median the document's tables give (none for the Speed Index); for the cost panel, the
+   * cost per pass. Empty for every other figure.
    */
   private documentChartMeasureNote(key: ReportChartFigureKey): string {
     if (key === 'p1b-speed' || key === 's1-quality-speed' || key === 's3-speed-cost') {
-      switch (this.speedMeasure) {
-        case 'meanModelTime':
-          return 'Times are the mean model time per question; the document\'s tables give the median.';
+      const measure = this.documentSpeedMeasure;
+      switch (measure) {
+        case 'medianModelTime':
+          return 'Times are the median model time per question, as in the document\'s tables.';
         case 'totalModelTime':
         case 'ttftP50': {
-          const name = MEASURE_NAMES[this.speedMeasure];
+          const name = MEASURE_NAMES[measure];
           return `Times are the ${name.charAt(0).toLocaleLowerCase('en-US')}${name.slice(1)}; the document's tables give the median.`;
         }
         default:
@@ -2917,7 +2927,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   ): { figures: ComparisonFigureSet; setNotes: readonly FigureNote[] } {
     const options = {
       sort: this.sort,
-      speedMeasure: this.speedMeasure,
+      speedMeasure: this.documentSpeedMeasure,
       costMeasure: this.costMeasure,
       orientation,
       directLabels: this.scatterDirectLabels,
@@ -3056,8 +3066,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   }
 
   private documentSpeedClause(entry: ModelComparisonEntry): string {
-    const value = speedValue(entry, this.speedMeasure);
-    switch (this.speedMeasure) {
+    const measure = this.documentSpeedMeasure;
+    const value = speedValue(entry, measure);
+    switch (measure) {
       case 'speedIndex':
         return `Speed Index ${formatIndexText(value)}`;
       case 'ttftP50':
@@ -3065,6 +3076,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       case 'totalModelTime':
         return `model time for the suite ${formatMsText(value)}`
           + (entry.totalModelTimeSdMs !== null ? ` ± ${formatMsText(entry.totalModelTimeSdMs)}` : '');
+      case 'medianModelTime':
+        return `median model time per question ${formatMsText(value)}`;
       default:
         return `mean model time per question ${formatMsText(value)}`;
     }
@@ -4144,6 +4157,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
 
   readonly speedMeasureOptions: readonly { readonly value: SpeedMeasure; readonly label: string }[] = [
     { value: 'meanModelTime', label: 'Model time per question, mean' },
+    { value: 'medianModelTime', label: 'Model time per question, median' },
     { value: 'totalModelTime', label: 'Candidate model time for the whole suite' },
     { value: 'ttftP50', label: 'Time to first token, P50' },
     { value: 'speedIndex', label: 'Speed Index (0-100)' }

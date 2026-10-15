@@ -27,6 +27,7 @@ import {
   DEFAULT_CHART_LAYOUT_SETTINGS,
   DEFAULT_CHART_SELECTION,
   REPORT_CHART_FIGURES,
+  REPORT_CHART_NOT_DRAWN,
   ReportChartLayoutSettings,
   ReportChartRowStatus,
   ReportChartSelection
@@ -1987,15 +1988,18 @@ describe('ReportPackPanelComponent', () => {
     expect(chartPicker.scope).toBe('comparison');
     q<HTMLButtonElement>(`#rp-charts-tab-${RootCauseAnalysis}`)!.click();
     fixture.detectChanges();
-    expect(q(`#rp-charts-${RootCauseAnalysis}-p1a-quality`)!.getAttribute('aria-disabled')).toBe('true');
-    expect(text(`#rp-charts-${RootCauseAnalysis}-p1a-quality-placement`)).toBe('Evidence: intelligence');
+    expect(q(`#rp-charts-${RootCauseAnalysis}-p1b-speed`)!.getAttribute('aria-disabled')).toBe('true');
+    expect(text(`#rp-charts-${RootCauseAnalysis}-p1b-speed-placement`)).toBe('Evidence: speed');
+    // The comparison-scope Root Cause Analysis places no Intelligence bars.
+    expect(text(`#rp-charts-${RootCauseAnalysis}-p1a-quality-placement`)).toBe(REPORT_CHART_NOT_DRAWN);
     expect(text('.rcp-server-note')).toContain('four charts drawn by Overseer');
 
     // Rewrite the Root Cause Analysis: its charts can be chosen.
     docCheck(`comparison|${RootCauseAnalysis}`).click();
     fixture.detectChanges();
     expect(chartPicker.enabledAudiences).toEqual(ALL_AUDIENCES);
-    expect(q(`#rp-charts-${RootCauseAnalysis}-p1a-quality`)!.hasAttribute('aria-disabled')).toBe(false);
+    expect(q(`#rp-charts-${RootCauseAnalysis}-p1b-speed`)!.hasAttribute('aria-disabled')).toBe(false);
+    expect(q(`#rp-charts-${RootCauseAnalysis}-p1a-quality`)!.getAttribute('aria-disabled')).toBe('true');
 
     q<HTMLButtonElement>(`#rp-charts-tab-${ExecutiveSummary}`)!.click();
     fixture.detectChanges();

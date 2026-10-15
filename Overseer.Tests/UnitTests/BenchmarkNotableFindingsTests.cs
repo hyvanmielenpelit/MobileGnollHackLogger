@@ -307,8 +307,11 @@ public class BenchmarkNotableFindingsTests
     public void ToolUse_AndAnswerLength_AreOutliersAtHalfOrTwiceTheMedianOfAllModels()
     {
         var tools = Assert.Single(Detect(new[] { Tools("A", 1.0), Tools("B", 2.0), Tools("C", 2.0) }));
-        Assert.Equal("Model A made 1.0 tool calls per question, at most half the median of all 3 models (2.0).", tools.Summary);
+        Assert.Equal("Model A made 1.0 tool calls per question, half the median of all 3 models (2.0).", tools.Summary);
         Assert.Empty(Detect(new[] { Tools("A", 1.01), Tools("B", 2.0), Tools("C", 2.0) }));
+
+        var fewer = Assert.Single(Detect(new[] { Tools("A", 0.9), Tools("B", 2.0), Tools("C", 2.0) }));
+        Assert.Equal("Model A made 0.9 tool calls per question, less than half the median of all 3 models (2.0).", fewer.Summary);
         Assert.Empty(Detect(new[] { Tools("A", 0.0), Tools("B", 0.5), Tools("C", 0.5) }));
 
         var length = Assert.Single(Detect(new[] { Length("A", 2000), Length("B", 1000), Length("C", 1000) }));

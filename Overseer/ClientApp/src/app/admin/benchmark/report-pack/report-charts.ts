@@ -102,8 +102,8 @@ function everyFigureIn(section: string, availability: string = section): Readonl
 }
 
 /**
- * The Root Cause Analysis' browser-drawn figures, the same in both scopes: Intelligence, Speed, Cost,
- * Intelligence against speed and Intelligence against cost, each in its evidence section.
+ * The per-model Root Cause Analysis' browser-drawn figures: Intelligence, Speed, Cost, Intelligence
+ * against speed and Intelligence against cost, each in its evidence section.
  */
 const ROOT_CAUSE_CHART_PLACEMENTS: Readonly<Record<ReportChartFigureKey, string>> = Object.freeze({
   'p1a-quality': 'Evidence: intelligence',
@@ -114,6 +114,15 @@ const ROOT_CAUSE_CHART_PLACEMENTS: Readonly<Record<ReportChartFigureKey, string>
   's2-quality-cost': 'Evidence: cost',
   's3-speed-cost': REPORT_CHART_NOT_DRAWN,
   'a1-availability': REPORT_CHART_NOT_DRAWN
+});
+
+/**
+ * The comparison-scope Root Cause Analysis' browser-drawn figures: the per-model ones without the
+ * Intelligence bars, whose values the document's own tables already give.
+ */
+const COMPARISON_ROOT_CAUSE_CHART_PLACEMENTS: Readonly<Record<ReportChartFigureKey, string>> = Object.freeze({
+  ...ROOT_CAUSE_CHART_PLACEMENTS,
+  'p1a-quality': REPORT_CHART_NOT_DRAWN
 });
 
 /**
@@ -128,11 +137,12 @@ export const MODEL_SCOPE_CHART_PLACEMENTS: ReportChartPlacementTable = Object.fr
 /**
  * Comparison-scope documents; mirrors the comparison-scope chart anchors per document type in the
  * server's `BenchmarkReportPackRenderer`. A document type or figure missing here takes its
- * model-scope section. The comparison-scope Executive Summary does not draw A1.
+ * model-scope section. The comparison-scope Executive Summary does not draw A1, and the
+ * comparison-scope Root Cause Analysis does not draw the Intelligence bars.
  */
 export const COMPARISON_SCOPE_CHART_PLACEMENTS: ReportChartPlacementTable = Object.freeze({
   [BenchmarkReportAudience.ExecutiveSummary]: everyFigureIn('How they compare', REPORT_CHART_NOT_DRAWN),
-  [BenchmarkReportAudience.RootCauseAnalysis]: ROOT_CAUSE_CHART_PLACEMENTS
+  [BenchmarkReportAudience.RootCauseAnalysis]: COMPARISON_ROOT_CAUSE_CHART_PLACEMENTS
 });
 
 export const REPORT_CHART_PLACEMENTS: Readonly<Record<ReportChartScope, ReportChartPlacementTable>> = Object.freeze({
@@ -167,6 +177,11 @@ export function reportChartDrawn(audience: BenchmarkReportAudience, key: ReportC
 export type ReportChartSelection<K extends string = ReportChartFigureKey> =
   Readonly<Partial<Record<BenchmarkReportAudience, readonly K[]>>>;
 
+/**
+ * The selection is kept per document type, across both scopes. A figure a document type of a scope
+ * does not place is neither shown as selected, composed nor uploaded ({@link reportChartDrawn}), so
+ * the Intelligence bars the Root Cause Analysis selects here reach only the per-model one.
+ */
 export const DEFAULT_CHART_SELECTION: ReportChartSelection = Object.freeze({
   [BenchmarkReportAudience.ExecutiveSummary]: Object.freeze(['p1a-quality', 's2-quality-cost'] as ReportChartFigureKey[]),
   [BenchmarkReportAudience.RootCauseAnalysis]: Object.freeze(

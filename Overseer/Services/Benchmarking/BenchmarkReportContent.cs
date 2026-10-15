@@ -112,7 +112,8 @@ public static class BenchmarkReportContent
 
     /// <summary>
     /// One block per run in run-id order, each with its answers in order-index order, numbered as
-    /// <see cref="BenchmarkReportFacts.NumberQuestions"/> numbers them.
+    /// <see cref="BenchmarkReportFacts.NumberQuestions"/> numbers them. An answer's critical-error
+    /// resolution is captured on a run scored under <see cref="BenchmarkCriticalErrorResolver.FirstScoringMethod"/> or later.
     /// </summary>
     public static BenchmarkReportContentSnapshot Build(IReadOnlyList<BenchmarkRun> subjectRuns, int answerExcerptChars)
     {
@@ -126,6 +127,7 @@ public static class BenchmarkReportContent
         {
             var block = new BenchmarkReportContentRun { RunId = run.Id };
             bool panel = BenchmarkRunFinalizer.IsPanelRun(run);
+            bool resolves = BenchmarkCriticalErrorResolver.Applies(run);
 
             foreach (var answer in (run.Answers ?? new List<BenchmarkRunAnswer>()).OrderBy(a => a.OrderIndex).ThenBy(a => a.Id))
             {
@@ -145,7 +147,8 @@ public static class BenchmarkReportContent
                     AnswerExcerptCut = cut,
                     AnswerText = cut ? answer.AnswerText ?? string.Empty : null,
                     Graders = GradersOf(run, answer, panel),
-                    ClaimRulings = RulingsOf(answer)
+                    ClaimRulings = RulingsOf(answer),
+                    CriticalErrorResolution = resolves ? ResolutionName(answer.CriticalErrorResolution) : null
                 });
             }
 
@@ -160,6 +163,9 @@ public static class BenchmarkReportContent
 
     /// <summary>A question whose covered models' scores span at least this many points is second in the excerpt order.</summary>
     public const double WideSpreadPoints = 20.0;
+
+    /// <summary>The most answer excerpts a comparison-scope document gives one question.</summary>
+    public const int MaxExcerptsPerQuestion = 3;
 
     /// <summary>
     /// One covered model's own content for a comparison-scope document: its per-model content
@@ -176,10 +182,11 @@ public static class BenchmarkReportContent
     /// <item>every question as asked, with its rubric, once, from the first model in letter order that
     /// has it (<see cref="BenchmarkReportContentSnapshot.Questions"/>);</item>
     /// <item>answer excerpts under one total budget of <paramref name="answerExcerptChars"/> characters
-    /// per question, allotted question by question in <see cref="ExcerptPriority"/> order and, within a
-    /// question, to the models with a critical error or a refuted sentence first, then the lowest
-    /// scores; an excerpt that no longer fits is skipped. Each excerpt comes from the model's run whose
-    /// graders' mean score is closest to its score on the question, ties to the lower run id.</item>
+    /// per question, allotted in at most <see cref="MaxExcerptsPerQuestion"/> rounds: each round gives
+    /// every question, in <see cref="ExcerptPriority"/> order, its next model in the question's own
+    /// order (a critical error or a refuted sentence first, then the lowest scores); an excerpt that
+    /// no longer fits is skipped. Each excerpt comes from the model's run whose graders' mean score is
+    /// closest to its score on the question, ties to the lower run id.</item>
     /// </list>
     /// </summary>
     public static BenchmarkReportContentSnapshot BuildComparison(
@@ -227,25 +234,31 @@ public static class BenchmarkReportContent
             });
         }
 
-        long budget = (long)chars * questions.Count;
-        var chosen = new List<(string Letter, string EntryKey, long RunId, BenchmarkReportContentQuestion Question)>();
-        foreach (var question in ExcerptPriority(questions))
-        {
-            var cells = (question.Models ?? new List<BenchmarkReportQuestionModelScore>())
+        // Each question's cells with an answer, in the order they receive excerpts.
+        var queues = ExcerptPriority(questions)
+            .Select(question => (question.Models ?? new List<BenchmarkReportQuestionModelScore>())
                 .OrderBy(c => c.CriticalError || RefutedOf(c) > 0 ? 0 : 1)
                 .ThenBy(c => c.Score.HasValue ? 0 : 1)
                 .ThenBy(c => c.Score ?? 0)
                 .ThenBy(c => c.Letter.Length)
                 .ThenBy(c => c.Letter, StringComparer.Ordinal)
-                .ToList();
+                .Select(c => (Cell: c, Entry: ordered.FirstOrDefault(e => string.Equals(e.Letter, c.Letter, StringComparison.Ordinal))))
+                .Where(x => x.Entry != null && blocks[x.Entry.Letter].ContainsKey(question.Number))
+                .Select(x => (x.Cell.Score, Entry: x.Entry!, Candidates: blocks[x.Entry!.Letter][question.Number]))
+                .ToList())
+            .ToList();
 
-            foreach (var cell in cells)
+        long budget = (long)chars * questions.Count;
+        var chosen = new List<(string Letter, string EntryKey, long RunId, BenchmarkReportContentQuestion Question)>();
+        for (int round = 0; round < MaxExcerptsPerQuestion && chars > 0; round++)
+        {
+            foreach (var cells in queues)
             {
-                var entry = ordered.FirstOrDefault(e => string.Equals(e.Letter, cell.Letter, StringComparison.Ordinal));
-                if (entry == null || !blocks[entry.Letter].TryGetValue(question.Number, out var candidates)) continue;
+                if (round >= cells.Count) continue;
 
-                var (runId, item) = Representative(candidates, cell.Score);
-                if (chars <= 0 || item.AnswerExcerpt.Length > budget) continue;
+                var (score, entry, candidates) = cells[round];
+                var (runId, item) = Representative(candidates, score);
+                if (item.AnswerExcerpt.Length > budget) continue;
 
                 budget -= item.AnswerExcerpt.Length;
                 chosen.Add((entry.Letter, entry.EntryKey, runId, item));
@@ -279,7 +292,9 @@ public static class BenchmarkReportContent
     /// any covered model made a critical error or had a refuted answer sentence, by number; then those
     /// whose scores span at least <see cref="WideSpreadPoints"/> points, widest first; then those every
     /// scored model scored below <see cref="SharedLowScore"/>, lowest best score first; then the rest,
-    /// widest spread first. Ties by number.
+    /// widest spread first. Ties by number. Within a group the suites are interleaved: each suite's
+    /// first question in that order (by <see cref="BenchmarkReportQuestion.Suite"/>, a question without
+    /// one as suite 0), then each suite's second, and so on.
     /// </summary>
     public static IReadOnlyList<BenchmarkReportQuestion> ExcerptPriority(IReadOnlyList<BenchmarkReportQuestion> questions)
     {
@@ -308,11 +323,19 @@ public static class BenchmarkReportContent
             return 3;
         }
 
+        static double KeyOf(int group, BenchmarkReportQuestion q)
+            => group is 1 or 3 ? -Spread(q) : group == 2 ? Best(q) ?? double.MaxValue : 0;
+
         return questions
-            .Select(q => (Question: q, Group: Group(q), Spread: Spread(q), Best: Best(q) ?? double.MaxValue))
+            .Select(q => (Question: q, Group: Group(q), Suite: q.Suite ?? 0))
+            .GroupBy(x => (x.Group, x.Suite))
+            .SelectMany(g => g
+                .OrderBy(x => KeyOf(x.Group, x.Question))
+                .ThenBy(x => x.Question.Number)
+                .Select((x, rank) => (x.Question, x.Group, x.Suite, Rank: rank)))
             .OrderBy(x => x.Group)
-            .ThenBy(x => x.Group is 1 or 3 ? -x.Spread : 0)
-            .ThenBy(x => x.Group == 2 ? x.Best : 0)
+            .ThenBy(x => x.Rank)
+            .ThenBy(x => x.Suite)
             .ThenBy(x => x.Question.Number)
             .Select(x => x.Question)
             .ToList();
@@ -350,8 +373,13 @@ public static class BenchmarkReportContent
         AnswerExcerptCut = question.AnswerExcerptCut,
         AnswerText = question.AnswerText,
         Graders = question.Graders,
-        ClaimRulings = question.ClaimRulings
+        ClaimRulings = question.ClaimRulings,
+        CriticalErrorResolution = question.CriticalErrorResolution
     };
+
+    /// <summary>The resolution's name; null for <see cref="BenchmarkCriticalErrorResolution.None"/> and when none is stored.</summary>
+    private static string? ResolutionName(BenchmarkCriticalErrorResolution? resolution)
+        => resolution is null or BenchmarkCriticalErrorResolution.None ? null : resolution.Value.ToString();
 
     /// <summary>
     /// The whole text when it fits in <paramref name="maxChars"/>. Otherwise the text cut back to the

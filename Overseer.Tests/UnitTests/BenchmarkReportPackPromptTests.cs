@@ -499,6 +499,85 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("    - Grader's statement — refuted (the verifier sided with the answer): The prayer timeout is always one thousand turns.", message);
     }
 
+    private const string ResolutionLine = "  Critical-error resolution: ";
+    private const string OverturnedLine = ResolutionLine + "overturned by the claim verifier (cap lifted)\n";
+    private const string UpheldLine = ResolutionLine + "upheld by the claim verifier (cap applied)\n";
+
+    private static int CountOf(string text, string part) => Regex.Matches(text, Regex.Escape(part)).Count;
+
+    [Theory]
+    [InlineData("Agreed", "agreed by both members")]
+    [InlineData("UpheldByVerifier", "upheld by the claim verifier (cap applied)")]
+    [InlineData("OverturnedByVerifier", "overturned by the claim verifier (cap lifted)")]
+    [InlineData("Unresolved", "unresolved (averaged)")]
+    [InlineData("SingleAssessor", "single assessor")]
+    [InlineData(null, null)]
+    [InlineData("None", null)]
+    public void TheCriticalErrorResolution_ReadsInWords_FromItsStoredName(string? stored, string? expected)
+    {
+        Assert.Equal(expected, BenchmarkReportPackPrompt.CriticalErrorResolutionText(stored));
+    }
+
+    [Fact]
+    public void AModelScopeQuestion_PrintsTheResolutionAfterItsGraderComments_OnlyWhereAnAnswerWasFlagged()
+    {
+        var content = ReportPackWriterTestData.Content();
+        foreach (var item in content.Runs.SelectMany(r => r.Questions)) item.CriticalErrorResolution = null;
+        content.Runs[0].Questions.Single(q => q.Number == 1).CriticalErrorResolution = "OverturnedByVerifier";
+        content.Runs[0].Questions.Single(q => q.Number == 3).CriticalErrorResolution = "UpheldByVerifier";
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, ReportPackWriterTestData.Sheet(), content).UserMessage;
+
+        Assert.Equal(1, CountOf(message, OverturnedLine));
+        Assert.Equal(1, CountOf(message, UpheldLine));
+        Assert.Equal(2, CountOf(message, ResolutionLine));
+
+        // Each line sits in its own question's block, after the grader comments; the unflagged Q2 has none.
+        int q1 = message.IndexOf("\n[Q1] band:", StringComparison.Ordinal);
+        int q2 = message.IndexOf("\n[Q2] band:", StringComparison.Ordinal);
+        int q3 = message.IndexOf("\n[Q3] band:", StringComparison.Ordinal);
+        int q4 = message.IndexOf("\n[Q4] band:", StringComparison.Ordinal);
+        Assert.True(q1 >= 0 && q1 < q2 && q2 < q3 && q3 < q4);
+        int overturned = message.IndexOf(OverturnedLine, StringComparison.Ordinal);
+        int upheld = message.IndexOf(UpheldLine, StringComparison.Ordinal);
+        Assert.InRange(overturned, q1, q2);
+        Assert.InRange(upheld, q3, q4);
+        Assert.True(message.LastIndexOf("  Grader comments (run 12):", overturned, StringComparison.Ordinal) > q1);
+        Assert.DoesNotContain(ResolutionLine, message[q2..q3]);
+    }
+
+    [Fact]
+    public void AComparisonQuestion_PrintsTheResolutionOfEachFlaggedExcerpt_AndNoneForAnUnflaggedOne()
+    {
+        var built = BenchmarkReportPackFixture.ComparisonFacts();
+        var items = built.Content!.Runs.SelectMany(r => r.Questions).ToList();
+        Assert.True(items.Count >= 3, "The fixture comparison needs three excerpts.");
+        foreach (var item in items) item.CriticalErrorResolution = null;
+        items[0].CriticalErrorResolution = "OverturnedByVerifier";
+        items[1].CriticalErrorResolution = "UpheldByVerifier";
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, built.Sheet!, built.Content!).UserMessage;
+
+        Assert.Equal(1, CountOf(message, OverturnedLine));
+        Assert.Equal(1, CountOf(message, UpheldLine));
+        Assert.Equal(2, CountOf(message, ResolutionLine));
+        Assert.Contains("answer excerpts were allotted in up to three rounds", message);
+    }
+
+    [Fact]
+    public void ABatteryDetail_PrintsTheResolutionOfItsFlaggedAnswer()
+    {
+        var content = BatteryReportFixture.Content();
+        foreach (var item in content.Runs.SelectMany(r => r.Questions)) item.CriticalErrorResolution = item.Number == 3 ? "UpheldByVerifier" : null;
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, BatteryReportFixture.Sheet(), content).UserMessage;
+
+        // The detail quotes one run's answer, so the line appears once, in S2-Q1's block.
+        Assert.Equal(1, CountOf(message, UpheldLine));
+        Assert.Equal(1, CountOf(message, ResolutionLine));
+        Assert.True(message.IndexOf(UpheldLine, StringComparison.Ordinal) > message.IndexOf("[S2-Q1] number 3 ", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void TheConfidenceSlot_LeavesTheIntervalToTheAppendedSentence_AndNeverCallsItsWidth()
     {
@@ -1056,7 +1135,7 @@ public class BenchmarkReportPackPromptTests
         Assert.Equal("- The tokens of a Not supported hypothesis support only a negated cause (not due to, not because).", lines[causal + 1]);
 
         string rule33 = Assert.Single(lines, l => l.StartsWith("- Rule 33, causes:", StringComparison.Ordinal));
-        Assert.Contains("'Part of the gap " + wording + " {{" + kept + "label}}.'", rule33, StringComparison.Ordinal);
+        Assert.Contains("'Part of the gap " + wording + " {{" + kept + "ref}}.'", rule33, StringComparison.Ordinal);
     }
 
     [Fact]

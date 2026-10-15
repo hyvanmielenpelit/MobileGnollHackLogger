@@ -17,7 +17,11 @@
 ### What we found
 
 > [!IMPORTANT]
-> **Key finding.** Intelligence: Not established; speed: Not established; cost: Probable cause.
+> **Key finding.** Intelligence: Not established; speed: Not established; cost: Root cause established.
+
+- Against the reference model, Orion Max, the paired tests establish no difference in intelligence.
+- Zeta Prime is the cheapest model, at $0.010 per question, and its Intelligence Index interval overlaps no other model's.
+- Answers without any tool call: Orion Max, 2 of 6 scored answers (33%); Vega Pro, 2 of 6 scored answers (33%); Lyra Mini, 2 of 6 scored answers (33%); Nova Lite, 2 of 6 scored answers (33%); Zeta Prime, 2 of 6 scored answers (33%).
 
 ### The questions
 
@@ -33,21 +37,21 @@
 >
 > *Answer strength: no hypothesis about this model fired — see its profile.*
 >
-> For Zeta Prime the measured signals are lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more. The answer strength is Unknown.
+> For Zeta Prime the measured signals are lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1). The answer strength is Unknown.
 
 > [!NOTE]
 > **Question.** **Why is Zeta Prime slowest?**
 >
 > *Answer strength: Suggestive (Low) — no hypothesis graded Low or higher compares it with the other models; its own breakdown, see WS3.3 and WS2.1, says where its own time, cost or points go.*
 >
-> For Zeta Prime the measured signals are median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer. The answer strength is Suggestive (Low). The leading hypothesis is Zeta Prime's time spent on tool rounds.
+> For Zeta Prime the measured signals are median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer. The answer strength is Suggestive (Low). The leading hypothesis is WS3.3 (time spent on tool rounds).
 
 > [!NOTE]
 > **Question.** **Why is Nova Lite the most expensive?**
 >
-> *Answer strength: Probable (Moderate) — against the other models, see HC2.2 and HC4.2; its own breakdown, see WC1.2.*
+> *Answer strength: Established (High) — against the other models, see HC2.2 and HC4.2; its own breakdown, see WC1.2.*
 >
-> For Nova Lite the measured signals are $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache. The answer strength is Probable (Moderate). The leading hypothesis is Nova Lite's higher price per token, compared with Orion Max.
+> For Nova Lite the measured signals are $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache. The answer strength is Established (High). The leading hypothesis is HC2.2 (higher price per token).
 
 ### At a glance
 
@@ -64,50 +68,31 @@
 > [!WARNING]
 > **Caveat.** How sure each answer is. **Established (High)**: measured, still clear after the correction for many comparisons, robust in every check, not explained by another setting, and each model ran at least twice per suite. **Probable (Moderate)**: one of those is missing. **Suggestive (Low)**: a lead only; it is not measured, two or more are missing, or the difference may be chance. **Ruled out (Not supported)**: the hypothesis's own test contradicts it.
 >
-> Each model ran only once per suite, so this document cannot tell whether its results would repeat. No cause can be graded above Probable (Moderate) until a second run of each suite is made.
+> Each model ran only once per suite, so this document cannot tell whether its results would repeat. No cause can be graded above Probable (Moderate) until a second run of each suite is made, apart from a price effect, which follows from the price cards.
 
 ## Key terms
 
-This document uses a few statistical and technical terms. Each is explained here in plain words, and the less familiar ones again where they first appear. Appendix H gives a fuller definition of each.
+The terms the summary and the conclusions use, each in plain words. A term is also explained where it first appears, and Appendix H defines every term this document uses.
 
 | Term | What it means |
 |---|---|
 | 95% interval | The range the true value most likely lies in. |
-| Answer quality | The score of one answer, from its four graded dimensions. |
 | Answers without tools | Answers the model wrote without looking anything up. |
-| Bootstrap interval | A range found by resampling the questions many times. |
 | Confound | Another difference between two models that could account for a result. |
 | Critical error | A mistake serious enough to cap the answer's score. |
-| Decomposition share | How much of a difference one part accounts for. |
-| Difficulty-weighted mean | An average in which harder questions count for more. |
-| Dimension | One of the four things graded: accuracy, completeness, conciseness, readability. |
 | Grade words | How sure the document is of a cause, strongest to weakest. |
 | Holm adjustment | A correction for running many comparisons at once. |
 | Hypothesis | A possible cause that code tested against the data. |
 | Intelligence Index | The overall answer-quality score, out of a hundred. |
 | Isolated miss | A question one model missed while the others did well. |
-| Leave-one-out check | Rechecking a result with each question left out in turn. |
-| Locus | Where a cause lies: model, chat, grading, questions, data or provider. |
 | Median and mean | The middle value, and the plain average. |
-| Null hypothesis | The starting assumption that a difference is only chance. |
-| Output generation and decode rate | The time spent writing the reply, and how fast it is written. |
-| p-value | How likely a gap this large would be by chance alone. |
 | Paired test | A comparison of two models on the same questions. |
 | Points at risk | The most index points a failure signal could have cost. |
-| Pricing basis | Which prices turned the token counts into dollars. |
 | Reference model | The model every other model is tested against. |
 | Replicate run | A second run of the same model, to see if results repeat. |
-| Response style | Whether the chat asks for concise or detailed answers. |
 | Robustness check | A test of whether a result survives a small change. |
 | Runs per suite | How many times each model answered each suite. |
-| Scoring levels | Fixed grade steps, each described by the answer behavior that earns it. |
-| Suite | A fixed set of benchmark questions with their rubrics. |
-| Tied rank | A shared rank for models the data cannot put in order. |
-| Time ratio and spend ratio | One model's time or cost divided by another's. |
-| Time to first token | The wait before the model starts writing, mostly its thinking. |
-| Tokens | The word pieces a model reads and writes, which set its price. |
-| Tool round | One cycle of calling a tool and reading its result. |
-| Weighted geometric mean | An average that one very low score pulls down sharply. |
+| Tied rank | The span of places the model's interval allows. |
 
 ## Why each model scored as it did
 
@@ -117,16 +102,16 @@ This document uses a few statistical and technical terms. Each is explained here
 | Vega Pro | 80 | tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness | low-scoring answers, mostly Accuracy: 2.8 index points on 2 questions (Q3 and Q4) | none |
 | Lyra Mini | 70 | none ranked first or second | confirmed critical errors: 7.2 index points on 1 question (Q3) | 1 critical error (Q3) |
 | Nova Lite | 70 | none ranked first or second | answers without tools: 6.3 index points on 1 question (Q3) | none |
-| Zeta Prime | 55 | none ranked first or second | low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); last of 5 models on Accuracy | 1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more |
+| Zeta Prime | 55 | none ranked first or second | low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); last of 5 models on Accuracy | 1 isolated miss (Q1) |
 
-*Each entry is a count, a share or a rank measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (the most index points a failure signal could have cost), with its questions (Appendix A). Flags: critical errors (a mistake serious enough to cap the answer's score); isolated misses (a question one model missed while the others did well).*
+*Each entry is a count, a share or a rank measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (the most index points a failure signal could have cost), with its questions (Appendix A). Flags: critical errors (a mistake serious enough to cap the answer's score); isolated misses (a question one model missed while the others did well). An isolated miss is a question the model scored 50 or less on while the other models' median was 75 or more.*
 
 ## Scope and design
 
 ### Setup and method
 
 - **Suite:** GnollHack Core Suite, 6 questions in the per-question matrix.
-- **Coverage:** every model of Comparison #12 — Spring model sweep that is not excluded.
+- **Coverage:** every non-excluded model of Comparison #12 — Spring model sweep.
 - **Chat configuration under test:** Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed
 - **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
 - **Graders:**
@@ -148,7 +133,7 @@ One run per suite on each side limits what this design can decide; the next runs
 | Nova Lite | 70 | 64–76 | 3–4 (tied) | 0 of 6 answers |
 | Zeta Prime | 55 | 50–60 | 5 | 0 of 6 answers |
 
-*A rank shown as a span, such as 2–4 (tied), is a tied rank: the model's 95% interval (the range the true value most likely lies in) overlaps a neighbor's, so the intervals alone cannot put them in order.*
+*A rank shown as a span, such as 5–9 (tied), is a tied rank: the model's 95% interval (the range the true value most likely lies in) overlaps others', so its rank is the span of places the interval allows. Interval bounds are rounded to whole numbers, so two intervals printed as touching may not overlap; ranks use the unrounded bounds.*
 
 | Model | Accuracy | Completeness | Conciseness | Readability |
 |---|---|---|---|---|
@@ -162,14 +147,12 @@ One run per suite on each side limits what this design can decide; the next runs
 
 | Pair | Questions | Difference (95% interval) | Result |
 |---|---|---|---|
-| Orion Max vs Vega Pro | 6 | 0.0 points (-21.0 to +21.0) | not established |
-| Orion Max vs Lyra Mini | 6 | +15.2 points (+6.6 to +23.8) | not established |
-| Orion Max vs Nova Lite | 6 | +15.8 points (+5.6 to +26.1) | not established |
-| Orion Max vs Zeta Prime | 6 | +30.0 points (+16.1 to +43.9) | not established |
+| Vega Pro vs Orion Max | 6 | 0.0 points (-21.0 to +21.0) | not established |
+| Lyra Mini vs Orion Max | 6 | -15.2 points (-23.8 to -6.6) | not established |
+| Nova Lite vs Orion Max | 6 | -15.8 points (-26.1 to -5.6) | not established |
+| Zeta Prime vs Orion Max | 6 | -30.0 points (-43.9 to -16.1) | not established |
 
-*Each row is a paired test (a comparison of two models on the same questions). Intelligence: Holm-adjusted across 4 tests (a correction for running many comparisons at once). Difference: the mean per-question difference, first model minus second, on the questions both answered. Appendix A gives every family.*
-
-*At least one entry has a single run. With one run a side, a paired test captures question sampling only, not run-to-run variation, so it can look more certain than it is.*
+*Each row is a paired test (a comparison of two models on the same questions). Intelligence: Holm-adjusted across 4 tests (a correction for running many comparisons at once). Difference: the mean per-question difference, first model minus the reference, on the questions both answered. Appendix A gives the tests among all pairs.*
 
 ### What the graders recorded
 
@@ -182,26 +165,26 @@ The first known fact: Uncached input, price per token accounts for 45% (44–46%
 
 ### Where the time goes
 
-| Model | Seconds per question | Time to first token | Output generation | Tool execution | Own waits and retries | Other |
-|---|---|---|---|---|---|---|
-| Orion Max | 8.9 s | 1.9 s | 5.2 s | 1.5 s | 0.0 s | 0.3 s |
-| Vega Pro | 10.4 s | 2.5 s | 6.1 s | 1.5 s | 0.0 s | 0.3 s |
-| Lyra Mini | 11.9 s | 3.1 s | 7.0 s | 1.5 s | 0.0 s | 0.3 s |
-| Nova Lite | 13.4 s | 3.8 s | 7.9 s | 1.5 s | 0.0 s | 0.3 s |
-| Zeta Prime | 14.9 s | 4.4 s | 8.7 s | 1.5 s | 0.0 s | 0.3 s |
+| Model | Wall time per question (median, tools included) | Time to first token | Output generation | Tool execution | Other |
+|---|---|---|---|---|---|
+| Orion Max | 8.9 s | 1.9 s | 5.2 s | 1.5 s | 0.3 s |
+| Vega Pro | 10.4 s | 2.5 s | 6.1 s | 1.5 s | 0.3 s |
+| Lyra Mini | 11.9 s | 3.1 s | 7.0 s | 1.5 s | 0.3 s |
+| Nova Lite | 13.4 s | 3.8 s | 7.9 s | 1.5 s | 0.3 s |
+| Zeta Prime | 14.9 s | 4.4 s | 8.7 s | 1.5 s | 0.3 s |
 
-*Seconds per question: the median time per question, split into its parts in proportion to their mean times. The parts are time to first token (the wait before the model starts writing, mostly its thinking), output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. Tool execution is excluded from the model's own time elsewhere in this document.*
+*Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. The parts are time to first token (the wait before the model starts writing, mostly its thinking), output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. It differs from the median model time the other tables of this document give, which leaves tool execution out. Left out because it is zero or not recorded in every row: own waits and retries.*
 
 ### Paired tests against Orion Max
 
 | Pair | Time ratio (95% interval) | Result |
 |---|---|---|
-| Orion Max vs Vega Pro | 0.83 (0.53 to 1.31) | not established |
-| Orion Max vs Lyra Mini | 0.71 (0.70 to 0.73) | not established |
-| Orion Max vs Nova Lite | 0.62 (0.40 to 0.98) | not established |
-| Orion Max vs Zeta Prime | 0.56 (0.54 to 0.57) | not established |
+| Vega Pro vs Orion Max | 1.20 (0.76 to 1.89) | not established |
+| Lyra Mini vs Orion Max | 1.40 (1.37 to 1.43) | not established |
+| Nova Lite vs Orion Max | 1.60 (1.02 to 2.51) | not established |
+| Zeta Prime vs Orion Max | 1.80 (1.75 to 1.86) | not established |
 
-*Each row is a paired test. Speed: Holm-adjusted across 4 tests. A ratio is the first model's own time per question divided by the second's, on the questions both answered. Appendix A gives every family.*
+*Each row is a paired test. Speed: Holm-adjusted across 4 tests. A ratio is the first model's own time per question divided by the reference's, on the questions both answered. Appendix A gives the tests among all pairs.*
 
 ### Time differences between the models
 
@@ -213,15 +196,15 @@ The speed tables split the time per question into its components.
 
 ### Where the cost goes
 
-| Model | Cost per question | Uncached input | Cache reads | Cache writes | Visible output | Reasoning |
-|---|---|---|---|---|---|---|
-| Orion Max | $0.014 | $0.0042 | $0.0001 | $0.0000 | $0.0067 | $0.0030 |
-| Vega Pro | $0.022 | $0.0082 | $0.0001 | $0.0000 | $0.0089 | $0.0046 |
-| Lyra Mini | $0.031 | $0.013 | $0.0002 | $0.0000 | $0.011 | $0.0064 |
-| Nova Lite | $0.041 | $0.018 | $0.0002 | $0.0000 | $0.014 | $0.0086 |
-| Zeta Prime | $0.052 | $0.024 | $0.0002 | $0.0000 | $0.017 | $0.011 |
+| Model | Cost per question | Uncached input | Cache reads | Visible output | Reasoning |
+|---|---|---|---|---|---|
+| Orion Max | $0.014 | $0.0042 | $0.0001 | $0.0067 | $0.0030 |
+| Vega Pro | $0.022 | $0.0082 | $0.0001 | $0.0089 | $0.0046 |
+| Lyra Mini | $0.031 | $0.013 | $0.0002 | $0.011 | $0.0064 |
+| Nova Lite | $0.041 | $0.018 | $0.0002 | $0.014 | $0.0086 |
+| Zeta Prime | $0.052 | $0.024 | $0.0002 | $0.017 | $0.011 |
 
-*Mean cost per question by component. Each component is a kind of token (the word pieces a model reads and writes, which set its price). Uncached input is text read at the full price, and cache reads are stored input read at a lower price. Cache writes store input for later calls; visible output is the answer; reasoning is the model's hidden thinking. Priced on this basis (which prices turned the token counts into dollars): Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.*
+*Mean cost per question by component. Each component is a kind of token (the word pieces a model reads and writes, which set its price). Uncached input is text read at the full price, and cache reads are stored input read at a lower price. Cache writes store input for later calls; visible output is the answer; reasoning is the model's hidden thinking. Priced on this basis (which prices turned the token counts into dollars): Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent. Left out because it is zero or not recorded in every row: cache writes.*
 
 ### Paired tests against Orion Max
 
@@ -245,7 +228,7 @@ The cost tables split the cost per question into volume and price.
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| HQ3.1: shared failures on the same questions | Shared failures on specific questions point to the instrument, not the models. | Suggestive (Low) | — | check 1 |
+| HQ3.1 | Shared failures on specific questions point to the instrument, not the models. | Suggestive (Low) | — | check 1 |
 
 *Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
@@ -267,12 +250,12 @@ The strongest hypothesis in the table: Shared failures on specific questions poi
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WS3.1: Orion Max's time spent on tool rounds | Tool rounds multiply Orion Max's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
-| WS3.2: Nova Lite's time spent on tool rounds | Tool rounds multiply Nova Lite's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
-| WS3.3: Zeta Prime's time spent on tool rounds | Tool rounds multiply Zeta Prime's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
-| WS2.1: Zeta Prime's time spent generating output | Most of Zeta Prime's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 65% (64–66%) | check 2 |
-| WS2.2: Nova Lite's time spent generating output | Most of Nova Lite's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 66% (65–67%) | check 3 |
-| WS2.3: Orion Max's time spent generating output | Most of Orion Max's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 70% (69–71%) | run 2 |
+| WS3.1 | Tool rounds multiply Orion Max's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
+| WS3.2 | Tool rounds multiply Nova Lite's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
+| WS3.3 | Tool rounds multiply Zeta Prime's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
+| WS2.1 | Most of Zeta Prime's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 65% (64–66%) | — |
+| WS2.2 | Most of Nova Lite's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 66% (65–67%) | — |
+| WS2.3 | Most of Orion Max's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 70% (69–71%) | — |
 
 *Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
@@ -290,18 +273,18 @@ The strongest hypothesis in the table: Tool rounds multiply Orion Max's time (wh
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WC1.1: Zeta Prime's output cost | Output (with reasoning) is Zeta Prime's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 54% | — |
-| HC2.1: Zeta Prime's higher price per token, compared with Orion Max | Zeta Prime costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 69% (68–69%) | — |
-| WC1.2: Nova Lite's output cost | Output (with reasoning) is Nova Lite's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 55% | — |
-| HC2.2: Nova Lite's higher price per token, compared with Orion Max | Nova Lite costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 70% (69–70%) | — |
-| HC2.3: Lyra Mini's higher price per token, compared with Orion Max | Lyra Mini costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 71% (70–71%) | — |
-| WC1.3: Orion Max's output cost | Output (with reasoning) is Orion Max's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 69% | — |
-| HC2.4: Zeta Prime's higher price per token, compared with Nova Lite | Zeta Prime costs more than Nova Lite mainly from its price per token. | Probable (Moderate) | 65% (64–65%) | — |
-| HC2.5: Vega Pro's higher price per token, compared with Orion Max | Vega Pro costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 72% (71–73%) | — |
-| HC4.1: Zeta Prime's weak prompt caching, compared with Orion Max | Weak prompt caching raises Zeta Prime's cost against Orion Max. | Ruled out (Not supported) | 9% (9–9%) | run 1 |
-| HC4.2: Nova Lite's weak prompt caching, compared with Orion Max | Weak prompt caching raises Nova Lite's cost against Orion Max. | Ruled out (Not supported) | 8% (8–9%) | run 1 |
-| HC4.3: Zeta Prime's weak prompt caching, compared with Nova Lite | Weak prompt caching raises Zeta Prime's cost against Nova Lite. | Ruled out (Not supported) | 12% (12–13%) | run 1 |
-| HC4.4: Lyra Mini's weak prompt caching, compared with Orion Max | Weak prompt caching raises Lyra Mini's cost against Orion Max. | Ruled out (Not supported) | 8% (7–8%) | run 1 |
+| HC2.1 | Zeta Prime costs more than Orion Max mainly from its price per token. | Established (High) | 69% (68–69%) | — |
+| HC2.2 | Nova Lite costs more than Orion Max mainly from its price per token. | Established (High) | 70% (69–70%) | — |
+| HC2.3 | Lyra Mini costs more than Orion Max mainly from its price per token. | Established (High) | 71% (70–71%) | — |
+| HC2.4 | Zeta Prime costs more than Nova Lite mainly from its price per token. | Established (High) | 65% (64–65%) | — |
+| HC2.5 | Vega Pro costs more than Orion Max mainly from its price per token. | Established (High) | 72% (71–73%) | — |
+| WC1.1 | Output (with reasoning) is Zeta Prime's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 54% | — |
+| WC1.2 | Output (with reasoning) is Nova Lite's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 55% | — |
+| WC1.3 | Output (with reasoning) is Orion Max's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 69% | — |
+| HC4.1 | Weak prompt caching raises Zeta Prime's cost against Orion Max. | Ruled out (Not supported) | 9% (9–9%) | — |
+| HC4.2 | Weak prompt caching raises Nova Lite's cost against Orion Max. | Ruled out (Not supported) | 8% (8–9%) | — |
+| HC4.3 | Weak prompt caching raises Zeta Prime's cost against Nova Lite. | Ruled out (Not supported) | 12% (12–13%) | — |
+| HC4.4 | Weak prompt caching raises Lyra Mini's cost against Orion Max. | Ruled out (Not supported) | 8% (7–8%) | — |
 
 *Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
@@ -313,7 +296,7 @@ A real difference was found for 5 pairs:
 - Orion Max vs. Zeta Prime
 - Nova Lite vs. Zeta Prime
 
-The strongest hypothesis in the table: Output (with reasoning) is Zeta Prime's largest cost component (where its cost goes, not a comparison). Its grade and the evidence against it stand beside it.
+The strongest hypothesis in the table: Zeta Prime costs more than Orion Max mainly from its price per token. Its grade and the evidence against it stand beside it.
 
 ### The writer's hypotheses
 
@@ -331,10 +314,10 @@ The strongest hypothesis in the table: Output (with reasoning) is Zeta Prime's l
 |---|---|---|---|
 | Intelligence | Not established | HQ3.1: shared failures on the same questions | Suggestive (Low) because it is observed, not measured. |
 | Speed | Not established | — | Only hypotheses about one model's own breakdown fired on this axis; none compares the models. |
-| Cost | Probable cause | HC2.1: Zeta Prime's higher price per token, compared with Orion Max | Probable (Moderate) because both models ran only once per suite. |
+| Cost | Root cause established | HC2.1: Zeta Prime's higher price per token, compared with Orion Max | Established (High): it passed every check, and a real difference between the two models was shown. |
 
 > [!TIP]
-> **Conclusion.** Intelligence: Not established. Speed: Not established. Cost: Probable cause.
+> **Conclusion.** Intelligence: Not established. Speed: Not established. Cost: Root cause established.
 
 ## What to run next
 
@@ -342,14 +325,11 @@ In the order to make them: the Overseer chat first (C), then the benchmark (B), 
 
 | # | Run | Purpose | Models | Settles | Estimate |
 |---|---|---|---|---|---|
-| 1 | Replicate (recommended) | M, model selection | Orion Max, Nova Lite, Zeta Prime and Lyra Mini | WS3.1, WS3.2, WS3.3, HC4.1, HC4.2, HC4.3, HC4.4 | not estimated |
-| 2 | Thinking-level pair (optional) | M, model selection | Orion Max and Orion Max (medium) | WS2.3 | not estimated |
+| 1 | Replicate (recommended) | M, model selection | all 5 models | H0-Q.1, H0-Q.2, H0-Q.3, H0-Q.4, H0-Q.5, H0-W.1, H0-W.2, H0-S.1 and 7 more (Appendix D) | not estimated |
 
 ### Checks
 
 1. Check the rubric of Q3 against the source, and whether the tools' corpus holds the facts the question needs. *(rubric; settles HQ3.1)*
-2. No configured, enabled Benchmark-role configuration of Zeta Prime exists at another thinking level; add one to test WS2.1. *(configuration; settles WS2.1)*
-3. No configured, enabled Benchmark-role configuration of Nova Lite exists at another thinking level; add one to test WS2.2. *(configuration; settles WS2.2)*
 
 The runs are ordered chat first, then the benchmark, then model selection.
 
@@ -367,13 +347,13 @@ The benchmark asks single questions, so longer conversations are not measured.
 
 ## Appendices
 
-- **A. Intelligence detail:** the compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, every paired test and the per-question matrix.
+- **A. Intelligence detail:** the compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, the paired tests the body does not give and the per-question matrix.
 - **B. Speed and cost decompositions:** calls, latency, tokens and every component of each decomposed difference.
 - **C. Hypothesis details:** each hypothesis' evidence for and against, grade reasons and robustness checks, and the null hypotheses.
 - **D. Run settings:** every launcher setting of each run to make next.
-- **E. Known facts:** what a test, a count, a decomposition or the configuration proves.
+- **E. Known facts:** the counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
 - **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
-- **G. Question details:** the questions this document cites, with their answers.
+- **G. Question details:** the questions the writer cites, those with a disputed claim or a critical error, and the control items, each with its answer excerpts.
 - **H. Glossary:** every term this document uses, in plain words.
 
 ## Appendix A: Intelligence detail
@@ -395,16 +375,6 @@ The benchmark asks single questions, so longer conversations are not measured.
 - **Orion Max against Nova Lite: config differences:** provider and model
 - **Orion Max against Zeta Prime: config differences:** provider and model
 - **Nova Lite against Zeta Prime: config differences:** provider and model
-
-### Results
-
-| Model | Provider | Intelligence Index | 95% interval | Rank | Median answer time | Speed rank | Cost per question | Cost rank | Critical errors |
-|---|---|---|---|---|---|---|---|---|---|
-| Orion Max (reference) | Northwind | 85 | 82–88 | 1–2 (tied) | 12.0 s | 3 | $0.050 | 4 | 0 of 6 answers |
-| Vega Pro | Southstar | 80 | 77–83 | 1–2 (tied) | 9.0 s | 2 | $0.030 | 3 | 0 of 6 answers |
-| Lyra Mini | Eastgate | 70 | 66–74 | 3–4 (tied) | 15.0 s | 4 | $0.020 | 2 | 1 of 6 answers |
-| Nova Lite | Westlake | 70 | 64–76 | 3–4 (tied) | 8.0 s | 1 | $0.060 | 5 | 0 of 6 answers |
-| Zeta Prime | Midland | 55 | 50–60 | 5 | 20.0 s | 5 | $0.010 | 1 | 0 of 6 answers |
 
 ### Failure profile
 
@@ -466,35 +436,9 @@ No model was graded by an assessor panel in every run, so no panel agreement fig
 
 *Index points, first model minus second, split by the scoring weights; the parts sum to the difference. Other is the critical-error cap and the difficulty weighting.*
 
-### Paired tests: every family
+### Paired tests
 
 *Each pair is compared on the questions both models answered. Each measure is its own family of tests, Holm-adjusted across the tests it makes over these models; a result is established when its adjusted p-value is below 0.05. Another set of models gives another family and another adjustment.*
-
-**Against Orion Max (the reference)**
-
-Intelligence: Holm-adjusted across 4 tests.
-
-| Pair | Questions | Difference (95% interval) | Adjusted p | Result |
-|---|---|---|---|---|
-| Orion Max vs Vega Pro | 6 | 0.0 points (-21.0 to +21.0) | 0.406 | not established |
-| Orion Max vs Lyra Mini | 6 | +15.2 points (+6.6 to +23.8) | 0.125 | not established |
-| Orion Max vs Nova Lite | 6 | +15.8 points (+5.6 to +26.1) | 0.125 | not established |
-| Orion Max vs Zeta Prime | 6 | +30.0 points (+16.1 to +43.9) | 0.125 | not established |
-
-*Difference: the mean per-question difference, first model minus second, on the questions both answered.*
-
-Speed: Holm-adjusted across 4 tests. Cost: not tested. No candidate price card was resolved for run #31 of Orion Max on this pricing basis, so its cost is unknown.
-
-| Pair | Time ratio (95% interval) | Speed result | Spend ratio (95% interval) | Cost result |
-|---|---|---|---|---|
-| Orion Max vs Vega Pro | 0.83 (0.53 to 1.31) | not established | — | not tested |
-| Orion Max vs Lyra Mini | 0.71 (0.70 to 0.73) | not established | — | not tested |
-| Orion Max vs Nova Lite | 0.62 (0.40 to 0.98) | not established | — | not tested |
-| Orion Max vs Zeta Prime | 0.56 (0.54 to 0.57) | not established | — | not tested |
-
-*A ratio is the first model's own time or spend per question divided by the second's, on the questions both answered.*
-
-*At least one entry has a single run. With one run a side, a paired test captures question sampling only, not run-to-run variation, so it can look more certain than it is.*
 
 **Every pair**
 
@@ -563,13 +507,15 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 
 ### Tokens per question
 
-| Model | Uncached input | Cache reads | Cache writes | Visible output | Reasoning | Cache-read share |
-|---|---|---|---|---|---|---|
-| Orion Max | 3,350 | 1,000 | 0 | 670 | 300 | 23% |
-| Vega Pro | 3,650 | 1,200 | 0 | 740 | 380 | 25% |
-| Lyra Mini | 3,950 | 1,400 | 0 | 810 | 460 | 26% |
-| Nova Lite | 4,250 | 1,600 | 0 | 880 | 540 | 27% |
-| Zeta Prime | 4,550 | 1,800 | 0 | 950 | 620 | 28% |
+| Model | Uncached input | Cache reads | Visible output | Reasoning | Cache-read share |
+|---|---|---|---|---|---|
+| Orion Max | 3,350 | 1,000 | 670 | 300 | 23% |
+| Vega Pro | 3,650 | 1,200 | 740 | 380 | 25% |
+| Lyra Mini | 3,950 | 1,400 | 810 | 460 | 26% |
+| Nova Lite | 4,250 | 1,600 | 880 | 540 | 27% |
+| Zeta Prime | 4,550 | 1,800 | 950 | 620 | 28% |
+
+*Left out because it is zero or not recorded in every row: cache writes.*
 
 ### Speed and cost figures
 
@@ -587,10 +533,6 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 |---|---|---|---|---|---|---|
 | Orion Max vs Vega Pro | 6 | -$0.0078 | Uncached input, token volume | volume | -$0.0005 | 7% (6–7%) |
 | Orion Max vs Vega Pro | 6 | -$0.0078 | Uncached input, price per token | price | -$0.0035 | 45% (44–46%) |
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Cache reads, token volume | volume | -$0.0000 | 0% (0–0%) |
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Cache reads, price per token | price | -$0.0000 | 0% (0–0%) |
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Cache writes, token volume | volume | $0.0000 | 0% (0–0%) |
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Cache writes, price per token | price | $0.0000 | 0% (0–0%) |
 | Orion Max vs Vega Pro | 6 | -$0.0078 | Visible output, token volume | volume | -$0.0008 | 10% (10–10%) |
 | Orion Max vs Vega Pro | 6 | -$0.0078 | Visible output, price per token | price | -$0.0014 | 18% (18–18%) |
 | Orion Max vs Vega Pro | 6 | -$0.0078 | Reasoning, token volume | volume | -$0.0009 | 11% (11–12%) |
@@ -600,9 +542,6 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 | Orion Max vs Lyra Mini | 6 | -$0.017 | Uncached input, token volume | volume | -$0.0013 | 8% (7–8%) |
 | Orion Max vs Lyra Mini | 6 | -$0.017 | Uncached input, price per token | price | -$0.0074 | 44% (43–45%) |
 | Orion Max vs Lyra Mini | 6 | -$0.017 | Cache reads, token volume | volume | -$0.0001 | 0% (0–0%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Cache reads, price per token | price | +$0.0000 | 0% (0–0%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Cache writes, token volume | volume | $0.0000 | 0% (0–0%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Cache writes, price per token | price | $0.0000 | 0% (0–0%) |
 | Orion Max vs Lyra Mini | 6 | -$0.017 | Visible output, token volume | volume | -$0.0017 | 10% (10–10%) |
 | Orion Max vs Lyra Mini | 6 | -$0.017 | Visible output, price per token | price | -$0.0030 | 18% (17–18%) |
 | Orion Max vs Lyra Mini | 6 | -$0.017 | Reasoning, token volume | volume | -$0.0019 | 11% (11–12%) |
@@ -612,9 +551,6 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 | Orion Max vs Nova Lite | 6 | -$0.027 | Uncached input, token volume | volume | -$0.0023 | 8% (8–9%) |
 | Orion Max vs Nova Lite | 6 | -$0.027 | Uncached input, price per token | price | -$0.012 | 43% (42–44%) |
 | Orion Max vs Nova Lite | 6 | -$0.027 | Cache reads, token volume | volume | -$0.0001 | 0% (0–0%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Cache reads, price per token | price | +$0.0000 | 0% (0–0%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Cache writes, token volume | volume | $0.0000 | 0% (0–0%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Cache writes, price per token | price | $0.0000 | 0% (0–0%) |
 | Orion Max vs Nova Lite | 6 | -$0.027 | Visible output, token volume | volume | -$0.0027 | 10% (10–10%) |
 | Orion Max vs Nova Lite | 6 | -$0.027 | Visible output, price per token | price | -$0.0047 | 17% (17–18%) |
 | Orion Max vs Nova Lite | 6 | -$0.027 | Reasoning, token volume | volume | -$0.0031 | 12% (11–12%) |
@@ -624,9 +560,6 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 | Orion Max vs Zeta Prime | 6 | -$0.038 | Uncached input, token volume | volume | -$0.0035 | 9% (9–9%) |
 | Orion Max vs Zeta Prime | 6 | -$0.038 | Uncached input, price per token | price | -$0.016 | 42% (42–43%) |
 | Orion Max vs Zeta Prime | 6 | -$0.038 | Cache reads, token volume | volume | -$0.0001 | 0% (0–0%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Cache reads, price per token | price | +$0.0000 | 0% (0–0%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Cache writes, token volume | volume | $0.0000 | 0% (0–0%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Cache writes, price per token | price | $0.0000 | 0% (0–0%) |
 | Orion Max vs Zeta Prime | 6 | -$0.038 | Visible output, token volume | volume | -$0.0039 | 10% (10–10%) |
 | Orion Max vs Zeta Prime | 6 | -$0.038 | Visible output, price per token | price | -$0.0065 | 17% (17–17%) |
 | Orion Max vs Zeta Prime | 6 | -$0.038 | Reasoning, token volume | volume | -$0.0045 | 12% (12–12%) |
@@ -635,10 +568,6 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 | Orion Max vs Zeta Prime | 6 | -$0.038 | Price per token, all components | price | -$0.026 | 69% (68–69%) |
 | Nova Lite vs Zeta Prime | 6 | -$0.011 | Uncached input, token volume | volume | -$0.0014 | 12% (12–13%) |
 | Nova Lite vs Zeta Prime | 6 | -$0.011 | Uncached input, price per token | price | -$0.0044 | 39% (38–39%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Cache reads, token volume | volume | -$0.0000 | 0% (0–0%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Cache reads, price per token | price | -$0.0000 | 0% (0–0%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Cache writes, token volume | volume | $0.0000 | 0% (0–0%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Cache writes, price per token | price | $0.0000 | 0% (0–0%) |
 | Nova Lite vs Zeta Prime | 6 | -$0.011 | Visible output, token volume | volume | -$0.0012 | 10% (10–11%) |
 | Nova Lite vs Zeta Prime | 6 | -$0.011 | Visible output, price per token | price | -$0.0018 | 16% (16–16%) |
 | Nova Lite vs Zeta Prime | 6 | -$0.011 | Reasoning, token volume | volume | -$0.0014 | 12% (12–12%) |
@@ -646,7 +575,7 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 | Nova Lite vs Zeta Prime | 6 | -$0.011 | Token volume, all components | volume | -$0.0040 | 35% (35–36%) |
 | Nova Lite vs Zeta Prime | 6 | -$0.011 | Price per token, all components | price | -$0.0074 | 65% (64–65%) |
 
-*Each difference is split into parts that add up exactly to it (a standard method, the logarithmic-mean Divisia index), using only the questions both models have figures for. A share's interval comes from resampling those questions (a bootstrap interval). The difference is the first model's minus the second's.*
+*Each difference is split into parts that add up exactly to it (a standard method, the logarithmic-mean Divisia index), using only the questions both models have figures for. A share's interval comes from resampling those questions (a bootstrap interval). The difference is the first model's minus the second's. A component whose part and share are both zero is left out.*
 
 ## Appendix C: Hypothesis details
 
@@ -719,54 +648,54 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
 
 ### Cost
 
+- **HC2.1: Zeta Prime's higher price per token, compared with Orion Max** (Zeta Prime and Orion Max; locus model; Established (High))
+  - *For:* Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference.
+  - *Against:* The volume effect is 31% (31–32%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
+- **HC2.2: Nova Lite's higher price per token, compared with Orion Max** (Nova Lite and Orion Max; locus model; Established (High))
+  - *For:* Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference.
+  - *Against:* The volume effect is 30% (30–31%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
+- **HC2.3: Lyra Mini's higher price per token, compared with Orion Max** (Lyra Mini and Orion Max; locus model; Established (High))
+  - *For:* Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference.
+  - *Against:* The volume effect is 29% (29–30%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
+- **HC2.4: Zeta Prime's higher price per token, compared with Nova Lite** (Zeta Prime and Nova Lite; locus model; Established (High))
+  - *For:* Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference.
+  - *Against:* The volume effect is 35% (35–36%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
+- **HC2.5: Vega Pro's higher price per token, compared with Orion Max** (Vega Pro and Orion Max; locus model; Established (High))
+  - *For:* Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference.
+  - *Against:* The volume effect is 28% (27–29%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
 - **WC1.1: Zeta Prime's output cost** (Zeta Prime; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 54% of Zeta Prime's cost per question.
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* Another component is larger.
   - *Robustness:* Replicates failed (Zeta Prime ran only once per suite).
-- **HC2.1: Zeta Prime's higher price per token, compared with Orion Max** (Zeta Prime and Orion Max; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference.
-  - *Against:* The volume effect is 31% (31–32%) of the difference.
-  - *Grade reasons:* see Robustness.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
 - **WC1.2: Nova Lite's output cost** (Nova Lite; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 55% of Nova Lite's cost per question.
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* Another component is larger.
   - *Robustness:* Replicates failed (Nova Lite ran only once per suite).
-- **HC2.2: Nova Lite's higher price per token, compared with Orion Max** (Nova Lite and Orion Max; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference.
-  - *Against:* The volume effect is 30% (30–31%) of the difference.
-  - *Grade reasons:* see Robustness.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC2.3: Lyra Mini's higher price per token, compared with Orion Max** (Lyra Mini and Orion Max; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference.
-  - *Against:* The volume effect is 29% (29–30%) of the difference.
-  - *Grade reasons:* see Robustness.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
 - **WC1.3: Orion Max's output cost** (Orion Max; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 69% of Orion Max's cost per question.
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* Another component is larger.
   - *Robustness:* Replicates failed (Orion Max ran only once per suite).
-- **HC2.4: Zeta Prime's higher price per token, compared with Nova Lite** (Zeta Prime and Nova Lite; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference.
-  - *Against:* The volume effect is 35% (35–36%) of the difference.
-  - *Grade reasons:* see Robustness.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC2.5: Vega Pro's higher price per token, compared with Orion Max** (Vega Pro and Orion Max; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference.
-  - *Against:* The volume effect is 28% (27–29%) of the difference.
-  - *Grade reasons:* see Robustness.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
 - **HC4.1: Zeta Prime's weak prompt caching, compared with Orion Max** (Zeta Prime and Orion Max; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 9% (9–9%) of the $0.038 per-question cost difference.
   - *Against:* Zeta Prime's cache-read share is 28% against the models' median of 26%.
@@ -806,15 +735,19 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ### Run 1: Replicate (M, model selection, recommended)
 
-- **Decides:** Confirms WS3.1, WS3.2 and WS3.3 if model time keeps rising with the calls per answer; refutes each if the ρ interval includes zero. Confirms HC4.1, HC4.2, HC4.3 and HC4.4 if the cache-read share stays low; refutes each if the cache-read share is comparable to the other models'.
+- **Decides:**
+  - Confirms H0-Q.1, H0-Q.2, H0-Q.3, H0-Q.4 and H0-Q.5 if the paired test still finds no difference with three runs per model; refutes each if a paired test of the two on the Intelligence Index is established after adjustment.
+  - Confirms H0-W.1 and H0-W.2 if the contrasts still find no difference with three runs per model; refutes each if a Mann–Whitney contrast is established after the Holm adjustment.
+  - Confirms H0-S.1, H0-S.2, H0-S.3, H0-S.4 and H0-S.5 if the paired test still finds no difference with three runs per model; refutes each if a paired test of the two on the model time is established after adjustment.
+  - Confirms WS3.1, WS3.2 and WS3.3 if model time keeps rising with the calls per answer; refutes each if the ρ interval includes zero.
 - **Predicted comparability:** Model comparison with the analyzed runs; a replicate (Tier A) of each model's own runs
 - **Estimate:** not estimated
-- **Settles:** WS3.1, WS3.2, WS3.3, HC4.1, HC4.2, HC4.3, HC4.4
+- **Settles:** H0-Q.1, H0-Q.2, H0-Q.3, H0-Q.4, H0-Q.5, H0-W.1, H0-W.2, H0-S.1, H0-S.2, H0-S.3, H0-S.4, H0-S.5, WS3.1, WS3.2, WS3.3
 
 | Launcher field | Setting |
 |---|---|
 | Models | Model batch |
-| Models Under Test | Orion Max, Nova Lite, Zeta Prime, Lyra Mini |
+| Models Under Test | Orion Max, Vega Pro, Lyra Mini, Nova Lite, Zeta Prime |
 | Run Target | Single suite |
 | Benchmark Suite | GnollHack Core Suite |
 | Scoring Profile | not shared by the analyzed runs: choose it |
@@ -831,46 +764,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 - The estimate for a model without analyzed runs is the analyzed models' mean.
 
-### Run 2: Thinking-level pair (M, model selection, optional)
-
-- **Decides:** Confirms WS2.3 if the decode share stays the largest and reasoning stays at least half the output; refutes it if the reasoning share is under one half.
-- **Predicted comparability:** Model comparison: only the thinking level differs
-- **Estimate:** not estimated
-- **Settles:** WS2.3
-
-| Launcher field | Setting |
-|---|---|
-| Models | Model batch |
-| Models Under Test | Orion Max, Orion Max (medium) |
-| Run Target | Single suite |
-| Benchmark Suite | GnollHack Core Suite |
-| Scoring Profile | not shared by the analyzed runs: choose it |
-| Response Style | Concise — production default |
-| Source Code References | Allowed — answers cite source files and lines |
-| Assessor | not shared by the analyzed runs: choose it |
-| Co-Assessor | none |
-| Second Reader | none |
-| Coverage | Never |
-| Claim Verifier | none |
-| Report Writer | none |
-| Runs per model | 1 |
-| Model order | Randomized (recommended) |
-
-- The estimate for a model without analyzed runs is the analyzed models' mean.
-
 ## Appendix E: Known facts
 
-1. Uncached input, price per token accounts for 45% (44–46%) of the per-question cost difference between Orion Max and Vega Pro.
-2. Uncached input, price per token accounts for 44% (43–45%) of the per-question cost difference between Orion Max and Lyra Mini.
-3. Uncached input, price per token accounts for 43% (42–44%) of the per-question cost difference between Orion Max and Nova Lite.
-4. Uncached input, price per token accounts for 42% (42–43%) of the per-question cost difference between Orion Max and Zeta Prime.
-5. Uncached input, price per token accounts for 39% (38–39%) of the per-question cost difference between Nova Lite and Zeta Prime.
-6. Orion Max answered 2 of 6 scored questions without a tool call.
-7. Vega Pro answered 2 of 6 scored questions without a tool call.
-8. Lyra Mini answered 2 of 6 scored questions without a tool call.
-9. Lyra Mini has 1 critical error in 6 scored answers.
-10. Nova Lite answered 2 of 6 scored questions without a tool call.
-11. Zeta Prime answered 2 of 6 scored questions without a tool call.
+The counts and the configuration facts the analysis states, each numbered as the writer cites it. Its tests and decompositions are given once, under the evidence and in Appendices A and B.
+
+- **6.** Orion Max answered 2 of 6 scored questions without a tool call.
+- **7.** Vega Pro answered 2 of 6 scored questions without a tool call.
+- **8.** Lyra Mini answered 2 of 6 scored questions without a tool call.
+- **9.** Lyra Mini has 1 critical error in 6 scored answers.
+- **10.** Nova Lite answered 2 of 6 scored questions without a tool call.
+- **11.** Zeta Prime answered 2 of 6 scored questions without a tool call.
 
 ## Appendix F: Reproducibility
 
@@ -885,7 +788,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ## Appendix G: Question details
 
-*Each answer shown is one the writer was given as an excerpt; the excerpts were chosen for the questions with critical errors or refuted sentences first, then the widest spread between models, then those every model scored low.*
+*Each answer shown is one the writer was given as an excerpt. The excerpts were given in rounds, one per question in each round and at most three per question, taking the suites in turn: the questions with critical errors or refuted sentences first, then the widest spread between models, then those every model scored low; within a question, a critical error or refuted sentence first, then the lowest score. Rubrics are shown without their source paragraphs.*
 
 ### Q1: An item question about gems
 
@@ -896,34 +799,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 **Rubric:**
 
 > - Rubric 201
-
-#### Orion Max, run 31
-
-**Answer:**
-
-> Answer 201
-
-**Graders:**
-
-- **Assessor (Gemini 3.8 Flash):** score 92.
-
-**Claim verifier:**
-
-- No claims were checked.
-
-#### Vega Pro, run 32
-
-**Answer:**
-
-> Answer 201
-
-**Graders:**
-
-- **Assessor (Gemini 3.8 Flash):** score 85.
-
-**Claim verifier:**
-
-- No claims were checked.
 
 #### Lyra Mini, run 33
 
@@ -991,20 +866,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 - No claims were checked.
 
-#### Vega Pro, run 32
-
-**Answer:**
-
-> Answer 203
-
-**Graders:**
-
-- **Assessor (Gemini 3.8 Flash):** score 70.
-
-**Claim verifier:**
-
-- No claims were checked.
-
 #### Lyra Mini, run 33
 
 **Answer:**
@@ -1020,20 +881,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 - No claims were checked.
 
-#### Nova Lite, run 34
-
-**Answer:**
-
-> Answer 203
-
-**Graders:**
-
-- **Assessor (Gemini 3.8 Flash):** score 32.
-
-**Claim verifier:**
-
-- No claims were checked.
-
 #### Zeta Prime, run 35
 
 **Answer:**
@@ -1043,86 +890,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 **Graders:**
 
 - **Assessor (Gemini 3.8 Flash):** score 25.
-
-**Claim verifier:**
-
-- No claims were checked.
-
-### Q4
-
-**Question:**
-
-> Question 204
-
-**Rubric:**
-
-> - Rubric 204
-
-#### Orion Max, run 31
-
-**Answer:**
-
-> Answer 204
-
-**Graders:**
-
-- **Assessor (Gemini 3.8 Flash):** score 90.
-
-**Claim verifier:**
-
-- No claims were checked.
-
-#### Vega Pro, run 32
-
-**Answer:**
-
-> Answer 204
-
-**Graders:**
-
-- **Assessor (Gemini 3.8 Flash):** score 75.
-
-**Claim verifier:**
-
-- No claims were checked.
-
-#### Lyra Mini, run 33
-
-**Answer:**
-
-> Answer 204
-
-**Graders:**
-
-- **Assessor (Gemini 3.8 Flash):** score 65.
-
-**Claim verifier:**
-
-- No claims were checked.
-
-#### Nova Lite, run 34
-
-**Answer:**
-
-> Answer 204
-
-**Graders:**
-
-- **Assessor (Gemini 3.8 Flash):** score 72.
-
-**Claim verifier:**
-
-- No claims were checked.
-
-#### Zeta Prime, run 35
-
-**Answer:**
-
-> Answer 204
-
-**Graders:**
-
-- **Assessor (Gemini 3.8 Flash):** score 52.
 
 **Claim verifier:**
 
@@ -1153,17 +920,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 - **Paired test:** A comparison of two models question by question, on the questions both answered, so that how hard each question is counts the same for both.
 - **Points at risk:** The index points a model lost on its answers below its own median answer, each answer counted once under its first signal, such as no tool call, a defect or a critical error. They are an upper bound on what each signal costs, not an estimate of its effect.
 - **Pricing basis:** The prices per token used to turn token counts into dollars: today's catalog prices, or the prices stored with each run. Costs on different bases are not comparable.
-- **Reference model:** The model each other model is paired-tested against: the one chosen for the comparison, or else the model with the highest Intelligence Index.
+- **Reference model:** The model each other model is paired-tested against: the one chosen for the comparison, or else the model with the highest Intelligence Index. It is also called the baseline model.
 - **Replicate run:** Running the same model on the same questions again. With only one run per suite, the document cannot tell whether a result would repeat, which caps every grade at Probable.
 - **Response style:** The production chat asks the model for concise answers; a run can ask for detailed ones instead. Completeness is graded under the style the run used, and only a pair of runs in both styles shows how much the style matters.
 - **Robustness check:** A test of whether a hypothesis still holds when the data changes a little: one question left out, another suite, a second run, the other panel member, or another setting.
 - **Runs per suite:** How many times a model answered every question of a suite. With one run per suite, the data cannot show whether a result would repeat.
 - **Scoring levels:** Each dimension is graded on a fixed scale of levels, each described by the answer behavior that earns it (behaviorally anchored levels). Each level stands for a fixed score.
 - **Suite:** A fixed set of benchmark questions, each with its rubric. A run answers every question of one suite once.
-- **Tied rank:** When a model's 95% interval overlaps a neighbor's, the data cannot put them in order, so they share a rank. The rank then shows the span of places the tied group covers, such as 2–9 (tied).
+- **Tied rank:** When a model's 95% interval overlaps others', the data cannot fix its place, so its rank is the span of places the interval allows, such as 5–9 (tied). The span starts one place below the models whose intervals lie wholly above its own and ends one place above those whose intervals lie wholly below it.
 - **Time ratio and spend ratio:** One model's own time, or spend, per question divided by the other's, on the questions both answered. A ratio of 1.50 means half as much again, and 0.50 means half.
 - **Time to first token:** The seconds from sending a request to the first word of the reply. For reasoning models it is mostly the time the model spends thinking before it answers.
-- **Tokens:** The pieces of text, roughly three quarters of a word each, that a model reads and writes; providers price by them. Uncached input is text read at the full price. Cache reads are input stored from an earlier call and charged less; cache writes store it. Visible output is the answer, and reasoning is the model's hidden thinking, billed as output.
+- **Tokens:** The pieces of text, roughly three quarters of a word each, that a model reads and writes; providers price by them. Uncached input is text read at the full price. Cache reads are input stored from an earlier call and charged less; cache writes store it. Visible output is the answer, and reasoning is the model's hidden thinking, billed as output; a provider that does not report it separately counts it inside output.
 - **Tool round:** One cycle in which the model calls a tool, such as the wiki search, reads its result and continues. Each round adds a model call, with its own wait for the first token.
 - **Weighted geometric mean:** The way an answer's four dimension scores are combined. Unlike a plain average, it falls sharply when any one dimension is very low, so strong dimensions cannot hide a weak one.
 
@@ -6818,9 +6585,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Probable cause",
+      "display": "Root cause established",
       "key": "rca.axis.cost.status",
-      "value": "ProbableCause"
+      "value": "RootCauseEstablished"
     },
     {
       "available": true,
@@ -6850,16 +6617,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Check the rubric of Q3 against the source, and whether the tools' corpus holds the facts the question needs.",
       "key": "rca.check.1"
-    },
-    {
-      "available": true,
-      "display": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test WS2.1.",
-      "key": "rca.check.2"
-    },
-    {
-      "available": true,
-      "display": "No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2.",
-      "key": "rca.check.3"
     },
     {
       "available": true,
@@ -7568,7 +7325,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Not supported",
+      "display": "Rejected — a real difference (Not supported)",
       "key": "rca.hypothesis.H0-C.1.grade",
       "value": "NotSupported"
     },
@@ -7591,6 +7348,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model B",
       "key": "rca.hypothesis.H0-C.1.models"
+    },
+    {
+      "available": true,
+      "display": "H0-C.1 (no cost difference)",
+      "key": "rca.hypothesis.H0-C.1.ref"
     },
     {
       "available": true,
@@ -7619,7 +7381,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Not supported",
+      "display": "Rejected — a real difference (Not supported)",
       "key": "rca.hypothesis.H0-C.2.grade",
       "value": "NotSupported"
     },
@@ -7642,6 +7404,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model C",
       "key": "rca.hypothesis.H0-C.2.models"
+    },
+    {
+      "available": true,
+      "display": "H0-C.2 (no cost difference)",
+      "key": "rca.hypothesis.H0-C.2.ref"
     },
     {
       "available": true,
@@ -7670,7 +7437,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Not supported",
+      "display": "Rejected — a real difference (Not supported)",
       "key": "rca.hypothesis.H0-C.3.grade",
       "value": "NotSupported"
     },
@@ -7693,6 +7460,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model D",
       "key": "rca.hypothesis.H0-C.3.models"
+    },
+    {
+      "available": true,
+      "display": "H0-C.3 (no cost difference)",
+      "key": "rca.hypothesis.H0-C.3.ref"
     },
     {
       "available": true,
@@ -7721,7 +7493,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Not supported",
+      "display": "Rejected — a real difference (Not supported)",
       "key": "rca.hypothesis.H0-C.4.grade",
       "value": "NotSupported"
     },
@@ -7744,6 +7516,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model E",
       "key": "rca.hypothesis.H0-C.4.models"
+    },
+    {
+      "available": true,
+      "display": "H0-C.4 (no cost difference)",
+      "key": "rca.hypothesis.H0-C.4.ref"
     },
     {
       "available": true,
@@ -7772,7 +7549,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Not supported",
+      "display": "Rejected — a real difference (Not supported)",
       "key": "rca.hypothesis.H0-C.5.grade",
       "value": "NotSupported"
     },
@@ -7795,6 +7572,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model D and Model E",
       "key": "rca.hypothesis.H0-C.5.models"
+    },
+    {
+      "available": true,
+      "display": "H0-C.5 (no cost difference)",
+      "key": "rca.hypothesis.H0-C.5.ref"
     },
     {
       "available": true,
@@ -7823,7 +7605,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-Q.1.grade",
       "value": "Low"
     },
@@ -7846,6 +7628,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model B",
       "key": "rca.hypothesis.H0-Q.1.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-Q.1.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-Q.1 (no intelligence difference)",
+      "key": "rca.hypothesis.H0-Q.1.ref"
     },
     {
       "available": true,
@@ -7874,7 +7667,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-Q.2.grade",
       "value": "Low"
     },
@@ -7897,6 +7690,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model C",
       "key": "rca.hypothesis.H0-Q.2.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-Q.2.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-Q.2 (no intelligence difference)",
+      "key": "rca.hypothesis.H0-Q.2.ref"
     },
     {
       "available": true,
@@ -7925,7 +7729,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-Q.3.grade",
       "value": "Low"
     },
@@ -7948,6 +7752,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model D",
       "key": "rca.hypothesis.H0-Q.3.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-Q.3.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-Q.3 (no intelligence difference)",
+      "key": "rca.hypothesis.H0-Q.3.ref"
     },
     {
       "available": true,
@@ -7976,7 +7791,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-Q.4.grade",
       "value": "Low"
     },
@@ -7999,6 +7814,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model E",
       "key": "rca.hypothesis.H0-Q.4.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-Q.4.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-Q.4 (no intelligence difference)",
+      "key": "rca.hypothesis.H0-Q.4.ref"
     },
     {
       "available": true,
@@ -8027,7 +7853,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-Q.5.grade",
       "value": "Low"
     },
@@ -8050,6 +7876,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model D and Model E",
       "key": "rca.hypothesis.H0-Q.5.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-Q.5.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-Q.5 (no intelligence difference)",
+      "key": "rca.hypothesis.H0-Q.5.ref"
     },
     {
       "available": true,
@@ -8078,7 +7915,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-S.1.grade",
       "value": "Low"
     },
@@ -8101,6 +7938,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model B",
       "key": "rca.hypothesis.H0-S.1.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-S.1.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-S.1 (no speed difference)",
+      "key": "rca.hypothesis.H0-S.1.ref"
     },
     {
       "available": true,
@@ -8129,7 +7977,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-S.2.grade",
       "value": "Low"
     },
@@ -8152,6 +8000,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model C",
       "key": "rca.hypothesis.H0-S.2.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-S.2.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-S.2 (no speed difference)",
+      "key": "rca.hypothesis.H0-S.2.ref"
     },
     {
       "available": true,
@@ -8180,7 +8039,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-S.3.grade",
       "value": "Low"
     },
@@ -8203,6 +8062,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model D",
       "key": "rca.hypothesis.H0-S.3.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-S.3.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-S.3 (no speed difference)",
+      "key": "rca.hypothesis.H0-S.3.ref"
     },
     {
       "available": true,
@@ -8231,7 +8101,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-S.4.grade",
       "value": "Low"
     },
@@ -8254,6 +8124,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A and Model E",
       "key": "rca.hypothesis.H0-S.4.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-S.4.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-S.4 (no speed difference)",
+      "key": "rca.hypothesis.H0-S.4.ref"
     },
     {
       "available": true,
@@ -8282,7 +8163,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-S.5.grade",
       "value": "Low"
     },
@@ -8305,6 +8186,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model D and Model E",
       "key": "rca.hypothesis.H0-S.5.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-S.5.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-S.5 (no speed difference)",
+      "key": "rca.hypothesis.H0-S.5.ref"
     },
     {
       "available": true,
@@ -8333,7 +8225,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-W.1.grade",
       "value": "Low"
     },
@@ -8356,6 +8248,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model A",
       "key": "rca.hypothesis.H0-W.1.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-W.1.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-W.1 (no difference within one model's own questions)",
+      "key": "rca.hypothesis.H0-W.1.ref"
     },
     {
       "available": true,
@@ -8384,7 +8287,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Low",
+      "display": "Stands — may be chance (Low)",
       "key": "rca.hypothesis.H0-W.2.grade",
       "value": "Low"
     },
@@ -8407,6 +8310,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model E",
       "key": "rca.hypothesis.H0-W.2.models"
+    },
+    {
+      "available": true,
+      "display": "next run 1",
+      "key": "rca.hypothesis.H0-W.2.nextRun",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "H0-W.2 (no difference within one model's own questions)",
+      "key": "rca.hypothesis.H0-W.2.ref"
     },
     {
       "available": true,
@@ -8435,13 +8349,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Moderate",
+      "display": "High",
       "key": "rca.hypothesis.HC2.1.grade",
-      "value": "Moderate"
+      "value": "High"
     },
     {
       "available": true,
-      "display": "both models ran only once per suite",
+      "display": "every condition of the grade is met",
       "key": "rca.hypothesis.HC2.1.gradeReasons"
     },
     {
@@ -8463,6 +8377,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model E and Model A",
       "key": "rca.hypothesis.HC2.1.models"
+    },
+    {
+      "available": true,
+      "display": "HC2.1 (higher price per token)",
+      "key": "rca.hypothesis.HC2.1.ref"
     },
     {
       "available": true,
@@ -8497,13 +8416,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Moderate",
+      "display": "High",
       "key": "rca.hypothesis.HC2.2.grade",
-      "value": "Moderate"
+      "value": "High"
     },
     {
       "available": true,
-      "display": "both models ran only once per suite",
+      "display": "every condition of the grade is met",
       "key": "rca.hypothesis.HC2.2.gradeReasons"
     },
     {
@@ -8525,6 +8444,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model D and Model A",
       "key": "rca.hypothesis.HC2.2.models"
+    },
+    {
+      "available": true,
+      "display": "HC2.2 (higher price per token)",
+      "key": "rca.hypothesis.HC2.2.ref"
     },
     {
       "available": true,
@@ -8559,13 +8483,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Moderate",
+      "display": "High",
       "key": "rca.hypothesis.HC2.3.grade",
-      "value": "Moderate"
+      "value": "High"
     },
     {
       "available": true,
-      "display": "both models ran only once per suite",
+      "display": "every condition of the grade is met",
       "key": "rca.hypothesis.HC2.3.gradeReasons"
     },
     {
@@ -8587,6 +8511,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model C and Model A",
       "key": "rca.hypothesis.HC2.3.models"
+    },
+    {
+      "available": true,
+      "display": "HC2.3 (higher price per token)",
+      "key": "rca.hypothesis.HC2.3.ref"
     },
     {
       "available": true,
@@ -8621,13 +8550,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Moderate",
+      "display": "High",
       "key": "rca.hypothesis.HC2.4.grade",
-      "value": "Moderate"
+      "value": "High"
     },
     {
       "available": true,
-      "display": "both models ran only once per suite",
+      "display": "every condition of the grade is met",
       "key": "rca.hypothesis.HC2.4.gradeReasons"
     },
     {
@@ -8649,6 +8578,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model E and Model D",
       "key": "rca.hypothesis.HC2.4.models"
+    },
+    {
+      "available": true,
+      "display": "HC2.4 (higher price per token)",
+      "key": "rca.hypothesis.HC2.4.ref"
     },
     {
       "available": true,
@@ -8683,13 +8617,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Moderate",
+      "display": "High",
       "key": "rca.hypothesis.HC2.5.grade",
-      "value": "Moderate"
+      "value": "High"
     },
     {
       "available": true,
-      "display": "both models ran only once per suite",
+      "display": "every condition of the grade is met",
       "key": "rca.hypothesis.HC2.5.gradeReasons"
     },
     {
@@ -8711,6 +8645,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model B and Model A",
       "key": "rca.hypothesis.HC2.5.models"
+    },
+    {
+      "available": true,
+      "display": "HC2.5 (higher price per token)",
+      "key": "rca.hypothesis.HC2.5.ref"
     },
     {
       "available": true,
@@ -8776,9 +8715,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "next run 1",
-      "key": "rca.hypothesis.HC4.1.nextRun",
-      "value": 1
+      "display": "HC4.1 (weak prompt caching)",
+      "key": "rca.hypothesis.HC4.1.ref"
     },
     {
       "available": true,
@@ -8844,9 +8782,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "next run 1",
-      "key": "rca.hypothesis.HC4.2.nextRun",
-      "value": 1
+      "display": "HC4.2 (weak prompt caching)",
+      "key": "rca.hypothesis.HC4.2.ref"
     },
     {
       "available": true,
@@ -8912,9 +8849,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "next run 1",
-      "key": "rca.hypothesis.HC4.3.nextRun",
-      "value": 1
+      "display": "HC4.3 (weak prompt caching)",
+      "key": "rca.hypothesis.HC4.3.ref"
     },
     {
       "available": true,
@@ -8980,9 +8916,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "next run 1",
-      "key": "rca.hypothesis.HC4.4.nextRun",
-      "value": 1
+      "display": "HC4.4 (weak prompt caching)",
+      "key": "rca.hypothesis.HC4.4.ref"
     },
     {
       "available": true,
@@ -9049,6 +8984,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
+      "display": "HQ3.1 (shared failures on the same questions)",
+      "key": "rca.hypothesis.HQ3.1.ref"
+    },
+    {
+      "available": true,
       "display": "One model answered the question well.",
       "key": "rca.hypothesis.HQ3.1.refutedIf"
     },
@@ -9097,6 +9037,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model E",
       "key": "rca.hypothesis.WC1.1.models"
+    },
+    {
+      "available": true,
+      "display": "WC1.1 (output cost)",
+      "key": "rca.hypothesis.WC1.1.ref"
     },
     {
       "available": true,
@@ -9157,6 +9102,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
+      "display": "WC1.2 (output cost)",
+      "key": "rca.hypothesis.WC1.2.ref"
+    },
+    {
+      "available": true,
       "display": "Another component is larger.",
       "key": "rca.hypothesis.WC1.2.refutedIf"
     },
@@ -9214,6 +9164,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
+      "display": "WC1.3 (output cost)",
+      "key": "rca.hypothesis.WC1.3.ref"
+    },
+    {
+      "available": true,
       "display": "Another component is larger.",
       "key": "rca.hypothesis.WC1.3.refutedIf"
     },
@@ -9237,12 +9192,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Speed",
       "key": "rca.hypothesis.WS2.1.axis"
-    },
-    {
-      "available": true,
-      "display": "check 2",
-      "key": "rca.hypothesis.WS2.1.check",
-      "value": 2
     },
     {
       "available": true,
@@ -9282,6 +9231,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
+      "display": "WS2.1 (time spent generating output)",
+      "key": "rca.hypothesis.WS2.1.ref"
+    },
+    {
+      "available": true,
       "display": "The reasoning share is under one half.",
       "key": "rca.hypothesis.WS2.1.refutedIf"
     },
@@ -9305,12 +9259,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Speed",
       "key": "rca.hypothesis.WS2.2.axis"
-    },
-    {
-      "available": true,
-      "display": "check 3",
-      "key": "rca.hypothesis.WS2.2.check",
-      "value": 3
     },
     {
       "available": true,
@@ -9347,6 +9295,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Model D",
       "key": "rca.hypothesis.WS2.2.models"
+    },
+    {
+      "available": true,
+      "display": "WS2.2 (time spent generating output)",
+      "key": "rca.hypothesis.WS2.2.ref"
     },
     {
       "available": true,
@@ -9412,9 +9365,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "next run 2",
-      "key": "rca.hypothesis.WS2.3.nextRun",
-      "value": 2
+      "display": "WS2.3 (time spent generating output)",
+      "key": "rca.hypothesis.WS2.3.ref"
     },
     {
       "available": true,
@@ -9481,6 +9433,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
+      "display": "WS3.1 (time spent on tool rounds)",
+      "key": "rca.hypothesis.WS3.1.ref"
+    },
+    {
+      "available": true,
       "display": "The ρ interval includes zero.",
       "key": "rca.hypothesis.WS3.1.refutedIf"
     },
@@ -9538,6 +9495,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
+      "display": "WS3.2 (time spent on tool rounds)",
+      "key": "rca.hypothesis.WS3.2.ref"
+    },
+    {
+      "available": true,
       "display": "The ρ interval includes zero.",
       "key": "rca.hypothesis.WS3.2.refutedIf"
     },
@@ -9592,6 +9554,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "display": "next run 1",
       "key": "rca.hypothesis.WS3.3.nextRun",
       "value": 1
+    },
+    {
+      "available": true,
+      "display": "WS3.3 (time spent on tool rounds)",
+      "key": "rca.hypothesis.WS3.3.ref"
     },
     {
       "available": true,
@@ -9758,12 +9725,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more",
+      "display": "1 isolated miss (Q1)",
       "key": "rca.profile.E.flag.1"
     },
     {
       "available": true,
-      "display": "1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more",
+      "display": "1 isolated miss (Q1)",
       "key": "rca.profile.E.flags",
       "value": 1
     },
@@ -10023,7 +9990,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more",
+      "display": "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1)",
       "key": "rca.question.2.signals"
     },
     {
@@ -10096,9 +10063,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Probable (Moderate)",
+      "display": "Established (High)",
       "key": "rca.question.4.status",
-      "value": "Moderate"
+      "value": "High"
     },
     {
       "available": true,
@@ -10113,13 +10080,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Run 1, a replicate of Model A, Model D, Model E and Model C",
+      "display": "Run 1, a replicate of all five models",
       "key": "rca.run.1.summary"
-    },
-    {
-      "available": true,
-      "display": "Run 2, a thinking-level pair of Model A and another configured model",
-      "key": "rca.run.2.summary"
     },
     {
       "available": true,
@@ -11477,8 +11439,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "criticalError": false,
       "detailed": true,
       "excerptLetters": [
-        "A",
-        "B",
         "C",
         "D",
         "E"
@@ -11556,8 +11516,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "criticalError": false,
       "detailed": true,
       "excerptLetters": [
-        "A",
-        "B",
         "C",
         "D",
         "E"
@@ -11636,9 +11594,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "detailed": true,
       "excerptLetters": [
         "A",
-        "B",
         "C",
-        "D",
         "E"
       ],
       "itemRevisionUsed": 1,
@@ -11714,8 +11670,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "criticalError": false,
       "detailed": true,
       "excerptLetters": [
-        "A",
-        "B",
         "C",
         "D",
         "E"
@@ -11793,8 +11747,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "criticalError": false,
       "detailed": true,
       "excerptLetters": [
-        "A",
-        "B",
         "C",
         "D",
         "E"
@@ -11872,8 +11824,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "criticalError": false,
       "detailed": true,
       "excerptLetters": [
-        "A",
-        "B",
         "C",
         "D",
         "E"
@@ -11964,8 +11914,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       {
         "axis": "cost",
         "bestHypothesis": "HC2.1",
-        "reason": "Probable (Moderate) because both models ran only once per suite.",
-        "status": "ProbableCause"
+        "reason": "Established (High): it passed every check, and a real difference between the two models was shown.",
+        "status": "RootCauseEstablished"
       }
     ],
     "checks": [
@@ -11976,22 +11926,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "kind": "rubric",
         "number": 1,
         "text": "Check the rubric of Q3 against the source, and whether the tools' corpus holds the facts the question needs."
-      },
-      {
-        "hypothesisIds": [
-          "WS2.1"
-        ],
-        "kind": "configuration",
-        "number": 2,
-        "text": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test WS2.1."
-      },
-      {
-        "hypothesisIds": [
-          "WS2.2"
-        ],
-        "kind": "configuration",
-        "number": 3,
-        "text": "No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2."
       }
     ],
     "computedAtUtc": "2026-09-21T08:00:00Z",
@@ -12786,7 +12720,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "unit": "usd"
       }
     ],
-    "engineVersion": 4,
+    "engineVersion": 5,
     "evidence": [
       {
         "atRisk": [
@@ -13389,7 +13323,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "ttftPerCallP50Ms": 1760
       }
     ],
-    "gradeCap": "Each model ran only once per suite, so this document cannot tell whether its results would repeat. No cause can be graded above Probable (Moderate) until a second run of each suite is made.",
+    "gradeCap": "Each model ran only once per suite, so this document cannot tell whether its results would repeat. No cause can be graded above Probable (Moderate) until a second run of each suite is made, apart from a price effect, which follows from the price cards.",
     "hypotheses": [
       {
         "against": [],
@@ -13419,6 +13353,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "B"
         ],
         "modelsText": "Model A and Model B",
+        "nextRunNumber": 1,
         "number": 1,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
@@ -13454,6 +13389,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "C"
         ],
         "modelsText": "Model A and Model C",
+        "nextRunNumber": 1,
         "number": 2,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
@@ -13489,6 +13425,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "D"
         ],
         "modelsText": "Model A and Model D",
+        "nextRunNumber": 1,
         "number": 3,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
@@ -13524,6 +13461,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "E"
         ],
         "modelsText": "Model A and Model E",
+        "nextRunNumber": 1,
         "number": 4,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
@@ -13557,6 +13495,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "E"
         ],
         "modelsText": "Model D and Model E",
+        "nextRunNumber": 1,
         "number": 5,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
@@ -13585,6 +13524,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "A"
         ],
         "modelsText": "Model A",
+        "nextRunNumber": 1,
         "number": 1,
         "refutedIf": "A Mann–Whitney contrast is established after the Holm adjustment.",
         "robustness": [],
@@ -13613,6 +13553,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "E"
         ],
         "modelsText": "Model E",
+        "nextRunNumber": 1,
         "number": 2,
         "refutedIf": "A Mann–Whitney contrast is established after the Holm adjustment.",
         "robustness": [],
@@ -13685,6 +13626,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "B"
         ],
         "modelsText": "Model A and Model B",
+        "nextRunNumber": 1,
         "number": 1,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
@@ -13718,6 +13660,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "C"
         ],
         "modelsText": "Model A and Model C",
+        "nextRunNumber": 1,
         "number": 2,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
@@ -13751,6 +13694,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "D"
         ],
         "modelsText": "Model A and Model D",
+        "nextRunNumber": 1,
         "number": 3,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
@@ -13784,6 +13728,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "E"
         ],
         "modelsText": "Model A and Model E",
+        "nextRunNumber": 1,
         "number": 4,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
@@ -13815,6 +13760,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "E"
         ],
         "modelsText": "Model D and Model E",
+        "nextRunNumber": 1,
         "number": 5,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
@@ -13961,7 +13907,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "Reasoning is 39% of Model E's output tokens."
         ],
         "axis": "speed",
-        "checkNumber": 2,
         "confounds": [],
         "explains": 8765,
         "factKeys": [
@@ -14012,7 +13957,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "Reasoning is 38% of Model D's output tokens."
         ],
         "axis": "speed",
-        "checkNumber": 3,
         "confounds": [],
         "explains": 7935.000000000001,
         "factKeys": [
@@ -14088,7 +14032,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "A"
         ],
         "modelsText": "Model A",
-        "nextRunNumber": 2,
         "number": 3,
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
@@ -14269,6 +14212,256 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "statement": "The cost per question difference between Model D and Model E is within sampling noise."
       },
       {
+        "against": [
+          "The volume effect is 31% (31–32%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.026411264046843817,
+        "factKeys": [
+          "rca.cost.A.E.all.price.share",
+          "rca.cost.A.E.total",
+          "model.E.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.1",
+        "kind": "pair",
+        "label": "Model E's higher price per token, compared with Model A",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "E",
+          "A"
+        ],
+        "modelsText": "Model E and Model A",
+        "number": 1,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.6885105330251258,
+        "shareLower": 0.6821542167660242,
+        "shareUpper": 0.6946130761822287,
+        "shortStatement": "Price per token: Model E",
+        "statement": "Model E costs more than Model A mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 30% (30–31%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.018792880218132888,
+        "factKeys": [
+          "rca.cost.A.D.all.price.share",
+          "rca.cost.A.D.total",
+          "model.D.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.2",
+        "kind": "pair",
+        "label": "Model D's higher price per token, compared with Model A",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "D",
+          "A"
+        ],
+        "modelsText": "Model D and Model A",
+        "number": 2,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.6968068304832366,
+        "shareLower": 0.6902657261070169,
+        "shareUpper": 0.7030744603212624,
+        "shortStatement": "Price per token: Model D",
+        "statement": "Model D costs more than Model A mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 29% (29–30%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.011859864660170447,
+        "factKeys": [
+          "rca.cost.A.C.all.price.share",
+          "rca.cost.A.C.total",
+          "model.C.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.3",
+        "kind": "pair",
+        "label": "Model C's higher price per token, compared with Model A",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "C",
+          "A"
+        ],
+        "modelsText": "Model C and Model A",
+        "number": 3,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.7067857366013377,
+        "shareLower": 0.700055545622766,
+        "shareUpper": 0.7132190392428142,
+        "shortStatement": "Price per token: Model C",
+        "statement": "Model C costs more than Model A mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 35% (35–36%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.0073937841792014085,
+        "factKeys": [
+          "rca.cost.D.E.all.price.share",
+          "rca.cost.D.E.total",
+          "model.E.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.4",
+        "kind": "pair",
+        "label": "Model E's higher price per token, compared with Model D",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "E",
+          "D"
+        ],
+        "modelsText": "Model E and Model D",
+        "number": 4,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.6491469867604399,
+        "shareLower": 0.643294023887542,
+        "shareUpper": 0.6548107961671323,
+        "shortStatement": "Price per token: Model E",
+        "statement": "Model E costs more than Model D mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 28% (27–29%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.005602724508327252,
+        "factKeys": [
+          "rca.cost.A.B.all.price.share",
+          "rca.cost.A.B.total",
+          "model.B.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.5",
+        "kind": "pair",
+        "label": "Model B's higher price per token, compared with Model A",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "B",
+          "A"
+        ],
+        "modelsText": "Model B and Model A",
+        "number": 5,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.71922009092776,
+        "shareLower": 0.7123096297876061,
+        "shareUpper": 0.7258059219416408,
+        "shortStatement": "Price per token: Model B",
+        "statement": "Model B costs more than Model A mainly from its price per token."
+      },
+      {
         "against": [],
         "axis": "cost",
         "confounds": [],
@@ -14310,63 +14503,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "statement": "Output (with reasoning) is Model E's largest cost component (where its cost goes, not a comparison)."
       },
       {
-        "against": [
-          "The volume effect is 31% (31–32%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.026411264046843817,
-        "factKeys": [
-          "rca.cost.A.E.all.price.share",
-          "rca.cost.A.E.total",
-          "model.E.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference."
-        ],
-        "grade": "Moderate",
-        "gradeReasons": [
-          "both models ran only once per suite"
-        ],
-        "id": "HC2",
-        "key": "HC2.1",
-        "kind": "pair",
-        "label": "Model E's higher price per token, compared with Model A",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "E",
-          "A"
-        ],
-        "modelsText": "Model E and Model A",
-        "number": 1,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Both models ran only once per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.6885105330251258,
-        "shareLower": 0.6821542167660242,
-        "shareUpper": 0.6946130761822287,
-        "shortStatement": "Price per token: Model E",
-        "statement": "Model E costs more than Model A mainly from its price per token."
-      },
-      {
         "against": [],
         "axis": "cost",
         "confounds": [],
@@ -14406,120 +14542,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "share": 0.5543829683401453,
         "shortStatement": "Output cost: Model D",
         "statement": "Output (with reasoning) is Model D's largest cost component (where its cost goes, not a comparison)."
-      },
-      {
-        "against": [
-          "The volume effect is 30% (30–31%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.018792880218132888,
-        "factKeys": [
-          "rca.cost.A.D.all.price.share",
-          "rca.cost.A.D.total",
-          "model.D.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference."
-        ],
-        "grade": "Moderate",
-        "gradeReasons": [
-          "both models ran only once per suite"
-        ],
-        "id": "HC2",
-        "key": "HC2.2",
-        "kind": "pair",
-        "label": "Model D's higher price per token, compared with Model A",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "D",
-          "A"
-        ],
-        "modelsText": "Model D and Model A",
-        "number": 2,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Both models ran only once per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.6968068304832366,
-        "shareLower": 0.6902657261070169,
-        "shareUpper": 0.7030744603212624,
-        "shortStatement": "Price per token: Model D",
-        "statement": "Model D costs more than Model A mainly from its price per token."
-      },
-      {
-        "against": [
-          "The volume effect is 29% (29–30%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.011859864660170447,
-        "factKeys": [
-          "rca.cost.A.C.all.price.share",
-          "rca.cost.A.C.total",
-          "model.C.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference."
-        ],
-        "grade": "Moderate",
-        "gradeReasons": [
-          "both models ran only once per suite"
-        ],
-        "id": "HC2",
-        "key": "HC2.3",
-        "kind": "pair",
-        "label": "Model C's higher price per token, compared with Model A",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "C",
-          "A"
-        ],
-        "modelsText": "Model C and Model A",
-        "number": 3,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Both models ran only once per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.7067857366013377,
-        "shareLower": 0.700055545622766,
-        "shareUpper": 0.7132190392428142,
-        "shortStatement": "Price per token: Model C",
-        "statement": "Model C costs more than Model A mainly from its price per token."
       },
       {
         "against": [],
@@ -14564,120 +14586,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "The volume effect is 35% (35–36%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.0073937841792014085,
-        "factKeys": [
-          "rca.cost.D.E.all.price.share",
-          "rca.cost.D.E.total",
-          "model.E.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference."
-        ],
-        "grade": "Moderate",
-        "gradeReasons": [
-          "both models ran only once per suite"
-        ],
-        "id": "HC2",
-        "key": "HC2.4",
-        "kind": "pair",
-        "label": "Model E's higher price per token, compared with Model D",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "E",
-          "D"
-        ],
-        "modelsText": "Model E and Model D",
-        "number": 4,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Both models ran only once per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.6491469867604399,
-        "shareLower": 0.643294023887542,
-        "shareUpper": 0.6548107961671323,
-        "shortStatement": "Price per token: Model E",
-        "statement": "Model E costs more than Model D mainly from its price per token."
-      },
-      {
-        "against": [
-          "The volume effect is 28% (27–29%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.005602724508327252,
-        "factKeys": [
-          "rca.cost.A.B.all.price.share",
-          "rca.cost.A.B.total",
-          "model.B.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference."
-        ],
-        "grade": "Moderate",
-        "gradeReasons": [
-          "both models ran only once per suite"
-        ],
-        "id": "HC2",
-        "key": "HC2.5",
-        "kind": "pair",
-        "label": "Model B's higher price per token, compared with Model A",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "B",
-          "A"
-        ],
-        "modelsText": "Model B and Model A",
-        "number": 5,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Both models ran only once per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.71922009092776,
-        "shareLower": 0.7123096297876061,
-        "shareUpper": 0.7258059219416408,
-        "shortStatement": "Price per token: Model B",
-        "statement": "Model B costs more than Model A mainly from its price per token."
-      },
-      {
-        "against": [
           "Model E's cache-read share is 28% against the models' median of 26%."
         ],
         "axis": "cost",
@@ -14709,7 +14617,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "A"
         ],
         "modelsText": "Model E and Model A",
-        "nextRunNumber": 1,
         "number": 1,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
@@ -14768,7 +14675,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "A"
         ],
         "modelsText": "Model D and Model A",
-        "nextRunNumber": 1,
         "number": 2,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
@@ -14827,7 +14733,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "D"
         ],
         "modelsText": "Model E and Model D",
-        "nextRunNumber": 1,
         "number": 3,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
@@ -14886,7 +14791,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "A"
         ],
         "modelsText": "Model C and Model A",
-        "nextRunNumber": 1,
         "number": 4,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
@@ -15371,7 +15275,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
               "Q1"
             ],
             "short": "1 isolated miss",
-            "text": "1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more"
+            "text": "1 isolated miss (Q1)"
           }
         ],
         "letter": "E",
@@ -15609,7 +15513,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "orderEstablished": true,
         "signals": [
           "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
-          "1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more"
+          "1 isolated miss (Q1)"
         ],
         "text": "Why did Model E score lowest?",
         "token": "E",
@@ -15644,7 +15548,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "HC2.2",
           "HC4.2"
         ],
-        "grade": "Moderate",
+        "grade": "High",
         "hypothesisKeys": [
           "HC2.2",
           "HC4.2",
@@ -15668,24 +15572,40 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       {
         "afterSystemHypotheses": false,
         "allowSourceCodeReferences": true,
-        "decides": "Confirms WS3.1, WS3.2 and WS3.3 if model time keeps rising with the calls per answer; refutes each if the ρ interval includes zero. Confirms HC4.1, HC4.2, HC4.3 and HC4.4 if the cache-read share stays low; refutes each if the cache-read share is comparable to the other models'.",
-        "estimatedMinutes": 150,
+        "assessorName": "Gemini 3.8 Flash",
+        "decides": "Confirms H0-Q.1, H0-Q.2, H0-Q.3, H0-Q.4 and H0-Q.5 if the paired test still finds no difference with three runs per model; refutes each if a paired test of the two on the Intelligence Index is established after adjustment. Confirms H0-W.1 and H0-W.2 if the contrasts still find no difference with three runs per model; refutes each if a Mann–Whitney contrast is established after the Holm adjustment. Confirms H0-S.1, H0-S.2, H0-S.3, H0-S.4 and H0-S.5 if the paired test still finds no difference with three runs per model; refutes each if a paired test of the two on the model time is established after adjustment. Confirms WS3.1, WS3.2 and WS3.3 if model time keeps rising with the calls per answer; refutes each if the ρ interval includes zero.",
+        "decidesItems": [
+          "Confirms H0-Q.1, H0-Q.2, H0-Q.3, H0-Q.4 and H0-Q.5 if the paired test still finds no difference with three runs per model; refutes each if a paired test of the two on the Intelligence Index is established after adjustment.",
+          "Confirms H0-W.1 and H0-W.2 if the contrasts still find no difference with three runs per model; refutes each if a Mann–Whitney contrast is established after the Holm adjustment.",
+          "Confirms H0-S.1, H0-S.2, H0-S.3, H0-S.4 and H0-S.5 if the paired test still finds no difference with three runs per model; refutes each if a paired test of the two on the model time is established after adjustment.",
+          "Confirms WS3.1, WS3.2 and WS3.3 if model time keeps rising with the calls per answer; refutes each if the ρ interval includes zero."
+        ],
+        "estimatedMinutes": 180,
         "hypothesisIds": [
+          "H0-Q.1",
+          "H0-Q.2",
+          "H0-Q.3",
+          "H0-Q.4",
+          "H0-Q.5",
+          "H0-W.1",
+          "H0-W.2",
+          "H0-S.1",
+          "H0-S.2",
+          "H0-S.3",
+          "H0-S.4",
+          "H0-S.5",
           "WS3.1",
           "WS3.2",
-          "WS3.3",
-          "HC4.1",
-          "HC4.2",
-          "HC4.3",
-          "HC4.4"
+          "WS3.3"
         ],
         "kind": "replicate",
         "mark": "Recommended",
         "modelNames": [
           "Orion Max",
+          "Vega Pro",
+          "Lyra Mini",
           "Nova Lite",
-          "Zeta Prime",
-          "Lyra Mini"
+          "Zeta Prime"
         ],
         "notes": [
           "The estimate for a model without analyzed runs is the analyzed models' mean."
@@ -15703,43 +15623,10 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "targetKind": "Suite",
         "testedModelConfigurationIds": [
           100,
+          101,
+          102,
           103,
-          104,
-          102
-        ],
-        "verboseMode": false
-      },
-      {
-        "afterSystemHypotheses": false,
-        "allowSourceCodeReferences": true,
-        "decides": "Confirms WS2.3 if the decode share stays the largest and reasoning stays at least half the output; refutes it if the reasoning share is under one half.",
-        "estimatedMinutes": 20,
-        "hypothesisIds": [
-          "WS2.3"
-        ],
-        "kind": "thinkingPair",
-        "mark": "Optional",
-        "modelNames": [
-          "Orion Max",
-          "Orion Max (medium)"
-        ],
-        "notes": [
-          "The estimate for a model without analyzed runs is the analyzed models' mean."
-        ],
-        "number": 2,
-        "order": "Randomized",
-        "predictedTier": "Model comparison: only the thinking level differs",
-        "purpose": "M",
-        "runCount": 1,
-        "runMode": "Batch",
-        "runsPerModel": 1,
-        "secondOpinionMode": 0,
-        "suiteId": 5,
-        "suiteName": "GnollHack Core Suite",
-        "targetKind": "Suite",
-        "testedModelConfigurationIds": [
-          100,
-          150
+          104
         ],
         "verboseMode": false
       }
@@ -16027,6 +15914,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ---
 
-*Document ID 212 · format version 19 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
+*Document ID 212 · format version 20 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

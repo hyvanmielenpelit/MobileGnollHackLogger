@@ -15,6 +15,7 @@ export type NumberMeasure =
   | 'intelligenceIndex'
   | 'speedIndex'
   | 'meanModelTime'
+  | 'medianModelTime'
   | 'totalModelTime'
   | 'ttftP50'
   | 'suiteCost'
@@ -41,6 +42,7 @@ export const NUMBER_MEASURES: readonly NumberMeasure[] = [
   'intelligenceIndex',
   'speedIndex',
   'meanModelTime',
+  'medianModelTime',
   'totalModelTime',
   'ttftP50',
   'suiteCost',
@@ -52,6 +54,7 @@ export const DEFAULT_MEASURE_DECIMALS: NumberFormatStyle = {
   intelligenceIndex: 0,
   speedIndex: 0,
   meanModelTime: 1,
+  medianModelTime: 1,
   totalModelTime: 1,
   ttftP50: 2,
   suiteCost: 4,
@@ -63,6 +66,7 @@ export const MEASURE_NAMES: Readonly<Record<NumberMeasure, string>> = {
   intelligenceIndex: 'Intelligence Index',
   speedIndex: 'Speed Index',
   meanModelTime: 'Mean time per question',
+  medianModelTime: 'Median time per question',
   totalModelTime: 'Total time for the suite',
   ttftP50: 'Time to first token, median',
   suiteCost: 'Candidate cost of one suite run',
@@ -75,6 +79,7 @@ export const MEASURE_SHORT_NAMES: Readonly<Record<NumberMeasure, string>> = {
   intelligenceIndex: 'Intelligence',
   speedIndex: 'Speed Index',
   meanModelTime: 'Mean time',
+  medianModelTime: 'Median time',
   totalModelTime: 'Suite time',
   ttftP50: 'TTFT',
   suiteCost: 'Cost',
@@ -87,6 +92,7 @@ export const MEASURE_EXAMPLES: Readonly<Record<NumberMeasure, number>> = {
   intelligenceIndex: 71,
   speedIndex: 64,
   meanModelTime: 22500,
+  medianModelTime: 16000,
   totalModelTime: 504000,
   ttftP50: 1250,
   suiteCost: 0.0761,
@@ -100,6 +106,7 @@ const MEASURE_KINDS: Readonly<Record<NumberMeasure, MeasureKind>> = {
   intelligenceIndex: 'index',
   speedIndex: 'index',
   meanModelTime: 'time',
+  medianModelTime: 'time',
   totalModelTime: 'time',
   ttftP50: 'time',
   suiteCost: 'usd',
@@ -119,6 +126,8 @@ export function speedNumberMeasure(measure: SpeedMeasure): NumberMeasure {
   switch (measure) {
     case 'meanModelTime':
       return 'meanModelTime';
+    case 'medianModelTime':
+      return 'medianModelTime';
     case 'totalModelTime':
       return 'totalModelTime';
     case 'ttftP50':

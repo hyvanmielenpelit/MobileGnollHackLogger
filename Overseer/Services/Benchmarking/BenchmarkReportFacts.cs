@@ -447,6 +447,7 @@ public static class BenchmarkReportFacts
                     .Where(p => p.Lower.HasValue && p.Upper.HasValue)
                     .ToDictionary(p => p.PeerLetter, p => (p.Lower!.Value, p.Upper!.Value), StringComparer.Ordinal),
                 Graders = sheet.Graders.Select(g => (g.Role, g.Provider)).ToList(),
+                FamilyGaps = RootCauseEvidence.FamilyGaps(comparison),
                 Controls = input.Controls,
                 Catalog = input.Catalog ?? new RootCauseCatalog(),
                 Questions = RootCauseEvidence.QuestionRefs(sheet.Questions)
@@ -2233,17 +2234,17 @@ public static class BenchmarkReportFacts
         => 1 + values.Count(v => higherIsBetter ? v > value : v < value);
 
     /// <summary>One entry's place in a ranking by score whose 95% intervals may overlap.</summary>
-    /// <param name="Rank">The rank of the entry's group: one more than the entries ranked above the group.</param>
-    /// <param name="Joint">The group holds more than this entry.</param>
-    /// <param name="GroupSize">The entries sharing the rank, this one included.</param>
+    /// <param name="Rank">The first place the entry can plausibly hold: one more than the entries clearly above it.</param>
+    /// <param name="Joint">The entry can plausibly hold more than one place.</param>
+    /// <param name="GroupSize">The number of places the entry's span covers, from <paramref name="Rank"/> on.</param>
     public sealed record JointRank(int Rank, bool Joint, int GroupSize);
 
     /// <summary>
-    /// Each entry's joint rank, highest score first. Joint means a transitive chain of neighbors in
-    /// score order (ties broken by key, ordinal): an entry joins the group of the entry just above it
-    /// when their intervals overlap (bounds touching counts) or their scores are equal, so A–B and B–C
-    /// overlapping make A, B and C one group even when A and C do not overlap. An entry without both
-    /// bounds overlaps only an equal score. Keys must be distinct.
+    /// Each entry's plausible span of places among N entries: first = 1 + the entries clearly above it,
+    /// last = N − the entries clearly below it. X is clearly above Y when X's score is higher and, where
+    /// both have both bounds, X's lower bound is above Y's upper bound; an entry without both bounds is
+    /// compared by score alone. Equal scores and touching bounds are never clearly apart. So where A–B
+    /// and B–C overlap but A and C do not, A spans 1–2, B 1–3 and C 2–3. Keys must be distinct.
     /// </summary>
     public static IReadOnlyDictionary<string, JointRank> JointRanks(
         IReadOnlyList<(string Key, double Score, double? Lower, double? Upper)> entries)
@@ -2254,46 +2255,29 @@ public static class BenchmarkReportFacts
             throw new ArgumentException("Every entry needs its own key.", nameof(entries));
         }
 
-        var sorted = entries
-            .OrderByDescending(e => e.Score)
-            .ThenBy(e => e.Key, StringComparer.Ordinal)
-            .ToList();
-
-        var groups = new List<List<(string Key, double Score, double? Lower, double? Upper)>>();
-        foreach (var entry in sorted)
-        {
-            var last = groups.Count == 0 ? null : groups[^1];
-            if (last != null && Overlaps(last[^1], entry))
-            {
-                last.Add(entry);
-            }
-            else
-            {
-                groups.Add(new List<(string Key, double Score, double? Lower, double? Upper)> { entry });
-            }
-        }
-
+        int n = entries.Count;
         var ranks = new Dictionary<string, JointRank>(StringComparer.Ordinal);
-        int above = 0;
-        foreach (var group in groups)
+        foreach (var entry in entries)
         {
-            foreach (var entry in group)
-            {
-                ranks[entry.Key] = new JointRank(above + 1, group.Count > 1, group.Count);
-            }
-            above += group.Count;
+            int above = entries.Count(other => IsAbove(other, entry));
+            int below = entries.Count(other => IsAbove(entry, other));
+            int first = 1 + above;
+            int last = n - below;
+            ranks[entry.Key] = new JointRank(first, last > first, last - first + 1);
         }
         return ranks;
 
-        static bool Overlaps((string Key, double Score, double? Lower, double? Upper) a, (string Key, double Score, double? Lower, double? Upper) b)
-            => a.Score.Equals(b.Score)
-               || (a.Lower is double aLower && a.Upper is double aUpper && b.Lower is double bLower && b.Upper is double bUpper
-                   && aLower <= bUpper && bLower <= aUpper);
+        static bool IsAbove((string Key, double Score, double? Lower, double? Upper) x, (string Key, double Score, double? Lower, double? Upper) y)
+        {
+            if (!(x.Score > y.Score)) return false;
+            bool bothBounded = x.Lower.HasValue && x.Upper.HasValue && y.Lower.HasValue && y.Upper.HasValue;
+            return !bothBounded || x.Lower!.Value > y.Upper!.Value;
+        }
     }
 
     /// <summary>
-    /// A rank as documents print it: the span of its tie group for a tied rank,
-    /// <c>2–9 of 9 (tied: intervals overlap)</c>, else <c>2nd of 3</c>; <paramref name="of"/> is the
+    /// A rank as documents print it: the span of places the entry can plausibly hold for a tied rank,
+    /// <c>5–9 of 9 (tied: intervals overlap)</c>, else <c>2nd of 3</c>; <paramref name="of"/> is the
     /// count of ranked entries.
     /// </summary>
     public static string JointRankText(JointRank rank, int of)
@@ -2304,8 +2288,8 @@ public static class BenchmarkReportFacts
     }
 
     /// <summary>
-    /// The positions a rank's tie group spans, joined by an en dash: <c>2–9</c> for a group of eight
-    /// ranked 2; the rank alone, <c>2</c>, for a group of one.
+    /// The places a rank's span covers, joined by an en dash: <c>2–9</c> for a span of eight from
+    /// place 2; the rank alone, <c>2</c>, for a span of one.
     /// </summary>
     public static string TiedRankSpan(JointRank rank)
     {

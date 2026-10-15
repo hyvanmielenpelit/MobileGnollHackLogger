@@ -402,12 +402,16 @@ public static class RootCauseHypotheses
     // Nulls
     // ---------------------------------------------------------------------------------------------
 
+    /// <summary>What a replicate decides about a pair null that stands.</summary>
+    public const string StandingNullConfirmIf = "the paired test still finds no difference with three runs per model";
+
     /// <summary>
     /// H0-Q, H0-S or H0-C for a pair: the difference is within sampling noise. Rejected (graded Not
     /// supported) when a paired test of the pair on the axis is established after its family's
     /// adjustment, or, where no family test exists, when the 95% bootstrap interval of the difference
-    /// excludes zero. When it stands it is graded Moderate, or Low when either side has a single run per
-    /// suite.
+    /// excludes zero (on the Intelligence Index, of the per-question difference: the per-model sheet's
+    /// interval, else <see cref="RootCauseContext.PairedBootstrapExcludesZero"/>'s). When it stands it is
+    /// graded Moderate, or Low when either side has a single run per suite.
     /// </summary>
     internal static RootCauseDraft PairNull(RootCauseContext ctx, RootCausePair pair, string axis, out bool stands)
     {
@@ -422,7 +426,8 @@ public static class RootCauseHypotheses
             Models = { pair.First, pair.Second },
             Statement = "The " + measure + " difference between " + ctx.Name(pair.First) + " and " + ctx.Name(pair.Second) + " is within sampling noise.",
             Short = "Noise: " + ctx.Name(pair.First) + " vs " + ctx.Name(pair.Second),
-            RefutedIf = "A paired test of the two on the " + measure + " is established after adjustment."
+            RefutedIf = "A paired test of the two on the " + measure + " is established after adjustment.",
+            ConfirmIf = StandingNullConfirmIf
         };
 
         bool rejected = false;
@@ -459,14 +464,19 @@ public static class RootCauseHypotheses
             }
             else if (axis == RootCauseAxes.Intelligence && ctx.PairedBootstrapExcludesZero(pair) is bool pairedExcludes)
             {
+                bool sheet = ctx.SheetPairedDifference(pair) != null;
                 if (pairedExcludes)
                 {
                     rejected = true;
-                    draft.Against.Add("The subject's paired-bootstrap interval against this peer excludes zero (unadjusted).");
+                    draft.Against.Add(sheet
+                        ? "The subject's paired-bootstrap interval against this peer excludes zero (unadjusted)."
+                        : "No family test covers this pair; the 95% paired-bootstrap interval of the per-question difference excludes zero (not adjusted).");
                 }
                 else
                 {
-                    draft.For.Add("The subject's paired-bootstrap interval against this peer includes zero.");
+                    draft.For.Add(sheet
+                        ? "The subject's paired-bootstrap interval against this peer includes zero."
+                        : "No family test covers this pair; the 95% paired-bootstrap interval of the per-question difference includes zero.");
                 }
             }
             else
@@ -580,16 +590,21 @@ public static class RootCauseHypotheses
         var atB = ctx.AtRisk(b.Token);
         var scoredA = a.Evidence.Scored.ToList();
         var scoredB = b.Evidence.Scored.ToList();
-        bool testEstablished = ctx.TestsFor(pair, RootCauseAxes.Intelligence).Any(t => t.Established && t.Favors != "None");
+        var intelligenceTests = ctx.TestsFor(pair, RootCauseAxes.Intelligence);
+        bool testEstablished = intelligenceTests.Any(t => t.Established && t.Favors != "None")
+                               || (intelligenceTests.All(t => t.NotTestedReason != null) && ctx.PairedBootstrapExcludesZero(pair) == true);
         string qualityKey = ctx.QualityFactKey(pair);
+        bool sameModel = SameModelAtTwoLevels(a, b);
 
+        // Of the same model at two levels, the thinking level is what the pair compares, not a confound.
         void Common(RootCauseDraft d, bool intelligenceConfound = true)
         {
             d.Robustness.Add(ctx.ReplicatesCheck(a, b));
             d.Robustness.Add(ctx.PanelAgreementCheck(a, b));
-            var confounds = ctx.Confounds(a, b, RootCauseAxes.Intelligence, skipThinking: !intelligenceConfound);
+            var confounds = ctx.Confounds(a, b, RootCauseAxes.Intelligence, skipThinking: !intelligenceConfound || sameModel);
             d.Confounds.AddRange(confounds);
-            d.Robustness.Add(ConfigurationCheck(confounds));
+            d.Robustness.Add(ConfigurationCheck(confounds, ModelDifferences(a, b)));
+            if (sameModel) d.For.Add(SameModelLine(A, B, a, b, confounds.Count > 0));
             d.FactKeys.Add(qualityKey);
         }
 
@@ -672,11 +687,16 @@ public static class RootCauseHypotheses
             yield return d;
         }
 
-        // HQ4: graders.
+        // HQ4: graders. Only a scoring grader (a panel member, or the assessor of a single-assessor run) that shares
+        // a provider with exactly one of the two can favor one side; the readers and the verifier score nothing.
         bool judgeDependent = ctx.JudgeDependent(pair);
-        var sharedGrader = ctx.Graders.Where(g => SameProvider(g.Provider, a.Provider) || SameProvider(g.Provider, b.Provider)).ToList();
+        var sharedGrader = ctx.Graders
+            .Where(g => ScoringRoles.Contains(g.Role.Trim(), StringComparer.Ordinal)
+                        && SameProvider(g.Provider, a.Provider) != SameProvider(g.Provider, b.Provider))
+            .ToList();
         var highDisagreement = RootCauseProfiles.PanelDisagreementOf(ctx.Models, a);
-        if (judgeDependent || sharedGrader.Count > 0 || highDisagreement != null)
+        var family = MemberFamilyGap(ctx, a, b);
+        if (judgeDependent || sharedGrader.Count > 0 || highDisagreement != null || family != null)
         {
             var d = PairDraft(ctx, pair, "HQ4", RootCauseAxes.Intelligence, a, b,
                 "The order of " + A + " and " + B + " depends on the graders.",
@@ -697,7 +717,41 @@ public static class RootCauseHypotheses
             d.Quantified = judgeDependent;
             d.Established = judgeDependent;
             d.EstablishedText = "the panel members do not order the two models differently";
+
+            // The members' own provider pair: the interaction contrast measures how much the members' families
+            // move the gap. A panel score is the mean of the two members, so a contrast of d moves it by about d ÷ 2.
+            if (family is { Contrast: { Value: double contrast } c } && gap > 0)
+            {
+                double sign = contrast < 0 ? -1 : 1;
+                d.Quantified = true;
+                d.Share = 0.5 * Math.Abs(contrast) / gap;
+                if (c.Lower is double lo && c.Upper is double hi)
+                {
+                    d.ShareLower = 0.5 * Math.Min(sign * lo, sign * hi) / gap;
+                    d.ShareUpper = 0.5 * Math.Max(sign * lo, sign * hi) / gap;
+                }
+                bool excludes = c.ExcludesZero();
+                d.Established = judgeDependent || excludes;
+                d.EstablishedText = "the interaction contrast's 95% interval includes zero";
+                d.For.Add("Under panel member A alone, " + family.Provider1 + " − " + family.Provider2 + " is " + RootCauseFacts.GapText(family.GapA)
+                          + "; under panel member B alone, " + RootCauseFacts.GapText(family.GapB)
+                          + ": an interaction contrast of " + RootCauseFacts.GapText(c) + ", which moves the panel's gap by about "
+                          + BenchmarkReportFormat.OneDecimal(Math.Abs(contrast) / 2) + " points.");
+            }
+
+            // Its own test: both members and the reference reader order the two as the panel does.
             d.Robustness.Add(ctx.ReplicatesCheck(a, b));
+            var agreement = ctx.PanelAgreementCheck(a, b);
+            d.Robustness.Add(agreement);
+            if (!judgeDependent && agreement.Status == RootCauseCheckStatuses.Passed
+                && a.ReferenceReaderIndex is double ra && b.ReferenceReaderIndex is double rb
+                && a.QualityIndex is double pa && b.QualityIndex is double pb
+                && Math.Sign(ra - rb) == Math.Sign(pa - pb) && Math.Sign(pa - pb) != 0)
+            {
+                d.NotSupported = true;
+                d.Against.Remove("Both panel members order the two alike.");
+                d.Against.Insert(0, "Both panel members and the reference reader order the two alike.");
+            }
             d.FactKeys.Add("panel.judgeDependentPairs");
             d.NextRunKind = RootCauseRunKinds.PanelSwap;
             yield return d;
@@ -772,9 +826,7 @@ public static class RootCauseHypotheses
         }
 
         // HQ8: the same model at two thinking levels.
-        if (string.Equals(a.ModelId?.Trim(), b.ModelId?.Trim(), StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(a.ThinkingLevel?.Trim(), b.ThinkingLevel?.Trim(), StringComparison.OrdinalIgnoreCase)
-            && ThinkingRank(a.ThinkingLevel) >= 0 && ThinkingRank(b.ThinkingLevel) >= 0)
+        if (SameModelAtTwoLevels(a, b))
         {
             bool lowerIsWorse = ThinkingRank(a.ThinkingLevel) < ThinkingRank(b.ThinkingLevel);
             var d = PairDraft(ctx, pair, "HQ8", RootCauseAxes.Intelligence, a, b,
@@ -796,7 +848,7 @@ public static class RootCauseHypotheses
             d.Robustness.Add(ctx.PanelAgreementCheck(a, b));
             var confounds = ctx.Confounds(a, b, RootCauseAxes.Intelligence, skipThinking: true);
             d.Confounds.AddRange(confounds);
-            d.Robustness.Add(ConfigurationCheck(confounds));
+            d.Robustness.Add(ConfigurationCheck(confounds, ModelDifferences(a, b)));
             d.FactKeys.Add(qualityKey);
             d.NextRunKind = RootCauseRunKinds.ThinkingPair;
             yield return d;
@@ -831,6 +883,7 @@ public static class RootCauseHypotheses
         var lead = shares.OrderByDescending(c => c.Share!.Value).First();
         string total = BenchmarkReportFormat.Seconds(Math.Abs(speed.Difference ?? 0));
         string decompositionKey = "rca.speed." + pair.First + "." + pair.Second;
+        bool sameModel = SameModelAtTwoLevels(a, b);
 
         RootCauseDraft Make(string id, string statement, string shortText, string refutedIf, string confirmIf, RootCauseComponent? component, params string[] loci)
         {
@@ -848,9 +901,10 @@ public static class RootCauseHypotheses
                 d.FactKeys.Add(decompositionKey + "." + component.Key + ".share");
             }
             d.Robustness.Add(ctx.ReplicatesCheck(a, b));
-            var confounds = ctx.Confounds(a, b, RootCauseAxes.Speed, skipThinking: id == "HS3");
+            var confounds = ctx.Confounds(a, b, RootCauseAxes.Speed, skipThinking: id == "HS3" || sameModel);
             d.Confounds.AddRange(confounds);
-            d.Robustness.Add(ConfigurationCheck(confounds));
+            d.Robustness.Add(ConfigurationCheck(confounds, ModelDifferences(a, b)));
+            if (sameModel) d.For.Add(SameModelLine(A, B, a, b, confounds.Count > 0));
             d.FactKeys.Add(decompositionKey + ".total");
             return d;
         }
@@ -883,6 +937,14 @@ public static class RootCauseHypotheses
                 if (ra is double x && rb is double y)
                 {
                     (x > y ? d.For : d.Against).Add(A + "'s reasoning share of output is " + Pct(x) + ", " + B + "'s " + Pct(y) + ".");
+                }
+                else
+                {
+                    // Without both reasoning shares the output tokens cannot be told apart from the thinking.
+                    if (!a.Evidence.ReasoningReported) d.Against.Add("Thinking is not reported separately for " + A + ".");
+                    if (!b.Evidence.ReasoningReported) d.Against.Add("Thinking is not reported separately for " + B + ".");
+                    d.Established = false;
+                    d.EstablishedText = "the reasoning share of output is not recorded for both models";
                 }
                 d.FactKeys.Add(ctx.Key(a.Token, "tokens.reasoningShare"));
                 d.NextRunKind = RootCauseRunKinds.ThinkingPair;
@@ -959,6 +1021,7 @@ public static class RootCauseHypotheses
             .OrderByDescending(x => x.Share)
             .ToList();
         string leadComponent = byComponent[0].Key;
+        bool sameModel = SameModelAtTwoLevels(a, b);
 
         RootCauseDraft Make(string id, string statement, string shortText, string refutedIf, string confirmIf, RootCauseComponent? component, params string[] loci)
         {
@@ -975,10 +1038,14 @@ public static class RootCauseHypotheses
                 if (ctx.Battery) d.Robustness.Add(ctx.AcrossSuitesCost(pair, component.Key, component.Effect));
                 d.FactKeys.Add(decompositionKey + "." + component.Key + "." + component.Effect + ".share");
             }
-            d.Robustness.Add(ctx.ReplicatesCheck(a, b));
-            var confounds = ctx.Confounds(a, b, RootCauseAxes.Cost, skipThinking: id == "HC3");
+            // A price effect follows from the price cards, which a rerun cannot change, unless the runs' own cards differ.
+            bool priceFromCards = id == "HC2"
+                                  && (ctx.Input.PricingBasisKind == BenchmarkReportFacts.PricingBasisCatalog || (!a.Evidence.PricesDiffer && !b.Evidence.PricesDiffer));
+            if (!priceFromCards) d.Robustness.Add(ctx.ReplicatesCheck(a, b));
+            var confounds = ctx.Confounds(a, b, RootCauseAxes.Cost, skipThinking: id == "HC3" || sameModel);
             d.Confounds.AddRange(confounds);
-            d.Robustness.Add(ConfigurationCheck(confounds));
+            d.Robustness.Add(ConfigurationCheck(confounds, ModelDifferences(a, b)));
+            if (sameModel) d.For.Add(SameModelLine(A, B, a, b, confounds.Count > 0));
             d.FactKeys.Add(decompositionKey + ".total");
             return d;
         }
@@ -997,10 +1064,14 @@ public static class RootCauseHypotheses
                 "The volume effect is larger.", "the price effect stays the larger", price, RootCauseLoci.Model);
             d.Against.Add("The volume effect is " + SharePct(volume) + " of the difference.");
             d.FactKeys.Add(ctx.Key(a.Token, "price.output.perMillion"));
+            d.CheckKind = "configuration";
+            d.CheckText = "Compare the two models' price cards; the price effect follows from them.";
             yield return d;
         }
 
-        if (leadComponent == RootCauseSegments.Reasoning)
+        // HC3 needs both models' thinking apart from their output: for a provider that counts it inside output,
+        // the lead component would be the other model's thinking alone.
+        if (leadComponent == RootCauseSegments.Reasoning && a.Evidence.ReasoningReported && b.Evidence.ReasoningReported)
         {
             var reasoningVolume = cost.Components.First(c => c.Key == RootCauseSegments.Reasoning && c.Effect == "volume");
             var d = Make("HC3", "Reasoning tokens drive " + A + "'s higher cost against " + B + ".", "Reasoning cost: " + A,
@@ -1216,7 +1287,8 @@ public static class RootCauseHypotheses
             Models = { model.Token },
             Statement = "The contrasts between groups of " + M + "'s own questions are within sampling noise.",
             Short = "Noise within " + M,
-            RefutedIf = "A Mann–Whitney contrast is established after the Holm adjustment."
+            RefutedIf = "A Mann–Whitney contrast is established after the Holm adjustment.",
+            ConfirmIf = "the contrasts still find no difference with three runs per model"
         };
         bool rejected = false;
         if (toolP is double tp)
@@ -1649,10 +1721,63 @@ public static class RootCauseHypotheses
     // Robustness helpers on the points at risk
     // ---------------------------------------------------------------------------------------------
 
-    internal static RootCauseRobustnessCheck ConfigurationCheck(IReadOnlyList<string> confounds)
-        => confounds.Count == 0
-            ? new RootCauseRobustnessCheck { Name = Configuration, Status = RootCauseCheckStatuses.Passed, Detail = "No configuration key differs beyond the model." }
-            : new RootCauseRobustnessCheck { Name = Configuration, Status = RootCauseCheckStatuses.Failed, Detail = "The two models also differ in " + BenchmarkReportFormat.LetterList(confounds) + "." };
+    /// <summary>The grading roles whose scores make the published index: the panel members, or a single run's assessor.</summary>
+    private static readonly string[] ScoringRoles =
+    {
+        BenchmarkReportFacts.PanelMemberARole, BenchmarkReportFacts.PanelMemberBRole, BenchmarkReportFacts.AssessorRole
+    };
+
+    /// <summary>
+    /// The grader-family gap of the panel members' own provider pair when the two models are one of each provider
+    /// and its interaction contrast was computed; null otherwise.
+    /// </summary>
+    internal static RootCauseFamilyGap? MemberFamilyGap(RootCauseContext ctx, RootCauseModelInput a, RootCauseModelInput b)
+    {
+        if (SameProvider(a.Provider, b.Provider)) return null;
+        return ctx.Input.FamilyGaps.FirstOrDefault(g =>
+            g.IsMemberProviderPair && !g.InsufficientData && g.Contrast?.Value != null
+            && ((SameProvider(g.Provider1, a.Provider) && SameProvider(g.Provider2, b.Provider))
+                || (SameProvider(g.Provider1, b.Provider) && SameProvider(g.Provider2, a.Provider))));
+    }
+
+    /// <summary>The settings of a model's own configuration, as <see cref="RootCauseContext.ConfigDifferences"/> names them.</summary>
+    private static readonly string[] ModelSettings = { "thinking level", "reasoning mode", "service tier", "output token cap", "parallel execution" };
+
+    /// <summary>Every configuration key that differs between the two beyond the provider and the model id, as the known facts state them.</summary>
+    internal static List<string> ModelDifferences(RootCauseModelInput a, RootCauseModelInput b)
+        => RootCauseContext.ConfigDifferences(a, b).Where(d => d != "provider" && d != "model").ToList();
+
+    /// <summary>
+    /// Passed when no confound is open, Failed otherwise. A passed check names the model's own settings among
+    /// <paramref name="modelDifferences"/> that differ (<c>Beyond the model, only its thinking level differs (high vs
+    /// max), which is part of its configuration.</c>), so it never reads as if the two configurations were alike.
+    /// </summary>
+    internal static RootCauseRobustnessCheck ConfigurationCheck(IReadOnlyList<string> confounds, IReadOnlyList<string>? modelDifferences = null)
+    {
+        if (confounds.Count > 0)
+        {
+            return new RootCauseRobustnessCheck { Name = Configuration, Status = RootCauseCheckStatuses.Failed, Detail = "The two models also differ in " + BenchmarkReportFormat.LetterList(confounds) + "." };
+        }
+
+        var settings = (modelDifferences ?? Array.Empty<string>())
+            .Where(d => ModelSettings.Any(s => d.StartsWith(s + " (", StringComparison.Ordinal)))
+            .ToList();
+        string detail;
+        if (settings.Count == 0)
+        {
+            detail = "No configuration key differs beyond the model.";
+        }
+        else if (settings.Count == 1)
+        {
+            int open = settings[0].IndexOf(" (", StringComparison.Ordinal);
+            detail = "Beyond the model, only its " + settings[0][..open] + " differs" + settings[0][open..] + ", which is part of its configuration.";
+        }
+        else
+        {
+            detail = "Beyond the model, only its " + BenchmarkReportFormat.LetterList(settings) + " differ, which are part of its configuration.";
+        }
+        return new RootCauseRobustnessCheck { Name = Configuration, Status = RootCauseCheckStatuses.Passed, Detail = detail };
+    }
 
     /// <summary>The first model's points of a segment, minus the second's, keep their sign without the question contributing most to the first's.</summary>
     private static RootCauseRobustnessCheck LeaveOneOutAtRisk(RootCauseAtRisk first, RootCauseAtRisk second, int segment)
@@ -1825,6 +1950,24 @@ public static class RootCauseHypotheses
     internal static int ThinkingRank(string? level)
         => Array.IndexOf(ThinkingOrder, (level ?? "none").Trim().ToLowerInvariant());
 
+    /// <summary>The two are one model id at two different thinking levels, both of known rank.</summary>
+    internal static bool SameModelAtTwoLevels(RootCauseModelInput a, RootCauseModelInput b)
+        => string.Equals(a.ModelId?.Trim(), b.ModelId?.Trim(), StringComparison.OrdinalIgnoreCase)
+           && !string.Equals(a.ThinkingLevel?.Trim(), b.ThinkingLevel?.Trim(), StringComparison.OrdinalIgnoreCase)
+           && ThinkingRank(a.ThinkingLevel) >= 0 && ThinkingRank(b.ThinkingLevel) >= 0;
+
+    /// <summary>The two compare different model ids.</summary>
+    internal static bool DifferentModels(RootCauseModelInput a, RootCauseModelInput b)
+        => !string.Equals(a.ModelId?.Trim(), b.ModelId?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// <c>Model A and Model B are the same model at high and max thinking</c>, followed by <c>; the thinking level is
+    /// the only configuration difference.</c> when no other confound is open.
+    /// </summary>
+    private static string SameModelLine(string first, string second, RootCauseModelInput a, RootCauseModelInput b, bool otherConfounds)
+        => first + " and " + second + " are the same model at " + (a.ThinkingLevel ?? "no") + " and " + (b.ThinkingLevel ?? "no") + " thinking"
+           + (otherConfounds ? "." : "; the thinking level is the only configuration difference.");
+
     internal static bool SameProvider(string? a, string? b)
         => !string.IsNullOrWhiteSpace(a) && string.Equals(a.Trim(), b?.Trim(), StringComparison.OrdinalIgnoreCase);
 
@@ -1857,7 +2000,8 @@ public static class RootCauseHypotheses
     {
         if (text.Length < 2 || !char.IsUpper(text[0]) || char.IsUpper(text[1])) return text;
         int space = text.IndexOf(' ');
-        if (space > 0 && space + 1 < text.Length && char.IsUpper(text[space + 1])) return text;
+        bool article = space > 0 && text[..space] is "A" or "An" or "The";
+        if (!article && space > 0 && space + 1 < text.Length && char.IsUpper(text[space + 1])) return text;
         return char.ToLowerInvariant(text[0]) + text[1..];
     }
 

@@ -13,11 +13,13 @@ import {
 import type { NumberMeasure } from './measure-format';
 
 describe('measure-format', () => {
-  it('lists eight measures with their defaults, names and examples', () => {
+  it('lists nine measures with their defaults, names and examples', () => {
     expect(NUMBER_MEASURES).toEqual([
-      'intelligenceIndex', 'speedIndex', 'meanModelTime', 'totalModelTime', 'ttftP50',
+      'intelligenceIndex', 'speedIndex', 'meanModelTime', 'medianModelTime', 'totalModelTime', 'ttftP50',
       'suiteCost', 'totalRunCost', 'costPerQuestion'
     ]);
+    expect(MEASURE_NAMES.medianModelTime).toBe('Median time per question');
+    expect(MEASURE_SHORT_NAMES.medianModelTime).toBe('Median time');
     for (const measure of NUMBER_MEASURES) {
       expect(MEASURE_NAMES[measure], measure).toBeTruthy();
       expect(MEASURE_SHORT_NAMES[measure], measure).toBeTruthy();
@@ -30,6 +32,7 @@ describe('measure-format', () => {
       intelligenceIndex: '71',
       speedIndex: '64',
       meanModelTime: '22.5 s',
+      medianModelTime: '16.0 s',
       totalModelTime: '504.0 s',
       ttftP50: '1.25 s',
       suiteCost: '$0.0761',
@@ -45,6 +48,7 @@ describe('measure-format', () => {
 
   it('maps every speed and cost measure', () => {
     expect(speedNumberMeasure('meanModelTime')).toBe('meanModelTime');
+    expect(speedNumberMeasure('medianModelTime')).toBe('medianModelTime');
     expect(speedNumberMeasure('totalModelTime')).toBe('totalModelTime');
     expect(speedNumberMeasure('ttftP50')).toBe('ttftP50');
     expect(speedNumberMeasure('speedIndex')).toBe('speedIndex');

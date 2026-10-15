@@ -564,6 +564,7 @@ public static class BenchmarkComparisonReportFacts
             PairTests = PairTestsOf(families, input, letterOf),
             JudgeDependentPairs = JudgeDependentPairsOf(comparison, letterOf).Select(p => new RootCausePair(p.First, p.Second)).ToList(),
             Graders = sheet.Graders.Select(g => (g.Role, g.Provider)).ToList(),
+            FamilyGaps = RootCauseEvidence.FamilyGaps(comparison),
             Catalog = input.Catalog ?? new RootCauseCatalog(),
             Battery = batteries,
             Questions = RootCauseEvidence.QuestionRefs(questions)

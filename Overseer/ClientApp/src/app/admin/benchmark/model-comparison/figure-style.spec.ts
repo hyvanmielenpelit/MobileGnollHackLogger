@@ -415,6 +415,7 @@ describe('figure-style', () => {
       intelligenceIndex: 2,
       speedIndex: 6,
       meanModelTime: 0,
+      medianModelTime: 1,
       totalModelTime: 3,
       ttftP50: 2,
       suiteCost: 4,

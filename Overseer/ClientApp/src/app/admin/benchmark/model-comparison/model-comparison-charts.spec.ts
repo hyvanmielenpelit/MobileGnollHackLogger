@@ -567,8 +567,27 @@ describe('model-comparison-charts', () => {
       const point = pointsOf(spec.config)[0];
       expect(point['note']).toBeUndefined();
       expect(point['xErrLow']).toBeUndefined();
-      expect(spec.chrome.key).toContainEqual({ glyph: 'hollow', text: 'Single run' });
+      expect(spec.chrome.key).toContainEqual({ glyph: 'hollow', text: 'One run per suite' });
       expect(spec.chrome.key.map((item) => item.glyph)).not.toContain('solid');
+    });
+
+    it('keys a battery entry by its runs per suite, not by its member runs', () => {
+      const once = makeEntry({ key: 'battery:1', runCount: 2, suiteCount: 2, runsPerSuite: 1, candidateCostPerQuestionSdUsd: null });
+      const spec = buildQualityCostScatter([once], {
+        ...BASE_FIGURE_OPTIONS,
+        glyphs: buildIdentityGlyphs([once]),
+      });
+      expect(spec.chrome.key).toContainEqual({ glyph: 'hollow', text: 'One run per suite' });
+      expect(spec.chrome.key.map((item) => item.glyph)).not.toContain('solid');
+      expect(datasetsOf(spec.config)[0]['backgroundColor']).toBe('transparent');
+
+      const twice = makeEntry({ key: 'battery:2', runCount: 4, suiteCount: 2, runsPerSuite: 2 });
+      const replicated = buildQualityCostScatter([twice], {
+        ...BASE_FIGURE_OPTIONS,
+        glyphs: buildIdentityGlyphs([twice]),
+      });
+      expect(replicated.chrome.key).toContainEqual({ glyph: 'solid', text: 'Mean of 2+ runs per suite' });
+      expect(replicated.chrome.key.map((item) => item.glyph)).not.toContain('hollow');
     });
 
     it('draws the Pareto frontier, keys it once and keeps it out of the identity legend', () => {
@@ -1797,6 +1816,9 @@ describe('model-comparison-charts', () => {
       expect(written).toContain('Model B');
       // A leader per label, each a moveTo and a lineTo of its own.
       expect(calls.filter((c) => c.op === 'moveTo').length).toBe(2);
+      // Each runs from 1 px outside the 6 px mark, clear of its border, to the plate 14 px out.
+      expect(calls.filter((c) => c.op === 'moveTo').map((c) => c.args)).toEqual([[107, 100], [207, 180]]);
+      expect(calls.filter((c) => c.op === 'lineTo').map((c) => c.args)).toEqual([[114, 100], [214, 180]]);
     });
 
     it('gives the highlighted model the accent its mark already wears', () => {
@@ -2027,25 +2049,44 @@ describe('model-comparison-charts', () => {
       expect(titleLines(scaleOf(figures.speedCost.config, 'x'))[0]).toContain('Mean time per question');
       expect(figures.profile.tiles[0].data.labels).toContainEqual(['Speed', '(mean model time)']);
     });
+
+    it('plots the median model time, everywhere the measure is read, when asked', () => {
+      const entries = PROFILE_FIXTURE.map((entry, index) => ({ ...entry, modelTimeP50Ms: 700 + index * 100 }));
+      const figures = buildComparisonFigures(entries, { context: CONTEXT, speedMeasure: 'medianModelTime' });
+
+      expect(scaleOf(figures.smallMultiples.speed.config, 'y').title?.text).toEqual(['Median time per question (ms)']);
+      expect(titleLines(scaleOf(figures.qualitySpeed.config, 'x'))[0]).toContain('Median time per question');
+      expect(titleLines(scaleOf(figures.speedCost.config, 'x'))[0]).toContain('Median time per question');
+      expect(pointsOf(figures.qualitySpeed.config).map((point) => point['x'])).toEqual([700]);
+      expect(figures.profile.tiles[0].data.labels).toContainEqual(['Speed', '(median model time)']);
+    });
   });
 
   describe('speedValue and speedLowerIsBetter', () => {
-    it('reads every one of the four measures off its own field', () => {
+    it('reads every one of the five measures off its own field', () => {
       const entry = makeEntry({
         key: 'x',
         modelTimeMeanMs: 111,
+        modelTimeP50Ms: 99,
         totalModelTimeMs: 222,
         ttftP50Ms: 333,
         speedIndex: 44,
       });
       expect(speedValue(entry, 'meanModelTime')).toBe(111);
+      expect(speedValue(entry, 'medianModelTime')).toBe(99);
       expect(speedValue(entry, 'totalModelTime')).toBe(222);
       expect(speedValue(entry, 'ttftP50')).toBe(333);
       expect(speedValue(entry, 'speedIndex')).toBe(44);
     });
 
-    it('is true for the three time measures and false only for Speed Index', () => {
+    it('reads an entry without a median model time as unmeasured', () => {
+      expect(Number.isNaN(speedValue(makeEntry({ key: 'x' }), 'medianModelTime'))).toBe(true);
+      expect(Number.isNaN(speedValue(makeEntry({ key: 'y', modelTimeP50Ms: null }), 'medianModelTime'))).toBe(true);
+    });
+
+    it('is true for the four time measures and false only for Speed Index', () => {
       expect(speedLowerIsBetter('meanModelTime')).toBe(true);
+      expect(speedLowerIsBetter('medianModelTime')).toBe(true);
       expect(speedLowerIsBetter('totalModelTime')).toBe(true);
       expect(speedLowerIsBetter('ttftP50')).toBe(true);
       expect(speedLowerIsBetter('speedIndex')).toBe(false);
@@ -3668,6 +3709,7 @@ describe('the figure theme in the charts', () => {
       const fills: unknown[] = [];
       const rectFills: unknown[] = [];
       const strokes: unknown[] = [];
+      const strokeWidths: unknown[] = [];
       const halos: unknown[] = [];
       const noop = (): void => undefined;
       const ctx = {
@@ -3678,6 +3720,7 @@ describe('the figure theme in the charts', () => {
         lineTo: noop,
         stroke: () => {
           strokes.push(ctx.strokeStyle);
+          strokeWidths.push(ctx.lineWidth);
         },
         fillRect: () => {
           rectFills.push(ctx.fillStyle);
@@ -3724,7 +3767,9 @@ describe('the figure theme in the charts', () => {
       expect(fills).toContain('#9a6b12');
       expect(fills).toContain('#52514e');
       expect(fills).not.toContain(ACCENT);
-      expect(strokes.every((stroke) => stroke === '#6b6a66')).toBe(true);
+      // Both leaders, in the muted color at 1.5 px.
+      expect(strokes).toEqual(['#6b6a66', '#6b6a66']);
+      expect(strokeWidths).toEqual([1.5, 1.5]);
     });
   });
 

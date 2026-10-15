@@ -154,6 +154,72 @@ public class RootCauseDecompositionTests
         Assert.Equal(result.Difference!.Value, all.Sum(c => c.Amount), 12);
     }
 
+    /// <summary>
+    /// The first model reports its reasoning apart from its output; the second's provider counts thinking inside
+    /// output, so its reasoning slot is 0 and its output slot holds all of it.
+    /// </summary>
+    private static (List<RootCauseItem> Reported, List<RootCauseItem> Unreported) ReasoningItems()
+        => (Enumerable.Range(1, 6).Select(i => CostItem("q" + i,
+                new double[] { 1000, 0, 0, 400 + 10 * i, 600 },
+                new double[] { 0.002, 0, 0, 0.004 + 1e-4 * i, 0.006 + 1e-4 * i })).ToList(),
+            Enumerable.Range(1, 6).Select(i => CostItem("q" + i,
+                new double[] { 900, 0, 0, 1500 + 20 * i, 0 },
+                new double[] { 0.0018, 0, 0, 0.015 + 2e-4 * i, 0 })).ToList());
+
+    [Fact]
+    public void CostEffects_WithAZeroReasoningSide_StillSumExactly_TheReasoningDifferenceAllVolume()
+    {
+        var (reported, unreported) = ReasoningItems();
+
+        var (effects, total, a, b) = RootCauseDecomposition.CostEffects(reported, unreported);
+
+        Assert.Equal(10, effects.Length);
+        Assert.Equal(a - b, total, 12);
+        Assert.Equal(total, effects.Sum(), 12);
+        Assert.Equal(reported.Average(i => i.Cost[4]), effects[8], 12);
+        Assert.Equal(0, effects[9], 12);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void APairWithUnreportedReasoning_WritesOneOutputRow_ThatStillSumsExactly(bool bothReport)
+    {
+        var (reported, unreported) = ReasoningItems();
+        RootCauseModelInput Model(string token, List<RootCauseItem> items, bool reasoningReported) => new()
+        {
+            Token = token,
+            Letter = token,
+            Label = "Model label " + token,
+            Provider = reasoningReported ? "Provider " + token : "Anthropic",
+            ModelId = "model-" + token.ToLowerInvariant(),
+            Evidence = new RootCauseModelEvidence { Priced = true, RunsPerSuite = 1, ReasoningReported = reasoningReported, CostItems = items }
+        };
+        var a = Model("A", reported, reasoningReported: true);
+        var b = Model("B", unreported, reasoningReported: bothReport);
+        var ctx = new RootCauseContext(new RootCauseInput { Scope = RootCauseEngine.ComparisonScope, Models = new[] { a, b }, ReferenceToken = "A" });
+        var cost = RootCauseDecomposition.Cost("A", a.Evidence, "B", b.Evidence);
+
+        var written = ctx.WrittenCostPair(new RootCausePair("A", "B"), cost);
+
+        if (bothReport)
+        {
+            Assert.Same(cost, written);
+            return;
+        }
+        Assert.DoesNotContain(written.Components, c => c.Key is RootCauseSegments.Output or RootCauseSegments.Reasoning);
+        var merged = written.Components.Where(c => c.Key == RootCauseSegments.OutputWithThinking).ToList();
+        Assert.Equal(new[] { "volume", "price" }, merged.Select(c => c.Effect));
+        Assert.Equal("output, thinking included, token volume", merged[0].Label);
+        Assert.Equal(cost.Components.Where(c => c.Key is RootCauseSegments.Output or RootCauseSegments.Reasoning).Sum(c => c.Amount), merged.Sum(c => c.Amount), 12);
+        Assert.Equal(written.Difference!.Value, written.Components.Where(c => c.Key != "all").Sum(c => c.Amount), 12);
+        Assert.Equal(1.0, written.Components.Where(c => c.Key != "all").Sum(c => c.Share!.Value), 9);
+        Assert.All(merged, c => Assert.NotNull(c.ShareLower));
+
+        // The rules still read the five components as decomposed.
+        Assert.Contains(cost.Components, c => c.Key == RootCauseSegments.Reasoning);
+    }
+
     [Fact]
     public void Cost_WithoutAPriceCard_IsUnavailable()
     {

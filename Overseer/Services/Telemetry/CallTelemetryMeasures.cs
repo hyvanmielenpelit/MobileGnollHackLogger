@@ -143,6 +143,14 @@ public static class CallTelemetryMeasures
         return rate.HasValue && rate.Value.TokensPerSecond > MaxPlausibleTokensPerSecond;
     }
 
+    /// <summary>
+    /// False for a provider that counts thinking inside its output tokens and does not report it
+    /// separately (Anthropic, matched after trimming and ignoring case); true for every other provider,
+    /// a null one included.
+    /// </summary>
+    public static bool ReportsReasoningSeparately(string? provider)
+        => !string.Equals(provider?.Trim(), "Anthropic", StringComparison.OrdinalIgnoreCase);
+
     /// <summary><see cref="AnswerStreamingRate"/> for <paramref name="final"/> without its two bounds.</summary>
     private static (double TokensPerSecond, bool Estimated)? UnboundedStreamingRate(ModelCallTelemetry final)
     {
@@ -154,7 +162,7 @@ public static class CallTelemetryMeasures
         }
 
         double seconds = spanMs / 1000.0;
-        if (string.Equals(final.Provider?.Trim(), "Anthropic", StringComparison.OrdinalIgnoreCase))
+        if (!ReportsReasoningSeparately(final.Provider))
         {
             return (windowChars / EstimatedCharsPerToken / seconds, true);
         }

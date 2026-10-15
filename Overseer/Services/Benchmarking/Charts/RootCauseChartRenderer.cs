@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Overseer.Models;
 using Overseer.Services.Benchmarking.Pdf;
 using Overseer.Services.Benchmarking.RootCause;
@@ -19,7 +20,8 @@ public sealed record DrawnChart(string Key, string Title, string Caption, string
 /// confidence as a dot on an ordinal grade axis with a share bar.
 ///
 /// <para>Each chart is a one-page QuestPDF document whose page is the chart, the full text-column width
-/// (<see cref="WidthPoints"/>) by 40 pt plus 18 pt per row, at most <see cref="MaxHeightPoints"/>; its
+/// (<see cref="WidthPoints"/>) by 40 pt plus 18 pt per row, and 11 pt more for R1–R3's axis title, at most
+/// <see cref="MaxHeightPoints"/>; its
 /// text is set in the document fonts <see cref="BenchmarkPdfResources"/> registers, at
 /// <see cref="FontSize"/> pt. It is rasterized with
 /// <c>document.GenerateImages(new ImageGenerationSettings { ImageFormat = ImageFormat.Png, RasterDpi = 300 })</c>
@@ -27,8 +29,12 @@ public sealed record DrawnChart(string Key, string Title, string Caption, string
 /// page content is scaled to fit, so there is always exactly one.</para>
 ///
 /// <para>Static and pure: the same result, sheet and naming always give the same charts. A chart with no
-/// row to draw is left out. The named variant prints model names; the anonymized variant prints a
-/// peer's letter (<c>Model A</c>) and never its name, as the anonymized document does.</para>
+/// row to draw is left out. The named variant prints model names, in R4's statements too; the anonymized
+/// variant prints a peer's letter (<c>Model A</c>) and never its name, as the anonymized document does.</para>
+///
+/// <para>R1–R3 name each segment in a key by its color and print a segment's value inside it where the value
+/// fits; the axis title stands on its own row under the ticks. R4 shows the hypotheses the body's tables show,
+/// the null hypotheses left out.</para>
 /// </summary>
 public static class RootCauseChartRenderer
 {
@@ -45,8 +51,11 @@ public static class RootCauseChartRenderer
     public const float FontSize = 8f;
     public const int RasterDpi = 300;
 
-    /// <summary>A segment of at least this share of its bar carries its number.</summary>
-    public const double LabeledSegmentShare = 0.08;
+    /// <summary>The estimated width of one character of a segment's value label, in points.</summary>
+    public const float LabelCharPoints = 4.5f;
+
+    /// <summary>The room a segment keeps around its value label, in points: a segment narrower than the label plus this prints none.</summary>
+    public const float LabelPaddingPoints = 4f;
 
     /// <summary>The tallest chart: <see cref="BenchmarkReportChartLayout.DefaultMaxHeightShare"/> of an A4 page's content height, as a figure's default height cap.</summary>
     public static float MaxHeightPoints => BenchmarkPdfRenderer.FigureFrameFor(BenchmarkPdfPaper.A4).MaxHeight;
@@ -63,7 +72,7 @@ public static class RootCauseChartRenderer
     private const float PlotWidth = 300f;
     private const float BarHeight = 12f;
     private const float SegmentGap = 1f;
-    private const float MinNumberedSegmentWidth = 7f;
+    private const float AxisTitlePoints = 11f;
 
     // R4: the label, the four grade positions, then the share bar and its text.
     private const float HypothesisLabelWidth = 150f;
@@ -134,9 +143,46 @@ public static class RootCauseChartRenderer
             "Cost per question in US dollars, split by token kind" + GroupSuffix(result.CostRows)
             + (string.IsNullOrWhiteSpace(result.PricingBasis) ? "" : "; pricing basis: " + result.PricingBasis.Trim().TrimEnd('.'))
             + ". " + drawnBy);
-        AddHypotheses(plans, result.Hypotheses,
+        AddHypotheses(plans, (result.Hypotheses ?? new List<RootCauseHypothesis>()).Where(h => h != null && h.Kind != "null").ToList(),
+            ModelNames(result, anonymized),
             "The confidence grade of each hypothesis in the tables, and its share of the difference with its 95% interval where it has one. " + drawnBy);
         return plans;
+    }
+
+    /// <summary>
+    /// The named variant's text with each <c>Model X</c> of an analyzed model replaced by the model's label; the anonymized
+    /// variant's text unchanged.
+    /// </summary>
+    private static Func<string, string> ModelNames(RootCauseResult result, bool anonymized)
+    {
+        var labels = (result.Models ?? new List<RootCauseModel>())
+            .Where(m => !string.IsNullOrEmpty(m.Letter) && !string.IsNullOrWhiteSpace(m.Label))
+            .GroupBy(m => m.Letter!, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Label, StringComparer.Ordinal);
+        if (anonymized || labels.Count == 0) return text => text;
+        return text => ModelToken.Replace(text, match => labels.TryGetValue(match.Groups[1].Value, out string? label) ? label : match.Value);
+    }
+
+    private static readonly Regex ModelToken = new(@"\bModel ([A-Z]{1,3})\b", RegexOptions.CultureInvariant);
+
+    /// <summary>The key whose slot a segment takes: its own, and the visible output's for <see cref="RootCauseSegments.OutputWithThinking"/>.</summary>
+    private static string SlotKey(string key) => key == RootCauseSegments.OutputWithThinking ? RootCauseSegments.Output : key;
+
+    /// <summary>
+    /// The words of each slot of a chart's key: its segment's label; for the visible output slot of R3, the output with
+    /// thinking included where some row holds that segment, or both where rows hold each. Null for a slot no row holds.
+    /// </summary>
+    private static List<string?> KeyLabels(IReadOnlyList<string> segmentKeys, IReadOnlyList<RootCauseChartRow> rows)
+    {
+        var held = new HashSet<string>(rows.SelectMany(r => r.Segments).Where(s => s?.Key != null).Select(s => s!.Key), StringComparer.Ordinal);
+        bool merged = held.Contains(RootCauseSegments.OutputWithThinking);
+        bool plain = held.Contains(RootCauseSegments.Output);
+        return segmentKeys.Select(k => k == RootCauseSegments.Output && merged
+                ? (plain
+                    ? RootCauseSegments.Label(RootCauseSegments.Output) + " (or " + RootCauseSegments.Label(RootCauseSegments.OutputWithThinking) + ")"
+                    : RootCauseSegments.Label(RootCauseSegments.OutputWithThinking))
+                : held.Contains(k) ? RootCauseSegments.Label(k) : null)
+            .ToList();
     }
 
     /// <summary>Whom the rows of a chart are: per model, or the subject and then its difficulty bands or suites.</summary>
@@ -157,27 +203,29 @@ public static class RootCauseChartRenderer
         if (!rows.Any(Available)) return;
 
         float cap = MaxHeightPoints;
+        float baseHeight = BaseHeightPoints + AxisTitlePoints;
         int shown = rows.Count;
         int hidden = 0;
-        if (BaseHeightPoints + RowPoints * rows.Count > cap)
+        if (baseHeight + RowPoints * rows.Count > cap)
         {
-            shown = Math.Max(1, (int)Math.Floor((cap - BaseHeightPoints) / RowPoints) - 1);
+            shown = Math.Max(1, (int)Math.Floor((cap - baseHeight) / RowPoints) - 1);
             hidden = rows.Count - shown;
         }
 
-        float height = Math.Max(MinHeightPoints, BaseHeightPoints + RowPoints * (shown + (hidden > 0 ? 1 : 0)));
+        float height = Math.Max(MinHeightPoints, baseHeight + RowPoints * (shown + (hidden > 0 ? 1 : 0)));
         double max = NiceCeiling(rows.Where(Available).Max(r => r.Total!.Value));
         var visible = rows.Take(shown).Select(r => (Name: RowName(r, anonymized), Row: r)).ToList();
+        var keyLabels = KeyLabels(segmentKeys, rows);
 
         string alt = AltText(title, rows.Select(r => StackClause(r, RowName(r, anonymized), unit)).ToList());
         plans.Add(new ChartPlan(key, title, Clip(caption, BenchmarkReportChartStore.MaxCaptionChars), alt, height,
-            content => ComposeStack(content, segmentKeys, visible, hidden, unit, max)));
+            content => ComposeStack(content, segmentKeys, keyLabels, visible, hidden, unit, max)));
     }
 
     private static bool Available(RootCauseChartRow row)
         => row.UnavailableReason == null && row.Total is double total && double.IsFinite(total) && row.Segments.Count > 0;
 
-    private static void AddHypotheses(List<ChartPlan> plans, IReadOnlyList<RootCauseHypothesis>? source, string caption)
+    private static void AddHypotheses(List<ChartPlan> plans, IReadOnlyList<RootCauseHypothesis>? source, Func<string, string> names, string caption)
     {
         var hypotheses = (source ?? Array.Empty<RootCauseHypothesis>()).Where(h => h != null).ToList();
         if (hypotheses.Count == 0) return;
@@ -202,10 +250,10 @@ public static class RootCauseChartRenderer
 
         var visible = items.Take(shownItems).ToList();
         float height = Math.Max(MinHeightPoints, BaseHeightPoints + pitch * (visible.Count + (hidden > 0 ? 1 : 0)));
-        string alt = AltText(HypothesesTitle, hypotheses.Select(HypothesisClause).ToList());
+        string alt = AltText(HypothesesTitle, hypotheses.Select(h => HypothesisClause(h, names)).ToList());
         plans.Add(new ChartPlan(BenchmarkReportChartPlacement.RcaHypothesesKey, HypothesesTitle,
             Clip(caption, BenchmarkReportChartStore.MaxCaptionChars), alt, height,
-            content => ComposeHypotheses(content, visible, hidden, pitch)));
+            content => ComposeHypotheses(content, visible, hidden, pitch, names)));
     }
 
     // ---------------------------------------------------------------- text
@@ -253,9 +301,9 @@ public static class RootCauseChartRenderer
         return clause + word + SegmentLabel(largest.Segment) + " (" + Format(largest.Segment.Value, unit) + ")";
     }
 
-    private static string HypothesisClause(RootCauseHypothesis hypothesis)
+    private static string HypothesisClause(RootCauseHypothesis hypothesis, Func<string, string> names)
     {
-        string clause = HypothesisLabel(hypothesis) + ": " + RootCauseGrades.Display(hypothesis.Grade);
+        string clause = HypothesisLabel(hypothesis, names) + ": " + RootCauseGrades.Display(hypothesis.Grade);
         if (hypothesis.Share is double share)
         {
             clause += ", share " + Percent(share);
@@ -267,11 +315,12 @@ public static class RootCauseChartRenderer
         return clause;
     }
 
-    private static string HypothesisLabel(RootCauseHypothesis hypothesis)
+    /// <summary>The hypothesis' key and short statement, each <c>Model X</c> as <paramref name="names"/> names it.</summary>
+    private static string HypothesisLabel(RootCauseHypothesis hypothesis, Func<string, string> names)
     {
         string id = string.IsNullOrWhiteSpace(hypothesis.Key) ? hypothesis.Id ?? string.Empty : hypothesis.Key;
         string text = string.IsNullOrWhiteSpace(hypothesis.ShortStatement) ? hypothesis.Statement ?? string.Empty : hypothesis.ShortStatement;
-        return (id + " " + text).Trim();
+        return (id + " " + names(text)).Trim();
     }
 
     private static string SegmentLabel(RootCauseSegment segment)
@@ -307,14 +356,19 @@ public static class RootCauseChartRenderer
         _ => "index points (of 100)"
     };
 
-    /// <summary>The smallest of 1, 2, 2.5 and 5 times a power of ten at or above <paramref name="value"/>; 1 for zero or less.</summary>
+    /// <summary>
+    /// The smallest of 1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8 and 10 times a power of ten at or above <paramref name="value"/>,
+    /// so 60 stays 60; 1 for zero or less.
+    /// </summary>
     internal static double NiceCeiling(double value)
     {
         if (!(value > 0) || !double.IsFinite(value)) return 1;
         double power = Math.Pow(10, Math.Floor(Math.Log10(value)));
-        foreach (double step in new[] { 1, 2, 2.5, 5, 10 })
+        // The steps in tenths, so that a whole power of ten gives a whole ceiling.
+        foreach (int tenths in new[] { 10, 12, 15, 20, 25, 30, 40, 50, 60, 80, 100 })
         {
-            if (step * power >= value * (1 - 1e-12)) return step * power;
+            double nice = tenths * power / 10;
+            if (nice >= value * (1 - 1e-12)) return nice;
         }
         return 10 * power;
     }
@@ -371,12 +425,13 @@ public static class RootCauseChartRenderer
     }
 
     /// <summary>
-    /// R1–R3: the key (each segment numbered, in stacking order), then one row per model, band or suite
-    /// with its stacked bar and the total after its end, then the axis.
+    /// R1–R3: the key (each segment's color swatch and name, in stacking order), then one row per model, band or
+    /// suite with its stacked bar and the total after its end, then the axis: its rule, its ticks, and its title on
+    /// a row of its own.
     /// </summary>
     private static void ComposeStack(
-        IContainer container, IReadOnlyList<string> segmentKeys, IReadOnlyList<(string Name, RootCauseChartRow Row)> rows,
-        int hidden, string unit, double max)
+        IContainer container, IReadOnlyList<string> segmentKeys, IReadOnlyList<string?> keyLabels,
+        IReadOnlyList<(string Name, RootCauseChartRow Row)> rows, int hidden, string unit, double max)
     {
         container.Column(col =>
         {
@@ -384,12 +439,15 @@ public static class RootCauseChartRenderer
             {
                 text.DefaultTextStyle(s => s.FontColor(Hex(RootCauseChartPalette.SecondaryInk)));
                 text.Span("Key: ");
+                bool first = true;
                 for (int i = 0; i < segmentKeys.Count; i++)
                 {
-                    if (i > 0) text.Span("   ");
-                    // A swatch (U+25A0), then the number and label, joined by no-break spaces (U+00A0).
+                    if (i < keyLabels.Count && keyLabels[i] == null) continue;
+                    if (!first) text.Span("   ");
+                    first = false;
+                    // A swatch (U+25A0) and a no-break space (U+00A0), then the label.
                     text.Span("■ ").FontColor(Hex(RootCauseChartPalette.Segment(i)));
-                    text.Span((i + 1).ToString(CultureInfo.InvariantCulture) + " " + RootCauseSegments.Label(segmentKeys[i]));
+                    text.Span((i < keyLabels.Count ? keyLabels[i] : null) ?? RootCauseSegments.Label(segmentKeys[i]));
                 }
             });
 
@@ -435,7 +493,12 @@ public static class RootCauseChartRenderer
                             t.RelativeItem().AlignCenter().Element(c => Line(c, Format(max / 2, unit), RootCauseChartPalette.SecondaryInk));
                             t.RelativeItem().AlignRight().Element(c => Line(c, Format(max, unit), RootCauseChartPalette.SecondaryInk));
                         });
-                        ticks.RelativeItem().PaddingLeft(4).Element(c => Line(c, AxisUnit(unit), RootCauseChartPalette.SecondaryInk));
+                        ticks.RelativeItem();
+                    });
+                    scale.Item().Row(title =>
+                    {
+                        title.ConstantItem(PlotWidth).AlignCenter().Element(c => Line(c, AxisUnit(unit), RootCauseChartPalette.SecondaryInk));
+                        title.RelativeItem();
                     });
                 });
             });
@@ -443,9 +506,9 @@ public static class RootCauseChartRenderer
     }
 
     /// <summary>
-    /// One stacked bar: each segment in its stacking color with a surface gap after it, numbered when it
-    /// is at least <see cref="LabeledSegmentShare"/> of the bar and wide enough to hold the number; then
-    /// the total.
+    /// One stacked bar: each segment in its stacking color with a surface gap after it, with its value inside
+    /// it (<see cref="SegmentValue"/>) where the segment is at least as wide as the label's estimated width
+    /// (<see cref="LabelCharPoints"/> a character) plus <see cref="LabelPaddingPoints"/>; then the total.
     /// </summary>
     private static void ComposeBar(RowDescriptor bar, IReadOnlyList<string> segmentKeys, RootCauseChartRow row, string unit, double max)
     {
@@ -465,15 +528,16 @@ public static class RootCauseChartRenderer
 
             int slot = SlotOf(segmentKeys, segment.Key, i);
             bool gap = width > SegmentGap + 0.5f;
-            bool numbered = total > 0 && segment.Value / total >= LabeledSegmentShare && width - SegmentGap >= MinNumberedSegmentWidth;
+            string label = SegmentValue(segment.Value, unit);
+            bool labeled = width - (gap ? SegmentGap : 0) >= label.Length * LabelCharPoints + LabelPaddingPoints;
 
             var box = bar.ConstantItem(width).Height(RowPoints).PaddingVertical(verticalPad);
             if (gap) box = box.PaddingRight(SegmentGap);
             box = box.Background(Hex(RootCauseChartPalette.Segment(slot)));
-            if (numbered)
+            if (labeled)
             {
                 box.AlignCenter().AlignMiddle()
-                    .Text((slot + 1).ToString(CultureInfo.InvariantCulture))
+                    .Text(label)
                     .FontColor(Hex(RootCauseChartPalette.SegmentLabel(slot)))
                     .ClampLines(1, "");
             }
@@ -483,15 +547,26 @@ public static class RootCauseChartRenderer
         bar.RelativeItem().Height(RowPoints).AlignMiddle().Element(c => Line(c, Format(total, unit), RootCauseChartPalette.Ink));
     }
 
-    /// <summary>The stacking position of a segment: its key's place in the chart's key, or its own index.</summary>
+    /// <summary>
+    /// The stacking position of a segment: its key's place in the chart's key, the visible output's for output with
+    /// thinking included (<see cref="SlotKey"/>), or its own index.
+    /// </summary>
     private static int SlotOf(IReadOnlyList<string> segmentKeys, string? key, int index)
     {
+        string? slotKey = key == null ? null : SlotKey(key);
         for (int i = 0; i < segmentKeys.Count; i++)
         {
-            if (string.Equals(segmentKeys[i], key, StringComparison.Ordinal)) return i;
+            if (string.Equals(segmentKeys[i], slotKey, StringComparison.Ordinal)) return i;
         }
         return index;
     }
+
+    /// <summary>
+    /// A segment's value as its label prints it, in the stack's unit: one decimal for points and seconds, <c>14.1</c>,
+    /// and <see cref="BenchmarkReportFormat.Usd"/> for cost, <c>$0.0040</c>.
+    /// </summary>
+    internal static string SegmentValue(double value, string unit)
+        => unit == "usd" ? BenchmarkReportFormat.Usd(value) : BenchmarkReportFormat.OneDecimal(value);
 
     /// <summary>
     /// R4: the header naming the four grade positions, then per axis a heading line and one line per
@@ -499,7 +574,7 @@ public static class RootCauseChartRenderer
     /// has a share, a bar to the share with its 95% interval as a whisker and the figures beside it.
     /// </summary>
     private static void ComposeHypotheses(
-        IContainer container, IReadOnlyList<(string? Heading, RootCauseHypothesis? Hypothesis)> items, int hidden, float pitch)
+        IContainer container, IReadOnlyList<(string? Heading, RootCauseHypothesis? Hypothesis)> items, int hidden, float pitch, Func<string, string> names)
     {
         container.Column(col =>
         {
@@ -532,7 +607,7 @@ public static class RootCauseChartRenderer
                 col.Item().Height(pitch).Row(line =>
                 {
                     line.ConstantItem(HypothesisLabelWidth).Height(pitch).AlignMiddle().PaddingRight(6)
-                        .Element(c => Line(c, HypothesisLabel(shown), RootCauseChartPalette.Ink));
+                        .Element(c => Line(c, HypothesisLabel(shown, names), RootCauseChartPalette.Ink));
                     line.ConstantItem(GradeWidth).Row(grade => ComposeGrade(grade, shown.Grade, pitch));
                     line.RelativeItem().Row(share => ComposeShare(share, shown, pitch));
                 });

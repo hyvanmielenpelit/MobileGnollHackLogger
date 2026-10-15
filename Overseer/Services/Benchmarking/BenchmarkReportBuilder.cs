@@ -1590,7 +1590,7 @@ public static class BenchmarkReportBuilder
 
     /// <summary>The candidate is an Anthropic model, whose usage reports no separate reasoning-token count.</summary>
     private static bool IsAnthropicCandidate(BenchmarkRun run)
-        => string.Equals(run.TestedModelSnapshot.Provider?.Trim(), "Anthropic", StringComparison.OrdinalIgnoreCase);
+        => !CallTelemetryMeasures.ReportsReasoningSeparately(run.TestedModelSnapshot.Provider);
 
     /// <summary>Own waits above this share of model time are reported as dominating the run's timing.</summary>
     public const double OwnWaitDominanceShare = 0.25;

@@ -44,6 +44,15 @@ public class RootCauseHypothesesTests
 
     private static RootCauseHypothesis Grade(RootCauseDraft draft) => RootCauseHypotheses.Grade(draft, t => "Model " + t);
 
+    [Theory]
+    [InlineData("A Mann–Whitney contrast is established", "a Mann–Whitney contrast is established")]
+    [InlineData("The ρ interval includes zero", "the ρ interval includes zero")]
+    [InlineData("Model A answers faster", "Model A answers faster")]
+    [InlineData("HQ1 is refuted", "HQ1 is refuted")]
+    [InlineData("Its share falls", "its share falls")]
+    public void LowerFirst_LowersALeadingWordOrArticle_ButKeepsAName(string text, string expected)
+        => Assert.Equal(expected, RootCauseHypotheses.LowerFirst(text));
+
     private static RootCauseRobustnessCheck[] AllPassed() => new[]
     {
         Check(RootCauseHypotheses.LeaveOneOut, RootCauseCheckStatuses.Passed),
@@ -372,6 +381,107 @@ public class RootCauseHypothesesTests
 
         // High first (measured, then unmeasured); then Low, the rejected null before the standing one.
         Assert.Equal(new[] { "C|D", "A|B", "G|H", "E|F" }, ranked);
+    }
+
+    // --- Reasoning a provider does not report separately ---------------------------------------------------
+
+    /// <summary>
+    /// One of two compared models with twelve timed and priced questions: its output tokens per question, its
+    /// reasoning cost per question, and whether its provider reports reasoning apart from output (when it does
+    /// not, its reasoning tokens are not recorded and its reasoning cost slot is 0).
+    /// </summary>
+    private static RootCauseModelInput Timed(string token, double outputTokens, double reasoningCost, bool reasoningReported)
+    {
+        var questions = Enumerable.Range(1, 12).ToList();
+        return new RootCauseModelInput
+        {
+            Token = token,
+            Letter = token,
+            Label = "Model label " + token,
+            Provider = reasoningReported ? "Provider " + token : "Anthropic",
+            ModelId = "model-" + token.ToLowerInvariant(),
+            ThinkingLevel = "high",
+            EntryKey = "run:" + token,
+            Evidence = new RootCauseModelEvidence
+            {
+                RunCount = 1,
+                RunsPerSuite = 1,
+                Priced = true,
+                ReasoningReported = reasoningReported,
+                Answers = questions.Select(q => new RootCauseAnswerRecord
+                {
+                    RunId = 1,
+                    ItemKey = "q" + q + "@1",
+                    QuestionKey = "q" + q,
+                    Band = "Simple",
+                    Ok = true,
+                    OutputTokens = (int)outputTokens,
+                    ReasoningTokens = reasoningReported ? (int)(outputTokens / 2) : null,
+                    ReasoningReported = reasoningReported
+                }).ToList(),
+                SpeedItems = questions.Select(q =>
+                {
+                    double decode = outputTokens * 10 * (1 + 0.01 * (q % 3));
+                    return new RootCauseItem
+                    {
+                        Key = "q" + q,
+                        Band = "Simple",
+                        TtftMs = 2000,
+                        DecodeMs = decode,
+                        ModelTimeMs = 2000 + decode + 500,
+                        DurationMs = 2000 + decode + 1500,
+                        ToolMs = 1000,
+                        Calls = 2,
+                        OutputTokens = outputTokens
+                    };
+                }).ToList(),
+                CostItems = questions.Select(q => new RootCauseItem
+                {
+                    Key = "q" + q,
+                    Band = "Simple",
+                    Tokens = new double[] { 1000, 0, 0, outputTokens, reasoningCost > 0 ? 5000 : 0 },
+                    Cost = new double[] { 0.001, 0, 0, outputTokens * 4e-6 * (1 + 0.01 * (q % 4)), reasoningCost * (1 + 0.01 * (q % 4)) }
+                }).ToList()
+            }
+        };
+    }
+
+    private static RootCauseContext Compared(RootCauseModelInput a, RootCauseModelInput b)
+        => new(new RootCauseInput { Scope = RootCauseEngine.ComparisonScope, Models = new[] { a, b }, ReferenceToken = a.Token });
+
+    [Fact]
+    public void HS3_WithUnreportedThinking_SaysSo_AndIsNotEstablished_ButNotRuledOut()
+    {
+        // Model B writes three times the output at the same rate, and does not report its thinking apart from it.
+        var ctx = Compared(Timed("A", 1000, 0, reasoningReported: true), Timed("B", 3000, 0, reasoningReported: false));
+
+        var hs3 = Assert.Single(RootCauseHypotheses.PairRules(ctx, new RootCausePair("A", "B"), new Dictionary<string, bool>()), d => d.Id == "HS3");
+
+        Assert.Equal(new[] { "B", "A" }, hs3.Models);
+        Assert.Contains("Thinking is not reported separately for Model B.", hs3.Against);
+        Assert.False(hs3.NotSupported);
+        Assert.False(hs3.Established);
+        Assert.NotEqual(RootCauseGrades.NotSupported, Grade(hs3).Grade);
+
+        // Both models report it: the shares are compared and the line is absent.
+        var reported = Compared(Timed("A", 1000, 0, reasoningReported: true), Timed("B", 3000, 0, reasoningReported: true));
+        var both = Assert.Single(RootCauseHypotheses.PairRules(reported, new RootCausePair("A", "B"), new Dictionary<string, bool>()), d => d.Id == "HS3");
+        Assert.DoesNotContain(both.Against, line => line.StartsWith("Thinking is not reported", StringComparison.Ordinal));
+        Assert.True(both.Established);
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(false, false)]
+    public void HC3_FiresOnlyWhenBothModelsReportTheirThinking(bool otherReports, bool fires)
+    {
+        // Model A's reasoning tokens carry its higher cost; Model B's thinking, if it has any, is inside its output.
+        var ctx = Compared(Timed("A", 500, 0.02, reasoningReported: true), Timed("B", 1500, 0, reasoningReported: otherReports));
+
+        var drafts = RootCauseHypotheses.PairRules(ctx, new RootCausePair("A", "B"), new Dictionary<string, bool>());
+
+        Assert.Contains(drafts, d => d.Axis == RootCauseAxes.Cost && d.Models[0] == "A");
+        Assert.Equal(fires, drafts.Any(d => d.Id == "HC3"));
     }
 
     [Fact]

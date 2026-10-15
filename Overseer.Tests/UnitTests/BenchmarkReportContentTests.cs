@@ -1,8 +1,11 @@
 namespace Overseer.Tests.UnitTests;
 
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using MobileGnollHackLogger.Data;
+using Overseer.Models;
 using Overseer.Services.Benchmarking;
 using Overseer.Tests.Helpers;
 using Xunit;
@@ -287,5 +290,120 @@ public class BenchmarkReportContentTests
         const string text = "| A | B |\n|---|---|\n| 1 | 2 |\nThen a long closing sentence that runs past the limit.";
 
         Assert.Equal("| A | B |\n|---|---|\n| 1 | 2 |\n\n…", BenchmarkReportContent.Excerpt(text, 40).Excerpt);
+    }
+
+    // --- Critical-error resolution -------------------------------------------------------------------
+
+    [Fact]
+    public void TheCriticalErrorResolution_IsCapturedByName_FromScoringMethod13_AndNoneIsNull()
+    {
+        var run = Run(1, "OpenAI", "subject", new AnswerSpec(11, 1, 1, 25), new AnswerSpec(12, 2, 1, 80), new AnswerSpec(13, 3, 1, 80));
+        run.ScoringMethodVersion = BenchmarkCriticalErrorResolver.FirstScoringMethod;
+        run.Answers[0].CriticalErrorResolution = BenchmarkCriticalErrorResolution.UpheldByVerifier;
+        run.Answers[1].CriticalErrorResolution = BenchmarkCriticalErrorResolution.None;
+
+        var questions = BenchmarkReportContent.Build(new[] { run }, 200).Runs[0].Questions;
+
+        Assert.Equal("UpheldByVerifier", questions[0].CriticalErrorResolution);
+        Assert.Null(questions[1].CriticalErrorResolution);
+        Assert.Null(questions[2].CriticalErrorResolution);
+        Assert.DoesNotContain("criticalErrorResolution", BenchmarkReportJson.Serialize(questions[1]));
+        Assert.Contains("\"criticalErrorResolution\":\"UpheldByVerifier\"", BenchmarkReportJson.Serialize(questions[0]));
+
+        // A run scored before method 13 resolves nothing, whatever its answer rows hold.
+        var earlier = Run(2, "OpenAI", "subject", new AnswerSpec(11, 1, 1, 25));
+        earlier.Answers[0].CriticalErrorResolution = BenchmarkCriticalErrorResolution.Agreed;
+        Assert.Null(BenchmarkReportContent.Build(new[] { earlier }, 200).Runs[0].Questions[0].CriticalErrorResolution);
+    }
+
+    // --- Comparison excerpts -------------------------------------------------------------------------
+
+    private static readonly string[] ModelLetters = { "A", "B", "C", "D", "E", "F" };
+
+    /// <summary>
+    /// Five questions over six models scoring 70 (A) to 75 (F): Q1 to Q4 have a critical error by F, so
+    /// all four lead the excerpt order; Q4 is suite 2, the others suite 1. Every excerpt is 10 characters.
+    /// </summary>
+    private static List<BenchmarkReportQuestion> ExcerptQuestions()
+        => Enumerable.Range(1, 5).Select(n => new BenchmarkReportQuestion
+        {
+            Number = n,
+            Suite = n == 4 ? 2 : 1,
+            Models = ModelLetters.Select((letter, k) => new BenchmarkReportQuestionModelScore
+            {
+                Letter = letter,
+                Score = 70 + k,
+                CriticalError = n <= 4 && letter == "F"
+            }).ToList()
+        }).ToList();
+
+    private static List<BenchmarkReportContent.ComparisonEntry> ExcerptEntries()
+        => ModelLetters.Select((letter, k) => new BenchmarkReportContent.ComparisonEntry(
+            letter,
+            "run:" + (k + 1),
+            new BenchmarkReportContentSnapshot
+            {
+                Runs =
+                {
+                    new BenchmarkReportContentRun
+                    {
+                        RunId = k + 1,
+                        Questions = Enumerable.Range(1, 5).Select(n => new BenchmarkReportContentQuestion
+                        {
+                            Number = n,
+                            QuestionKey = (100 + n).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            AnswerExcerpt = "Excerpt " + letter + n,
+                            CriticalErrorResolution = n == 1 && letter == "F" ? "Agreed" : null
+                        }).ToList()
+                    }
+                }
+            },
+            Enumerable.Range(1, 5).ToDictionary(n => n, n => n))).ToList();
+
+    /// <summary>Each question's excerpted letters, in letter order.</summary>
+    private static Dictionary<int, List<string>> ExcerptedLetters(BenchmarkReportContentSnapshot snapshot)
+        => snapshot.Runs
+            .SelectMany(r => r.Questions.Select(q => (q.Number, Letter: r.Letter!)))
+            .GroupBy(x => x.Number)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.Letter).OrderBy(l => l, StringComparer.Ordinal).ToList());
+
+    [Fact]
+    public void TheExcerptOrder_InterleavesTheSuitesWithinAGroup()
+    {
+        Assert.Equal(new[] { 1, 4, 2, 3, 5 }, BenchmarkReportContent.ExcerptPriority(ExcerptQuestions()).Select(q => q.Number));
+    }
+
+    [Fact]
+    public void UnderATightBudget_EveryLeadingQuestionGetsOneExcerpt_BeforeAnyGetsASecond()
+    {
+        // 8 characters a question: a budget of 40, four excerpts of 10.
+        var excerpted = ExcerptedLetters(BenchmarkReportContent.BuildComparison(ExcerptQuestions(), ExcerptEntries(), 8));
+
+        Assert.Equal(new[] { 1, 2, 3, 4 }, excerpted.Keys.OrderBy(n => n));
+        Assert.All(excerpted.Values, letters => Assert.Equal(new[] { "F" }, letters));
+    }
+
+    [Fact]
+    public void ASecondSuitesQuestion_GetsItsExcerptInTheFirstRound()
+    {
+        // 4 characters a question: a budget of 20, two excerpts of 10, to Q1 and to Q4 of suite 2.
+        var excerpted = ExcerptedLetters(BenchmarkReportContent.BuildComparison(ExcerptQuestions(), ExcerptEntries(), 4));
+
+        Assert.Equal(new[] { 1, 4 }, excerpted.Keys.OrderBy(n => n));
+    }
+
+    [Fact]
+    public void AQuestionGetsAtMostThreeExcerpts_InItsOwnOrder_WithTheirResolution()
+    {
+        var snapshot = BenchmarkReportContent.BuildComparison(ExcerptQuestions(), ExcerptEntries(), 1000);
+        var excerpted = ExcerptedLetters(snapshot);
+
+        Assert.All(excerpted.Values, letters => Assert.Equal(BenchmarkReportContent.MaxExcerptsPerQuestion, letters.Count));
+        Assert.Equal(new[] { "A", "B", "F" }, excerpted[1]);
+        Assert.Equal(new[] { "A", "B", "C" }, excerpted[5]);
+
+        var resolved = snapshot.Runs.Single(r => r.Letter == "F").Questions.Single(q => q.Number == 1);
+        Assert.Equal("Agreed", resolved.CriticalErrorResolution);
+        Assert.All(snapshot.Questions!, q => Assert.Null(q.CriticalErrorResolution));
     }
 }

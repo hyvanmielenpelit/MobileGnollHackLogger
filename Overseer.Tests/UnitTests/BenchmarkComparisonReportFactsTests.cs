@@ -183,7 +183,8 @@ public class BenchmarkComparisonReportFactsTests
         // Q3, with the critical error and the refuted claim, comes first in the excerpt order.
         Assert.Equal(3, BenchmarkReportContent.ExcerptPriority(sheet.Questions)[0].Number);
 
-        // One budget of 120 characters a question for all models, never one per model.
+        // One budget of 120 characters a question for all models, never one per model, and at most
+        // three excerpts a question: on Q3 the critical error (C), then the two lowest scores (E 25, A 30).
         var content = built.Content!;
         Assert.Equal(6, content.Questions!.Count);
         int excerpted = content.Runs.SelectMany(r => r.Questions).Sum(q => q.AnswerExcerpt.Length);
@@ -191,6 +192,9 @@ public class BenchmarkComparisonReportFactsTests
         Assert.Contains(content.Runs, r => r.Letter == "C" && r.Questions.Any(q => q.Number == 3));
         Assert.All(content.Runs, r => Assert.NotNull(r.EntryKey));
         Assert.Equal(q3.ExcerptLetters, content.Runs.Where(r => r.Questions.Any(q => q.Number == 3)).Select(r => r.Letter!).ToList());
+        Assert.Equal(new[] { "A", "C", "E" }, q3.ExcerptLetters);
+        Assert.Equal(new[] { "C", "D", "E" }, sheet.Questions.Single(q => q.Number == 1).ExcerptLetters);
+        Assert.All(sheet.Questions, q => Assert.Equal(BenchmarkReportContent.MaxExcerptsPerQuestion, q.ExcerptLetters!.Count));
         Assert.All(sheet.Questions, q => Assert.True(q.Detailed));
     }
 

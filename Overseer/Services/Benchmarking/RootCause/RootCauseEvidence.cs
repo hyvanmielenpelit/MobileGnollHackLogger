@@ -88,9 +88,18 @@ public sealed class RootCauseAnswerRecord
 
     public int? InputTokens { get; init; }
     public int? OutputTokens { get; init; }
+
+    /// <summary>Null when not recorded, and when the provider does not report reasoning separately.</summary>
     public int? ReasoningTokens { get; init; }
+
     public int? CacheReadTokens { get; init; }
     public int? CacheWriteTokens { get; init; }
+
+    /// <summary>
+    /// The provider reports reasoning tokens apart from output (<see cref="CallTelemetryMeasures.ReportsReasoningSeparately"/>).
+    /// When false, the reasoning component is 0 and the output component holds the whole output, thinking included.
+    /// </summary>
+    public bool ReasoningReported { get; init; } = true;
 
     /// <summary>Tokens by cost component (<see cref="RootCauseSegments.CostComponents"/> order); null without token counts.</summary>
     public double[]? ComponentTokens { get; init; }
@@ -115,6 +124,13 @@ public sealed class RootCauseRunSettings
     public long? SecondOpinionAssessorModelConfigurationId { get; init; }
     public int? SecondOpinionMode { get; init; }
     public long? ClaimVerifierModelConfigurationId { get; init; }
+
+    // The names of the profile and the graders, from the runs' snapshots; null where the runs do not share one.
+    public string? ScoringProfileName { get; init; }
+    public string? AssessorName { get; init; }
+    public string? CoAssessorName { get; init; }
+    public string? ReferenceReaderName { get; init; }
+    public string? ClaimVerifierName { get; init; }
 
     /// <summary>Settings whose value differs between the runs, by launcher field name.</summary>
     public IReadOnlyList<string> Differing { get; init; } = Array.Empty<string>();
@@ -162,6 +178,9 @@ public sealed class RootCauseModelEvidence
 
     /// <summary>Every run has a price card on the basis.</summary>
     public bool Priced { get; init; }
+
+    /// <summary>Every run's provider reports reasoning tokens apart from output (<see cref="RootCauseAnswerRecord.ReasoningReported"/>).</summary>
+    public bool ReasoningReported { get; init; } = true;
 
     /// <summary>The dimension weights of the lowest-id run: accuracy, completeness, conciseness, readability.</summary>
     public double[] Weights { get; init; } = { 0.25, 0.25, 0.25, 0.25 };
@@ -227,6 +246,10 @@ public static class RootCauseEvidence
     public const string NoTelemetryReason = "No answer of this model recorded candidate call telemetry, so its time cannot be split.";
     public const string NoTokensReason = "No answer of this model recorded its token counts.";
     public const string NoPriceReason = "No price card was resolved for every run behind this model.";
+    public const string ReasoningNotReportedReason = "This provider counts thinking inside its output tokens and does not report it separately.";
+
+    /// <summary>The end of an output figure's display for a model whose provider does not report reasoning separately.</summary>
+    public const string ThinkingIncluded = " (thinking included)";
 
     /// <summary>
     /// The evidence of one model over <paramref name="runs"/>, which carry their answers, their tool calls
@@ -284,6 +307,7 @@ public static class RootCauseEvidence
             Panel = allPanel,
             CriticalErrorsConfirmed = ordered.Count > 0 && ordered.All(BenchmarkCriticalErrorResolver.Applies),
             Priced = priced,
+            ReasoningReported = ordered.All(r => CallTelemetryMeasures.ReportsReasoningSeparately(r.TestedModelSnapshot?.Provider)),
             Weights = WeightsOf(first),
             PricesPerMillion = prices,
             PricesDiffer = pricesDiffer,
@@ -344,6 +368,9 @@ public static class RootCauseEvidence
             ? (answer.PermitWaitMs ?? 0) + (answer.BackoffWaitMs ?? 0) + failedAttempts
             : null;
 
+        // A provider that counts thinking inside its output reports no reasoning of its own: its reasoning
+        // slot is 0 and its output slot holds the whole output, so the five-slot arrays keep their shape.
+        bool reported = CallTelemetryMeasures.ReportsReasoningSeparately(run.TestedModelSnapshot?.Provider);
         double[]? componentTokens = null;
         double[]? componentCost = null;
         if (answer.InputTokens.HasValue || answer.OutputTokens.HasValue)
@@ -352,7 +379,7 @@ public static class RootCauseEvidence
             double cacheRead = answer.CacheReadInputTokens ?? 0;
             double cacheWrite = answer.CacheCreationInputTokens ?? 0;
             double output = answer.OutputTokens ?? 0;
-            double reasoning = Math.Clamp((double)(answer.ReasoningTokens ?? 0), 0, output);
+            double reasoning = reported ? Math.Clamp((double)(answer.ReasoningTokens ?? 0), 0, output) : 0;
             componentTokens = new[] { Math.Max(0, input - cacheRead - cacheWrite), cacheRead, cacheWrite, output - reasoning, reasoning };
 
             if (card != null)
@@ -418,9 +445,10 @@ public static class RootCauseEvidence
             ServedTierMismatch = !ChatConsistencyMeasures.AnswerTierMatches(answer, run),
             InputTokens = answer.InputTokens,
             OutputTokens = answer.OutputTokens,
-            ReasoningTokens = answer.ReasoningTokens,
+            ReasoningTokens = reported ? answer.ReasoningTokens : null,
             CacheReadTokens = answer.CacheReadInputTokens,
             CacheWriteTokens = answer.CacheCreationInputTokens,
+            ReasoningReported = reported,
             ComponentTokens = componentTokens,
             ComponentCost = componentCost
         };
@@ -554,6 +582,13 @@ public static class RootCauseEvidence
         long? suiteId = batteryId.HasValue ? null : Shared("SuiteId", r => r.BenchmarkSuiteId ?? r.BenchmarkSuiteIdUsed);
         string? suiteName = batteryId.HasValue ? null : SharedText("SuiteName", r => r.SuiteName);
 
+        // A name is shown beside its id, so a name the runs do not share is left out without being named as differing.
+        static string? SharedName(IReadOnlyList<BenchmarkRun> all, Func<BenchmarkRun, string?> read)
+        {
+            var values = all.Select(read).Distinct(StringComparer.Ordinal).ToList();
+            return values.Count == 1 && !string.IsNullOrWhiteSpace(values[0]) ? values[0]!.Trim() : null;
+        }
+
         return new RootCauseRunSettings
         {
             SuiteId = suiteId,
@@ -569,8 +604,36 @@ public static class RootCauseEvidence
             SecondOpinionAssessorModelConfigurationId = Shared("SecondOpinionAssessorModelConfigurationId", r => r.SecondOpinionAssessorModelConfigurationId),
             SecondOpinionMode = Shared("SecondOpinionMode", r => (int?)r.SecondOpinionModeUsed),
             ClaimVerifierModelConfigurationId = Shared("ClaimVerifierModelConfigurationId", r => r.ClaimVerifierModelConfigurationId),
+            ScoringProfileName = SharedName(runs, ScoringProfileNameOf),
+            AssessorName = SharedName(runs, r => r.AssessorModelSnapshot.Label()),
+            CoAssessorName = SharedName(runs, r => r.CoAssessorModelSnapshot.Label()),
+            ReferenceReaderName = SharedName(runs, r => r.SecondOpinionAssessorModelSnapshot.Label()),
+            ClaimVerifierName = SharedName(runs, r => r.ClaimVerifierModelSnapshot.Label()),
             Differing = differing
         };
+    }
+
+    /// <summary>The name in the run's scoring-profile snapshot, else its loaded profile's; null without either.</summary>
+    private static string? ScoringProfileNameOf(BenchmarkRun run)
+    {
+        if (!string.IsNullOrWhiteSpace(run.ScoringProfileSnapshotJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(run.ScoringProfileSnapshotJson);
+                if (doc.RootElement.ValueKind == JsonValueKind.Object
+                    && doc.RootElement.TryGetProperty("Name", out var name)
+                    && name.ValueKind == JsonValueKind.String)
+                {
+                    return name.GetString();
+                }
+            }
+            catch (JsonException)
+            {
+                // An unreadable snapshot falls back to the loaded profile.
+            }
+        }
+        return run.ScoringProfile?.Name;
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -649,7 +712,19 @@ public static class RootCauseEvidence
         }
 
         var withReasoning = evidence.Answers.Where(a => a.ReasoningTokens.HasValue && a.OutputTokens.HasValue).ToList();
-        if (withReasoning.Count == 0)
+        if (!evidence.ReasoningReported)
+        {
+            facts.Unavailable("tokens.reasoningPerQuestion", ReasoningNotReportedReason);
+            facts.Unavailable("tokens.reasoningShare", ReasoningNotReportedReason);
+
+            // The sheet's own output-token figure counts the thinking too; its display says so.
+            var outputs = evidence.Answers.Where(a => a.OutputTokens.HasValue).Select(a => (double)a.OutputTokens!.Value).ToList();
+            if (outputs.Count > 0)
+            {
+                facts.Replace("tokens.outputPerQuestion", outputs.Average(), BenchmarkReportFormat.Count(outputs.Average()) + ThinkingIncluded);
+            }
+        }
+        else if (withReasoning.Count == 0)
         {
             facts.Unavailable("tokens.reasoningPerQuestion", "No answer recorded its reasoning tokens separately.");
             facts.Unavailable("tokens.reasoningShare", "No answer recorded its reasoning tokens separately.");
@@ -685,18 +760,25 @@ public static class RootCauseEvidence
         for (int k = 0; k < 5; k++)
         {
             string component = RootCauseSegments.CostComponents[k];
+            bool unreportedReasoning = !evidence.ReasoningReported && component == RootCauseSegments.Reasoning;
             string key = "cost.component." + component + ".perQuestion";
             if (costDegradedReason != null) facts.Unavailable(key, costDegradedReason);
+            else if (unreportedReasoning) facts.Unavailable(key, ReasoningNotReportedReason);
             else if (!evidence.Priced) facts.Unavailable(key, NoPriceReason);
             else if (costed.Count == 0) facts.Unavailable(key, NoTokensReason);
             else
             {
                 double mean = costed.Average(a => a.ComponentCost![k]);
-                facts.Add(key, mean, BenchmarkReportFormat.Usd(mean));
+                facts.Add(key, mean, BenchmarkReportFormat.Usd(mean)
+                    + (!evidence.ReasoningReported && component == RootCauseSegments.Output ? ThinkingIncluded : string.Empty));
             }
 
             string priceKey = "price." + component + ".perMillion";
-            if (evidence.PricesPerMillion[k] is double price)
+            if (unreportedReasoning)
+            {
+                facts.Unavailable(priceKey, ReasoningNotReportedReason);
+            }
+            else if (evidence.PricesPerMillion[k] is double price)
             {
                 string basis = pricingBasisKind == BenchmarkReportFacts.PricingBasisCatalog ? "today's catalog" : "the run's stored card";
                 facts.Add(priceKey, price, "$" + price.ToString("0.00##", CultureInfo.InvariantCulture) + " per million tokens ("
@@ -813,8 +895,37 @@ public static class RootCauseEvidence
             VerificationClearedIndex = verificationClearedIndex,
             MemberAIndex = panel?.MemberAIndex,
             MemberBIndex = panel?.MemberBIndex,
+            ReferenceReaderIndex = panel?.ReferenceIndex,
             Evidence = evidence
         };
+    }
+
+    /// <summary>
+    /// The comparison's grader-family gaps, copied from its panel diagnostics as they are, in their order; empty
+    /// when the diagnostics do not apply.
+    /// </summary>
+    public static IReadOnlyList<RootCauseFamilyGap> FamilyGaps(BenchmarkModelComparisonDto comparison)
+    {
+        ArgumentNullException.ThrowIfNull(comparison);
+        if (comparison.PanelDiagnostics is not { Applicable: true } diagnostics) return Array.Empty<RootCauseFamilyGap>();
+
+        static RootCauseGapEstimate Estimate(BenchmarkPanelEstimateDto? e)
+            => new() { Value = e?.Value, Lower = e?.CiLow, Upper = e?.CiHigh };
+
+        return diagnostics.FamilyGaps
+            .Select(g => new RootCauseFamilyGap
+            {
+                Provider1 = g.Provider1,
+                Provider2 = g.Provider2,
+                PairedQuestionCount = g.PairedQuestionCount,
+                InsufficientData = g.InsufficientData,
+                IsMemberProviderPair = g.IsMemberProviderPair,
+                GapA = Estimate(g.GapA),
+                GapB = Estimate(g.GapB),
+                GapPanel = Estimate(g.GapPanel),
+                Contrast = g.IsMemberProviderPair ? Estimate(g.InteractionContrast) : null
+            })
+            .ToList();
     }
 
     /// <summary>The comparison's judge-dependent pairs between models of <paramref name="tokenOf"/> (entry key → token).</summary>

@@ -80,6 +80,11 @@ export interface ModelComparisonEntry {
   readonly runCount: number;
   /** A battery result's suites; absent on a run or group entry. The runs badge counts battery passes by it. */
   readonly suiteCount?: number;
+  /**
+   * A battery result's replicate rounds per suite; absent or null on a run or group entry, whose
+   * `runCount` is already per suite. {@link runsPerSuiteOf} reads the two together.
+   */
+  readonly runsPerSuite?: number | null;
 
   /** Intelligence Index point estimate, 0-100. */
   readonly intelligenceIndex: number;
@@ -106,6 +111,8 @@ export interface ModelComparisonEntry {
 
   /** Mean model time per question, ms - turn duration with tool I/O removed. UNMEASURED when absent. */
   readonly modelTimeMeanMs: number;
+  /** Median model time per question, ms: the figure the Report Pack's tables print. Absent or null when unmeasured. */
+  readonly modelTimeP50Ms?: number | null;
   /** Mean per-run total model time for the whole suite, ms. UNMEASURED when absent. */
   readonly totalModelTimeMs: number;
   /** SD of totalModelTimeMs across runs. Null below R = 2, where no run-to-run spread exists. */
@@ -357,10 +364,10 @@ export function glyphFor(glyphs: ReadonlyMap<string, IdentityGlyph>, key: string
 // ---------------------------------------------------------------------------------------------
 
 /**
- * P1's speed panel switches between these four; the three scatters and the profile plot read
+ * P1's speed panel switches between these five; the three scatters and the profile plot read
  * whichever one is selected off {@link speedValue} rather than a figure-specific fixed measure.
  */
-export type SpeedMeasure = 'meanModelTime' | 'totalModelTime' | 'ttftP50' | 'speedIndex';
+export type SpeedMeasure = 'meanModelTime' | 'medianModelTime' | 'totalModelTime' | 'ttftP50' | 'speedIndex';
 /** P1's cost panel switches between these two. The scatters always use candidate cost per question. */
 export type CostMeasure = 'candidateSuite' | 'totalRun';
 
@@ -380,6 +387,14 @@ export const DEFAULT_MODEL_SORT: ModelSort = { key: 'intelligenceIndex', directi
 /** Candidate cost of one suite run: the entry's own mean run cost, independent of any item count. */
 export function suiteCostUsd(entry: ModelComparisonEntry): number {
   return entry.candidateCostPerRunUsd;
+}
+
+/**
+ * The runs behind each suite of the entry: a battery's replicate rounds, otherwise the run count.
+ * One run per suite draws hollow marks, bars and the `n = 1` tick, however many suites a battery has.
+ */
+export function runsPerSuiteOf(entry: ModelComparisonEntry): number {
+  return entry.runsPerSuite ?? entry.runCount;
 }
 
 /** `1 question`, `18 questions`, `17.5 questions`: an averaged asked count, as labels print it. */
@@ -405,6 +420,8 @@ export function speedValue(entry: ModelComparisonEntry, measure: SpeedMeasure): 
   switch (measure) {
     case 'meanModelTime':
       return entry.modelTimeMeanMs;
+    case 'medianModelTime':
+      return entry.modelTimeP50Ms ?? Number.NaN;
     case 'totalModelTime':
       return entry.totalModelTimeMs;
     case 'ttftP50':
@@ -1578,19 +1595,28 @@ export function measureDirectLabelBlock(
   };
 }
 
-/** Draws a leader from the edge of the mark to the nearest edge of its label plate. */
-function strokeLeader(ctx: CanvasRenderingContext2D, box: DirectLabelBox, markRadius: number): void {
+/** A plate further than this from its mark's drawn edge gets a leader. */
+const LEADER_MIN_GAP_PX = 2;
+/** The leader's stroke width: wide enough to survive a 300 dpi document figure. */
+const LEADER_WIDTH_PX = 1.5;
+
+/**
+ * Draws a leader from just outside the mark's 2 px border to the nearest edge of its label plate,
+ * whenever the plate sits more than {@link LEADER_MIN_GAP_PX} from the mark's drawn edge.
+ */
+function strokeLeader(ctx: CanvasRenderingContext2D, box: DirectLabelBox, markEdgeRadius: number): void {
   const targetX = Math.min(Math.max(box.anchorX, box.x), box.x + box.width);
   const targetY = Math.min(Math.max(box.anchorY, box.y), box.y + box.height);
   const dx = targetX - box.anchorX;
   const dy = targetY - box.anchorY;
   const distance = Math.hypot(dx, dy);
-  // A plate that already touches the mark needs no leader, and normalising zero would be NaN.
-  if (distance <= markRadius) {
+  // A plate touching the mark needs no leader, and normalizing zero would be NaN.
+  if (distance - markEdgeRadius <= LEADER_MIN_GAP_PX) {
     return;
   }
+  const start = markEdgeRadius + 1;
   ctx.beginPath();
-  ctx.moveTo(box.anchorX + (dx / distance) * markRadius, box.anchorY + (dy / distance) * markRadius);
+  ctx.moveTo(box.anchorX + (dx / distance) * start, box.anchorY + (dy / distance) * start);
   ctx.lineTo(targetX, targetY);
   ctx.stroke();
 }
@@ -1676,7 +1702,8 @@ export const directLabelPlugin: Plugin = {
     const size = options?.fontSizePx ?? DIRECT_LABEL_DEFAULT_SIZE;
     const font: DirectLabelFont = { family: options?.fontFamily, nameWeight: options?.nameFontWeight };
     const text = directLabelMetrics(size, font);
-    const markRadius = (options?.markRadiusPx ?? POINT_RADIUS) + 3;
+    const markEdgeRadius = options?.markRadiusPx ?? POINT_RADIUS;
+    const markRadius = markEdgeRadius + 3;
     const avoidWhiskers = options?.avoidWhiskers ?? true;
     const surface = options?.surfaceColor ?? CHART_SURFACE;
     const accent = options?.accentColor ?? ACCENT;
@@ -1723,9 +1750,9 @@ export const directLabelPlugin: Plugin = {
 
     // Leaders first, so a plate covers the end of its own line rather than the line crossing it.
     ctx.strokeStyle = muted;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = LEADER_WIDTH_PX;
     for (const box of boxes) {
-      strokeLeader(ctx, box, markRadius);
+      strokeLeader(ctx, box, markEdgeRadius);
     }
 
     for (const box of boxes) {
@@ -2031,6 +2058,21 @@ const MEAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
   errHigh: () => undefined,
 };
 
+// The median the Report Pack's tables print, drawn like the mean: no whisker.
+const MEDIAN_MODEL_TIME_AXIS: ScatterAxisSpec = {
+  baseTitle: 'Median time per question',
+  tooltipLabel: 'Median time per question',
+  shortLabel: 'Median time',
+  kind: 'time',
+  better: 'lower',
+  bounds: MEASURE_BOUNDS,
+  minSpan: MEASURE_MIN_SPAN,
+  measure: 'medianModelTime',
+  value: (e) => speedValue(e, 'medianModelTime') ?? Number.NaN,
+  errLow: () => undefined,
+  errHigh: () => undefined,
+};
+
 // Unlike the mean, the per-run total carries a genuine run-to-run SD once R >= 2 - the same
 // dispersion the small-multiples panel draws as a whisker.
 const TOTAL_MODEL_TIME_AXIS: ScatterAxisSpec = {
@@ -2054,6 +2096,8 @@ function speedAxisFor(measure: SpeedMeasure): ScatterAxisSpec {
       return SPEED_INDEX_AXIS;
     case 'meanModelTime':
       return MEAN_MODEL_TIME_AXIS;
+    case 'medianModelTime':
+      return MEDIAN_MODEL_TIME_AXIS;
     case 'totalModelTime':
       return TOTAL_MODEL_TIME_AXIS;
     case 'ttftP50':
@@ -2318,8 +2362,9 @@ function buildScatter(
     const hue = providerHue(entry.provider, theme);
     const highlighted = highlightedKey === entry.key;
     const faded = isFaded(entry);
-    // R = 1 draws hollow; R >= 2 draws solid with a surface ring so overlapping marks stay legible.
-    const hollow = entry.runCount === 1;
+    // One run per suite draws hollow; two or more draw solid with a surface ring so overlapping
+    // marks stay legible.
+    const hollow = runsPerSuiteOf(entry) === 1;
     const fill = hollow ? 'transparent' : hue;
     const border = highlighted ? theme.chart.accent : hollow ? hue : theme.chart.surface;
     const point = scatterPoint(entry, xAxis, yAxis);
@@ -2478,11 +2523,11 @@ function buildScatter(
 
   // The key explains only the marks this figure actually draws.
   const key: FigureKeyItem[] = [];
-  if (measured.some((entry) => entry.runCount === 1)) {
-    key.push({ glyph: 'hollow', text: 'Single run' });
+  if (measured.some((entry) => runsPerSuiteOf(entry) === 1)) {
+    key.push({ glyph: 'hollow', text: 'One run per suite' });
   }
-  if (measured.some((entry) => entry.runCount >= 2)) {
-    key.push({ glyph: 'solid', text: 'Mean of 2+ runs' });
+  if (measured.some((entry) => runsPerSuiteOf(entry) >= 2)) {
+    key.push({ glyph: 'solid', text: 'Mean of 2+ runs per suite' });
   }
   const whiskered = (entry: ModelComparisonEntry): boolean =>
     [xAxis.errLow, xAxis.errHigh, yAxis.errLow, yAxis.errHigh].some((err) => drawnWhisker(err(entry)) > 0);
@@ -2699,7 +2744,7 @@ function buildPanel(
   // A bar wears its model's provider hue, as the marks of every other figure do. Bars are never
   // ramped by value: darker-where-bigger would re-encode the length the bar already shows. The
   // Highlight emphasis overrides the hue with the accent and the gray.
-  const hollow = (entry: ModelComparisonEntry): boolean => entry.runCount === 1 && !style.filledBars;
+  const hollow = (entry: ModelComparisonEntry): boolean => runsPerSuiteOf(entry) === 1 && !style.filledBars;
   const fills = plotted.map((entry) => {
     if (!hasEmphasis) {
       return hollow(entry) ? 'transparent' : providerHue(entry.provider, theme);
@@ -2923,7 +2968,8 @@ export function buildSmallMultiples(
   // Speed Index has no percentile spread, so its whisker is the reproducibility SD. TTFT carries
   // the P50-to-P90 whisker, one-sided because latency is right-skewed. The total model time for
   // the whole suite carries a genuine run-to-run SD once R >= 2. The mean model time per question
-  // has no per-answer dispersion at the DTO level, so it draws no whisker at all.
+  // has no per-answer dispersion at the DTO level, so it draws no whisker at all, and neither does
+  // the median.
   const speedErrLow = plotted.map((e) => {
     if (speedMeasure === 'speedIndex') {
       return e.speedIndexSd ?? undefined;
@@ -2987,9 +3033,11 @@ export function buildSmallMultiples(
       ? 'Speed Index (0-100)'
       : speedMeasure === 'meanModelTime'
         ? `Mean time per question (${speedUnit})`
-        : speedMeasure === 'totalModelTime'
-          ? `Total time for the suite (${speedUnit})`
-          : `Time to first token, median (${speedUnit})`;
+        : speedMeasure === 'medianModelTime'
+          ? `Median time per question (${speedUnit})`
+          : speedMeasure === 'totalModelTime'
+            ? `Total time for the suite (${speedUnit})`
+            : `Time to first token, median (${speedUnit})`;
   // Two lines on the axis, the parenthetical under the head, so the title is never clipped.
   const costTitle =
     costMeasure === 'candidateSuite'
@@ -3067,7 +3115,7 @@ export function buildSmallMultiples(
 function panelCategoryLabels(plotted: readonly ModelComparisonEntry[], barStyle: BarFigureStyle): PanelCategoryLabel[] {
   return plotted.map((e) => {
     const lines = ([] as string[]).concat(modelLabelLines(e, barStyle.thinkingLevelBreak));
-    if (e.runCount === 1 && barStyle.singleRunMarker) {
+    if (runsPerSuiteOf(e) === 1 && barStyle.singleRunMarker) {
       lines.push('n = 1');
     }
     return lines.length === 1 ? lines[0] : lines;
@@ -3552,12 +3600,14 @@ function prepareProfile(
         ? 'Speed Index'
         : speedMeasure === 'meanModelTime'
           ? 'Speed (mean model time)'
-          : speedMeasure === 'totalModelTime'
-            ? 'Speed (total model time)'
-            : 'Speed (TTFT P50)',
+          : speedMeasure === 'medianModelTime'
+            ? 'Speed (median model time)'
+            : speedMeasure === 'totalModelTime'
+              ? 'Speed (total model time)'
+              : 'Speed (TTFT P50)',
       noun: speedIsIndex
         ? 'Speed Index'
-        : speedMeasure === 'meanModelTime'
+        : speedMeasure === 'meanModelTime' || speedMeasure === 'medianModelTime'
           ? 'model time'
           : speedMeasure === 'totalModelTime'
             ? 'total model time'

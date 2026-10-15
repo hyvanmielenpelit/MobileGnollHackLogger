@@ -12,13 +12,16 @@ using Overseer.Services.Benchmarking.RootCause;
 /// <summary>
 /// The Root Cause Analysis, in comparison scope (every covered model as an equal) and model scope (a subject
 /// with its peers, or a run or battery run on its own with its controls), answer first. The body: the summary
-/// (the headline, each research question with the writer's answer, the models at a glance and how sure the
-/// grades can be); the key terms the document uses (<see cref="RootCauseGlossary"/>), each also glossed in the template
-/// text at its first use; why each model scored as it did; scope and design; the evidence on intelligence, speed and
-/// cost; the hypotheses per axis with the writer's own; the conclusions; the runs to make next; limitations and
-/// threats to validity. Then the lettered appendices: A intelligence detail, B speed and cost decompositions,
-/// C hypothesis details, D run settings, E known facts, F reproducibility, G question details and H glossary;
-/// and, in the Markdown copy, the fact sheet. Every table is computed by code from the stored
+/// (the headline, the main findings code states, each research question with the writer's answer, the models at a
+/// glance and how sure the grades can be); the key terms the summary and the conclusions use
+/// (<see cref="RootCauseGlossary"/>), each term glossed once in the text, at its first use; why each model scored as
+/// it did; scope and design; the evidence on intelligence, speed and cost; the hypotheses per axis with the writer's
+/// own; the conclusions; the runs to make next; limitations and threats to validity. Then the lettered appendices:
+/// A intelligence detail (in comparison scope, without the results the body gives, and only the paired tests the
+/// body does not print), B speed and cost decompositions, C hypothesis details, D run settings, E the known counts
+/// and configuration facts, F reproducibility, G the cited questions with their answer excerpts and H glossary;
+/// and, in the Markdown copy, the fact sheet. A table column that is zero or not recorded in every row is left out,
+/// and the table's note says so. Every table is computed by code from the stored
 /// <see cref="RootCauseResult"/> and facts; the writer's slots follow the code-rendered part of their section.
 /// The headline, the questions, the caveats, the writer's hypotheses and the conclusions stand in GitHub alert
 /// callouts (<c>&gt; [!NOTE]</c> and the like), each opened by a bold label. Figures go at the four Root Cause
@@ -42,8 +45,8 @@ public static partial class BenchmarkReportPackRenderer
     private const string RcaWriterHypothesesNote = "Hypotheses the report writer added from the grader comments and excerpts. Code has not "
         + "tested them, so their confidence is Low.";
 
-    private const string RcaKeyTermsLead = "This document uses a few statistical and technical terms. Each is explained here in plain words, "
-        + "and the less familiar ones again where they first appear. Appendix H gives a fuller definition of each.";
+    private const string RcaKeyTermsLead = "The terms the summary and the conclusions use, each in plain words. A term is also explained where it "
+        + "first appears, and Appendix H defines every term this document uses.";
 
     private const string RcaShareNote = "Share: how much of the difference, or of the total it is part of, this cause accounts for, with its "
         + "95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.";
@@ -68,9 +71,11 @@ public static partial class BenchmarkReportPackRenderer
         if (ctx.Comparison) ComparisonTitleBlock(sb, ctx);
         else TitleBlock(sb, ctx);
 
+        ctx.RecordsKeyTerms = true;
         RcaSummary(sb, ctx, result);
+        ctx.RecordsKeyTerms = false;
 
-        // The Key terms section lists the terms the whole document uses, so the rest is written first.
+        // The Key terms section lists the terms the Summary and the Conclusions use, so the rest is written first.
         var rest = new StringBuilder();
         RcaWhyEachModel(rest, ctx, result);
         RcaScope(rest, ctx, result);
@@ -78,7 +83,9 @@ public static partial class BenchmarkReportPackRenderer
         RcaSpeed(rest, ctx, result);
         RcaCost(rest, ctx, result);
         RcaHypotheses(rest, ctx, result);
+        ctx.RecordsKeyTerms = true;
         RcaConclusions(rest, ctx, result);
+        ctx.RecordsKeyTerms = false;
         RcaNextRuns(rest, ctx, result);
         RcaLimitations(rest, ctx, result);
 
@@ -103,12 +110,13 @@ public static partial class BenchmarkReportPackRenderer
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// The Key terms section, after the Summary: every term the document uses (<see cref="Context.UsedTerms"/>),
-    /// alphabetically, each with its short plain gloss; nothing when the document uses none.
+    /// The Key terms section, after the Summary: every term the Summary and the Conclusions use
+    /// (<see cref="Context.KeyTerms"/>), alphabetically, each with its short plain gloss; nothing when they use none.
+    /// Appendix H keeps every term of the document.
     /// </summary>
     private static void RcaKeyTerms(StringBuilder sb, Context ctx)
     {
-        var terms = RootCauseGlossary.Alphabetical(ctx.UsedTerms);
+        var terms = RootCauseGlossary.Alphabetical(ctx.KeyTerms);
         if (terms.Count == 0) return;
 
         Heading(sb, "## Key terms");
@@ -123,7 +131,10 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
     }
 
-    /// <summary>Marks each term as used by the document; nothing outside a Root Cause Analysis. An unknown key throws.</summary>
+    /// <summary>
+    /// Marks each term as used by the document, and by the Key terms section while <see cref="Context.RecordsKeyTerms"/>;
+    /// nothing outside a Root Cause Analysis. An unknown key throws.
+    /// </summary>
     private static void UseTerms(Context ctx, params string[] keys)
     {
         if (!ctx.TracksTerms) return;
@@ -131,6 +142,7 @@ public static partial class BenchmarkReportPackRenderer
         {
             RootCauseGlossary.Get(key);
             ctx.UsedTerms.Add(key);
+            if (ctx.RecordsKeyTerms) ctx.KeyTerms.Add(key);
         }
     }
 
@@ -153,7 +165,7 @@ public static partial class BenchmarkReportPackRenderer
     {
         if (!ctx.TracksTerms) return string.Empty;
         var term = RootCauseGlossary.Get(key);
-        ctx.UsedTerms.Add(key);
+        UseTerms(ctx, key);
         return ctx.GlossedTerms.Add(key) ? " (" + term.Gloss + ")" : string.Empty;
     }
 
@@ -197,8 +209,9 @@ public static partial class BenchmarkReportPackRenderer
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// The headline as the key finding; each research question with its answer strength and the writer's
-    /// answer; every model at a glance; and the grade words with the cap the run counts put on them.
+    /// The headline as the key finding, then the main findings code states (<see cref="RcaFindings"/>); each research
+    /// question with its answer strength and the writer's answer; every model at a glance; and the grade words with the
+    /// cap the run counts put on them and, where it stands out, the grader-family gap.
     /// </summary>
     private static void RcaSummary(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
@@ -206,6 +219,12 @@ public static partial class BenchmarkReportPackRenderer
 
         Heading(sb, "### What we found");
         Callout(sb, "IMPORTANT", new[] { "**Key finding.** " + Prose(ctx, ctx.Writer.Headline) });
+        var findings = RcaFindings(ctx, result);
+        foreach (string finding in findings)
+        {
+            Line(sb, "- " + finding);
+        }
+        if (findings.Count > 0) Line(sb);
 
         var questions = (result?.Questions ?? new List<RootCauseQuestion>()).OrderBy(q => q.Number).ToList();
         if (questions.Count > 0)
@@ -246,7 +265,128 @@ public static partial class BenchmarkReportPackRenderer
             caveat.Add("The intelligence hypotheses that could lie in the model or in the instrument are capped at " + RootCauseGrades.WordWithGrade(limit)
                 + (string.IsNullOrWhiteSpace(result.ControlLimitReason) ? "." : ": " + OneLine(result.ControlLimitReason).TrimEnd('.') + "."));
         }
+        if (RcaFamilyGapSentence(ctx, result) is string familyGap)
+        {
+            caveat.Add(string.Empty);
+            caveat.Add(familyGap);
+        }
         Callout(sb, "WARNING", caveat);
+    }
+
+    /// <summary>A no-tool share at or above this, for any model, is one of the Summary's findings.</summary>
+    private const double RcaNoToolFindingShare = 0.20;
+
+    /// <summary>
+    /// Up to four sentences code builds from the stored figures, for What we found: which models the paired tests
+    /// against the reference establish above or below it; the cheapest model and how many others its Intelligence
+    /// Index interval overlaps; the dimension lowest for at least two thirds of the models; and each model that
+    /// answered 20% or more of its scored answers without a tool call. Empty without an analysis.
+    /// </summary>
+    private static List<string> RcaFindings(Context ctx, RootCauseResult? result)
+    {
+        var findings = new List<string>();
+        if (result == null) return findings;
+
+        if (ctx.Comparison && RcaReferenceFinding(ctx) is string reference) findings.Add(reference);
+        if (RcaCheapestFinding(ctx) is string cheapest) findings.Add(cheapest);
+        if (RcaLowestDimension(result.Profiles) is { } lowest && lowest.Count * 3 >= lowest.Of * 2)
+        {
+            UseTerms(ctx, RootCauseGlossary.Dimension);
+            findings.Add(lowest.Text);
+        }
+
+        var noTool = result.Evidence
+            .Where(e => e.ScoredAnswers > 0 && e.NoToolAnswers / (double)e.ScoredAnswers >= RcaNoToolFindingShare - 1e-9)
+            .ToList();
+        if (noTool.Count > 0)
+        {
+            UseTerms(ctx, RootCauseGlossary.NoToolAnswers);
+            string Share(RootCauseModelEvidenceSummary e)
+                => Inv(e.NoToolAnswers) + " of " + Inv(e.ScoredAnswers) + " scored answers (" + RootCauseHypotheses.Pct(e.NoToolAnswers / (double)e.ScoredAnswers) + ")";
+            findings.Add(noTool.Count == 1
+                ? RcaTokenName(ctx, noTool[0].Token) + " answered " + Share(noTool[0]) + " without any tool call."
+                : "Answers without any tool call: " + string.Join("; ", noTool.Select(e => RcaTokenName(ctx, e.Token) + ", " + Share(e))) + ".");
+        }
+        return findings;
+    }
+
+    /// <summary>
+    /// <c>Against the reference, Orion Max, the paired tests establish that Vega Pro scored higher and that Lyra Mini scored
+    /// lower; no other difference is established.</c>; null without a reference family or an intelligence test in it.
+    /// </summary>
+    private static string? RcaReferenceFinding(Context ctx)
+    {
+        var family = (ctx.Sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>()).FirstOrDefault(f => f.Mode != "AllPairs");
+        var tests = family?.Measures.FirstOrDefault(m => m.Measure == BenchmarkPairedTests.IntelligenceMeasure);
+        if (family == null || tests == null || tests.NotTestedReason != null || tests.Pairs.Count == 0) return null;
+
+        string reference = family.ReferenceLetter ?? OrderedPeers(ctx.Sheet).FirstOrDefault()?.Letter ?? "A";
+        var above = new List<string>();
+        var below = new List<string>();
+        foreach (var pair in tests.Pairs.Select(p => ReferenceSecond(p, reference)).Where(p => p.SecondLetter == reference))
+        {
+            if (pair.NotTestedReason != null || pair.AdjustedPValue == null || !pair.Established) continue;
+            if (pair.Favors == "First") above.Add(NameOfLetter(ctx, pair.FirstLetter));
+            else if (pair.Favors == "Second") below.Add(NameOfLetter(ctx, pair.FirstLetter));
+        }
+
+        UseTerms(ctx, RootCauseGlossary.PairedTest, RootCauseGlossary.ReferenceModel);
+        string lead = "Against the reference model, " + NameOfLetter(ctx, reference) + ", the paired tests ";
+        if (above.Count == 0 && below.Count == 0) return lead + "establish no difference in intelligence.";
+
+        var parts = new List<string>();
+        if (above.Count > 0) parts.Add("that " + BenchmarkReportFormat.LetterList(above) + " scored higher");
+        if (below.Count > 0) parts.Add("that " + BenchmarkReportFormat.LetterList(below) + " scored lower");
+        bool all = above.Count + below.Count == tests.Pairs.Count;
+        return lead + "establish " + string.Join(" and ", parts) + (all ? "." : "; no other difference is established.");
+    }
+
+    /// <summary>
+    /// <c>Vega Pro is the cheapest model, at $0.030 per question, and its Intelligence Index interval overlaps those of 2 of
+    /// the other 4 models.</c>; null with fewer than two models with a cost, or without the cheapest model's interval.
+    /// </summary>
+    private static string? RcaCheapestFinding(Context ctx)
+    {
+        var rows = RcaRows(ctx);
+        var priced = rows.Where(r => !r.Entry.CostDegraded && r.Entry.CostPerQuestionUsd.HasValue).ToList();
+        if (priced.Count < 2) return null;
+
+        var cheapest = priced.OrderBy(r => r.Entry.CostPerQuestionUsd!.Value).First();
+        if (priced.Count(r => r.Entry.CostPerQuestionUsd == cheapest.Entry.CostPerQuestionUsd) > 1) return null;
+        if (cheapest.Entry.QualityLower is not double lower || cheapest.Entry.QualityUpper is not double upper) return null;
+
+        var others = rows.Where(r => !ReferenceEquals(r.Entry, cheapest.Entry) && r.Entry.QualityLower.HasValue && r.Entry.QualityUpper.HasValue).ToList();
+        if (others.Count == 0) return null;
+        int overlapping = others.Count(r => !(r.Entry.QualityLower!.Value > upper) && !(lower > r.Entry.QualityUpper!.Value));
+
+        UseTerms(ctx, RootCauseGlossary.IntelligenceIndex, RootCauseGlossary.Interval95);
+        string name = PlainName(ctx, cheapest.Peer);
+        string overlap = overlapping == 0
+            ? "its Intelligence Index interval overlaps no other model's"
+            : "its Intelligence Index interval overlaps " + (overlapping == others.Count ? "those of all " + Inv(others.Count) + " other models"
+                : "those of " + Inv(overlapping) + " of the other " + Inv(others.Count) + " models");
+        return name + " is the cheapest model, at " + BenchmarkReportFormat.Usd(cheapest.Entry.CostPerQuestionUsd!.Value) + " per question, and " + overlap + ".";
+    }
+
+    /// <summary>
+    /// For How sure are we?: the gap between the candidates of the two panel members' own providers under each member,
+    /// and their contrast, when the contrast's 95% interval excludes zero; null otherwise and on a result stored without
+    /// the family gaps. The providers are named unless the copy withholds them.
+    /// </summary>
+    private static string? RcaFamilyGapSentence(Context ctx, RootCauseResult? result)
+    {
+        var gap = result?.FamilyGaps?.FirstOrDefault(g => g.IsMemberProviderPair && !g.InsufficientData
+            && g.Contrast is { Value: not null } contrast && contrast.ExcludesZero());
+        if (gap == null || gap.GapA.Value == null || gap.GapB.Value == null) return null;
+
+        UseTerms(ctx, RootCauseGlossary.PanelMember, RootCauseGlossary.Interval95);
+        bool named = !ProviderWithheld(ctx, gap.Provider1.Trim()) && !ProviderWithheld(ctx, gap.Provider2.Trim());
+        string pair = named
+            ? "models from " + gap.Provider1 + " minus models from " + gap.Provider2 + ", the two panel members' own providers,"
+            : "models from one panel member's provider minus models from the other member's provider";
+        return "Grader family: the quality gap of " + pair + " is " + RootCauseFacts.GapText(gap.GapA)
+               + " under Panel member A and " + RootCauseFacts.GapText(gap.GapB) + " under Panel member B, a contrast of "
+               + RootCauseFacts.GapText(gap.Contrast!) + ". The order between models of those two providers depends on the panel's balance.";
     }
 
     /// <summary>
@@ -352,16 +492,18 @@ public static partial class BenchmarkReportPackRenderer
                 + " | " + Cell(SheetText(ctx, flags)) + " |");
         }
         Line(sb);
-        Line(sb, "*" + RcaProfileNote(ctx, result.Profiles) + "*");
+        Line(sb, "*" + RcaProfileNote(ctx, result) + "*");
         Line(sb);
     }
 
     /// <summary>
-    /// The note under the profiles: what an entry is, what Lost points on measures, and a gloss for each kind of
-    /// flag the profiles show at its first use.
+    /// The note under the profiles: what an entry is, what Lost points on measures, a gloss for each kind of flag the
+    /// profiles show at its first use, and two rules behind the flags, each stated once: answers without tools are
+    /// flagged above the models' median share, and an isolated miss is set against the other models' median.
     /// </summary>
-    private static string RcaProfileNote(Context ctx, IReadOnlyList<RootCauseModelProfile> profiles)
+    private static string RcaProfileNote(Context ctx, RootCauseResult result)
     {
+        var profiles = result.Profiles;
         UseFlagTerms(ctx, profiles);
         string note = "Each entry is a count, a share or a rank measured over the model's scored answers; none says why. "
             + "Lost points on: the largest share of the model's index points at risk" + Gloss(ctx, RootCauseGlossary.PointsAtRisk)
@@ -379,7 +521,29 @@ public static partial class BenchmarkReportPackRenderer
         {
             if (kinds.Contains(kind) && Gloss(ctx, key) is { Length: > 0 } gloss) flags.Add(words + gloss);
         }
-        return flags.Count == 0 ? note : note + " Flags: " + string.Join("; ", flags) + ".";
+        if (flags.Count > 0) note += " Flags: " + string.Join("; ", flags) + ".";
+
+        var rules = new List<string>();
+        if (kinds.Contains(RootCauseProfiles.NoTool) && RcaNoToolMedian(result) is double median)
+        {
+            rules.Add("Answers without tools are flagged where a model's share of them is above the models' median of " + RootCauseHypotheses.Pct(median) + ".");
+        }
+        if (kinds.Contains(RootCauseProfiles.IsolatedMisses))
+        {
+            rules.Add("An isolated miss is a question the model scored " + BenchmarkReportFormat.Whole(BenchmarkComparisonModelProfile.IsolatedMissAtMost)
+                + " or less on while the other models' median was " + BenchmarkReportFormat.Whole(BenchmarkComparisonModelProfile.IsolatedMissOthersMedianAtLeast)
+                + " or more.");
+        }
+        return rules.Count == 0 ? note : note + " " + string.Join(" ", rules);
+    }
+
+    /// <summary>The models' median share of answers without tools over their scored answers, as the profiles flag against it; null with fewer than two models with scored answers.</summary>
+    private static double? RcaNoToolMedian(RootCauseResult result)
+    {
+        var shares = result.Evidence.Where(e => e.ScoredAnswers > 0).Select(e => e.NoToolAnswers / (double)e.ScoredAnswers).OrderBy(s => s).ToList();
+        if (shares.Count < 2) return null;
+        int mid = shares.Count / 2;
+        return shares.Count % 2 == 1 ? shares[mid] : (shares[mid - 1] + shares[mid]) / 2.0;
     }
 
     /// <summary>The terms the profiles' entries name: points at risk, dimensions and each kind of flag shown.</summary>
@@ -533,8 +697,8 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
         UseTerms(ctx, RootCauseGlossary.IntelligenceIndex, RootCauseGlossary.CriticalError);
         ExplainedTerms(ctx, RootCauseGlossary.TiedRank);
-        Line(sb, "*A rank shown as a span, such as 2–4 (tied), is a tied rank: the model's 95% interval" + Gloss(ctx, RootCauseGlossary.Interval95)
-            + " overlaps a neighbor's, so the intervals alone cannot put them in order.*");
+        Line(sb, "*A rank shown as a span, such as 5–9 (tied), is a tied rank: the model's 95% interval" + Gloss(ctx, RootCauseGlossary.Interval95)
+            + " overlaps others', so its rank is the span of places the interval allows. " + RoundedBoundsNote + "*");
         Line(sb);
     }
 
@@ -565,19 +729,22 @@ public static partial class BenchmarkReportPackRenderer
         }
         Line(sb);
 
-        if (RcaLowestDimensionLine(profiles) is string line)
+        if (RcaLowestDimension(profiles) is { } lowest)
         {
-            Line(sb, line);
+            Line(sb, lowest.Text);
             Line(sb);
         }
     }
 
     /// <summary>
-    /// <c>Completeness is the lowest dimension for 8 of 9 models (13.5 to 37.0 points below Accuracy).</c>, for the
-    /// dimension lowest for the most models; null with fewer than two models with all four dimensions, or when no
-    /// dimension is lowest for two of them.
+    /// The dimension lowest for the most models, in a sentence: <c>Completeness is the lowest dimension for 9 of 9 models
+    /// (11.0 to 37.0 points below Accuracy), and at least 13 points below Accuracy for 8 of them.</c> The second clause counts
+    /// the models the response-style rule (<see cref="BenchmarkChatTransfer.HasResponseStyleConflict"/>) marks, Completeness
+    /// strictly lowest and at least 13 points below Accuracy, and is left out when it marks every one of them. With the
+    /// models counted and the models with all four dimensions; null with fewer than two such models, or when no dimension
+    /// is lowest for two of them.
     /// </summary>
-    private static string? RcaLowestDimensionLine(IReadOnlyList<RootCauseModelProfile> profiles)
+    private static (string Text, int Count, int Of)? RcaLowestDimension(IReadOnlyList<RootCauseModelProfile> profiles)
     {
         var complete = profiles
             .Where(p => p.Dimensions.Count == 4 && p.Dimensions.All(d => d.HasValue))
@@ -587,32 +754,52 @@ public static partial class BenchmarkReportPackRenderer
 
         var lowest = complete
             .Where(d => d.Max() - d.Min() > 0.05)
-            .Select(d => (Dimension: Array.IndexOf(d, d.Min()), Gap: d[0] - d.Min()))
+            .Select(d => (Dimensions: d, Dimension: Array.IndexOf(d, d.Min()), Gap: d[0] - d.Min()))
             .GroupBy(x => x.Dimension)
             .OrderByDescending(g => g.Count())
             .ThenBy(g => g.Key)
             .FirstOrDefault();
         if (lowest == null || lowest.Count() < 2) return null;
 
+        int count = lowest.Count();
         string name = BenchmarkReportFactLabels.Dimensions[lowest.Key].Name;
-        string text = name + " is the lowest dimension for " + Inv(lowest.Count()) + " of " + Inv(complete.Count) + " models";
-        if (lowest.Key == 0) return text + ".";
+        string text = name + " is the lowest dimension for " + Inv(count) + " of " + Inv(complete.Count) + " models";
+        if (lowest.Key == 0) return (text + ".", count, complete.Count);
 
         double low = lowest.Min(x => x.Gap), high = lowest.Max(x => x.Gap);
         string gaps = BenchmarkReportFormat.OneDecimal(low) == BenchmarkReportFormat.OneDecimal(high)
             ? BenchmarkReportFormat.OneDecimal(low)
             : BenchmarkReportFormat.OneDecimal(low) + " to " + BenchmarkReportFormat.OneDecimal(high);
-        return text + " (" + gaps + " points below Accuracy).";
+        text += " (" + gaps + " points below Accuracy)";
+
+        if (lowest.Key == 1)
+        {
+            int marked = lowest.Count(x => BenchmarkChatTransfer.HasResponseStyleConflict(false, x.Dimensions[0], x.Dimensions[1], x.Dimensions[2], x.Dimensions[3]));
+            if (marked < count)
+            {
+                text += ", and at least " + BenchmarkReportFormat.CompactDecimal(BenchmarkChatTransfer.LevelStepThreshold) + " points below Accuracy for "
+                        + (marked == 0 ? "none" : Inv(marked)) + " of them";
+            }
+        }
+        return (text + ".", count, complete.Count);
+    }
+
+    /// <summary>The paired-test family the body prints: the reference family, else the first.</summary>
+    private static BenchmarkReportPairedFamily? RcaBodyFamily(Context ctx)
+    {
+        var families = ctx.Sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>();
+        return families.FirstOrDefault(f => f.Mode != "AllPairs") ?? families.FirstOrDefault();
     }
 
     /// <summary>
-    /// The reference family's paired tests of one measure, one row per pair, with the family's adjustment
-    /// stated once under the table; nothing in a comparison without paired tests but the reason.
+    /// The body family's paired tests of one measure (<see cref="RcaBodyFamily"/>), one row per pair with the reference
+    /// second, with the family's adjustment stated once under the table; nothing in a comparison without paired tests
+    /// but the reason. The family's single-run caveat is printed only when How sure are we? does not state the cap.
     /// </summary>
     private static void RcaReferenceTests(StringBuilder sb, Context ctx, string measure)
     {
         var families = ctx.Sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>();
-        var family = families.FirstOrDefault(f => f.Mode != "AllPairs") ?? families.FirstOrDefault();
+        var family = RcaBodyFamily(ctx);
         bool intelligence = measure == BenchmarkPairedTests.IntelligenceMeasure;
         string name = intelligence ? "Intelligence" : measure == BenchmarkPairedTests.SpeedMeasure ? "Speed" : "Cost";
 
@@ -639,11 +826,14 @@ public static partial class BenchmarkReportPackRenderer
             return;
         }
 
+        var pairs = family.Mode == "AllPairs"
+            ? tests.Pairs
+            : tests.Pairs.Select(p => ReferenceSecond(p, reference, ratio: !intelligence)).ToList();
         if (intelligence)
         {
             Line(sb, "| Pair | Questions | Difference (95% interval) | Result |");
             Line(sb, "|---|---|---|---|");
-            foreach (var pair in tests.Pairs)
+            foreach (var pair in pairs)
             {
                 string difference = pair.Effect is double effect
                     ? BenchmarkReportFormat.SignedOneDecimal(effect) + " points"
@@ -659,7 +849,7 @@ public static partial class BenchmarkReportPackRenderer
             bool speed = measure == BenchmarkPairedTests.SpeedMeasure;
             Line(sb, "| Pair | " + (speed ? "Time ratio" : "Spend ratio") + " (95% interval) | Result |");
             Line(sb, "|---|---|---|");
-            foreach (var pair in tests.Pairs)
+            foreach (var pair in pairs)
             {
                 Line(sb, "| " + Cell(PairName(ctx, pair)) + " | " + RatioCell(pair) + " | " + Cell(ResultText(ctx, pair, speed ? "was faster" : "was cheaper")) + " |");
             }
@@ -668,13 +858,17 @@ public static partial class BenchmarkReportPackRenderer
 
         UseTerms(ctx, RootCauseGlossary.Interval95);
         if (!intelligence) ExplainedTerms(ctx, RootCauseGlossary.Ratio);
+        string second = family.Mode == "AllPairs" ? "second" : "the reference";
         string explain = intelligence
-            ? " Difference: the mean per-question difference, first model minus second, on the questions both answered."
-            : " A ratio is the first model's own " + (measure == BenchmarkPairedTests.SpeedMeasure ? "time" : "spend") + " per question divided by the second's, on the questions both answered.";
+            ? " Difference: the mean per-question difference, first model minus " + second + ", on the questions both answered."
+            : " A ratio is the first model's own " + (measure == BenchmarkPairedTests.SpeedMeasure ? "time" : "spend") + " per question divided by "
+              + (family.Mode == "AllPairs" ? "the second's" : "the reference's") + ", on the questions both answered.";
         string paired = "Each row is a paired test" + Gloss(ctx, RootCauseGlossary.PairedTest) + ". ";
-        Line(sb, "*" + paired + SheetText(ctx, FamilySizeText(ctx, name, tests)) + explain + " Appendix A gives every family.*");
+        bool allPairsElsewhere = families.Any(f => f.Mode == "AllPairs" && !ReferenceEquals(f, family));
+        Line(sb, "*" + paired + SheetText(ctx, FamilySizeText(ctx, name, tests)) + explain
+            + (allPairsElsewhere ? " Appendix A gives the tests among all pairs." : string.Empty) + "*");
         Line(sb);
-        if (intelligence && !string.IsNullOrWhiteSpace(family.SingleRunCaveat))
+        if (intelligence && ctx.Sheet.RootCause?.GradeCap == null && !string.IsNullOrWhiteSpace(family.SingleRunCaveat))
         {
             Line(sb, "*" + SheetText(ctx, family.SingleRunCaveat) + "*");
             Line(sb);
@@ -700,7 +894,10 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
     }
 
-    /// <summary>The writer's observations, each with its evidence.</summary>
+    /// <summary>
+    /// The writer's observations, each with its evidence and how each critical error on a question it cites was
+    /// resolved; a document stored without the resolutions prints none.
+    /// </summary>
     private static void RcaObservations(StringBuilder sb, Context ctx)
     {
         Heading(sb, "### What the graders recorded");
@@ -721,8 +918,41 @@ public static partial class BenchmarkReportPackRenderer
             {
                 EvidenceLine(sb, ctx, item, listsRefutations: true);
             }
+            if (RcaResolutionsText(ctx, item) is { Length: > 0 } resolutions) Line(sb, "  - *Critical errors:* " + resolutions);
         }
         Line(sb);
+    }
+
+    /// <summary>
+    /// <c>Lyra Mini on Q3: upheld by the claim verifier (cap applied).</c>: each answer to a question the item cites whose
+    /// critical-error resolution the content stores, by model in a comparison and by run when the subject has several;
+    /// empty for none.
+    /// </summary>
+    private static string RcaResolutionsText(Context ctx, BenchmarkReportWriterItem item)
+    {
+        var numbers = new HashSet<int>(item.Questions ?? new List<int>());
+        foreach (string id in (item.Evidence ?? new List<string>()).Where(id => !string.IsNullOrWhiteSpace(id)))
+        {
+            if (ComparisonQuestionNumber(ctx, id.Trim()) is int number) numbers.Add(number);
+        }
+        if (numbers.Count == 0) return string.Empty;
+
+        var parts = new List<string>();
+        foreach (var run in ctx.Content.Runs
+                     .OrderBy(r => (r.Letter ?? string.Empty).Length)
+                     .ThenBy(r => r.Letter ?? string.Empty, StringComparer.Ordinal)
+                     .ThenBy(r => r.RunId))
+        {
+            foreach (var answer in run.Questions.Where(q => numbers.Contains(q.Number)).OrderBy(q => q.Number))
+            {
+                if (CriticalErrorResolutionText(answer.CriticalErrorResolution) is not string text) continue;
+                string who = run.Letter != null ? NameOfLetter(ctx, run.Letter)
+                    : ctx.Content.Runs.Count > 1 ? "run " + Inv(run.RunId)
+                    : ctx.Sheet.SubjectLabel;
+                parts.Add(who + " on " + ctx.QuestionLabel(answer.Number) + ": " + text);
+            }
+        }
+        return parts.Count == 0 ? string.Empty : string.Join("; ", parts) + ".";
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -741,8 +971,9 @@ public static partial class BenchmarkReportPackRenderer
         else
         {
             Heading(sb, "### Where the time goes");
-            RcaSegmentTable(sb, ctx, result.SpeedRows, RootCauseSegments.Time, "Seconds per question", v => BenchmarkReportFormat.OneDecimal(v) + " s");
-            Line(sb, "*" + RcaTimeNote(ctx) + "*");
+            string dropped = RcaSegmentTable(sb, ctx, result.SpeedRows, RootCauseSegments.Time, "Wall time per question (median, tools included)",
+                v => BenchmarkReportFormat.OneDecimal(v) + " s");
+            Line(sb, "*" + RcaTimeNote(ctx) + (dropped.Length > 0 ? " " + dropped : string.Empty) + "*");
             Line(sb);
             Figures(sb, ctx, BenchmarkReportChartAnchor.RcaSpeed);
             if (ctx.Comparison) RcaReferenceTests(sb, ctx, BenchmarkPairedTests.SpeedMeasure);
@@ -763,8 +994,9 @@ public static partial class BenchmarkReportPackRenderer
         else
         {
             Heading(sb, "### Where the cost goes");
-            RcaSegmentTable(sb, ctx, result.CostRows, RootCauseSegments.CostComponents, "Cost per question", BenchmarkReportFormat.Usd);
-            Line(sb, "*" + RcaCostNote(ctx, result) + "*");
+            string dropped = RcaSegmentTable(sb, ctx, result.CostRows, RcaCostKeys(result.CostRows.Select(r => r.Segments)), "Cost per question",
+                BenchmarkReportFormat.Usd);
+            Line(sb, "*" + RcaCostNote(ctx, result) + (dropped.Length > 0 ? " " + dropped : string.Empty) + "*");
             Line(sb);
             Figures(sb, ctx, BenchmarkReportChartAnchor.RcaCost);
             if (ctx.Comparison) RcaReferenceTests(sb, ctx, BenchmarkPairedTests.CostMeasure);
@@ -777,45 +1009,75 @@ public static partial class BenchmarkReportPackRenderer
     private static string RcaTimeNote(Context ctx)
     {
         UseTerms(ctx, RootCauseGlossary.MedianAndMean);
-        return "Seconds per question: the median time per question, split into its parts in proportion to their mean times. "
+        return "Wall time per question: the median time per question, tool execution included, split into its parts in proportion to their mean times. "
             + "The parts are time to first token" + Gloss(ctx, RootCauseGlossary.TimeToFirstToken)
             + ", output generation" + Gloss(ctx, RootCauseGlossary.OutputGeneration)
             + ", tool execution, the model's own waits and retries, and other time. "
-            + "Tool execution is excluded from the model's own time elsewhere in this document.";
+            + "It differs from the median model time the other tables of this document give, which leaves tool execution out.";
     }
 
-    /// <summary>The note under the cost table: what each token component is, and the pricing basis, glossed at their first use.</summary>
+    /// <summary>
+    /// The note under the cost table: what each token component is, and the pricing basis, glossed at their first use;
+    /// where a provider does not report reasoning separately, that its output includes the thinking.
+    /// </summary>
     private static string RcaCostNote(Context ctx, RootCauseResult result)
     {
         string basis = OneLine(string.IsNullOrWhiteSpace(result.PricingBasis) ? PricingBasisText(ctx.Sheet).Text : result.PricingBasis).TrimEnd('.');
+        bool merged = result.CostRows.Any(r => r.Segments.Any(s => s.Key == RootCauseSegments.OutputWithThinking));
         return "Mean cost per question by component. Each component is a kind of token" + Gloss(ctx, RootCauseGlossary.Tokens) + ". "
             + "Uncached input is text read at the full price, and cache reads are stored input read at a lower price. "
             + "Cache writes store input for later calls; visible output is the answer; reasoning is the model's hidden thinking. "
+            + (merged ? "A provider that does not report reasoning separately counts it inside its output, shown as output, thinking included. " : string.Empty)
             + "Priced on this basis" + Gloss(ctx, RootCauseGlossary.PricingBasis) + ": " + basis + ".";
     }
 
     /// <summary>
-    /// One row per chart row of R2 or R3: each model, then for a subject on its own each difficulty band or
-    /// suite, with its total and its segments; an unavailable row says why.
+    /// The cost components in table order: <see cref="RootCauseSegments.CostComponents"/>, with
+    /// <see cref="RootCauseSegments.OutputWithThinking"/> after the visible output where some row holds it.
     /// </summary>
-    private static void RcaSegmentTable(
+    private static List<string> RcaCostKeys(IEnumerable<IEnumerable<RootCauseSegment>> rows)
+    {
+        var keys = RootCauseSegments.CostComponents.ToList();
+        if (rows.Any(r => r.Any(s => s.Key == RootCauseSegments.OutputWithThinking)))
+        {
+            keys.Insert(keys.IndexOf(RootCauseSegments.Output) + 1, RootCauseSegments.OutputWithThinking);
+        }
+        return keys;
+    }
+
+    /// <summary>
+    /// One row per chart row of R2 or R3: each model, then for a subject on its own each difficulty band or
+    /// suite, with its total and its segments; an unavailable row says why. A segment column that is zero or
+    /// not recorded in every row is left out; returns the sentence that names the columns left out, or empty.
+    /// </summary>
+    private static string RcaSegmentTable(
         StringBuilder sb, Context ctx, IReadOnlyList<RootCauseChartRow> rows, IReadOnlyList<string> keys, string totalColumn, Func<double, string> format)
     {
-        Line(sb, "| Model | " + totalColumn + " | " + string.Join(" | ", keys.Select(k => Capitalized(RootCauseSegments.Label(k)))) + " |");
-        Line(sb, "|---|---|" + string.Concat(keys.Select(_ => "---|")));
+        var header = new List<string> { "Model", totalColumn };
+        header.AddRange(keys.Select(k => Capitalized(RootCauseSegments.Label(k))));
+        var cells = new List<IReadOnlyList<string>>();
         foreach (var row in rows)
         {
             string name = row.Token != null ? RcaTokenName(ctx, row.Token) : row.Label;
+            var line = new List<string> { Cell(name) };
             if (row.Total is not double total)
             {
-                Line(sb, "| " + Cell(name) + " | not recorded (" + Cell(OneLine(row.UnavailableReason ?? "no data").TrimEnd('.')) + ") | "
-                    + string.Join(" | ", keys.Select(_ => NoValue)) + " |");
-                continue;
+                line.Add("not recorded (" + Cell(OneLine(row.UnavailableReason ?? "no data").TrimEnd('.')) + ")");
+                line.AddRange(keys.Select(_ => NoValue));
             }
-            Line(sb, "| " + Cell(name) + " | " + format(total) + " | "
-                + string.Join(" | ", keys.Select(k => row.Segments.FirstOrDefault(s => s.Key == k) is { } s ? format(s.Value) : NoValue)) + " |");
+            else
+            {
+                line.Add(format(total));
+                line.AddRange(keys.Select(k => row.Segments.FirstOrDefault(s => s.Key == k) is { } s ? format(s.Value) : NoValue));
+            }
+            cells.Add(line);
         }
+
+        var (shown, shownRows, dropped) = DropConstantColumns(header, cells, keepFirst: 2);
+        TableHeaderOf(sb, shown);
+        foreach (var line in shownRows) Line(sb, "| " + string.Join(" | ", line) + " |");
         Line(sb);
+        return DroppedColumnsSentence(dropped);
     }
 
     /// <summary>
@@ -829,13 +1091,20 @@ public static partial class BenchmarkReportPackRenderer
 
         Heading(sb, cost ? "### Cost differences between the models" : "### Time differences between the models");
         var decomposed = pairs.Where(p => p.UnavailableReason == null && p.Difference.HasValue && p.Components.Count > 0).ToList();
+        bool overExplained = false;
         foreach (var pair in decomposed)
         {
             var lead = pair.Components.Where(c => c.Key != "all" && c.Share.HasValue).OrderByDescending(c => c.Share!.Value).FirstOrDefault();
             string difference = RcaAmount(pair.Difference!.Value, cost) + " per question";
+            string over = string.Empty;
+            if (lead?.Share is double share && Math.Round(share * 100, MidpointRounding.AwayFromZero) > 100 && !overExplained)
+            {
+                over = " (above 100%: another component pulls the other way)";
+                overExplained = true;
+            }
             string leading = lead == null
                 ? string.Empty
-                : "; leading component " + LowerFirst(lead.Label) + ", " + RcaAmount(lead.Amount, cost) + ", " + RootCauseHypotheses.SharePct(lead) + " of the difference";
+                : "; leading component " + LowerFirst(lead.Label) + ", " + RcaAmount(lead.Amount, cost) + ", " + RootCauseHypotheses.SharePct(lead) + " of the difference" + over;
             Line(sb, "- **" + RcaPairName(ctx, pair.First, pair.Second) + ":** " + difference + leading + ".");
         }
         if (decomposed.Count > 0) Line(sb);
@@ -908,7 +1177,7 @@ public static partial class BenchmarkReportPackRenderer
                 if (fired.Any(h => h.Share.HasValue)) UseTerms(ctx, RootCauseGlossary.DecompositionShare);
                 foreach (var h in fired)
                 {
-                    Line(sb, "| " + Cell(RcaHypothesisName(ctx, h)) + " | " + Cell(SheetText(ctx, h.Statement)) + " | " + RootCauseGrades.HypothesisWordWithGrade(h)
+                    Line(sb, "| " + Cell(h.Key) + " | " + Cell(SheetText(ctx, h.Statement)) + " | " + RootCauseGrades.HypothesisWordWithGrade(h)
                         + " | " + RcaShareText(h) + " | " + RcaSettledBy(h) + " |");
                 }
                 Line(sb);
@@ -950,7 +1219,10 @@ public static partial class BenchmarkReportPackRenderer
         Callout(sb, "WARNING", lines);
     }
 
-    /// <summary><c>HQ2.1: critical errors of Model F against Model E</c>; the key alone on a result stored without labels.</summary>
+    /// <summary>
+    /// <c>HQ2.1: critical errors of Model F against Model E</c>, as the Conclusions and Appendix C name a hypothesis; the
+    /// key alone on a result stored without labels. The body's hypothesis tables give the key alone, beside the statement.
+    /// </summary>
     private static string RcaHypothesisName(Context ctx, RootCauseHypothesis h)
         => string.IsNullOrWhiteSpace(h.Label) ? h.Key : h.Key + ": " + SheetText(ctx, h.Label);
 
@@ -1129,7 +1401,9 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// Every launcher field of a recommended run, labeled as Run Benchmark labels it, in the launcher's order;
-    /// a setting the analyzed runs did not share says so.
+    /// a setting the analyzed runs did not share says so. A grader and the scoring profile are named with their id,
+    /// <c>Claude 5 Opus @ medium (configuration 19)</c>; by the id alone on a result stored without the names, and
+    /// for a grader whose name an anonymized copy withholds (<see cref="RcaGraderNameShown"/>).
     /// </summary>
     private static List<(string Field, string Setting)> RcaLauncherSettings(Context ctx, RootCauseRecommendedRun run)
     {
@@ -1137,7 +1411,13 @@ public static partial class BenchmarkReportPackRenderer
         bool batch = string.Equals(run.RunMode, "Batch", StringComparison.Ordinal);
         bool battery = string.Equals(run.TargetKind, "Battery", StringComparison.Ordinal);
         bool panel = run.CoAssessorModelConfigurationId.HasValue;
-        string Config(long? id, string none) => id is long value ? "configuration " + Inv(value) : none;
+        string Config(long? id, string none, string? name = null)
+            => id is not long value ? none
+                : RcaGraderNameShown(ctx, name) ? OneLine(name) + " (configuration " + Inv(value) + ")"
+                : "configuration " + Inv(value);
+        string profile = run.ScoringProfileId is long profileId
+            ? (string.IsNullOrWhiteSpace(run.ScoringProfileName) ? "profile " + Inv(profileId) : OneLine(run.ScoringProfileName) + " (profile " + Inv(profileId) + ")")
+            : NotShared;
 
         var models = run.ModelNames.Select(name => RcaRunModelName(ctx, name)).ToList();
         var settings = new List<(string, string)>
@@ -1148,7 +1428,7 @@ public static partial class BenchmarkReportPackRenderer
             battery
                 ? ("Battery", run.BatteryName ?? (run.BatteryId is long batteryId ? "battery " + Inv(batteryId) : NotShared))
                 : ("Benchmark Suite", run.SuiteName ?? (run.SuiteId is long suiteId ? "suite " + Inv(suiteId) : NotShared)),
-            ("Scoring Profile", run.ScoringProfileId is long profile ? "profile " + Inv(profile) : NotShared),
+            ("Scoring Profile", profile),
             ("Response Style", run.VerboseMode switch { true => "Detailed — diagnostic", false => "Concise — production default", _ => NotShared }),
             ("Source Code References", run.AllowSourceCodeReferences switch
             {
@@ -1156,15 +1436,15 @@ public static partial class BenchmarkReportPackRenderer
                 false => "Disallowed — production default",
                 _ => NotShared
             }),
-            ("Assessor", Config(run.AssessorModelConfigurationId, NotShared)),
-            ("Co-Assessor", Config(run.CoAssessorModelConfigurationId, "none")),
-            (panel ? "Reference Reader" : "Second Reader", Config(run.SecondOpinionAssessorModelConfigurationId, "none"))
+            ("Assessor", Config(run.AssessorModelConfigurationId, NotShared, run.AssessorName)),
+            ("Co-Assessor", Config(run.CoAssessorModelConfigurationId, "none", run.CoAssessorName)),
+            (panel ? "Reference Reader" : "Second Reader", Config(run.SecondOpinionAssessorModelConfigurationId, "none", run.ReferenceReaderName))
         };
         if (!panel)
         {
             settings.Add(("Coverage", RcaCoverageText(run.SecondOpinionMode)));
         }
-        settings.Add(("Claim Verifier", Config(run.ClaimVerifierModelConfigurationId, "none")));
+        settings.Add(("Claim Verifier", Config(run.ClaimVerifierModelConfigurationId, "none", run.ClaimVerifierName)));
         settings.Add(("Report Writer", Config(run.ReportWriterModelConfigurationId, "none")));
         settings.Add(batch
             ? (battery ? "Runs per Suite" : "Runs per model", Inv(run.RunsPerModel))
@@ -1174,6 +1454,19 @@ public static partial class BenchmarkReportPackRenderer
             settings.Add(("Model order", string.Equals(run.Order, "AsListed", StringComparison.Ordinal) ? "As listed" : "Randomized (recommended)"));
         }
         return settings;
+    }
+
+    /// <summary>
+    /// Whether a recommended run's grader name may be printed: a name was stored, and in an anonymized copy it is the
+    /// label of a grader on the sheet whose identity the copy does not withhold (<see cref="GraderWithheld"/>); any
+    /// other name could name a compared model's provider, so an anonymized copy prints its id alone.
+    /// </summary>
+    private static bool RcaGraderNameShown(Context ctx, string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        if (!ctx.Anonymized) return true;
+        var graders = ctx.Sheet.Graders.Where(g => string.Equals(g.Label?.Trim(), name.Trim(), StringComparison.Ordinal)).ToList();
+        return graders.Count > 0 && graders.All(g => !GraderWithheld(ctx, g));
     }
 
     /// <summary>The launcher's Coverage choice for a second-opinion mode.</summary>
@@ -1229,7 +1522,7 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb, "- The hypotheses come from a fixed rule table over these runs; points at risk are upper bounds, and a decomposition rests on the questions both sides have figures for. The writer's own hypotheses are qualitative.");
         if (ctx.Comparison)
         {
-            Line(sb, "- Intervals: " + SharedOrPerModel(ctx, "quality.intervalBasis"));
+            Line(sb, "- Intervals: " + WithPeriod(SharedOrPerModel(ctx, "quality.intervalBasis")));
             Line(sb, "- The graders are AI models. Each grader's provider relation to the models is stated under Setup and method; "
                 + "a grader from a model's own provider may read that model more favorably.");
             Line(sb, "- Paired tests: each measure's family is Holm-adjusted across the tests it makes over these models only.");
@@ -1245,7 +1538,7 @@ public static partial class BenchmarkReportPackRenderer
         }
         else
         {
-            Line(sb, "- Interval: " + D(ctx, "quality.intervalBasis"));
+            Line(sb, "- Interval: " + WithPeriod(D(ctx, "quality.intervalBasis")));
             Line(sb, "- The graders are AI models. Each grader's provider relation to the model under test is stated under "
                 + "Setup and method; a grader from the model's own provider may read it more favorably.");
             if (string.Equals(ctx.Sheet.SubjectState, "Degraded", StringComparison.Ordinal))
@@ -1299,18 +1592,21 @@ public static partial class BenchmarkReportPackRenderer
     private static void RcaAppendixList(StringBuilder sb)
     {
         Heading(sb, "## Appendices");
-        Line(sb, "- **A. Intelligence detail:** the compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, every paired test and the per-question matrix.");
+        Line(sb, "- **A. Intelligence detail:** the compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, the paired tests the body does not give and the per-question matrix.");
         Line(sb, "- **B. Speed and cost decompositions:** calls, latency, tokens and every component of each decomposed difference.");
         Line(sb, "- **C. Hypothesis details:** each hypothesis' evidence for and against, grade reasons and robustness checks, and the null hypotheses.");
         Line(sb, "- **D. Run settings:** every launcher setting of each run to make next.");
-        Line(sb, "- **E. Known facts:** what a test, a count, a decomposition or the configuration proves.");
+        Line(sb, "- **E. Known facts:** the counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.");
         Line(sb, "- **F. Reproducibility:** run ids, dates, hashes and the pricing basis.");
-        Line(sb, "- **G. Question details:** the questions this document cites, with their answers.");
+        Line(sb, "- **G. Question details:** the questions the writer cites, those with a disputed claim or a critical error, and the control items, each with its answer excerpts.");
         Line(sb, "- **H. Glossary:** every term this document uses, in plain words.");
         Line(sb);
     }
 
-    /// <summary>Appendix A: every intelligence table the body leaves out.</summary>
+    /// <summary>
+    /// Appendix A: every intelligence table the body leaves out. In comparison scope the results are in the body's At a
+    /// glance and scoreboard, and the paired tests here are only the families the body does not print.
+    /// </summary>
     private static void RcaIntelligenceDetail(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
         Heading(sb, "## Appendix A: Intelligence detail");
@@ -1318,8 +1614,6 @@ public static partial class BenchmarkReportPackRenderer
         {
             ComparisonModelsTable(sb, ctx, "### Compared models");
             RcaConfiguration(sb, ctx, result);
-            Heading(sb, "### Results");
-            ResultsTable(sb, ctx);
             if (HasProfiles(ctx))
             {
                 Heading(sb, "### Failure profile");
@@ -1351,7 +1645,9 @@ public static partial class BenchmarkReportPackRenderer
         RcaQualitySplits(sb, ctx, result);
         if (ctx.Comparison)
         {
-            PairedTestsSection(sb, ctx, "### Paired tests: every family");
+            var body = RcaBodyFamily(ctx);
+            PairedTestsSection(sb, ctx, "### Paired tests", f => f.Mode == "AllPairs" && !ReferenceEquals(f, body),
+                "Every paired test of this comparison is under the evidence on intelligence, speed and cost.");
             MatrixTable(sb, ctx, "### Per-question matrix");
         }
         else
@@ -1574,23 +1870,35 @@ public static partial class BenchmarkReportPackRenderer
         }
         Line(sb);
         UseTerms(ctx, RootCauseGlossary.TimeToFirstToken, RootCauseGlossary.OutputGeneration, RootCauseGlossary.MedianAndMean, RootCauseGlossary.Tokens);
+        bool merged = result.Evidence.Any(e => e.Tokens.Any(s => s.Key == RootCauseSegments.OutputWithThinking));
         Line(sb, "*Model calls per answer: the model is called again after each tool round" + Gloss(ctx, RootCauseGlossary.ToolRound)
             + ". Decode rate: the median output tokens per second once the model has started writing. Reasoning share: the part of the "
-            + "output tokens spent on hidden thinking.*");
+            + "output tokens spent on hidden thinking"
+            + (merged ? "; not stated for a provider that counts thinking inside its output tokens and does not report it separately" : string.Empty) + ".*");
         Line(sb);
 
         Heading(sb, "### Tokens per question");
-        var keys = RootCauseSegments.CostComponents;
-        Line(sb, "| Model | " + string.Join(" | ", keys.Select(k => Capitalized(RootCauseSegments.Label(k)))) + " | Cache-read share |");
-        Line(sb, "|---|" + string.Concat(keys.Select(_ => "---|")) + "---|");
+        var keys = RcaCostKeys(result.Evidence.Select(e => e.Tokens));
+        var header = new List<string> { "Model" };
+        header.AddRange(keys.Select(k => Capitalized(RootCauseSegments.Label(k))));
+        header.Add("Cache-read share");
+        var rows = new List<IReadOnlyList<string>>();
         foreach (var summary in result.Evidence)
         {
             var cells = new List<string> { Cell(RcaTokenName(ctx, summary.Token)) };
             cells.AddRange(keys.Select(k => summary.Tokens.FirstOrDefault(s => s.Key == k) is { } s ? BenchmarkReportFormat.Count(s.Value) : NoValue));
             cells.Add(summary.CacheReadShare is double share ? RootCauseHypotheses.Pct(share) : NoValue);
-            Line(sb, "| " + string.Join(" | ", cells) + " |");
+            rows.Add(cells);
         }
+        var (shown, shownRows, dropped) = DropConstantColumns(header, rows, keepFirst: 1);
+        TableHeaderOf(sb, shown);
+        foreach (var cells in shownRows) Line(sb, "| " + string.Join(" | ", cells) + " |");
         Line(sb);
+        if (DroppedColumnsSentence(dropped) is { Length: > 0 } droppedSentence)
+        {
+            Line(sb, "*" + droppedSentence + "*");
+            Line(sb);
+        }
 
         if (ctx.Comparison)
         {
@@ -1609,7 +1917,10 @@ public static partial class BenchmarkReportPackRenderer
         RcaPairDecompositions(sb, ctx, result.CostPairs, "### Cost differences, decomposed", cost: true);
     }
 
-    /// <summary>Each decomposed pair's exact decomposition, one row per component; nothing without one.</summary>
+    /// <summary>
+    /// Each decomposed pair's exact decomposition, one row per component, leaving out a component whose part and share
+    /// are both zero; nothing without one.
+    /// </summary>
     private static void RcaPairDecompositions(StringBuilder sb, Context ctx, IReadOnlyList<RootCausePairDecomposition> pairs, string heading, bool cost)
     {
         var available = pairs.Where(p => p.UnavailableReason == null && p.Difference.HasValue && p.Components.Count > 0).ToList();
@@ -1620,12 +1931,19 @@ public static partial class BenchmarkReportPackRenderer
             ? "| Pair | Questions | Difference per question | Component | Effect | Part | Share (95% interval) |"
             : "| Pair | Questions | Difference per question | Component | Part | Share (95% interval) |");
         Line(sb, cost ? "|---|---|---|---|---|---|---|" : "|---|---|---|---|---|---|");
+        bool skipped = false;
         foreach (var pair in available)
         {
             string name = Cell(RcaPairName(ctx, pair.First, pair.Second));
             string difference = RcaAmount(pair.Difference!.Value, cost);
             foreach (var component in pair.Components)
             {
+                if (IsZeroLikeCell(RcaAmount(component.Amount, cost).TrimStart('+', '-'))
+                    && (component.Share is not double part || RootCauseHypotheses.Pct(part) is "0%" or "-0%"))
+                {
+                    skipped = true;
+                    continue;
+                }
                 string share = component.Share is double s
                     ? RootCauseHypotheses.Pct(s) + (component.ShareLower is double lo && component.ShareUpper is double hi ? " (" + RootCauseHypotheses.Interval(lo, hi) + ")" : string.Empty)
                     : NoValue;
@@ -1637,7 +1955,8 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
         ExplainedTerms(ctx, RootCauseGlossary.DecompositionShare, RootCauseGlossary.BootstrapInterval);
         UseTerms(ctx, RootCauseGlossary.Interval95);
-        Line(sb, "*" + RcaDecompositionNote + " The difference is the first model's minus the second's.*");
+        Line(sb, "*" + RcaDecompositionNote + " The difference is the first model's minus the second's."
+            + (skipped ? " A component whose part and share are both zero is left out." : string.Empty) + "*");
         Line(sb);
     }
 
@@ -1770,7 +2089,16 @@ public static partial class BenchmarkReportPackRenderer
         foreach (var run in runs.OrderBy(r => r.Number))
         {
             Heading(sb, "### Run " + Inv(run.Number) + ": " + RootCauseNextRuns.KindName(run.Kind) + " (" + RcaPurposeText(run.Purpose) + ", " + run.Mark.ToLowerInvariant() + ")");
-            Line(sb, "- **Decides:** " + SheetText(ctx, run.Decides));
+            var decides = (run.DecidesItems ?? new List<string>()).Where(d => !string.IsNullOrWhiteSpace(d)).ToList();
+            if (decides.Count > 1)
+            {
+                Line(sb, "- **Decides:**");
+                foreach (string item in decides) Line(sb, "  - " + SheetText(ctx, item));
+            }
+            else
+            {
+                Line(sb, "- **Decides:** " + SheetText(ctx, decides.Count == 1 ? decides[0] : run.Decides));
+            }
             Line(sb, "- **Predicted comparability:** " + (string.IsNullOrWhiteSpace(run.PredictedTier) ? "not predicted" : OneLine(run.PredictedTier)));
             string estimate = RootCauseNextRuns.EstimateText(run);
             Line(sb, "- **Estimate:** " + (estimate.Length == 0 ? "not estimated" : estimate));
@@ -1806,54 +2134,58 @@ public static partial class BenchmarkReportPackRenderer
         }
     }
 
-    /// <summary>Appendix E: the known facts, numbered as their <c>rca.known.&lt;n&gt;</c> facts.</summary>
+    /// <summary>
+    /// Appendix E: the known facts of kind <c>count</c> and <c>configuration</c>, numbered as their <c>rca.known.&lt;n&gt;</c>
+    /// facts, so the numbering may skip; the tests and decompositions are in the body and Appendices A and B. A result
+    /// stored without the kinds lists every known fact.
+    /// </summary>
     private static void RcaKnownFacts(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
         Heading(sb, "## Appendix E: Known facts");
+        var known = result?.KnownFacts ?? new List<RootCauseKnownFact>();
+        bool kinds = known.Any(k => !string.IsNullOrEmpty(k.Kind));
+        var listed = known
+            .Where(k => !kinds || k.Kind is "count" or "configuration")
+            .OrderBy(k => k.Number)
+            .ToList();
         if (result == null)
         {
             Line(sb, RcaNoAnalysis);
         }
-        else if (result.KnownFacts.Count == 0)
+        else if (listed.Count == 0)
         {
-            Line(sb, "No rule found a fact to state.");
+            Line(sb, "No rule found a count or a configuration fact to state.");
         }
         else
         {
-            foreach (var known in result.KnownFacts.OrderBy(k => k.Number))
+            Line(sb, "The counts and the configuration facts the analysis states, each numbered as the writer cites it. Its tests and decompositions are given "
+                + "once, under the evidence and in Appendices A and B.");
+            Line(sb);
+            // A bullet with its number in bold, since a Markdown ordered list would renumber past a gap.
+            foreach (var fact in listed)
             {
-                Line(sb, Inv(known.Number) + ". " + SheetText(ctx, known.Text));
+                Line(sb, "- **" + Inv(fact.Number) + ".** " + SheetText(ctx, fact.Text));
             }
         }
         Line(sb);
     }
 
     /// <summary>
-    /// Appendix G: the details of every question the document cites: in the writer's prose and lists, in the
-    /// code's hypotheses, known facts, checks, runs and profiles, and each instrument-suspect or model-specific
-    /// control item.
+    /// Appendix G: the details of the questions the writer cites in its prose and lists, those with a refuted claim
+    /// or a critical error, and each instrument-suspect or model-specific control item; only those with answers
+    /// given in detail, each answer as its excerpt and the rubric without its <c>SOURCE</c> paragraphs.
     /// </summary>
     private static void RcaQuestionDetails(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
         const string Title = "Appendix G: Question details";
-        var texts = new List<string?>();
-        if (result != null)
-        {
-            foreach (var h in result.Hypotheses)
-            {
-                texts.Add(h.Statement);
-                texts.AddRange(h.For);
-                texts.AddRange(h.Against);
-                texts.Add(h.RefutedIf);
-            }
-            texts.AddRange(result.KnownFacts.Select(k => k.Text));
-            texts.AddRange(result.Checks.Select(c => c.Text));
-            texts.AddRange(result.RecommendedRuns.Select(r => r.Decides));
-            texts.AddRange(result.Profiles.SelectMany(p => p.Strengths.Concat(p.Weaknesses).Concat(p.Flags)).Select(e => e.Text));
-        }
-
         var cited = new HashSet<int>(BenchmarkReportPackValidator.CitedQuestions(ctx.Writer, ctx.Sheet));
-        cited.UnionWith(BenchmarkReportPackValidator.QuestionsReferencedIn(texts, ctx.Sheet));
+        foreach (var q in ctx.Sheet.Questions)
+        {
+            bool disputed = q.Models is { } cells
+                ? cells.Any(c => c.CriticalError || (c.CriticalErrorCount ?? 0) > 0 || (c.RefutedAnswerSentences ?? c.RefutedClaims) > 0)
+                : q.CriticalError || (q.CriticalErrorCount ?? 0) > 0 || (q.RefutedAnswerSentences ?? q.RefutedClaims) > 0;
+            if (disputed) cited.Add(q.Number);
+        }
         if (result != null)
         {
             cited.UnionWith(result.ControlItems.Where(i => i.InstrumentSuspect || i.ModelSpecific).Select(i => i.Number));
@@ -1868,8 +2200,14 @@ public static partial class BenchmarkReportPackRenderer
             }
             else
             {
-                var questions = ctx.Sheet.Questions.Where(q => cited.Contains(q.Number)).OrderBy(q => q.Number).ToList();
-                QuestionDetails(sb, ctx, questions, grading: ctx.Options.Disclosure == BenchmarkReportDisclosure.Full, level: 2, title: Title);
+                var questions = ctx.Sheet.Questions
+                    .Where(q => cited.Contains(q.Number) && ContentFor(ctx, q.Number).Count > 0)
+                    .OrderBy(q => q.Number)
+                    .ToList();
+                if (questions.Count > 0)
+                {
+                    QuestionDetails(sb, ctx, questions, grading: ctx.Options.Disclosure == BenchmarkReportDisclosure.Full, level: 2, title: Title, excerpts: true);
+                }
             }
         }
         if (sb.Length == length)
@@ -1915,7 +2253,8 @@ public static partial class BenchmarkReportPackRenderer
     /// The anonymized copy of the sheet with its root-cause data lettered too: every analyzed model but a
     /// per-model subject reads <c>Model X</c> in the models, the evidence and the chart rows, with no provider
     /// or model id, and a recommended run names an analyzed model so; in comparison scope another configured
-    /// model is not named. The controls stay named: they are evidence, not peers.
+    /// model is not named. A recommended run's grader names are left out in either scope. The controls stay named:
+    /// they are evidence, not peers.
     /// </summary>
     private static BenchmarkReportFactSheet RcaAnonymizedSheet(Context ctx)
     {
@@ -1953,6 +2292,10 @@ public static partial class BenchmarkReportPackRenderer
             run.ModelNames = run.ModelNames
                 .Select(name => byLabel.TryGetValue(name, out string? alias) ? alias : ctx.Comparison ? "another configured model" : name)
                 .ToList();
+            run.AssessorName = null;
+            run.CoAssessorName = null;
+            run.ReferenceReaderName = null;
+            run.ClaimVerifierName = null;
         }
         return copy;
     }
@@ -2018,4 +2361,11 @@ public static partial class BenchmarkReportPackRenderer
     private static string RcaPairName(Context ctx, string first, string second) => RcaTokenName(ctx, first) + " vs " + RcaTokenName(ctx, second);
 
     private static string Capitalized(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
+
+    /// <summary>The text ending in one period: <c>item sampling only.</c></summary>
+    private static string WithPeriod(string text)
+    {
+        string trimmed = text.TrimEnd();
+        return trimmed.Length == 0 || trimmed.EndsWith('.') ? trimmed : trimmed + ".";
+    }
 }

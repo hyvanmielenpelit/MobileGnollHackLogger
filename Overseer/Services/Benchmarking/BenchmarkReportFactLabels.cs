@@ -667,6 +667,7 @@ public static class BenchmarkReportFactLabels
         ["cacheWrite"] = "cache writes",
         ["output"] = "visible output",
         ["reasoning"] = "reasoning",
+        ["outputWithThinking"] = "output, thinking included",
     };
 
     /// <summary>The parts of a root-cause hypothesis's facts (<c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.&lt;part&gt;</c>).</summary>
@@ -674,6 +675,7 @@ public static class BenchmarkReportFactLabels
     {
         ["statement"] = "statement",
         ["label"] = "label",
+        ["ref"] = "reference",
         ["axis"] = "axis",
         ["models"] = "models",
         ["locus"] = "locus",
@@ -718,6 +720,16 @@ public static class BenchmarkReportFactLabels
         ["date"] = "date",
         ["provider"] = "provider",
         ["sharedQuestions"] = "shared questions",
+    };
+
+    /// <summary>The parts of a grader-family gap's facts (<c>rca.graders.familyGap.&lt;n&gt;.&lt;part&gt;</c>).</summary>
+    private static readonly IReadOnlyDictionary<string, string> FamilyGapParts = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["providers"] = "provider pair, first minus second",
+        ["underA"] = "quality gap under panel member A alone",
+        ["underB"] = "quality gap under panel member B alone",
+        ["contrast"] = "interaction contrast, member A's gap minus member B's (a panel score is the mean of two members, so a contrast of d moves a cross-provider pair by about d ÷ 2)",
+        ["notable"] = "interaction contrast's 95% interval excludes zero",
     };
 
     /// <summary>The axes of the root cause, as a label names them.</summary>
@@ -783,6 +795,20 @@ public static class BenchmarkReportFactLabels
             case "hypothesis" when parts.Length == 5 && IsIndex(parts[3]) && HypothesisParts.TryGetValue(parts[4], out var part):
                 label = "Hypothesis " + parts[2] + " (" + parts[3] + "): " + part;
                 return true;
+
+            // rca.graders.familyGap.count, rca.graders.familyGap.<n>.<part>
+            case "graders" when parts.Length >= 4 && parts[2] == "familyGap":
+                if (parts.Length == 4 && parts[3] == "count")
+                {
+                    label = "Grader-family gaps: provider pairs";
+                    return true;
+                }
+                if (parts.Length == 5 && IsIndex(parts[3]) && FamilyGapParts.TryGetValue(parts[4], out var familyPart))
+                {
+                    label = "Grader-family gap " + parts[3] + ": " + familyPart;
+                    return true;
+                }
+                return false;
 
             // rca.question.<n>.<part>
             case "question" when parts.Length == 4 && IsIndex(parts[2]) && QuestionParts.TryGetValue(parts[3], out var questionPart):

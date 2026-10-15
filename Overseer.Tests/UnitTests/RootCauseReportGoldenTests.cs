@@ -139,6 +139,16 @@ public class RootCauseReportGoldenTests
         document.ContentJson = BenchmarkReportJson.Serialize(content);
 
         string text = BenchmarkReportPackRenderer.Render(document, FullNamed);
+        string appendix = Section(text, "## Appendix G: Question details");
+
+        // Only the questions with an answer given in detail, each answer as the excerpt the writer saw.
+        Assert.Contains("The excerpts were given in rounds, one per question in each round and at most three per question", appendix);
+        Assert.DoesNotContain("No answer to this question was given as an excerpt.", appendix);
+        Assert.True(appendix.Contains("**Answer excerpt:**\n", StringComparison.Ordinal) || appendix.Contains("**Answer:**\n", StringComparison.Ordinal));
+        foreach (var item in content.Runs.SelectMany(r => r.Questions).Where(q => q.AnswerText != null))
+        {
+            Assert.DoesNotContain(item.AnswerText!, appendix);
+        }
 
         Assert.Contains("**Claim verifier:**", text);
         Assert.DoesNotContain("  - Accuracy: Matches rubric.", text);
@@ -163,7 +173,9 @@ public class RootCauseReportGoldenTests
         Assert.Contains("### What we found\n\n> [!IMPORTANT]\n> **Key finding.** ", summary);
         Assert.Contains("### How sure are we?\n\n> [!WARNING]\n> **Caveat.** How sure each answer is. **Established (High)**: ", summary);
         Assert.Contains("> Each model ran only once per suite, so this document cannot tell whether its results would repeat. "
-            + "No cause can be graded above Probable (Moderate) until a second run of each suite is made.\n", summary);
+            + "No cause can be graded above Probable (Moderate) until a second run of each suite is made, apart from a price effect, "
+            + "which follows from the price cards.\n", summary);
+        Assert.Contains(sheet.RootCause!.Hypotheses, h => h.Id == "HC2" && h.Grade != RootCauseGrades.NotSupported);
         Assert.Contains("| Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |\n", summary);
 
         var questions = sheet.RootCause!.Questions;

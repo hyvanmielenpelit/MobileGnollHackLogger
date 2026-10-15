@@ -832,20 +832,12 @@ WEAKEST ANSWERS BY MODEL (each model's questions scored below seventy, lowest fi
 {{model:E}}:
   [Q1] Assessor: Misses the alignment condition.
 
-QUESTIONS (as asked, with their rubrics; answer excerpts were chosen for the questions with critical errors or refuted sentences first, then the widest spread between models, then those every model scored low)
+QUESTIONS (as asked, with their rubrics; answer excerpts were allotted in up to three rounds, each round giving every question one more model's excerpt while the budget lasted: the questions with critical errors or refuted sentences first, then those with the widest spread between models, then those every model scored low, then the rest, the suites taking turns within each group; within a question, a model with a critical error or a refuted sentence first, then the lowest score, an unscored answer last. An excerpt longer than the budget left was skipped and not replaced, so a question may have fewer excerpts than others, or none)
 [Q1]
   Question as asked:
     Question 201
   Rubric:
     - Rubric 201
-  Answer excerpt of {{model:A}} (run 31):
-    Answer 201
-  Grader comments on {{model:A}}'s answer:
-    - Assessor, score 92: (no comment)
-  Answer excerpt of {{model:B}} (run 32):
-    Answer 201
-  Grader comments on {{model:B}}'s answer:
-    - Assessor, score 85: (no comment)
   Answer excerpt of {{model:C}} (run 33):
     Answer 201
   Grader comments on {{model:C}}'s answer:
@@ -864,14 +856,6 @@ QUESTIONS (as asked, with their rubrics; answer excerpts were chosen for the que
     Question 202
   Rubric:
     - Rubric 202
-  Answer excerpt of {{model:A}} (run 31):
-    Answer 202
-  Grader comments on {{model:A}}'s answer:
-    - Assessor, score 88: (no comment)
-  Answer excerpt of {{model:B}} (run 32):
-    Answer 202
-  Grader comments on {{model:B}}'s answer:
-    - Assessor, score 80: (no comment)
   Answer excerpt of {{model:C}} (run 33):
     Answer 202
   Grader comments on {{model:C}}'s answer:
@@ -894,19 +878,11 @@ QUESTIONS (as asked, with their rubrics; answer excerpts were chosen for the que
     Answer 203
   Grader comments on {{model:A}}'s answer:
     - Assessor, score 30: (no comment)
-  Answer excerpt of {{model:B}} (run 32):
-    Answer 203
-  Grader comments on {{model:B}}'s answer:
-    - Assessor, score 70: (no comment)
   Answer excerpt of {{model:C}} (run 33):
     Answer 203
   Grader comments on {{model:C}}'s answer:
     - Assessor, score 28: Says the thrown gem always breaks, which contradicts the rubric.
       evidence: Critical error: "Answer 203"
-  Answer excerpt of {{model:D}} (run 34):
-    Answer 203
-  Grader comments on {{model:D}}'s answer:
-    - Assessor, score 32: (no comment)
   Answer excerpt of {{model:E}} (run 35):
     Answer 203
   Grader comments on {{model:E}}'s answer:
@@ -917,14 +893,6 @@ QUESTIONS (as asked, with their rubrics; answer excerpts were chosen for the que
     Question 204
   Rubric:
     - Rubric 204
-  Answer excerpt of {{model:A}} (run 31):
-    Answer 204
-  Grader comments on {{model:A}}'s answer:
-    - Assessor, score 90: (no comment)
-  Answer excerpt of {{model:B}} (run 32):
-    Answer 204
-  Grader comments on {{model:B}}'s answer:
-    - Assessor, score 75: (no comment)
   Answer excerpt of {{model:C}} (run 33):
     Answer 204
   Grader comments on {{model:C}}'s answer:
@@ -943,14 +911,6 @@ QUESTIONS (as asked, with their rubrics; answer excerpts were chosen for the que
     Question 205
   Rubric:
     - Rubric 205
-  Answer excerpt of {{model:A}} (run 31):
-    Answer 205
-  Grader comments on {{model:A}}'s answer:
-    - Assessor, score 85: (no comment)
-  Answer excerpt of {{model:B}} (run 32):
-    Answer 205
-  Grader comments on {{model:B}}'s answer:
-    - Assessor, score 82: (no comment)
   Answer excerpt of {{model:C}} (run 33):
     Answer 205
   Grader comments on {{model:C}}'s answer:
@@ -969,14 +929,6 @@ QUESTIONS (as asked, with their rubrics; answer excerpts were chosen for the que
     Question 206
   Rubric:
     - Rubric 206
-  Answer excerpt of {{model:A}} (run 31):
-    Answer 206
-  Grader comments on {{model:A}}'s answer:
-    - Assessor, score 95: (no comment)
-  Answer excerpt of {{model:B}} (run 32):
-    Answer 206
-  Grader comments on {{model:B}}'s answer:
-    - Assessor, score 88: (no comment)
   Answer excerpt of {{model:C}} (run 33):
     Answer 206
   Grader comments on {{model:C}}'s answer:

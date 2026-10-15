@@ -147,7 +147,7 @@ describe('report-charts', () => {
         reportChartPlacementLabel(RootCauseAnalysis, figure.key, 'comparison')
       ]);
       expect(table).toEqual([
-        ['How they compare', 'Evidence: intelligence'],
+        ['How they compare', REPORT_CHART_NOT_DRAWN],
         ['How they compare', 'Evidence: speed'],
         ['How they compare', 'Evidence: cost'],
         ['How they compare', REPORT_CHART_NOT_DRAWN],
@@ -161,6 +161,9 @@ describe('report-charts', () => {
       expect(reportChartDrawn(RootCauseAnalysis, 'a1-availability', 'comparison')).toBe(false);
       expect(reportChartDrawn(ExecutiveSummary, 'p1a-quality', 'comparison')).toBe(true);
       expect(reportChartDrawn(RootCauseAnalysis, 's1-quality-speed', 'comparison')).toBe(true);
+      // The comparison-scope Root Cause Analysis draws no Intelligence bars; the per-model one keeps them.
+      expect(reportChartDrawn(RootCauseAnalysis, 'p1a-quality', 'comparison')).toBe(false);
+      expect(reportChartDrawn(RootCauseAnalysis, 'p1a-quality', 'model')).toBe(true);
     });
 
     it('defaults to two charts in the Executive Summary and the five offered kinds in the Root Cause Analysis', () => {
@@ -170,6 +173,9 @@ describe('report-charts', () => {
       for (const key of DEFAULT_CHART_SELECTION[RootCauseAnalysis] ?? []) {
         expect(reportChartDrawn(RootCauseAnalysis, key), key).toBe(true);
       }
+      // The comparison-scope Root Cause Analysis draws every default figure but the Intelligence bars.
+      expect((DEFAULT_CHART_SELECTION[RootCauseAnalysis] ?? []).filter(key => reportChartDrawn(RootCauseAnalysis, key, 'comparison')))
+        .toEqual(['p1b-speed', 'p1c-cost', 's1-quality-speed', 's2-quality-cost']);
     });
 
     it('draws full column at 300 dpi with 8 pt labels by default, taller as the width narrows', () => {

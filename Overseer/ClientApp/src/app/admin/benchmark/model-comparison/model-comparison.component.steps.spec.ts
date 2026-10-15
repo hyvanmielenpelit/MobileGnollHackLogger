@@ -644,7 +644,7 @@ describe('ModelComparisonComponent', () => {
         const speed = await component.composeReportChart('p1b-speed', { kind: 'named' });
         const intelligence = await component.composeReportChart('p1a-quality', { kind: 'named' });
 
-        expect(speed.caption).toContain('Times are the mean model time per question; the document\'s tables give the median. Drawn from');
+        expect(speed.caption).toContain('Times are the median model time per question, as in the document\'s tables. Drawn from');
         expect(intelligence.caption).not.toContain('Times are');
         expect(intelligence.caption).not.toContain('Costs are');
       });

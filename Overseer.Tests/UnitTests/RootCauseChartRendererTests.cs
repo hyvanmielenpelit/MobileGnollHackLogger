@@ -56,6 +56,11 @@ public class RootCauseChartRendererTests
         Origin = RootCauseOrigins.Comparison,
         ComputedAtUtc = new DateTime(2026, 10, 15, 8, 30, 0, DateTimeKind.Utc),
         PricingBasis = "As run",
+        Models =
+        {
+            new RootCauseModel { Token = "A", Letter = "A", Label = "Orion Max", Provider = "Northwind", ModelId = "orion-max", EntryKey = "run:31" },
+            new RootCauseModel { Token = "B", Letter = "B", Label = "Vega Pro", Provider = "Southstar", ModelId = "vega-pro", EntryKey = "run:32" }
+        },
         PointsAtRisk =
         {
             Row("Orion Max", "A", "model", RootCauseSegments.AtRisk, "points", 2.0, 1.5, 6.0, 4.6),
@@ -197,6 +202,89 @@ public class RootCauseChartRendererTests
         Assert.Contains("HS3", hypotheses);
         Assert.Contains("Moderate", hypotheses);
         Assert.Contains("High", hypotheses);
+    }
+
+    [Fact]
+    public void ASegment_PrintsItsValue_WhereTheValueFits()
+    {
+        var pdf = RootCauseChartRenderer.DrawPdfs(Comparison(), Sheet(), anonymized: false)
+            .Single(p => p.Key == BenchmarkReportChartPlacement.RcaSpeedKey).Value;
+
+        using var reader = PdfDocument.Open(pdf);
+        string text = Squash(string.Concat(reader.GetPages().Select(p => p.Text)));
+        // Output generation, 10.4 s of a 20 s axis, is wide enough for its value; the key names the segments by color alone.
+        Assert.Contains("10.4", text);
+        Assert.Contains(Squash(RootCauseSegments.Label(RootCauseSegments.OutputGeneration)), text);
+        Assert.Contains(Squash(RootCauseChartRenderer.SegmentValue(10.4, "seconds")), text);
+        Assert.DoesNotContain(Squash("1 " + RootCauseSegments.Label(RootCauseSegments.Ttft)), text);
+
+        Assert.Equal("10.4", RootCauseChartRenderer.SegmentValue(10.4, "seconds"));
+        Assert.Equal("6.0", RootCauseChartRenderer.SegmentValue(6, "points"));
+        Assert.Equal("$0.0040", RootCauseChartRenderer.SegmentValue(0.004, "usd"));
+        Assert.Equal("$0.012", RootCauseChartRenderer.SegmentValue(0.012, "usd"));
+    }
+
+    [Theory]
+    [InlineData(60, 60)]
+    [InlineData(55, 60)]
+    [InlineData(61, 80)]
+    [InlineData(11.5, 12)]
+    [InlineData(1.3, 1.5)]
+    [InlineData(16.4, 20)]
+    [InlineData(0.026, 0.03)]
+    [InlineData(100, 100)]
+    [InlineData(0, 1)]
+    public void TheAxis_EndsAtTheNextNiceValue(double value, double ceiling)
+    {
+        Assert.Equal(ceiling, RootCauseChartRenderer.NiceCeiling(value), 12);
+    }
+
+    [Fact]
+    public void TheHypothesisChart_LeavesOutTheNulls_AndTheNamedVariantNamesTheModels()
+    {
+        var result = Comparison();
+        result.Hypotheses.Add(new RootCauseHypothesis
+        {
+            Id = "H0-Q", Number = 1, Key = "H0-Q.1", Axis = RootCauseAxes.Intelligence, Kind = "null",
+            ShortStatement = "No difference between Model A and Model B", Statement = "No difference between Model A and Model B",
+            Grade = RootCauseGrades.NotSupported
+        });
+
+        string named = RootCauseChartRenderer.Draw(result, Sheet(), anonymized: false).Single(c => c.Key == BenchmarkReportChartPlacement.RcaHypothesesKey).AltText;
+        Assert.DoesNotContain("H0-Q", named);
+        Assert.Contains("HS3.1 Orion Max is slower mainly from more output tokens", named);
+        Assert.DoesNotContain("Model A", named);
+
+        string anonymized = RootCauseChartRenderer.Draw(result, Sheet(), anonymized: true).Single(c => c.Key == BenchmarkReportChartPlacement.RcaHypothesesKey).AltText;
+        Assert.Contains("HS3.1 Model A is slower mainly from more output tokens", anonymized);
+        Assert.DoesNotContain("Orion", anonymized);
+
+        // A result of null hypotheses alone draws no hypothesis chart.
+        var nullsOnly = Comparison();
+        nullsOnly.Hypotheses.RemoveAll(h => h.Kind != "null");
+        nullsOnly.Hypotheses.Add(result.Hypotheses.Single(h => h.Kind == "null"));
+        Assert.DoesNotContain(RootCauseChartRenderer.Draw(nullsOnly, Sheet(), anonymized: false), c => c.Key == BenchmarkReportChartPlacement.RcaHypothesesKey);
+    }
+
+    [Fact]
+    public void TheCostKey_NamesOutputWithThinkingIncluded_ForAProviderThatDoesNotReportReasoning()
+    {
+        var result = Comparison();
+        result.CostRows[1] = new RootCauseChartRow
+        {
+            Label = "Vega Pro", Letter = "B", Token = "B", Kind = "model", Unit = "usd",
+            Segments = new[] { RootCauseSegments.UncachedInput, RootCauseSegments.CacheRead, RootCauseSegments.CacheWrite, RootCauseSegments.OutputWithThinking }
+                .Select((k, i) => new RootCauseSegment { Key = k, Label = RootCauseSegments.Label(k), Value = new[] { 0.002, 0.0001, 0.0, 0.004 }[i] })
+                .ToList(),
+            Total = 0.0061
+        };
+
+        var pdf = RootCauseChartRenderer.DrawPdfs(result, Sheet(), anonymized: false).Single(p => p.Key == BenchmarkReportChartPlacement.RcaCostKey).Value;
+        using var reader = PdfDocument.Open(pdf);
+        string text = Squash(string.Concat(reader.GetPages().Select(p => p.Text)));
+
+        Assert.Contains(Squash(RootCauseSegments.Label(RootCauseSegments.OutputWithThinking)), text);
+        Assert.Contains(Squash(RootCauseSegments.Label(RootCauseSegments.Reasoning)), text);
     }
 
     [Fact]

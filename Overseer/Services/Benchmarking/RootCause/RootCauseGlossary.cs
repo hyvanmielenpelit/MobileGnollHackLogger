@@ -106,8 +106,9 @@ public static class RootCauseGlossary
             "A range built so that, if the questions were drawn again and again, 95 of 100 such ranges would contain the true value. When two models' ranges overlap, the ranges alone cannot say which is higher.",
             "the range the true value most likely lies in"),
         new RootCauseTerm(TiedRank, "Tied rank",
-            "When a model's 95% interval overlaps a neighbor's, the data cannot put them in order, so they share a rank. The rank then shows the span of places the tied group covers, such as 2–9 (tied).",
-            "a shared rank for models the data cannot put in order"),
+            "When a model's 95% interval overlaps others', the data cannot fix its place, so its rank is the span of places the interval allows, such as 5–9 (tied). "
+            + "The span starts one place below the models whose intervals lie wholly above its own and ends one place above those whose intervals lie wholly below it.",
+            "the span of places the model's interval allows"),
         new RootCauseTerm(PairedTest, "Paired test",
             "A comparison of two models question by question, on the questions both answered, so that how hard each question is counts the same for both.",
             "a comparison of two models on the same questions"),
@@ -163,7 +164,8 @@ public static class RootCauseGlossary
             "one cycle of calling a tool and reading its result"),
         new RootCauseTerm(Tokens, "Tokens",
             "The pieces of text, roughly three quarters of a word each, that a model reads and writes; providers price by them. Uncached input is text read at the full price. "
-            + "Cache reads are input stored from an earlier call and charged less; cache writes store it. Visible output is the answer, and reasoning is the model's hidden thinking, billed as output.",
+            + "Cache reads are input stored from an earlier call and charged less; cache writes store it. Visible output is the answer, and reasoning is the model's hidden thinking, billed as output; "
+            + "a provider that does not report it separately counts it inside output.",
             "the word pieces a model reads and writes, which set its price"),
         new RootCauseTerm(PricingBasis, "Pricing basis",
             "The prices per token used to turn token counts into dollars: today's catalog prices, or the prices stored with each run. Costs on different bases are not comparable.",
@@ -182,7 +184,7 @@ public static class RootCauseGlossary
             "The model a comparison marks as its standard, so that the others can be read against it. Where it is also the reference model, every other model is paired-tested against it.",
             "the model the comparison marks as the standard to compare with"),
         new RootCauseTerm(ReferenceModel, "Reference model",
-            "The model each other model is paired-tested against: the one chosen for the comparison, or else the model with the highest Intelligence Index.",
+            "The model each other model is paired-tested against: the one chosen for the comparison, or else the model with the highest Intelligence Index. It is also called the baseline model.",
             "the model every other model is tested against"),
         new RootCauseTerm(Suite, "Suite",
             "A fixed set of benchmark questions, each with its rubric. A run answers every question of one suite once.",

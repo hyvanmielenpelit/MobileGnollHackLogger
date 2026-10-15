@@ -618,6 +618,7 @@ public static partial class BenchmarkReportPackPrompt
                 Line(sb, $"      evidence: {OneLine(evidence)}");
             }
         }
+        AppendCriticalErrorResolution(sb, item, "  ");
 
         if (item.ClaimRulings.Count > 0)
         {
@@ -772,6 +773,7 @@ public static partial class BenchmarkReportPackPrompt
                         Line(sb, $"      evidence: {OneLine(evidence)}");
                     }
                 }
+                AppendCriticalErrorResolution(sb, item, "  ");
 
                 if (item.ClaimRulings.Count > 0)
                 {
@@ -790,6 +792,29 @@ public static partial class BenchmarkReportPackPrompt
     // -----------------------------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// How a critical error on the answer was resolved, in words, from the stored
+    /// <see cref="BenchmarkCriticalErrorResolution"/> name; null when none is stored or the name is unknown.
+    /// </summary>
+    internal static string? CriticalErrorResolutionText(string? resolution) => resolution?.Trim() switch
+    {
+        nameof(BenchmarkCriticalErrorResolution.Agreed) => "agreed by both members",
+        nameof(BenchmarkCriticalErrorResolution.UpheldByVerifier) => "upheld by the claim verifier (cap applied)",
+        nameof(BenchmarkCriticalErrorResolution.OverturnedByVerifier) => "overturned by the claim verifier (cap lifted)",
+        nameof(BenchmarkCriticalErrorResolution.Unresolved) => "unresolved (averaged)",
+        nameof(BenchmarkCriticalErrorResolution.SingleAssessor) => "single assessor",
+        _ => null
+    };
+
+    /// <summary>The answer's critical-error resolution line, at <paramref name="indent"/>; nothing when it has none.</summary>
+    private static void AppendCriticalErrorResolution(StringBuilder sb, BenchmarkReportContentQuestion item, string indent)
+    {
+        if (CriticalErrorResolutionText(item.CriticalErrorResolution) is string text)
+        {
+            Line(sb, $"{indent}Critical-error resolution: {text}");
+        }
+    }
 
     /// <summary>Peers by letter: shorter letters first, then ordinal, so <c>Z</c> precedes <c>AA</c>.</summary>
     internal static List<BenchmarkReportPeer> OrderedPeers(IEnumerable<BenchmarkReportPeer> peers)

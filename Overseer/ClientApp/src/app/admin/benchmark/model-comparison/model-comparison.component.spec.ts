@@ -492,7 +492,7 @@ describe('ModelComparisonComponent', () => {
     expect(Array.from(panel.querySelectorAll('.mc-models-table thead th')).map(th => th.textContent?.trim()))
       .toEqual(['Show', 'Model', 'Highlight']);
     expect(fixture.debugElement.query(By.css('#mc-pricing-basis'))).toBeTruthy();
-    expect(panel.querySelectorAll('input[type="radio"][name="mc-speed-measure"]').length).toBe(4);
+    expect(panel.querySelectorAll('input[type="radio"][name="mc-speed-measure"]').length).toBe(5);
     expect(panel.querySelectorAll('input[type="radio"][name="mc-cost-measure"]').length).toBe(2);
     expect(panel.querySelectorAll('input[type="radio"][name="mc-sort-key"]').length).toBe(5);
     expect(panel.querySelectorAll('input[type="radio"][name="mc-sort-direction"]').length).toBe(2);

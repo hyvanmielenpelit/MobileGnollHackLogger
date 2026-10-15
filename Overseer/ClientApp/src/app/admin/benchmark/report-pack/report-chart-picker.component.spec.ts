@@ -340,9 +340,14 @@ describe('ReportChartPickerComponent', () => {
     expect(fixture.componentInstance.audienceOptions).toBe(COMPARISON_REPORT_AUDIENCE_OPTIONS);
     expect(text(q(`#rcp-${ExecutiveSummary}-p1a-quality-placement`))).toBe('How they compare');
     select(RootCauseAnalysis);
-    expect(text(q(`#rcp-${RootCauseAnalysis}-p1a-quality-placement`))).toBe('Evidence: intelligence');
+    // The comparison-scope Root Cause Analysis places no Intelligence bars: neither offered nor selected.
+    expect(text(q(`#rcp-${RootCauseAnalysis}-p1a-quality-placement`))).toBe(REPORT_CHART_NOT_DRAWN);
+    expect(cell(RootCauseAnalysis, 'p1a-quality').checked).toBe(false);
+    expect(cell(RootCauseAnalysis, 'p1a-quality').getAttribute('aria-disabled')).toBe('true');
+    expect(text(q(`#rcp-${RootCauseAnalysis}-p1b-speed-placement`))).toBe('Evidence: speed');
     expect(text(q(`#rcp-${RootCauseAnalysis}-s2-quality-cost-placement`))).toBe('Evidence: cost');
     expect(text(q(`#rcp-${RootCauseAnalysis}-a1-availability-placement`))).toBe(REPORT_CHART_NOT_DRAWN);
+    expect(checkedIn(RootCauseAnalysis)).toEqual(RCA_KEYS.filter(key => key !== 'p1a-quality'));
   });
 
   it('never offers or selects A1 in a comparison-scope Executive Summary, which does not place it', () => {

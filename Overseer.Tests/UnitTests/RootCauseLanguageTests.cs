@@ -281,7 +281,7 @@ public class RootCauseLanguageTests
     };
 
     [Fact]
-    public void PanelDisagreement_HasOneBasisAndOneWording_InTheNotableFindingsAndTheProfiles()
+    public void PanelDisagreement_HasOneBasis_TheNotableFindingsWording_AndACompactProfilePhrase()
     {
         var input = new RootCauseInput
         {
@@ -302,8 +302,11 @@ public class RootCauseLanguageTests
                         + "about three times the other models' median of " + BenchmarkReportFormat.Percent(othersMedian * 100);
         Assert.Equal(phrase, BenchmarkNotableFindings.DisagreementPhrase(rate, othersMedian));
 
+        // The profile states the same rate and median compactly; its note states the rule once.
         var flag = Assert.Single(profiles.Single(p => p.Token == "A").Flags, f => f.Kind == RootCauseProfiles.PanelDisagreement);
-        Assert.Equal(phrase, flag.Text);
+        Assert.Equal("panel disagreement 19% (others' median 6%)", flag.Text);
+        Assert.Equal(BenchmarkNotableFindings.ProfileDisagreementPhrase(rate, othersMedian), flag.Text);
+        Assert.Empty(RootCauseClaimSupport.CausalPhrases(flag.Text));
 
         var finding = Assert.Single(notable);
         Assert.Equal(new[] { "A" }, finding.Models);

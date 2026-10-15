@@ -154,13 +154,13 @@ public static class BenchmarkBatteryModelComparison
     public const string BatteryComparabilityClassKey = "BatteryComparabilityClass";
 
     public const string IntervalBasisAcrossRounds =
-        "Battery composite: item sampling (t) and reproducibility across rounds";
+        "Battery composite: item sampling and reproducibility across rounds";
 
     public const string IntervalBasisPerSuiteFallback =
-        "Battery composite: item sampling (t) and reproducibility from each suite's own runs, because the rounds are ragged";
+        "Battery composite: item sampling and reproducibility from each suite's own runs, because the rounds are ragged";
 
     public const string IntervalBasisItemSamplingOnly =
-        "Battery composite: item sampling (t) only. Below three complete rounds there is no reproducibility estimate";
+        "Battery composite: item sampling only. Below three complete rounds there is no reproducibility estimate";
 
     public static string KeyOf(long batteryRunId)
         => KeyPrefix + batteryRunId.ToString(CultureInfo.InvariantCulture);

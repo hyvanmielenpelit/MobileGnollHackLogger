@@ -805,7 +805,8 @@ describe('FigureStylePanelComponent', () => {
   it('covers every number measure through the shared record and the row mappings', () => {
     expect(Object.keys(DEFAULT_FIGURE_STYLE.numbers).sort()).toEqual([...NUMBER_MEASURES].sort());
     const reachable = new Set<NumberMeasure>(['intelligenceIndex', 'costPerQuestion']);
-    (['meanModelTime', 'totalModelTime', 'ttftP50', 'speedIndex'] as SpeedMeasure[]).forEach(m => reachable.add(speedNumberMeasure(m)));
+    (['meanModelTime', 'medianModelTime', 'totalModelTime', 'ttftP50', 'speedIndex'] as SpeedMeasure[])
+      .forEach(m => reachable.add(speedNumberMeasure(m)));
     (['candidateSuite', 'totalRun'] as CostMeasure[]).forEach(m => reachable.add(costNumberMeasure(m)));
     expect([...reachable].sort()).toEqual([...NUMBER_MEASURES].sort());
     for (const kind of ['bar', 'scatter', 'profile'] as const) {
@@ -906,6 +907,12 @@ describe('FigureStylePanelComponent', () => {
     fixture.componentRef.setInput('speedMeasure', 'meanModelTime');
     render('bar', withNumbers({ ttftP50: 3, totalRunCost: 1, meanModelTime: 5 }));
     expect(numberSelect('bar', 'meanModelTime').value).toBe('5');
+
+    // The median keeps a setting of its own, apart from the mean's.
+    fixture.componentRef.setInput('speedMeasure', 'medianModelTime');
+    render('bar', withNumbers({ meanModelTime: 5, medianModelTime: 2 }));
+    expect(numberRowIds('bar')[1]).toBe('mc-style-bar-number-medianModelTime');
+    expect(numberSelect('bar', 'medianModelTime').value).toBe('2');
   });
 
   it('labels each option with its decimal count and shows the family sample at the chosen count', () => {

@@ -232,9 +232,13 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "| " + string.Join(" | ", cells) + " |");
         }
         Line(sb);
-        Line(sb, "*Each model's Intelligence Index is followed by its 95% interval. A rank shown as a span, such as 2–4 (tied), means the model's interval overlaps a neighbor's, so the intervals alone cannot put them in order.*");
+        Line(sb, "*Each model's Intelligence Index is followed by its 95% interval. A rank shown as a span, such as 5–9 (tied), means the model's "
+            + "interval overlaps others', so its rank is the span of places the interval allows. " + RoundedBoundsNote + "*");
         Line(sb);
     }
+
+    private const string RoundedBoundsNote = "Interval bounds are rounded to whole numbers, so two intervals printed as touching may not overlap; "
+        + "ranks use the unrounded bounds.";
 
     private static void DimensionsTable(StringBuilder sb, Context ctx)
     {
@@ -259,44 +263,6 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "- **" + name + ":** " + Shown(ctx, fact!));
         }
         if (spreads.Count > 0) Line(sb);
-    }
-
-    /// <summary>
-    /// Every covered model's results: the Intelligence Index with its interval and tied rank, speed and
-    /// cost with their ranks, critical errors and, on a sheet that carries the availability facts, provider errors.
-    /// </summary>
-    private static void ResultsTable(StringBuilder sb, Context ctx)
-    {
-        bool availability = HasComparisonAvailability(ctx);
-        var header = ModelColumns(ctx);
-        header.AddRange(new[]
-        {
-            Label("quality.index"), Label("quality.interval"), "Rank", Label("speed.modelTimeP50"), "Speed rank",
-            Label("cost.perQuestion"), "Cost rank", Label("errors.critical")
-        });
-        if (availability) header.Add(Label("availability.providerErrors"));
-        TableHeaderOf(sb, header);
-
-        foreach (var (entry, peer) in ComparisonRows(ctx))
-        {
-            string index = entry.QualityIndex.HasValue ? BenchmarkReportFormat.Whole(entry.QualityIndex.Value) : BenchmarkReportFacts.NotAvailable;
-            string interval = entry.QualityLower.HasValue && entry.QualityUpper.HasValue
-                ? BenchmarkReportFormat.Whole(entry.QualityLower.Value) + "–" + BenchmarkReportFormat.Whole(entry.QualityUpper.Value)
-                : BenchmarkReportFacts.NotAvailable;
-            var cells = ModelCells(ctx, peer);
-            cells.AddRange(new[]
-            {
-                index, interval, QualityRankCell(ctx, entry), TimeCell(entry), RankCell(entry.SpeedRank),
-                CostCell(entry), RankCell(entry.CostRank), CriticalErrorsCell(ctx, entry, peer)
-            });
-            if (availability) cells.Add(ProviderErrorsCell(entry));
-            Line(sb, "| " + string.Join(" | ", cells) + " |");
-        }
-        Line(sb);
-
-        var rows = ComparisonRows(ctx).Select(r => (r.Entry, (BenchmarkReportPeer?)r.Peer)).ToList();
-        DegradedNotes(sb, ctx, rows, "Not ranked on speed:", e => e.SpeedDegraded);
-        DegradedNotes(sb, ctx, rows, "Not ranked on cost:", e => e.CostDegraded);
     }
 
     private static void SpeedAndCostTable(StringBuilder sb, Context ctx)
@@ -397,15 +363,27 @@ public static partial class BenchmarkReportPackRenderer
         }
     }
 
-    /// <summary>Each paired family's tables: Intelligence, then speed and cost, each pair with its result after the family's adjustment.</summary>
-    private static void PairedTestsSection(StringBuilder sb, Context ctx, string heading)
+    /// <summary>
+    /// Each paired family <paramref name="include"/> keeps, with its tables: Intelligence, then speed and cost, each pair
+    /// with its result after the family's adjustment. When the sheet has families but none is kept, <paramref name="pointer"/>
+    /// alone says where they are printed.
+    /// </summary>
+    private static void PairedTestsSection(StringBuilder sb, Context ctx, string heading, Func<BenchmarkReportPairedFamily, bool> include, string pointer)
     {
         Heading(sb, heading);
-        var families = ctx.Sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>();
-        if (families.Count == 0)
+        var all = ctx.Sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>();
+        if (all.Count == 0)
         {
             Line(sb, "No pair of models was tested" + (string.IsNullOrWhiteSpace(ctx.Sheet.PairedTestsUnavailableReason) ? "." : ": " + SheetText(ctx, ctx.Sheet.PairedTestsUnavailableReason))
                 + " A gap between two models may be noise.");
+            Line(sb);
+            return;
+        }
+
+        var families = all.Where(include).ToList();
+        if (families.Count == 0)
+        {
+            Line(sb, pointer);
             Line(sb);
             return;
         }
@@ -732,7 +710,7 @@ public static partial class BenchmarkReportPackRenderer
 
         Heading(sb, heading);
         Line(sb, "- **" + (IsBatteryComparison(ctx) ? "Battery" : "Suite") + ":** " + sheet.SuiteName + ", " + Inv(sheet.Questions.Count) + " questions in the per-question matrix.");
-        Line(sb, "- **Coverage:** " + (CoverageText(ctx) ?? "every model of " + ComparisonNameText(ctx) + " that is not excluded."));
+        Line(sb, "- **Coverage:** " + (CoverageText(ctx) ?? "every non-excluded model of " + ComparisonNameText(ctx) + "."));
         Line(sb, "- **" + Label("config.chat") + ":** " + SharedOrPerModel(ctx, "config.chat"));
         Line(sb, GradingLine(ctx, D(ctx, ModelKey(first, "scoring.weights")), D(ctx, ModelKey(first, "scoring.levels")),
             D(ctx, ModelKey(first, "scoring.criticalErrorCap"))));
@@ -884,11 +862,12 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// The questions whose text the writer was given: the question, and at Full its rubric; then each
-    /// answer the writer was given as an excerpt, under its model, as the excerpt at Detailed and whole
-    /// at Full, with the graders and the claim verifier. A grader's no-fault evidence line is left out, and
-    /// the answer sentences the verifier supported are counted rather than listed. <paramref name="only"/>,
-    /// when given, keeps the questions it holds.
+    /// The questions whose text the writer was given with at least one answer: the question, and with
+    /// <paramref name="grading"/> its rubric without its <c>SOURCE</c> paragraphs; then each answer the writer was
+    /// given, under its model, as its excerpt, with its critical-error resolution where one is stored and, with
+    /// <paramref name="grading"/>, the graders and the claim verifier. A grader's no-fault evidence line is left out,
+    /// and the answer sentences the verifier supported are counted rather than listed. <paramref name="only"/>, when
+    /// given, keeps the questions it holds.
     /// </summary>
     private static void ComparisonQuestionDetails(
         StringBuilder sb, Context ctx, bool grading, int level, IReadOnlySet<int>? only = null, string? title = null)
@@ -896,12 +875,18 @@ public static partial class BenchmarkReportPackRenderer
         string prefix = new('#', level);
         var questions = (ctx.Content.Questions ?? new List<BenchmarkReportContentQuestion>())
             .Where(q => only == null || only.Contains(q.Number))
+            .Where(q => ctx.Content.Runs.Any(r => r.Questions.Any(a => a.Number == q.Number)))
             .OrderBy(q => q.Number)
             .ToList();
         if (questions.Count == 0) return;
 
         Heading(sb, prefix + " " + (title ?? (grading ? "Question details" : "Questions and answers")));
-        Line(sb, "*Each answer shown is one the writer was given as an excerpt; the excerpts were chosen for the questions with critical errors or refuted sentences first, then the widest spread between models, then those every model scored low.*");
+        Line(sb, ctx.Document.ReportFormatVersion >= RoundExcerptsFormatVersion
+            ? "*Each answer shown is one the writer was given as an excerpt. The excerpts were given in rounds, one per question in each round and at most "
+              + "three per question, taking the suites in turn: the questions with critical errors or refuted sentences first, then the widest spread "
+              + "between models, then those every model scored low; within a question, a critical error or refuted sentence first, then the lowest score."
+              + " Rubrics are shown without their source paragraphs.*"
+            : "*Each answer shown is one the writer was given as an excerpt; the excerpts were chosen for the questions with critical errors or refuted sentences first, then the widest spread between models, then those every model scored low.*");
         Line(sb);
 
         foreach (var question in questions)
@@ -919,7 +904,7 @@ public static partial class BenchmarkReportPackRenderer
                 Line(sb);
                 if (!question.ExpectedPointsRecorded) Line(sb, "*Rubric not recorded for this answer.*");
                 else if (string.IsNullOrWhiteSpace(question.ExpectedPoints)) Line(sb, "*No rubric points.*");
-                else Quote(sb, question.ExpectedPoints);
+                else Quote(sb, BenchmarkReportPackPrompt.WithoutSourceParagraphs(question.ExpectedPoints));
                 Line(sb);
             }
 
@@ -929,32 +914,15 @@ public static partial class BenchmarkReportPackRenderer
                 .ThenBy(r => r.Letter ?? string.Empty, StringComparer.Ordinal)
                 .ThenBy(r => r.RunId)
                 .ToList();
-            if (answers.Count == 0)
-            {
-                Line(sb, "*No answer to this question was given as an excerpt.*");
-                Line(sb);
-                continue;
-            }
-
             foreach (var run in answers)
             {
                 var item = run.Questions.First(q => q.Number == question.Number);
                 var peer = ctx.Sheet.Peers.FirstOrDefault(p => string.Equals(p.Letter, run.Letter, StringComparison.Ordinal));
                 Heading(sb, prefix + "## " + (peer != null ? ProseName(ctx, peer) : "Model " + run.Letter) + ", run " + Inv(run.RunId));
 
-                if (!grading)
-                {
-                    Line(sb, "**Answer excerpt:**");
-                    Line(sb);
-                    Quote(sb, item.AnswerExcerpt);
-                    Line(sb);
-                    continue;
-                }
-
-                Line(sb, "**Answer:**");
-                Line(sb);
-                Quote(sb, item.AnswerText ?? item.AnswerExcerpt);
-                Line(sb);
+                AnswerExcerptBlock(sb, item);
+                CriticalErrorResolutionLine(sb, item);
+                if (!grading) continue;
 
                 Line(sb, "**Graders:**");
                 Line(sb);
@@ -1351,7 +1319,8 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// Each covered model's runs with structured grader findings and, of them, how many raised a weakness of
-    /// each category; a sentence instead when no run of any model recorded them.
+    /// each category; a sentence instead when no run of any model recorded them. A category no model's runs raised
+    /// is left out, and the note says so.
     /// </summary>
     private static void FindingsTable(StringBuilder sb, Context ctx)
     {
@@ -1372,8 +1341,9 @@ public static partial class BenchmarkReportPackRenderer
 
         var header = ModelColumns(ctx);
         header.Add("Runs with findings");
+        int keepFirst = header.Count;
         header.AddRange(categories.Select(c => c.Name));
-        TableHeaderOf(sb, header);
+        var rows = new List<IReadOnlyList<string>>();
         foreach (var peer in models)
         {
             var cells = ModelCells(ctx, peer);
@@ -1382,10 +1352,15 @@ public static partial class BenchmarkReportPackRenderer
             cells.AddRange(categories.Select(c => NumberOf(Fact(ctx, Key(peer, c.Key))) is double count && runs is double of
                 ? Inv((int)count) + " of " + Inv((int)of)
                 : NoValue));
-            Line(sb, "| " + string.Join(" | ", cells) + " |");
+            rows.Add(cells);
         }
+
+        var (shown, shownRows, dropped) = DropConstantColumns(header, rows, keepFirst);
+        TableHeaderOf(sb, shown);
+        foreach (var cells in shownRows) Line(sb, "| " + string.Join(" | ", cells) + " |");
         Line(sb);
-        Line(sb, "*" + FindingsTableNote + "*");
+        string droppedSentence = DroppedColumnsSentence(dropped);
+        Line(sb, "*" + FindingsTableNote + (droppedSentence.Length > 0 ? " " + droppedSentence : string.Empty) + "*");
         Line(sb);
     }
 
@@ -1458,20 +1433,6 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>Whether the sheet carries any covered model's provider availability facts (format version 13 and later).</summary>
     private static bool HasComparisonAvailability(Context ctx)
         => OrderedPeers(ctx.Sheet).Any(p => Fact(ctx, ModelKey(p.Letter, "availability.attempts")) != null);
-
-    /// <summary>
-    /// A model's provider errors in the results table: <c>0.81% (12/1,480)</c>, <c>not recorded</c>, or
-    /// <c>not available</c> for an entry whose availability was not computed.
-    /// </summary>
-    private static string ProviderErrorsCell(BenchmarkReportEntryFigures entry)
-    {
-        if (entry.ProviderAvailabilityRecorded is not bool recorded) return BenchmarkReportFacts.NotAvailable;
-        if (!recorded) return "not recorded";
-        if (entry.ProviderErrorRate is not double rate || entry.ProviderAttempts is not int attempts) return "no valid attempts";
-
-        return BenchmarkProviderAvailability.FormatPercent(rate)
-            + " (" + BenchmarkReportFacts.Thousands(entry.ProviderErrors ?? 0) + "/" + BenchmarkReportFacts.Thousands(attempts) + ")";
-    }
 
     /// <summary>
     /// The per-model provider availability: valid attempts,

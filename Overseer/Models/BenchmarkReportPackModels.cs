@@ -1003,7 +1003,8 @@ public sealed class BenchmarkReportContentSnapshot
     /// <summary>
     /// One block per subject run, in run-id order. On a comparison-scope document, one block per
     /// covered model's run whose answers the writer was given as excerpts, in letter and run-id order,
-    /// holding only those answers.
+    /// holding only those answers: at most three excerpts a question, allotted in rounds of one a
+    /// question with the suites interleaved (<see cref="Overseer.Services.Benchmarking.BenchmarkReportContent.BuildComparison"/>).
     /// </summary>
     public List<BenchmarkReportContentRun> Runs { get; set; } = new();
 
@@ -1091,6 +1092,15 @@ public sealed class BenchmarkReportContentQuestion
     public List<BenchmarkReportContentGrader> Graders { get; set; } = new();
 
     public List<BenchmarkReportContentClaimRuling> ClaimRulings { get; set; } = new();
+
+    /// <summary>
+    /// How the answer's critical-error flags were resolved, as the name of its
+    /// <see cref="BenchmarkCriticalErrorResolution"/>: <c>Agreed</c>,
+    /// <c>UpheldByVerifier</c>, <c>OverturnedByVerifier</c>, <c>Unresolved</c> or <c>SingleAssessor</c>.
+    /// Null when no grader flagged a critical error, on a run scored before method 13, on a comparison's
+    /// question without an answer, and on a document stored before this field.
+    /// </summary>
+    public string? CriticalErrorResolution { get; set; }
 }
 
 public sealed class BenchmarkReportContentGrader

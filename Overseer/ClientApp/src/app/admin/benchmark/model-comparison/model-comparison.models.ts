@@ -1256,8 +1256,9 @@ export function summarizeConditionDifference(row: ConditionDetailRow): Condition
 /**
  * Two fields the chart core declares that this endpoint does not carry, named once here so the
  * view can say so out loud rather than each caller rediscovering it. `modelTimeMeanMs`,
- * `totalModelTimeMs` and `totalModelTimeSdMs` are deliberately not in this set — the DTO does carry
- * them, and {@link toChartEntries} maps them below like every other measured field:
+ * `modelTimeP50Ms`, `totalModelTimeMs` and `totalModelTimeSdMs` are deliberately not in this set —
+ * the DTO does carry them, and {@link toChartEntries} maps them below like every other measured
+ * field:
  *
  * - **`speedIndexSd`** — no per-run Speed Index dispersion is returned, so the speed panel draws no
  *   interval under that measure and the saturation notice carries the caveat instead.
@@ -1333,6 +1334,7 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
     provider: (entry.provider ?? '').trim().toLowerCase(),
     runCount: entry.runCount,
     ...(entry.suiteCount != null && entry.suiteCount > 0 ? { suiteCount: entry.suiteCount } : {}),
+    runsPerSuite: entry.runsPerSuite ?? null,
 
     intelligenceIndex: entry.quality?.pointEstimate ?? UNMEASURED,
     // Null half-width means neither uncertainty component could be computed, which is not the same
@@ -1347,6 +1349,7 @@ export function toChartEntries(dto: BenchmarkModelComparisonDto | null): ModelCo
     ttftP90Ms: entry.speed?.ttftP90Ms ?? UNMEASURED,
 
     modelTimeMeanMs: entry.speed?.modelTimeMeanMs ?? UNMEASURED,
+    modelTimeP50Ms: entry.speed?.modelTimeP50Ms ?? null,
     totalModelTimeMs: entry.speed?.totalModelTimePerRunMeanMs ?? UNMEASURED,
     totalModelTimeSdMs: entry.speed?.totalModelTimeSdMs ?? null,
 

@@ -2039,7 +2039,7 @@ public static class BenchmarkReportPackValidator
         if (unsupported.Count > 0)
         {
             Issue(notes, RootCauseCausalClaimRule, location, $"Uses the causal wording {Quoted(unsupported)} without a hypothesis graded Low or higher in the same sentence: "
-                + "cite one (CLAIM SUPPORT lists them)"
+                + "cite one of its tokens, such as its .ref (CLAIM SUPPORT lists the hypotheses)"
                 + (string.Equals(slot, BenchmarkReportSlots.NextRuns, StringComparison.Ordinal) ? ", or the rca.run token of the run it describes" : string.Empty)
                 + ". A Not supported hypothesis may be cited only to rule a cause out (not due to …).");
         }

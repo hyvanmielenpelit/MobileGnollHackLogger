@@ -221,15 +221,23 @@ public class RootCauseValidatorTests
         }
     }
 
-    // --- Next runs: a missing configuration becomes a check -------------------------------------------
+    // --- Next runs: a thinking-level pair runs one model at two levels; a missing level becomes a check ------
 
     [Fact]
-    public void AThinkingPairWithNoConfiguredLevel_BecomesACheck_NotARun()
+    public void AThinkingPair_RunsOneModelAtTwoLevels_ServesNoCrossModelHypothesis_AndAMissingLevelIsACheck()
     {
         var result = ComparisonSheet.RootCause!;
+        var hypotheses = result.Hypotheses.ToDictionary(h => h.Key, StringComparer.Ordinal);
+        var modelIds = result.Models.ToDictionary(m => m.Token, m => m.ModelId, StringComparer.Ordinal);
 
-        Assert.Contains(result.Checks, c => c.Kind == "configuration" && c.Text.Contains("another thinking level", StringComparison.Ordinal));
-        Assert.All(result.RecommendedRuns.Where(r => r.Kind == RootCauseRunKinds.ThinkingPair), r => Assert.Equal(2, r.TestedModelConfigurationIds.Count));
+        foreach (var run in result.RecommendedRuns.Where(r => r.Kind == RootCauseRunKinds.ThinkingPair))
+        {
+            Assert.Equal(2, run.TestedModelConfigurationIds.Count);
+            Assert.All(run.HypothesisIds, key => Assert.Single(hypotheses[key].Models.Select(t => modelIds[t]).Distinct(StringComparer.OrdinalIgnoreCase)));
+        }
+        Assert.All(result.Checks.Where(c => c.Text.Contains("another thinking level", StringComparison.Ordinal)), c => Assert.Equal("configuration", c.Kind));
+        Assert.DoesNotContain(result.RecommendedRuns, r => r.Kind == RootCauseRunKinds.StylePair && r.Mark != RootCauseMarks.Optional);
+        Assert.All(result.RecommendedRuns, r => Assert.Equal(r.Decides, string.Join(" ", r.DecidesItems!)));
         var orders = result.RecommendedRuns.Select(r => RootCausePurposes.Order(r.Purpose)).ToList();
         Assert.Equal(orders.OrderBy(o => o).ToList(), orders);
         Assert.All(result.RecommendedRuns, r => Assert.Equal(r.AfterSystemHypotheses, result.SystemFirst && r.Purpose == RootCausePurposes.ModelSelection));
@@ -279,15 +287,19 @@ public class RootCauseValidatorTests
             TextFact("rca.axis.speed.status", RootCauseStatuses.NotEstablished, "Not established"),
             TextFact("rca.hypothesis.HC1.1.grade", RootCauseGrades.Low),
             TextFact("rca.hypothesis.HC1.1.label", "higher output price of Model B"),
+            TextFact("rca.hypothesis.HC1.1.ref", "HC1.1 (higher token volume)"),
             TextFact("rca.hypothesis.HC1.1.statement", "Model B pays a higher output price than Model A."),
             TextFact("rca.hypothesis.HQ1.1.grade", RootCauseGrades.Moderate),
             TextFact("rca.hypothesis.HQ1.1.label", "critical errors of Model B against Model A"),
+            TextFact("rca.hypothesis.HQ1.1.ref", "HQ1.1 (answers without tools)"),
             TextFact("rca.hypothesis.HQ1.1.statement", "Model B made more critical errors than Model A."),
             TextFact("rca.hypothesis.HS1.1.grade", RootCauseGrades.High),
             TextFact("rca.hypothesis.HS1.1.label", "longer outputs of Model B"),
+            TextFact("rca.hypothesis.HS1.1.ref", "HS1.1 (more model calls)"),
             TextFact("rca.hypothesis.HS1.1.statement", "Model B writes longer answers than Model A."),
             TextFact("rca.hypothesis.HS4.1.grade", RootCauseGrades.NotSupported, RootCauseGrades.Display(RootCauseGrades.NotSupported)),
             TextFact("rca.hypothesis.HS4.1.label", "slower first token of Model B"),
+            TextFact("rca.hypothesis.HS4.1.ref", "HS4.1 (slower decoding)"),
             TextFact("rca.hypothesis.HS4.1.statement", "Model B waits longer for its first token than Model A."),
             TextFact("rca.run.1.summary", "a replicate of every model"),
         };
@@ -349,6 +361,11 @@ public class RootCauseValidatorTests
     [InlineData("The speed gap is unlikely to be due to anything but {{rca.hypothesis.HC1.1.label}}.", false)]
     [InlineData("The speed gap is due to {{rca.hypothesis.HC1.1.label}} and {{rca.hypothesis.HQ1.1.label}}.", true)]
     [InlineData("Per {{rca.axis.speed.status}}, the speed gap is due to the output length.", true)]
+    [InlineData("The speed gap is due to {{rca.hypothesis.HQ1.1.ref}}.", true)]
+    [InlineData("The speed gap is due to {{rca.hypothesis.HS4.1.ref}}.", false)]
+    [InlineData("The speed gap is not due to {{rca.hypothesis.HS4.1.ref}}.", true)]
+    [InlineData("The speed gap is due to {{rca.hypothesis.HC1.1.ref}}.", false)]
+    [InlineData("The speed gap may be due to {{rca.hypothesis.HC1.1.ref}}.", true)]
     public void Rule33_ACauseNeedsAHypothesisGradedLowOrHigher_HedgedWhenLow_AndARuledOutCauseMayCiteAnyHypothesis(string paragraph, bool kept)
     {
         var notes = CausalClaimNotes(BenchmarkReportSlots.HypothesesSpeed, paragraph);
@@ -437,6 +454,14 @@ public class RootCauseValidatorTests
 
         Assert.DoesNotContain(labeled, n => n.Rule == BenchmarkReportPackValidator.ComparisonTokenShapeRule);
         Assert.DoesNotContain(labeled, n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule);
+
+        // The reference is a noun phrase too.
+        var referenced = ValidateSections(QuestionSheet(), new Dictionary<string, string>
+        {
+            [slot] = "Part of the gap is due to {{rca.hypothesis.HQ1.1.ref}} on the hard questions."
+        }).Where(n => n.Location.StartsWith("sections." + slot, StringComparison.Ordinal)).ToList();
+        Assert.DoesNotContain(referenced, n => n.Rule == BenchmarkReportPackValidator.ComparisonTokenShapeRule);
+        Assert.DoesNotContain(referenced, n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule);
 
         // The statement is a sentence: inside another one it is still flagged.
         var stated = ValidateSections(QuestionSheet(), new Dictionary<string, string>

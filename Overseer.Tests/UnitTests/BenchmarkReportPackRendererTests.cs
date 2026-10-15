@@ -1530,12 +1530,12 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion19()
+    public void AComparisonDocument_IsCurrentAtFormatVersion20()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(19, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 19 · ", text);
+        Assert.Equal(20, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 20 · ", text);
         Assert.Contains(" · models named*", text);
     }
 
@@ -1608,6 +1608,377 @@ public class BenchmarkReportPackRendererTests
             BenchmarkReportPackRenderer.RcaAnswerStrength(Question(null, new[] { "HS4.1" }, new[] { "WS2.1" }, true)));
         Assert.Equal("no hypothesis about this model fired — see its profile.",
             BenchmarkReportPackRenderer.RcaAnswerStrength(Question(null, Array.Empty<string>(), Array.Empty<string>(), false)));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Root Cause Analysis: comparison format 20, model-scope format 15
+    // ---------------------------------------------------------------------------------------------
+
+    private static readonly BenchmarkReportRenderOptions RcaNamed = new() { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
+    private static readonly BenchmarkReportRenderOptions RcaAnonymized = new() { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Anonymized };
+
+    /// <summary>The fixture's comparison-scope Root Cause Analysis, its sheet, content and writer output changed as given.</summary>
+    private static BenchmarkReportDocument RcaDocument(
+        Action<BenchmarkReportFactSheet>? sheet = null, Action<BenchmarkReportContentSnapshot>? content = null, Action<BenchmarkReportWriterOutput>? writer = null)
+    {
+        var document = RootCauseReportFixture.ComparisonDocument();
+        if (sheet != null)
+        {
+            var s = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+            sheet(s);
+            document.FactsJson = BenchmarkReportJson.Serialize(s);
+        }
+        if (content != null)
+        {
+            var c = BenchmarkReportJson.Deserialize<BenchmarkReportContentSnapshot>(document.ContentJson);
+            content(c);
+            document.ContentJson = BenchmarkReportJson.Serialize(c);
+        }
+        if (writer != null)
+        {
+            var w = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
+            writer(w);
+            document.WriterOutputJson = BenchmarkReportJson.Serialize(w);
+        }
+        return document;
+    }
+
+    /// <summary>The text from <paramref name="heading"/> to the next heading of its level or a higher one.</summary>
+    private static string RcaSection(string text, string heading)
+    {
+        int start = text.IndexOf(heading + "\n", StringComparison.Ordinal);
+        Assert.True(start >= 0, heading + " is missing");
+        int level = heading.TakeWhile(c => c == '#').Count();
+        int end = Enumerable.Range(1, level)
+            .Select(l => text.IndexOf("\n" + new string('#', l) + " ", start + heading.Length, StringComparison.Ordinal))
+            .Where(i => i >= 0)
+            .DefaultIfEmpty(text.Length - 1)
+            .Min();
+        return text[start..(end + 1)];
+    }
+
+    [Fact]
+    public void ARootCauseAnalysisTable_LeavesOutAColumnThatIsZeroOrNotRecordedInEveryRow_AndSaysSo()
+    {
+        var document = RcaDocument(sheet =>
+        {
+            foreach (var row in sheet.RootCause!.SpeedRows.Where(r => r.Total.HasValue))
+            {
+                row.Segments = RootCauseSegments.Time
+                    .Select((k, i) => new RootCauseSegment
+                    {
+                        Key = k,
+                        Label = RootCauseSegments.Label(k),
+                        Value = k is RootCauseSegments.OwnWaits or RootCauseSegments.Other ? 0 : 1.0 + i
+                    })
+                    .ToList();
+                row.Total = row.Segments.Sum(s => s.Value);
+            }
+        });
+
+        string speed = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaNamed), "### Where the time goes");
+
+        Assert.Contains("| Model | Wall time per question (median, tools included) | Time to first token | Output generation | Tool execution |\n", speed);
+        Assert.DoesNotContain("| Own waits and retries |", speed);
+        Assert.Contains("Left out because they are zero or not recorded in every row: own waits and retries and other.", speed);
+        Assert.Contains("It differs from the median model time the other tables of this document give, which leaves tool execution out.", speed);
+    }
+
+    [Fact]
+    public void AppendixG_GivesEachAnswerAsItsExcerpt_TheRubricWithoutItsSourceParagraphs_AndTheCriticalErrorResolution()
+    {
+        const string Rubric = "- The first rubric point.\n\nSOURCE: src/monst.c lines 10 to 20\nThe cited source text.\n\n- The second rubric point.";
+        var document = RcaDocument(content: content =>
+        {
+            foreach (var question in content.Questions!)
+            {
+                question.ExpectedPoints = Rubric;
+                question.ExpectedPointsRecorded = true;
+            }
+            foreach (var item in content.Runs.SelectMany(r => r.Questions))
+            {
+                item.AnswerExcerpt = "The excerpt of the answer.";
+                item.AnswerExcerptCut = true;
+                item.AnswerText = "The complete answer, which the analysis never prints.";
+                item.CriticalErrorResolution = "OverturnedByVerifier";
+            }
+        });
+
+        string appendix = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaNamed), "## Appendix G: Question details");
+
+        Assert.Contains("> - The first rubric point.\n", appendix);
+        Assert.Contains("> - The second rubric point.\n", appendix);
+        Assert.DoesNotContain("SOURCE", appendix);
+        Assert.DoesNotContain("The cited source text.", appendix);
+        Assert.Contains("**Answer excerpt:**\n\n> The excerpt of the answer.\n", appendix);
+        Assert.DoesNotContain("The complete answer", appendix);
+        Assert.Contains("**Critical error:** overturned by the claim verifier (cap lifted).\n", appendix);
+        Assert.Contains("Rubrics are shown without their source paragraphs.", appendix);
+        Assert.DoesNotContain("No answer to this question was given as an excerpt.", appendix);
+    }
+
+    [Fact]
+    public void AnObservation_StatesHowEachCriticalErrorOnItsQuestionsWasResolved()
+    {
+        var original = BenchmarkReportJson.Deserialize<BenchmarkReportContentSnapshot>(RootCauseReportFixture.ComparisonDocument().ContentJson);
+        var run = original.Runs.First(r => r.Questions.Count > 0);
+        int number = run.Questions[0].Number;
+        string q = "Q" + number.ToString(CultureInfo.InvariantCulture);
+        void Cite(BenchmarkReportWriterOutput w)
+        {
+            w.Observations![0].Questions = new List<int> { number };
+            w.Observations[0].Evidence = new List<string> { q };
+        }
+
+        var document = RcaDocument(
+            content: content =>
+            {
+                foreach (var item in content.Runs.SelectMany(r => r.Questions)) item.CriticalErrorResolution = null;
+                content.Runs.First(r => r.RunId == run.RunId && r.Letter == run.Letter).Questions[0].CriticalErrorResolution = "UpheldByVerifier";
+            },
+            writer: Cite);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+
+        string observations = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaNamed), "### What the graders recorded");
+
+        string model = sheet.Peers.Single(p => p.Letter == run.Letter).Label;
+        Assert.Contains("  - *Critical errors:* " + model + " on " + q + ": upheld by the claim verifier (cap applied).\n", observations);
+
+        // Stored without the resolutions, the observation prints none.
+        string stored = RcaSection(BenchmarkReportPackRenderer.Render(RcaDocument(
+            content: content =>
+            {
+                foreach (var item in content.Runs.SelectMany(r => r.Questions)) item.CriticalErrorResolution = null;
+            },
+            writer: Cite), RcaNamed), "### What the graders recorded");
+        Assert.DoesNotContain("*Critical errors:*", stored);
+    }
+
+    [Fact]
+    public void ReferenceSecond_TurnsADifferenceOrARatio_SoTheReferenceIsTheSecondModel()
+    {
+        var difference = new BenchmarkReportPairedTest
+        {
+            FirstLetter = "C", SecondLetter = "A", PairedItems = 12, EffectKind = "Difference", Effect = 4.5, Lower = 1.5, Upper = 7.0,
+            PValue = 0.01, AdjustedPValue = 0.02, Established = true, Favors = "First"
+        };
+        var turned = BenchmarkReportPackRenderer.ReferenceSecond(difference, "C");
+        Assert.Equal(("A", "C"), (turned.FirstLetter, turned.SecondLetter));
+        Assert.Equal((-4.5, -7.0, -1.5), (turned.Effect!.Value, turned.Lower!.Value, turned.Upper!.Value));
+        Assert.Equal("Second", turned.Favors);
+        Assert.Equal((12, 0.02, true), (turned.PairedItems, turned.AdjustedPValue!.Value, turned.Established));
+        Assert.Same(difference, BenchmarkReportPackRenderer.ReferenceSecond(difference, "A"));
+
+        var ratio = new BenchmarkReportPairedTest
+        {
+            FirstLetter = "C", SecondLetter = "B", EffectKind = "Ratio", Effect = 2.0, Lower = 1.25, Upper = 4.0, Favors = "Second", Established = true
+        };
+        var inverted = BenchmarkReportPackRenderer.ReferenceSecond(ratio, "C");
+        Assert.Equal(("B", "C"), (inverted.FirstLetter, inverted.SecondLetter));
+        Assert.Equal((0.5, 0.25, 0.8), (inverted.Effect!.Value, inverted.Lower!.Value, inverted.Upper!.Value));
+        Assert.Equal("First", inverted.Favors);
+    }
+
+    [Fact]
+    public void TheBodysPairedTests_PutTheReferenceSecond_HoweverThePairsWereStored()
+    {
+        string reference = string.Empty;
+        string Tables(BenchmarkReportDocument document)
+        {
+            string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
+            var facts = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+            var family = facts.PairedTests!.First(f => f.Mode != "AllPairs");
+            reference = facts.Peers.Single(p => p.Letter == family.ReferenceLetter).Label;
+            return RcaSection(text, "## Evidence: intelligence") + RcaSection(text, "## Evidence: speed") + RcaSection(text, "## Evidence: cost");
+        }
+
+        string stored = Tables(RcaDocument());
+        string flipped = Tables(RcaDocument(s =>
+        {
+            foreach (var measure in s.PairedTests!.Where(f => f.Mode != "AllPairs").SelectMany(f => f.Measures))
+            {
+                // Each pair stored the other way round.
+                bool ratio = measure.Measure != BenchmarkPairedTests.IntelligenceMeasure;
+                measure.Pairs = measure.Pairs.Select(p => BenchmarkReportPackRenderer.ReferenceSecond(p, p.FirstLetter, ratio)).ToList();
+            }
+        }));
+
+        Assert.Equal(stored, flipped);
+        var rows = RcaSection(stored, "### Paired tests against " + reference)
+            .Split('\n')
+            .Where(l => l.StartsWith("| ", StringComparison.Ordinal) && !l.StartsWith("| Pair |", StringComparison.Ordinal))
+            .ToList();
+        Assert.NotEmpty(rows);
+        Assert.All(rows, row => Assert.StartsWith("| ", row));
+        Assert.All(rows, row => Assert.Contains(" vs " + reference + " |", row));
+    }
+
+    [Fact]
+    public void AppendixA_PrintsNoResults_AndOnlyThePairedTestsTheBodyDoesNot_AndAppendixE_OnlyCountsAndConfiguration()
+    {
+        var document = RcaDocument();
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
+        string appendixA = RcaSection(text, "## Appendix A: Intelligence detail");
+
+        Assert.DoesNotContain("### Results\n", appendixA);
+        Assert.DoesNotContain("**Against ", appendixA);
+        Assert.DoesNotContain("Paired tests: every family", appendixA);
+        if (sheet.PairedTests!.Any(f => f.Mode == "AllPairs")) Assert.Contains("**Every pair**", appendixA);
+
+        string appendixE = RcaSection(text, "## Appendix E: Known facts");
+        foreach (var known in sheet.RootCause!.KnownFacts)
+        {
+            string line = "- **" + known.Number.ToString(CultureInfo.InvariantCulture) + ".** ";
+            if (known.Kind is "count" or "configuration") Assert.Contains(line, appendixE);
+            else Assert.DoesNotContain(line, appendixE);
+        }
+
+        // With only the reference family, the appendix points to the body instead of printing it again.
+        string pointer = RcaSection(BenchmarkReportPackRenderer.Render(RcaDocument(s => s.PairedTests = s.PairedTests!.Where(f => f.Mode != "AllPairs").ToList()), RcaNamed),
+            "## Appendix A: Intelligence detail");
+        Assert.Contains("### Paired tests\n\nEvery paired test of this comparison is under the evidence on intelligence, speed and cost.\n", pointer);
+    }
+
+    [Fact]
+    public void TheLowestDimensionSentence_CountsTheModelsTheResponseStyleRuleMarks()
+    {
+        var document = RcaDocument(sheet =>
+        {
+            var profiles = sheet.RootCause!.Profiles;
+            for (int i = 0; i < profiles.Count; i++)
+            {
+                profiles[i].Dimensions = new List<double?> { 90, i == 0 ? 80 : 70, 85, 88 };
+            }
+        });
+        int models = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson).RootCause!.Profiles.Count;
+        string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
+
+        string sentence = "Completeness is the lowest dimension for " + models + " of " + models + " models (10.0 to 20.0 points below Accuracy), "
+            + "and at least 13 points below Accuracy for " + (models - 1) + " of them.";
+        Assert.Contains(sentence + "\n", RcaSection(text, "## Evidence: intelligence"));
+        Assert.Contains("- " + sentence + "\n", RcaSection(text, "### What we found"));
+    }
+
+    [Fact]
+    public void TheSummary_StatesTheCheapestModel_AndAGraderFamilyGap_OnlyWhereItsContrastExcludesZero()
+    {
+        var document = RcaDocument(s =>
+        {
+            var ordered = s.Peers.OrderBy(p => p.Letter, StringComparer.Ordinal).ToList();
+            s.RootCause!.FamilyGaps = new List<RootCauseFamilyGap>
+            {
+                new()
+                {
+                    Provider1 = ordered[0].Provider, Provider2 = ordered[1].Provider, PairedQuestionCount = 12, IsMemberProviderPair = true,
+                    GapA = new RootCauseGapEstimate { Value = 3.9, Lower = 1.2, Upper = 6.6 },
+                    GapB = new RootCauseGapEstimate { Value = -1.2, Lower = -3.0, Upper = 0.6 },
+                    GapPanel = new RootCauseGapEstimate { Value = 1.4, Lower = 0.1, Upper = 2.7 },
+                    Contrast = new RootCauseGapEstimate { Value = 5.1, Lower = 2.0, Upper = 8.2 }
+                }
+            };
+        });
+        var peers = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson).Peers.OrderBy(p => p.Letter, StringComparer.Ordinal).ToList();
+
+        string named = BenchmarkReportPackRenderer.Render(document, RcaNamed);
+        Assert.Contains(" is the cheapest model, at $", RcaSection(named, "### What we found"));
+        Assert.Contains("> Grader family: the quality gap of models from " + peers[0].Provider + " minus models from " + peers[1].Provider
+            + ", the two panel members' own providers, is +3.9 points (95% interval +1.2 to +6.6) under Panel member A and -1.2 points (95% interval "
+            + "-3.0 to +0.6) under Panel member B, a contrast of +5.1 points (95% interval +2.0 to +8.2). The order between models of those two "
+            + "providers depends on the panel's balance.\n", RcaSection(named, "### How sure are we?"));
+
+        string anonymized = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaAnonymized), "### How sure are we?");
+        Assert.Contains("> Grader family: the quality gap of models from one panel member's provider minus models from the other member's provider is +3.9 points", anonymized);
+        Assert.DoesNotContain(peers[0].Provider, anonymized);
+
+        // A contrast whose interval includes zero, and a result stored without the gaps, print no sentence.
+        var included = RcaDocument(s => s.RootCause!.FamilyGaps = new List<RootCauseFamilyGap>
+        {
+            new() { Provider1 = "P", Provider2 = "Q", IsMemberProviderPair = true, GapA = new() { Value = 1 }, GapB = new() { Value = 0 }, Contrast = new() { Value = 1, Lower = -1, Upper = 3 } }
+        });
+        Assert.DoesNotContain("Grader family:", BenchmarkReportPackRenderer.Render(included, RcaNamed));
+        Assert.DoesNotContain("Grader family:", BenchmarkReportPackRenderer.Render(RcaDocument(), RcaNamed));
+    }
+
+    [Fact]
+    public void AppendixD_ListsWhatARunDecides_AndNamesItsGraders_ButAnAnonymizedCopyGivesAnUnknownGradersIdAlone()
+    {
+        var document = RcaDocument(sheet =>
+        {
+            var run = sheet.RootCause!.RecommendedRuns[0];
+            run.DecidesItems = new List<string> { "Confirms HQ1.1 if the gap stays.", "Refutes HS2.1 if the time ratio falls below 1." };
+            run.AssessorModelConfigurationId = 19;
+            run.AssessorName = "Northwind Grader @ medium";
+            run.ScoringProfileId = 1;
+            run.ScoringProfileName = "Default profile";
+        });
+
+        string named = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaNamed), "## Appendix D: Run settings");
+        Assert.Contains("- **Decides:**\n  - Confirms HQ1.1 if the gap stays.\n  - Refutes HS2.1 if the time ratio falls below 1.\n", named);
+        Assert.Contains("| Assessor | Northwind Grader @ medium (configuration 19) |\n", named);
+        Assert.Contains("| Scoring Profile | Default profile (profile 1) |\n", named);
+
+        string anonymized = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaAnonymized), "## Appendix D: Run settings");
+        Assert.Contains("| Assessor | configuration 19 |\n", anonymized);
+        Assert.DoesNotContain("Northwind Grader", anonymized);
+    }
+
+    [Fact]
+    public void AStoredFormat19RootCauseAnalysis_WithoutTheNewFields_RendersWithTheWordingItHadThen()
+    {
+        var document = RcaDocument(
+            s =>
+            {
+                s.RootCause!.FamilyGaps = null;
+                foreach (var stored in s.RootCause.RecommendedRuns)
+                {
+                    stored.DecidesItems = null;
+                    stored.ScoringProfileName = stored.AssessorName = stored.CoAssessorName = stored.ReferenceReaderName = stored.ClaimVerifierName = null;
+                }
+            },
+            c =>
+            {
+                foreach (var item in c.Runs.SelectMany(r => r.Questions)) item.CriticalErrorResolution = null;
+            });
+        document.ReportFormatVersion = 19;
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+
+        string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
+
+        Assert.Contains(" · generated under format version 19 · rendered with format version 20 · ", text);
+        Assert.DoesNotContain("Grader family:", text);
+        foreach (string resolution in new[] { "agreed by both members", "upheld by the claim verifier", "overturned by the claim verifier", "unresolved (averaged)", "single assessor" })
+        {
+            Assert.DoesNotContain("**Critical error:** " + resolution, text);
+        }
+        Assert.DoesNotContain("*Critical errors:*", text);
+        Assert.Contains("*Each answer shown is one the writer was given as an excerpt; the excerpts were chosen for the questions with critical errors "
+            + "or refuted sentences first, then the widest spread between models, then those every model scored low.*", text);
+
+        // The anonymized copy prints a run's text as stored, so the joined Decides reads verbatim.
+        string settings = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaAnonymized), "## Appendix D: Run settings");
+        foreach (var run in sheet.RootCause!.RecommendedRuns)
+        {
+            Assert.Contains("- **Decides:** " + run.Decides.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd().Replace('\n', ' ') + "\n", settings);
+            if (run.AssessorModelConfigurationId is long id)
+            {
+                Assert.Contains("| Assessor | configuration " + id.ToString(CultureInfo.InvariantCulture) + " |\n", settings);
+            }
+        }
+    }
+
+    [Fact]
+    public void TheComparisonRootCauseAnalysis_PlacesNoIntelligenceFigure_WhileTheModelScopeKeepsIt()
+    {
+        var rca = BenchmarkReportAudience.RootCauseAnalysis;
+        Assert.Equal(new[] { BenchmarkReportChartPlacement.RcaPointsAtRiskKey },
+            BenchmarkReportChartPlacement.KeysAt(rca, BenchmarkReportChartAnchor.RcaIntelligence, BenchmarkReportScope.Comparison));
+        Assert.Equal(new[] { BenchmarkReportChartPlacement.QualityKey, BenchmarkReportChartPlacement.RcaPointsAtRiskKey },
+            BenchmarkReportChartPlacement.KeysAt(rca, BenchmarkReportChartAnchor.RcaIntelligence, BenchmarkReportScope.Model));
+        Assert.Null(BenchmarkReportChartPlacement.AnchorOf(rca, BenchmarkReportChartPlacement.QualityKey, BenchmarkReportScope.Comparison));
+        Assert.Equal(BenchmarkReportChartAnchor.RcaIntelligence, BenchmarkReportChartPlacement.AnchorOf(rca, BenchmarkReportChartPlacement.QualityKey));
+        Assert.Equal(new[] { BenchmarkReportChartPlacement.SpeedKey, BenchmarkReportChartPlacement.QualitySpeedKey, BenchmarkReportChartPlacement.RcaSpeedKey },
+            BenchmarkReportChartPlacement.KeysAt(rca, BenchmarkReportChartAnchor.RcaSpeed, BenchmarkReportScope.Comparison));
     }
 
     [Fact]
@@ -1786,10 +2157,10 @@ public class BenchmarkReportPackRendererTests
     {
         Assert.Equal(4, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
         Assert.Equal(4, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(14, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(19, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
-        Assert.Equal(14, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(19, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(15, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(20, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(15, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(20, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         Assert.Contains(" · format version 4 · ", text);
