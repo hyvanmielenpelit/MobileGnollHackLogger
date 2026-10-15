@@ -22,6 +22,9 @@ using Overseer.Services.Benchmarking.RootCause;
 /// </summary>
 public static partial class BenchmarkReportPackPrompt
 {
+    /// <summary>The fact holding the first harness version that records provider availability, when the sheet carries one.</summary>
+    private const string ProviderHarnessKey = "rca.provider.harness";
+
     /// <summary>The fixed instruction text of a Root Cause Analysis in comparison or model scope.</summary>
     public static string BuildRootCauseSystemPrompt(bool comparisonScope)
     {
@@ -46,6 +49,8 @@ public static partial class BenchmarkReportPackPrompt
         AppendRootCauseSlots(sb, spec);
         AppendRootCauseLists(sb, comparisonScope);
         AppendRootCauseTokenRules(sb, comparisonScope);
+        AppendRootCausePlainLanguage(sb);
+        AppendRootCauseTerms(sb);
         AppendRootCauseClaimRules(sb, comparisonScope);
         AppendRootCauseEvidenceRules(sb, comparisonScope);
         AppendRootCauseWeighingRules(sb, comparisonScope);
@@ -72,7 +77,7 @@ public static partial class BenchmarkReportPackPrompt
     private static void AppendRootCauseDocument(StringBuilder sb)
     {
         Line(sb, "DOCUMENT: Root Cause Analysis.");
-        Line(sb, "Reader: the Overseer team, who maintain the Overseer chat, its tools and corpora, and the benchmark, and decide what to fix or measure next.");
+        Line(sb, "Reader: the Overseer team, who maintain the Overseer chat, its tools and corpora, and the benchmark, and decide what to fix or measure next; and readers without statistics training: the headline, the answers to the questions and the conclusions must be clear to them.");
         Line(sb, "Tone: precise and neutral US English in short sentences. Keep what was measured apart from what it may mean, and say how sure each reading is.");
         Line(sb, "The document is internal. Code prints the questions and rubrics beside your prose, but your prose never quotes them.");
         Line(sb);
@@ -83,7 +88,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "METHOD (code has applied it; your words follow it):");
         Line(sb, "- Observation before inference. The scope, the evidence slots and the observations state what was measured or what the graders recorded, never why. Causes belong to the hypotheses, the conclusions and the next runs.");
         Line(sb, "- The null hypothesis first. For a pair of models on an axis, H0-Q, H0-S or H0-C says the difference is within sampling noise; for one model's own contrast between groups of questions, H0-W says so. A null that stands is graded Moderate or Low; a rejected null is graded Not supported. While a pair's null stands, no mechanism for that pair is graded above Low.");
-        Line(sb, "- Effect sizes come with intervals. Paired tests are Holm-adjusted within their family; a decomposition share carries a 95 % bootstrap interval over the questions.");
+        Line(sb, "- Effect sizes come with intervals. Paired tests are Holm-adjusted within their family; a decomposition share carries a 95% bootstrap interval over the questions.");
         Line(sb, "- Decompositions are exact. A speed or cost difference is split additively, by the logarithmic-mean Divisia index, into components that sum to it; the Intelligence Index difference is split by the scoring weights into the dimensions. Points at risk are an upper bound, not a causal estimate. No correlation across models is ever a known fact.");
         Line(sb, "- Confounds. A pair hypothesis lists the configuration keys that differ between its models; an open confound caps it at Moderate.");
         Line(sb, "- Instrument before model. Every hypothesis has a locus: model (the model itself), chat (the Overseer chat prompt or its tools), harness (the grading or the instrument), suite (a question or its rubric), corpus (the data a tool reads) or provider (serving or infrastructure). A harness or suite hypothesis graded Moderate or higher puts the system first: model-selection runs wait until it is settled.");
@@ -216,18 +221,44 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Any other {{...}} token is an error.");
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" are allowed for a plain count, but prefer a fact token for any figure.");
         Line(sb, "- Never write a hypothesis id, a run number or a check number in the prose: cite the hypothesis by one of its rca.hypothesis.<id>.<n> tokens, a run by its rca.run.<n>.summary token and a check by its rca.check.<n> token.");
-        Line(sb, "- A token whose value reads 'N of M' is a noun phrase. Never put it after 'no' or make it the object of 'made'.");
+        Line(sb, "- A token whose value reads 'N of M' is a noun phrase. Never put it after 'no', make it the object of 'made', or end a clause with it: say right after it what it counts.");
         foreach (string rule in TokenShapeReminders)
         {
             Line(sb, "- " + rule);
         }
         Line(sb, "- A hypothesis' statement, a known fact and a check read as whole sentences: cite each as a sentence of its own.");
         Line(sb, comparisonScope
+            ? "- Never write a version number, in digits or in words. For the harness a model's runs used, cite its model.X.run.harnessVersion token; to say that older harness versions did not record a figure, say so without a number."
+            : "- Never write a version number, in digits or in words. For the harness the runs used, cite the run.harnessVersion token; to say that older harness versions did not record a figure, say so without a number.");
+        Line(sb, comparisonScope
             ? "- Refer to a question exactly as the QUESTION MATRIX does, for example Q7. This is the only form in which a digit may appear."
             : "- Refer to a question as its QUESTIONS row does, for example Q7 (S2-Q7 in a battery report). This is the only form in which a digit may appear.");
         Line(sb, "- Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader).");
         Line(sb, "- Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.");
         Line(sb, "- In the prose, never write a fact key outside its {{key}} token, and never describe the facts list, the fact sheet or how the data was given to you.");
+        Line(sb);
+    }
+
+    private static void AppendRootCausePlainLanguage(StringBuilder sb)
+    {
+        Line(sb, "PLAIN LANGUAGE (the headline, the answer slots and the conclusions are read by people without statistics training):");
+        Line(sb, "- In the headline, the answer slots and the conclusions, state the finding in everyday words first, then cite the hypothesis or status token that supports it.");
+        Line(sb, "- Cite at most two hypothesis labels in one sentence. When more hypotheses share a topic, name the topic and how many there are, and cite the strongest one: 'four related hypotheses about answering without tools, the strongest being' followed by its label token.");
+        Line(sb, "- A token whose value is a whole sentence (a statement, a known fact, a check, a profile flag) stands as a sentence of its own, or follows a colon. Never put it after 'at', 'with', 'as' or 'and' inside another sentence.");
+        Line(sb, "- Say what a null hypothesis' grade means: a rejected null (graded Not supported) means a real difference was found; a null that stands means the gap may be chance.");
+        Line(sb, "- The first time a slot uses a term that TERMS lists, use plain words instead, or add the term's gloss from TERMS in parentheses after it.");
+        Line(sb, "- Prefer verbs to chains of nouns: 'the model waits longest before it starts writing', not 'deliberation time before output'.");
+        Line(sb);
+    }
+
+    /// <summary>The TERMS block: each glossary term with its short gloss, which holds no digit, so the writer may copy it.</summary>
+    private static void AppendRootCauseTerms(StringBuilder sb)
+    {
+        Line(sb, "TERMS (each term with a plain gloss you may add in parentheses after it; a gloss holds no digit):");
+        foreach (var term in RootCauseGlossary.Terms)
+        {
+            Line(sb, $"- {term.Name}: {term.Gloss}");
+        }
         Line(sb);
     }
 
@@ -250,7 +281,7 @@ public static partial class BenchmarkReportPackPrompt
         {
             Line(sb, "- A sentence that ranks {{subject}} above or below a peer whose interval overlaps the subject's (that peer's intervalOverlap fact is true) says in the same sentence that the intervals overlap or that the order is not established, or cites that fact: '{{subject}} scored higher than {{peer:A}}, though the intervals overlap and the order is not established.' Where that peer's pairedExcludesZero fact is true, it says instead that the paired interval excludes zero. A speed or cost ranking needs no interval caveat, since no paired speed or cost result exists between the subject and a peer: '{{subject}} has a higher cost per question than {{peer:A}}.'");
         }
-        Line(sb, "- The interval level may be written as text only in the fixed phrase '95 % interval'; no other digit may appear in the prose.");
+        Line(sb, "- The interval level may be written as text only in the fixed phrase '95% interval'; no other digit may appear in the prose.");
         Line(sb, "- Never re-grade a hypothesis, never raise a qualitative reading above Low, and never invent a cause, a figure or a run.");
         Line(sb);
     }
@@ -550,7 +581,7 @@ public static partial class BenchmarkReportPackPrompt
             .Select(f => f.Key)
             .FirstOrDefault();
         Line(sb, "- Rule 3, digits: write every figure as its token" + (figure != null ? ", such as " + T(figure) : string.Empty)
-            + "; the only digits prose may hold are question references and the phrase '95 % interval'.");
+            + "; the only digits prose may hold are question references and the phrase '95% interval'.");
 
         string ranking;
         if (comparison)
@@ -652,6 +683,10 @@ public static partial class BenchmarkReportPackPrompt
         else
         {
             Line(sb, "Pricing basis: {{rca.pricingBasis}}. System first: {{rca.systemFirst}}.");
+            if (sheet.Facts.Any(f => f.Available && string.Equals(f.Key, ProviderHarnessKey, StringComparison.Ordinal)))
+            {
+                Line(sb, $"Provider availability is recorded from {{{{{ProviderHarnessKey}}}}} on: cite that token wherever you say which runs lack it, and never write the version.");
+            }
             foreach (string note in result.Notes.Where(n => !string.IsNullOrWhiteSpace(n)))
             {
                 Line(sb, $"Note: {OneLine(note)}");

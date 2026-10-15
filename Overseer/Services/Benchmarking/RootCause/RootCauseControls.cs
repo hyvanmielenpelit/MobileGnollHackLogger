@@ -308,7 +308,8 @@ public static class RootCauseControls
     public static (string? Cap, string? Reason) Limit(int count, int otherProviders)
     {
         if (count >= 2 && otherProviders >= 1) return (null, null);
-        if (count >= 1) return (RootCauseGrades.Moderate, "one control, or controls from one provider only");
+        if (count == 1) return (RootCauseGrades.Moderate, "only one other model answered these questions");
+        if (count >= 2) return (RootCauseGrades.Moderate, "every other model that answered these questions comes from the model's own provider");
         return (RootCauseGrades.Low, "no other model answered these questions");
     }
 

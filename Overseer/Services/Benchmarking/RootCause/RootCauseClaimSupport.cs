@@ -166,6 +166,53 @@ public sealed class RootCauseClaimSupport
     public static bool IsLabel(string key)
         => key.StartsWith(HypothesisPrefix, StringComparison.Ordinal) && key.EndsWith(LabelSuffix, StringComparison.Ordinal);
 
+    /// <summary>The parts of a hypothesis whose display is a sentence or a list of clauses.</summary>
+    private static readonly HashSet<string> SentenceShapedHypothesisParts = new(StringComparer.Ordinal)
+    {
+        "statement", "for", "against", "refutedIf", "gradeReasons"
+    };
+
+    private static readonly Regex ModelKeyPrefixRegex = new(@"^model\.[A-Z]+\.", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>The kinds of fact <see cref="IsSentenceShaped"/> marks, in words, for the prompt and the validator's notes.</summary>
+    public const string SentenceShapedKinds =
+        "a hypothesis' statement, evidence for or against, refuted-if statement or grade reasons; a known fact; a check; "
+        + "a research question or its signals; a model's list of flags; a notable finding's summary; and a response-style conflict";
+
+    /// <summary>
+    /// Whether a fact's display is a sentence, a clause or a list of clauses rather than a noun phrase, so the
+    /// writer must give it a sentence of its own, or write it after a colon, never after a word of its own
+    /// sentence: <c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.statement</c>, <c>.for</c>, <c>.against</c>,
+    /// <c>.refutedIf</c> and <c>.gradeReasons</c>; <c>rca.known.&lt;n&gt;</c>; <c>rca.check.&lt;n&gt;</c>;
+    /// <c>rca.question.&lt;n&gt;.text</c> and <c>.signals</c>; <c>rca.profile.&lt;T&gt;.flags</c>;
+    /// <c>notable.&lt;n&gt;.summary</c>; and <c>style.responseStyleConflict</c>, bare or under a model's letter,
+    /// when its <paramref name="display"/> states a conflict (it opens with a capital letter). A hypothesis'
+    /// label and each single flag are noun phrases and are never marked.
+    /// </summary>
+    public static bool IsSentenceShaped(string key, string? display = null)
+    {
+        if (string.IsNullOrEmpty(key)) return false;
+        string bare = ModelKeyPrefixRegex.Replace(key, string.Empty);
+        string[] parts = bare.Split('.');
+
+        if (bare == "style.responseStyleConflict")
+        {
+            string text = (display ?? string.Empty).TrimStart();
+            return text.Length > 0 && char.IsUpper(text[0]);
+        }
+        if (parts.Length == 3 && parts[0] == "notable" && parts[2] == "summary") return true;
+        if (parts.Length < 3 || parts[0] != "rca") return false;
+
+        return parts[1] switch
+        {
+            "hypothesis" => parts.Length == 5 && SentenceShapedHypothesisParts.Contains(parts[4]),
+            "known" or "check" => parts.Length == 3,
+            "question" => parts.Length == 4 && parts[3] is "text" or "signals",
+            "profile" => parts.Length == 4 && parts[3] == "flags",
+            _ => false
+        };
+    }
+
     /// <summary>A token of a hypothesis the sheet holds, its label included.</summary>
     public bool IsHypothesisToken(string key) => _facts.ContainsKey(key) && PrefixesOf(key).Any();
 

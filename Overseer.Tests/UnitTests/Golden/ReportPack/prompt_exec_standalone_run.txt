@@ -180,7 +180,7 @@ run.toolGuidesSha256 = f59d8b30a1c7
 scoring.criticalErrorCap = 25
 scoring.levels = 1, 15, 35, 55, 72, 87, 100
 scoring.methodVersion = 12
-scoring.weights = Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %
+scoring.weights = Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%
 speed.modelTimeP50 = 12.3 s
 speed.modelTimeP90 = 15.0 s
 speed.rank = unavailable: A stand-alone run report has no peers.
@@ -192,11 +192,11 @@ tools.callsPerQuestion = 3.5
 tools.callsPerQuestion.peerMean = unavailable: A stand-alone run report has no peers.
 tools.failed = 0
 tools.refusedByBudget = 0
-tools.share.knowledgeBase = 0 %
-tools.share.other = 0 %
-tools.share.sourceCode = 57 %
-tools.share.structuredLookup = 14 %
-tools.share.wiki = 29 %
+tools.share.knowledgeBase = 0%
+tools.share.other = 0%
+tools.share.sourceCode = 57%
+tools.share.structuredLookup = 14%
+tools.share.wiki = 29%
 tools.zeroKnowledgeBaseAnswers = unavailable: No question of this suite is a knowledge-base topic; the prompt routes game mechanics past the knowledge base.
 
 RESPONSE STYLE

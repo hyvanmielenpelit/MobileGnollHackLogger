@@ -356,7 +356,7 @@ public static class BenchmarkReportContent
     /// <summary>
     /// The whole text when it fits in <paramref name="maxChars"/>. Otherwise the text cut back to the
     /// last sentence end or line break at or before that position, or, when neither lies in the last
-    /// 40 % of it, to the last whitespace (a hard cut when there is none), with trailing whitespace
+    /// 40% of it, to the last whitespace (a hard cut when there is none), with trailing whitespace
     /// removed and an ellipsis appended. A cut never falls inside a Markdown table: when the limit
     /// does, the excerpt ends before the table with <see cref="TableFollows"/>.
     /// </summary>

@@ -6,7 +6,7 @@ import { cardSentence, formatInteger, formatPercent } from './provider-availabil
 let nextBadgeId = 0;
 
 /**
- * A card's outlined provider-error badge: `Provider errors 0.81 %` and/or `2 re-runs`, with the full
+ * A card's outlined provider-error badge: `Provider errors 0.81%` and/or `2 re-runs`, with the full
  * sentence in a tooltip (`12 of 1,480 attempts; 3 unattributed; 2 re-runs, 1 for provider errors`).
  * It renders nothing unless the figures are recorded and show provider errors or re-runs, so a card
  * says nothing while all is well. Distinct from `app-provider-badge`, the provider's name.
@@ -29,7 +29,7 @@ export class ProviderErrorBadgeComponent implements OnInit {
   /** The tooltip's id and anchor name, unique per badge: the inputs carry no id. */
   readonly tipId = `peb-tip-${++nextBadgeId}`;
 
-  /** `Provider errors 0.81 %`, or null without provider errors. */
+  /** `Provider errors 0.81%`, or null without provider errors. */
   readonly errorsText = computed(() => {
     const k = this.providerErrors() ?? 0;
     if (!this.recorded() || k <= 0) {

@@ -81,7 +81,7 @@ public static class RootCauseNextRuns
 
     /// <summary>
     /// One run in a short phrase, the display of its <c>rca.run.&lt;n&gt;.summary</c> fact: <c>Run 1, a replicate
-    /// of all nine models (about $260 and 528 minutes)</c>. The run's card in the document holds its details.
+    /// of all nine models (about $260 and 8 h 50 min)</c>. The run's card in the document holds its details.
     /// Each model name is written through <paramref name="modelName"/> when it is given, so a comparison-scope
     /// fact names no model; a run of every one of <paramref name="analyzedModels"/> models (three or more)
     /// says so instead of listing them.
@@ -97,13 +97,52 @@ public static class RootCauseNextRuns
         return "Run " + Inv(run.Number) + ", " + Article(KindPhrase(run.Kind)) + " of " + models + (estimate.Length > 0 ? " (" + estimate + ")" : string.Empty);
     }
 
-    /// <summary><c>about $260 and 528 minutes</c>: whole dollars from ten up; empty when the run is not estimated.</summary>
+    /// <summary>
+    /// <c>about $7.50 and 14 minutes</c>, <c>about $240 and 7 h 50 min</c>: each figure to two significant figures,
+    /// whole dollars from $10 and cents below, and from 90 minutes up in hours and minutes. Empty when the run
+    /// is not estimated.
+    /// </summary>
     public static string EstimateText(RootCauseRecommendedRun run)
     {
         ArgumentNullException.ThrowIfNull(run);
         if (run.EstimatedCostUsd is not double cost) return string.Empty;
-        string usd = cost >= 10 ? "$" + BenchmarkReportFormat.Count(cost) : BenchmarkReportFormat.Usd(cost);
-        return "about " + usd + (run.EstimatedMinutes is double minutes ? " and " + BenchmarkReportFormat.Count(minutes) + " minutes" : string.Empty);
+        return "about " + Dollars(cost) + (run.EstimatedMinutes is double minutes ? " and " + Duration(minutes) : string.Empty);
+    }
+
+    /// <summary><c>$7.50</c>, <c>$0.046</c>, <c>$240</c>, <c>$1,200</c>: two significant figures, whole dollars from $10.</summary>
+    public static string Dollars(double usd)
+    {
+        double rounded = TwoSignificant(Math.Max(usd, 0));
+        if (rounded >= 10) return "$" + rounded.ToString("#,0", CultureInfo.InvariantCulture);
+        return "$" + rounded.ToString(rounded >= 0.1 || rounded == 0 ? "0.00" : "0.00##", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// <c>14 minutes</c>, <c>7 h 50 min</c>, <c>20 h</c>: two significant figures, in hours and minutes from 90
+    /// minutes up; <c>less than a minute</c> below one.
+    /// </summary>
+    public static string Duration(double minutes)
+    {
+        double rounded = TwoSignificant(Math.Max(minutes, 0));
+        if (rounded < 1) return "less than a minute";
+        int whole = (int)Math.Round(rounded, MidpointRounding.AwayFromZero);
+        if (whole < 90) return Inv(whole) + (whole == 1 ? " minute" : " minutes");
+        int hours = whole / 60, rest = whole % 60;
+        return Inv(hours) + " h" + (rest > 0 ? " " + Inv(rest) + " min" : string.Empty);
+    }
+
+    /// <summary><paramref name="value"/> rounded to two significant figures, half away from zero; zero stays zero.</summary>
+    private static double TwoSignificant(double value)
+    {
+        if (value <= 0) return 0;
+        int exponent = 1 - (int)Math.Floor(Math.Log10(value));
+        if (exponent >= 0)
+        {
+            double scale = Math.Pow(10, exponent);
+            return Math.Round(value * scale, MidpointRounding.AwayFromZero) / scale;
+        }
+        double divisor = Math.Pow(10, -exponent);
+        return Math.Round(value / divisor, MidpointRounding.AwayFromZero) * divisor;
     }
 
     /// <summary>The kind as a phrase inside a sentence: <c>replicate</c>, <c>thinking-level pair</c>, ….</summary>

@@ -190,10 +190,10 @@ describe('chat-consistency-format', () => {
   describe('provider errors', () => {
     it('writes a row\'s rate with its count and re-runs, and Not recorded before the ledger', () => {
       expect(providerErrorsText({ availabilityRecorded: true, validAttemptCount: 1480, providerErrorCount: 12 }))
-        .toBe('0.81 % (12 of 1,480 attempts)');
+        .toBe('0.81% (12 of 1,480 attempts)');
       expect(providerErrorsText({
         availabilityRecorded: true, validAttemptCount: 1480, providerErrorCount: 12, rerunsNeeded: 2, providerRerunsNeeded: 1
-      })).toBe('0.81 % (12 of 1,480 attempts); 2 re-runs (1 for provider errors)');
+      })).toBe('0.81% (12 of 1,480 attempts); 2 re-runs (1 for provider errors)');
       expect(providerErrorsText({ availabilityRecorded: true, validAttemptCount: 0, providerErrorCount: 0 })).toBe('No valid attempts');
       expect(providerErrorsText({ availabilityRecorded: false })).toBe('Not recorded');
       expect(providerErrorsText({})).toBe('Not recorded');

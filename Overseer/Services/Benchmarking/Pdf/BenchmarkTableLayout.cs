@@ -26,7 +26,7 @@ internal sealed record BenchmarkTableLayout
         ["Cost per run, graders included"] = "Cost/run",
         ["Critical-error rate"] = "Crit. rate",
         ["Provider errors"] = "Prov. err.",
-        ["Paired difference (95 % interval)"] = "Paired diff.",
+        ["Paired difference (95% interval)"] = "Paired diff.",
         ["Better / similar / worse"] = "B / S / W",
         ["May mislead per 20"] = "Mislead/20",
         ["Correct / partial / incorrect / not attempted"] = "Outcomes",

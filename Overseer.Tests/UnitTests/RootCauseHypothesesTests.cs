@@ -60,9 +60,9 @@ public class RootCauseHypothesesTests
     }
 
     [Theory]
-    [InlineData(RootCauseCheckStatuses.Failed, "failed")]
-    [InlineData(RootCauseCheckStatuses.NotAssessable, "could not be assessed")]
-    public void ExactlyOneCondition_IsModerate_WithItsReason(string status, string wording)
+    [InlineData(RootCauseCheckStatuses.Failed)]
+    [InlineData(RootCauseCheckStatuses.NotAssessable)]
+    public void ExactlyOneCondition_IsModerate_WithItsReason(string status)
     {
         var checks = AllPassed();
         checks[1] = Check(RootCauseHypotheses.Replicates, status);
@@ -70,7 +70,7 @@ public class RootCauseHypothesesTests
         var graded = Grade(Draft(checks: checks));
 
         Assert.Equal(RootCauseGrades.Moderate, graded.Grade);
-        Assert.Contains(graded.GradeReasons, r => r.StartsWith("replicates " + wording, StringComparison.Ordinal));
+        Assert.Contains(RootCauseHypotheses.CheckReason(checks[1]), graded.GradeReasons);
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public class RootCauseHypothesesTests
         var graded = Grade(Draft(quantified: false, checks: AllPassed()));
 
         Assert.Equal(RootCauseGrades.Low, graded.Grade);
-        Assert.Contains("qualitative only", graded.GradeReasons);
+        Assert.Contains(RootCauseHypotheses.QualitativeReason, graded.GradeReasons);
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public class RootCauseHypothesesTests
         var graded = Grade(Draft(nullStands: true, checks: AllPassed()));
 
         Assert.Equal(RootCauseGrades.Low, graded.Grade);
-        Assert.Contains("the pair's null hypothesis stands", graded.GradeReasons);
+        Assert.Contains(RootCauseHypotheses.NullStandsReason, graded.GradeReasons);
     }
 
     [Theory]

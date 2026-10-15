@@ -47,15 +47,15 @@ The baseline ran from 2026-09-01 00:00 UTC to 2026-09-08 00:00 UTC, and the comp
 
 ## Measurements with intervals
 
-| Endpoint | Change (95 % interval) | Margin | Verdict and grade | Smallest detectable |
+| Endpoint | Change (95% interval) | Margin | Verdict and grade | Smallest detectable |
 |---|---|---|---|---|
 | Quality (P1) | −4.2 index points (−6.0 to −3.1 index points) | ±3 index points | Degraded, Indicated | ±2.5 index points |
-| Time to first answer text (P2) | +2.0 % (−4.9 to +9.4 %) | ±15 % | Equivalent, Established | ±8.3 % |
-| Cost per answer (P5) | +3.1 % (−3.9 to +10.5 %) | ±10 % | Inconclusive, Not established | ±12.7 % |
+| Time to first answer text (P2) | +2.0% (−4.9 to +9.4%) | ±15% | Equivalent, Established | ±8.3% |
+| Cost per answer (P5) | +3.1% (−3.9 to +10.5%) | ±10% | Inconclusive, Not established | ±12.7% |
 
-- **Quality (P1):** 90 % interval −5.6 to −3.4 index points; Holm-adjusted p 0.016; a comparison run lacks call telemetry
-- **Time to first answer text (P2):** 90 % interval −3.9 to +8.3 %; Holm-adjusted p 1.000
-- **Cost per answer (P5):** 90 % interval −3.0 to +9.4 %; Holm-adjusted p 0.800
+- **Quality (P1):** 90% interval −5.6 to −3.4 index points; Holm-adjusted p 0.016; a comparison run lacks call telemetry
+- **Time to first answer text (P2):** 90% interval −3.9 to +8.3%; Holm-adjusted p 1.000
+- **Cost per answer (P5):** 90% interval −3.0 to +9.4%; Holm-adjusted p 0.800
 
 - **Answer streaming rate (P3), not computable:** No telemetry run in the baseline.
 
@@ -111,8 +111,8 @@ Please tell us whether anything changed on your side in the period of Undeclared
 ## How to read this
 
 - **What was measured.** The Overseer chat with Test Model: the model together with the chat system prompt, the tools, the knowledge corpora and the agent loop. The same benchmark suites were run in a baseline period and a later comparison period, and each endpoint compares the two.
-- **The endpoints.** Quality (P1), Time to first answer text (P2), Answer streaming rate (P3) and Cost per answer (P5). Each estimate comes with its 95 % interval.
-- **Verdicts.** Each verdict is read against the endpoint's equivalence margin, set by the protocol: *equivalent* when the 90 % interval lies inside the margin; *degraded* or *improved* (*more work* or *less work* for an endpoint that counts work) when the 95 % interval lies wholly beyond the margin on one side; *changed, negligible* when the 95 % interval excludes zero but lies inside the margin; *inconclusive* otherwise, when the runs cannot tell a change from no change. The smallest detectable change, ± the minimum detectable effect, is the smallest change these runs could have detected.
+- **The endpoints.** Quality (P1), Time to first answer text (P2), Answer streaming rate (P3) and Cost per answer (P5). Each estimate comes with its 95% interval.
+- **Verdicts.** Each verdict is read against the endpoint's equivalence margin, set by the protocol: *equivalent* when the 90% interval lies inside the margin; *degraded* or *improved* (*more work* or *less work* for an endpoint that counts work) when the 95% interval lies wholly beyond the margin on one side; *changed, negligible* when the 95% interval excludes zero but lies inside the margin; *inconclusive* otherwise, when the runs cannot tell a change from no change. The smallest detectable change, ± the minimum detectable effect, is the smallest change these runs could have detected.
 - **Evidence grades.** *Established*: a decisive verdict, every robustness check passed, the minimum sample met, telemetry-grade data and no pooling across a measurement change. *Indicated*: a decisive verdict with a failed robustness check, legacy data, pooling across a measurement change or a sample below the minimum. *Not established*: inconclusive, or nothing to support a claim. Only an Established result is fit to publish.
 - **Hours.** Every result holds for weekdays 04–12 UTC only, the hours both periods share. It says nothing about the hours outside them.
 - **Attribution.** The total change is reported first; the attribution then grades where it came from: our change, our infrastructure, the provider's side, or undetermined. An attribution never goes beyond its grade.
@@ -133,7 +133,7 @@ Please tell us whether anything changed on your side in the period of Undeclared
 - **Baseline:** runs #10 and #11
 - **Comparison:** runs #20 and #21
 - **Control runs:** #30, #31
-- **Report format version:** 3
+- **Report format version:** 4
 
 ## Evaluation terms
 
@@ -142,6 +142,6 @@ Please tell us whether anything changed on your side in the period of Undeclared
 
 ---
 
-*Document ID 41 · format version 3 · created 2026-09-28 10:42 UTC · writer Writer One (Anthropic, writer-1) · disclosure Detailed · controls anonymized*
+*Document ID 41 · format version 4 · created 2026-09-28 10:42 UTC · writer Writer One (Anthropic, writer-1) · disclosure Detailed · controls anonymized*
 
 *Figures and tables were computed by Overseer from the saved chat consistency analysis. The prose was written by Writer One from those figures and checked automatically for structure, permitted figures, word limits, control-model names, hype words, spelling, readable text and the claim rules on change, cause, intent, mechanism, public claims and hours; the checks do not verify the prose's interpretations.*

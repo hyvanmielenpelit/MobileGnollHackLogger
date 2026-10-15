@@ -33,6 +33,7 @@ import { ModelPickerComponent, ModelPickerKey, ModelPickerOption, toModelPickerO
 import { ModelMultiPickerComponent } from '../../../shared/model-picker/model-multi-picker.component';
 import { ModelIdentityComponent } from '../../../shared/model-identity/model-identity.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
+import { LoadingIndicatorComponent } from '../../../shared/loading-indicator/loading-indicator.component';
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { ensureOverlayPolyfills, refreshAnchorPositioning } from '../../../utils/polyfills.util';
@@ -148,6 +149,8 @@ export interface LayoutPreviewItem {
 export interface ReportPackChartCell {
   readonly text: string;
   readonly retry: boolean;
+  /** The charts are being drawn and attached now. */
+  readonly pending: boolean;
 }
 
 /** One row of the document progress list. */
@@ -219,12 +222,15 @@ export const REPORT_PACK_CHART_STORAGE_MISSING_TEXT =
 /** The Reference model option that sends no reference: the server judges against the highest Intelligence Index. */
 export const REPORT_PACK_HIGHEST_INDEX_REFERENCE = 'Highest Intelligence Index';
 
-/** The note beside Generate: the charts are drawn by this browser while the wizard is open. */
+/**
+ * The note in the job card while charts can still be pending: this browser draws the charts while the
+ * wizard is open, and a document that finishes while it is closed gets none.
+ */
 export const REPORT_PACK_KEEP_OPEN_TEXT =
-  'Keep this wizard open until every document shows its charts. Charts are drawn by this browser as each '
-  + 'document finishes; if you close it, add them on step 4 with Update charts…';
+  'Keep this wizard open until every document shows its charts: this browser draws them as each document '
+  + 'finishes. If you close it, add them later on step 4 with Update charts…';
 
-/** The paragraph under the step heading: where these reports are kept, and where a run's own reports are written. */
+/** The info tip beside New report pack: where these reports are kept, and where a run's own reports are written. */
 export const REPORT_PACK_LEAD_TEXT =
   'These reports are kept with the comparison: step 4 lists them, and so does Comparison reports on the Model '
   + 'Comparison tab. A run\'s or battery run\'s own reports are written in the AI Reports tab of its report.';
@@ -241,6 +247,12 @@ export const REPORT_PACK_ALL_WRITTEN_REASON =
 /** Why Generate is unavailable when the checked documents are not the same for every model checked. */
 export const REPORT_PACK_UNEVEN_MODELS_REASON =
   'One job writes the same documents for every model it covers. Check the same documents for each model, or write them in separate jobs.';
+
+/** Why Generate is unavailable while a job is starting or running; the main area shows the job. */
+export const REPORT_PACK_JOB_RUNNING_REASON = 'A report pack is being written. Wait for it to finish, or cancel it.';
+
+/** Why Generate is unavailable while the estimate is computed; the estimate panel shows *Estimating…*. */
+export const REPORT_PACK_ESTIMATING_REASON = 'Checking the writer and estimating the cost…';
 
 /** The job statuses after which nothing changes. */
 const FINISHED_JOB_STATUSES = new Set(['Completed', 'CompletedWithErrors', 'Canceled', 'Failed']);
@@ -424,7 +436,7 @@ interface CheckedEstimate {
   imports: [
     RunReportFrameComponent, ModelPickerComponent, ModelMultiPickerComponent, InfoTipComponent, ReportChartPickerComponent,
     ComparisonDocumentsStatusComponent, PdfViewerDialogComponent, ReportValidationDetailsComponent, ModelIdentityComponent,
-    NgTemplateOutlet
+    LoadingIndicatorComponent, NgTemplateOutlet
   ],
   templateUrl: './report-pack-panel.component.html',
   styleUrls: ['./report-pack-panel.component.scss'],
@@ -498,7 +510,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return this.currentChartStatus;
   }
 
-  /** The prefix of every id in the panel, so the wizard can label its step region by `${idPrefix}-heading`. */
+  /** The prefix of every id in the panel. */
   @Input() idPrefix = 'rp';
 
   /** The writer field's *How the graders work* link: the host opens the guide at *Choosing grader models*. */
@@ -792,22 +804,6 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  /** `<suite> · N models`, and how many of them are Excluded. */
-  get subtitle(): string {
-    const suite = this.currentContext?.suiteName || 'Suite not set';
-    const models = this.currentContext?.entries.length ?? 0;
-    const excluded = models - this.modelOptions.length;
-    const parts = [suite, plural(models, 'model', 'models')];
-    if (excluded > 0) {
-      parts.push(`${excluded} Excluded`);
-    }
-    return parts.join(' · ');
-  }
-
-  get headingId(): string {
-    return `${this.idPrefix}-heading`;
-  }
-
   requestGraderGuide(): void {
     this.graderGuideRequested.emit();
   }
@@ -898,8 +894,13 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return this.modelOptions.find(option => option.key === key)?.model.label ?? key;
   }
 
-  /** What Generate writes, in one line under the picker. */
+  /** What Generate writes, in one line under the picker, and how many entries are Excluded and not offered. */
   get modelsLine(): string {
+    const excluded = this.excludedNote;
+    return excluded ? `${this.writesLine} ${excluded}` : this.writesLine;
+  }
+
+  private get writesLine(): string {
     const chosen = this.chosenKeys;
     const offered = this.modelOptions.map(option => String(option.key));
     if (this.scopeMode === 'comparison') {
@@ -913,6 +914,17 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       return `Writes the per-model documents of ${comparisonModelMention(chosen[0], this.modelOptions)}, compared with the other models.`;
     }
     return `Writes the per-model documents of ${chosen.length} models, one set each, each compared with the other models.`;
+  }
+
+  /** `1 entry of this comparison is Excluded and is not offered.`, or null when none is. */
+  private get excludedNote(): string | null {
+    const excluded = (this.currentContext?.entries.length ?? 0) - this.modelOptions.length;
+    if (excluded <= 0) {
+      return null;
+    }
+    return excluded === 1
+      ? '1 entry of this comparison is Excluded and is not offered.'
+      : `${excluded} entries of this comparison are Excluded and are not offered.`;
   }
 
   /** Why a whole-comparison choice starts with fewer than every model, or null. */
@@ -1611,7 +1623,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   /** Why Generate is unavailable, or null when it can start. */
   get generateBlockedReason(): string | null {
     if (this.jobInProgress) {
-      return 'A report pack is being written. Wait for it to finish, or cancel it.';
+      return REPORT_PACK_JOB_RUNNING_REASON;
     }
     if (this.modelOptions.length === 0) {
       return 'Every entry of this comparison is Excluded, so no document can be written.';
@@ -1646,7 +1658,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     }
     if (this.previewPending) {
       return this.documentsView.state === 'ready'
-        ? 'Checking the writer and estimating the cost…'
+        ? REPORT_PACK_ESTIMATING_REASON
         : 'Looking up the documents already written…';
     }
     if (this.previewError) {
@@ -1667,6 +1679,15 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
    */
   get generateAriaDisabled(): boolean {
     return this.generateBlockedReason === REPORT_PACK_ALL_WRITTEN_REASON;
+  }
+
+  /**
+   * The blocked reason is visually hidden, and still Generate's description, while its fact is already
+   * in view: the main area shows the job and Cancel Job, or the estimate panel shows *Estimating…*.
+   */
+  protected get generateBlockedReasonShownElsewhere(): boolean {
+    const reason = this.generateBlockedReason;
+    return reason === REPORT_PACK_JOB_RUNNING_REASON || reason === REPORT_PACK_ESTIMATING_REASON;
   }
 
   /** The Generate button's description: the estimate, and the reason it is blocked while it is. */
@@ -1712,6 +1733,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (!request || this.starting || this.jobInProgress) {
       return;
     }
+    // Focus is on the progress area before Generate disables; a stacked layout scrolls it into view.
+    this.focusProgressHeading();
     this.starting = true;
     this.startError = null;
     this.pollError = null;
@@ -1752,10 +1775,27 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
         }
         this.startError = this.startErrorMessage(error);
         this.syncRunning();
-        this.cdr.markForCheck();
+        this.focusGenerateIfEnabled();
       }
     });
     this.cdr.markForCheck();
+  }
+
+  private focusProgressHeading(): void {
+    document.getElementById(`${this.idPrefix}-progress-heading`)?.focus();
+  }
+
+  /**
+   * After a refused start: back to Generate when it can be used again; otherwise focus stays on the
+   * progress heading, and the error's `role="alert"` announces it.
+   */
+  private focusGenerateIfEnabled(): void {
+    // Renders now, so the button's disabled state is the one the refusal leaves.
+    this.cdr.detectChanges();
+    const button = this.generateButton?.nativeElement;
+    if (button && !button.disabled) {
+      button.focus();
+    }
   }
 
   private startErrorMessage(error: HttpErrorResponse): string {
@@ -1793,6 +1833,22 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   /** A job is running: the host keeps the wizard from closing on it unawares. */
   get jobRunning(): boolean {
     return this.jobInProgress;
+  }
+
+  /**
+   * From Generate until the job's first reading: the start request, then the wait for the first
+   * progress. The main area shows the starting panel in place of the job card meanwhile.
+   */
+  get isStarting(): boolean {
+    return this.starting || (this.activeJobId !== null && this.job === null && !this.pollError);
+  }
+
+  /**
+   * The keep-open note, in the job card while charts can still be pending: the job runs, or a written
+   * document's charts are being drawn. Never without chart storage, which draws none.
+   */
+  get showKeepOpenNote(): boolean {
+    return !this.chartStorageMissing && (this.jobInProgress || this.documentRows.some(row => row.charts.pending));
   }
 
   /** The job has finished; its card shows a one-line summary. */
@@ -1872,7 +1928,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   get jobStatusLine(): string {
     const job = this.job;
     if (!job) {
-      return this.activeJobId ? 'Starting the report pack…' : '';
+      return this.starting || this.activeJobId ? 'Starting the report pack…' : '';
     }
     const total = job.documents.length;
     const finished = job.documents.filter(d => FINISHED_DOCUMENT_STATUSES.has(d.status)).length;
@@ -1974,21 +2030,21 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
 
   private chartCell(doc: BenchmarkReportPackDocumentProgressDto): ReportPackChartCell {
     if (this.chartStorageMissing || (this.chartSelection[doc.audience] ?? []).length === 0) {
-      return { text: 'Charts: none', retry: false };
+      return { text: 'Charts: none', retry: false, pending: false };
     }
     const status = doc.documentId === null ? undefined : this.chartStatus[doc.documentId];
     if (!status) {
-      return { text: '—', retry: false };
+      return { text: '—', retry: false, pending: false };
     }
     switch (status.state) {
       case 'attaching':
-        return { text: 'Charts: attaching…', retry: false };
+        return { text: 'Charts: attaching…', retry: false, pending: true };
       case 'done':
-        return { text: `Charts: ${numberFormat.format(status.count)}`, retry: false };
+        return { text: `Charts: ${numberFormat.format(status.count)}`, retry: false, pending: false };
       case 'failed':
-        return { text: 'Charts failed — retry', retry: true };
+        return { text: 'Charts failed — retry', retry: true, pending: false };
       default:
-        return { text: 'Charts: none', retry: false };
+        return { text: 'Charts: none', retry: false, pending: false };
     }
   }
 
@@ -2051,7 +2107,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.pollError = null;
     this.syncRunning();
     this.cdr.markForCheck();
-    document.getElementById(`${this.idPrefix}-progress-heading`)?.focus();
+    this.focusProgressHeading();
   }
 
   cancelJob(): void {

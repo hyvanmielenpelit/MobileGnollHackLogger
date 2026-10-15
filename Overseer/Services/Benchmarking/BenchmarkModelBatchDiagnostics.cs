@@ -230,7 +230,7 @@ public static class BenchmarkModelBatchDiagnostics
         => value.HasValue ? value.Value.ToString("0", CultureInfo.InvariantCulture) + " ms" : "n/a";
 
     private static string Percent(double? value)
-        => value.HasValue ? (value.Value * 100).ToString("0.0", CultureInfo.InvariantCulture) + " %" : "n/a";
+        => value.HasValue ? (value.Value * 100).ToString("0.0", CultureInfo.InvariantCulture) + "%" : "n/a";
 
     private static string Number(double? value)
         => value.HasValue ? value.Value.ToString("0.0", CultureInfo.InvariantCulture) : "n/a";

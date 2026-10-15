@@ -180,7 +180,7 @@ public class BenchmarkGroupReportBuilderTests
         // it covers both. Collapsing them would hide that only one can be bought down with runs.
         Assert.Contains("Would a re-run move this?", md);
         Assert.Contains("Would a different set of questions move this?", md);
-        Assert.Contains("Combined 95 % interval", md);
+        Assert.Contains("Combined 95% interval", md);
         Assert.Contains("does not shrink as more runs are added, and that is correct", md);
     }
 
@@ -812,7 +812,7 @@ public class BenchmarkGroupReportBuilderTests
             group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
 
         // Per-run indices 74 / 84 / 94 give a sample SD of exactly 10 on df = 2.
-        Assert.Contains("SD 10.00, 95 % interval on σ [5.21, 62.85], from the χ²(2) distribution", md);
+        Assert.Contains("SD 10.00, 95% interval on σ [5.21, 62.85], from the χ²(2) distribution", md);
         Assert.Contains("the upper bound is 6.3 × the point estimate", md);
         Assert.Contains("two groups' SDs are not comparable point estimates", md);
     }
@@ -834,7 +834,7 @@ public class BenchmarkGroupReportBuilderTests
         string md = BenchmarkGroupReportBuilder.BuildMarkdownReport(
             group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
 
-        Assert.DoesNotContain("95 % interval on σ", md);
+        Assert.DoesNotContain("95% interval on σ", md);
     }
 
     // --- Time to first token ----------------------------------------------------------------------
@@ -997,7 +997,7 @@ public class BenchmarkGroupReportBuilderTests
         // $3.10 of verifier spend over 31 claims, 23 supported and 8 indeterminate.
         Assert.Contains("**Cost per claim checked:** $0.1000 — $3.10 over 31 claims", md);
         Assert.Contains("**Cost per refutation:** no refutations, so this ratio does not exist", md);
-        Assert.Contains("**Indeterminate share:** 25.8 % — 8 of 31", md);
+        Assert.Contains("**Indeterminate share:** 25.8% — 8 of 31", md);
     }
 
     [Fact]
@@ -1044,7 +1044,7 @@ public class BenchmarkGroupReportBuilderTests
             group, result, BenchmarkComparabilityKey.Resolve(runs), runs);
 
         Assert.Contains("**Cost per refutation:** $1.55 — $3.10 over 2 refutation(s)", md);
-        Assert.Contains("**Indeterminate share:** 0.0 % — 0 of 25", md);
+        Assert.Contains("**Indeterminate share:** 0.0% — 0 of 25", md);
         Assert.DoesNotContain("no refutations, so this ratio does not exist", md);
     }
 

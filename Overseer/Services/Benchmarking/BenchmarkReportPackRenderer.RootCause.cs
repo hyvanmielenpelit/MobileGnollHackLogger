@@ -13,7 +13,8 @@ using Overseer.Services.Benchmarking.RootCause;
 /// The Root Cause Analysis, in comparison scope (every covered model as an equal) and model scope (a subject
 /// with its peers, or a run or battery run on its own with its controls), answer first. The body: the summary
 /// (the headline, each research question with the writer's answer, the models at a glance and how sure the
-/// grades can be); why each model scored as it did; scope and design; the evidence on intelligence, speed and
+/// grades can be); the key terms the document uses (<see cref="RootCauseGlossary"/>), each also glossed in the template
+/// text at its first use; why each model scored as it did; scope and design; the evidence on intelligence, speed and
 /// cost; the hypotheses per axis with the writer's own; the conclusions; the runs to make next; limitations and
 /// threats to validity. Then the lettered appendices: A intelligence detail, B speed and cost decompositions,
 /// C hypothesis details, D run settings, E known facts, F reproducibility, G question details and H glossary;
@@ -29,29 +30,26 @@ public static partial class BenchmarkReportPackRenderer
     private const string RcaAtRiskNote = "Index points at risk: the points lost on the answers showing each signal, relative to the model's "
         + "own median answer, each answer counted once under its first signal. They are an upper bound, not a causal estimate.";
 
-    private const string RcaTimeNote = "Seconds per question: the median of the per-question time, split into its parts in proportion to "
-        + "their means. Tool execution is excluded from the model's own time elsewhere in this document.";
+    private const string RcaDecompositionNote = "Each difference is split into parts that add up exactly to it (a standard method, the "
+        + "logarithmic-mean Divisia index), using only the questions both models have figures for. A share's interval comes from "
+        + "resampling those questions (a bootstrap interval).";
 
-    private const string RcaDecompositionNote = "Each difference is split exactly into parts that sum to it (logarithmic-mean Divisia index), "
-        + "over the questions both models have figures for; a share's interval is a 95 % bootstrap interval over those questions.";
-
-    private const string RcaGradesNote = "Code fired each hypothesis on a pre-declared rule and graded it: High (quantified, established after "
-        + "adjustment, its null rejected, no open confound, every robustness check passed, two or more runs per suite on both sides), "
-        + "Moderate (exactly one of those conditions missed), Low (qualitative only, two or more conditions missed, or the null stands) or "
-        + "Not supported (refuted by the rule's own test). Each null hypothesis says that the difference is within sampling noise.";
-
-    private const string RcaGradeWordsNote = "Established (High): measured, established after adjustment, robust, with two or more runs per "
-        + "suite on both sides. Probable (Moderate): one of those conditions is missed. Suggestive (Low): qualitative only, two or more "
-        + "conditions missed, or the difference may be noise. Ruled out (Not supported): the rule's own test refutes it.";
-
-    private const string RcaIdLegend = "Ids: H0 is a null hypothesis, H one between two models, W one within a single model; Q, S and C "
-        + "mark intelligence, speed and cost. Appendix C gives each hypothesis' evidence for and against.";
+    private const string RcaGradeWordsNote = "How sure each answer is. **Established (High)**: measured, still clear after the correction for "
+        + "many comparisons, robust in every check, not explained by another setting, and each model ran at least twice per suite. "
+        + "**Probable (Moderate)**: one of those is missing. **Suggestive (Low)**: a lead only; it is not measured, two or more are "
+        + "missing, or the difference may be chance. **Ruled out (Not supported)**: the hypothesis's own test contradicts it.";
 
     private const string RcaWriterHypothesesNote = "Hypotheses the report writer added from the grader comments and excerpts. Code has not "
         + "tested them, so their confidence is Low.";
 
-    private const string RcaProfileNote = "Each entry is a count, a share or a rank that was measured over the model's scored answers; none "
-        + "says why. Lost points on: the largest share of the model's index points at risk (Appendix A), with its questions.";
+    private const string RcaKeyTermsLead = "This document uses a few statistical and technical terms. Each is explained here in plain words, "
+        + "and the less familiar ones again where they first appear. Appendix H gives a fuller definition of each.";
+
+    private const string RcaShareNote = "Share: how much of the difference, or of the total it is part of, this cause accounts for, with its "
+        + "95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.";
+
+    /// <summary>A list of pairs longer than this goes in bullets under its sentence instead of inside it.</summary>
+    private const int RcaInlinePairsMax = 4;
 
     private const string RcaNoAnalysis = "No root-cause analysis was computed for this document.";
 
@@ -71,27 +69,127 @@ public static partial class BenchmarkReportPackRenderer
         else TitleBlock(sb, ctx);
 
         RcaSummary(sb, ctx, result);
-        RcaWhyEachModel(sb, ctx, result);
-        RcaScope(sb, ctx, result);
-        RcaIntelligence(sb, ctx, result);
-        RcaSpeed(sb, ctx, result);
-        RcaCost(sb, ctx, result);
-        RcaHypotheses(sb, ctx, result);
-        RcaConclusions(sb, ctx, result);
-        RcaNextRuns(sb, ctx, result);
-        RcaLimitations(sb, ctx, result);
 
-        RcaAppendixList(sb);
-        RcaIntelligenceDetail(sb, ctx, result);
-        RcaDecompositionDetail(sb, ctx, result);
-        RcaHypothesisDetail(sb, ctx, result);
-        RcaRunSettings(sb, ctx, result);
-        RcaKnownFacts(sb, ctx, result);
-        if (ctx.Comparison) ComparisonReproducibility(sb, ctx, "## Appendix F: Reproducibility");
-        else Reproducibility(sb, ctx, "## Appendix F: Reproducibility");
-        RcaQuestionDetails(sb, ctx, result);
-        RcaGlossary(sb);
-        RcaFactSheet(sb, ctx);
+        // The Key terms section lists the terms the whole document uses, so the rest is written first.
+        var rest = new StringBuilder();
+        RcaWhyEachModel(rest, ctx, result);
+        RcaScope(rest, ctx, result);
+        RcaIntelligence(rest, ctx, result);
+        RcaSpeed(rest, ctx, result);
+        RcaCost(rest, ctx, result);
+        RcaHypotheses(rest, ctx, result);
+        RcaConclusions(rest, ctx, result);
+        RcaNextRuns(rest, ctx, result);
+        RcaLimitations(rest, ctx, result);
+
+        RcaAppendixList(rest);
+        RcaIntelligenceDetail(rest, ctx, result);
+        RcaDecompositionDetail(rest, ctx, result);
+        RcaHypothesisDetail(rest, ctx, result);
+        RcaRunSettings(rest, ctx, result);
+        RcaKnownFacts(rest, ctx, result);
+        if (ctx.Comparison) ComparisonReproducibility(rest, ctx, "## Appendix F: Reproducibility");
+        else Reproducibility(rest, ctx, "## Appendix F: Reproducibility");
+        RcaQuestionDetails(rest, ctx, result);
+        RcaGlossary(rest, ctx);
+        RcaFactSheet(rest, ctx);
+
+        RcaKeyTerms(sb, ctx);
+        sb.Append(rest);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Terms
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The Key terms section, after the Summary: every term the document uses (<see cref="Context.UsedTerms"/>),
+    /// alphabetically, each with its short plain gloss; nothing when the document uses none.
+    /// </summary>
+    private static void RcaKeyTerms(StringBuilder sb, Context ctx)
+    {
+        var terms = RootCauseGlossary.Alphabetical(ctx.UsedTerms);
+        if (terms.Count == 0) return;
+
+        Heading(sb, "## Key terms");
+        Line(sb, RcaKeyTermsLead);
+        Line(sb);
+        Line(sb, "| Term | What it means |");
+        Line(sb, "|---|---|");
+        foreach (var term in terms)
+        {
+            Line(sb, "| " + Cell(term.Name) + " | " + Cell(Capitalized(term.Gloss)) + ". |");
+        }
+        Line(sb);
+    }
+
+    /// <summary>Marks each term as used by the document; nothing outside a Root Cause Analysis. An unknown key throws.</summary>
+    private static void UseTerms(Context ctx, params string[] keys)
+    {
+        if (!ctx.TracksTerms) return;
+        foreach (string key in keys)
+        {
+            RootCauseGlossary.Get(key);
+            ctx.UsedTerms.Add(key);
+        }
+    }
+
+    /// <summary>
+    /// Marks each term as used and as explained, for a text that explains it in its own words, so no later text
+    /// glosses it again; nothing outside a Root Cause Analysis.
+    /// </summary>
+    private static void ExplainedTerms(Context ctx, params string[] keys)
+    {
+        if (!ctx.TracksTerms) return;
+        UseTerms(ctx, keys);
+        ctx.GlossedTerms.UnionWith(keys);
+    }
+
+    /// <summary>
+    /// Marks the term as used and returns <c> (its gloss)</c> the first time a Root Cause Analysis prints it, to
+    /// follow the term; empty after that, and in any other document.
+    /// </summary>
+    private static string Gloss(Context ctx, string key)
+    {
+        if (!ctx.TracksTerms) return string.Empty;
+        var term = RootCauseGlossary.Get(key);
+        ctx.UsedTerms.Add(key);
+        return ctx.GlossedTerms.Add(key) ? " (" + term.Gloss + ")" : string.Empty;
+    }
+
+    /// <summary>The Grading bullet of a setup, with the scoring levels and the critical error glossed at their first use.</summary>
+    private static string GradingLine(Context ctx, string weights, string levels, string criticalErrorCap)
+    {
+        UseTerms(ctx, RootCauseGlossary.Dimension, RootCauseGlossary.AnswerQuality);
+        return "- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted " + weights
+            + ". Each dimension is graded on behaviorally anchored levels" + Gloss(ctx, RootCauseGlossary.ScoringLevels) + " scored " + levels
+            + ". A critical error" + Gloss(ctx, RootCauseGlossary.CriticalError) + " caps the answer's quality at " + criticalErrorCap + ".";
+    }
+
+    /// <summary>The Formulas bullet of a setup, ending in <paramref name="costSentence"/>, with its two means glossed at their first use.</summary>
+    private static string FormulasLine(Context ctx, string costSentence)
+    {
+        UseTerms(ctx, RootCauseGlossary.IntelligenceIndex, RootCauseGlossary.MedianAndMean);
+        return "- **Formulas:** answer quality is the weighted geometric mean" + Gloss(ctx, RootCauseGlossary.GeometricMean)
+            + " of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. "
+            + "The Intelligence Index is the difficulty-weighted mean" + Gloss(ctx, RootCauseGlossary.DifficultyWeighted)
+            + " of answer quality. Median answer time is the median model time per answer, with tool time excluded. " + costSentence;
+    }
+
+    /// <summary>The terms of the design: the grader roles the sheet records, suite or battery, runs per suite, controls, the baseline model.</summary>
+    private static void UseDesignTerms(Context ctx)
+    {
+        UseTerms(ctx, ctx.Battery || (ctx.Comparison && IsBatteryComparison(ctx)) ? RootCauseGlossary.Battery : RootCauseGlossary.Suite,
+            RootCauseGlossary.RunsPerSuite);
+        if (ctx.Battery || (ctx.Comparison && IsBatteryComparison(ctx))) UseTerms(ctx, RootCauseGlossary.Suite, RootCauseGlossary.OverallIndex);
+        foreach (string role in ctx.Sheet.Graders.Select(g => g.Role ?? string.Empty))
+        {
+            if (role.Contains("panel member", StringComparison.OrdinalIgnoreCase)) UseTerms(ctx, RootCauseGlossary.PanelMember);
+            if (role.Contains("reference reader", StringComparison.OrdinalIgnoreCase)) UseTerms(ctx, RootCauseGlossary.ReferenceReader);
+            if (role.Contains("claim verifier", StringComparison.OrdinalIgnoreCase)) UseTerms(ctx, RootCauseGlossary.ClaimVerifier);
+        }
+        if (RootCauseClaimSupport.IsCompletion(ctx.Sheet)) UseTerms(ctx, RootCauseGlossary.Control);
+        if (ctx.Comparison && ctx.Sheet.BaselineModelLetter != null) UseTerms(ctx, RootCauseGlossary.BaselineModel);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -112,6 +210,7 @@ public static partial class BenchmarkReportPackRenderer
         var questions = (result?.Questions ?? new List<RootCauseQuestion>()).OrderBy(q => q.Number).ToList();
         if (questions.Count > 0)
         {
+            UseTerms(ctx, RootCauseGlossary.GradeWords, RootCauseGlossary.Hypothesis);
             Heading(sb, "### The questions");
             bool answered = BenchmarkReportSlots.RootCauseAnswerSlots.Any(s => ctx.Writer.Sections.ContainsKey(s));
             foreach (var question in questions)
@@ -135,6 +234,9 @@ public static partial class BenchmarkReportPackRenderer
         RcaGlance(sb, ctx, result);
 
         Heading(sb, "### How sure are we?");
+        UseTerms(ctx, RootCauseGlossary.GradeWords, RootCauseGlossary.Holm, RootCauseGlossary.RobustnessCheck, RootCauseGlossary.Confound,
+            RootCauseGlossary.RunsPerSuite);
+        if (result?.GradeCap != null) UseTerms(ctx, RootCauseGlossary.ReplicateRun);
         var caveat = new List<string> { "**Caveat.** " + RcaGradeWordsNote, string.Empty };
         caveat.Add(result?.GradeCap is string cap
             ? SheetText(ctx, cap)
@@ -168,6 +270,8 @@ public static partial class BenchmarkReportPackRenderer
     /// </summary>
     private static void RcaGlance(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
+        UseTerms(ctx, RootCauseGlossary.IntelligenceIndex, RootCauseGlossary.Interval95, RootCauseGlossary.MedianAndMean);
+        if (result != null) UseFlagTerms(ctx, result.Profiles);
         Line(sb, "| Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |");
         Line(sb, "|---|---|---|---|---|---|");
         foreach (var (entry, peer) in RcaRankedRows(ctx))
@@ -225,8 +329,51 @@ public static partial class BenchmarkReportPackRenderer
                 + " | " + Cell(SheetText(ctx, flags)) + " |");
         }
         Line(sb);
-        Line(sb, "*" + RcaProfileNote + "*");
+        Line(sb, "*" + RcaProfileNote(ctx, result.Profiles) + "*");
         Line(sb);
+    }
+
+    /// <summary>
+    /// The note under the profiles: what an entry is, what Lost points on measures, and a gloss for each kind of
+    /// flag the profiles show at its first use.
+    /// </summary>
+    private static string RcaProfileNote(Context ctx, IReadOnlyList<RootCauseModelProfile> profiles)
+    {
+        UseFlagTerms(ctx, profiles);
+        string note = "Each entry is a count, a share or a rank measured over the model's scored answers; none says why. "
+            + "Lost points on: the largest share of the model's index points at risk" + Gloss(ctx, RootCauseGlossary.PointsAtRisk)
+            + ", with its questions (Appendix A).";
+
+        var kinds = new HashSet<string>(profiles.SelectMany(p => p.Flags).Select(f => f.Kind), StringComparer.Ordinal);
+        var flags = new List<string>();
+        foreach (var (kind, key, words) in new[]
+        {
+            (RootCauseProfiles.CriticalErrors, RootCauseGlossary.CriticalError, "critical errors"),
+            (RootCauseProfiles.NoTool, RootCauseGlossary.NoToolAnswers, "answers without tools"),
+            (RootCauseProfiles.PanelDisagreement, RootCauseGlossary.PanelDisagreement, "panel disagreement"),
+            (RootCauseProfiles.IsolatedMisses, RootCauseGlossary.IsolatedMiss, "isolated misses")
+        })
+        {
+            if (kinds.Contains(kind) && Gloss(ctx, key) is { Length: > 0 } gloss) flags.Add(words + gloss);
+        }
+        return flags.Count == 0 ? note : note + " Flags: " + string.Join("; ", flags) + ".";
+    }
+
+    /// <summary>The terms the profiles' entries name: points at risk, dimensions and each kind of flag shown.</summary>
+    private static void UseFlagTerms(Context ctx, IReadOnlyList<RootCauseModelProfile> profiles)
+    {
+        foreach (var entry in profiles.SelectMany(p => p.Weaknesses.Concat(p.Flags)))
+        {
+            switch (entry.Kind)
+            {
+                case RootCauseProfiles.LostPointsOn: UseTerms(ctx, RootCauseGlossary.PointsAtRisk); break;
+                case RootCauseProfiles.WeakestDimension: UseTerms(ctx, RootCauseGlossary.Dimension); break;
+                case RootCauseProfiles.CriticalErrors: UseTerms(ctx, RootCauseGlossary.CriticalError); break;
+                case RootCauseProfiles.NoTool: UseTerms(ctx, RootCauseGlossary.NoToolAnswers); break;
+                case RootCauseProfiles.PanelDisagreement: UseTerms(ctx, RootCauseGlossary.PanelDisagreement); break;
+                case RootCauseProfiles.IsolatedMisses: UseTerms(ctx, RootCauseGlossary.IsolatedMiss); break;
+            }
+        }
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -236,6 +383,7 @@ public static partial class BenchmarkReportPackRenderer
     private static void RcaScope(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
         Heading(sb, "## Scope and design");
+        UseDesignTerms(ctx);
         if (ctx.Comparison)
         {
             ComparisonSetup(sb, ctx, "### Setup and method", comparedModels: false);
@@ -248,7 +396,7 @@ public static partial class BenchmarkReportPackRenderer
             SetupAndMethod(sb, ctx, "### Setup and method", comparedModels: false);
             if (RootCauseClaimSupport.IsCompletion(ctx.Sheet))
             {
-                RcaControls(sb, result);
+                RcaControls(sb, ctx, result);
             }
             ProviderAvailabilitySection(sb, ctx);
         }
@@ -274,7 +422,7 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>The controls of a run- or battery-completion analysis, the control limit and the deficit against them.</summary>
-    private static void RcaControls(StringBuilder sb, RootCauseResult? result)
+    private static void RcaControls(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
         Heading(sb, "### Controls");
         var controls = result?.Controls ?? new List<RootCauseControl>();
@@ -308,8 +456,9 @@ public static partial class BenchmarkReportPackRenderer
               + (string.IsNullOrWhiteSpace(result.ControlLimitReason) ? "." : ": " + OneLine(result.ControlLimitReason).TrimEnd('.') + ".")));
         if (result.ControlDeficitMean is double mean)
         {
+            UseTerms(ctx, RootCauseGlossary.Interval95);
             string interval = result.ControlDeficitLower is double lo && result.ControlDeficitUpper is double hi
-                ? " (95 % interval " + BenchmarkReportFormat.SignedOneDecimal(lo) + " to " + BenchmarkReportFormat.SignedOneDecimal(hi) + ")"
+                ? " (95% interval " + BenchmarkReportFormat.SignedOneDecimal(lo) + " to " + BenchmarkReportFormat.SignedOneDecimal(hi) + ")"
                 : string.Empty;
             Line(sb, "- **Against the controls:** " + BenchmarkReportFormat.SignedOneDecimal(mean) + " points on average over "
                 + Inv(result.ControlItems.Count) + " shared questions" + interval + ".");
@@ -342,7 +491,7 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// Every model's Intelligence Index, its 95 % interval, its rank and its critical errors: five columns, so a
+    /// Every model's Intelligence Index, its 95% interval, its rank and its critical errors: five columns, so a
     /// name is never broken mid-word. Speed and cost are under their own evidence.
     /// </summary>
     private static void RcaScoreboard(StringBuilder sb, Context ctx)
@@ -359,7 +508,10 @@ public static partial class BenchmarkReportPackRenderer
                 + " | " + CriticalErrorsCell(ctx, entry, peer) + " |");
         }
         Line(sb);
-        Line(sb, "*A joint rank means the model's 95 % interval overlaps a neighbor's, so the intervals do not establish the order between them.*");
+        UseTerms(ctx, RootCauseGlossary.IntelligenceIndex, RootCauseGlossary.CriticalError);
+        ExplainedTerms(ctx, RootCauseGlossary.TiedRank);
+        Line(sb, "*A rank shown as a span, such as 2–4 (tied), is a tied rank: the model's 95% interval" + Gloss(ctx, RootCauseGlossary.Interval95)
+            + " overlaps a neighbor's, so the intervals alone cannot put them in order.*");
         Line(sb);
     }
 
@@ -371,6 +523,7 @@ public static partial class BenchmarkReportPackRenderer
     private static void RcaDimensions(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
         var profiles = result?.Profiles ?? new List<RootCauseModelProfile>();
+        UseTerms(ctx, RootCauseGlossary.Dimension);
         if (profiles.Count == 0)
         {
             if (ctx.Comparison) DimensionsTable(sb, ctx);
@@ -454,6 +607,7 @@ public static partial class BenchmarkReportPackRenderer
         if (tests == null) return;
 
         string reference = family.ReferenceLetter ?? OrderedPeers(ctx.Sheet).FirstOrDefault()?.Letter ?? "A";
+        if (family.Mode != "AllPairs") UseTerms(ctx, RootCauseGlossary.ReferenceModel);
         Heading(sb, family.Mode == "AllPairs" ? "### Paired tests" : "### Paired tests against " + NameOfLetter(ctx, reference));
         if (tests.NotTestedReason != null || tests.Pairs.Count == 0)
         {
@@ -464,7 +618,7 @@ public static partial class BenchmarkReportPackRenderer
 
         if (intelligence)
         {
-            Line(sb, "| Pair | Questions | Difference (95 % interval) | Result |");
+            Line(sb, "| Pair | Questions | Difference (95% interval) | Result |");
             Line(sb, "|---|---|---|---|");
             foreach (var pair in tests.Pairs)
             {
@@ -480,7 +634,7 @@ public static partial class BenchmarkReportPackRenderer
         else
         {
             bool speed = measure == BenchmarkPairedTests.SpeedMeasure;
-            Line(sb, "| Pair | " + (speed ? "Time ratio" : "Spend ratio") + " (95 % interval) | Result |");
+            Line(sb, "| Pair | " + (speed ? "Time ratio" : "Spend ratio") + " (95% interval) | Result |");
             Line(sb, "|---|---|---|");
             foreach (var pair in tests.Pairs)
             {
@@ -489,10 +643,13 @@ public static partial class BenchmarkReportPackRenderer
         }
         Line(sb);
 
+        UseTerms(ctx, RootCauseGlossary.Interval95);
+        if (!intelligence) ExplainedTerms(ctx, RootCauseGlossary.Ratio);
         string explain = intelligence
             ? " Difference: the mean per-question difference, first model minus second, on the questions both answered."
             : " A ratio is the first model's own " + (measure == BenchmarkPairedTests.SpeedMeasure ? "time" : "spend") + " per question divided by the second's, on the questions both answered.";
-        Line(sb, "*" + SheetText(ctx, FamilySizeText(ctx, name, tests)) + explain + " Appendix A gives every family.*");
+        string paired = "Each row is a paired test" + Gloss(ctx, RootCauseGlossary.PairedTest) + ". ";
+        Line(sb, "*" + paired + SheetText(ctx, FamilySizeText(ctx, name, tests)) + explain + " Appendix A gives every family.*");
         Line(sb);
         if (intelligence && !string.IsNullOrWhiteSpace(family.SingleRunCaveat))
         {
@@ -507,8 +664,9 @@ public static partial class BenchmarkReportPackRenderer
         var peers = OrderedPeers(ctx.Sheet);
         if (!peers.Any(p => Fact(ctx, BenchmarkReportFacts.PeerPrefix(p.Letter) + "pairedDifference") != null)) return;
 
+        UseTerms(ctx, RootCauseGlossary.Interval95, RootCauseGlossary.BootstrapInterval);
         Heading(sb, "### Paired differences against the peers");
-        Line(sb, "| Peer | Paired difference (95 % interval) |");
+        Line(sb, "| Peer | Paired difference (95% interval) |");
         Line(sb, "|---|---|");
         foreach (var peer in peers)
         {
@@ -561,7 +719,7 @@ public static partial class BenchmarkReportPackRenderer
         {
             Heading(sb, "### Where the time goes");
             RcaSegmentTable(sb, ctx, result.SpeedRows, RootCauseSegments.Time, "Seconds per question", v => BenchmarkReportFormat.OneDecimal(v) + " s");
-            Line(sb, "*" + RcaTimeNote + "*");
+            Line(sb, "*" + RcaTimeNote(ctx) + "*");
             Line(sb);
             Figures(sb, ctx, BenchmarkReportChartAnchor.RcaSpeed);
             if (ctx.Comparison) RcaReferenceTests(sb, ctx, BenchmarkPairedTests.SpeedMeasure);
@@ -583,14 +741,34 @@ public static partial class BenchmarkReportPackRenderer
         {
             Heading(sb, "### Where the cost goes");
             RcaSegmentTable(sb, ctx, result.CostRows, RootCauseSegments.CostComponents, "Cost per question", BenchmarkReportFormat.Usd);
-            Line(sb, "*Mean cost per question by component, priced on this basis: "
-                + OneLine(string.IsNullOrWhiteSpace(result.PricingBasis) ? PricingBasisText(ctx.Sheet).Text : result.PricingBasis).TrimEnd('.') + ".*");
+            Line(sb, "*" + RcaCostNote(ctx, result) + "*");
             Line(sb);
             Figures(sb, ctx, BenchmarkReportChartAnchor.RcaCost);
             if (ctx.Comparison) RcaReferenceTests(sb, ctx, BenchmarkPairedTests.CostMeasure);
             RcaDecompositionSummary(sb, ctx, result.CostPairs, cost: true);
         }
         Slot(sb, ctx, BenchmarkReportSlots.EvidenceCost);
+    }
+
+    /// <summary>The note under the time table: how the seconds are split, each part named, the first two glossed at their first use.</summary>
+    private static string RcaTimeNote(Context ctx)
+    {
+        UseTerms(ctx, RootCauseGlossary.MedianAndMean);
+        return "Seconds per question: the median time per question, split into its parts in proportion to their mean times. "
+            + "The parts are time to first token" + Gloss(ctx, RootCauseGlossary.TimeToFirstToken)
+            + ", output generation" + Gloss(ctx, RootCauseGlossary.OutputGeneration)
+            + ", tool execution, the model's own waits and retries, and other time. "
+            + "Tool execution is excluded from the model's own time elsewhere in this document.";
+    }
+
+    /// <summary>The note under the cost table: what each token component is, and the pricing basis, glossed at their first use.</summary>
+    private static string RcaCostNote(Context ctx, RootCauseResult result)
+    {
+        string basis = OneLine(string.IsNullOrWhiteSpace(result.PricingBasis) ? PricingBasisText(ctx.Sheet).Text : result.PricingBasis).TrimEnd('.');
+        return "Mean cost per question by component. Each component is a kind of token" + Gloss(ctx, RootCauseGlossary.Tokens) + ". "
+            + "Uncached input is text read at the full price, and cache reads are stored input read at a lower price. "
+            + "Cache writes store input for later calls; visible output is the answer; reasoning is the model's hidden thinking. "
+            + "Priced on this basis" + Gloss(ctx, RootCauseGlossary.PricingBasis) + ": " + basis + ".";
     }
 
     /// <summary>
@@ -642,7 +820,7 @@ public static partial class BenchmarkReportPackRenderer
         var notEstablished = pairs.Where(p => p.NotEstablished).ToList();
         if (notEstablished.Count > 0)
         {
-            Line(sb, "Not decomposed, as the difference is not established: "
+            Line(sb, "Not split into parts, because the difference itself may be chance: "
                 + BenchmarkReportFormat.LetterList(notEstablished.Select(p => RcaPairName(ctx, p.First, p.Second)).ToList()) + ".");
             Line(sb);
         }
@@ -657,7 +835,8 @@ public static partial class BenchmarkReportPackRenderer
 
         if (decomposed.Count > 0)
         {
-            Line(sb, "*" + RcaDecompositionNote + " The difference is the first model's minus the second's; a share can pass 100 % when another "
+            ExplainedTerms(ctx, RootCauseGlossary.DecompositionShare, RootCauseGlossary.BootstrapInterval);
+            Line(sb, "*" + RcaDecompositionNote + " The difference is the first model's minus the second's. A share can pass 100% when another "
                 + "component pulls the other way. Appendix B gives every component.*");
             Line(sb);
         }
@@ -702,24 +881,27 @@ public static partial class BenchmarkReportPackRenderer
             {
                 Line(sb, "| Hypothesis | Statement | Grade | Share | Settled by |");
                 Line(sb, "|---|---|---|---|---|");
+                UseTerms(ctx, RootCauseGlossary.Hypothesis, RootCauseGlossary.GradeWords, RootCauseGlossary.Interval95);
+                if (fired.Any(h => h.Share.HasValue)) UseTerms(ctx, RootCauseGlossary.DecompositionShare);
                 foreach (var h in fired)
                 {
-                    Line(sb, "| " + Cell(RcaHypothesisName(ctx, h)) + " | " + Cell(SheetText(ctx, h.Statement)) + " | " + RootCauseGrades.WordWithGrade(h.Grade)
+                    Line(sb, "| " + Cell(RcaHypothesisName(ctx, h)) + " | " + Cell(SheetText(ctx, h.Statement)) + " | " + RootCauseGrades.HypothesisWordWithGrade(h)
                         + " | " + RcaShareText(h) + " | " + RcaSettledBy(h) + " |");
                 }
                 Line(sb);
+                Line(sb, "*" + RcaShareNote + "*");
+                Line(sb);
                 if (!legend)
                 {
-                    Line(sb, "*" + RcaIdLegend + "*");
+                    Line(sb, "*" + RcaIdLegend(ctx) + "*");
                     Line(sb);
                     legend = true;
                 }
             }
 
-            if (RcaNullsLine(ctx, hypotheses.Where(h => h.Kind == "null").ToList()) is string nulls)
+            foreach (string line in RcaNullsLines(ctx, hypotheses.Where(h => h.Kind == "null").ToList()))
             {
-                Line(sb, nulls);
-                Line(sb);
+                Line(sb, line);
             }
             Slot(sb, ctx, slots[axis]);
         }
@@ -727,8 +909,9 @@ public static partial class BenchmarkReportPackRenderer
         Figures(sb, ctx, BenchmarkReportChartAnchor.RcaHypotheses);
 
         Heading(sb, "### The writer's hypotheses");
-        var lines = new List<string> { "**Not tested by code.** " + RcaWriterHypothesesNote, string.Empty };
         var own = ctx.Writer.WriterHypotheses ?? new List<BenchmarkReportWriterHypothesis>();
+        string locus = own.Count == 0 ? string.Empty : " Each names its locus" + Gloss(ctx, RootCauseGlossary.Locus) + ".";
+        var lines = new List<string> { "**Not tested by code.** " + RcaWriterHypothesesNote + locus, string.Empty };
         if (own.Count == 0)
         {
             lines.Add("The writer added none.");
@@ -757,23 +940,52 @@ public static partial class BenchmarkReportPackRenderer
         => h.NextRunNumber is int run ? "run " + Inv(run) : h.CheckNumber is int check ? "check " + Inv(check) : NoValue;
 
     /// <summary>
-    /// The null hypotheses of an axis in one sentence: the pairs (and models' own questions) whose null stands,
-    /// then those where a paired result rejects it; null when the axis has none.
+    /// How to read a hypothesis id, with the null hypothesis glossed at its first use.
     /// </summary>
-    private static string? RcaNullsLine(Context ctx, IReadOnlyList<RootCauseHypothesis> nulls)
+    private static string RcaIdLegend(Context ctx)
+        => "How to read a hypothesis ID such as HQ1.2: H compares two models, W looks inside one model, and H0 is a null hypothesis"
+           + Gloss(ctx, RootCauseGlossary.NullHypothesis) + ". Q, S and C stand for intelligence, speed and cost. "
+           + "Appendix C gives each hypothesis's evidence for and against.";
+
+    /// <summary>
+    /// The null hypotheses of an axis as counts with their pairs: those where no real difference could be shown,
+    /// then those where a test found one. Up to <see cref="RcaInlinePairsMax"/> pairs stand in the sentence, more
+    /// in a list under it. Each block ends in an empty line; nothing when the axis has no null hypothesis.
+    /// </summary>
+    private static List<string> RcaNullsLines(Context ctx, IReadOnlyList<RootCauseHypothesis> nulls)
     {
-        if (nulls.Count == 0) return null;
+        var lines = new List<string>();
+        if (nulls.Count == 0) return lines;
+        UseTerms(ctx, RootCauseGlossary.NullHypothesis);
 
-        string Subject(RootCauseHypothesis h) => h.Kind == "null" && h.Id == "H0-W"
+        string Subject(RootCauseHypothesis h) => h.Id == "H0-W"
             ? "within " + RcaTokenName(ctx, h.Models.FirstOrDefault() ?? string.Empty) + "'s own questions"
-            : h.Models.Count >= 2 ? RcaPairName(ctx, h.Models[0], h.Models[1]) : RcaTokenName(ctx, h.Models.FirstOrDefault() ?? string.Empty);
+            : h.Models.Count >= 2
+                ? RcaTokenName(ctx, h.Models[0]) + " vs. " + RcaTokenName(ctx, h.Models[1])
+                : RcaTokenName(ctx, h.Models.FirstOrDefault() ?? string.Empty);
 
-        var stands = nulls.Where(h => h.Grade != RootCauseGrades.NotSupported).Select(Subject).ToList();
-        var rejected = nulls.Where(h => h.Grade == RootCauseGrades.NotSupported).Select(Subject).ToList();
-        var parts = new List<string>();
-        if (stands.Count > 0) parts.Add("it stands for " + BenchmarkReportFormat.LetterList(stands));
-        if (rejected.Count > 0) parts.Add("a paired result rejects it for " + BenchmarkReportFormat.LetterList(rejected));
-        return "*Null hypotheses (the difference is within sampling noise):* " + string.Join("; ", parts) + ".";
+        void Block(IReadOnlyList<RootCauseHypothesis> group, string lead)
+        {
+            if (group.Count == 0) return;
+            bool pairs = group.All(h => h.Id != "H0-W" && h.Models.Count >= 2);
+            string count = Inv(group.Count) + " " + (pairs ? (group.Count == 1 ? "pair" : "pairs") : (group.Count == 1 ? "comparison" : "comparisons"));
+            var subjects = group.Select(Subject).ToList();
+            if (subjects.Count <= RcaInlinePairsMax)
+            {
+                lines.Add(lead + count + ": " + string.Join("; ", subjects) + ".");
+            }
+            else
+            {
+                lines.Add(lead + count + ":");
+                lines.Add(string.Empty);
+                lines.AddRange(subjects.Select(s => "- " + s));
+            }
+            lines.Add(string.Empty);
+        }
+
+        Block(nulls.Where(h => h.Grade != RootCauseGrades.NotSupported).ToList(), "No real difference could be shown (the gap may be chance) for ");
+        Block(nulls.Where(h => h.Grade == RootCauseGrades.NotSupported).ToList(), "A real difference was found for ");
+        return lines;
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -794,6 +1006,7 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "|---|---|---|---|");
             foreach (var axis in result.Axes)
             {
+                UseReasonTerms(ctx, axis.Reason);
                 var best = axis.BestHypothesis == null ? null : result.Hypotheses.FirstOrDefault(h => h.Key == axis.BestHypothesis);
                 string name = best != null ? RcaHypothesisName(ctx, best) : axis.BestHypothesis ?? NoValue;
                 Line(sb, "| " + RootCauseAxes.Name(axis.Axis) + " | " + RootCauseStatuses.Display(axis.Status) + " | " + Cell(name)
@@ -985,7 +1198,9 @@ public static partial class BenchmarkReportPackRenderer
     private static void RcaLimitations(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
         Heading(sb, "## Limitations and threats to validity");
-        Line(sb, "- The benchmark asks single-turn questions under one chat configuration: live chat carries the conversation before each question, "
+        UseTerms(ctx, RootCauseGlossary.Hypothesis, RootCauseGlossary.PointsAtRisk);
+        if (ctx.Comparison) UseTerms(ctx, RootCauseGlossary.PairedTest, RootCauseGlossary.Holm);
+        Line(sb,"- The benchmark asks single-turn questions under one chat configuration: live chat carries the conversation before each question, "
             + "and spoiler-free mode, web search and subagents are off, so a cause found here holds for that configuration only.");
         Line(sb, "- It runs without the wiki text that live chat always gives the model before it answers, so a reading about retrieval or tool routing was measured under a condition live chat does not share.");
         Line(sb, "- The hypotheses come from a fixed rule table over these runs; points at risk are upper bounds, and a decomposition rests on the questions both sides have figures for. The writer's own hypotheses are qualitative.");
@@ -1068,7 +1283,7 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb, "- **E. Known facts:** what a test, a count, a decomposition or the configuration proves.");
         Line(sb, "- **F. Reproducibility:** run ids, dates, hashes and the pricing basis.");
         Line(sb, "- **G. Question details:** the questions this document cites, with their answers.");
-        Line(sb, "- **H. Glossary:** the statistical terms in plain words.");
+        Line(sb, "- **H. Glossary:** every term this document uses, in plain words.");
         Line(sb);
     }
 
@@ -1150,6 +1365,7 @@ public static partial class BenchmarkReportPackRenderer
         {
             Line(sb, "- **" + (ctx.Comparison ? ComparisonFactLabel(ctx, fact.Key) : FactLabel(ctx, fact.Key)) + ":** " + Shown(ctx, fact));
         }
+        if (confounds.Count > 0) UseTerms(ctx, RootCauseGlossary.Confound);
         foreach (var hypothesis in confounds)
         {
             Line(sb, "- **Open confounds of " + hypothesis.Key + "** (" + SheetText(ctx, hypothesis.ModelsText) + "): " + OneLine(string.Join(", ", hypothesis.Confounds)));
@@ -1201,6 +1417,7 @@ public static partial class BenchmarkReportPackRenderer
         if (result == null) return;
 
         Heading(sb, "### Points at risk");
+        UseTerms(ctx, RootCauseGlossary.PointsAtRisk, RootCauseGlossary.NoToolAnswers, RootCauseGlossary.CriticalError);
         var keys = RootCauseSegments.AtRisk;
         Line(sb, "| Model | " + string.Join(" | ", keys.Select(k => Capitalized(RootCauseSegments.Label(k)))) + " | Total | Median answer |");
         Line(sb, "|---|" + string.Concat(keys.Select(_ => "---|")) + "---|---|");
@@ -1253,6 +1470,7 @@ public static partial class BenchmarkReportPackRenderer
             .DistinctBy(c => c.Key, StringComparer.Ordinal)
             .ToList();
 
+        UseTerms(ctx, RootCauseGlossary.IntelligenceIndex, RootCauseGlossary.Dimension);
         Heading(sb, "### Intelligence Index difference by dimension");
         Line(sb, "| Pair | Difference | " + string.Join(" | ", columns.Select(c => Cell(Capitalized(c.Label)))) + " |");
         Line(sb, "|---|---|" + string.Concat(columns.Select(_ => "---|")));
@@ -1332,6 +1550,11 @@ public static partial class BenchmarkReportPackRenderer
                 + " |");
         }
         Line(sb);
+        UseTerms(ctx, RootCauseGlossary.TimeToFirstToken, RootCauseGlossary.OutputGeneration, RootCauseGlossary.MedianAndMean, RootCauseGlossary.Tokens);
+        Line(sb, "*Model calls per answer: the model is called again after each tool round" + Gloss(ctx, RootCauseGlossary.ToolRound)
+            + ". Decode rate: the median output tokens per second once the model has started writing. Reasoning share: the part of the "
+            + "output tokens spent on hidden thinking.*");
+        Line(sb);
 
         Heading(sb, "### Tokens per question");
         var keys = RootCauseSegments.CostComponents;
@@ -1371,8 +1594,8 @@ public static partial class BenchmarkReportPackRenderer
 
         Heading(sb, heading);
         Line(sb, cost
-            ? "| Pair | Questions | Difference per question | Component | Effect | Part | Share (95 % interval) |"
-            : "| Pair | Questions | Difference per question | Component | Part | Share (95 % interval) |");
+            ? "| Pair | Questions | Difference per question | Component | Effect | Part | Share (95% interval) |"
+            : "| Pair | Questions | Difference per question | Component | Part | Share (95% interval) |");
         Line(sb, cost ? "|---|---|---|---|---|---|---|" : "|---|---|---|---|---|---|");
         foreach (var pair in available)
         {
@@ -1389,17 +1612,15 @@ public static partial class BenchmarkReportPackRenderer
             }
         }
         Line(sb);
+        ExplainedTerms(ctx, RootCauseGlossary.DecompositionShare, RootCauseGlossary.BootstrapInterval);
+        UseTerms(ctx, RootCauseGlossary.Interval95);
         Line(sb, "*" + RcaDecompositionNote + " The difference is the first model's minus the second's.*");
         Line(sb);
     }
 
-    /// <summary>
-    /// A grade reason that restates one of the hypothesis' robustness checks: the check's name in lower case,
-    /// then <c>failed</c> or <c>could not be assessed</c>.
-    /// </summary>
+    /// <summary>A grade reason that restates one of the hypothesis' robustness checks (<see cref="RootCauseHypotheses.IsRobustnessReason"/>).</summary>
     private static bool IsRobustnessReason(RootCauseHypothesis h, string reason)
-        => h.Robustness.Any(r => reason.StartsWith(r.Name.ToLowerInvariant() + " failed", StringComparison.Ordinal)
-                                 || reason.StartsWith(r.Name.ToLowerInvariant() + " could not be assessed", StringComparison.Ordinal));
+        => RootCauseHypotheses.IsRobustnessReason(h, reason);
 
     /// <summary>
     /// Appendix C: the grading rule, then per axis each fired hypothesis' evidence, the grade reasons its
@@ -1415,7 +1636,7 @@ public static partial class BenchmarkReportPackRenderer
             return;
         }
 
-        Line(sb, "*" + RcaGradesNote + "*");
+        Line(sb, RcaGradesNote(ctx, result));
         Line(sb);
         foreach (string axis in RootCauseAxes.All)
         {
@@ -1425,7 +1646,10 @@ public static partial class BenchmarkReportPackRenderer
             Heading(sb, "### " + RootCauseAxes.Name(axis));
             foreach (var h in hypotheses.Where(h => h.Kind != "null"))
             {
-                Line(sb, "- **" + RcaHypothesisName(ctx, h) + "** (" + SheetText(ctx, h.ModelsText) + "; locus " + h.Locus + "; " + RootCauseGrades.WordWithGrade(h.Grade) + ")");
+                foreach (string reason in h.GradeReasons.Concat(h.Robustness.Select(r => r.Name))) UseReasonTerms(ctx, reason);
+                if (h.Robustness.Count > 0) UseTerms(ctx, RootCauseGlossary.RobustnessCheck);
+                if (h.Confounds.Count > 0) UseTerms(ctx, RootCauseGlossary.Confound);
+                Line(sb, "- **" + RcaHypothesisName(ctx, h) + "** (" + SheetText(ctx, h.ModelsText) + "; locus " + h.Locus + "; " + RootCauseGrades.HypothesisWordWithGrade(h) + ")");
                 Line(sb, "  - *For:* " + (h.For.Count == 0 ? "none recorded." : SheetText(ctx, string.Join(" ", h.For))));
                 Line(sb, "  - *Against:* " + (h.Against.Count == 0 ? "none recorded." : SheetText(ctx, string.Join(" ", h.Against))));
                 var reasons = h.GradeReasons.Where(r => !IsRobustnessReason(h, r)).ToList();
@@ -1455,11 +1679,31 @@ public static partial class BenchmarkReportPackRenderer
                     string pair = h.Id == "H0-W" || h.Models.Count < 2
                         ? "within " + RcaTokenName(ctx, h.Models.FirstOrDefault() ?? string.Empty)
                         : RcaPairName(ctx, h.Models[0], h.Models[1]);
-                    Line(sb, "| " + Cell(h.Key) + " | " + Cell(pair) + " | " + Cell(RcaNullResult(ctx, h)) + " | " + RootCauseGrades.WordWithGrade(h.Grade) + " |");
+                    Line(sb, "| " + Cell(h.Key) + " | " + Cell(pair) + " | " + Cell(RcaNullResult(ctx, h)) + " | " + RootCauseGrades.HypothesisWordWithGrade(h) + " |");
                 }
             }
             Line(sb);
         }
+    }
+
+    /// <summary>
+    /// The grading rule of Appendix C in the order of the summary's grade words, with the null hypothesis, a
+    /// confound and a robustness check glossed at their first use, then what each entry gives.
+    /// </summary>
+    private static string RcaGradesNote(Context ctx, RootCauseResult result)
+    {
+        UseTerms(ctx, RootCauseGlossary.GradeWords, RootCauseGlossary.Hypothesis, RootCauseGlossary.RunsPerSuite);
+        string locus = result.Hypotheses.Any(h => h.Kind != "null")
+            ? " Each entry gives the models, the locus" + Gloss(ctx, RootCauseGlossary.Locus) + " and the grade, then the evidence for and against."
+            : string.Empty;
+        return "Code raised each hypothesis from a rule fixed in advance and graded it. "
+            + "**Established (High)** needs all of these: it is measured; it is still clear after the correction for many comparisons; "
+            + "its null hypothesis" + Gloss(ctx, RootCauseGlossary.NullHypothesis) + " is rejected; no confound"
+            + Gloss(ctx, RootCauseGlossary.Confound) + " is open; every robustness check" + Gloss(ctx, RootCauseGlossary.RobustnessCheck)
+            + " passed; and each model ran at least twice per suite. **Probable (Moderate)**: exactly one of those conditions is missing. "
+            + "**Suggestive (Low)**: it is not measured, two or more conditions are missing, or the null hypothesis stands. "
+            + "**Ruled out (Not supported)**: the hypothesis's own test contradicts it. A null hypothesis reads **Rejected — a real difference** "
+            + "when a test found a real difference, and **Stands — may be chance** when none could be shown." + locus;
     }
 
     /// <summary>
@@ -1497,6 +1741,7 @@ public static partial class BenchmarkReportPackRenderer
             return;
         }
 
+        UseTerms(ctx, RootCauseGlossary.ResponseStyle);
         Line(sb, "Each run's settings are the launcher's, copied from the analyzed runs unless its kind changes them; a setting the runs did not share is left for you to choose.");
         Line(sb);
         foreach (var run in runs.OrderBy(r => r.Number))
@@ -1612,32 +1857,31 @@ public static partial class BenchmarkReportPackRenderer
         }
     }
 
-    /// <summary>Appendix H: the statistical terms of the document in plain words.</summary>
-    private static void RcaGlossary(StringBuilder sb)
+    /// <summary>Appendix H: every term the document uses (<see cref="Context.UsedTerms"/>), alphabetically, with its full definition.</summary>
+    private static void RcaGlossary(StringBuilder sb, Context ctx)
     {
         Heading(sb, "## Appendix H: Glossary");
-        Line(sb, "- **95 % interval:** a range built so that, if the questions were sampled again and again, 95 of 100 such ranges would hold the true value. When two models' intervals overlap, the intervals alone do not say which is higher.");
-        Line(sb, "- **Paired test:** a comparison of two models question by question, on the questions both answered, so that how hard each question is counts the same for both.");
-        Line(sb, "- **Holm adjustment:** testing many pairs at once turns up some differences by chance. The Holm adjustment raises each p-value so that the whole family of tests keeps a 5 % chance of a false finding; a result is established when its adjusted p-value is below 0.05.");
-        Line(sb, "- **Null hypothesis:** the statement that a difference is within sampling noise. It stands until a paired test, or without one a bootstrap interval that excludes zero, rejects it; a null that stands is not proof that the two are equal.");
-        Line(sb, "- **Grade words:** Established (High) is measured, established after adjustment, robust and replicated; Probable (Moderate) misses one of those conditions; Suggestive (Low) is qualitative, misses two or more, or may be noise; Ruled out (Not supported) is refuted by its own rule's test.");
-        Line(sb, "- **Points at risk:** the index points a model lost on its answers below its own median answer, each answer counted once under its first signal (no tool call, a defect, a critical error). An upper bound of what each signal costs, not an estimate of its effect.");
-        Line(sb, "- **Decomposition share:** the part of a speed or cost difference one component accounts for; the parts sum exactly to the difference. A share can pass 100 % when two components pull in opposite directions: if the difference is 2 s, one component adding 3 s and another taking 1 s back are 150 % and −50 %. Over few questions or a small difference, a share's interval can be very wide.");
-        Line(sb, "- **Isolated miss:** a question a model scored 50 or less on while the other models' median was 75 or more.");
-        Line(sb, "- **Joint rank:** two models share a rank when their 95 % intervals overlap.");
+        var terms = RootCauseGlossary.Alphabetical(ctx.UsedTerms);
+        if (terms.Count == 0)
+        {
+            Line(sb, "This document uses no term the glossary explains.");
+        }
+        foreach (var term in terms)
+        {
+            Line(sb, "- **" + term.Name + ":** " + term.Definition);
+        }
         Line(sb);
     }
 
-    /// <summary>The fact sheet as JSON, in the Markdown copy only; an anonymized copy letters every peer's name, the root-cause data's too.</summary>
+    /// <summary>
+    /// The fact sheet as JSON, in the Markdown copy only; an anonymized copy letters every peer's name, the root-cause
+    /// data's too. A render without the fact sheet (the PDF and Word) has no such section and no contents entry for it.
+    /// </summary>
     private static void RcaFactSheet(StringBuilder sb, Context ctx)
     {
+        if (!ctx.Options.IncludeFactSheet) return;
+
         Heading(sb, "## Fact sheet");
-        if (!ctx.Options.IncludeFactSheet)
-        {
-            Line(sb, FactSheetElsewhere);
-            Line(sb);
-            return;
-        }
         Line(sb, "```json");
         Line(sb, BenchmarkReportJson.SerializeSorted(ctx.Anonymized ? RcaAnonymizedSheet(ctx) : ctx.Sheet));
         Line(sb, "```");
@@ -1709,6 +1953,18 @@ public static partial class BenchmarkReportPackRenderer
             }
         }
         Line(sb);
+    }
+
+    /// <summary>The terms a grade reason or a robustness check names: replicate runs and the leave-one-out check.</summary>
+    private static void UseReasonTerms(Context ctx, string? text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        if (text.Contains("replicate", StringComparison.OrdinalIgnoreCase)) UseTerms(ctx, RootCauseGlossary.ReplicateRun);
+        if (text.Contains("leave one", StringComparison.OrdinalIgnoreCase) || text.Contains("leave-one", StringComparison.OrdinalIgnoreCase))
+        {
+            UseTerms(ctx, RootCauseGlossary.LeaveOneOut);
+        }
+        if (text.Contains("confound", StringComparison.OrdinalIgnoreCase)) UseTerms(ctx, RootCauseGlossary.Confound);
     }
 
     /// <summary>The models' rows as the document lists them: letter order in comparison scope, the subject first in model scope.</summary>

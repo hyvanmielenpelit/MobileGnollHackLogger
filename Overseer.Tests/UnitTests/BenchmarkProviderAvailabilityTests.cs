@@ -20,13 +20,13 @@ public class BenchmarkProviderAvailabilityTests
     /// </summary>
     public static readonly (int K, int N, string Rate, string Count, string Interval, string? OneIn, string Headline)[] ParityTable =
     {
-        (0, 1480, "0 %", "0 of 1,480 attempts", "95 % CI 0–0.26 %", null, "0 % (0 of 1,480 attempts; 95 % CI 0–0.26 %)"),
-        (12, 1480, "0.81 %", "12 of 1,480 attempts", "95 % CI 0.46–1.4 %", "about 1 in 123", "0.81 % (12 of 1,480 attempts; 95 % CI 0.46–1.4 %)"),
-        (1, 37, "2.7 %", "1 of 37 attempts", "95 % CI 0.48–14 %", null, "2.7 % (1 of 37 attempts; 95 % CI 0.48–14 %; few attempts)"),
-        (150, 1200, "13 %", "150 of 1,200 attempts", "95 % CI 11–14 %", null, "13 % (150 of 1,200 attempts; 95 % CI 11–14 %)"),
-        (3, 99, "3.0 %", "3 of 99 attempts", "95 % CI 1.0–8.5 %", null, "3.0 % (3 of 99 attempts; 95 % CI 1.0–8.5 %; few attempts)"),
-        (1, 1480, "0.068 %", "1 of 1,480 attempts", "95 % CI 0.012–0.38 %", "about 1 in 1,480", "0.068 % (1 of 1,480 attempts; 95 % CI 0.012–0.38 %)"),
-        (1, 1, "100 %", "1 of 1 attempt", "95 % CI 21–100 %", null, "100 % (1 of 1 attempt; 95 % CI 21–100 %; few attempts)"),
+        (0, 1480, "0%", "0 of 1,480 attempts", "95% CI 0–0.26%", null, "0% (0 of 1,480 attempts; 95% CI 0–0.26%)"),
+        (12, 1480, "0.81%", "12 of 1,480 attempts", "95% CI 0.46–1.4%", "about 1 in 123", "0.81% (12 of 1,480 attempts; 95% CI 0.46–1.4%)"),
+        (1, 37, "2.7%", "1 of 37 attempts", "95% CI 0.48–14%", null, "2.7% (1 of 37 attempts; 95% CI 0.48–14%; few attempts)"),
+        (150, 1200, "13%", "150 of 1,200 attempts", "95% CI 11–14%", null, "13% (150 of 1,200 attempts; 95% CI 11–14%)"),
+        (3, 99, "3.0%", "3 of 99 attempts", "95% CI 1.0–8.5%", null, "3.0% (3 of 99 attempts; 95% CI 1.0–8.5%; few attempts)"),
+        (1, 1480, "0.068%", "1 of 1,480 attempts", "95% CI 0.012–0.38%", "about 1 in 1,480", "0.068% (1 of 1,480 attempts; 95% CI 0.012–0.38%)"),
+        (1, 1, "100%", "1 of 1 attempt", "95% CI 21–100%", null, "100% (1 of 1 attempt; 95% CI 21–100%; few attempts)"),
     };
 
     public static IEnumerable<object[]> ParityRows => Enumerable.Range(0, ParityTable.Length).Select(i => new object[] { i });
@@ -83,19 +83,19 @@ public class BenchmarkProviderAvailabilityTests
     }
 
     [Theory]
-    [InlineData(0.0, "0 %")]
-    [InlineData(1.0, "100 %")]
-    [InlineData(0.0081081, "0.81 %")]
-    [InlineData(0.031, "3.1 %")]
-    [InlineData(0.12, "12 %")]
-    [InlineData(0.125, "13 %")]
-    [InlineData(0.5, "50 %")]
-    [InlineData(0.005, "0.50 %")]
-    [InlineData(0.000042, "0.0042 %")]
-    [InlineData(0.0999, "10 %")]
-    [InlineData(0.00996, "1.0 %")]
-    [InlineData(-0.1, "0 %")]
-    [InlineData(1.5, "100 %")]
+    [InlineData(0.0, "0%")]
+    [InlineData(1.0, "100%")]
+    [InlineData(0.0081081, "0.81%")]
+    [InlineData(0.031, "3.1%")]
+    [InlineData(0.12, "12%")]
+    [InlineData(0.125, "13%")]
+    [InlineData(0.5, "50%")]
+    [InlineData(0.005, "0.50%")]
+    [InlineData(0.000042, "0.0042%")]
+    [InlineData(0.0999, "10%")]
+    [InlineData(0.00996, "1.0%")]
+    [InlineData(-0.1, "0%")]
+    [InlineData(1.5, "100%")]
     public void FormatPercent_KeepsTwoSignificantDigits(double proportion, string expected)
     {
         Assert.Equal(expected, BenchmarkProviderAvailability.FormatPercent(proportion));
@@ -141,8 +141,8 @@ public class BenchmarkProviderAvailabilityTests
     public void FormatRate_WithoutIntervalOrAttempts()
     {
         Assert.Equal("no valid attempts", BenchmarkProviderAvailability.FormatRate(0, 0, null, null));
-        Assert.Equal("2.5 % (5 of 200 attempts)", BenchmarkProviderAvailability.FormatRate(5, 200, null, null));
-        Assert.Equal("2.0 % (1 of 50 attempts; few attempts)", BenchmarkProviderAvailability.FormatRate(1, 50, null, null));
+        Assert.Equal("2.5% (5 of 200 attempts)", BenchmarkProviderAvailability.FormatRate(5, 200, null, null));
+        Assert.Equal("2.0% (1 of 50 attempts; few attempts)", BenchmarkProviderAvailability.FormatRate(1, 50, null, null));
     }
 
     // --- Wilson on an effective sample ----------------------------------------------------------------

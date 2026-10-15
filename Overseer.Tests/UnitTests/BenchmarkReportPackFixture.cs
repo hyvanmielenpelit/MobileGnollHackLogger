@@ -359,7 +359,7 @@ internal static class BenchmarkReportPackFixture
             Fact("panel.referenceReaderIndex", "90 / 100", JsonValue.Create(90.0)),
             Fact("panel.referenceReaderOffset", "+16.8 points", JsonValue.Create(16.8)),
             Fact("peer.A.cost.perQuestion", "$0.052", JsonValue.Create(0.052)),
-            Fact("peer.A.intervalOverlap", "its 95 % interval overlaps the subject's", JsonValue.Create(true)),
+            Fact("peer.A.intervalOverlap", "its 95% interval overlaps the subject's", JsonValue.Create(true)),
             Fact("peer.A.pairedDifference", "-4.6 points", JsonValue.Create(-4.6)),
             Fact("peer.A.pairedInterval", "-9.8 to +0.7"),
             Fact("peer.A.quality.index", "85 / 100", JsonValue.Create(85.2)),
@@ -369,7 +369,7 @@ internal static class BenchmarkReportPackFixture
             Fact("peer.A.sharedQuestions", "4 questions", JsonValue.Create(4)),
             Fact("peer.A.speed.medianSeconds", "9.8 s", JsonValue.Create(9800.0)),
             Fact("peer.B.cost.perQuestion", "$0.021", JsonValue.Create(0.021)),
-            Fact("peer.B.intervalOverlap", "its 95 % interval overlaps the subject's", JsonValue.Create(true)),
+            Fact("peer.B.intervalOverlap", "its 95% interval overlaps the subject's", JsonValue.Create(true)),
             Unavailable("peer.B.pairedDifference", PairedTooFewReason),
             Unavailable("peer.B.pairedInterval", PairedTooFewReason),
             Fact("peer.B.quality.index", "78 / 100", JsonValue.Create(78.3)),
@@ -381,7 +381,7 @@ internal static class BenchmarkReportPackFixture
             Fact("quality.index", "80 / 100", JsonValue.Create(80.4)),
             Fact("quality.interval", "77–83"),
             Fact("quality.intervalBasis", "Item sampling only. Below 3 runs there is no reproducibility estimate, so this interval covers one source of variation rather than two."),
-            Fact("quality.intervalOverlap", "its 95 % interval overlaps those of Models A and B", JsonValue.Create(2)),
+            Fact("quality.intervalOverlap", "its 95% interval overlaps those of Models A and B", JsonValue.Create(2)),
             Fact("quality.intervalSpan", "6 points", JsonValue.Create(6)),
             Fact("quality.scoredItems", "4 of 4 questions", JsonValue.Create(4)),
             Fact("quality.rank", "2nd of 3"),
@@ -393,7 +393,7 @@ internal static class BenchmarkReportPackFixture
             Fact("scoring.criticalErrorCap", "25"),
             Fact("scoring.levels", "1, 15, 35, 55, 72, 87, 100"),
             Fact("scoring.methodVersion", "12"),
-            Fact("scoring.weights", "Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %"),
+            Fact("scoring.weights", "Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%"),
             Fact("speed.modelTimeP50", "12.3 s"),
             Fact("speed.modelTimeP90", "15.0 s"),
             Fact("speed.rank", "2nd of 2"),
@@ -405,11 +405,11 @@ internal static class BenchmarkReportPackFixture
             Fact("tools.callsPerQuestion.peerMean", "2.8"),
             Fact("tools.failed", "0"),
             Fact("tools.refusedByBudget", "0"),
-            Fact("tools.share.knowledgeBase", "0 %"),
-            Fact("tools.share.other", "0 %"),
-            Fact("tools.share.sourceCode", "57 %"),
-            Fact("tools.share.structuredLookup", "14 %"),
-            Fact("tools.share.wiki", "29 %"),
+            Fact("tools.share.knowledgeBase", "0%"),
+            Fact("tools.share.other", "0%"),
+            Fact("tools.share.sourceCode", "57%"),
+            Fact("tools.share.structuredLookup", "14%"),
+            Fact("tools.share.wiki", "29%"),
             new BenchmarkReportFact
             {
                 Key = "tools.zeroKnowledgeBaseAnswers",
@@ -677,7 +677,7 @@ internal static class BenchmarkReportPackFixture
         return new System.Text.UTF8Encoding(false).GetString(bytes);
     }
 
-    private static string GoldenPath(string fileName)
+    internal static string GoldenPath(string fileName)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null && !File.Exists(Path.Combine(dir.FullName, "MobileGnollHackLogger.slnx")))

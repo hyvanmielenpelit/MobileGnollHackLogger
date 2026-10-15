@@ -442,10 +442,10 @@ describe('BatteryRunReportDialogComponent', () => {
       const card = h.el().querySelector('[data-figure="provider-errors"]') as HTMLElement;
       expect(h.text('[data-figure="provider-errors"] .score-label')).toBe('Provider Errors');
       const value = card.querySelector('.score-subvalue') as HTMLElement;
-      expect(value.textContent?.trim()).toBe('2.0 %');
+      expect(value.textContent?.trim()).toBe('2.0%');
       expect(value.className).not.toMatch(/badge-score-|text-muted/);
       expect(Array.from(card.querySelectorAll('.score-note')).map(n => (n.textContent ?? '').replace(/\s+/g, ' ').trim()))
-        .toEqual(['2 of 99 attempts', '95 % CI 0.56–7.1 % · 1 re-run (1 provider)', 'few attempts']);
+        .toEqual(['2 of 99 attempts', '95% CI 0.56–7.1% · 1 re-run (1 provider)', 'few attempts']);
       expect(card.querySelector('button.kfc-copy')?.getAttribute('aria-label')).toBe('Copy Provider Errors of battery run 7 as an image');
     });
 
@@ -646,13 +646,13 @@ describe('BatteryRunReportDialogComponent', () => {
 
       const section = h.el().querySelector('#brr-panel-integrity app-provider-availability') as HTMLElement;
       expect(accessibleText(section.querySelector('.pa-summary') as HTMLElement))
-        .toBe('Provider errors observed: 2.0 % (2 of 99 attempts; 95 % CI 0.56–7.1 %; few attempts).');
+        .toBe('Provider errors observed: 2.0% (2 of 99 attempts; 95% CI 0.56–7.1%; few attempts).');
       expect(section.querySelector('.pa-summary .pa-few')?.getAttribute('aria-hidden')).toBe('true');
       const rows = Array.from(section.querySelectorAll('.pa-members tbody tr')).map(row =>
         Array.from((row as HTMLTableRowElement).cells).map(cell => (cell.textContent ?? '').replace(/\s+/g, ' ').trim()));
       expect(rows).toEqual([
-        ['Gameplay Help, round 1, run #101', '50', '2', '4.0 %', '1 re-run (1 provider)'],
-        ['Board Reading, round 1, run #102', '49', '0', '0 %', '0 re-runs'],
+        ['Gameplay Help, round 1, run #101', '50', '2', '4.0%', '1 re-run (1 provider)'],
+        ['Board Reading, round 1, run #102', '49', '0', '0%', '0 re-runs'],
         ['Board Reading, round 1, run #98 superseded', 'Not recorded', '—', '—', '—']
       ]);
 

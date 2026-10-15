@@ -54,7 +54,7 @@ public sealed record BenchmarkPanelRankedPair(
     string SecondEntryLabel,
     string Description);
 
-/// <summary>A mean with its 95 % confidence interval; all three are null when the data are insufficient.</summary>
+/// <summary>A mean with its 95% confidence interval; all three are null when the data are insufficient.</summary>
 public sealed record BenchmarkPanelEstimate(double? Value, double? CiLow, double? CiHigh);
 
 /// <summary>
@@ -152,7 +152,7 @@ public static class BenchmarkPanelDiagnostics
         "The asymmetry estimate (gap under the panel minus gap under the reference reader) is valid only if the reference reader is neutral between the two families. A reference reader with a preference of its own shifts the estimate by that preference.",
         "The asymmetry estimate also assumes the reference reader spreads its scores like the panel. A reader that compresses score differences — a lenient reader bunched near the top — reads a smaller gap, and the estimate then carries part of the real capability gap as well as the panel's bias. Compare the reader's index spread with the panel's before reading it.",
         "The accusation audit assumes the claim verifier is neutral between the families, and it measures only the charges the verifier could check: indeterminate verdicts are counted but excluded from the overturn rate, and a deduction that raised no checkable charge is invisible to it.",
-        "Small samples: gap intervals are 95 % Student t intervals over paired questions and are withheld below 5 pairs; a family overturn gap is withheld below 10 ruled charges on either side. Questions, not runs, are the sampling unit: repeated runs average within a question and add no pairs."
+        "Small samples: gap intervals are 95% Student t intervals over paired questions and are withheld below 5 pairs; a family overturn gap is withheld below 10 ruled charges on either side. Questions, not runs, are the sampling unit: repeated runs average within a question and add no pairs."
     };
 
     private static readonly JsonSerializerOptions ClaimVerificationJsonOptions = new() { PropertyNameCaseInsensitive = true };
@@ -584,7 +584,7 @@ public static class BenchmarkPanelDiagnostics
     }
 
     /// <summary>
-    /// The mean of paired differences with its 95 % Student t interval; all null below
+    /// The mean of paired differences with its 95% Student t interval; all null below
     /// <see cref="MinPairedQuestions"/> differences.
     /// </summary>
     private static BenchmarkPanelEstimate Estimate(IReadOnlyList<double> differences)

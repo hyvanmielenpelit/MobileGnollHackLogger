@@ -153,7 +153,7 @@ public static class BenchmarkProviderAvailability
     /// Summarizes a pool of runs. Only rows of runs that are in <paramref name="runs"/> and recorded
     /// count; the re-run figures cover every run of the pool. With <paramref name="candidateOnly"/>
     /// the attempt figures count candidate rows only (the reported figures); otherwise every row. The
-    /// grader figures always count grader rows. The interval is the cluster-adjusted Wilson 95 %
+    /// grader figures always count grader rows. The interval is the cluster-adjusted Wilson 95%
     /// interval: clusters are (run, 10-minute UTC block) and, when two or more recorded runs are
     /// pooled, also runs, and the larger design effect is used.
     /// </summary>
@@ -302,7 +302,7 @@ public static class BenchmarkProviderAvailability
     }
 
     /// <summary>
-    /// The 95 % Wilson interval on the design-effect-adjusted sample of the given clusters, where
+    /// The 95% Wilson interval on the design-effect-adjusted sample of the given clusters, where
     /// <c>K</c> counts provider-class (the "successes" of the proportion) and <c>N</c> valid attempts.
     /// Entries with the same cluster key are summed, and clusters with no valid attempt are left out.
     /// With p̂ = ΣK / ΣN, N = ΣN and C clusters, V_cl = C/(C−1) · Σ(K_c − p̂·N_c)² / N² and
@@ -369,10 +369,10 @@ public static class BenchmarkProviderAvailability
 
     /// <summary>
     /// A proportion as a percentage with 2 significant digits and a regular space before the sign:
-    /// <c>0.81 %</c>, <c>3.1 %</c>, <c>3.0 %</c>, <c>12 %</c>, <c>0.0042 %</c>; <c>0 %</c> for zero and
-    /// <c>100 %</c> for one. See <see cref="FormatPercentNumber"/> for the rounding rule.
+    /// <c>0.81%</c>, <c>3.1%</c>, <c>3.0%</c>, <c>12%</c>, <c>0.0042%</c>; <c>0%</c> for zero and
+    /// <c>100%</c> for one. See <see cref="FormatPercentNumber"/> for the rounding rule.
     /// </summary>
-    public static string FormatPercent(double proportion) => FormatPercentNumber(proportion) + " %";
+    public static string FormatPercent(double proportion) => FormatPercentNumber(proportion) + "%";
 
     /// <summary>
     /// The number part of <see cref="FormatPercent"/>, without the percent sign. The proportion is
@@ -386,7 +386,7 @@ public static class BenchmarkProviderAvailability
     /// <item>r is written in digits with the decimal point d places from the right, padded with
     /// leading zeros so that one digit precedes the point; trailing zeros are kept.</item>
     /// </list>
-    /// So values of 10 % and more are whole numbers (<c>12</c>, <c>100</c>), and smaller values keep
+    /// So values of 10% and more are whole numbers (<c>12</c>, <c>100</c>), and smaller values keep
     /// two significant digits (<c>3.0</c>, <c>0.81</c>, <c>0.0042</c>).
     /// </summary>
     public static string FormatPercentNumber(double proportion)
@@ -434,16 +434,16 @@ public static class BenchmarkProviderAvailability
         FormatInteger(k) + " of " + FormatInteger(n) + (n == 1 ? " attempt" : " attempts");
 
     /// <summary>
-    /// The interval <c>95 % CI 0.46–1.4 %</c>: each bound by <see cref="FormatPercentNumber"/>, joined
+    /// The interval <c>95% CI 0.46–1.4%</c>: each bound by <see cref="FormatPercentNumber"/>, joined
     /// by an en dash (U+2013), one percent sign at the end. Empty when either bound is null.
     /// </summary>
     public static string FormatInterval(double? low, double? high) =>
         low is double l && high is double h
-            ? "95 % CI " + FormatPercentNumber(l) + "–" + FormatPercentNumber(h) + " %"
+            ? "95% CI " + FormatPercentNumber(l) + "–" + FormatPercentNumber(h) + "%"
             : string.Empty;
 
     /// <summary>
-    /// The natural frequency for prose, <c>about 1 in 123</c>, when 0 &lt; k/n &lt; 1 % (tested in
+    /// The natural frequency for prose, <c>about 1 in 123</c>, when 0 &lt; k/n &lt; 1% (tested in
     /// integers as k × 100 &lt; n); N = floor(n / k + 0.5) with the "," thousands separator. Null otherwise.
     /// </summary>
     public static string? FormatOneIn(int k, int n)
@@ -458,8 +458,8 @@ public static class BenchmarkProviderAvailability
     /// The headline: <see cref="FormatPercent"/> of k/n, then in parentheses <see cref="FormatCount"/>,
     /// <see cref="FormatInterval"/> when it is not empty, and <c>few attempts</c> when
     /// n &lt; <see cref="FewAttemptsThreshold"/>, separated by "; ". For example
-    /// <c>0.81 % (12 of 1,480 attempts; 95 % CI 0.46–1.4 %)</c> and
-    /// <c>3.0 % (3 of 99 attempts; 95 % CI 1.0–8.5 %; few attempts)</c>. With n = 0 it is
+    /// <c>0.81% (12 of 1,480 attempts; 95% CI 0.46–1.4%)</c> and
+    /// <c>3.0% (3 of 99 attempts; 95% CI 1.0–8.5%; few attempts)</c>. With n = 0 it is
     /// <c>no valid attempts</c>. A pool that is not recorded is the caller's to word.
     /// </summary>
     public static string FormatRate(int k, int n, double? low, double? high)

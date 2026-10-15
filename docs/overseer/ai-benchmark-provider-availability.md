@@ -295,9 +295,9 @@ All figures are candidate-only.
 
 | Name | Definition | Shown as |
 |---|---|---|
-| **Provider error rate** (the headline) | provider-class attempts ÷ valid attempts | `0.81 %`, always beside its count |
+| **Provider error rate** (the headline) | provider-class attempts ÷ valid attempts | `0.81%`, always beside its count |
 | **Provider errors** | the provider-class attempt count *k*, with *n* valid attempts | `12 of 1,480 attempts` |
-| **Upper bound including unattributed** | (provider + unattributed) ÷ valid | `≤ 1.0 % incl. 3 unattributed` |
+| **Upper bound including unattributed** | (provider + unattributed) ÷ valid | `≤ 1.0% incl. 3 unattributed` |
 | **By class** | counts of overloaded (503/529), server error (5xx), timeout, stream failure, 429 ours, 429 unattributed and transport unattributed | breakdown table |
 | **Our-side failures (excluded)** | counts of classes 30 to 36 | breakdown table and the Integrity tab only |
 | **Questions lost to the provider** | answers whose terminal status, after every pass, is `ProviderError` with origin `Provider` | count |
@@ -366,9 +366,10 @@ never hidden.
 
 The server (`BenchmarkProviderAvailability`) and the client (`provider-availability.ts`) format alike,
 byte for byte, in the invariant culture; `BenchmarkProviderAvailabilityTests` holds the parity table the
-client spec copies.
+client spec copies. Since 2026-10-15 both write the percent sign in the US style, right after the number
+(`0.81%`); before, both wrote a space (`0.81 %`).
 
-- **The rate** (`FormatPercent`) has **2 significant digits** and a space before the sign. With
+- **The rate** (`FormatPercent`) has **2 significant digits** and no space before the sign. With
   *v* = the proportion, clamped to [0, 1], × 100:
   1. *v* = 0 gives `0`.
   2. The decimals *d* are 0 when *v* ≥ 10; otherwise the smallest *d* ≥ 1 with *v* × 10<sup>d</sup> ≥ 10
@@ -378,15 +379,15 @@ client spec copies.
   5. *r* is written with the decimal point *d* places from the right, with one digit before the point;
      trailing zeros are kept.
 
-  So `0 %`, `0.81 %`, `3.0 %`, `3.1 %`, `12 %`, `100 %`. Per-mille is never used.
+  So `0%`, `0.81%`, `3.0%`, `3.1%`, `12%`, `100%`. Per-mille is never used.
 - **The count** always comes with its denominator (`FormatCount`): `12 of 1,480 attempts`, `1 of 1
   attempt`, with a comma thousands separator.
-- **The interval** (`FormatInterval`): `95 % CI 0.46–1.4 %`, each bound formatted as the rate, joined by
+- **The interval** (`FormatInterval`): `95% CI 0.46–1.4%`, each bound formatted as the rate, joined by
   an en dash, one percent sign at the end.
 - **The headline** (`FormatRate`): the rate, then in parentheses the count, the interval and *few
-  attempts* below 100, separated by `; ` — `0.81 % (12 of 1,480 attempts; 95 % CI 0.46–1.4 %)`,
-  `3.0 % (3 of 99 attempts; 95 % CI 1.0–8.5 %; few attempts)`, `0 % (0 of 1,480 attempts; 95 % CI
-  0–0.26 %)`. With no valid attempt it reads `no valid attempts`; a pool with no recorded run reads *Not
+  attempts* below 100, separated by `; ` — `0.81% (12 of 1,480 attempts; 95% CI 0.46–1.4%)`,
+  `3.0% (3 of 99 attempts; 95% CI 1.0–8.5%; few attempts)`, `0% (0 of 1,480 attempts; 95% CI
+  0–0.26%)`. With no valid attempt it reads `no valid attempts`; a pool with no recorded run reads *Not
   recorded*.
 - **In prose only**, a rate under 1 % with *k* > 0 (tested in integers as *k* × 100 < *n*) gets a natural
   frequency (`FormatOneIn`), *about 1 in N* with **N = round(*n* / *k*)** (floor(*n* / *k* + 0.5)): 12 of
@@ -481,16 +482,16 @@ optional and remembered per browser in `localStorage`, read and written behind `
 
 | Where | What | Default |
 |---|---|---|
-| Run and battery run result dialogs, *Key figures* | the tile **Provider errors** (`provider-errors`): the rate, *12 of 1,480 attempts*, then *95 % CI … · 3 unattributed · 2 re-runs (1 provider)*; *few attempts* below 100; *Not recorded* on a legacy run; neutral tone. It can be hidden with **Choose figures** like every tile | shown |
+| Run and battery run result dialogs, *Key figures* | the tile **Provider errors** (`provider-errors`): the rate, *12 of 1,480 attempts*, then *95% CI … · 3 unattributed · 2 re-runs (1 provider)*; *few attempts* below 100; *Not recorded* on a legacy run; neutral tone. It can be hidden with **Choose figures** like every tile | shown |
 | Both dialogs, *Integrity* tab | the **Provider availability** section (`app-provider-availability`): a one-sentence summary, the breakdown table (class, count, share of valid attempts, typical statuses) with our-side rows under *Excluded: our side*, the outcome view, the re-run line (repair passes, replaced runs as links, first-attempt success), the grader line, and in the battery dialog a per-member table (member, attempts, provider errors, rate, re-runs) | view `strip`, stored under `overseer.benchmark.providerAvailability.view` |
 | The outcome view | `strip`: 5-minute UTC bins from the first to the last attempt, each shaded by its provider-error share on a color-blind-safe sequential ramp, gray with no attempts, hatched for bins with our-side failures only, with a visually hidden table of the same data; `bar`: a 100 %-stacked bar of attempts by class with counts labeled | `strip` |
 | Run dialog, *Questions* tab | the failed answer's line by origin and kind (§ 4) | — |
-| Run History run and battery run cards; Model Comparison source cards | the outlined badge `app-provider-error-badge`, **only when** provider errors or re-runs are above 0: *Provider errors 0.81 %* and/or *2 re-runs*, its tooltip *12 of 1,480 attempts; 3 unattributed; 2 re-runs, 1 for provider errors*. Run History adds the sort *Most provider errors* (legacy runs last) and the Flags facet value *Provider errors* | hidden at zero |
+| Run History run and battery run cards; Model Comparison source cards | the outlined badge `app-provider-error-badge`, **only when** provider errors or re-runs are above 0: *Provider errors 0.81%* and/or *2 re-runs*, its tooltip *12 of 1,480 attempts; 3 unattributed; 2 re-runs, 1 for provider errors*. Run History adds the sort *Most provider errors* (legacy runs last) and the Flags facet value *Provider errors* | hidden at zero |
 | Chat Consistency step-1 run cards and step-3 period cards | a *Provider errors* fact | — |
 | Model batch member figures; multi-run progress table and its `--- MEMBERS ---` block; battery leaderboard | *Provider errors* and *Re-runs* (model batch); a *Provider errors* column (multi-run, leaderboard, sortable there) | — |
-| Model Comparison, figure style group `availability` | `panel` (`on` · `off`): a fourth P1 panel, a dot per model with its interval, labeled *k/n*, hollow below 100 attempts; `measure` (`strict` · `inclusive`); `scale` (`sqrt` · `linear`); `markers` on the S1–S3 scatters (`off` · `on`): a dashed ring and *3.1 % provider errors* on a model whose interval's **lower** bound exceeds 2 % | panel `on`, measure `strict`, scale `sqrt`, markers `off` |
+| Model Comparison, figure style group `availability` | `panel` (`on` · `off`): a fourth P1 panel, a dot per model with its interval, labeled *k/n*, hollow below 100 attempts; `measure` (`strict` · `inclusive`); `scale` (`sqrt` · `linear`); `markers` on the S1–S3 scatters (`off` · `on`): a dashed ring and *3.1% provider errors* on a model whose interval's **lower** bound exceeds 2 % | panel `on`, measure `strict`, scale `sqrt`, markers `off` |
 | Model Comparison, figure **A1 Provider errors** | the same dot plot as its own figure card, always present, which documents can carry (`a1-availability`) | — |
-| Model Comparison table | **Provider errors**, `0.81 % (12/1,480)`; **Re-runs needed**, `3 (2 provider)` | Provider errors shown, Re-runs needed hidden |
+| Model Comparison table | **Provider errors**, `0.81% (12/1,480)`; **Re-runs needed**, `3 (2 provider)` | Provider errors shown, Re-runs needed hidden |
 | Chat Consistency, figure **Provider availability** | `points`: a dot per unit with its interval, area by valid attempts, availability-only units hollow, ▲ above a unit that needed a provider-caused re-run; `controlChart`: a Laney p′ chart labeled *control limits*; `strip`: one row per measure, one cell per UTC day | `points` |
 | Documents | the `availability.*` facts, a Key Figures bullet, a *Provider availability* subsection, threats lines, figure A1 and figure `cc5-availability` ([`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md)) | — |
 

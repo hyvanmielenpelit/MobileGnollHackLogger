@@ -383,7 +383,7 @@ describe('CcModelStepComponent', () => {
         ? { ...row, availabilityRecorded: true, validAttemptCount: 1480, providerErrorCount: 12, rerunsNeeded: 2, providerRerunsNeeded: 1 }
         : row));
       expect(textOf(card(106).querySelector('[data-fact="providerErrors"] dd')))
-        .toBe('0.81 % (12 of 1,480 attempts); 2 re-runs (1 for provider errors)');
+        .toBe('0.81% (12 of 1,480 attempts); 2 re-runs (1 for provider errors)');
     });
 
     it('lists a run kept for provider availability only, labeled, outside the selection and refusing the marks', () => {
@@ -402,7 +402,7 @@ describe('CcModelStepComponent', () => {
       expect(checkbox(107).getAttribute('aria-disabled')).toBe('true');
       expect(textOf(el.querySelector('#cc-run-107-reason')))
         .toBe('Provider availability only (P6): failed or canceled, its provider attempts still count');
-      expect(textOf(card(107).querySelector('[data-fact="providerErrors"] dd'))).toBe('20 % (8 of 40 attempts)');
+      expect(textOf(card(107).querySelector('[data-fact="providerErrors"] dd'))).toBe('20% (8 of 40 attempts)');
       // The selection counts the six usable runs only.
       expect(textOf(el.querySelector('#cc-scope-label'))).toBe('Runs in the analysis — all 6 runs in these dates');
 

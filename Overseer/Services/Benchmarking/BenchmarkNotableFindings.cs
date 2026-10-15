@@ -154,17 +154,17 @@ public static class BenchmarkNotableFindings
 
     /// <summary>What the section printing the findings says the rules are.</summary>
     public const string RulesNote = "Detected by code from the figures, in this order, at most two of a kind and ten in all: "
-        + "a model established as scoring higher than another (by a paired test or by 95 % intervals that do not overlap) at no more than half its cost per question, or half its median answer time; "
+        + "a model established as scoring higher than another (by a paired test or by 95% intervals that do not overlap) at no more than half its cost per question, or half its median answer time; "
         + "one model at two thinking levels where the lower level's Intelligence Index is at least the higher's; "
         + "the highest-Index or reference model scoring 50 or less where the other models' median is 75 or more; "
         + "the lowest-Index model scoring at least 15 points above every other model on a question; "
         + "every model scoring below 50 on a question; "
         + "an advanced-band score at least 10 points above the simple-band score, each band with at least three questions; "
-        + "at least two critical errors, or three panel disagreements, at twice the other models' median rate or more; "
+        + "at least two critical errors, or three panel disagreements counted over the answers both panel members graded, at twice the other models' median rate or more; "
         + "a pair whose order depends on which panel member grades; "
-        + "truncated answers and tool-limit hits on at least 10 % of a model's answers; "
+        + "truncated answers and tool-limit hits on at least 10% of a model's answers; "
         + "tool calls per question or median answer length at most half or at least twice the other models' median; "
-        + "and a provider error rate of at least 2 % and five times the other models' median.";
+        + "and a provider error rate of at least 2% and five times the other models' median.";
 
     /// <summary>What a section prints when no rule found anything.</summary>
     public const string NothingDetected = "Nothing unusual was detected by the rules below.";
@@ -276,7 +276,7 @@ public static class BenchmarkNotableFindings
 
         if (x.QualityLower is double xLower && y.QualityUpper is double yUpper && xLower > yUpper)
         {
-            return (BenchmarkComparisonReportFacts.PairPrefix(first, second) + "intervalOverlap", "established by 95 % intervals that do not overlap");
+            return (BenchmarkComparisonReportFacts.PairPrefix(first, second) + "intervalOverlap", "established by 95% intervals that do not overlap");
         }
         return null;
     }
@@ -480,22 +480,37 @@ public static class BenchmarkNotableFindings
         return found;
     }
 
-    /// <summary>Critical errors or panel disagreements: at least the minimum count, at no less than twice the other models' median rate.</summary>
+    /// <summary>
+    /// Critical errors or panel disagreements: at least the minimum count, at no less than twice the other models'
+    /// median rate. Panel disagreement follows <see cref="DisagreementConcentration"/>, which the Root Cause
+    /// Analysis' model profiles share.
+    /// </summary>
     private static List<Candidate> Concentrations(IReadOnlyList<BenchmarkNotableModel> models, string kind)
     {
         bool critical = kind == CriticalErrorConcentration;
-        (int Count, int Of)? CountsOf(BenchmarkNotableModel m)
+        if (!critical)
         {
-            int? count = critical ? m.CriticalErrors : m.PanelDisagreements;
-            int? of = critical ? m.CountingAnswers : m.PanelAnswers;
-            if (count is not int c || of is not int n || n <= 0) return null;
+            var disagreements = new List<Candidate>();
+            foreach (var m in models)
+            {
+                var others = models.Where(o => o.Letter != m.Letter).Select(o => (o.PanelDisagreements, o.PanelAnswers));
+                if (DisagreementConcentration(m.PanelDisagreements, m.PanelAnswers, others) is not { } panel) continue;
+                disagreements.Add(new Candidate(kind, new[] { m.Letter }, Array.Empty<int>(), new[] { Model(m, "panel.disagreements") },
+                    $"Model {m.Letter} had {DisagreementPhrase(panel.Rate, panel.OthersMedian)}, so its Intelligence Index is less certain.",
+                    panel.Rate));
+            }
+            return disagreements;
+        }
+        static (int Count, int Of)? CountsOf(BenchmarkNotableModel m)
+        {
+            if (m.CriticalErrors is not int c || m.CountingAnswers is not int n || n <= 0) return null;
             return (c, n);
         }
 
         var found = new List<Candidate>();
         foreach (var m in models)
         {
-            if (CountsOf(m) is not { } own || own.Count < (critical ? CriticalErrorMinCount : DisagreementMinCount)) continue;
+            if (CountsOf(m) is not { } own || own.Count < CriticalErrorMinCount) continue;
 
             var others = models
                 .Where(o => o.Letter != m.Letter)
@@ -511,14 +526,72 @@ public static class BenchmarkNotableFindings
             string against = median > 0
                 ? Ratio(rate / median) + " times the other models' median rate"
                 : "while the other models' median rate is zero";
-            string summary = critical
-                ? $"Model {m.Letter} made {Inv(own.Count)} critical errors in {Inv(own.Of)} answers, {against}."
-                : $"The panel disagreed on {Inv(own.Count)} of Model {m.Letter}'s {Inv(own.Of)} answers, {against}, so its Intelligence Index is less certain.";
-            found.Add(new Candidate(kind, new[] { m.Letter }, Array.Empty<int>(),
-                new[] { Model(m, critical ? "errors.critical" : "panel.disagreements") }, summary, rate));
+            found.Add(new Candidate(kind, new[] { m.Letter }, Array.Empty<int>(), new[] { Model(m, "errors.critical") },
+                $"Model {m.Letter} made {Inv(own.Count)} critical errors in {Inv(own.Of)} answers, {against}.", rate));
         }
         return found;
     }
+
+    /// <summary>
+    /// A model's panel disagreement when it stands out: the share of the answers both panel members graded on
+    /// which they disagreed, with at least <see cref="DisagreementMinCount"/> disagreements, at
+    /// <see cref="ConcentrationFactor"/> times the median of the other models' shares or more; with that median.
+    /// Null without such answers, without another model that has them, or when the share does not stand out.
+    /// The notable findings and the Root Cause Analysis' model profiles both read it.
+    /// </summary>
+    public static (double Rate, double OthersMedian)? DisagreementConcentration(
+        int? disagreements, int? panelAnswers, IEnumerable<(int? Disagreements, int? PanelAnswers)> others)
+    {
+        ArgumentNullException.ThrowIfNull(others);
+        if (disagreements is not int count || panelAnswers is not int of || of <= 0 || count < DisagreementMinCount) return null;
+
+        var rates = others
+            .Where(o => o.Disagreements.HasValue && o.PanelAnswers is > 0)
+            .Select(o => o.Disagreements!.Value / (double)o.PanelAnswers!.Value)
+            .ToList();
+        if (rates.Count == 0 || BenchmarkComparisonModelProfile.Median(rates) is not double median) return null;
+
+        double rate = count / (double)of;
+        return rate < median * ConcentrationFactor ? null : (rate, median);
+    }
+
+    /// <summary>
+    /// <c>panel disagreement on 19% of the answers both members graded, about three times the other models'
+    /// median of 6%</c>: a noun phrase, as the notable finding and the model profile both state it.
+    /// </summary>
+    public static string DisagreementPhrase(double rate, double othersMedian)
+        => "panel disagreement on " + BenchmarkReportFormat.Percent(rate * 100) + " of the answers both members graded, "
+           + (othersMedian > 0
+               ? AboutTimes(rate / othersMedian) + " the other models' median of " + BenchmarkReportFormat.Percent(othersMedian * 100)
+               : "while the other models' median is zero");
+
+    /// <summary><c>about the same as</c>, <c>about twice</c>, <c>about three times</c> … <c>about 15 times</c>: the ratio to the nearest whole.</summary>
+    public static string AboutTimes(double ratio)
+    {
+        int whole = (int)Math.Round(ratio, MidpointRounding.AwayFromZero);
+        return whole switch
+        {
+            <= 1 => "about the same as",
+            2 => "about twice",
+            _ => "about " + NumberWord(whole) + " times"
+        };
+    }
+
+    /// <summary>Three to twelve in words, digits above.</summary>
+    private static string NumberWord(int value) => value switch
+    {
+        3 => "three",
+        4 => "four",
+        5 => "five",
+        6 => "six",
+        7 => "seven",
+        8 => "eight",
+        9 => "nine",
+        10 => "ten",
+        11 => "eleven",
+        12 => "twelve",
+        _ => Inv(value)
+    };
 
     /// <summary>A pair whose order depends on which panel member grades.</summary>
     private static List<Candidate> JudgeDependent(IReadOnlyList<BenchmarkNotableModel> models, IReadOnlyList<(string First, string Second)> pairs)
@@ -540,7 +613,7 @@ public static class BenchmarkNotableFindings
             .ToList();
     }
 
-    /// <summary>Truncated answers plus tool-limit hits on at least 10 % of a model's answers.</summary>
+    /// <summary>Truncated answers plus tool-limit hits on at least 10% of a model's answers.</summary>
     private static List<Candidate> OutputTroubles(IReadOnlyList<BenchmarkNotableModel> models)
     {
         var found = new List<Candidate>();
@@ -590,7 +663,7 @@ public static class BenchmarkNotableFindings
         return found;
     }
 
-    /// <summary>A provider error rate of at least 2 % and at least five times the other models' median.</summary>
+    /// <summary>A provider error rate of at least 2% and at least five times the other models' median.</summary>
     private static List<Candidate> ProviderErrorRates(IReadOnlyList<BenchmarkNotableModel> models)
     {
         var found = new List<Candidate>();

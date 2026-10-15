@@ -5245,6 +5245,16 @@ progress.job-progress {
   color: #a1a1aa;
 }
 
+/* An empty note, such as a live region waiting for its first message, leaves the flow and adds no
+   gap, but stays in the accessibility tree: never display: none on a live region. */
+.rp-note:empty {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
 .rp-idle-note {
   margin: 0;
 }

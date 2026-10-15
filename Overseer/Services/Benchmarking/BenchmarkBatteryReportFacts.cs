@@ -1089,7 +1089,7 @@ public static class BenchmarkBatteryReportFacts
         }
 
         int excluded = result.ExcludedMembers.Count;
-        facts.Add("battery.excludedMembers", excluded, Inv(excluded) + (excluded == 1 ? " member run" : " member runs"));
+        facts.Add("battery.excludedMembers", excluded, Inv(excluded) + (excluded == 1 ? " excluded member run" : " excluded member runs"));
 
         var caveats = result.Caveats.Where(c => !string.IsNullOrWhiteSpace(c)).ToList();
         for (int i = 0; i < caveats.Count; i++)
@@ -1110,7 +1110,7 @@ public static class BenchmarkBatteryReportFacts
 
             if (suite.Weight is double weight)
             {
-                facts.Add(prefix + "weight", weight, BenchmarkReportFormat.OneDecimal(weight * 100) + " %");
+                facts.Add(prefix + "weight", weight, BenchmarkReportFormat.OneDecimal(weight * 100) + "%");
             }
             else
             {

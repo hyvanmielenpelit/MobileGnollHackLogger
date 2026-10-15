@@ -116,7 +116,7 @@
       </p>
     }
     @case ('loading') {
-      <p class="cds-note cds-loading">Looking up the documents already written…</p>
+      <app-loading-indicator class="cds-note cds-loading" text="Looking up the documents already written…"></app-loading-indicator>
     }
     @default {
       @for (group of view!.groups; track group.key) {

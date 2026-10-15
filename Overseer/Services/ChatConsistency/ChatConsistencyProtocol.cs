@@ -68,9 +68,9 @@ public sealed record ChatConsistencyEndpointProtocol
     /// <summary>How items are paired and what is resampled.</summary>
     public string Pairing { get; init; } = string.Empty;
 
-    /// <summary>The margin as text, for example "±3 index points" or "±15 %".</summary>
+    /// <summary>The margin as text, for example "±3 index points" or "±15%".</summary>
     public string MarginText => Scale == ChatConsistencyEffectScale.LogRatio
-        ? "±" + (100.0 * (Math.Exp(Margin) - 1.0)).ToString("0.#", CultureInfo.InvariantCulture) + " %"
+        ? "±" + (100.0 * (Math.Exp(Margin) - 1.0)).ToString("0.#", CultureInfo.InvariantCulture) + "%"
         : "±" + Margin.ToString("0.###", CultureInfo.InvariantCulture) + " " + Unit;
 }
 
@@ -85,7 +85,7 @@ public sealed record ChatConsistencyProtocolOverrides
 {
     /// <summary>
     /// Margins by endpoint id: the endpoint's own unit for a difference endpoint (index points, or
-    /// percentage points for P6), a fraction (0.15 = ±15 %) for a log-ratio endpoint.
+    /// percentage points for P6), a fraction (0.15 = ±15%) for a log-ratio endpoint.
     /// </summary>
     public IReadOnlyDictionary<string, double>? Margins { get; init; }
 

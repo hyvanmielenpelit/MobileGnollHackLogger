@@ -153,7 +153,7 @@ public sealed record BenchmarkGroupItemStatistics
     public double? CoefficientOfVariation { get; init; }
 
     /// <summary>
-    /// Half-width of the 95 % confidence interval on the item mean:
+    /// Half-width of the 95% confidence interval on the item mean:
     /// <c>t(R−1) · SD / √R</c>. Null below two runs.
     /// </summary>
     public double? MeanConfidenceHalfWidth { get; init; }
@@ -268,7 +268,7 @@ public sealed record BenchmarkGroupIndexStatistics
     public double? ReproducibilityStandardDeviation { get; init; }
 
     /// <summary>
-    /// Bounds of the 95 % confidence interval on σ itself:
+    /// Bounds of the 95% confidence interval on σ itself:
     /// <c>SD·√(df/χ²_{0.975,df})</c> and <c>SD·√(df/χ²_{0.025,df})</c> on <c>df = R−1</c>.
     ///
     /// <para>The interval is <b>inverted</b> with respect to the critical values — the lower bound
@@ -296,7 +296,7 @@ public sealed record BenchmarkGroupIndexStatistics
     /// </summary>
     public double? ReproducibilityStandardError { get; init; }
 
-    /// <summary>The <i>t</i>(<i>R</i>−1) two-sided 95 % critical value. Null below three runs.</summary>
+    /// <summary>The <i>t</i>(<i>R</i>−1) two-sided 95% critical value. Null below three runs.</summary>
     public double? ReproducibilityCriticalValue { get; init; }
 
     /// <summary><c>t(R−1) · SE_repro</c>. Null below three runs.</summary>
@@ -316,7 +316,7 @@ public sealed record BenchmarkGroupIndexStatistics
     /// </summary>
     public double? ItemSamplingStandardError { get; init; }
 
-    /// <summary>The normal 95 % critical value, 1.96, used for the item-sampling component.</summary>
+    /// <summary>The normal 95% critical value, 1.96, used for the item-sampling component.</summary>
     public double ItemSamplingCriticalValue { get; init; } = BenchmarkGroupStatistics.NormalCritical95;
 
     /// <summary><c>1.96 · SE_item</c>. Null when the item-sampling SE is null.</summary>
@@ -937,7 +937,7 @@ public static class BenchmarkGroupStatistics
     /// <summary>Sample SD at or above which an item is flagged unstable.</summary>
     public const double DefaultUnstableItemStandardDeviation = 15.0;
 
-    /// <summary>The two-sided 95 % normal critical value.</summary>
+    /// <summary>The two-sided 95% normal critical value.</summary>
     public const double NormalCritical95 = 1.959963984540054;
 
     /// <summary>The bounds a quality score, and therefore any interval reported on one, lives in.</summary>
@@ -2128,7 +2128,7 @@ public static class BenchmarkGroupStatistics
     };
 
     /// <summary>
-    /// The two-sided 95 % critical value of Student's <i>t</i> on
+    /// The two-sided 95% critical value of Student's <i>t</i> on
     /// <paramref name="degreesOfFreedom"/> degrees of freedom. Tabulated to df = 30 and continued
     /// by the Cornish–Fisher expansion above it, which agrees with published tables to four
     /// decimals from df = 31 upward. Returns the normal value 1.96 at df ≤ 0, where no <i>t</i>
@@ -2168,7 +2168,7 @@ public static class BenchmarkGroupStatistics
     };
 
     /// <summary>
-    /// The 95 % confidence interval on a population standard deviation, from the χ²(<i>df</i>)
+    /// The 95% confidence interval on a population standard deviation, from the χ²(<i>df</i>)
     /// distribution: <c>[SD·√(df/χ²_{0.975,df}), SD·√(df/χ²_{0.025,df})]</c>.
     ///
     /// <para>Note the inversion: the <b>lower</b> bound on σ divides by the <b>upper</b> critical

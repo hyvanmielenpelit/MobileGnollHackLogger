@@ -15,7 +15,7 @@ using static Overseer.Tests.UnitTests.BenchmarkReportPackFixture;
 /// </summary>
 public class BenchmarkNotableFindingsTests
 {
-    /// <summary>A model with an Intelligence Index and a 95 % interval two points either side of it.</summary>
+    /// <summary>A model with an Intelligence Index and a 95% interval two points either side of it.</summary>
     private static BenchmarkNotableModel Model(
         string letter, double quality, double? cost = null, double? timeMs = null, string provider = "Northwind", string modelId = "model",
         string? thinkingLevel = null, double halfWidth = 2)
@@ -65,7 +65,7 @@ public class BenchmarkNotableFindingsTests
 
         Assert.Equal(BenchmarkNotableFindings.CheaperAndBetter, found.Kind);
         Assert.Equal(new[] { "A", "B" }, found.Models);
-        Assert.Equal("Model A scored higher than Model B (established by 95 % intervals that do not overlap) at 0.50 times its cost per question.", found.Summary);
+        Assert.Equal("Model A scored higher than Model B (established by 95% intervals that do not overlap) at 0.50 times its cost per question.", found.Summary);
         Assert.Contains("pair.A.B.intervalOverlap", found.Facts);
         Assert.Equal(1, found.Number);
 
@@ -250,7 +250,7 @@ public class BenchmarkNotableFindingsTests
         BenchmarkNotableModel Output(int answers) => new() { Letter = "A", Quality = 80, Answers = answers, Truncated = 1, ToolLimitHits = 1 };
 
         var found = Assert.Single(Detect(new[] { Output(20), Model("B", 70) }));
-        Assert.Equal("Model A had 1 truncated answer and 1 tool-limit hit in 20 answers (10 %).", found.Summary);
+        Assert.Equal("Model A had 1 truncated answer and 1 tool-limit hit in 20 answers (10%).", found.Summary);
 
         Assert.Empty(Detect(new[] { Output(21), Model("B", 70) }));
     }

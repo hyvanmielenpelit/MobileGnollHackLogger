@@ -34,7 +34,9 @@ import {
 import { reportPackIo } from './report-pack-diagnostics';
 import {
   REPORT_PACK_ALL_WRITTEN_REASON,
+  REPORT_PACK_JOB_RUNNING_REASON,
   REPORT_PACK_KEEP_OPEN_TEXT,
+  REPORT_PACK_LEAD_TEXT,
   REPORT_PACK_MODEL_SCOPE_TIP,
   REPORT_PACK_PEERLESS_REFUSAL,
   REPORT_PACK_POLL_MS,
@@ -86,6 +88,9 @@ const ENTRIES: BenchmarkModelComparisonEntryDto[] = [
 ];
 
 const OFFERED = ['run:1', 'run:2', 'group:4'];
+
+/** The models line's last sentence for CONTEXT, whose Old GPT is Excluded. */
+const EXCLUDED_ONE = '1 entry of this comparison is Excluded and is not offered.';
 
 const CONTEXT: ReportPackContext = {
   runIds: [1, 2, 3],
@@ -337,7 +342,7 @@ describe('ReportPackPanelComponent', () => {
   // Layout
   // -------------------------------------------------------------------------------------------
 
-  it('lays out the form in the sidebar and the progress in the main area, under the step heading', fakeAsync(() => {
+  it('lays out the form in the sidebar and the progress in the main area, with no heading above them', fakeAsync(() => {
     openPanel();
     answerPreview();
 
@@ -357,14 +362,22 @@ describe('ReportPackPanelComponent', () => {
       expect(order[i - 1]!.compareDocumentPosition(order[i]!) & Node.DOCUMENT_POSITION_FOLLOWING, `${i}`).toBeTruthy();
     }
 
-    const heading = q('h4.gh-section-title#rp-heading')!;
-    expect(heading.textContent!.trim()).toBe('Write reports');
-    expect(component.headingId).toBe('rp-heading');
-    expect(text('.rp-subtitle')).toBe('Board Suite · 4 models · 1 Excluded');
-    expect(text('.rp-lead')).toBe(
+    // The frame renders no header: no step heading, subtitle or lead paragraph above the columns.
+    expect(q('.rrf-header')).toBeNull();
+    expect(q('.rp-identity, .rp-heading, .rp-subtitle, .rp-lead')).toBeNull();
+    expect(text('#rp-new-heading')).toBe('New report pack');
+    expect(main.querySelector('#rp-progress-heading')?.textContent?.trim()).toBe('Report pack progress');
+
+    // Where the reports are kept is the info tip after the sidebar's heading.
+    const headingRow = q('.rp-new-heading-row')!;
+    expect(headingRow.firstElementChild).toBe(q('h5#rp-new-heading'));
+    const leadButton = headingRow.querySelector<HTMLButtonElement>('app-info-tip button.gh-info-btn')!;
+    expect(leadButton.getAttribute('aria-label')).toBe('About Where these reports are kept');
+    expect(leadButton.getAttribute('interestfor')).toBe('rp-lead-tip');
+    expect(text('#rp-lead-tip')).toBe(REPORT_PACK_LEAD_TEXT);
+    expect(REPORT_PACK_LEAD_TEXT).toBe(
       'These reports are kept with the comparison: step 4 lists them, and so does Comparison reports on the Model '
       + 'Comparison tab. A run\'s or battery run\'s own reports are written in the AI Reports tab of its report.');
-    expect(main.querySelector('#rp-progress-heading')?.textContent?.trim()).toBe('Report pack progress');
 
     // No subject select and no Documents checkboxes: the list of this comparison's documents replaces them.
     expect(q('#rp-subject')).toBeNull();
@@ -379,7 +392,8 @@ describe('ReportPackPanelComponent', () => {
     fixture.componentRef.setInput('idPrefix', 'mcr');
     openPanel();
 
-    expect(q('h4#mcr-heading')).not.toBeNull();
+    expect(q('h5#mcr-new-heading')).not.toBeNull();
+    expect(q('#mcr-lead-tip')).not.toBeNull();
     expect(q('#mcr-scope-comparison')).not.toBeNull();
     expect(q('#mcr-models-label')).not.toBeNull();
     expect(q('#mcr-estimate')).not.toBeNull();
@@ -501,7 +515,8 @@ describe('ReportPackPanelComponent', () => {
     expect(instance.labelledBy).toBe('rp-models-label');
     expect(text('#rp-models-label')).toBe('Models');
     expect(text('.rp-models-picker .selector-trigger')).toBe('All 3 models');
-    expect(text('#rp-models-line')).toBe('Writes the comparison-wide documents.');
+    // The Excluded entry is not offered, and the line says so.
+    expect(text('#rp-models-line')).toBe(`Writes the comparison-wide documents. ${EXCLUDED_ONE}`);
     expect(instance.describedBy).toBe('rp-models-line');
     expect(q('.rp-models-cap')).toBeNull();
 
@@ -538,7 +553,7 @@ describe('ReportPackPanelComponent', () => {
 
     expect(component.chosenKeys).toEqual(['run:1', 'group:4']);
     expect(text('.rp-models-picker .selector-trigger')).toBe('2 of 3 models');
-    expect(text('#rp-models-line')).toBe('Writes documents for 2 of 3 models — leaves out Claude Opus (medium).');
+    expect(text('#rp-models-line')).toBe(`Writes documents for 2 of 3 models — leaves out Claude Opus (medium). ${EXCLUDED_ONE}`);
     // The list waits for the subset's own documents.
     expect(text('.cds-loading')).toBe('Looking up the documents already written…');
 
@@ -591,11 +606,13 @@ describe('ReportPackPanelComponent', () => {
     expect(component.chosenKeys).toEqual(['run:1']);
     expect(picker().min).toBe(1);
     expect(picker().max).toBeNull();
-    expect(text('#rp-models-line')).toBe('Writes the per-model documents of Gemini Flash (medium), compared with the other models.');
+    expect(text('#rp-models-line')).toBe(
+      `Writes the per-model documents of Gemini Flash (medium), compared with the other models. ${EXCLUDED_ONE}`);
     expect(q('.rp-letters')).toBeNull();
 
     chooseModels(['run:2', 'group:4']);
-    expect(text('#rp-models-line')).toBe('Writes the per-model documents of 2 models, one set each, each compared with the other models.');
+    expect(text('#rp-models-line')).toBe(
+      `Writes the per-model documents of 2 models, one set each, each compared with the other models. ${EXCLUDED_ONE}`);
     selectScope('comparison');
     chooseModels(['run:1', 'run:2']);
     selectScope('model');
@@ -832,7 +849,7 @@ describe('ReportPackPanelComponent', () => {
     q<HTMLButtonElement>('.cds-choose-set')!.click();
     fixture.detectChanges();
     expect(component.chosenKeys).toEqual(['run:1', 'run:2']);
-    expect(text('#rp-models-line')).toBe('Writes documents for 2 of 3 models — leaves out GPT Sol group (medium).');
+    expect(text('#rp-models-line')).toBe(`Writes documents for 2 of 3 models — leaves out GPT Sol group (medium). ${EXCLUDED_ONE}`);
     const request = answerPreview(comparisonPreview({ coversAllEntries: false }));
     expect(request.request.body.coveredEntryKeys).toEqual(['run:1', 'run:2']);
     fixture.destroy();
@@ -849,6 +866,8 @@ describe('ReportPackPanelComponent', () => {
     expect(component.writerId).toBeNull();
     expect(generateButton().disabled).toBe(true);
     expect(text('#rp-generate-blocked')).toBe('Choose a report writer.');
+    // A reason shown nowhere else stays visible.
+    expect(q('#rp-generate-blocked')!.classList).not.toContain('visually-hidden');
 
     // The documents are listed without a writer; there is no estimate yet.
     const request = answerPreview();
@@ -1059,8 +1078,14 @@ describe('ReportPackPanelComponent', () => {
     expect(panel.getAttribute('aria-busy')).toBe('true');
     expect(panel.classList).toContain('is-muted');
     expect(text('#rp-estimate')).toBe('Estimating…');
+    // The spinner shows at once, without the delayed reveal.
+    const indicator = q('#rp-estimate app-loading-indicator')!;
+    expect(indicator.querySelector('svg.dc-ring')).not.toBeNull();
+    expect(indicator.classList).not.toContain('li-reveal');
     expect(generateButton().getAttribute('aria-describedby')).toBe('rp-estimate rp-generate-blocked');
+    // Estimating… already says it under the estimate: the reason stays Generate's description, out of sight.
     expect(text('#rp-generate-blocked')).toBe('Checking the writer and estimating the cost…');
+    expect(q('#rp-generate-blocked')!.classList).toContain('visually-hidden');
 
     answerPreview();
     expect(panel.hasAttribute('aria-busy')).toBe(false);
@@ -1231,6 +1256,8 @@ describe('ReportPackPanelComponent', () => {
     expect(text('.rp-start-error')).toContain('its progress is shown here.');
     expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
     expect(generateButton().disabled).toBe(true);
+    // Generate stays disabled for the other job, so focus stays on the progress heading.
+    expect(document.activeElement).toBe(q('#rp-progress-heading'));
 
     tick(REPORT_PACK_POLL_MS);
     http.expectOne(jobUrl('job-9')).flush(jobDto({ id: 'job-9', status: 'Completed', completedAtUtc: '2026-09-28T10:01:00Z' }));
@@ -1251,12 +1278,54 @@ describe('ReportPackPanelComponent', () => {
     expect(alert.getAttribute('role')).toBe('alert');
     expect(alert.textContent!.trim()).toBe(message);
     expect(generateButton().disabled).toBe(false);
+    // Generate can be used again, so focus returns to it from the progress heading.
+    expect(document.activeElement).toBe(generateButton());
+    // The starting panel is gone; no job was started.
+    expect(q('.rp-starting')).toBeNull();
+    expect(text('.rp-idle-note')).toContain('step 4, Documents');
     fixture.destroy();
   }));
 
   // -------------------------------------------------------------------------------------------
   // Progress
   // -------------------------------------------------------------------------------------------
+
+  it('answers Generate at once: the starting panel, the live line and focus on the progress heading', fakeAsync(() => {
+    openPanel();
+    chooseWriter(7);
+    expect(q('.rp-starting')).toBeNull();
+
+    // A real click; the start request has not answered yet.
+    generateButton().click();
+    fixture.detectChanges();
+    const start = http.expectOne(START_URL);
+
+    const panel = q('section.rrf-main .rp-starting')!;
+    expect(panel).not.toBeNull();
+    const indicator = panel.querySelector('app-loading-indicator')!;
+    expect(indicator.classList).toContain('li-block');
+    expect(indicator.classList).not.toContain('li-reveal');
+    expect(text('.rp-starting app-loading-indicator')).toBe('Starting the report pack…');
+    expect(text('.rp-starting-detail')).toBe(
+      'Checking the comparison, the report writer and the cost, then queuing the documents. This can take several seconds.');
+    expect(q('.rp-idle-note')).toBeNull();
+    expect(q('.rp-job')).toBeNull();
+    expect(text('.rp-job-status')).toBe('Starting the report pack…');
+    expect(document.activeElement).toBe(q('#rp-progress-heading'));
+    expect(generateButton().disabled).toBe(true);
+    expect(generateButton().getAttribute('aria-busy')).toBe('true');
+    expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_JOB_RUNNING_REASON);
+    expect(q('#rp-generate-blocked')!.classList).toContain('visually-hidden');
+
+    start.flush({ jobId: 'job-1' });
+    fixture.detectChanges();
+    expect(q('.rp-starting')).not.toBeNull();
+    http.expectOne(jobUrl('job-1')).flush(jobDto());
+    fixture.detectChanges();
+    expect(q('.rp-starting')).toBeNull();
+    expect(q('.rp-job')).not.toBeNull();
+    fixture.destroy();
+  }));
 
   it('shows no job card until a job exists, with the live line in place', () => {
     openPanel();
@@ -1281,12 +1350,15 @@ describe('ReportPackPanelComponent', () => {
     generateButton().click();
     http.expectOne(START_URL).flush({ jobId: 'job-1' });
     fixture.detectChanges();
-    // Before the first reading, the rail stands at Queued.
-    expect(text('.rp-job-rail .run-stage.is-current .run-stage-name')).toBe('Queued');
+    // Before the first reading, the starting panel stands in for the job card, whose values are not known yet.
+    expect(q('.rp-starting')).not.toBeNull();
+    expect(q('.rp-job')).toBeNull();
+    expect(text('.rp-job-status')).toBe('Starting the report pack…');
     expect(component.jobRunning).toBe(true);
 
     http.expectOne(jobUrl('job-1')).flush(jobDto());
     fixture.detectChanges();
+    expect(q('.rp-starting')).toBeNull();
 
     expect(cellText(ExecutiveSummary, '.rp-doc-name')).toBe('Executive Summary');
     expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Writing draft');
@@ -1426,6 +1498,9 @@ describe('ReportPackPanelComponent', () => {
 
     expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
     expect(text('#rp-generate-blocked')).toBe('A report pack is being written. Wait for it to finish, or cancel it.');
+    // The main area shows the job and Cancel Job: the reason is out of sight, and still Generate's description.
+    expect(q('#rp-generate-blocked')!.classList).toContain('visually-hidden');
+    expect(generateButton().getAttribute('aria-describedby')).toBe('rp-estimate rp-generate-blocked');
 
     tick(REPORT_PACK_POLL_MS);
     http.expectOne(jobUrl('job-5')).flush('down', { status: 503, statusText: 'Service Unavailable' });
@@ -2292,18 +2367,50 @@ describe('ReportPackPanelComponent', () => {
     });
   });
 
-  it('says beside Generate to keep the wizard open while the charts are drawn, unless there is no chart storage', () => {
+  it('says in the job card to keep the wizard open while charts can be pending, never under Generate', fakeAsync(() => {
     openPanel();
-    const note = q('.rp-keep-open')!;
-    expect(text('.rp-keep-open')).toBe(REPORT_PACK_KEEP_OPEN_TEXT);
-    expect(REPORT_PACK_KEEP_OPEN_TEXT).toBe('Keep this wizard open until every document shows its charts. Charts are drawn by '
-      + 'this browser as each document finishes; if you close it, add them on step 4 with Update charts…');
-    expect(q('.rp-actions-row')!.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // No job: no note, in the sidebar or anywhere else.
+    expect(q('.rp-keep-open')).toBeNull();
+    expect(REPORT_PACK_KEEP_OPEN_TEXT).toBe('Keep this wizard open until every document shows its charts: this browser '
+      + 'draws them as each document finishes. If you close it, add them later on step 4 with Update charts…');
 
-    fixture.componentRef.setInput('chartStorageMissing', true);
+    // While the job runs, under the card's title.
+    startJob();
+    const note = q('section.rp-job .rp-keep-open')!;
+    expect(text('section.rp-job .rp-keep-open')).toBe(REPORT_PACK_KEEP_OPEN_TEXT);
+    expect(q('.rrf-sidebar .rp-keep-open')).toBeNull();
+    expect(q('.rp-job-title')!.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // Finished, while the last document's charts are still being attached.
+    tick(REPORT_PACK_POLL_MS);
+    http.expectOne(jobUrl('job-1')).flush(jobDto({
+      status: 'Completed',
+      completedAtUtc: '2026-09-28T10:02:05Z',
+      documents: [written(ExecutiveSummary, 21), written(RootCauseAnalysis, 22)]
+    }));
+    fixture.componentRef.setInput('chartStatus', { 21: { state: 'done', count: 2, images: 4 }, 22: { state: 'attaching' } });
+    fixture.detectChanges();
+    expect(q('.rp-keep-open')).not.toBeNull();
+
+    // Every document shows its charts: nothing is pending any more.
+    fixture.componentRef.setInput('chartStatus', { 21: { state: 'done', count: 2, images: 4 }, 22: { state: 'done', count: 3, images: 6 } });
     fixture.detectChanges();
     expect(q('.rp-keep-open')).toBeNull();
-  });
+    // The documents are listed again: the finished job, then the charted ones.
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.match(PREVIEW_URL);
+    http.match(r => r.url === DOCUMENTS_URL);
+    fixture.destroy();
+  }));
+
+  it('never says to keep the wizard open without chart storage', fakeAsync(() => {
+    fixture.componentRef.setInput('chartStorageMissing', true);
+    openPanel();
+    startJob();
+    expect(q('section.rp-job')).not.toBeNull();
+    expect(q('.rp-keep-open')).toBeNull();
+    fixture.destroy();
+  }));
 
   // -------------------------------------------------------------------------------------------
   // The grader guide

@@ -135,7 +135,7 @@ public static class RootCauseChartRenderer
             + (string.IsNullOrWhiteSpace(result.PricingBasis) ? "" : "; pricing basis: " + result.PricingBasis.Trim().TrimEnd('.'))
             + ". " + drawnBy);
         AddHypotheses(plans, result.Hypotheses,
-            "The confidence grade of each hypothesis in the tables, and its share of the difference with its 95 % interval where it has one. " + drawnBy);
+            "The confidence grade of each hypothesis in the tables, and its share of the difference with its 95% interval where it has one. " + drawnBy);
         return plans;
     }
 
@@ -261,7 +261,7 @@ public static class RootCauseChartRenderer
             clause += ", share " + Percent(share);
             if (hypothesis.ShareLower is double lower && hypothesis.ShareUpper is double upper)
             {
-                clause += " (95 % interval " + Percent(lower) + " to " + Percent(upper) + ")";
+                clause += " (95% interval " + Percent(lower) + " to " + Percent(upper) + ")";
             }
         }
         return clause;
@@ -298,7 +298,7 @@ public static class RootCauseChartRenderer
     };
 
     private static string Percent(double share)
-        => (share * 100).ToString("0", CultureInfo.InvariantCulture) + " %";
+        => (share * 100).ToString("0", CultureInfo.InvariantCulture) + "%";
 
     private static string AxisUnit(string unit) => unit switch
     {
@@ -496,7 +496,7 @@ public static class RootCauseChartRenderer
     /// <summary>
     /// R4: the header naming the four grade positions, then per axis a heading line and one line per
     /// hypothesis: its id and short statement, a dot at its grade with the grade beside it, and where it
-    /// has a share, a bar to the share with its 95 % interval as a whisker and the figures beside it.
+    /// has a share, a bar to the share with its 95% interval as a whisker and the figures beside it.
     /// </summary>
     private static void ComposeHypotheses(
         IContainer container, IReadOnlyList<(string? Heading, RootCauseHypothesis? Hypothesis)> items, int hidden, float pitch)
@@ -516,7 +516,7 @@ public static class RootCauseChartRenderer
                     }
                 });
                 header.RelativeItem().AlignBottom().PaddingLeft(4)
-                    .Element(c => Line(c, "Share (95 % interval)", RootCauseChartPalette.SecondaryInk));
+                    .Element(c => Line(c, "Share (95% interval)", RootCauseChartPalette.SecondaryInk));
             });
 
             col.Item().Height(0.75f).Background(Hex(RootCauseChartPalette.Baseline));
@@ -573,7 +573,7 @@ public static class RootCauseChartRenderer
         }
     }
 
-    /// <summary>The share bar from zero, its 95 % interval as a whisker over it, and the figures; nothing without a share. Shares are drawn within 0 to 1.</summary>
+    /// <summary>The share bar from zero, its 95% interval as a whisker over it, and the figures; nothing without a share. Shares are drawn within 0 to 1.</summary>
     private static void ComposeShare(RowDescriptor row, RootCauseHypothesis hypothesis, float pitch)
     {
         if (hypothesis.Share is not double share || !double.IsFinite(share))

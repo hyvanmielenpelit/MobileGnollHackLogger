@@ -1676,7 +1676,7 @@ public static class BenchmarkReportBuilder
         {
             string rateNote = rates.Any(r => r.Estimated)
                 ? $" *(estimated: the provider counts thinking inside its output tokens, so visible tokens are estimated at {Inv(CallTelemetryMeasures.EstimatedCharsPerToken)} characters per token)*"
-                : " *(visible output over the last 80 % of the final call's deltas)*";
+                : " *(visible output over the last 80% of the final call's deltas)*";
             string unmeasurableNote = unmeasurable > 0
                 ? $"; not measurable on {Inv(unmeasurable)} (the visible text arrived in one burst after thinking)"
                 : string.Empty;

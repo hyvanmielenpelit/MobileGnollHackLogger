@@ -62,7 +62,7 @@ public sealed record BenchmarkOutcomeSummary
     /// <summary>Confirmed critical errors ÷ classified answers. Null when nothing is classified.</summary>
     public double? CriticalErrorRate { get; init; }
 
-    /// <summary>The 95 % Wilson interval of <see cref="CriticalErrorRate"/>.</summary>
+    /// <summary>The 95% Wilson interval of <see cref="CriticalErrorRate"/>.</summary>
     public double? CriticalErrorRateLow { get; init; }
 
     public double? CriticalErrorRateHigh { get; init; }

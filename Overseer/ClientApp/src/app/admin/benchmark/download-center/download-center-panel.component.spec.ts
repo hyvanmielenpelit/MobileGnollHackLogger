@@ -426,6 +426,34 @@ describe('DownloadCenterPanelComponent', () => {
       expect(panel().isIncluded(panel().rows.find(r => r.key === 'doc:13')!)).toBe(false);
     });
 
+    it('shows a large spinner in place of the list on the first load, and a small one above the cards on a reload', () => {
+      hostComponent.context = library();
+      fixture.detectChanges();
+
+      const section = q('section.dc-documents')!;
+      expect(section.getAttribute('aria-busy')).toBe('true');
+      const first = q('.dc-documents app-loading-indicator.dc-loading')!;
+      expect(first.classList).toContain('li-block');
+      expect(flat(first)).toBe('Loading report documents…');
+      expect(first.querySelector('svg.dc-ring')!.getAttribute('aria-hidden')).toBe('true');
+      expect(q('.dc-empty')).toBeNull();
+
+      expectList().flush([doc(11, ExecutiveSummary)]);
+      fixture.detectChanges();
+      expect(q('.dc-loading')).toBeNull();
+      expect(section.hasAttribute('aria-busy')).toBe(false);
+
+      hostComponent.reloadToken++;
+      fixture.detectChanges();
+      const reload = q('.dc-documents app-loading-indicator.dc-loading')!;
+      expect(reload.classList).toContain('li-inline');
+      expect(rowKeys()).toEqual(['doc:11']);
+      expect(reload.compareDocumentPosition(q('.dc-card-list')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expectList().flush([doc(11, ExecutiveSummary)]);
+      fixture.detectChanges();
+      expect(q('.dc-loading')).toBeNull();
+    });
+
     it('says when a comparison has no reports', () => {
       render([]);
 

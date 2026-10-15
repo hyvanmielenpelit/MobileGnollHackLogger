@@ -32,7 +32,8 @@ internal sealed class RootCauseDraft
 
     public bool Quantified { get; set; } = true;
     public bool Established { get; set; }
-    public string EstablishedText { get; set; } = "its test is not established after adjustment";
+    /// <summary>The grade reason when <see cref="Established"/> is false: the one condition that failed, as a plain clause.</summary>
+    public string EstablishedText { get; set; } = "its result may be chance";
     public bool NotSupported { get; set; }
     public bool? PairNullStands { get; set; }
     public List<(string Cap, string Reason)> Caps { get; } = new();
@@ -97,6 +98,78 @@ public static class RootCauseHypotheses
     private static readonly string[] ThinkingOrder = { "none", "minimal", "low", "medium", "high", "xhigh", "max" };
 
     // ---------------------------------------------------------------------------------------------
+    // Grade reasons: each one plain clause, the reason that applied
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>The reason of a hypothesis its own test refutes, before the first item against it.</summary>
+    public const string RefutedReason = "its own test rules it out";
+
+    /// <summary>The reason of a hypothesis no figure measures (graded Low).</summary>
+    public const string QualitativeReason = "it is observed, not measured";
+
+    /// <summary>
+    /// The reason a pair hypothesis is capped at Low while the pair's null hypothesis stands; it takes the place of
+    /// <see cref="PairTestReason"/>, which says the same.
+    /// </summary>
+    public const string NullStandsReason = "the gap between the two models may be chance, which caps the grade at Low (the pair's null hypothesis stands)";
+
+    /// <summary>The reason of a pair hypothesis when no paired test of the pair is established.</summary>
+    public const string PairTestReason = "no paired test shows that the gap between the two models is real";
+
+    /// <summary>A share whose interval includes zero.</summary>
+    private const string ShareIntervalReason = "the share may be zero (its 95% interval includes zero)";
+
+    /// <summary>The cap of a null hypothesis that stands while a side ran once per suite.</summary>
+    private const string OneRunCapReason = "with one run per suite, the tests can miss a real difference";
+
+    /// <summary>The cap of a null hypothesis that stands while every side ran at least twice per suite.</summary>
+    private const string NoProofCapReason = "failing to find a difference does not prove there is none";
+
+    /// <summary>The cap of a critical-error hypothesis before scoring method 13.</summary>
+    private const string UnconfirmedCapReason = "the critical errors are graders' flags, not confirmed errors";
+
+    /// <summary><c>reason (grade capped at Low)</c>.</summary>
+    public static string CapReason(string cap, string reason)
+        => reason.TrimEnd('.') + " (grade capped at " + RootCauseGrades.Display(cap) + ")";
+
+    /// <summary>
+    /// The grade reason of a robustness check that failed or could not be made, as one plain clause: what the
+    /// check found (<c>Model A ran only once per suite</c>, <c>the result depends on one question</c>), or that it
+    /// is unknown, with the check's own detail in parentheses.
+    /// </summary>
+    public static string CheckReason(RootCauseRobustnessCheck check)
+    {
+        ArgumentNullException.ThrowIfNull(check);
+        string detail = LowerFirst(check.Detail.Trim()).TrimEnd('.');
+        if (check.Status == RootCauseCheckStatuses.Failed)
+        {
+            return check.Name switch
+            {
+                LeaveOneOut => "the result depends on one question (leave-one-out check)",
+                _ => detail.Length > 0 ? detail : check.Name.ToLowerInvariant() + " check failed"
+            };
+        }
+
+        string what = check.Name switch
+        {
+            LeaveOneOut => "the result depends on one question",
+            AcrossSuites => "the effect holds in every suite",
+            PanelAgreement => "both panel members agree",
+            Replicates => "the result repeats",
+            _ => "the " + check.Name.ToLowerInvariant() + " check holds"
+        };
+        return "it is unknown whether " + what + (detail.Length > 0 ? " (" + detail + ")" : string.Empty);
+    }
+
+    /// <summary>Whether <paramref name="reason"/> is the grade reason of one of <paramref name="hypothesis"/>' robustness checks.</summary>
+    public static bool IsRobustnessReason(RootCauseHypothesis hypothesis, string reason)
+    {
+        ArgumentNullException.ThrowIfNull(hypothesis);
+        return hypothesis.Robustness.Any(r => r.Status is RootCauseCheckStatuses.Failed or RootCauseCheckStatuses.NotAssessable
+                                              && string.Equals(CheckReason(r), reason, StringComparison.Ordinal));
+    }
+
+    // ---------------------------------------------------------------------------------------------
     // Grading
     // ---------------------------------------------------------------------------------------------
 
@@ -115,19 +188,18 @@ public static class RootCauseHypotheses
         if (draft.NotSupported)
         {
             grade = RootCauseGrades.NotSupported;
-            reasons.Add("the rule's own test refutes it" + (draft.Against.Count > 0 ? ": " + LowerFirst(draft.Against[0]) : string.Empty));
+            reasons.Add(RefutedReason + (draft.Against.Count > 0 ? ": " + LowerFirst(draft.Against[0]).TrimEnd('.') : string.Empty));
         }
         else if (!draft.Quantified)
         {
             grade = RootCauseGrades.Low;
-            reasons.Add("qualitative only");
+            reasons.Add(QualitativeReason);
         }
         else
         {
             foreach (var check in draft.Robustness)
             {
-                if (check.Status == RootCauseCheckStatuses.Failed) reasons.Add(check.Name.ToLowerInvariant() + " failed: " + LowerFirst(check.Detail));
-                else if (check.Status == RootCauseCheckStatuses.NotAssessable) reasons.Add(check.Name.ToLowerInvariant() + " could not be assessed: " + LowerFirst(check.Detail));
+                if (check.Status is RootCauseCheckStatuses.Failed or RootCauseCheckStatuses.NotAssessable) reasons.Add(CheckReason(check));
             }
             if (!draft.Established) reasons.Add(draft.EstablishedText);
             grade = reasons.Count == 0 ? RootCauseGrades.High : reasons.Count == 1 ? RootCauseGrades.Moderate : RootCauseGrades.Low;
@@ -138,14 +210,15 @@ public static class RootCauseHypotheses
             if (draft.PairNullStands == true && RootCauseGrades.Rank(grade) > RootCauseGrades.Rank(RootCauseGrades.Low))
             {
                 grade = RootCauseGrades.Low;
-                reasons.Add("the pair's null hypothesis stands");
+                reasons.Remove(PairTestReason);
+                reasons.Add(NullStandsReason);
             }
             foreach (var (cap, reason) in draft.Caps)
             {
                 if (RootCauseGrades.Rank(grade) > RootCauseGrades.Rank(cap))
                 {
                     grade = cap;
-                    reasons.Add("capped at " + RootCauseGrades.Display(cap) + ": " + reason);
+                    reasons.Add(CapReason(cap, reason));
                 }
             }
         }
@@ -221,7 +294,8 @@ public static class RootCauseHypotheses
 
     /// <summary>
     /// The status of an axis (§ A2): established when a non-null hypothesis is High and its null is
-    /// rejected; probable when the best is Moderate; otherwise not established.
+    /// rejected; probable when the best is Moderate; otherwise not established. The reason names the best
+    /// hypothesis' grade and the grade reasons that applied to it, each one clause.
     /// </summary>
     internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept)
     {
@@ -235,7 +309,7 @@ public static class RootCauseHypotheses
             {
                 Axis = axis,
                 Status = RootCauseStatuses.NotEstablished,
-                Reason = "No hypothesis fired on this axis."
+                Reason = "No rule found a possible cause on this axis."
             };
         }
 
@@ -247,32 +321,32 @@ public static class RootCauseHypotheses
                 Axis = axis,
                 Status = RootCauseStatuses.Established,
                 BestHypothesis = established.Hypothesis.Key,
-                Reason = established.Hypothesis.Key + " is graded High and its null hypothesis is rejected."
-            };
-        }
-
-        if (best.Hypothesis.Grade == RootCauseGrades.Moderate)
-        {
-            return new RootCauseAxisStatus
-            {
-                Axis = axis,
-                Status = RootCauseStatuses.Probable,
-                BestHypothesis = best.Hypothesis.Key,
-                Reason = best.Hypothesis.Key + " is the best hypothesis, graded Moderate: " + Reasons(best.Hypothesis) + "."
+                Reason = RootCauseGrades.WordWithGrade(RootCauseGrades.High) + ": it passed every check"
+                         + (established.Draft.PairNullStands == false ? ", and a real difference between the two models was shown." : ".")
             };
         }
 
         return new RootCauseAxisStatus
         {
             Axis = axis,
-            Status = RootCauseStatuses.NotEstablished,
+            Status = best.Hypothesis.Grade == RootCauseGrades.Moderate ? RootCauseStatuses.Probable : RootCauseStatuses.NotEstablished,
             BestHypothesis = best.Hypothesis.Key,
-            Reason = "The best hypothesis, " + best.Hypothesis.Key + ", is graded " + RootCauseGrades.Display(best.Hypothesis.Grade)
-                     + (best.Hypothesis.GradeReasons.Count > 0 ? ": " + Reasons(best.Hypothesis) : string.Empty) + "."
+            Reason = RootCauseGrades.WordWithGrade(best.Hypothesis.Grade)
+                     + (best.Hypothesis.GradeReasons.Count > 0 ? " because " + ReasonList(best.Hypothesis.GradeReasons) : string.Empty) + "."
         };
+    }
 
-        static string Reasons(RootCauseHypothesis hypothesis)
-            => string.Join("; ", hypothesis.GradeReasons.Select(r => r.TrimEnd('.')));
+    /// <summary><c>A</c>; <c>A, and B</c>; <c>A; B; and C</c>: clauses that may hold commas of their own.</summary>
+    internal static string ReasonList(IReadOnlyList<string> reasons)
+    {
+        var clauses = reasons.Select(r => r.Trim().TrimEnd('.')).Where(r => r.Length > 0).ToList();
+        return clauses.Count switch
+        {
+            0 => string.Empty,
+            1 => clauses[0],
+            2 => clauses[0] + ", and " + clauses[1],
+            _ => string.Join("; ", clauses.Take(clauses.Count - 1)) + "; and " + clauses[^1]
+        };
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -282,7 +356,7 @@ public static class RootCauseHypotheses
     /// <summary>
     /// H0-Q, H0-S or H0-C for a pair: the difference is within sampling noise. Rejected (graded Not
     /// supported) when a paired test of the pair on the axis is established after its family's
-    /// adjustment, or, where no family test exists, when the 95 % bootstrap interval of the difference
+    /// adjustment, or, where no family test exists, when the 95% bootstrap interval of the difference
     /// excludes zero. When it stands it is graded Moderate, or Low when either side has a single run per
     /// suite.
     /// </summary>
@@ -327,11 +401,11 @@ public static class RootCauseHypotheses
                 if (excludes)
                 {
                     rejected = true;
-                    draft.Against.Add("No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).");
+                    draft.Against.Add("No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted).");
                 }
                 else
                 {
-                    draft.For.Add("No family test exists; the 95 % bootstrap interval of the per-question difference includes zero.");
+                    draft.For.Add("No family test exists; the 95% bootstrap interval of the per-question difference includes zero.");
                 }
             }
             else if (axis == RootCauseAxes.Intelligence && ctx.PairedBootstrapExcludesZero(pair) is bool pairedExcludes)
@@ -354,7 +428,7 @@ public static class RootCauseHypotheses
 
         if (axis == RootCauseAxes.Intelligence && ctx.IntervalsOverlap(pair) is bool overlap)
         {
-            (overlap ? draft.For : draft.Against).Add(overlap ? "The two 95 % intervals overlap." : "The two 95 % intervals do not overlap.");
+            (overlap ? draft.For : draft.Against).Add(overlap ? "The two 95% intervals overlap." : "The two 95% intervals do not overlap.");
         }
 
         stands = !rejected;
@@ -368,11 +442,11 @@ public static class RootCauseHypotheses
             draft.Established = true;
             if (ctx.Model(pair.First).Evidence.RunsPerSuite < 2 || ctx.Model(pair.Second).Evidence.RunsPerSuite < 2)
             {
-                draft.Caps.Add((RootCauseGrades.Low, "a single run per suite gives the tests little power"));
+                draft.Caps.Add((RootCauseGrades.Low, OneRunCapReason));
             }
             else
             {
-                draft.Caps.Add((RootCauseGrades.Moderate, "the absence of an established difference is not proof of equality"));
+                draft.Caps.Add((RootCauseGrades.Moderate, NoProofCapReason));
             }
         }
         return draft;
@@ -503,8 +577,11 @@ public static class RootCauseHypotheses
                 double points = atA.Points[0] - atB.Points[0];
                 d.Share = gap > 0 ? points / gap : null;
                 d.For.Add("Answers without tools put " + OneDecimal(atA.Points[0]) + " index points of " + A + " at risk (upper bound), " + OneDecimal(atB.Points[0]) + " of " + B + "'s.");
-                d.Established = testEstablished && mw != null && mw.PValue < RootCauseStatistics.SignificanceLevel;
-                d.EstablishedText = "the without-tool contrast or the pair's paired test is not established";
+                bool contrast = mw != null && mw.PValue < RootCauseStatistics.SignificanceLevel;
+                d.Established = testEstablished && contrast;
+                d.EstablishedText = Both(
+                    testEstablished ? null : PairTestReason,
+                    contrast ? null : "answers without tools do not score clearly lower than answers with tools");
                 d.Robustness.Add(LeaveOneOutAtRisk(atA, atB, 0));
                 Common(d);
                 d.FactKeys.Add(ctx.Key(a.Token, "profile.noToolAnswers"));
@@ -528,12 +605,12 @@ public static class RootCauseHypotheses
             if (!a.Evidence.CriticalErrorsConfirmed)
             {
                 d.Against.Add("Before scoring method 13 the caps are graders' flags, not confirmed errors.");
-                d.Caps.Add((RootCauseGrades.Low, "the caps are not confirmed"));
+                d.Caps.Add((RootCauseGrades.Low, UnconfirmedCapReason));
             }
             if (critical < 2) d.Against.Add("A single critical error carries the whole effect.");
             d.Share = gap > 0 ? atA.Points[2] / gap : null;
             d.Established = testEstablished;
-            d.EstablishedText = "the pair's paired test is not established";
+            d.EstablishedText = PairTestReason;
             d.Robustness.Add(LeaveOneOutThreshold(atA, 2, 0.5 * gap));
             Common(d);
             d.FactKeys.Add(ctx.Key(a.Token, "errors.critical"));
@@ -544,10 +621,8 @@ public static class RootCauseHypotheses
         // HQ4: graders.
         bool judgeDependent = ctx.JudgeDependent(pair);
         var sharedGrader = ctx.Graders.Where(g => SameProvider(g.Provider, a.Provider) || SameProvider(g.Provider, b.Provider)).ToList();
-        double? rateDisagreeA = a.Evidence.PanelAnswers is > 0 ? a.Evidence.PanelDisagreements / (double)a.Evidence.PanelAnswers : null;
-        var rates = ctx.Models.Where(m => m.Evidence.PanelAnswers is > 0).Select(m => m.Evidence.PanelDisagreements!.Value / (double)m.Evidence.PanelAnswers!.Value).ToList();
-        bool highDisagreement = rateDisagreeA is double r && rates.Count >= 2 && RootCauseStatistics.Median(rates) is double med && med > 0 && r >= 2 * med;
-        if (judgeDependent || sharedGrader.Count > 0 || highDisagreement)
+        var highDisagreement = RootCauseProfiles.PanelDisagreementOf(ctx.Models, a);
+        if (judgeDependent || sharedGrader.Count > 0 || highDisagreement != null)
         {
             var d = PairDraft(ctx, pair, "HQ4", RootCauseAxes.Intelligence, a, b,
                 "The order of " + A + " and " + B + " depends on the graders.",
@@ -556,15 +631,18 @@ public static class RootCauseHypotheses
                 "a panel from two other providers reverses or erases the gap",
                 stands, RootCauseLoci.Harness);
             if (judgeDependent) d.For.Add("The panel members order the two differently (a judge-dependent pair).");
-            foreach (var grader in sharedGrader) d.For.Add("The " + grader.Role.ToLowerInvariant() + " shares a provider with " + (SameProvider(grader.Provider, a.Provider) ? A : B) + ".");
-            if (highDisagreement) d.For.Add(A + "'s panel disagreement rate is at least twice the models' median.");
+            foreach (var grader in sharedGrader) d.For.Add(Capitalize(grader.Role.Trim()) + " shares a provider with " + (SameProvider(grader.Provider, a.Provider) ? A : B) + ".");
+            if (highDisagreement is { } panel)
+            {
+                d.For.Add(A + " has " + BenchmarkNotableFindings.DisagreementPhrase(panel.Rate, panel.OthersMedian) + ".");
+            }
             if (!judgeDependent && a.MemberAIndex.HasValue && b.MemberAIndex.HasValue && a.MemberBIndex.HasValue && b.MemberBIndex.HasValue)
             {
                 d.Against.Add("Both panel members order the two alike.");
             }
             d.Quantified = judgeDependent;
             d.Established = judgeDependent;
-            d.EstablishedText = "no judge-dependent order is established";
+            d.EstablishedText = "the panel members do not order the two models differently";
             d.Robustness.Add(ctx.ReplicatesCheck(a, b));
             d.FactKeys.Add("panel.judgeDependentPairs");
             d.NextRunKind = RootCauseRunKinds.PanelSwap;
@@ -577,12 +655,12 @@ public static class RootCauseHypotheses
             var d = PairDraft(ctx, pair, "HQ5", RootCauseAxes.Intelligence, a, b,
                 "Completeness was " + A + "'s lowest dimension under the concise response style.",
                 "Concise style: " + A,
-                "No comparison run covers the style; this states a condition, not a cause.",
+                "A run of the same model with the detailed response style shows that Completeness is no longer its lowest dimension.",
                 "a Detailed run raises Completeness",
                 stands, RootCauseLoci.Chat);
             d.For.Add(A + "'s response-style conflict is true: Completeness is its lowest dimension, well below Accuracy.");
             d.Quantified = false;
-            d.Caps.Add((RootCauseGrades.Low, "no comparison run covers the response style"));
+            d.Caps.Add((RootCauseGrades.Low, "no run with the other response style exists to compare"));
             d.FactKeys.Add(ctx.Key(a.Token, "style.responseStyleConflict"));
             d.NextRunKind = RootCauseRunKinds.StylePair;
             yield return d;
@@ -607,10 +685,10 @@ public static class RootCauseHypotheses
             if (!apart)
             {
                 d.NotSupported = true;
-                d.Against.Add("The two 95 % Wilson intervals overlap.");
+                d.Against.Add("The two 95% Wilson intervals overlap.");
             }
             d.Established = apart;
-            d.EstablishedText = "the Wilson intervals overlap";
+            d.EstablishedText = "the two rates' 95% intervals overlap (Wilson intervals)";
             Common(d);
             d.FactKeys.Add(ctx.Key(a.Token, "profile.outcome.wrongInsteadOfAbstaining"));
             d.NextRunKind = RootCauseRunKinds.Replicate;
@@ -630,7 +708,7 @@ public static class RootCauseHypotheses
                       + OneDecimal(atB.Points[1]) + " of " + B + "'s.");
             d.Share = gap > 0 ? (atA.Points[1] - atB.Points[1]) / gap : null;
             d.Established = testEstablished;
-            d.EstablishedText = "the pair's paired test is not established";
+            d.EstablishedText = PairTestReason;
             d.Robustness.Add(LeaveOneOutThreshold(atA, 1, 1.0));
             Common(d);
             d.FactKeys.Add(ctx.Key(a.Token, "profile.toolLimitHits"));
@@ -659,7 +737,7 @@ public static class RootCauseHypotheses
             }
             d.Share = 1.0;
             d.Established = testEstablished;
-            d.EstablishedText = "the pair's paired test is not established";
+            d.EstablishedText = PairTestReason;
             d.Robustness.Add(ctx.ReplicatesCheck(a, b));
             d.Robustness.Add(ctx.PanelAgreementCheck(a, b));
             var confounds = ctx.Confounds(a, b, RootCauseAxes.Intelligence, skipThinking: true);
@@ -682,7 +760,7 @@ public static class RootCauseHypotheses
             d.For.Add(A + "'s verification-cleared Overall Index is " + OneDecimal(cleared) + " against its published " + OneDecimal(index) + ".");
             d.Share = gap > 0 ? (cleared - index) / gap : null;
             d.Established = false;
-            d.EstablishedText = "the sensitivity is advisory, not a test";
+            d.EstablishedText = "the claim verifier's rulings are advisory, not a test";
             d.Robustness.Add(ctx.ReplicatesCheck(a, b));
             d.FactKeys.Add(ctx.Key(a.Token, BenchmarkBatteryReportFacts.PanelVerificationClearedSensitivityKey));
             d.NextRunKind = RootCauseRunKinds.PanelSwap;
@@ -710,7 +788,7 @@ public static class RootCauseHypotheses
                 d.ShareUpper = component.ShareUpper;
                 d.For.Add(Capitalize(component.Label) + " accounts for " + SharePct(component) + " of the " + total + " per-question difference in model time.");
                 d.Established = component.ShareLower is double lo && component.ShareUpper is double hi && (lo > 0 || hi < 0);
-                d.EstablishedText = "the share's 95 % interval includes zero";
+                d.EstablishedText = ShareIntervalReason;
                 d.Robustness.Add(ctx.LeaveOneOutSpeed(pair, component.Key));
                 if (ctx.Battery) d.Robustness.Add(ctx.AcrossSuitesSpeed(pair, component.Key));
                 d.FactKeys.Add(decompositionKey + "." + component.Key + ".share");
@@ -780,17 +858,17 @@ public static class RootCauseHypotheses
             double? waitDifference = ctx.WaitDifference(pair, a.Token);
             double? share = waitDifference is double wd && speed.Difference is double t && t != 0 ? wd / Math.Abs(t) : null;
             var d = Make("HS5", "Own waits or retries inflated " + A + "'s time against " + B + ".", "Waits and retries: " + A,
-                "They account for under 5 % of the gap.", "the waits stay above the models' median", null, RootCauseLoci.Harness, RootCauseLoci.Provider);
+                "They account for under 5% of the gap.", "the waits stay above the models' median", null, RootCauseLoci.Harness, RootCauseLoci.Provider);
             if (aboveWait) d.For.Add(A + "'s own waits are " + Pct(waitA!.Value) + " of its model time, above the models' median.");
             if (aboveRetries) d.For.Add(A + " retried " + OneDecimal(retriesA!.Value) + " attempts per answer, above the models' median.");
             d.Share = share;
             if (share is double s && s < 0.05)
             {
                 d.NotSupported = true;
-                d.Against.Add("Own waits and retries account for " + Pct(s) + " of the gap, under 5 %.");
+                d.Against.Add("Own waits and retries account for " + Pct(s) + " of the gap, under 5%.");
             }
             d.Established = share is double s2 && s2 >= 0.05;
-            d.EstablishedText = "the waits' share of the gap is not measured";
+            d.EstablishedText = "the waits' share of the gap could not be measured";
             d.FactKeys.Add(ctx.Key(a.Token, "speed.ownWaitShare"));
             d.NextRunKind = RootCauseRunKinds.TimeStratum;
             yield return d;
@@ -838,7 +916,7 @@ public static class RootCauseHypotheses
                 d.ShareUpper = component.ShareUpper;
                 d.For.Add(Capitalize(component.Label) + " accounts for " + SharePct(component) + " of the " + total + " per-question cost difference.");
                 d.Established = component.ShareLower is double lo && component.ShareUpper is double hi && (lo > 0 || hi < 0);
-                d.EstablishedText = "the share's 95 % interval includes zero";
+                d.EstablishedText = ShareIntervalReason;
                 d.Robustness.Add(ctx.LeaveOneOutCost(pair, component.Key, component.Effect));
                 if (ctx.Battery) d.Robustness.Add(ctx.AcrossSuitesCost(pair, component.Key, component.Effect));
                 d.FactKeys.Add(decompositionKey + "." + component.Key + "." + component.Effect + ".share");
@@ -929,7 +1007,7 @@ public static class RootCauseHypotheses
                     d.NotSupported = true;
                 }
                 d.Established = x > y * 1.1;
-                d.EstablishedText = "the call counts are not compared by a test";
+                d.EstablishedText = A + " makes at most a tenth more model calls per answer";
             }
             else
             {
@@ -1106,7 +1184,7 @@ public static class RootCauseHypotheses
         {
             h0.Established = true;
             h0.Caps.Add((model.Evidence.RunsPerSuite < 2 ? RootCauseGrades.Low : RootCauseGrades.Moderate,
-                model.Evidence.RunsPerSuite < 2 ? "a single run per suite gives the contrasts little power" : "the absence of an established contrast is not proof of equality"));
+                model.Evidence.RunsPerSuite < 2 ? OneRunCapReason : NoProofCapReason));
         }
         yield return h0;
 
@@ -1136,8 +1214,11 @@ public static class RootCauseHypotheses
                 d.NotSupported = true;
                 d.Against.Add("The contrast with answers that used tools is within noise (adjusted p " + P(p) + ").");
             }
-            d.Established = toolP is double p2 && p2 < RootCauseStatistics.SignificanceLevel && largest;
-            d.EstablishedText = "the contrast is not established, or the no-tool share is not the largest";
+            bool contrast = toolP is double p2 && p2 < RootCauseStatistics.SignificanceLevel;
+            d.Established = contrast && largest;
+            d.EstablishedText = Both(
+                contrast ? null : "answers without tools do not score clearly lower than answers with tools",
+                largest ? null : "answers without tools are not the largest share of the lost points");
             d.Robustness.Add(LeaveOneOutLargest(at, 0));
             d.Robustness.Add(ctx.WithinPanelCheck(model, a => a.NoTool));
             if (battery) d.Robustness.Add(ctx.WithinAcrossSuites(model, a => a.NoTool));
@@ -1172,7 +1253,7 @@ public static class RootCauseHypotheses
             }
             d.NotSupported = even || (groupP is double p3 && p3 >= RootCauseStatistics.SignificanceLevel);
             d.Established = groupP is double p4 && p4 < RootCauseStatistics.SignificanceLevel;
-            d.EstablishedText = "the group contrast is not established";
+            d.EstablishedText = "the gap between " + groupName + " and the rest may be chance";
             if (battery) d.Robustness.Add(ctx.LeaveOneSuiteOutCheck(leadGroup.Name));
             else d.Robustness.Add(LeaveOneOutGroup(at, leadGroup.Answers.Select(a => a.QuestionKey).Distinct(StringComparer.Ordinal).ToList(), groups.Skip(1).Select(g => g.Points).DefaultIfEmpty(0).Max()));
             d.Robustness.Add(ctx.WithinPanelCheck(model, a => GroupOf(a, battery) == leadGroup.Name));
@@ -1195,11 +1276,11 @@ public static class RootCauseHypotheses
             d.For.Add("Confirmed critical errors hold " + Pct(share) + " of the points at risk (" + OneDecimal(at.Points[2]) + " index points, upper bound).");
             var lead = LeadOverNext(at, 2);
             d.Established = lead?.ExcludesZero == true;
-            d.EstablishedText = "the lead of the critical-error share over the next is not established";
+            d.EstablishedText = "critical errors may not clearly hold more of the lost points than the next cause";
             if (!model.Evidence.CriticalErrorsConfirmed)
             {
                 d.Against.Add("Before scoring method 13 the caps are graders' flags, not confirmed errors.");
-                d.Caps.Add((RootCauseGrades.Low, "the caps are not confirmed"));
+                d.Caps.Add((RootCauseGrades.Low, UnconfirmedCapReason));
             }
             d.Robustness.Add(LeaveOneOutLargest(at, 2));
             d.Robustness.Add(ctx.WithinPanelCheck(model, a => a.CriticalError));
@@ -1224,11 +1305,11 @@ public static class RootCauseHypotheses
             if (!above)
             {
                 d.NotSupported = true;
-                d.Against.Add("The 95 % Wilson interval includes one third.");
+                d.Against.Add("The 95% Wilson interval includes one third.");
             }
             d.Share = wrong / (double)denied;
             d.Established = above;
-            d.EstablishedText = "the Wilson interval is not above one third";
+            d.EstablishedText = "the rate's 95% interval reaches one third (Wilson interval)";
             Cap(d);
             d.FactKeys.Add(ctx.Key(model.Token, "profile.outcome.wrongInsteadOfAbstaining"));
             d.NextRunKind = RootCauseRunKinds.Replicate;
@@ -1248,7 +1329,7 @@ public static class RootCauseHypotheses
             d.For.Add("Budget, truncation or output defects put " + OneDecimal(at.Points[1]) + " index points at risk (upper bound).");
             var interval = SegmentInterval(at, 1);
             d.Established = interval is { Lower: > 0 };
-            d.EstablishedText = "the defect points' 95 % interval includes zero";
+            d.EstablishedText = "the points lost to defects may be zero (their 95% interval includes zero)";
             d.Robustness.Add(LeaveOneOutThreshold(at, 1, 1.0));
             d.FactKeys.Add(ctx.Key(model.Token, "profile.toolLimitHits"));
             d.FactKeys.Add(ctx.Key(model.Token, "profile.outputDefects"));
@@ -1274,7 +1355,9 @@ public static class RootCauseHypotheses
             if (memberGap is double mg) d.For.Add("The members' indices are " + OneDecimal(mg) + " points apart" + (halfWidth is double hw ? ", against an interval half-width of " + OneDecimal(hw) : string.Empty) + ".");
             var wilson = disagreement.HasValue ? RootCauseStatistics.Wilson(model.Evidence.PanelDisagreements!.Value, model.Evidence.PanelAnswers!.Value) : null;
             d.Established = (wilson is { } w && w.Low > 0.15) || gapWide;
-            d.EstablishedText = "neither the disagreement rate nor the member gap is established";
+            d.EstablishedText = Both(
+                disagreement.HasValue ? "the disagreement rate may be 15% or less (its 95% interval reaches that low)" : null,
+                memberGap.HasValue && halfWidth.HasValue ? "the two members' indices differ by no more than the interval half-width" : null);
             d.FactKeys.Add(ctx.Key(model.Token, "panel.disagreements"));
             d.NextRunKind = RootCauseRunKinds.PanelSwap;
             yield return d;
@@ -1303,7 +1386,7 @@ public static class RootCauseHypotheses
                 RootCauseLoci.Provider, RootCauseLoci.Model);
             FillShare(d, s.Shares[0], s.Intervals[0], names[0], "model time");
             d.Established = leadInterval?.Lower > 0;
-            d.EstablishedText = "its lead over the next component is not established";
+            d.EstablishedText = "the wait before the first word may not clearly be the largest part of the time";
             d.Robustness.Add(ctx.WithinLeaveOneOutTime(model, 0));
             d.FactKeys.Add(ctx.WithinKey(model.Token, "time.ttft.share"));
             d.NextRunKind = RootCauseRunKinds.TimeStratum;
@@ -1330,8 +1413,11 @@ public static class RootCauseHypotheses
             {
                 d.Against.Add("The reasoning tokens are not recorded separately.");
             }
-            d.Established = leadInterval?.Lower > 0 && reasoning is >= 0.5;
-            d.EstablishedText = "its lead is not established, or the reasoning share is unknown";
+            bool leads = leadInterval?.Lower > 0;
+            d.Established = leads && reasoning is >= 0.5;
+            d.EstablishedText = Both(
+                leads ? null : "output generation may not clearly be the largest part of the time",
+                reasoning.HasValue ? null : "the reasoning tokens are not recorded separately");
             d.Robustness.Add(ctx.WithinLeaveOneOutTime(model, 1));
             d.FactKeys.Add(ctx.WithinKey(model.Token, "time.outputGeneration.share"));
             d.FactKeys.Add(ctx.Key(model.Token, "tokens.reasoningShare"));
@@ -1349,7 +1435,7 @@ public static class RootCauseHypotheses
                 "The ρ interval includes zero.",
                 "model time keeps rising with the calls per answer",
                 RootCauseLoci.Model, RootCauseLoci.Chat);
-            d.For.Add("Across " + M + "'s questions, model time rises with model calls per answer: Spearman ρ " + Two(rho.Rho) + " (95 % interval " + Two(rho.Lower) + " to " + Two(rho.Upper) + ", n " + Inv(rho.Count) + ").");
+            d.For.Add("Across " + M + "'s questions, model time rises with model calls per answer: Spearman ρ " + Two(rho.Rho) + " (95% interval " + Two(rho.Lower) + " to " + Two(rho.Upper) + ", n " + Inv(rho.Count) + ").");
             if (!rho.ExcludesZero)
             {
                 d.NotSupported = true;
@@ -1371,7 +1457,7 @@ public static class RootCauseHypotheses
             var d = WithinDraft(ctx, model, "WS4", RootCauseAxes.Speed,
                 "Tool execution adds materially to " + M + "'s wall time (where its time goes, not a comparison).",
                 "Tool execution: " + M,
-                "Tool time is under 10 % of the total.",
+                "Tool time is under 10% of the total.",
                 "tool time stays at least a quarter of the total",
                 RootCauseLoci.Chat, RootCauseLoci.Corpus);
             var interval = RootCauseStatistics.Bootstrap(items.Count, sample =>
@@ -1384,7 +1470,7 @@ public static class RootCauseHypotheses
             d.ShareUpper = interval?.Upper;
             d.For.Add("Tool execution is " + Pct(toolShare) + IntervalText(interval) + " of " + M + "'s wall time per question.");
             d.Established = interval?.Lower >= 0.10;
-            d.EstablishedText = "the tool share's interval reaches below 10 %";
+            d.EstablishedText = "tool time may be under 10% of the total (its 95% interval reaches below 10%)";
             d.FactKeys.Add(ctx.Key(model.Token, "speed.toolTimeP50"));
             yield return d;
         }
@@ -1398,7 +1484,7 @@ public static class RootCauseHypotheses
             var d = WithinDraft(ctx, model, "WS5", RootCauseAxes.Speed,
                 "Own waits or retries inflate " + M + "'s time (where its time goes, not a comparison).",
                 "Waits and retries: " + M,
-                "Waits are under 10 % of model time and retries under 10 % of answers.",
+                "Waits are under 10% of model time and retries under 10% of answers.",
                 "the waits or retries recur at other times of day",
                 RootCauseLoci.Harness, RootCauseLoci.Provider);
             if (waitShare is double w) d.For.Add("Own waits and failed attempts are " + Pct(w) + " of " + M + "'s model time.");
@@ -1445,7 +1531,7 @@ public static class RootCauseHypotheses
             d.Share = grouped[3];
             d.For.Add("Visible output and reasoning are " + Pct(grouped[3]) + " of " + M + "'s cost per question.");
             d.Established = leadInterval?.Lower > 0;
-            d.EstablishedText = "its lead over the next component is not established";
+            d.EstablishedText = "output may not clearly be the largest part of the cost";
             d.FactKeys.Add(ctx.Key(model.Token, "cost.component.output.perQuestion"));
             d.FactKeys.Add(ctx.Key(model.Token, "cost.component.reasoning.perQuestion"));
             yield return d;
@@ -1457,7 +1543,7 @@ public static class RootCauseHypotheses
             var d = WithinDraft(ctx, model, "WC2", RootCauseAxes.Cost,
                 "Uncached input is " + M + "'s largest cost component (where its cost goes, not a comparison).",
                 "Uncached input: " + M,
-                "The cache-read share is at least 70 %.",
+                "The cache-read share is at least 70%.",
                 "the uncached share stays the largest",
                 RootCauseLoci.Chat, RootCauseLoci.Provider);
             d.Share = grouped[0];
@@ -1469,8 +1555,12 @@ public static class RootCauseHypotheses
                 (c < 0.5 ? d.For : d.Against).Add(M + " read " + Pct(c) + " of its input from the cache.");
                 if (c >= 0.7) d.NotSupported = true;
             }
-            d.Established = leadInterval?.Lower > 0 && cacheShare is < 0.5;
-            d.EstablishedText = "its lead is not established, or the cache-read share is not under one half";
+            bool leads = leadInterval?.Lower > 0;
+            d.Established = leads && cacheShare is < 0.5;
+            d.EstablishedText = Both(
+                leads ? null : "uncached input may not clearly be the largest part of the cost",
+                cacheShare is null ? "the share of input read from the cache is not recorded"
+                    : cacheShare >= 0.5 ? M + " read at least half its input from the cache" : null);
             d.FactKeys.Add(ctx.Key(model.Token, "tokens.cacheReadShare"));
             d.FactKeys.Add(ctx.Key(model.Token, "cost.component.uncachedInput.perQuestion"));
             yield return d;
@@ -1487,7 +1577,7 @@ public static class RootCauseHypotheses
                 "The ρ interval includes zero.",
                 "input cost keeps rising with the calls per answer",
                 RootCauseLoci.Chat, RootCauseLoci.Model);
-            d.For.Add("Across " + M + "'s questions, input cost rises with model calls per answer: Spearman ρ " + Two(rho.Rho) + " (95 % interval " + Two(rho.Lower) + " to " + Two(rho.Upper) + ").");
+            d.For.Add("Across " + M + "'s questions, input cost rises with model calls per answer: Spearman ρ " + Two(rho.Rho) + " (95% interval " + Two(rho.Lower) + " to " + Two(rho.Upper) + ").");
             if (!rho.ExcludesZero)
             {
                 d.NotSupported = true;
@@ -1508,7 +1598,7 @@ public static class RootCauseHypotheses
     internal static RootCauseRobustnessCheck ConfigurationCheck(IReadOnlyList<string> confounds)
         => confounds.Count == 0
             ? new RootCauseRobustnessCheck { Name = Configuration, Status = RootCauseCheckStatuses.Passed, Detail = "No configuration key differs beyond the model." }
-            : new RootCauseRobustnessCheck { Name = Configuration, Status = RootCauseCheckStatuses.Failed, Detail = "Open confounds: " + string.Join(", ", confounds) + "." };
+            : new RootCauseRobustnessCheck { Name = Configuration, Status = RootCauseCheckStatuses.Failed, Detail = "The two models also differ in " + BenchmarkReportFormat.LetterList(confounds) + "." };
 
     /// <summary>The first model's points of a segment, minus the second's, keep their sign without the question contributing most to the first's.</summary>
     private static RootCauseRobustnessCheck LeaveOneOutAtRisk(RootCauseAtRisk first, RootCauseAtRisk second, int segment)
@@ -1655,6 +1745,14 @@ public static class RootCauseHypotheses
     // Text helpers
     // ---------------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// The grade reason of the conditions that failed: one clause, or two joined by <c>and</c>; the general
+    /// reason when neither is given.
+    /// </summary>
+    private static string Both(string? first, string? second)
+        => first != null && second != null ? first + ", and " + second
+            : first ?? second ?? "its result may be chance";
+
     private static void FillShare(RootCauseDraft d, double share, RootCauseInterval? interval, string component, string of)
     {
         d.Share = share;
@@ -1685,7 +1783,7 @@ public static class RootCauseHypotheses
         => component.Share is double s ? Pct(s) + (component.ShareLower is double lo && component.ShareUpper is double hi ? " (" + Interval(lo, hi) + ")" : string.Empty) : "an unknown share";
 
     internal static string Interval(double lower, double upper)
-        => BenchmarkReportFormat.Whole(lower * 100) + "–" + BenchmarkReportFormat.Whole(upper * 100) + " %";
+        => BenchmarkReportFormat.Whole(lower * 100) + "–" + BenchmarkReportFormat.Whole(upper * 100) + "%";
 
     private static string IntervalText(RootCauseInterval? interval)
         => interval == null ? string.Empty : " (" + Interval(interval.Lower, interval.Upper) + ")";

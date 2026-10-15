@@ -138,11 +138,11 @@ public class BenchmarkBatteryReportBuilderTests
         int profile = report.IndexOf("## 3. Suite Profile", StringComparison.Ordinal);
         Assert.True(overall >= 0 && overall < subsection && subsection < profile);
 
-        Assert.Contains("- **Provider error rate:** 0.80 % (8 of 1,000 attempts; 95 % CI 0.40–1.6 %); recorded for 1 of 2 runs\n", report);
-        Assert.Contains("- **Upper bound including unattributed errors:** 1.0 % (10 of 1,000 attempts; 95 % CI 0.55–1.8 %) — 2 unattributed\n", report);
+        Assert.Contains("- **Provider error rate:** 0.80% (8 of 1,000 attempts; 95% CI 0.40–1.6%); recorded for 1 of 2 runs\n", report);
+        Assert.Contains("- **Upper bound including unattributed errors:** 1.0% (10 of 1,000 attempts; 95% CI 0.55–1.8%) — 2 unattributed\n", report);
         Assert.Contains("- **Our-side failures (excluded):** 3, of them rate limited by our own limits 3\n", report);
         Assert.Contains("- **Re-runs needed:** 1 re-run (1 for provider errors)\n", report);
-        Assert.Contains("| 1 | #1 | current | 1,000 | 8 | 0.80 % | 2 | 1 re-run (1 for provider errors) |\n", report);
+        Assert.Contains("| 1 | #1 | current | 1,000 | 8 | 0.80% | 2 | 1 re-run (1 for provider errors) |\n", report);
         Assert.Contains("| 1 | #2 | current | not recorded | — | — | — | — |\n", report);
         Assert.Contains("These are provider errors observed in GnollBench runs", report);
         Assert.DoesNotContain("throttl", report, StringComparison.OrdinalIgnoreCase);

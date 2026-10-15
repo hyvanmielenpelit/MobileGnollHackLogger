@@ -2,10 +2,12 @@
      frame scrolls; wide, the top block sticks above the two scrolling columns. Single: the top block
      stays put and the body scrolls. Every slot appears once, so each projects in one place. -->
 <div class="rrf-top">
-  <header class="rrf-header">
-    <div class="rrf-identity"><ng-content select="[runReportHeader]" /></div>
-    <div class="rrf-actions"><ng-content select="[runReportActions]" /></div>
-  </header>
+  @if (showHeader) {
+    <header class="rrf-header">
+      <div class="rrf-identity"><ng-content select="[runReportHeader]" /></div>
+      <div class="rrf-actions"><ng-content select="[runReportActions]" /></div>
+    </header>
+  }
   <div class="rrf-tabs"><ng-content select="[runReportTabs]" /></div>
 </div>
 

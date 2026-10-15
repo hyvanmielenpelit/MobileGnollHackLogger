@@ -70,12 +70,12 @@ export function storeProviderAvailabilityView(view: ProviderAvailabilityView): v
 /** The Provider Errors key-figure tile of the run and battery run dialogs. */
 export interface ProviderErrorsFigure {
   readonly recorded: boolean;
-  /** `0.81 %`; `Not recorded`; `—` without a valid attempt. */
+  /** `0.81%`; `Not recorded`; `—` without a valid attempt. */
   readonly value: string;
   readonly muted: boolean;
   /** `12 of 1,480 attempts`; null when not recorded. */
   readonly count: string | null;
-  /** `95 % CI 0.44–1.5 % · 3 unattributed · 2 re-runs (1 provider)`, or why nothing is recorded. */
+  /** `95% CI 0.44–1.5% · 3 unattributed · 2 re-runs (1 provider)`, or why nothing is recorded. */
   readonly note: string;
   /** Fewer than 100 valid attempts on a recorded run. */
   readonly fewAttempts: boolean;
@@ -147,11 +147,11 @@ export function stripShadeOf(bin: ProviderAvailabilityBinDto): StripShade {
 export const STRIP_LEGEND: readonly { readonly shade: StripShade; readonly label: string }[] = [
   { shade: 'empty', label: 'No attempts' },
   { shade: 'ours', label: 'Our side only' },
-  { shade: 's0', label: '0 %' },
-  { shade: 's1', label: 'up to 1 %' },
-  { shade: 's2', label: 'up to 5 %' },
-  { shade: 's3', label: 'up to 20 %' },
-  { shade: 's4', label: 'over 20 %' }
+  { shade: 's0', label: '0%' },
+  { shade: 's1', label: 'up to 1%' },
+  { shade: 's2', label: 'up to 5%' },
+  { shade: 's3', label: 'up to 20%' },
+  { shade: 's4', label: 'over 20%' }
 ];
 
 /** `2026-10-12 13:05 UTC`. */
@@ -390,7 +390,7 @@ export class ProviderAvailabilityComponent {
       side: o.side,
       count: o.count,
       countText: formatInteger(o.count),
-      share: total > 0 ? formatPercent(o.count / total) : '0 %',
+      share: total > 0 ? formatPercent(o.count / total) : '0%',
       labeled: total > 0 && o.count / total >= BAR_LABEL_MIN_SHARE
     }));
   });
@@ -421,7 +421,7 @@ export class ProviderAvailabilityComponent {
       causeText: replacementCauseText(link.cause)
     })));
 
-  /** `98 % (1,450 of 1,480 calls)`, or `no valid calls`. */
+  /** `98% (1,450 of 1,480 calls)`, or `no valid calls`. */
   readonly firstAttemptText = computed(() => {
     const a = this.availability();
     if (!a || a.calls <= 0) {

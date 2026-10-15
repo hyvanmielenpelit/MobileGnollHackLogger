@@ -1102,7 +1102,7 @@ describe('ModelComparisonComponent', () => {
       (fixture.debugElement.query(By.css(`canvas[data-figure-id="${id}"]`)).nativeElement as HTMLCanvasElement)
         .getAttribute('aria-label') ?? '';
     for (const id of ['p1d-availability', 'a1-availability']) {
-      expect(label(id), id).toContain('Gemini 2.5 Flash (medium): 0.81 % (12 of 1,480 attempts; 95 % CI 0.44–1.5 %)');
+      expect(label(id), id).toContain('Gemini 2.5 Flash (medium): 0.81% (12 of 1,480 attempts; 95% CI 0.44–1.5%)');
       expect(label(id), id).toContain('Legacy Model (medium): not recorded');
     }
     expect(component.availabilityCard!.chrome.notes.map(note => note.text)).toContain(

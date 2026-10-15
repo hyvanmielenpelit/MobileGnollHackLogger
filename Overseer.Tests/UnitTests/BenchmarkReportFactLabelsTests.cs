@@ -70,7 +70,7 @@ public class BenchmarkReportFactLabelsTests
         foreach (string key in EmittedKeys())
         {
             string label = BenchmarkReportFactLabels.Label(key);
-            Assert.DoesNotContain(".", label.Replace("ICC(A,1)", string.Empty).Replace(" %", string.Empty));
+            Assert.DoesNotContain(".", label.Replace("ICC(A,1)", string.Empty).Replace("%", string.Empty));
             Assert.NotEqual(key, label);
             Assert.True(char.IsUpper(label[0]) || char.IsDigit(label[0]), key + " → " + label);
         }
@@ -97,7 +97,7 @@ public class BenchmarkReportFactLabelsTests
     [InlineData("comparison.peerRuns", "Runs per peer")]
     [InlineData("peer.B.dimension.accuracy", "Model B: accuracy score")]
     [InlineData("peer.A.quality.index", "Model A's Intelligence Index")]
-    [InlineData("peer.A.quality.interval", "Model A's 95 % interval")]
+    [InlineData("peer.A.quality.interval", "Model A's 95% interval")]
     [InlineData("peer.C.quality.rank", "Model C's intelligence rank")]
     [InlineData("peer.A.speed.medianSeconds", "Model A's median answer time")]
     [InlineData("peer.B.cost.perQuestion", "Model B's cost per question")]
@@ -110,16 +110,16 @@ public class BenchmarkReportFactLabelsTests
     [InlineData("availability.attempts", "Valid attempts")]
     [InlineData("availability.providerErrors", "Provider errors")]
     [InlineData("availability.providerErrorRate", "Provider error rate")]
-    [InlineData("availability.providerErrorRateCi95Low", "Lower bound of the provider error rate's 95 % interval")]
+    [InlineData("availability.providerErrorRateCi95Low", "Lower bound of the provider error rate's 95% interval")]
     [InlineData("availability.unattributedErrors", "Unattributed errors")]
     [InlineData("availability.reruns", "Re-runs needed")]
     [InlineData("availability.providerReruns", "Re-runs needed for provider errors")]
     [InlineData("availability.oneIn", "Provider errors as a natural frequency")]
     [InlineData("endpoint.P6.estimate", "Provider error rate (P6): change")]
     [InlineData("protocol.margin.P6", "Equivalence margin of provider error rate (P6)")]
-    [InlineData("endpoint.P6.ci95", "Provider error rate (P6): 95 % interval")]
+    [InlineData("endpoint.P6.ci95", "Provider error rate (P6): 95% interval")]
     [InlineData("availability.baseline.attempts", "Baseline period: valid attempts")]
-    [InlineData("availability.comparison.providerErrorRateCi95High", "Comparison period: provider error rate, 95 % interval high")]
+    [InlineData("availability.comparison.providerErrorRateCi95High", "Comparison period: provider error rate, 95% interval high")]
     [InlineData("availability.comparison.availabilityOnlyRuns", "Comparison period: availability-only runs")]
     public void Labels_AreExplicitOrFollowTheirPattern(string key, string expected)
     {

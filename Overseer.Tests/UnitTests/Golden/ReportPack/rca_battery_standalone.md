@@ -24,11 +24,54 @@
 ### How sure are we?
 
 > [!WARNING]
-> **Caveat.** Established (High): measured, established after adjustment, robust, with two or more runs per suite on both sides. Probable (Moderate): one of those conditions is missed. Suggestive (Low): qualitative only, two or more conditions missed, or the difference may be noise. Ruled out (Not supported): the rule's own test refutes it.
+> **Caveat.** How sure each answer is. **Established (High)**: measured, still clear after the correction for many comparisons, robust in every check, not explained by another setting, and each model ran at least twice per suite. **Probable (Moderate)**: one of those is missing. **Suggestive (Low)**: a lead only; it is not measured, two or more are missing, or the difference may be chance. **Ruled out (Not supported)**: the hypothesis's own test contradicts it.
 >
 > Every model has two or more runs per suite, so a cause can be graded up to Established (High).
 >
 > The intelligence hypotheses that could lie in the model or in the instrument are capped at Suggestive (Low): no other model answered these questions.
+
+## Key terms
+
+This document uses a few statistical and technical terms. Each is explained here in plain words, and the less familiar ones again where they first appear. Appendix H gives a fuller definition of each.
+
+| Term | What it means |
+|---|---|
+| 95% interval | The range the true value most likely lies in. |
+| Answer quality | The score of one answer, from its four graded dimensions. |
+| Answers without tools | Answers the model wrote without looking anything up. |
+| Battery | Several suites run together and scored as one. |
+| Claim verifier | An AI model that checks single statements against the game's sources. |
+| Confound | Another difference between two models that could account for a result. |
+| Control | An earlier run of another model on the same questions. |
+| Critical error | A mistake serious enough to cap the answer's score. |
+| Decomposition share | How much of a difference one part accounts for. |
+| Difficulty-weighted mean | An average in which harder questions count for more. |
+| Dimension | One of the four things graded: accuracy, completeness, conciseness, readability. |
+| Grade words | How sure the document is of a cause, strongest to weakest. |
+| Holm adjustment | A correction for running many comparisons at once. |
+| Hypothesis | A possible cause that code tested against the data. |
+| Intelligence Index | The overall answer-quality score, out of a hundred. |
+| Leave-one-out check | Rechecking a result with each question left out in turn. |
+| Locus | Where a cause lies: model, chat, grading, questions, data or provider. |
+| Median and mean | The middle value, and the plain average. |
+| Null hypothesis | The starting assumption that a difference is only chance. |
+| Output generation and decode rate | The time spent writing the reply, and how fast it is written. |
+| Overall Index | A battery's score: its suites' Intelligence Indexes, weighted and added. |
+| Panel member | One of the two AI graders whose scores are averaged. |
+| Points at risk | The most index points a failure signal could have cost. |
+| Pricing basis | Which prices turned the token counts into dollars. |
+| Reference reader | A third AI grader whose scores serve as a check only. |
+| Replicate run | A second run of the same model, to see if results repeat. |
+| Response style | Whether the chat asks for concise or detailed answers. |
+| Robustness check | A test of whether a result survives a small change. |
+| Runs per suite | How many times each model answered each suite. |
+| Scoring levels | Fixed grade steps, each described by the answer behavior that earns it. |
+| Suite | A fixed set of benchmark questions with their rubrics. |
+| Tied rank | A shared rank for models the data cannot put in order. |
+| Time to first token | The wait before the model starts writing, mostly its thinking. |
+| Tokens | The word pieces a model reads and writes, which set its price. |
+| Tool round | One cycle of calling a tool and reading its result. |
+| Weighted geometric mean | An average that one very low score pulls down sharply. |
 
 ## Why each model scored as it did
 
@@ -36,7 +79,7 @@
 |---|---|---|---|---|
 | **GPT-5.6 Luna** | 80 | none ranked first or second | confirmed critical errors: 5.6 index points on 1 question (S2-Q3); weakest dimension Completeness, 2.0 points below Accuracy | 1 critical error (S2-Q3) |
 
-*Each entry is a count, a share or a rank that was measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (Appendix A), with its questions.*
+*Each entry is a count, a share or a rank measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (the most index points a failure signal could have cost), with its questions (Appendix A). Flags: critical errors (a mistake serious enough to cap the answer's score).*
 
 ## Scope and design
 
@@ -47,13 +90,13 @@ This analysis describes battery run 9 of GPT-5.6 Luna on its own. Other models e
 - **Battery:** Core knowledge, revision 2: 2 suites, 2 runs per suite, weighting scheme Questions and difficulty; 4 questions in all.
 - **Chat configuration under test:** Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed
 - **Model under test:** GPT-5.6 Luna (OpenAI, gpt-5.6-luna), thinking level high; 4 member runs.
-- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %. Each dimension is graded on behaviorally anchored levels scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
+- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
 - **Graders:**
   - Panel member A: Gemini 3.8 Flash (Google, gemini-3.8-flash), different provider from the model under test
   - Panel member B: Claude Haiku 5 (Anthropic, claude-haiku-5), different provider from the model under test
   - Reference reader: DeepSeek V4 (DeepSeek, deepseek-v4), different provider from the model under test
   - Claim verifier: Gemini 3.8 Flash (Google, gemini-3.8-flash), different provider from the model under test
-- **Formulas:** answer quality is the weighted geometric mean of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
+- **Formulas:** answer quality is the weighted geometric mean (an average that one very low score pulls down sharply) of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean (an average in which harder questions count for more) of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
 - **Battery composite:** the Overall Index is the sum over the suites of each suite's weight times its Intelligence Index, under the battery's weighting scheme; it is not comparable with a single suite's index. Speed and cost are pooled over the member runs, and cost per run is per battery pass, one run of every suite.
 - **Comparability:** this report describes the battery result on its own, measured in the comparability class `5e1d0c7b3a91f08c`.
 - **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
@@ -67,11 +110,11 @@ One run per suite on each side limits what this design can decide; the next runs
 
 ## Evidence: intelligence
 
-| Model | Intelligence Index | 95 % interval | Rank | Critical errors |
+| Model | Intelligence Index | 95% interval | Rank | Critical errors |
 |---|---|---|---|---|
 | **GPT-5.6 Luna** | 80 | 77–83 | 2 | 1 of 4 answers |
 
-*A joint rank means the model's 95 % interval overlaps a neighbor's, so the intervals do not establish the order between them.*
+*A rank shown as a span, such as 2–4 (tied), is a tied rank: the model's 95% interval (the range the true value most likely lies in) overlaps a neighbor's, so the intervals alone cannot put them in order.*
 
 | Model | Accuracy | Completeness | Conciseness | Readability |
 |---|---|---|---|---|
@@ -94,7 +137,7 @@ The first known fact: No earlier run of another model answered these questions u
 | Suite 1: Item lore | 20.5 s | 2.6 s | 13.0 s | 2.0 s | 0.1 s | 2.9 s |
 | Suite 2: Hazards | 24.5 s | 2.6 s | 16.2 s | 2.0 s | 0.1 s | 3.6 s |
 
-*Seconds per question: the median of the per-question time, split into its parts in proportion to their means. Tool execution is excluded from the model's own time elsewhere in this document.*
+*Seconds per question: the median time per question, split into its parts in proportion to their mean times. The parts are time to first token (the wait before the model starts writing, mostly its thinking), output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. Tool execution is excluded from the model's own time elsewhere in this document.*
 
 The speed tables split the time per question into its components.
 
@@ -108,7 +151,7 @@ The speed tables split the time per question into its components.
 | Suite 1: Item lore | $0.019 | $0.0050 | $0.0001 | $0.0000 | $0.0090 | $0.0050 |
 | Suite 2: Hazards | $0.019 | $0.0050 | $0.0001 | $0.0000 | $0.0090 | $0.0050 |
 
-*Mean cost per question by component, priced on this basis: As run.*
+*Mean cost per question by component. Each component is a kind of token (the word pieces a model reads and writes, which set its price). Uncached input is text read at the full price, and cache reads are stored input read at a lower price. Cache writes store input for later calls; visible output is the answer; reasoning is the model's hidden thinking. Priced on this basis (which prices turned the token counts into dollars): As run.*
 
 The cost tables split the cost per question into volume and price.
 
@@ -118,12 +161,14 @@ The cost tables split the cost per question into volume and price.
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WQ2.1: points lost in suite 2 by GPT-5.6 Luna | GPT-5.6 Luna's points are lost mostly in suite 2 (where its points go, not a comparison). | Suggestive (Low) | 100 % | run 1 |
-| WQ3.1: critical errors of GPT-5.6 Luna | Confirmed critical errors cost GPT-5.6 Luna most of its points (where its points go, not a comparison). | Suggestive (Low) | 66 % | — |
+| WQ2.1: GPT-5.6 Luna's points lost in suite 2 | GPT-5.6 Luna's points are lost mostly in suite 2 (where its points go, not a comparison). | Suggestive (Low) | 100% | run 1 |
+| WQ3.1: GPT-5.6 Luna's critical errors | Confirmed critical errors cost GPT-5.6 Luna most of its points (where its points go, not a comparison). | Suggestive (Low) | 66% | — |
 
-*Ids: H0 is a null hypothesis, H one between two models, W one within a single model; Q, S and C mark intelligence, speed and cost. Appendix C gives each hypothesis' evidence for and against.*
+*Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
-*Null hypotheses (the difference is within sampling noise):* a paired result rejects it for within GPT-5.6 Luna's own questions.
+*How to read a hypothesis ID such as HQ1.2: H compares two models, W looks inside one model, and H0 is a null hypothesis (the starting assumption that a difference is only chance). Q, S and C stand for intelligence, speed and cost. Appendix C gives each hypothesis's evidence for and against.*
+
+A real difference was found for 1 comparison: within GPT-5.6 Luna's own questions.
 
 The strongest hypothesis in the table: GPT-5.6 Luna's points are lost mostly in suite 2 (where its points go, not a comparison). Its grade and the evidence against it stand beside it.
 
@@ -131,7 +176,9 @@ The strongest hypothesis in the table: GPT-5.6 Luna's points are lost mostly in 
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WS2.1: output generation of GPT-5.6 Luna | Most of GPT-5.6 Luna's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Probable (Moderate) | 83 % (82–84 %) | run 2 |
+| WS2.1: GPT-5.6 Luna's time spent generating output | Most of GPT-5.6 Luna's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Probable (Moderate) | 83% (82–84%) | run 2 |
+
+*Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
 The strongest hypothesis in the table: Most of GPT-5.6 Luna's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). Its grade and the evidence against it stand beside it.
 
@@ -139,14 +186,16 @@ The strongest hypothesis in the table: Most of GPT-5.6 Luna's time is output gen
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WC1.1: output cost of GPT-5.6 Luna | Output (with reasoning) is GPT-5.6 Luna's largest cost component (where its cost goes, not a comparison). | Established (High) | 73 % | — |
+| WC1.1: GPT-5.6 Luna's output cost | Output (with reasoning) is GPT-5.6 Luna's largest cost component (where its cost goes, not a comparison). | Established (High) | 73% | — |
+
+*Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
 The strongest hypothesis in the table: Output (with reasoning) is GPT-5.6 Luna's largest cost component (where its cost goes, not a comparison). Its grade and the evidence against it stand beside it.
 
 ### The writer's hypotheses
 
 > [!WARNING]
-> **Not tested by code.** Hypotheses the report writer added from the grader comments and excerpts. Code has not tested them, so their confidence is Low.
+> **Not tested by code.** Hypotheses the report writer added from the grader comments and excerpts. Code has not tested them, so their confidence is Low. Each names its locus (where a cause lies: model, chat, grading, questions, data or provider).
 >
 > - **Intelligence · Low** (GPT-5.6 Luna; locus suite): GPT-5.6 Luna may have lost points to a rubric that asks for more than the question states.
 >   - *For:* The grader comment on Q1 names a missing point.
@@ -157,9 +206,9 @@ The strongest hypothesis in the table: Output (with reasoning) is GPT-5.6 Luna's
 
 | Axis | Status | Best hypothesis | Why |
 |---|---|---|---|
-| Intelligence | Not established | WQ2.1: points lost in suite 2 by GPT-5.6 Luna | The best hypothesis, WQ2.1, is graded Low: across suites failed: leaving the suite out moves the Overall Index by less than the interval half-width; panel agreement could not be assessed: the model was not graded by a panel, or a group has no score from both members. |
-| Speed | Probable cause | WS2.1: output generation of GPT-5.6 Luna | WS2.1 is the best hypothesis, graded Moderate: its lead is not established, or the reasoning share is unknown. |
-| Cost | Root cause established | WC1.1: output cost of GPT-5.6 Luna | WC1.1 is graded High and its null hypothesis is rejected. |
+| Intelligence | Not established | WQ2.1: GPT-5.6 Luna's points lost in suite 2 | Suggestive (Low) because leaving the suite out moves the Overall Index by less than the interval half-width, and it is unknown whether both panel members agree (the model was not graded by a panel). |
+| Speed | Probable cause | WS2.1: GPT-5.6 Luna's time spent generating output | Probable (Moderate) because the reasoning tokens are not recorded separately. |
+| Cost | Root cause established | WC1.1: GPT-5.6 Luna's output cost | Established (High): it passed every check. |
 
 > [!TIP]
 > **Conclusion.** Intelligence: Not established. Speed: Probable cause. Cost: Root cause established.
@@ -170,8 +219,8 @@ In the order to make them: the Overseer chat first (C), then the benchmark (B), 
 
 | # | Run | Purpose | Models | Settles | Estimate |
 |---|---|---|---|---|---|
-| 1 | Control run (recommended) | B, the benchmark | Lyra Mini (high) and Zeta Prime (high) | WQ2.1 | about $0.480 and 28 minutes |
-| 2 | Thinking-level pair (recommended) | M, model selection | GPT-5.6 Luna and Orion Max (medium) | WS2.1 | about $0.480 and 28 minutes |
+| 1 | Control run (recommended) | B, the benchmark | Lyra Mini (high) and Zeta Prime (high) | WQ2.1 | about $0.48 and 28 minutes |
+| 2 | Thinking-level pair (recommended) | M, model selection | GPT-5.6 Luna and Orion Max (medium) | WS2.1 | about $0.48 and 28 minutes |
 
 ### Checks
 
@@ -203,7 +252,7 @@ The benchmark asks single questions, so longer conversations are not measured.
 - **E. Known facts:** what a test, a count, a decomposition or the configuration proves.
 - **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
 - **G. Question details:** the questions this document cites, with their answers.
-- **H. Glossary:** the statistical terms in plain words.
+- **H. Glossary:** every term this document uses, in plain words.
 
 ## Appendix A: Intelligence detail
 
@@ -218,10 +267,10 @@ The benchmark asks single questions, so longer conversations are not measured.
 
 The Overall Index is the sum over the suites of each suite's weight times its Intelligence Index, under the Questions and difficulty scheme. It is not comparable with a single suite's Intelligence Index.
 
-| Suite | Weight | Intelligence Index | 95 % interval | Contribution | Scored questions | Runs | Speed Index | Cost per run, graders included | Critical-error rate |
+| Suite | Weight | Intelligence Index | 95% interval | Contribution | Scored questions | Runs | Speed Index | Cost per run, graders included | Critical-error rate |
 |---|---|---|---|---|---|---|---|---|---|
-| S1 · Item lore | 60.0 % | 84 / 100 | 78–90 | 50.4 points | 2 of 2 questions | 2 runs | 84 / 100 | $0.081 | 0 % |
-| S2 · Hazards | 40.0 % | 74 / 100 | — | 29.6 points | 2 of 2 questions | 2 runs | 80 / 100 | $0.063 | 25 % |
+| S1 · Item lore | 60.0% | 84 / 100 | 78–90 | 50.4 points | 2 of 2 questions | 2 runs | 84 / 100 | $0.081 | 0% |
+| S2 · Hazards | 40.0% | 74 / 100 | — | 29.6 points | 2 of 2 questions | 2 runs | 80 / 100 | $0.063 | 25% |
 
 *A suite's cost per run is its mean over its member runs, graders included, at the prices stored with each run.*
 
@@ -229,7 +278,7 @@ The Overall Index is the sum over the suites of each suite's weight times its In
 - **Standard deviation of the suite indices:** 7.1 points
 - **Range of the suite indices:** 10.0 points
 - **Pooled identity:** the Overall Index equals one difficulty-weighted index over every question of every suite
-- **Critical-error rate:** 13 %
+- **Critical-error rate:** 13%
 - **Speed Index:** 82 / 100
 - **Member runs left out of the analysis:** 0 member runs
 
@@ -279,11 +328,11 @@ A battery report lists no synthesis findings; each member run's report has its o
 ### Tool use
 
 - **Tool calls per question:** 3.5
-- **Source code share:** 57 %
-- **Wiki share:** 29 %
-- **Structured lookup share:** 14 %
-- **Knowledge base share:** 0 %
-- **Other tools share:** 0 %
+- **Source code share:** 57%
+- **Wiki share:** 29%
+- **Structured lookup share:** 14%
+- **Knowledge base share:** 0%
+- **Other tools share:** 0%
 - **Failed tool calls:** not available
 - **Calls refused by the tool budget:** not available
 
@@ -320,6 +369,8 @@ A battery report lists no synthesis findings; each member run's report has its o
 |---|---|---|---|---|---|
 | GPT-5.6 Luna | 2 | — | — | — | 1,400 |
 
+*Model calls per answer: the model is called again after each tool round (one cycle of calling a tool and reading its result). Decode rate: the median output tokens per second once the model has started writing. Reasoning share: the part of the output tokens spent on hidden thinking.*
+
 ### Tokens per question
 
 | Model | Uncached input | Cache reads | Cache writes | Visible output | Reasoning | Cache-read share |
@@ -339,44 +390,44 @@ A battery report lists no synthesis findings; each member run's report has its o
 
 ## Appendix C: Hypothesis details
 
-*Code fired each hypothesis on a pre-declared rule and graded it: High (quantified, established after adjustment, its null rejected, no open confound, every robustness check passed, two or more runs per suite on both sides), Moderate (exactly one of those conditions missed), Low (qualitative only, two or more conditions missed, or the null stands) or Not supported (refuted by the rule's own test). Each null hypothesis says that the difference is within sampling noise.*
+Code raised each hypothesis from a rule fixed in advance and graded it. **Established (High)** needs all of these: it is measured; it is still clear after the correction for many comparisons; its null hypothesis is rejected; no confound (another difference between two models that could account for a result) is open; every robustness check (a test of whether a result survives a small change) passed; and each model ran at least twice per suite. **Probable (Moderate)**: exactly one of those conditions is missing. **Suggestive (Low)**: it is not measured, two or more conditions are missing, or the null hypothesis stands. **Ruled out (Not supported)**: the hypothesis's own test contradicts it. A null hypothesis reads **Rejected — a real difference** when a test found a real difference, and **Stands — may be chance** when none could be shown. Each entry gives the models, the locus and the grade, then the evidence for and against.
 
 ### Intelligence
 
-- **WQ2.1: points lost in suite 2 by GPT-5.6 Luna** (GPT-5.6 Luna; locus model / suite; Suggestive (Low))
-  - *For:* suite 2 holds 100 % of GPT-5.6 Luna's points at risk.
+- **WQ2.1: GPT-5.6 Luna's points lost in suite 2** (GPT-5.6 Luna; locus model / suite; Suggestive (Low))
+  - *For:* suite 2 holds 100% of GPT-5.6 Luna's points at risk.
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* The contrast stands within noise, or the shares are even.
-  - *Robustness:* Replicates passed (Every model has at least two runs per suite); Across suites failed (Leaving the suite out moves the Overall Index by less than the interval half-width); Panel agreement could not be assessed (The model was not graded by a panel, or a group has no score from both members).
-- **WQ3.1: critical errors of GPT-5.6 Luna** (GPT-5.6 Luna; locus model; Suggestive (Low))
-  - *For:* Confirmed critical errors hold 66 % of the points at risk (5.6 index points, upper bound).
+  - *Robustness:* Replicates passed (Every model ran at least twice per suite); Across suites failed (Leaving the suite out moves the Overall Index by less than the interval half-width); Panel agreement could not be assessed (The model was not graded by a panel).
+- **WQ3.1: GPT-5.6 Luna's critical errors** (GPT-5.6 Luna; locus model; Suggestive (Low))
+  - *For:* Confirmed critical errors hold 66% of the points at risk (5.6 index points, upper bound).
   - *Against:* none recorded.
-  - *Grade reasons:* the lead of the critical-error share over the next is not established.
+  - *Grade reasons:* critical errors may not clearly hold more of the lost points than the next cause.
   - *Refuted if:* The caps are unconfirmed.
-  - *Robustness:* Replicates passed (Every model has at least two runs per suite); Leave one question out could not be assessed (Fewer than two questions put points at risk in this segment); Panel agreement could not be assessed (The model was not graded by a panel, or a group has no score from both members).
+  - *Robustness:* Replicates passed (Every model ran at least twice per suite); Leave one question out could not be assessed (Fewer than two questions put points at risk in this segment); Panel agreement could not be assessed (The model was not graded by a panel).
 
 | Hypothesis | Pair | Paired result | Grade |
 |---|---|---|---|
-| H0-W.1 | within GPT-5.6 Luna | suite 2 against the rest: adjusted p 0.030. | Ruled out (Not supported) |
+| H0-W.1 | within GPT-5.6 Luna | suite 2 against the rest: adjusted p 0.030. | Rejected — a real difference (Not supported) |
 
 ### Speed
 
-- **WS2.1: output generation of GPT-5.6 Luna** (GPT-5.6 Luna; locus model; Probable (Moderate))
-  - *For:* Output generation is 83 % (82–84 %) of model time per question.
+- **WS2.1: GPT-5.6 Luna's time spent generating output** (GPT-5.6 Luna; locus model; Probable (Moderate))
+  - *For:* Output generation is 83% (82–84%) of model time per question.
   - *Against:* The reasoning tokens are not recorded separately.
-  - *Grade reasons:* its lead is not established, or the reasoning share is unknown.
+  - *Grade reasons:* the reasoning tokens are not recorded separately.
   - *Refuted if:* The reasoning share is under one half.
-  - *Robustness:* Replicates passed (Every model has at least two runs per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
+  - *Robustness:* Replicates passed (Every model ran at least twice per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
 
 ### Cost
 
-- **WC1.1: output cost of GPT-5.6 Luna** (GPT-5.6 Luna; locus model; Established (High))
-  - *For:* Visible output and reasoning are 73 % of GPT-5.6 Luna's cost per question.
+- **WC1.1: GPT-5.6 Luna's output cost** (GPT-5.6 Luna; locus model; Established (High))
+  - *For:* Visible output and reasoning are 73% of GPT-5.6 Luna's cost per question.
   - *Against:* none recorded.
   - *Grade reasons:* every condition of the grade is met.
   - *Refuted if:* Another component is larger.
-  - *Robustness:* Replicates passed (Every model has at least two runs per suite).
+  - *Robustness:* Replicates passed (Every model ran at least twice per suite).
 
 ## Appendix D: Run settings
 
@@ -386,7 +437,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 - **Decides:** Separates the model from the instrument: once two controls, one from another provider, have run on the same questions under the same graders, the intelligence hypotheses are graded without the control cap.
 - **Predicted comparability:** Model comparison: every must-match key agrees and only the model differs
-- **Estimate:** about $0.480 and 28 minutes
+- **Estimate:** about $0.48 and 28 minutes
 - **Settles:** WQ2.1
 
 | Launcher field | Setting |
@@ -414,7 +465,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 - **Decides:** Confirms WS2.1 if the decode share stays the largest and reasoning stays at least half the output; refutes it if the reasoning share is under one half.
 - **Predicted comparability:** Model comparison: only the thinking level differs
-- **Estimate:** about $0.480 and 28 minutes
+- **Estimate:** about $0.48 and 28 minutes
 - **Settles:** WS2.1
 
 | Launcher field | Setting |
@@ -442,8 +493,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 1. No earlier run of another model answered these questions under the same instrument.
 2. GPT-5.6 Luna answered 2 of 8 scored questions without a tool call.
 3. GPT-5.6 Luna has 1 critical error in 8 scored answers.
-4. Output generation is 65 % of GPT-5.6 Luna's time per question.
-5. Visible output is 47 % of GPT-5.6 Luna's cost per question.
+4. Output generation is 65% of GPT-5.6 Luna's time per question.
+5. Visible output is 47% of GPT-5.6 Luna's cost per question.
 
 ## Appendix F: Reproducibility
 
@@ -493,15 +544,42 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ## Appendix H: Glossary
 
-- **95 % interval:** a range built so that, if the questions were sampled again and again, 95 of 100 such ranges would hold the true value. When two models' intervals overlap, the intervals alone do not say which is higher.
-- **Paired test:** a comparison of two models question by question, on the questions both answered, so that how hard each question is counts the same for both.
-- **Holm adjustment:** testing many pairs at once turns up some differences by chance. The Holm adjustment raises each p-value so that the whole family of tests keeps a 5 % chance of a false finding; a result is established when its adjusted p-value is below 0.05.
-- **Null hypothesis:** the statement that a difference is within sampling noise. It stands until a paired test, or without one a bootstrap interval that excludes zero, rejects it; a null that stands is not proof that the two are equal.
-- **Grade words:** Established (High) is measured, established after adjustment, robust and replicated; Probable (Moderate) misses one of those conditions; Suggestive (Low) is qualitative, misses two or more, or may be noise; Ruled out (Not supported) is refuted by its own rule's test.
-- **Points at risk:** the index points a model lost on its answers below its own median answer, each answer counted once under its first signal (no tool call, a defect, a critical error). An upper bound of what each signal costs, not an estimate of its effect.
-- **Decomposition share:** the part of a speed or cost difference one component accounts for; the parts sum exactly to the difference. A share can pass 100 % when two components pull in opposite directions: if the difference is 2 s, one component adding 3 s and another taking 1 s back are 150 % and −50 %. Over few questions or a small difference, a share's interval can be very wide.
-- **Isolated miss:** a question a model scored 50 or less on while the other models' median was 75 or more.
-- **Joint rank:** two models share a rank when their 95 % intervals overlap.
+- **95% interval:** A range built so that, if the questions were drawn again and again, 95 of 100 such ranges would contain the true value. When two models' ranges overlap, the ranges alone cannot say which is higher.
+- **Answer quality:** The score of one answer, from 0 to 100. It combines the four dimension scores in a weighted geometric mean and is capped when the answer has a critical error.
+- **Answers without tools:** Answers for which the model called no tool, such as the wiki search or the source code search, and answered from its own knowledge alone.
+- **Battery:** A set of suites run together. Each suite is scored on its own, and the battery's Overall Index combines them under the battery's weights.
+- **Claim verifier:** An AI model that checks single statements, in answers or in grader comments, against the game's source code and wiki. Its rulings are advisory and can be wrong.
+- **Confound:** A setting other than the model itself that differs between the two models a hypothesis compares, such as the response style. While it is open, its effect cannot be told apart from the model's.
+- **Control:** An earlier run of another model that answered the same questions under the same graders and settings. Controls show how hard each question is, which helps tell the model from the instrument.
+- **Critical error:** A mistake the graders judge serious, such as a wrong game rule stated as fact. It caps the answer's quality, whatever the answer's other scores.
+- **Decomposition share:** The part of a time or cost difference that one component accounts for, found by a standard method (the logarithmic-mean Divisia index). The parts always add up to the whole difference, so one part can be larger than the whole when another pulls the other way: a 2 s gap can be 3 s from one part and −1 s from another.
+- **Difficulty-weighted mean:** The average of answer quality over the questions, with harder questions counting for more. The Intelligence Index is computed this way.
+- **Dimension:** One of the four qualities each answer is graded on: Accuracy, Completeness, Conciseness and Readability. Each has its own weight in the answer's quality.
+- **Grade words:** Established (High) means measured, still clear after the correction for many comparisons, and robust in every check, with no open confound and two or more runs per suite. Probable (Moderate) misses exactly one of those conditions. Suggestive (Low) is a lead only. Ruled out (Not supported) means the hypothesis's own test contradicts it.
+- **Holm adjustment:** When many pairs are compared at once, some differences look real by chance. The Holm adjustment raises the bar for each comparison, so the whole set keeps at most a one-in-twenty chance of any false finding.
+- **Hypothesis:** A possible cause of a difference, raised by a rule fixed in advance and tested by code against the data. Each hypothesis states what would refute it and receives a grade.
+- **Intelligence Index:** A model's overall score for answer quality, from 0 to 100. It is the mean quality of the model's answers, with harder questions counting for more.
+- **Leave-one-out check:** A robustness check that repeats a result with each question removed in turn. If the result rests on a single question, the check fails.
+- **Locus:** Where a hypothesis places the cause: the model itself; the Overseer chat prompt or its tools (chat); the grading (harness); a question or its rubric (suite); the data a tool reads (corpus); or the serving (provider).
+- **Median and mean:** The median is the middle value once all values are sorted, so a few very slow or costly questions barely move it. The mean is the plain average, which they do move.
+- **Null hypothesis:** The starting assumption that a difference, between two models or between two groups of questions, is only chance. A paired test, or else a bootstrap interval that excludes zero, can reject it. A null that stands does not prove that the two are equal.
+- **Output generation and decode rate:** Output generation is the time the model spends writing its reply once it has started. The decode rate is how fast it writes, in tokens per second.
+- **Overall Index:** A battery's combined score: each suite's Intelligence Index times the suite's weight, summed over the suites. It is not comparable with a single suite's index.
+- **Panel member:** In a panel run, two AI graders, Panel member A and Panel member B, score each answer. The answer's score is the mean of their two scores.
+- **Points at risk:** The index points a model lost on its answers below its own median answer, each answer counted once under its first signal, such as no tool call, a defect or a critical error. They are an upper bound on what each signal costs, not an estimate of its effect.
+- **Pricing basis:** The prices per token used to turn token counts into dollars: today's catalog prices, or the prices stored with each run. Costs on different bases are not comparable.
+- **Reference reader:** A third AI grader that scores the same answers as a check on the panel. Its scores do not count toward any result.
+- **Replicate run:** Running the same model on the same questions again. With only one run per suite, the document cannot tell whether a result would repeat, which caps every grade at Probable.
+- **Response style:** The production chat asks the model for concise answers; a run can ask for detailed ones instead. Completeness is graded under the style the run used, and only a pair of runs in both styles shows how much the style matters.
+- **Robustness check:** A test of whether a hypothesis still holds when the data changes a little: one question left out, another suite, a second run, the other panel member, or another setting.
+- **Runs per suite:** How many times a model answered every question of a suite. With one run per suite, the data cannot show whether a result would repeat.
+- **Scoring levels:** Each dimension is graded on a fixed scale of levels, each described by the answer behavior that earns it (behaviorally anchored levels). Each level stands for a fixed score.
+- **Suite:** A fixed set of benchmark questions, each with its rubric. A run answers every question of one suite once.
+- **Tied rank:** When a model's 95% interval overlaps a neighbor's, the data cannot put them in order, so they share a rank. The rank then shows the span of places the tied group covers, such as 2–9 (tied).
+- **Time to first token:** The seconds from sending a request to the first word of the reply. For reasoning models it is mostly the time the model spends thinking before it answers.
+- **Tokens:** The pieces of text, roughly three quarters of a word each, that a model reads and writes; providers price by them. Uncached input is text read at the full price. Cache reads are input stored from an earlier call and charged less; cache writes store it. Visible output is the answer, and reasoning is the model's hidden thinking, billed as output.
+- **Tool round:** One cycle in which the model calls a tool, such as the wiki search, reads its result and continues. Each round adds a model call, with its own wait for the first token.
+- **Weighted geometric mean:** The way an answer's four dimension scores are combined. Unlike a plain average, it falls sharply when any one dimension is very low, so strong dimensions cannot hide a weak one.
 
 ## Fact sheet
 
@@ -633,7 +711,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "13 %",
+      "display": "13%",
       "key": "battery.criticalErrorRate",
       "value": 0.125
     },
@@ -1057,12 +1135,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: suite 2 against the rest: adjusted p 0.030.",
+      "display": "its own test rules it out: suite 2 against the rest: adjusted p 0.030",
       "key": "rca.hypothesis.H0-W.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "no contrast within GPT-5.6 Luna's own questions",
+      "display": "no difference within GPT-5.6 Luna's own questions",
       "key": "rca.hypothesis.H0-W.1.label"
     },
     {
@@ -1097,7 +1175,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Visible output and reasoning are 73 % of GPT-5.6 Luna's cost per question.",
+      "display": "Visible output and reasoning are 73% of GPT-5.6 Luna's cost per question.",
       "key": "rca.hypothesis.WC1.1.for"
     },
     {
@@ -1113,7 +1191,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "output cost of GPT-5.6 Luna",
+      "display": "GPT-5.6 Luna's output cost",
       "key": "rca.hypothesis.WC1.1.label"
     },
     {
@@ -1133,7 +1211,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "73 %",
+      "display": "73%",
       "key": "rca.hypothesis.WC1.1.share",
       "value": 0.7329842931937172
     },
@@ -1154,7 +1232,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "suite 2 holds 100 % of GPT-5.6 Luna's points at risk.",
+      "display": "suite 2 holds 100% of GPT-5.6 Luna's points at risk.",
       "key": "rca.hypothesis.WQ2.1.for"
     },
     {
@@ -1165,12 +1243,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "across suites failed: leaving the suite out moves the Overall Index by less than the interval half-width.; panel agreement could not be assessed: the model was not graded by a panel, or a group has no score from both members.",
+      "display": "leaving the suite out moves the Overall Index by less than the interval half-width; it is unknown whether both panel members agree (the model was not graded by a panel)",
       "key": "rca.hypothesis.WQ2.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "points lost in suite 2 by GPT-5.6 Luna",
+      "display": "GPT-5.6 Luna's points lost in suite 2",
       "key": "rca.hypothesis.WQ2.1.label"
     },
     {
@@ -1196,7 +1274,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "100 %",
+      "display": "100%",
       "key": "rca.hypothesis.WQ2.1.share",
       "value": 1
     },
@@ -1217,7 +1295,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Confirmed critical errors hold 66 % of the points at risk (5.6 index points, upper bound).",
+      "display": "Confirmed critical errors hold 66% of the points at risk (5.6 index points, upper bound).",
       "key": "rca.hypothesis.WQ3.1.for"
     },
     {
@@ -1228,12 +1306,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "leave one question out could not be assessed: fewer than two questions put points at risk in this segment.; panel agreement could not be assessed: the model was not graded by a panel, or a group has no score from both members.; the lead of the critical-error share over the next is not established",
+      "display": "it is unknown whether the result depends on one question (fewer than two questions put points at risk in this segment); it is unknown whether both panel members agree (the model was not graded by a panel); critical errors may not clearly hold more of the lost points than the next cause",
       "key": "rca.hypothesis.WQ3.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "critical errors of GPT-5.6 Luna",
+      "display": "GPT-5.6 Luna's critical errors",
       "key": "rca.hypothesis.WQ3.1.label"
     },
     {
@@ -1253,7 +1331,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "66 %",
+      "display": "66%",
       "key": "rca.hypothesis.WQ3.1.share",
       "value": 0.6617647058823529
     },
@@ -1274,7 +1352,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Output generation is 83 % (82–84 %) of model time per question.",
+      "display": "Output generation is 83% (82–84%) of model time per question.",
       "key": "rca.hypothesis.WS2.1.for"
     },
     {
@@ -1285,17 +1363,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "its lead is not established, or the reasoning share is unknown",
+      "display": "the reasoning tokens are not recorded separately",
       "key": "rca.hypothesis.WS2.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "82–84 %",
+      "display": "82–84%",
       "key": "rca.hypothesis.WS2.1.interval"
     },
     {
       "available": true,
-      "display": "output generation of GPT-5.6 Luna",
+      "display": "GPT-5.6 Luna's time spent generating output",
       "key": "rca.hypothesis.WS2.1.label"
     },
     {
@@ -1321,7 +1399,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "83 %",
+      "display": "83%",
       "key": "rca.hypothesis.WS2.1.share",
       "value": 0.8295454545454546
     },
@@ -1347,12 +1425,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Output generation is 65 % of GPT-5.6 Luna's time per question.",
+      "display": "Output generation is 65% of GPT-5.6 Luna's time per question.",
       "key": "rca.known.4"
     },
     {
       "available": true,
-      "display": "Visible output is 47 % of GPT-5.6 Luna's cost per question.",
+      "display": "Visible output is 47% of GPT-5.6 Luna's cost per question.",
       "key": "rca.known.5"
     },
     {
@@ -1383,12 +1461,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Run 1, a control run of Lyra Mini (high) and Zeta Prime (high) (about $0.480 and 28 minutes)",
+      "display": "Run 1, a control run of Lyra Mini (high) and Zeta Prime (high) (about $0.48 and 28 minutes)",
       "key": "rca.run.1.summary"
     },
     {
       "available": true,
-      "display": "Run 2, a thinking-level pair of GPT-5.6 Luna and Orion Max (medium) (about $0.480 and 28 minutes)",
+      "display": "Run 2, a thinking-level pair of GPT-5.6 Luna and Orion Max (medium) (about $0.48 and 28 minutes)",
       "key": "rca.run.2.summary"
     },
     {
@@ -1399,25 +1477,25 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "1 %",
+      "display": "1%",
       "key": "rca.within.subject.cost.cacheRead.share",
       "value": 0.005235602094240839
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.subject.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "47 %",
+      "display": "47%",
       "key": "rca.within.subject.cost.output.share",
       "value": 0.4712041884816754
     },
     {
       "available": true,
-      "display": "26 %",
+      "display": "26%",
       "key": "rca.within.subject.cost.reasoning.share",
       "value": 0.2617801047120419
     },
@@ -1429,7 +1507,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "26 %",
+      "display": "26%",
       "key": "rca.within.subject.cost.uncachedInput.share",
       "value": 0.2617801047120419
     },
@@ -1441,7 +1519,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "14 %",
+      "display": "14%",
       "key": "rca.within.subject.time.other.share",
       "value": 0.1433333333333333
     },
@@ -1453,7 +1531,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "65 %",
+      "display": "65%",
       "key": "rca.within.subject.time.outputGeneration.share",
       "value": 0.6488888888888887
     },
@@ -1465,7 +1543,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.subject.time.ownWaits.share",
       "value": 0.004444444444444444
     },
@@ -1477,7 +1555,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "9 %",
+      "display": "9%",
       "key": "rca.within.subject.time.toolExecution.share",
       "value": 0.08888888888888888
     },
@@ -1495,7 +1573,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "11 %",
+      "display": "11%",
       "key": "rca.within.subject.time.ttft.share",
       "value": 0.11444444444444443
     },
@@ -1541,7 +1619,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %",
+      "display": "Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%",
       "key": "scoring.weights"
     },
     {
@@ -1598,7 +1676,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "suite.1.criticalErrorRate",
       "value": 0
     },
@@ -1638,7 +1716,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "60.0 %",
+      "display": "60.0%",
       "key": "suite.1.weight",
       "value": 0.6
     },
@@ -1656,7 +1734,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "25 %",
+      "display": "25%",
       "key": "suite.2.criticalErrorRate",
       "value": 0.25
     },
@@ -1697,7 +1775,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "40.0 %",
+      "display": "40.0%",
       "key": "suite.2.weight",
       "value": 0.4
     },
@@ -1747,27 +1825,27 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "tools.share.knowledgeBase"
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "tools.share.other"
     },
     {
       "available": true,
-      "display": "57 %",
+      "display": "57%",
       "key": "tools.share.sourceCode"
     },
     {
       "available": true,
-      "display": "14 %",
+      "display": "14%",
       "key": "tools.share.structuredLookup"
     },
     {
       "available": true,
-      "display": "29 %",
+      "display": "29%",
       "key": "tools.share.wiki"
     },
     {
@@ -1920,19 +1998,19 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       {
         "axis": "intelligence",
         "bestHypothesis": "WQ2.1",
-        "reason": "The best hypothesis, WQ2.1, is graded Low: across suites failed: leaving the suite out moves the Overall Index by less than the interval half-width; panel agreement could not be assessed: the model was not graded by a panel, or a group has no score from both members.",
+        "reason": "Suggestive (Low) because leaving the suite out moves the Overall Index by less than the interval half-width, and it is unknown whether both panel members agree (the model was not graded by a panel).",
         "status": "NotEstablished"
       },
       {
         "axis": "speed",
         "bestHypothesis": "WS2.1",
-        "reason": "WS2.1 is the best hypothesis, graded Moderate: its lead is not established, or the reasoning share is unknown.",
+        "reason": "Probable (Moderate) because the reasoning tokens are not recorded separately.",
         "status": "ProbableCause"
       },
       {
         "axis": "cost",
         "bestHypothesis": "WC1.1",
-        "reason": "WC1.1 is graded High and its null hypothesis is rejected.",
+        "reason": "Established (High): it passed every check.",
         "status": "RootCauseEstablished"
       }
     ],
@@ -2175,12 +2253,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "for": [],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: suite 2 against the rest: adjusted p 0.030."
+          "its own test rules it out: suite 2 against the rest: adjusted p 0.030"
         ],
         "id": "H0-W",
         "key": "H0-W.1",
         "kind": "null",
-        "label": "no contrast within GPT-5.6 Luna's own questions",
+        "label": "no difference within GPT-5.6 Luna's own questions",
         "loci": [],
         "locus": "—",
         "models": [
@@ -2200,17 +2278,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "explains": 8.5,
         "factKeys": [],
         "for": [
-          "suite 2 holds 100 % of GPT-5.6 Luna's points at risk."
+          "suite 2 holds 100% of GPT-5.6 Luna's points at risk."
         ],
         "grade": "Low",
         "gradeReasons": [
-          "across suites failed: leaving the suite out moves the Overall Index by less than the interval half-width.",
-          "panel agreement could not be assessed: the model was not graded by a panel, or a group has no score from both members."
+          "leaving the suite out moves the Overall Index by less than the interval half-width",
+          "it is unknown whether both panel members agree (the model was not graded by a panel)"
         ],
         "id": "WQ2",
         "key": "WQ2.1",
         "kind": "within",
-        "label": "points lost in suite 2 by GPT-5.6 Luna",
+        "label": "GPT-5.6 Luna's points lost in suite 2",
         "loci": [
           "model",
           "suite"
@@ -2225,7 +2303,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "The contrast stands within noise, or the shares are even.",
         "robustness": [
           {
-            "detail": "Every model has at least two runs per suite.",
+            "detail": "Every model ran at least twice per suite.",
             "name": "Replicates",
             "status": "Passed"
           },
@@ -2235,7 +2313,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Failed"
           },
           {
-            "detail": "The model was not graded by a panel, or a group has no score from both members.",
+            "detail": "The model was not graded by a panel.",
             "name": "Panel agreement",
             "status": "NotAssessable"
           }
@@ -2253,18 +2331,18 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "outcome.confirmedCriticalRate"
         ],
         "for": [
-          "Confirmed critical errors hold 66 % of the points at risk (5.6 index points, upper bound)."
+          "Confirmed critical errors hold 66% of the points at risk (5.6 index points, upper bound)."
         ],
         "grade": "Low",
         "gradeReasons": [
-          "leave one question out could not be assessed: fewer than two questions put points at risk in this segment.",
-          "panel agreement could not be assessed: the model was not graded by a panel, or a group has no score from both members.",
-          "the lead of the critical-error share over the next is not established"
+          "it is unknown whether the result depends on one question (fewer than two questions put points at risk in this segment)",
+          "it is unknown whether both panel members agree (the model was not graded by a panel)",
+          "critical errors may not clearly hold more of the lost points than the next cause"
         ],
         "id": "WQ3",
         "key": "WQ3.1",
         "kind": "within",
-        "label": "critical errors of GPT-5.6 Luna",
+        "label": "GPT-5.6 Luna's critical errors",
         "loci": [
           "model"
         ],
@@ -2277,7 +2355,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "The caps are unconfirmed.",
         "robustness": [
           {
-            "detail": "Every model has at least two runs per suite.",
+            "detail": "Every model ran at least twice per suite.",
             "name": "Replicates",
             "status": "Passed"
           },
@@ -2287,7 +2365,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "NotAssessable"
           },
           {
-            "detail": "The model was not graded by a panel, or a group has no score from both members.",
+            "detail": "The model was not graded by a panel.",
             "name": "Panel agreement",
             "status": "NotAssessable"
           }
@@ -2308,16 +2386,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "tokens.reasoningShare"
         ],
         "for": [
-          "Output generation is 83 % (82–84 %) of model time per question."
+          "Output generation is 83% (82–84%) of model time per question."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "its lead is not established, or the reasoning share is unknown"
+          "the reasoning tokens are not recorded separately"
         ],
         "id": "WS2",
         "key": "WS2.1",
         "kind": "within",
-        "label": "output generation of GPT-5.6 Luna",
+        "label": "GPT-5.6 Luna's time spent generating output",
         "loci": [
           "model"
         ],
@@ -2331,7 +2409,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
-            "detail": "Every model has at least two runs per suite.",
+            "detail": "Every model ran at least twice per suite.",
             "name": "Replicates",
             "status": "Passed"
           },
@@ -2357,14 +2435,14 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "cost.component.reasoning.perQuestion"
         ],
         "for": [
-          "Visible output and reasoning are 73 % of GPT-5.6 Luna's cost per question."
+          "Visible output and reasoning are 73% of GPT-5.6 Luna's cost per question."
         ],
         "grade": "High",
         "gradeReasons": [],
         "id": "WC1",
         "key": "WC1.1",
         "kind": "within",
-        "label": "output cost of GPT-5.6 Luna",
+        "label": "GPT-5.6 Luna's output cost",
         "loci": [
           "model"
         ],
@@ -2377,7 +2455,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
-            "detail": "Every model has at least two runs per suite.",
+            "detail": "Every model ran at least twice per suite.",
             "name": "Replicates",
             "status": "Passed"
           }
@@ -2418,7 +2496,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "kind": "decomposition",
         "number": 4,
-        "text": "Output generation is 65 % of GPT-5.6 Luna's time per question."
+        "text": "Output generation is 65% of GPT-5.6 Luna's time per question."
       },
       {
         "factKeys": [
@@ -2426,7 +2504,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "kind": "decomposition",
         "number": 5,
-        "text": "Visible output is 47 % of GPT-5.6 Luna's cost per question."
+        "text": "Visible output is 47% of GPT-5.6 Luna's cost per question."
       }
     ],
     "models": [
@@ -2790,6 +2868,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ---
 
-*Document ID 202 · format version 13 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 202 · format version 14 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

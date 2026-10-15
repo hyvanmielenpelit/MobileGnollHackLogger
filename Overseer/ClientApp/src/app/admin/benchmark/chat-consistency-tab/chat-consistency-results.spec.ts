@@ -472,7 +472,7 @@ describe('chat consistency results', () => {
         expect(figures.find(figure => figure.key === 'providerErrors')).toEqual({
           key: 'providerErrors',
           label: 'Provider errors',
-          value: '0.81 % → 2.0 %',
+          value: '0.81% → 2.0%',
           sub: 'Baseline 12 of 1,480 attempts · Comparison 30 of 1,500 attempts',
           note: 'Re-runs: baseline 0 re-runs · comparison 2 re-runs (1 for provider errors)'
         });
@@ -487,7 +487,7 @@ describe('chat consistency results', () => {
         const figure = ccResultKeyFigures(ccAnalysisResult({ endpoints: [p6({ availability })], periodLevels: null }))
           .find(entry => entry.key === 'providerErrors');
         expect(figure).toEqual({
-          key: 'providerErrors', label: 'Provider errors', value: '1.0 % → 0 %',
+          key: 'providerErrors', label: 'Provider errors', value: '1.0% → 0%',
           sub: 'Baseline 2 of 200 attempts · Comparison 0 of 100 attempts', note: 'No re-runs'
         });
       });

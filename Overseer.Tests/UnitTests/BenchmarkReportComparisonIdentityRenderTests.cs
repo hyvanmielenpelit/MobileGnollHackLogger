@@ -39,7 +39,7 @@ public class BenchmarkReportComparisonIdentityRenderTests
 
         Assert.Equal(new BenchmarkReportFacts.JointRank(1, true, 2), ranks["run:1"]);
         Assert.Equal(new BenchmarkReportFacts.JointRank(1, true, 2), ranks["run:2"]);
-        Assert.Equal("joint 1st of 2 (intervals overlap)", BenchmarkReportFacts.JointRankText(ranks["run:2"], 2));
+        Assert.Equal("1–2 of 2 (tied: intervals overlap)",BenchmarkReportFacts.JointRankText(ranks["run:2"], 2));
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class BenchmarkReportComparisonIdentityRenderTests
         Assert.Equal(new BenchmarkReportFacts.JointRank(2, true, 2), ranks["b"]);
         Assert.Equal(new BenchmarkReportFacts.JointRank(2, true, 2), ranks["c"]);
         Assert.Equal(new BenchmarkReportFacts.JointRank(4, false, 1), ranks["d"]);
-        Assert.Equal("joint 2nd of 4 (intervals overlap)", BenchmarkReportFacts.JointRankText(ranks["c"], 4));
+        Assert.Equal("2–3 of 4 (tied: intervals overlap)",BenchmarkReportFacts.JointRankText(ranks["c"], 4));
     }
 
     [Fact]

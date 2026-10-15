@@ -47,8 +47,23 @@ public sealed record BenchmarkPdfDocumentInfo
     /// <summary>Executive Summary, Root Cause Analysis, Provider Issue Report, Run report, Tool-call log or Run diagnostics.</summary>
     public required string DocumentKind { get; init; }
 
+    /// <summary>The document's title as its metadata carries it, naming the document type.</summary>
     public required string Title { get; init; }
 
+    /// <summary>
+    /// The title the title block prints, when it is not <see cref="Title"/>: a comparison-scope
+    /// document's <see cref="ComparisonDocumentHeading"/>, whose document type the kicker above it
+    /// names. Null prints <see cref="Title"/>.
+    /// </summary>
+    public string? DisplayTitle { get; init; }
+
+    /// <summary>What the title block prints as the title: <see cref="DisplayTitle"/>, else <see cref="Title"/>.</summary>
+    public string HeadingTitle => string.IsNullOrWhiteSpace(DisplayTitle) ? Title : DisplayTitle;
+
+    /// <summary>
+    /// The subject line, carried in the metadata; the title block prints it below the title unless it
+    /// repeats <see cref="HeadingTitle"/>.
+    /// </summary>
     public required string SubjectLine { get; init; }
 
     /// <summary>
@@ -136,7 +151,9 @@ public sealed record BenchmarkPdfDocumentInfo
     /// <para>A comparison-scope document's facts table names its covered models in place of Compared with
     /// (<see cref="ComparisonScopeFacts"/>), and its title is built for the naming
     /// (<see cref="BenchmarkReportPackRenderer.BuildComparisonTitle"/>), since an anonymized copy never
-    /// prints the comparison's name.</para>
+    /// prints the comparison's name. Its title block prints <see cref="ComparisonDocumentHeading"/> under
+    /// the document type, its metadata title adds the document type, and its Comparison row carries only
+    /// what that heading does not say (<see cref="ComparisonDetailText"/>).</para>
     /// </summary>
     public static BenchmarkPdfDocumentInfo ForReportDocument(
         BenchmarkReportDocument document, BenchmarkReportRenderOptions options, BenchmarkPdfPaper paper)
@@ -158,10 +175,18 @@ public sealed record BenchmarkPdfDocumentInfo
 
         var battery = sheet?.Battery;
 
+        string? comparisonHeading = comparisonScope
+            ? ComparisonDocumentHeading(
+                BenchmarkReportPackRenderer.BuildComparisonTitle(document.Audience, sheet!, comparison, options.PeerNaming), audience)
+            : null;
+
         var facts = new List<BenchmarkPdfFact>();
         if (comparison is { } numbered)
         {
-            facts.Add(new("Comparison", ComparisonText(numbered, ComparisonComputedOn(sheet), options.PeerNaming)));
+            string? comparisonRow = comparisonHeading != null
+                ? ComparisonDetailText(numbered, ComparisonComputedOn(sheet), options.PeerNaming, comparisonHeading)
+                : ComparisonText(numbered, ComparisonComputedOn(sheet), options.PeerNaming);
+            if (!string.IsNullOrEmpty(comparisonRow)) facts.Add(new("Comparison", comparisonRow));
         }
         facts.AddRange(new BenchmarkPdfFact[]
         {
@@ -226,11 +251,12 @@ public sealed record BenchmarkPdfDocumentInfo
         return new BenchmarkPdfDocumentInfo
         {
             DocumentKind = audience,
-            Title = comparisonScope
-                ? BenchmarkReportPackRenderer.BuildComparisonTitle(document.Audience, sheet!, comparison, options.PeerNaming)
+            Title = comparisonHeading != null
+                ? comparisonHeading + ": " + audience
                 : string.IsNullOrWhiteSpace(document.Title)
                     ? audience + ": " + document.SubjectLabel
                     : document.Title,
+            DisplayTitle = comparisonHeading,
             SubjectLine = subjectLine,
             HeaderText = comparison is { } headerComparison ? ComparisonHeading(headerComparison, options.PeerNaming) : null,
             Classification = full ? BenchmarkPdfClassification.Internal : BenchmarkPdfClassification.ProviderConfidential,
@@ -549,7 +575,7 @@ public sealed record BenchmarkPdfDocumentInfo
     }
 
     /// <summary>
-    /// The cover's Comparison row and the Markdown's Comparison line:
+    /// The Comparison row of a document that is not comparison-scope, and the Markdown's Comparison line:
     /// <c>Comparison #12 — name · 3 models · computed 2026-09-20</c>, each unknown part left out.
     /// </summary>
     public static string ComparisonText(BenchmarkPdfComparison comparison, string? computedOn, BenchmarkReportPeerNaming naming)
@@ -559,6 +585,43 @@ public sealed record BenchmarkPdfDocumentInfo
         if (comparison.EntryCount is int count) parts.Add(ModelCount(count));
         if (!string.IsNullOrWhiteSpace(computedOn)) parts.Add("computed " + computedOn.Trim());
         return string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// A comparison-scope document's Comparison row: what <paramref name="heading"/>, the title it prints,
+    /// does not already say. The comparison's name in a named copy when the heading leaves it out, the
+    /// entry count and the day it was computed: <c>9 models · computed 2026-10-15</c>. Empty when the
+    /// heading says everything.
+    /// </summary>
+    public static string ComparisonDetailText(
+        BenchmarkPdfComparison comparison, string? computedOn, BenchmarkReportPeerNaming naming, string heading)
+    {
+        ArgumentNullException.ThrowIfNull(comparison);
+        ArgumentNullException.ThrowIfNull(heading);
+        var parts = new List<string>();
+        if (naming == BenchmarkReportPeerNaming.Named && !string.IsNullOrWhiteSpace(comparison.Name)
+            && !heading.Contains(comparison.Name, StringComparison.Ordinal))
+        {
+            parts.Add(comparison.Name);
+        }
+        if (comparison.EntryCount is int count) parts.Add(ModelCount(count));
+        if (!string.IsNullOrWhiteSpace(computedOn)) parts.Add("computed " + computedOn.Trim());
+        return string.Join(" · ", parts);
+    }
+
+    /// <summary>
+    /// A comparison-scope document's first heading, as its title block prints it: its
+    /// <see cref="BenchmarkReportPackRenderer.BuildComparisonTitle"/> without the closing
+    /// <c>: Root Cause Analysis</c> (or other <paramref name="documentKind"/>), which the kicker above it names.
+    /// </summary>
+    public static string ComparisonDocumentHeading(string comparisonTitle, string documentKind)
+    {
+        ArgumentNullException.ThrowIfNull(comparisonTitle);
+        if (string.IsNullOrEmpty(documentKind)) return comparisonTitle;
+        string suffix = ": " + documentKind;
+        return comparisonTitle.EndsWith(suffix, StringComparison.Ordinal) && comparisonTitle.Length > suffix.Length
+            ? comparisonTitle[..^suffix.Length]
+            : comparisonTitle;
     }
 
     /// <summary>

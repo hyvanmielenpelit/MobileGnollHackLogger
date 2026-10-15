@@ -405,6 +405,8 @@ describe('ComparisonDocumentsStatusComponent', () => {
   it('says it is looking the documents up, and why it could not', () => {
     show({ preview: null });
     expect(text(q('.cds-loading'))).toBe('Looking up the documents already written…');
+    expect(q('.cds-loading')!.tagName.toLowerCase()).toBe('app-loading-indicator');
+    expect(q('.cds-loading svg.dc-ring')).not.toBeNull();
     expect(q('.cds')!.getAttribute('aria-busy')).toBe('true');
 
     show({ preview: null, error: 'The comparison could not be computed.' });

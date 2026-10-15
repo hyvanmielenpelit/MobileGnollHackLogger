@@ -3,7 +3,7 @@
  * labels. Pure TypeScript, no Angular.
  *
  * The formatting mirrors `BenchmarkProviderAvailability` on the server byte for byte (invariant
- * culture, "," thousands separator, a regular space before "%", an en dash in intervals), so a
+ * culture, "," thousands separator, no space before "%", an en dash in intervals), so a
  * document and the dialog beside it never disagree. `provider-availability.spec.ts` holds the parity
  * table copied verbatim from `BenchmarkProviderAvailabilityTests`. The method is in
  * docs/overseer/ai-benchmark-provider-availability.md.
@@ -18,7 +18,7 @@ import type {
 /** Below this many valid attempts a figure carries the tag "few attempts". */
 export const FEW_ATTEMPTS_THRESHOLD = 100;
 
-/** The two-sided 95 % normal quantile, as the server's `BenchmarkProportionInterval.Z95`. */
+/** The two-sided 95% normal quantile, as the server's `BenchmarkProportionInterval.Z95`. */
 export const Z95 = 1.959964;
 
 /** Shown wherever a run does not record the ledger (before harness 56). */
@@ -71,9 +71,9 @@ export function formatPercentNumber(proportion: number): string {
   return `${digits.slice(0, digits.length - d)}.${digits.slice(digits.length - d)}`;
 }
 
-/** A proportion as a percentage: `0.81 %`, `3.0 %`, `12 %`, `0 %`. */
+/** A proportion as a percentage: `0.81%`, `3.0%`, `12%`, `0%`. */
 export function formatPercent(proportion: number): string {
-  return `${formatPercentNumber(proportion)} %`;
+  return `${formatPercentNumber(proportion)}%`;
 }
 
 /** An integer with the "," thousands separator, independent of the browser's locale. */
@@ -88,15 +88,15 @@ export function formatCount(k: number, n: number): string {
   return `${formatInteger(k)} of ${formatInteger(n)} ${n === 1 ? 'attempt' : 'attempts'}`;
 }
 
-/** The interval `95 % CI 0.46–1.4 %`; empty when either bound is missing. */
+/** The interval `95% CI 0.46–1.4%`; empty when either bound is missing. */
 export function formatInterval(low: number | null | undefined, high: number | null | undefined): string {
   if (low == null || high == null) {
     return '';
   }
-  return `95 % CI ${formatPercentNumber(low)}–${formatPercentNumber(high)} %`;
+  return `95% CI ${formatPercentNumber(low)}–${formatPercentNumber(high)}%`;
 }
 
-/** `about 1 in 123` when 0 < k/n < 1 % (k × 100 < n), N = floor(n / k + 0.5); null otherwise. */
+/** `about 1 in 123` when 0 < k/n < 1% (k × 100 < n), N = floor(n / k + 0.5); null otherwise. */
 export function formatOneIn(k: number, n: number): string | null {
   if (k <= 0 || n <= 0 || k * 100 >= n) {
     return null;
@@ -105,7 +105,7 @@ export function formatOneIn(k: number, n: number): string | null {
 }
 
 /**
- * The headline: `0.81 % (12 of 1,480 attempts; 95 % CI 0.46–1.4 %)`, with `; few attempts` inside
+ * The headline: `0.81% (12 of 1,480 attempts; 95% CI 0.46–1.4%)`, with `; few attempts` inside
  * the parentheses below 100 valid attempts; `no valid attempts` when n is 0.
  */
 export function formatRate(k: number, n: number, low: number | null | undefined, high: number | null | undefined): string {
@@ -124,7 +124,7 @@ export function formatRate(k: number, n: number, low: number | null | undefined,
 }
 
 /**
- * The 95 % Wilson score interval for k of n, clamped to [0, 1], as the server's integer
+ * The 95% Wilson score interval for k of n, clamped to [0, 1], as the server's integer
  * `BenchmarkProportionInterval.Wilson95`; null when n is 0.
  */
 export function wilson95(k: number, n: number): { low: number; high: number } | null {
@@ -243,7 +243,7 @@ export function cardHasProviderTrouble(card: ProviderAvailabilityCardFields | nu
   return (card.providerErrorCount ?? 0) > 0 || (card.rerunsNeeded ?? 0) > 0;
 }
 
-/** A card's one-line figure: `0.81 % (12/1,480)`, or null when not recorded or without attempts. */
+/** A card's one-line figure: `0.81% (12/1,480)`, or null when not recorded or without attempts. */
 export function cardRateText(card: ProviderAvailabilityCardFields | null | undefined): string | null {
   if (!card?.providerAvailabilityRecorded || !card.providerValidAttempts) {
     return null;

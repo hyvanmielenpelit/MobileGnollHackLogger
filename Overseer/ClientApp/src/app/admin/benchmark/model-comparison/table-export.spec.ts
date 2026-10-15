@@ -330,7 +330,7 @@ describe('table-export', () => {
     const cells = built.rows[0].cells;
 
     expect(built.columns.length).toBe(DEFAULT_TABLE_COLUMNS.shown.length);
-    expect(cells['providerErrors'].text).toBe('0.81 % (12/1,480)');
+    expect(cells['providerErrors'].text).toBe('0.81% (12/1,480)');
     expect(cells['model'].text).toBe('Gemini 2.5 Flash · medium · extended · Google · Run 43');
     expect(cells['runs'].text).toBe('1 · n = 1');
     expect(cells['stateCol'].text).toBe('Comparable · Comparable with the baseline on every must-match key.');
@@ -416,7 +416,7 @@ describe('table-export', () => {
 
   it('carries provider errors and re-runs as typed parts, and words their combined cells as on screen', () => {
     const [row] = model().rows;
-    expect(row.cells['providerErrorRate']).toEqual({ raw: 0.0081, text: '0.81 %' });
+    expect(row.cells['providerErrorRate']).toEqual({ raw: 0.0081, text: '0.81%' });
     expect(row.cells['providerErrorCount']).toEqual({ raw: 12, text: '12' });
     expect(row.cells['providerAttempts']).toEqual({ raw: 1480, text: '1,480' });
     expect(row.cells['rerunsNeeded']).toEqual({ raw: 3, text: '3' });
@@ -430,7 +430,7 @@ describe('table-export', () => {
     expect(reading(['model', 'providerErrors', 'rerunsCol'])['rerunsCol'].text).toBe('3 (2 provider)');
     expect(reading(['model', 'rerunsCol'], buildEntry({ table: { ...buildEntry().table!, providerReruns: 0 } }))['rerunsCol'].text).toBe('3');
     // A part shown as its own column is left out of the combined cell.
-    expect(reading(['model', 'providerErrors', 'providerAttempts'])['providerErrors'].text).toBe('0.81 % (12 errors)');
+    expect(reading(['model', 'providerErrors', 'providerAttempts'])['providerErrors'].text).toBe('0.81% (12 errors)');
     expect(reading(['model', 'rerunsCol', 'providerReruns'])['rerunsCol'].text).toBe('3');
 
     // Not recorded: the figures are null and the rate says why, with no count after it.

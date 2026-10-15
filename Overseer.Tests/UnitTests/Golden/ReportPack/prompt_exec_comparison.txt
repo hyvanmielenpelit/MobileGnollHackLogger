@@ -32,7 +32,7 @@ NUMBERS AND NAMES:
 - A token whose value reads 'N of M' is a noun phrase. Never put it after 'no' or make it the object of 'made'.
 - A fact whose value is a whole sentence — every notable.N.summary, and any value that begins with a capital letter and ends with a full stop — is written as a sentence of its own, at most once, never inside parentheses, and never continued after its full stop.
 - A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took one and a half times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.
-- Never list several 'N of M' tokens in a row: say what each counts.
+- Never list several 'N of M' tokens in a row, and never end a clause with one: say right after each what it counts.
 - Refer to a question exactly as the QUESTION MATRIX does, for example Q7. This is the only form in which a digit may appear.
 - Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader). In the Executive Summary say 'one grader' or 'both graders' instead.
 - Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.
@@ -227,7 +227,7 @@ model.A.quality.index = 85 / 100
 model.A.quality.interval = 82–88
 model.A.quality.intervalBasis = Item sampling only.
 model.A.quality.intervalSpan = 6 points
-model.A.quality.rank = joint 1st of 5 (intervals overlap)
+model.A.quality.rank = 1–2 of 5 (tied: intervals overlap)
 model.A.quality.rawIndex = 80 / 100
 model.A.quality.scoredItems = 1 of 1 question
 model.A.quality.unweightedMean = 80 / 100
@@ -240,7 +240,7 @@ model.A.runs = 1
 model.A.scoring.criticalErrorCap = 25
 model.A.scoring.levels = 1, 15, 35, 55, 72, 87, 100
 model.A.scoring.methodVersion = 12
-model.A.scoring.weights = Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %
+model.A.scoring.weights = Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%
 model.A.speed.modelTimeMean = unavailable: Not recorded.
 model.A.speed.modelTimeP50 = 12.0 s
 model.A.speed.modelTimeP90 = unavailable: Not recorded.
@@ -327,7 +327,7 @@ model.B.quality.index = 80 / 100
 model.B.quality.interval = 77–83
 model.B.quality.intervalBasis = Item sampling only.
 model.B.quality.intervalSpan = 6 points
-model.B.quality.rank = joint 1st of 5 (intervals overlap)
+model.B.quality.rank = 1–2 of 5 (tied: intervals overlap)
 model.B.quality.rawIndex = 80 / 100
 model.B.quality.scoredItems = 1 of 1 question
 model.B.quality.unweightedMean = 80 / 100
@@ -340,7 +340,7 @@ model.B.runs = 1
 model.B.scoring.criticalErrorCap = 25
 model.B.scoring.levels = 1, 15, 35, 55, 72, 87, 100
 model.B.scoring.methodVersion = 12
-model.B.scoring.weights = Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %
+model.B.scoring.weights = Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%
 model.B.speed.modelTimeMean = unavailable: Not recorded.
 model.B.speed.modelTimeP50 = 9.0 s
 model.B.speed.modelTimeP90 = unavailable: Not recorded.
@@ -431,7 +431,7 @@ model.C.quality.index = 70 / 100
 model.C.quality.interval = 66–74
 model.C.quality.intervalBasis = Item sampling only.
 model.C.quality.intervalSpan = 8 points
-model.C.quality.rank = joint 3rd of 5 (intervals overlap)
+model.C.quality.rank = 3–4 of 5 (tied: intervals overlap)
 model.C.quality.rawIndex = 65 / 100
 model.C.quality.scoredItems = 1 of 1 question
 model.C.quality.unweightedMean = 65 / 100
@@ -444,7 +444,7 @@ model.C.runs = 1
 model.C.scoring.criticalErrorCap = 25
 model.C.scoring.levels = 1, 15, 35, 55, 72, 87, 100
 model.C.scoring.methodVersion = 12
-model.C.scoring.weights = Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %
+model.C.scoring.weights = Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%
 model.C.speed.modelTimeMean = unavailable: Not recorded.
 model.C.speed.modelTimeP50 = 15.0 s
 model.C.speed.modelTimeP90 = unavailable: Not recorded.
@@ -535,7 +535,7 @@ model.D.quality.index = 70 / 100
 model.D.quality.interval = 64–76
 model.D.quality.intervalBasis = Item sampling only.
 model.D.quality.intervalSpan = 12 points
-model.D.quality.rank = joint 3rd of 5 (intervals overlap)
+model.D.quality.rank = 3–4 of 5 (tied: intervals overlap)
 model.D.quality.rawIndex = 64 / 100
 model.D.quality.scoredItems = 1 of 1 question
 model.D.quality.unweightedMean = 64 / 100
@@ -548,7 +548,7 @@ model.D.runs = 1
 model.D.scoring.criticalErrorCap = 25
 model.D.scoring.levels = 1, 15, 35, 55, 72, 87, 100
 model.D.scoring.methodVersion = 12
-model.D.scoring.weights = Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %
+model.D.scoring.weights = Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%
 model.D.speed.modelTimeMean = unavailable: Not recorded.
 model.D.speed.modelTimeP50 = 8.0 s
 model.D.speed.modelTimeP90 = unavailable: Not recorded.
@@ -652,7 +652,7 @@ model.E.runs = 1
 model.E.scoring.criticalErrorCap = 25
 model.E.scoring.levels = 1, 15, 35, 55, 72, 87, 100
 model.E.scoring.methodVersion = 12
-model.E.scoring.weights = Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %
+model.E.scoring.weights = Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%
 model.E.speed.modelTimeMean = unavailable: Not recorded.
 model.E.speed.modelTimeP50 = 20.0 s
 model.E.speed.modelTimeP90 = unavailable: Not recorded.
@@ -680,20 +680,20 @@ model.E.vsReference.worse = 5 of 6 questions
 notable.1.kind = cheaper and better
 notable.1.models = Models B and D
 notable.1.questions = none
-notable.1.summary = Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question.
+notable.1.summary = Model B scored higher than Model D (established by 95% intervals that do not overlap) at 0.50 times its cost per question.
 notable.2.kind = faster and better
 notable.2.models = Models D and E
 notable.2.questions = none
-notable.2.summary = Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time.
+notable.2.summary = Model D scored higher than Model E (established by 95% intervals that do not overlap) at 0.40 times its median answer time.
 notable.3.kind = faster and better
 notable.3.models = Models B and E
 notable.3.questions = none
-notable.3.summary = Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time.
+notable.3.summary = Model B scored higher than Model E (established by 95% intervals that do not overlap) at 0.45 times its median answer time.
 notable.count = 3 notable findings
 pair.A.B.cost.allPairs = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 pair.A.B.cost.ratio = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 pair.A.B.cost.reference = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
-pair.A.B.intervalOverlap = the 95 % intervals of Model A and Model B overlap
+pair.A.B.intervalOverlap = the 95% intervals of Model A and Model B overlap
 pair.A.B.quality.allPairs = no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.813)
 pair.A.B.quality.difference = 0.0 points (Model A minus Model B)
 pair.A.B.quality.interval = -21.0 to +21.0
@@ -705,7 +705,7 @@ pair.A.B.speed.reference = unavailable: The pair was not tested.
 pair.A.C.cost.allPairs = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 pair.A.C.cost.ratio = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 pair.A.C.cost.reference = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
-pair.A.C.intervalOverlap = the 95 % intervals of Model A and Model C do not overlap
+pair.A.C.intervalOverlap = the 95% intervals of Model A and Model C do not overlap
 pair.A.C.quality.allPairs = no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)
 pair.A.C.quality.difference = +15.2 points (Model A minus Model C)
 pair.A.C.quality.interval = +6.6 to +23.8
@@ -717,7 +717,7 @@ pair.A.C.speed.reference = unavailable: The pair was not tested.
 pair.A.D.cost.allPairs = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 pair.A.D.cost.ratio = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 pair.A.D.cost.reference = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
-pair.A.D.intervalOverlap = the 95 % intervals of Model A and Model D do not overlap
+pair.A.D.intervalOverlap = the 95% intervals of Model A and Model D do not overlap
 pair.A.D.quality.allPairs = no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)
 pair.A.D.quality.difference = +15.8 points (Model A minus Model D)
 pair.A.D.quality.interval = +5.6 to +26.1
@@ -729,7 +729,7 @@ pair.A.D.speed.reference = unavailable: The pair was not tested.
 pair.A.E.cost.allPairs = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 pair.A.E.cost.ratio = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 pair.A.E.cost.reference = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
-pair.A.E.intervalOverlap = the 95 % intervals of Model A and Model E do not overlap
+pair.A.E.intervalOverlap = the 95% intervals of Model A and Model E do not overlap
 pair.A.E.quality.allPairs = no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)
 pair.A.E.quality.difference = +30.0 points (Model A minus Model E)
 pair.A.E.quality.interval = +16.1 to +43.9
@@ -740,7 +740,7 @@ pair.A.E.speed.ratio = Model A took 1.00 times as long as Model E on the same qu
 pair.A.E.speed.reference = unavailable: The pair was not tested.
 pair.B.C.cost.allPairs = unavailable: No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown.
 pair.B.C.cost.ratio = unavailable: No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown.
-pair.B.C.intervalOverlap = the 95 % intervals of Model B and Model C do not overlap
+pair.B.C.intervalOverlap = the 95% intervals of Model B and Model C do not overlap
 pair.B.C.quality.allPairs = no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)
 pair.B.C.quality.difference = +15.2 points (Model B minus Model C)
 pair.B.C.quality.interval = +1.1 to +29.3
@@ -749,7 +749,7 @@ pair.B.C.speed.allPairs = unavailable: The pair was not tested.
 pair.B.C.speed.ratio = Model B took 1.00 times as long as Model C on the same questions (1.00 to 1.00)
 pair.B.D.cost.allPairs = unavailable: No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown.
 pair.B.D.cost.ratio = unavailable: No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown.
-pair.B.D.intervalOverlap = the 95 % intervals of Model B and Model D do not overlap
+pair.B.D.intervalOverlap = the 95% intervals of Model B and Model D do not overlap
 pair.B.D.quality.allPairs = no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)
 pair.B.D.quality.difference = +15.8 points (Model B minus Model D)
 pair.B.D.quality.interval = +3.0 to +28.6
@@ -758,7 +758,7 @@ pair.B.D.speed.allPairs = unavailable: The pair was not tested.
 pair.B.D.speed.ratio = Model B took 1.00 times as long as Model D on the same questions (1.00 to 1.00)
 pair.B.E.cost.allPairs = unavailable: No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown.
 pair.B.E.cost.ratio = unavailable: No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown.
-pair.B.E.intervalOverlap = the 95 % intervals of Model B and Model E do not overlap
+pair.B.E.intervalOverlap = the 95% intervals of Model B and Model E do not overlap
 pair.B.E.quality.allPairs = no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)
 pair.B.E.quality.difference = +30.0 points (Model B minus Model E)
 pair.B.E.quality.interval = +21.0 to +39.0
@@ -767,7 +767,7 @@ pair.B.E.speed.allPairs = unavailable: The pair was not tested.
 pair.B.E.speed.ratio = Model B took 1.00 times as long as Model E on the same questions (1.00 to 1.00)
 pair.C.D.cost.allPairs = unavailable: No candidate price card was resolved for run #33 of Model C on this pricing basis, so its cost is unknown.
 pair.C.D.cost.ratio = unavailable: No candidate price card was resolved for run #33 of Model C on this pricing basis, so its cost is unknown.
-pair.C.D.intervalOverlap = the 95 % intervals of Model C and Model D overlap
+pair.C.D.intervalOverlap = the 95% intervals of Model C and Model D overlap
 pair.C.D.quality.allPairs = no difference in score established after the Holm adjustment across 10 tests (adjusted p 1.000)
 pair.C.D.quality.difference = +0.7 points (Model C minus Model D)
 pair.C.D.quality.interval = -7.1 to +8.4
@@ -776,7 +776,7 @@ pair.C.D.speed.allPairs = unavailable: The pair was not tested.
 pair.C.D.speed.ratio = Model C took 1.00 times as long as Model D on the same questions (1.00 to 1.00)
 pair.C.E.cost.allPairs = unavailable: No candidate price card was resolved for run #33 of Model C on this pricing basis, so its cost is unknown.
 pair.C.E.cost.ratio = unavailable: No candidate price card was resolved for run #33 of Model C on this pricing basis, so its cost is unknown.
-pair.C.E.intervalOverlap = the 95 % intervals of Model C and Model E do not overlap
+pair.C.E.intervalOverlap = the 95% intervals of Model C and Model E do not overlap
 pair.C.E.quality.allPairs = no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)
 pair.C.E.quality.difference = +14.8 points (Model C minus Model E)
 pair.C.E.quality.interval = +8.1 to +21.5
@@ -785,7 +785,7 @@ pair.C.E.speed.allPairs = unavailable: The pair was not tested.
 pair.C.E.speed.ratio = Model C took 1.00 times as long as Model E on the same questions (1.00 to 1.00)
 pair.D.E.cost.allPairs = unavailable: No candidate price card was resolved for run #34 of Model D on this pricing basis, so its cost is unknown.
 pair.D.E.cost.ratio = unavailable: No candidate price card was resolved for run #34 of Model D on this pricing basis, so its cost is unknown.
-pair.D.E.intervalOverlap = the 95 % intervals of Model D and Model E do not overlap
+pair.D.E.intervalOverlap = the 95% intervals of Model D and Model E do not overlap
 pair.D.E.quality.allPairs = no difference in score established after the Holm adjustment across 10 tests (adjusted p 0.313)
 pair.D.E.quality.difference = +14.2 points (Model D minus Model E)
 pair.D.E.quality.interval = +5.8 to +22.5
@@ -812,9 +812,9 @@ RESPONSE STYLE
 {{model.E.style.responseStyleConflict}} is not true: that model's completeness is not its lowest dimension by that margin.
 
 NOTABLE FINDINGS (detected by code from the facts; cite one as {{notable.N.summary}}, explain it, and never restate it)
-- {{notable.1.summary}} (cheaper and better): Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question.; rests on: pair.B.D.intervalOverlap, model.B.quality.index, model.D.quality.index, model.B.cost.perQuestion, model.D.cost.perQuestion
-- {{notable.2.summary}} (faster and better): Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time.; rests on: pair.D.E.intervalOverlap, model.D.quality.index, model.E.quality.index, model.D.speed.modelTimeP50, model.E.speed.modelTimeP50
-- {{notable.3.summary}} (faster and better): Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time.; rests on: pair.B.E.intervalOverlap, model.B.quality.index, model.E.quality.index, model.B.speed.modelTimeP50, model.E.speed.modelTimeP50
+- {{notable.1.summary}} (cheaper and better): Model B scored higher than Model D (established by 95% intervals that do not overlap) at 0.50 times its cost per question.; rests on: pair.B.D.intervalOverlap, model.B.quality.index, model.D.quality.index, model.B.cost.perQuestion, model.D.cost.perQuestion
+- {{notable.2.summary}} (faster and better): Model D scored higher than Model E (established by 95% intervals that do not overlap) at 0.40 times its median answer time.; rests on: pair.D.E.intervalOverlap, model.D.quality.index, model.E.quality.index, model.D.speed.modelTimeP50, model.E.speed.modelTimeP50
+- {{notable.3.summary}} (faster and better): Model B scored higher than Model E (established by 95% intervals that do not overlap) at 0.45 times its median answer time.; rests on: pair.B.E.intervalOverlap, model.B.quality.index, model.E.quality.index, model.B.speed.modelTimeP50, model.E.speed.modelTimeP50
 
 QUESTION MATRIX (each model's cell: score, CE for a critical error, refuted answer sentences, tool calls, model time; n/a where it was not scored)
 [Q1] band: Intermediate | A: 92, 0 calls, 10.0 s | B: 85, 0 calls, 10.0 s | C: 70, 0 calls, 10.0 s | D: 75, 0 calls, 10.0 s | E: 50, 0 calls, 10.0 s | spread 42

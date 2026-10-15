@@ -135,22 +135,33 @@ public static partial class BenchmarkReportPackRenderer
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// The title, then, with <see cref="BenchmarkReportRenderOptions.IncludeFrontMatter"/>, the comparison
-    /// line, the stamp and the facts list: the suite or battery, the questions, the models, the coverage
-    /// of a subset and the pricing basis.
+    /// The comparison's name as the title (<see cref="BenchmarkPdfDocumentInfo.ComparisonDocumentHeading"/>), then, with
+    /// <see cref="BenchmarkReportRenderOptions.IncludeFrontMatter"/>, the document type as its kicker above it, the
+    /// comparison line with only what the title does not say (<see cref="BenchmarkPdfDocumentInfo.ComparisonDetailText"/>),
+    /// the stamp and the facts list: the suite or battery, the questions, the models, the coverage of a subset and
+    /// the pricing basis. Without the front matter the title alone opens the document, as the PDF and Word cover
+    /// print the document type.
     /// </summary>
     private static void ComparisonTitleBlock(StringBuilder sb, Context ctx)
     {
         var sheet = ctx.Sheet;
         var comparison = BenchmarkPdfDocumentInfo.ComparisonOf(ctx.Document);
-        Line(sb, "# " + BuildComparisonTitle(ctx.Document.Audience, sheet, comparison, ctx.Options.PeerNaming));
+        string audience = AudienceName(ctx.Document.Audience);
+        string heading = BenchmarkPdfDocumentInfo.ComparisonDocumentHeading(
+            BuildComparisonTitle(ctx.Document.Audience, sheet, comparison, ctx.Options.PeerNaming), audience);
+        if (ctx.Options.IncludeFrontMatter)
+        {
+            Line(sb, "**" + audience.ToUpperInvariant() + "**");
+            Line(sb);
+        }
+        Line(sb, "# " + heading);
         Line(sb);
         if (!ctx.Options.IncludeFrontMatter) return;
 
-        if (comparison != null)
+        if (comparison != null && BenchmarkPdfDocumentInfo.ComparisonDetailText(
+                comparison, BenchmarkPdfDocumentInfo.ComparisonComputedOn(sheet), ctx.Options.PeerNaming, heading) is { Length: > 0 } detail)
         {
-            Line(sb, "**Comparison:** " + BenchmarkPdfDocumentInfo.ComparisonText(
-                comparison, BenchmarkPdfDocumentInfo.ComparisonComputedOn(sheet), ctx.Options.PeerNaming));
+            Line(sb, "**Comparison:** " + detail);
             Line(sb);
         }
 
@@ -201,7 +212,7 @@ public static partial class BenchmarkReportPackRenderer
             + (others == 1 ? " is" : " are") + " not part of this document.";
     }
 
-    /// <summary>Every covered model's Intelligence Index with its interval and joint rank, median answer time, cost per question and critical errors.</summary>
+    /// <summary>Every covered model's Intelligence Index with its interval and tied rank, median answer time, cost per question and critical errors.</summary>
     private static void ModelsTable(StringBuilder sb, Context ctx)
     {
         var header = ModelColumns(ctx);
@@ -221,7 +232,7 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "| " + string.Join(" | ", cells) + " |");
         }
         Line(sb);
-        Line(sb, "*Each model's Intelligence Index is followed by its 95 % interval; a joint rank means its interval overlaps a neighbor's, so the order between them is not established by the intervals.*");
+        Line(sb, "*Each model's Intelligence Index is followed by its 95% interval. A rank shown as a span, such as 2–4 (tied), means the model's interval overlaps a neighbor's, so the intervals alone cannot put them in order.*");
         Line(sb);
     }
 
@@ -251,7 +262,7 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// Every covered model's results: the Intelligence Index with its interval and joint rank, speed and
+    /// Every covered model's results: the Intelligence Index with its interval and tied rank, speed and
     /// cost with their ranks, critical errors and, on a sheet that carries the availability facts, provider errors.
     /// </summary>
     private static void ResultsTable(StringBuilder sb, Context ctx)
@@ -330,7 +341,7 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
     }
 
-    /// <summary>How many pairs of models have overlapping 95 % intervals.</summary>
+    /// <summary>How many pairs of models have overlapping 95% intervals.</summary>
     private static void OverlapSentence(StringBuilder sb, Context ctx)
     {
         var overlaps = ctx.Sheet.Facts
@@ -342,14 +353,14 @@ public static partial class BenchmarkReportPackRenderer
         if (overlaps.Count == 1)
         {
             Line(sb, overlapping == 1
-                ? "The two models' 95 % intervals overlap; the intervals alone do not establish which scored higher."
-                : "The two models' 95 % intervals do not overlap.");
+                ? "The two models' 95% intervals overlap; the intervals alone do not establish which scored higher."
+                : "The two models' 95% intervals do not overlap.");
             Line(sb);
             return;
         }
 
         Line(sb, "Of the " + Inv(overlaps.Count) + (overlaps.Count == 1 ? " pair" : " pairs") + " of models, " + Inv(overlapping)
-            + (overlapping == 1 ? " has" : " have") + " overlapping 95 % intervals"
+            + (overlapping == 1 ? " has" : " have") + " overlapping 95% intervals"
             + (overlapping > 0 ? "; the intervals alone do not establish the order within such a pair." : "."));
         Line(sb);
     }
@@ -401,6 +412,8 @@ public static partial class BenchmarkReportPackRenderer
 
         Line(sb, "*" + PairedTestsNote + "*");
         Line(sb);
+        UseTerms(ctx, RootCause.RootCauseGlossary.PairedTest, RootCause.RootCauseGlossary.PValue, RootCause.RootCauseGlossary.Holm,
+            RootCause.RootCauseGlossary.Interval95);
 
         foreach (var family in families)
         {
@@ -416,7 +429,7 @@ public static partial class BenchmarkReportPackRenderer
             {
                 Line(sb, Cell(FamilySizeText(ctx, "Intelligence", intelligence)));
                 Line(sb);
-                Line(sb, "| Pair | Questions | Difference (95 % interval) | Adjusted p | Result |");
+                Line(sb, "| Pair | Questions | Difference (95% interval) | Adjusted p | Result |");
                 Line(sb, "|---|---|---|---|---|");
                 foreach (var pair in intelligence.Pairs)
                 {
@@ -449,7 +462,8 @@ public static partial class BenchmarkReportPackRenderer
                     .Select(p => (p.FirstLetter, p.SecondLetter))
                     .Distinct()
                     .ToList();
-                Line(sb, "| Pair | Time ratio (95 % interval) | Speed result | Spend ratio (95 % interval) | Cost result |");
+                UseTerms(ctx, RootCause.RootCauseGlossary.Ratio);
+                Line(sb, "| Pair | Time ratio (95% interval) | Speed result | Spend ratio (95% interval) | Cost result |");
                 Line(sb, "|---|---|---|---|---|");
                 foreach (var (first, second) in pairs)
                 {
@@ -479,11 +493,15 @@ public static partial class BenchmarkReportPackRenderer
     private static string SheetText(Context ctx, string? text)
         => ctx.Anonymized ? OneLine(text) : NamedLetters(ctx, OneLine(text));
 
+    /// <summary>
+    /// <c>Intelligence: Holm-adjusted across 8 tests.</c>, with the Holm adjustment glossed at its first use in a
+    /// Root Cause Analysis; a single test, no test, or why the measure was not tested.
+    /// </summary>
     private static string FamilySizeText(Context ctx, string measure, BenchmarkReportPairedMeasure family)
         => family.NotTestedReason != null
             ? measure + ": not tested. " + SheetText(ctx, family.NotTestedReason)
             : measure + ": " + (family.FamilySize > 1
-                ? "Holm-adjusted across " + Inv(family.FamilySize) + " tests."
+                ? "Holm-adjusted across " + Inv(family.FamilySize) + " tests" + Gloss(ctx, RootCause.RootCauseGlossary.Holm) + "."
                 : family.FamilySize == 1 ? "a single test, no adjustment." : "no test could be made.");
 
     private static string AdjustedCell(BenchmarkReportPairedTest pair)
@@ -716,9 +734,8 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb, "- **" + (IsBatteryComparison(ctx) ? "Battery" : "Suite") + ":** " + sheet.SuiteName + ", " + Inv(sheet.Questions.Count) + " questions in the per-question matrix.");
         Line(sb, "- **Coverage:** " + (CoverageText(ctx) ?? "every model of " + ComparisonNameText(ctx) + " that is not excluded."));
         Line(sb, "- **" + Label("config.chat") + ":** " + SharedOrPerModel(ctx, "config.chat"));
-        Line(sb, "- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted "
-            + D(ctx, ModelKey(first, "scoring.weights")) + ". Each dimension is graded on behaviorally anchored levels scored "
-            + D(ctx, ModelKey(first, "scoring.levels")) + ". A critical error caps the answer's quality at " + D(ctx, ModelKey(first, "scoring.criticalErrorCap")) + ".");
+        Line(sb, GradingLine(ctx, D(ctx, ModelKey(first, "scoring.weights")), D(ctx, ModelKey(first, "scoring.levels")),
+            D(ctx, ModelKey(first, "scoring.criticalErrorCap"))));
 
         if (sheet.Graders.Count == 0)
         {
@@ -734,10 +751,7 @@ public static partial class BenchmarkReportPackRenderer
             }
         }
 
-        Line(sb, "- **Formulas:** answer quality is the weighted geometric mean of the four dimension scores, capped by a "
-            + "critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the "
-            + "difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with "
-            + "tool time excluded. Cost per question is each model's own spend divided by the questions asked.");
+        Line(sb, FormulasLine(ctx, "Cost per question is each model's own spend divided by the questions asked."));
         if (IsBatteryComparison(ctx))
         {
             Line(sb, "- **Battery composite:** each model's Overall Index is the sum over the suites of each suite's weight times its "
@@ -1115,7 +1129,7 @@ public static partial class BenchmarkReportPackRenderer
     // ---------------------------------------------------------------------------------------------
 
     private const string ReferenceTableNote = "Paired difference: the mean per-question difference, the model minus the reference, on the "
-        + "questions both answered, with its 95 % interval. Better, similar and worse count the questions both scored on the same item "
+        + "questions both answered, with its 95% interval. Better, similar and worse count the questions both scored on the same item "
         + "revision on which the model scored more than 15 points above the reference, within 15 points of it, or more than 15 points "
         + "below it; they are not tests. May mislead per 20: answers with an accuracy level below 4 or a critical error, per 20 answers. "
         + "Time and cost ratios: the model's median answer time and cost per question divided by the reference's.";
@@ -1157,7 +1171,7 @@ public static partial class BenchmarkReportPackRenderer
 
         var header = ModelColumns(ctx);
         if (full) header.Add("Questions");
-        header.Add("Paired difference (95 % interval)");
+        header.Add("Paired difference (95% interval)");
         if (full) header.Add("Result");
         header.AddRange(new[] { "Better / similar / worse", "May mislead per 20", "Time ratio", "Cost ratio" });
         TableHeaderOf(sb, header);
@@ -1446,7 +1460,7 @@ public static partial class BenchmarkReportPackRenderer
         => OrderedPeers(ctx.Sheet).Any(p => Fact(ctx, ModelKey(p.Letter, "availability.attempts")) != null);
 
     /// <summary>
-    /// A model's provider errors in the results table: <c>0.81 % (12/1,480)</c>, <c>not recorded</c>, or
+    /// A model's provider errors in the results table: <c>0.81% (12/1,480)</c>, <c>not recorded</c>, or
     /// <c>not available</c> for an entry whose availability was not computed.
     /// </summary>
     private static string ProviderErrorsCell(BenchmarkReportEntryFigures entry)
@@ -1514,7 +1528,7 @@ public static partial class BenchmarkReportPackRenderer
         }
         Line(sb);
         Line(sb, "*Valid attempts: each model's API attempts except our-side failures, the denominator of its provider error rate, "
-            + "whose interval is a cluster-adjusted Wilson 95 % interval. " + AvailabilityFootnoteClasses + "*");
+            + "whose interval is a cluster-adjusted Wilson 95% interval. " + AvailabilityFootnoteClasses + "*");
         Line(sb);
     }
 

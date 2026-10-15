@@ -32,7 +32,7 @@ public static class RootCauseChartPalette
     ///   node scripts/validate_palette.js "#eda100,#008300,#e87ba4,#4a3aa7,#e34948" --mode light --surface "#ffffff"
     /// Result on 2026-10-15: lightness band, chroma floor, CVD separation (worst adjacent ΔE 16.2, protan,
     /// green and yellow) and normal-vision floor (worst adjacent ΔE 30.3) pass; contrast warns for yellow
-    /// (2.17:1) and magenta (2.69:1) on white. The relief is visible text: every segment of 8 % of its bar
+    /// (2.17:1) and magenta (2.69:1) on white. The relief is visible text: every segment of 8% of its bar
     /// or more carries its number, and the key names every segment in stacking order. The first four
     /// alone give the same result.
     /// </summary>

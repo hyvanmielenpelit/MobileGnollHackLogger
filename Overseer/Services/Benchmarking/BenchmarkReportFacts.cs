@@ -34,7 +34,7 @@ using Overseer.Services.Benchmarking.RootCause;
 //
 // Quality (Intelligence Index; higher is better)
 //   quality.index            "80 / 100": the point estimate
-//   quality.interval         "77–83": the 95 % interval, its bounds rounded as the point is
+//   quality.interval         "77–83": the 95% interval, its bounds rounded as the point is
 //   quality.intervalSpan     "6 points": the printed upper bound minus the printed lower bound
 //   quality.intervalBasis    which sources of variation the interval covers
 //   quality.rank             "2nd of 3" among entries with a quality figure
@@ -100,10 +100,10 @@ using Overseer.Services.Benchmarking.RootCause;
 //   peer.X.quality.index, peer.X.quality.interval, peer.X.quality.rank   the peer's own quality figures
 //   peer.X.speed.medianSeconds, peer.X.cost.perQuestion                  the peer's median answer time and cost
 //   peer.X.runs                                                          "3 runs"
-//   peer.X.intervalOverlap                                               boolean: its 95 % interval overlaps the subject's
+//   peer.X.intervalOverlap                                               boolean: its 95% interval overlaps the subject's
 //   peer.X.pairedDifference, peer.X.pairedInterval, peer.X.sharedQuestions
 //       the subject's mean per-question difference from the peer over the questions both scored on the
-//       same item revision, and its 95 % paired-bootstrap interval; unavailable below
+//       same item revision, and its 95% paired-bootstrap interval; unavailable below
 //       PairedMinimumQuestions shared questions
 //   peer.X.pairedExcludesZero                                            boolean: the printed paired interval lies on one
 //                                                                        side of zero; unavailable with the paired difference
@@ -113,7 +113,7 @@ using Overseer.Services.Benchmarking.RootCause;
 //   availability.attempts                               valid attempts, the denominator: "1,480 attempts"
 //   availability.providerErrors                         "12 of 1,480 attempts"
 //   availability.providerErrorRate, .providerErrorRateCi95Low, .providerErrorRateCi95High
-//                                                       "0.81 %" and its cluster-adjusted Wilson 95 % bounds
+//                                                       "0.81%" and its cluster-adjusted Wilson 95% bounds
 //   availability.unattributedErrors                     "3 of 1,480 attempts"
 //   availability.inclusiveRate, .inclusiveRateCi95Low, .inclusiveRateCi95High
 //                                                       the upper bound including unattributed errors
@@ -122,7 +122,7 @@ using Overseer.Services.Benchmarking.RootCause;
 //   availability.ourSideFailures                        excluded from the denominator
 //   availability.questionsLost                          answers ended by a provider error after every pass
 //   availability.reruns, .providerReruns, .replacedRuns re-runs needed, the provider-caused part, replaced runs
-//   availability.oneIn                                  "about 1 in 123", prose only; unavailable at 0 and from 1 %
+//   availability.oneIn                                  "about 1 in 123", prose only; unavailable at 0 and from 1%
 //   A pool with no recorded run (started before harness 56) marks every key unavailable.
 //
 // Root cause (the evidence and result of the root-cause engine; kept off the Executive Summary's
@@ -885,7 +885,7 @@ public static class BenchmarkReportFacts
     }
 
     /// <summary>
-    /// Which peers' 95 % intervals overlap the subject's, by letter. Descriptive only: the comparison
+    /// Which peers' 95% intervals overlap the subject's, by letter. Descriptive only: the comparison
     /// runs no significance test, and the wording never implies one.
     /// </summary>
     private static void AddIntervalOverlap(
@@ -911,15 +911,15 @@ public static class BenchmarkReportFacts
         facts.Add("quality.intervalOverlap", letters.Count, OverlapSentence(letters));
     }
 
-    /// <summary>"its 95 % interval overlaps those of Models A and B", or of one model, or of none.</summary>
+    /// <summary>"its 95% interval overlaps those of Models A and B", or of one model, or of none.</summary>
     public static string OverlapSentence(IReadOnlyList<string> letters)
     {
         ArgumentNullException.ThrowIfNull(letters);
         return letters.Count switch
         {
-            0 => "its 95 % interval overlaps no other model's",
-            1 => "its 95 % interval overlaps that of Model " + letters[0],
-            _ => "its 95 % interval overlaps those of Models " + BenchmarkReportFormat.LetterList(letters)
+            0 => "its 95% interval overlaps no other model's",
+            1 => "its 95% interval overlaps that of Model " + letters[0],
+            _ => "its 95% interval overlaps those of Models " + BenchmarkReportFormat.LetterList(letters)
         };
     }
 
@@ -1415,7 +1415,7 @@ public static class BenchmarkReportFacts
 
     /// <summary>
     /// Each peer's own figures: its index, interval and rank, median answer time, cost per question,
-    /// runs, and whether its 95 % interval overlaps the subject's. A figure of an axis the peer is
+    /// runs, and whether its 95% interval overlaps the subject's. A figure of an axis the peer is
     /// degraded on is unavailable with the peer's explanation.
     /// </summary>
     internal static void AddPeerFacts(
@@ -1466,7 +1466,7 @@ public static class BenchmarkReportFacts
                 {
                     bool overlaps = subjectLower <= peerUpper && peerLower <= subjectUpper;
                     facts.Add(prefix + "intervalOverlap", overlaps,
-                        overlaps ? "its 95 % interval overlaps the subject's" : "its 95 % interval does not overlap the subject's");
+                        overlaps ? "its 95% interval overlaps the subject's" : "its 95% interval does not overlap the subject's");
                 }
             }
 
@@ -1530,7 +1530,7 @@ public static class BenchmarkReportFacts
     /// <summary>
     /// The subject's paired difference from each peer, in letter order: over the questions both
     /// scored on the same item revision, the subject's per-question score (a mean over runs for a
-    /// group) minus the peer's per-question mean, and its 95 % paired-bootstrap interval. Adds the
+    /// group) minus the peer's per-question mean, and its 95% paired-bootstrap interval. Adds the
     /// <c>peer.X.paired*</c> and <c>peer.X.sharedQuestions</c> facts, unavailable below
     /// <see cref="PairedMinimumQuestions"/> shared questions.
     /// </summary>
@@ -1598,7 +1598,7 @@ public static class BenchmarkReportFacts
     }
 
     /// <summary>
-    /// The mean of <paramref name="differences"/> and its 95 % percentile interval: the means of
+    /// The mean of <paramref name="differences"/> and its 95% percentile interval: the means of
     /// <see cref="PairedBootstrapResamples"/> resamples of the list with replacement, drawn from
     /// <c>new Random(seed)</c> and sorted, cut at the 2.5th and 97.5th percentiles (the 251st mean
     /// from each end). The same list and seed always give the same interval.
@@ -1937,8 +1937,8 @@ public static class BenchmarkReportFacts
     /// <summary>Why a rate is unavailable when the recorded runs have no valid attempt.</summary>
     public const string NoValidAttemptsReason = "The recorded runs have no valid attempt.";
 
-    /// <summary>Why <c>availability.oneIn</c> is unavailable: a natural frequency is stated only for a rate above 0 and below 1 %.</summary>
-    public const string OneInReason = "A natural frequency is stated only for a provider error rate above 0 and below 1 %.";
+    /// <summary>Why <c>availability.oneIn</c> is unavailable: a natural frequency is stated only for a rate above 0 and below 1%.</summary>
+    public const string OneInReason = "A natural frequency is stated only for a provider error rate above 0 and below 1%.";
 
     /// <summary>Every <c>availability.*</c> key of a run or battery sheet, in key order.</summary>
     public static readonly IReadOnlyList<string> AvailabilityKeys = new[]
@@ -2232,7 +2232,7 @@ public static class BenchmarkReportFacts
     internal static int RankOf(double value, IReadOnlyList<double> values, bool higherIsBetter)
         => 1 + values.Count(v => higherIsBetter ? v > value : v < value);
 
-    /// <summary>One entry's place in a ranking by score whose 95 % intervals may overlap.</summary>
+    /// <summary>One entry's place in a ranking by score whose 95% intervals may overlap.</summary>
     /// <param name="Rank">The rank of the entry's group: one more than the entries ranked above the group.</param>
     /// <param name="Joint">The group holds more than this entry.</param>
     /// <param name="GroupSize">The entries sharing the rank, this one included.</param>
@@ -2292,14 +2292,27 @@ public static class BenchmarkReportFacts
     }
 
     /// <summary>
-    /// A rank as documents print it: <c>joint 1st of 2 (intervals overlap)</c> for a joint rank, else
-    /// <c>2nd of 3</c>; <paramref name="of"/> is the count of ranked entries.
+    /// A rank as documents print it: the span of its tie group for a tied rank,
+    /// <c>2–9 of 9 (tied: intervals overlap)</c>, else <c>2nd of 3</c>; <paramref name="of"/> is the
+    /// count of ranked entries.
     /// </summary>
     public static string JointRankText(JointRank rank, int of)
     {
         ArgumentNullException.ThrowIfNull(rank);
-        string text = BenchmarkReportFormat.Rank(rank.Rank, of);
-        return rank.Joint ? "joint " + text + " (intervals overlap)" : text;
+        if (!rank.Joint) return BenchmarkReportFormat.Rank(rank.Rank, of);
+        return TiedRankSpan(rank) + " of " + of.ToString(CultureInfo.InvariantCulture) + " (tied: intervals overlap)";
+    }
+
+    /// <summary>
+    /// The positions a rank's tie group spans, joined by an en dash: <c>2–9</c> for a group of eight
+    /// ranked 2; the rank alone, <c>2</c>, for a group of one.
+    /// </summary>
+    public static string TiedRankSpan(JointRank rank)
+    {
+        ArgumentNullException.ThrowIfNull(rank);
+        int last = rank.Rank + Math.Max(1, rank.GroupSize) - 1;
+        string first = rank.Rank.ToString(CultureInfo.InvariantCulture);
+        return last > rank.Rank ? first + "–" + last.ToString(CultureInfo.InvariantCulture) : first;
     }
 
     internal static double Median(IReadOnlyList<double> values)
@@ -2657,7 +2670,7 @@ public static class BenchmarkReportFormat
         return "$" + rounded.ToString(value >= 0.01 ? "0.000" : "0.0000", CultureInfo.InvariantCulture);
     }
 
-    public static string Percent(double value) => Whole(value) + " %";
+    public static string Percent(double value) => Whole(value) + "%";
 
     public static string Ordinal(int value)
     {

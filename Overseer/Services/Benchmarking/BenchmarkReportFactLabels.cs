@@ -48,7 +48,7 @@ public static class BenchmarkReportFactLabels
 
         // Quality
         ["quality.index"] = "Intelligence Index",
-        ["quality.interval"] = "95 % interval",
+        ["quality.interval"] = "95% interval",
         ["quality.intervalSpan"] = "Interval span",
         ["quality.intervalBasis"] = "Interval basis",
         ["quality.rank"] = "Intelligence rank",
@@ -103,11 +103,15 @@ public static class BenchmarkReportFactLabels
         ["rca.controls.providers"] = "Providers of the controls",
         ["rca.controls.limit"] = "Control limit",
         ["rca.control.deficit.mean"] = "Mean difference from the controls",
-        ["rca.control.deficit.interval"] = "95 % interval of the mean difference from the controls",
+        ["rca.control.deficit.interval"] = "95% interval of the mean difference from the controls",
         ["rca.control.instrumentSuspect"] = "Questions every control also missed",
         ["rca.control.modelSpecific"] = "Questions only the model under test missed",
         ["rca.systemFirst"] = "System hypotheses first",
         ["rca.pricingBasis"] = "Pricing basis of the cost decomposition",
+
+        // Battery (BenchmarkBatteryReportFacts)
+        ["battery.memberRuns"] = "Member runs",
+        ["battery.excludedMembers"] = "Member runs left out of the analysis",
 
         // Errors and claims
         ["answers.scored"] = "Scored answers",
@@ -157,12 +161,12 @@ public static class BenchmarkReportFactLabels
         ["availability.attempts"] = "Valid attempts",
         ["availability.providerErrors"] = "Provider errors",
         ["availability.providerErrorRate"] = "Provider error rate",
-        ["availability.providerErrorRateCi95Low"] = "Lower bound of the provider error rate's 95 % interval",
-        ["availability.providerErrorRateCi95High"] = "Upper bound of the provider error rate's 95 % interval",
+        ["availability.providerErrorRateCi95Low"] = "Lower bound of the provider error rate's 95% interval",
+        ["availability.providerErrorRateCi95High"] = "Upper bound of the provider error rate's 95% interval",
         ["availability.unattributedErrors"] = "Unattributed errors",
         ["availability.inclusiveRate"] = "Error rate including unattributed errors (upper bound)",
-        ["availability.inclusiveRateCi95Low"] = "Lower bound of the 95 % interval of the error rate including unattributed errors",
-        ["availability.inclusiveRateCi95High"] = "Upper bound of the 95 % interval of the error rate including unattributed errors",
+        ["availability.inclusiveRateCi95Low"] = "Lower bound of the 95% interval of the error rate including unattributed errors",
+        ["availability.inclusiveRateCi95High"] = "Upper bound of the 95% interval of the error rate including unattributed errors",
         ["availability.overloaded"] = "Provider overloaded (HTTP 503 and 529)",
         ["availability.serverErrors"] = "Provider server errors (HTTP 5xx)",
         ["availability.timeouts"] = "Provider timeouts",
@@ -281,7 +285,7 @@ public static class BenchmarkReportFactLabels
 
     /// <summary>
     /// The last part of a patterned chat consistency key, as the words after the colon of its label:
-    /// <c>endpoint.P1.ci95</c> reads <c>Quality (P1): 95 % interval</c>.
+    /// <c>endpoint.P1.ci95</c> reads <c>Quality (P1): 95% interval</c>.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, string> ChatSuffixes = new Dictionary<string, string>(StringComparer.Ordinal)
     {
@@ -290,10 +294,10 @@ public static class BenchmarkReportFactLabels
         ["percent"] = "change in percent",
         ["baseline"] = "baseline",
         ["comparison"] = "comparison",
-        ["ci95"] = "95 % interval",
-        ["ci95Low"] = "lower bound of the 95 % interval",
-        ["ci95High"] = "upper bound of the 95 % interval",
-        ["ci90"] = "90 % interval",
+        ["ci95"] = "95% interval",
+        ["ci95Low"] = "lower bound of the 95% interval",
+        ["ci95High"] = "upper bound of the 95% interval",
+        ["ci90"] = "90% interval",
         ["p"] = "p-value",
         ["adjustedP"] = "adjusted p-value",
         ["rejected"] = "rejected at the false discovery rate",
@@ -323,7 +327,7 @@ public static class BenchmarkReportFactLabels
         ["periods"] = "periods matched",
         ["endpoint"] = "endpoint",
         ["controlChange"] = "control's own change",
-        ["controlChangeCi95"] = "95 % interval of the control's own change",
+        ["controlChangeCi95"] = "95% interval of the control's own change",
         ["includesZero"] = "interval relative to zero",
         ["separatesTarget"] = "separates the model under test",
         ["movedSameWay"] = "control moved the same way",
@@ -398,8 +402,8 @@ public static class BenchmarkReportFactLabels
         ["attempts"] = "valid attempts",
         ["providerErrors"] = "provider errors",
         ["providerErrorRate"] = "provider error rate",
-        ["providerErrorRateCi95Low"] = "provider error rate, 95 % interval low",
-        ["providerErrorRateCi95High"] = "provider error rate, 95 % interval high",
+        ["providerErrorRateCi95Low"] = "provider error rate, 95% interval low",
+        ["providerErrorRateCi95High"] = "provider error rate, 95% interval high",
         ["unattributedErrors"] = "unattributed errors",
         ["ourSideFailures"] = "our-side failures (excluded)",
         ["reruns"] = "re-runs needed",
@@ -415,7 +419,7 @@ public static class BenchmarkReportFactLabels
     private static readonly IReadOnlyDictionary<string, string> PeerLabels = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["quality.index"] = "{0}'s Intelligence Index",
-        ["quality.interval"] = "{0}'s 95 % interval",
+        ["quality.interval"] = "{0}'s 95% interval",
         ["quality.rank"] = "{0}'s intelligence rank",
         ["speed.medianSeconds"] = "{0}'s median answer time",
         ["cost.perQuestion"] = "{0}'s cost per question",
@@ -681,7 +685,7 @@ public static class BenchmarkReportFactLabels
         ["nextRun"] = "next run",
         ["check"] = "check",
         ["share"] = "share of the difference",
-        ["interval"] = "95 % interval of the share",
+        ["interval"] = "95% interval of the share",
     };
 
     /// <summary>The parts of a research question's facts (<c>rca.question.&lt;n&gt;.&lt;part&gt;</c>).</summary>
@@ -806,7 +810,7 @@ public static class BenchmarkReportFactLabels
                 }
                 if (parts.Length == 6 && SpeedComponentNames.TryGetValue(parts[4], out var speedComponent) && parts[5] is "share" or "interval")
                 {
-                    label = "Speed decomposition, " + first + " against " + second + ": " + speedComponent + (parts[5] == "share" ? " share" : " share, 95 % interval");
+                    label = "Speed decomposition, " + first + " against " + second + ": " + speedComponent + (parts[5] == "share" ? " share" : " share, 95% interval");
                     return true;
                 }
                 return false;
@@ -823,7 +827,7 @@ public static class BenchmarkReportFactLabels
                 {
                     string component = parts[4] == "all" ? "every component" : CostComponentNames[parts[4]];
                     label = "Cost decomposition, " + first + " against " + second + ": " + component + ", " + (parts[5] == "volume" ? "token volume" : "price per token")
-                            + (parts[6] == "share" ? " share" : " share, 95 % interval");
+                            + (parts[6] == "share" ? " share" : " share, 95% interval");
                     return true;
                 }
                 return false;

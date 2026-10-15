@@ -630,10 +630,16 @@
   padding: 8px 24px 0;
 }
 
-/* Step 3: the Report Pack panel fills the step, which scrolls whatever the panel does not. */
-.mc-step--reports > app-report-pack-panel {
-  flex: 1 1 auto;
-  min-height: 0;
+/* Step 3: the Report Pack panel fills the step, which scrolls whatever the panel does not. The step
+   adds no padding of its own: the frame's inset is the only one, as on step 4. */
+.mc-step--reports {
+  padding: 0;
+  gap: 0;
+
+  > app-report-pack-panel {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
 }
 
 /* Step 4: the Download Center panel fills the step edge to edge; it scrolls its own body and pins

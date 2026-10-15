@@ -97,10 +97,10 @@ describe('provider availability helpers', () => {
   it('builds the key-figure tile from a recorded run', () => {
     expect(providerErrorsFigure(availability())).toEqual({
       recorded: true,
-      value: '0.81 %',
+      value: '0.81%',
       muted: false,
       count: '12 of 1,480 attempts',
-      note: '95 % CI 0.44–1.5 % · 3 unattributed · 3 re-runs (2 provider)',
+      note: '95% CI 0.44–1.5% · 3 unattributed · 3 re-runs (2 provider)',
       fewAttempts: false
     });
   });
@@ -129,7 +129,7 @@ describe('provider availability helpers', () => {
     const figure = providerErrorsFigure(availability({
       validAttempts: 99, providerErrors: 3, providerErrorRate: 3 / 99, unattributedErrors: 0, fewAttempts: true
     }));
-    expect(figure.value).toBe('3.0 %');
+    expect(figure.value).toBe('3.0%');
     expect(figure.count).toBe('3 of 99 attempts');
     expect(figure.fewAttempts).toBe(true);
   });
@@ -213,7 +213,7 @@ describe('ProviderAvailabilityComponent', () => {
   it('opens with the observed headline, its natural frequency and the unattributed upper bound', () => {
     create({ availability: availability() });
     expect(text('.pa-summary')).toBe(
-      'Provider errors observed: 0.81 % (12 of 1,480 attempts; 95 % CI 0.44–1.5 %), about 1 in 123; ≤ 1.0 % incl. 3 unattributed.');
+      'Provider errors observed: 0.81% (12 of 1,480 attempts; 95% CI 0.44–1.5%), about 1 in 123; ≤ 1.0% incl. 3 unattributed.');
     expect(el().querySelector('.pa-few')).toBeNull();
     expect(el().querySelector('.pa-scope')).toBeNull();
   });
@@ -226,7 +226,7 @@ describe('ProviderAvailabilityComponent', () => {
         recordedRuns: 2, totalRuns: 3, replacedRunsIncluded: 1
       })
     });
-    expect(text('.pa-summary')).toContain('3.0 % (3 of 99 attempts; 95 % CI 1.0–8.5 %; few attempts)');
+    expect(text('.pa-summary')).toContain('3.0% (3 of 99 attempts; 95% CI 1.0–8.5%; few attempts)');
     const tag = el().querySelector('.pa-few') as HTMLElement;
     expect(tag.textContent?.trim()).toBe('few attempts');
     expect(tag.getAttribute('aria-hidden')).toBe('true');
@@ -238,16 +238,16 @@ describe('ProviderAvailabilityComponent', () => {
     const groups = Array.from(el().querySelectorAll('.pa-breakdown tbody')).map(body => body.getAttribute('data-side'));
     expect(groups).toEqual(['ok', 'provider', 'unattributed']);
     expect(rowTexts('.pa-breakdown tbody tr[data-outcome]')).toEqual([
-      ['Succeeded', '1,465', '99 %', 'HTTP 200'],
-      ['Overloaded', '9', '0.61 %', 'HTTP 529, HTTP 503'],
-      ['Server error', '3', '0.20 %', 'HTTP 500'],
-      ['Timeout', '0', '0 %', '—'],
-      ['Stream failure', '0', '0 %', '—'],
-      ['Rate limited, unattributed', '3', '0.20 %', 'HTTP 429'],
-      ['Connection failure, unattributed', '0', '0 %', '—']
+      ['Succeeded', '1,465', '99%', 'HTTP 200'],
+      ['Overloaded', '9', '0.61%', 'HTTP 529, HTTP 503'],
+      ['Server error', '3', '0.20%', 'HTTP 500'],
+      ['Timeout', '0', '0%', '—'],
+      ['Stream failure', '0', '0%', '—'],
+      ['Rate limited, unattributed', '3', '0.20%', 'HTTP 429'],
+      ['Connection failure, unattributed', '0', '0%', '—']
     ]);
     expect(rowTexts('.pa-breakdown .pa-group-row').map(r => r[0])).toEqual(['Provider', 'Unattributed']);
-    expect(rowTexts('.pa-breakdown tfoot tr')).toEqual([['Valid attempts', '1,480', '100 %', '']]);
+    expect(rowTexts('.pa-breakdown tfoot tr')).toEqual([['Valid attempts', '1,480', '100%', '']]);
 
     const heading = el().querySelector('h5.pa-subtitle') as HTMLElement;
     expect(heading.textContent?.trim()).toBe('Excluded: our side');
@@ -279,10 +279,10 @@ describe('ProviderAvailabilityComponent', () => {
     const table = el().querySelector('table.pa-strip-table') as HTMLTableElement;
     expect(table.classList).toContain('visually-hidden');
     expect(rowTexts('.pa-strip-table tbody tr')).toEqual([
-      ['2026-10-12 13:00 UTC', '400', '0', '0', '0', '0 %'],
+      ['2026-10-12 13:00 UTC', '400', '0', '0', '0', '0%'],
       ['2026-10-12 13:05 UTC', '0', '0', '0', '0', '—'],
       ['2026-10-12 13:10 UTC', '0', '0', '0', '4', '—'],
-      ['2026-10-12 13:15 UTC', '1,080', '12', '3', '0', '1.1 %']
+      ['2026-10-12 13:15 UTC', '1,080', '12', '3', '0', '1.1%']
     ]);
   });
 
@@ -302,12 +302,12 @@ describe('ProviderAvailabilityComponent', () => {
     expect(segments[1].textContent?.trim()).toBe('');
     expect(Array.from(el().querySelectorAll('.pa-bar-legend li')).map(li => (li.textContent ?? '').replace(/\s+/g, ' ').trim()))
       .toEqual([
-        'Succeeded: 1,465 (99 %)',
-        'Overloaded: 9 (0.61 %)',
-        'Server error: 3 (0.20 %)',
-        'Rate limited, unattributed: 3 (0.20 %)',
-        'Overseer request governor: 1 (0.067 %), excluded',
-        'Canceled or question time budget: 3 (0.20 %), excluded'
+        'Succeeded: 1,465 (99%)',
+        'Overloaded: 9 (0.61%)',
+        'Server error: 3 (0.20%)',
+        'Rate limited, unattributed: 3 (0.20%)',
+        'Overseer request governor: 1 (0.067%), excluded',
+        'Canceled or question time budget: 3 (0.20%), excluded'
       ]);
 
     create({ availability: availability() });
@@ -347,7 +347,7 @@ describe('ProviderAvailabilityComponent', () => {
     expect(text('.pa-reruns dd')).toBe(
       '3 re-runs (2 for provider errors): 2 repair passes (1 for provider errors), 1 replaced run (1 for provider errors)');
     expect(text('.pa-replaces-list li')).toBe('Run #55 replaces run #41, which failed at the provider');
-    expect(text('.pa-first-attempt dd')).toBe('98 % (1,450 of 1,480 calls)');
+    expect(text('.pa-first-attempt dd')).toBe('98% (1,450 of 1,480 calls)');
     expect(text('.pa-lost dd')).toBe('1');
     expect(text('.pa-graders dd')).toBe('3 provider errors in 240 grader attempts; for information, not counted above');
 
@@ -373,8 +373,8 @@ describe('ProviderAvailabilityComponent', () => {
 
     expect(text('#' + fixture.componentInstance.uid + '-members')).toBe('Members');
     expect(rowTexts('.pa-members tbody tr')).toEqual([
-      ['Gameplay Help, round 1, run #101', '700', '7', '1.0 %', '1 re-run (1 provider)'],
-      ['Gameplay Help, round 1, run #99 superseded', '80', '30', '38 %', '0 re-runs'],
+      ['Gameplay Help, round 1, run #101', '700', '7', '1.0%', '1 re-run (1 provider)'],
+      ['Gameplay Help, round 1, run #99 superseded', '80', '30', '38%', '0 re-runs'],
       ['Board Reading, round 1, run #103', 'Not recorded', '—', '—', '0 re-runs']
     ]);
     const superseded = el().querySelector('.pa-members tr[data-member-id="2"]') as HTMLElement;

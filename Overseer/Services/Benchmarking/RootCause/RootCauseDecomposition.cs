@@ -33,7 +33,7 @@ public sealed class RootCauseAtRisk
 /// <c>cost = Σ_k tokens_k × price_k</c>, each component's difference split into a volume and a price
 /// effect, the price being the effective price (cost ÷ tokens) of the model's own answers, which carries
 /// the long-context card and the served tier. Every split is exact: its effects sum to the difference.
-/// Shares carry 95 % bootstrap intervals over the shared questions (<see cref="RootCauseStatistics.Seed"/>,
+/// Shares carry 95% bootstrap intervals over the shared questions (<see cref="RootCauseStatistics.Seed"/>,
 /// <see cref="RootCauseStatistics.Resamples"/>, percentile).</para>
 /// </summary>
 public static class RootCauseDecomposition

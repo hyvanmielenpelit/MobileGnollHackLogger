@@ -196,7 +196,7 @@ public class ChatConsistencyAnalysisServiceTests
         var result = await Service(db).AnalyzeAsync(Request(key), TestContext.Current.CancellationToken);
 
         var revised = Assert.Single(result.DataQuality, n => n.Kind == "revisedQuestions");
-        Assert.Equal("2 of 24 questions (8.3 %) were revised between the periods and are left out of the paired comparison; 22 are paired.", revised.Text);
+        Assert.Equal("2 of 24 questions (8.3%) were revised between the periods and are left out of the paired comparison; 22 are paired.", revised.Text);
         Assert.DoesNotContain(result.DataQuality, n => n.Kind == "unpairedItems");
     }
 

@@ -30,8 +30,8 @@ The Overseer chat with Test Model is Degraded: quality degraded (indicated); tim
 | Measure | Result | What it means |
 |---|---|---|
 | Quality | Degraded: −4.2 index points | Worse than before, beyond the margin of ±3 index points; graded Indicated |
-| Time to first answer text | Equivalent: +2.0 % | The same as before, within the margin of ±15 %; graded Established |
-| Cost per answer | Inconclusive: +3.1 % | Undecided: these runs could detect only a change of ±12.7 % or more |
+| Time to first answer text | Equivalent: +2.0% | The same as before, within the margin of ±15%; graded Established |
+| Cost per answer | Inconclusive: +3.1% | Undecided: these runs could detect only a change of ±12.7% or more |
 
 *Not computable: Answer streaming rate; the overall verdict says why.*
 
@@ -56,7 +56,7 @@ Answer quality degraded by −4.2 index points within weekdays 04–12 UTC. Wai
 
 ## What changed for players
 
-Players got answers of lower quality, by −4.2 index points. Cost per answer is inconclusive at +3.1 %, and the runs could only detect a change of ±12.7 %.
+Players got answers of lower quality, by −4.2 index points. Cost per answer is inconclusive at +3.1%, and the runs could only detect a change of ±12.7%.
 
 ## Our changes and their effect
 
@@ -91,6 +91,6 @@ The analysis suggests one more run: Repeat the comparison runs during US busines
 
 ---
 
-*Document ID 41 · format version 3 · created 2026-09-28 10:42 UTC · writer Writer One (Anthropic, writer-1) · disclosure Detailed · controls anonymized*
+*Document ID 41 · format version 4 · created 2026-09-28 10:42 UTC · writer Writer One (Anthropic, writer-1) · disclosure Detailed · controls anonymized*
 
 *Figures and tables were computed by Overseer from the saved chat consistency analysis. The prose was written by Writer One from those figures and checked automatically for structure, permitted figures, word limits, control-model names, hype words, spelling, readable text and the claim rules on change, cause, intent, mechanism, public claims and hours; the checks do not verify the prose's interpretations.*

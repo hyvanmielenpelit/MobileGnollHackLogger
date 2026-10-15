@@ -594,7 +594,7 @@ public class BenchmarkReportPackPromptTests
         sheet.Peers[1].Explanation = "Plotted with a degraded axis: quality is sound, and speed mixes conditions across the set.";
         sheet.Facts.Add(new BenchmarkReportFact { Key = "peer.B.quality.index", Value = System.Text.Json.Nodes.JsonValue.Create(71.0), Display = "71 / 100" });
         sheet.Facts.Add(new BenchmarkReportFact { Key = "peer.A.quality.index", Value = System.Text.Json.Nodes.JsonValue.Create(83.0), Display = "83 / 100" });
-        sheet.Facts.Add(new BenchmarkReportFact { Key = "peer.A.intervalOverlap", Value = System.Text.Json.Nodes.JsonValue.Create(true), Display = "its 95 % interval overlaps the subject's" });
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "peer.A.intervalOverlap", Value = System.Text.Json.Nodes.JsonValue.Create(true), Display = "its 95% interval overlaps the subject's" });
         sheet.Facts.Add(new BenchmarkReportFact
         {
             Key = "peer.A.pairedDifference", Display = BenchmarkReportFacts.NotAvailable, Available = false,
@@ -722,7 +722,7 @@ public class BenchmarkReportPackPromptTests
     {
         string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>());
 
-        Assert.Contains("A token whose value reads 'N of M' is a noun phrase; never put it after 'no' or make it the object of 'made'.", message);
+        Assert.Contains("A token whose value reads 'N of M' is a noun phrase; never put it after 'no', make it the object of 'made', or end a clause with it: say right after it what it counts.", message);
     }
 
     [Theory]
@@ -989,7 +989,7 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("{{rca.axis.intelligence.status}}", lines[6]);
         Assert.Contains("{{model:", lines[2]);
         Assert.Contains("noun phrase", lines[3]);
-        Assert.Contains("'95 % interval'", lines[1]);
+        Assert.Contains("'95% interval'", lines[1]);
     }
 
     // Comparison scope --------------------------------------------------------------------------

@@ -15,7 +15,7 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 
 ## Key figures
 
-- **Intelligence:** 80 / 100 (interval 77–83), joint 1st of 3 (intervals overlap); its 95 % interval overlaps every peer's.
+- **Intelligence:** 80 / 100 (interval 77–83), 1–3 of 3 (tied: intervals overlap); its 95% interval overlaps every peer's.
 - **Speed:** median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
 - **Critical errors:** 1 of 4 answers.
@@ -35,7 +35,7 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 | Conciseness | 88 | 85 | +3 |
 | Readability | 90 | 89 | +1 |
 
-GPT-5.6 Luna places joint 1st of 3 (intervals overlap) on intelligence, but its interval overlaps those of Grok 5 and Mistral Large 4, so the order is not established. Its paired difference from Grok 5 is -4.6 points.
+GPT-5.6 Luna places 1–3 of 3 (tied: intervals overlap) on intelligence, but its interval overlaps those of Grok 5 and Mistral Large 4, so the order is not established. Its paired difference from Grok 5 is -4.6 points.
 
 ## What it did well
 
@@ -52,9 +52,9 @@ GPT-5.6 Luna is a capable assistant for everyday play, but its answers on item d
 
 ## How reliable this result is
 
-The result rests on 4 questions; its 95 % interval overlaps every peer's.
+The result rests on 4 questions; its 95% interval overlaps every peer's.
 
-The 95 % interval is 77–83, a span of 6 points, and rests on 4 of 4 questions with a scored answer.
+The 95% interval is 77–83, a span of 6 points, and rests on 4 of 4 questions with a scored answer.
 
 No pair of models is tested for significance: with 3 models, testing every pair would flag chance differences.
 
@@ -64,7 +64,7 @@ GnollHack is a roguelike game descended from NetHack. The Overseer is its AI ass
 
 This benchmark gives the production assistant prompt and tools, unchanged, a fixed set of single-turn questions about the game, and asks for the concise answer style the live assistant uses.
 
-Two AI graders from two different companies score every answer for accuracy, completeness, conciseness and readability, weighted Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %. A separate verifier checks disputed claims against the game's source code. Speed is the model's own time per answer, with time spent in tools excluded. Cost is the model under test's price per question at the catalog prices of 2026-09-20, which is comparable across dates but is not what was actually spent.
+Two AI graders from two different companies score every answer for accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. A separate verifier checks disputed claims against the game's source code. Speed is the model's own time per answer, with time spent in tools excluded. Cost is the model under test's price per question at the catalog prices of 2026-09-20, which is comparable across dates but is not what was actually spent.
 
 What it does not measure: conversations longer than one question, the wiki text the live assistant is given before it answers, spoiler-free mode, web search, and delegation to subagents. A result here describes the assistant as configured for this benchmark; it may not carry over to those situations.
 
@@ -82,6 +82,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 13 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 101 · format version 14 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

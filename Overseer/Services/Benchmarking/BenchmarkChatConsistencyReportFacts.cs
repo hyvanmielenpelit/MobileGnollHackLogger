@@ -15,7 +15,7 @@ using Overseer.Services.ChatConsistency;
 // subject and its control models the peers, lettered A, B, … by control subject key (ordinal). Every
 // free text the analysis wrote is lettered as the comparison scope letters it, so a control's name
 // never reaches the writer. Indexed keys count from 1 in the analysis's own order. Numbers print a
-// minus as U+2212 and keep their unit on the same line with a no-break space (U+00A0): "−7.6 %".
+// minus as U+2212 and keep their unit on the same line with a no-break space (U+00A0): "−7.6%".
 //
 // Fact keys (sorted by key, ordinal, on the sheet):
 //
@@ -711,7 +711,7 @@ public static class BenchmarkChatConsistencyReportFacts
 
     /// <summary>
     /// <c>level.&lt;period&gt;.&lt;measure&gt;</c>: each period's descriptive level of <c>answers</c>, <c>quality</c> (the
-    /// native mean), <c>overallIndex</c> (with its 95 % interval when recorded), <c>timeToFirstAnswerText</c>,
+    /// native mean), <c>overallIndex</c> (with its 95% interval when recorded), <c>timeToFirstAnswerText</c>,
     /// <c>streamingRate</c>, <c>outputTokens</c>, <c>costPerQuestion</c> and <c>failedAnswers</c>; unavailable with a
     /// reason where the analysis has no value.
     /// </summary>
@@ -734,7 +734,7 @@ public static class BenchmarkChatConsistencyReportFacts
                 string text = BenchmarkReportFormat.OneDecimal(index);
                 if (levels.OverallIndexHalfWidth is double half && double.IsFinite(half))
                 {
-                    text += " (95 % interval " + BenchmarkReportFormat.OneDecimal(index - half) + "–" + BenchmarkReportFormat.OneDecimal(index + half)
+                    text += " (95% interval " + BenchmarkReportFormat.OneDecimal(index - half) + "–" + BenchmarkReportFormat.OneDecimal(index + half)
                         + (string.IsNullOrWhiteSpace(levels.OverallIndexIntervalNote) ? string.Empty : ", " + levels.OverallIndexIntervalNote.Trim()) + ")";
                 }
                 facts.Add(p + "overallIndex", index, text);
@@ -771,7 +771,7 @@ public static class BenchmarkChatConsistencyReportFacts
 
     /// <summary>
     /// <c>availability.&lt;period&gt;.&lt;measure&gt;</c> of an analysis whose protocol has P6: each period's
-    /// candidate attempts with their denominator, the provider error rate and its cluster-adjusted 95 % interval,
+    /// candidate attempts with their denominator, the provider error rate and its cluster-adjusted 95% interval,
     /// the unattributed errors and our own failures, the re-runs, and the runs counted. Nothing under Protocol V1;
     /// every measure unavailable for a period that recorded no attempt.
     /// </summary>
@@ -793,11 +793,11 @@ public static class BenchmarkChatConsistencyReportFacts
             facts.Add(p + "attempts", n, BenchmarkReportFormat.Count(n) + (n == 1 ? " valid attempt" : " valid attempts"));
             facts.Add(p + "providerErrors", k, BenchmarkProviderAvailability.FormatCount(k, n));
             facts.Add(p + "providerErrorRate", levels.ProviderErrorRate ?? 0.0,
-                NoBreakPercent(BenchmarkProviderAvailability.FormatRate(k, n, levels.ProviderErrorRateLow, levels.ProviderErrorRateHigh)));
+                BenchmarkProviderAvailability.FormatRate(k, n, levels.ProviderErrorRateLow, levels.ProviderErrorRateHigh));
             if (levels.ProviderErrorRateLow is double low && levels.ProviderErrorRateHigh is double high)
             {
-                facts.Add(p + "providerErrorRateCi95Low", low, NoBreakPercent(BenchmarkProviderAvailability.FormatPercent(low)));
-                facts.Add(p + "providerErrorRateCi95High", high, NoBreakPercent(BenchmarkProviderAvailability.FormatPercent(high)));
+                facts.Add(p + "providerErrorRateCi95Low", low, BenchmarkProviderAvailability.FormatPercent(low));
+                facts.Add(p + "providerErrorRateCi95High", high, BenchmarkProviderAvailability.FormatPercent(high));
             }
             else
             {
@@ -824,9 +824,6 @@ public static class BenchmarkChatConsistencyReportFacts
                   + " counted for provider availability only");
         }
     }
-
-    /// <summary>A shared availability format with the space before each percent sign made the unit space (U+00A0).</summary>
-    private static string NoBreakPercent(string text) => text.Replace(" %", UnitSpace + "%", StringComparison.Ordinal);
 
     private static void Level(BenchmarkReportFacts.FactList facts, string key, double? value, Func<double, string> format, string reason)
     {
@@ -897,8 +894,8 @@ public static class BenchmarkChatConsistencyReportFacts
 
         foreach (var endpoint in protocol.Endpoints)
         {
-            // "±3 index points": the unit kept on the line of its number.
-            string margin = endpoint.MarginText;
+            // "±3 index points": the unit kept on the line of its number. A stored "±15 %" reads "±15%".
+            string margin = endpoint.MarginText.Replace(" %", "%", StringComparison.Ordinal);
             int space = margin.IndexOf(' ', StringComparison.Ordinal);
             facts.Add("protocol.margin." + endpoint.Id, endpoint.Margin, space > 0 ? margin[..space] + UnitSpace + margin[(space + 1)..] : margin);
         }
@@ -965,11 +962,11 @@ public static class BenchmarkChatConsistencyReportFacts
         }
         else
         {
-            foreach (string figure in new[] { "ci95", "ci95Low", "ci95High" }) facts.Unavailable(p + figure, "No 95 % interval was computed.");
+            foreach (string figure in new[] { "ci95", "ci95Low", "ci95High" }) facts.Unavailable(p + figure, "No 95% interval was computed.");
         }
 
         if (e.Ci90 is { } ci90 && double.IsFinite(ci90.Lower) && double.IsFinite(ci90.Upper)) facts.Text(p + "ci90", interval(ci90));
-        else facts.Unavailable(p + "ci90", "No 90 % interval was computed.");
+        else facts.Unavailable(p + "ci90", "No 90% interval was computed.");
 
         AddP(facts, p + "p", e.PValue, "No p-value was computed.");
         AddP(facts, p + "adjustedP", e.AdjustedPValue, "No adjusted p-value was computed.");
@@ -1681,9 +1678,14 @@ public static class BenchmarkChatConsistencyReportFacts
     private static string WithMinus(string number)
         => number.StartsWith('-') ? Minus + number[1..] : number;
 
-    /// <summary>The number and its unit joined by a no-break space; the number alone without a unit.</summary>
+    /// <summary>
+    /// The number and its unit joined by a no-break space, or a percent sign with no space; the number alone
+    /// without a unit.
+    /// </summary>
     private static string WithUnit(string number, string? unit)
-        => string.IsNullOrWhiteSpace(unit) ? number : number + UnitSpace + unit.Trim();
+        => string.IsNullOrWhiteSpace(unit) ? number
+            : unit.Trim() == "%" ? number + "%"
+            : number + UnitSpace + unit.Trim();
 
     private static string Seconds(double milliseconds) => WithUnit(BenchmarkReportFormat.OneDecimal(milliseconds / 1000.0), "s");
 

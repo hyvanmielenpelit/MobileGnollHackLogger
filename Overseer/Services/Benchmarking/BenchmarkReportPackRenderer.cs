@@ -109,22 +109,23 @@ public static class BenchmarkReportJson
 /// </summary>
 public static partial class BenchmarkReportPackRenderer
 {
-    public const int ReportFormatVersion = 13;
+    public const int ReportFormatVersion = 14;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
     /// version 16 its Root Cause Analysis opens with a summary that answers the research questions, its
     /// writer output carries an answer slot per question, and its detail is in lettered appendices. From
     /// version 17 each question is answered only by the hypotheses that answer it, the answers start with
-    /// the reason, and a model is named only through its token.
+    /// the reason, and a model is named only through its token. From version 18 the Root Cause Analysis
+    /// explains its terms (a Key terms section and first-use glosses) and its writer is asked for plain language.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 17;
+    public const int ComparisonReportFormatVersion = 18;
 
     /// <summary>The comparison format version whose Root Cause Analysis writer output first carries the answer slots.</summary>
     private const int AnswerSlotsFormatVersion = 16;
 
     /// <summary>The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.</summary>
-    public const int ChatConsistencyReportFormatVersion = 3;
+    public const int ChatConsistencyReportFormatVersion = 4;
 
     /// <summary>The format version a document of <paramref name="scope"/> is written and rendered under now.</summary>
     public static int CurrentFormatVersion(BenchmarkReportScope scope) => scope switch
@@ -135,11 +136,8 @@ public static partial class BenchmarkReportPackRenderer
     };
 
     private const string PairedDifferenceNote = "Paired difference: mean per-question difference, subject minus peer, over the questions "
-        + "both answered; 95 % paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several "
+        + "both answered; 95% paired-bootstrap interval. It reflects question sampling only, is not adjusted for comparing several "
         + "models, and is not a significance test.";
-
-    /// <summary>A fact sheet section's text when the fact sheet is left out.</summary>
-    private const string FactSheetElsewhere = "The fact sheet is in the Markdown copy of this document.";
 
     /// <summary>A question evidence line lists at most this many questions.</summary>
     private const int EvidenceQuestionLimit = 6;
@@ -231,6 +229,20 @@ public static partial class BenchmarkReportPackRenderer
     /// figures by <see cref="BenchmarkReportChartPlacement"/>'s current table instead of its legacy one.
     /// </summary>
     public static string Render(BenchmarkReportDocument document, BenchmarkReportRenderOptions options, bool chartLayoutPresent)
+        => RenderDocument(document, options, chartLayoutPresent, out _);
+
+    /// <summary>
+    /// As <see cref="Render(BenchmarkReportDocument, BenchmarkReportRenderOptions)"/>; <paramref name="termsUsed"/> receives
+    /// the glossary keys the document used, in glossary order: a Root Cause Analysis' terms, none for another document.
+    /// </summary>
+    internal static string Render(BenchmarkReportDocument document, BenchmarkReportRenderOptions options, out IReadOnlyList<string> termsUsed)
+    {
+        string text = RenderDocument(document, options, chartLayoutPresent: false, out var ctx);
+        termsUsed = RootCause.RootCauseGlossary.Terms.Select(t => t.Key).Where(ctx.UsedTerms.Contains).ToList();
+        return text;
+    }
+
+    private static string RenderDocument(BenchmarkReportDocument document, BenchmarkReportRenderOptions options, bool chartLayoutPresent, out Context ctx)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(options);
@@ -241,7 +253,7 @@ public static partial class BenchmarkReportPackRenderer
                 nameof(options));
         }
 
-        var ctx = new Context
+        ctx = new Context
         {
             Document = document,
             Options = options,
@@ -543,7 +555,7 @@ public static partial class BenchmarkReportPackRenderer
             scored += " questions";
         }
 
-        Line(sb, "The 95 % interval is " + D(ctx, "quality.interval") + ", a span of " + D(ctx, "quality.intervalSpan")
+        Line(sb, "The 95% interval is " + D(ctx, "quality.interval") + ", a span of " + D(ctx, "quality.intervalSpan")
             + ", and rests on " + scored + " with a scored answer.");
         Line(sb);
     }
@@ -576,8 +588,8 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// The Key figures bullet of the availability facts under <paramref name="prefix"/> (empty, or a
-    /// model's <c>model.A.</c>): <c>0.81 % of attempts failed at the provider (12 of 1,480 attempts; 95 % CI
-    /// 0.46–1.4 %), plus 3 re-runs (2 for provider errors).</c>; the reason on a pool not recorded; null when
+    /// model's <c>model.A.</c>): <c>0.81% of attempts failed at the provider (12 of 1,480 attempts; 95% CI
+    /// 0.46–1.4%), plus 3 re-runs (2 for provider errors).</c>; the reason on a pool not recorded; null when
     /// the sheet carries no availability facts.
     /// </summary>
     private static string? AvailabilityBullet(Context ctx, string prefix)
@@ -614,7 +626,7 @@ public static partial class BenchmarkReportPackRenderer
         return text;
     }
 
-    /// <summary><c>95 % CI 0.46–1.4 %</c> from the values of a rate's two bound facts; empty when either is missing.</summary>
+    /// <summary><c>95% CI 0.46–1.4%</c> from the values of a rate's two bound facts; empty when either is missing.</summary>
     private static string AvailabilityInterval(Context ctx, string rateKey)
         => BenchmarkProviderAvailability.FormatInterval(NumberOf(Fact(ctx, rateKey + "Ci95Low")), NumberOf(Fact(ctx, rateKey + "Ci95High")));
 
@@ -942,9 +954,7 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb, "- **Model under test:** " + sheet.SubjectLabel + " (" + sheet.SubjectProvider + ", " + sheet.SubjectModelId
             + "), thinking level " + (sheet.SubjectThinkingLevel ?? "not set") + "; " + Inv(runs)
             + (ctx.Battery ? (runs == 1 ? " member run." : " member runs.") : (runs == 1 ? " run." : " runs.")));
-        Line(sb, "- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted "
-            + D(ctx, "scoring.weights") + ". Each dimension is graded on behaviorally anchored levels scored "
-            + D(ctx, "scoring.levels") + ". A critical error caps the answer's quality at " + D(ctx, "scoring.criticalErrorCap") + ".");
+        Line(sb, GradingLine(ctx, D(ctx, "scoring.weights"), D(ctx, "scoring.levels"), D(ctx, "scoring.criticalErrorCap")));
 
         if (sheet.Graders.Count == 0)
         {
@@ -963,10 +973,7 @@ public static partial class BenchmarkReportPackRenderer
             }
         }
 
-        Line(sb, "- **Formulas:** answer quality is the weighted geometric mean of the four dimension scores, capped by a "
-            + "critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the "
-            + "difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with "
-            + "tool time excluded. Cost per question is the model under test's spend divided by the questions asked.");
+        Line(sb, FormulasLine(ctx, "Cost per question is the model under test's spend divided by the questions asked."));
         if (ctx.Battery)
         {
             Line(sb, "- **Battery composite:** the Overall Index is the sum over the suites of each suite's weight times its "
@@ -2246,11 +2253,17 @@ public static partial class BenchmarkReportPackRenderer
 
     private static string RankCell(int? rank) => rank.HasValue ? Inv(rank.Value) : NoValue;
 
-    /// <summary>An entry's quality rank cell: <c>joint 1</c> where its interval overlaps a neighbor's, else <see cref="RankCell"/>.</summary>
+    /// <summary>
+    /// An entry's quality rank cell: where its interval overlaps a neighbor's, the span of places its tie group
+    /// covers, <c>2–9 (tied)</c>; else <see cref="RankCell"/>.
+    /// </summary>
     private static string QualityRankCell(Context ctx, BenchmarkReportEntryFigures entry)
-        => QualityJointRanks(ctx.Sheet).TryGetValue(entry.EntryKey, out var joint) && joint.Joint
-            ? "joint " + Inv(joint.Rank)
-            : RankCell(entry.QualityRank);
+    {
+        if (!QualityJointRanks(ctx.Sheet).TryGetValue(entry.EntryKey, out var tied) || !tied.Joint) return RankCell(entry.QualityRank);
+
+        UseTerms(ctx, RootCause.RootCauseGlossary.TiedRank);
+        return BenchmarkReportFacts.TiedRankSpan(tied) + " (tied)";
+    }
 
     /// <summary>
     /// The joint quality ranks of the sheet's entries with an Intelligence Index
@@ -2268,8 +2281,8 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// <c>joint 1st of 2 (intervals overlap)</c> for the entry of a <c>quality.rank</c> or
-    /// <c>peer.X.quality.rank</c> fact whose rank is joint; null otherwise, and on a sheet without entries.
+    /// <see cref="BenchmarkReportFacts.JointRankText"/> for the entry of a <c>quality.rank</c> or
+    /// <c>peer.X.quality.rank</c> fact whose rank is tied; null otherwise, and on a sheet without entries.
     /// </summary>
     private static string? JointQualityRank(Context ctx, string key)
     {
@@ -2356,7 +2369,7 @@ public static partial class BenchmarkReportPackRenderer
     private static string D(Context ctx, string key) => Fact(ctx, key) is { } fact ? Shown(ctx, fact) : BenchmarkReportFacts.NotAvailable;
 
     /// <summary>
-    /// A fact's display as this document prints it: <see cref="DisplayOf"/>; a joint quality rank as
+    /// A fact's display as this document prints it: <see cref="DisplayOf"/>; a tied quality rank as
     /// <see cref="JointQualityRank"/> words it; and in a named copy the peers of
     /// <c>quality.intervalOverlap</c> and <c>panel.judgeDependentPairs</c> by name instead of by letter.
     /// </summary>
@@ -2389,11 +2402,11 @@ public static partial class BenchmarkReportPackRenderer
 
         var overlapping = flags.Where(f => BenchmarkReportPackPrompt.IsTrue(f.Fact!)).Select(f => f.Peer).ToList();
         if (overlapping.Count == 0) return BenchmarkReportFacts.OverlapSentence(Array.Empty<string>());
-        if (overlapping.Count == peers.Count && peers.Count > 1) return "its 95 % interval overlaps every peer's";
+        if (overlapping.Count == peers.Count && peers.Count > 1) return "its 95% interval overlaps every peer's";
 
         return overlapping.Count == 1
-            ? "its 95 % interval overlaps that of " + overlapping[0].Label
-            : "its 95 % interval overlaps those of " + BenchmarkReportFormat.LetterList(overlapping.Select(p => p.Label).ToList());
+            ? "its 95% interval overlaps that of " + overlapping[0].Label
+            : "its 95% interval overlaps those of " + BenchmarkReportFormat.LetterList(overlapping.Select(p => p.Label).ToList());
     }
 
     /// <summary>
@@ -2656,6 +2669,15 @@ public static partial class BenchmarkReportPackRenderer
 
         /// <summary>The sheet is a battery result's.</summary>
         public bool Battery => Sheet.Battery != null;
+
+        /// <summary>The document explains its terms (<see cref="RootCause.RootCauseGlossary"/>): a Root Cause Analysis does, no other document does.</summary>
+        public bool TracksTerms => Document.Audience == BenchmarkReportAudience.RootCauseAnalysis && !ChatConsistency;
+
+        /// <summary>The glossary keys of the terms the document uses so far, for its Key terms section and Appendix H.</summary>
+        public HashSet<string> UsedTerms { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>The glossary keys whose gloss the template text has printed: each term is glossed once, at its first use.</summary>
+        public HashSet<string> GlossedTerms { get; } = new(StringComparer.Ordinal);
 
         private Dictionary<int, string>? _labels;
         private Dictionary<string, int>? _numbers;

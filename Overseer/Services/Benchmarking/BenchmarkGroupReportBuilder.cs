@@ -374,7 +374,7 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine();
         sb.AppendLine("They are reported separately before they are combined because they answer different questions and behave differently as runs are added. Only one of them can be bought down with more runs.");
         sb.AppendLine();
-        sb.AppendLine("| Component | Question it answers | SD | SE | 95 % half-width | Shrinks with *R*? |");
+        sb.AppendLine("| Component | Question it answers | SD | SE | 95% half-width | Shrinks with *R*? |");
         sb.AppendLine("|---|---|---:|---:|---:|---|");
         sb.AppendLine(
             "| **Reproducibility** | *Would a re-run move this?* " +
@@ -402,7 +402,7 @@ public static class BenchmarkGroupReportBuilder
                 ? Inv(ix.ReproducibilitySdUpper.Value / sd, "F1")
                 : "—";
 
-            sb.AppendLine($"**The reproducibility SD is itself an estimate, and it carries its own interval:** SD {Inv(sd)}, 95 % interval on σ [{Inv(ix.ReproducibilitySdLower)}, {Inv(ix.ReproducibilitySdUpper)}], from the χ²({ix.RunCount - 1}) distribution.");
+            sb.AppendLine($"**The reproducibility SD is itself an estimate, and it carries its own interval:** SD {Inv(sd)}, 95% interval on σ [{Inv(ix.ReproducibilitySdLower)}, {Inv(ix.ReproducibilitySdUpper)}], from the χ²({ix.RunCount - 1}) distribution.");
             sb.AppendLine();
             sb.AppendLine($"At *R* = {ix.RunCount} the upper bound is {factor} × the point estimate, so **two groups' SDs are not comparable point estimates.** A set reporting an SD ten times another's can have an interval that overlaps it completely: the instrument did not become ten times less reproducible, and a reader comparing the two bare numbers across reports will conclude that it did. Compare the intervals, or add runs until the SD is worth comparing.");
             sb.AppendLine();
@@ -414,7 +414,7 @@ public static class BenchmarkGroupReportBuilder
             sb.AppendLine();
         }
 
-        sb.AppendLine($"- **Combined 95 % interval:** {Inv(ix.PointEstimate, "F2")} ± {Inv(ix.CombinedHalfWidth)}" +
+        sb.AppendLine($"- **Combined 95% interval:** {Inv(ix.PointEstimate, "F2")} ± {Inv(ix.CombinedHalfWidth)}" +
                       (ix.CombinedLower.HasValue && ix.CombinedUpper.HasValue
                           ? $"  →  [{Inv(ix.CombinedLower)}, {Inv(ix.CombinedUpper)}]"
                           : string.Empty));
@@ -456,7 +456,7 @@ public static class BenchmarkGroupReportBuilder
 
         sb.AppendLine("Each dimension's per-run mean, pooled across the group. These means are **unweighted**, while the Intelligence Index is difficulty-weighted — there are no per-dimension difficulty weights to apply, so the two are not expected to agree.");
         sb.AppendLine();
-        sb.AppendLine("| Dimension | Mean | SD | 95 % half-width | Min | Max | Per-run means | Lowest items |");
+        sb.AppendLine("| Dimension | Mean | SD | 95% half-width | Min | Max | Per-run means | Lowest items |");
         sb.AppendLine("|---|---:|---:|---:|---:|---:|---|---|");
 
         foreach (var dim in scored)
@@ -514,7 +514,7 @@ public static class BenchmarkGroupReportBuilder
         sb.AppendLine();
         sb.AppendLine("Quality score per item across the group's runs. *CV* is SD / mean; *CE rate* is the share of runs in which the assessor flagged a critical error on this item. An interval marked † was truncated at the score bound.");
         sb.AppendLine();
-        sb.AppendLine("| Q | Runs | Per-run scores | Mean | Median | SD | Min | Max | IQR | CV | 95 % CI | CE rate | Stability | Question |");
+        sb.AppendLine("| Q | Runs | Per-run scores | Mean | Median | SD | Min | Max | IQR | CV | 95% CI | CE rate | Stability | Question |");
         sb.AppendLine("|---:|---:|---|---:|---:|---:|---:|---:|---:|---:|---|---:|---|---|");
 
         foreach (var item in result.Items.OrderBy(i => i.OrderIndex))
@@ -552,9 +552,9 @@ public static class BenchmarkGroupReportBuilder
                 $"| {Inv(item.Min, "0.#")} " +
                 $"| {Inv(item.Max, "0.#")} " +
                 $"| {Inv(item.InterquartileRange, "F1")} " +
-                $"| {(item.CoefficientOfVariation.HasValue ? Inv(item.CoefficientOfVariation.Value * 100.0, "F1") + " %" : "—")} " +
+                $"| {(item.CoefficientOfVariation.HasValue ? Inv(item.CoefficientOfVariation.Value * 100.0, "F1") + "%" : "—")} " +
                 $"| {ci} " +
-                $"| {Inv(item.CriticalErrorRate * 100.0, "F0")} % " +
+                $"| {Inv(item.CriticalErrorRate * 100.0, "F0")}% " +
                 $"| {stability} " +
                 $"| {Excerpt(item.QuestionText)} |");
         }
@@ -733,7 +733,7 @@ public static class BenchmarkGroupReportBuilder
                 cost.MaxCostByRole.TryGetValue(kv.Key, out double max);
 
                 sb.AppendLine($"| {kv.Key} | {Money(kv.Value)} | {Money(mean)} | {Money(sd)} " +
-                              $"| {Money(min)} | {Money(max)} | {Inv(share, "F0")} % |");
+                              $"| {Money(min)} | {Money(max)} | {Inv(share, "F0")}% |");
             }
 
             sb.AppendLine();
@@ -775,7 +775,7 @@ public static class BenchmarkGroupReportBuilder
                       (usage.InputOutputRatio.HasValue ? $" — a ratio of {Inv(usage.InputOutputRatio, "F1")} : 1" : string.Empty));
         if (usage.CacheReadSharePercentage.HasValue)
         {
-            sb.AppendLine($"- **Prompt cache reads:** {Tokens(usage.TotalCacheReadTokens)} — {Inv(usage.CacheReadSharePercentage, "F1")} % of input. The segmented system prompt is what makes that share possible, and anything that changes its frozen segment invalidates it.");
+            sb.AppendLine($"- **Prompt cache reads:** {Tokens(usage.TotalCacheReadTokens)} — {Inv(usage.CacheReadSharePercentage, "F1")}% of input. The segmented system prompt is what makes that share possible, and anything that changes its frozen segment invalidates it.");
         }
 
         if (usage.PerRunInputTokens.Count > 0)
@@ -800,7 +800,7 @@ public static class BenchmarkGroupReportBuilder
             foreach (var kv in usage.ToolCallsByFamily.OrderByDescending(k => k.Value))
             {
                 usage.ToolFamilyShares.TryGetValue(kv.Key, out double share);
-                sb.AppendLine($"| {kv.Key} | {kv.Value} | {Inv(share, "F1")} % |");
+                sb.AppendLine($"| {kv.Key} | {kv.Value} | {Inv(share, "F1")}% |");
             }
 
             sb.AppendLine();
@@ -890,7 +890,7 @@ public static class BenchmarkGroupReportBuilder
         }
 
         sb.AppendLine(usage.ClaimsChecked > 0
-            ? $"- **Indeterminate share:** {Inv(usage.ClaimsIndeterminate * 100.0 / usage.ClaimsChecked, "F1")} % — {usage.ClaimsIndeterminate} of {usage.ClaimsChecked}. A claim the verifier could not decide cost what a decided one cost and settled nothing, so this share is the part of the spend that bought no verdict."
+            ? $"- **Indeterminate share:** {Inv(usage.ClaimsIndeterminate * 100.0 / usage.ClaimsChecked, "F1")}% — {usage.ClaimsIndeterminate} of {usage.ClaimsChecked}. A claim the verifier could not decide cost what a decided one cost and settled nothing, so this share is the part of the spend that bought no verdict."
             : "- **Indeterminate share:** no claims were checked, so there is no share to report.");
         sb.AppendLine();
     }
@@ -915,7 +915,7 @@ public static class BenchmarkGroupReportBuilder
 
         sb.AppendLine($"- **Mean paired difference:** {Inv(cmp.MeanDifference, "F2")} points" +
                       (cmp.DifferenceConfidenceLower.HasValue && cmp.DifferenceConfidenceUpper.HasValue
-                          ? $" (95 % CI [{Inv(cmp.DifferenceConfidenceLower, "F2")}, {Inv(cmp.DifferenceConfidenceUpper, "F2")}])"
+                          ? $" (95% CI [{Inv(cmp.DifferenceConfidenceLower, "F2")}, {Inv(cmp.DifferenceConfidenceUpper, "F2")}])"
                           : string.Empty));
         sb.AppendLine($"- **SD of the differences:** {Inv(cmp.DifferenceStandardDeviation, "F2")}");
         sb.AppendLine($"- **Cohen's *d*z (effect size):** {Inv(cmp.CohensDz, "F3")} — the paired effect size: mean difference over the SD of those differences, not a pooled between-group *d*, which would describe a comparison nobody made here.");

@@ -7,7 +7,7 @@ using System.Linq;
 /// <summary>Spearman's rank correlation with its Fisher-z interval.</summary>
 public sealed record RootCauseSpearman(int Count, double Rho, double Lower, double Upper)
 {
-    /// <summary>The 95 % interval lies on one side of zero.</summary>
+    /// <summary>The 95% interval lies on one side of zero.</summary>
     public bool ExcludesZero => Lower > 0 || Upper < 0;
 }
 
@@ -43,7 +43,7 @@ public static class RootCauseStatistics
 
     /// <summary>
     /// Spearman's ρ of <paramref name="x"/> and <paramref name="y"/> (paired, average ranks for ties), with
-    /// the 95 % Fisher-z interval <c>tanh(atanh ρ ± 1.96 / √(n − 3))</c>. Null below
+    /// the 95% Fisher-z interval <c>tanh(atanh ρ ± 1.96 / √(n − 3))</c>. Null below
     /// <see cref="MinSpearmanCount"/> pairs or when either side has no spread. Used only across one
     /// model's questions, never across models.
     /// </summary>
@@ -113,11 +113,11 @@ public static class RootCauseStatistics
     /// <summary>Holm's step-down adjustment, results in input order (<see cref="BenchmarkBatteryStatistics.HolmAdjust"/>).</summary>
     public static IReadOnlyList<double> Holm(IReadOnlyList<double> pValues) => BenchmarkBatteryStatistics.HolmAdjust(pValues);
 
-    /// <summary>The 95 % Wilson interval of <paramref name="k"/> in <paramref name="n"/> (<see cref="BenchmarkProportionInterval.Wilson95"/>).</summary>
+    /// <summary>The 95% Wilson interval of <paramref name="k"/> in <paramref name="n"/> (<see cref="BenchmarkProportionInterval.Wilson95"/>).</summary>
     public static (double Low, double High)? Wilson(int k, int n) => BenchmarkProportionInterval.Wilson95(k, n);
 
     /// <summary>
-    /// The 95 % percentile interval of <paramref name="statistic"/> over <see cref="Resamples"/> resamples
+    /// The 95% percentile interval of <paramref name="statistic"/> over <see cref="Resamples"/> resamples
     /// of <paramref name="count"/> indices with replacement, drawn from <c>new Random(Seed)</c>. A resample
     /// for which the statistic is null or not finite is left out; null when fewer than half remain or
     /// <paramref name="count"/> is zero.
@@ -173,7 +173,7 @@ public static class RootCauseStatistics
     private static List<RootCauseInterval?> BootstrapValues(int count, int width, Func<int[], double[]?> statistics)
         => Bootstrap(count, width, indices => statistics(indices)?.Select(v => (double?)v).ToArray()).ToList();
 
-    /// <summary>The mean of a paired-bootstrap resample of <paramref name="values"/>, with its 95 % percentile interval.</summary>
+    /// <summary>The mean of a paired-bootstrap resample of <paramref name="values"/>, with its 95% percentile interval.</summary>
     public static (double Mean, RootCauseInterval? Interval) MeanWithInterval(IReadOnlyList<double> values)
     {
         ArgumentNullException.ThrowIfNull(values);

@@ -105,7 +105,7 @@ public class BenchmarkComparisonModelProfileTests
         Assert.Equal("1 of 4 answers", Fact(facts, "model.A.profile.outcome.correct").Display);
         var wrong = Fact(facts, "model.A.profile.outcome.wrongInsteadOfAbstaining");
         Assert.True(wrong.Available);
-        Assert.Equal("50 % (1 of the 2 answers that were incorrect or not attempted)", wrong.Display);
+        Assert.Equal("50% (1 of the 2 answers that were incorrect or not attempted)", wrong.Display);
     }
 
     [Fact]

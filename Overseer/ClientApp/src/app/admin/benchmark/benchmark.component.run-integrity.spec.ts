@@ -185,7 +185,7 @@ describe('AdminBenchmarkComponent', () => {
       const text = integrityPanel().textContent!.replace(/\s+/g, ' ');
       expect(text).not.toContain('No integrity notices for this run.');
       expect(integrityPanel().querySelector('app-provider-availability .pa-summary')?.textContent?.replace(/\s+/g, ' ').trim())
-        .toBe('Provider errors observed: 0 % (0 of 400 attempts; 95 % CI 0–0.95 %).');
+        .toBe('Provider errors observed: 0% (0 of 400 attempts; 95% CI 0–0.95%).');
     });
 
     it('should open a replaced run from the Integrity tab as the dialog opens runs', () => {

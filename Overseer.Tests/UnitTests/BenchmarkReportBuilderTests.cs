@@ -4593,11 +4593,11 @@ public class BenchmarkReportBuilderTests
         var report = BenchmarkReportBuilder.BuildMarkdownReport(RecordedRunWithFailures(), availability: availability).Replace("\r\n", "\n");
 
         Assert.Contains("- **Terminal failures:** 3 (provider 1 · unattributed 1 · our side 1)\n"
-            + "- **Provider availability:** 0.81 % (12 of 1,480 attempts; 95 % CI 0.46–1.4 %) of the candidate's attempts failed at the provider", report);
-        Assert.Contains("  - **Upper bound including unattributed errors:** 1.0 % (15 of 1,480 attempts; 95 % CI 0.60–1.7 %) — 3 unattributed\n", report);
+            + "- **Provider availability:** 0.81% (12 of 1,480 attempts; 95% CI 0.46–1.4%) of the candidate's attempts failed at the provider", report);
+        Assert.Contains("  - **Upper bound including unattributed errors:** 1.0% (15 of 1,480 attempts; 95% CI 0.60–1.7%) — 3 unattributed\n", report);
         Assert.Contains("  - **By class:** overloaded 7 · server errors 4 · timeouts 0 · stream failures 1 · rate limited, unattributed 1 · transport, unattributed 2\n", report);
         Assert.Contains("  - **Our-side failures (excluded):** 5, of them rate limited by our own limits 2\n", report);
-        Assert.Contains("  - **First-attempt success:** 98 % of 400 candidate calls\n", report);
+        Assert.Contains("  - **First-attempt success:** 98% of 400 candidate calls\n", report);
         Assert.Contains("  - **Questions lost to provider errors:** 1\n", report);
         Assert.Contains("  - **Re-runs needed:** 3 re-runs (2 for provider errors), including 1 replaced run\n", report);
         Assert.Contains("  - **Grader attempts (information only):** 2 provider errors in 900 valid attempts\n", report);
@@ -6795,7 +6795,7 @@ public class BenchmarkReportBuilderTests
         var run = Method13PanelRun();
         string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        // Confirmed: Q2 (agreed) and Q3 (upheld), 2 of the 6 classified answers; Wilson 9.7–70.0 %.
+        // Confirmed: Q2 (agreed) and Q3 (upheld), 2 of the 6 classified answers; Wilson 9.7–70.0%.
         Assert.Contains(
             "- **Critical Errors:** 2 confirmed (Q2, both panel members; Q3, upheld by the claim verifier) · rate 33% (95% CI 10–70%, 2 of 6) · 1 split(s) unresolved, averaged (Q5) · 1 overturned by the claim verifier (Q4)" + Environment.NewLine,
             report);
@@ -6873,7 +6873,7 @@ public class BenchmarkReportBuilderTests
 
         string report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        // 1 of 4 classified; Wilson 4.6–69.9 %.
+        // 1 of 4 classified; Wilson 4.6–69.9%.
         Assert.Contains("- **Critical Errors:** 1 confirmed (Q2, assessor) · rate 25% (95% CI 5–70%, 1 of 4)" + Environment.NewLine, report);
         Assert.Contains("- **Outcomes:** 1 correct, 0 partial, 1 incorrect, 2 not attempted, 0 without an answer · correct when attempted 50% (1 of 2) · wrong instead of abstaining 33% (1 of 3)" + Environment.NewLine, report);
         Assert.Contains("| Critical errors | 1 confirmed (Q2) |", AtAGlanceOf(report));
@@ -7052,7 +7052,7 @@ public class BenchmarkReportBuilderTests
     /// A call telemetry run of three answers, two with candidate rows. Q1's net time to first answer
     /// text is 4 + (1 + 1 + 0.5) + 1.5 − (3 + 1) = 4.0 s and its rate (600 − 200) × 1280 / 1600 / 4 s =
     /// 80 tokens/s; Q2's is (5 + 2 + 1) + 2 − (5 + 2) = 3.0 s and 1000 × 0.8 / 4 s = 200 tokens/s. Own
-    /// waits are 11 s of 28 s model time, 39 %. Q3 carries no rows.
+    /// waits are 11 s of 28 s model time, 39%. Q3 carries no rows.
     /// </summary>
     private static BenchmarkRun TimingDecompositionRun(string provider = "OpenAI")
     {
@@ -7146,7 +7146,7 @@ public class BenchmarkReportBuilderTests
         string section = string.Join(Environment.NewLine,
             "- **Timing Decomposition:** call telemetry version 1, recorded on 2 of 3 answers",
             "  - **Time to First Answer Text:** Median (P50) = 3.5 s, P90 = 3.9 s *(from the start of the turn to the final call's first visible output, net of our own waits)*",
-            "  - **Answer Streaming Rate:** Median 140.0 tokens/s *(visible output over the last 80 % of the final call's deltas)*",
+            "  - **Answer Streaming Rate:** Median 140.0 tokens/s *(visible output over the last 80% of the final call's deltas)*",
             "  - **Own Waits:** permit wait 8.0 s, retry backoff 3.0 s; 3 retried attempt(s); HTTP 429 ×2, HTTP 5xx ×1",
             "  - **Served Model IDs:** `gpt-5.6-luna-2026-08-01` ×2, `gpt-5.6-luna-2026-09-01` ×1",
             "  - **Served Tiers:** `default` ×2, `priority` ×1",
@@ -7203,7 +7203,7 @@ public class BenchmarkReportBuilderTests
 
         var report = BenchmarkReportBuilder.BuildMarkdownReport(run);
 
-        Assert.Contains("  - **Answer Streaming Rate:** Median 80.0 tokens/s over 1 of 2 answers; not measurable on 1 (the visible text arrived in one burst after thinking) *(visible output over the last 80 % of the final call's deltas)*" + Environment.NewLine, report);
+        Assert.Contains("  - **Answer Streaming Rate:** Median 80.0 tokens/s over 1 of 2 answers; not measurable on 1 (the visible text arrived in one burst after thinking) *(visible output over the last 80% of the final call's deltas)*" + Environment.NewLine, report);
     }
 
     [Fact]

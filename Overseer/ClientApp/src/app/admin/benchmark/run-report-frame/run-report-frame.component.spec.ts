@@ -294,6 +294,10 @@ describe('RunReportFrameComponent in sidebar layout', () => {
     expect(parseFloat(tracks()[0])).toBeLessThanOrEqual(content * 0.4 + 1);
   });
 
+  it('renders the header by default', () => {
+    expect(q('.rrf-header .rrf-identity .t-title').textContent).toBe('Report packs');
+  });
+
   it('emits the committed width after a keyboard resize, and not before', () => {
     setWidth(1200);
     const resizer = q('app-pane-resizer.rrf-resizer');
@@ -309,5 +313,55 @@ describe('RunReportFrameComponent in sidebar layout', () => {
     expect(tracks()[0]).toBe('400px');
     expect(resizer.getAttribute('aria-valuenow')).toBe('400');
     expect(Number(resizer.getAttribute('aria-valuemax'))).toBeLessThanOrEqual(512);
+  });
+});
+
+@Component({
+  standalone: true,
+  imports: [RunReportFrameComponent],
+  changeDetection: ChangeDetectionStrategy.Eager,
+  template: `
+    <div class="shell" [style.width.px]="width" style="height: 640px; display: flex; flex-direction: column;">
+      <app-run-report-frame layout="sidebar" sidebarLabel="New report pack" mainLabel="Report pack progress"
+                            [showHeader]="false">
+        <div runReportSidebar class="t-sidebar"><button type="button" class="t-generate">Generate</button></div>
+        <div runReportMain class="t-main">Progress</div>
+      </app-run-report-frame>
+    </div>
+  `
+})
+class HeaderlessHostComponent {
+  width = 1200;
+}
+
+describe('RunReportFrameComponent without a header', () => {
+  let fixture: ComponentFixture<HeaderlessHostComponent>;
+  let host: HTMLElement;
+
+  const q = (selector: string): HTMLElement => host.querySelector<HTMLElement>(selector)!;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({ imports: [HeaderlessHostComponent] }).compileComponents();
+    fixture = TestBed.createComponent(HeaderlessHostComponent);
+    host = fixture.nativeElement as HTMLElement;
+    fixture.detectChanges();
+  });
+
+  it('renders no header, and still the sidebar and the main column', () => {
+    expect(host.querySelector('.rrf-header')).toBeNull();
+    expect(q('aside.rrf-sidebar .t-sidebar')).not.toBeNull();
+    expect(q('section.rrf-main .t-main').textContent).toBe('Progress');
+  });
+
+  it('puts the columns at the top of the frame, side by side from 60rem and stacked below it', () => {
+    const tracks = (): number =>
+      getComputedStyle(q('.rrf-columns')).gridTemplateColumns.split(' ').filter(part => part !== '').length;
+    expect(tracks()).toBe(3);
+    // Nothing above the body but the empty tab row, which takes no space.
+    expect(q('.rrf-top').getBoundingClientRect().height).toBe(0);
+
+    fixture.componentInstance.width = 700;
+    fixture.detectChanges();
+    expect(tracks()).toBe(1);
   });
 });

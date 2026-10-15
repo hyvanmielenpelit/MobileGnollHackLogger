@@ -95,7 +95,7 @@ public static class RootCauseKnownFacts
             else if (result.ControlDeficitMean is double mean)
             {
                 string interval = result.ControlDeficitLower is double lo && result.ControlDeficitUpper is double hi
-                    ? " (95 % interval " + BenchmarkReportFormat.SignedOneDecimal(lo) + " to " + BenchmarkReportFormat.SignedOneDecimal(hi) + ")"
+                    ? " (95% interval " + BenchmarkReportFormat.SignedOneDecimal(lo) + " to " + BenchmarkReportFormat.SignedOneDecimal(hi) + ")"
                     : string.Empty;
                 Add(KindTest, ctx.Name(ctx.Models[0].Token) + "'s mean score differs by " + BenchmarkReportFormat.SignedOneDecimal(mean) + " points" + interval
                     + " from the mean of " + Inv(result.Controls.Count) + (result.Controls.Count == 1 ? " control" : " controls") + " on "

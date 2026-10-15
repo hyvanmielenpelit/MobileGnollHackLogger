@@ -507,12 +507,12 @@ describe('AdminBenchmarkComponent', () => {
 
         const card = figureCard('provider-errors') as HTMLElement;
         expect(card.querySelector('.score-label')?.textContent?.trim()).toBe('Provider Errors');
-        expect(figureValue('provider-errors')).toBe('0.81 %');
+        expect(figureValue('provider-errors')).toBe('0.81%');
         expect(card.querySelector('.score-subvalue')?.classList).not.toContain('text-muted');
         expect(card.querySelector('.score-subvalue')?.className).not.toMatch(/badge-score-/);
         expect(figureNotes('provider-errors')).toEqual([
           '12 of 1,480 attempts',
-          '95 % CI 0.44–1.5 % · 3 unattributed · 2 re-runs (1 provider)'
+          '95% CI 0.44–1.5% · 3 unattributed · 2 re-runs (1 provider)'
         ]);
       });
 
@@ -526,8 +526,8 @@ describe('AdminBenchmarkComponent', () => {
         });
         fixture.detectChanges();
 
-        expect(figureValue('provider-errors')).toBe('3.0 %');
-        expect(figureNotes('provider-errors')).toEqual(['3 of 99 attempts', '95 % CI 1.0–8.5 % · 0 re-runs', 'few attempts']);
+        expect(figureValue('provider-errors')).toBe('3.0%');
+        expect(figureNotes('provider-errors')).toEqual(['3 of 99 attempts', '95% CI 1.0–8.5% · 0 re-runs', 'few attempts']);
       });
 
       it('should read Not recorded on a run before harness 56', () => {

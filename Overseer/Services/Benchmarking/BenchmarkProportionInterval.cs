@@ -5,11 +5,11 @@ using System;
 /// <summary>Confidence intervals for a binomial proportion.</summary>
 public static class BenchmarkProportionInterval
 {
-    /// <summary>The two-sided 95 % normal quantile.</summary>
+    /// <summary>The two-sided 95% normal quantile.</summary>
     public const double Z95 = 1.959964;
 
     /// <summary>
-    /// The 95 % Wilson score interval for <paramref name="k"/> successes in <paramref name="n"/>
+    /// The 95% Wilson score interval for <paramref name="k"/> successes in <paramref name="n"/>
     /// trials, clamped to [0, 1]. Null when <paramref name="n"/> is 0.
     /// </summary>
     public static (double Low, double High)? Wilson95(int k, int n)
@@ -30,7 +30,7 @@ public static class BenchmarkProportionInterval
     }
 
     /// <summary>
-    /// The 95 % Wilson score interval for an effective sample of <paramref name="kEff"/> successes in
+    /// The 95% Wilson score interval for an effective sample of <paramref name="kEff"/> successes in
     /// <paramref name="nEff"/> trials, as a design-effect adjustment produces it; clamped to [0, 1].
     /// Null when <paramref name="nEff"/> is 0 or less. On integer inputs it equals
     /// <see cref="Wilson95(int, int)"/> exactly: <paramref name="kEff"/> 0 gives a lower bound of 0, and

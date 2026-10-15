@@ -69,7 +69,8 @@
       </section>
 
       <!-- Right: every available document, as a filterable list of cards with their options. -->
-      <section class="dc-documents" [attr.aria-labelledby]="idPrefix + '-documents-title'">
+      <section class="dc-documents" [attr.aria-labelledby]="idPrefix + '-documents-title'"
+               [attr.aria-busy]="loadingDocuments ? 'true' : null">
         <div class="dc-list-head">
           <!-- Focused after a delete that leaves no card to focus. -->
           <h4 class="gh-section-title dc-documents-title" [id]="idPrefix + '-documents-title'" tabindex="-1">{{ documentsHeading }}</h4>
@@ -246,11 +247,17 @@
           }
         }
 
+        <!-- The first load in place of the list; a reload above the cards, so the list does not jump. The
+             footer's status line announces both. -->
         @if (loadingDocuments) {
-          <p class="dc-loading">Loading report documents&hellip;</p>
+          @if (rows.length === 0) {
+            <app-loading-indicator class="dc-loading" size="block" text="Loading report documents…"></app-loading-indicator>
+          } @else {
+            <app-loading-indicator class="dc-loading" text="Loading report documents…"></app-loading-indicator>
+          }
         }
         @if (loadingMembers && includeMemberRuns) {
-          <p class="dc-loading dc-loading-members">Listing the member runs&hellip;</p>
+          <app-loading-indicator class="dc-loading dc-loading-members" text="Listing the member runs…"></app-loading-indicator>
         }
 
         @if (rows.length === 0) {

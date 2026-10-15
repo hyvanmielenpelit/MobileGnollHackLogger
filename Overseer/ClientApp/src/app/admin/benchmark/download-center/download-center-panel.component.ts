@@ -42,6 +42,7 @@ import { SortDirection, TableState, anyOfFilter, customFilter, exactFilter } fro
 import { FilterFacetComponent } from '../../../shared/data-table/filter-facet.component';
 import { CardListChip, CardListFacet, CardListNoun, CardListState } from '../../../shared/data-table/card-list-state';
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
+import { LoadingIndicatorComponent } from '../../../shared/loading-indicator/loading-indicator.component';
 import { exportTimestamp, saveFigureBlob } from '../model-comparison/figure-export';
 import {
   REPORT_DOCUMENT_AUDIENCE_OPTIONS,
@@ -557,7 +558,7 @@ let nextInstanceId = 0;
 @Component({
   selector: 'app-download-center-panel',
   standalone: true,
-  imports: [InfoTipComponent, FilterFacetComponent, PdfViewerDialogComponent, ReportChartPickerComponent],
+  imports: [InfoTipComponent, FilterFacetComponent, PdfViewerDialogComponent, ReportChartPickerComponent, LoadingIndicatorComponent],
   templateUrl: './download-center-panel.component.html',
   styleUrls: ['./download-center-panel.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush

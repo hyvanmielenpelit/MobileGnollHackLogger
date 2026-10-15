@@ -1664,7 +1664,7 @@ public class BenchmarkReportPackValidatorTests
         static BenchmarkReportFact F(string key, JsonNode? value, string display) => new() { Key = key, Value = value, Display = display };
         var facts = new List<BenchmarkReportFact>
         {
-            F("model.A.quality.rank", JsonValue.Create(1), "joint 1st of 4 (intervals overlap)"),
+            F("model.A.quality.rank", JsonValue.Create(1), "1–2 of 4 (tied: intervals overlap)"),
             F("pair.A.B.cost.reference", JsonValue.Create(false), "not established"),
             F("pair.A.B.intervalOverlap", JsonValue.Create(true), "the intervals of Model A and Model B overlap"),
             F("pair.A.B.quality.short", JsonValue.Create(false), "two points apart, not established"),

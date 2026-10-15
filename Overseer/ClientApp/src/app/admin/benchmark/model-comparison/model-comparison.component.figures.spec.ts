@@ -747,7 +747,7 @@ describe('ModelComparisonComponent', () => {
       expect(card.plugins.map(plugin => plugin.id), card.id).toContain(availabilityMarkerPlugin.id);
       const options = (card.options?.plugins as unknown as Record<string, AvailabilityMarkerPluginOptions>)[availabilityMarkerPlugin.id];
       // Only the model whose whole interval lies above 2 %: 0.81 % with its bound at 0.44 % is never marked.
-      expect(options.marks.map(mark => mark.text), card.id).toEqual(['4.1 % provider errors']);
+      expect(options.marks.map(mark => mark.text), card.id).toEqual(['4.1% provider errors']);
       expect(exportNotesOf(card), card.id).toContain(AVAILABILITY_MARKER_NOTE);
       expect(card.ariaLabel, card.id).toContain('Provider errors above 2 %');
     }

@@ -510,8 +510,8 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// The verdicts outside the Executive Summary: <c>Endpoint · Change (95 % interval) · Margin · Verdict
-    /// and grade · Smallest detectable</c> for the computed endpoints, a note line per endpoint (the 90 %
+    /// The verdicts outside the Executive Summary: <c>Endpoint · Change (95% interval) · Margin · Verdict
+    /// and grade · Smallest detectable</c> for the computed endpoints, a note line per endpoint (the 90%
     /// interval, the Holm-adjusted p-value, the note on the
     /// minimum detectable effect and the grade's reasons), the endpoints not computable with their
     /// reasons, and the secondary measures.
@@ -529,7 +529,7 @@ public static partial class BenchmarkReportPackRenderer
         var computed = ChatComputedEndpoints(ctx);
         if (computed.Count > 0)
         {
-            Line(sb, "| Endpoint | Change (95 % interval) | Margin | Verdict and grade | Smallest detectable |");
+            Line(sb, "| Endpoint | Change (95% interval) | Margin | Verdict and grade | Smallest detectable |");
             Line(sb, "|---|---|---|---|---|");
             foreach (string id in computed)
             {
@@ -569,12 +569,12 @@ public static partial class BenchmarkReportPackRenderer
         ChatSecondaryTable(sb, ctx);
     }
 
-    /// <summary>One computed endpoint's note line: its 90 % interval, adjusted p-value, minimum-detectable-effect note and grade reasons.</summary>
+    /// <summary>One computed endpoint's note line: its 90% interval, adjusted p-value, minimum-detectable-effect note and grade reasons.</summary>
     private static List<string> ChatNoteParts(Context ctx, string id)
     {
         string p = "endpoint." + id + ".";
         var parts = new List<string>();
-        if (IsAvailable(ctx, p + "ci90")) parts.Add("90 % interval " + ChatFigure(ctx, p + "ci90"));
+        if (IsAvailable(ctx, p + "ci90")) parts.Add("90% interval " + ChatFigure(ctx, p + "ci90"));
         if (IsAvailable(ctx, p + "adjustedP")) parts.Add("Holm-adjusted p " + D(ctx, p + "adjustedP"));
         if (IsAvailable(ctx, p + "mdeNote")) parts.Add(OneLine(D(ctx, p + "mdeNote")).TrimEnd('.'));
         if (Fact(ctx, p + "legacyProxy") is { Available: true } proxy && BenchmarkReportPackPrompt.IsTrue(proxy)) parts.Add(OneLine(proxy.Display));
@@ -588,7 +588,7 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// The secondary measures: <c>Measure · Change (95 % interval) · Verdict</c> for the quality detail,
+    /// The secondary measures: <c>Measure · Change (95% interval) · Verdict</c> for the quality detail,
     /// tool use, reliability rates and every other secondary family but the descriptive shift function;
     /// nothing when the analysis recorded none.
     /// </summary>
@@ -645,7 +645,7 @@ public static partial class BenchmarkReportPackRenderer
 
         Line(sb, "Secondary measures:");
         Line(sb);
-        Line(sb, "| Measure | Baseline → comparison, or change (95 % interval) | Verdict |");
+        Line(sb, "| Measure | Baseline → comparison, or change (95% interval) | Verdict |");
         Line(sb, "|---|---|---|");
         foreach (var (measure, change, verdict) in rows)
         {
@@ -1018,12 +1018,12 @@ public static partial class BenchmarkReportPackRenderer
         if (endpoints.Count > 0)
         {
             Line(sb, "- **The endpoints.** " + BenchmarkReportFormat.LetterList(endpoints.Select(id => ChatEndpointName(ctx, id)).ToList())
-                + ". Each estimate comes with its 95 % interval.");
+                + ". Each estimate comes with its 95% interval.");
         }
         Line(sb, "- **Verdicts.** Each verdict is read against the endpoint's equivalence margin, set by the protocol: *equivalent* when "
-            + "the 90 % interval lies inside the margin; *degraded* or *improved* (*more work* or *less work* for an endpoint that "
+            + "the 90% interval lies inside the margin; *degraded* or *improved* (*more work* or *less work* for an endpoint that "
             + "counts work" + (availability ? ", *more provider errors* or *fewer provider errors* for the provider error rate" : string.Empty)
-            + ") when the 95 % interval lies wholly beyond the margin on one side; *changed, negligible* when the 95 % "
+            + ") when the 95% interval lies wholly beyond the margin on one side; *changed, negligible* when the 95% "
             + "interval excludes zero but lies inside the margin; *inconclusive* otherwise, when the runs cannot tell a change from "
             + "no change. The smallest detectable change, ± the minimum detectable effect, is the smallest change these runs could have detected.");
         Line(sb, "- **Evidence grades.** *Established*: a decisive verdict, every robustness check passed, the minimum sample met, "
@@ -1240,7 +1240,7 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>A figure's display without the <c>(log ratio …)</c> a sheet written before readable displays carries.</summary>
     private static string ChatFigure(Context ctx, string key) => Regex.Replace(D(ctx, key), ChatLogRatioNote, string.Empty, RegexOptions.CultureInvariant);
 
-    /// <summary>An endpoint's minimum detectable effect, <c>±12.7 %</c>; the ± added to a display stored without it.</summary>
+    /// <summary>An endpoint's minimum detectable effect, <c>±12.7%</c>; the ± added to a display stored without it.</summary>
     private static string ChatMde(Context ctx, string id)
     {
         string display = D(ctx, "endpoint." + id + ".mde");

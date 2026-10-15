@@ -40,8 +40,8 @@ public sealed class BenchmarkPdfSourceTooLargeException : Exception
 /// </summary>
 public static class BenchmarkPdfRenderer
 {
-    /// <summary>The page layout's version, printed in the title block and footer as "PDF layout 10".</summary>
-    public const int LayoutVersion = 10;
+    /// <summary>The page layout's version, printed in the title block and footer as "PDF layout 11".</summary>
+    public const int LayoutVersion = 11;
 
     /// <summary>The longest source text rendered; a longer one is refused before rendering starts.</summary>
     public const int MaxSourceCharacters = 6_000_000;
@@ -102,7 +102,7 @@ public static class BenchmarkPdfRenderer
         cancellationToken.ThrowIfCancellationRequested();
         BenchmarkPdfResources.EnsureRegistered();
 
-        var prepared = BenchmarkPdfMarkdownComposer.Prepare(markdown, info.Title, charts, layout);
+        var prepared = BenchmarkPdfMarkdownComposer.Prepare(markdown, info.HeadingTitle, charts, layout);
         var sourced = info with { SourceSha256 = SourceSha256(markdown, prepared.OrderedFigures.Select(f => f.Chart)) };
         bool contents = sourced.AllowTableOfContents && prepared.Contents.Count >= 4;
         var frame = FigureFrameFor(sourced.Paper, BenchmarkPdfMarkdownComposer.MaxHeightShareOf(layout));
@@ -230,9 +230,10 @@ public static class BenchmarkPdfRenderer
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Page 1's title block: the wide logo, the document kind, the title, the subject line, the facts,
-    /// the source hash and layout version, and the classification banner, whose text states the
-    /// classification so color is never the only signal.
+    /// Page 1's title block: the wide logo, the document kind, the title as printed
+    /// (<see cref="BenchmarkPdfDocumentInfo.HeadingTitle"/>), the subject line unless it repeats that title,
+    /// the facts, the source hash and layout version, and the classification banner, whose text states
+    /// the classification so color is never the only signal.
     /// </summary>
     private static void TitleBlock(IContainer container, BenchmarkPdfDocumentInfo info)
     {
@@ -251,12 +252,13 @@ public static class BenchmarkPdfRenderer
                 .LetterSpacing(0.08f)
                 .FontColor(BenchmarkPdfStyle.Muted);
 
-            BenchmarkPdfStyle.SemiboldSpan(col.Item().SemanticHeading1().Text(info.Title))
+            BenchmarkPdfStyle.SemiboldSpan(col.Item().SemanticHeading1().Text(info.HeadingTitle))
                 .FontSize(BenchmarkPdfStyle.TitleSize)
                 .LineHeight(1.2f)
                 .FontColor(BenchmarkPdfStyle.Teal);
 
-            if (!string.IsNullOrWhiteSpace(info.SubjectLine))
+            if (!string.IsNullOrWhiteSpace(info.SubjectLine)
+                && !string.Equals(info.SubjectLine.Trim(), info.HeadingTitle.Trim(), StringComparison.Ordinal))
             {
                 col.Item().Text(info.SubjectLine).FontSize(11).FontColor(BenchmarkPdfStyle.Muted);
             }
@@ -400,7 +402,7 @@ public static class BenchmarkPdfRenderer
             });
     }
 
-    /// <summary>"INTERNAL", diagonal, 6 % gray, behind the content; an artifact, so screen readers and text extraction by structure skip it.</summary>
+    /// <summary>"INTERNAL", diagonal, 6% gray, behind the content; an artifact, so screen readers and text extraction by structure skip it.</summary>
     private static void Watermark(IContainer container)
     {
         BenchmarkPdfStyle.SemiboldSpan(container.SemanticIgnore()

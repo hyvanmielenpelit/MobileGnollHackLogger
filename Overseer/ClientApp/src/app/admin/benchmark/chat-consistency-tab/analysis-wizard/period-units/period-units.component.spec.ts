@@ -116,13 +116,13 @@ describe('CcPeriodUnitsComponent', () => {
         ? { ...row, availabilityRecorded: true, validAttemptCount: 600, providerErrorCount: 3, rerunsNeeded: 1, providerRerunsNeeded: 1 }
         : row);
       setInputs({ units: ccPeriodUnits(rows, [], false) });
-      expect(fact(106, 'providerErrors')).toBe('0.50 % (3 of 600 attempts); 1 re-run (1 for provider errors)');
+      expect(fact(106, 'providerErrors')).toBe('0.50% (3 of 600 attempts); 1 re-run (1 for provider errors)');
 
       const batteries = ccBatteryRunRows().map(row => row.batteryRunId === 12
         ? { ...row, availabilityRecorded: true, validAttemptCount: 200, providerErrorCount: 0 }
         : row);
       setInputs({ units: ccPeriodUnits([], batteries, true), batteryMode: true });
-      expect(textOf(card(12).querySelector('.cc-run-fact[data-fact="providerErrors"] dd'))).toBe('0 % (0 of 200 attempts)');
+      expect(textOf(card(12).querySelector('.cc-run-fact[data-fact="providerErrors"] dd'))).toBe('0% (0 of 200 attempts)');
       expect(textOf(card(11).querySelector('.cc-run-fact[data-fact="providerErrors"] dd'))).toBe('Not recorded');
     });
   });

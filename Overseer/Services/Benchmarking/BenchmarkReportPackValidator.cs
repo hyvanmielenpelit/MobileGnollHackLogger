@@ -40,7 +40,7 @@ public sealed class BenchmarkReportCleanResult
 /// the sheet has peers); no unknown slots; no lists the audience does not use; item texts non-empty.</item>
 /// <item>Tokens: <c>{{key}}</c> names a fact, <c>{{peer:X}}</c> a peer letter, <c>{{subject}}</c> the subject;
 /// written exactly, without inner spaces; no stray braces.</item>
-/// <item>No bare digit once tokens, known names, the fixed phrase <c>95 % interval</c> (<see cref="IntervalLevelRegex"/>)
+/// <item>No bare digit once tokens, known names, the fixed phrase <c>95% interval</c> (<see cref="IntervalLevelRegex"/>)
 /// and <c>Q&lt;n&gt;</c> / <c>R&lt;n&gt;</c> references (on a battery sheet also <c>S&lt;suite&gt;-Q&lt;n&gt;</c>) are masked.</item>
 /// <item>Every question number exists in the subject's exam; topics cover every question where required
 /// (on a battery sheet, every question given in detail). A battery sheet's questions are referred to as
@@ -89,7 +89,9 @@ public sealed class BenchmarkReportCleanResult
 /// rule 21, a warning, asks for an entry for every covered model. Rule 31 (<see cref="ComparisonTokenShapeRule"/>),
 /// a warning, reads the text with every token resolved to its display: a sentence continued after a full
 /// stop, a sentence-valued fact placed inside a sentence or parentheses, a clause-valued fact
-/// (<c>Model A took …</c>) after its own model or verb, and a run of unlabeled <c>N of M</c> counts. Rule 37
+/// (<c>Model A took …</c>) after its own model or verb, a run of unlabeled <c>N of M</c> counts, and in a Root
+/// Cause Analysis a sentence-shaped fact (<see cref="RootCauseClaimSupport.IsSentenceShaped"/>) after words of the
+/// writer's own sentence. Rule 37
 /// (<see cref="BareModelLetterRule"/>), a warning, flags a model written by its bare letter, <c>Model H</c>
 /// or <c>Models H and I</c>, outside its token.</para>
 ///
@@ -451,7 +453,7 @@ public static class BenchmarkReportPackValidator
     private static readonly Regex CostWordRegex = WordListRegex(CostWords);
     private static readonly Regex QualityWordRegex = WordListRegex(QualityWords);
 
-    /// <summary>The fixed interval-level phrase rule 3 masks before its digit search: <c>95 % interval</c> and its variants.</summary>
+    /// <summary>The fixed interval-level phrase rule 3 masks before its digit search: <c>95% interval</c> and its variants.</summary>
     private static readonly Regex IntervalLevelRegex = new(
         @"\b95\s?%\s?(?:bootstrap\s+|confidence\s+|paired\s+)?intervals?\b",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -1235,11 +1237,12 @@ public static class BenchmarkReportPackValidator
             Issue(notes, OverlapHedgeRule, location, $"Ranks {{{{subject}}}} against {peers}, whose interval overlaps the subject's, without the paired result: in the same sentence, say that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero, not adjusted for comparing several models.");
         }
 
-        // Rule 31: the shape of the fact tokens.
+        // Rule 31: the shape of the fact tokens; in a Root Cause Analysis, a clause-valued fact after words of the writer's own sentence too.
         if (ctx.Comparison || ctx.RootCause)
         {
             CheckTokenShape(ctx, text, location, notes);
         }
+        CheckSentenceShapedTokens(ctx, text, location, notes);
 
         // Rule 17: hype and filler words.
         var hype = HypeWordRegex.Matches(stripped)
@@ -1817,24 +1820,7 @@ public static class BenchmarkReportPackValidator
     {
         if (string.IsNullOrWhiteSpace(text) || !TokenRegex.IsMatch(text)) return;
 
-        var resolved = new StringBuilder();
-        var spans = new List<(int Start, int End, string Key, string Display)>();
-        int last = 0;
-        foreach (Match match in TokenRegex.Matches(text))
-        {
-            resolved.Append(text, last, match.Index - last);
-            string key = match.Groups[1].Value.Trim();
-            string display = key.StartsWith("model:", StringComparison.Ordinal) ? "Model " + key["model:".Length..]
-                : key.StartsWith("peer:", StringComparison.Ordinal) ? "Model " + key["peer:".Length..]
-                : key == "subject" ? "the subject"
-                : ctx.FactDisplay(key) ?? match.Value;
-            int start = resolved.Length;
-            resolved.Append(display);
-            spans.Add((start, resolved.Length, key, display));
-            last = match.Index + match.Length;
-        }
-        resolved.Append(text, last, text.Length - last);
-        string all = resolved.ToString();
+        var (all, spans) = ResolveTokens(ctx, text);
 
         var spliced = TokenShapeSplicedRegex.Matches(all).Select(m => Excerpt(all, m)).Distinct(StringComparer.Ordinal).ToList();
         if (spliced.Count > 0)
@@ -1851,17 +1837,13 @@ public static class BenchmarkReportPackValidator
             if (RootCauseClaimSupport.IsLabel(span.Key)) continue;
 
             string display = span.Display.Trim();
-            if (display.Length > 1 && char.IsUpper(display[0]) && display.EndsWith('.')
-                && !span.Key.StartsWith("model:", StringComparison.Ordinal) && !span.Key.StartsWith("peer:", StringComparison.Ordinal))
+            if (IsSentenceValuedDisplay(span.Key, display))
             {
-                int before = span.Start - 1;
-                while (before >= 0 && char.IsWhiteSpace(all[before])) before--;
                 int after = span.End;
                 while (after < all.Length && char.IsWhiteSpace(all[after])) after++;
 
-                bool atStart = before < 0 || all[before] is '.' or '!' or '?' or ':' || IsListMarker(all, before);
                 bool closesParenthesis = after < all.Length && all[after] == ')';
-                if (!atStart || closesParenthesis) misplaced.Add("{{" + span.Key + "}}");
+                if (!StartsSentence(all, span.Start) || closesParenthesis) misplaced.Add("{{" + span.Key + "}}");
             }
 
             var clause = ClauseValuedRegex.Match(display);
@@ -1909,6 +1891,76 @@ public static class BenchmarkReportPackValidator
             Issue(notes, ComparisonTokenShapeRule, location, $"Lists counts in a row without saying what each counts ({string.Join("; ", lists)}): "
                 + "each reads 'N of M', so say what each one counts.");
         }
+    }
+
+    /// <summary>
+    /// Rule 31, a warning, on one prose string of a Root Cause Analysis: a sentence-shaped fact
+    /// (<see cref="RootCauseClaimSupport.IsSentenceShaped"/>), one whose display is a clause, a sentence or a list
+    /// of clauses, preceded in its sentence by a word of the writer's own: it reads as a broken sentence
+    /// (<c>graded under the concise style at Completeness is the lowest dimension</c>). Standing at the start of a
+    /// sentence, after a list marker or after a colon it is left alone. A display that already reads as a
+    /// sentence is <see cref="CheckTokenShape"/>'s. A warning, never a drop: dropping would remove whole answers.
+    /// </summary>
+    private static void CheckSentenceShapedTokens(Context ctx, string text, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        if (!ctx.RootCause || string.IsNullOrWhiteSpace(text) || !TokenRegex.IsMatch(text)) return;
+
+        var (all, spans) = ResolveTokens(ctx, text);
+        var misplaced = spans
+            .Where(s => !IsSentenceValuedDisplay(s.Key, s.Display.Trim()))
+            .Where(s => RootCauseClaimSupport.IsSentenceShaped(s.Key, s.Display))
+            .Where(s => !StartsSentence(all, s.Start))
+            .Select(s => "{{" + s.Key + "}}")
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (misplaced.Count > 0)
+        {
+            Issue(notes, ComparisonTokenShapeRule, location, $"Places the clause-valued fact{Plural(misplaced.Count)} {string.Join(", ", misplaced)} after words of your own sentence: "
+                + "its value reads as a clause or a list of clauses, so it breaks the sentence around it. Give it a sentence of its own, or write it after a colon, "
+                + "and say in your own words what it shows.");
+        }
+    }
+
+    /// <summary>
+    /// The text with every token resolved to its display (a model token to <c>Model X</c>), and where each display
+    /// stands in it, for rule 31.
+    /// </summary>
+    private static (string All, List<(int Start, int End, string Key, string Display)> Spans) ResolveTokens(Context ctx, string text)
+    {
+        var resolved = new StringBuilder();
+        var spans = new List<(int Start, int End, string Key, string Display)>();
+        int last = 0;
+        foreach (Match match in TokenRegex.Matches(text))
+        {
+            resolved.Append(text, last, match.Index - last);
+            string key = match.Groups[1].Value.Trim();
+            string display = key.StartsWith("model:", StringComparison.Ordinal) ? "Model " + key["model:".Length..]
+                : key.StartsWith("peer:", StringComparison.Ordinal) ? "Model " + key["peer:".Length..]
+                : key == "subject" ? "the subject"
+                : ctx.FactDisplay(key) ?? match.Value;
+            int start = resolved.Length;
+            resolved.Append(display);
+            spans.Add((start, resolved.Length, key, display));
+            last = match.Index + match.Length;
+        }
+        resolved.Append(text, last, text.Length - last);
+        return (resolved.ToString(), spans);
+    }
+
+    /// <summary>A fact's display reads as a whole sentence: it starts with a capital and ends with a full stop, and is no model token.</summary>
+    private static bool IsSentenceValuedDisplay(string key, string display)
+        => display.Length > 1 && char.IsUpper(display[0]) && display.EndsWith('.')
+           && !key.StartsWith("model:", StringComparison.Ordinal) && !key.StartsWith("peer:", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Nothing but whitespace stands between <paramref name="index"/> and the start of its sentence: the text's
+    /// start, <c>.</c>, <c>!</c>, <c>?</c>, <c>:</c> or a list marker.
+    /// </summary>
+    private static bool StartsSentence(string text, int index)
+    {
+        int before = index - 1;
+        while (before >= 0 && char.IsWhiteSpace(text[before])) before--;
+        return before < 0 || text[before] is '.' or '!' or '?' or ':' || IsListMarker(text, before);
     }
 
     /// <summary>The character at <paramref name="index"/> is a list marker, <c>-</c> or <c>*</c>, with only whitespace before it on its line.</summary>

@@ -41,7 +41,7 @@ using Overseer.Services.Benchmarking.RootCause;
 //   frontier.qualityCost, .qualitySpeed, .speedCost   the models on each two-measure Pareto frontier
 //   spread.quality, spread.dimension.<d>, spread.speed, spread.cost   lowest and highest, by model
 //   questions.anyCriticalError, .wideSpread, .sharedLow   question counts behind the excerpt priority
-//   pair.<L>.<M>.intervalOverlap                   every pair: their 95 % intervals overlap
+//   pair.<L>.<M>.intervalOverlap                   every pair: their 95% intervals overlap
 //   pair.<L>.<M>.quality.difference, .quality.interval, .sharedQuestions
 //                                                  a tested pair's mean per-question difference, L minus M
 //   pair.<L>.<M>.quality.<family>                  established after the family's Holm adjustment (family =
@@ -872,8 +872,8 @@ public static class BenchmarkComparisonReportFacts
 
                 bool overlaps = aLower <= bUpper && bLower <= aUpper;
                 facts.Add(key, overlaps, overlaps
-                    ? "the 95 % intervals of Model " + a + " and Model " + b + " overlap"
-                    : "the 95 % intervals of Model " + a + " and Model " + b + " do not overlap");
+                    ? "the 95% intervals of Model " + a + " and Model " + b + " overlap"
+                    : "the 95% intervals of Model " + a + " and Model " + b + " do not overlap");
             }
         }
     }

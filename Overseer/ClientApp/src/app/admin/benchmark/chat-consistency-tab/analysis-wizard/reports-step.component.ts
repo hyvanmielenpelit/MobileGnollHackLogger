@@ -29,6 +29,7 @@ import {
 import { SystemAiConfigDto } from '../../../../services/admin.service';
 import { AdminChatConsistencyService, ccErrorText } from '../../../../services/admin-chat-consistency.service';
 import { InfoTipComponent } from '../../../../shared/info-tip/info-tip.component';
+import { LoadingIndicatorComponent } from '../../../../shared/loading-indicator/loading-indicator.component';
 import { ModelPickerComponent, ModelPickerOption } from '../../../../shared/model-picker/model-picker.component';
 import { PdfViewerDialogComponent } from '../../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { copyToClipboard } from '../../../../utils/clipboard.util';
@@ -205,7 +206,7 @@ function chartDocumentOf(doc: BenchmarkReportDocumentListItemDto): CcReportChart
   standalone: true,
   imports: [
     RunReportFrameComponent, ModelPickerComponent, InfoTipComponent, PdfViewerDialogComponent, CcModelBadgesComponent,
-    ReportChartPickerComponent, CcFreshnessNoticeComponent
+    ReportChartPickerComponent, CcFreshnessNoticeComponent, LoadingIndicatorComponent
   ],
   templateUrl: './reports-step.component.html',
   styleUrls: ['./reports-step.component.scss'],

@@ -14,6 +14,14 @@
   min-inline-size: 0;
 }
 
+/* The sidebar's heading followed by its (i). Unlike .gh-field-row, the heading keeps its own width. */
+.rp-new-heading-row {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-inline-size: 0;
+}
+
 .rp-guide-link,
 .rp-retry-estimate {
   align-self: flex-start;
@@ -230,11 +238,27 @@
   margin-top: 0;
 }
 
-.rp-layout-preview-note:empty {
-  display: none;
+/* --- The job --- */
+
+/* From Generate until the job's first reading, in place of the job card: the large ring, its line,
+   and what the server checks meanwhile. */
+.rp-starting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 12px 14px 16px;
+  border: 1px solid var(--border-glass);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  font-size: var(--text-body);
+  color: #e4e4e7;
 }
 
-/* --- The job --- */
+.rp-starting-detail {
+  max-inline-size: 36rem;
+  text-align: center;
+}
 
 .rp-chart-retry {
   font-size: var(--text-secondary);

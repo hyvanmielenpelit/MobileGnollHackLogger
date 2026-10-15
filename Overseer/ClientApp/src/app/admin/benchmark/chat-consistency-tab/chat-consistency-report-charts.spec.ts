@@ -138,7 +138,7 @@ describe('chat-consistency-report-charts', () => {
     expect(upload!.figureKey).toBe('cc5-availability');
     expect(upload!.title).toBe('Provider availability');
     expect(upload!.caption).toBe(buildCcFigure('availability', recorded).takeaway);
-    expect(upload!.caption.startsWith('The provider error rate ranged from 0 % to 1.3 % across 6 runs (15 of 2,400 attempts in all).')).toBe(true);
+    expect(upload!.caption.startsWith('The provider error rate ranged from 0% to 1.3% across 6 runs (15 of 2,400 attempts in all).')).toBe(true);
     const strip = await composeCcReportChart('cc5-availability', recorded, 'a'.repeat(64), CC_DEFAULT_DOCUMENT_CHART_LAYOUT, 'strip');
     expect(strip!.caption).toBe(buildCcFigure('availability', recorded, { availabilityForm: 'strip' }).takeaway);
   });

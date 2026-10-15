@@ -1,6 +1,8 @@
-# Comparison #12: Root Cause Analysis
+**ROOT CAUSE ANALYSIS**
 
-**Comparison:** Comparison #12 · 5 models · computed 2026-09-21
+# Comparison #12
+
+**Comparison:** 5 models · computed 2026-09-21
 
 *INTERNAL — contains benchmark questions and rubrics. Do not share outside the Overseer team.*
 
@@ -24,57 +26,100 @@
 >
 > *Answer strength: no hypothesis about this model fired — see its profile.*
 >
-> For Model A the measured signals are joint first on Accuracy of 5 models; joint first on Completeness of 5 models. The answer strength is Unknown.
+> For Model A the measured signals are tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness. The answer strength is Unknown.
 
 > [!NOTE]
 > **Question.** **Why did Model E score lowest?**
 >
 > *Answer strength: no hypothesis about this model fired — see its profile.*
 >
-> For Model E the measured signals are lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more. The answer strength is Unknown.
+> For Model E the measured signals are lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more. The answer strength is Unknown.
 
 > [!NOTE]
 > **Question.** **Why is Model E slowest?**
 >
 > *Answer strength: Probable (Moderate) — see WS3.3 and WS2.1.*
 >
-> For Model E the measured signals are median model time 20.0 s; output generation 59 % of its time per question; 2.5 model calls per answer. The answer strength is Probable (Moderate). The leading hypothesis is tool rounds in the time of Model E.
+> For Model E the measured signals are median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer. The answer strength is Probable (Moderate). The leading hypothesis is Model E's time spent on tool rounds.
 
 > [!NOTE]
 > **Question.** **Why is Model D the most expensive?**
 >
 > *Answer strength: Probable (Moderate) — see WC1.2, HC2.2 and HC4.2.*
 >
-> For Model D the measured signals are $0.060 per question; uncached input 44 % of its cost per question; 27 % of input tokens read from the cache. The answer strength is Probable (Moderate). The leading hypothesis is output cost of Model D.
+> For Model D the measured signals are $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache. The answer strength is Probable (Moderate). The leading hypothesis is Model D's output cost.
 
 ### At a glance
 
 | Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |
 |---|---|---|---|---|---|
-| Model A (reference) | 85 (82–88), rank joint 1 | 12.0 s | $0.050 | answers without tools, 9.8 points | none |
-| Model B | 80 (77–83), rank joint 1 | 9.0 s | $0.030 | mostly Accuracy, 2.8 points | none |
-| Model C | 70 (66–74), rank joint 3 | 15.0 s | $0.020 | confirmed critical errors, 7.2 points | 1 critical error |
-| Model D | 70 (64–76), rank joint 3 | 8.0 s | $0.060 | answers without tools, 6.3 points | none |
+| Model A (reference) | 85 (82–88), rank 1–2 (tied) | 12.0 s | $0.050 | answers without tools, 9.8 points | none |
+| Model B | 80 (77–83), rank 1–2 (tied) | 9.0 s | $0.030 | mostly Accuracy, 2.8 points | none |
+| Model C | 70 (66–74), rank 3–4 (tied) | 15.0 s | $0.020 | confirmed critical errors, 7.2 points | 1 critical error |
+| Model D | 70 (64–76), rank 3–4 (tied) | 8.0 s | $0.060 | answers without tools, 6.3 points | none |
 | Model E | 55 (50–60), rank 5 | 20.0 s | $0.010 | mostly Accuracy, 5.6 points | 1 isolated miss |
 
 ### How sure are we?
 
 > [!WARNING]
-> **Caveat.** Established (High): measured, established after adjustment, robust, with two or more runs per suite on both sides. Probable (Moderate): one of those conditions is missed. Suggestive (Low): qualitative only, two or more conditions missed, or the difference may be noise. Ruled out (Not supported): the rule's own test refutes it.
+> **Caveat.** How sure each answer is. **Established (High)**: measured, still clear after the correction for many comparisons, robust in every check, not explained by another setting, and each model ran at least twice per suite. **Probable (Moderate)**: one of those is missing. **Suggestive (Low)**: a lead only; it is not measured, two or more are missing, or the difference may be chance. **Ruled out (Not supported)**: the hypothesis's own test contradicts it.
 >
-> One run per suite for every model: the replicates check fails for every hypothesis, so no cause can be graded above Probable (Moderate).
+> Each model ran only once per suite, so this document cannot tell whether its results would repeat. No cause can be graded above Probable (Moderate) until a second run of each suite is made.
+
+## Key terms
+
+This document uses a few statistical and technical terms. Each is explained here in plain words, and the less familiar ones again where they first appear. Appendix H gives a fuller definition of each.
+
+| Term | What it means |
+|---|---|
+| 95% interval | The range the true value most likely lies in. |
+| Answer quality | The score of one answer, from its four graded dimensions. |
+| Answers without tools | Answers the model wrote without looking anything up. |
+| Bootstrap interval | A range found by resampling the questions many times. |
+| Confound | Another difference between two models that could account for a result. |
+| Critical error | A mistake serious enough to cap the answer's score. |
+| Decomposition share | How much of a difference one part accounts for. |
+| Difficulty-weighted mean | An average in which harder questions count for more. |
+| Dimension | One of the four things graded: accuracy, completeness, conciseness, readability. |
+| Grade words | How sure the document is of a cause, strongest to weakest. |
+| Holm adjustment | A correction for running many comparisons at once. |
+| Hypothesis | A possible cause that code tested against the data. |
+| Intelligence Index | The overall answer-quality score, out of a hundred. |
+| Isolated miss | A question one model missed while the others did well. |
+| Leave-one-out check | Rechecking a result with each question left out in turn. |
+| Locus | Where a cause lies: model, chat, grading, questions, data or provider. |
+| Median and mean | The middle value, and the plain average. |
+| Null hypothesis | The starting assumption that a difference is only chance. |
+| Output generation and decode rate | The time spent writing the reply, and how fast it is written. |
+| p-value | How likely a gap this large would be by chance alone. |
+| Paired test | A comparison of two models on the same questions. |
+| Points at risk | The most index points a failure signal could have cost. |
+| Pricing basis | Which prices turned the token counts into dollars. |
+| Reference model | The model every other model is tested against. |
+| Replicate run | A second run of the same model, to see if results repeat. |
+| Response style | Whether the chat asks for concise or detailed answers. |
+| Robustness check | A test of whether a result survives a small change. |
+| Runs per suite | How many times each model answered each suite. |
+| Scoring levels | Fixed grade steps, each described by the answer behavior that earns it. |
+| Suite | A fixed set of benchmark questions with their rubrics. |
+| Tied rank | A shared rank for models the data cannot put in order. |
+| Time ratio and spend ratio | One model's time or cost divided by another's. |
+| Time to first token | The wait before the model starts writing, mostly its thinking. |
+| Tokens | The word pieces a model reads and writes, which set its price. |
+| Tool round | One cycle of calling a tool and reading its result. |
+| Weighted geometric mean | An average that one very low score pulls down sharply. |
 
 ## Why each model scored as it did
 
 | Model | Index | Strengths | Lost points on | Flags |
 |---|---|---|---|---|
-| Model A (reference) | 85 | joint first on Accuracy of 5 models; joint first on Completeness of 5 models | answers without tools: 9.8 index points on 1 question (Q3) | none |
-| Model B | 80 | joint first on Accuracy of 5 models; joint first on Completeness of 5 models | low-scoring answers, mostly Accuracy: 2.8 index points on 2 questions (Q3 and Q4) | none |
+| Model A (reference) | 85 | tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness | answers without tools: 9.8 index points on 1 question (Q3) | none |
+| Model B | 80 | tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness | low-scoring answers, mostly Accuracy: 2.8 index points on 2 questions (Q3 and Q4) | none |
 | Model C | 70 | none ranked first or second | confirmed critical errors: 7.2 index points on 1 question (Q3) | 1 critical error (Q3) |
 | Model D | 70 | none ranked first or second | answers without tools: 6.3 index points on 1 question (Q3) | none |
-| Model E | 55 | none ranked first or second | low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); last on Accuracy of 5 models | 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more |
+| Model E | 55 | none ranked first or second | low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); last of 5 models on Accuracy | 1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more |
 
-*Each entry is a count, a share or a rank that was measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (Appendix A), with its questions.*
+*Each entry is a count, a share or a rank measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (the most index points a failure signal could have cost), with its questions (Appendix A). Flags: critical errors (a mistake serious enough to cap the answer's score); isolated misses (a question one model missed while the others did well).*
 
 ## Scope and design
 
@@ -83,10 +128,10 @@
 - **Suite:** GnollHack Core Suite, 6 questions in the per-question matrix.
 - **Coverage:** every model of Comparison #12 that is not excluded.
 - **Chat configuration under test:** Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed
-- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %. Each dimension is graded on behaviorally anchored levels scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
+- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
 - **Graders:**
   - Assessor: Gemini 3.8 Flash (Google, gemini-3.8-flash), a different provider from every model
-- **Formulas:** answer quality is the weighted geometric mean of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is each model's own spend divided by the questions asked.
+- **Formulas:** answer quality is the weighted geometric mean (an average that one very low score pulls down sharply) of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean (an average in which harder questions count for more) of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is each model's own spend divided by the questions asked.
 - **Comparability:** every model in this report was measured under one instrument condition, signature `sig-7f3a91`.
 - **Pricing basis:** Catalog prices on 2026-09-21
 - **Versions:** harness 41; scoring method 12.
@@ -95,15 +140,15 @@ One run per suite on each side limits what this design can decide; the next runs
 
 ## Evidence: intelligence
 
-| Model | Intelligence Index | 95 % interval | Rank | Critical errors |
+| Model | Intelligence Index | 95% interval | Rank | Critical errors |
 |---|---|---|---|---|
-| Model A (reference) | 85 | 82–88 | joint 1 | 0 of 6 answers |
-| Model B | 80 | 77–83 | joint 1 | 0 of 6 answers |
-| Model C | 70 | 66–74 | joint 3 | 1 of 6 answers |
-| Model D | 70 | 64–76 | joint 3 | 0 of 6 answers |
+| Model A (reference) | 85 | 82–88 | 1–2 (tied) | 0 of 6 answers |
+| Model B | 80 | 77–83 | 1–2 (tied) | 0 of 6 answers |
+| Model C | 70 | 66–74 | 3–4 (tied) | 1 of 6 answers |
+| Model D | 70 | 64–76 | 3–4 (tied) | 0 of 6 answers |
 | Model E | 55 | 50–60 | 5 | 0 of 6 answers |
 
-*A joint rank means the model's 95 % interval overlaps a neighbor's, so the intervals do not establish the order between them.*
+*A rank shown as a span, such as 2–4 (tied), is a tied rank: the model's 95% interval (the range the true value most likely lies in) overlaps a neighbor's, so the intervals alone cannot put them in order.*
 
 | Model | Accuracy | Completeness | Conciseness | Readability |
 |---|---|---|---|---|
@@ -115,14 +160,14 @@ One run per suite on each side limits what this design can decide; the next runs
 
 ### Paired tests against Model A
 
-| Pair | Questions | Difference (95 % interval) | Result |
+| Pair | Questions | Difference (95% interval) | Result |
 |---|---|---|---|
 | Model A vs Model B | 6 | 0.0 points (-21.0 to +21.0) | not established |
 | Model A vs Model C | 6 | +15.2 points (+6.6 to +23.8) | not established |
 | Model A vs Model D | 6 | +15.8 points (+5.6 to +26.1) | not established |
 | Model A vs Model E | 6 | +30.0 points (+16.1 to +43.9) | not established |
 
-*Intelligence: Holm-adjusted across 4 tests. Difference: the mean per-question difference, first model minus second, on the questions both answered. Appendix A gives every family.*
+*Each row is a paired test (a comparison of two models on the same questions). Intelligence: Holm-adjusted across 4 tests (a correction for running many comparisons at once). Difference: the mean per-question difference, first model minus second, on the questions both answered. Appendix A gives every family.*
 
 *At least one entry has a single run. With one run a side, a paired test captures question sampling only, not run-to-run variation, so it can look more certain than it is.*
 
@@ -131,7 +176,7 @@ One run per suite on each side limits what this design can decide; the next runs
 - The grader recorded a comment on this answer.
   - *Evidence:* Q1
 
-The first known fact: Uncached input, price per token accounts for 45 % (44–46 %) of the per-question cost difference between Model A and Model B.
+The first known fact: Uncached input, price per token accounts for 45% (44–46%) of the per-question cost difference between Model A and Model B.
 
 ## Evidence: speed
 
@@ -145,22 +190,22 @@ The first known fact: Uncached input, price per token accounts for 45 % (44–46
 | Model D | 13.4 s | 3.8 s | 7.9 s | 1.5 s | 0.0 s | 0.3 s |
 | Model E | 14.9 s | 4.4 s | 8.7 s | 1.5 s | 0.0 s | 0.3 s |
 
-*Seconds per question: the median of the per-question time, split into its parts in proportion to their means. Tool execution is excluded from the model's own time elsewhere in this document.*
+*Seconds per question: the median time per question, split into its parts in proportion to their mean times. The parts are time to first token (the wait before the model starts writing, mostly its thinking), output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. Tool execution is excluded from the model's own time elsewhere in this document.*
 
 ### Paired tests against Model A
 
-| Pair | Time ratio (95 % interval) | Result |
+| Pair | Time ratio (95% interval) | Result |
 |---|---|---|
 | Model A vs Model B | 0.83 (0.53 to 1.31) | not established |
 | Model A vs Model C | 0.71 (0.70 to 0.73) | not established |
 | Model A vs Model D | 0.62 (0.40 to 0.98) | not established |
 | Model A vs Model E | 0.56 (0.54 to 0.57) | not established |
 
-*Speed: Holm-adjusted across 4 tests. A ratio is the first model's own time per question divided by the second's, on the questions both answered. Appendix A gives every family.*
+*Each row is a paired test. Speed: Holm-adjusted across 4 tests. A ratio is the first model's own time per question divided by the second's, on the questions both answered. Appendix A gives every family.*
 
 ### Time differences between the models
 
-Not decomposed, as the difference is not established: Model A vs Model B, Model A vs Model C, Model A vs Model D, Model A vs Model E and Model D vs Model E.
+Not split into parts, because the difference itself may be chance: Model A vs Model B, Model A vs Model C, Model A vs Model D, Model A vs Model E and Model D vs Model E.
 
 The speed tables split the time per question into its components.
 
@@ -176,7 +221,7 @@ The speed tables split the time per question into its components.
 | Model D | $0.041 | $0.018 | $0.0002 | $0.0000 | $0.014 | $0.0086 |
 | Model E | $0.052 | $0.024 | $0.0002 | $0.0000 | $0.017 | $0.011 |
 
-*Mean cost per question by component, priced on this basis: Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.*
+*Mean cost per question by component. Each component is a kind of token (the word pieces a model reads and writes, which set its price). Uncached input is text read at the full price, and cache reads are stored input read at a lower price. Cache writes store input for later calls; visible output is the answer; reasoning is the model's hidden thinking. Priced on this basis (which prices turned the token counts into dollars): Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.*
 
 ### Paired tests against Model A
 
@@ -184,13 +229,13 @@ Cost: not tested. No candidate price card was resolved for run #31 of Model A on
 
 ### Cost differences between the models
 
-- **Model A vs Model B:** -$0.0078 per question; leading component uncached input, price per token, -$0.0035, 45 % (44–46 %) of the difference.
-- **Model A vs Model C:** -$0.017 per question; leading component uncached input, price per token, -$0.0074, 44 % (43–45 %) of the difference.
-- **Model A vs Model D:** -$0.027 per question; leading component uncached input, price per token, -$0.012, 43 % (42–44 %) of the difference.
-- **Model A vs Model E:** -$0.038 per question; leading component uncached input, price per token, -$0.016, 42 % (42–43 %) of the difference.
-- **Model D vs Model E:** -$0.011 per question; leading component uncached input, price per token, -$0.0044, 39 % (38–39 %) of the difference.
+- **Model A vs Model B:** -$0.0078 per question; leading component uncached input, price per token, -$0.0035, 45% (44–46%) of the difference.
+- **Model A vs Model C:** -$0.017 per question; leading component uncached input, price per token, -$0.0074, 44% (43–45%) of the difference.
+- **Model A vs Model D:** -$0.027 per question; leading component uncached input, price per token, -$0.012, 43% (42–44%) of the difference.
+- **Model A vs Model E:** -$0.038 per question; leading component uncached input, price per token, -$0.016, 42% (42–43%) of the difference.
+- **Model D vs Model E:** -$0.011 per question; leading component uncached input, price per token, -$0.0044, 39% (38–39%) of the difference.
 
-*Each difference is split exactly into parts that sum to it (logarithmic-mean Divisia index), over the questions both models have figures for; a share's interval is a 95 % bootstrap interval over those questions. The difference is the first model's minus the second's; a share can pass 100 % when another component pulls the other way. Appendix B gives every component.*
+*Each difference is split into parts that add up exactly to it (a standard method, the logarithmic-mean Divisia index), using only the questions both models have figures for. A share's interval comes from resampling those questions (a bootstrap interval). The difference is the first model's minus the second's. A share can pass 100% when another component pulls the other way. Appendix B gives every component.*
 
 The cost tables split the cost per question into volume and price.
 
@@ -202,9 +247,19 @@ The cost tables split the cost per question into volume and price.
 |---|---|---|---|---|
 | HQ3.1: shared failures on the same questions | Shared failures on specific questions point to the instrument, not the models. | Suggestive (Low) | — | check 1 |
 
-*Ids: H0 is a null hypothesis, H one between two models, W one within a single model; Q, S and C mark intelligence, speed and cost. Appendix C gives each hypothesis' evidence for and against.*
+*Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
-*Null hypotheses (the difference is within sampling noise):* it stands for Model A vs Model B, Model A vs Model C, Model A vs Model D, Model A vs Model E, Model D vs Model E, within Model A's own questions and within Model E's own questions.
+*How to read a hypothesis ID such as HQ1.2: H compares two models, W looks inside one model, and H0 is a null hypothesis (the starting assumption that a difference is only chance). Q, S and C stand for intelligence, speed and cost. Appendix C gives each hypothesis's evidence for and against.*
+
+No real difference could be shown (the gap may be chance) for 7 comparisons:
+
+- Model A vs. Model B
+- Model A vs. Model C
+- Model A vs. Model D
+- Model A vs. Model E
+- Model D vs. Model E
+- within Model A's own questions
+- within Model E's own questions
 
 The strongest hypothesis in the table: Shared failures on specific questions point to the instrument, not the models. Its grade and the evidence against it stand beside it.
 
@@ -212,14 +267,22 @@ The strongest hypothesis in the table: Shared failures on specific questions poi
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WS3.1: tool rounds in the time of Model A | Tool rounds multiply Model A's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
-| WS3.2: tool rounds in the time of Model D | Tool rounds multiply Model D's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
-| WS3.3: tool rounds in the time of Model E | Tool rounds multiply Model E's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
-| WS2.1: output generation of Model E | Most of Model E's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 65 % (64–66 %) | check 2 |
-| WS2.2: output generation of Model D | Most of Model D's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 66 % (65–67 %) | check 3 |
-| WS2.3: output generation of Model A | Most of Model A's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 70 % (69–71 %) | run 2 |
+| WS3.1: Model A's time spent on tool rounds | Tool rounds multiply Model A's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
+| WS3.2: Model D's time spent on tool rounds | Tool rounds multiply Model D's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
+| WS3.3: Model E's time spent on tool rounds | Tool rounds multiply Model E's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
+| WS2.1: Model E's time spent generating output | Most of Model E's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 65% (64–66%) | check 2 |
+| WS2.2: Model D's time spent generating output | Most of Model D's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 66% (65–67%) | check 3 |
+| WS2.3: Model A's time spent generating output | Most of Model A's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 70% (69–71%) | run 2 |
 
-*Null hypotheses (the difference is within sampling noise):* it stands for Model A vs Model B, Model A vs Model C, Model A vs Model D, Model A vs Model E and Model D vs Model E.
+*Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
+
+No real difference could be shown (the gap may be chance) for 5 pairs:
+
+- Model A vs. Model B
+- Model A vs. Model C
+- Model A vs. Model D
+- Model A vs. Model E
+- Model D vs. Model E
 
 The strongest hypothesis in the table: Tool rounds multiply Model A's time (where its time goes, not a comparison). Its grade and the evidence against it stand beside it.
 
@@ -227,27 +290,35 @@ The strongest hypothesis in the table: Tool rounds multiply Model A's time (wher
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WC1.1: output cost of Model E | Output (with reasoning) is Model E's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 54 % | — |
-| HC2.1: higher price per token of Model E against Model A | Model E costs more than Model A mainly from its price per token. | Probable (Moderate) | 69 % (68–69 %) | — |
-| WC1.2: output cost of Model D | Output (with reasoning) is Model D's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 55 % | — |
-| HC2.2: higher price per token of Model D against Model A | Model D costs more than Model A mainly from its price per token. | Probable (Moderate) | 70 % (69–70 %) | — |
-| HC2.3: higher price per token of Model C against Model A | Model C costs more than Model A mainly from its price per token. | Probable (Moderate) | 71 % (70–71 %) | — |
-| WC1.3: output cost of Model A | Output (with reasoning) is Model A's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 69 % | — |
-| HC2.4: higher price per token of Model E against Model D | Model E costs more than Model D mainly from its price per token. | Probable (Moderate) | 65 % (64–65 %) | — |
-| HC2.5: higher price per token of Model B against Model A | Model B costs more than Model A mainly from its price per token. | Probable (Moderate) | 72 % (71–73 %) | — |
-| HC4.1: weak prompt caching of Model E against Model A | Weak prompt caching raises Model E's cost against Model A. | Ruled out (Not supported) | 9 % (9–9 %) | run 1 |
-| HC4.2: weak prompt caching of Model D against Model A | Weak prompt caching raises Model D's cost against Model A. | Ruled out (Not supported) | 8 % (8–9 %) | run 1 |
-| HC4.3: weak prompt caching of Model E against Model D | Weak prompt caching raises Model E's cost against Model D. | Ruled out (Not supported) | 12 % (12–13 %) | run 1 |
-| HC4.4: weak prompt caching of Model C against Model A | Weak prompt caching raises Model C's cost against Model A. | Ruled out (Not supported) | 8 % (7–8 %) | run 1 |
+| WC1.1: Model E's output cost | Output (with reasoning) is Model E's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 54% | — |
+| HC2.1: Model E's higher price per token, compared with Model A | Model E costs more than Model A mainly from its price per token. | Probable (Moderate) | 69% (68–69%) | — |
+| WC1.2: Model D's output cost | Output (with reasoning) is Model D's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 55% | — |
+| HC2.2: Model D's higher price per token, compared with Model A | Model D costs more than Model A mainly from its price per token. | Probable (Moderate) | 70% (69–70%) | — |
+| HC2.3: Model C's higher price per token, compared with Model A | Model C costs more than Model A mainly from its price per token. | Probable (Moderate) | 71% (70–71%) | — |
+| WC1.3: Model A's output cost | Output (with reasoning) is Model A's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 69% | — |
+| HC2.4: Model E's higher price per token, compared with Model D | Model E costs more than Model D mainly from its price per token. | Probable (Moderate) | 65% (64–65%) | — |
+| HC2.5: Model B's higher price per token, compared with Model A | Model B costs more than Model A mainly from its price per token. | Probable (Moderate) | 72% (71–73%) | — |
+| HC4.1: Model E's weak prompt caching, compared with Model A | Weak prompt caching raises Model E's cost against Model A. | Ruled out (Not supported) | 9% (9–9%) | run 1 |
+| HC4.2: Model D's weak prompt caching, compared with Model A | Weak prompt caching raises Model D's cost against Model A. | Ruled out (Not supported) | 8% (8–9%) | run 1 |
+| HC4.3: Model E's weak prompt caching, compared with Model D | Weak prompt caching raises Model E's cost against Model D. | Ruled out (Not supported) | 12% (12–13%) | run 1 |
+| HC4.4: Model C's weak prompt caching, compared with Model A | Weak prompt caching raises Model C's cost against Model A. | Ruled out (Not supported) | 8% (7–8%) | run 1 |
 
-*Null hypotheses (the difference is within sampling noise):* a paired result rejects it for Model A vs Model B, Model A vs Model C, Model A vs Model D, Model A vs Model E and Model D vs Model E.
+*Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
+
+A real difference was found for 5 pairs:
+
+- Model A vs. Model B
+- Model A vs. Model C
+- Model A vs. Model D
+- Model A vs. Model E
+- Model D vs. Model E
 
 The strongest hypothesis in the table: Output (with reasoning) is Model E's largest cost component (where its cost goes, not a comparison). Its grade and the evidence against it stand beside it.
 
 ### The writer's hypotheses
 
 > [!WARNING]
-> **Not tested by code.** Hypotheses the report writer added from the grader comments and excerpts. Code has not tested them, so their confidence is Low.
+> **Not tested by code.** Hypotheses the report writer added from the grader comments and excerpts. Code has not tested them, so their confidence is Low. Each names its locus (where a cause lies: model, chat, grading, questions, data or provider).
 >
 > - **Intelligence · Low** (Model A; locus suite): Model A may have lost points to a rubric that asks for more than the question states.
 >   - *For:* The grader comment on Q1 names a missing point.
@@ -258,9 +329,9 @@ The strongest hypothesis in the table: Output (with reasoning) is Model E's larg
 
 | Axis | Status | Best hypothesis | Why |
 |---|---|---|---|
-| Intelligence | Not established | HQ3.1: shared failures on the same questions | The best hypothesis, HQ3.1, is graded Low: qualitative only. |
-| Speed | Probable cause | WS3.1: tool rounds in the time of Model A | WS3.1 is the best hypothesis, graded Moderate: replicates failed: Model A has a single run per suite. |
-| Cost | Probable cause | WC1.1: output cost of Model E | WC1.1 is the best hypothesis, graded Moderate: replicates failed: Model E has a single run per suite. |
+| Intelligence | Not established | HQ3.1: shared failures on the same questions | Suggestive (Low) because it is observed, not measured. |
+| Speed | Probable cause | WS3.1: Model A's time spent on tool rounds | Probable (Moderate) because Model A ran only once per suite. |
+| Cost | Probable cause | WC1.1: Model E's output cost | Probable (Moderate) because Model E ran only once per suite. |
 
 > [!TIP]
 > **Conclusion.** Intelligence: Not established. Speed: Probable cause. Cost: Probable cause.
@@ -303,7 +374,7 @@ The benchmark asks single questions, so longer conversations are not measured.
 - **E. Known facts:** what a test, a count, a decomposition or the configuration proves.
 - **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
 - **G. Question details:** the questions this document cites, with their answers.
-- **H. Glossary:** the statistical terms in plain words.
+- **H. Glossary:** every term this document uses, in plain words.
 
 ## Appendix A: Intelligence detail
 
@@ -327,12 +398,12 @@ The benchmark asks single questions, so longer conversations are not measured.
 
 ### Results
 
-| Model | Intelligence Index | 95 % interval | Rank | Median answer time | Speed rank | Cost per question | Cost rank | Critical errors |
+| Model | Intelligence Index | 95% interval | Rank | Median answer time | Speed rank | Cost per question | Cost rank | Critical errors |
 |---|---|---|---|---|---|---|---|---|
-| Model A (reference) | 85 | 82–88 | joint 1 | 12.0 s | 3 | $0.050 | 4 | 0 of 6 answers |
-| Model B | 80 | 77–83 | joint 1 | 9.0 s | 2 | $0.030 | 3 | 0 of 6 answers |
-| Model C | 70 | 66–74 | joint 3 | 15.0 s | 4 | $0.020 | 2 | 1 of 6 answers |
-| Model D | 70 | 64–76 | joint 3 | 8.0 s | 1 | $0.060 | 5 | 0 of 6 answers |
+| Model A (reference) | 85 | 82–88 | 1–2 (tied) | 12.0 s | 3 | $0.050 | 4 | 0 of 6 answers |
+| Model B | 80 | 77–83 | 1–2 (tied) | 9.0 s | 2 | $0.030 | 3 | 0 of 6 answers |
+| Model C | 70 | 66–74 | 3–4 (tied) | 15.0 s | 4 | $0.020 | 2 | 1 of 6 answers |
+| Model D | 70 | 64–76 | 3–4 (tied) | 8.0 s | 1 | $0.060 | 5 | 0 of 6 answers |
 | Model E | 55 | 50–60 | 5 | 20.0 s | 5 | $0.010 | 1 | 0 of 6 answers |
 
 ### Failure profile
@@ -403,7 +474,7 @@ No model was graded by an assessor panel in every run, so no panel agreement fig
 
 Intelligence: Holm-adjusted across 4 tests.
 
-| Pair | Questions | Difference (95 % interval) | Adjusted p | Result |
+| Pair | Questions | Difference (95% interval) | Adjusted p | Result |
 |---|---|---|---|---|
 | Model A vs Model B | 6 | 0.0 points (-21.0 to +21.0) | 0.406 | not established |
 | Model A vs Model C | 6 | +15.2 points (+6.6 to +23.8) | 0.125 | not established |
@@ -414,7 +485,7 @@ Intelligence: Holm-adjusted across 4 tests.
 
 Speed: Holm-adjusted across 4 tests. Cost: not tested. No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 
-| Pair | Time ratio (95 % interval) | Speed result | Spend ratio (95 % interval) | Cost result |
+| Pair | Time ratio (95% interval) | Speed result | Spend ratio (95% interval) | Cost result |
 |---|---|---|---|---|
 | Model A vs Model B | 0.83 (0.53 to 1.31) | not established | — | not tested |
 | Model A vs Model C | 0.71 (0.70 to 0.73) | not established | — | not tested |
@@ -429,7 +500,7 @@ Speed: Holm-adjusted across 4 tests. Cost: not tested. No candidate price card w
 
 Intelligence: Holm-adjusted across 10 tests.
 
-| Pair | Questions | Difference (95 % interval) | Adjusted p | Result |
+| Pair | Questions | Difference (95% interval) | Adjusted p | Result |
 |---|---|---|---|---|
 | Model A vs Model B | 6 | 0.0 points (-21.0 to +21.0) | 0.813 | not established |
 | Model A vs Model C | 6 | +15.2 points (+6.6 to +23.8) | 0.313 | not established |
@@ -446,7 +517,7 @@ Intelligence: Holm-adjusted across 10 tests.
 
 Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested on this measure; each pair says why.
 
-| Pair | Time ratio (95 % interval) | Speed result | Spend ratio (95 % interval) | Cost result |
+| Pair | Time ratio (95% interval) | Speed result | Spend ratio (95% interval) | Cost result |
 |---|---|---|---|---|
 | Model A vs Model B | 0.83 (0.53 to 1.31) | not established | — | not tested |
 | Model A vs Model C | 0.71 (0.70 to 0.73) | not established | — | not tested |
@@ -482,21 +553,23 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 
 | Model | Model calls per answer | Time to first token per call, median | Decode rate | Reasoning share | Output tokens per question |
 |---|---|---|---|---|---|
-| Model A | 2.5 | 0.8 s | — | 31 % | 970 |
-| Model B | 2.5 | 1.0 s | — | 34 % | 1,120 |
-| Model C | 2.5 | 1.3 s | — | 36 % | 1,270 |
-| Model D | 2.5 | 1.5 s | — | 38 % | 1,420 |
-| Model E | 2.5 | 1.8 s | — | 39 % | 1,570 |
+| Model A | 2.5 | 0.8 s | — | 31% | 970 |
+| Model B | 2.5 | 1.0 s | — | 34% | 1,120 |
+| Model C | 2.5 | 1.3 s | — | 36% | 1,270 |
+| Model D | 2.5 | 1.5 s | — | 38% | 1,420 |
+| Model E | 2.5 | 1.8 s | — | 39% | 1,570 |
+
+*Model calls per answer: the model is called again after each tool round (one cycle of calling a tool and reading its result). Decode rate: the median output tokens per second once the model has started writing. Reasoning share: the part of the output tokens spent on hidden thinking.*
 
 ### Tokens per question
 
 | Model | Uncached input | Cache reads | Cache writes | Visible output | Reasoning | Cache-read share |
 |---|---|---|---|---|---|---|
-| Model A | 3,350 | 1,000 | 0 | 670 | 300 | 23 % |
-| Model B | 3,650 | 1,200 | 0 | 740 | 380 | 25 % |
-| Model C | 3,950 | 1,400 | 0 | 810 | 460 | 26 % |
-| Model D | 4,250 | 1,600 | 0 | 880 | 540 | 27 % |
-| Model E | 4,550 | 1,800 | 0 | 950 | 620 | 28 % |
+| Model A | 3,350 | 1,000 | 0 | 670 | 300 | 23% |
+| Model B | 3,650 | 1,200 | 0 | 740 | 380 | 25% |
+| Model C | 3,950 | 1,400 | 0 | 810 | 460 | 26% |
+| Model D | 4,250 | 1,600 | 0 | 880 | 540 | 27% |
+| Model E | 4,550 | 1,800 | 0 | 950 | 620 | 28% |
 
 ### Speed and cost figures
 
@@ -510,222 +583,222 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 
 ### Cost differences, decomposed
 
-| Pair | Questions | Difference per question | Component | Effect | Part | Share (95 % interval) |
+| Pair | Questions | Difference per question | Component | Effect | Part | Share (95% interval) |
 |---|---|---|---|---|---|---|
-| Model A vs Model B | 6 | -$0.0078 | Uncached input, token volume | volume | -$0.0005 | 7 % (6–7 %) |
-| Model A vs Model B | 6 | -$0.0078 | Uncached input, price per token | price | -$0.0035 | 45 % (44–46 %) |
-| Model A vs Model B | 6 | -$0.0078 | Cache reads, token volume | volume | -$0.0000 | 0 % (0–0 %) |
-| Model A vs Model B | 6 | -$0.0078 | Cache reads, price per token | price | -$0.0000 | 0 % (0–0 %) |
-| Model A vs Model B | 6 | -$0.0078 | Cache writes, token volume | volume | $0.0000 | 0 % (0–0 %) |
-| Model A vs Model B | 6 | -$0.0078 | Cache writes, price per token | price | $0.0000 | 0 % (0–0 %) |
-| Model A vs Model B | 6 | -$0.0078 | Visible output, token volume | volume | -$0.0008 | 10 % (10–10 %) |
-| Model A vs Model B | 6 | -$0.0078 | Visible output, price per token | price | -$0.0014 | 18 % (18–18 %) |
-| Model A vs Model B | 6 | -$0.0078 | Reasoning, token volume | volume | -$0.0009 | 11 % (11–12 %) |
-| Model A vs Model B | 6 | -$0.0078 | Reasoning, price per token | price | -$0.0007 | 9 % (9–9 %) |
-| Model A vs Model B | 6 | -$0.0078 | Token volume, all components | volume | -$0.0022 | 28 % (27–29 %) |
-| Model A vs Model B | 6 | -$0.0078 | Price per token, all components | price | -$0.0056 | 72 % (71–73 %) |
-| Model A vs Model C | 6 | -$0.017 | Uncached input, token volume | volume | -$0.0013 | 8 % (7–8 %) |
-| Model A vs Model C | 6 | -$0.017 | Uncached input, price per token | price | -$0.0074 | 44 % (43–45 %) |
-| Model A vs Model C | 6 | -$0.017 | Cache reads, token volume | volume | -$0.0001 | 0 % (0–0 %) |
-| Model A vs Model C | 6 | -$0.017 | Cache reads, price per token | price | +$0.0000 | 0 % (0–0 %) |
-| Model A vs Model C | 6 | -$0.017 | Cache writes, token volume | volume | $0.0000 | 0 % (0–0 %) |
-| Model A vs Model C | 6 | -$0.017 | Cache writes, price per token | price | $0.0000 | 0 % (0–0 %) |
-| Model A vs Model C | 6 | -$0.017 | Visible output, token volume | volume | -$0.0017 | 10 % (10–10 %) |
-| Model A vs Model C | 6 | -$0.017 | Visible output, price per token | price | -$0.0030 | 18 % (17–18 %) |
-| Model A vs Model C | 6 | -$0.017 | Reasoning, token volume | volume | -$0.0019 | 11 % (11–12 %) |
-| Model A vs Model C | 6 | -$0.017 | Reasoning, price per token | price | -$0.0015 | 9 % (9–9 %) |
-| Model A vs Model C | 6 | -$0.017 | Token volume, all components | volume | -$0.0049 | 29 % (29–30 %) |
-| Model A vs Model C | 6 | -$0.017 | Price per token, all components | price | -$0.012 | 71 % (70–71 %) |
-| Model A vs Model D | 6 | -$0.027 | Uncached input, token volume | volume | -$0.0023 | 8 % (8–9 %) |
-| Model A vs Model D | 6 | -$0.027 | Uncached input, price per token | price | -$0.012 | 43 % (42–44 %) |
-| Model A vs Model D | 6 | -$0.027 | Cache reads, token volume | volume | -$0.0001 | 0 % (0–0 %) |
-| Model A vs Model D | 6 | -$0.027 | Cache reads, price per token | price | +$0.0000 | 0 % (0–0 %) |
-| Model A vs Model D | 6 | -$0.027 | Cache writes, token volume | volume | $0.0000 | 0 % (0–0 %) |
-| Model A vs Model D | 6 | -$0.027 | Cache writes, price per token | price | $0.0000 | 0 % (0–0 %) |
-| Model A vs Model D | 6 | -$0.027 | Visible output, token volume | volume | -$0.0027 | 10 % (10–10 %) |
-| Model A vs Model D | 6 | -$0.027 | Visible output, price per token | price | -$0.0047 | 17 % (17–18 %) |
-| Model A vs Model D | 6 | -$0.027 | Reasoning, token volume | volume | -$0.0031 | 12 % (11–12 %) |
-| Model A vs Model D | 6 | -$0.027 | Reasoning, price per token | price | -$0.0025 | 9 % (9–9 %) |
-| Model A vs Model D | 6 | -$0.027 | Token volume, all components | volume | -$0.0082 | 30 % (30–31 %) |
-| Model A vs Model D | 6 | -$0.027 | Price per token, all components | price | -$0.019 | 70 % (69–70 %) |
-| Model A vs Model E | 6 | -$0.038 | Uncached input, token volume | volume | -$0.0035 | 9 % (9–9 %) |
-| Model A vs Model E | 6 | -$0.038 | Uncached input, price per token | price | -$0.016 | 42 % (42–43 %) |
-| Model A vs Model E | 6 | -$0.038 | Cache reads, token volume | volume | -$0.0001 | 0 % (0–0 %) |
-| Model A vs Model E | 6 | -$0.038 | Cache reads, price per token | price | +$0.0000 | 0 % (0–0 %) |
-| Model A vs Model E | 6 | -$0.038 | Cache writes, token volume | volume | $0.0000 | 0 % (0–0 %) |
-| Model A vs Model E | 6 | -$0.038 | Cache writes, price per token | price | $0.0000 | 0 % (0–0 %) |
-| Model A vs Model E | 6 | -$0.038 | Visible output, token volume | volume | -$0.0039 | 10 % (10–10 %) |
-| Model A vs Model E | 6 | -$0.038 | Visible output, price per token | price | -$0.0065 | 17 % (17–17 %) |
-| Model A vs Model E | 6 | -$0.038 | Reasoning, token volume | volume | -$0.0045 | 12 % (12–12 %) |
-| Model A vs Model E | 6 | -$0.038 | Reasoning, price per token | price | -$0.0037 | 10 % (9–10 %) |
-| Model A vs Model E | 6 | -$0.038 | Token volume, all components | volume | -$0.012 | 31 % (31–32 %) |
-| Model A vs Model E | 6 | -$0.038 | Price per token, all components | price | -$0.026 | 69 % (68–69 %) |
-| Model D vs Model E | 6 | -$0.011 | Uncached input, token volume | volume | -$0.0014 | 12 % (12–13 %) |
-| Model D vs Model E | 6 | -$0.011 | Uncached input, price per token | price | -$0.0044 | 39 % (38–39 %) |
-| Model D vs Model E | 6 | -$0.011 | Cache reads, token volume | volume | -$0.0000 | 0 % (0–0 %) |
-| Model D vs Model E | 6 | -$0.011 | Cache reads, price per token | price | -$0.0000 | 0 % (0–0 %) |
-| Model D vs Model E | 6 | -$0.011 | Cache writes, token volume | volume | $0.0000 | 0 % (0–0 %) |
-| Model D vs Model E | 6 | -$0.011 | Cache writes, price per token | price | $0.0000 | 0 % (0–0 %) |
-| Model D vs Model E | 6 | -$0.011 | Visible output, token volume | volume | -$0.0012 | 10 % (10–11 %) |
-| Model D vs Model E | 6 | -$0.011 | Visible output, price per token | price | -$0.0018 | 16 % (16–16 %) |
-| Model D vs Model E | 6 | -$0.011 | Reasoning, token volume | volume | -$0.0014 | 12 % (12–12 %) |
-| Model D vs Model E | 6 | -$0.011 | Reasoning, price per token | price | -$0.0012 | 10 % (10–10 %) |
-| Model D vs Model E | 6 | -$0.011 | Token volume, all components | volume | -$0.0040 | 35 % (35–36 %) |
-| Model D vs Model E | 6 | -$0.011 | Price per token, all components | price | -$0.0074 | 65 % (64–65 %) |
+| Model A vs Model B | 6 | -$0.0078 | Uncached input, token volume | volume | -$0.0005 | 7% (6–7%) |
+| Model A vs Model B | 6 | -$0.0078 | Uncached input, price per token | price | -$0.0035 | 45% (44–46%) |
+| Model A vs Model B | 6 | -$0.0078 | Cache reads, token volume | volume | -$0.0000 | 0% (0–0%) |
+| Model A vs Model B | 6 | -$0.0078 | Cache reads, price per token | price | -$0.0000 | 0% (0–0%) |
+| Model A vs Model B | 6 | -$0.0078 | Cache writes, token volume | volume | $0.0000 | 0% (0–0%) |
+| Model A vs Model B | 6 | -$0.0078 | Cache writes, price per token | price | $0.0000 | 0% (0–0%) |
+| Model A vs Model B | 6 | -$0.0078 | Visible output, token volume | volume | -$0.0008 | 10% (10–10%) |
+| Model A vs Model B | 6 | -$0.0078 | Visible output, price per token | price | -$0.0014 | 18% (18–18%) |
+| Model A vs Model B | 6 | -$0.0078 | Reasoning, token volume | volume | -$0.0009 | 11% (11–12%) |
+| Model A vs Model B | 6 | -$0.0078 | Reasoning, price per token | price | -$0.0007 | 9% (9–9%) |
+| Model A vs Model B | 6 | -$0.0078 | Token volume, all components | volume | -$0.0022 | 28% (27–29%) |
+| Model A vs Model B | 6 | -$0.0078 | Price per token, all components | price | -$0.0056 | 72% (71–73%) |
+| Model A vs Model C | 6 | -$0.017 | Uncached input, token volume | volume | -$0.0013 | 8% (7–8%) |
+| Model A vs Model C | 6 | -$0.017 | Uncached input, price per token | price | -$0.0074 | 44% (43–45%) |
+| Model A vs Model C | 6 | -$0.017 | Cache reads, token volume | volume | -$0.0001 | 0% (0–0%) |
+| Model A vs Model C | 6 | -$0.017 | Cache reads, price per token | price | +$0.0000 | 0% (0–0%) |
+| Model A vs Model C | 6 | -$0.017 | Cache writes, token volume | volume | $0.0000 | 0% (0–0%) |
+| Model A vs Model C | 6 | -$0.017 | Cache writes, price per token | price | $0.0000 | 0% (0–0%) |
+| Model A vs Model C | 6 | -$0.017 | Visible output, token volume | volume | -$0.0017 | 10% (10–10%) |
+| Model A vs Model C | 6 | -$0.017 | Visible output, price per token | price | -$0.0030 | 18% (17–18%) |
+| Model A vs Model C | 6 | -$0.017 | Reasoning, token volume | volume | -$0.0019 | 11% (11–12%) |
+| Model A vs Model C | 6 | -$0.017 | Reasoning, price per token | price | -$0.0015 | 9% (9–9%) |
+| Model A vs Model C | 6 | -$0.017 | Token volume, all components | volume | -$0.0049 | 29% (29–30%) |
+| Model A vs Model C | 6 | -$0.017 | Price per token, all components | price | -$0.012 | 71% (70–71%) |
+| Model A vs Model D | 6 | -$0.027 | Uncached input, token volume | volume | -$0.0023 | 8% (8–9%) |
+| Model A vs Model D | 6 | -$0.027 | Uncached input, price per token | price | -$0.012 | 43% (42–44%) |
+| Model A vs Model D | 6 | -$0.027 | Cache reads, token volume | volume | -$0.0001 | 0% (0–0%) |
+| Model A vs Model D | 6 | -$0.027 | Cache reads, price per token | price | +$0.0000 | 0% (0–0%) |
+| Model A vs Model D | 6 | -$0.027 | Cache writes, token volume | volume | $0.0000 | 0% (0–0%) |
+| Model A vs Model D | 6 | -$0.027 | Cache writes, price per token | price | $0.0000 | 0% (0–0%) |
+| Model A vs Model D | 6 | -$0.027 | Visible output, token volume | volume | -$0.0027 | 10% (10–10%) |
+| Model A vs Model D | 6 | -$0.027 | Visible output, price per token | price | -$0.0047 | 17% (17–18%) |
+| Model A vs Model D | 6 | -$0.027 | Reasoning, token volume | volume | -$0.0031 | 12% (11–12%) |
+| Model A vs Model D | 6 | -$0.027 | Reasoning, price per token | price | -$0.0025 | 9% (9–9%) |
+| Model A vs Model D | 6 | -$0.027 | Token volume, all components | volume | -$0.0082 | 30% (30–31%) |
+| Model A vs Model D | 6 | -$0.027 | Price per token, all components | price | -$0.019 | 70% (69–70%) |
+| Model A vs Model E | 6 | -$0.038 | Uncached input, token volume | volume | -$0.0035 | 9% (9–9%) |
+| Model A vs Model E | 6 | -$0.038 | Uncached input, price per token | price | -$0.016 | 42% (42–43%) |
+| Model A vs Model E | 6 | -$0.038 | Cache reads, token volume | volume | -$0.0001 | 0% (0–0%) |
+| Model A vs Model E | 6 | -$0.038 | Cache reads, price per token | price | +$0.0000 | 0% (0–0%) |
+| Model A vs Model E | 6 | -$0.038 | Cache writes, token volume | volume | $0.0000 | 0% (0–0%) |
+| Model A vs Model E | 6 | -$0.038 | Cache writes, price per token | price | $0.0000 | 0% (0–0%) |
+| Model A vs Model E | 6 | -$0.038 | Visible output, token volume | volume | -$0.0039 | 10% (10–10%) |
+| Model A vs Model E | 6 | -$0.038 | Visible output, price per token | price | -$0.0065 | 17% (17–17%) |
+| Model A vs Model E | 6 | -$0.038 | Reasoning, token volume | volume | -$0.0045 | 12% (12–12%) |
+| Model A vs Model E | 6 | -$0.038 | Reasoning, price per token | price | -$0.0037 | 10% (9–10%) |
+| Model A vs Model E | 6 | -$0.038 | Token volume, all components | volume | -$0.012 | 31% (31–32%) |
+| Model A vs Model E | 6 | -$0.038 | Price per token, all components | price | -$0.026 | 69% (68–69%) |
+| Model D vs Model E | 6 | -$0.011 | Uncached input, token volume | volume | -$0.0014 | 12% (12–13%) |
+| Model D vs Model E | 6 | -$0.011 | Uncached input, price per token | price | -$0.0044 | 39% (38–39%) |
+| Model D vs Model E | 6 | -$0.011 | Cache reads, token volume | volume | -$0.0000 | 0% (0–0%) |
+| Model D vs Model E | 6 | -$0.011 | Cache reads, price per token | price | -$0.0000 | 0% (0–0%) |
+| Model D vs Model E | 6 | -$0.011 | Cache writes, token volume | volume | $0.0000 | 0% (0–0%) |
+| Model D vs Model E | 6 | -$0.011 | Cache writes, price per token | price | $0.0000 | 0% (0–0%) |
+| Model D vs Model E | 6 | -$0.011 | Visible output, token volume | volume | -$0.0012 | 10% (10–11%) |
+| Model D vs Model E | 6 | -$0.011 | Visible output, price per token | price | -$0.0018 | 16% (16–16%) |
+| Model D vs Model E | 6 | -$0.011 | Reasoning, token volume | volume | -$0.0014 | 12% (12–12%) |
+| Model D vs Model E | 6 | -$0.011 | Reasoning, price per token | price | -$0.0012 | 10% (10–10%) |
+| Model D vs Model E | 6 | -$0.011 | Token volume, all components | volume | -$0.0040 | 35% (35–36%) |
+| Model D vs Model E | 6 | -$0.011 | Price per token, all components | price | -$0.0074 | 65% (64–65%) |
 
-*Each difference is split exactly into parts that sum to it (logarithmic-mean Divisia index), over the questions both models have figures for; a share's interval is a 95 % bootstrap interval over those questions. The difference is the first model's minus the second's.*
+*Each difference is split into parts that add up exactly to it (a standard method, the logarithmic-mean Divisia index), using only the questions both models have figures for. A share's interval comes from resampling those questions (a bootstrap interval). The difference is the first model's minus the second's.*
 
 ## Appendix C: Hypothesis details
 
-*Code fired each hypothesis on a pre-declared rule and graded it: High (quantified, established after adjustment, its null rejected, no open confound, every robustness check passed, two or more runs per suite on both sides), Moderate (exactly one of those conditions missed), Low (qualitative only, two or more conditions missed, or the null stands) or Not supported (refuted by the rule's own test). Each null hypothesis says that the difference is within sampling noise.*
+Code raised each hypothesis from a rule fixed in advance and graded it. **Established (High)** needs all of these: it is measured; it is still clear after the correction for many comparisons; its null hypothesis is rejected; no confound (another difference between two models that could account for a result) is open; every robustness check (a test of whether a result survives a small change) passed; and each model ran at least twice per suite. **Probable (Moderate)**: exactly one of those conditions is missing. **Suggestive (Low)**: it is not measured, two or more conditions are missing, or the null hypothesis stands. **Ruled out (Not supported)**: the hypothesis's own test contradicts it. A null hypothesis reads **Rejected — a real difference** when a test found a real difference, and **Stands — may be chance** when none could be shown. Each entry gives the models, the locus and the grade, then the evidence for and against.
 
 ### Intelligence
 
 - **HQ3.1: shared failures on the same questions** (Model A, Model B, Model C, Model D and Model E; locus suite / corpus / chat; Suggestive (Low))
   - *For:* Q3: 4 of 5 models scored below 50.
   - *Against:* none recorded.
-  - *Grade reasons:* qualitative only.
+  - *Grade reasons:* it is observed, not measured.
   - *Refuted if:* One model answered the question well.
 
 | Hypothesis | Pair | Paired result | Grade |
 |---|---|---|---|
-| H0-Q.1 | Model A vs Model B | 0.0 points, not established | Suggestive (Low) |
-| H0-Q.2 | Model A vs Model C | +15.2 points, not established | Suggestive (Low) |
-| H0-Q.3 | Model A vs Model D | +15.8 points, not established | Suggestive (Low) |
-| H0-Q.4 | Model A vs Model E | +30.0 points, not established | Suggestive (Low) |
-| H0-Q.5 | Model D vs Model E | +14.2 points, not established | Suggestive (Low) |
-| H0-W.1 | within Model A | No contrast could be made. | Suggestive (Low) |
-| H0-W.2 | within Model E | No contrast could be made. | Suggestive (Low) |
+| H0-Q.1 | Model A vs Model B | 0.0 points, not established | Stands — may be chance (Low) |
+| H0-Q.2 | Model A vs Model C | +15.2 points, not established | Stands — may be chance (Low) |
+| H0-Q.3 | Model A vs Model D | +15.8 points, not established | Stands — may be chance (Low) |
+| H0-Q.4 | Model A vs Model E | +30.0 points, not established | Stands — may be chance (Low) |
+| H0-Q.5 | Model D vs Model E | +14.2 points, not established | Stands — may be chance (Low) |
+| H0-W.1 | within Model A | No contrast could be made. | Stands — may be chance (Low) |
+| H0-W.2 | within Model E | No contrast could be made. | Stands — may be chance (Low) |
 
 ### Speed
 
-- **WS3.1: tool rounds in the time of Model A** (Model A; locus model / chat; Probable (Moderate))
-  - *For:* Across Model A's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
+- **WS3.1: Model A's time spent on tool rounds** (Model A; locus model / chat; Probable (Moderate))
+  - *For:* Across Model A's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* The ρ interval includes zero.
-  - *Robustness:* Replicates failed (Model A has a single run per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
-- **WS3.2: tool rounds in the time of Model D** (Model D; locus model / chat; Probable (Moderate))
-  - *For:* Across Model D's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
+  - *Robustness:* Replicates failed (Model A ran only once per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
+- **WS3.2: Model D's time spent on tool rounds** (Model D; locus model / chat; Probable (Moderate))
+  - *For:* Across Model D's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* The ρ interval includes zero.
-  - *Robustness:* Replicates failed (Model D has a single run per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
-- **WS3.3: tool rounds in the time of Model E** (Model E; locus model / chat; Probable (Moderate))
-  - *For:* Across Model E's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
+  - *Robustness:* Replicates failed (Model D ran only once per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
+- **WS3.3: Model E's time spent on tool rounds** (Model E; locus model / chat; Probable (Moderate))
+  - *For:* Across Model E's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* The ρ interval includes zero.
-  - *Robustness:* Replicates failed (Model E has a single run per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
-- **WS2.1: output generation of Model E** (Model E; locus model; Ruled out (Not supported))
-  - *For:* Output generation is 65 % (64–66 %) of model time per question.
-  - *Against:* Reasoning is 39 % of Model E's output tokens.
-  - *Grade reasons:* the rule's own test refutes it: reasoning is 39 % of Model E's output tokens.
+  - *Robustness:* Replicates failed (Model E ran only once per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
+- **WS2.1: Model E's time spent generating output** (Model E; locus model; Ruled out (Not supported))
+  - *For:* Output generation is 65% (64–66%) of model time per question.
+  - *Against:* Reasoning is 39% of Model E's output tokens.
+  - *Grade reasons:* its own test rules it out: reasoning is 39% of Model E's output tokens.
   - *Refuted if:* The reasoning share is under one half.
-  - *Robustness:* Replicates failed (Model E has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
-- **WS2.2: output generation of Model D** (Model D; locus model; Ruled out (Not supported))
-  - *For:* Output generation is 66 % (65–67 %) of model time per question.
-  - *Against:* Reasoning is 38 % of Model D's output tokens.
-  - *Grade reasons:* the rule's own test refutes it: reasoning is 38 % of Model D's output tokens.
+  - *Robustness:* Replicates failed (Model E ran only once per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
+- **WS2.2: Model D's time spent generating output** (Model D; locus model; Ruled out (Not supported))
+  - *For:* Output generation is 66% (65–67%) of model time per question.
+  - *Against:* Reasoning is 38% of Model D's output tokens.
+  - *Grade reasons:* its own test rules it out: reasoning is 38% of Model D's output tokens.
   - *Refuted if:* The reasoning share is under one half.
-  - *Robustness:* Replicates failed (Model D has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
-- **WS2.3: output generation of Model A** (Model A; locus model; Ruled out (Not supported))
-  - *For:* Output generation is 70 % (69–71 %) of model time per question.
-  - *Against:* Reasoning is 31 % of Model A's output tokens.
-  - *Grade reasons:* the rule's own test refutes it: reasoning is 31 % of Model A's output tokens.
+  - *Robustness:* Replicates failed (Model D ran only once per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
+- **WS2.3: Model A's time spent generating output** (Model A; locus model; Ruled out (Not supported))
+  - *For:* Output generation is 70% (69–71%) of model time per question.
+  - *Against:* Reasoning is 31% of Model A's output tokens.
+  - *Grade reasons:* its own test rules it out: reasoning is 31% of Model A's output tokens.
   - *Refuted if:* The reasoning share is under one half.
-  - *Robustness:* Replicates failed (Model A has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
+  - *Robustness:* Replicates failed (Model A ran only once per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
 
 | Hypothesis | Pair | Paired result | Grade |
 |---|---|---|---|
-| H0-S.1 | Model A vs Model B | 0.83 times as long, not established | Suggestive (Low) |
-| H0-S.2 | Model A vs Model C | 0.71 times as long, not established | Suggestive (Low) |
-| H0-S.3 | Model A vs Model D | 0.62 times as long, not established | Suggestive (Low) |
-| H0-S.4 | Model A vs Model E | 0.56 times as long, not established | Suggestive (Low) |
-| H0-S.5 | Model D vs Model E | 0.89 times as long, not established | Suggestive (Low) |
+| H0-S.1 | Model A vs Model B | 0.83 times as long, not established | Stands — may be chance (Low) |
+| H0-S.2 | Model A vs Model C | 0.71 times as long, not established | Stands — may be chance (Low) |
+| H0-S.3 | Model A vs Model D | 0.62 times as long, not established | Stands — may be chance (Low) |
+| H0-S.4 | Model A vs Model E | 0.56 times as long, not established | Stands — may be chance (Low) |
+| H0-S.5 | Model D vs Model E | 0.89 times as long, not established | Stands — may be chance (Low) |
 
 ### Cost
 
-- **WC1.1: output cost of Model E** (Model E; locus model; Probable (Moderate))
-  - *For:* Visible output and reasoning are 54 % of Model E's cost per question.
+- **WC1.1: Model E's output cost** (Model E; locus model; Probable (Moderate))
+  - *For:* Visible output and reasoning are 54% of Model E's cost per question.
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* Another component is larger.
-  - *Robustness:* Replicates failed (Model E has a single run per suite).
-- **HC2.1: higher price per token of Model E against Model A** (Model E and Model A; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 69 % (68–69 %) of the $0.038 per-question cost difference.
-  - *Against:* The volume effect is 31 % (31–32 %) of the difference.
+  - *Robustness:* Replicates failed (Model E ran only once per suite).
+- **HC2.1: Model E's higher price per token, compared with Model A** (Model E and Model A; locus model; Probable (Moderate))
+  - *For:* Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference.
+  - *Against:* The volume effect is 31% (31–32%) of the difference.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model E and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **WC1.2: output cost of Model D** (Model D; locus model; Probable (Moderate))
-  - *For:* Visible output and reasoning are 55 % of Model D's cost per question.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
+- **WC1.2: Model D's output cost** (Model D; locus model; Probable (Moderate))
+  - *For:* Visible output and reasoning are 55% of Model D's cost per question.
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* Another component is larger.
-  - *Robustness:* Replicates failed (Model D has a single run per suite).
-- **HC2.2: higher price per token of Model D against Model A** (Model D and Model A; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 70 % (69–70 %) of the $0.027 per-question cost difference.
-  - *Against:* The volume effect is 30 % (30–31 %) of the difference.
+  - *Robustness:* Replicates failed (Model D ran only once per suite).
+- **HC2.2: Model D's higher price per token, compared with Model A** (Model D and Model A; locus model; Probable (Moderate))
+  - *For:* Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference.
+  - *Against:* The volume effect is 30% (30–31%) of the difference.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model D and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC2.3: higher price per token of Model C against Model A** (Model C and Model A; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 71 % (70–71 %) of the $0.017 per-question cost difference.
-  - *Against:* The volume effect is 29 % (29–30 %) of the difference.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
+- **HC2.3: Model C's higher price per token, compared with Model A** (Model C and Model A; locus model; Probable (Moderate))
+  - *For:* Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference.
+  - *Against:* The volume effect is 29% (29–30%) of the difference.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model C and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **WC1.3: output cost of Model A** (Model A; locus model; Probable (Moderate))
-  - *For:* Visible output and reasoning are 69 % of Model A's cost per question.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
+- **WC1.3: Model A's output cost** (Model A; locus model; Probable (Moderate))
+  - *For:* Visible output and reasoning are 69% of Model A's cost per question.
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* Another component is larger.
-  - *Robustness:* Replicates failed (Model A has a single run per suite).
-- **HC2.4: higher price per token of Model E against Model D** (Model E and Model D; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 65 % (64–65 %) of the $0.011 per-question cost difference.
-  - *Against:* The volume effect is 35 % (35–36 %) of the difference.
+  - *Robustness:* Replicates failed (Model A ran only once per suite).
+- **HC2.4: Model E's higher price per token, compared with Model D** (Model E and Model D; locus model; Probable (Moderate))
+  - *For:* Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference.
+  - *Against:* The volume effect is 35% (35–36%) of the difference.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model E and Model D have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC2.5: higher price per token of Model B against Model A** (Model B and Model A; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 72 % (71–73 %) of the $0.0078 per-question cost difference.
-  - *Against:* The volume effect is 28 % (27–29 %) of the difference.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
+- **HC2.5: Model B's higher price per token, compared with Model A** (Model B and Model A; locus model; Probable (Moderate))
+  - *For:* Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference.
+  - *Against:* The volume effect is 28% (27–29%) of the difference.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model B and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC4.1: weak prompt caching of Model E against Model A** (Model E and Model A; locus chat / provider; Ruled out (Not supported))
-  - *For:* Uncached input, token volume accounts for 9 % (9–9 %) of the $0.038 per-question cost difference.
-  - *Against:* Model E's cache-read share is 28 % against the models' median of 26 %.
-  - *Grade reasons:* the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
+- **HC4.1: Model E's weak prompt caching, compared with Model A** (Model E and Model A; locus chat / provider; Ruled out (Not supported))
+  - *For:* Uncached input, token volume accounts for 9% (9–9%) of the $0.038 per-question cost difference.
+  - *Against:* Model E's cache-read share is 28% against the models' median of 26%.
+  - *Grade reasons:* its own test rules it out: Model E's cache-read share is 28% against the models' median of 26%.
   - *Refuted if:* The cache-read share is comparable to the other models'.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model E and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC4.2: weak prompt caching of Model D against Model A** (Model D and Model A; locus chat / provider; Ruled out (Not supported))
-  - *For:* Uncached input, token volume accounts for 8 % (8–9 %) of the $0.027 per-question cost difference.
-  - *Against:* Model D's cache-read share is 27 % against the models' median of 26 %.
-  - *Grade reasons:* the rule's own test refutes it: Model D's cache-read share is 27 % against the models' median of 26 %.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
+- **HC4.2: Model D's weak prompt caching, compared with Model A** (Model D and Model A; locus chat / provider; Ruled out (Not supported))
+  - *For:* Uncached input, token volume accounts for 8% (8–9%) of the $0.027 per-question cost difference.
+  - *Against:* Model D's cache-read share is 27% against the models' median of 26%.
+  - *Grade reasons:* its own test rules it out: Model D's cache-read share is 27% against the models' median of 26%.
   - *Refuted if:* The cache-read share is comparable to the other models'.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model D and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC4.3: weak prompt caching of Model E against Model D** (Model E and Model D; locus chat / provider; Ruled out (Not supported))
-  - *For:* Uncached input, token volume accounts for 12 % (12–13 %) of the $0.011 per-question cost difference.
-  - *Against:* Model E's cache-read share is 28 % against the models' median of 26 %.
-  - *Grade reasons:* the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
+- **HC4.3: Model E's weak prompt caching, compared with Model D** (Model E and Model D; locus chat / provider; Ruled out (Not supported))
+  - *For:* Uncached input, token volume accounts for 12% (12–13%) of the $0.011 per-question cost difference.
+  - *Against:* Model E's cache-read share is 28% against the models' median of 26%.
+  - *Grade reasons:* its own test rules it out: Model E's cache-read share is 28% against the models' median of 26%.
   - *Refuted if:* The cache-read share is comparable to the other models'.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model E and Model D have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC4.4: weak prompt caching of Model C against Model A** (Model C and Model A; locus chat / provider; Ruled out (Not supported))
-  - *For:* Uncached input, token volume accounts for 8 % (7–8 %) of the $0.017 per-question cost difference.
-  - *Against:* Model C's cache-read share is 26 % against the models' median of 26 %.
-  - *Grade reasons:* the rule's own test refutes it: Model C's cache-read share is 26 % against the models' median of 26 %.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
+- **HC4.4: Model C's weak prompt caching, compared with Model A** (Model C and Model A; locus chat / provider; Ruled out (Not supported))
+  - *For:* Uncached input, token volume accounts for 8% (7–8%) of the $0.017 per-question cost difference.
+  - *Against:* Model C's cache-read share is 26% against the models' median of 26%.
+  - *Grade reasons:* its own test rules it out: Model C's cache-read share is 26% against the models' median of 26%.
   - *Refuted if:* The cache-read share is comparable to the other models'.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model C and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
 
 | Hypothesis | Pair | Paired result | Grade |
 |---|---|---|---|
-| H0-C.1 | Model A vs Model B | No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted). | Ruled out (Not supported) |
-| H0-C.2 | Model A vs Model C | No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted). | Ruled out (Not supported) |
-| H0-C.3 | Model A vs Model D | No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted). | Ruled out (Not supported) |
-| H0-C.4 | Model A vs Model E | No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted). | Ruled out (Not supported) |
-| H0-C.5 | Model D vs Model E | No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted). | Ruled out (Not supported) |
+| H0-C.1 | Model A vs Model B | No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted). | Rejected — a real difference (Not supported) |
+| H0-C.2 | Model A vs Model C | No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted). | Rejected — a real difference (Not supported) |
+| H0-C.3 | Model A vs Model D | No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted). | Rejected — a real difference (Not supported) |
+| H0-C.4 | Model A vs Model E | No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted). | Rejected — a real difference (Not supported) |
+| H0-C.5 | Model D vs Model E | No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted). | Rejected — a real difference (Not supported) |
 
 ## Appendix D: Run settings
 
@@ -787,11 +860,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ## Appendix E: Known facts
 
-1. Uncached input, price per token accounts for 45 % (44–46 %) of the per-question cost difference between Model A and Model B.
-2. Uncached input, price per token accounts for 44 % (43–45 %) of the per-question cost difference between Model A and Model C.
-3. Uncached input, price per token accounts for 43 % (42–44 %) of the per-question cost difference between Model A and Model D.
-4. Uncached input, price per token accounts for 42 % (42–43 %) of the per-question cost difference between Model A and Model E.
-5. Uncached input, price per token accounts for 39 % (38–39 %) of the per-question cost difference between Model D and Model E.
+1. Uncached input, price per token accounts for 45% (44–46%) of the per-question cost difference between Model A and Model B.
+2. Uncached input, price per token accounts for 44% (43–45%) of the per-question cost difference between Model A and Model C.
+3. Uncached input, price per token accounts for 43% (42–44%) of the per-question cost difference between Model A and Model D.
+4. Uncached input, price per token accounts for 42% (42–43%) of the per-question cost difference between Model A and Model E.
+5. Uncached input, price per token accounts for 39% (38–39%) of the per-question cost difference between Model D and Model E.
 6. Model A answered 2 of 6 scored questions without a tool call.
 7. Model B answered 2 of 6 scored questions without a tool call.
 8. Model C answered 2 of 6 scored questions without a tool call.
@@ -1057,15 +1130,42 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ## Appendix H: Glossary
 
-- **95 % interval:** a range built so that, if the questions were sampled again and again, 95 of 100 such ranges would hold the true value. When two models' intervals overlap, the intervals alone do not say which is higher.
-- **Paired test:** a comparison of two models question by question, on the questions both answered, so that how hard each question is counts the same for both.
-- **Holm adjustment:** testing many pairs at once turns up some differences by chance. The Holm adjustment raises each p-value so that the whole family of tests keeps a 5 % chance of a false finding; a result is established when its adjusted p-value is below 0.05.
-- **Null hypothesis:** the statement that a difference is within sampling noise. It stands until a paired test, or without one a bootstrap interval that excludes zero, rejects it; a null that stands is not proof that the two are equal.
-- **Grade words:** Established (High) is measured, established after adjustment, robust and replicated; Probable (Moderate) misses one of those conditions; Suggestive (Low) is qualitative, misses two or more, or may be noise; Ruled out (Not supported) is refuted by its own rule's test.
-- **Points at risk:** the index points a model lost on its answers below its own median answer, each answer counted once under its first signal (no tool call, a defect, a critical error). An upper bound of what each signal costs, not an estimate of its effect.
-- **Decomposition share:** the part of a speed or cost difference one component accounts for; the parts sum exactly to the difference. A share can pass 100 % when two components pull in opposite directions: if the difference is 2 s, one component adding 3 s and another taking 1 s back are 150 % and −50 %. Over few questions or a small difference, a share's interval can be very wide.
-- **Isolated miss:** a question a model scored 50 or less on while the other models' median was 75 or more.
-- **Joint rank:** two models share a rank when their 95 % intervals overlap.
+- **95% interval:** A range built so that, if the questions were drawn again and again, 95 of 100 such ranges would contain the true value. When two models' ranges overlap, the ranges alone cannot say which is higher.
+- **Answer quality:** The score of one answer, from 0 to 100. It combines the four dimension scores in a weighted geometric mean and is capped when the answer has a critical error.
+- **Answers without tools:** Answers for which the model called no tool, such as the wiki search or the source code search, and answered from its own knowledge alone.
+- **Bootstrap interval:** An interval found by redrawing the questions at random, with repeats, many times and recomputing the figure each time. The middle 95 of every 100 recomputed figures form the interval.
+- **Confound:** A setting other than the model itself that differs between the two models a hypothesis compares, such as the response style. While it is open, its effect cannot be told apart from the model's.
+- **Critical error:** A mistake the graders judge serious, such as a wrong game rule stated as fact. It caps the answer's quality, whatever the answer's other scores.
+- **Decomposition share:** The part of a time or cost difference that one component accounts for, found by a standard method (the logarithmic-mean Divisia index). The parts always add up to the whole difference, so one part can be larger than the whole when another pulls the other way: a 2 s gap can be 3 s from one part and −1 s from another.
+- **Difficulty-weighted mean:** The average of answer quality over the questions, with harder questions counting for more. The Intelligence Index is computed this way.
+- **Dimension:** One of the four qualities each answer is graded on: Accuracy, Completeness, Conciseness and Readability. Each has its own weight in the answer's quality.
+- **Grade words:** Established (High) means measured, still clear after the correction for many comparisons, and robust in every check, with no open confound and two or more runs per suite. Probable (Moderate) misses exactly one of those conditions. Suggestive (Low) is a lead only. Ruled out (Not supported) means the hypothesis's own test contradicts it.
+- **Holm adjustment:** When many pairs are compared at once, some differences look real by chance. The Holm adjustment raises the bar for each comparison, so the whole set keeps at most a one-in-twenty chance of any false finding.
+- **Hypothesis:** A possible cause of a difference, raised by a rule fixed in advance and tested by code against the data. Each hypothesis states what would refute it and receives a grade.
+- **Intelligence Index:** A model's overall score for answer quality, from 0 to 100. It is the mean quality of the model's answers, with harder questions counting for more.
+- **Isolated miss:** A question a model scored 50 or less on while the other models' median score was 75 or more.
+- **Leave-one-out check:** A robustness check that repeats a result with each question removed in turn. If the result rests on a single question, the check fails.
+- **Locus:** Where a hypothesis places the cause: the model itself; the Overseer chat prompt or its tools (chat); the grading (harness); a question or its rubric (suite); the data a tool reads (corpus); or the serving (provider).
+- **Median and mean:** The median is the middle value once all values are sorted, so a few very slow or costly questions barely move it. The mean is the plain average, which they do move.
+- **Null hypothesis:** The starting assumption that a difference, between two models or between two groups of questions, is only chance. A paired test, or else a bootstrap interval that excludes zero, can reject it. A null that stands does not prove that the two are equal.
+- **Output generation and decode rate:** Output generation is the time the model spends writing its reply once it has started. The decode rate is how fast it writes, in tokens per second.
+- **p-value:** The chance of a difference at least this large if the two models were really equal. After the Holm adjustment, a p-value below 0.05 counts as a real difference.
+- **Paired test:** A comparison of two models question by question, on the questions both answered, so that how hard each question is counts the same for both.
+- **Points at risk:** The index points a model lost on its answers below its own median answer, each answer counted once under its first signal, such as no tool call, a defect or a critical error. They are an upper bound on what each signal costs, not an estimate of its effect.
+- **Pricing basis:** The prices per token used to turn token counts into dollars: today's catalog prices, or the prices stored with each run. Costs on different bases are not comparable.
+- **Reference model:** The model each other model is paired-tested against: the one chosen for the comparison, or else the model with the highest Intelligence Index.
+- **Replicate run:** Running the same model on the same questions again. With only one run per suite, the document cannot tell whether a result would repeat, which caps every grade at Probable.
+- **Response style:** The production chat asks the model for concise answers; a run can ask for detailed ones instead. Completeness is graded under the style the run used, and only a pair of runs in both styles shows how much the style matters.
+- **Robustness check:** A test of whether a hypothesis still holds when the data changes a little: one question left out, another suite, a second run, the other panel member, or another setting.
+- **Runs per suite:** How many times a model answered every question of a suite. With one run per suite, the data cannot show whether a result would repeat.
+- **Scoring levels:** Each dimension is graded on a fixed scale of levels, each described by the answer behavior that earns it (behaviorally anchored levels). Each level stands for a fixed score.
+- **Suite:** A fixed set of benchmark questions, each with its rubric. A run answers every question of one suite once.
+- **Tied rank:** When a model's 95% interval overlaps a neighbor's, the data cannot put them in order, so they share a rank. The rank then shows the span of places the tied group covers, such as 2–9 (tied).
+- **Time ratio and spend ratio:** One model's own time, or spend, per question divided by the other's, on the questions both answered. A ratio of 1.50 means half as much again, and 0.50 means half.
+- **Time to first token:** The seconds from sending a request to the first word of the reply. For reasoning models it is mostly the time the model spends thinking before it answers.
+- **Tokens:** The pieces of text, roughly three quarters of a word each, that a model reads and writes; providers price by them. Uncached input is text read at the full price. Cache reads are input stored from an earlier call and charged less; cache writes store it. Visible output is the answer, and reasoning is the model's hidden thinking, billed as output.
+- **Tool round:** One cycle in which the model calls a tool, such as the wiki search, reads its result and continues. Each round adds a model call, with its own wait for the first token.
+- **Weighted geometric mean:** The way an answer's four dimension scores are combined. Unlike a plain average, it falls sharply when any one dimension is very low, so strong dimensions cannot hide a weak one.
 
 ## Fact sheet
 
@@ -1624,7 +1724,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % (95 % interval 0 %–39 %); before scoring method 13, flagged rather than confirmed",
+      "display": "0% (95% interval 0%–39%); before scoring method 13, flagged rather than confirmed",
       "key": "model.A.outcome.confirmedCriticalRate",
       "value": 0
     },
@@ -1899,7 +1999,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "joint 1st of 5 (intervals overlap)",
+      "display": "1–2 of 5 (tied: intervals overlap)",
       "key": "model.A.quality.rank",
       "value": 1
     },
@@ -1982,7 +2082,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %",
+      "display": "Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%",
       "key": "model.A.scoring.weights"
     },
     {
@@ -2023,7 +2123,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of model time",
+      "display": "0% of model time",
       "key": "model.A.speed.ownWaitShare",
       "value": 0
     },
@@ -2094,7 +2194,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "23 % of input tokens read from the cache",
+      "display": "23% of input tokens read from the cache",
       "key": "model.A.tokens.cacheReadShare",
       "value": 0.22988505747126436
     },
@@ -2118,7 +2218,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "31 % of output tokens",
+      "display": "31% of output tokens",
       "key": "model.A.tokens.reasoningShare",
       "value": 0.30927835051546393
     },
@@ -2385,7 +2485,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % (95 % interval 0 %–39 %); before scoring method 13, flagged rather than confirmed",
+      "display": "0% (95% interval 0%–39%); before scoring method 13, flagged rather than confirmed",
       "key": "model.B.outcome.confirmedCriticalRate",
       "value": 0
     },
@@ -2660,7 +2760,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "joint 1st of 5 (intervals overlap)",
+      "display": "1–2 of 5 (tied: intervals overlap)",
       "key": "model.B.quality.rank",
       "value": 1
     },
@@ -2743,7 +2843,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %",
+      "display": "Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%",
       "key": "model.B.scoring.weights"
     },
     {
@@ -2784,7 +2884,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of model time",
+      "display": "0% of model time",
       "key": "model.B.speed.ownWaitShare",
       "value": 0
     },
@@ -2855,7 +2955,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "25 % of input tokens read from the cache",
+      "display": "25% of input tokens read from the cache",
       "key": "model.B.tokens.cacheReadShare",
       "value": 0.24742268041237114
     },
@@ -2879,7 +2979,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "34 % of output tokens",
+      "display": "34% of output tokens",
       "key": "model.B.tokens.reasoningShare",
       "value": 0.3392857142857143
     },
@@ -3170,7 +3270,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "17 % (95 % interval 3 %–56 %); before scoring method 13, flagged rather than confirmed",
+      "display": "17% (95% interval 3%–56%); before scoring method 13, flagged rather than confirmed",
       "key": "model.C.outcome.confirmedCriticalRate",
       "value": 0.16666666666666666
     },
@@ -3445,7 +3545,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "joint 3rd of 5 (intervals overlap)",
+      "display": "3–4 of 5 (tied: intervals overlap)",
       "key": "model.C.quality.rank",
       "value": 3
     },
@@ -3528,7 +3628,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %",
+      "display": "Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%",
       "key": "model.C.scoring.weights"
     },
     {
@@ -3569,7 +3669,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of model time",
+      "display": "0% of model time",
       "key": "model.C.speed.ownWaitShare",
       "value": 0
     },
@@ -3640,7 +3740,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "26 % of input tokens read from the cache",
+      "display": "26% of input tokens read from the cache",
       "key": "model.C.tokens.cacheReadShare",
       "value": 0.2616822429906542
     },
@@ -3664,7 +3764,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "36 % of output tokens",
+      "display": "36% of output tokens",
       "key": "model.C.tokens.reasoningShare",
       "value": 0.36220472440944884
     },
@@ -3955,7 +4055,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % (95 % interval 0 %–39 %); before scoring method 13, flagged rather than confirmed",
+      "display": "0% (95% interval 0%–39%); before scoring method 13, flagged rather than confirmed",
       "key": "model.D.outcome.confirmedCriticalRate",
       "value": 0
     },
@@ -4230,7 +4330,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "joint 3rd of 5 (intervals overlap)",
+      "display": "3–4 of 5 (tied: intervals overlap)",
       "key": "model.D.quality.rank",
       "value": 3
     },
@@ -4313,7 +4413,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %",
+      "display": "Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%",
       "key": "model.D.scoring.weights"
     },
     {
@@ -4354,7 +4454,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of model time",
+      "display": "0% of model time",
       "key": "model.D.speed.ownWaitShare",
       "value": 0
     },
@@ -4425,7 +4525,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "27 % of input tokens read from the cache",
+      "display": "27% of input tokens read from the cache",
       "key": "model.D.tokens.cacheReadShare",
       "value": 0.27350427350427353
     },
@@ -4449,7 +4549,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "38 % of output tokens",
+      "display": "38% of output tokens",
       "key": "model.D.tokens.reasoningShare",
       "value": 0.38028169014084506
     },
@@ -4740,7 +4840,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % (95 % interval 0 %–39 %); before scoring method 13, flagged rather than confirmed",
+      "display": "0% (95% interval 0%–39%); before scoring method 13, flagged rather than confirmed",
       "key": "model.E.outcome.confirmedCriticalRate",
       "value": 0
     },
@@ -5098,7 +5198,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %",
+      "display": "Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%",
       "key": "model.E.scoring.weights"
     },
     {
@@ -5139,7 +5239,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of model time",
+      "display": "0% of model time",
       "key": "model.E.speed.ownWaitShare",
       "value": 0
     },
@@ -5210,7 +5310,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "28 % of input tokens read from the cache",
+      "display": "28% of input tokens read from the cache",
       "key": "model.E.tokens.cacheReadShare",
       "value": 0.28346456692913385
     },
@@ -5234,7 +5334,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "39 % of output tokens",
+      "display": "39% of output tokens",
       "key": "model.E.tokens.reasoningShare",
       "value": 0.39490445859872614
     },
@@ -5336,9 +5436,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question.",
+      "display": "Model B scored higher than Model D (established by 95% intervals that do not overlap) at 0.50 times its cost per question.",
       "key": "notable.1.summary",
-      "value": "Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question."
+      "value": "Model B scored higher than Model D (established by 95% intervals that do not overlap) at 0.50 times its cost per question."
     },
     {
       "available": true,
@@ -5360,9 +5460,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time.",
+      "display": "Model D scored higher than Model E (established by 95% intervals that do not overlap) at 0.40 times its median answer time.",
       "key": "notable.2.summary",
-      "value": "Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time."
+      "value": "Model D scored higher than Model E (established by 95% intervals that do not overlap) at 0.40 times its median answer time."
     },
     {
       "available": true,
@@ -5384,9 +5484,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time.",
+      "display": "Model B scored higher than Model E (established by 95% intervals that do not overlap) at 0.45 times its median answer time.",
       "key": "notable.3.summary",
-      "value": "Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time."
+      "value": "Model B scored higher than Model E (established by 95% intervals that do not overlap) at 0.45 times its median answer time."
     },
     {
       "available": true,
@@ -5474,7 +5574,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the 95 % intervals of Model A and Model B overlap",
+      "display": "the 95% intervals of Model A and Model B overlap",
       "key": "pair.A.B.intervalOverlap",
       "value": true
     },
@@ -5617,7 +5717,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the 95 % intervals of Model A and Model C do not overlap",
+      "display": "the 95% intervals of Model A and Model C do not overlap",
       "key": "pair.A.C.intervalOverlap",
       "value": false
     },
@@ -5760,7 +5860,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the 95 % intervals of Model A and Model D do not overlap",
+      "display": "the 95% intervals of Model A and Model D do not overlap",
       "key": "pair.A.D.intervalOverlap",
       "value": false
     },
@@ -5903,7 +6003,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the 95 % intervals of Model A and Model E do not overlap",
+      "display": "the 95% intervals of Model A and Model E do not overlap",
       "key": "pair.A.E.intervalOverlap",
       "value": false
     },
@@ -6010,7 +6110,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the 95 % intervals of Model B and Model C do not overlap",
+      "display": "the 95% intervals of Model B and Model C do not overlap",
       "key": "pair.B.C.intervalOverlap",
       "value": false
     },
@@ -6105,7 +6205,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the 95 % intervals of Model B and Model D do not overlap",
+      "display": "the 95% intervals of Model B and Model D do not overlap",
       "key": "pair.B.D.intervalOverlap",
       "value": false
     },
@@ -6200,7 +6300,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the 95 % intervals of Model B and Model E do not overlap",
+      "display": "the 95% intervals of Model B and Model E do not overlap",
       "key": "pair.B.E.intervalOverlap",
       "value": false
     },
@@ -6295,7 +6395,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the 95 % intervals of Model C and Model D overlap",
+      "display": "the 95% intervals of Model C and Model D overlap",
       "key": "pair.C.D.intervalOverlap",
       "value": true
     },
@@ -6390,7 +6490,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the 95 % intervals of Model C and Model E do not overlap",
+      "display": "the 95% intervals of Model C and Model E do not overlap",
       "key": "pair.C.E.intervalOverlap",
       "value": false
     },
@@ -6491,7 +6591,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the 95 % intervals of Model D and Model E do not overlap",
+      "display": "the 95% intervals of Model D and Model E do not overlap",
       "key": "pair.D.E.intervalOverlap",
       "value": false
     },
@@ -6763,111 +6863,111 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "71–73 %",
+      "display": "71–73%",
       "key": "rca.cost.A.B.all.price.interval"
     },
     {
       "available": true,
-      "display": "72 % of the difference",
+      "display": "72% of the difference",
       "key": "rca.cost.A.B.all.price.share",
       "value": 0.71922009092776
     },
     {
       "available": true,
-      "display": "27–29 %",
+      "display": "27–29%",
       "key": "rca.cost.A.B.all.volume.interval"
     },
     {
       "available": true,
-      "display": "28 % of the difference",
+      "display": "28% of the difference",
       "key": "rca.cost.A.B.all.volume.share",
       "value": 0.28077990907223965
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.B.cacheRead.price.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.B.cacheRead.price.share",
       "value": 5.65413520631882E-18
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.B.cacheRead.volume.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.B.cacheRead.volume.share",
       "value": 0.0032092426187419684
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.B.cacheWrite.price.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.B.cacheWrite.price.share",
       "value": -0
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.B.cacheWrite.volume.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.B.cacheWrite.volume.share",
       "value": -0
     },
     {
       "available": true,
-      "display": "18–18 %",
+      "display": "18–18%",
       "key": "rca.cost.A.B.output.price.interval"
     },
     {
       "available": true,
-      "display": "18 % of the difference",
+      "display": "18% of the difference",
       "key": "rca.cost.A.B.output.price.share",
       "value": 0.18112542291023093
     },
     {
       "available": true,
-      "display": "10–10 %",
+      "display": "10–10%",
       "key": "rca.cost.A.B.output.volume.interval"
     },
     {
       "available": true,
-      "display": "10 % of the difference",
+      "display": "10% of the difference",
       "key": "rca.cost.A.B.output.volume.share",
       "value": 0.09872053344406923
     },
     {
       "available": true,
-      "display": "9–9 %",
+      "display": "9–9%",
       "key": "rca.cost.A.B.reasoning.price.interval"
     },
     {
       "available": true,
-      "display": "9 % of the difference",
+      "display": "9% of the difference",
       "key": "rca.cost.A.B.reasoning.price.share",
       "value": 0.08719899521942158
     },
     {
       "available": true,
-      "display": "11–12 %",
+      "display": "11–12%",
       "key": "rca.cost.A.B.reasoning.volume.interval"
     },
     {
       "available": true,
-      "display": "11 % of the difference",
+      "display": "11% of the difference",
       "key": "rca.cost.A.B.reasoning.volume.share",
       "value": 0.11305774419007787
     },
@@ -6879,133 +6979,133 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "44–46 %",
+      "display": "44–46%",
       "key": "rca.cost.A.B.uncachedInput.price.interval"
     },
     {
       "available": true,
-      "display": "45 % of the difference",
+      "display": "45% of the difference",
       "key": "rca.cost.A.B.uncachedInput.price.share",
       "value": 0.45089567279810744
     },
     {
       "available": true,
-      "display": "6–7 %",
+      "display": "6–7%",
       "key": "rca.cost.A.B.uncachedInput.volume.interval"
     },
     {
       "available": true,
-      "display": "7 % of the difference",
+      "display": "7% of the difference",
       "key": "rca.cost.A.B.uncachedInput.volume.share",
       "value": 0.06579238881935058
     },
     {
       "available": true,
-      "display": "70–71 %",
+      "display": "70–71%",
       "key": "rca.cost.A.C.all.price.interval"
     },
     {
       "available": true,
-      "display": "71 % of the difference",
+      "display": "71% of the difference",
       "key": "rca.cost.A.C.all.price.share",
       "value": 0.7067857366013377
     },
     {
       "available": true,
-      "display": "29–30 %",
+      "display": "29–30%",
       "key": "rca.cost.A.C.all.volume.interval"
     },
     {
       "available": true,
-      "display": "29 % of the difference",
+      "display": "29% of the difference",
       "key": "rca.cost.A.C.all.volume.share",
       "value": 0.29321426339866247
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.C.cacheRead.price.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.C.cacheRead.price.share",
       "value": -7.268935900156093E-18
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.C.cacheRead.volume.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.C.cacheRead.volume.share",
       "value": 0.0029797377830750966
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.C.cacheWrite.price.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.C.cacheWrite.price.share",
       "value": -0
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.C.cacheWrite.volume.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.C.cacheWrite.volume.share",
       "value": -0
     },
     {
       "available": true,
-      "display": "17–18 %",
+      "display": "17–18%",
       "key": "rca.cost.A.C.output.price.interval"
     },
     {
       "available": true,
-      "display": "18 % of the difference",
+      "display": "18% of the difference",
       "key": "rca.cost.A.C.output.price.share",
       "value": 0.17680749428237597
     },
     {
       "available": true,
-      "display": "10–10 %",
+      "display": "10–10%",
       "key": "rca.cost.A.C.output.volume.interval"
     },
     {
       "available": true,
-      "display": "10 % of the difference",
+      "display": "10% of the difference",
       "key": "rca.cost.A.C.output.volume.share",
       "value": 0.09971217198699239
     },
     {
       "available": true,
-      "display": "9–9 %",
+      "display": "9–9%",
       "key": "rca.cost.A.C.reasoning.price.interval"
     },
     {
       "available": true,
-      "display": "9 % of the difference",
+      "display": "9% of the difference",
       "key": "rca.cost.A.C.reasoning.price.share",
       "value": 0.09029630352104531
     },
     {
       "available": true,
-      "display": "11–12 %",
+      "display": "11–12%",
       "key": "rca.cost.A.C.reasoning.volume.interval"
     },
     {
       "available": true,
-      "display": "11 % of the difference",
+      "display": "11% of the difference",
       "key": "rca.cost.A.C.reasoning.volume.share",
       "value": 0.11470965595452089
     },
@@ -7017,133 +7117,133 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "43–45 %",
+      "display": "43–45%",
       "key": "rca.cost.A.C.uncachedInput.price.interval"
     },
     {
       "available": true,
-      "display": "44 % of the difference",
+      "display": "44% of the difference",
       "key": "rca.cost.A.C.uncachedInput.price.share",
       "value": 0.4396819387979164
     },
     {
       "available": true,
-      "display": "7–8 %",
+      "display": "7–8%",
       "key": "rca.cost.A.C.uncachedInput.volume.interval"
     },
     {
       "available": true,
-      "display": "8 % of the difference",
+      "display": "8% of the difference",
       "key": "rca.cost.A.C.uncachedInput.volume.share",
       "value": 0.07581269767407409
     },
     {
       "available": true,
-      "display": "69–70 %",
+      "display": "69–70%",
       "key": "rca.cost.A.D.all.price.interval"
     },
     {
       "available": true,
-      "display": "70 % of the difference",
+      "display": "70% of the difference",
       "key": "rca.cost.A.D.all.price.share",
       "value": 0.6968068304832366
     },
     {
       "available": true,
-      "display": "30–31 %",
+      "display": "30–31%",
       "key": "rca.cost.A.D.all.volume.interval"
     },
     {
       "available": true,
-      "display": "30 % of the difference",
+      "display": "30% of the difference",
       "key": "rca.cost.A.D.all.volume.share",
       "value": 0.3031931695167636
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.D.cacheRead.price.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.D.cacheRead.price.share",
       "value": -4.522534089900603E-18
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.D.cacheRead.volume.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.D.cacheRead.volume.share",
       "value": 0.0027808676307007835
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.D.cacheWrite.price.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.D.cacheWrite.price.share",
       "value": -0
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.D.cacheWrite.volume.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.D.cacheWrite.volume.share",
       "value": -0
     },
     {
       "available": true,
-      "display": "17–18 %",
+      "display": "17–18%",
       "key": "rca.cost.A.D.output.price.interval"
     },
     {
       "available": true,
-      "display": "17 % of the difference",
+      "display": "17% of the difference",
       "key": "rca.cost.A.D.output.price.share",
       "value": 0.1731783963649792
     },
     {
       "available": true,
-      "display": "10–10 %",
+      "display": "10–10%",
       "key": "rca.cost.A.D.output.volume.interval"
     },
     {
       "available": true,
-      "display": "10 % of the difference",
+      "display": "10% of the difference",
       "key": "rca.cost.A.D.output.volume.share",
       "value": 0.10045897849597754
     },
     {
       "available": true,
-      "display": "9–9 %",
+      "display": "9–9%",
       "key": "rca.cost.A.D.reasoning.price.interval"
     },
     {
       "available": true,
-      "display": "9 % of the difference",
+      "display": "9% of the difference",
       "key": "rca.cost.A.D.reasoning.price.share",
       "value": 0.09291798670837466
     },
     {
       "available": true,
-      "display": "11–12 %",
+      "display": "11–12%",
       "key": "rca.cost.A.D.reasoning.volume.interval"
     },
     {
       "available": true,
-      "display": "12 % of the difference",
+      "display": "12% of the difference",
       "key": "rca.cost.A.D.reasoning.volume.share",
       "value": 0.11620325912032395
     },
@@ -7155,133 +7255,133 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "42–44 %",
+      "display": "42–44%",
       "key": "rca.cost.A.D.uncachedInput.price.interval"
     },
     {
       "available": true,
-      "display": "43 % of the difference",
+      "display": "43% of the difference",
       "key": "rca.cost.A.D.uncachedInput.price.share",
       "value": 0.4307104474098827
     },
     {
       "available": true,
-      "display": "8–9 %",
+      "display": "8–9%",
       "key": "rca.cost.A.D.uncachedInput.volume.interval"
     },
     {
       "available": true,
-      "display": "8 % of the difference",
+      "display": "8% of the difference",
       "key": "rca.cost.A.D.uncachedInput.volume.share",
       "value": 0.08375006426976137
     },
     {
       "available": true,
-      "display": "68–69 %",
+      "display": "68–69%",
       "key": "rca.cost.A.E.all.price.interval"
     },
     {
       "available": true,
-      "display": "69 % of the difference",
+      "display": "69% of the difference",
       "key": "rca.cost.A.E.all.price.share",
       "value": 0.6885105330251258
     },
     {
       "available": true,
-      "display": "31–32 %",
+      "display": "31–32%",
       "key": "rca.cost.A.E.all.volume.interval"
     },
     {
       "available": true,
-      "display": "31 % of the difference",
+      "display": "31% of the difference",
       "key": "rca.cost.A.E.all.volume.share",
       "value": 0.31148946697487445
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.E.cacheRead.price.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.E.cacheRead.price.share",
       "value": -1.4131936554816275E-18
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.E.cacheRead.volume.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.E.cacheRead.volume.share",
       "value": 0.0026068821689259657
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.E.cacheWrite.price.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.E.cacheWrite.price.share",
       "value": -0
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.A.E.cacheWrite.volume.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.A.E.cacheWrite.volume.share",
       "value": -0
     },
     {
       "available": true,
-      "display": "17–17 %",
+      "display": "17–17%",
       "key": "rca.cost.A.E.output.price.interval"
     },
     {
       "available": true,
-      "display": "17 % of the difference",
+      "display": "17% of the difference",
       "key": "rca.cost.A.E.output.price.share",
       "value": 0.17007808201744268
     },
     {
       "available": true,
-      "display": "10–10 %",
+      "display": "10–10%",
       "key": "rca.cost.A.E.output.volume.interval"
     },
     {
       "available": true,
-      "display": "10 % of the difference",
+      "display": "10% of the difference",
       "key": "rca.cost.A.E.output.volume.share",
       "value": 0.10103766355085769
     },
     {
       "available": true,
-      "display": "9–10 %",
+      "display": "9–10%",
       "key": "rca.cost.A.E.reasoning.price.interval"
     },
     {
       "available": true,
-      "display": "10 % of the difference",
+      "display": "10% of the difference",
       "key": "rca.cost.A.E.reasoning.price.share",
       "value": 0.09517595976166772
     },
     {
       "available": true,
-      "display": "12–12 %",
+      "display": "12–12%",
       "key": "rca.cost.A.E.reasoning.volume.interval"
     },
     {
       "available": true,
-      "display": "12 % of the difference",
+      "display": "12% of the difference",
       "key": "rca.cost.A.E.reasoning.volume.share",
       "value": 0.117545625222691
     },
@@ -7293,133 +7393,133 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "42–43 %",
+      "display": "42–43%",
       "key": "rca.cost.A.E.uncachedInput.price.interval"
     },
     {
       "available": true,
-      "display": "42 % of the difference",
+      "display": "42% of the difference",
       "key": "rca.cost.A.E.uncachedInput.price.share",
       "value": 0.4232564912460154
     },
     {
       "available": true,
-      "display": "9–9 %",
+      "display": "9–9%",
       "key": "rca.cost.A.E.uncachedInput.volume.interval"
     },
     {
       "available": true,
-      "display": "9 % of the difference",
+      "display": "9% of the difference",
       "key": "rca.cost.A.E.uncachedInput.volume.share",
       "value": 0.09029929603239982
     },
     {
       "available": true,
-      "display": "64–65 %",
+      "display": "64–65%",
       "key": "rca.cost.D.E.all.price.interval"
     },
     {
       "available": true,
-      "display": "65 % of the difference",
+      "display": "65% of the difference",
       "key": "rca.cost.D.E.all.price.share",
       "value": 0.6491469867604399
     },
     {
       "available": true,
-      "display": "35–36 %",
+      "display": "35–36%",
       "key": "rca.cost.D.E.all.volume.interval"
     },
     {
       "available": true,
-      "display": "35 % of the difference",
+      "display": "35% of the difference",
       "key": "rca.cost.D.E.all.volume.share",
       "value": 0.35085301323956025
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.D.E.cacheRead.price.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.D.E.cacheRead.price.share",
       "value": 5.651844072987431E-18
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.D.E.cacheRead.volume.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.D.E.cacheRead.volume.share",
       "value": 0.0021949078138718083
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.D.E.cacheWrite.price.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.D.E.cacheWrite.price.share",
       "value": -0
     },
     {
       "available": true,
-      "display": "0–0 %",
+      "display": "0–0%",
       "key": "rca.cost.D.E.cacheWrite.volume.interval"
     },
     {
       "available": true,
-      "display": "0 % of the difference",
+      "display": "0% of the difference",
       "key": "rca.cost.D.E.cacheWrite.volume.share",
       "value": -0
     },
     {
       "available": true,
-      "display": "16–16 %",
+      "display": "16–16%",
       "key": "rca.cost.D.E.output.price.interval"
     },
     {
       "available": true,
-      "display": "16 % of the difference",
+      "display": "16% of the difference",
       "key": "rca.cost.D.E.output.price.share",
       "value": 0.16070948285114076
     },
     {
       "available": true,
-      "display": "10–11 %",
+      "display": "10–11%",
       "key": "rca.cost.D.E.output.volume.interval"
     },
     {
       "available": true,
-      "display": "10 % of the difference",
+      "display": "10% of the difference",
       "key": "rca.cost.D.E.output.volume.share",
       "value": 0.10443538106457471
     },
     {
       "available": true,
-      "display": "10–10 %",
+      "display": "10–10%",
       "key": "rca.cost.D.E.reasoning.price.interval"
     },
     {
       "available": true,
-      "display": "10 % of the difference",
+      "display": "10% of the difference",
       "key": "rca.cost.D.E.reasoning.price.share",
       "value": 0.10181989333148497
     },
     {
       "available": true,
-      "display": "12–12 %",
+      "display": "12–12%",
       "key": "rca.cost.D.E.reasoning.volume.interval"
     },
     {
       "available": true,
-      "display": "12 % of the difference",
+      "display": "12% of the difference",
       "key": "rca.cost.D.E.reasoning.volume.share",
       "value": 0.11942681430679408
     },
@@ -7431,29 +7531,29 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "38–39 %",
+      "display": "38–39%",
       "key": "rca.cost.D.E.uncachedInput.price.interval"
     },
     {
       "available": true,
-      "display": "39 % of the difference",
+      "display": "39% of the difference",
       "key": "rca.cost.D.E.uncachedInput.price.share",
       "value": 0.38661761057781424
     },
     {
       "available": true,
-      "display": "12–13 %",
+      "display": "12–13%",
       "key": "rca.cost.D.E.uncachedInput.volume.interval"
     },
     {
       "available": true,
-      "display": "12 % of the difference",
+      "display": "12% of the difference",
       "key": "rca.cost.D.E.uncachedInput.volume.share",
       "value": 0.12479591005431967
     },
     {
       "available": true,
-      "display": "No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
+      "display": "No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted).",
       "key": "rca.hypothesis.H0-C.1.against"
     },
     {
@@ -7474,7 +7574,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
+      "display": "its own test rules it out: no family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)",
       "key": "rca.hypothesis.H0-C.1.gradeReasons"
     },
     {
@@ -7504,7 +7604,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
+      "display": "No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted).",
       "key": "rca.hypothesis.H0-C.2.against"
     },
     {
@@ -7525,7 +7625,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
+      "display": "its own test rules it out: no family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)",
       "key": "rca.hypothesis.H0-C.2.gradeReasons"
     },
     {
@@ -7555,7 +7655,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
+      "display": "No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted).",
       "key": "rca.hypothesis.H0-C.3.against"
     },
     {
@@ -7576,7 +7676,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
+      "display": "its own test rules it out: no family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)",
       "key": "rca.hypothesis.H0-C.3.gradeReasons"
     },
     {
@@ -7606,7 +7706,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
+      "display": "No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted).",
       "key": "rca.hypothesis.H0-C.4.against"
     },
     {
@@ -7627,7 +7727,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
+      "display": "its own test rules it out: no family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)",
       "key": "rca.hypothesis.H0-C.4.gradeReasons"
     },
     {
@@ -7657,7 +7757,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
+      "display": "No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted).",
       "key": "rca.hypothesis.H0-C.5.against"
     },
     {
@@ -7678,7 +7778,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
+      "display": "its own test rules it out: no family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)",
       "key": "rca.hypothesis.H0-C.5.gradeReasons"
     },
     {
@@ -7718,7 +7818,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "The paired Intelligence Index test is not established after the Holm adjustment across 4 tests. The paired Intelligence Index test is not established after the Holm adjustment across 10 tests. The two 95 % intervals overlap.",
+      "display": "The paired Intelligence Index test is not established after the Holm adjustment across 4 tests. The paired Intelligence Index test is not established after the Holm adjustment across 10 tests. The two 95% intervals overlap.",
       "key": "rca.hypothesis.H0-Q.1.for"
     },
     {
@@ -7729,7 +7829,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the tests little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-Q.1.gradeReasons"
     },
     {
@@ -7759,7 +7859,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "The two 95 % intervals do not overlap.",
+      "display": "The two 95% intervals do not overlap.",
       "key": "rca.hypothesis.H0-Q.2.against"
     },
     {
@@ -7780,7 +7880,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the tests little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-Q.2.gradeReasons"
     },
     {
@@ -7810,7 +7910,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "The two 95 % intervals do not overlap.",
+      "display": "The two 95% intervals do not overlap.",
       "key": "rca.hypothesis.H0-Q.3.against"
     },
     {
@@ -7831,7 +7931,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the tests little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-Q.3.gradeReasons"
     },
     {
@@ -7861,7 +7961,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "The two 95 % intervals do not overlap.",
+      "display": "The two 95% intervals do not overlap.",
       "key": "rca.hypothesis.H0-Q.4.against"
     },
     {
@@ -7882,7 +7982,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the tests little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-Q.4.gradeReasons"
     },
     {
@@ -7912,7 +8012,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "The two 95 % intervals do not overlap.",
+      "display": "The two 95% intervals do not overlap.",
       "key": "rca.hypothesis.H0-Q.5.against"
     },
     {
@@ -7933,7 +8033,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the tests little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-Q.5.gradeReasons"
     },
     {
@@ -7984,7 +8084,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the tests little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-S.1.gradeReasons"
     },
     {
@@ -8035,7 +8135,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the tests little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-S.2.gradeReasons"
     },
     {
@@ -8086,7 +8186,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the tests little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-S.3.gradeReasons"
     },
     {
@@ -8137,7 +8237,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the tests little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-S.4.gradeReasons"
     },
     {
@@ -8188,7 +8288,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the tests little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-S.5.gradeReasons"
     },
     {
@@ -8239,12 +8339,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the contrasts little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-W.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "no contrast within Model A's own questions",
+      "display": "no difference within Model A's own questions",
       "key": "rca.hypothesis.H0-W.1.label"
     },
     {
@@ -8290,12 +8390,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the contrasts little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-W.2.gradeReasons"
     },
     {
       "available": true,
-      "display": "no contrast within Model E's own questions",
+      "display": "no difference within Model E's own questions",
       "key": "rca.hypothesis.H0-W.2.label"
     },
     {
@@ -8320,7 +8420,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "The volume effect is 31 % (31–32 %) of the difference.",
+      "display": "The volume effect is 31% (31–32%) of the difference.",
       "key": "rca.hypothesis.HC2.1.against"
     },
     {
@@ -8330,7 +8430,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Price per token, all components accounts for 69 % (68–69 %) of the $0.038 per-question cost difference.",
+      "display": "Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference.",
       "key": "rca.hypothesis.HC2.1.for"
     },
     {
@@ -8341,17 +8441,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model E and Model A have a single run per suite.",
+      "display": "both models ran only once per suite",
       "key": "rca.hypothesis.HC2.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "68–69 %",
+      "display": "68–69%",
       "key": "rca.hypothesis.HC2.1.interval"
     },
     {
       "available": true,
-      "display": "higher price per token of Model E against Model A",
+      "display": "Model E's higher price per token, compared with Model A",
       "key": "rca.hypothesis.HC2.1.label"
     },
     {
@@ -8371,7 +8471,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "69 %",
+      "display": "69%",
       "key": "rca.hypothesis.HC2.1.share",
       "value": 0.6885105330251258
     },
@@ -8382,7 +8482,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "The volume effect is 30 % (30–31 %) of the difference.",
+      "display": "The volume effect is 30% (30–31%) of the difference.",
       "key": "rca.hypothesis.HC2.2.against"
     },
     {
@@ -8392,7 +8492,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Price per token, all components accounts for 70 % (69–70 %) of the $0.027 per-question cost difference.",
+      "display": "Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference.",
       "key": "rca.hypothesis.HC2.2.for"
     },
     {
@@ -8403,17 +8503,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model D and Model A have a single run per suite.",
+      "display": "both models ran only once per suite",
       "key": "rca.hypothesis.HC2.2.gradeReasons"
     },
     {
       "available": true,
-      "display": "69–70 %",
+      "display": "69–70%",
       "key": "rca.hypothesis.HC2.2.interval"
     },
     {
       "available": true,
-      "display": "higher price per token of Model D against Model A",
+      "display": "Model D's higher price per token, compared with Model A",
       "key": "rca.hypothesis.HC2.2.label"
     },
     {
@@ -8433,7 +8533,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "70 %",
+      "display": "70%",
       "key": "rca.hypothesis.HC2.2.share",
       "value": 0.6968068304832366
     },
@@ -8444,7 +8544,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "The volume effect is 29 % (29–30 %) of the difference.",
+      "display": "The volume effect is 29% (29–30%) of the difference.",
       "key": "rca.hypothesis.HC2.3.against"
     },
     {
@@ -8454,7 +8554,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Price per token, all components accounts for 71 % (70–71 %) of the $0.017 per-question cost difference.",
+      "display": "Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference.",
       "key": "rca.hypothesis.HC2.3.for"
     },
     {
@@ -8465,17 +8565,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model C and Model A have a single run per suite.",
+      "display": "both models ran only once per suite",
       "key": "rca.hypothesis.HC2.3.gradeReasons"
     },
     {
       "available": true,
-      "display": "70–71 %",
+      "display": "70–71%",
       "key": "rca.hypothesis.HC2.3.interval"
     },
     {
       "available": true,
-      "display": "higher price per token of Model C against Model A",
+      "display": "Model C's higher price per token, compared with Model A",
       "key": "rca.hypothesis.HC2.3.label"
     },
     {
@@ -8495,7 +8595,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "71 %",
+      "display": "71%",
       "key": "rca.hypothesis.HC2.3.share",
       "value": 0.7067857366013377
     },
@@ -8506,7 +8606,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "The volume effect is 35 % (35–36 %) of the difference.",
+      "display": "The volume effect is 35% (35–36%) of the difference.",
       "key": "rca.hypothesis.HC2.4.against"
     },
     {
@@ -8516,7 +8616,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Price per token, all components accounts for 65 % (64–65 %) of the $0.011 per-question cost difference.",
+      "display": "Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference.",
       "key": "rca.hypothesis.HC2.4.for"
     },
     {
@@ -8527,17 +8627,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model E and Model D have a single run per suite.",
+      "display": "both models ran only once per suite",
       "key": "rca.hypothesis.HC2.4.gradeReasons"
     },
     {
       "available": true,
-      "display": "64–65 %",
+      "display": "64–65%",
       "key": "rca.hypothesis.HC2.4.interval"
     },
     {
       "available": true,
-      "display": "higher price per token of Model E against Model D",
+      "display": "Model E's higher price per token, compared with Model D",
       "key": "rca.hypothesis.HC2.4.label"
     },
     {
@@ -8557,7 +8657,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "65 %",
+      "display": "65%",
       "key": "rca.hypothesis.HC2.4.share",
       "value": 0.6491469867604399
     },
@@ -8568,7 +8668,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "The volume effect is 28 % (27–29 %) of the difference.",
+      "display": "The volume effect is 28% (27–29%) of the difference.",
       "key": "rca.hypothesis.HC2.5.against"
     },
     {
@@ -8578,7 +8678,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Price per token, all components accounts for 72 % (71–73 %) of the $0.0078 per-question cost difference.",
+      "display": "Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference.",
       "key": "rca.hypothesis.HC2.5.for"
     },
     {
@@ -8589,17 +8689,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model B and Model A have a single run per suite.",
+      "display": "both models ran only once per suite",
       "key": "rca.hypothesis.HC2.5.gradeReasons"
     },
     {
       "available": true,
-      "display": "71–73 %",
+      "display": "71–73%",
       "key": "rca.hypothesis.HC2.5.interval"
     },
     {
       "available": true,
-      "display": "higher price per token of Model B against Model A",
+      "display": "Model B's higher price per token, compared with Model A",
       "key": "rca.hypothesis.HC2.5.label"
     },
     {
@@ -8619,7 +8719,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "72 %",
+      "display": "72%",
       "key": "rca.hypothesis.HC2.5.share",
       "value": 0.71922009092776
     },
@@ -8630,7 +8730,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model E's cache-read share is 28 % against the models' median of 26 %.",
+      "display": "Model E's cache-read share is 28% against the models' median of 26%.",
       "key": "rca.hypothesis.HC4.1.against"
     },
     {
@@ -8640,7 +8740,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Uncached input, token volume accounts for 9 % (9–9 %) of the $0.038 per-question cost difference.",
+      "display": "Uncached input, token volume accounts for 9% (9–9%) of the $0.038 per-question cost difference.",
       "key": "rca.hypothesis.HC4.1.for"
     },
     {
@@ -8651,17 +8751,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %.",
+      "display": "its own test rules it out: Model E's cache-read share is 28% against the models' median of 26%",
       "key": "rca.hypothesis.HC4.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "9–9 %",
+      "display": "9–9%",
       "key": "rca.hypothesis.HC4.1.interval"
     },
     {
       "available": true,
-      "display": "weak prompt caching of Model E against Model A",
+      "display": "Model E's weak prompt caching, compared with Model A",
       "key": "rca.hypothesis.HC4.1.label"
     },
     {
@@ -8687,7 +8787,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "9 %",
+      "display": "9%",
       "key": "rca.hypothesis.HC4.1.share",
       "value": 0.09029929603239982
     },
@@ -8698,7 +8798,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model D's cache-read share is 27 % against the models' median of 26 %.",
+      "display": "Model D's cache-read share is 27% against the models' median of 26%.",
       "key": "rca.hypothesis.HC4.2.against"
     },
     {
@@ -8708,7 +8808,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Uncached input, token volume accounts for 8 % (8–9 %) of the $0.027 per-question cost difference.",
+      "display": "Uncached input, token volume accounts for 8% (8–9%) of the $0.027 per-question cost difference.",
       "key": "rca.hypothesis.HC4.2.for"
     },
     {
@@ -8719,17 +8819,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: Model D's cache-read share is 27 % against the models' median of 26 %.",
+      "display": "its own test rules it out: Model D's cache-read share is 27% against the models' median of 26%",
       "key": "rca.hypothesis.HC4.2.gradeReasons"
     },
     {
       "available": true,
-      "display": "8–9 %",
+      "display": "8–9%",
       "key": "rca.hypothesis.HC4.2.interval"
     },
     {
       "available": true,
-      "display": "weak prompt caching of Model D against Model A",
+      "display": "Model D's weak prompt caching, compared with Model A",
       "key": "rca.hypothesis.HC4.2.label"
     },
     {
@@ -8755,7 +8855,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "8 %",
+      "display": "8%",
       "key": "rca.hypothesis.HC4.2.share",
       "value": 0.08375006426976137
     },
@@ -8766,7 +8866,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model E's cache-read share is 28 % against the models' median of 26 %.",
+      "display": "Model E's cache-read share is 28% against the models' median of 26%.",
       "key": "rca.hypothesis.HC4.3.against"
     },
     {
@@ -8776,7 +8876,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Uncached input, token volume accounts for 12 % (12–13 %) of the $0.011 per-question cost difference.",
+      "display": "Uncached input, token volume accounts for 12% (12–13%) of the $0.011 per-question cost difference.",
       "key": "rca.hypothesis.HC4.3.for"
     },
     {
@@ -8787,17 +8887,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %.",
+      "display": "its own test rules it out: Model E's cache-read share is 28% against the models' median of 26%",
       "key": "rca.hypothesis.HC4.3.gradeReasons"
     },
     {
       "available": true,
-      "display": "12–13 %",
+      "display": "12–13%",
       "key": "rca.hypothesis.HC4.3.interval"
     },
     {
       "available": true,
-      "display": "weak prompt caching of Model E against Model D",
+      "display": "Model E's weak prompt caching, compared with Model D",
       "key": "rca.hypothesis.HC4.3.label"
     },
     {
@@ -8823,7 +8923,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "12 %",
+      "display": "12%",
       "key": "rca.hypothesis.HC4.3.share",
       "value": 0.12479591005431967
     },
@@ -8834,7 +8934,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model C's cache-read share is 26 % against the models' median of 26 %.",
+      "display": "Model C's cache-read share is 26% against the models' median of 26%.",
       "key": "rca.hypothesis.HC4.4.against"
     },
     {
@@ -8844,7 +8944,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Uncached input, token volume accounts for 8 % (7–8 %) of the $0.017 per-question cost difference.",
+      "display": "Uncached input, token volume accounts for 8% (7–8%) of the $0.017 per-question cost difference.",
       "key": "rca.hypothesis.HC4.4.for"
     },
     {
@@ -8855,17 +8955,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: Model C's cache-read share is 26 % against the models' median of 26 %.",
+      "display": "its own test rules it out: Model C's cache-read share is 26% against the models' median of 26%",
       "key": "rca.hypothesis.HC4.4.gradeReasons"
     },
     {
       "available": true,
-      "display": "7–8 %",
+      "display": "7–8%",
       "key": "rca.hypothesis.HC4.4.interval"
     },
     {
       "available": true,
-      "display": "weak prompt caching of Model C against Model A",
+      "display": "Model C's weak prompt caching, compared with Model A",
       "key": "rca.hypothesis.HC4.4.label"
     },
     {
@@ -8891,7 +8991,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "8 %",
+      "display": "8%",
       "key": "rca.hypothesis.HC4.4.share",
       "value": 0.07581269767407409
     },
@@ -8929,7 +9029,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "qualitative only",
+      "display": "it is observed, not measured",
       "key": "rca.hypothesis.HQ3.1.gradeReasons"
     },
     {
@@ -8969,7 +9069,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Visible output and reasoning are 54 % of Model E's cost per question.",
+      "display": "Visible output and reasoning are 54% of Model E's cost per question.",
       "key": "rca.hypothesis.WC1.1.for"
     },
     {
@@ -8980,12 +9080,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model E has a single run per suite.",
+      "display": "Model E ran only once per suite",
       "key": "rca.hypothesis.WC1.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "output cost of Model E",
+      "display": "Model E's output cost",
       "key": "rca.hypothesis.WC1.1.label"
     },
     {
@@ -9005,7 +9105,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "54 %",
+      "display": "54%",
       "key": "rca.hypothesis.WC1.1.share",
       "value": 0.5395961621079766
     },
@@ -9026,7 +9126,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Visible output and reasoning are 55 % of Model D's cost per question.",
+      "display": "Visible output and reasoning are 55% of Model D's cost per question.",
       "key": "rca.hypothesis.WC1.2.for"
     },
     {
@@ -9037,12 +9137,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model D has a single run per suite.",
+      "display": "Model D ran only once per suite",
       "key": "rca.hypothesis.WC1.2.gradeReasons"
     },
     {
       "available": true,
-      "display": "output cost of Model D",
+      "display": "Model D's output cost",
       "key": "rca.hypothesis.WC1.2.label"
     },
     {
@@ -9062,7 +9162,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "55 %",
+      "display": "55%",
       "key": "rca.hypothesis.WC1.2.share",
       "value": 0.5543829683401453
     },
@@ -9083,7 +9183,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Visible output and reasoning are 69 % of Model A's cost per question.",
+      "display": "Visible output and reasoning are 69% of Model A's cost per question.",
       "key": "rca.hypothesis.WC1.3.for"
     },
     {
@@ -9094,12 +9194,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model A has a single run per suite.",
+      "display": "Model A ran only once per suite",
       "key": "rca.hypothesis.WC1.3.gradeReasons"
     },
     {
       "available": true,
-      "display": "output cost of Model A",
+      "display": "Model A's output cost",
       "key": "rca.hypothesis.WC1.3.label"
     },
     {
@@ -9119,7 +9219,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "69 %",
+      "display": "69%",
       "key": "rca.hypothesis.WC1.3.share",
       "value": 0.6922390722569134
     },
@@ -9130,7 +9230,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Reasoning is 39 % of Model E's output tokens.",
+      "display": "Reasoning is 39% of Model E's output tokens.",
       "key": "rca.hypothesis.WS2.1.against"
     },
     {
@@ -9146,7 +9246,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Output generation is 65 % (64–66 %) of model time per question.",
+      "display": "Output generation is 65% (64–66%) of model time per question.",
       "key": "rca.hypothesis.WS2.1.for"
     },
     {
@@ -9157,17 +9257,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: reasoning is 39 % of Model E's output tokens.",
+      "display": "its own test rules it out: reasoning is 39% of Model E's output tokens",
       "key": "rca.hypothesis.WS2.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "64–66 %",
+      "display": "64–66%",
       "key": "rca.hypothesis.WS2.1.interval"
     },
     {
       "available": true,
-      "display": "output generation of Model E",
+      "display": "Model E's time spent generating output",
       "key": "rca.hypothesis.WS2.1.label"
     },
     {
@@ -9187,7 +9287,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "65 %",
+      "display": "65%",
       "key": "rca.hypothesis.WS2.1.share",
       "value": 0.6502225519287834
     },
@@ -9198,7 +9298,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Reasoning is 38 % of Model D's output tokens.",
+      "display": "Reasoning is 38% of Model D's output tokens.",
       "key": "rca.hypothesis.WS2.2.against"
     },
     {
@@ -9214,7 +9314,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Output generation is 66 % (65–67 %) of model time per question.",
+      "display": "Output generation is 66% (65–67%) of model time per question.",
       "key": "rca.hypothesis.WS2.2.for"
     },
     {
@@ -9225,17 +9325,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: reasoning is 38 % of Model D's output tokens.",
+      "display": "its own test rules it out: reasoning is 38% of Model D's output tokens",
       "key": "rca.hypothesis.WS2.2.gradeReasons"
     },
     {
       "available": true,
-      "display": "65–67 %",
+      "display": "65–67%",
       "key": "rca.hypothesis.WS2.2.interval"
     },
     {
       "available": true,
-      "display": "output generation of Model D",
+      "display": "Model D's time spent generating output",
       "key": "rca.hypothesis.WS2.2.label"
     },
     {
@@ -9255,7 +9355,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "66 %",
+      "display": "66%",
       "key": "rca.hypothesis.WS2.2.share",
       "value": 0.6596009975062345
     },
@@ -9266,7 +9366,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Reasoning is 31 % of Model A's output tokens.",
+      "display": "Reasoning is 31% of Model A's output tokens.",
       "key": "rca.hypothesis.WS2.3.against"
     },
     {
@@ -9276,7 +9376,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Output generation is 70 % (69–71 %) of model time per question.",
+      "display": "Output generation is 70% (69–71%) of model time per question.",
       "key": "rca.hypothesis.WS2.3.for"
     },
     {
@@ -9287,17 +9387,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: reasoning is 31 % of Model A's output tokens.",
+      "display": "its own test rules it out: reasoning is 31% of Model A's output tokens",
       "key": "rca.hypothesis.WS2.3.gradeReasons"
     },
     {
       "available": true,
-      "display": "69–71 %",
+      "display": "69–71%",
       "key": "rca.hypothesis.WS2.3.interval"
     },
     {
       "available": true,
-      "display": "output generation of Model A",
+      "display": "Model A's time spent generating output",
       "key": "rca.hypothesis.WS2.3.label"
     },
     {
@@ -9323,7 +9423,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "70 %",
+      "display": "70%",
       "key": "rca.hypothesis.WS2.3.share",
       "value": 0.7038770053475936
     },
@@ -9344,7 +9444,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Across Model A's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).",
+      "display": "Across Model A's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).",
       "key": "rca.hypothesis.WS3.1.for"
     },
     {
@@ -9355,12 +9455,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model A has a single run per suite.",
+      "display": "Model A ran only once per suite",
       "key": "rca.hypothesis.WS3.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "tool rounds in the time of Model A",
+      "display": "Model A's time spent on tool rounds",
       "key": "rca.hypothesis.WS3.1.label"
     },
     {
@@ -9401,7 +9501,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Across Model D's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).",
+      "display": "Across Model D's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).",
       "key": "rca.hypothesis.WS3.2.for"
     },
     {
@@ -9412,12 +9512,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model D has a single run per suite.",
+      "display": "Model D ran only once per suite",
       "key": "rca.hypothesis.WS3.2.gradeReasons"
     },
     {
       "available": true,
-      "display": "tool rounds in the time of Model D",
+      "display": "Model D's time spent on tool rounds",
       "key": "rca.hypothesis.WS3.2.label"
     },
     {
@@ -9458,7 +9558,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Across Model E's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).",
+      "display": "Across Model E's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).",
       "key": "rca.hypothesis.WS3.3.for"
     },
     {
@@ -9469,12 +9569,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model E has a single run per suite.",
+      "display": "Model E ran only once per suite",
       "key": "rca.hypothesis.WS3.3.gradeReasons"
     },
     {
       "available": true,
-      "display": "tool rounds in the time of Model E",
+      "display": "Model E's time spent on tool rounds",
       "key": "rca.hypothesis.WS3.3.label"
     },
     {
@@ -9505,7 +9605,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Uncached input, price per token accounts for 45 % (44–46 %) of the per-question cost difference between Model A and Model B.",
+      "display": "Uncached input, price per token accounts for 45% (44–46%) of the per-question cost difference between Model A and Model B.",
       "key": "rca.known.1"
     },
     {
@@ -9520,22 +9620,22 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Uncached input, price per token accounts for 44 % (43–45 %) of the per-question cost difference between Model A and Model C.",
+      "display": "Uncached input, price per token accounts for 44% (43–45%) of the per-question cost difference between Model A and Model C.",
       "key": "rca.known.2"
     },
     {
       "available": true,
-      "display": "Uncached input, price per token accounts for 43 % (42–44 %) of the per-question cost difference between Model A and Model D.",
+      "display": "Uncached input, price per token accounts for 43% (42–44%) of the per-question cost difference between Model A and Model D.",
       "key": "rca.known.3"
     },
     {
       "available": true,
-      "display": "Uncached input, price per token accounts for 42 % (42–43 %) of the per-question cost difference between Model A and Model E.",
+      "display": "Uncached input, price per token accounts for 42% (42–43%) of the per-question cost difference between Model A and Model E.",
       "key": "rca.known.4"
     },
     {
       "available": true,
-      "display": "Uncached input, price per token accounts for 39 % (38–39 %) of the per-question cost difference between Model D and Model E.",
+      "display": "Uncached input, price per token accounts for 39% (38–39%) of the per-question cost difference between Model D and Model E.",
       "key": "rca.known.5"
     },
     {
@@ -9576,12 +9676,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "joint first on Accuracy of 5 models",
+      "display": "tied for first of 5 models on Accuracy",
       "key": "rca.profile.A.strength.1"
     },
     {
       "available": true,
-      "display": "joint first on Completeness of 5 models",
+      "display": "tied for first of 5 models on Completeness",
       "key": "rca.profile.A.strength.2"
     },
     {
@@ -9603,12 +9703,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "joint first on Accuracy of 5 models",
+      "display": "tied for first of 5 models on Accuracy",
       "key": "rca.profile.B.strength.1"
     },
     {
       "available": true,
-      "display": "joint first on Completeness of 5 models",
+      "display": "tied for first of 5 models on Completeness",
       "key": "rca.profile.B.strength.2"
     },
     {
@@ -9658,12 +9758,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more",
+      "display": "1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more",
       "key": "rca.profile.E.flag.1"
     },
     {
       "available": true,
-      "display": "1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more",
+      "display": "1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more",
       "key": "rca.profile.E.flags",
       "value": 1
     },
@@ -9674,7 +9774,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "last on Accuracy of 5 models",
+      "display": "last of 5 models on Accuracy",
       "key": "rca.profile.E.lowestRank"
     },
     {
@@ -9877,7 +9977,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "joint first on Accuracy of 5 models; joint first on Completeness of 5 models",
+      "display": "tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness",
       "key": "rca.question.1.signals"
     },
     {
@@ -9905,7 +10005,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more",
+      "display": "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more",
       "key": "rca.question.2.signals"
     },
     {
@@ -9933,7 +10033,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "median model time 20.0 s; output generation 59 % of its time per question; 2.5 model calls per answer",
+      "display": "median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer",
       "key": "rca.question.3.signals"
     },
     {
@@ -9961,7 +10061,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "$0.060 per question; uncached input 44 % of its cost per question; 27 % of input tokens read from the cache",
+      "display": "$0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache",
       "key": "rca.question.4.signals"
     },
     {
@@ -9987,31 +10087,31 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "-1.6 s per question (Model A minus Model B, model time, not established, so not decomposed)",
+      "display": "-1.6 s per question (Model A minus Model B, model time; the difference may be chance, so it is not split into parts)",
       "key": "rca.speed.A.B.total",
       "value": -1.55
     },
     {
       "available": true,
-      "display": "-3.0 s per question (Model A minus Model C, model time, not established, so not decomposed)",
+      "display": "-3.0 s per question (Model A minus Model C, model time; the difference may be chance, so it is not split into parts)",
       "key": "rca.speed.A.C.total",
       "value": -3
     },
     {
       "available": true,
-      "display": "-4.6 s per question (Model A minus Model D, model time, not established, so not decomposed)",
+      "display": "-4.6 s per question (Model A minus Model D, model time; the difference may be chance, so it is not split into parts)",
       "key": "rca.speed.A.D.total",
       "value": -4.55
     },
     {
       "available": true,
-      "display": "-6.0 s per question (Model A minus Model E, model time, not established, so not decomposed)",
+      "display": "-6.0 s per question (Model A minus Model E, model time; the difference may be chance, so it is not split into parts)",
       "key": "rca.speed.A.E.total",
       "value": -6
     },
     {
       "available": true,
-      "display": "-1.5 s per question (Model D minus Model E, model time, not established, so not decomposed)",
+      "display": "-1.5 s per question (Model D minus Model E, model time; the difference may be chance, so it is not split into parts)",
       "key": "rca.speed.D.E.total",
       "value": -1.45
     },
@@ -10023,25 +10123,25 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "1 %",
+      "display": "1%",
       "key": "rca.within.A.cost.cacheRead.share",
       "value": 0.008920606601248885
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.A.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "48 %",
+      "display": "48%",
       "key": "rca.within.A.cost.output.share",
       "value": 0.47814451382694023
     },
     {
       "available": true,
-      "display": "21 %",
+      "display": "21%",
       "key": "rca.within.A.cost.reasoning.share",
       "value": 0.21409455842997321
     },
@@ -10053,7 +10153,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "30 %",
+      "display": "30%",
       "key": "rca.within.A.cost.uncachedInput.share",
       "value": 0.2988403211418377
     },
@@ -10065,7 +10165,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "3 %",
+      "display": "3%",
       "key": "rca.within.A.time.other.share",
       "value": 0.03340757238307349
     },
@@ -10077,7 +10177,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 %",
+      "display": "59%",
       "key": "rca.within.A.time.outputGeneration.share",
       "value": 0.5863028953229398
     },
@@ -10089,7 +10189,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.A.time.ownWaits.share",
       "value": 0
     },
@@ -10101,7 +10201,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "17 %",
+      "display": "17%",
       "key": "rca.within.A.time.toolExecution.share",
       "value": 0.16703786191536749
     },
@@ -10119,31 +10219,31 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "21 %",
+      "display": "21%",
       "key": "rca.within.A.time.ttft.share",
       "value": 0.21325167037861914
     },
     {
       "available": true,
-      "display": "1 %",
+      "display": "1%",
       "key": "rca.within.B.cost.cacheRead.share",
       "value": 0.006879944960440315
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.B.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "41 %",
+      "display": "41%",
       "key": "rca.within.B.cost.output.share",
       "value": 0.40729274165806667
     },
     {
       "available": true,
-      "display": "21 %",
+      "display": "21%",
       "key": "rca.within.B.cost.reasoning.share",
       "value": 0.20915032679738563
     },
@@ -10155,7 +10255,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "38 %",
+      "display": "38%",
       "key": "rca.within.B.cost.uncachedInput.share",
       "value": 0.37667698658410725
     },
@@ -10167,7 +10267,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "3 %",
+      "display": "3%",
       "key": "rca.within.B.time.other.share",
       "value": 0.028490028490028487
     },
@@ -10179,7 +10279,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 %",
+      "display": "59%",
       "key": "rca.within.B.time.outputGeneration.share",
       "value": 0.5873694207027539
     },
@@ -10191,7 +10291,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.B.time.ownWaits.share",
       "value": 0
     },
@@ -10203,7 +10303,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "14 %",
+      "display": "14%",
       "key": "rca.within.B.time.toolExecution.share",
       "value": 0.14245014245014243
     },
@@ -10221,31 +10321,31 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "24 %",
+      "display": "24%",
       "key": "rca.within.B.time.ttft.share",
       "value": 0.241690408357075
     },
     {
       "available": true,
-      "display": "1 %",
+      "display": "1%",
       "key": "rca.within.C.cost.cacheRead.share",
       "value": 0.0056832020784281885
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.C.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "37 %",
+      "display": "37%",
       "key": "rca.within.C.cost.output.share",
       "value": 0.36827149468214665
     },
     {
       "available": true,
-      "display": "21 %",
+      "display": "21%",
       "key": "rca.within.C.cost.reasoning.share",
       "value": 0.20914183648615736
     },
@@ -10257,7 +10357,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "42 %",
+      "display": "42%",
       "key": "rca.within.C.cost.uncachedInput.share",
       "value": 0.41690346675326784
     },
@@ -10269,7 +10369,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "3 %",
+      "display": "3%",
       "key": "rca.within.C.time.other.share",
       "value": 0.025041736227045072
     },
@@ -10281,7 +10381,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 %",
+      "display": "59%",
       "key": "rca.within.C.time.outputGeneration.share",
       "value": 0.585559265442404
     },
@@ -10293,7 +10393,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.C.time.ownWaits.share",
       "value": 0
     },
@@ -10305,7 +10405,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "13 %",
+      "display": "13%",
       "key": "rca.within.C.time.toolExecution.share",
       "value": 0.12520868113522537
     },
@@ -10323,31 +10423,31 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "26 %",
+      "display": "26%",
       "key": "rca.within.C.time.ttft.share",
       "value": 0.26419031719532554
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.D.cost.cacheRead.share",
       "value": 0.004880131763557617
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.D.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "34 %",
+      "display": "34%",
       "key": "rca.within.D.cost.output.share",
       "value": 0.34356127615445625
     },
     {
       "available": true,
-      "display": "21 %",
+      "display": "21%",
       "key": "rca.within.D.cost.reasoning.share",
       "value": 0.21082169218568902
     },
@@ -10359,7 +10459,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "44 %",
+      "display": "44%",
       "key": "rca.within.D.cost.uncachedInput.share",
       "value": 0.44073689989629716
     },
@@ -10371,7 +10471,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "2 %",
+      "display": "2%",
       "key": "rca.within.D.time.other.share",
       "value": 0.022172949002217293
     },
@@ -10383,7 +10483,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 %",
+      "display": "59%",
       "key": "rca.within.D.time.outputGeneration.share",
       "value": 0.5864745011086474
     },
@@ -10395,7 +10495,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.D.time.ownWaits.share",
       "value": 0
     },
@@ -10407,7 +10507,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "11 %",
+      "display": "11%",
       "key": "rca.within.D.time.toolExecution.share",
       "value": 0.11086474501108647
     },
@@ -10425,31 +10525,31 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "28 %",
+      "display": "28%",
       "key": "rca.within.D.time.ttft.share",
       "value": 0.28048780487804875
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.E.cost.cacheRead.share",
       "value": 0.004296147787483889
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.E.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "33 %",
+      "display": "33%",
       "key": "rca.within.E.cost.output.share",
       "value": 0.3265072318487756
     },
     {
       "available": true,
-      "display": "21 %",
+      "display": "21%",
       "key": "rca.within.E.cost.reasoning.share",
       "value": 0.2130889302592009
     },
@@ -10461,7 +10561,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "46 %",
+      "display": "46%",
       "key": "rca.within.E.cost.uncachedInput.share",
       "value": 0.45610769010453966
     },
@@ -10473,7 +10573,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "2 %",
+      "display": "2%",
       "key": "rca.within.E.time.other.share",
       "value": 0.02002670226969292
     },
@@ -10485,7 +10585,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 %",
+      "display": "59%",
       "key": "rca.within.E.time.outputGeneration.share",
       "value": 0.585113484646195
     },
@@ -10497,7 +10597,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.E.time.ownWaits.share",
       "value": 0
     },
@@ -10509,7 +10609,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "10 %",
+      "display": "10%",
       "key": "rca.within.E.time.toolExecution.share",
       "value": 0.10013351134846461
     },
@@ -10527,7 +10627,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "29 %",
+      "display": "29%",
       "key": "rca.within.E.time.ttft.share",
       "value": 0.2947263017356475
     },
@@ -10645,7 +10745,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       ],
       "number": 1,
       "questions": [],
-      "summary": "Model B scored higher than Model D (established by 95 % intervals that do not overlap) at 0.50 times its cost per question."
+      "summary": "Model B scored higher than Model D (established by 95% intervals that do not overlap) at 0.50 times its cost per question."
     },
     {
       "facts": [
@@ -10662,7 +10762,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       ],
       "number": 2,
       "questions": [],
-      "summary": "Model D scored higher than Model E (established by 95 % intervals that do not overlap) at 0.40 times its median answer time."
+      "summary": "Model D scored higher than Model E (established by 95% intervals that do not overlap) at 0.40 times its median answer time."
     },
     {
       "facts": [
@@ -10679,7 +10779,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       ],
       "number": 3,
       "questions": [],
-      "summary": "Model B scored higher than Model E (established by 95 % intervals that do not overlap) at 0.45 times its median answer time."
+      "summary": "Model B scored higher than Model E (established by 95% intervals that do not overlap) at 0.45 times its median answer time."
     }
   ],
   "pairedDifferences": [],
@@ -11802,19 +11902,19 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       {
         "axis": "intelligence",
         "bestHypothesis": "HQ3.1",
-        "reason": "The best hypothesis, HQ3.1, is graded Low: qualitative only.",
+        "reason": "Suggestive (Low) because it is observed, not measured.",
         "status": "NotEstablished"
       },
       {
         "axis": "speed",
         "bestHypothesis": "WS3.1",
-        "reason": "WS3.1 is the best hypothesis, graded Moderate: replicates failed: Model A has a single run per suite.",
+        "reason": "Probable (Moderate) because Model A ran only once per suite.",
         "status": "ProbableCause"
       },
       {
         "axis": "cost",
         "bestHypothesis": "WC1.1",
-        "reason": "WC1.1 is the best hypothesis, graded Moderate: replicates failed: Model E has a single run per suite.",
+        "reason": "Probable (Moderate) because Model E ran only once per suite.",
         "status": "ProbableCause"
       }
     ],
@@ -13239,7 +13339,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "ttftPerCallP50Ms": 1760
       }
     ],
-    "gradeCap": "One run per suite for every model: the replicates check fails for every hypothesis, so no cause can be graded above Probable (Moderate).",
+    "gradeCap": "Each model ran only once per suite, so this document cannot tell whether its results would repeat. No cause can be graded above Probable (Moderate) until a second run of each suite is made.",
     "hypotheses": [
       {
         "against": [],
@@ -13252,11 +13352,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "for": [
           "The paired Intelligence Index test is not established after the Holm adjustment across 4 tests.",
           "The paired Intelligence Index test is not established after the Holm adjustment across 10 tests.",
-          "The two 95 % intervals overlap."
+          "The two 95% intervals overlap."
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the tests little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-Q",
         "key": "H0-Q.1",
@@ -13277,7 +13377,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "The two 95 % intervals do not overlap."
+          "The two 95% intervals do not overlap."
         ],
         "axis": "intelligence",
         "confounds": [],
@@ -13291,7 +13391,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the tests little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-Q",
         "key": "H0-Q.2",
@@ -13312,7 +13412,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "The two 95 % intervals do not overlap."
+          "The two 95% intervals do not overlap."
         ],
         "axis": "intelligence",
         "confounds": [],
@@ -13326,7 +13426,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the tests little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-Q",
         "key": "H0-Q.3",
@@ -13347,7 +13447,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "The two 95 % intervals do not overlap."
+          "The two 95% intervals do not overlap."
         ],
         "axis": "intelligence",
         "confounds": [],
@@ -13361,7 +13461,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the tests little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-Q",
         "key": "H0-Q.4",
@@ -13382,7 +13482,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "The two 95 % intervals do not overlap."
+          "The two 95% intervals do not overlap."
         ],
         "axis": "intelligence",
         "confounds": [],
@@ -13394,7 +13494,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the tests little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-Q",
         "key": "H0-Q.5",
@@ -13423,12 +13523,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the contrasts little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-W",
         "key": "H0-W.1",
         "kind": "null",
-        "label": "no contrast within Model A's own questions",
+        "label": "no difference within Model A's own questions",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13451,12 +13551,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the contrasts little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-W",
         "key": "H0-W.2",
         "kind": "null",
-        "label": "no contrast within Model E's own questions",
+        "label": "no difference within Model E's own questions",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13482,7 +13582,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "qualitative only"
+          "it is observed, not measured"
         ],
         "id": "HQ3",
         "key": "HQ3.1",
@@ -13522,7 +13622,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the tests little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-S",
         "key": "H0-S.1",
@@ -13555,7 +13655,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the tests little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-S",
         "key": "H0-S.2",
@@ -13588,7 +13688,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the tests little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-S",
         "key": "H0-S.3",
@@ -13621,7 +13721,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the tests little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-S",
         "key": "H0-S.4",
@@ -13652,7 +13752,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the tests little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-S",
         "key": "H0-S.5",
@@ -13679,16 +13779,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.A.speed.modelCallsPerAnswer"
         ],
         "for": [
-          "Across Model A's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6)."
+          "Across Model A's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6)."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model A has a single run per suite."
+          "Model A ran only once per suite"
         ],
         "id": "WS3",
         "key": "WS3.1",
         "kind": "within",
-        "label": "tool rounds in the time of Model A",
+        "label": "Model A's time spent on tool rounds",
         "loci": [
           "model",
           "chat"
@@ -13703,7 +13803,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "The ρ interval includes zero.",
         "robustness": [
           {
-            "detail": "Model A has a single run per suite.",
+            "detail": "Model A ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -13724,16 +13824,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.D.speed.modelCallsPerAnswer"
         ],
         "for": [
-          "Across Model D's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6)."
+          "Across Model D's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6)."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model D has a single run per suite."
+          "Model D ran only once per suite"
         ],
         "id": "WS3",
         "key": "WS3.2",
         "kind": "within",
-        "label": "tool rounds in the time of Model D",
+        "label": "Model D's time spent on tool rounds",
         "loci": [
           "model",
           "chat"
@@ -13748,7 +13848,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "The ρ interval includes zero.",
         "robustness": [
           {
-            "detail": "Model D has a single run per suite.",
+            "detail": "Model D ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -13769,16 +13869,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.E.speed.modelCallsPerAnswer"
         ],
         "for": [
-          "Across Model E's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6)."
+          "Across Model E's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6)."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model E has a single run per suite."
+          "Model E ran only once per suite"
         ],
         "id": "WS3",
         "key": "WS3.3",
         "kind": "within",
-        "label": "tool rounds in the time of Model E",
+        "label": "Model E's time spent on tool rounds",
         "loci": [
           "model",
           "chat"
@@ -13793,7 +13893,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "The ρ interval includes zero.",
         "robustness": [
           {
-            "detail": "Model E has a single run per suite.",
+            "detail": "Model E ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -13808,7 +13908,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "Reasoning is 39 % of Model E's output tokens."
+          "Reasoning is 39% of Model E's output tokens."
         ],
         "axis": "speed",
         "checkNumber": 2,
@@ -13819,16 +13919,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.E.tokens.reasoningShare"
         ],
         "for": [
-          "Output generation is 65 % (64–66 %) of model time per question."
+          "Output generation is 65% (64–66%) of model time per question."
         ],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: reasoning is 39 % of Model E's output tokens."
+          "its own test rules it out: reasoning is 39% of Model E's output tokens"
         ],
         "id": "WS2",
         "key": "WS2.1",
         "kind": "within",
-        "label": "output generation of Model E",
+        "label": "Model E's time spent generating output",
         "loci": [
           "model"
         ],
@@ -13841,7 +13941,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
-            "detail": "Model E has a single run per suite.",
+            "detail": "Model E ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -13859,7 +13959,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "Reasoning is 38 % of Model D's output tokens."
+          "Reasoning is 38% of Model D's output tokens."
         ],
         "axis": "speed",
         "checkNumber": 3,
@@ -13870,16 +13970,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.D.tokens.reasoningShare"
         ],
         "for": [
-          "Output generation is 66 % (65–67 %) of model time per question."
+          "Output generation is 66% (65–67%) of model time per question."
         ],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: reasoning is 38 % of Model D's output tokens."
+          "its own test rules it out: reasoning is 38% of Model D's output tokens"
         ],
         "id": "WS2",
         "key": "WS2.2",
         "kind": "within",
-        "label": "output generation of Model D",
+        "label": "Model D's time spent generating output",
         "loci": [
           "model"
         ],
@@ -13892,7 +13992,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
-            "detail": "Model D has a single run per suite.",
+            "detail": "Model D ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -13910,7 +14010,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "Reasoning is 31 % of Model A's output tokens."
+          "Reasoning is 31% of Model A's output tokens."
         ],
         "axis": "speed",
         "confounds": [],
@@ -13920,16 +14020,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.A.tokens.reasoningShare"
         ],
         "for": [
-          "Output generation is 70 % (69–71 %) of model time per question."
+          "Output generation is 70% (69–71%) of model time per question."
         ],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: reasoning is 31 % of Model A's output tokens."
+          "its own test rules it out: reasoning is 31% of Model A's output tokens"
         ],
         "id": "WS2",
         "key": "WS2.3",
         "kind": "within",
-        "label": "output generation of Model A",
+        "label": "Model A's time spent generating output",
         "loci": [
           "model"
         ],
@@ -13943,7 +14043,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
-            "detail": "Model A has a single run per suite.",
+            "detail": "Model A ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -13961,7 +14061,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted)."
+          "No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)."
         ],
         "axis": "cost",
         "confounds": [],
@@ -13972,7 +14072,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "for": [],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted)."
+          "its own test rules it out: no family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)"
         ],
         "id": "H0-C",
         "key": "H0-C.1",
@@ -13993,7 +14093,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted)."
+          "No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14004,7 +14104,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "for": [],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted)."
+          "its own test rules it out: no family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)"
         ],
         "id": "H0-C",
         "key": "H0-C.2",
@@ -14025,7 +14125,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted)."
+          "No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14036,7 +14136,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "for": [],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted)."
+          "its own test rules it out: no family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)"
         ],
         "id": "H0-C",
         "key": "H0-C.3",
@@ -14057,7 +14157,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted)."
+          "No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14068,7 +14168,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "for": [],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted)."
+          "its own test rules it out: no family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)"
         ],
         "id": "H0-C",
         "key": "H0-C.4",
@@ -14089,7 +14189,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted)."
+          "No family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14099,7 +14199,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "for": [],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted)."
+          "its own test rules it out: no family test exists; the 95% bootstrap interval of the per-question difference excludes zero (unadjusted)"
         ],
         "id": "H0-C",
         "key": "H0-C.5",
@@ -14128,16 +14228,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.E.cost.component.reasoning.perQuestion"
         ],
         "for": [
-          "Visible output and reasoning are 54 % of Model E's cost per question."
+          "Visible output and reasoning are 54% of Model E's cost per question."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model E has a single run per suite."
+          "Model E ran only once per suite"
         ],
         "id": "WC1",
         "key": "WC1.1",
         "kind": "within",
-        "label": "output cost of Model E",
+        "label": "Model E's output cost",
         "loci": [
           "model"
         ],
@@ -14150,7 +14250,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
-            "detail": "Model E has a single run per suite.",
+            "detail": "Model E ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           }
@@ -14161,7 +14261,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "The volume effect is 31 % (31–32 %) of the difference."
+          "The volume effect is 31% (31–32%) of the difference."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14172,16 +14272,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.E.price.output.perMillion"
         ],
         "for": [
-          "Price per token, all components accounts for 69 % (68–69 %) of the $0.038 per-question cost difference."
+          "Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model E and Model A have a single run per suite."
+          "both models ran only once per suite"
         ],
         "id": "HC2",
         "key": "HC2.1",
         "kind": "pair",
-        "label": "higher price per token of Model E against Model A",
+        "label": "Model E's higher price per token, compared with Model A",
         "loci": [
           "model"
         ],
@@ -14200,7 +14300,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           },
           {
-            "detail": "Model E and Model A have a single run per suite.",
+            "detail": "Both models ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -14226,16 +14326,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.D.cost.component.reasoning.perQuestion"
         ],
         "for": [
-          "Visible output and reasoning are 55 % of Model D's cost per question."
+          "Visible output and reasoning are 55% of Model D's cost per question."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model D has a single run per suite."
+          "Model D ran only once per suite"
         ],
         "id": "WC1",
         "key": "WC1.2",
         "kind": "within",
-        "label": "output cost of Model D",
+        "label": "Model D's output cost",
         "loci": [
           "model"
         ],
@@ -14248,7 +14348,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
-            "detail": "Model D has a single run per suite.",
+            "detail": "Model D ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           }
@@ -14259,7 +14359,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "The volume effect is 30 % (30–31 %) of the difference."
+          "The volume effect is 30% (30–31%) of the difference."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14270,16 +14370,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.D.price.output.perMillion"
         ],
         "for": [
-          "Price per token, all components accounts for 70 % (69–70 %) of the $0.027 per-question cost difference."
+          "Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model D and Model A have a single run per suite."
+          "both models ran only once per suite"
         ],
         "id": "HC2",
         "key": "HC2.2",
         "kind": "pair",
-        "label": "higher price per token of Model D against Model A",
+        "label": "Model D's higher price per token, compared with Model A",
         "loci": [
           "model"
         ],
@@ -14298,7 +14398,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           },
           {
-            "detail": "Model D and Model A have a single run per suite.",
+            "detail": "Both models ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -14316,7 +14416,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "The volume effect is 29 % (29–30 %) of the difference."
+          "The volume effect is 29% (29–30%) of the difference."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14327,16 +14427,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.C.price.output.perMillion"
         ],
         "for": [
-          "Price per token, all components accounts for 71 % (70–71 %) of the $0.017 per-question cost difference."
+          "Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model C and Model A have a single run per suite."
+          "both models ran only once per suite"
         ],
         "id": "HC2",
         "key": "HC2.3",
         "kind": "pair",
-        "label": "higher price per token of Model C against Model A",
+        "label": "Model C's higher price per token, compared with Model A",
         "loci": [
           "model"
         ],
@@ -14355,7 +14455,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           },
           {
-            "detail": "Model C and Model A have a single run per suite.",
+            "detail": "Both models ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -14381,16 +14481,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.A.cost.component.reasoning.perQuestion"
         ],
         "for": [
-          "Visible output and reasoning are 69 % of Model A's cost per question."
+          "Visible output and reasoning are 69% of Model A's cost per question."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model A has a single run per suite."
+          "Model A ran only once per suite"
         ],
         "id": "WC1",
         "key": "WC1.3",
         "kind": "within",
-        "label": "output cost of Model A",
+        "label": "Model A's output cost",
         "loci": [
           "model"
         ],
@@ -14403,7 +14503,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
-            "detail": "Model A has a single run per suite.",
+            "detail": "Model A ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           }
@@ -14414,7 +14514,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "The volume effect is 35 % (35–36 %) of the difference."
+          "The volume effect is 35% (35–36%) of the difference."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14425,16 +14525,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.E.price.output.perMillion"
         ],
         "for": [
-          "Price per token, all components accounts for 65 % (64–65 %) of the $0.011 per-question cost difference."
+          "Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model E and Model D have a single run per suite."
+          "both models ran only once per suite"
         ],
         "id": "HC2",
         "key": "HC2.4",
         "kind": "pair",
-        "label": "higher price per token of Model E against Model D",
+        "label": "Model E's higher price per token, compared with Model D",
         "loci": [
           "model"
         ],
@@ -14453,7 +14553,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           },
           {
-            "detail": "Model E and Model D have a single run per suite.",
+            "detail": "Both models ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -14471,7 +14571,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "The volume effect is 28 % (27–29 %) of the difference."
+          "The volume effect is 28% (27–29%) of the difference."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14482,16 +14582,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.B.price.output.perMillion"
         ],
         "for": [
-          "Price per token, all components accounts for 72 % (71–73 %) of the $0.0078 per-question cost difference."
+          "Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model B and Model A have a single run per suite."
+          "both models ran only once per suite"
         ],
         "id": "HC2",
         "key": "HC2.5",
         "kind": "pair",
-        "label": "higher price per token of Model B against Model A",
+        "label": "Model B's higher price per token, compared with Model A",
         "loci": [
           "model"
         ],
@@ -14510,7 +14610,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           },
           {
-            "detail": "Model B and Model A have a single run per suite.",
+            "detail": "Both models ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -14528,7 +14628,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "Model E's cache-read share is 28 % against the models' median of 26 %."
+          "Model E's cache-read share is 28% against the models' median of 26%."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14539,16 +14639,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.E.tokens.cacheReadShare"
         ],
         "for": [
-          "Uncached input, token volume accounts for 9 % (9–9 %) of the $0.038 per-question cost difference."
+          "Uncached input, token volume accounts for 9% (9–9%) of the $0.038 per-question cost difference."
         ],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %."
+          "its own test rules it out: Model E's cache-read share is 28% against the models' median of 26%"
         ],
         "id": "HC4",
         "key": "HC4.1",
         "kind": "pair",
-        "label": "weak prompt caching of Model E against Model A",
+        "label": "Model E's weak prompt caching, compared with Model A",
         "loci": [
           "chat",
           "provider"
@@ -14569,7 +14669,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           },
           {
-            "detail": "Model E and Model A have a single run per suite.",
+            "detail": "Both models ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -14587,7 +14687,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "Model D's cache-read share is 27 % against the models' median of 26 %."
+          "Model D's cache-read share is 27% against the models' median of 26%."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14598,16 +14698,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.D.tokens.cacheReadShare"
         ],
         "for": [
-          "Uncached input, token volume accounts for 8 % (8–9 %) of the $0.027 per-question cost difference."
+          "Uncached input, token volume accounts for 8% (8–9%) of the $0.027 per-question cost difference."
         ],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: Model D's cache-read share is 27 % against the models' median of 26 %."
+          "its own test rules it out: Model D's cache-read share is 27% against the models' median of 26%"
         ],
         "id": "HC4",
         "key": "HC4.2",
         "kind": "pair",
-        "label": "weak prompt caching of Model D against Model A",
+        "label": "Model D's weak prompt caching, compared with Model A",
         "loci": [
           "chat",
           "provider"
@@ -14628,7 +14728,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           },
           {
-            "detail": "Model D and Model A have a single run per suite.",
+            "detail": "Both models ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -14646,7 +14746,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "Model E's cache-read share is 28 % against the models' median of 26 %."
+          "Model E's cache-read share is 28% against the models' median of 26%."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14657,16 +14757,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.E.tokens.cacheReadShare"
         ],
         "for": [
-          "Uncached input, token volume accounts for 12 % (12–13 %) of the $0.011 per-question cost difference."
+          "Uncached input, token volume accounts for 12% (12–13%) of the $0.011 per-question cost difference."
         ],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %."
+          "its own test rules it out: Model E's cache-read share is 28% against the models' median of 26%"
         ],
         "id": "HC4",
         "key": "HC4.3",
         "kind": "pair",
-        "label": "weak prompt caching of Model E against Model D",
+        "label": "Model E's weak prompt caching, compared with Model D",
         "loci": [
           "chat",
           "provider"
@@ -14687,7 +14787,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           },
           {
-            "detail": "Model E and Model D have a single run per suite.",
+            "detail": "Both models ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -14705,7 +14805,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "Model C's cache-read share is 26 % against the models' median of 26 %."
+          "Model C's cache-read share is 26% against the models' median of 26%."
         ],
         "axis": "cost",
         "confounds": [],
@@ -14716,16 +14816,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "model.C.tokens.cacheReadShare"
         ],
         "for": [
-          "Uncached input, token volume accounts for 8 % (7–8 %) of the $0.017 per-question cost difference."
+          "Uncached input, token volume accounts for 8% (7–8%) of the $0.017 per-question cost difference."
         ],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: Model C's cache-read share is 26 % against the models' median of 26 %."
+          "its own test rules it out: Model C's cache-read share is 26% against the models' median of 26%"
         ],
         "id": "HC4",
         "key": "HC4.4",
         "kind": "pair",
-        "label": "weak prompt caching of Model C against Model A",
+        "label": "Model C's weak prompt caching, compared with Model A",
         "loci": [
           "chat",
           "provider"
@@ -14746,7 +14846,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           },
           {
-            "detail": "Model C and Model A have a single run per suite.",
+            "detail": "Both models ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -14770,7 +14870,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "kind": "decomposition",
         "number": 1,
-        "text": "Uncached input, price per token accounts for 45 % (44–46 %) of the per-question cost difference between Model A and Model B."
+        "text": "Uncached input, price per token accounts for 45% (44–46%) of the per-question cost difference between Model A and Model B."
       },
       {
         "factKeys": [
@@ -14778,7 +14878,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "kind": "decomposition",
         "number": 2,
-        "text": "Uncached input, price per token accounts for 44 % (43–45 %) of the per-question cost difference between Model A and Model C."
+        "text": "Uncached input, price per token accounts for 44% (43–45%) of the per-question cost difference between Model A and Model C."
       },
       {
         "factKeys": [
@@ -14786,7 +14886,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "kind": "decomposition",
         "number": 3,
-        "text": "Uncached input, price per token accounts for 43 % (42–44 %) of the per-question cost difference between Model A and Model D."
+        "text": "Uncached input, price per token accounts for 43% (42–44%) of the per-question cost difference between Model A and Model D."
       },
       {
         "factKeys": [
@@ -14794,7 +14894,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "kind": "decomposition",
         "number": 4,
-        "text": "Uncached input, price per token accounts for 42 % (42–43 %) of the per-question cost difference between Model A and Model E."
+        "text": "Uncached input, price per token accounts for 42% (42–43%) of the per-question cost difference between Model A and Model E."
       },
       {
         "factKeys": [
@@ -14802,7 +14902,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "kind": "decomposition",
         "number": 5,
-        "text": "Uncached input, price per token accounts for 39 % (38–39 %) of the per-question cost difference between Model D and Model E."
+        "text": "Uncached input, price per token accounts for 39% (38–39%) of the per-question cost difference between Model D and Model E."
       },
       {
         "factKeys": [
@@ -15093,14 +15193,14 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           {
             "kind": "strength",
             "questions": [],
-            "short": "joint first on Accuracy",
-            "text": "joint first on Accuracy of 5 models"
+            "short": "tied for first on Accuracy",
+            "text": "tied for first of 5 models on Accuracy"
           },
           {
             "kind": "strength",
             "questions": [],
-            "short": "joint first on Completeness",
-            "text": "joint first on Completeness of 5 models"
+            "short": "tied for first on Completeness",
+            "text": "tied for first of 5 models on Completeness"
           }
         ],
         "token": "A",
@@ -15129,14 +15229,14 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           {
             "kind": "strength",
             "questions": [],
-            "short": "joint first on Accuracy",
-            "text": "joint first on Accuracy of 5 models"
+            "short": "tied for first on Accuracy",
+            "text": "tied for first of 5 models on Accuracy"
           },
           {
             "kind": "strength",
             "questions": [],
-            "short": "joint first on Completeness",
-            "text": "joint first on Completeness of 5 models"
+            "short": "tied for first on Completeness",
+            "text": "tied for first of 5 models on Completeness"
           }
         ],
         "token": "B",
@@ -15221,7 +15321,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
               "Q1"
             ],
             "short": "1 isolated miss",
-            "text": "1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more"
+            "text": "1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more"
           }
         ],
         "letter": "E",
@@ -15243,7 +15343,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "kind": "lowestRank",
             "questions": [],
             "short": "last on Accuracy",
-            "text": "last on Accuracy of 5 models"
+            "text": "last of 5 models on Accuracy"
           }
         ]
       }
@@ -15441,8 +15541,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "hypothesisKeys": [],
         "number": 1,
         "signals": [
-          "joint first on Accuracy of 5 models",
-          "joint first on Completeness of 5 models"
+          "tied for first of 5 models on Accuracy",
+          "tied for first of 5 models on Completeness"
         ],
         "text": "Why did Model A score highest?",
         "token": "A"
@@ -15453,7 +15553,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "number": 2,
         "signals": [
           "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
-          "1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more"
+          "1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more"
         ],
         "text": "Why did Model E score lowest?",
         "token": "E"
@@ -15468,7 +15568,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "number": 3,
         "signals": [
           "median model time 20.0 s",
-          "output generation 59 % of its time per question",
+          "output generation 59% of its time per question",
           "2.5 model calls per answer"
         ],
         "text": "Why is Model E slowest?",
@@ -15485,8 +15585,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "number": 4,
         "signals": [
           "$0.060 per question",
-          "uncached input 44 % of its cost per question",
-          "27 % of input tokens read from the cache"
+          "uncached input 44% of its cost per question",
+          "27% of input tokens read from the cache"
         ],
         "text": "Why is Model D the most expensive?",
         "token": "D"
@@ -15855,6 +15955,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ---
 
-*Document ID 212 · format version 17 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models anonymized*
+*Document ID 212 · format version 18 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

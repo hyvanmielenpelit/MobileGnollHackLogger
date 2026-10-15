@@ -1,0 +1,48 @@
+/* The ring (.dc-ring, .dc-ring--inline, .dc-ring-track, .dc-ring-arc) and its reduced-motion and
+   forced-colors rules come from styles.scss. */
+
+/* Inline: the ring beside the text, which keeps the surrounding font size. */
+:host(.li-inline) {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-inline-size: 0;
+}
+
+/* Block: the ring above the text, centered where the content will be. */
+:host(.li-block) {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-block-size: 8rem;
+  min-inline-size: 0;
+  text-align: center;
+}
+
+.li-text {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
+}
+
+:host(.li-reveal) {
+  animation: li-reveal 0.2s ease-out 0.3s both;
+}
+
+@keyframes li-reveal {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/* Still delayed, but it appears without a fade. */
+@media (prefers-reduced-motion: reduce) {
+  :host(.li-reveal) {
+    animation-duration: 0s;
+  }
+}

@@ -48,7 +48,8 @@ function clamp(value: number, min: number, max: number): number {
  * the two labeled, focusable sections sit side by side, each scrolling on its own; below it they
  * stack. `sidebar`: the same, with a resizable sidebar first and the main column after it, the
  * resizer in its own track between them; below 60rem they stack, sidebar first, with no resizer.
- * `single`: the header and tab row stay put and the body is the one scroller.
+ * `single`: the header and tab row stay put and the body is the one scroller. With `showHeader` off
+ * the header is not rendered, and its two slots are not projected anywhere.
  */
 @Component({
   selector: 'app-run-report-frame',
@@ -82,6 +83,9 @@ export class RunReportFrameComponent implements OnChanges {
 
   /** Two columns, a sidebar and a main column, or one body under a tab row. */
   @Input() layout: 'columns' | 'sidebar' | 'single' = 'columns';
+
+  /** Renders the header; off for a host whose surroundings already name what it shows. */
+  @Input() showHeader = true;
 
   /** The sidebar's width once a resize ends, for the host to store. */
   @Output() readonly sidebarWidthChange = new EventEmitter<number>();

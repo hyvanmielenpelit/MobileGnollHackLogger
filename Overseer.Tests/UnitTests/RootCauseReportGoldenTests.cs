@@ -161,8 +161,9 @@ public class RootCauseReportGoldenTests
         string summary = Section(text, "## Summary");
 
         Assert.Contains("### What we found\n\n> [!IMPORTANT]\n> **Key finding.** ", summary);
-        Assert.Contains("### How sure are we?\n\n> [!WARNING]\n> **Caveat.** Established (High): ", summary);
-        Assert.Contains("> One run per suite for every model: the replicates check fails for every hypothesis, so no cause can be graded above Probable (Moderate).\n", summary);
+        Assert.Contains("### How sure are we?\n\n> [!WARNING]\n> **Caveat.** How sure each answer is. **Established (High)**: ", summary);
+        Assert.Contains("> Each model ran only once per suite, so this document cannot tell whether its results would repeat. "
+            + "No cause can be graded above Probable (Moderate) until a second run of each suite is made.\n", summary);
         Assert.Contains("| Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |\n", summary);
 
         var questions = sheet.RootCause!.Questions;

@@ -425,7 +425,7 @@ public static class BenchmarkWordRenderer
     /// <summary>
     /// "INTERNAL" as the markup Word writes for Design, Watermark, Custom watermark, Text: a VML
     /// text-path shape in the header, centered on the page behind the text, rotated 40° counterclockwise,
-    /// in 6 % gray. Its id prefix is what Word's Remove Watermark looks for.
+    /// in 6% gray. Its id prefix is what Word's Remove Watermark looks for.
     /// </summary>
     private static Run Watermark(int index)
     {

@@ -28,6 +28,7 @@ import {
   reportPeerNamingParam
 } from '../../../services/admin-benchmark.service';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
+import { LoadingIndicatorComponent } from '../../../shared/loading-indicator/loading-indicator.component';
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { rememberedPdfPaper, reportDocumentFileStem } from '../download-center/download-center-panel.component';
@@ -275,7 +276,10 @@ function serverMessage(error: HttpErrorResponse): string | null {
 @Component({
   selector: 'app-comparison-documents-status',
   standalone: true,
-  imports: [NgTemplateOutlet, PdfViewerDialogComponent, RootCauseRunsComponent, InfoTipComponent, ReportValidationDetailsComponent],
+  imports: [
+    NgTemplateOutlet, PdfViewerDialogComponent, RootCauseRunsComponent, InfoTipComponent, ReportValidationDetailsComponent,
+    LoadingIndicatorComponent
+  ],
   templateUrl: './comparison-documents-status.component.html',
   styleUrls: ['./comparison-documents-status.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush

@@ -87,14 +87,14 @@ internal static class BatteryReportFixture
             Fact("battery.definitionSha256", "d41f0c9e2b7a"),
             Fact("battery.classSha256", "5e1d0c7b3a91"),
             Fact("battery.pooledIdentity", "the Overall Index equals one difficulty-weighted index over every question of every suite", JsonValue.Create(true)),
-            Fact("battery.criticalErrorRate", "13 %", JsonValue.Create(0.125)),
+            Fact("battery.criticalErrorRate", "13%", JsonValue.Create(0.125)),
             Fact("battery.speedIndex", "82 / 100", JsonValue.Create(82.0)),
             Fact("battery.suiteIndexSd", "7.1 points", JsonValue.Create(7.07)),
             Fact("battery.suiteIndexRange", "10.0 points", JsonValue.Create(10.0)),
             Fact("battery.excludedMembers", "0 member runs", JsonValue.Create(0)),
             Fact("battery.caveat.1", "Fewer than three complete rounds: the interval covers item sampling only."),
             Fact("suite.1.name", "Item lore"),
-            Fact("suite.1.weight", "60.0 %", JsonValue.Create(0.6)),
+            Fact("suite.1.weight", "60.0%", JsonValue.Create(0.6)),
             Fact("suite.1.index", "84 / 100", JsonValue.Create(84.0)),
             Fact("suite.1.contribution", "50.4 points", JsonValue.Create(50.4)),
             Fact("suite.1.interval", "78–90"),
@@ -102,9 +102,9 @@ internal static class BatteryReportFixture
             Fact("suite.1.runs", "2 runs", JsonValue.Create(2)),
             Fact("suite.1.speedIndex", "84 / 100", JsonValue.Create(84.0)),
             Fact("suite.1.costPerRun", "$0.081", JsonValue.Create(0.081)),
-            Fact("suite.1.criticalErrorRate", "0 %", JsonValue.Create(0.0)),
+            Fact("suite.1.criticalErrorRate", "0%", JsonValue.Create(0.0)),
             Fact("suite.2.name", "Hazards"),
-            Fact("suite.2.weight", "40.0 %", JsonValue.Create(0.4)),
+            Fact("suite.2.weight", "40.0%", JsonValue.Create(0.4)),
             Fact("suite.2.index", "74 / 100", JsonValue.Create(74.0)),
             Fact("suite.2.contribution", "29.6 points", JsonValue.Create(29.6)),
             Unavailable("suite.2.interval", "No interval could be computed for this suite."),
@@ -112,7 +112,7 @@ internal static class BatteryReportFixture
             Fact("suite.2.runs", "2 runs", JsonValue.Create(2)),
             Fact("suite.2.speedIndex", "80 / 100", JsonValue.Create(80.0)),
             Fact("suite.2.costPerRun", "$0.063", JsonValue.Create(0.063)),
-            Fact("suite.2.criticalErrorRate", "25 %", JsonValue.Create(0.25)),
+            Fact("suite.2.criticalErrorRate", "25%", JsonValue.Create(0.25)),
             Fact("sensitivity.difficultyMass", "80 / 100 under the Questions and difficulty weights (the declared scheme)", JsonValue.Create(80.0)),
             Fact("sensitivity.equal", "79 / 100 under the Equal per suite weights", JsonValue.Create(79.0)),
             Fact("sensitivity.itemCount", "79 / 100 under the Questions only weights", JsonValue.Create(79.0)),
@@ -412,7 +412,7 @@ public class BenchmarkBatteryReportFactsTests
 
         var sheet = Assert.IsType<BenchmarkReportFactSheet>(built.Sheet);
         Assert.Equal("12 of 1,480 attempts", Fact(sheet, "availability.providerErrors").Display);
-        Assert.Equal("0.81 %", Fact(sheet, "availability.providerErrorRate").Display);
+        Assert.Equal("0.81%", Fact(sheet, "availability.providerErrorRate").Display);
         Assert.Equal("1 replaced run", Fact(sheet, "availability.replacedRuns").Display);
         var subject = Assert.Single(sheet.Entries, e => e.IsSubject);
         Assert.True(subject.ProviderAvailabilityRecorded);
@@ -924,8 +924,8 @@ public class BenchmarkBatteryReportFactsTests
 
         Assert.Contains("- **Battery:** Core knowledge, revision 2: 2 suites, 2 runs per suite, weighting scheme Questions and difficulty\n", text);
         Assert.Contains("- **Member runs:** 4 (battery run 9)\n", text);
-        Assert.Contains("| S1 · Item lore | 60.0 % | 84 / 100 (78–90) |\n", text);
-        Assert.Contains("| S2 · Hazards | 40.0 % | 74 / 100 |\n", text);
+        Assert.Contains("| S1 · Item lore | 60.0% | 84 / 100 (78–90) |\n", text);
+        Assert.Contains("| S2 · Hazards | 40.0% | 74 / 100 |\n", text);
         Assert.Contains("- Asserted a false outcome on S2-Q1.", text);
         Assert.DoesNotContain("| Q1 |", text);
     }

@@ -449,7 +449,7 @@ re-score, a new battery analysis — refreshes the result without a status chang
   provider-caused part. They are read from the runs' rollup columns and lineage
   ([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md)); a member whose runs
   all started before harness 56 reads *not recorded*. The progress dialog's member figures show them as
-  **Provider errors** (*0.81 % (12 of 1,480 attempts)*) and **Re-runs** (*3 (2 provider)*).
+  **Provider errors** (*0.81% (12 of 1,480 attempts)*) and **Re-runs** (*3 (2 provider)*).
 - **Size** — `QuestionCount`, the questions summed over the completed runs.
 
 The batch carries the live candidate and total cost of every member run so far (a running run's from its
@@ -670,8 +670,8 @@ History:
 
 A **Copy steps** icon button copies the guide as plain text. The text is one constant
 (`MODEL_BATCH_DOCUMENTS_GUIDE` in `model-batch.models.ts`) used by the dialog and the copy. The launcher
-says the same up front through MB-A13 (§ 3.3), and step 3 of the wizard carries a matching note beside
-**Generate** (`ai-benchmark-report-pack.md` § 12).
+says the same up front through MB-A13 (§ 3.3), and step 3 of the wizard carries a matching note in its
+job card while charts can still be pending (`ai-benchmark-report-pack.md` § 12).
 
 ## 9. Completion and Failure Alerts
 

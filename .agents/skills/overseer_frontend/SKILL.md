@@ -148,6 +148,16 @@ Harness-neutral, and the floor for any Overseer frontend work.
   word) and the **`.dc-ring`** ring spinner (`.dc-ring-track`,
   `.dc-ring-arc`; the Download Center, the PDF viewer and the Chat Consistency wizard's step-1 runs
   loading state), which turns slowly (6 s, still arc) under reduced motion.
+- **`app-loading-indicator`** (since 2026-10-15; `shared/loading-indicator/`, `OnPush`) is the `.dc-ring`
+  with a line of text, for a new wait: inputs `text` (required), `size` (`inline`: a 14 px ring beside
+  the text in the surrounding font size; `block`: a 40 px ring above it, centered in a column at least
+  8rem tall) and `revealDelay` (on by default: both fade in after 0.3 s, so a quick answer shows
+  nothing; under reduced motion they appear after the same delay without the fade). It has **no live region and no `role`**: the
+  host announces the wait with its own `role="status"` line or `aria-busy`, and the ring is
+  `aria-hidden`. Users: the report steps' *Estimating…* (Model Comparison step 3, Chat Consistency step
+  5), step 3's *Looking up the documents already written…* and *Starting the report pack…*, and the
+  Download Center's *Loading report documents…* and *Listing the member runs…*. The older hand-written
+  rings are not migrated to it.
 - **`.config-badge`** is the neutral configuration badge (service tier, custom endpoint, prompt
   options) beside `.thinking-badge`, `.reasoning-badge` and `.provider-badge`: a configuration fact,
   not a capability claim. It badges the requested service tier and the reader coverage in the run and
@@ -1100,7 +1110,8 @@ To find specific popups, look in the corresponding component's `.html` template:
 
       **Step 5, *Write*,** is `reports-step.component.*` (`app-cc-reports-step`, kept as the
       `@ViewChild`, headed `h4#cc-rep-heading` *Write reports*), in Model Comparison step 3's layout: `app-run-report-frame layout="sidebar"` with
-      the same section order and classes, not `app-report-pack-panel`, whose context, sidebar and calls
+      the same section order and classes (but with the frame's header, which also holds the analysis's
+      out-of-date notice; Model Comparison step 3 renders none, `[showHeader]="false"`), not `app-report-pack-panel`, whose context, sidebar and calls
       are comparison-specific. The `rp-*` rules both screens use are **global**, in the `styles.scss`
       block *Report steps (Model Comparison step 3, Chat Consistency step 5)*; the document rows take
       the `cds-*` row classes of `app-comparison-documents-status`, which are global too (the
@@ -1135,7 +1146,8 @@ To find specific popups, look in the corresponding component's `.html` template:
       maxHeightShare }`; two consecutive half-width figures at one anchor share a row). Then the writer
       picker with `CHAT_CONSISTENCY_REPORT_WRITER_ADVICE` (`run-ai-reports/report-writer-advice.ts`: the
       four documents and `REPORT_WRITER_ADVICE_CHAT_CONSISTENCY_SHARED`), the refusal or warning, the
-      estimate (debounced by `CC_REPORT_ESTIMATE_DEBOUNCE_MS`) and *Write Reports* (*zap*), with the
+      estimate (debounced by `CC_REPORT_ESTIMATE_DEBOUNCE_MS`; *Estimating…* beside an inline
+      `app-loading-indicator`, no reveal delay, as on Model Comparison step 3) and *Write Reports* (*zap*), with the
       same-provider dialog asked on every write and on the server's 409. The main area has no visible
       heading (its accessible name is the frame's `mainLabel` *Report progress*): the job's phase is a
       visually hidden polite `p.visually-hidden.cc-rep-status[role=status]`, shown visibly by the stage
@@ -2154,10 +2166,16 @@ To find specific popups, look in the corresponding component's `.html` template:
     renders only while it is open, and it stops propagation of its own close and cancel events so
     they never reach, and close, the wizard's own dialog.
   - **Step 3, Write** is `app-report-pack-panel` (`report-pack/report-pack-panel.component.*`, the
-    former Report Pack dialog's body; step 2's **Reports** button and the dialog are gone), headed by
-    `h4.gh-section-title` *Write reports*, in `app-run-report-frame`'s `layout="sidebar"`: a resizable
-    sidebar (20–32rem, at most 40 % of the body, width kept as `sidebarWidth` in
-    `localStorage['overseer.benchmark.reportPack']`; stacked below 60rem) holds the form, in order:
+    former Report Pack dialog's body; step 2's **Reports** button and the dialog are gone), in
+    `app-run-report-frame`'s `layout="sidebar"` with `[showHeader]="false"`: no heading block above the
+    columns, since the wizard's header already names the suite and the charted entries. The step adds no
+    padding of its own (`.mc-step--reports`: `padding: 0; gap: 0`, as `.mc-step--documents`), so the
+    frame's inset is the only one. A resizable sidebar (20–32rem, at most 40 % of the body, width kept as
+    `sidebarWidth` in `localStorage['overseer.benchmark.reportPack']`; stacked below 60rem) holds the
+    form, in order:
+    - **New report pack** (`h5#{idPrefix}-new-heading`), followed in a plain flex row
+      (`.rp-new-heading-row`, not `.gh-field-row`, so the heading keeps its width) by an `app-info-tip`
+      in hover mode, *Where these reports are kept* (`{idPrefix}-lead-tip`, `REPORT_PACK_LEAD_TEXT`).
     - **Document scope**: a `.gh-tabs-segmented` pair (`role="tablist"` *Document scope*, arrow keys wrap,
       Home / End) *Whole comparison* (a smaller second line, *Recommended*, `.rp-scope-tab-note`) /
       *One model at a time*; each segment wraps its label (`text-wrap: balance`) rather than clipping
@@ -2173,7 +2191,9 @@ To find specific popups, look in the corresponding component's `.html` template:
       `min` 1, the highest-Index option chosen at first. The choice is component state, reset when the
       comparison changes. Under it the `describedBy` line `modelsLine` (*Writes the comparison-wide
       documents.* / *Writes documents for 3 of 5 models — leaves out …* / the per-model documents of the
-      chosen models) and, once the preview has lettered them, under Whole comparison only, the letters
+      chosen models, followed while any entry is Excluded by *1 entry of this comparison is Excluded and
+      is not offered.*, the one fact of the old subtitle the wizard's header lacks) and, once the preview
+      has lettered them, under Whole comparison only, the letters
       legend (`coveredLetterPairs`, memoized on the preview and the scope): a boxed `role="group"` named by
       its title *Letters in the anonymized copies*, holding a `<dl>` grid of 13 rem columns whose `dt` is
       the letter tile (*Letter A* to a screen reader) and `dd` the model's label. It is not in the
@@ -2194,6 +2214,8 @@ To find specific popups, look in the corresponding component's `.html` template:
       none. One polite live line. The list comes from the preview, requested 300 ms after the last
       change (`REPORT_PACK_PREVIEW_DEBOUNCE_MS`, `debounceTime` then `switchMap`, so an older answer is
       dropped), and the written documents' list entries from `listReportDocuments({ comparisonId })`.
+      While it is awaited the section is `aria-busy` and shows an inline `app-loading-indicator`,
+      *Looking up the documents already written…*, with the delayed reveal.
     - **Charts in PDF and Word**: `app-report-chart-picker` with `[layout]` and `[scope]`, then the
       visible print advisory and, while the `report-charts-location-missing` alert is present, the
       warning *Chart storage is not configured; documents will be written without charts.*
@@ -2201,12 +2223,19 @@ To find specific popups, look in the corresponding component's `.html` template:
       `run-ai-reports/report-writer-advice.ts`; a subject's own model, or a covered model's
       configuration, is refused), the refusal or the amber same-provider warning (*Writer from a chosen
       model's provider*), the `.gh-estimate-panel` estimate (the checked rows summed, per row and model
-      when several) with an amber warning from 70 % of the writer's context window
+      when several; *Estimating…* with an inline `app-loading-indicator`, no reveal delay, while it is
+      computed) with an amber warning from 70 % of the writer's context window
       (`REPORT_PACK_CONTEXT_WARNING_SHARE`), and **Generate** (*zap*), sending `scope`,
       `coveredEntryKeys` or `subjectKeys`, the checked audiences and `replaceDocumentIds`. Its blocked
-      reason is a visible note; it stays focusable and `aria-disabled` only when every listed document is
+      reason (`#{idPrefix}-generate-blocked`, always in Generate's `aria-describedby`) is a visible note,
+      except the two whose fact is already in view: the job-in-progress reason
+      (`REPORT_PACK_JOB_RUNNING_REASON`; the main area shows the job and **Cancel Job**) and *Checking
+      the writer and estimating the cost…* (`REPORT_PACK_ESTIMATING_REASON`; the estimate panel shows
+      *Estimating…*), which are `visually-hidden` (`generateBlockedReasonShownElsewhere`). Generate stays
+      focusable and `aria-disabled` only when every listed document is
       written and none is checked (`REPORT_PACK_ALL_WRITTEN_REASON`), and one model at a time needs the
-      same documents checked for every chosen model (`REPORT_PACK_UNEVEN_MODELS_REASON`).
+      same documents checked for every chosen model (`REPORT_PACK_UNEVEN_MODELS_REASON`). No keep-open
+      note sits under it; that note is in the job card.
     - **Preview layout** and **Generate** share `.rp-actions-row`, a grid of
       `repeat(auto-fit, minmax(min(100%, 16.5rem), 1fr))`: both gold `.btn-gh`, full width, Generate
       last; they stack at the default 416 px sidebar and sit side by side from about 34 rem. **Preview
@@ -2225,12 +2254,21 @@ To find specific popups, look in the corresponding component's `.html` template:
       (`layoutPreviewViewerRequest`, `report-pack/report-chart-layout-preview.ts`), titled *Layout
       preview — Executive Summary*, which composes the figures through the wizard's lent
       `documentChartsComposer` and posts `report-packs/layout-preview` as multipart; figures that could
-      not be drawn are listed in a `role="status"` line (*Not drawn: …*, hidden while empty); focus
-      returns to the trigger when the viewer closes.
+      not be drawn are listed in a `role="status"` line (*Not drawn: …*; while empty, the global
+      `.rp-note:empty` rule gives it the visually hidden geometry, so it adds no gap and stays a live
+      region, never `display: none`); focus returns to the trigger when the viewer closes.
 
     A same-provider writer makes Generate ask
     the nested *Same-Provider Report Writer* confirmation (**Write Anyway**) on every write; nothing is
-    remembered. The main area, *Report pack progress*, holds the job: the stage rail while it runs,
+    remembered. Generate answers at once: `startPack()` focuses the progress heading
+    (`#{idPrefix}-progress-heading`, `tabindex="-1"`), so focus never falls to the body when Generate
+    disables and the stacked layout scrolls the main area into view; while `isStarting` (the start
+    request, which runs the comparison, preparation and estimate checks on the server, then the wait for
+    the job's first reading) the main area shows `.rp-starting` — a block `app-loading-indicator`
+    *Starting the report pack…* and the line *Checking the comparison, the report writer and the cost,
+    then queuing the documents. This can take several seconds.* — in place of the job card, and the live
+    line reads *Starting the report pack…*. A refused start returns focus to Generate when it is
+    enabled again, else leaves it on the heading. The main area, *Report pack progress*, holds the job: the stage rail while it runs,
     the stat strip (which stays, with the cost and estimate, after it finishes; elapsed ticks every
     second on the server's clock from `serverTimeUtc`), one row per document (with a *Model* column for a
     per-model job) with its status chip,
@@ -2240,7 +2278,12 @@ To find specific popups, look in the corresponding component's `.html` template:
     *Charts failed — retry* as a link-style button, *Charts: none*), a *Log and diagnostics*
     disclosure with icon-only **Copy diagnostics** and **Download diagnostics**
     (`report-pack_<subject>_diagnostics_<yyyyMMdd-HHmmss>.txt`, LF, never the starting user), and,
-    once finished, a summary with **See the documents** (switches to step 4) and **Dismiss**. Polling
+    once finished, a summary with **See the documents** (switches to step 4) and **Dismiss**. Under the
+    card's title, while charts can still be pending (`showKeepOpenNote`: chart storage is configured and
+    the job runs or a row's charts are attaching, `ReportPackChartCell.pending`), the keep-open note
+    `REPORT_PACK_KEEP_OPEN_TEXT`: the wizard charts a written document only while its dialog is open
+    (`onReportDocumentWritten` checks `wizardOpen`), and a document that finishes while it is closed is
+    never charted on reopen, so its charts are added on step 4 with **Update charts…**. Polling
     continues while the step is hidden and stops when the wizard is destroyed.
     `ReportPackContext.entryKeys` is every entry key of the comparison, Excluded ones included, since
     the server keys a document by the request's run and group ids. See

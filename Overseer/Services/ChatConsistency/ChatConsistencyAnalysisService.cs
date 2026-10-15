@@ -2439,7 +2439,7 @@ public class ChatConsistencyAnalysisService
         }
 
         /// <summary>
-        /// The cluster-adjusted Wilson 95 % interval of a period's attempt rate: clusters are (unit, 10-minute
+        /// The cluster-adjusted Wilson 95% interval of a period's attempt rate: clusters are (unit, 10-minute
         /// UTC block) and, with two or more units, units; the larger design effect is used.
         /// </summary>
         private static ChatConsistencyInterval? ClusteredInterval(List<List<ProviderAttemptRow>> units, Func<ProviderAttemptOutcome, bool> counted)
@@ -2973,7 +2973,7 @@ public class ChatConsistencyAnalysisService
             }
 
             families.Add(Family("shiftFunction", "Shift function", shift,
-                "Pointwise 95 % intervals, not adjusted across deciles; descriptive."));
+                "Pointwise 95% intervals, not adjusted across deciles; descriptive."));
 
             // Time of day.
             var timeOfDay = new List<ChatConsistencySecondaryResult>();
@@ -4410,7 +4410,7 @@ public class ChatConsistencyAnalysisService
         => value.HasValue && double.IsFinite(value.Value) ? value.Value.ToString("0.###", CultureInfo.InvariantCulture) : "not computable";
 
     private static string Percent(double? share)
-        => share.HasValue && double.IsFinite(share.Value) ? (100.0 * share.Value).ToString("0.#", CultureInfo.InvariantCulture) + " %" : "not recorded";
+        => share.HasValue && double.IsFinite(share.Value) ? (100.0 * share.Value).ToString("0.#", CultureInfo.InvariantCulture) + "%" : "not recorded";
 
     private static string Money(decimal? value)
         => value.HasValue ? "$" + value.Value.ToString("0.00##", CultureInfo.InvariantCulture) : "not priced";

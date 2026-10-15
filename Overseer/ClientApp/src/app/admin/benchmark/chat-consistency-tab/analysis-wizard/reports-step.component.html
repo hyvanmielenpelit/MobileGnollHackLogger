@@ -169,7 +169,9 @@
     <!-- Always rendered, so the live region is in place before an estimate arrives. -->
     <div id="cc-rep-estimate" class="gh-estimate-panel cc-rep-estimate" role="status"
          [class.is-empty]="!estimateText" [class.is-muted]="estimating || estimateFailed">
-      @if (estimateText) {
+      @if (estimating && estimateText) {
+        <p class="gh-estimate-note"><app-loading-indicator [text]="estimateText" [revealDelay]="false"></app-loading-indicator></p>
+      } @else if (estimateText) {
         <p class="gh-estimate-note">{{ estimateText }}</p>
       }
     </div>

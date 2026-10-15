@@ -24,11 +24,49 @@
 ### How sure are we?
 
 > [!WARNING]
-> **Caveat.** Established (High): measured, established after adjustment, robust, with two or more runs per suite on both sides. Probable (Moderate): one of those conditions is missed. Suggestive (Low): qualitative only, two or more conditions missed, or the difference may be noise. Ruled out (Not supported): the rule's own test refutes it.
+> **Caveat.** How sure each answer is. **Established (High)**: measured, still clear after the correction for many comparisons, robust in every check, not explained by another setting, and each model ran at least twice per suite. **Probable (Moderate)**: one of those is missing. **Suggestive (Low)**: a lead only; it is not measured, two or more are missing, or the difference may be chance. **Ruled out (Not supported)**: the hypothesis's own test contradicts it.
 >
-> One run per suite: the replicates check fails for every hypothesis, so no cause can be graded above Probable (Moderate).
+> The model ran only once per suite, so this document cannot tell whether its results would repeat. No cause can be graded above Probable (Moderate) until a second run of each suite is made.
 >
 > The intelligence hypotheses that could lie in the model or in the instrument are capped at Suggestive (Low): no other model answered these questions.
+
+## Key terms
+
+This document uses a few statistical and technical terms. Each is explained here in plain words, and the less familiar ones again where they first appear. Appendix H gives a fuller definition of each.
+
+| Term | What it means |
+|---|---|
+| 95% interval | The range the true value most likely lies in. |
+| Answer quality | The score of one answer, from its four graded dimensions. |
+| Answers without tools | Answers the model wrote without looking anything up. |
+| Confound | Another difference between two models that could account for a result. |
+| Control | An earlier run of another model on the same questions. |
+| Critical error | A mistake serious enough to cap the answer's score. |
+| Decomposition share | How much of a difference one part accounts for. |
+| Difficulty-weighted mean | An average in which harder questions count for more. |
+| Dimension | One of the four things graded: accuracy, completeness, conciseness, readability. |
+| Grade words | How sure the document is of a cause, strongest to weakest. |
+| Holm adjustment | A correction for running many comparisons at once. |
+| Hypothesis | A possible cause that code tested against the data. |
+| Intelligence Index | The overall answer-quality score, out of a hundred. |
+| Leave-one-out check | Rechecking a result with each question left out in turn. |
+| Locus | Where a cause lies: model, chat, grading, questions, data or provider. |
+| Median and mean | The middle value, and the plain average. |
+| Null hypothesis | The starting assumption that a difference is only chance. |
+| Output generation and decode rate | The time spent writing the reply, and how fast it is written. |
+| Points at risk | The most index points a failure signal could have cost. |
+| Pricing basis | Which prices turned the token counts into dollars. |
+| Replicate run | A second run of the same model, to see if results repeat. |
+| Response style | Whether the chat asks for concise or detailed answers. |
+| Robustness check | A test of whether a result survives a small change. |
+| Runs per suite | How many times each model answered each suite. |
+| Scoring levels | Fixed grade steps, each described by the answer behavior that earns it. |
+| Suite | A fixed set of benchmark questions with their rubrics. |
+| Tied rank | A shared rank for models the data cannot put in order. |
+| Time to first token | The wait before the model starts writing, mostly its thinking. |
+| Tokens | The word pieces a model reads and writes, which set its price. |
+| Tool round | One cycle of calling a tool and reading its result. |
+| Weighted geometric mean | An average that one very low score pulls down sharply. |
 
 ## Why each model scored as it did
 
@@ -36,7 +74,7 @@
 |---|---|---|---|---|
 | **Orion Max** | 85 | none ranked first or second | answers without tools: 9.8 index points on 1 question (Q3) | none |
 
-*Each entry is a count, a share or a rank that was measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (Appendix A), with its questions.*
+*Each entry is a count, a share or a rank measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (the most index points a failure signal could have cost), with its questions (Appendix A).*
 
 ## Scope and design
 
@@ -47,10 +85,10 @@ This analysis describes run 31 of Orion Max on its own. Other models enter only 
 - **Suite:** GnollHack Core Suite, 1 questions.
 - **Chat configuration under test:** Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed
 - **Model under test:** Orion Max (Northwind, orion-max), thinking level not set; 1 run.
-- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %. Each dimension is graded on behaviorally anchored levels scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
+- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error (a mistake serious enough to cap the answer's score) caps the answer's quality at 25.
 - **Graders:**
   - Assessor: Gemini 3.8 Flash (Google, gemini-3.8-flash), different provider from the model under test
-- **Formulas:** answer quality is the weighted geometric mean of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
+- **Formulas:** answer quality is the weighted geometric mean (an average that one very low score pulls down sharply) of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean (an average in which harder questions count for more) of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
 - **Comparability:** this report describes the model on its own, measured under the instrument condition with signature `sig-7f3a91`.
 - **Pricing basis:** Catalog prices on 2026-09-21
 - **Versions:** harness 41, scoring method 12.
@@ -63,11 +101,11 @@ One run per suite on each side limits what this design can decide; the next runs
 
 ## Evidence: intelligence
 
-| Model | Intelligence Index | 95 % interval | Rank | Critical errors |
+| Model | Intelligence Index | 95% interval | Rank | Critical errors |
 |---|---|---|---|---|
 | **Orion Max** | 85 | 82–88 | 1 | 0 of 6 answers |
 
-*A joint rank means the model's 95 % interval overlaps a neighbor's, so the intervals do not establish the order between them.*
+*A rank shown as a span, such as 2–4 (tied), is a tied rank: the model's 95% interval (the range the true value most likely lies in) overlaps a neighbor's, so the intervals alone cannot put them in order.*
 
 | Model | Accuracy | Completeness | Conciseness | Readability |
 |---|---|---|---|---|
@@ -89,7 +127,7 @@ The first known fact: No earlier run of another model answered these questions u
 | Orion Max | 8.9 s | 1.9 s | 5.2 s | 1.5 s | 0.0 s | 0.3 s |
 | Intermediate questions | 8.9 s | 1.9 s | 5.2 s | 1.5 s | 0.0 s | 0.3 s |
 
-*Seconds per question: the median of the per-question time, split into its parts in proportion to their means. Tool execution is excluded from the model's own time elsewhere in this document.*
+*Seconds per question: the median time per question, split into its parts in proportion to their mean times. The parts are time to first token (the wait before the model starts writing, mostly its thinking), output generation (the time spent writing the reply, and how fast it is written), tool execution, the model's own waits and retries, and other time. Tool execution is excluded from the model's own time elsewhere in this document.*
 
 The speed tables split the time per question into its components.
 
@@ -102,7 +140,7 @@ The speed tables split the time per question into its components.
 | Orion Max | $0.014 | $0.0042 | $0.0001 | $0.0000 | $0.0067 | $0.0030 |
 | Intermediate questions | $0.014 | $0.0042 | $0.0001 | $0.0000 | $0.0067 | $0.0030 |
 
-*Mean cost per question by component, priced on this basis: Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.*
+*Mean cost per question by component. Each component is a kind of token (the word pieces a model reads and writes, which set its price). Uncached input is text read at the full price, and cache reads are stored input read at a lower price. Cache writes store input for later calls; visible output is the answer; reasoning is the model's hidden thinking. Priced on this basis (which prices turned the token counts into dollars): Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.*
 
 The cost tables split the cost per question into volume and price.
 
@@ -112,7 +150,7 @@ The cost tables split the cost per question into volume and price.
 
 No hypothesis other than a null fired on this axis.
 
-*Null hypotheses (the difference is within sampling noise):* it stands for within Orion Max's own questions.
+No real difference could be shown (the gap may be chance) for 1 comparison: within Orion Max's own questions.
 
 No hypothesis on this axis has more support than its null.
 
@@ -120,10 +158,12 @@ No hypothesis on this axis has more support than its null.
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WS3.1: tool rounds in the time of Orion Max | Tool rounds multiply Orion Max's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 2 |
-| WS2.1: output generation of Orion Max | Most of Orion Max's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 70 % (69–71 %) | run 3 |
+| WS3.1: Orion Max's time spent on tool rounds | Tool rounds multiply Orion Max's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 2 |
+| WS2.1: Orion Max's time spent generating output | Most of Orion Max's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 70% (69–71%) | run 3 |
 
-*Ids: H0 is a null hypothesis, H one between two models, W one within a single model; Q, S and C mark intelligence, speed and cost. Appendix C gives each hypothesis' evidence for and against.*
+*Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
+
+*How to read a hypothesis ID such as HQ1.2: H compares two models, W looks inside one model, and H0 is a null hypothesis (the starting assumption that a difference is only chance). Q, S and C stand for intelligence, speed and cost. Appendix C gives each hypothesis's evidence for and against.*
 
 The strongest hypothesis in the table: Tool rounds multiply Orion Max's time (where its time goes, not a comparison). Its grade and the evidence against it stand beside it.
 
@@ -131,14 +171,16 @@ The strongest hypothesis in the table: Tool rounds multiply Orion Max's time (wh
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WC1.1: output cost of Orion Max | Output (with reasoning) is Orion Max's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 69 % | — |
+| WC1.1: Orion Max's output cost | Output (with reasoning) is Orion Max's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 69% | — |
+
+*Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
 The strongest hypothesis in the table: Output (with reasoning) is Orion Max's largest cost component (where its cost goes, not a comparison). Its grade and the evidence against it stand beside it.
 
 ### The writer's hypotheses
 
 > [!WARNING]
-> **Not tested by code.** Hypotheses the report writer added from the grader comments and excerpts. Code has not tested them, so their confidence is Low.
+> **Not tested by code.** Hypotheses the report writer added from the grader comments and excerpts. Code has not tested them, so their confidence is Low. Each names its locus (where a cause lies: model, chat, grading, questions, data or provider).
 >
 > - **Intelligence · Low** (Orion Max; locus suite): Orion Max may have lost points to a rubric that asks for more than the question states.
 >   - *For:* The grader comment on Q1 names a missing point.
@@ -149,9 +191,9 @@ The strongest hypothesis in the table: Output (with reasoning) is Orion Max's la
 
 | Axis | Status | Best hypothesis | Why |
 |---|---|---|---|
-| Intelligence | Not established | — | No hypothesis fired on this axis. |
-| Speed | Probable cause | WS3.1: tool rounds in the time of Orion Max | WS3.1 is the best hypothesis, graded Moderate: replicates failed: Orion Max has a single run per suite. |
-| Cost | Probable cause | WC1.1: output cost of Orion Max | WC1.1 is the best hypothesis, graded Moderate: replicates failed: Orion Max has a single run per suite. |
+| Intelligence | Not established | — | No rule found a possible cause on this axis. |
+| Speed | Probable cause | WS3.1: Orion Max's time spent on tool rounds | Probable (Moderate) because Orion Max ran only once per suite. |
+| Cost | Probable cause | WC1.1: Orion Max's output cost | Probable (Moderate) because Orion Max ran only once per suite. |
 
 > [!TIP]
 > **Conclusion.** Intelligence: Not established. Speed: Probable cause. Cost: Probable cause.
@@ -194,7 +236,7 @@ The benchmark asks single questions, so longer conversations are not measured.
 - **E. Known facts:** what a test, a count, a decomposition or the configuration proves.
 - **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
 - **G. Question details:** the questions this document cites, with their answers.
-- **H. Glossary:** the statistical terms in plain words.
+- **H. Glossary:** every term this document uses, in plain words.
 
 ## Appendix A: Intelligence detail
 
@@ -293,13 +335,15 @@ No synthesis findings were recorded.
 
 | Model | Model calls per answer | Time to first token per call, median | Decode rate | Reasoning share | Output tokens per question |
 |---|---|---|---|---|---|
-| Orion Max | 2.5 | 0.8 s | — | 31 % | 970 |
+| Orion Max | 2.5 | 0.8 s | — | 31% | 970 |
+
+*Model calls per answer: the model is called again after each tool round (one cycle of calling a tool and reading its result). Decode rate: the median output tokens per second once the model has started writing. Reasoning share: the part of the output tokens spent on hidden thinking.*
 
 ### Tokens per question
 
 | Model | Uncached input | Cache reads | Cache writes | Visible output | Reasoning | Cache-read share |
 |---|---|---|---|---|---|---|
-| Orion Max | 3,350 | 1,000 | 0 | 670 | 300 | 23 % |
+| Orion Max | 3,350 | 1,000 | 0 | 670 | 300 | 23% |
 
 ### Speed and cost figures
 
@@ -312,37 +356,37 @@ No synthesis findings were recorded.
 
 ## Appendix C: Hypothesis details
 
-*Code fired each hypothesis on a pre-declared rule and graded it: High (quantified, established after adjustment, its null rejected, no open confound, every robustness check passed, two or more runs per suite on both sides), Moderate (exactly one of those conditions missed), Low (qualitative only, two or more conditions missed, or the null stands) or Not supported (refuted by the rule's own test). Each null hypothesis says that the difference is within sampling noise.*
+Code raised each hypothesis from a rule fixed in advance and graded it. **Established (High)** needs all of these: it is measured; it is still clear after the correction for many comparisons; its null hypothesis is rejected; no confound (another difference between two models that could account for a result) is open; every robustness check (a test of whether a result survives a small change) passed; and each model ran at least twice per suite. **Probable (Moderate)**: exactly one of those conditions is missing. **Suggestive (Low)**: it is not measured, two or more conditions are missing, or the null hypothesis stands. **Ruled out (Not supported)**: the hypothesis's own test contradicts it. A null hypothesis reads **Rejected — a real difference** when a test found a real difference, and **Stands — may be chance** when none could be shown. Each entry gives the models, the locus and the grade, then the evidence for and against.
 
 ### Intelligence
 
 | Hypothesis | Pair | Paired result | Grade |
 |---|---|---|---|
-| H0-W.1 | within Orion Max | No contrast could be made. | Suggestive (Low) |
+| H0-W.1 | within Orion Max | No contrast could be made. | Stands — may be chance (Low) |
 
 ### Speed
 
-- **WS3.1: tool rounds in the time of Orion Max** (Orion Max; locus model / chat; Probable (Moderate))
-  - *For:* Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
+- **WS3.1: Orion Max's time spent on tool rounds** (Orion Max; locus model / chat; Probable (Moderate))
+  - *For:* Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* The ρ interval includes zero.
-  - *Robustness:* Replicates failed (Orion Max has a single run per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
-- **WS2.1: output generation of Orion Max** (Orion Max; locus model; Ruled out (Not supported))
-  - *For:* Output generation is 70 % (69–71 %) of model time per question.
-  - *Against:* Reasoning is 31 % of Orion Max's output tokens.
-  - *Grade reasons:* the rule's own test refutes it: reasoning is 31 % of Orion Max's output tokens.
+  - *Robustness:* Replicates failed (Orion Max ran only once per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
+- **WS2.1: Orion Max's time spent generating output** (Orion Max; locus model; Ruled out (Not supported))
+  - *For:* Output generation is 70% (69–71%) of model time per question.
+  - *Against:* Reasoning is 31% of Orion Max's output tokens.
+  - *Grade reasons:* its own test rules it out: reasoning is 31% of Orion Max's output tokens.
   - *Refuted if:* The reasoning share is under one half.
-  - *Robustness:* Replicates failed (Orion Max has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
+  - *Robustness:* Replicates failed (Orion Max ran only once per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
 
 ### Cost
 
-- **WC1.1: output cost of Orion Max** (Orion Max; locus model; Probable (Moderate))
-  - *For:* Visible output and reasoning are 69 % of Orion Max's cost per question.
+- **WC1.1: Orion Max's output cost** (Orion Max; locus model; Probable (Moderate))
+  - *For:* Visible output and reasoning are 69% of Orion Max's cost per question.
   - *Against:* none recorded.
   - *Grade reasons:* see Robustness.
   - *Refuted if:* Another component is larger.
-  - *Robustness:* Replicates failed (Orion Max has a single run per suite).
+  - *Robustness:* Replicates failed (Orion Max ran only once per suite).
 
 ## Appendix D: Run settings
 
@@ -433,8 +477,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 1. No earlier run of another model answered these questions under the same instrument.
 2. Orion Max answered 2 of 6 scored questions without a tool call.
-3. Output generation is 59 % of Orion Max's time per question.
-4. Visible output is 48 % of Orion Max's cost per question.
+3. Output generation is 59% of Orion Max's time per question.
+4. Visible output is 48% of Orion Max's cost per question.
 
 ## Appendix F: Reproducibility
 
@@ -497,15 +541,37 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ## Appendix H: Glossary
 
-- **95 % interval:** a range built so that, if the questions were sampled again and again, 95 of 100 such ranges would hold the true value. When two models' intervals overlap, the intervals alone do not say which is higher.
-- **Paired test:** a comparison of two models question by question, on the questions both answered, so that how hard each question is counts the same for both.
-- **Holm adjustment:** testing many pairs at once turns up some differences by chance. The Holm adjustment raises each p-value so that the whole family of tests keeps a 5 % chance of a false finding; a result is established when its adjusted p-value is below 0.05.
-- **Null hypothesis:** the statement that a difference is within sampling noise. It stands until a paired test, or without one a bootstrap interval that excludes zero, rejects it; a null that stands is not proof that the two are equal.
-- **Grade words:** Established (High) is measured, established after adjustment, robust and replicated; Probable (Moderate) misses one of those conditions; Suggestive (Low) is qualitative, misses two or more, or may be noise; Ruled out (Not supported) is refuted by its own rule's test.
-- **Points at risk:** the index points a model lost on its answers below its own median answer, each answer counted once under its first signal (no tool call, a defect, a critical error). An upper bound of what each signal costs, not an estimate of its effect.
-- **Decomposition share:** the part of a speed or cost difference one component accounts for; the parts sum exactly to the difference. A share can pass 100 % when two components pull in opposite directions: if the difference is 2 s, one component adding 3 s and another taking 1 s back are 150 % and −50 %. Over few questions or a small difference, a share's interval can be very wide.
-- **Isolated miss:** a question a model scored 50 or less on while the other models' median was 75 or more.
-- **Joint rank:** two models share a rank when their 95 % intervals overlap.
+- **95% interval:** A range built so that, if the questions were drawn again and again, 95 of 100 such ranges would contain the true value. When two models' ranges overlap, the ranges alone cannot say which is higher.
+- **Answer quality:** The score of one answer, from 0 to 100. It combines the four dimension scores in a weighted geometric mean and is capped when the answer has a critical error.
+- **Answers without tools:** Answers for which the model called no tool, such as the wiki search or the source code search, and answered from its own knowledge alone.
+- **Confound:** A setting other than the model itself that differs between the two models a hypothesis compares, such as the response style. While it is open, its effect cannot be told apart from the model's.
+- **Control:** An earlier run of another model that answered the same questions under the same graders and settings. Controls show how hard each question is, which helps tell the model from the instrument.
+- **Critical error:** A mistake the graders judge serious, such as a wrong game rule stated as fact. It caps the answer's quality, whatever the answer's other scores.
+- **Decomposition share:** The part of a time or cost difference that one component accounts for, found by a standard method (the logarithmic-mean Divisia index). The parts always add up to the whole difference, so one part can be larger than the whole when another pulls the other way: a 2 s gap can be 3 s from one part and −1 s from another.
+- **Difficulty-weighted mean:** The average of answer quality over the questions, with harder questions counting for more. The Intelligence Index is computed this way.
+- **Dimension:** One of the four qualities each answer is graded on: Accuracy, Completeness, Conciseness and Readability. Each has its own weight in the answer's quality.
+- **Grade words:** Established (High) means measured, still clear after the correction for many comparisons, and robust in every check, with no open confound and two or more runs per suite. Probable (Moderate) misses exactly one of those conditions. Suggestive (Low) is a lead only. Ruled out (Not supported) means the hypothesis's own test contradicts it.
+- **Holm adjustment:** When many pairs are compared at once, some differences look real by chance. The Holm adjustment raises the bar for each comparison, so the whole set keeps at most a one-in-twenty chance of any false finding.
+- **Hypothesis:** A possible cause of a difference, raised by a rule fixed in advance and tested by code against the data. Each hypothesis states what would refute it and receives a grade.
+- **Intelligence Index:** A model's overall score for answer quality, from 0 to 100. It is the mean quality of the model's answers, with harder questions counting for more.
+- **Leave-one-out check:** A robustness check that repeats a result with each question removed in turn. If the result rests on a single question, the check fails.
+- **Locus:** Where a hypothesis places the cause: the model itself; the Overseer chat prompt or its tools (chat); the grading (harness); a question or its rubric (suite); the data a tool reads (corpus); or the serving (provider).
+- **Median and mean:** The median is the middle value once all values are sorted, so a few very slow or costly questions barely move it. The mean is the plain average, which they do move.
+- **Null hypothesis:** The starting assumption that a difference, between two models or between two groups of questions, is only chance. A paired test, or else a bootstrap interval that excludes zero, can reject it. A null that stands does not prove that the two are equal.
+- **Output generation and decode rate:** Output generation is the time the model spends writing its reply once it has started. The decode rate is how fast it writes, in tokens per second.
+- **Points at risk:** The index points a model lost on its answers below its own median answer, each answer counted once under its first signal, such as no tool call, a defect or a critical error. They are an upper bound on what each signal costs, not an estimate of its effect.
+- **Pricing basis:** The prices per token used to turn token counts into dollars: today's catalog prices, or the prices stored with each run. Costs on different bases are not comparable.
+- **Replicate run:** Running the same model on the same questions again. With only one run per suite, the document cannot tell whether a result would repeat, which caps every grade at Probable.
+- **Response style:** The production chat asks the model for concise answers; a run can ask for detailed ones instead. Completeness is graded under the style the run used, and only a pair of runs in both styles shows how much the style matters.
+- **Robustness check:** A test of whether a hypothesis still holds when the data changes a little: one question left out, another suite, a second run, the other panel member, or another setting.
+- **Runs per suite:** How many times a model answered every question of a suite. With one run per suite, the data cannot show whether a result would repeat.
+- **Scoring levels:** Each dimension is graded on a fixed scale of levels, each described by the answer behavior that earns it (behaviorally anchored levels). Each level stands for a fixed score.
+- **Suite:** A fixed set of benchmark questions, each with its rubric. A run answers every question of one suite once.
+- **Tied rank:** When a model's 95% interval overlaps a neighbor's, the data cannot put them in order, so they share a rank. The rank then shows the span of places the tied group covers, such as 2–9 (tied).
+- **Time to first token:** The seconds from sending a request to the first word of the reply. For reasoning models it is mostly the time the model spends thinking before it answers.
+- **Tokens:** The pieces of text, roughly three quarters of a word each, that a model reads and writes; providers price by them. Uncached input is text read at the full price. Cache reads are input stored from an earlier call and charged less; cache writes store it. Visible output is the answer, and reasoning is the model's hidden thinking, billed as output.
+- **Tool round:** One cycle in which the model calls a tool, such as the wiki search, reads its result and continues. Each round adds a model call, with its own wait for the first token.
+- **Weighted geometric mean:** The way an answer's four dimension scores are combined. Unlike a plain average, it falls sharply when any one dimension is very low, so strong dimensions cannot hide a weak one.
 
 ## Fact sheet
 
@@ -893,7 +959,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % (95 % interval 0 %–39 %); before scoring method 13, flagged rather than confirmed",
+      "display": "0% (95% interval 0%–39%); before scoring method 13, flagged rather than confirmed",
       "key": "outcome.confirmedCriticalRate",
       "value": 0
     },
@@ -1260,7 +1326,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": false,
       "display": "not available",
       "key": "rca.axis.intelligence.best",
-      "unavailableReason": "No hypothesis fired on this axis."
+      "unavailableReason": "No rule found a possible cause on this axis."
     },
     {
       "available": true,
@@ -1344,12 +1410,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "capped at Low: a single run per suite gives the contrasts little power",
+      "display": "with one run per suite, the tests can miss a real difference (grade capped at Low)",
       "key": "rca.hypothesis.H0-W.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "no contrast within Orion Max's own questions",
+      "display": "no difference within Orion Max's own questions",
       "key": "rca.hypothesis.H0-W.1.label"
     },
     {
@@ -1384,7 +1450,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Visible output and reasoning are 69 % of Orion Max's cost per question.",
+      "display": "Visible output and reasoning are 69% of Orion Max's cost per question.",
       "key": "rca.hypothesis.WC1.1.for"
     },
     {
@@ -1395,12 +1461,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Orion Max has a single run per suite.",
+      "display": "Orion Max ran only once per suite",
       "key": "rca.hypothesis.WC1.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "output cost of Orion Max",
+      "display": "Orion Max's output cost",
       "key": "rca.hypothesis.WC1.1.label"
     },
     {
@@ -1420,7 +1486,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "69 %",
+      "display": "69%",
       "key": "rca.hypothesis.WC1.1.share",
       "value": 0.6922390722569134
     },
@@ -1431,7 +1497,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Reasoning is 31 % of Orion Max's output tokens.",
+      "display": "Reasoning is 31% of Orion Max's output tokens.",
       "key": "rca.hypothesis.WS2.1.against"
     },
     {
@@ -1441,7 +1507,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Output generation is 70 % (69–71 %) of model time per question.",
+      "display": "Output generation is 70% (69–71%) of model time per question.",
       "key": "rca.hypothesis.WS2.1.for"
     },
     {
@@ -1452,17 +1518,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: reasoning is 31 % of Orion Max's output tokens.",
+      "display": "its own test rules it out: reasoning is 31% of Orion Max's output tokens",
       "key": "rca.hypothesis.WS2.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "69–71 %",
+      "display": "69–71%",
       "key": "rca.hypothesis.WS2.1.interval"
     },
     {
       "available": true,
-      "display": "output generation of Orion Max",
+      "display": "Orion Max's time spent generating output",
       "key": "rca.hypothesis.WS2.1.label"
     },
     {
@@ -1488,7 +1554,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "70 %",
+      "display": "70%",
       "key": "rca.hypothesis.WS2.1.share",
       "value": 0.7038770053475936
     },
@@ -1509,7 +1575,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).",
+      "display": "Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).",
       "key": "rca.hypothesis.WS3.1.for"
     },
     {
@@ -1520,12 +1586,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Orion Max has a single run per suite.",
+      "display": "Orion Max ran only once per suite",
       "key": "rca.hypothesis.WS3.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "tool rounds in the time of Orion Max",
+      "display": "Orion Max's time spent on tool rounds",
       "key": "rca.hypothesis.WS3.1.label"
     },
     {
@@ -1566,12 +1632,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Output generation is 59 % of Orion Max's time per question.",
+      "display": "Output generation is 59% of Orion Max's time per question.",
       "key": "rca.known.3"
     },
     {
       "available": true,
-      "display": "Visible output is 48 % of Orion Max's cost per question.",
+      "display": "Visible output is 48% of Orion Max's cost per question.",
       "key": "rca.known.4"
     },
     {
@@ -1619,25 +1685,25 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "1 %",
+      "display": "1%",
       "key": "rca.within.subject.cost.cacheRead.share",
       "value": 0.008920606601248885
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.subject.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "48 %",
+      "display": "48%",
       "key": "rca.within.subject.cost.output.share",
       "value": 0.47814451382694023
     },
     {
       "available": true,
-      "display": "21 %",
+      "display": "21%",
       "key": "rca.within.subject.cost.reasoning.share",
       "value": 0.21409455842997321
     },
@@ -1649,7 +1715,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "30 %",
+      "display": "30%",
       "key": "rca.within.subject.cost.uncachedInput.share",
       "value": 0.2988403211418377
     },
@@ -1661,7 +1727,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "3 %",
+      "display": "3%",
       "key": "rca.within.subject.time.other.share",
       "value": 0.03340757238307349
     },
@@ -1673,7 +1739,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 %",
+      "display": "59%",
       "key": "rca.within.subject.time.outputGeneration.share",
       "value": 0.5863028953229398
     },
@@ -1685,7 +1751,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 %",
+      "display": "0%",
       "key": "rca.within.subject.time.ownWaits.share",
       "value": 0
     },
@@ -1697,7 +1763,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "17 %",
+      "display": "17%",
       "key": "rca.within.subject.time.toolExecution.share",
       "value": 0.16703786191536749
     },
@@ -1715,7 +1781,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "21 %",
+      "display": "21%",
       "key": "rca.within.subject.time.ttft.share",
       "value": 0.21325167037861914
     },
@@ -1774,7 +1840,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Accuracy 55 %, Completeness 25 %, Conciseness 10 %, Readability 10 %",
+      "display": "Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%",
       "key": "scoring.weights"
     },
     {
@@ -1815,7 +1881,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of model time",
+      "display": "0% of model time",
       "key": "speed.ownWaitShare",
       "value": 0
     },
@@ -1916,7 +1982,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "23 % of input tokens read from the cache",
+      "display": "23% of input tokens read from the cache",
       "key": "tokens.cacheReadShare",
       "value": 0.22988505747126436
     },
@@ -1940,7 +2006,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "31 % of output tokens",
+      "display": "31% of output tokens",
       "key": "tokens.reasoningShare",
       "value": 0.30927835051546393
     },
@@ -2162,19 +2228,19 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     "axes": [
       {
         "axis": "intelligence",
-        "reason": "No hypothesis fired on this axis.",
+        "reason": "No rule found a possible cause on this axis.",
         "status": "NotEstablished"
       },
       {
         "axis": "speed",
         "bestHypothesis": "WS3.1",
-        "reason": "WS3.1 is the best hypothesis, graded Moderate: replicates failed: Orion Max has a single run per suite.",
+        "reason": "Probable (Moderate) because Orion Max ran only once per suite.",
         "status": "ProbableCause"
       },
       {
         "axis": "cost",
         "bestHypothesis": "WC1.1",
-        "reason": "WC1.1 is the best hypothesis, graded Moderate: replicates failed: Orion Max has a single run per suite.",
+        "reason": "Probable (Moderate) because Orion Max ran only once per suite.",
         "status": "ProbableCause"
       }
     ],
@@ -2377,7 +2443,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "ttftPerCallP50Ms": 760
       }
     ],
-    "gradeCap": "One run per suite: the replicates check fails for every hypothesis, so no cause can be graded above Probable (Moderate).",
+    "gradeCap": "The model ran only once per suite, so this document cannot tell whether its results would repeat. No cause can be graded above Probable (Moderate) until a second run of each suite is made.",
     "hypotheses": [
       {
         "against": [],
@@ -2389,12 +2455,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "grade": "Low",
         "gradeReasons": [
-          "capped at Low: a single run per suite gives the contrasts little power"
+          "with one run per suite, the tests can miss a real difference (grade capped at Low)"
         ],
         "id": "H0-W",
         "key": "H0-W.1",
         "kind": "null",
-        "label": "no contrast within Orion Max's own questions",
+        "label": "no difference within Orion Max's own questions",
         "loci": [],
         "locus": "—",
         "models": [
@@ -2415,16 +2481,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "speed.modelCallsPerAnswer"
         ],
         "for": [
-          "Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6)."
+          "Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6)."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Orion Max has a single run per suite."
+          "Orion Max ran only once per suite"
         ],
         "id": "WS3",
         "key": "WS3.1",
         "kind": "within",
-        "label": "tool rounds in the time of Orion Max",
+        "label": "Orion Max's time spent on tool rounds",
         "loci": [
           "model",
           "chat"
@@ -2439,7 +2505,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "The ρ interval includes zero.",
         "robustness": [
           {
-            "detail": "Orion Max has a single run per suite.",
+            "detail": "Orion Max ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -2454,7 +2520,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "Reasoning is 31 % of Orion Max's output tokens."
+          "Reasoning is 31% of Orion Max's output tokens."
         ],
         "axis": "speed",
         "confounds": [],
@@ -2464,16 +2530,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "tokens.reasoningShare"
         ],
         "for": [
-          "Output generation is 70 % (69–71 %) of model time per question."
+          "Output generation is 70% (69–71%) of model time per question."
         ],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: reasoning is 31 % of Orion Max's output tokens."
+          "its own test rules it out: reasoning is 31% of Orion Max's output tokens"
         ],
         "id": "WS2",
         "key": "WS2.1",
         "kind": "within",
-        "label": "output generation of Orion Max",
+        "label": "Orion Max's time spent generating output",
         "loci": [
           "model"
         ],
@@ -2487,7 +2553,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
-            "detail": "Orion Max has a single run per suite.",
+            "detail": "Orion Max ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -2513,16 +2579,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "cost.component.reasoning.perQuestion"
         ],
         "for": [
-          "Visible output and reasoning are 69 % of Orion Max's cost per question."
+          "Visible output and reasoning are 69% of Orion Max's cost per question."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Orion Max has a single run per suite."
+          "Orion Max ran only once per suite"
         ],
         "id": "WC1",
         "key": "WC1.1",
         "kind": "within",
-        "label": "output cost of Orion Max",
+        "label": "Orion Max's output cost",
         "loci": [
           "model"
         ],
@@ -2535,7 +2601,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
-            "detail": "Orion Max has a single run per suite.",
+            "detail": "Orion Max ran only once per suite.",
             "name": "Replicates",
             "status": "Failed"
           }
@@ -2568,7 +2634,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "kind": "decomposition",
         "number": 3,
-        "text": "Output generation is 59 % of Orion Max's time per question."
+        "text": "Output generation is 59% of Orion Max's time per question."
       },
       {
         "factKeys": [
@@ -2576,7 +2642,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "kind": "decomposition",
         "number": 4,
-        "text": "Visible output is 48 % of Orion Max's cost per question."
+        "text": "Visible output is 48% of Orion Max's cost per question."
       }
     ],
     "models": [
@@ -2884,6 +2950,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ---
 
-*Document ID 131 · format version 13 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 14 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

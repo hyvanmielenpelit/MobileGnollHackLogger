@@ -427,7 +427,7 @@ describe('BatteryLeaderboardDialogComponent', () => {
     open(board([cls(CLASS_A, rows)]));
 
     const cells = () => bodyRows().map(r => (r.querySelector('.bl-provider-errors')?.textContent ?? '').trim());
-    expect(cells()).toEqual(['1.0 % (2/200)', 'Not recorded', '0.81 % (12/1,480)']);
+    expect(cells()).toEqual(['1.0% (2/200)', 'Not recorded', '0.81% (12/1,480)']);
 
     sortButton('Provider errors').click();
     fixture.detectChanges();

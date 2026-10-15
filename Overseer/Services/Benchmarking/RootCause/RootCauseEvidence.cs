@@ -732,7 +732,7 @@ public static class RootCauseEvidence
             double rate = critical / (double)counting.Count;
             var wilson = RootCauseStatistics.Wilson(critical, counting.Count);
             string interval = wilson is { } w
-                ? " (95 % interval " + BenchmarkReportFormat.Percent(w.Low * 100) + "–" + BenchmarkReportFormat.Percent(w.High * 100) + ")"
+                ? " (95% interval " + BenchmarkReportFormat.Percent(w.Low * 100) + "–" + BenchmarkReportFormat.Percent(w.High * 100) + ")"
                 : string.Empty;
             facts.Add("outcome.confirmedCriticalRate", rate,
                 BenchmarkReportFormat.Percent(rate * 100) + interval

@@ -1890,16 +1890,16 @@ describe('chat-consistency-charts', () => {
       expect([radius({ raw: data[0] }), radius({ raw: data[1] })]).toEqual([8, 4]);
       const only = figure.config!.data.datasets[1];
       expect((only.pointRadius as unknown as (ctx: { raw: CcChartPoint }) => number)({ raw: (only.data as CcChartPoint[])[2] })).toBe(2);
-      expect(figure.takeaway).toBe('The provider error rate ranged from 1.0 % to 20 % across 3 runs (23 of 1,290 attempts in all). '
+      expect(figure.takeaway).toBe('The provider error rate ranged from 1.0% to 20% across 3 runs (23 of 1,290 attempts in all). '
         + 'A dot\'s area follows its run\'s valid attempts and its bar is the run\'s 95 % interval. '
         + '1 failed or canceled run is drawn hollow: its attempts count for provider availability only. '
         + '▲ marks 1 run that needed a re-run for provider errors. 1 run recorded no provider attempts (before harness 56).');
       expect(figure.altText).toBe(`Provider errors per run. ${figure.takeaway}`);
       expect(figure.table.columns).toEqual(['Run', 'Started', 'Provider errors', 'Rate', '95 % interval', 'Unattributed', 'Re-runs', 'Availability only']);
       expect(figure.table.rows).toEqual([
-        ['#1', '2026-09-01 08:00 UTC', '10 of 1,000 attempts', '1.0 %', '0.50 %–1.8 %', '2', '0', 'No'],
-        ['#2', '2026-09-02 08:00 UTC', '5 of 250 attempts', '2.0 %', '0.80 %–5.0 %', '0', '1 (1 for provider errors)', 'No'],
-        ['#3', '2026-09-04 08:00 UTC', '8 of 40 attempts', '20 %', '10 %–35 %', '0', '0', 'Yes'],
+        ['#1', '2026-09-01 08:00 UTC', '10 of 1,000 attempts', '1.0%', '0.50%–1.8%', '2', '0', 'No'],
+        ['#2', '2026-09-02 08:00 UTC', '5 of 250 attempts', '2.0%', '0.80%–5.0%', '0', '1 (1 for provider errors)', 'No'],
+        ['#3', '2026-09-04 08:00 UTC', '8 of 40 attempts', '20%', '10%–35%', '0', '0', 'Yes'],
         ['#4', '2026-09-05 08:00 UTC', 'Not recorded', '—', '—', '—', '0', 'No']
       ]);
     });
@@ -1936,8 +1936,8 @@ describe('chat-consistency-charts', () => {
       expect(figure.config!.plugins.map(plugin => plugin.id)).toEqual(['ccOverlay', 'ccGlyphs']);
       expect((figure.config!.options.scales!['y'] as unknown as { title: { text: string } }).title.text)
         .toBe('Provider errors (%), with control limits');
-      expect(figure.takeaway).toBe('The center line is the baseline period\'s pooled rate, 1.2 % (15 of 1,250 attempts), with Laney\'s σ_Z 1.54. '
-        + '1 run lies beyond the control limits: #3 (20 %, 8 of 40 attempts). 1 run recorded no provider attempts (before harness 56).');
+      expect(figure.takeaway).toBe('The center line is the baseline period\'s pooled rate, 1.2% (15 of 1,250 attempts), with Laney\'s σ_Z 1.54. '
+        + '1 run lies beyond the control limits: #3 (20%, 8 of 40 attempts). 1 run recorded no provider attempts (before harness 56).');
       expect(figure.table.columns.slice(-3)).toEqual(['Lower limit', 'Upper limit', 'Beyond the limits']);
       expect(figure.table.rows.map(cells => cells[cells.length - 1])).toEqual(['No', 'No', 'Yes', '—']);
     });
@@ -1953,10 +1953,10 @@ describe('chat-consistency-charts', () => {
       expect(figure.plottedUnits).toBe(3);
       expect(figure.table.columns).toEqual(['Day (UTC)', 'Runs', 'Valid attempts', 'Strict', 'Inclusive']);
       expect(figure.table.rows).toEqual([
-        ['2026-09-01', '1', '1,000', '1.0 % (10 of 1,000 attempts)', '1.2 % (12 of 1,000 attempts)'],
-        ['2026-09-02', '1', '250', '2.0 % (5 of 250 attempts)', '2.0 % (5 of 250 attempts)'],
+        ['2026-09-01', '1', '1,000', '1.0% (10 of 1,000 attempts)', '1.2% (12 of 1,000 attempts)'],
+        ['2026-09-02', '1', '250', '2.0% (5 of 250 attempts)', '2.0% (5 of 250 attempts)'],
         ['2026-09-03', '0', '—', 'No runs', 'No runs'],
-        ['2026-09-04', '1', '40', '20 % (8 of 40 attempts)', '20 % (8 of 40 attempts)'],
+        ['2026-09-04', '1', '40', '20% (8 of 40 attempts)', '20% (8 of 40 attempts)'],
         ['2026-09-05', '1', '—', 'Not recorded', 'Not recorded']
       ]);
       expect(figure.takeaway).toContain('A hatched cell is a day without recorded attempts.');

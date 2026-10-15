@@ -518,13 +518,13 @@ public class RootCauseEngineTests
         }
 
         var a = result.Profiles.Single(p => p.Token == "A");
-        Assert.Contains(a.Strengths, s => s.Text == "first on Accuracy of 3 models");
+        Assert.Contains(a.Strengths, s => s.Text == "first of 3 models on Accuracy");
         Assert.Contains(a.Weaknesses, w => w.Kind == RootCauseProfiles.WeakestDimension && w.Text == "Completeness, 10.0 points below Accuracy");
         Assert.Contains(a.Weaknesses, w => w.Kind == RootCauseProfiles.LostPointsOn && w.Text.StartsWith("answers without tools: ", StringComparison.Ordinal));
 
         var c = result.Profiles.Single(p => p.Token == "C");
         Assert.Contains(c.Flags, f => f.Kind == RootCauseProfiles.CriticalErrors && f.Text == "1 critical error (Q3)");
-        Assert.Contains(c.Weaknesses, w => w.Kind == RootCauseProfiles.LowestRank && w.Text == "last on Accuracy of 3 models");
+        Assert.Contains(c.Weaknesses, w => w.Kind == RootCauseProfiles.LowestRank && w.Text == "last of 3 models on Accuracy");
 
         var facts = new BenchmarkReportFacts.FactList();
         RootCauseFacts.Add(facts, result, t => "Model " + t);
@@ -557,7 +557,7 @@ public class RootCauseEngineTests
         }
 
         var critical = new RootCauseHypothesis { Id = "HQ2", Kind = "pair", Models = { "F", "E" } };
-        Assert.Equal("critical errors of Model F against Model E", RootCauseLabels.Of(critical, t => "Model " + t));
+        Assert.Equal("Model F's critical errors, compared with Model E", RootCauseLabels.Of(critical, t => "Model " + t));
     }
 
     [Fact]
@@ -618,7 +618,7 @@ public class RootCauseEngineTests
             Compared("C", 3, 60, 0.9, 2.0, q => HardAdvanced(q, 60))));
 
         var wq2 = Assert.Single(result.Hypotheses, h => h.Id == "WQ2" && h.Models[0] == "C");
-        Assert.Contains("The other models' median share there is 0 %.", wq2.For);
+        Assert.Contains("The other models' median share there is 0%.", wq2.For);
         Assert.DoesNotContain(result.Hypotheses, h => h.Id == "WQ2" && h.Models[0] != "C" && h.ShortStatement.Contains("advanced", StringComparison.Ordinal));
     }
 

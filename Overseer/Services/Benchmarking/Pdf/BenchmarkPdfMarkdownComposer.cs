@@ -251,7 +251,21 @@ internal static class BenchmarkPdfMarkdownComposer
     public static MarkdownDocument Parse(string markdown) => Markdown.Parse(markdown ?? string.Empty, Pipeline);
 
     /// <summary>
-    /// Parses <paramref name="markdown"/> and drops its first <c>#</c> heading when it repeats <paramref name="title"/>.
+    /// Whether a first <c>#</c> heading repeats the title the page frame prints: the same text, or the same
+    /// text but for a closing <c>: Document type</c> on one of the two, as a comparison document's heading
+    /// and its metadata title differ.
+    /// </summary>
+    internal static bool RepeatsTitle(string? heading, string? title)
+    {
+        string h = (heading ?? string.Empty).Trim();
+        string t = (title ?? string.Empty).Trim();
+        if (string.Equals(h, t, StringComparison.Ordinal)) return true;
+        if (h.Length == 0 || t.Length == 0) return false;
+        return t.StartsWith(h + ": ", StringComparison.Ordinal) || h.StartsWith(t + ": ", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Parses <paramref name="markdown"/> and drops its first <c>#</c> heading when it repeats <paramref name="title"/> (<see cref="RepeatsTitle"/>).
     /// Each top-level figure marker whose key has a chart in <paramref name="charts"/> becomes a figure,
     /// with its width share and row group from <paramref name="layout"/>; two figures of one row group
     /// with nothing printed between them form a row.
@@ -264,8 +278,7 @@ internal static class BenchmarkPdfMarkdownComposer
         var blocks = document.ToList();
 
         var firstHeading = blocks.OfType<HeadingBlock>().FirstOrDefault(h => h.Level == 1);
-        if (firstHeading != null
-            && string.Equals(PlainText(firstHeading.Inline), (title ?? string.Empty).Trim(), StringComparison.Ordinal))
+        if (firstHeading != null && RepeatsTitle(PlainText(firstHeading.Inline), title))
         {
             blocks.Remove(firstHeading);
         }
@@ -536,9 +549,11 @@ internal static class BenchmarkPdfMarkdownComposer
 
             if (block is HeadingBlock)
             {
-                // A run of consecutive headings keeps with what follows: a first paragraph or figure
-                // moves with it when the group does not fit, and before anything else the run needs
-                // room on its page for its own height and the first lines of the next block.
+                // A run of consecutive headings keeps with what follows: a first paragraph or figure, a
+                // short callout or a short table moves with it when the group does not fit; a paragraph
+                // that leads into a table also needs room for the table's first rows; and before
+                // anything else the run needs room on its page for its own height and the first lines
+                // of the next block.
                 int last = i;
                 while (last + 1 < blocks.Count && blocks[last + 1] is HeadingBlock) last++;
                 var headings = blocks.Skip(i).Take(last - i + 1).Cast<HeadingBlock>().ToList();
@@ -551,7 +566,13 @@ internal static class BenchmarkPdfMarkdownComposer
                     : null;
                 var labeled = labeledIndex is int t ? blocks[t] as MdTable : null;
 
-                if (next is ParagraphBlock labelBlock && labeled != null && IsShortTable(labeled))
+                // A text paragraph that leads into a table: the table, or its first rows, belong with the run too.
+                int? leadTableIndex = next is ParagraphBlock lead && labeled == null && !ctx.Document.Figures.ContainsKey(lead)
+                    ? FirstPrintedAfter(blocks, nextIndex!.Value, ctx.Document)
+                    : null;
+                var leadTable = leadTableIndex is int lt ? blocks[lt] as MdTable : null;
+
+                if (next is ParagraphBlock labelBlock && labeled != null && KeepsTableTogether(labeled, ctx))
                 {
                     col.Item().PreventPageBreak().Column(group =>
                     {
@@ -573,9 +594,28 @@ internal static class BenchmarkPdfMarkdownComposer
                     });
                     i = nextIndex!.Value;
                 }
+                else if (next is ParagraphBlock leadParagraph && leadTable != null && KeepsTableTogether(leadTable, ctx)
+                         && FitsOnAPage(GroupHeight(headings, new Block[] { leadParagraph, leadTable }, ctx), ctx.Frame))
+                {
+                    // A lead paragraph and the short table it introduces stay on one page with the headings.
+                    col.Item().PreventPageBreak().Column(group =>
+                    {
+                        group.Spacing(BenchmarkPdfStyle.BlockSpacing);
+                        foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
+                        group.Item().Element(c => ParagraphOrFigure(c, leadParagraph, ctx));
+                        group.Item().Element(c => ComposeTable(c, leadTable, ctx, keepTogether: false));
+                    });
+                    i = leadTableIndex!.Value;
+                }
                 else if (next is ParagraphBlock paragraph)
                 {
-                    col.Item().PreventPageBreak().Column(group =>
+                    // Before a table, the page also needs room for the table's first rows; otherwise the
+                    // headings and the paragraph move to the next page together.
+                    var target = leadTable != null
+                        ? col.Item().EnsureSpace(GroupHeight(headings, new Block[] { paragraph }, ctx)
+                            + BenchmarkPdfStyle.BlockSpacing + BenchmarkPdfStyle.KeepWithTableHeight)
+                        : col.Item();
+                    target.PreventPageBreak().Column(group =>
                     {
                         group.Spacing(BenchmarkPdfStyle.BlockSpacing);
                         foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
@@ -583,7 +623,19 @@ internal static class BenchmarkPdfMarkdownComposer
                     });
                     i = nextIndex!.Value;
                 }
-                else if (next is MdTable shortTable && IsShortTable(shortTable))
+                else if (next is QuoteBlock calloutQuote && CalloutOf(calloutQuote, ctx.Document.Source) != null
+                         && IsShortCallout(calloutQuote, ctx.Document, ctx.Frame))
+                {
+                    // A callout of at most a third of a page stays on one page with its headings.
+                    col.Item().PreventPageBreak().Column(group =>
+                    {
+                        group.Spacing(BenchmarkPdfStyle.BlockSpacing);
+                        foreach (var heading in headings) group.Item().Element(c => Heading(c, heading, ctx));
+                        group.Item().Element(c => ComposeBlock(c, calloutQuote, ctx, listDepth));
+                    });
+                    i = nextIndex!.Value;
+                }
+                else if (next is MdTable shortTable && KeepsTableTogether(shortTable, ctx))
                 {
                     // A short table is kept on one page, so its headings move with it rather than stay behind.
                     col.Item().PreventPageBreak().Column(group =>
@@ -611,7 +663,7 @@ internal static class BenchmarkPdfMarkdownComposer
             {
                 // A bold label keeps with what follows as a heading does: a short table moves with it, and
                 // before anything else it needs room on its page for its own line and the first lines after it.
-                if (blocks[afterIndex] is MdTable labeledTable && IsShortTable(labeledTable))
+                if (blocks[afterIndex] is MdTable labeledTable && KeepsTableTogether(labeledTable, ctx))
                 {
                     col.Item().PreventPageBreak().Column(group =>
                     {
@@ -698,6 +750,44 @@ internal static class BenchmarkPdfMarkdownComposer
         _ => 2 + BenchmarkPdfStyle.BaseSize * 1.2f
     };
 
+    /// <summary>The largest share of the page's height between its margins a callout kept on one page may take.</summary>
+    internal const double CalloutKeepMaxShare = 1.0 / 3;
+
+    /// <summary>A callout's vertical padding, above and below its text together, in points.</summary>
+    private const float CalloutVerticalPadding = 10f;
+
+    /// <summary>
+    /// A callout kept on one page: its <see cref="EstimatedHeight"/> and padding take at most
+    /// <see cref="CalloutKeepMaxShare"/> of the page's height. False when the page height is unknown; a
+    /// longer callout breaks across pages as other text does.
+    /// </summary>
+    internal static bool IsShortCallout(QuoteBlock quote, Prepared document, FigureFrame frame)
+        => frame.PageHeight > 0
+           && EstimatedHeight(quote, document, frame) + CalloutVerticalPadding <= frame.PageHeight * CalloutKeepMaxShare;
+
+    /// <summary>
+    /// A table kept on one page: at most <see cref="ShortTableMaxBodyRows"/> body rows (<see cref="IsShortTable"/>),
+    /// and, when the page height is known, an <see cref="EstimatedHeight"/> that fits on one page
+    /// (<see cref="FitsOnAPage"/>). A table that cannot fit flows from where it starts, so it never leaves
+    /// the rest of a page empty.
+    /// </summary>
+    internal static bool KeepsTableTogether(MdTable table, Prepared document, FigureFrame frame)
+        => IsShortTable(table) && FitsOnAPage(EstimatedHeight(table, document, frame), frame);
+
+    private static bool KeepsTableTogether(MdTable table, Context ctx) => KeepsTableTogether(table, ctx.Document, ctx.Frame);
+
+    /// <summary>
+    /// Whether a group of <paramref name="height"/> points fits on one page: the page's height less
+    /// <see cref="PageFrameAllowance"/>. True when the page height is unknown.
+    /// </summary>
+    internal static bool FitsOnAPage(float height, FigureFrame frame)
+        => frame.PageHeight <= 0 || height <= frame.PageHeight - PageFrameAllowance;
+
+    /// <summary>A run of headings and the blocks after it, in points: their heights and the spacing between them.</summary>
+    private static float GroupHeight(IReadOnlyList<HeadingBlock> headings, IReadOnlyList<Block> blocks, Context ctx)
+        => KeepWithNextHeight(headings, null)
+           + blocks.Sum(b => BenchmarkPdfStyle.BlockSpacing + EstimatedHeight(b, ctx.Document, ctx.Frame));
+
     private static void ComposeBlock(IContainer container, Block block, Context ctx, int listDepth)
     {
         switch (block)
@@ -718,7 +808,7 @@ internal static class BenchmarkPdfMarkdownComposer
                 ComposeList(container, list, ctx, listDepth);
                 break;
             case QuoteBlock callout when CalloutOf(callout, ctx.Document.Source) is { } parsed:
-                ComposeCallout(container, parsed, ctx, listDepth);
+                ComposeCallout(IsShortCallout(callout, ctx.Document, ctx.Frame) ? container.PreventPageBreak() : container, parsed, ctx, listDepth);
                 break;
             case QuoteBlock quote:
                 container.SemanticBlockQuotation()
@@ -753,7 +843,8 @@ internal static class BenchmarkPdfMarkdownComposer
     /// <summary>
     /// A callout, tagged as a division: a box on its kind's tint with a 3 pt rule in its kind's color
     /// down the left, its text in the body color. The lead paragraph opens with the Markdown's bold
-    /// label, or with the kind's <see cref="CalloutLabel"/> in bold when the Markdown has none.
+    /// label, or with the kind's <see cref="CalloutLabel"/> in bold when the Markdown has none. A short
+    /// callout (<see cref="IsShortCallout"/>) arrives in a container that keeps it on one page.
     /// </summary>
     private static void ComposeCallout(IContainer container, Callout callout, Context ctx, int listDepth)
     {
@@ -980,7 +1071,8 @@ internal static class BenchmarkPdfMarkdownComposer
     /// body as a column of one-row tables sharing the header's column definitions, zebra-striped with
     /// hairline rules. Each body row is kept on one page when it fits on one, so a row's cells always
     /// start on the same page; a row taller than a page breaks across pages. A table of at most
-    /// <see cref="ShortTableMaxBodyRows"/> body rows is kept on one page when it fits on one. A column
+    /// <see cref="ShortTableMaxBodyRows"/> body rows is kept on one page when its estimate fits on one
+    /// (<see cref="KeepsTableTogether(MdTable, Prepared, FigureFrame)"/>). A column
     /// whose non-empty body cells are all numbers, percentages, currency amounts or durations is
     /// right-aligned unless the Markdown sets its alignment. The text size, the column widths, the
     /// short headers with their legend line below the table, and a column set on a second line of each
@@ -1059,7 +1151,7 @@ internal static class BenchmarkPdfMarkdownComposer
         });
 
         var target = layout.Constant ? container.AlignLeft() : container;
-        if (keepTogether && bodyRows.Count <= ShortTableMaxBodyRows) target = target.PreventPageBreak();
+        if (keepTogether && KeepsTableTogether(table, ctx)) target = target.PreventPageBreak();
 
         if (layout.Legend is not string legend)
         {

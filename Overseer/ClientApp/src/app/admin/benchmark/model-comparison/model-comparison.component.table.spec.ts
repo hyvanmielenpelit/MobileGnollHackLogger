@@ -978,7 +978,7 @@ describe('ModelComparisonComponent', () => {
 
     const row = tableRowOf('Run 1');
     expect(row.children.length).toBe(DEFAULT_TABLE_COLUMNS.shown.length);
-    expect(row.children[8].textContent?.trim()).toBe('0.81 % (12/1,480)');
+    expect(row.children[8].textContent?.trim()).toBe('0.81% (12/1,480)');
     expect(row.children[0].tagName).toBe('TH');
     expect(row.children[1].classList).toContain('col-center');
     expect(row.querySelector('.mc-state')?.getAttribute('interestfor')).toBeTruthy();

@@ -724,7 +724,7 @@ line counts a battery run as one run and adds *· newest 500 battery runs* when 
   and *Analysis stale* or *Not analyzed*; the model as its title; the battery name, revision,
   assessors, start time and user; the metrics *Intelligence* (the Overall Index ± half-width, or *N/A*
   with *Incomplete (k of K suites)*), *Speed*, *Duration* and *Cost*; and the *DEF* and *CLASS* hashes.
-  The kicker also carries the outlined provider-error badge (*Provider errors 0.81 %*, *2 re-runs*) when
+  The kicker also carries the outlined provider-error badge (*Provider errors 0.81%*, *2 re-runs*) when
   the battery run's members had provider errors or re-runs, and never when they had none (§ 3.10).
 - **Its actions:** **View details** opens the Battery Run Report (§ 4.7); **Download Markdown report**
   downloads the deterministic report (§ 7.1), unavailable until there is an analysis; **Show progress**

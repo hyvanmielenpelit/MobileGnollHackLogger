@@ -68,10 +68,10 @@ public class BenchmarkComparisonReportFactsTests
     {
         var sheet = ComparisonFacts().Sheet!;
 
-        Assert.Equal("joint 1st of 5 (intervals overlap)", Display(sheet, "model.A.quality.rank"));
-        Assert.Equal("joint 1st of 5 (intervals overlap)", Display(sheet, "model.B.quality.rank"));
-        Assert.Equal("joint 3rd of 5 (intervals overlap)", Display(sheet, "model.C.quality.rank"));
-        Assert.Equal("joint 3rd of 5 (intervals overlap)", Display(sheet, "model.D.quality.rank"));
+        Assert.Equal("1–2 of 5 (tied: intervals overlap)", Display(sheet, "model.A.quality.rank"));
+        Assert.Equal("1–2 of 5 (tied: intervals overlap)", Display(sheet, "model.B.quality.rank"));
+        Assert.Equal("3–4 of 5 (tied: intervals overlap)", Display(sheet, "model.C.quality.rank"));
+        Assert.Equal("3–4 of 5 (tied: intervals overlap)", Display(sheet, "model.D.quality.rank"));
         Assert.Equal("5th of 5", Display(sheet, "model.E.quality.rank"));
         Assert.Equal("2nd of 5", Display(sheet, "model.B.speed.rank"));
         Assert.Equal("1st of 5", Display(sheet, "model.E.cost.rank"));

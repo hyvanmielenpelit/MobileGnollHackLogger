@@ -194,7 +194,7 @@ The writer never writes a figure. It references:
 | `Q7` | A question, by its number — the only place a digit may appear in prose |
 | `R3` | A finding row, in an item's `evidence` list only; the prose describes the finding instead |
 
-Counts in prose are number words. Interval overlap is stated descriptively — *"its 95 % interval
+Counts in prose are number words. Interval overlap is stated descriptively — *"its 95% interval
 overlaps those of Models B and C"*. The comparison runs **no significance test**. A document with peers
 says so once, in its own words, where the comparison left pairwise significance out: *"No pair of models
 is tested for significance: with N models, testing every pair would flag chance differences."* (*"The two
@@ -218,7 +218,7 @@ those tests, or on the subject's paired bootstrap in model scope, and states whi
 **Per-peer facts.** Each peer `X` has its own facts, so the writer can say how the subject compares with
 it: `peer.X.quality.index`, `peer.X.quality.interval`, `peer.X.quality.rank`,
 `peer.X.speed.medianSeconds`, `peer.X.cost.perQuestion`, `peer.X.runs` (*"3 runs"*) and the boolean
-`peer.X.intervalOverlap` (the peer's 95 % interval overlaps the subject's). A fact on an axis the peer is
+`peer.X.intervalOverlap` (the peer's 95% interval overlaps the subject's). A fact on an axis the peer is
 degraded on is unavailable with the entry's explanation. The prompt's PEERS block lists each peer's fact
 keys and its explanation as data, and SUBJECT carries the subject's own explanation. Their labels read
 *Model X's Intelligence Index* and so on; the label never names the peer, and the renderer puts the
@@ -288,7 +288,7 @@ case, carries no label there (from format 8; the label is chosen at render, so o
 their *both graders agreed* too).
 
 **Fact labels.** A rendered document never prints a raw fact key: every key has a human label in
-`BenchmarkReportFactLabels` (*Intelligence Index*, *95 % interval*, *Critical errors*…), used by the
+`BenchmarkReportFactLabels` (*Intelligence Index*, *95% interval*, *Critical errors*…), used by the
 tables, the labeled lines and the evidence lines alike, so one figure never has two names. A key without
 an explicit label gets a readable fallback built from its dotted parts. Every key the per-model and the
 comparison builders emit has a label, explicit or by a pattern rule (`model.<L>.*`, `pair.<L>.<M>.*`,
@@ -323,7 +323,7 @@ the retired audiences (§ 17); their numbers stay unused.
 |---|---|
 | 1 | The output is JSON of the expected shape, and every required slot is present and non-empty |
 | 2 | Every `{{…}}` token exists: a fact key, `{{subject}}` or a known peer letter |
-| 3 | No bare digits in prose after masking tokens, question references, known names and the fixed phrase *95 % interval* |
+| 3 | No bare digits in prose after masking tokens, question references, known names and the fixed phrase *95% interval* |
 | 4 | Every question number exists, and the question topics cover every question where the document requires them (the Root Cause Analysis: every question it cites) |
 | 5 | *Retired* (evidence for the retired audiences' recommendations) |
 | 6 | A strength may not cite a weakness row and a weakness may not cite a strength row; a finding citing only Conflicting rows must say the graders disagree |
@@ -351,7 +351,7 @@ the retired audiences (§ 17); their numbers stay unused.
 | 28 | **C7**, Provider Issue Report only: a model or serving term (`ChatModelServingTerms`) needs a provider-side attribution token, except in `affectedModel` and `sampleRequestIds`; and `ruledOut` cites a token of every `events.<n>` (`ChatProviderReportRule`). An error; the second half cannot drop text and marks the document *Completed with warnings* |
 | 29 | **C8**, *readable text*, chat consistency only: the headline and every paragraph hold no run of twelve or more hex digits, no JSON (`{"`), no `OverseerEventKinds` identifier (`CandidateSystemPromptSha256`, `CorpusIndexFingerprintsJson`…) as a whole word, and no token of a fact kept from the writer (`BenchmarkChatConsistencyReportFacts.WriterHidden`: `analysis.inputSha256` and an older sheet's raw `events.<n>.from` / `.to`; and the sheet's own `WriterHiddenKeys`, § 16) (`ChatReadableTextRule`). One note names every offending token. An error: the paragraph is dropped |
 | 30 | **C9**, *repetition*, chat consistency only: read with every fact token replaced by its display value, the headline and every paragraph hold no *A and A, respectively* whose two operands are the same words, ignoring case, and no full stop followed by a lower-case *and* inside one sentence — a sentence-valued fact spliced into a sentence — outside abbreviations such as *e.g.*, *i.e.*, *etc.*, *vs.*, *cf.*, *approx.*, *incl.* and *resp.* (`ChatRepetitionRule`). One note per kind, quoting the offending text. A **warning**: it asks for the repair turn and marks the document *Completed with warnings*, but never drops a paragraph |
-| 31 | *Token shape* (`ComparisonTokenShapeRule`), comparison scope and every Root Cause Analysis (both scopes), not a per-model Executive Summary: read with every token resolved to its display (a model token to *Model X*), the text holds **(a)** no full stop followed by a lower-case letter, outside abbreviations such as *e.g.* and *vs.* — a sentence-valued fact continued after its full stop; **(b)** no sentence-valued fact (a display that starts with a capital and ends with a full stop, every `notable.<n>.summary` among them) placed anywhere but at the start of a sentence, a paragraph or a list item, or just before `)`; **(c)** no clause-valued fact (*"Model A took 1.49 times as long as Model F …"*) right after a model or its own verb (*"Model A took {{…}}"*); and **(d)** no run of two or more *N of M* counts separated only by commas or semicolons, which leaves the reader guessing what each counts. One note per kind found. A **warning**: it asks for the repair turn and keeps the text |
+| 31 | *Token shape* (`ComparisonTokenShapeRule`), comparison scope and every Root Cause Analysis (both scopes), not a per-model Executive Summary: read with every token resolved to its display (a model token to *Model X*), the text holds **(a)** no full stop followed by a lower-case letter, outside abbreviations such as *e.g.* and *vs.* — a sentence-valued fact continued after its full stop; **(b)** no sentence-valued fact (a display that starts with a capital and ends with a full stop, every `notable.<n>.summary` among them) placed anywhere but at the start of a sentence, a paragraph or a list item, or just before `)`; **(c)** no clause-valued fact (*"Model A took 1.49 times as long as Model F …"*) right after a model or its own verb (*"Model A took {{…}}"*); and **(d)** no run of two or more *N of M* counts separated only by commas or semicolons, which leaves the reader guessing what each counts; and, in a Root Cause Analysis only, **(e)** no sentence-shaped fact (`RootCauseClaimSupport.IsSentenceShaped`: a hypothesis' statement, *for*, *against*, *refuted if* and grade reasons, a known fact, a check, a question's text and signals, a profile's joined flags, a notable finding's summary, the response-style conflict) after words of the writer's own sentence — it stands alone, or after a colon or a list marker; a label and a single flag are noun phrases and exempt. One note per kind found. A **warning**: it asks for the repair turn and keeps the text |
 | 32–36 | Root Cause Analysis only: the claim discipline of § 17 (`RootCauseEvidenceCausalRule`, `RootCauseCausalClaimRule`, `RootCauseCertaintyRule`, `RootCauseWriterHypothesisRule`, `RootCauseAxisStatusRule`; 36 is a warning) |
 | 37 | *Bare model letter* (`BareModelLetterRule`), comparison scope only: read with every token stripped, the prose holds no *Model X* or *Models X and Y* (`\bModels? [A-Z]{1,2}\b`, case-sensitive) — a model is named only through its `{{model:X}}` token, in every slot and list, the writer's hypotheses included. A **warning**: it asks for the repair turn and keeps the text; a named copy renders a bare letter that resolves to a peer as the model's name |
 
@@ -419,8 +419,9 @@ cost and time. The policy stays *any issue sends one revision*; what keeps revis
 careful first draft can pass every rule. To that end the rules do not contradict one another or the
 prompt:
 
-- **Rule 3 and the interval level.** The fixed phrase *95 % interval* (also *95 % bootstrap*,
-  *confidence* or *paired interval*, singular or plural) is masked before the digit search: the level is
+- **Rule 3 and the interval level.** The fixed phrase *95% interval* (also *95% bootstrap*,
+  *confidence* or *paired interval*, singular or plural, and the older spaced form *95 % interval*,
+  which the prompt used before 2026-10-15) is masked before the digit search: the level is
   a method constant, not a figure from the data. No other digit is exempt. Rule 16's messages say
   *"whose intervals overlap"*, with no digit.
 - **Rule 16 is axis-aware.** A ranking in `evidenceSpeed`, `evidenceCost`, `hypothesesSpeed`,
@@ -708,7 +709,7 @@ that the runs did not record per-call arguments or results.
 **Writer independence.** When the stored writer provider equals the subject's provider (trimmed,
 case-insensitive, as `BenchmarkComplianceGuard.IsSameProvider` compares), the Executive Summary's *How
 reliable this result is* prints a code-rendered caveat naming the writer and the shared provider,
-whatever the writer returned. The Executive Summary's reliability section also prints *"The 95 % interval is 73–82,
+whatever the writer returned. The Executive Summary's reliability section also prints *"The 95% interval is 73–82,
 a span of 9 points, and rests on 4 of 4 questions with a scored answer."* from the `quality.interval`,
 `quality.intervalSpan` and `quality.scoredItems` facts; a document stored without the span fact, or whose
 reliability paragraph already places `{{quality.interval}}`, prints nothing there.
@@ -825,6 +826,20 @@ earlier format re-renders without them, and a legacy run's unavailable facts ren
 `BenchmarkReportChartLayout.CurrentVersion` does not move: the chart layout schema is unchanged and a new
 figure key is additive.
 
+**Plain-language Root Cause Analysis and the US percent sign (2026-10-15)** move every scope:
+per-model documents to **format 14** (`ReportFormatVersion` 13 → 14), comparison-wide documents to
+**format 18** (`ComparisonReportFormatVersion` 17 → 18) and chat consistency documents to **format 4**
+(`ChatConsistencyReportFormatVersion` 3 → 4); `BenchmarkPdfRenderer.LayoutVersion` moves 10 → 11 (§ 8)
+and the Word layout stays 3. Every GnollBench document writes a percentage in the US style, the sign
+right after the number (*96%*, *68–69%*), where it wrote *96 %* (and a chat consistency document a
+no-break space); a test reads every golden file for a space before a percent sign
+(`BenchmarkReportPercentSignTests`). The Root Cause Analysis gains a *Key terms* section, first-use
+glosses and an Appendix H built from one term registry, tied ranks read *2–9 (tied)*, hypothesis labels
+read inside a sentence, and the grade notes, grade reasons and null-hypothesis displays are in plain
+words (§ 17). Comparison documents of both types open with the document type as a kicker and the
+comparison's name as the H1 (§ 15). A document stored earlier keeps its stored facts and writer text,
+so its numbers keep their old spacing; it re-renders in the new template.
+
 **Comparison format version 14** (2026-10-14) moves comparison-wide documents only
 (`ComparisonReportFormatVersion` 13 → 14); per-model documents stay at 12 and chat consistency documents
 at 3. It adds the reference model and the baseline model, the failure profile, the comparison with the
@@ -836,8 +851,9 @@ earlier renders as before apart from its footer and the fact labels it shares (�
 (`ComparisonReportFormatVersion`, § 15, 13 since 2026-10-12, 14 since 2026-10-14); `BenchmarkReportPackRenderer.CurrentFormatVersion(scope)` gives
 each scope's version. Per-model documents were written under format 11 until 2026-10-12. Every Report Pack document of a
 numbered comparison prints its comparison (§ 15), and every per-model document prints a named peer
-without its letter, a *Letter* column in *Compared models* and joint ranks (*"joint 1st of 2 (intervals
-overlap)"*), whatever format it was written under.
+without its letter, a *Letter* column in *Compared models* and tied ranks (*"1–2 of 2 (tied: intervals
+overlap)"*; *"joint 1st of 2 (intervals overlap)"* before 2026-10-15), whatever format it was written
+under.
 
 **Chat consistency format version 2** was the format of the chat consistency documents
 (`ChatConsistencyReportFormatVersion`, § 16, **3** since 2026-10-12), numbered on its own: `CurrentFormatVersion(scope)`
@@ -982,9 +998,10 @@ from now on.
 - **File names (R7)**: `vs-<N>-models_` after `run-<id>_`, or first for a group subject, when the
   document has peers (§ 8; since 2026-10-06 the comparison part names the peers or the comparison key).
 - **Fact sheet in Markdown only (R8)**: the PDF and Word copies of a document that carries the fact
-  sheet (today the Root Cause Analysis, § 17) say *"The fact sheet is in the Markdown copy of this
-  document."* (`BenchmarkReportRenderOptions.IncludeFactSheet = false` for native renders); the Markdown
-  copy keeps the JSON.
+  sheet (today the Root Cause Analysis, § 17) leave out the *Fact sheet* section, its heading and its
+  contents entry (`BenchmarkReportRenderOptions.IncludeFactSheet = false` for native renders); the
+  Markdown copy keeps the JSON. Until 2026-10-15 the section printed only *"The fact sheet is in the
+  Markdown copy of this document."*
 - **No Rank line (R9)**: the Executive Summary's separate *Rank* line of format 7 is gone; the rank is
   on the *Intelligence* line.
 - **How it compares (R10)**: the table gains a *Critical errors* column and is followed by a compact
@@ -1551,6 +1568,17 @@ still reaches no model client, clock or configuration, and the architecture pins
   `#9A6200` on `#FFF4D6`; the ink `#1B1B1B` on every tint is at least 14.9 : 1, and every rule at least
   4.5 : 1 against its tint and 5 : 1 against white (`TheCalloutColors_MeetTextContrast`). The tints are
   light enough that a grayscale print keeps the label and the rule.
+- **Keep-together** (*PDF layout 11*, 2026-10-15, `BenchmarkPdfRenderer.LayoutVersion = 11`): a callout
+  whose estimated height is at most a third of the text area (`CalloutKeepMaxShare`) prints on one page
+  (`PreventPageBreak`), with a heading run directly above it; a longer callout still breaks. A table is
+  kept together only when it is short (at most 10 body rows) **and** its estimate fits on a page
+  (`KeepsTableTogether`); a short table taller than a page flows from where it starts, so it no longer
+  pulls its heading off a nearly empty page. A heading, its lead paragraph and a kept table go in one
+  group when the whole fits; otherwise the heading and paragraph get `EnsureSpace` for themselves plus
+  the first table rows. Nothing forces a page break per heading. For a comparison-wide document the
+  cover prints the comparison's name (`BenchmarkPdfDocumentInfo.HeadingTitle`) once, its *Comparison* row
+  keeps only what the name does not say (*"9 models · computed 2026-10-15"*), and the metadata title
+  still names the document type; the body's H1 is dropped whether or not it carries the type.
 - **Source hash**: SHA-256 over the UTF-8 Markdown followed by each drawn chart's SHA-256 (lowercase hex)
   in figure order, so a changed chart changes the hash; with no chart drawn it equals the Markdown's own
   hash, as before layout 3. The cover and the footer print its first 16 hex characters.
@@ -2163,18 +2191,20 @@ on step 4 and view again (§ 13). While charts are being drawn and uploaded, the
 are disabled and Escape is refused, as during an export, even a repeated Escape, which the browser would
 otherwise let through.
 
-**Step 3, Write** (`app-report-pack-panel`, `report-pack/report-pack-panel.component.*`), headed
-*Write reports*, uses `app-run-report-frame` in its **sidebar** layout: a resizable sidebar with the form, then
+**Step 3, Write** (`app-report-pack-panel`, `report-pack/report-pack-panel.component.*`) uses
+`app-run-report-frame` in its **sidebar** layout with no header (`[showHeader]="false"`), since the
+wizard's header already names the suite and the charted entries; the step adds no padding of its own
+(as step 4), so the frame's inset is the only one. The layout is a resizable sidebar with the form, then
 the main area with the job, in reading and tab order. From 60rem of body width the sidebar is 20–32rem
 wide, at most 40 % of the body, 24rem by default, set by the `app-pane-resizer` between the two (drag, or
 Left and Right on it); the width is kept under `sidebarWidth` in
 `localStorage['overseer.benchmark.reportPack']`. Below 60rem the two stack, the sidebar first. Each
 column scrolls on its own.
 
-Under the step heading, the subtitle names the suite, the number of models and how many are Excluded,
-and a lead paragraph says where the documents live: *"These reports are kept with the comparison: step 4
-lists them, and so does Comparison reports on the Model Comparison tab. A run's or battery run's own
-reports are written in the AI Reports tab of its report."*
+The sidebar's heading, *New report pack*, is followed by a hover info tip, *Where these reports are
+kept*: *"These reports are kept with the comparison: step 4 lists them, and so does Comparison reports
+on the Model Comparison tab. A run's or battery run's own reports are written in the AI Reports tab of
+its report."*
 
 - **Sidebar**, *New report pack*, in order:
   - **Document scope**: a `.gh-tabs-segmented` pair, *Whole comparison* (with the visible note
@@ -2191,7 +2221,9 @@ reports are written in the AI Reports tab of its report."*
     component state, reset when the comparison changes. One line under the picker says what Generate
     writes: *"Writes the comparison-wide documents."*, *"Writes documents for 3 of 5 models — leaves out
     Claude 5 Opus (high), Gemini 3.8 Pro (high)."* (naming only what is left out, with its source where
-    two models share a name), or the per-model documents of the chosen models. Once the preview answers,
+    two models share a name), or the per-model documents of the chosen models. While any entry is
+    Excluded, the line ends with *"1 entry of this comparison is Excluded and is not offered."* (*"N
+    entries of this comparison are Excluded and are not offered."*). Once the preview answers,
     under *Whole comparison* a legend follows: a boxed group titled *Letters in the anonymized copies*
     whose `<dl>` pairs each letter (a small gold tile, read as *Letter A*) with the model's label, in a
     grid of 13 rem columns. It is not added to the picker's description, which it would make long.
@@ -2219,7 +2251,9 @@ reports are written in the AI Reports tab of its report."*
     Root Cause Analysis row sit its recommended runs and checks (`root-cause-runs`, each run with **Set
     up this run**) and a **Redraw charts** action (§ 17). The list follows
     the preview, asked 300 ms after the last change of scope, models, checks or writer, an answer for an
-    older choice dropped.
+    older choice dropped. While it is awaited, the section is busy and shows a small spinner
+    (`app-loading-indicator`) with *Looking up the documents already written…*, which appears only if
+    the lookup takes longer than 0.3 s.
   - **Charts in PDF and Word**: the chart picker with its per-figure width select (no visible caption;
     beside each figure, and under its title below a 20 rem picker width) and its *Layout* disclosure
     (§ 13), 1 rem below the figures, with the note *"The Root Cause Analysis also carries four charts
@@ -2233,16 +2267,16 @@ reports are written in the AI Reports tab of its report."*
     Root Cause Analysis entry) and the *How the graders work* link; the refusal or the amber same-provider
     warning (*Writer from a chosen model's provider*).
   - The *Estimated cost* panel (`.gh-estimate-panel`, shared with the AI Reports tab), summing the
-    checked rows as a range, *first call only, to one repair turn per document* (§ 9), with an amber
+    checked rows as a range, *first call only, to one repair turn per document* (§ 9); while it is
+    computed it reads *Estimating…* beside a small spinner, shown at once; with an amber
     warning when a checked document's prompt would fill 70 % or more of the writer's context window
     (refused from 90 %, § 15).
   - **Preview layout** and **Generate**, two gold `.btn-gh` buttons in one action row at the bottom of
     the sidebar, Generate last. At the default sidebar width they stack, Preview layout above Generate,
-    both full width; from a sidebar about 34 rem wide they sit side by side. Under the row, unless chart
-    storage is missing: *"Keep this wizard open until every document shows its charts. Charts are drawn by
-    this browser as each document finishes; if you close it, add them on step 4 with Update charts…"*
-    (§ 13, *When charts are attached*). A finished model batch's dialog gives the same advice as four steps
-    (`ai-benchmark-model-batches.md` § 8.1).
+    both full width; from a sidebar about 34 rem wide they sit side by side. The keep-open note is in
+    the job card (**Main area** below). The layout preview's status line under the row is a live region
+    that takes no space while empty (`.rp-note:empty` in `styles.scss` is visually hidden, never
+    `display: none`).
   - **Generate** (*zap*), which sends `scope`, `coveredEntryKeys` (whole comparison) or `subjectKeys`
     (the chosen models with a checked row), the checked document types and `replaceDocumentIds` (the
     checked written rows). It is unavailable, with its reason under it, while a job runs, with fewer than
@@ -2251,7 +2285,10 @@ reports are written in the AI Reports tab of its report."*
     the same documents for every model it covers. …"*), without a writer, while the preview is pending,
     and on a refusal. When every listed document is written and none is checked, it stays focusable and
     `aria-disabled` with *"Every document listed is already written. Check Rewrite on one to replace it,
-    or delete it."* A 409 from the start — a document written in the meantime (§ 9) — shows its `error`
+    or delete it."* Two reasons are visually hidden, though still Generate's description, because the
+    fact is already in view beside it: *"A report pack is being written. Wait for it to finish, or cancel
+    it."* (the main area shows the job and **Cancel Job**) and *"Checking the writer and estimating the
+    cost…"* (the estimate panel shows *Estimating…*). A 409 from the start — a document written in the meantime (§ 9) — shows its `error`
     as any other start error.
 - **Preview layout** (*eye*, and a *chevron* that points up while open) opens a popover of the two
   document types (`frontend_ui_controls` § 4f), each *Executive Summary · 2 charts*, offered whether or
@@ -2266,8 +2303,18 @@ reports are written in the AI Reports tab of its report."*
   drawn, chart storage is not configured, the comparison has no number yet or too few models are chosen.
 - **Same-provider writer**: Generate opens a nested *Same-Provider Report Writer* confirmation, **Write
   Anyway**, on every write, and only then sends `acknowledgeSameProvider: true`. Nothing is remembered.
-- **Main area**, *Report pack progress*: a status line that changes with the job's phase; while a job
-  runs, the stage rail (*Queued*, *Preparing*, one stage per document, *Done*); a stat strip (elapsed,
+- **Main area**, *Report pack progress*: a status line that changes with the job's phase. **Generate**
+  answers at once: focus moves to the *Report pack progress* heading (in the stacked layout the view
+  scrolls to it) and, until the job's first progress reading, the main area shows a large spinner with
+  *Starting the report pack…* and the line *"Checking the comparison, the report writer and the cost,
+  then queuing the documents. This can take several seconds."* in place of the job card, while the
+  status line reads *Starting the report pack…*. A refused start returns focus to Generate when it can be
+  used again. In the job card, under its title, only while charts can still be pending (the job runs,
+  or a document's charts are being attached) and chart storage is configured: *"Keep this wizard open
+  until every document shows its charts: this browser draws them as each document finishes. If you
+  close it, add them later on step 4 with Update charts…"* (§ 13, *When charts are attached*; a finished
+  model batch's dialog gives the same advice as four steps, `ai-benchmark-model-batches.md` § 8.1).
+  While a job runs, the stage rail (*Queued*, *Preparing*, one stage per document, *Done*); a stat strip (elapsed,
   writer, model calls, tokens, cost, estimate) that stays after the job finishes; one row per document
   (preceded by a *Model* column in a per-model job) with its status chip, a live duration, its model calls
   and a charts cell — *Charts: attaching…*,
@@ -2306,7 +2353,10 @@ prints no context title or subtitle, since only the dialog wrapper does. Run-com
 written before comparisons were numbered, when the comparison has the same set of entries (§ 5), so
 changing *Prices* keeps the list, and adding or removing a model empties it. The wizard
 lends the panel its chart actions (§ 13): the *Charts* option and filter, **Update charts…** and each
-card's **More actions**. The list reloads when a job finishes and when a document is charted.
+card's **More actions**. The list reloads when a job finishes and when a document is charted. While
+the documents load, the list shows a centered spinner with *Loading report documents…* on the first
+load, and a small one above the cards on a reload, so the list does not jump; *Listing the member
+runs…* is shown the same small way. The same applies in the stand-alone Download Center dialog.
 
 **The Model Comparison launcher** (Admin → GnollBench → Model Comparison) leads with the action: a hero
 card with *Cross-model comparison*, its lead and **Open Comparison Wizard** (the page's only `.btn-gh`,
@@ -2561,10 +2611,11 @@ that differ from step 2.
 ### When charts are attached
 
 - **While the wizard is open**, each document of a step-3 job is charted as soon as its row reaches
-  *Completed*, with step 3's selection for its type (none when that type's selection is empty). Its row
-  shows the progress (§ 12).
-- **Otherwise** — the wizard closed during the job, a document written before charts existed, or charts
-  to redraw after step 2 changed — step 4 shows *None* or *differs from step 2* and **Update charts…**
+  *Completed* or *Completed with warnings*, with step 3's selection for its type (none when that type's
+  selection is empty). Its row shows the progress (§ 12).
+- **Otherwise** — a document of the job that finished while the wizard was closed (the wizard cannot be
+  closed while a chart is being drawn or uploaded, and reopening it does not chart what finished
+  meanwhile), a document written before charts existed, or charts to redraw after step 2 changed — step 4 shows *None* or *differs from step 2* and **Update charts…**
   adds or redraws them.
 - **Server-drawn charts** need no browser. `WriteDocumentAsync` draws R1–R4 right after a Root Cause
   Analysis is stored, in the same job, from the stored `RootCause` result, and logs *"Root Cause
@@ -2922,7 +2973,7 @@ other models without naming them.
 - **Letters** follow the Intelligence Index, highest first, an unmeasured model last, ties by entry key
   (ordinal). They are the same in the two documents of one covered set.
 - **Per-model facts** `model.<L>.*`: every fact the per-model sheet has for its subject, the `subject.`
-  prefix dropped (`subject.runs` becomes `model.A.runs`), plus `model.<L>.quality.rank` (the joint rank,
+  prefix dropped (`subject.runs` becomes `model.A.runs`), plus `model.<L>.quality.rank` (the tied rank,
   below), `model.<L>.speed.rank`, `model.<L>.cost.rank` and `model.<L>.frontier` (*"on the intelligence
   against cost frontier"*). Of the `availability.*` family only the eight headline keys pass through
   (format 13: `model.<L>.availability.attempts`, `.providerErrors`, `.providerErrorRate`, its two bounds,
@@ -2939,8 +2990,10 @@ other models without naming them.
 - **Joint ranks.** `BenchmarkReportFacts.JointRanks` ranks by Intelligence Index and joins a model to the
   group of the model just above it when their 95 % intervals overlap (touching counts) or their scores
   are equal. Groups are **transitive overlap chains**: A–B and B–C overlapping make A, B and C one group
-  even when A and C do not overlap. A joint rank prints *"joint 1st of 2 (intervals overlap)"*. The same
-  helper words the per-model documents' ranks (W2, below).
+  even when A and C do not overlap. A tied rank prints the span of its group, *"2–9 of 9 (tied: intervals
+  overlap)"* (`JointRankText`, span from `BenchmarkReportFacts.TiedRankSpan`), and a table cell *2–9
+  (tied)*; the word *joint* is not used in document text. The same helper words the per-model documents'
+  ranks (W2, below).
 - **The paired-test family** comes from the service step 2's *Paired tests* view uses, requested for the
   covered models only, so each Holm adjustment counts exactly the tests the document reports: *Against a
   reference* with the document's **reference model** (below; model A when none was chosen), plus *All pairs* when there are **3 to 6** covered
@@ -3117,8 +3170,12 @@ behind a confirmation.
 
 ### The rendered documents
 
-`ReportFormatVersion` for comparison scope is **15** (`ComparisonReportFormatVersion`); per-model
-documents are at 13 (§ 7). The sections, by audience:
+`ReportFormatVersion` for comparison scope is **18** (`ComparisonReportFormatVersion`); per-model
+documents are at 14 (§ 7). Both comparison document types open with the document type as a bold kicker
+(*EXECUTIVE SUMMARY*, *ROOT CAUSE ANALYSIS*), then the comparison's name as the H1
+(`BenchmarkPdfDocumentInfo.ComparisonDocumentHeading`: *Comparison #12 — Spring model sweep*), then a
+*Comparison:* line with only what the name does not say (*5 models · computed 2026-09-21*); the stored
+`document.Title` and the file name keep the type. The sections, by audience:
 
 - **Executive Summary**: *The result in one sentence*, *The comparison in one paragraph*, *Which model to
   use*, *How they compare* (every model's Intelligence Index with its interval and joint rank, median
@@ -3144,7 +3201,7 @@ documents are at 13 (§ 7). The sections, by audience:
   abbreviates the wide new tables' headers.
 
 **Provider availability (format 13).** The results table (`ResultsTable`) gains a **Provider errors**
-column, *0.81 % (12/1,480)* or *not recorded*, from the entry figures; `Pdf/BenchmarkTableLayout.cs`
+column, *0.81% (12/1,480)* or *not recorded*, from the entry figures; `Pdf/BenchmarkTableLayout.cs`
 abbreviates its header (`HeaderAbbreviations`) so the eleven-column table still fits, and
 `ComparisonThreats` gains the unattributed, re-run and not-recorded lines of § 7. Each block renders only
 when the sheet carries the facts.
@@ -3155,7 +3212,8 @@ are correct for their own family. Tables that list the models carry a **Letter**
 namings, and a named copy prints each model's label and provider and **no letter in its prose (W1)**.
 The per-model documents print the same way: a named peer reads *Grok 5*, never *Grok 5 (A)*, their
 *Compared models* table gains the Letter column, and a rank whose interval overlaps a neighbor's reads
-*joint* (**W2**), whatever format they were written under.
+as the span of its tie group, *1–2 of 3 (tied: intervals overlap)* (**W2**), whatever format they were
+written under.
 
 ### Titles, covers and running headers
 
@@ -3232,7 +3290,7 @@ of runs, with no peers to rank against.
 | `SubjectKey` | `chat-consistency:<id>` (`BenchmarkChatConsistencyReportFacts.SubjectKeyPrefix`) |
 | `ChatConsistencyAnalysisId` | the analysis, a `Restrict` foreign key: the analysis cannot be deleted while documents written from it exist (the API answers 409) |
 | `ComparisonKey`, `ComparisonId`, `CoveredEntryKeysJson` | null |
-| `ReportFormatVersion` | `ChatConsistencyReportFormatVersion`, currently **3** (§ 7) |
+| `ReportFormatVersion` | `ChatConsistencyReportFormatVersion`, currently **4** (§ 7) |
 
 The title is *Overseer Chat Consistency Report: \<model\>*. The sheet's subject block
 (`BenchmarkReportChatConsistencySubject`) carries the analysis id, name, headline, protocol label,
@@ -3278,7 +3336,7 @@ sentence.
 |---|---|---|
 | Out-of-date box | under the title block when the analysis is out of date (below) | the same |
 | Overall verdict | *Verdict* (`verdict.short`), one bullet per group of endpoints not computable with its reason in plain words (a grading change on quality, periods run at different hours), *Sample* (`sample.shortfall` when the minimum is not met, each part stated as met or missed: *1 battery run per period on 1 day, below the minimum of 2 battery runs on 2 days per period; paired items 32, above the minimum of 20*), *Hours*, *Controls* | the same with the technical not-computable reasons, plus *Time strata* |
-| Verdicts | *Measure · Result · What it means* for the computed endpoints, named without P1–P5 ids, one line naming those not computable, and one sentence on where the change came from | *Endpoint · Change (95 % interval) · Margin · Verdict and grade · Smallest detectable* for the computed endpoints; under it one note line per endpoint (the 90 % interval, the Holm-adjusted p-value, the MDE note, the legacy-proxy note and the grade's reasons); the endpoints not computable as bullets with their reasons; and a *Secondary measures* table, *Measure · Baseline → comparison, or change (95 % interval) · Verdict* |
+| Verdicts | *Measure · Result · What it means* for the computed endpoints, named without P1–P5 ids, one line naming those not computable, and one sentence on where the change came from | *Endpoint · Change (95% interval) · Margin · Verdict and grade · Smallest detectable* for the computed endpoints; under it one note line per endpoint (the 90% interval, the Holm-adjusted p-value, the MDE note, the legacy-proxy note and the grade's reasons); the endpoints not computable as bullets with their reasons; and a *Secondary measures* table, *Measure · Baseline → comparison, or change (95% interval) · Verdict* |
 | Where the chat stands | after the verdict table | the same |
 | Overseer events | one sentence naming each update by its tag with its time and changes and no run ids (*Between the periods, Overseer was updated once: E1, 2026-10-08 14:49 UTC — harness 53 → 54.*), and how many more the control models' runs show; when there are more than three updates, the sentence gives their count and is followed by the **table of Overseer updates**, as the Provider Issue Report prints it, so the per-update detail stays in the Executive Summary | *Event · When (UTC) · Run · What changed*, one row per update (`eventGroups.*`, below), the time reading from–to when the update's events span time, a control model's update naming its series |
 | Control models | in the overall verdict | one bullet per control model with its runs, periods and difference-in-differences estimates, then the missing controls as a table, *Period · Battery run (suites) · What to do* (*Run (suite)* when the units are runs), its suggestions without an instrument note |
@@ -3338,7 +3396,8 @@ Overseer events to list under `ruledOut` and the sample request ids. The fact fa
 and, for the Provider Issue Report, `requestIds.sample.*` (`BenchmarkChatConsistencyReportFacts`).
 
 The displays are written for a reader. Numbers print a minus as U+2212 and keep their unit on the line
-with a no-break space (U+00A0): *−7.6 %*, *38.7 s*. An MDE reads *±12.7 %*, with its caveat in
+with a no-break space (U+00A0), *38.7 s*, except a percent sign, which follows the number directly:
+*−7.6%*. An MDE reads *±12.7%*, with its caveat in
 `endpoint.<P>.mdeNote` (*A floor: one unit per period, so run-to-run noise is not included.* for an
 item-paired endpoint from analysis code version 6, *one run per period: run-to-run noise not estimable*
 for a speed endpoint), and no estimate carries a *(log ratio …)* note. The served models are labeled
@@ -3532,17 +3591,17 @@ dates and its battery runs or runs), *Controls* (as the naming allows, never by 
 Issue Report), *Hours* (`scope.hours`, or *none: the periods ran at different hours*), *Protocol*
 (*\<protocol label\>, α \<alpha\>*), *Analysis code* (*version 7*, or *version 4 — out of date (current:
 7)*, or *version 7 — out of date (its inputs changed)*, decided when the document is rendered), *Written*
-(the time and the writer) and *Provenance*; the line under the facts reads *PDF layout 10*
+(the time and the writer) and *Provenance*; the line under the facts reads *PDF layout 11*
 or *Word layout 3* without a source hash. The page footer reads the short classification, then *Chat
 consistency analysis #12 · Executive Summary · page 2 of 3* (`BenchmarkPdfDocumentInfo.FooterText`).
 The Word file still records the source hash in its *GnollBench Source SHA-256* custom property, as
-metadata only. Other scopes keep their cover and the *Source … · PDF layout 10* footer
-(`BenchmarkPdfRenderer.LayoutVersion` 10: a heading followed by a short table, at most 10 body rows,
+metadata only. Other scopes keep their cover and the *Source … · PDF layout 11* footer
+(`BenchmarkPdfRenderer.LayoutVersion` 11: a heading followed by a short table, at most 10 body rows,
 which is kept on one page, moves with the table instead of staying alone at a page foot, layout 7; a
 bold label paragraph such as **Where the chat stands** does the same before its short table, layout 8;
-the smaller inline code and full-width server-drawn figures of layout 9; and the callouts of layout 10,
-§ 8).
-`ChatConsistencyReportFormatVersion` is 3.
+the smaller inline code and full-width server-drawn figures of layout 9; the callouts of layout 10; and
+the keep-together rules of layout 11, § 8).
+`ChatConsistencyReportFormatVersion` is 4.
 
 ### Endpoints
 
@@ -3699,7 +3758,7 @@ across its questions, never across models. *T* in a key is a model token: a lett
 **Known facts** (`RootCauseKnownFacts`) are numbered sentences, `rca.known.<n>`, each produced by a rule
 and stating only what a test or a count proves, with its kind (`test`, `count`, `decomposition`,
 `configuration`) and the fact keys it rests on: *"Model A's median model time is 1.5 times Model F's on
-the same questions, established after Holm across 8 tests"*; *"Decode accounts for 71 % (58–80 %) of the
+the same questions, established after Holm across 8 tests"*; *"Decode accounts for 71% (58–80%) of the
 per-question time difference between Model C and Model F"*; *"Model I answered 9 of 36 questions without
 a tool call"*.
 
@@ -3803,10 +3862,18 @@ axis' best hypothesis is the first in this order. Each kept hypothesis becomes t
 facts `rca.hypothesis.<id>.<n>.statement`, `.label`, `.axis`, `.models`, `.locus`, `.grade`,
 `.gradeReasons`, `.for`, `.against`, `.refutedIf`, `.nextRun` or `.check`, and `.share` and `.interval`
 where it has a share; `<n>` numbers the hypotheses of one rule from 1. The **label**
-(`RootCauseLabels.Of`) is a noun phrase of at most 10 words built from the rule and its models —
-*"critical errors of Model F against Model E"*, *"higher price per token of Vega Pro against Orion
-Max"* — so a reader meets a name, not only an id, and the writer can cite a cause inside its own
-sentence.
+(`RootCauseLabels.Of`) is a noun phrase that reads inside a sentence, built from the rule and its
+models: a pair's is *"{first}'s {topic}, compared with {second}"* (*"Model F's critical errors, compared
+with Model E"*, *"Vega Pro's higher price per token, compared with Orion Max"*) and a within-model one
+*"{model}'s {topic}"* (*"Model D's time spent on tool rounds"*). `MaxWords` (10) caps the topic only, so
+a model name is never cut. A reader meets a name, not only an id, and the writer can cite a cause inside
+its own sentence; tables print the id in front (*HQ1.1: …*).
+
+**Null hypotheses** keep their grade value and sort order, but documents print their grade as what it
+means: a rejected null as *Rejected — a real difference (Not supported)*, a null that stands as *Stands —
+may be chance (Low)* (`RootCauseGrades.HypothesisWordWithGrade`), so a reader is never told "Not
+supported" about a difference that was found. **Grade reasons** print the one reason that applied, never
+the rule's *"A, or B"* (`RootCauseHypotheses.CheckReason`, `NullStandsReason`, `QualitativeReason`).
 
 ### The research questions and the model profiles
 
@@ -3843,8 +3910,12 @@ on the sheet, so they cannot be dropped by a rule and never use a causal word:
   gap; and `.lowestRank` when the model is last on a dimension;
 - **Strengths** (`.strength.<n>`): the model's dimension ranks when first or second;
 - **Flags** (`.flag.<n>`, joined in `.flags`): critical errors with their questions; answers without
-  tools above the median; panel disagreement at twice the median rate or more; isolated misses (three
-  or more models); output defects and tool-limit hits.
+  tools above the median; panel disagreement under the notable findings' rule
+  (`BenchmarkNotableFindings.DisagreementConcentration`: at least 3 disagreements on the answers both
+  members graded, at twice the **other** models' median rate or more, worded by `DisagreementPhrase`,
+  *"panel disagreement on 19% of the answers both members graded, about three times the other models'
+  median of 6%"*), which HQ4 uses too; isolated misses (three or more models); output defects and
+  tool-limit hits. A flag is a noun phrase, so the writer can cite it inside a sentence.
 
 At most two strengths and three weaknesses per model; every entry is a measured count, share or rank
 with its questions.
@@ -4035,8 +4106,9 @@ button is refused with its reason on the card.
 
 Disclosure **Full** only, named and, where peers exist, anonymized. Stamp *"INTERNAL — contains
 benchmark questions and rubrics. Do not share outside the Overseer team."* Title *Root Cause Analysis*
-(*Comparison #12 — <name>: Root Cause Analysis*, or *<model> on the Overseer GnollHack Assistant
-Benchmark — Root Cause Analysis* in model scope); file kind slug `root-cause-analysis`. The `##`
+(*Comparison #12 — <name>: Root Cause Analysis*, printed as the kicker *ROOT CAUSE ANALYSIS* over the H1
+*Comparison #12 — <name>* (§ 15), or *<model> on the Overseer GnollHack Assistant Benchmark — Root Cause
+Analysis* in model scope); file kind slug `root-cause-analysis`. The `##`
 headings are unnumbered. The document is **answer-first**: the questions and their answers, then a
 per-model explanation, then the evidence, with the detail in lettered appendices, so the body of a
 nine-model comparison is about a fifth of what it was. The renderer
@@ -4047,18 +4119,19 @@ caveats and conclusions are callouts (§ 7). The comparison form (`ComparisonRoo
 
 | Section | Code-rendered | Writer slot (word cap) |
 |---|---|---|
-| *Summary* | `### What we found`: the headline in a *Key finding* callout. `### The questions`: each question asked, in a *Question* callout with the question in bold and *Answer strength: Probable (Moderate) — see HQ2.1, HS2.1*. `### At a glance`: *Model · Intelligence (index, interval, rank) · Median time · Cost per question · Where it lost most points · Flags*. `### How sure are we?`: a *Caveat* callout with the grade words and the run-level cap stated once (*"One run per suite for every model: … no cause can be graded above Probable (Moderate)."*) | `headline` (35): in one plain sentence, what most explains the differences between the models; `answerBest`, `answerWorst`, `answerSpeed`, `answerCost` (60 each), in their question's callout, each citing `{{rca.question.<n>.status}}` |
+| *Summary* | `### What we found`: the headline in a *Key finding* callout. `### The questions`: each question asked, in a *Question* callout with the question in bold and *Answer strength: Probable (Moderate) — see HQ2.1, HS2.1*. `### At a glance`: *Model · Intelligence (index, interval, rank) · Median time · Cost per question · Where it lost most points · Flags*. `### How sure are we?`: a *Caveat* callout with the grade words in plain order (*"How sure each answer is. **Established (High)**: measured, still clear after the correction for many comparisons, …"*) and the run-level cap stated once (*"Each model ran only once per suite, so this document cannot tell whether its results would repeat. No cause can be graded above Probable (Moderate) until a second run of each suite is made."*) | `headline` (35): in one plain sentence, what most explains the differences between the models; `answerBest`, `answerWorst`, `answerSpeed`, `answerCost` (60 each), in their question's callout, each citing `{{rca.question.<n>.status}}` |
+| *Key terms* | Format 18: a two-sentence lead, then *Term · What it means*, one row per term the document actually uses, alphabetical, with the term's short gloss (`RootCause/RootCauseGlossary.cs`, the one term registry). Each less familiar term is also glossed in parentheses where template text first uses it (the render `Context`'s `GlossedTerms`), for example *Holm-adjusted across 4 tests (a correction for running many comparisons at once)* | — |
 | *Why each model scored as it did* | The profile table, one row per model in rank order: *Model · Index · Strengths · Lost points on · Flags*, with a note that every entry is measured and none says why | — |
 | *Scope and design* | `### Setup and method`, the grader roster, the availability table (one sentence when every model's is unrecorded); the compared models and configuration differences move to Appendix A | `scope` (120) |
-| *Evidence: intelligence* | A five-column scoreboard (*Model · Intelligence Index · 95 % interval · Rank · Critical errors*), the dimensions table, figure R1, `### Paired tests against <reference>` with the adjustment family stated once under it, `### What the graders recorded` (the `observations`), one grouped response-style line | `evidenceIntelligence` (100), no causal words: what stands out and why it matters for choosing a model |
+| *Evidence: intelligence* | A five-column scoreboard (*Model · Intelligence Index · 95% interval · Rank · Critical errors*, a tied rank as *2–9 (tied)*), the dimensions table, figure R1, `### Paired tests against <reference>` with the adjustment family stated once under it, `### What the graders recorded` (the `observations`), one grouped response-style line | `evidenceIntelligence` (100), no causal words: what stands out and why it matters for choosing a model |
 | *Evidence: speed* | `### Where the time goes` and figure R2, the paired tests, `### Time differences between the models`: one line per decomposed pair (its leading component in seconds and its share with interval), the pairs not decomposed in one line | `evidenceSpeed` (100) |
 | *Evidence: cost* | The same, in dollars (figure R3) | `evidenceCost` (100) |
 | *Hypotheses* | Per axis a table of the kept non-null hypotheses — *Hypothesis (id and label) · Statement · Grade · Share · Settled by* — the null hypotheses in one sentence (where it stands, where a paired result rejects it), the id legend under the first table (H0 null, H between two models, W within one; Q, S, C), figure R4; the writer's hypotheses in a *Not tested by code* caveat callout | `hypothesesIntelligence`, `hypothesesSpeed`, `hypothesesCost` (120 each), each after its axis' table |
 | *Conclusions* | The table *Axis · Status · Best hypothesis · Why* | `conclusions` (120), in a *Conclusion* callout |
 | *What to run next* | The order (C, B, M), a priority table *# · Run · Purpose · Models · Settles (hypothesis ids, at most eight, then "and N more (Appendix D)") · Estimate*, then `### Checks` | `nextRuns` (50): which run to make first and what it settles |
 | *Limitations and threats to validity* | One merged, deduplicated list; the availability threats grouped by reason (*"Provider availability is not recorded for any of the 9 models (runs before harness 56), …"*) | `limitations` (120) |
-| *Appendices* | The list of A–H, then **A** Intelligence detail (compared models, configuration differences, failure profile, grader findings, panel agreement, points at risk, the index difference by dimension, every paired test, the per-question matrix); **B** Speed and cost decompositions (decomposed pairs only); **C** Hypothesis details (*For*, *Against*, *Grade reasons*, *Refuted if*, *Robustness*, *Settled by* per hypothesis; the nulls as one table *Hypothesis · Pair · Paired result · Grade*); **D** Run settings (each run's *Launcher field · Setting* table); **E** Known facts; **F** Reproducibility; **G** Question details (every claim-verifier ruling that is not a supported answer sentence, then *"N further answer sentences supported."*; a grader evidence line that only says *&lt;Dimension&gt;: Matches rubric.* is left out); **H** Glossary (95 % interval, paired test, Holm adjustment, null hypothesis, grade words, points at risk, decomposition share and why it can pass 100 %, isolated miss, joint rank) | `questionTopics` for every question cited whose text the writer was given |
-| *Fact sheet*, *Removed content*, *Evaluation terms* | As before; *Removed content* names each removal's location in words and its rule, and at Full disclosure prints the removed text with its tokens resolved under the document's peer naming (withheld names, ids and providers as letters in an anonymized copy) | — |
+| *Appendices* | The list of A–H, then **A** Intelligence detail (compared models, configuration differences, failure profile, grader findings, panel agreement, points at risk, the index difference by dimension, every paired test, the per-question matrix); **B** Speed and cost decompositions (decomposed pairs only); **C** Hypothesis details (*For*, *Against*, *Grade reasons*, *Refuted if*, *Robustness*, *Settled by* per hypothesis; the nulls as one table *Hypothesis · Pair · Paired result · Grade*, the grade read as *Stands — may be chance* or *Rejected — a real difference*); **D** Run settings (each run's *Launcher field · Setting* table); **E** Known facts; **F** Reproducibility; **G** Question details (every claim-verifier ruling that is not a supported answer sentence, then *"N further answer sentences supported."*; a grader evidence line that only says *&lt;Dimension&gt;: Matches rubric.* is left out); **H** Glossary: from format 18 every term the document uses, alphabetical, with its full definition from `RootCauseGlossary` (before, nine fixed bullets) | `questionTopics` for every question cited whose text the writer was given |
+| *Fact sheet*, *Removed content*, *Evaluation terms* | As before (the fact sheet in the Markdown copy only, with no section at all in the PDF and Word); *Removed content* names each removal's location in words and its rule, and at Full disclosure prints the removed text with its tokens resolved under the document's peer naming (withheld names, ids and providers as letters in an anonymized copy) | — |
 
 The table below is the structure **before format 16**, kept for reading a PDF or Word file downloaded
 then. A stored document opened now renders in the structure above, its answer callouts saying to

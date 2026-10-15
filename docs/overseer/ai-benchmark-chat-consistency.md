@@ -416,7 +416,7 @@ analysis's own protocol endpoints, so nothing asks a V1 protocol for P6.
   replicates, seed 20261007, every resampling seeded from the protocol.
 - **Items** pair only on an identical question and item revision; a revised item drops out on both
   sides, and an unrecorded revision pairs only with another unrecorded one. Both are data-quality notes.
-  From code version 6 the notes count questions: `revisedQuestions` (*"4 of 36 questions (11.1 %) were
+  From code version 6 the notes count questions: `revisedQuestions` (*"4 of 36 questions (11.1%) were
   revised between the periods and are left out of the paired comparison; 32 are paired."*), and
   `unpairedItems` only for questions answered in one period only.
 - **Minimum replication** counts **units**: a run, or, in a battery comparison (§ 17.2), a **battery
@@ -1252,9 +1252,12 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
        marks and the unanalyzed entries name battery runs (*battery run #11*; *#305 (comparison, battery
        run #13)*), and runs of another battery or suite are listed as *Outside the compared set*.
 5. **Write** — writes the Chat Consistency Report documents (§ 20), in the layout of Model
-   Comparison's step 3: *Write reports*, *Analysis #7 · Chat consistency: <model>* and *Write AI reports
-   about this analysis. Each document is written once.*, then a resizable **New reports** sidebar
-   beside the report progress area (no visible heading), each scrolling on its own; the sidebar's width
+   Comparison's step 3, which it keeps a header of its own over: *Write reports*, *Analysis #7 · Chat
+   consistency: <model>* and *Write AI reports about this analysis. Each document is written once.*, with
+   the analysis's out-of-date notice (Model Comparison's step 3 has no such header). Under it a resizable
+   **New reports** sidebar sits beside the report progress area (no visible heading), each scrolling on
+   its own; while the estimate is computed, its estimate panel reads *Estimating…* beside the shared
+   ring spinner (`app-loading-indicator`). The sidebar's width
    is remembered in this browser (`localStorage['overseer.benchmark.chatConsistency.reports']`,
    `{ version: 1, sidebarWidth }`).
    - **Documents** — the two documents, the Executive Summary and the Provider Issue Report (a chat
@@ -1805,11 +1808,11 @@ And of the implementation:
 
 Cite a finding with **its hour scope, its grade and its protocol version**, and its analysis id:
 
-> Overseer chat with \<model\>: time to first answer text degraded by 22 % (95 % CI 14 % to 31 %),
+> Overseer chat with \<model\>: time to first answer text degraded by 22% (95% CI 14% to 31%),
 > **Indicated**, within weekdays 08–16 UTC; Protocol V1; analysis #12.
 
 A P6 finding is cited the same way, in percentage points and as an observation: *"provider error rate
-up 1.4 percentage points (95 % CI …), more provider errors observed in GnollBench runs, Indicated, within
+up 1.4 percentage points (95% CI …), more provider errors observed in GnollBench runs, Indicated, within
 weekdays 08–16 UTC; Protocol V2; analysis #15"*. A verdict under Protocol V1 and one under Protocol V2 are
 never set side by side as if comparable (§ 9).
 

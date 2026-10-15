@@ -335,11 +335,16 @@
 }
 
 .dc-toolbar-reason,
-.dc-loading,
 .dc-empty,
 .dc-no-matches,
 .dc-selection-count {
   margin: 0;
+  font-size: var(--text-secondary);
+  color: #a1a1aa;
+}
+
+/* The loading indicators (app-loading-indicator) lay themselves out; only their text is styled here. */
+.dc-loading {
   font-size: var(--text-secondary);
   color: #a1a1aa;
 }

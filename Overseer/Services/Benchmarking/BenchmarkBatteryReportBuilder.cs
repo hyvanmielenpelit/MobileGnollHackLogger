@@ -119,7 +119,7 @@ public static class BenchmarkBatteryReportBuilder
         => value.HasValue ? "$" + Inv(value.Value, value.Value >= 1.0 ? "F2" : "F4") : "—";
 
     private static string Percent(double? fraction)
-        => fraction.HasValue ? Inv(fraction.Value * 100.0, "F1") + " %" : "—";
+        => fraction.HasValue ? Inv(fraction.Value * 100.0, "F1") + "%" : "—";
 
     private static string Tokens(long value)
     {
@@ -647,7 +647,7 @@ public static class BenchmarkBatteryReportBuilder
         }
 
         sb.AppendLine($"- **Overall Intelligence Index:** {Inv(ix.PointEstimate, "F2")} / 100 — Σ *w*ₛ · *I*ₛ under *{SchemeLabel(result.Scheme)}* weights.");
-        sb.AppendLine($"- **Combined 95 % interval:** {Inv(ix.PointEstimate, "F2")} ± {Inv(ix.CombinedHalfWidth)}" +
+        sb.AppendLine($"- **Combined 95% interval:** {Inv(ix.PointEstimate, "F2")} ± {Inv(ix.CombinedHalfWidth)}" +
                       (ix.CombinedLower.HasValue && ix.CombinedUpper.HasValue
                           ? $"  →  [{Inv(ix.CombinedLower)}, {Inv(ix.CombinedUpper)}]"
                           : string.Empty));
@@ -662,7 +662,7 @@ public static class BenchmarkBatteryReportBuilder
 
         sb.AppendLine($"### {section}.1 The two uncertainty components");
         sb.AppendLine();
-        sb.AppendLine("| Component | Question it answers | SE | Degrees of freedom | Critical value | 95 % half-width | Source |");
+        sb.AppendLine("| Component | Question it answers | SE | Degrees of freedom | Critical value | 95% half-width | Source |");
         sb.AppendLine("|---|---|---:|---:|---:|---:|---|");
         sb.AppendLine(
             "| **Item sampling** | *Would different questions move this?* " +
@@ -775,7 +775,7 @@ public static class BenchmarkBatteryReportBuilder
             sb.AppendLine();
         }
 
-        sb.AppendLine("> Candidate attempts only. Valid attempts are every API attempt of the model under test except our-side failures, which are counted but left out of the denominator: our own rate limits, billing, a rejected key or request, Overseer's request governor, our cancellations and per-question time budget, and our network. Provider errors are the attempts the provider answered with an overload (HTTP 503 or 529), a server error (HTTP 5xx), no response headers within the request timeout, or a stream that broke after it started; unattributed errors (rate limits and transport failures no rule attributes to either side) stay in the denominator and out of the provider error rate. The interval is a cluster-adjusted Wilson 95 % interval. These are provider errors observed in GnollBench runs, pooled over every member run, superseded members included, every run they replaced and every repair pass.");
+        sb.AppendLine("> Candidate attempts only. Valid attempts are every API attempt of the model under test except our-side failures, which are counted but left out of the denominator: our own rate limits, billing, a rejected key or request, Overseer's request governor, our cancellations and per-question time budget, and our network. Provider errors are the attempts the provider answered with an overload (HTTP 503 or 529), a server error (HTTP 5xx), no response headers within the request timeout, or a stream that broke after it started; unattributed errors (rate limits and transport failures no rule attributes to either side) stay in the denominator and out of the provider error rate. The interval is a cluster-adjusted Wilson 95% interval. These are provider errors observed in GnollBench runs, pooled over every member run, superseded members included, every run they replaced and every repair pass.");
         sb.AppendLine();
     }
 
@@ -794,7 +794,7 @@ public static class BenchmarkBatteryReportBuilder
         sb.AppendLine();
         sb.AppendLine("Each suite's own multi-run index *I*ₛ, unrounded, with its own interval on the group layer's normal 1.96 for item sampling. The contribution is *w*ₛ · *I*ₛ; the contributions of a complete battery sum to the Overall Index.");
         sb.AppendLine();
-        sb.AppendLine("| # | Suite | *w*ₛ | *v*ₛ | Scored / exam items | Usable runs | *I*ₛ | 95 % interval | Contribution | Mean Speed Index | Critical-error rate |");
+        sb.AppendLine("| # | Suite | *w*ₛ | *v*ₛ | Scored / exam items | Usable runs | *I*ₛ | 95% interval | Contribution | Mean Speed Index | Critical-error rate |");
         sb.AppendLine("|---:|---|---:|---:|---:|---:|---:|---|---:|---:|---:|");
 
         foreach (var p in result.Suites.OrderBy(s => s.SuiteIndex))
@@ -1141,7 +1141,7 @@ public static class BenchmarkBatteryReportBuilder
 
         sb.AppendLine($"- **Composite difference *D*:** {Signed(cmp.CompositeDifference)} points" +
                       (cmp.CompositeConfidenceLower.HasValue && cmp.CompositeConfidenceUpper.HasValue
-                          ? $" (95 % CI [{Inv(cmp.CompositeConfidenceLower)}, {Inv(cmp.CompositeConfidenceUpper)}])"
+                          ? $" (95% CI [{Inv(cmp.CompositeConfidenceLower)}, {Inv(cmp.CompositeConfidenceUpper)}])"
                           : string.Empty));
         sb.AppendLine($"- **Standard error:** {Inv(cmp.CompositeStandardError, "F3")} · **ν:** {Inv(cmp.CompositeDegreesOfFreedom, "F1")} · **t:** {Inv(cmp.CompositeCriticalValue, "F3")}");
         string method = cmp.RandomizationMethod switch

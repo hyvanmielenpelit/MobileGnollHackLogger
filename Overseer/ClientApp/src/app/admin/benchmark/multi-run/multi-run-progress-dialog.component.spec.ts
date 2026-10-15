@@ -494,10 +494,10 @@ describe('MultiRunProgressDialogComponent', () => {
     const cells = Array.from(fixture.nativeElement.querySelectorAll('.series-member-table tbody td.member-provider-errors'))
       .map(td => ((td as HTMLElement).textContent || '').trim());
     // Recorded; finished before the ledger; still running.
-    expect(cells).toEqual(['0.81 % (12/1,480)', 'Not recorded', '—']);
+    expect(cells).toEqual(['0.81% (12/1,480)', 'Not recorded', '—']);
 
     const capture = component.seriesDiagnosticsText;
-    expect(capture).toContain('1. run #41, status Completed, index 71, speed 55, cost $2.5300, provider errors 0.81 % (12/1,480), ');
+    expect(capture).toContain('1. run #41, status Completed, index 71, speed 55, cost $2.5300, provider errors 0.81% (12/1,480), ');
     expect(capture).toContain('2. run #42, status Completed, index 71, speed 55, cost $2.5300, provider errors not recorded, ');
     expect(capture).toContain('provider errors n/a, ');
   });

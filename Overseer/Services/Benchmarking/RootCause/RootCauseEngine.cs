@@ -612,7 +612,7 @@ internal sealed class RootCauseContext
     /// <summary>
     /// Whether the pair's difference on a speed or cost axis is established, as its null hypothesis is
     /// rejected: a family test established after its adjustment; without a family test that was made, the
-    /// 95 % bootstrap interval of the per-question difference excluding zero.
+    /// 95% bootstrap interval of the per-question difference excluding zero.
     /// </summary>
     public bool DifferenceEstablished(RootCausePair pair, string axis, RootCausePairDecomposition difference)
     {
@@ -883,13 +883,14 @@ internal sealed class RootCauseContext
     public RootCauseRobustnessCheck ReplicatesCheck(params RootCauseModelInput[] models)
     {
         var single = models.Where(m => m.Evidence.RunsPerSuite < 2).ToList();
+        string who = single.Count == 2 && models.Length == 2 ? "Both models" : BenchmarkReportFormat.LetterList(single.Select(m => Name(m.Token)).ToList());
         return single.Count == 0
-            ? new RootCauseRobustnessCheck { Name = RootCauseHypotheses.Replicates, Status = RootCauseCheckStatuses.Passed, Detail = "Every model has at least two runs per suite." }
+            ? new RootCauseRobustnessCheck { Name = RootCauseHypotheses.Replicates, Status = RootCauseCheckStatuses.Passed, Detail = "Every model ran at least twice per suite." }
             : new RootCauseRobustnessCheck
             {
                 Name = RootCauseHypotheses.Replicates,
                 Status = RootCauseCheckStatuses.Failed,
-                Detail = BenchmarkReportFormat.LetterList(single.Select(m => Name(m.Token)).ToList()) + (single.Count == 1 ? " has" : " have") + " a single run per suite."
+                Detail = who + " ran only once per suite."
             };
     }
 
@@ -926,13 +927,17 @@ internal sealed class RootCauseContext
             return group.Count > 0 && rest.Count > 0 ? group.Average() - rest.Average() : null;
         }
 
-        if (!model.Evidence.Panel || Contrast(a => a.MemberAQuality) is not double ca || Contrast(a => a.MemberBQuality) is not double cb)
+        if (!model.Evidence.Panel)
         {
-            return new RootCauseRobustnessCheck { Name = RootCauseHypotheses.PanelAgreement, Status = RootCauseCheckStatuses.NotAssessable, Detail = "The model was not graded by a panel, or a group has no score from both members." };
+            return new RootCauseRobustnessCheck { Name = RootCauseHypotheses.PanelAgreement, Status = RootCauseCheckStatuses.NotAssessable, Detail = "The model was not graded by a panel." };
+        }
+        if (Contrast(a => a.MemberAQuality) is not double ca || Contrast(a => a.MemberBQuality) is not double cb)
+        {
+            return new RootCauseRobustnessCheck { Name = RootCauseHypotheses.PanelAgreement, Status = RootCauseCheckStatuses.NotAssessable, Detail = "A group has no score from both panel members." };
         }
         return Math.Sign(ca) == Math.Sign(cb) && ca != 0
-            ? new RootCauseRobustnessCheck { Name = RootCauseHypotheses.PanelAgreement, Status = RootCauseCheckStatuses.Passed, Detail = "Both panel members show the same contrast." }
-            : new RootCauseRobustnessCheck { Name = RootCauseHypotheses.PanelAgreement, Status = RootCauseCheckStatuses.Failed, Detail = "The panel members show different contrasts." };
+            ? new RootCauseRobustnessCheck { Name = RootCauseHypotheses.PanelAgreement, Status = RootCauseCheckStatuses.Passed, Detail = "Both panel members see the difference in the same direction." }
+            : new RootCauseRobustnessCheck { Name = RootCauseHypotheses.PanelAgreement, Status = RootCauseCheckStatuses.Failed, Detail = "The two panel members do not see the difference in the same direction." };
     }
 
     /// <summary>The within-model contrast has the same sign in every suite with at least five scored answers.</summary>
@@ -1085,10 +1090,16 @@ internal sealed class RootCauseContext
             return new RootCauseRobustnessCheck { Name = RootCauseHypotheses.LeaveOneOut, Status = RootCauseCheckStatuses.NotAssessable, Detail = "The share cannot be recomputed without a question." };
         }
 
-        bool holds = worst[index] > 0 && worst[index] >= worst.Max();
-        return holds
+        bool keepsSign = worst[index] > 0;
+        bool largest = worst[index] >= worst.Max();
+        return keepsSign && largest
             ? new RootCauseRobustnessCheck { Name = RootCauseHypotheses.LeaveOneOut, Status = RootCauseCheckStatuses.Passed, Detail = "The deciding share keeps its sign and stays the largest without the question that contributes most." }
-            : new RootCauseRobustnessCheck { Name = RootCauseHypotheses.LeaveOneOut, Status = RootCauseCheckStatuses.Failed, Detail = "Without one question the deciding share changes sign or another component is larger." };
+            : new RootCauseRobustnessCheck
+            {
+                Name = RootCauseHypotheses.LeaveOneOut,
+                Status = RootCauseCheckStatuses.Failed,
+                Detail = keepsSign ? "Without one question another component is larger." : "Without one question the deciding share changes sign."
+            };
     }
 
     private static RootCauseRobustnessCheck AcrossSuites(IReadOnlyList<RootCauseItem> items, double overall, Func<IReadOnlyList<int>, double> effect)
@@ -1272,6 +1283,9 @@ public static class RootCauseFacts
 
     private static readonly HashSet<string> EvidenceKeys = new(RootCauseEvidence.FactKeys, StringComparer.Ordinal);
 
+    /// <summary>The end of a pair difference's display when the difference itself may be chance.</summary>
+    private const string NotDecomposed = "; the difference may be chance, so it is not split into parts";
+
     /// <summary>
     /// Whether a fact stays off the Executive Summary's fact list: every <c>rca.*</c> fact, and every
     /// evidence fact only the Root Cause Analysis reads (the per-model facts of § A3, a per-model sheet's
@@ -1336,7 +1350,7 @@ public static class RootCauseFacts
         foreach (var pair in result.SpeedPairs)
         {
             string prefix = "rca.speed." + pair.First + "." + pair.Second + ".";
-            string notDecomposed = pair.NotEstablished ? ", not established, so not decomposed" : string.Empty;
+            string notDecomposed = pair.NotEstablished ? NotDecomposed : string.Empty;
             if ((pair.UnavailableReason != null && !pair.NotEstablished) || pair.Difference is not double total)
             {
                 facts.Unavailable(prefix + "total", pair.UnavailableReason ?? "Not computed.");
@@ -1350,7 +1364,7 @@ public static class RootCauseFacts
         foreach (var pair in result.CostPairs)
         {
             string prefix = "rca.cost." + pair.First + "." + pair.Second + ".";
-            string notDecomposed = pair.NotEstablished ? ", not established, so not decomposed" : string.Empty;
+            string notDecomposed = pair.NotEstablished ? NotDecomposed : string.Empty;
             if ((pair.UnavailableReason != null && !pair.NotEstablished) || pair.Difference is not double total)
             {
                 facts.Unavailable(prefix + "total", pair.UnavailableReason ?? "Not computed.");
@@ -1536,46 +1550,49 @@ public static class RootCauseFacts
 }
 
 /// <summary>
-/// The hypothesis labels: a noun phrase of at most <see cref="MaxWords"/> words naming what a rule measures
-/// and its models, as the models are named in fact displays (<c>critical errors of Model F against Model E</c>).
+/// The hypothesis labels: a noun phrase that reads inside a sentence, naming the models as fact displays
+/// name them. A pair hypothesis reads <c>Model F's critical errors, compared with Model E</c>; a within-model
+/// one <c>Model F's critical errors</c>. <see cref="MaxWords"/> caps the topic only, so a model name is never cut.
 /// </summary>
 public static class RootCauseLabels
 {
+    /// <summary>The most words of a label's topic; the model names around it are never cut.</summary>
     public const int MaxWords = 10;
 
     private static readonly IReadOnlyDictionary<string, string> Topics = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["HQ1"] = "answers without tools",
         ["HQ2"] = "critical errors",
-        ["HQ5"] = "the concise response style",
+        ["HQ4"] = "order that depends on the graders",
+        ["HQ5"] = "Completeness under the concise response style",
         ["HQ6"] = "guessing instead of abstaining",
         ["HQ7"] = "budget, truncation or output defects",
-        ["HQ8"] = "the lower thinking level",
-        ["HQ9"] = "verifier-cleared accuracy",
+        ["HQ8"] = "lower thinking level",
+        ["HQ9"] = "accuracy once the claim verifier's rulings are applied",
         ["HS1"] = "more model calls",
         ["HS2"] = "longer latency per call",
         ["HS3"] = "more output tokens",
         ["HS4"] = "slower decoding",
         ["HS5"] = "own waits and retries",
-        ["HS6"] = "a served-tier mismatch",
+        ["HS6"] = "answers served at another tier than requested",
         ["HC1"] = "higher token volume",
         ["HC2"] = "higher price per token",
         ["HC3"] = "reasoning tokens",
         ["HC4"] = "weak prompt caching",
-        ["HC5"] = "tool rounds in the input tokens",
+        ["HC5"] = "input tokens from tool rounds",
         ["WQ1"] = "answers without tools",
         ["WQ3"] = "critical errors",
         ["WQ4"] = "guessing instead of abstaining",
         ["WQ5"] = "budget, truncation or output defects",
         ["WQ6"] = "grader disagreement",
-        ["WS1"] = "time to first token",
-        ["WS2"] = "output generation",
-        ["WS3"] = "tool rounds in the time",
+        ["WS1"] = "wait before the first word (time to first token)",
+        ["WS2"] = "time spent generating output",
+        ["WS3"] = "time spent on tool rounds",
         ["WS4"] = "tool execution time",
         ["WS5"] = "own waits and retries",
         ["WC1"] = "output cost",
         ["WC2"] = "uncached input cost",
-        ["WC3"] = "tool rounds in the input cost"
+        ["WC3"] = "input cost from tool rounds"
     };
 
     /// <summary>The label of <paramref name="hypothesis"/>; <paramref name="name"/> names a model by token.</summary>
@@ -1586,50 +1603,44 @@ public static class RootCauseLabels
 
         string first = hypothesis.Models.Count > 0 ? name(hypothesis.Models[0]) : "the models";
         string? second = hypothesis.Models.Count > 1 ? name(hypothesis.Models[1]) : null;
-        string full;
-        string brief;
         switch (hypothesis.Id)
         {
             case "H0-Q":
             case "H0-S":
             case "H0-C":
                 string axis = hypothesis.Id == "H0-S" ? "speed" : hypothesis.Id == "H0-C" ? "cost" : "intelligence";
-                full = "no " + axis + " difference between " + first + " and " + (second ?? "the others");
-                brief = "no " + axis + " difference for " + first;
-                break;
+                return "no " + axis + " difference between " + first + " and " + (second ?? "the others");
             case "H0-W":
-                full = brief = "no contrast within " + first + "'s own questions";
-                break;
+                return "no difference within " + Possessive(first) + " own questions";
             case "HQ3":
-                full = brief = "shared failures on the same questions";
-                break;
-            case "HQ4":
-                full = "grader-dependent order of " + first + (second != null ? " and " + second : string.Empty);
-                brief = "grader-dependent order of " + first;
-                break;
+                return "shared failures on the same questions";
             case "WQ2":
                 const string LostIn = "Lost in ";
                 string group = hypothesis.ShortStatement.StartsWith(LostIn, StringComparison.Ordinal)
                     ? hypothesis.ShortStatement[LostIn.Length..]
                     : "one group";
-                full = brief = "points lost in " + group + " by " + first;
-                break;
+                return Possessive(first) + " " + Topic("points lost in " + group);
             default:
-                string topic = Topics.TryGetValue(hypothesis.Id, out var known)
+                string topic = Topic(Topics.TryGetValue(hypothesis.Id, out var known)
                     ? known
-                    : RootCauseHypotheses.LowerFirst(hypothesis.ShortStatement.Split(':')[0].Trim());
-                full = topic + " of " + first + (second != null && hypothesis.Kind == "pair" ? " against " + second : string.Empty);
-                brief = topic + " of " + first;
-                break;
+                    : RootCauseHypotheses.LowerFirst(hypothesis.ShortStatement.Split(':')[0].Trim()));
+                return Possessive(first) + " " + topic
+                       + (second != null && hypothesis.Kind == "pair" ? ", compared with " + second : string.Empty);
         }
-
-        string label = Words(full).Length <= MaxWords ? full : brief;
-        var words = Words(label);
-        return words.Length <= MaxWords ? label : string.Join(' ', words.Take(MaxWords));
     }
 
     /// <summary>The words of <paramref name="text"/>, split on whitespace.</summary>
     public static string[] Words(string text) => (text ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+
+    /// <summary>The topic, cut to <see cref="MaxWords"/> words.</summary>
+    private static string Topic(string topic)
+    {
+        var words = Words(topic);
+        return words.Length <= MaxWords ? topic : string.Join(' ', words.Take(MaxWords));
+    }
+
+    /// <summary><c>Model F's</c>: a named copy puts the model's name in place of <c>Model F</c> and keeps the <c>'s</c>.</summary>
+    private static string Possessive(string name) => name + "'s";
 }
 
 /// <summary>
@@ -1665,9 +1676,6 @@ public static class RootCauseProfiles
             .Select(m => m.Evidence.Scored.ToList())
             .Where(s => s.Count > 0)
             .Select(s => s.Count(a => a.NoTool) / (double)s.Count));
-        double? panelMedian = Median(models
-            .Where(m => m.Evidence.PanelAnswers is > 0)
-            .Select(m => m.Evidence.PanelDisagreements.GetValueOrDefault() / (double)m.Evidence.PanelAnswers!.Value));
         var means = models.GroupBy(m => m.Token, StringComparer.Ordinal).ToDictionary(g => g.Key, g => RootCauseContext.ItemMeans(g.First()), StringComparer.Ordinal);
 
         var profiles = new List<RootCauseModelProfile>();
@@ -1688,7 +1696,7 @@ public static class RootCauseProfiles
             if (Lowest(models, model) is { } lowest) weaknesses.Add(lowest);
             profile.Weaknesses.AddRange(weaknesses.Take(MaxWeaknesses));
 
-            profile.Flags.AddRange(Flags(models, model, refs, noToolMedian, panelMedian, means));
+            profile.Flags.AddRange(Flags(models, model, refs, noToolMedian, means));
             profiles.Add(profile);
         }
         return profiles;
@@ -1751,14 +1759,18 @@ public static class RootCauseProfiles
         if (single.Count == 0) return null;
 
         string cap = RootCauseGrades.WordWithGrade(RootCauseGrades.Moderate);
+        const string SecondRun = " until a second run of each suite is made.";
         if (single.Count == ctx.Models.Count)
         {
-            return (ctx.Models.Count == 1 ? "One run per suite" : "One run per suite for every model")
-                   + ": the replicates check fails for every hypothesis, so no cause can be graded above " + cap + ".";
+            return (ctx.Models.Count == 1
+                       ? "The model ran only once per suite, so this document cannot tell whether its results would repeat. "
+                       : "Each model ran only once per suite, so this document cannot tell whether its results would repeat. ")
+                   + "No cause can be graded above " + cap + SecondRun;
         }
-        return "One run per suite for " + BenchmarkReportFormat.LetterList(single.Select(m => ctx.Name(m.Token)).ToList())
-               + ": the replicates check fails for every hypothesis about " + (single.Count == 1 ? "it" : "them")
-               + ", so none of those can be graded above " + cap + ".";
+        bool one = single.Count == 1;
+        return BenchmarkReportFormat.LetterList(single.Select(m => ctx.Name(m.Token)).ToList())
+               + " ran only once per suite, so this document cannot tell whether " + (one ? "its" : "their") + " results would repeat. "
+               + "No cause involving " + (one ? "it" : "them") + " can be graded above " + cap + SecondRun;
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1778,15 +1790,15 @@ public static class RootCauseProfiles
             bool tied = values.Count(v => Math.Abs(v - own) <= 1e-9) > 1;
             int rank = above + 1;
             if (below == 0 || (rank == 1 && values.Count < 2) || (rank == 2 && values.Count < 3) || rank > 2) continue;
-            string place = (tied ? "joint " : string.Empty) + (rank == 1 ? "first" : "second") + " on " + DimensionNames[d];
+            string place = (tied ? "tied for " : string.Empty) + (rank == 1 ? "first" : "second");
             ranked.Add((rank, d, place));
         }
         return ranked.OrderBy(r => r.Rank).ThenBy(r => r.Dimension)
             .Select(r => new RootCauseProfileEntry
             {
                 Kind = Strength,
-                Text = r.Text + " of " + Inv(models.Count(m => DimensionOf(m, r.Dimension).HasValue)) + " models",
-                Short = r.Text
+                Text = r.Text + " of " + Inv(models.Count(m => DimensionOf(m, r.Dimension).HasValue)) + " models on " + DimensionNames[r.Dimension],
+                Short = r.Text + " on " + DimensionNames[r.Dimension]
             });
     }
 
@@ -1879,12 +1891,12 @@ public static class RootCauseProfiles
             var values = models.Select(m => DimensionOf(m, d)).Where(v => v.HasValue).Select(v => v!.Value).ToList();
             if (values.Count < 3 || values.Any(v => v < own - 1e-9) || !values.Any(v => v > own + 1e-9)) continue;
             bool tied = values.Count(v => Math.Abs(v - own) <= 1e-9) > 1;
-            string place = (tied ? "joint last" : "last") + " on " + DimensionNames[d];
+            string place = tied ? "tied for last" : "last";
             return new RootCauseProfileEntry
             {
                 Kind = LowestRank,
-                Text = place + " of " + Inv(values.Count) + " models",
-                Short = place
+                Text = place + " of " + Inv(values.Count) + " models on " + DimensionNames[d],
+                Short = place + " on " + DimensionNames[d]
             };
         }
         return null;
@@ -1892,12 +1904,13 @@ public static class RootCauseProfiles
 
     /// <summary>
     /// What stands out in the model's answers: critical errors; answers without tools at a rate above the
-    /// models' median; panel disagreement at twice the median rate or more; isolated misses; budget,
-    /// tool-limit or output defects.
+    /// models' median; panel disagreement that stands out against the other models
+    /// (<see cref="BenchmarkNotableFindings.DisagreementConcentration"/>, the notable findings' own rule);
+    /// isolated misses; budget, tool-limit or output defects. Each display is a noun phrase.
     /// </summary>
     private static IEnumerable<RootCauseProfileEntry> Flags(
         IReadOnlyList<RootCauseModelInput> models, RootCauseModelInput model, IReadOnlyDictionary<string, RootCauseQuestionRef> refs,
-        double? noToolMedian, double? panelMedian, IReadOnlyDictionary<string, Dictionary<string, double>> means)
+        double? noToolMedian, IReadOnlyDictionary<string, Dictionary<string, double>> means)
     {
         var scored = model.Evidence.Scored.ToList();
         List<RootCauseQuestionRef> RefsOf(IEnumerable<RootCauseAnswerRecord> answers)
@@ -1926,25 +1939,20 @@ public static class RootCauseProfiles
             yield return new RootCauseProfileEntry
             {
                 Kind = NoTool,
-                Text = count + Listed(listed) + ", above the models' median of " + RootCauseHypotheses.Pct(median),
+                Text = count + Listed(listed) + ", a higher share than the models' median of " + RootCauseHypotheses.Pct(median),
                 Short = count,
                 Questions = listed.Select(r => r.Reference).ToList()
             };
         }
 
-        if (model.Evidence.PanelAnswers is > 0 && panelMedian is double panel && panel > 0)
+        if (PanelDisagreementOf(models, model) is { } panel)
         {
-            double rate = model.Evidence.PanelDisagreements.GetValueOrDefault() / (double)model.Evidence.PanelAnswers.Value;
-            if (rate >= 2 * panel)
+            yield return new RootCauseProfileEntry
             {
-                yield return new RootCauseProfileEntry
-                {
-                    Kind = PanelDisagreement,
-                    Text = "panel disagreement on " + RootCauseHypotheses.Pct(rate) + " of the answers both members graded, at least twice the models' median of "
-                           + RootCauseHypotheses.Pct(panel),
-                    Short = "panel disagreement " + RootCauseHypotheses.Pct(rate)
-                };
-            }
+                Kind = PanelDisagreement,
+                Text = BenchmarkNotableFindings.DisagreementPhrase(panel.Rate, panel.OthersMedian),
+                Short = "panel disagreement " + RootCauseHypotheses.Pct(panel.Rate)
+            };
         }
 
         if (models.Count >= BenchmarkComparisonModelProfile.MatrixMinModels && means.TryGetValue(model.Token, out var own))
@@ -1968,7 +1976,7 @@ public static class RootCauseProfiles
                 yield return new RootCauseProfileEntry
                 {
                     Kind = IsolatedMisses,
-                    Text = count + Listed(listed) + ", scored 50 or less where the other models' median is 75 or more",
+                    Text = count + Listed(listed) + ", questions where it scored 50 or less while the other models' median is 75 or more",
                     Short = count,
                     Questions = listed.Select(r => r.Reference).ToList()
                 };
@@ -2034,6 +2042,16 @@ public static class RootCauseProfiles
     // ---------------------------------------------------------------------------------------------
     // Helpers
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// The model's panel disagreement when it stands out against the other analyzed models, by the notable
+    /// findings' rule (<see cref="BenchmarkNotableFindings.DisagreementConcentration"/>): its share of the answers
+    /// both panel members graded, and the other models' median share. Null otherwise, or without a panel.
+    /// </summary>
+    internal static (double Rate, double OthersMedian)? PanelDisagreementOf(IReadOnlyList<RootCauseModelInput> models, RootCauseModelInput model)
+        => BenchmarkNotableFindings.DisagreementConcentration(
+            model.Evidence.PanelDisagreements, model.Evidence.PanelAnswers,
+            models.Where(m => m.Token != model.Token).Select(m => (m.Evidence.PanelDisagreements, m.Evidence.PanelAnswers)));
 
     private static double? DimensionOf(RootCauseModelInput model, int dimension)
         => dimension < model.Dimensions.Count ? model.Dimensions[dimension] : null;

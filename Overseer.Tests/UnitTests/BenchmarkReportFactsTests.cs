@@ -156,12 +156,12 @@ public class BenchmarkReportFactsTests
             SimpleRun(1, "OpenAI"), SimpleRun(2, "Google"), SimpleRun(3, "Anthropic"), SimpleRun(4, "xAI")));
 
         var overlap = FactOf(sheet, "quality.intervalOverlap");
-        Assert.Equal("its 95 % interval overlaps those of Models A and B", overlap.Display);
+        Assert.Equal("its 95% interval overlaps those of Models A and B", overlap.Display);
         Assert.DoesNotContain("significan", overlap.Display, StringComparison.OrdinalIgnoreCase);
 
-        Assert.Equal("its 95 % interval overlaps no other model's", BenchmarkReportFacts.OverlapSentence(Array.Empty<string>()));
-        Assert.Equal("its 95 % interval overlaps that of Model B", BenchmarkReportFacts.OverlapSentence(new[] { "B" }));
-        Assert.Equal("its 95 % interval overlaps those of Models A, B and C", BenchmarkReportFacts.OverlapSentence(new[] { "A", "B", "C" }));
+        Assert.Equal("its 95% interval overlaps no other model's", BenchmarkReportFacts.OverlapSentence(Array.Empty<string>()));
+        Assert.Equal("its 95% interval overlaps that of Model B", BenchmarkReportFacts.OverlapSentence(new[] { "B" }));
+        Assert.Equal("its 95% interval overlaps those of Models A, B and C", BenchmarkReportFacts.OverlapSentence(new[] { "A", "B", "C" }));
     }
 
     [Fact]
@@ -865,7 +865,7 @@ public class BenchmarkReportFactsTests
         Assert.Equal("1 run", FactOf(sheet, "peer.A.runs").Display);
         var overlapA = FactOf(sheet, "peer.A.intervalOverlap");
         Assert.True(overlapA.Value!.GetValue<bool>());
-        Assert.Equal("its 95 % interval overlaps the subject's", overlapA.Display);
+        Assert.Equal("its 95% interval overlaps the subject's", overlapA.Display);
 
         // Model B is degraded on speed and cost: those figures carry its explanation; quality stays.
         Assert.Equal("3rd of 4", FactOf(sheet, "peer.B.quality.rank").Display);
@@ -877,7 +877,7 @@ public class BenchmarkReportFactsTests
         }
         var overlapB = FactOf(sheet, "peer.B.intervalOverlap");
         Assert.False(overlapB.Value!.GetValue<bool>());
-        Assert.Equal("its 95 % interval does not overlap the subject's", overlapB.Display);
+        Assert.Equal("its 95% interval does not overlap the subject's", overlapB.Display);
 
         // A group peer counts its runs; without an interval its overlap cannot be stated.
         Assert.Equal("3 runs", FactOf(sheet, "peer.C.runs").Display);
@@ -1507,7 +1507,7 @@ public class BenchmarkReportFactsTests
 
     /// <summary>
     /// A recorded pool of two runs, one of them replaced: 12 provider errors in 1,480 valid attempts
-    /// (0.81 %, about 1 in 123), 3 unattributed, 5 our-side failures, 3 re-runs of which 2 for provider errors.
+    /// (0.81%, about 1 in 123), 3 unattributed, 5 our-side failures, 3 re-runs of which 2 for provider errors.
     /// </summary>
     internal static ProviderAvailabilitySummary RecordedAvailability() => new()
     {
@@ -1562,11 +1562,11 @@ public class BenchmarkReportFactsTests
 
         Assert.Equal("1,480 attempts", FactOf(sheet, "availability.attempts").Display);
         Assert.Equal("12 of 1,480 attempts", FactOf(sheet, "availability.providerErrors").Display);
-        Assert.Equal("0.81 %", FactOf(sheet, "availability.providerErrorRate").Display);
-        Assert.Equal("0.46 %", FactOf(sheet, "availability.providerErrorRateCi95Low").Display);
-        Assert.Equal("1.4 %", FactOf(sheet, "availability.providerErrorRateCi95High").Display);
+        Assert.Equal("0.81%", FactOf(sheet, "availability.providerErrorRate").Display);
+        Assert.Equal("0.46%", FactOf(sheet, "availability.providerErrorRateCi95Low").Display);
+        Assert.Equal("1.4%", FactOf(sheet, "availability.providerErrorRateCi95High").Display);
         Assert.Equal("3 of 1,480 attempts", FactOf(sheet, "availability.unattributedErrors").Display);
-        Assert.Equal("1.0 %", FactOf(sheet, "availability.inclusiveRate").Display);
+        Assert.Equal("1.0%", FactOf(sheet, "availability.inclusiveRate").Display);
         Assert.Equal("7", FactOf(sheet, "availability.overloaded").Display);
         Assert.Equal("0", FactOf(sheet, "availability.timeouts").Display);
         Assert.Equal("5", FactOf(sheet, "availability.ourSideFailures").Display);
@@ -1646,7 +1646,7 @@ public class BenchmarkReportFactsTests
         });
 
         var zero = SheetOf(RecordedAvailability() with { ProviderErrors = 0, ProviderErrorRate = 0.0, ProviderErrorRateLow = 0.0, ProviderErrorRateHigh = 0.0026 });
-        Assert.Equal("0 %", FactOf(zero, "availability.providerErrorRate").Display);
+        Assert.Equal("0%", FactOf(zero, "availability.providerErrorRate").Display);
         Assert.False(FactOf(zero, "availability.oneIn").Available);
         Assert.Equal(BenchmarkReportFacts.OneInReason, FactOf(zero, "availability.oneIn").UnavailableReason);
 

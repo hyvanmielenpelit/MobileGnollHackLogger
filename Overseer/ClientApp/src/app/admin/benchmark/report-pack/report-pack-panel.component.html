@@ -3,24 +3,23 @@
 
   A resizable sidebar that starts a report pack (the document scope, the models, the documents of
   this comparison with what the next job writes, the charts, the writer and the estimate), and a main
-  area with the job's progress, one row per document, and its log and diagnostics. The same-provider
-  confirmation and the layout preview are nested in the wizard's dialog and stop their own close and
-  cancel events.
+  area with the job's progress, one row per document, and its log and diagnostics. The frame has no
+  header: the wizard's header names the comparison, and where the reports are kept is the info tip
+  beside New report pack. The same-provider confirmation and the layout preview are nested in the
+  wizard's dialog and stop their own close and cancel events.
 -->
 <app-run-report-frame layout="sidebar" sidebarLabel="New report pack" mainLabel="Report pack progress"
+                      [showHeader]="false"
                       [sidebarWidth]="sidebarWidth" (sidebarWidthChange)="onSidebarWidthChange($event)"
                       [busy]="writersLoading">
-  <div runReportHeader class="rp-identity">
-    <h4 class="gh-section-title rp-heading" [id]="headingId" tabindex="-1">Write reports</h4>
-    <p class="rp-subtitle">{{ subtitle }}</p>
-    <p class="form-hint rp-lead">{{ leadText }}</p>
-  </div>
-
   <!-- ===================================================================================
        SIDEBAR: NEW REPORT PACK
        =================================================================================== -->
   <div runReportSidebar class="rp-new">
-    <h5 class="rp-subsection-title rp-new-heading" [id]="idPrefix + '-new-heading'">New report pack</h5>
+    <div class="rp-new-heading-row">
+      <h5 class="rp-subsection-title rp-new-heading" [id]="idPrefix + '-new-heading'">New report pack</h5>
+      <app-info-tip [tipId]="idPrefix + '-lead-tip'" subject="Where these reports are kept">{{ leadText }}</app-info-tip>
+    </div>
 
     <div class="rp-scope">
       <div class="gh-tabs gh-tabs-segmented rp-scope-tabs" role="tablist" aria-label="Document scope">
@@ -225,7 +224,7 @@
             <p class="gh-estimate-note">{{ estimateSubjectLine }}</p>
           }
           @case ('loading') {
-            <p class="gh-estimate-note">Estimating…</p>
+            <p class="gh-estimate-note"><app-loading-indicator text="Estimating…" [revealDelay]="false"></app-loading-indicator></p>
           }
           @case ('failed') {
             <p class="gh-estimate-note">{{ previewError }}</p>
@@ -287,19 +286,16 @@
         Generate
       </button>
     </div>
-    <!-- The charts are drawn here, as each document finishes; none are drawn without chart storage. -->
-    @if (!chartStorageMissing) {
-      <p class="rp-note rp-keep-open">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
-        <span>{{ keepOpenText }}</span>
-      </p>
-    }
     @if (layoutPreviewGlobalReason; as reason) {
       <p class="rp-note rp-preview-layout-reason" [id]="idPrefix + '-preview-layout-reason'">{{ reason }}</p>
     }
+    <!-- Empty most of the time; .rp-note:empty takes it out of the flow, never out of the tree. -->
     <p class="rp-note rp-layout-preview-note" role="status">{{ layoutPreviewNote }}</p>
+    <!-- Visually hidden only where the same fact is already in view (the job, or Estimating…); Generate
+         stays described by it either way. -->
     @if (generateBlockedReason !== null) {
-      <p class="rp-note" [id]="idPrefix + '-generate-blocked'">{{ generateBlockedReason }}</p>
+      <p class="rp-note rp-generate-blocked" [class.visually-hidden]="generateBlockedReasonShownElsewhere"
+         [id]="idPrefix + '-generate-blocked'">{{ generateBlockedReason }}</p>
     }
 
     @if (startError) {
@@ -319,11 +315,25 @@
     <!-- One polite live line, in place before a job exists; it changes with the job's phase only. -->
     <p class="rp-job-status" role="status" aria-live="polite">{{ jobStatusLine }}</p>
 
-    @if (!activeJobId) {
+    <!-- From Generate until the job's first reading: the start request checks the comparison, the
+         writer and the cost on the server before it answers. -->
+    @if (isStarting) {
+      <div class="rp-starting">
+        <app-loading-indicator size="block" [revealDelay]="false" text="Starting the report pack…"></app-loading-indicator>
+        <p class="rp-note rp-starting-detail">Checking the comparison, the report writer and the cost, then queuing the documents. This can take several seconds.</p>
+      </div>
+    } @else if (!activeJobId) {
       <p class="form-hint rp-idle-note">No report pack is being written. The documents written for this comparison are listed under New report pack, and in step 4, Documents.</p>
     } @else {
       <section class="rp-job" [class.is-finished]="isJobFinished" [attr.aria-labelledby]="idPrefix + '-job-heading'">
         <h6 [id]="idPrefix + '-job-heading'" class="rp-job-title">{{ isJobFinished ? 'Last report pack' : 'Report pack in progress' }}</h6>
+        <!-- The charts are drawn by this browser as each document finishes; none without chart storage. -->
+        @if (showKeepOpenNote) {
+          <p class="rp-note rp-keep-open">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span>{{ keepOpenText }}</span>
+          </p>
+        }
         @if (isJobFinished) {
           <div class="rp-job-summary-row">
             <p class="rp-job-summary">{{ jobSummary }}</p>

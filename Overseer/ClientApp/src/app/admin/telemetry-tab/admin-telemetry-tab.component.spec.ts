@@ -430,7 +430,7 @@ describe('AdminTelemetryTabComponent', () => {
 
       const errors = (card: HTMLElement) => card.querySelector('.tl-metric-errors')?.textContent?.replace(/\s+/g, ' ').trim();
       const [chat, title, benchmark] = cards();
-      expect(errors(chat)).toContain('0.50 %');
+      expect(errors(chat)).toContain('0.50%');
       expect(errors(chat)).toContain('1 of 200 attempts');
       expect(errors(chat)).toContain('about 1 in 200');
       expect(errors(title)).toContain('No attempts');
@@ -492,7 +492,7 @@ describe('AdminTelemetryTabComponent', () => {
       });
       fixture.detectChanges();
 
-      expect(rate()).toContain('0.81 %');
+      expect(rate()).toContain('0.81%');
       expect(host().querySelector('.telemetry-availability-count')?.textContent).toContain('12 of 1,480 attempts');
       expect(termValues('.telemetry-availability-card')).toContainEqual(['Title generation', '2 of 140 attempts']);
       expect(host().querySelector('.telemetry-error-classes-card')).not.toBeNull();
@@ -515,11 +515,11 @@ describe('AdminTelemetryTabComponent', () => {
         ['Server errors', '2'],
         ['Timeouts', '1'],
         ['Stream failures', '0'],
-        ['Unattributed', '4 rate limited 3 · transport 1 · 2.0 % with them'],
+        ['Unattributed', '4 rate limited 3 · transport 1 · 2.0% with them'],
         ['Our side', '5 excluded from the rate']
       ]);
       const notes = Array.from(host().querySelectorAll(`${card} .telemetry-dd-note`)).map(n => n.textContent?.trim());
-      expect(notes).toEqual(['rate limited 3 · transport 1 · 2.0 % with them', 'excluded from the rate']);
+      expect(notes).toEqual(['rate limited 3 · transport 1 · 2.0% with them', 'excluded from the rate']);
     });
 
     it('shows the estimated cost with the unpriced requests and when cost recording began', () => {

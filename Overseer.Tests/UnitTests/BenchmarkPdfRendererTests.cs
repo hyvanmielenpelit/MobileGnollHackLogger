@@ -708,9 +708,9 @@ public class BenchmarkPdfRendererTests
     // --- The last section ----------------------------------------------------------------------------
 
     [Fact]
-    public void TheLayoutVersion_IsTen()
+    public void TheLayoutVersion_IsEleven()
     {
-        Assert.Equal(10, BenchmarkPdfRenderer.LayoutVersion);
+        Assert.Equal(11, BenchmarkPdfRenderer.LayoutVersion);
     }
 
     // --- Callouts ----------------------------------------------------------------------------------

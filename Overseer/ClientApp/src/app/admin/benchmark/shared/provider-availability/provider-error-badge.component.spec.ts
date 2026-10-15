@@ -37,7 +37,7 @@ describe('ProviderErrorBadgeComponent', () => {
 
   it('reads the rate and the re-runs, with the full sentence in its tooltip', () => {
     const el = render(TROUBLED);
-    expect(text(el.querySelector('.peb-errors'))).toBe('Provider errors 0.81 %');
+    expect(text(el.querySelector('.peb-errors'))).toBe('Provider errors 0.81%');
     expect(text(el.querySelector('.peb-reruns'))).toBe('2 re-runs');
     expect(el.querySelector('.peb-sep [aria-hidden="true"]')).not.toBeNull();
     const tip = el.querySelector('.gh-tooltip') as HTMLElement;
@@ -47,7 +47,7 @@ describe('ProviderErrorBadgeComponent', () => {
 
   it('reads the rate alone without re-runs, and the re-runs alone without provider errors', () => {
     let el = render({ ...TROUBLED, rerunsNeeded: 0, providerReruns: 0 });
-    expect(text(el.querySelector('.peb'))).toBe('Provider errors 0.81 %');
+    expect(text(el.querySelector('.peb'))).toBe('Provider errors 0.81%');
     expect(el.querySelector('.peb-sep')).toBeNull();
 
     el = render({ ...TROUBLED, providerErrors: 0, rerunsNeeded: 1, providerReruns: 0 });

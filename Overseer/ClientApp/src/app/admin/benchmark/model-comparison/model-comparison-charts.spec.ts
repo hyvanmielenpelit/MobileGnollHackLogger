@@ -3935,8 +3935,8 @@ describe('provider availability', () => {
     expect(availabilityGapText(ENTRIES[3])).toBe('not recorded');
     expect(availabilityGapText(makeEntry({ key: 'E' }))).toBe('not recorded');
     expect(availabilityGapText(makeEntry({ key: 'F', availability: { ...UNRECORDED, recorded: true } }))).toBe('no valid attempts');
-    expect(availabilityText(ENTRIES[0], 'strict')).toBe('0.81 % (12 of 1,480 attempts; 95 % CI 0.44–1.5 %)');
-    expect(availabilityText(ENTRIES[2], 'strict')).toBe('2.5 % (1 of 40 attempts; 95 % CI 0.40–13 %; few attempts)');
+    expect(availabilityText(ENTRIES[0], 'strict')).toBe('0.81% (12 of 1,480 attempts; 95% CI 0.44–1.5%)');
+    expect(availabilityText(ENTRIES[2], 'strict')).toBe('2.5% (1 of 40 attempts; 95% CI 0.40–13%; few attempts)');
   });
 
   it('marks a model only when the lower bound of its provider error rate exceeds 2 %', () => {
@@ -4012,9 +4012,9 @@ describe('provider availability', () => {
   it('gives every model a sentence in the text alternative, and notes the models it cannot draw', () => {
     const spec = dotPlot();
     expect(spec.summary).toEqual([
-      'A: 0.81 % (12 of 1,480 attempts; 95 % CI 0.44–1.5 %)',
-      'B: 4.1 % (60 of 1,480 attempts; 95 % CI 3.1–5.2 %)',
-      'C: 2.5 % (1 of 40 attempts; 95 % CI 0.40–13 %; few attempts)',
+      'A: 0.81% (12 of 1,480 attempts; 95% CI 0.44–1.5%)',
+      'B: 4.1% (60 of 1,480 attempts; 95% CI 3.1–5.2%)',
+      'C: 2.5% (1 of 40 attempts; 95% CI 0.40–13%; few attempts)',
       'D: not recorded',
     ]);
     expect(spec.chrome.notes.map((note) => note.text)).toContain('Not recorded for D: its runs predate the provider attempt ledger.');
@@ -4042,9 +4042,9 @@ describe('provider availability', () => {
       const spec = build(ENTRIES, options(styleWith({ markers: 'on' })));
       expect(spec.plugins.map((plugin) => plugin.id), spec.id).toContain(availabilityMarkerPlugin.id);
       const marker = (spec.config.options!.plugins as unknown as Record<string, AvailabilityMarkerPluginOptions>)[availabilityMarkerPlugin.id];
-      expect(marker.marks, spec.id).toEqual([{ datasetIndex: 1, text: '4.1 % provider errors' }]);
+      expect(marker.marks, spec.id).toEqual([{ datasetIndex: 1, text: '4.1% provider errors' }]);
       expect(spec.chrome.notes.map((note) => note.text), spec.id).toContain(AVAILABILITY_MARKER_NOTE);
-      expect(spec.summary, spec.id).toContain('Provider errors above 2 %: B, 4.1 % provider errors');
+      expect(spec.summary, spec.id).toContain('Provider errors above 2 %: B, 4.1% provider errors');
     }
   });
 

@@ -70,6 +70,22 @@ public static class RootCauseGrades
     /// <summary><c>Probable (Moderate)</c>: the plain word with the grade; <c>Unknown</c> for none.</summary>
     public static string WordWithGrade(string? grade)
         => Rank(grade) < 0 ? Word(grade) : Word(grade) + " (" + Display(grade) + ")";
+
+    /// <summary>
+    /// A null hypothesis' grade in plain words, the grade in parentheses: <c>Rejected — a real difference (Not supported)</c>
+    /// when a test rejected it, <c>Stands — may be chance (Moderate)</c> otherwise; <c>Unknown</c> for none.
+    /// </summary>
+    public static string NullWordWithGrade(string? grade)
+        => Rank(grade) < 0 ? Word(grade)
+            : grade == NotSupported ? "Rejected — a real difference (" + Display(grade) + ")"
+            : "Stands — may be chance (" + Display(grade) + ")";
+
+    /// <summary>A hypothesis' grade as documents print it: <see cref="NullWordWithGrade"/> for a null, else <see cref="WordWithGrade"/>.</summary>
+    public static string HypothesisWordWithGrade(RootCauseHypothesis hypothesis)
+    {
+        ArgumentNullException.ThrowIfNull(hypothesis);
+        return hypothesis.Kind == "null" ? NullWordWithGrade(hypothesis.Grade) : WordWithGrade(hypothesis.Grade);
+    }
 }
 
 /// <summary>The status of one axis (§ A2): the <c>rca.axis.&lt;axis&gt;.status</c> fact's value.</summary>
@@ -749,7 +765,7 @@ public sealed class RootCauseComponent
     /// <summary>Its share of the difference; null when the difference is zero.</summary>
     public double? Share { get; set; }
 
-    /// <summary>The 95 % bootstrap percentile interval of the share over questions.</summary>
+    /// <summary>The 95% bootstrap percentile interval of the share over questions.</summary>
     public double? ShareLower { get; set; }
 
     public double? ShareUpper { get; set; }

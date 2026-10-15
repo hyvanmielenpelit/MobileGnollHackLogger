@@ -129,7 +129,7 @@ public class BenchmarkChatConsistencyReportFactsTests
             },
             new ChatConsistencyFamilyResult
             {
-                Id = "shiftFunction", Name = "Shift function", Note = "Pointwise 95 % intervals, not adjusted across deciles; descriptive.", Results = new[]
+                Id = "shiftFunction", Name = "Shift function", Note = "Pointwise 95% intervals, not adjusted across deciles; descriptive.", Results = new[]
                 {
                     new ChatConsistencySecondaryResult { Id = "P2.d10", Name = "Time to first answer text, decile 0.1", Unit = "log ratio", BaselineValue = -0.2, ComparisonValue = -0.1, Estimate = 0.1, Ci95 = new ChatConsistencyInterval(0.01, 0.2) }
                 }
@@ -302,7 +302,7 @@ public class BenchmarkChatConsistencyReportFactsTests
     [Theory]
     [InlineData("verdict.overall", "Overall verdict on the chat")]
     [InlineData("scope.hours", "Hours the comparison holds for")]
-    [InlineData("endpoint.P1.ci95", "Quality (P1): 95 % interval")]
+    [InlineData("endpoint.P1.ci95", "Quality (P1): 95% interval")]
     [InlineData("endpoint.P2.percent", "Time to first answer text (P2): change in percent")]
     [InlineData("protocol.margin.P5", "Equivalence margin of cost per question (P5)")]
     [InlineData("period.baseline.start", "Baseline period: start")]
@@ -342,7 +342,7 @@ public class BenchmarkChatConsistencyReportFactsTests
         Assert.Equal("weekdays 04–12 UTC", Fact(sheet, "scope.hours").Display);
         Assert.Equal("degraded (Indicated)", Fact(sheet, "verdict.quality").Display);
         Assert.False(Fact(sheet, "serving.timeOfDayAssessable").Value!.GetValue<bool>());
-        Assert.Equal("12.5\u00A0%", Fact(sheet, "scope.excludedShare").Display);
+        Assert.Equal("12.5%", Fact(sheet, "scope.excludedShare").Display);
     }
 
     [Fact]
@@ -355,9 +355,9 @@ public class BenchmarkChatConsistencyReportFactsTests
         Assert.Equal("±2.5\u00A0index points", Fact(sheet, "endpoint.P1.mde").Display);
         Assert.Equal("0.016", Fact(sheet, "endpoint.P1.adjustedP").Display);
         Assert.DoesNotContain(sheet.Facts, f => f.Key == "endpoint.P1.percent");
-        Assert.Equal("+2.0\u00A0%", Fact(sheet, "endpoint.P2.percent").Display);
-        Assert.Equal("+2.0\u00A0%", Fact(sheet, "endpoint.P2.estimate").Display);
-        Assert.Equal("±8.3\u00A0%", Fact(sheet, "endpoint.P2.mde").Display);
+        Assert.Equal("+2.0%", Fact(sheet, "endpoint.P2.percent").Display);
+        Assert.Equal("+2.0%", Fact(sheet, "endpoint.P2.estimate").Display);
+        Assert.Equal("±8.3%", Fact(sheet, "endpoint.P2.mde").Display);
         Assert.DoesNotContain(sheet.Facts, f => f.Display.Contains("log ratio", StringComparison.Ordinal));
         Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("endpoint.", StringComparison.Ordinal) && f.Display.Contains('-'));
 
@@ -868,7 +868,7 @@ public class BenchmarkChatConsistencyReportFactsTests
 
         Assert.Equal("weekdays 04–08 UTC", Fact(sheet, "period.baseline.hours").Display);
         Assert.Equal("weekdays 12–16 UTC", Fact(sheet, "period.comparison.hours").Display);
-        Assert.Equal("82.1 (95 % interval 79.6–84.5, question sampling only)", Fact(sheet, "level.baseline.overallIndex").Display);
+        Assert.Equal("82.1 (95% interval 79.6–84.5, question sampling only)", Fact(sheet, "level.baseline.overallIndex").Display);
         Assert.Equal("mean score 81.0 points", Fact(sheet, "level.baseline.quality").Display);
         Assert.Equal("median 39.3 s", Fact(sheet, "level.baseline.timeToFirstAnswerText").Display);
         Assert.Equal("median 61.2 tokens/s", Fact(sheet, "level.baseline.streamingRate").Display);
@@ -1060,7 +1060,7 @@ public class BenchmarkChatConsistencyReportFactsTests
         Assert.Equal("claude-haiku-5-5 in both periods (203 and 210 calls)", Fact(sheet, "identity.servedModels").Display);
         Assert.Equal("standard in both periods", Fact(sheet, "serving.speeds").Display);
         Assert.Equal("0 retry attempts in both periods", Fact(sheet, "ownWaits.retries").Display);
-        Assert.Equal("0.0 % in both periods", Fact(sheet, "ownWaits.share").Display);
+        Assert.Equal("0.0% in both periods", Fact(sheet, "ownWaits.share").Display);
         foreach (var (combined, baseline, comparison) in BenchmarkChatConsistencyReportFacts.CombinedPairs)
         {
             Assert.True(BenchmarkReportFactLabels.TryLabel(combined, out _), combined + " needs a label.");
@@ -1142,7 +1142,7 @@ public class BenchmarkChatConsistencyReportFactsTests
     {
         var sheet = BenchmarkChatConsistencyReportFacts.Build(V2Result(), BenchmarkReportAudience.ExecutiveSummary);
 
-        Assert.Equal("0.81 % (12 of 1,480 attempts; 95 % CI 0.46–1.4 %)", Fact(sheet, "availability.baseline.providerErrorRate").Display);
+        Assert.Equal("0.81% (12 of 1,480 attempts; 95% CI 0.46–1.4%)", Fact(sheet, "availability.baseline.providerErrorRate").Display);
         Assert.Equal("12 of 1,480 attempts", Fact(sheet, "availability.baseline.providerErrors").Display);
         Assert.Equal("1,480 valid attempts", Fact(sheet, "availability.baseline.attempts").Display);
         Assert.Equal("3 of 1,480 attempts", Fact(sheet, "availability.baseline.unattributedErrors").Display);
