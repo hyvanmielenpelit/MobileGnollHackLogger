@@ -168,8 +168,8 @@ In the order to make them: the Overseer chat first (C), then the benchmark (B), 
 
 | # | Run | Purpose | Models | Settles | Estimate |
 |---|---|---|---|---|---|
-| 1 | Replicate (recommended) | M, model selection | Orion Max | WS3.1: tool rounds in the time of Orion Max | not estimated |
-| 2 | Thinking-level pair (optional) | M, model selection | Orion Max and Orion Max (medium) | WS2.1: output generation of Orion Max | not estimated |
+| 1 | Replicate (recommended) | M, model selection | Orion Max | WS3.1 | not estimated |
+| 2 | Thinking-level pair (optional) | M, model selection | Orion Max and Orion Max (medium) | WS2.1 | not estimated |
 
 ### Checks
 
@@ -342,7 +342,7 @@ No synthesis findings were recorded.
 - **WS3.1: tool rounds in the time of Orion Max** (Orion Max; locus model / chat; Probable (Moderate))
   - *For:* Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
   - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Orion Max has a single run per suite.
+  - *Grade reasons:* see Robustness.
   - *Refuted if:* The ρ interval includes zero.
   - *Robustness:* Replicates failed (Orion Max has a single run per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
 - **WS2.1: output generation of Orion Max** (Orion Max; locus model; Ruled out (Not supported))
@@ -357,7 +357,7 @@ No synthesis findings were recorded.
 - **WC1.1: output cost of Orion Max** (Orion Max; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 69 % of Orion Max's cost per question.
   - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Orion Max has a single run per suite.
+  - *Grade reasons:* see Robustness.
   - *Refuted if:* Another component is larger.
   - *Robustness:* Replicates failed (Orion Max has a single run per suite).
 
@@ -1657,25 +1657,25 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "1 % of the cost per question",
+      "display": "1 %",
       "key": "rca.within.subject.cost.cacheRead.share",
       "value": 0.008920606601248885
     },
     {
       "available": true,
-      "display": "0 % of the cost per question",
+      "display": "0 %",
       "key": "rca.within.subject.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "48 % of the cost per question",
+      "display": "48 %",
       "key": "rca.within.subject.cost.output.share",
       "value": 0.47814451382694023
     },
     {
       "available": true,
-      "display": "21 % of the cost per question",
+      "display": "21 %",
       "key": "rca.within.subject.cost.reasoning.share",
       "value": 0.21409455842997321
     },
@@ -1687,7 +1687,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "30 % of the cost per question",
+      "display": "30 %",
       "key": "rca.within.subject.cost.uncachedInput.share",
       "value": 0.2988403211418377
     },
@@ -1699,7 +1699,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "3 % of the time per question",
+      "display": "3 %",
       "key": "rca.within.subject.time.other.share",
       "value": 0.03340757238307349
     },
@@ -1711,7 +1711,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 % of the time per question",
+      "display": "59 %",
       "key": "rca.within.subject.time.outputGeneration.share",
       "value": 0.5863028953229398
     },
@@ -1723,7 +1723,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of the time per question",
+      "display": "0 %",
       "key": "rca.within.subject.time.ownWaits.share",
       "value": 0
     },
@@ -1735,7 +1735,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "17 % of the time per question",
+      "display": "17 %",
       "key": "rca.within.subject.time.toolExecution.share",
       "value": 0.16703786191536749
     },
@@ -1753,7 +1753,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "21 % of the time per question",
+      "display": "21 %",
       "key": "rca.within.subject.time.ttft.share",
       "value": 0.21325167037861914
     },
@@ -1901,7 +1901,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "No response-style conflict",
+      "display": "no response-style conflict",
       "key": "style.responseStyleConflict",
       "value": false
     },
@@ -2381,7 +2381,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "unit": "usd"
       }
     ],
-    "engineVersion": 2,
+    "engineVersion": 3,
     "evidence": [
       {
         "atRisk": [
@@ -2585,6 +2585,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "axis": "speed",
         "confounds": [],
+        "explains": 5265,
         "factKeys": [
           "rca.within.subject.time.outputGeneration.share",
           "tokens.reasoningShare"
@@ -2633,6 +2634,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "against": [],
         "axis": "cost",
         "confounds": [],
+        "explains": 0.0097,
         "factKeys": [
           "cost.component.output.perQuestion",
           "cost.component.reasoning.perQuestion"

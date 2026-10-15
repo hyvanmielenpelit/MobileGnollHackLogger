@@ -38,7 +38,7 @@ const FLAGGED: TestModel[] = [
     <div class="outer" (keydown)="outerKeys.push($any($event).key)">
       <label id="pickerALabel">Model A</label>
       <app-model-picker class="picker-a marker" labelledBy="pickerALabel" describedBy="pickerAHint"
-                        [noneLabel]="noneLabel" [options]="optionsA" [selectedKey]="selectedA"
+                        [noneLabel]="noneLabel" [noneMuted]="noneMutedA" [options]="optionsA" [selectedKey]="selectedA"
                         [showPrice]="true" [showParallel]="true" [disabled]="disabledA"
                         (selectionChange)="onSelect($event)"></app-model-picker>
       <span id="pickerAHint">Hint A</span>
@@ -55,6 +55,7 @@ const FLAGGED: TestModel[] = [
 class HostComponent {
   private cdr = inject(ChangeDetectorRef);
   noneLabel: string | null = null;
+  noneMutedA = true;
   optionsA: ModelPickerOption<TestModel>[] = toModelPickerOptions(MODELS);
   optionsB: ModelPickerOption<TestModel>[] = [];
   optionsD: ModelPickerOption<TestModel>[] = toModelPickerOptions(FLAGGED);
@@ -69,7 +70,7 @@ class HostComponent {
     this.cdr.markForCheck();
   }
 
-  set(changes: Partial<Pick<HostComponent, 'noneLabel' | 'optionsA' | 'selectedA' | 'disabledA'>>): void {
+  set(changes: Partial<Pick<HostComponent, 'noneLabel' | 'noneMutedA' | 'optionsA' | 'selectedA' | 'disabledA'>>): void {
     Object.assign(this, changes);
     this.cdr.markForCheck();
   }
@@ -98,7 +99,7 @@ describe('ModelPickerComponent', () => {
     return id ? picker.querySelector<HTMLElement>(`#${id}`) : null;
   };
 
-  function update(changes: Partial<Pick<HostComponent, 'noneLabel' | 'optionsA' | 'selectedA' | 'disabledA'>>): void {
+  function update(changes: Partial<Pick<HostComponent, 'noneLabel' | 'noneMutedA' | 'optionsA' | 'selectedA' | 'disabledA'>>): void {
     host.set(changes);
     fixture.detectChanges();
   }
@@ -168,6 +169,35 @@ describe('ModelPickerComponent', () => {
     it('merges the host marker classes with custom-model-selector', () => {
       expect(pickerA().classList).toContain('custom-model-selector');
       expect(pickerA().classList).toContain('marker');
+    });
+  });
+
+  describe('none option strength', () => {
+    it('draws the none option and a trigger showing it muted by default', () => {
+      update({ noneLabel: 'None — nobody' });
+      expect(trigger().querySelector('.model-name')!.classList).toContain('text-muted');
+
+      openByClick();
+      const none = options()[0];
+      expect(none.textContent!.trim()).toBe('None — nobody');
+      expect(none.querySelector('.model-name')!.classList).toContain('text-muted');
+    });
+
+    it('draws them at full strength with noneMuted false, keeping a placeholder muted', () => {
+      update({ noneMutedA: false });
+      let name = trigger().querySelector('.model-name')!;
+      expect(name.textContent!.trim()).toBe('Select Model');
+      expect(name.classList).toContain('text-muted');
+
+      update({ noneLabel: 'Highest score' });
+      name = trigger().querySelector('.model-name')!;
+      expect(name.textContent!.trim()).toBe('Highest score');
+      expect(name.classList).not.toContain('text-muted');
+
+      openByClick();
+      const none = options()[0];
+      expect(none.textContent!.trim()).toBe('Highest score');
+      expect(none.querySelector('.model-name')!.classList).not.toContain('text-muted');
     });
   });
 

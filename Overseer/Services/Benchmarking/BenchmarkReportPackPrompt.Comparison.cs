@@ -70,7 +70,7 @@ public static partial class BenchmarkReportPackPrompt
         AppendGroupedIssues(sb, issues);
         Line(sb);
         Line(sb, "REMINDERS");
-        Line(sb, "- Figures appear only as {{key}} with a key from FACTS exactly as written; a model only as {{model:X}} with its letter from MODELS. No other {{...}} tokens.");
+        Line(sb, "- Figures appear only as {{key}} with a key from FACTS exactly as written; a model only as {{model:X}} with its letter from MODELS, never as Model X. No other {{...}} tokens.");
         Line(sb, "- No digits in prose except question references as the QUESTION MATRIX shows them and the fixed phrase for the interval level. Write counts as number words, and no numbered lists.");
         Line(sb, "- Every question number, question reference and evidence id must exist in the data. Every point about a model cites at least one evidence id.");
         Line(sb, "- Never quote the questions, rubrics, answers or grader comments: no run of eight words may match them. Describe a question by its topic.");
@@ -194,6 +194,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "NUMBERS AND NAMES:");
         Line(sb, "- Every figure appears only as a fact token {{key}}, with a key from FACTS written exactly as listed and no spaces inside the braces. The document prints the fact's value in its place.");
         Line(sb, "- Refer to a model only as {{model:X}}, where X is its letter from MODELS, for example {{model:A}}. There is no {{subject}} and no {{peer:X}} token.");
+        Line(sb, "- Never write a model's letter on its own, as in Model H or Models H and I: in every slot and list, a model is named only through its {{model:X}} token. Only the \"model\" field of a \"models\" entry takes a bare letter.");
         Line(sb, "- Any other {{...}} token is an error.");
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" or \"twice\" are allowed for a plain count, but prefer a fact token for any figure.");
         Line(sb, "- A token whose value reads 'N of M' is a noun phrase. Never put it after 'no' or make it the object of 'made'.");

@@ -353,6 +353,7 @@ the retired audiences (§ 17); their numbers stay unused.
 | 30 | **C9**, *repetition*, chat consistency only: read with every fact token replaced by its display value, the headline and every paragraph hold no *A and A, respectively* whose two operands are the same words, ignoring case, and no full stop followed by a lower-case *and* inside one sentence — a sentence-valued fact spliced into a sentence — outside abbreviations such as *e.g.*, *i.e.*, *etc.*, *vs.*, *cf.*, *approx.*, *incl.* and *resp.* (`ChatRepetitionRule`). One note per kind, quoting the offending text. A **warning**: it asks for the repair turn and marks the document *Completed with warnings*, but never drops a paragraph |
 | 31 | *Token shape* (`ComparisonTokenShapeRule`), comparison scope and every Root Cause Analysis (both scopes), not a per-model Executive Summary: read with every token resolved to its display (a model token to *Model X*), the text holds **(a)** no full stop followed by a lower-case letter, outside abbreviations such as *e.g.* and *vs.* — a sentence-valued fact continued after its full stop; **(b)** no sentence-valued fact (a display that starts with a capital and ends with a full stop, every `notable.<n>.summary` among them) placed anywhere but at the start of a sentence, a paragraph or a list item, or just before `)`; **(c)** no clause-valued fact (*"Model A took 1.49 times as long as Model F …"*) right after a model or its own verb (*"Model A took {{…}}"*); and **(d)** no run of two or more *N of M* counts separated only by commas or semicolons, which leaves the reader guessing what each counts. One note per kind found. A **warning**: it asks for the repair turn and keeps the text |
 | 32–36 | Root Cause Analysis only: the claim discipline of § 17 (`RootCauseEvidenceCausalRule`, `RootCauseCausalClaimRule`, `RootCauseCertaintyRule`, `RootCauseWriterHypothesisRule`, `RootCauseAxisStatusRule`; 36 is a warning) |
+| 37 | *Bare model letter* (`BareModelLetterRule`), comparison scope only: read with every token stripped, the prose holds no *Model X* or *Models X and Y* (`\bModels? [A-Z]{1,2}\b`, case-sensitive) — a model is named only through its `{{model:X}}` token, in every slot and list, the writer's hypotheses included. A **warning**: it asks for the repair turn and keeps the text; a named copy renders a bare letter that resolves to a peer as the model's name |
 
 Rules 2, 3, 8, 9, 10, 11, 12, 16, 17 and 19 apply to every prose string: the headline, each paragraph of
 each slot, and the text of every item and topic. Rule 13 applies to each paragraph of the Executive
@@ -393,7 +394,7 @@ without saying what each counts.
    a hype word is **kept**, its note is recorded without `Dropped`, and the document is stored as
    **CompletedWithWarnings**. The
    Executive Summary states the interval's span in a code-rendered sentence whatever the writer wrote
-   (§ 6). Rules 21, 26 (C5), 30 (C9), 31 and 36 are warning rules in the same way.
+   (§ 6). Rules 21, 26 (C5), 30 (C9), 31, 36 and 37 are warning rules in the same way.
 4. **The headline rescue.** A headline cannot be dropped like a paragraph. When, after the repair turn,
    the headline is the **only** fatal cause — every required slot kept a paragraph
    (`BenchmarkReportCleanResult.HeadlineOnlyFatal`) — the job tries to rescue it, checking each
@@ -3776,7 +3777,7 @@ models, and its wording says so.
 | Id | Axis | Hypothesis (template) | Locus | Evidence for | Evidence against / refuted if |
 |---|---|---|---|---|---|
 | WQ1 | Intelligence | A loses most of its points on answers without tool calls | model / chat | `score.withoutTools` below `.withTools`, `H0-W` rejected; their at-risk share is the largest | `H0-W` stands, or fewer than 3 answers without tools |
-| WQ2 | Intelligence | A's points are lost mostly in one difficulty band (or, on a battery, one suite) | model / suite | That group's at-risk share is the largest and its contrast rejects `H0-W`; on a battery, the leave-one-suite-out index moves by more than the interval half-width | Contrast within noise; shares even |
+| WQ2 | Intelligence | A's points are lost mostly in one difficulty band (or, on a battery, one suite) | model / suite | That group's at-risk share is the largest, exceeds the other models' median share there by at least 15 points (`WithinGroupExcessOverPeers`; a document with one model skips this) and its contrast rejects `H0-W`; on a battery, the leave-one-suite-out index moves by more than the interval half-width | Contrast within noise; shares even |
 | WQ3 | Intelligence | Confirmed critical errors cost A most of its points | model | Critical-error at-risk share largest | Caps unconfirmed |
 | WQ4 | Intelligence | A guesses where it should abstain | model | `wrongInsteadOfAbstaining` above 0.5 with a Wilson interval above 0.33 | Interval includes 0.33 |
 | WQ5 | Intelligence | Budget, truncation or output defects cost A points | harness / provider | At-risk points of those signals at least 1 | — |
@@ -3791,8 +3792,14 @@ models, and its wording says so.
 | WC3 | Cost | Tool rounds multiply A's input cost | chat / model | Input cost rises with model calls per answer (ρ ≥ 0.5, interval excluding 0) | ρ interval includes 0 |
 
 **What is kept.** Every null hypothesis is kept; of the rest, the strongest three per axis and group (a
-pair, or one model's own rules), ranked by grade, then share, then rule id, and at most **12 per axis**
-in total (`KeepPerGroup`, `MaxPerAxis`), so the prompt stays bounded. Each kept hypothesis becomes the
+pair, or one model's own rules), and at most **12 per axis** in total (`KeepPerGroup`, `MaxPerAxis`), so
+the prompt stays bounded. Hypotheses rank (`RootCauseHypotheses.Ranked`) by grade; then a pair whose null
+is rejected before one whose null stands; then by **the amount they explain in the axis' own unit**
+(`Explains`: the share, at most 100 %, of the pair's gap in index points, milliseconds or dollars per
+question, or of the model's own points at risk, time or cost per question; a hypothesis without such a
+share last); then by rule id. A share above 100 % arises when another component pulls the other way and
+is largest on the smallest gaps, so ranking by the share itself would put a negligible gap first. The
+axis' best hypothesis is the first in this order. Each kept hypothesis becomes the
 facts `rca.hypothesis.<id>.<n>.statement`, `.label`, `.axis`, `.models`, `.locus`, `.grade`,
 `.gradeReasons`, `.for`, `.against`, `.refutedIf`, `.nextRun` or `.check`, and `.share` and `.interval`
 where it has a share; `<n>` numbers the hypotheses of one rule from 1. The **label**
@@ -3814,18 +3821,24 @@ comparable models:
 | 3 | *Why is {model} slowest?* | Slowest by median answer time |
 | 4 | *Why is {model} the most expensive?* | Highest cost per question |
 
-Each is the facts `rca.question.<n>.text`, `.model`, `.hypotheses` (the kept non-null hypotheses about
-that model on that axis, best grade first, *"none fired"* without one), `.status` (the best grade among
-them in plain words: *Established (High)*, *Probable (Moderate)*, *Suggestive (Low)*, or *Unknown*) and
-`.signals` (the model's top measured signals, from its profile). The writer answers each in its answer
-slot; code supplies the answer's strength.
+Each is the facts `rca.question.<n>.text`, `.model`, `.hypotheses` (the kept hypotheses that answer it,
+in rank order, *"none fired"* without one), `.status` (the best grade among them in plain words:
+*Established (High)*, *Probable (Moderate)*, *Suggestive (Low)*, or *Unknown*) and `.signals` (the
+model's top measured signals, from its profile). Question 1 takes the pair hypotheses where the model is
+the **better** side, and only its strengths as signals; questions 2 to 4 take the pair hypotheses where it
+is the **worse** side and its own within-model hypotheses. HQ3 (shared failures) answers none of them.
+The writer answers each in its answer slot, starting with the reason; code prints the answer's strength
+and hypothesis ids above it, or *"no hypothesis about this model fired — see its profile"*.
 
 **Model profiles** (`RootCauseProfiles.Build`), `rca.profile.<T>.*`, are code-written from facts already
 on the sheet, so they cannot be dropped by a rule and never use a causal word:
 
 - **Lost points on** (`.lostPointsOn`): the largest segment of the model's index points at risk —
   answers without tools; budget, tool-limit, truncation or output defects; confirmed critical errors;
-  other low-scoring answers — with its points and questions;
+  other low-scoring answers — with its points and questions. The last of these is named by the dimension
+  that lost more on its answers, Accuracy or Completeness, each weighted by the scoring profile
+  (*"low-scoring answers, mostly Completeness: 2.2 index points on 17 questions"*); when the two tie it
+  keeps the plain label;
 - **Weakest dimension** (`.weakestDimension`): the dimension furthest below the model's Accuracy, and the
   gap; and `.lowestRank` when the model is last on a dimension;
 - **Strengths** (`.strength.<n>`): the model's dimension ranks when first or second;
@@ -3971,7 +3984,8 @@ the fact `rca.run.<n>.summary` — a short line, *"Run 1, a replicate of all nin
 528 minutes)"*, the card holding the rest — and returned on the document detail as `recommendedRuns`:
 
 - `Number`, `Kind`, `Purpose` (C, B or M), `Mark` and `HypothesisIds`;
-- `Decides`: *"confirms H… if …, refutes it if …"*, stated before the run;
+- `Decides`: one sentence per group of hypotheses with the same confirm and refute conditions,
+  *"Confirms HQ2.1, HQ2.2 and HQ2.3 if …; refutes each if …"*, stated before the run;
 - `PredictedTier`, from the keys the run changes;
 - `EstimatedCostUsd` and `EstimatedMinutes`, from the analyzed runs' own costs and durations (a model
   without analyzed runs takes their mean, and a note says so);
@@ -4041,9 +4055,9 @@ caveats and conclusions are callouts (§ 7). The comparison form (`ComparisonRoo
 | *Evidence: cost* | The same, in dollars (figure R3) | `evidenceCost` (100) |
 | *Hypotheses* | Per axis a table of the kept non-null hypotheses — *Hypothesis (id and label) · Statement · Grade · Share · Settled by* — the null hypotheses in one sentence (where it stands, where a paired result rejects it), the id legend under the first table (H0 null, H between two models, W within one; Q, S, C), figure R4; the writer's hypotheses in a *Not tested by code* caveat callout | `hypothesesIntelligence`, `hypothesesSpeed`, `hypothesesCost` (120 each), each after its axis' table |
 | *Conclusions* | The table *Axis · Status · Best hypothesis · Why* | `conclusions` (120), in a *Conclusion* callout |
-| *What to run next* | The order (C, B, M), a priority table *# · Run · Purpose · Models · Settles (labels) · Estimate*, then `### Checks` | `nextRuns` (50): which run to make first and what it settles |
+| *What to run next* | The order (C, B, M), a priority table *# · Run · Purpose · Models · Settles (hypothesis ids, at most eight, then "and N more (Appendix D)") · Estimate*, then `### Checks` | `nextRuns` (50): which run to make first and what it settles |
 | *Limitations and threats to validity* | One merged, deduplicated list; the availability threats grouped by reason (*"Provider availability is not recorded for any of the 9 models (runs before harness 56), …"*) | `limitations` (120) |
-| *Appendices* | The list of A–H, then **A** Intelligence detail (compared models, configuration differences, failure profile, grader findings, panel agreement, points at risk, the index difference by dimension, every paired test, the per-question matrix); **B** Speed and cost decompositions (decomposed pairs only); **C** Hypothesis details (*For*, *Against*, *Grade reasons*, *Refuted if*, *Robustness*, *Settled by* per hypothesis; the nulls as one table *Hypothesis · Pair · Paired result · Grade*); **D** Run settings (each run's *Launcher field · Setting* table); **E** Known facts; **F** Reproducibility; **G** Question details; **H** Glossary (95 % interval, paired test, Holm adjustment, null hypothesis, grade words, points at risk, decomposition share and why it can pass 100 %, isolated miss, joint rank) | `questionTopics` for every question cited whose text the writer was given |
+| *Appendices* | The list of A–H, then **A** Intelligence detail (compared models, configuration differences, failure profile, grader findings, panel agreement, points at risk, the index difference by dimension, every paired test, the per-question matrix); **B** Speed and cost decompositions (decomposed pairs only); **C** Hypothesis details (*For*, *Against*, *Grade reasons*, *Refuted if*, *Robustness*, *Settled by* per hypothesis; the nulls as one table *Hypothesis · Pair · Paired result · Grade*); **D** Run settings (each run's *Launcher field · Setting* table); **E** Known facts; **F** Reproducibility; **G** Question details (every claim-verifier ruling that is not a supported answer sentence, then *"N further answer sentences supported."*; a grader evidence line that only says *&lt;Dimension&gt;: Matches rubric.* is left out); **H** Glossary (95 % interval, paired test, Holm adjustment, null hypothesis, grade words, points at risk, decomposition share and why it can pass 100 %, isolated miss, joint rank) | `questionTopics` for every question cited whose text the writer was given |
 | *Fact sheet*, *Removed content*, *Evaluation terms* | As before; *Removed content* names each removal's location in words and its rule, and at Full disclosure prints the removed text with its tokens resolved under the document's peer naming (withheld names, ids and providers as letters in an anonymized copy) | — |
 
 The table below is the structure **before format 16**, kept for reading a PDF or Word file downloaded
@@ -4129,7 +4143,7 @@ names exactly the tokens the validator accepts.
 | 33 (`RootCauseCausalClaimRule`) | A causal word in an answer slot, a `hypotheses*` slot, `conclusions` or `nextRuns` with no token of a hypothesis the sheet holds (`rca.hypothesis.<id>.<n>.*`, its `.label` included) or of an axis (`rca.axis.<axis>.*`) in the same sentence; in `nextRuns` only, an `rca.run.<n>.*` token serves as well, since the run order is decided by code | The paragraph is dropped |
 | 34 (`RootCauseCertaintyRule`) | A certainty word (`CertaintyWords`: *established*, *confirmed*, *proven*, *definitely*, *certainly*, *root cause was found*), anywhere, without a token of a *High* hypothesis, or the `rca.axis.<axis>.status` token of an axis whose root cause is established, in the same sentence; a certainty word after *not*, *never* or *cannot* does not count | The paragraph or item is dropped |
 | 35 (`RootCauseWriterHypothesisRule`) | A `writerHypotheses` item without an axis, a statement, evidence for, a refuted-if statement or a known locus (`model`, `chat`, `harness`, `suite`, `corpus`, `provider`), with a confidence other than *Low*, or citing a model or fact that does not exist; each of its texts is capped at 40 words | The item is dropped |
-| 36 (`RootCauseAxisStatusRule`) | `conclusions` does not cite each axis' `rca.axis.<axis>.status`, or an answer slot does not cite its question's `rca.question.<n>.status` | A **warning**, checked over the kept text |
+| 36 (`RootCauseAxisStatusRule`) | `conclusions` does not cite each axis' `rca.axis.<axis>.status`. An answer slot need not cite its question's `rca.question.<n>.status`: code prints the answer strength above it | A **warning**, checked over the kept text |
 
 A hypothesis' **label** is a noun phrase, so rule 31 lets it sit inside a sentence, while it still
 carries a cause for rule 33 and, for a *High* hypothesis, certainty for rule 34; its **statement** is a

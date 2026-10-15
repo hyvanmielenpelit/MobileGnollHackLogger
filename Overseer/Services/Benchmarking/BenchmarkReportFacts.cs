@@ -1371,7 +1371,7 @@ public static class BenchmarkReportFacts
         facts.Add("style.responseStyleConflict", conflict,
             conflict
                 ? "Completeness is the lowest dimension, " + BenchmarkReportFormat.OneDecimal(gap) + " points below Accuracy"
-                : "No response-style conflict");
+                : "no response-style conflict");
     }
 
     internal static void AddScoringAndProvenanceFacts(FactList facts, IReadOnlyList<BenchmarkRun> subjectRuns)

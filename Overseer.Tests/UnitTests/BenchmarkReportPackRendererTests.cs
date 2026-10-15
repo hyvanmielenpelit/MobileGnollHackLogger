@@ -1528,13 +1528,32 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion16()
+    public void AComparisonDocument_IsCurrentAtFormatVersion17()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(16, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 16 · ", text);
+        Assert.Equal(17, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 17 · ", text);
         Assert.Contains(" · models named*", text);
+    }
+
+    [Fact]
+    public void ANamedComparisonCopy_NamesTheModelsAWriterLeftAsBareLetters()
+    {
+        var document = ComparisonDocument(BenchmarkReportAudience.ExecutiveSummary);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        var peers = sheet.Peers.OrderBy(p => p.Letter, StringComparer.Ordinal).Take(2).ToList();
+        var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
+        writer.Headline = "Models " + peers[0].Letter + " and " + peers[1].Letter + " lose Accuracy, and Model Q is no peer.";
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+
+        string named = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
+        string anonymized = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Anonymized });
+
+        Assert.Contains(peers[0].Label + " and " + peers[1].Label + " lose Accuracy, and Model Q is no peer.", named);
+        Assert.Contains("Models " + peers[0].Letter + " and " + peers[1].Letter + " lose Accuracy", anonymized);
     }
 
     public static IEnumerable<object[]> ComparisonBaselineGoldenCombinations() => ComparisonBaselineCombinations();
@@ -1695,9 +1714,9 @@ public class BenchmarkReportPackRendererTests
         Assert.Equal(3, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
         Assert.Equal(3, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
         Assert.Equal(13, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(16, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(17, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
         Assert.Equal(13, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(16, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(17, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         Assert.Contains(" · format version 3 · ", text);

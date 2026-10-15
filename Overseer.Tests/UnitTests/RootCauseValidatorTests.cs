@@ -12,7 +12,8 @@ using Xunit;
 /// <summary>
 /// The Root Cause Analysis claim rules (32–36) in both scopes, its writer-hypothesis and observation
 /// checks, and the v1 validator changes every comparison document shares: rule 16 checks the pair a
-/// comparative word relates, rule 31 flags misused fact shapes, and <c>HeadlineIssues</c>.
+/// comparative word relates, rule 31 flags misused fact shapes, rule 37 flags bare model letters, and
+/// <c>HeadlineIssues</c>.
 /// </summary>
 public class RootCauseValidatorTests
 {
@@ -352,7 +353,7 @@ public class RootCauseValidatorTests
     }
 
     [Fact]
-    public void TheAnswerSlots_CiteTheirQuestionStatus()
+    public void TheAnswerSlots_NeedNoQuestionStatus()
     {
         var sheet = QuestionSheet(1, 3);
 
@@ -367,25 +368,76 @@ public class RootCauseValidatorTests
         var sections = new Dictionary<string, string>
         {
             [BenchmarkReportSlots.AnswerBest] = uncited,
-            [BenchmarkReportSlots.AnswerSpeed] = "Its speed cause is {{rca.question.3.status}}, as {{rca.hypothesis.HS1.1.label}} suggests.",
+            [BenchmarkReportSlots.AnswerSpeed] = "Its answers run longer, as {{rca.hypothesis.HS1.1.label}} suggests.",
             [BenchmarkReportSlots.AnswerWorst] = "The lowest model lost points on hard questions.",
         };
         var notes = ValidateSections(sheet, sections);
 
-        var missing = Assert.Single(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule && n.Location == "sections." + BenchmarkReportSlots.AnswerBest);
-        Assert.Contains("{{rca.question.1.status}}", missing.Message);
-        Assert.True(BenchmarkReportPackValidator.IsWarningRule(missing.Rule));
-        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule && n.Location == "sections." + BenchmarkReportSlots.AnswerSpeed);
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule
+                                          && n.Location.StartsWith("sections." + BenchmarkReportSlots.AnswerBest, StringComparison.Ordinal));
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule
+                                          && n.Location.StartsWith("sections." + BenchmarkReportSlots.AnswerSpeed, StringComparison.Ordinal));
         Assert.Contains(notes, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.AnswerWorst && n.Message.Contains("does not ask", StringComparison.Ordinal));
 
-        // The warning keeps the answer, and the note is recorded against it.
+        // An answer without a status token is kept as written.
         var output = new BenchmarkReportWriterOutput { Headline = "The models differ on every axis." };
         foreach (var (slot, text) in sections) output.Sections[slot] = text;
         var cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, sheet, new BenchmarkReportContentSnapshot());
         Assert.Equal(uncited, cleaned.Output.Sections[BenchmarkReportSlots.AnswerBest]);
-        Assert.Contains(cleaned.Notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule
-                                            && n.Location == "sections." + BenchmarkReportSlots.AnswerBest && !n.Dropped);
         Assert.False(cleaned.Output.Sections.ContainsKey(BenchmarkReportSlots.AnswerWorst));
+    }
+
+    [Fact]
+    public void ACertaintyWordInAnAnswer_StillNeedsItsSupport()
+    {
+        var notes = ValidateSections(QuestionSheet(1, 3), new Dictionary<string, string>
+        {
+            [BenchmarkReportSlots.AnswerBest] = "It certainly lost points to {{rca.hypothesis.HQ1.1.label}}.",
+            [BenchmarkReportSlots.AnswerSpeed] = "It is certainly slower through {{rca.hypothesis.HS1.1.label}}.",
+        });
+
+        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCertaintyRule
+                                    && n.Location.StartsWith("sections." + BenchmarkReportSlots.AnswerBest, StringComparison.Ordinal));
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCertaintyRule
+                                          && n.Location.StartsWith("sections." + BenchmarkReportSlots.AnswerSpeed, StringComparison.Ordinal));
+    }
+
+    // --- Rule 37: no bare model letter in a comparison -------------------------------------------------
+
+    [Fact]
+    public void Rule37_FlagsABareModelLetter_InComparisonScope_AsAWarning()
+    {
+        const string slot = BenchmarkReportSlots.HypothesesIntelligence;
+        var notes = ValidateSections(QuestionSheet(), new Dictionary<string, string>
+        {
+            [slot] = "Models H and I lose Accuracy on the hard questions."
+        });
+
+        var note = Assert.Single(notes, n => n.Rule == BenchmarkReportPackValidator.BareModelLetterRule);
+        Assert.StartsWith("sections." + slot, note.Location, StringComparison.Ordinal);
+        Assert.Contains("Models H", note.Message, StringComparison.Ordinal);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+        Assert.False(BenchmarkReportPackValidator.BlocksText(note));
+    }
+
+    [Fact]
+    public void Rule37_LeavesModelTokens_Alone()
+    {
+        var notes = ValidateSections(QuestionSheet(), new Dictionary<string, string>
+        {
+            [BenchmarkReportSlots.HypothesesIntelligence] = "{{model:A}} and {{model:B}} lose Accuracy on the hard questions."
+        });
+
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.BareModelLetterRule);
+    }
+
+    [Fact]
+    public void Rule37_DoesNotApply_OutsideComparisonScope()
+    {
+        var output = Writer(comparison: false);
+        output.Sections[BenchmarkReportSlots.HypothesesIntelligence] = "Models H and I lose Accuracy on the hard questions.";
+
+        Assert.DoesNotContain(Validate(false, output), n => n.Rule == BenchmarkReportPackValidator.BareModelLetterRule);
     }
 
     // --- Rule 16: the pair a comparative word relates (v1) ------------------------------------------

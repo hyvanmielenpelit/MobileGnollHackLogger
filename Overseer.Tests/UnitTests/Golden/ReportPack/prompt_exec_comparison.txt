@@ -26,6 +26,7 @@ FIELDS AND LISTS:
 NUMBERS AND NAMES:
 - Every figure appears only as a fact token {{key}}, with a key from FACTS written exactly as listed and no spaces inside the braces. The document prints the fact's value in its place.
 - Refer to a model only as {{model:X}}, where X is its letter from MODELS, for example {{model:A}}. There is no {{subject}} and no {{peer:X}} token.
+- Never write a model's letter on its own, as in Model H or Models H and I: in every slot and list, a model is named only through its {{model:X}} token. Only the "model" field of a "models" entry takes a bare letter.
 - Any other {{...}} token is an error.
 - Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as "1st". Number words such as "three" or "twice" are allowed for a plain count, but prefer a fact token for any figure.
 - A token whose value reads 'N of M' is a noun phrase. Never put it after 'no' or make it the object of 'made'.
@@ -246,7 +247,7 @@ model.A.speed.modelTimeP90 = unavailable: Not recorded.
 model.A.speed.rank = 3rd of 5
 model.A.speed.ttftP50 = unavailable: Not recorded.
 model.A.state = Comparable
-model.A.style.responseStyleConflict = No response-style conflict
+model.A.style.responseStyleConflict = no response-style conflict
 model.A.suite.questions = 1
 model.A.thinkingLevel = not set
 model.A.tokens.inputPerQuestion = unavailable: No answer recorded its token counts.
@@ -346,7 +347,7 @@ model.B.speed.modelTimeP90 = unavailable: Not recorded.
 model.B.speed.rank = 2nd of 5
 model.B.speed.ttftP50 = unavailable: Not recorded.
 model.B.state = Comparable
-model.B.style.responseStyleConflict = No response-style conflict
+model.B.style.responseStyleConflict = no response-style conflict
 model.B.suite.questions = 1
 model.B.thinkingLevel = not set
 model.B.tokens.inputPerQuestion = unavailable: No answer recorded its token counts.
@@ -450,7 +451,7 @@ model.C.speed.modelTimeP90 = unavailable: Not recorded.
 model.C.speed.rank = 4th of 5
 model.C.speed.ttftP50 = unavailable: Not recorded.
 model.C.state = Comparable
-model.C.style.responseStyleConflict = No response-style conflict
+model.C.style.responseStyleConflict = no response-style conflict
 model.C.suite.questions = 1
 model.C.thinkingLevel = not set
 model.C.tokens.inputPerQuestion = unavailable: No answer recorded its token counts.
@@ -554,7 +555,7 @@ model.D.speed.modelTimeP90 = unavailable: Not recorded.
 model.D.speed.rank = 1st of 5
 model.D.speed.ttftP50 = unavailable: Not recorded.
 model.D.state = Comparable
-model.D.style.responseStyleConflict = No response-style conflict
+model.D.style.responseStyleConflict = no response-style conflict
 model.D.suite.questions = 1
 model.D.thinkingLevel = not set
 model.D.tokens.inputPerQuestion = unavailable: No answer recorded its token counts.
@@ -658,7 +659,7 @@ model.E.speed.modelTimeP90 = unavailable: Not recorded.
 model.E.speed.rank = 5th of 5
 model.E.speed.ttftP50 = unavailable: Not recorded.
 model.E.state = Comparable
-model.E.style.responseStyleConflict = No response-style conflict
+model.E.style.responseStyleConflict = no response-style conflict
 model.E.suite.questions = 1
 model.E.thinkingLevel = not set
 model.E.tokens.inputPerQuestion = unavailable: No answer recorded its token counts.

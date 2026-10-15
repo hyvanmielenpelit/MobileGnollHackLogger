@@ -11,6 +11,7 @@ import {
   ViewChild,
   inject
 } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { EMPTY, Subject, Subscription, catchError, debounceTime, interval, map, of, switchMap } from 'rxjs';
 
@@ -30,6 +31,7 @@ import {
 import { AdminService, SystemAiConfigDto } from '../../../services/admin.service';
 import { ModelPickerComponent, ModelPickerKey, ModelPickerOption, toModelPickerOptions } from '../../../shared/model-picker/model-picker.component';
 import { ModelMultiPickerComponent } from '../../../shared/model-picker/model-multi-picker.component';
+import { ModelIdentityComponent } from '../../../shared/model-identity/model-identity.component';
 import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { parseServerUtcDate } from '../../../utils/date.util';
@@ -53,6 +55,7 @@ import {
 } from './comparison-documents-status.component';
 import {
   ComparisonModelOption,
+  ComparisonModelPickerModel,
   MAX_COMPARISON_DOCUMENT_ENTRIES,
   MIN_COMPARISON_DOCUMENT_ENTRIES,
   comparisonModelMention,
@@ -168,10 +171,15 @@ export interface ReportPackDocumentRow {
   readonly title: string;
   /** The status explanation's button and dialog, for a document completed with warnings or failed; null otherwise. */
   readonly why: { readonly subject: string; readonly title: string } | null;
-  /** The step the document is at, or how its draft was checked once it is finished; null when there is nothing to say. */
+  /**
+   * The step the document is at, or how its draft was checked once it is finished; null when there is
+   * nothing to say or the chip already says it.
+   */
   readonly phaseLine: string | null;
-  /** The first draft's issue count, for the phase line's info button; 0 when there are none to list. */
+  /** The first draft's issue count, for the draft issues' info button; 0 when there are none to list. */
   readonly draftIssueCount: number;
+  /** The draft issues' info button sits beside the chip while the document is written, beside the phase line once finished. */
+  readonly draftTipBesideChip: boolean;
 }
 
 /** The two document scopes, as the segmented tab row offers them; `note` is a second, smaller line. */
@@ -284,6 +292,14 @@ export function documentPhaseLine(doc: BenchmarkReportPackDocumentProgressDto): 
   return phase;
 }
 
+/** The row's phase line: as documentPhaseLine, except none while it only repeats the chip. */
+export function documentRowPhaseLine(doc: BenchmarkReportPackDocumentProgressDto): string | null {
+  if ((doc.status === 'Writing' && doc.phase === 'Writing') || (doc.status === 'Repairing' && doc.phase === 'Revising')) {
+    return null;
+  }
+  return documentPhaseLine(doc);
+}
+
 function isJobDto(body: unknown): body is BenchmarkReportPackJobDto {
   return !!body && typeof body === 'object'
     && typeof (body as BenchmarkReportPackJobDto).id === 'string'
@@ -376,6 +392,15 @@ export interface ReportPackWrittenReference {
   readonly differs: boolean;
 }
 
+/** A covered model's letter in the anonymized copies. */
+export interface ReportPackLetterPair {
+  readonly letter: string;
+  /** The preview's label for the model. */
+  readonly label: string;
+  /** The Models picker's model of the same entry, for its badges; null when no option matches. */
+  readonly model: ComparisonModelPickerModel | null;
+}
+
 /** A checked row and the estimate the preview gave for it. */
 interface CheckedEstimate {
   readonly row: ComparisonDocumentRow;
@@ -398,7 +423,8 @@ interface CheckedEstimate {
   standalone: true,
   imports: [
     RunReportFrameComponent, ModelPickerComponent, ModelMultiPickerComponent, InfoTipComponent, ReportChartPickerComponent,
-    ComparisonDocumentsStatusComponent, PdfViewerDialogComponent, ReportValidationDetailsComponent
+    ComparisonDocumentsStatusComponent, PdfViewerDialogComponent, ReportValidationDetailsComponent, ModelIdentityComponent,
+    NgTemplateOutlet
   ],
   templateUrl: './report-pack-panel.component.html',
   styleUrls: ['./report-pack-panel.component.scss'],
@@ -544,8 +570,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   private referenceChoice: string | null = null;
   private writtenReferencesSource: unknown[] | null = null;
   private writtenReferencesCache: readonly ReportPackWrittenReference[] = [];
-  private referenceOptionsSource: unknown[] | null = null;
-  private referenceOptionsCache: readonly { readonly key: string; readonly label: string }[] = [];
+  private referencePickerOptionsSource: unknown[] | null = null;
+  private referencePickerOptionsCache: ComparisonModelOption[] = [];
   /** The admin's own Write and Rewrite choices, by row key; a row without one takes its default. */
   private readonly checks = new Map<string, boolean>();
   /** The comparison's stored documents, by id, for each row's flags and chart count. */
@@ -569,7 +595,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   private writerOptionsCache: ModelPickerOption<SystemAiConfigDto>[] = [];
   private letterPairsPreview: BenchmarkReportPackPreviewDto | null | undefined = undefined;
   private letterPairsScope: ReportDocumentScopeMode | null = null;
-  private letterPairsCache: readonly { readonly letter: string; readonly label: string }[] | null = null;
+  private letterPairsOptions: ComparisonModelOption[] | null = null;
+  private letterPairsCache: readonly ReportPackLetterPair[] | null = null;
 
   /** The last preview answered for the current scope and models; its estimate is current while nothing is pending. */
   preview: BenchmarkReportPackPreviewDto | null = null;
@@ -932,19 +959,29 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return baseline !== null && this.coveredKeys.includes(baseline) ? baseline : null;
   }
 
-  /** The Reference model select's options after *Highest Intelligence Index*: each covered model. */
-  get referenceOptions(): readonly { readonly key: string; readonly label: string }[] {
+  /**
+   * The Reference model picker's options after *Highest Intelligence Index*: each covered model, in the
+   * covered order, the baseline model tagged *Baseline*.
+   */
+  get referencePickerOptions(): ComparisonModelOption[] {
     const source: unknown[] = [this.coveredKeys, this.modelOptions, this.currentContext];
-    const cached = this.referenceOptionsSource;
+    const cached = this.referencePickerOptionsSource;
     if (cached && cached.every((item, i) => item === source[i])) {
-      return this.referenceOptionsCache;
+      return this.referencePickerOptionsCache;
     }
-    this.referenceOptionsSource = source;
-    this.referenceOptionsCache = this.coveredKeys.map(key => ({ key, label: this.referenceLabel(key) }));
-    return this.referenceOptionsCache;
+    this.referencePickerOptionsSource = source;
+    const baseline = this.baselineKey;
+    this.referencePickerOptionsCache = this.coveredKeys.flatMap(key => {
+      const option = this.modelOptions.find(candidate => candidate.key === key);
+      if (!option) {
+        return [];
+      }
+      return [key === baseline ? { ...option, tag: 'Baseline' } : option];
+    });
+    return this.referencePickerOptionsCache;
   }
 
-  /** How the Reference model select and the written documents name a reference. */
+  /** How the written documents and the mismatch note name a reference. */
   referenceLabel(key: string | null): string {
     if (key === null) {
       return REPORT_PACK_HIGHEST_INDEX_REFERENCE;
@@ -957,8 +994,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return key === this.baselineKey ? `${label} (baseline model)` : label;
   }
 
-  onReferenceChange(event: Event): void {
-    this.referenceChoice = (event.target as HTMLSelectElement).value;
+  onReferencePicked(key: ModelPickerKey | null): void {
+    this.referenceChoice = key === null ? '' : String(key);
     this.serverWarning = null;
     this.startError = null;
     this.schedulePreview();
@@ -999,20 +1036,26 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       + `${this.referenceLabel(this.referenceEntryKey)}.`;
   }
 
-  /** Each covered model's letter and label, once the preview has lettered them; null under One model at a time. */
-  get coveredLetterPairs(): readonly { readonly letter: string; readonly label: string }[] | null {
+  /** Each covered model's letter, label and picker model, once the preview has lettered them; null under One model at a time. */
+  get coveredLetterPairs(): readonly ReportPackLetterPair[] | null {
     const preview = this.listPreview;
-    if (preview === this.letterPairsPreview && this.scopeMode === this.letterPairsScope) {
+    if (preview === this.letterPairsPreview && this.scopeMode === this.letterPairsScope
+      && this.modelOptions === this.letterPairsOptions) {
       return this.letterPairsCache;
     }
     this.letterPairsPreview = preview;
     this.letterPairsScope = this.scopeMode;
+    this.letterPairsOptions = this.modelOptions;
     const lettered = this.scopeMode === 'comparison'
       ? (preview?.coveredModels ?? []).filter(model => !!model.letter)
       : [];
     this.letterPairsCache = lettered.length === 0
       ? null
-      : lettered.map(model => ({ letter: model.letter as string, label: model.label }));
+      : lettered.map(model => ({
+        letter: model.letter as string,
+        label: model.label,
+        model: this.modelOptions.find(option => option.key === model.entryKey)?.model ?? null
+      }));
     return this.letterPairsCache;
   }
 
@@ -1922,8 +1965,9 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
         why: EXPLAINED_DOCUMENT_STATUSES.has(doc.status)
           ? { subject: documentStatusSubject(title, doc.status), title: documentStatusQuestion(title, doc.status) }
           : null,
-        phaseLine: documentPhaseLine(doc),
-        draftIssueCount: doc.firstTurnIssues?.length ?? 0
+        phaseLine: documentRowPhaseLine(doc),
+        draftIssueCount: doc.firstTurnIssues?.length ?? 0,
+        draftTipBesideChip: ACTIVE_DOCUMENT_STATUSES.has(doc.status)
       };
     });
   }

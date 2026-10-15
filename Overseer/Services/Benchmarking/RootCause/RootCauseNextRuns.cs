@@ -273,7 +273,7 @@ public static class RootCauseNextRuns
                     plan = PanelSwap(ctx, models.Count > 0 ? models : new List<RootCauseModelInput> { anchor }, GetOrAdd);
                     if (plan == null)
                     {
-                        Check("graders", "No two configured, enabled Benchmark-role graders of other providers exist for a panel swap; add them to test " + h.Key + ".", h);
+                        Check("graders", "No two configured, enabled Benchmark-role graders of other providers exist for a panel swap; add them to test the grader-dependent hypotheses.", h);
                     }
                     break;
 
@@ -558,15 +558,32 @@ public static class RootCauseNextRuns
         };
         if (plan.TimeOfDay && plan.Kind == RootCauseRunKinds.Replicate) run.PredictedTier += "; time of day differs, which the speed comparison discloses";
 
-        run.Decides = plan.Decides ?? string.Join(" ", plan.Hypotheses.Select(x =>
-            "Confirms " + x.Hypothesis.Key + " if " + (string.IsNullOrWhiteSpace(x.Draft.ConfirmIf) ? "the result repeats" : x.Draft.ConfirmIf)
-            + "; refutes it if " + LowerFirst(x.Draft.RefutedIf.TrimEnd('.')) + "."));
+        run.Decides = plan.Decides ?? Decides(plan.Hypotheses);
 
         var (cost, minutes, estimated) = Estimate(ctx, plan, batch);
         run.EstimatedCostUsd = cost;
         run.EstimatedMinutes = minutes;
         if (estimated) run.Notes.Add("The estimate for a model without analyzed runs is the analyzed models' mean.");
         return run;
+    }
+
+    /// <summary>
+    /// What a run decides: one sentence per group of its hypotheses that share a confirm-if and a refuted-if
+    /// statement, in the order of each group's first hypothesis: <c>Confirms HQ2.1 and HQ2.2 if …; refutes
+    /// each if ….</c>, or <c>… refutes it if ….</c> for a group of one.
+    /// </summary>
+    private static string Decides(IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> hypotheses)
+    {
+        var groups = hypotheses
+            .Select(x => (x.Hypothesis.Key,
+                Confirm: string.IsNullOrWhiteSpace(x.Draft.ConfirmIf) ? "the result repeats" : x.Draft.ConfirmIf,
+                Refute: LowerFirst(x.Draft.RefutedIf.TrimEnd('.'))))
+            .GroupBy(x => (x.Confirm, x.Refute))
+            .Select(g => (Keys: g.Select(x => x.Key).Distinct(StringComparer.Ordinal).ToList(), g.Key.Confirm, g.Key.Refute));
+
+        return string.Join(" ", groups.Select(g =>
+            "Confirms " + BenchmarkReportFormat.LetterList(g.Keys) + " if " + g.Confirm
+            + "; refutes " + (g.Keys.Count == 1 ? "it" : "each") + " if " + g.Refute + "."));
     }
 
     /// <summary>

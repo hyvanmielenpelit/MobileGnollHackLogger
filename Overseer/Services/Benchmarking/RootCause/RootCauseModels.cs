@@ -513,6 +513,12 @@ public sealed class RootCauseHypothesis
     public double? ShareLower { get; set; }
     public double? ShareUpper { get; set; }
 
+    /// <summary>
+    /// The amount of the axis' own measure the hypothesis accounts for (index points, milliseconds or USD per
+    /// question): its share, at most one, of the difference or total it is a share of. Hypotheses rank by it.
+    /// </summary>
+    public double? Explains { get; set; }
+
     public List<RootCauseRobustnessCheck> Robustness { get; set; } = new();
 
     /// <summary>The configuration keys that differ between the models it compares, other than the one it is about.</summary>

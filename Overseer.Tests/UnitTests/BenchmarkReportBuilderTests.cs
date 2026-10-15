@@ -6123,7 +6123,7 @@ public class BenchmarkReportBuilderTests
 
         Assert.DoesNotContain("Response-style conflict", report);
         Assert.False(FactOf("style.responseStyleConflict").Value!.GetValue<bool>());
-        Assert.Equal("No response-style conflict", FactOf("style.responseStyleConflict").Display);
+        Assert.Equal("no response-style conflict", FactOf("style.responseStyleConflict").Display);
 
         // Member B's Completeness of 35 beside member A's 55 leaves the panel's at 45, 34.5 below its Accuracy.
         foreach (var a in run.Answers)

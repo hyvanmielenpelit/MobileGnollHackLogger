@@ -22,40 +22,40 @@
 > [!NOTE]
 > **Question.** **Why did Orion Max score highest?**
 >
-> *Answer strength: Suggestive (Low) — see HQ3.1.*
+> *Answer strength: no hypothesis about this model fired — see its profile.*
 >
-> For Orion Max the measured signals are joint first on Accuracy of 5 models; joint first on Completeness of 5 models; lost points on answers without tools: 9.8 index points on 1 question (Q3). The answer strength is Suggestive (Low). The leading hypothesis is shared failures on the same questions.
+> For Orion Max the measured signals are joint first on Accuracy of 5 models; joint first on Completeness of 5 models. The answer strength is Unknown.
 
 > [!NOTE]
 > **Question.** **Why did Zeta Prime score lowest?**
 >
-> *Answer strength: Suggestive (Low) — see HQ3.1.*
+> *Answer strength: no hypothesis about this model fired — see its profile.*
 >
-> For Zeta Prime the measured signals are lost points on other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more. The answer strength is Suggestive (Low). The leading hypothesis is shared failures on the same questions.
+> For Zeta Prime the measured signals are lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more. The answer strength is Unknown.
 
 > [!NOTE]
 > **Question.** **Why is Zeta Prime slowest?**
 >
-> *Answer strength: Probable (Moderate) — see WS3.3 and WS2.3.*
+> *Answer strength: Probable (Moderate) — see WS3.3 and WS2.1.*
 >
 > For Zeta Prime the measured signals are median model time 20.0 s; output generation 59 % of its time per question; 2.5 model calls per answer. The answer strength is Probable (Moderate). The leading hypothesis is tool rounds in the time of Zeta Prime.
 
 > [!NOTE]
 > **Question.** **Why is Nova Lite the most expensive?**
 >
-> *Answer strength: Probable (Moderate) — see HC2.3, HC2.5, WC1.2, HC4.1 and HC4.3.*
+> *Answer strength: Probable (Moderate) — see WC1.2, HC2.2 and HC4.2.*
 >
-> For Nova Lite the measured signals are $0.060 per question; uncached input 44 % of its cost per question; 27 % of input tokens read from the cache. The answer strength is Probable (Moderate). The leading hypothesis is higher price per token of Nova Lite against Orion Max.
+> For Nova Lite the measured signals are $0.060 per question; uncached input 44 % of its cost per question; 27 % of input tokens read from the cache. The answer strength is Probable (Moderate). The leading hypothesis is output cost of Nova Lite.
 
 ### At a glance
 
 | Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |
 |---|---|---|---|---|---|
 | Orion Max (reference) | 85 (82–88), rank joint 1 | 12.0 s | $0.050 | answers without tools, 9.8 points | none |
-| Vega Pro | 80 (77–83), rank joint 1 | 9.0 s | $0.030 | other low-scoring answers, 2.8 points | none |
+| Vega Pro | 80 (77–83), rank joint 1 | 9.0 s | $0.030 | mostly Accuracy, 2.8 points | none |
 | Lyra Mini | 70 (66–74), rank joint 3 | 15.0 s | $0.020 | confirmed critical errors, 7.2 points | 1 critical error |
 | Nova Lite | 70 (64–76), rank joint 3 | 8.0 s | $0.060 | answers without tools, 6.3 points | none |
-| Zeta Prime | 55 (50–60), rank 5 | 20.0 s | $0.010 | other low-scoring answers, 5.6 points | 1 isolated miss |
+| Zeta Prime | 55 (50–60), rank 5 | 20.0 s | $0.010 | mostly Accuracy, 5.6 points | 1 isolated miss |
 
 ### How sure are we?
 
@@ -69,10 +69,10 @@
 | Model | Index | Strengths | Lost points on | Flags |
 |---|---|---|---|---|
 | Orion Max (reference) | 85 | joint first on Accuracy of 5 models; joint first on Completeness of 5 models | answers without tools: 9.8 index points on 1 question (Q3) | none |
-| Vega Pro | 80 | joint first on Accuracy of 5 models; joint first on Completeness of 5 models | other low-scoring answers: 2.8 index points on 2 questions (Q3 and Q4) | none |
+| Vega Pro | 80 | joint first on Accuracy of 5 models; joint first on Completeness of 5 models | low-scoring answers, mostly Accuracy: 2.8 index points on 2 questions (Q3 and Q4) | none |
 | Lyra Mini | 70 | none ranked first or second | confirmed critical errors: 7.2 index points on 1 question (Q3) | 1 critical error (Q3) |
 | Nova Lite | 70 | none ranked first or second | answers without tools: 6.3 index points on 1 question (Q3) | none |
-| Zeta Prime | 55 | none ranked first or second | other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4); last on Accuracy of 5 models | 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more |
+| Zeta Prime | 55 | none ranked first or second | low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); last on Accuracy of 5 models | 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more |
 
 *Each entry is a count, a share or a rank that was measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (Appendix A), with its questions.*
 
@@ -215,9 +215,9 @@ The strongest hypothesis in the table: Shared failures on specific questions poi
 | WS3.1: tool rounds in the time of Orion Max | Tool rounds multiply Orion Max's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
 | WS3.2: tool rounds in the time of Nova Lite | Tool rounds multiply Nova Lite's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
 | WS3.3: tool rounds in the time of Zeta Prime | Tool rounds multiply Zeta Prime's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
-| WS2.1: output generation of Orion Max | Most of Orion Max's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 70 % (69–71 %) | run 2 |
-| WS2.2: output generation of Nova Lite | Most of Nova Lite's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 66 % (65–67 %) | check 2 |
-| WS2.3: output generation of Zeta Prime | Most of Zeta Prime's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 65 % (64–66 %) | check 3 |
+| WS2.1: output generation of Zeta Prime | Most of Zeta Prime's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 65 % (64–66 %) | check 2 |
+| WS2.2: output generation of Nova Lite | Most of Nova Lite's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 66 % (65–67 %) | check 3 |
+| WS2.3: output generation of Orion Max | Most of Orion Max's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 70 % (69–71 %) | run 2 |
 
 *Null hypotheses (the difference is within sampling noise):* it stands for Orion Max vs Vega Pro, Orion Max vs Lyra Mini, Orion Max vs Nova Lite, Orion Max vs Zeta Prime and Nova Lite vs Zeta Prime.
 
@@ -227,22 +227,22 @@ The strongest hypothesis in the table: Tool rounds multiply Orion Max's time (wh
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| HC2.1: higher price per token of Vega Pro against Orion Max | Vega Pro costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 72 % (71–73 %) | — |
-| HC2.2: higher price per token of Lyra Mini against Orion Max | Lyra Mini costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 71 % (70–71 %) | — |
-| HC2.3: higher price per token of Nova Lite against Orion Max | Nova Lite costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 70 % (69–70 %) | — |
-| WC1.1: output cost of Orion Max | Output (with reasoning) is Orion Max's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 69 % | — |
-| HC2.4: higher price per token of Zeta Prime against Orion Max | Zeta Prime costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 69 % (68–69 %) | — |
-| HC2.5: higher price per token of Zeta Prime against Nova Lite | Zeta Prime costs more than Nova Lite mainly from its price per token. | Probable (Moderate) | 65 % (64–65 %) | — |
+| WC1.1: output cost of Zeta Prime | Output (with reasoning) is Zeta Prime's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 54 % | — |
+| HC2.1: higher price per token of Zeta Prime against Orion Max | Zeta Prime costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 69 % (68–69 %) | — |
 | WC1.2: output cost of Nova Lite | Output (with reasoning) is Nova Lite's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 55 % | — |
-| WC1.3: output cost of Zeta Prime | Output (with reasoning) is Zeta Prime's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 54 % | — |
-| HC4.1: weak prompt caching of Zeta Prime against Nova Lite | Weak prompt caching raises Zeta Prime's cost against Nova Lite. | Ruled out (Not supported) | 12 % (12–13 %) | run 1 |
-| HC4.2: weak prompt caching of Zeta Prime against Orion Max | Weak prompt caching raises Zeta Prime's cost against Orion Max. | Ruled out (Not supported) | 9 % (9–9 %) | run 1 |
-| HC4.3: weak prompt caching of Nova Lite against Orion Max | Weak prompt caching raises Nova Lite's cost against Orion Max. | Ruled out (Not supported) | 8 % (8–9 %) | run 1 |
+| HC2.2: higher price per token of Nova Lite against Orion Max | Nova Lite costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 70 % (69–70 %) | — |
+| HC2.3: higher price per token of Lyra Mini against Orion Max | Lyra Mini costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 71 % (70–71 %) | — |
+| WC1.3: output cost of Orion Max | Output (with reasoning) is Orion Max's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 69 % | — |
+| HC2.4: higher price per token of Zeta Prime against Nova Lite | Zeta Prime costs more than Nova Lite mainly from its price per token. | Probable (Moderate) | 65 % (64–65 %) | — |
+| HC2.5: higher price per token of Vega Pro against Orion Max | Vega Pro costs more than Orion Max mainly from its price per token. | Probable (Moderate) | 72 % (71–73 %) | — |
+| HC4.1: weak prompt caching of Zeta Prime against Orion Max | Weak prompt caching raises Zeta Prime's cost against Orion Max. | Ruled out (Not supported) | 9 % (9–9 %) | run 1 |
+| HC4.2: weak prompt caching of Nova Lite against Orion Max | Weak prompt caching raises Nova Lite's cost against Orion Max. | Ruled out (Not supported) | 8 % (8–9 %) | run 1 |
+| HC4.3: weak prompt caching of Zeta Prime against Nova Lite | Weak prompt caching raises Zeta Prime's cost against Nova Lite. | Ruled out (Not supported) | 12 % (12–13 %) | run 1 |
 | HC4.4: weak prompt caching of Lyra Mini against Orion Max | Weak prompt caching raises Lyra Mini's cost against Orion Max. | Ruled out (Not supported) | 8 % (7–8 %) | run 1 |
 
 *Null hypotheses (the difference is within sampling noise):* a paired result rejects it for Orion Max vs Vega Pro, Orion Max vs Lyra Mini, Orion Max vs Nova Lite, Orion Max vs Zeta Prime and Nova Lite vs Zeta Prime.
 
-The strongest hypothesis in the table: Vega Pro costs more than Orion Max mainly from its price per token. Its grade and the evidence against it stand beside it.
+The strongest hypothesis in the table: Output (with reasoning) is Zeta Prime's largest cost component (where its cost goes, not a comparison). Its grade and the evidence against it stand beside it.
 
 ### The writer's hypotheses
 
@@ -260,7 +260,7 @@ The strongest hypothesis in the table: Vega Pro costs more than Orion Max mainly
 |---|---|---|---|
 | Intelligence | Not established | HQ3.1: shared failures on the same questions | The best hypothesis, HQ3.1, is graded Low: qualitative only. |
 | Speed | Probable cause | WS3.1: tool rounds in the time of Orion Max | WS3.1 is the best hypothesis, graded Moderate: replicates failed: Orion Max has a single run per suite. |
-| Cost | Probable cause | HC2.1: higher price per token of Vega Pro against Orion Max | HC2.1 is the best hypothesis, graded Moderate: replicates failed: Vega Pro and Orion Max have a single run per suite. |
+| Cost | Probable cause | WC1.1: output cost of Zeta Prime | WC1.1 is the best hypothesis, graded Moderate: replicates failed: Zeta Prime has a single run per suite. |
 
 > [!TIP]
 > **Conclusion.** Intelligence: Not established. Speed: Probable cause. Cost: Probable cause.
@@ -271,14 +271,14 @@ In the order to make them: the Overseer chat first (C), then the benchmark (B), 
 
 | # | Run | Purpose | Models | Settles | Estimate |
 |---|---|---|---|---|---|
-| 1 | Replicate (recommended) | M, model selection | Orion Max, Nova Lite, Zeta Prime and Lyra Mini | WS3.1: tool rounds in the time of Orion Max; WS3.2: tool rounds in the time of Nova Lite; WS3.3: tool rounds in the time of Zeta Prime; HC4.1: weak prompt caching of Zeta Prime against Nova Lite; HC4.2: weak prompt caching of Zeta Prime against Orion Max; HC4.3: weak prompt caching of Nova Lite against Orion Max; HC4.4: weak prompt caching of Lyra Mini against Orion Max | not estimated |
-| 2 | Thinking-level pair (optional) | M, model selection | Orion Max and Orion Max (medium) | WS2.1: output generation of Orion Max | not estimated |
+| 1 | Replicate (recommended) | M, model selection | Orion Max, Nova Lite, Zeta Prime and Lyra Mini | WS3.1, WS3.2, WS3.3, HC4.1, HC4.2, HC4.3, HC4.4 | not estimated |
+| 2 | Thinking-level pair (optional) | M, model selection | Orion Max and Orion Max (medium) | WS2.3 | not estimated |
 
 ### Checks
 
 1. Check the rubric of Q3 against the source, and whether the tools' corpus holds the facts the question needs. *(rubric; settles HQ3.1)*
-2. No configured, enabled Benchmark-role configuration of Nova Lite exists at another thinking level; add one to test WS2.2. *(configuration; settles WS2.2)*
-3. No configured, enabled Benchmark-role configuration of Zeta Prime exists at another thinking level; add one to test WS2.3. *(configuration; settles WS2.3)*
+2. No configured, enabled Benchmark-role configuration of Zeta Prime exists at another thinking level; add one to test WS2.1. *(configuration; settles WS2.1)*
+3. No configured, enabled Benchmark-role configuration of Nova Lite exists at another thinking level; add one to test WS2.2. *(configuration; settles WS2.2)*
 
 The runs are ordered chat first, then the benchmark, then model selection.
 
@@ -602,39 +602,39 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 - **WS3.1: tool rounds in the time of Orion Max** (Orion Max; locus model / chat; Probable (Moderate))
   - *For:* Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
   - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Orion Max has a single run per suite.
+  - *Grade reasons:* see Robustness.
   - *Refuted if:* The ρ interval includes zero.
   - *Robustness:* Replicates failed (Orion Max has a single run per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
 - **WS3.2: tool rounds in the time of Nova Lite** (Nova Lite; locus model / chat; Probable (Moderate))
   - *For:* Across Nova Lite's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
   - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Nova Lite has a single run per suite.
+  - *Grade reasons:* see Robustness.
   - *Refuted if:* The ρ interval includes zero.
   - *Robustness:* Replicates failed (Nova Lite has a single run per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
 - **WS3.3: tool rounds in the time of Zeta Prime** (Zeta Prime; locus model / chat; Probable (Moderate))
   - *For:* Across Zeta Prime's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
   - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Zeta Prime has a single run per suite.
+  - *Grade reasons:* see Robustness.
   - *Refuted if:* The ρ interval includes zero.
   - *Robustness:* Replicates failed (Zeta Prime has a single run per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
-- **WS2.1: output generation of Orion Max** (Orion Max; locus model; Ruled out (Not supported))
-  - *For:* Output generation is 70 % (69–71 %) of model time per question.
-  - *Against:* Reasoning is 31 % of Orion Max's output tokens.
-  - *Grade reasons:* the rule's own test refutes it: reasoning is 31 % of Orion Max's output tokens.
+- **WS2.1: output generation of Zeta Prime** (Zeta Prime; locus model; Ruled out (Not supported))
+  - *For:* Output generation is 65 % (64–66 %) of model time per question.
+  - *Against:* Reasoning is 39 % of Zeta Prime's output tokens.
+  - *Grade reasons:* the rule's own test refutes it: reasoning is 39 % of Zeta Prime's output tokens.
   - *Refuted if:* The reasoning share is under one half.
-  - *Robustness:* Replicates failed (Orion Max has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
+  - *Robustness:* Replicates failed (Zeta Prime has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
 - **WS2.2: output generation of Nova Lite** (Nova Lite; locus model; Ruled out (Not supported))
   - *For:* Output generation is 66 % (65–67 %) of model time per question.
   - *Against:* Reasoning is 38 % of Nova Lite's output tokens.
   - *Grade reasons:* the rule's own test refutes it: reasoning is 38 % of Nova Lite's output tokens.
   - *Refuted if:* The reasoning share is under one half.
   - *Robustness:* Replicates failed (Nova Lite has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
-- **WS2.3: output generation of Zeta Prime** (Zeta Prime; locus model; Ruled out (Not supported))
-  - *For:* Output generation is 65 % (64–66 %) of model time per question.
-  - *Against:* Reasoning is 39 % of Zeta Prime's output tokens.
-  - *Grade reasons:* the rule's own test refutes it: reasoning is 39 % of Zeta Prime's output tokens.
+- **WS2.3: output generation of Orion Max** (Orion Max; locus model; Ruled out (Not supported))
+  - *For:* Output generation is 70 % (69–71 %) of model time per question.
+  - *Against:* Reasoning is 31 % of Orion Max's output tokens.
+  - *Grade reasons:* the rule's own test refutes it: reasoning is 31 % of Orion Max's output tokens.
   - *Refuted if:* The reasoning share is under one half.
-  - *Robustness:* Replicates failed (Zeta Prime has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
+  - *Robustness:* Replicates failed (Orion Max has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
 
 | Hypothesis | Pair | Paired result | Grade |
 |---|---|---|---|
@@ -646,72 +646,72 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 
 ### Cost
 
-- **HC2.1: higher price per token of Vega Pro against Orion Max** (Vega Pro and Orion Max; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 72 % (71–73 %) of the $0.0078 per-question cost difference.
-  - *Against:* The volume effect is 28 % (27–29 %) of the difference.
-  - *Grade reasons:* replicates failed: Vega Pro and Orion Max have a single run per suite.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Vega Pro and Orion Max have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC2.2: higher price per token of Lyra Mini against Orion Max** (Lyra Mini and Orion Max; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 71 % (70–71 %) of the $0.017 per-question cost difference.
-  - *Against:* The volume effect is 29 % (29–30 %) of the difference.
-  - *Grade reasons:* replicates failed: Lyra Mini and Orion Max have a single run per suite.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Lyra Mini and Orion Max have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC2.3: higher price per token of Nova Lite against Orion Max** (Nova Lite and Orion Max; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 70 % (69–70 %) of the $0.027 per-question cost difference.
-  - *Against:* The volume effect is 30 % (30–31 %) of the difference.
-  - *Grade reasons:* replicates failed: Nova Lite and Orion Max have a single run per suite.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Nova Lite and Orion Max have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **WC1.1: output cost of Orion Max** (Orion Max; locus model; Probable (Moderate))
-  - *For:* Visible output and reasoning are 69 % of Orion Max's cost per question.
+- **WC1.1: output cost of Zeta Prime** (Zeta Prime; locus model; Probable (Moderate))
+  - *For:* Visible output and reasoning are 54 % of Zeta Prime's cost per question.
   - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Orion Max has a single run per suite.
+  - *Grade reasons:* see Robustness.
   - *Refuted if:* Another component is larger.
-  - *Robustness:* Replicates failed (Orion Max has a single run per suite).
-- **HC2.4: higher price per token of Zeta Prime against Orion Max** (Zeta Prime and Orion Max; locus model; Probable (Moderate))
+  - *Robustness:* Replicates failed (Zeta Prime has a single run per suite).
+- **HC2.1: higher price per token of Zeta Prime against Orion Max** (Zeta Prime and Orion Max; locus model; Probable (Moderate))
   - *For:* Price per token, all components accounts for 69 % (68–69 %) of the $0.038 per-question cost difference.
   - *Against:* The volume effect is 31 % (31–32 %) of the difference.
-  - *Grade reasons:* replicates failed: Zeta Prime and Orion Max have a single run per suite.
+  - *Grade reasons:* see Robustness.
   - *Refuted if:* The volume effect is larger.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Zeta Prime and Orion Max have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC2.5: higher price per token of Zeta Prime against Nova Lite** (Zeta Prime and Nova Lite; locus model; Probable (Moderate))
-  - *For:* Price per token, all components accounts for 65 % (64–65 %) of the $0.011 per-question cost difference.
-  - *Against:* The volume effect is 35 % (35–36 %) of the difference.
-  - *Grade reasons:* replicates failed: Zeta Prime and Nova Lite have a single run per suite.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Zeta Prime and Nova Lite have a single run per suite); Configuration passed (No configuration key differs beyond the model).
 - **WC1.2: output cost of Nova Lite** (Nova Lite; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 55 % of Nova Lite's cost per question.
   - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Nova Lite has a single run per suite.
+  - *Grade reasons:* see Robustness.
   - *Refuted if:* Another component is larger.
   - *Robustness:* Replicates failed (Nova Lite has a single run per suite).
-- **WC1.3: output cost of Zeta Prime** (Zeta Prime; locus model; Probable (Moderate))
-  - *For:* Visible output and reasoning are 54 % of Zeta Prime's cost per question.
+- **HC2.2: higher price per token of Nova Lite against Orion Max** (Nova Lite and Orion Max; locus model; Probable (Moderate))
+  - *For:* Price per token, all components accounts for 70 % (69–70 %) of the $0.027 per-question cost difference.
+  - *Against:* The volume effect is 30 % (30–31 %) of the difference.
+  - *Grade reasons:* see Robustness.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Nova Lite and Orion Max have a single run per suite); Configuration passed (No configuration key differs beyond the model).
+- **HC2.3: higher price per token of Lyra Mini against Orion Max** (Lyra Mini and Orion Max; locus model; Probable (Moderate))
+  - *For:* Price per token, all components accounts for 71 % (70–71 %) of the $0.017 per-question cost difference.
+  - *Against:* The volume effect is 29 % (29–30 %) of the difference.
+  - *Grade reasons:* see Robustness.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Lyra Mini and Orion Max have a single run per suite); Configuration passed (No configuration key differs beyond the model).
+- **WC1.3: output cost of Orion Max** (Orion Max; locus model; Probable (Moderate))
+  - *For:* Visible output and reasoning are 69 % of Orion Max's cost per question.
   - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Zeta Prime has a single run per suite.
+  - *Grade reasons:* see Robustness.
   - *Refuted if:* Another component is larger.
-  - *Robustness:* Replicates failed (Zeta Prime has a single run per suite).
-- **HC4.1: weak prompt caching of Zeta Prime against Nova Lite** (Zeta Prime and Nova Lite; locus chat / provider; Ruled out (Not supported))
-  - *For:* Uncached input, token volume accounts for 12 % (12–13 %) of the $0.011 per-question cost difference.
-  - *Against:* Zeta Prime's cache-read share is 28 % against the models' median of 26 %.
-  - *Grade reasons:* the rule's own test refutes it: Zeta Prime's cache-read share is 28 % against the models' median of 26 %.
-  - *Refuted if:* The cache-read share is comparable to the other models'.
+  - *Robustness:* Replicates failed (Orion Max has a single run per suite).
+- **HC2.4: higher price per token of Zeta Prime against Nova Lite** (Zeta Prime and Nova Lite; locus model; Probable (Moderate))
+  - *For:* Price per token, all components accounts for 65 % (64–65 %) of the $0.011 per-question cost difference.
+  - *Against:* The volume effect is 35 % (35–36 %) of the difference.
+  - *Grade reasons:* see Robustness.
+  - *Refuted if:* The volume effect is larger.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Zeta Prime and Nova Lite have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC4.2: weak prompt caching of Zeta Prime against Orion Max** (Zeta Prime and Orion Max; locus chat / provider; Ruled out (Not supported))
+- **HC2.5: higher price per token of Vega Pro against Orion Max** (Vega Pro and Orion Max; locus model; Probable (Moderate))
+  - *For:* Price per token, all components accounts for 72 % (71–73 %) of the $0.0078 per-question cost difference.
+  - *Against:* The volume effect is 28 % (27–29 %) of the difference.
+  - *Grade reasons:* see Robustness.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Vega Pro and Orion Max have a single run per suite); Configuration passed (No configuration key differs beyond the model).
+- **HC4.1: weak prompt caching of Zeta Prime against Orion Max** (Zeta Prime and Orion Max; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 9 % (9–9 %) of the $0.038 per-question cost difference.
   - *Against:* Zeta Prime's cache-read share is 28 % against the models' median of 26 %.
   - *Grade reasons:* the rule's own test refutes it: Zeta Prime's cache-read share is 28 % against the models' median of 26 %.
   - *Refuted if:* The cache-read share is comparable to the other models'.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Zeta Prime and Orion Max have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC4.3: weak prompt caching of Nova Lite against Orion Max** (Nova Lite and Orion Max; locus chat / provider; Ruled out (Not supported))
+- **HC4.2: weak prompt caching of Nova Lite against Orion Max** (Nova Lite and Orion Max; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 8 % (8–9 %) of the $0.027 per-question cost difference.
   - *Against:* Nova Lite's cache-read share is 27 % against the models' median of 26 %.
   - *Grade reasons:* the rule's own test refutes it: Nova Lite's cache-read share is 27 % against the models' median of 26 %.
   - *Refuted if:* The cache-read share is comparable to the other models'.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Nova Lite and Orion Max have a single run per suite); Configuration passed (No configuration key differs beyond the model).
+- **HC4.3: weak prompt caching of Zeta Prime against Nova Lite** (Zeta Prime and Nova Lite; locus chat / provider; Ruled out (Not supported))
+  - *For:* Uncached input, token volume accounts for 12 % (12–13 %) of the $0.011 per-question cost difference.
+  - *Against:* Zeta Prime's cache-read share is 28 % against the models' median of 26 %.
+  - *Grade reasons:* the rule's own test refutes it: Zeta Prime's cache-read share is 28 % against the models' median of 26 %.
+  - *Refuted if:* The cache-read share is comparable to the other models'.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Zeta Prime and Nova Lite have a single run per suite); Configuration passed (No configuration key differs beyond the model).
 - **HC4.4: weak prompt caching of Lyra Mini against Orion Max** (Lyra Mini and Orion Max; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 8 % (7–8 %) of the $0.017 per-question cost difference.
   - *Against:* Lyra Mini's cache-read share is 26 % against the models' median of 26 %.
@@ -733,7 +733,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ### Run 1: Replicate (M, model selection, recommended)
 
-- **Decides:** Confirms WS3.1 if model time keeps rising with the calls per answer; refutes it if the ρ interval includes zero. Confirms WS3.2 if model time keeps rising with the calls per answer; refutes it if the ρ interval includes zero. Confirms WS3.3 if model time keeps rising with the calls per answer; refutes it if the ρ interval includes zero. Confirms HC4.1 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'. Confirms HC4.2 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'. Confirms HC4.3 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'. Confirms HC4.4 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'.
+- **Decides:** Confirms WS3.1, WS3.2 and WS3.3 if model time keeps rising with the calls per answer; refutes each if the ρ interval includes zero. Confirms HC4.1, HC4.2, HC4.3 and HC4.4 if the cache-read share stays low; refutes each if the cache-read share is comparable to the other models'.
 - **Predicted comparability:** Model comparison with the analyzed runs; a replicate (Tier A) of each model's own runs
 - **Estimate:** not estimated
 - **Settles:** WS3.1, WS3.2, WS3.3, HC4.1, HC4.2, HC4.3, HC4.4
@@ -760,10 +760,10 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ### Run 2: Thinking-level pair (M, model selection, optional)
 
-- **Decides:** Confirms WS2.1 if the decode share stays the largest and reasoning stays at least half the output; refutes it if the reasoning share is under one half.
+- **Decides:** Confirms WS2.3 if the decode share stays the largest and reasoning stays at least half the output; refutes it if the reasoning share is under one half.
 - **Predicted comparability:** Model comparison: only the thinking level differs
 - **Estimate:** not estimated
-- **Settles:** WS2.1
+- **Settles:** WS2.3
 
 | Launcher field | Setting |
 |---|---|
@@ -2077,7 +2077,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "No response-style conflict",
+      "display": "no response-style conflict",
       "key": "model.A.style.responseStyleConflict",
       "value": false
     },
@@ -2838,7 +2838,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "No response-style conflict",
+      "display": "no response-style conflict",
       "key": "model.B.style.responseStyleConflict",
       "value": false
     },
@@ -3623,7 +3623,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "No response-style conflict",
+      "display": "no response-style conflict",
       "key": "model.C.style.responseStyleConflict",
       "value": false
     },
@@ -4408,7 +4408,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "No response-style conflict",
+      "display": "no response-style conflict",
       "key": "model.D.style.responseStyleConflict",
       "value": false
     },
@@ -5193,7 +5193,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "No response-style conflict",
+      "display": "no response-style conflict",
       "key": "model.E.style.responseStyleConflict",
       "value": false
     },
@@ -6712,9 +6712,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "HC2.1",
+      "display": "WC1.1",
       "key": "rca.axis.cost.best",
-      "value": "HC2.1"
+      "value": "WC1.1"
     },
     {
       "available": true,
@@ -6753,12 +6753,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2.",
+      "display": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test WS2.1.",
       "key": "rca.check.2"
     },
     {
       "available": true,
-      "display": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test WS2.3.",
+      "display": "No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2.",
       "key": "rca.check.3"
     },
     {
@@ -8320,7 +8320,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "The volume effect is 28 % (27–29 %) of the difference.",
+      "display": "The volume effect is 31 % (31–32 %) of the difference.",
       "key": "rca.hypothesis.HC2.1.against"
     },
     {
@@ -8330,7 +8330,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Price per token, all components accounts for 72 % (71–73 %) of the $0.0078 per-question cost difference.",
+      "display": "Price per token, all components accounts for 69 % (68–69 %) of the $0.038 per-question cost difference.",
       "key": "rca.hypothesis.HC2.1.for"
     },
     {
@@ -8341,17 +8341,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model B and Model A have a single run per suite.",
+      "display": "replicates failed: Model E and Model A have a single run per suite.",
       "key": "rca.hypothesis.HC2.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "71–73 %",
+      "display": "68–69 %",
       "key": "rca.hypothesis.HC2.1.interval"
     },
     {
       "available": true,
-      "display": "higher price per token of Model B against Model A",
+      "display": "higher price per token of Model E against Model A",
       "key": "rca.hypothesis.HC2.1.label"
     },
     {
@@ -8361,7 +8361,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model B and Model A",
+      "display": "Model E and Model A",
       "key": "rca.hypothesis.HC2.1.models"
     },
     {
@@ -8371,18 +8371,18 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "72 %",
+      "display": "69 %",
       "key": "rca.hypothesis.HC2.1.share",
-      "value": 0.71922009092776
+      "value": 0.6885105330251258
     },
     {
       "available": true,
-      "display": "Model B costs more than Model A mainly from its price per token.",
+      "display": "Model E costs more than Model A mainly from its price per token.",
       "key": "rca.hypothesis.HC2.1.statement"
     },
     {
       "available": true,
-      "display": "The volume effect is 29 % (29–30 %) of the difference.",
+      "display": "The volume effect is 30 % (30–31 %) of the difference.",
       "key": "rca.hypothesis.HC2.2.against"
     },
     {
@@ -8392,7 +8392,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Price per token, all components accounts for 71 % (70–71 %) of the $0.017 per-question cost difference.",
+      "display": "Price per token, all components accounts for 70 % (69–70 %) of the $0.027 per-question cost difference.",
       "key": "rca.hypothesis.HC2.2.for"
     },
     {
@@ -8403,17 +8403,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model C and Model A have a single run per suite.",
+      "display": "replicates failed: Model D and Model A have a single run per suite.",
       "key": "rca.hypothesis.HC2.2.gradeReasons"
     },
     {
       "available": true,
-      "display": "70–71 %",
+      "display": "69–70 %",
       "key": "rca.hypothesis.HC2.2.interval"
     },
     {
       "available": true,
-      "display": "higher price per token of Model C against Model A",
+      "display": "higher price per token of Model D against Model A",
       "key": "rca.hypothesis.HC2.2.label"
     },
     {
@@ -8423,7 +8423,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model C and Model A",
+      "display": "Model D and Model A",
       "key": "rca.hypothesis.HC2.2.models"
     },
     {
@@ -8433,18 +8433,18 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "71 %",
+      "display": "70 %",
       "key": "rca.hypothesis.HC2.2.share",
-      "value": 0.7067857366013377
+      "value": 0.6968068304832366
     },
     {
       "available": true,
-      "display": "Model C costs more than Model A mainly from its price per token.",
+      "display": "Model D costs more than Model A mainly from its price per token.",
       "key": "rca.hypothesis.HC2.2.statement"
     },
     {
       "available": true,
-      "display": "The volume effect is 30 % (30–31 %) of the difference.",
+      "display": "The volume effect is 29 % (29–30 %) of the difference.",
       "key": "rca.hypothesis.HC2.3.against"
     },
     {
@@ -8454,7 +8454,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Price per token, all components accounts for 70 % (69–70 %) of the $0.027 per-question cost difference.",
+      "display": "Price per token, all components accounts for 71 % (70–71 %) of the $0.017 per-question cost difference.",
       "key": "rca.hypothesis.HC2.3.for"
     },
     {
@@ -8465,17 +8465,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model D and Model A have a single run per suite.",
+      "display": "replicates failed: Model C and Model A have a single run per suite.",
       "key": "rca.hypothesis.HC2.3.gradeReasons"
     },
     {
       "available": true,
-      "display": "69–70 %",
+      "display": "70–71 %",
       "key": "rca.hypothesis.HC2.3.interval"
     },
     {
       "available": true,
-      "display": "higher price per token of Model D against Model A",
+      "display": "higher price per token of Model C against Model A",
       "key": "rca.hypothesis.HC2.3.label"
     },
     {
@@ -8485,7 +8485,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model D and Model A",
+      "display": "Model C and Model A",
       "key": "rca.hypothesis.HC2.3.models"
     },
     {
@@ -8495,18 +8495,18 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "70 %",
+      "display": "71 %",
       "key": "rca.hypothesis.HC2.3.share",
-      "value": 0.6968068304832366
+      "value": 0.7067857366013377
     },
     {
       "available": true,
-      "display": "Model D costs more than Model A mainly from its price per token.",
+      "display": "Model C costs more than Model A mainly from its price per token.",
       "key": "rca.hypothesis.HC2.3.statement"
     },
     {
       "available": true,
-      "display": "The volume effect is 31 % (31–32 %) of the difference.",
+      "display": "The volume effect is 35 % (35–36 %) of the difference.",
       "key": "rca.hypothesis.HC2.4.against"
     },
     {
@@ -8516,7 +8516,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Price per token, all components accounts for 69 % (68–69 %) of the $0.038 per-question cost difference.",
+      "display": "Price per token, all components accounts for 65 % (64–65 %) of the $0.011 per-question cost difference.",
       "key": "rca.hypothesis.HC2.4.for"
     },
     {
@@ -8527,17 +8527,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model E and Model A have a single run per suite.",
+      "display": "replicates failed: Model E and Model D have a single run per suite.",
       "key": "rca.hypothesis.HC2.4.gradeReasons"
     },
     {
       "available": true,
-      "display": "68–69 %",
+      "display": "64–65 %",
       "key": "rca.hypothesis.HC2.4.interval"
     },
     {
       "available": true,
-      "display": "higher price per token of Model E against Model A",
+      "display": "higher price per token of Model E against Model D",
       "key": "rca.hypothesis.HC2.4.label"
     },
     {
@@ -8547,7 +8547,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model E and Model A",
+      "display": "Model E and Model D",
       "key": "rca.hypothesis.HC2.4.models"
     },
     {
@@ -8557,18 +8557,18 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "69 %",
+      "display": "65 %",
       "key": "rca.hypothesis.HC2.4.share",
-      "value": 0.6885105330251258
+      "value": 0.6491469867604399
     },
     {
       "available": true,
-      "display": "Model E costs more than Model A mainly from its price per token.",
+      "display": "Model E costs more than Model D mainly from its price per token.",
       "key": "rca.hypothesis.HC2.4.statement"
     },
     {
       "available": true,
-      "display": "The volume effect is 35 % (35–36 %) of the difference.",
+      "display": "The volume effect is 28 % (27–29 %) of the difference.",
       "key": "rca.hypothesis.HC2.5.against"
     },
     {
@@ -8578,7 +8578,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Price per token, all components accounts for 65 % (64–65 %) of the $0.011 per-question cost difference.",
+      "display": "Price per token, all components accounts for 72 % (71–73 %) of the $0.0078 per-question cost difference.",
       "key": "rca.hypothesis.HC2.5.for"
     },
     {
@@ -8589,17 +8589,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model E and Model D have a single run per suite.",
+      "display": "replicates failed: Model B and Model A have a single run per suite.",
       "key": "rca.hypothesis.HC2.5.gradeReasons"
     },
     {
       "available": true,
-      "display": "64–65 %",
+      "display": "71–73 %",
       "key": "rca.hypothesis.HC2.5.interval"
     },
     {
       "available": true,
-      "display": "higher price per token of Model E against Model D",
+      "display": "higher price per token of Model B against Model A",
       "key": "rca.hypothesis.HC2.5.label"
     },
     {
@@ -8609,7 +8609,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model E and Model D",
+      "display": "Model B and Model A",
       "key": "rca.hypothesis.HC2.5.models"
     },
     {
@@ -8619,13 +8619,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "65 %",
+      "display": "72 %",
       "key": "rca.hypothesis.HC2.5.share",
-      "value": 0.6491469867604399
+      "value": 0.71922009092776
     },
     {
       "available": true,
-      "display": "Model E costs more than Model D mainly from its price per token.",
+      "display": "Model B costs more than Model A mainly from its price per token.",
       "key": "rca.hypothesis.HC2.5.statement"
     },
     {
@@ -8640,7 +8640,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Uncached input, token volume accounts for 12 % (12–13 %) of the $0.011 per-question cost difference.",
+      "display": "Uncached input, token volume accounts for 9 % (9–9 %) of the $0.038 per-question cost difference.",
       "key": "rca.hypothesis.HC4.1.for"
     },
     {
@@ -8656,12 +8656,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "12–13 %",
+      "display": "9–9 %",
       "key": "rca.hypothesis.HC4.1.interval"
     },
     {
       "available": true,
-      "display": "weak prompt caching of Model E against Model D",
+      "display": "weak prompt caching of Model E against Model A",
       "key": "rca.hypothesis.HC4.1.label"
     },
     {
@@ -8671,7 +8671,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model E and Model D",
+      "display": "Model E and Model A",
       "key": "rca.hypothesis.HC4.1.models"
     },
     {
@@ -8687,18 +8687,18 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "12 %",
+      "display": "9 %",
       "key": "rca.hypothesis.HC4.1.share",
-      "value": 0.12479591005431967
+      "value": 0.09029929603239982
     },
     {
       "available": true,
-      "display": "Weak prompt caching raises Model E's cost against Model D.",
+      "display": "Weak prompt caching raises Model E's cost against Model A.",
       "key": "rca.hypothesis.HC4.1.statement"
     },
     {
       "available": true,
-      "display": "Model E's cache-read share is 28 % against the models' median of 26 %.",
+      "display": "Model D's cache-read share is 27 % against the models' median of 26 %.",
       "key": "rca.hypothesis.HC4.2.against"
     },
     {
@@ -8708,7 +8708,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Uncached input, token volume accounts for 9 % (9–9 %) of the $0.038 per-question cost difference.",
+      "display": "Uncached input, token volume accounts for 8 % (8–9 %) of the $0.027 per-question cost difference.",
       "key": "rca.hypothesis.HC4.2.for"
     },
     {
@@ -8719,17 +8719,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %.",
+      "display": "the rule's own test refutes it: Model D's cache-read share is 27 % against the models' median of 26 %.",
       "key": "rca.hypothesis.HC4.2.gradeReasons"
     },
     {
       "available": true,
-      "display": "9–9 %",
+      "display": "8–9 %",
       "key": "rca.hypothesis.HC4.2.interval"
     },
     {
       "available": true,
-      "display": "weak prompt caching of Model E against Model A",
+      "display": "weak prompt caching of Model D against Model A",
       "key": "rca.hypothesis.HC4.2.label"
     },
     {
@@ -8739,7 +8739,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model E and Model A",
+      "display": "Model D and Model A",
       "key": "rca.hypothesis.HC4.2.models"
     },
     {
@@ -8755,18 +8755,18 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "9 %",
+      "display": "8 %",
       "key": "rca.hypothesis.HC4.2.share",
-      "value": 0.09029929603239982
+      "value": 0.08375006426976137
     },
     {
       "available": true,
-      "display": "Weak prompt caching raises Model E's cost against Model A.",
+      "display": "Weak prompt caching raises Model D's cost against Model A.",
       "key": "rca.hypothesis.HC4.2.statement"
     },
     {
       "available": true,
-      "display": "Model D's cache-read share is 27 % against the models' median of 26 %.",
+      "display": "Model E's cache-read share is 28 % against the models' median of 26 %.",
       "key": "rca.hypothesis.HC4.3.against"
     },
     {
@@ -8776,7 +8776,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Uncached input, token volume accounts for 8 % (8–9 %) of the $0.027 per-question cost difference.",
+      "display": "Uncached input, token volume accounts for 12 % (12–13 %) of the $0.011 per-question cost difference.",
       "key": "rca.hypothesis.HC4.3.for"
     },
     {
@@ -8787,17 +8787,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: Model D's cache-read share is 27 % against the models' median of 26 %.",
+      "display": "the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %.",
       "key": "rca.hypothesis.HC4.3.gradeReasons"
     },
     {
       "available": true,
-      "display": "8–9 %",
+      "display": "12–13 %",
       "key": "rca.hypothesis.HC4.3.interval"
     },
     {
       "available": true,
-      "display": "weak prompt caching of Model D against Model A",
+      "display": "weak prompt caching of Model E against Model D",
       "key": "rca.hypothesis.HC4.3.label"
     },
     {
@@ -8807,7 +8807,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model D and Model A",
+      "display": "Model E and Model D",
       "key": "rca.hypothesis.HC4.3.models"
     },
     {
@@ -8823,13 +8823,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "8 %",
+      "display": "12 %",
       "key": "rca.hypothesis.HC4.3.share",
-      "value": 0.08375006426976137
+      "value": 0.12479591005431967
     },
     {
       "available": true,
-      "display": "Weak prompt caching raises Model D's cost against Model A.",
+      "display": "Weak prompt caching raises Model E's cost against Model D.",
       "key": "rca.hypothesis.HC4.3.statement"
     },
     {
@@ -8969,7 +8969,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Visible output and reasoning are 69 % of Model A's cost per question.",
+      "display": "Visible output and reasoning are 54 % of Model E's cost per question.",
       "key": "rca.hypothesis.WC1.1.for"
     },
     {
@@ -8980,12 +8980,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model A has a single run per suite.",
+      "display": "replicates failed: Model E has a single run per suite.",
       "key": "rca.hypothesis.WC1.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "output cost of Model A",
+      "display": "output cost of Model E",
       "key": "rca.hypothesis.WC1.1.label"
     },
     {
@@ -8995,7 +8995,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model A",
+      "display": "Model E",
       "key": "rca.hypothesis.WC1.1.models"
     },
     {
@@ -9005,13 +9005,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "69 %",
+      "display": "54 %",
       "key": "rca.hypothesis.WC1.1.share",
-      "value": 0.6922390722569134
+      "value": 0.5395961621079766
     },
     {
       "available": true,
-      "display": "Output (with reasoning) is Model A's largest cost component (where its cost goes, not a comparison).",
+      "display": "Output (with reasoning) is Model E's largest cost component (where its cost goes, not a comparison).",
       "key": "rca.hypothesis.WC1.1.statement"
     },
     {
@@ -9083,7 +9083,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Visible output and reasoning are 54 % of Model E's cost per question.",
+      "display": "Visible output and reasoning are 69 % of Model A's cost per question.",
       "key": "rca.hypothesis.WC1.3.for"
     },
     {
@@ -9094,12 +9094,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "replicates failed: Model E has a single run per suite.",
+      "display": "replicates failed: Model A has a single run per suite.",
       "key": "rca.hypothesis.WC1.3.gradeReasons"
     },
     {
       "available": true,
-      "display": "output cost of Model E",
+      "display": "output cost of Model A",
       "key": "rca.hypothesis.WC1.3.label"
     },
     {
@@ -9109,7 +9109,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model E",
+      "display": "Model A",
       "key": "rca.hypothesis.WC1.3.models"
     },
     {
@@ -9119,18 +9119,18 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "54 %",
+      "display": "69 %",
       "key": "rca.hypothesis.WC1.3.share",
-      "value": 0.5395961621079766
+      "value": 0.6922390722569134
     },
     {
       "available": true,
-      "display": "Output (with reasoning) is Model E's largest cost component (where its cost goes, not a comparison).",
+      "display": "Output (with reasoning) is Model A's largest cost component (where its cost goes, not a comparison).",
       "key": "rca.hypothesis.WC1.3.statement"
     },
     {
       "available": true,
-      "display": "Reasoning is 31 % of Model A's output tokens.",
+      "display": "Reasoning is 39 % of Model E's output tokens.",
       "key": "rca.hypothesis.WS2.1.against"
     },
     {
@@ -9140,7 +9140,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Output generation is 70 % (69–71 %) of model time per question.",
+      "display": "check 2",
+      "key": "rca.hypothesis.WS2.1.check",
+      "value": 2
+    },
+    {
+      "available": true,
+      "display": "Output generation is 65 % (64–66 %) of model time per question.",
       "key": "rca.hypothesis.WS2.1.for"
     },
     {
@@ -9151,17 +9157,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: reasoning is 31 % of Model A's output tokens.",
+      "display": "the rule's own test refutes it: reasoning is 39 % of Model E's output tokens.",
       "key": "rca.hypothesis.WS2.1.gradeReasons"
     },
     {
       "available": true,
-      "display": "69–71 %",
+      "display": "64–66 %",
       "key": "rca.hypothesis.WS2.1.interval"
     },
     {
       "available": true,
-      "display": "output generation of Model A",
+      "display": "output generation of Model E",
       "key": "rca.hypothesis.WS2.1.label"
     },
     {
@@ -9171,14 +9177,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model A",
+      "display": "Model E",
       "key": "rca.hypothesis.WS2.1.models"
-    },
-    {
-      "available": true,
-      "display": "next run 2",
-      "key": "rca.hypothesis.WS2.1.nextRun",
-      "value": 2
     },
     {
       "available": true,
@@ -9187,13 +9187,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "70 %",
+      "display": "65 %",
       "key": "rca.hypothesis.WS2.1.share",
-      "value": 0.7038770053475936
+      "value": 0.6502225519287834
     },
     {
       "available": true,
-      "display": "Most of Model A's time is output generation, driven by reasoning tokens (where its time goes, not a comparison).",
+      "display": "Most of Model E's time is output generation, driven by reasoning tokens (where its time goes, not a comparison).",
       "key": "rca.hypothesis.WS2.1.statement"
     },
     {
@@ -9208,9 +9208,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "check 2",
+      "display": "check 3",
       "key": "rca.hypothesis.WS2.2.check",
-      "value": 2
+      "value": 3
     },
     {
       "available": true,
@@ -9266,7 +9266,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Reasoning is 39 % of Model E's output tokens.",
+      "display": "Reasoning is 31 % of Model A's output tokens.",
       "key": "rca.hypothesis.WS2.3.against"
     },
     {
@@ -9276,13 +9276,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "check 3",
-      "key": "rca.hypothesis.WS2.3.check",
-      "value": 3
-    },
-    {
-      "available": true,
-      "display": "Output generation is 65 % (64–66 %) of model time per question.",
+      "display": "Output generation is 70 % (69–71 %) of model time per question.",
       "key": "rca.hypothesis.WS2.3.for"
     },
     {
@@ -9293,17 +9287,17 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "the rule's own test refutes it: reasoning is 39 % of Model E's output tokens.",
+      "display": "the rule's own test refutes it: reasoning is 31 % of Model A's output tokens.",
       "key": "rca.hypothesis.WS2.3.gradeReasons"
     },
     {
       "available": true,
-      "display": "64–66 %",
+      "display": "69–71 %",
       "key": "rca.hypothesis.WS2.3.interval"
     },
     {
       "available": true,
-      "display": "output generation of Model E",
+      "display": "output generation of Model A",
       "key": "rca.hypothesis.WS2.3.label"
     },
     {
@@ -9313,8 +9307,14 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Model E",
+      "display": "Model A",
       "key": "rca.hypothesis.WS2.3.models"
+    },
+    {
+      "available": true,
+      "display": "next run 2",
+      "key": "rca.hypothesis.WS2.3.nextRun",
+      "value": 2
     },
     {
       "available": true,
@@ -9323,13 +9323,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "65 %",
+      "display": "70 %",
       "key": "rca.hypothesis.WS2.3.share",
-      "value": 0.6502225519287834
+      "value": 0.7038770053475936
     },
     {
       "available": true,
-      "display": "Most of Model E's time is output generation, driven by reasoning tokens (where its time goes, not a comparison).",
+      "display": "Most of Model A's time is output generation, driven by reasoning tokens (where its time goes, not a comparison).",
       "key": "rca.hypothesis.WS2.3.statement"
     },
     {
@@ -9598,7 +9598,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "other low-scoring answers: 2.8 index points on 2 questions (Q3 and Q4)",
+      "display": "low-scoring answers, mostly Accuracy: 2.8 index points on 2 questions (Q3 and Q4)",
       "key": "rca.profile.B.lostPointsOn"
     },
     {
@@ -9669,7 +9669,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
+      "display": "low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
       "key": "rca.profile.E.lostPointsOn"
     },
     {
@@ -9865,9 +9865,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "HQ3.1",
+      "display": "none fired",
       "key": "rca.question.1.hypotheses",
-      "value": 1
+      "value": 0
     },
     {
       "available": true,
@@ -9877,14 +9877,14 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "joint first on Accuracy of 5 models; joint first on Completeness of 5 models; lost points on answers without tools: 9.8 index points on 1 question (Q3)",
+      "display": "joint first on Accuracy of 5 models; joint first on Completeness of 5 models",
       "key": "rca.question.1.signals"
     },
     {
       "available": true,
-      "display": "Suggestive (Low)",
+      "display": "Unknown",
       "key": "rca.question.1.status",
-      "value": "Low"
+      "value": "Unknown"
     },
     {
       "available": true,
@@ -9893,9 +9893,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "HQ3.1",
+      "display": "none fired",
       "key": "rca.question.2.hypotheses",
-      "value": 1
+      "value": 0
     },
     {
       "available": true,
@@ -9905,14 +9905,14 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "lost points on other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more",
+      "display": "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more",
       "key": "rca.question.2.signals"
     },
     {
       "available": true,
-      "display": "Suggestive (Low)",
+      "display": "Unknown",
       "key": "rca.question.2.status",
-      "value": "Low"
+      "value": "Unknown"
     },
     {
       "available": true,
@@ -9921,7 +9921,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "WS3.3 and WS2.3",
+      "display": "WS3.3 and WS2.1",
       "key": "rca.question.3.hypotheses",
       "value": 2
     },
@@ -9949,9 +9949,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "HC2.3, HC2.5, WC1.2, HC4.1 and HC4.3",
+      "display": "WC1.2, HC2.2 and HC4.2",
       "key": "rca.question.4.hypotheses",
-      "value": 5
+      "value": 3
     },
     {
       "available": true,
@@ -10023,25 +10023,25 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "1 % of the cost per question",
+      "display": "1 %",
       "key": "rca.within.A.cost.cacheRead.share",
       "value": 0.008920606601248885
     },
     {
       "available": true,
-      "display": "0 % of the cost per question",
+      "display": "0 %",
       "key": "rca.within.A.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "48 % of the cost per question",
+      "display": "48 %",
       "key": "rca.within.A.cost.output.share",
       "value": 0.47814451382694023
     },
     {
       "available": true,
-      "display": "21 % of the cost per question",
+      "display": "21 %",
       "key": "rca.within.A.cost.reasoning.share",
       "value": 0.21409455842997321
     },
@@ -10053,7 +10053,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "30 % of the cost per question",
+      "display": "30 %",
       "key": "rca.within.A.cost.uncachedInput.share",
       "value": 0.2988403211418377
     },
@@ -10065,7 +10065,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "3 % of the time per question",
+      "display": "3 %",
       "key": "rca.within.A.time.other.share",
       "value": 0.03340757238307349
     },
@@ -10077,7 +10077,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 % of the time per question",
+      "display": "59 %",
       "key": "rca.within.A.time.outputGeneration.share",
       "value": 0.5863028953229398
     },
@@ -10089,7 +10089,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of the time per question",
+      "display": "0 %",
       "key": "rca.within.A.time.ownWaits.share",
       "value": 0
     },
@@ -10101,7 +10101,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "17 % of the time per question",
+      "display": "17 %",
       "key": "rca.within.A.time.toolExecution.share",
       "value": 0.16703786191536749
     },
@@ -10119,31 +10119,31 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "21 % of the time per question",
+      "display": "21 %",
       "key": "rca.within.A.time.ttft.share",
       "value": 0.21325167037861914
     },
     {
       "available": true,
-      "display": "1 % of the cost per question",
+      "display": "1 %",
       "key": "rca.within.B.cost.cacheRead.share",
       "value": 0.006879944960440315
     },
     {
       "available": true,
-      "display": "0 % of the cost per question",
+      "display": "0 %",
       "key": "rca.within.B.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "41 % of the cost per question",
+      "display": "41 %",
       "key": "rca.within.B.cost.output.share",
       "value": 0.40729274165806667
     },
     {
       "available": true,
-      "display": "21 % of the cost per question",
+      "display": "21 %",
       "key": "rca.within.B.cost.reasoning.share",
       "value": 0.20915032679738563
     },
@@ -10155,7 +10155,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "38 % of the cost per question",
+      "display": "38 %",
       "key": "rca.within.B.cost.uncachedInput.share",
       "value": 0.37667698658410725
     },
@@ -10167,7 +10167,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "3 % of the time per question",
+      "display": "3 %",
       "key": "rca.within.B.time.other.share",
       "value": 0.028490028490028487
     },
@@ -10179,7 +10179,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 % of the time per question",
+      "display": "59 %",
       "key": "rca.within.B.time.outputGeneration.share",
       "value": 0.5873694207027539
     },
@@ -10191,7 +10191,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of the time per question",
+      "display": "0 %",
       "key": "rca.within.B.time.ownWaits.share",
       "value": 0
     },
@@ -10203,7 +10203,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "14 % of the time per question",
+      "display": "14 %",
       "key": "rca.within.B.time.toolExecution.share",
       "value": 0.14245014245014243
     },
@@ -10221,31 +10221,31 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "24 % of the time per question",
+      "display": "24 %",
       "key": "rca.within.B.time.ttft.share",
       "value": 0.241690408357075
     },
     {
       "available": true,
-      "display": "1 % of the cost per question",
+      "display": "1 %",
       "key": "rca.within.C.cost.cacheRead.share",
       "value": 0.0056832020784281885
     },
     {
       "available": true,
-      "display": "0 % of the cost per question",
+      "display": "0 %",
       "key": "rca.within.C.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "37 % of the cost per question",
+      "display": "37 %",
       "key": "rca.within.C.cost.output.share",
       "value": 0.36827149468214665
     },
     {
       "available": true,
-      "display": "21 % of the cost per question",
+      "display": "21 %",
       "key": "rca.within.C.cost.reasoning.share",
       "value": 0.20914183648615736
     },
@@ -10257,7 +10257,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "42 % of the cost per question",
+      "display": "42 %",
       "key": "rca.within.C.cost.uncachedInput.share",
       "value": 0.41690346675326784
     },
@@ -10269,7 +10269,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "3 % of the time per question",
+      "display": "3 %",
       "key": "rca.within.C.time.other.share",
       "value": 0.025041736227045072
     },
@@ -10281,7 +10281,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 % of the time per question",
+      "display": "59 %",
       "key": "rca.within.C.time.outputGeneration.share",
       "value": 0.585559265442404
     },
@@ -10293,7 +10293,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of the time per question",
+      "display": "0 %",
       "key": "rca.within.C.time.ownWaits.share",
       "value": 0
     },
@@ -10305,7 +10305,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "13 % of the time per question",
+      "display": "13 %",
       "key": "rca.within.C.time.toolExecution.share",
       "value": 0.12520868113522537
     },
@@ -10323,31 +10323,31 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "26 % of the time per question",
+      "display": "26 %",
       "key": "rca.within.C.time.ttft.share",
       "value": 0.26419031719532554
     },
     {
       "available": true,
-      "display": "0 % of the cost per question",
+      "display": "0 %",
       "key": "rca.within.D.cost.cacheRead.share",
       "value": 0.004880131763557617
     },
     {
       "available": true,
-      "display": "0 % of the cost per question",
+      "display": "0 %",
       "key": "rca.within.D.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "34 % of the cost per question",
+      "display": "34 %",
       "key": "rca.within.D.cost.output.share",
       "value": 0.34356127615445625
     },
     {
       "available": true,
-      "display": "21 % of the cost per question",
+      "display": "21 %",
       "key": "rca.within.D.cost.reasoning.share",
       "value": 0.21082169218568902
     },
@@ -10359,7 +10359,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "44 % of the cost per question",
+      "display": "44 %",
       "key": "rca.within.D.cost.uncachedInput.share",
       "value": 0.44073689989629716
     },
@@ -10371,7 +10371,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "2 % of the time per question",
+      "display": "2 %",
       "key": "rca.within.D.time.other.share",
       "value": 0.022172949002217293
     },
@@ -10383,7 +10383,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 % of the time per question",
+      "display": "59 %",
       "key": "rca.within.D.time.outputGeneration.share",
       "value": 0.5864745011086474
     },
@@ -10395,7 +10395,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of the time per question",
+      "display": "0 %",
       "key": "rca.within.D.time.ownWaits.share",
       "value": 0
     },
@@ -10407,7 +10407,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "11 % of the time per question",
+      "display": "11 %",
       "key": "rca.within.D.time.toolExecution.share",
       "value": 0.11086474501108647
     },
@@ -10425,31 +10425,31 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "28 % of the time per question",
+      "display": "28 %",
       "key": "rca.within.D.time.ttft.share",
       "value": 0.28048780487804875
     },
     {
       "available": true,
-      "display": "0 % of the cost per question",
+      "display": "0 %",
       "key": "rca.within.E.cost.cacheRead.share",
       "value": 0.004296147787483889
     },
     {
       "available": true,
-      "display": "0 % of the cost per question",
+      "display": "0 %",
       "key": "rca.within.E.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "33 % of the cost per question",
+      "display": "33 %",
       "key": "rca.within.E.cost.output.share",
       "value": 0.3265072318487756
     },
     {
       "available": true,
-      "display": "21 % of the cost per question",
+      "display": "21 %",
       "key": "rca.within.E.cost.reasoning.share",
       "value": 0.2130889302592009
     },
@@ -10461,7 +10461,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "46 % of the cost per question",
+      "display": "46 %",
       "key": "rca.within.E.cost.uncachedInput.share",
       "value": 0.45610769010453966
     },
@@ -10473,7 +10473,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "2 % of the time per question",
+      "display": "2 %",
       "key": "rca.within.E.time.other.share",
       "value": 0.02002670226969292
     },
@@ -10485,7 +10485,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "59 % of the time per question",
+      "display": "59 %",
       "key": "rca.within.E.time.outputGeneration.share",
       "value": 0.585113484646195
     },
@@ -10497,7 +10497,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of the time per question",
+      "display": "0 %",
       "key": "rca.within.E.time.ownWaits.share",
       "value": 0
     },
@@ -10509,7 +10509,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "10 % of the time per question",
+      "display": "10 %",
       "key": "rca.within.E.time.toolExecution.share",
       "value": 0.10013351134846461
     },
@@ -10527,7 +10527,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "29 % of the time per question",
+      "display": "29 %",
       "key": "rca.within.E.time.ttft.share",
       "value": 0.2947263017356475
     },
@@ -11828,8 +11828,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "axis": "cost",
-        "bestHypothesis": "HC2.1",
-        "reason": "HC2.1 is the best hypothesis, graded Moderate: replicates failed: Model B and Model A have a single run per suite.",
+        "bestHypothesis": "WC1.1",
+        "reason": "WC1.1 is the best hypothesis, graded Moderate: replicates failed: Model E has a single run per suite.",
         "status": "ProbableCause"
       }
     ],
@@ -11844,19 +11844,19 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "hypothesisIds": [
-          "WS2.2"
+          "WS2.1"
         ],
         "kind": "configuration",
         "number": 2,
-        "text": "No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2."
+        "text": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test WS2.1."
       },
       {
         "hypothesisIds": [
-          "WS2.3"
+          "WS2.2"
         ],
         "kind": "configuration",
         "number": 3,
-        "text": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test WS2.3."
+        "text": "No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2."
       }
     ],
     "computedAtUtc": "2026-09-21T08:00:00Z",
@@ -12651,7 +12651,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "unit": "usd"
       }
     ],
-    "engineVersion": 2,
+    "engineVersion": 3,
     "evidence": [
       {
         "atRisk": [
@@ -13823,39 +13823,40 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "Reasoning is 31 % of Model A's output tokens."
+          "Reasoning is 39 % of Model E's output tokens."
         ],
         "axis": "speed",
+        "checkNumber": 2,
         "confounds": [],
+        "explains": 8765,
         "factKeys": [
-          "rca.within.A.time.outputGeneration.share",
-          "model.A.tokens.reasoningShare"
+          "rca.within.E.time.outputGeneration.share",
+          "model.E.tokens.reasoningShare"
         ],
         "for": [
-          "Output generation is 70 % (69–71 %) of model time per question."
+          "Output generation is 65 % (64–66 %) of model time per question."
         ],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: reasoning is 31 % of Model A's output tokens."
+          "the rule's own test refutes it: reasoning is 39 % of Model E's output tokens."
         ],
         "id": "WS2",
         "key": "WS2.1",
         "kind": "within",
-        "label": "output generation of Model A",
+        "label": "output generation of Model E",
         "loci": [
           "model"
         ],
         "locus": "model",
         "models": [
-          "A"
+          "E"
         ],
-        "modelsText": "Model A",
-        "nextRunNumber": 2,
+        "modelsText": "Model E",
         "number": 1,
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
-            "detail": "Model A has a single run per suite.",
+            "detail": "Model E has a single run per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -13865,19 +13866,20 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           }
         ],
-        "share": 0.7038770053475936,
-        "shareLower": 0.6944414987628137,
-        "shareUpper": 0.711864406779661,
-        "shortStatement": "Output generation: Model A",
-        "statement": "Most of Model A's time is output generation, driven by reasoning tokens (where its time goes, not a comparison)."
+        "share": 0.6502225519287834,
+        "shareLower": 0.6437415578568212,
+        "shareUpper": 0.6561855670103092,
+        "shortStatement": "Output generation: Model E",
+        "statement": "Most of Model E's time is output generation, driven by reasoning tokens (where its time goes, not a comparison)."
       },
       {
         "against": [
           "Reasoning is 38 % of Model D's output tokens."
         ],
         "axis": "speed",
-        "checkNumber": 2,
+        "checkNumber": 3,
         "confounds": [],
+        "explains": 7935.000000000001,
         "factKeys": [
           "rca.within.D.time.outputGeneration.share",
           "model.D.tokens.reasoningShare"
@@ -13923,39 +13925,40 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
-          "Reasoning is 39 % of Model E's output tokens."
+          "Reasoning is 31 % of Model A's output tokens."
         ],
         "axis": "speed",
-        "checkNumber": 3,
         "confounds": [],
+        "explains": 5265,
         "factKeys": [
-          "rca.within.E.time.outputGeneration.share",
-          "model.E.tokens.reasoningShare"
+          "rca.within.A.time.outputGeneration.share",
+          "model.A.tokens.reasoningShare"
         ],
         "for": [
-          "Output generation is 65 % (64–66 %) of model time per question."
+          "Output generation is 70 % (69–71 %) of model time per question."
         ],
         "grade": "NotSupported",
         "gradeReasons": [
-          "the rule's own test refutes it: reasoning is 39 % of Model E's output tokens."
+          "the rule's own test refutes it: reasoning is 31 % of Model A's output tokens."
         ],
         "id": "WS2",
         "key": "WS2.3",
         "kind": "within",
-        "label": "output generation of Model E",
+        "label": "output generation of Model A",
         "loci": [
           "model"
         ],
         "locus": "model",
         "models": [
-          "E"
+          "A"
         ],
-        "modelsText": "Model E",
+        "modelsText": "Model A",
+        "nextRunNumber": 2,
         "number": 3,
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
-            "detail": "Model E has a single run per suite.",
+            "detail": "Model A has a single run per suite.",
             "name": "Replicates",
             "status": "Failed"
           },
@@ -13965,11 +13968,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           }
         ],
-        "share": 0.6502225519287834,
-        "shareLower": 0.6437415578568212,
-        "shareUpper": 0.6561855670103092,
-        "shortStatement": "Output generation: Model E",
-        "statement": "Most of Model E's time is output generation, driven by reasoning tokens (where its time goes, not a comparison)."
+        "share": 0.7038770053475936,
+        "shareLower": 0.6944414987628137,
+        "shareUpper": 0.711864406779661,
+        "shortStatement": "Output generation: Model A",
+        "statement": "Most of Model A's time is output generation, driven by reasoning tokens (where its time goes, not a comparison)."
       },
       {
         "against": [
@@ -14131,212 +14134,45 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "statement": "The cost per question difference between Model D and Model E is within sampling noise."
       },
       {
-        "against": [
-          "The volume effect is 28 % (27–29 %) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "factKeys": [
-          "rca.cost.A.B.all.price.share",
-          "rca.cost.A.B.total",
-          "model.B.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 72 % (71–73 %) of the $0.0078 per-question cost difference."
-        ],
-        "grade": "Moderate",
-        "gradeReasons": [
-          "replicates failed: Model B and Model A have a single run per suite."
-        ],
-        "id": "HC2",
-        "key": "HC2.1",
-        "kind": "pair",
-        "label": "higher price per token of Model B against Model A",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "B",
-          "A"
-        ],
-        "modelsText": "Model B and Model A",
-        "number": 1,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Model B and Model A have a single run per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.71922009092776,
-        "shareLower": 0.7123096297876061,
-        "shareUpper": 0.7258059219416408,
-        "shortStatement": "Price per token: Model B",
-        "statement": "Model B costs more than Model A mainly from its price per token."
-      },
-      {
-        "against": [
-          "The volume effect is 29 % (29–30 %) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "factKeys": [
-          "rca.cost.A.C.all.price.share",
-          "rca.cost.A.C.total",
-          "model.C.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 71 % (70–71 %) of the $0.017 per-question cost difference."
-        ],
-        "grade": "Moderate",
-        "gradeReasons": [
-          "replicates failed: Model C and Model A have a single run per suite."
-        ],
-        "id": "HC2",
-        "key": "HC2.2",
-        "kind": "pair",
-        "label": "higher price per token of Model C against Model A",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "C",
-          "A"
-        ],
-        "modelsText": "Model C and Model A",
-        "number": 2,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Model C and Model A have a single run per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.7067857366013377,
-        "shareLower": 0.700055545622766,
-        "shareUpper": 0.7132190392428142,
-        "shortStatement": "Price per token: Model C",
-        "statement": "Model C costs more than Model A mainly from its price per token."
-      },
-      {
-        "against": [
-          "The volume effect is 30 % (30–31 %) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "factKeys": [
-          "rca.cost.A.D.all.price.share",
-          "rca.cost.A.D.total",
-          "model.D.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 70 % (69–70 %) of the $0.027 per-question cost difference."
-        ],
-        "grade": "Moderate",
-        "gradeReasons": [
-          "replicates failed: Model D and Model A have a single run per suite."
-        ],
-        "id": "HC2",
-        "key": "HC2.3",
-        "kind": "pair",
-        "label": "higher price per token of Model D against Model A",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "D",
-          "A"
-        ],
-        "modelsText": "Model D and Model A",
-        "number": 3,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Model D and Model A have a single run per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.6968068304832366,
-        "shareLower": 0.6902657261070169,
-        "shareUpper": 0.7030744603212624,
-        "shortStatement": "Price per token: Model D",
-        "statement": "Model D costs more than Model A mainly from its price per token."
-      },
-      {
         "against": [],
         "axis": "cost",
         "confounds": [],
+        "explains": 0.02826,
         "factKeys": [
-          "model.A.cost.component.output.perQuestion",
-          "model.A.cost.component.reasoning.perQuestion"
+          "model.E.cost.component.output.perQuestion",
+          "model.E.cost.component.reasoning.perQuestion"
         ],
         "for": [
-          "Visible output and reasoning are 69 % of Model A's cost per question."
+          "Visible output and reasoning are 54 % of Model E's cost per question."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model A has a single run per suite."
+          "replicates failed: Model E has a single run per suite."
         ],
         "id": "WC1",
         "key": "WC1.1",
         "kind": "within",
-        "label": "output cost of Model A",
+        "label": "output cost of Model E",
         "loci": [
           "model"
         ],
         "locus": "model",
         "models": [
-          "A"
+          "E"
         ],
-        "modelsText": "Model A",
+        "modelsText": "Model E",
         "number": 1,
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
-            "detail": "Model A has a single run per suite.",
+            "detail": "Model E has a single run per suite.",
             "name": "Replicates",
             "status": "Failed"
           }
         ],
-        "share": 0.6922390722569134,
-        "shortStatement": "Output cost: Model A",
-        "statement": "Output (with reasoning) is Model A's largest cost component (where its cost goes, not a comparison)."
+        "share": 0.5395961621079766,
+        "shortStatement": "Output cost: Model E",
+        "statement": "Output (with reasoning) is Model E's largest cost component (where its cost goes, not a comparison)."
       },
       {
         "against": [
@@ -14344,6 +14180,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "axis": "cost",
         "confounds": [],
+        "explains": 0.026411264046843817,
         "factKeys": [
           "rca.cost.A.E.all.price.share",
           "rca.cost.A.E.total",
@@ -14357,7 +14194,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "replicates failed: Model E and Model A have a single run per suite."
         ],
         "id": "HC2",
-        "key": "HC2.4",
+        "key": "HC2.1",
         "kind": "pair",
         "label": "higher price per token of Model E against Model A",
         "loci": [
@@ -14369,7 +14206,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "A"
         ],
         "modelsText": "Model E and Model A",
-        "number": 4,
+        "number": 1,
         "refutedIf": "The volume effect is larger.",
         "robustness": [
           {
@@ -14395,65 +14232,10 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "statement": "Model E costs more than Model A mainly from its price per token."
       },
       {
-        "against": [
-          "The volume effect is 35 % (35–36 %) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "factKeys": [
-          "rca.cost.D.E.all.price.share",
-          "rca.cost.D.E.total",
-          "model.E.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 65 % (64–65 %) of the $0.011 per-question cost difference."
-        ],
-        "grade": "Moderate",
-        "gradeReasons": [
-          "replicates failed: Model E and Model D have a single run per suite."
-        ],
-        "id": "HC2",
-        "key": "HC2.5",
-        "kind": "pair",
-        "label": "higher price per token of Model E against Model D",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "E",
-          "D"
-        ],
-        "modelsText": "Model E and Model D",
-        "number": 5,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Model E and Model D have a single run per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.6491469867604399,
-        "shareLower": 0.643294023887542,
-        "shareUpper": 0.6548107961671323,
-        "shortStatement": "Price per token: Model E",
-        "statement": "Model E costs more than Model D mainly from its price per token."
-      },
-      {
         "against": [],
         "axis": "cost",
         "confounds": [],
+        "explains": 0.022720000000000004,
         "factKeys": [
           "model.D.cost.component.output.perQuestion",
           "model.D.cost.component.reasoning.perQuestion"
@@ -14491,80 +14273,194 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "statement": "Output (with reasoning) is Model D's largest cost component (where its cost goes, not a comparison)."
       },
       {
-        "against": [],
+        "against": [
+          "The volume effect is 30 % (30–31 %) of the difference."
+        ],
         "axis": "cost",
         "confounds": [],
+        "explains": 0.018792880218132888,
         "factKeys": [
-          "model.E.cost.component.output.perQuestion",
-          "model.E.cost.component.reasoning.perQuestion"
+          "rca.cost.A.D.all.price.share",
+          "rca.cost.A.D.total",
+          "model.D.price.output.perMillion"
         ],
         "for": [
-          "Visible output and reasoning are 54 % of Model E's cost per question."
+          "Price per token, all components accounts for 70 % (69–70 %) of the $0.027 per-question cost difference."
         ],
         "grade": "Moderate",
         "gradeReasons": [
-          "replicates failed: Model E has a single run per suite."
+          "replicates failed: Model D and Model A have a single run per suite."
         ],
-        "id": "WC1",
-        "key": "WC1.3",
-        "kind": "within",
-        "label": "output cost of Model E",
+        "id": "HC2",
+        "key": "HC2.2",
+        "kind": "pair",
+        "label": "higher price per token of Model D against Model A",
         "loci": [
           "model"
         ],
         "locus": "model",
         "models": [
-          "E"
+          "D",
+          "A"
         ],
-        "modelsText": "Model E",
+        "modelsText": "Model D and Model A",
+        "number": 2,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "Model D and Model A have a single run per suite.",
+            "name": "Replicates",
+            "status": "Failed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.6968068304832366,
+        "shareLower": 0.6902657261070169,
+        "shareUpper": 0.7030744603212624,
+        "shortStatement": "Price per token: Model D",
+        "statement": "Model D costs more than Model A mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 29 % (29–30 %) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.011859864660170447,
+        "factKeys": [
+          "rca.cost.A.C.all.price.share",
+          "rca.cost.A.C.total",
+          "model.C.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 71 % (70–71 %) of the $0.017 per-question cost difference."
+        ],
+        "grade": "Moderate",
+        "gradeReasons": [
+          "replicates failed: Model C and Model A have a single run per suite."
+        ],
+        "id": "HC2",
+        "key": "HC2.3",
+        "kind": "pair",
+        "label": "higher price per token of Model C against Model A",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "C",
+          "A"
+        ],
+        "modelsText": "Model C and Model A",
+        "number": 3,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "Model C and Model A have a single run per suite.",
+            "name": "Replicates",
+            "status": "Failed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.7067857366013377,
+        "shareLower": 0.700055545622766,
+        "shareUpper": 0.7132190392428142,
+        "shortStatement": "Price per token: Model C",
+        "statement": "Model C costs more than Model A mainly from its price per token."
+      },
+      {
+        "against": [],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.0097,
+        "factKeys": [
+          "model.A.cost.component.output.perQuestion",
+          "model.A.cost.component.reasoning.perQuestion"
+        ],
+        "for": [
+          "Visible output and reasoning are 69 % of Model A's cost per question."
+        ],
+        "grade": "Moderate",
+        "gradeReasons": [
+          "replicates failed: Model A has a single run per suite."
+        ],
+        "id": "WC1",
+        "key": "WC1.3",
+        "kind": "within",
+        "label": "output cost of Model A",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "A"
+        ],
+        "modelsText": "Model A",
         "number": 3,
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
-            "detail": "Model E has a single run per suite.",
+            "detail": "Model A has a single run per suite.",
             "name": "Replicates",
             "status": "Failed"
           }
         ],
-        "share": 0.5395961621079766,
-        "shortStatement": "Output cost: Model E",
-        "statement": "Output (with reasoning) is Model E's largest cost component (where its cost goes, not a comparison)."
+        "share": 0.6922390722569134,
+        "shortStatement": "Output cost: Model A",
+        "statement": "Output (with reasoning) is Model A's largest cost component (where its cost goes, not a comparison)."
       },
       {
         "against": [
-          "Model E's cache-read share is 28 % against the models' median of 26 %."
+          "The volume effect is 35 % (35–36 %) of the difference."
         ],
         "axis": "cost",
         "confounds": [],
+        "explains": 0.0073937841792014085,
         "factKeys": [
-          "rca.cost.D.E.uncachedInput.volume.share",
+          "rca.cost.D.E.all.price.share",
           "rca.cost.D.E.total",
-          "model.E.tokens.cacheReadShare"
+          "model.E.price.output.perMillion"
         ],
         "for": [
-          "Uncached input, token volume accounts for 12 % (12–13 %) of the $0.011 per-question cost difference."
+          "Price per token, all components accounts for 65 % (64–65 %) of the $0.011 per-question cost difference."
         ],
-        "grade": "NotSupported",
+        "grade": "Moderate",
         "gradeReasons": [
-          "the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %."
+          "replicates failed: Model E and Model D have a single run per suite."
         ],
-        "id": "HC4",
-        "key": "HC4.1",
+        "id": "HC2",
+        "key": "HC2.4",
         "kind": "pair",
-        "label": "weak prompt caching of Model E against Model D",
+        "label": "higher price per token of Model E against Model D",
         "loci": [
-          "chat",
-          "provider"
+          "model"
         ],
-        "locus": "chat / provider",
+        "locus": "model",
         "models": [
           "E",
           "D"
         ],
         "modelsText": "Model E and Model D",
-        "nextRunNumber": 1,
-        "number": 1,
-        "refutedIf": "The cache-read share is comparable to the other models'.",
+        "number": 4,
+        "refutedIf": "The volume effect is larger.",
         "robustness": [
           {
             "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
@@ -14582,11 +14478,68 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
             "status": "Passed"
           }
         ],
-        "share": 0.12479591005431967,
-        "shareLower": 0.12277931904129795,
-        "shareUpper": 0.12687998096366945,
-        "shortStatement": "Weak caching: Model E",
-        "statement": "Weak prompt caching raises Model E's cost against Model D."
+        "share": 0.6491469867604399,
+        "shareLower": 0.643294023887542,
+        "shareUpper": 0.6548107961671323,
+        "shortStatement": "Price per token: Model E",
+        "statement": "Model E costs more than Model D mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 28 % (27–29 %) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.005602724508327252,
+        "factKeys": [
+          "rca.cost.A.B.all.price.share",
+          "rca.cost.A.B.total",
+          "model.B.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 72 % (71–73 %) of the $0.0078 per-question cost difference."
+        ],
+        "grade": "Moderate",
+        "gradeReasons": [
+          "replicates failed: Model B and Model A have a single run per suite."
+        ],
+        "id": "HC2",
+        "key": "HC2.5",
+        "kind": "pair",
+        "label": "higher price per token of Model B against Model A",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "B",
+          "A"
+        ],
+        "modelsText": "Model B and Model A",
+        "number": 5,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "Model B and Model A have a single run per suite.",
+            "name": "Replicates",
+            "status": "Failed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.71922009092776,
+        "shareLower": 0.7123096297876061,
+        "shareUpper": 0.7258059219416408,
+        "shortStatement": "Price per token: Model B",
+        "statement": "Model B costs more than Model A mainly from its price per token."
       },
       {
         "against": [
@@ -14594,6 +14547,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "axis": "cost",
         "confounds": [],
+        "explains": 0.0034638809958028563,
         "factKeys": [
           "rca.cost.A.E.uncachedInput.volume.share",
           "rca.cost.A.E.total",
@@ -14607,7 +14561,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %."
         ],
         "id": "HC4",
-        "key": "HC4.2",
+        "key": "HC4.1",
         "kind": "pair",
         "label": "weak prompt caching of Model E against Model A",
         "loci": [
@@ -14621,7 +14575,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "modelsText": "Model E and Model A",
         "nextRunNumber": 1,
-        "number": 2,
+        "number": 1,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
           {
@@ -14652,6 +14606,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "axis": "cost",
         "confounds": [],
+        "explains": 0.002258739233355464,
         "factKeys": [
           "rca.cost.A.D.uncachedInput.volume.share",
           "rca.cost.A.D.total",
@@ -14665,7 +14620,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "the rule's own test refutes it: Model D's cache-read share is 27 % against the models' median of 26 %."
         ],
         "id": "HC4",
-        "key": "HC4.3",
+        "key": "HC4.2",
         "kind": "pair",
         "label": "weak prompt caching of Model D against Model A",
         "loci": [
@@ -14679,7 +14634,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "modelsText": "Model D and Model A",
         "nextRunNumber": 1,
-        "number": 3,
+        "number": 2,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
           {
@@ -14706,10 +14661,70 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "against": [
+          "Model E's cache-read share is 28 % against the models' median of 26 %."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.0014214254155187006,
+        "factKeys": [
+          "rca.cost.D.E.uncachedInput.volume.share",
+          "rca.cost.D.E.total",
+          "model.E.tokens.cacheReadShare"
+        ],
+        "for": [
+          "Uncached input, token volume accounts for 12 % (12–13 %) of the $0.011 per-question cost difference."
+        ],
+        "grade": "NotSupported",
+        "gradeReasons": [
+          "the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %."
+        ],
+        "id": "HC4",
+        "key": "HC4.3",
+        "kind": "pair",
+        "label": "weak prompt caching of Model E against Model D",
+        "loci": [
+          "chat",
+          "provider"
+        ],
+        "locus": "chat / provider",
+        "models": [
+          "E",
+          "D"
+        ],
+        "modelsText": "Model E and Model D",
+        "nextRunNumber": 1,
+        "number": 3,
+        "refutedIf": "The cache-read share is comparable to the other models'.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "Model E and Model D have a single run per suite.",
+            "name": "Replicates",
+            "status": "Failed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.12479591005431967,
+        "shareLower": 0.12277931904129795,
+        "shareUpper": 0.12687998096366945,
+        "shortStatement": "Weak caching: Model E",
+        "statement": "Weak prompt caching raises Model E's cost against Model D."
+      },
+      {
+        "against": [
           "Model C's cache-read share is 26 % against the models' median of 26 %."
         ],
         "axis": "cost",
         "confounds": [],
+        "explains": 0.001272137066970963,
         "factKeys": [
           "rca.cost.A.C.uncachedInput.volume.share",
           "rca.cost.A.C.total",
@@ -15147,8 +15162,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
               "Q3",
               "Q4"
             ],
-            "short": "other low-scoring answers, 2.8 points",
-            "text": "other low-scoring answers: 2.8 index points on 2 questions (Q3 and Q4)"
+            "short": "mostly Accuracy, 2.8 points",
+            "text": "low-scoring answers, mostly Accuracy: 2.8 index points on 2 questions (Q3 and Q4)"
           }
         ]
       },
@@ -15236,8 +15251,8 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
               "Q1",
               "Q4"
             ],
-            "short": "other low-scoring answers, 5.6 points",
-            "text": "other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4)"
+            "short": "mostly Accuracy, 5.6 points",
+            "text": "low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4)"
           },
           {
             "kind": "lowestRank",
@@ -15438,28 +15453,21 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     "questions": [
       {
         "axis": "intelligence",
-        "grade": "Low",
-        "hypothesisKeys": [
-          "HQ3.1"
-        ],
+        "hypothesisKeys": [],
         "number": 1,
         "signals": [
           "joint first on Accuracy of 5 models",
-          "joint first on Completeness of 5 models",
-          "lost points on answers without tools: 9.8 index points on 1 question (Q3)"
+          "joint first on Completeness of 5 models"
         ],
         "text": "Why did Model A score highest?",
         "token": "A"
       },
       {
         "axis": "intelligence",
-        "grade": "Low",
-        "hypothesisKeys": [
-          "HQ3.1"
-        ],
+        "hypothesisKeys": [],
         "number": 2,
         "signals": [
-          "lost points on other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
+          "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
           "1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more"
         ],
         "text": "Why did Model E score lowest?",
@@ -15470,7 +15478,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "grade": "Moderate",
         "hypothesisKeys": [
           "WS3.3",
-          "WS2.3"
+          "WS2.1"
         ],
         "number": 3,
         "signals": [
@@ -15485,11 +15493,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "axis": "cost",
         "grade": "Moderate",
         "hypothesisKeys": [
-          "HC2.3",
-          "HC2.5",
           "WC1.2",
-          "HC4.1",
-          "HC4.3"
+          "HC2.2",
+          "HC4.2"
         ],
         "number": 4,
         "signals": [
@@ -15505,7 +15511,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       {
         "afterSystemHypotheses": false,
         "allowSourceCodeReferences": true,
-        "decides": "Confirms WS3.1 if model time keeps rising with the calls per answer; refutes it if the ρ interval includes zero. Confirms WS3.2 if model time keeps rising with the calls per answer; refutes it if the ρ interval includes zero. Confirms WS3.3 if model time keeps rising with the calls per answer; refutes it if the ρ interval includes zero. Confirms HC4.1 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'. Confirms HC4.2 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'. Confirms HC4.3 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'. Confirms HC4.4 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'.",
+        "decides": "Confirms WS3.1, WS3.2 and WS3.3 if model time keeps rising with the calls per answer; refutes each if the ρ interval includes zero. Confirms HC4.1, HC4.2, HC4.3 and HC4.4 if the cache-read share stays low; refutes each if the cache-read share is comparable to the other models'.",
         "estimatedMinutes": 150,
         "hypothesisIds": [
           "WS3.1",
@@ -15549,10 +15555,10 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       {
         "afterSystemHypotheses": false,
         "allowSourceCodeReferences": true,
-        "decides": "Confirms WS2.1 if the decode share stays the largest and reasoning stays at least half the output; refutes it if the reasoning share is under one half.",
+        "decides": "Confirms WS2.3 if the decode share stays the largest and reasoning stays at least half the output; refutes it if the reasoning share is under one half.",
         "estimatedMinutes": 20,
         "hypothesisIds": [
-          "WS2.1"
+          "WS2.3"
         ],
         "kind": "thinkingPair",
         "mark": "Optional",
@@ -15864,6 +15870,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ---
 
-*Document ID 212 · format version 16 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
+*Document ID 212 · format version 17 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

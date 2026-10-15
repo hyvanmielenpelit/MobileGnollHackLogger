@@ -18,7 +18,7 @@ public class RootCauseHypothesesTests
     private static RootCauseDraft Draft(
         string id = "HS1", string axis = RootCauseAxes.Speed, string kind = "pair", string group = "A|B",
         bool established = true, bool quantified = true, bool notSupported = false, bool? nullStands = false,
-        double? share = 0.6, params RootCauseRobustnessCheck[] checks)
+        double? share = 0.6, double? scale = 10.0, params RootCauseRobustnessCheck[] checks)
     {
         var draft = new RootCauseDraft
         {
@@ -33,7 +33,8 @@ public class RootCauseHypothesesTests
             Established = established,
             NotSupported = notSupported,
             PairNullStands = nullStands,
-            Share = share
+            Share = share,
+            Scale = scale
         };
         draft.Against.Add("The other share is larger.");
         foreach (var check in checks) draft.Robustness.Add(check);
@@ -199,6 +200,43 @@ public class RootCauseHypothesesTests
         var none = RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, Kept(Draft(checks: AllPassed())));
         Assert.Equal(RootCauseStatuses.NotEstablished, none.Status);
         Assert.Null(none.BestHypothesis);
+    }
+
+    [Fact]
+    public void HypothesesRank_ByTheAmountTheyExplain_NotByTheirShareOfTheGap()
+    {
+        // A 0.7-point gap explained at 218 % accounts for 0.7 points; a 6.7-point gap explained at 80 % for 5.36.
+        var tiny = Draft(id: "HQ2", axis: RootCauseAxes.Intelligence, group: "A|B", share: 2.18, scale: 0.7, checks: AllPassed());
+        var large = Draft(id: "HQ2", axis: RootCauseAxes.Intelligence, group: "C|D", share: 0.80, scale: 6.7, checks: AllPassed());
+        var kept = RootCauseHypotheses.Keep(new[] { tiny, large }.Select(d => (Grade(d), d)).ToList());
+
+        Assert.Equal(new[] { "C|D", "A|B" }, kept.Select(k => k.Draft.Group));
+        Assert.Equal(0.7, kept[1].Hypothesis.Explains!.Value, 9);
+        Assert.Equal(5.36, kept[0].Hypothesis.Explains!.Value, 9);
+        Assert.Equal(2.18, kept[1].Hypothesis.Share);
+
+        var status = RootCauseHypotheses.AxisStatus(RootCauseAxes.Intelligence, kept);
+        Assert.Equal(kept[0].Hypothesis.Key, status.BestHypothesis);
+    }
+
+    [Fact]
+    public void AHypothesisWithNoAmount_RanksAfterThoseWithOne_AndARejectedNullBeforeAStandingOne()
+    {
+        var unmeasured = Draft(id: "HS1", group: "A|B", share: null, checks: AllPassed());
+        var measured = Draft(id: "HS2", group: "C|D", share: 0.1, scale: 1.0, checks: AllPassed());
+        var standing = Draft(id: "HS1", group: "E|F", nullStands: true, share: 1.0, scale: 100.0, checks: AllPassed());
+        var rejectedLow = Draft(id: "HS3", group: "G|H", share: 0.01, scale: 1.0, checks: new[]
+        {
+            Check(RootCauseHypotheses.LeaveOneOut, RootCauseCheckStatuses.Failed),
+            Check(RootCauseHypotheses.Replicates, RootCauseCheckStatuses.Failed)
+        });
+
+        var ranked = RootCauseHypotheses.Ranked(new[] { unmeasured, standing, measured, rejectedLow }.Select(d => (Grade(d), d)).ToList())
+            .Select(r => r.Draft.Group)
+            .ToList();
+
+        // High first (measured, then unmeasured); then Low, the rejected null before the standing one.
+        Assert.Equal(new[] { "C|D", "A|B", "G|H", "E|F" }, ranked);
     }
 
     [Fact]

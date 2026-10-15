@@ -17,7 +17,7 @@ public class RootCauseEngineTests
 {
     private const long SubjectConfigId = 11;
 
-    private static RootCauseAnswerRecord Answer(int q, double quality, string band, bool noTool = false, bool critical = false)
+    private static RootCauseAnswerRecord Answer(int q, double quality, string band, bool noTool = false, bool critical = false, double completenessGap = 0)
         => new()
         {
             RunId = 500,
@@ -30,7 +30,7 @@ public class RootCauseEngineTests
             NoTool = noTool,
             CriticalError = critical,
             Accuracy = quality,
-            Completeness = quality,
+            Completeness = quality - completenessGap,
             Conciseness = 80,
             Readability = 80,
             DurationMs = 20000 + 500 * q,
@@ -115,11 +115,16 @@ public class RootCauseEngineTests
     /// <summary>
     /// One of three compared models: its Intelligence Index, its time and cost per question scaled by the
     /// factors, Completeness ten points below its Accuracy, and every fourth question answered without tools.
+    /// With <paramref name="quality"/>, each answer's score instead, every answer with tools and none critical,
+    /// its Completeness <paramref name="completenessGap"/> below its Accuracy.
     /// </summary>
-    private static RootCauseModelInput Compared(string letter, int number, double index, double speed, double cost)
+    private static RootCauseModelInput Compared(string letter, int number, double index, double speed, double cost,
+        Func<int, double>? quality = null, double completenessGap = 0, double? cleared = null)
     {
         var questions = Enumerable.Range(1, 12).ToList();
-        var answers = questions.Select(q => Answer(q, q % 4 == 0 ? 30 : index - 10 + 2 * (q % 5), BandOf(q), noTool: q % 4 == 0, critical: letter == "C" && q == 3)).ToList();
+        var answers = quality != null
+            ? questions.Select(q => Answer(q, quality(q), BandOf(q), completenessGap: completenessGap)).ToList()
+            : questions.Select(q => Answer(q, q % 4 == 0 ? 30 : index - 10 + 2 * (q % 5), BandOf(q), noTool: q % 4 == 0, critical: letter == "C" && q == 3)).ToList();
         return new RootCauseModelInput
         {
             Token = letter,
@@ -133,6 +138,7 @@ public class RootCauseEngineTests
             QualityIndex = index,
             QualityLower = index - 5,
             QualityUpper = index + 5,
+            VerificationClearedIndex = cleared,
             Dimensions = new double?[] { index, index - 10, index - 3, index - 2 },
             ModelTimeP50Ms = 18000 * speed,
             CostPerQuestionUsd = 0.0183 * cost,
@@ -191,19 +197,21 @@ public class RootCauseEngineTests
     /// Three compared models: A best and the reference, B slowest, C lowest and most expensive. The paired
     /// speed test of A and B is established, of A and C not; no pair's cost is tested.
     /// </summary>
-    private static RootCauseInput ComparisonInput() => new()
+    private static RootCauseInput ComparisonInput(params RootCauseModelInput[] models) => new()
     {
         Scope = RootCauseEngine.ComparisonScope,
         Origin = RootCauseOrigins.Comparison,
         ComputedAtUtc = new DateTime(2026, 10, 15, 8, 0, 0, DateTimeKind.Utc),
         PricingBasis = "As run",
         PricingBasisKind = "AsRun",
-        Models = new[]
-        {
-            Compared("A", 1, 85, 1.0, 1.0),
-            Compared("B", 2, 75, 1.6, 1.2),
-            Compared("C", 3, 60, 0.9, 2.0)
-        },
+        Models = models.Length > 0
+            ? models
+            : new[]
+            {
+                Compared("A", 1, 85, 1.0, 1.0),
+                Compared("B", 2, 75, 1.6, 1.2),
+                Compared("C", 3, 60, 0.9, 2.0)
+            },
         ReferenceToken = "A",
         PairTests = new[]
         {
@@ -444,9 +452,15 @@ public class RootCauseEngineTests
         var byKey = facts.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
         foreach (var question in result.Questions)
         {
+            // Why highest: the pairs where the model is the better side. Why lowest, slowest or most expensive:
+            // the pairs where it is the worse side, and its own within-model hypotheses.
             var about = result.Hypotheses
-                .Where(h => h.Kind != "null" && h.Axis == question.Axis && h.Models.Contains(question.Token))
+                .Where(h => h.Axis == question.Axis && h.Id != "HQ3")
+                .Where(h => question.Number == 1
+                    ? h.Kind == "pair" && h.Models[1] == question.Token
+                    : (h.Kind == "pair" && h.Models[0] == question.Token) || (h.Kind == "within" && h.Models[0] == question.Token))
                 .ToList();
+            Assert.All(question.HypothesisKeys, k => Assert.DoesNotContain(k, result.Hypotheses.Where(h => h.Kind == "null").Select(h => h.Key)));
             Assert.Equal(about.Select(h => h.Key).OrderBy(k => k, StringComparer.Ordinal), question.HypothesisKeys.OrderBy(k => k, StringComparer.Ordinal));
             var ranks = question.HypothesisKeys.Select(k => RootCauseGrades.Rank(about.Single(h => h.Key == k).Grade)).ToList();
             Assert.Equal(ranks.OrderByDescending(r => r).ToList(), ranks);
@@ -462,6 +476,17 @@ public class RootCauseEngineTests
             Assert.True(byKey.ContainsKey(prefix + "hypotheses"));
             Assert.True(byKey.ContainsKey(prefix + "signals"));
         }
+
+        // Model A scored highest: no hypothesis about where it lost, and only strengths as its signals.
+        var highest = result.Questions[0];
+        Assert.All(highest.HypothesisKeys, k =>
+        {
+            var h = result.Hypotheses.Single(x => x.Key == k);
+            Assert.Equal("pair", h.Kind);
+            Assert.Equal("A", h.Models[1]);
+        });
+        Assert.DoesNotContain(highest.Signals, s => s.StartsWith("lost points on", StringComparison.Ordinal));
+        Assert.Contains(result.Questions[1].HypothesisKeys, k => result.Hypotheses.Single(h => h.Key == k).Kind == "within");
 
         Assert.Equal("Established (High)", RootCauseGrades.WordWithGrade(RootCauseGrades.High));
         Assert.Equal("Probable (Moderate)", RootCauseGrades.WordWithGrade(RootCauseGrades.Moderate));
@@ -558,6 +583,82 @@ public class RootCauseEngineTests
         string second = BenchmarkReportJson.Serialize(RootCauseEngine.Compute(Input(Controls(("Vega Pro (medium)", "Anthropic", "vega-pro", 85)))));
 
         Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void TheEngineVersion_IsThree()
+    {
+        Assert.Equal(3, RootCauseEngine.Version);
+    }
+
+    /// <summary>Questions 9 to 12 (the Advanced band) score 40 below the rest.</summary>
+    private static double HardAdvanced(int q, double index) => q >= 9 ? index - 40 : index + (q % 3);
+
+    /// <summary>Questions 1 to 4 (the Simple band) score 40 below the rest.</summary>
+    private static double HardSimple(int q, double index) => q <= 4 ? index - 40 : index + (q % 3);
+
+    [Fact]
+    public void ABandHardForEveryModel_IsNoModelsCause_AndIsNoted()
+    {
+        var result = RootCauseEngine.Compute(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0, q => HardAdvanced(q, 85)),
+            Compared("B", 2, 75, 1.6, 1.2, q => HardAdvanced(q, 75)),
+            Compared("C", 3, 60, 0.9, 2.0, q => HardAdvanced(q, 60))));
+
+        Assert.DoesNotContain(result.Hypotheses, h => h.Id == "WQ2");
+        Assert.Contains("The advanced band holds most of the points at risk for 3 of 3 models; a contrast within one model there reflects the questions, not the model.", result.Notes);
+    }
+
+    [Fact]
+    public void ABandHardForOneModelAlone_FiresWithThePeersMedian()
+    {
+        var result = RootCauseEngine.Compute(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0, q => HardSimple(q, 85)),
+            Compared("B", 2, 75, 1.6, 1.2, q => HardSimple(q, 75)),
+            Compared("C", 3, 60, 0.9, 2.0, q => HardAdvanced(q, 60))));
+
+        var wq2 = Assert.Single(result.Hypotheses, h => h.Id == "WQ2" && h.Models[0] == "C");
+        Assert.Contains("The other models' median share there is 0 %.", wq2.For);
+        Assert.DoesNotContain(result.Hypotheses, h => h.Id == "WQ2" && h.Models[0] != "C" && h.ShortStatement.Contains("advanced", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheCatchAllSegment_IsNamedByTheDimensionThatLostMost()
+    {
+        var result = RootCauseEngine.Compute(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0, q => HardAdvanced(q, 85), completenessGap: 15),
+            Compared("B", 2, 75, 1.6, 1.2),
+            Compared("C", 3, 60, 0.9, 2.0)));
+
+        var lost = Assert.Single(result.Profiles.Single(p => p.Token == "A").Weaknesses, w => w.Kind == RootCauseProfiles.LostPointsOn);
+        Assert.StartsWith("low-scoring answers, mostly Completeness: ", lost.Text, StringComparison.Ordinal);
+        Assert.StartsWith("mostly Completeness, ", lost.Short, StringComparison.Ordinal);
+        Assert.Empty(RootCauseClaimSupport.CausalPhrases(lost.Text));
+    }
+
+    [Theory]
+    [InlineData(61.3, true)]
+    [InlineData(60.4, false)]
+    [InlineData(58.0, false)]
+    public void HQ9_FiresOnlyWhenTheVerifierWouldRaiseTheIndex(double cleared, bool fires)
+    {
+        var result = RootCauseEngine.Compute(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0),
+            Compared("B", 2, 75, 1.6, 1.2),
+            Compared("C", 3, 60, 0.9, 2.0, cleared: cleared)));
+
+        var hq9 = result.Hypotheses.Where(h => h.Id == "HQ9" && h.Models[0] == "C").ToList();
+        if (!fires)
+        {
+            Assert.Empty(hq9);
+            return;
+        }
+        Assert.NotEmpty(hq9);
+        Assert.All(hq9, h =>
+        {
+            Assert.NotEqual(RootCauseGrades.NotSupported, h.Grade);
+            Assert.Contains("Model C's verification-cleared Overall Index is 61.3 against its published 60.0.", h.For);
+        });
     }
 
     [Fact]

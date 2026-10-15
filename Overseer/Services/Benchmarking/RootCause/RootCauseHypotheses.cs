@@ -41,6 +41,16 @@ internal sealed class RootCauseDraft
     public double? ShareLower { get; set; }
     public double? ShareUpper { get; set; }
 
+    /// <summary>
+    /// What <see cref="Share"/> is a share of, in the axis' own unit: the pair's gap (index points, ms or USD
+    /// per question), or the model's points at risk, mean time or cost per question; null when the share is
+    /// not a share of the axis' measure.
+    /// </summary>
+    public double? Scale { get; set; }
+
+    /// <summary>The amount of <see cref="Scale"/> the hypothesis accounts for: its share, at most one, of it.</summary>
+    public double? Explains => Share is double s && Scale is double g ? Math.Min(Math.Abs(s), 1.0) * Math.Abs(g) : null;
+
     public List<RootCauseRobustnessCheck> Robustness { get; } = new();
     public List<string> Confounds { get; } = new();
 
@@ -74,6 +84,9 @@ public static class RootCauseHypotheses
 
     /// <summary>A question scored at least this is answered well.</summary>
     public const double WellAtLeast = 75.0;
+
+    /// <summary>WQ2 fires only when the model's share of its points at risk in a group exceeds the other models' median share there by this much.</summary>
+    public const double WithinGroupExcessOverPeers = 0.15;
 
     public const string LeaveOneOut = "Leave one question out";
     public const string AcrossSuites = "Across suites";
@@ -156,6 +169,7 @@ public static class RootCauseHypotheses
             Share = draft.Share,
             ShareLower = draft.ShareLower,
             ShareUpper = draft.ShareUpper,
+            Explains = draft.Explains,
             Robustness = draft.Robustness.ToList(),
             Confounds = draft.Confounds.ToList(),
             FactKeys = draft.FactKeys.Where(k => !string.IsNullOrEmpty(k)).Distinct(StringComparer.Ordinal).ToList()
@@ -164,8 +178,8 @@ public static class RootCauseHypotheses
 
     /// <summary>
     /// The hypotheses kept: every null, then per axis and group the strongest <see cref="KeepPerGroup"/>
-    /// non-null hypotheses (by grade, then share, then rule id), and at most <see cref="MaxPerAxis"/> per
-    /// axis. Ordered by axis, nulls first, then grade, share and key; each numbered within its rule.
+    /// non-null hypotheses (in <see cref="Ranked"/> order), and at most <see cref="MaxPerAxis"/> per axis.
+    /// Each numbered within its rule.
     /// </summary>
     internal static List<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> Keep(IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> graded)
     {
@@ -190,14 +204,20 @@ public static class RootCauseHypotheses
             hypothesis.Key = hypothesis.Id + "." + n.ToString(CultureInfo.InvariantCulture);
         }
         return kept;
-
-        static IEnumerable<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> Ranked(IEnumerable<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> items)
-            => items
-                .OrderByDescending(g => RootCauseGrades.Rank(g.Hypothesis.Grade))
-                .ThenByDescending(g => Math.Abs(g.Hypothesis.Share ?? 0))
-                .ThenBy(g => g.Hypothesis.Id, StringComparer.Ordinal)
-                .ThenBy(g => g.Draft.Group, StringComparer.Ordinal);
     }
+
+    /// <summary>
+    /// The ranking of hypotheses: by grade; then a pair whose null is rejected before one whose null stands;
+    /// then by the amount explained in the axis' own unit (none last); then by rule id and group.
+    /// </summary>
+    internal static IOrderedEnumerable<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> Ranked(IEnumerable<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> items)
+        => items
+            .OrderByDescending(g => RootCauseGrades.Rank(g.Hypothesis.Grade))
+            .ThenBy(g => g.Draft.PairNullStands == true ? 1 : 0)
+            .ThenBy(g => g.Hypothesis.Explains.HasValue ? 0 : 1)
+            .ThenByDescending(g => g.Hypothesis.Explains ?? 0)
+            .ThenBy(g => g.Hypothesis.Id, StringComparer.Ordinal)
+            .ThenBy(g => g.Draft.Group, StringComparer.Ordinal);
 
     /// <summary>
     /// The status of an axis (§ A2): established when a non-null hypothesis is High and its null is
@@ -379,24 +399,34 @@ public static class RootCauseHypotheses
             bool stands = nullStands.GetValueOrDefault(pair.Key + "|" + RootCauseAxes.Intelligence, true);
             var (worse, better) = qa < qb ? (first, second) : (second, first);
             double gap = Math.Abs(qa - qb);
-            drafts.AddRange(IntelligencePairRules(ctx, pair, worse, better, gap, stands));
+            drafts.AddRange(Scaled(IntelligencePairRules(ctx, pair, worse, better, gap, stands), gap));
         }
 
         if (!first.SpeedDegraded && !second.SpeedDegraded && ctx.SpeedPair(pair) is { UnavailableReason: null, Difference: double dt } speed && dt != 0)
         {
             bool stands = nullStands.GetValueOrDefault(pair.Key + "|" + RootCauseAxes.Speed, true);
             var (worse, better) = dt > 0 ? (first, second) : (second, first);
-            drafts.AddRange(SpeedPairRules(ctx, pair, speed, worse, better, stands));
+            drafts.AddRange(Scaled(SpeedPairRules(ctx, pair, speed, worse, better, stands), Math.Abs(dt)));
         }
 
         if (!first.CostDegraded && !second.CostDegraded && ctx.CostPair(pair) is { UnavailableReason: null, Difference: double dc } cost && dc != 0)
         {
             bool stands = nullStands.GetValueOrDefault(pair.Key + "|" + RootCauseAxes.Cost, true);
             var (worse, better) = dc > 0 ? (first, second) : (second, first);
-            drafts.AddRange(CostPairRules(ctx, pair, cost, worse, better, stands));
+            drafts.AddRange(Scaled(CostPairRules(ctx, pair, cost, worse, better, stands), Math.Abs(dc)));
         }
 
         return drafts;
+    }
+
+    /// <summary>The drafts with <paramref name="scale"/> as what their shares are a share of.</summary>
+    private static IEnumerable<RootCauseDraft> Scaled(IEnumerable<RootCauseDraft> drafts, double? scale)
+    {
+        foreach (var draft in drafts)
+        {
+            draft.Scale = scale;
+            yield return draft;
+        }
     }
 
     private static RootCauseDraft PairDraft(RootCauseContext ctx, RootCausePair pair, string id, string axis, RootCauseModelInput worse, RootCauseModelInput better,
@@ -641,7 +671,7 @@ public static class RootCauseHypotheses
         }
 
         // HQ9: the verifier would clear part of the Accuracy shortfall.
-        if (a.VerificationClearedIndex is double cleared && a.QualityIndex is double index && Math.Abs(cleared - index) >= 0.5)
+        if (a.VerificationClearedIndex is double cleared && a.QualityIndex is double index && cleared - index >= 0.5)
         {
             var d = PairDraft(ctx, pair, "HQ9", RootCauseAxes.Intelligence, a, b,
                 "The claim verifier would clear part of " + A + "'s Accuracy shortfall against " + B + ".",
@@ -649,8 +679,7 @@ public static class RootCauseHypotheses
                 "The verification-cleared sensitivity equals the index.",
                 "re-grading with the verifier's rulings narrows the gap",
                 stands, RootCauseLoci.Harness);
-            d.For.Add(A + "'s verification-cleared Overall Index is " + Whole(cleared) + " against its published " + Whole(index) + ".");
-            if (cleared <= index) { d.NotSupported = true; d.Against.Add("The verification-cleared sensitivity is not above the index."); }
+            d.For.Add(A + "'s verification-cleared Overall Index is " + OneDecimal(cleared) + " against its published " + OneDecimal(index) + ".");
             d.Share = gap > 0 ? (cleared - index) / gap : null;
             d.Established = false;
             d.EstablishedText = "the sensitivity is advisory, not a test";
@@ -971,6 +1000,24 @@ public static class RootCauseHypotheses
         if (axes.Contains(RootCauseAxes.Intelligence)) drafts.AddRange(WithinIntelligence(ctx, model, controlCap));
         if (axes.Contains(RootCauseAxes.Speed) && !model.SpeedDegraded) drafts.AddRange(WithinSpeed(ctx, model));
         if (axes.Contains(RootCauseAxes.Cost) && !model.CostDegraded) drafts.AddRange(WithinCost(ctx, model));
+
+        var speedItems = model.Evidence.SpeedItems;
+        var costItems = model.Evidence.CostItems;
+        foreach (var draft in drafts.Where(d => d.Kind != "null"))
+        {
+            draft.Scale = draft.Id switch
+            {
+                // A rate of answers, not a share of the points at risk.
+                "WQ4" => null,
+                "WS4" => speedItems.Count > 0 ? speedItems.Average(i => i.DurationMs) : null,
+                _ => draft.Axis switch
+                {
+                    RootCauseAxes.Speed => speedItems.Count > 0 ? speedItems.Average(i => i.ModelTimeMs) : null,
+                    RootCauseAxes.Cost => costItems.Count > 0 ? costItems.Average(i => i.TotalCost) : null,
+                    _ => ctx.AtRisk(model.Token).Total
+                }
+            };
+        }
         return drafts;
     }
 
@@ -1007,7 +1054,7 @@ public static class RootCauseHypotheses
         var toolContrast = withoutTools.Count >= 3 && withTools.Count > 0 ? RootCauseStatistics.MannWhitney(withoutTools, withTools) : null;
 
         bool battery = scored.Any(a => a.Suite.HasValue);
-        var groups = scored.GroupBy(a => battery ? "S" + Inv(a.Suite ?? 0) : a.Band, StringComparer.Ordinal)
+        var groups = scored.GroupBy(a => GroupOf(a, battery), StringComparer.Ordinal)
             .Select(g => (Name: g.Key, Answers: g.ToList(), Points: AtRiskOf(at, g.Select(x => x.QuestionKey).Distinct(StringComparer.Ordinal))))
             .OrderByDescending(g => g.Points)
             .ThenBy(g => g.Name, StringComparer.Ordinal)
@@ -1101,8 +1148,10 @@ public static class RootCauseHypotheses
             yield return d;
         }
 
-        // WQ2: points lost mostly in one band or suite.
-        if (groups.Count >= 2 && leadGroup.Points > 0)
+        // WQ2: points lost mostly in one band or suite, more than the other models lose there.
+        double? peerMedian = groups.Count >= 2 && leadGroup.Points > 0 ? PeerGroupShareMedian(ctx, model, leadGroup.Name) : null;
+        double leadShare = at.Total > 0 ? leadGroup.Points / at.Total : 0;
+        if (groups.Count >= 2 && leadGroup.Points > 0 && (peerMedian is not double peers || leadShare - peers >= WithinGroupExcessOverPeers))
         {
             string groupName = GroupName(leadGroup.Name);
             var d = WithinDraft(ctx, model, "WQ2", RootCauseAxes.Intelligence,
@@ -1111,9 +1160,10 @@ public static class RootCauseHypotheses
                 "The contrast stands within noise, or the shares are even.",
                 "the same group keeps holding the largest share",
                 RootCauseLoci.Model, RootCauseLoci.Suite);
-            double share = at.Total > 0 ? leadGroup.Points / at.Total : 0;
+            double share = leadShare;
             d.Share = share;
             d.For.Add(groupName + " holds " + Pct(share) + " of " + M + "'s points at risk.");
+            if (peerMedian is double median) d.For.Add("The other models' median share there is " + Pct(median) + ".");
             bool even = share < 1.0 / groups.Count + 0.10;
             if (even) d.Against.Add("The shares are nearly even across the groups.");
             if (groupP is double p && p >= RootCauseStatistics.SignificanceLevel)
@@ -1125,7 +1175,7 @@ public static class RootCauseHypotheses
             d.EstablishedText = "the group contrast is not established";
             if (battery) d.Robustness.Add(ctx.LeaveOneSuiteOutCheck(leadGroup.Name));
             else d.Robustness.Add(LeaveOneOutGroup(at, leadGroup.Answers.Select(a => a.QuestionKey).Distinct(StringComparer.Ordinal).ToList(), groups.Skip(1).Select(g => g.Points).DefaultIfEmpty(0).Max()));
-            d.Robustness.Add(ctx.WithinPanelCheck(model, a => (battery ? "S" + Inv(a.Suite ?? 0) : a.Band) == leadGroup.Name));
+            d.Robustness.Add(ctx.WithinPanelCheck(model, a => GroupOf(a, battery) == leadGroup.Name));
             Cap(d);
             d.NextRunKind = ctx.NeedsControlRun ? RootCauseRunKinds.Control : RootCauseRunKinds.Replicate;
             yield return d;
@@ -1532,6 +1582,74 @@ public static class RootCauseHypotheses
 
     private static double AtRiskOf(RootCauseAtRisk at, IEnumerable<string> questions)
         => questions.Where(at.ByQuestion.ContainsKey).Sum(q => at.ByQuestion[q].Sum());
+
+    // ---------------------------------------------------------------------------------------------
+    // Groups of questions (WQ2)
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>The group of a model's answer: its suite (<c>S2</c>) when the model's answers carry suites, else its band.</summary>
+    private static string GroupOf(RootCauseAnswerRecord answer, bool battery) => battery ? "S" + Inv(answer.Suite ?? 0) : answer.Band;
+
+    /// <summary>The share of a model's points at risk in <paramref name="group"/>; null when it has no points at risk.</summary>
+    private static double? GroupShare(RootCauseContext ctx, RootCauseModelInput model, string group)
+    {
+        var at = ctx.AtRisk(model.Token);
+        if (at.Total <= 0) return null;
+        var scored = model.Evidence.Scored.ToList();
+        bool battery = scored.Any(a => a.Suite.HasValue);
+        return AtRiskOf(at, scored.Where(a => GroupOf(a, battery) == group).Select(a => a.QuestionKey).Distinct(StringComparer.Ordinal)) / at.Total;
+    }
+
+    /// <summary>The other models' median share of their points at risk in <paramref name="group"/>; null with no other model.</summary>
+    private static double? PeerGroupShareMedian(RootCauseContext ctx, RootCauseModelInput model, string group)
+    {
+        var shares = ctx.Models
+            .Where(m => m.Token != model.Token)
+            .Select(m => GroupShare(ctx, m, group))
+            .Where(s => s.HasValue)
+            .Select(s => s!.Value)
+            .ToList();
+        return shares.Count > 0 ? RootCauseStatistics.Median(shares) : null;
+    }
+
+    /// <summary>The group holding the most of a model's points at risk; null with fewer than two groups or none at risk.</summary>
+    private static string? LeadGroup(RootCauseContext ctx, RootCauseModelInput model)
+    {
+        var at = ctx.AtRisk(model.Token);
+        var scored = model.Evidence.Scored.ToList();
+        if (at.Total <= 0) return null;
+        bool battery = scored.Any(a => a.Suite.HasValue);
+        var groups = scored.GroupBy(a => GroupOf(a, battery), StringComparer.Ordinal)
+            .Select(g => (Name: g.Key, Points: AtRiskOf(at, g.Select(x => x.QuestionKey).Distinct(StringComparer.Ordinal))))
+            .OrderByDescending(g => g.Points)
+            .ThenBy(g => g.Name, StringComparer.Ordinal)
+            .ToList();
+        return groups.Count >= 2 && groups[0].Points > 0 ? groups[0].Name : null;
+    }
+
+    /// <summary>
+    /// The note for a group that holds the most points at risk for at least half the models (two or more)
+    /// while WQ2 does not fire for every one of them; null otherwise.
+    /// </summary>
+    internal static string? SharedLeadGroupNote(RootCauseContext ctx, IReadOnlyList<RootCauseDraft> drafts)
+    {
+        int total = ctx.Models.Count;
+        if (total < 2) return null;
+        var common = ctx.Models
+            .Select(m => (m.Token, Group: LeadGroup(ctx, m)))
+            .Where(x => x.Group != null)
+            .GroupBy(x => x.Group!, StringComparer.Ordinal)
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key, StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (common == null) return null;
+        int count = common.Count();
+        if (count < 2 || 2 * count < total) return null;
+        bool firedForAll = common.All(x => drafts.Any(d => d.Id == "WQ2" && d.Group == "within:" + x.Token));
+        if (firedForAll) return null;
+        return Capitalize(GroupName(common.Key)) + " holds most of the points at risk for " + Inv(count) + " of " + Inv(total)
+               + " models; a contrast within one model there reflects the questions, not the model.";
+    }
 
     // ---------------------------------------------------------------------------------------------
     // Text helpers

@@ -199,6 +199,11 @@ public static class BenchmarkReportRuleCatalog
             BenchmarkReportRuleSeverity.Warning,
             "The conclusions do not give a writer's verdict on every axis; the axis table still does.",
             "Cite every axis' status token in the conclusions, one paragraph per axis."),
+        R(BenchmarkReportPackValidator.BareModelLetterRule, "Model named by its bare letter",
+            "A comparison names each model only through its model token, never as Model X.",
+            BenchmarkReportRuleSeverity.Warning,
+            "The text was kept; a named copy prints the models' names in place of the letters where it can.",
+            "Replace every Model X or Models X and Y with the models' model tokens."),
     }.ToDictionary(r => r.Rule);
 
     private static readonly IReadOnlyDictionary<string, string> ListLabels = new Dictionary<string, string>(StringComparer.Ordinal)

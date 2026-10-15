@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.Json.Nodes;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking.RootCause;
@@ -65,7 +66,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, $"- No causal word ({string.Join(", ", RootCauseClaimSupport.CausalWords)}) in the scope, the evidence slots or the observations; in the answer slots, the hypotheses slots, the conclusions and the next runs, only in a sentence that cites the hypothesis it states (an rca.hypothesis token or its label) or its axis (an rca.axis token); in the next runs, the run's rca.run token serves too.");
         Line(sb, $"- A certainty word ({string.Join(", ", RootCauseClaimSupport.CertaintyWords)}) only in a sentence that cites a High hypothesis or an established axis status, as CLAIM SUPPORT lists them; otherwise write probable or not established.");
         Line(sb, "- Every writer hypothesis has an axis, a statement, evidence for, a refuted-if statement, a locus of model, chat, harness, suite, corpus or provider, and confidence Low, and cites only models and facts of the data.");
-        Line(sb, "- The conclusions cite every axis' rca.axis.<axis>.status token, and each answer slot its question's rca.question.<n>.status token. Never write a hypothesis id in the prose: cite its tokens.");
+        Line(sb, "- The conclusions cite every axis' rca.axis.<axis>.status token. Never write a hypothesis id in the prose: cite its tokens.");
     }
 
     private static void AppendRootCauseDocument(StringBuilder sb)
@@ -158,7 +159,8 @@ public static partial class BenchmarkReportPackPrompt
         {
             string n = question.ToString(CultureInfo.InvariantCulture);
             return $"Only when THE QUESTIONS lists question {n}: answer the {QuestionOrdinal(question)} question in at most {RootCauseCap(slot, false)} words. "
-                   + $"Cite its rca.question.{n}.status token, the hypothesis tokens it lists, and the measured signals of the model's profile. "
+                   + "Code prints the answer strength and the hypothesis ids above the answer, so do not restate them: start with the reason. "
+                   + "Cite the hypothesis tokens THE QUESTIONS lists for it and the measured signals of the model's profile; where it lists no hypothesis, answer from those signals alone with no causal word. "
                    + "Use a causal word only beside a hypothesis token or its label.";
         }
 
@@ -205,6 +207,7 @@ public static partial class BenchmarkReportPackPrompt
         if (comparisonScope)
         {
             Line(sb, "- Refer to a model only as {{model:X}}, where X is its letter from MODELS, for example {{model:A}}. There is no {{subject}} and no {{peer:X}} token.");
+            Line(sb, "- Never write a model's letter on its own, as in Model H or Models H and I: in every slot and list, your own hypotheses included, a model is named only through its {{model:X}} token. Only the \"models\" field of a writer hypothesis takes bare letters.");
         }
         else
         {
@@ -237,7 +240,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- In the answer slots, the hypotheses slots, the conclusions and the next runs, a causal word needs, in the same sentence, a token of the hypothesis it states (rca.hypothesis.<id>.<n>.*, its label included) or of its axis (rca.axis.<axis>.*), as CLAIM SUPPORT lists them. In the next runs, the rca.run.<n>.* token of the run the sentence describes serves as well.");
         Line(sb, $"- Certainty words ({Join(RootCauseClaimSupport.CertaintyWords)}) need, in the same sentence, a token of a hypothesis graded High or the status token of an axis whose root cause is established, as CLAIM SUPPORT lists them. Elsewhere write probable, consistent with or not established; 'not established' is always allowed. Describe a paired test's result as what the paired test finds, never as established or confirmed.");
         Line(sb, "- A writer hypothesis without an axis, a statement, evidence for, a refuted-if statement or a known locus, with a confidence other than Low, or citing a model or a fact the data does not have, is removed.");
-        Line(sb, "- The conclusions cite every axis' status token: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}. Each answer slot cites its question's rca.question.<n>.status token.");
+        Line(sb, "- The conclusions cite every axis' status token: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.");
         Line(sb, "- A hypothesis' label (rca.hypothesis.<id>.<n>.label) is a noun phrase: it may sit inside a sentence. Its statement is a sentence: it stands alone as a sentence of its own.");
         if (comparisonScope)
         {
@@ -487,11 +490,12 @@ public static partial class BenchmarkReportPackPrompt
 
     /// <summary>
     /// The research questions the sheet asks, each with its answer slot and its <c>rca.question.&lt;n&gt;.*</c>
-    /// tokens; that none is asked when the sheet has none.
+    /// tokens, and for a question no hypothesis answers, that its answer rests on the profile's measured
+    /// signals with no causal word; that none is asked when the sheet has none.
     /// </summary>
     private static void AppendRootCauseQuestions(StringBuilder sb, BenchmarkReportFactSheet sheet, RootCauseClaimSupport claims)
     {
-        Line(sb, "THE QUESTIONS (answer each listed question in its slot, citing its status token; leave the slot of a question not listed out)");
+        Line(sb, "THE QUESTIONS (answer each listed question in its slot, starting with the reason; leave the slot of a question not listed out)");
         if (claims.Questions.Count == 0)
         {
             Line(sb, "(none: the data asks no question, so leave every answer slot out)");
@@ -510,8 +514,22 @@ public static partial class BenchmarkReportPackPrompt
                 if (facts.TryGetValue(key, out var fact)) parts.Add($"{part} {{{{{key}}}}} = {OneLine(fact.Display)}");
             }
             Line(sb, $"- {RootCauseClaimSupport.AnswerSlot(question)}: {string.Join(" | ", parts)}");
+            if (!HasQuestionHypotheses(facts, prefix + "hypotheses"))
+            {
+                string signals = facts.ContainsKey(prefix + "signals") ? $" ({{{{{prefix}signals}}}})" : string.Empty;
+                Line(sb, $"  no hypothesis answers this question: answer it from the profile's measured signals{signals} and use no causal word.");
+            }
         }
         Line(sb);
+    }
+
+    /// <summary>The question's <c>rca.question.&lt;n&gt;.hypotheses</c> fact counts at least one hypothesis.</summary>
+    private static bool HasQuestionHypotheses(Dictionary<string, BenchmarkReportFact> facts, string key)
+    {
+        if (!facts.TryGetValue(key, out var fact) || fact.Value is not JsonValue value) return false;
+        if (value.TryGetValue(out int whole)) return whole > 0;
+        if (value.TryGetValue(out long wide)) return wide > 0;
+        return value.TryGetValue(out double number) && number > 0;
     }
 
     /// <summary>
@@ -601,11 +619,9 @@ public static partial class BenchmarkReportPackPrompt
             : "no hypothesis is graded High and no axis is established, so use no certainty word; write probable or not established."));
 
         var statuses = claims.Axes.Select(a => T(RootCauseClaimSupport.StatusKey(a))).ToList();
-        var answers = claims.Questions.Select(q => RootCauseClaimSupport.AnswerSlot(q) + " cites " + T(RootCauseClaimSupport.QuestionStatusKey(q))).ToList();
         Line(sb, "- Rule 36, statuses: " + (statuses.Count == 0
-            ? "the conclusions cite every axis' status token"
-            : "the conclusions cite " + BenchmarkReportFormat.LetterList(statuses))
-            + (answers.Count == 0 ? "." : "; " + string.Join("; ", answers) + "."));
+            ? "the conclusions cite every axis' status token."
+            : "the conclusions cite " + BenchmarkReportFormat.LetterList(statuses) + "."));
         Line(sb);
     }
 
@@ -835,11 +851,6 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Certainty words need, in the same sentence, one of: "
             + OrNone(claims.CertaintySupport(), "none: no hypothesis is graded High and no axis has an established root cause, so use no certainty word and write probable or not established"));
         Line(sb, "- The conclusions cite: " + OrNone(claims.Axes.Select(a => "{{" + RootCauseClaimSupport.StatusKey(a) + "}}").ToList(), "no axis status, since none was computed"));
-        if (claims.Questions.Count > 0)
-        {
-            Line(sb, "- Each answer slot cites its question's status: " + string.Join(", ", claims.Questions.Select(q =>
-                RootCauseClaimSupport.AnswerSlot(q) + " cites {{" + RootCauseClaimSupport.QuestionStatusKey(q) + "}}")));
-        }
         Line(sb);
     }
 

@@ -89,7 +89,9 @@ public sealed class BenchmarkReportCleanResult
 /// rule 21, a warning, asks for an entry for every covered model. Rule 31 (<see cref="ComparisonTokenShapeRule"/>),
 /// a warning, reads the text with every token resolved to its display: a sentence continued after a full
 /// stop, a sentence-valued fact placed inside a sentence or parentheses, a clause-valued fact
-/// (<c>Model A took …</c>) after its own model or verb, and a run of unlabeled <c>N of M</c> counts.</para>
+/// (<c>Model A took …</c>) after its own model or verb, and a run of unlabeled <c>N of M</c> counts. Rule 37
+/// (<see cref="BareModelLetterRule"/>), a warning, flags a model written by its bare letter, <c>Model H</c>
+/// or <c>Models H and I</c>, outside its token.</para>
 ///
 /// <para>A Root Cause Analysis, in comparison or model scope, adds the claim discipline of rules 32 to 36,
 /// each built from <see cref="RootCauseClaimSupport"/>, which the prompt shares: rule 32, a causal word in
@@ -99,8 +101,8 @@ public sealed class BenchmarkReportCleanResult
 /// anywhere without a High hypothesis token or an established axis status token in its sentence, drops the
 /// paragraph or item; rule 35, a writer hypothesis without an axis, statement, evidence for, refuted-if
 /// statement or known locus, with a confidence other than Low, or citing a model or fact that does not
-/// exist, is dropped; rule 36, a warning, wants the conclusions to cite every axis' status and each answer
-/// slot its question's status. An answer slot is required only for a question the sheet asks
+/// exist, is dropped; rule 36, a warning, wants the conclusions to cite every axis' status. An answer slot
+/// is required only for a question the sheet asks
 /// (<see cref="RootCauseClaimSupport.Questions"/>). Rule 31 applies to it in both scopes, a hypothesis'
 /// label excepted, and rule 4 wants a topic for every question it cites whose text the writer was given.</para>
 ///
@@ -251,6 +253,12 @@ public static class BenchmarkReportPackValidator
     /// <summary>Rule 36: the conclusions cite every axis' <c>rca.axis.&lt;axis&gt;.status</c>. A warning.</summary>
     public const int RootCauseAxisStatusRule = 36;
 
+    /// <summary>
+    /// Rule 37: comparison-scope prose names a model only through its <c>{{model:X}}</c> token, never as a bare
+    /// <c>Model X</c> or <c>Models X and Y</c>. A warning: it asks for the repair turn and keeps the text.
+    /// </summary>
+    public const int BareModelLetterRule = 37;
+
     // Root Cause Analysis slot caps.
     public const int RootCauseScopeMaxWords = 120;
     public const int RootCauseEvidenceMaxWords = 100;
@@ -276,7 +284,7 @@ public static class BenchmarkReportPackValidator
     public static bool IsWarningRule(int rule)
         => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule or OverlapHedgeRule
             or HypeWordRule or ZeroTokenNegationRule or ModelCoverageRule or ChatInconclusiveMdeRule
-            or ChatRepetitionRule or ComparisonTokenShapeRule or RootCauseAxisStatusRule;
+            or ChatRepetitionRule or ComparisonTokenShapeRule or RootCauseAxisStatusRule or BareModelLetterRule;
 
     /// <summary>Words rule 19 reads as a negation, matched as whole words, ignoring case.</summary>
     public static readonly IReadOnlyList<string> NegationWords = new[] { "no", "none", "never", "without", "zero" };
@@ -400,6 +408,9 @@ public static class BenchmarkReportPackValidator
         @"^[ \t]*\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$",
         RegexOptions.Compiled | RegexOptions.Multiline);
     private static readonly Regex HtmlRegex = new(@"<!--|</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>", RegexOptions.Compiled);
+
+    /// <summary>A model named by its bare letter, <c>Model H</c> or <c>Models H</c>, case-sensitive (rule 37).</summary>
+    private static readonly Regex BareModelLetterRegex = new(@"\bModels? [A-Z]{1,2}\b", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex SignificanceRegex = new(
         @"\b(?:significant|significantly|statistically|reliably\s+better|reliably\s+worse|clearly\s+outperform(?:s|ed)?)\b",
@@ -1050,7 +1061,7 @@ public static class BenchmarkReportPackValidator
     }
 
     /// <summary>
-    /// Rules 2, 3, 4 (question references), 5 (row references), 8 to 12, 16, 17, 19 and 31 on one prose
+    /// Rules 2, 3, 4 (question references), 5 (row references), 8 to 12, 16, 17, 19, 31 and 37 on one prose
     /// string; <paramref name="slot"/> is null for the headline and an item, and lets rule 16 read a speed or
     /// cost slot's sentences on that axis.
     /// </summary>
@@ -1162,6 +1173,19 @@ public static class BenchmarkReportPackValidator
             Issue(notes, 10, location, ctx.Comparison
                 ? $"Names a model or its provider ({string.Join(", ", names)}): refer to a model only as {{{{model:X}}}}."
                 : $"Names another model or its provider ({string.Join(", ", names)}): refer to a peer only as {{{{peer:X}}}}.");
+        }
+
+        // Rule 37: a bare model letter in comparison-scope prose.
+        if (ctx.Comparison)
+        {
+            var letters = BareModelLetterRegex.Matches(stripped)
+                .Select(m => m.Value)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (letters.Count > 0)
+            {
+                Issue(notes, BareModelLetterRule, location, $"Writes \"{string.Join("\", \"", letters)}\": name each model only through its {{{{model:X}}}} token, never as Model X.");
+            }
         }
 
         // Rule 11: significance claims.
@@ -1953,8 +1977,7 @@ public static class BenchmarkReportPackValidator
     }
 
     /// <summary>
-    /// Rule 36, a warning: the conclusions cite every axis' <c>rca.axis.&lt;axis&gt;.status</c>, and each answer
-    /// slot of the document its question's <c>rca.question.&lt;n&gt;.status</c>.
+    /// Rule 36, a warning: the conclusions cite every axis' <c>rca.axis.&lt;axis&gt;.status</c>.
     /// </summary>
     private static void CheckRootCauseConclusions(Context ctx, IReadOnlyDictionary<string, string> sections, List<BenchmarkReportValidationNote> notes)
     {
@@ -1971,19 +1994,6 @@ public static class BenchmarkReportPackValidator
                     + "the conclusions state every axis' status, citing its token, and then its root cause or why it is not established.");
             }
         }
-
-        foreach (int question in ctx.RootCauseClaims.Questions)
-        {
-            string slot = RootCauseClaimSupport.AnswerSlot(question);
-            if (!sections.TryGetValue(slot, out string? answer) || string.IsNullOrWhiteSpace(answer)) continue;
-
-            string status = RootCauseClaimSupport.QuestionStatusKey(question);
-            if (!CitedTokens(answer).Contains(status))
-            {
-                Issue(notes, RootCauseAxisStatusRule, SectionLocation(slot),
-                    $"Does not cite {{{{{status}}}}}: each answer states its question's status, citing its token, before the hypotheses and signals that answer it.");
-            }
-        }
     }
 
     /// <summary>The fact keys a text cites, trimmed.</summary>
@@ -1994,7 +2004,7 @@ public static class BenchmarkReportPackValidator
     /// Rule 35 and the prose rules on one writer hypothesis of a Root Cause Analysis: an axis, a statement,
     /// evidence for, a refuted-if statement and a known locus; confidence Low (an empty confidence reads as
     /// Low); only models of the document and evidence that exists; each text within
-    /// <see cref="WriterHypothesisPartMaxWords"/> words, and through rules 2 to 12, 17, 19, 31 and 34.
+    /// <see cref="WriterHypothesisPartMaxWords"/> words, and through rules 2 to 12, 17, 19, 31, 34 and 37.
     /// </summary>
     private static List<BenchmarkReportValidationNote> WriterHypothesisIssues(Context ctx, BenchmarkReportWriterHypothesis? hypothesis, string location)
     {

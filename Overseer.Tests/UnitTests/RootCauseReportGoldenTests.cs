@@ -114,6 +114,45 @@ public class RootCauseReportGoldenTests
     }
 
     [Fact]
+    public void TheQuestionDetails_ListWhatWasDisputed_AndCountTheSupportedSentences()
+    {
+        var document = Document("comparison");
+        var content = BenchmarkReportJson.Deserialize<BenchmarkReportContentSnapshot>(document.ContentJson);
+        foreach (var item in content.Runs.SelectMany(r => r.Questions))
+        {
+            item.Graders = new List<BenchmarkReportContentGrader>
+            {
+                new()
+                {
+                    Role = "Panel member A", Label = "Gemini 3.8 Flash", Score = 80, Comment = "Mostly right.",
+                    Evidence = new List<string> { "Accuracy: Matches rubric.", " completeness: matches RUBRIC. ", "Completeness: Omits the Luck adjustment." }
+                }
+            };
+            item.ClaimRulings = new List<BenchmarkReportContentClaimRuling>
+            {
+                new() { Claim = "First supported sentence.", Verdict = "supported", Role = BenchmarkReportContent.ClaimRole },
+                new() { Claim = "Second supported sentence.", Verdict = "supported", Role = null },
+                new() { Claim = "A refuted sentence.", Verdict = "refuted", Role = BenchmarkReportContent.ClaimRole, Rationale = "The source says otherwise." },
+                new() { Claim = "An accused but true sentence.", Verdict = "supported", Role = BenchmarkReportContent.AccusedSentenceRole }
+            };
+        }
+        document.ContentJson = BenchmarkReportJson.Serialize(content);
+
+        string text = BenchmarkReportPackRenderer.Render(document, FullNamed);
+
+        Assert.Contains("**Claim verifier:**", text);
+        Assert.DoesNotContain("  - Accuracy: Matches rubric.", text);
+        Assert.DoesNotContain("  - completeness: matches RUBRIC.", text);
+        Assert.Contains("  - Completeness: Omits the Luck adjustment.", text);
+        Assert.Contains("Mostly right.", text);
+        Assert.DoesNotContain("First supported sentence.", text);
+        Assert.DoesNotContain("Second supported sentence.", text);
+        Assert.Contains("\"A refuted sentence.\" — The source says otherwise.", text);
+        Assert.Contains("\"An accused but true sentence.\"", text);
+        Assert.Contains("- 2 further answer sentences supported.", text);
+    }
+
+    [Fact]
     public void TheSummary_PutsTheQuestionsInCallouts()
     {
         var document = Document("comparison");
@@ -131,8 +170,11 @@ public class RootCauseReportGoldenTests
         Assert.Equal(questions.Count, CountOf(summary, "> [!NOTE]\n> **Question.** **Why "));
         foreach (var question in questions)
         {
+            string strength = question.HypothesisKeys.Count > 0
+                ? RootCauseGrades.WordWithGrade(question.Grade)
+                : "no hypothesis about this model fired — see its profile.";
             int at = summary.IndexOf("> **Question.** **" + NamedQuestion(sheet, question.Text) + "**\n>\n> *Answer strength: "
-                + RootCauseGrades.WordWithGrade(question.Grade), StringComparison.Ordinal);
+                + strength, StringComparison.Ordinal);
             Assert.True(at >= 0, question.Text);
             string callout = summary[at..summary.IndexOf("\n\n", at, StringComparison.Ordinal)];
             Assert.Contains(">\n> For ", callout);

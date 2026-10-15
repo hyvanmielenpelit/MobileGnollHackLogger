@@ -120,8 +120,10 @@ public static partial class BenchmarkReportPackRenderer
                 {
                     "**Question.** **" + SheetText(ctx, question.Text) + "**",
                     string.Empty,
-                    "*Answer strength: " + RootCauseGrades.WordWithGrade(question.Grade)
-                        + (question.HypothesisKeys.Count > 0 ? " — see " + BenchmarkReportFormat.LetterList(question.HypothesisKeys) : string.Empty) + ".*",
+                    question.HypothesisKeys.Count > 0
+                        ? "*Answer strength: " + RootCauseGrades.WordWithGrade(question.Grade)
+                            + " — see " + BenchmarkReportFormat.LetterList(question.HypothesisKeys) + ".*"
+                        : "*Answer strength: no hypothesis about this model fired — see its profile.*",
                     string.Empty
                 };
                 lines.Add(RcaAnswer(ctx, question.Number, answered));
@@ -839,13 +841,12 @@ public static partial class BenchmarkReportPackRenderer
                 string modelText = models.Count == 0 ? "no model resolved"
                     : models.Count >= 3 && models.Count == analysis.Models.Count ? "all " + Inv(models.Count) + " models"
                     : BenchmarkReportFormat.LetterList(models);
-                var settles = run.HypothesisIds.Select(key => analysis.Hypotheses.FirstOrDefault(h => h.Key == key) is { } h ? RcaHypothesisName(ctx, h) : key).ToList();
                 string estimate = RootCauseNextRuns.EstimateText(run);
                 Line(sb, "| " + Inv(run.Number)
                     + " | " + Capitalized(RootCauseNextRuns.KindPhrase(run.Kind)) + " (" + run.Mark.ToLowerInvariant() + ")"
                     + " | " + RcaPurposeText(run.Purpose)
                     + " | " + Cell(modelText)
-                    + " | " + Cell(settles.Count == 0 ? NoValue : string.Join("; ", settles))
+                    + " | " + Cell(RcaSettlesText(run.HypothesisIds))
                     + " | " + (estimate.Length == 0 ? "not estimated" : estimate) + " |");
             }
             Line(sb);
@@ -874,6 +875,20 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
 
         Slot(sb, ctx, BenchmarkReportSlots.NextRuns);
+    }
+
+    /// <summary>The most hypothesis ids a run's Settles cell lists before it refers to Appendix D.</summary>
+    private const int RcaSettlesMaxIds = 8;
+
+    /// <summary>
+    /// A run's Settles cell: its hypothesis ids, comma-separated; past <see cref="RcaSettlesMaxIds"/>, the
+    /// first of them and how many more Appendix D lists.
+    /// </summary>
+    private static string RcaSettlesText(IReadOnlyList<string> ids)
+    {
+        if (ids.Count == 0) return NoValue;
+        if (ids.Count <= RcaSettlesMaxIds) return string.Join(", ", ids);
+        return string.Join(", ", ids.Take(RcaSettlesMaxIds)) + " and " + Inv(ids.Count - RcaSettlesMaxIds) + " more (Appendix D)";
     }
 
     /// <summary>
@@ -1379,8 +1394,16 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// Appendix C: the grading rule, then per axis each fired hypothesis' evidence, grade reasons and robustness
-    /// checks, and the null hypotheses as one compact table.
+    /// A grade reason that restates one of the hypothesis' robustness checks: the check's name in lower case,
+    /// then <c>failed</c> or <c>could not be assessed</c>.
+    /// </summary>
+    private static bool IsRobustnessReason(RootCauseHypothesis h, string reason)
+        => h.Robustness.Any(r => reason.StartsWith(r.Name.ToLowerInvariant() + " failed", StringComparison.Ordinal)
+                                 || reason.StartsWith(r.Name.ToLowerInvariant() + " could not be assessed", StringComparison.Ordinal));
+
+    /// <summary>
+    /// Appendix C: the grading rule, then per axis each fired hypothesis' evidence, the grade reasons its
+    /// robustness checks do not already give, and those checks, and the null hypotheses as one compact table.
     /// </summary>
     private static void RcaHypothesisDetail(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
@@ -1405,7 +1428,10 @@ public static partial class BenchmarkReportPackRenderer
                 Line(sb, "- **" + RcaHypothesisName(ctx, h) + "** (" + SheetText(ctx, h.ModelsText) + "; locus " + h.Locus + "; " + RootCauseGrades.WordWithGrade(h.Grade) + ")");
                 Line(sb, "  - *For:* " + (h.For.Count == 0 ? "none recorded." : SheetText(ctx, string.Join(" ", h.For))));
                 Line(sb, "  - *Against:* " + (h.Against.Count == 0 ? "none recorded." : SheetText(ctx, string.Join(" ", h.Against))));
-                Line(sb, "  - *Grade reasons:* " + (h.GradeReasons.Count == 0 ? "every condition of the grade is met." : SheetText(ctx, string.Join("; ", h.GradeReasons)).TrimEnd('.') + "."));
+                var reasons = h.GradeReasons.Where(r => !IsRobustnessReason(h, r)).ToList();
+                Line(sb, "  - *Grade reasons:* " + (h.GradeReasons.Count == 0 ? "every condition of the grade is met."
+                    : reasons.Count == 0 ? "see Robustness."
+                    : SheetText(ctx, string.Join("; ", reasons)).TrimEnd('.') + "."));
                 Line(sb, "  - *Refuted if:* " + SheetText(ctx, h.RefutedIf));
                 if (h.Robustness.Count > 0)
                 {

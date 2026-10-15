@@ -687,7 +687,7 @@ public class BenchmarkReportFactsTests
         var single = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
         var none = FactOf(single, "style.responseStyleConflict");
         Assert.False(none.Value!.GetValue<bool>());
-        Assert.Equal("No response-style conflict", none.Display);
+        Assert.Equal("no response-style conflict", none.Display);
         Assert.False(BenchmarkReportPackPrompt.IsTrue(none));
     }
 

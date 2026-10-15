@@ -42,10 +42,10 @@ WHAT THE BENCHMARK DOES NOT MEASURE:
 - A hypothesis or a check is an input to the team's triage into a harness defect, a suite defect, a chat-transferable finding or a corpus or environment defect; it is never a finding in itself.
 
 SLOTS (the keys of "sections"; each holds Markdown paragraphs, printed under the code-rendered part of its section, and is required, except that an answer slot is written only for a question THE QUESTIONS lists and left out otherwise):
-- answerBest: Only when THE QUESTIONS lists question 1: answer the first question in at most 60 words. Cite its rca.question.1.status token, the hypothesis tokens it lists, and the measured signals of the model's profile. Use a causal word only beside a hypothesis token or its label.
-- answerWorst: Only when THE QUESTIONS lists question 2: answer the second question in at most 60 words. Cite its rca.question.2.status token, the hypothesis tokens it lists, and the measured signals of the model's profile. Use a causal word only beside a hypothesis token or its label.
-- answerSpeed: Only when THE QUESTIONS lists question 3: answer the third question in at most 60 words. Cite its rca.question.3.status token, the hypothesis tokens it lists, and the measured signals of the model's profile. Use a causal word only beside a hypothesis token or its label.
-- answerCost: Only when THE QUESTIONS lists question 4: answer the fourth question in at most 60 words. Cite its rca.question.4.status token, the hypothesis tokens it lists, and the measured signals of the model's profile. Use a causal word only beside a hypothesis token or its label.
+- answerBest: Only when THE QUESTIONS lists question 1: answer the first question in at most 60 words. Code prints the answer strength and the hypothesis ids above the answer, so do not restate them: start with the reason. Cite the hypothesis tokens THE QUESTIONS lists for it and the measured signals of the model's profile; where it lists no hypothesis, answer from those signals alone with no causal word. Use a causal word only beside a hypothesis token or its label.
+- answerWorst: Only when THE QUESTIONS lists question 2: answer the second question in at most 60 words. Code prints the answer strength and the hypothesis ids above the answer, so do not restate them: start with the reason. Cite the hypothesis tokens THE QUESTIONS lists for it and the measured signals of the model's profile; where it lists no hypothesis, answer from those signals alone with no causal word. Use a causal word only beside a hypothesis token or its label.
+- answerSpeed: Only when THE QUESTIONS lists question 3: answer the third question in at most 60 words. Code prints the answer strength and the hypothesis ids above the answer, so do not restate them: start with the reason. Cite the hypothesis tokens THE QUESTIONS lists for it and the measured signals of the model's profile; where it lists no hypothesis, answer from those signals alone with no causal word. Use a causal word only beside a hypothesis token or its label.
+- answerCost: Only when THE QUESTIONS lists question 4: answer the fourth question in at most 60 words. Code prints the answer strength and the hypothesis ids above the answer, so do not restate them: start with the reason. Cite the hypothesis tokens THE QUESTIONS lists for it and the measured signals of the model's profile; where it lists no hypothesis, answer from those signals alone with no causal word. Use a causal word only beside a hypothesis token or its label.
 - scope: At most 120 words, under the code-rendered design: what this design can and cannot decide: how many models and runs it rests on, whether they share graders and settings, which entries are degraded or excluded, and, where CONTROLS applies, which controls there are and the control limit. State it; use no causal word.
 - evidenceIntelligence: At most 100 words, under the intelligence evidence tables: where the points were lost, which failure signals several models share and which only one shows, what the per-question results and the item-level controls show. Say what stands out and why it matters for choosing a model; do not restate the table rows; one sentence per point. State what was measured; use no causal word.
 - evidenceSpeed: At most 100 words, under the timing decomposition: which components make up the time per question and how they differ between the models or the groups of questions. Say what stands out and why it matters for choosing a model; do not restate the table rows; one sentence per point. State what was measured; use no causal word.
@@ -85,7 +85,7 @@ CLAIM DISCIPLINE (code checks every sentence; a paragraph or item that breaks on
 - In the answer slots, the hypotheses slots, the conclusions and the next runs, a causal word needs, in the same sentence, a token of the hypothesis it states (rca.hypothesis.<id>.<n>.*, its label included) or of its axis (rca.axis.<axis>.*), as CLAIM SUPPORT lists them. In the next runs, the rca.run.<n>.* token of the run the sentence describes serves as well.
 - Certainty words (established, confirmed, proven, definitely, certainly, root cause was found) need, in the same sentence, a token of a hypothesis graded High or the status token of an axis whose root cause is established, as CLAIM SUPPORT lists them. Elsewhere write probable, consistent with or not established; 'not established' is always allowed. Describe a paired test's result as what the paired test finds, never as established or confirmed.
 - A writer hypothesis without an axis, a statement, evidence for, a refuted-if statement or a known locus, with a confidence other than Low, or citing a model or a fact the data does not have, is removed.
-- The conclusions cite every axis' status token: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}. Each answer slot cites its question's rca.question.<n>.status token.
+- The conclusions cite every axis' status token: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.
 - A hypothesis' label (rca.hypothesis.<id>.<n>.label) is a noun phrase: it may sit inside a sentence. Its statement is a sentence: it stands alone as a sentence of its own.
 - A sentence that ranks {{subject}} above or below a peer whose interval overlaps the subject's (that peer's intervalOverlap fact is true) says in the same sentence that the intervals overlap or that the order is not established, or cites that fact: '{{subject}} scored higher than {{peer:A}}, though the intervals overlap and the order is not established.' Where that peer's pairedExcludesZero fact is true, it says instead that the paired interval excludes zero. A speed or cost ranking needs no interval caveat, since no paired speed or cost result exists between the subject and a peer: '{{subject}} has a higher cost per question than {{peer:A}}.'
 - The interval level may be written as text only in the fixed phrase '95 % interval'; no other digit may appear in the prose.
@@ -372,23 +372,23 @@ rca.run.1.summary = Run 1, a control run of Lyra Mini (high) and Zeta Prime (hig
 rca.run.2.summary = Run 2, a replicate of Orion Max
 rca.run.3.summary = Run 3, a thinking-level pair of Orion Max and Orion Max (medium)
 rca.systemFirst = no harness or suite hypothesis holds model-selection runs back
-rca.within.subject.cost.cacheRead.share = 1 % of the cost per question
-rca.within.subject.cost.cacheWrite.share = 0 % of the cost per question
-rca.within.subject.cost.output.share = 48 % of the cost per question
-rca.within.subject.cost.reasoning.share = 21 % of the cost per question
+rca.within.subject.cost.cacheRead.share = 1 %
+rca.within.subject.cost.cacheWrite.share = 0 %
+rca.within.subject.cost.output.share = 48 %
+rca.within.subject.cost.reasoning.share = 21 %
 rca.within.subject.cost.total = $0.014 per question, mean
-rca.within.subject.cost.uncachedInput.share = 30 % of the cost per question
+rca.within.subject.cost.uncachedInput.share = 30 %
 rca.within.subject.time.other.seconds = 0.3 s per question, mean
-rca.within.subject.time.other.share = 3 % of the time per question
+rca.within.subject.time.other.share = 3 %
 rca.within.subject.time.outputGeneration.seconds = 5.3 s per question, mean
-rca.within.subject.time.outputGeneration.share = 59 % of the time per question
+rca.within.subject.time.outputGeneration.share = 59 %
 rca.within.subject.time.ownWaits.seconds = 0.0 s per question, mean
-rca.within.subject.time.ownWaits.share = 0 % of the time per question
+rca.within.subject.time.ownWaits.share = 0 %
 rca.within.subject.time.toolExecution.seconds = 1.5 s per question, mean
-rca.within.subject.time.toolExecution.share = 17 % of the time per question
+rca.within.subject.time.toolExecution.share = 17 %
 rca.within.subject.time.total = 9.0 s per question, mean
 rca.within.subject.time.ttft.seconds = 1.9 s per question, mean
-rca.within.subject.time.ttft.share = 21 % of the time per question
+rca.within.subject.time.ttft.share = 21 %
 run.dates = 2026-09-21
 run.harnessVersion = 41
 run.ids = 31
@@ -414,7 +414,7 @@ speed.toolTimeP50 = 1.5 s
 speed.ttftP50 = unavailable: Not recorded.
 speed.ttftP90 = unavailable: No answer recorded a time to first token.
 speed.ttftPerCallP50 = 0.8 s
-style.responseStyleConflict = No response-style conflict
+style.responseStyleConflict = no response-style conflict
 subject.label = Orion Max
 subject.modelId = orion-max
 subject.provider = Northwind
@@ -494,7 +494,7 @@ No harness or suite hypothesis holds the model-selection runs back.
 CHECKS (what a run cannot settle: a rubric, a corpus, a configuration or the grading to look at)
 (none)
 
-THE QUESTIONS (answer each listed question in its slot, citing its status token; leave the slot of a question not listed out)
+THE QUESTIONS (answer each listed question in its slot, starting with the reason; leave the slot of a question not listed out)
 (none: the data asks no question, so leave every answer slot out)
 
 CLAIM SUPPORT (derived from FACTS: what a sentence must cite for each kind of claim)

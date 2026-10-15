@@ -63,7 +63,14 @@
                 @for (pair of pairs; track pair.letter) {
                   <div class="rp-letter-pair">
                     <dt class="rp-letter"><span class="visually-hidden">Letter </span>{{ pair.letter }}</dt>
-                    <dd class="rp-letter-model">{{ pair.label }}</dd>
+                    <dd class="rp-letter-model">
+                      @if (pair.model; as model) {
+                        <app-model-identity [name]="model.displayName || pair.label" [thinkingLevel]="model.thinkingLevel"
+                                            [reasoningMode]="model.reasoningMode"></app-model-identity>
+                      } @else {
+                        {{ pair.label }}
+                      }
+                    </dd>
                   </div>
                 }
               </dl>
@@ -78,14 +85,11 @@
            names its own reference, and an amber note says when that is not the one chosen here. -->
       @if (scopeMode === 'comparison' && modelOptions.length > 0) {
         <div class="form-group rp-field rp-reference-field">
-          <label [for]="idPrefix + '-reference'">Reference model</label>
-          <select class="gh-input rp-reference-select" [id]="idPrefix + '-reference'"
-                  [attr.aria-describedby]="idPrefix + '-reference-hint'" (change)="onReferenceChange($event)">
-            <option value="" [selected]="referenceEntryKey === null">{{ highestIndexReference }}</option>
-            @for (option of referenceOptions; track option.key) {
-              <option [value]="option.key" [selected]="option.key === referenceEntryKey">{{ option.label }}</option>
-            }
-          </select>
+          <label [id]="idPrefix + '-reference-label'">Reference model</label>
+          <app-model-picker class="rp-reference-picker" [triggerId]="idPrefix + '-reference'"
+                            [labelledBy]="idPrefix + '-reference-label'" [describedBy]="idPrefix + '-reference-hint'"
+                            [noneLabel]="highestIndexReference" [noneMuted]="false" [options]="referencePickerOptions"
+                            [selectedKey]="referenceEntryKey" (selectionChange)="onReferencePicked($event.key)"></app-model-picker>
           <p class="form-hint rp-reference-hint" [id]="idPrefix + '-reference-hint'">
             The documents judge the other models against this one.
           </p>
@@ -394,6 +398,16 @@
                     <span class="rp-doc-model"><span class="visually-hidden">Model: </span>{{ row.subjectLabel }}</span>
                   }
                   <span class="rp-doc-name">{{ row.name }}</span>
+                  <!-- The first draft's issues: beside the chip while the document is written, beside the
+                       finished phase line once it is done. -->
+                  <ng-template #draftTip>
+                    <app-info-tip class="rp-doc-draft" trigger="dialog" [tipId]="row.tipStem + '-draft'"
+                                  [subject]="'the first draft check of ' + row.title"
+                                  [dialogTitle]="'What the automatic check found in the first draft of ' + row.title">
+                      <app-report-validation-details [document]="row.doc" source="job" view="firstDraft"
+                                                     [phaseDetail]="row.doc.phaseDetail ?? null"></app-report-validation-details>
+                    </app-info-tip>
+                  </ng-template>
                   <span class="rp-doc-status">
                     <span class="rp-doc-chip-row">
                       <span class="visually-hidden">Status: </span>
@@ -404,6 +418,9 @@
                           <app-report-validation-details [document]="row.doc" source="job"></app-report-validation-details>
                         </app-info-tip>
                       }
+                      @if (row.draftTipBesideChip && row.draftIssueCount > 0) {
+                        <ng-container [ngTemplateOutlet]="draftTip"></ng-container>
+                      }
                     </span>
                     @if (row.errorMessage) {
                       <span class="rp-job-row-error">{{ row.errorMessage }}</span>
@@ -412,13 +429,8 @@
                       <!-- One line; the full text is in the dialog. -->
                       <span class="rp-doc-phase-row">
                         <span class="rp-doc-phase">{{ row.phaseLine }}</span>
-                        @if (row.draftIssueCount > 0) {
-                          <app-info-tip class="rp-doc-draft" trigger="dialog" [tipId]="row.tipStem + '-draft'"
-                                        [subject]="'the first draft check of ' + row.title"
-                                        [dialogTitle]="'What the automatic check found in the first draft of ' + row.title">
-                            <app-report-validation-details [document]="row.doc" source="job" view="firstDraft"
-                                                           [phaseDetail]="row.doc.phaseDetail ?? null"></app-report-validation-details>
-                          </app-info-tip>
+                        @if (!row.draftTipBesideChip && row.draftIssueCount > 0) {
+                          <ng-container [ngTemplateOutlet]="draftTip"></ng-container>
                         }
                       </span>
                     }

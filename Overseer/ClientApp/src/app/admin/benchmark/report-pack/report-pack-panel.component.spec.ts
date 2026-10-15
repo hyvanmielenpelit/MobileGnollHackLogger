@@ -515,7 +515,12 @@ describe('ReportPackPanelComponent', () => {
     const texts = (selector: string): string[] =>
       Array.from(host.querySelectorAll(selector)).map(element => (element.textContent ?? '').replace(/\s+/g, ' ').trim());
     expect(texts('.rp-letters-list dt')).toEqual(['Letter A', 'Letter B', 'Letter C']);
-    expect(texts('.rp-letters-list dd')).toEqual(['Gemini Flash', 'GPT Sol group', 'Claude Opus']);
+    expect(texts('.rp-letters-list dd .model-identity-name')).toEqual(['Gemini Flash', 'GPT Sol group', 'Claude Opus']);
+    // The thinking level is a badge, one per lettered model, never a parenthesis after the name.
+    expect(texts('.rp-letters-list dd .thinking-badge')).toEqual(
+      ['thinking level medium', 'thinking level medium', 'thinking level medium']);
+    expect(texts('.rp-letters-list dd').some(line => line.includes('('))).toBe(false);
+    expect(q('.rp-letters-list dd app-provider-badge')).toBeNull();
     fixture.destroy();
   }));
 
@@ -1727,13 +1732,14 @@ describe('ReportPackPanelComponent', () => {
     };
     openPanel({ activeJob: jobDto({ id: 'job-5', serverTimeUtc: '2026-09-28T10:01:00Z', documents: [writing, pending] }) });
 
-    expect(cellText(ExecutiveSummary, '.rp-doc-phase')).toBe('Writing draft');
+    // Writing: the chip says it, so the row has no phase line; the live line still names the phase.
+    expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Writing draft');
+    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-phase`)).toBeNull();
+    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-phase-row`)).toBeNull();
     expect(q(`.rp-job-row[data-audience="${RootCauseAnalysis}"] .rp-doc-phase`)).toBeNull();
     const writingLine = 'Writing 2 documents for Gemini Flash: 0 of 2 finished. Executive Summary: Writing draft.';
     expect(text('.rp-job-status')).toBe(writingLine);
     expect(q('.rp-job-status')!.getAttribute('aria-live')).toBe('polite');
-    // The phase line itself is not live: the one live line announces the change.
-    expect(q('.rp-doc-phase')!.closest('[role="status"], [aria-live]')).toBeNull();
 
     // Neither the clock nor a reading in the same phase changes the live line.
     tick(1000);
@@ -1744,23 +1750,26 @@ describe('ReportPackPanelComponent', () => {
     fixture.detectChanges();
     expect(text('.rp-job-status')).toBe(writingLine);
 
-    // Revising: the chip reads Revising, the phase line counts the first draft's issues.
+    // Revising: the chip reads Revising and the row has no phase line; the live line counts the first draft's issues.
+    const revising: BenchmarkReportPackDocumentProgressDto = {
+      ...writing, status: 'Repairing', modelCalls: 2, phase: 'Revising', firstDraftClean: false, firstTurnIssues: [RANKING, DIGIT],
+      phaseDetail: 'The automatic check found 2 issues in the first draft: 1 ranking without the overlap caveat, 1 digit in prose.'
+    };
     tick(REPORT_PACK_POLL_MS);
-    http.expectOne(jobUrl('job-5')).flush(jobDto({
-      id: 'job-5',
-      documents: [{
-        ...writing, status: 'Repairing', modelCalls: 2, phase: 'Revising', firstDraftClean: false, firstTurnIssues: [RANKING, DIGIT],
-        phaseDetail: 'The automatic check found 2 issues in the first draft: 1 ranking without the overlap caveat, 1 digit in prose.'
-      }, { ...pending }]
-    }));
+    http.expectOne(jobUrl('job-5')).flush(jobDto({ id: 'job-5', documents: [revising, { ...pending }] }));
     fixture.detectChanges();
     expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Revising');
-    expect(cellText(ExecutiveSummary, '.rp-doc-phase')).toBe('Revising the draft — 2 issues found by the automatic check');
+    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-phase`)).toBeNull();
     expect(text('.rp-job-status')).toBe(
       'Writing 2 documents for Gemini Flash: 0 of 2 finished. Executive Summary: Revising the draft — 2 issues found by the automatic check.');
 
-    // The phase line's info button lists the first draft's issues by rule in a dialog.
-    const draftButton = q<HTMLButtonElement>(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-draft button.gh-info-btn`)!;
+    // The first draft's info button sits right after the chip while the document is written.
+    const chipRow = (): HTMLElement => q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-chip-row`)!;
+    expect(chipRow().querySelector('.job-status-chip')!.nextElementSibling!.classList).toContain('rp-doc-draft');
+    expect(host.querySelectorAll(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-draft`).length).toBe(1);
+
+    // It lists the first draft's issues by rule in a dialog.
+    const draftButton = q<HTMLButtonElement>(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-chip-row .rp-doc-draft button.gh-info-btn`)!;
     expect(draftButton.getAttribute('aria-label')).toBe('About the first draft check of the Executive Summary of Gemini Flash');
     expect(draftButton.hasAttribute('title')).toBe(false);
     draftButton.click();
@@ -1772,7 +1781,22 @@ describe('ReportPackPanelComponent', () => {
     expect(draftDialog.querySelectorAll('.report-validation-group').length).toBe(2);
     draftDialog.close();
 
-    // Finished: the phase line says how each draft was checked.
+    // Checking the revision: a phase line the chip does not say, and the info button stays beside the chip.
+    tick(REPORT_PACK_POLL_MS);
+    http.expectOne(jobUrl('job-5')).flush(jobDto({
+      id: 'job-5', documents: [{ ...revising, modelCalls: 3, phase: 'CheckingRevision' }, { ...pending }]
+    }));
+    fixture.detectChanges();
+    expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Revising');
+    expect(cellText(ExecutiveSummary, '.rp-doc-phase')).toBe('Checking the revision — 2 issues found by the automatic check');
+    expect(text('.rp-job-status')).toBe(
+      'Writing 2 documents for Gemini Flash: 0 of 2 finished. Executive Summary: Checking the revision — 2 issues found by the automatic check.');
+    expect(chipRow().querySelector('.job-status-chip')!.nextElementSibling!.classList).toContain('rp-doc-draft');
+    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-phase-row .rp-doc-draft`)).toBeNull();
+    // The phase line itself is not live: the one live line announces the change.
+    expect(q('.rp-doc-phase')!.closest('[role="status"], [aria-live]')).toBeNull();
+
+    // Finished: the phase line says how each draft was checked, its info button beside it.
     tick(REPORT_PACK_POLL_MS);
     http.expectOne(jobUrl('job-5')).flush(jobDto({
       id: 'job-5',
@@ -1788,6 +1812,8 @@ describe('ReportPackPanelComponent', () => {
     }));
     fixture.detectChanges();
     expect(cellText(ExecutiveSummary, '.rp-doc-phase')).toBe('Revised once — 2 issues in the first draft');
+    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-phase-row .rp-doc-draft`)).not.toBeNull();
+    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-chip-row .rp-doc-draft`)).toBeNull();
     expect(cellText(RootCauseAnalysis, '.rp-doc-phase')).toBe('First draft passed every check');
     expect(q(`.rp-job-row[data-audience="${RootCauseAnalysis}"] .rp-doc-draft`)).toBeNull();
     expect(text('.rp-job-status')).toBe('Report pack for Gemini Flash: Completed.');
@@ -2116,12 +2142,31 @@ describe('ReportPackPanelComponent', () => {
     /** The comparison with GPT Sol group as its charted baseline model. */
     const BASELINE_CONTEXT: ReportPackContext = { ...CONTEXT, baselineModelEntryKey: 'group:4' };
 
-    const referenceSelect = (): HTMLSelectElement => q<HTMLSelectElement>('#rp-reference')!;
+    /** The Reference model picker's trigger. */
+    const referenceTrigger = (): HTMLButtonElement => q<HTMLButtonElement>('#rp-reference')!;
+    /** The name the trigger shows: the chosen model's, or *Highest Intelligence Index*. */
+    const referenceShown = (): HTMLElement => referenceTrigger().querySelector<HTMLElement>('.model-name')!;
+    const referenceOptions = (): HTMLElement[] =>
+      Array.from(host.querySelectorAll<HTMLElement>('.rp-reference-picker [role="option"]'));
+    const optionName = (option: HTMLElement): string => option.querySelector('.model-name')!.textContent!.trim();
 
-    function chooseReference(value: string): void {
-      const select = referenceSelect();
-      select.value = value;
-      select.dispatchEvent(new Event('change'));
+    function openReference(): void {
+      referenceTrigger().click();
+      fixture.detectChanges();
+    }
+
+    function closeReference(): void {
+      q('.rp-reference-picker [role="listbox"]')!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+      fixture.detectChanges();
+    }
+
+    /** Opens the picker and clicks the option of that visible name. */
+    function chooseReference(name: string): void {
+      openReference();
+      const option = referenceOptions().find(candidate => optionName(candidate) === name);
+      expect(option).toBeDefined();
+      option!.click();
       fixture.detectChanges();
     }
 
@@ -2129,12 +2174,24 @@ describe('ReportPackPanelComponent', () => {
       openPanel({ context: BASELINE_CONTEXT });
       const request = chooseWriter(7);
 
-      const select = referenceSelect();
-      expect(text('label[for="rp-reference"]')).toBe('Reference model');
-      expect(select.value).toBe('group:4');
-      expect(Array.from(select.options).map(option => option.textContent!.trim())).toEqual([
-        'Highest Intelligence Index', 'Gemini Flash (medium)', 'Claude Opus (medium)', 'GPT Sol group (medium) (baseline model)'
-      ]);
+      expect(text('#rp-reference-label')).toBe('Reference model');
+      expect(referenceTrigger().getAttribute('aria-labelledby')).toBe('rp-reference-label rp-reference');
+      expect(referenceTrigger().getAttribute('aria-describedby')).toBe('rp-reference-hint');
+      // The trigger shows the baseline model with its role and its thinking level as a badge.
+      expect(referenceShown().textContent!.trim()).toBe('GPT Sol group');
+      expect(referenceTrigger().querySelector('.model-option-tag')!.textContent!.trim()).toBe('Baseline');
+      expect(referenceTrigger().querySelector('.thinking-badge')!.textContent!.toLowerCase()).toContain('medium');
+
+      openReference();
+      const options = referenceOptions();
+      expect(options.map(optionName)).toEqual(['Highest Intelligence Index', 'Gemini Flash', 'Claude Opus', 'GPT Sol group']);
+      expect(options.map(option => option.getAttribute('aria-selected'))).toEqual(['false', 'false', 'false', 'true']);
+      expect(options.map(option => option.querySelector('.model-option-tag')?.textContent?.trim() ?? null))
+        .toEqual([null, null, null, 'Baseline']);
+      expect(options.slice(1).every(option => option.querySelector('.thinking-badge') !== null)).toBe(true);
+      // Highest Intelligence Index is a setting of its own, drawn at full strength.
+      expect(options[0].querySelector('.model-name')!.classList).not.toContain('text-muted');
+      closeReference();
       expect(request.request.body.referenceEntryKey).toBe('group:4');
 
       generateButton().click();
@@ -2146,14 +2203,20 @@ describe('ReportPackPanelComponent', () => {
     it('sends a reference only when one is named', fakeAsync(() => {
       openPanel();
       const first = chooseWriter(7);
-      expect(referenceSelect().value).toBe('');
+      expect(referenceShown().textContent!.trim()).toBe('Highest Intelligence Index');
+      expect(referenceShown().classList).not.toContain('text-muted');
       expect('referenceEntryKey' in first.request.body).toBe(false);
 
-      chooseReference('run:2');
+      chooseReference('Claude Opus');
+      expect(referenceShown().textContent!.trim()).toBe('Claude Opus');
+      expect(referenceTrigger().querySelector('.thinking-badge')).not.toBeNull();
+      expect(referenceTrigger().querySelector('.model-option-tag')).toBeNull();
       const named = answerPreview();
       expect(named.request.body.referenceEntryKey).toBe('run:2');
 
-      chooseReference('');
+      chooseReference('Highest Intelligence Index');
+      expect(referenceShown().textContent!.trim()).toBe('Highest Intelligence Index');
+      expect(referenceShown().classList).not.toContain('text-muted');
       const unnamed = answerPreview();
       expect('referenceEntryKey' in unnamed.request.body).toBe(false);
       fixture.destroy();
@@ -2164,7 +2227,7 @@ describe('ReportPackPanelComponent', () => {
       chooseWriter(7);
       chooseModels(['run:1', 'run:2']);
 
-      expect(referenceSelect().value).toBe('');
+      expect(referenceShown().textContent!.trim()).toBe('Highest Intelligence Index');
       const request = answerPreview();
       expect('referenceEntryKey' in request.request.body).toBe(false);
       fixture.destroy();
@@ -2204,7 +2267,7 @@ describe('ReportPackPanelComponent', () => {
         + '(Highest Intelligence Index). Check Rewrite to write it against GPT Sol group (medium) (baseline model).');
 
       // The same reference as the newer document's: the note names the other one.
-      chooseReference('');
+      chooseReference('Highest Intelligence Index');
       expect(text('.rp-reference-mismatch')).toContain('Executive Summary (GPT Sol group (medium) (baseline model))');
       fixture.destroy();
     }));
@@ -2222,7 +2285,8 @@ describe('ReportPackPanelComponent', () => {
       expect(component.chosenKeys).toContain('run:1');
       expect(component.chosenKeys).not.toContain('run:2');
       expect(component.chosenKeys).not.toContain('run:3');
-      expect(referenceSelect().value).toBe('run:1');
+      expect(component.referenceEntryKey).toBe('run:1');
+      expect(referenceShown().textContent!.trim()).toBe('Model 1');
       expect(text('.rp-models-cap')).toBe('A document covers at most 12 models, so the baseline model and the 11 others '
         + 'with the highest Intelligence Index of the 14 are chosen first.');
     });

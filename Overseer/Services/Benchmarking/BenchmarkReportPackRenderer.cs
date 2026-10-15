@@ -114,9 +114,11 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
     /// version 16 its Root Cause Analysis opens with a summary that answers the research questions, its
-    /// writer output carries an answer slot per question, and its detail is in lettered appendices.
+    /// writer output carries an answer slot per question, and its detail is in lettered appendices. From
+    /// version 17 each question is answered only by the hypotheses that answer it, the answers start with
+    /// the reason, and a model is named only through its token.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 16;
+    public const int ComparisonReportFormatVersion = 17;
 
     /// <summary>The comparison format version whose Root Cause Analysis writer output first carries the answer slots.</summary>
     private const int AnswerSlotsFormatVersion = 16;
@@ -2464,12 +2466,19 @@ public static partial class BenchmarkReportPackRenderer
     /// followed by the prose's own period, prints one.
     /// </summary>
     private static string Prose(Context ctx, string? text)
-        => Regex.Replace(Normalize(text), TokenPattern + @"(\.)?", match =>
+        => Regex.Replace(ProseLetters(ctx, Normalize(text)), TokenPattern + @"(\.)?", match =>
         {
             string resolved = Resolve(ctx, match);
             if (!match.Groups[2].Success) return resolved;
             return resolved.EndsWith('.') ? resolved : resolved + ".";
         }, RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// In a named comparison copy, the writer's own <c>Model X</c> and <c>Models X and Y</c> by the models'
+    /// names where every letter is a peer's; the text unchanged otherwise.
+    /// </summary>
+    private static string ProseLetters(Context ctx, string text)
+        => ctx.Comparison && !ctx.Anonymized ? NamedLetters(ctx, text) : text;
 
     /// <summary>The token's value; the token itself, as written, when it names nothing.</summary>
     private static string Resolve(Context ctx, Match match)

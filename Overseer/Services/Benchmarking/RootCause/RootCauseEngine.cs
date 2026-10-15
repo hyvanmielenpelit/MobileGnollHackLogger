@@ -187,7 +187,7 @@ public sealed class RootCauseInput
 public static class RootCauseEngine
 {
     /// <summary>The version stored on every result.</summary>
-    public const int Version = 2;
+    public const int Version = 3;
 
     public const string ComparisonScope = "Comparison";
     public const string ModelScope = "Model";
@@ -276,6 +276,7 @@ public static class RootCauseEngine
         {
             drafts.AddRange(RootCauseHypotheses.WithinRules(ctx, model, axes, ctx.ControlCap(model)));
         }
+        if (RootCauseHypotheses.SharedLeadGroupNote(ctx, drafts) is { } sharedGroupNote) result.Notes.Add(sharedGroupNote);
 
         var graded = drafts.Select(d => (Hypothesis: RootCauseHypotheses.Grade(d, ctx.Name), Draft: d)).ToList();
         var kept = RootCauseHypotheses.Keep(graded);
@@ -283,7 +284,9 @@ public static class RootCauseEngine
             .OrderBy(k => RootCauseAxes.All.ToList().IndexOf(k.Hypothesis.Axis))
             .ThenBy(k => k.Hypothesis.Kind == "null" ? 0 : 1)
             .ThenByDescending(k => RootCauseGrades.Rank(k.Hypothesis.Grade))
-            .ThenByDescending(k => Math.Abs(k.Hypothesis.Share ?? 0))
+            .ThenBy(k => k.Draft.PairNullStands == true ? 1 : 0)
+            .ThenBy(k => k.Hypothesis.Explains.HasValue ? 0 : 1)
+            .ThenByDescending(k => k.Hypothesis.Explains ?? 0)
             .ThenBy(k => k.Hypothesis.Id, StringComparer.Ordinal)
             .ThenBy(k => k.Hypothesis.Number)
             .ToList();
@@ -1423,7 +1426,7 @@ public static class RootCauseFacts
                 foreach (var s in summary.Time)
                 {
                     facts.Add(within + "time." + s.Key + ".seconds", s.Value, BenchmarkReportFormat.OneDecimal(s.Value) + " s per question, mean");
-                    if (total > 0) facts.Add(within + "time." + s.Key + ".share", s.Value / total, RootCauseHypotheses.Pct(s.Value / total) + " of the time per question");
+                    if (total > 0) facts.Add(within + "time." + s.Key + ".share", s.Value / total, RootCauseHypotheses.Pct(s.Value / total));
                 }
             }
 
@@ -1437,7 +1440,7 @@ public static class RootCauseFacts
                 facts.Add(within + "cost.total", total, BenchmarkReportFormat.Usd(total) + " per question, mean");
                 foreach (var s in summary.Cost)
                 {
-                    if (total > 0) facts.Add(within + "cost." + s.Key + ".share", s.Value / total, RootCauseHypotheses.Pct(s.Value / total) + " of the cost per question");
+                    if (total > 0) facts.Add(within + "cost." + s.Key + ".share", s.Value / total, RootCauseHypotheses.Pct(s.Value / total));
                 }
             }
         }
@@ -1706,11 +1709,14 @@ public static class RootCauseProfiles
         var questions = new List<RootCauseQuestion>();
         void Add(int number, string axis, RootCauseModelInput model, string text)
         {
+            // Question 1 asks why a model did well: the pair hypotheses where it is the better side. The others ask
+            // why it did badly: the pair hypotheses where it is the worse side, and its own within-model ones.
+            // result.Hypotheses is already in rank order.
             var hypotheses = result.Hypotheses
-                .Where(h => h.Kind != "null" && h.Axis == axis && h.Models.Contains(model.Token, StringComparer.Ordinal))
-                .OrderByDescending(h => RootCauseGrades.Rank(h.Grade))
-                .ThenByDescending(h => Math.Abs(h.Share ?? 0))
-                .ThenBy(h => h.Key, StringComparer.Ordinal)
+                .Where(h => h.Axis == axis && h.Id != "HQ3" && h.Models.Count > 0)
+                .Where(h => number == 1
+                    ? h.Kind == "pair" && h.Models.Count == 2 && h.Models[1] == model.Token
+                    : (h.Kind == "pair" && h.Models.Count == 2 && h.Models[0] == model.Token) || (h.Kind == "within" && h.Models[0] == model.Token))
                 .ToList();
             var best = hypotheses.FirstOrDefault(h => RootCauseGrades.Rank(h.Grade) >= RootCauseGrades.Rank(RootCauseGrades.Low));
             questions.Add(new RootCauseQuestion
@@ -1806,15 +1812,41 @@ public static class RootCauseProfiles
 
         string label = RootCauseSegments.Label(RootCauseSegments.AtRisk[segment]);
         string points = BenchmarkReportFormat.OneDecimal(at.Points[segment]);
+        string shortLabel = label;
+        if (RootCauseSegments.AtRisk[segment] == RootCauseSegments.OtherLow && MostlyLost(model, at) is { } dimension)
+        {
+            shortLabel = "mostly " + dimension;
+            label = "low-scoring answers, " + shortLabel;
+        }
         string text = label + ": " + points + " index points on " + Inv(contributing.Count) + (contributing.Count == 1 ? " question" : " questions")
                       + Listed(listed, byContribution: true);
         return new RootCauseProfileEntry
         {
             Kind = LostPointsOn,
             Text = text,
-            Short = label + ", " + points + " points",
+            Short = shortLabel + ", " + points + " points",
             Questions = listed.Select(r => r.Reference).ToList()
         };
+    }
+
+    /// <summary>
+    /// Accuracy or Completeness, whichever loses more on the answers in the catch-all at-risk segment (below the
+    /// model's median, with no stronger signal): the sum over them of each dimension's weight times its shortfall
+    /// from 100, unweighted when the profile gives both no weight. Null when neither dimension was scored or the two tie.
+    /// </summary>
+    private static string? MostlyLost(RootCauseModelInput model, RootCauseAtRisk at)
+    {
+        if (at.Median is not double median) return null;
+        var answers = model.Evidence.Scored
+            .Where(a => a.Quality < median && !a.CriticalError && !a.BudgetOrDefect && !a.NoTool)
+            .ToList();
+        var weights = model.Evidence.Weights;
+        double wa = weights.Length > 0 ? weights[0] : 0, wc = weights.Length > 1 ? weights[1] : 0;
+        if (wa <= 0 && wc <= 0) wa = wc = 1;
+        double accuracy = answers.Where(a => a.Accuracy.HasValue).Sum(a => wa * (100 - a.Accuracy!.Value));
+        double completeness = answers.Where(a => a.Completeness.HasValue).Sum(a => wc * (100 - a.Completeness!.Value));
+        if (!answers.Any(a => a.Accuracy.HasValue || a.Completeness.HasValue) || Math.Abs(completeness - accuracy) < 1e-9) return null;
+        return completeness > accuracy ? DimensionNames[1] : DimensionNames[0];
     }
 
     /// <summary>The dimension furthest below the model's Accuracy, with the gap; null when none is below it.</summary>
@@ -1971,7 +2003,6 @@ public static class RootCauseProfiles
         {
             case 1:
                 signals.AddRange(profile?.Strengths.Select(s => s.Text) ?? Enumerable.Empty<string>());
-                if (lost != null) signals.Add("lost points on " + lost);
                 break;
             case 2:
                 if (lost != null) signals.Add("lost points on " + lost);

@@ -132,6 +132,8 @@ export class ModelPickerComponent<M extends ModelPickerModel = ModelPickerModel>
   @Input() selectedKey: ModelPickerKey | null = null;
   /** When set, a first option with key `null`, shown muted on the trigger while nothing is selected. */
   @Input() noneLabel: string | null = null;
+  /** False draws the none option at full strength: a none choice that is a setting of its own, not an absence. */
+  @Input() noneMuted = true;
   @Input() placeholder = 'Select Model';
   /** Shown in the popup when `options` is empty. */
   @Input() emptyHint: string | null = null;

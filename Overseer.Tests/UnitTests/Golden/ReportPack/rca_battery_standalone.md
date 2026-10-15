@@ -170,8 +170,8 @@ In the order to make them: the Overseer chat first (C), then the benchmark (B), 
 
 | # | Run | Purpose | Models | Settles | Estimate |
 |---|---|---|---|---|---|
-| 1 | Control run (recommended) | B, the benchmark | Lyra Mini (high) and Zeta Prime (high) | WQ2.1: points lost in suite 2 by GPT-5.6 Luna | about $0.480 and 28 minutes |
-| 2 | Thinking-level pair (recommended) | M, model selection | GPT-5.6 Luna and Orion Max (medium) | WS2.1: output generation of GPT-5.6 Luna | about $0.480 and 28 minutes |
+| 1 | Control run (recommended) | B, the benchmark | Lyra Mini (high) and Zeta Prime (high) | WQ2.1 | about $0.480 and 28 minutes |
+| 2 | Thinking-level pair (recommended) | M, model selection | GPT-5.6 Luna and Orion Max (medium) | WS2.1 | about $0.480 and 28 minutes |
 
 ### Checks
 
@@ -346,13 +346,13 @@ A battery report lists no synthesis findings; each member run's report has its o
 - **WQ2.1: points lost in suite 2 by GPT-5.6 Luna** (GPT-5.6 Luna; locus model / suite; Suggestive (Low))
   - *For:* suite 2 holds 100 % of GPT-5.6 Luna's points at risk.
   - *Against:* none recorded.
-  - *Grade reasons:* across suites failed: leaving the suite out moves the Overall Index by less than the interval half-width.; panel agreement could not be assessed: the model was not graded by a panel, or a group has no score from both members.
+  - *Grade reasons:* see Robustness.
   - *Refuted if:* The contrast stands within noise, or the shares are even.
   - *Robustness:* Replicates passed (Every model has at least two runs per suite); Across suites failed (Leaving the suite out moves the Overall Index by less than the interval half-width); Panel agreement could not be assessed (The model was not graded by a panel, or a group has no score from both members).
 - **WQ3.1: critical errors of GPT-5.6 Luna** (GPT-5.6 Luna; locus model; Suggestive (Low))
   - *For:* Confirmed critical errors hold 66 % of the points at risk (5.6 index points, upper bound).
   - *Against:* none recorded.
-  - *Grade reasons:* leave one question out could not be assessed: fewer than two questions put points at risk in this segment.; panel agreement could not be assessed: the model was not graded by a panel, or a group has no score from both members.; the lead of the critical-error share over the next is not established.
+  - *Grade reasons:* the lead of the critical-error share over the next is not established.
   - *Refuted if:* The caps are unconfirmed.
   - *Robustness:* Replicates passed (Every model has at least two runs per suite); Leave one question out could not be assessed (Fewer than two questions put points at risk in this segment); Panel agreement could not be assessed (The model was not graded by a panel, or a group has no score from both members).
 
@@ -1399,25 +1399,25 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "1 % of the cost per question",
+      "display": "1 %",
       "key": "rca.within.subject.cost.cacheRead.share",
       "value": 0.005235602094240839
     },
     {
       "available": true,
-      "display": "0 % of the cost per question",
+      "display": "0 %",
       "key": "rca.within.subject.cost.cacheWrite.share",
       "value": 0
     },
     {
       "available": true,
-      "display": "47 % of the cost per question",
+      "display": "47 %",
       "key": "rca.within.subject.cost.output.share",
       "value": 0.4712041884816754
     },
     {
       "available": true,
-      "display": "26 % of the cost per question",
+      "display": "26 %",
       "key": "rca.within.subject.cost.reasoning.share",
       "value": 0.2617801047120419
     },
@@ -1429,7 +1429,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "26 % of the cost per question",
+      "display": "26 %",
       "key": "rca.within.subject.cost.uncachedInput.share",
       "value": 0.2617801047120419
     },
@@ -1441,7 +1441,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "14 % of the time per question",
+      "display": "14 %",
       "key": "rca.within.subject.time.other.share",
       "value": 0.1433333333333333
     },
@@ -1453,7 +1453,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "65 % of the time per question",
+      "display": "65 %",
       "key": "rca.within.subject.time.outputGeneration.share",
       "value": 0.6488888888888887
     },
@@ -1465,7 +1465,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "0 % of the time per question",
+      "display": "0 %",
       "key": "rca.within.subject.time.ownWaits.share",
       "value": 0.004444444444444444
     },
@@ -1477,7 +1477,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "9 % of the time per question",
+      "display": "9 %",
       "key": "rca.within.subject.time.toolExecution.share",
       "value": 0.08888888888888888
     },
@@ -1495,7 +1495,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "11 % of the time per question",
+      "display": "11 %",
       "key": "rca.within.subject.time.ttft.share",
       "value": 0.11444444444444443
     },
@@ -2045,7 +2045,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "unit": "usd"
       }
     ],
-    "engineVersion": 2,
+    "engineVersion": 3,
     "evidence": [
       {
         "atRisk": [
@@ -2197,6 +2197,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "against": [],
         "axis": "intelligence",
         "confounds": [],
+        "explains": 8.5,
         "factKeys": [],
         "for": [
           "suite 2 holds 100 % of GPT-5.6 Luna's points at risk."
@@ -2247,6 +2248,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "against": [],
         "axis": "intelligence",
         "confounds": [],
+        "explains": 5.625,
         "factKeys": [
           "outcome.confirmedCriticalRate"
         ],
@@ -2300,6 +2302,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         ],
         "axis": "speed",
         "confounds": [],
+        "explains": 14600,
         "factKeys": [
           "rca.within.subject.time.outputGeneration.share",
           "tokens.reasoningShare"
@@ -2348,6 +2351,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "against": [],
         "axis": "cost",
         "confounds": [],
+        "explains": 0.014,
         "factKeys": [
           "cost.component.output.perQuestion",
           "cost.component.reasoning.perQuestion"

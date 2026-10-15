@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking.Pdf;
@@ -871,8 +872,9 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// The questions whose text the writer was given: the question, and at Full its rubric; then each
     /// answer the writer was given as an excerpt, under its model, as the excerpt at Detailed and whole
-    /// at Full, with the graders and the claim verifier. <paramref name="only"/>, when given, keeps the
-    /// questions it holds.
+    /// at Full, with the graders and the claim verifier. A grader's no-fault evidence line is left out, and
+    /// the answer sentences the verifier supported are counted rather than listed. <paramref name="only"/>,
+    /// when given, keeps the questions it holds.
     /// </summary>
     private static void ComparisonQuestionDetails(
         StringBuilder sb, Context ctx, bool grading, int level, IReadOnlySet<int>? only = null, string? title = null)
@@ -949,7 +951,7 @@ public static partial class BenchmarkReportPackRenderer
                     Line(sb, "- **" + grader.Role + " (" + (GraderWithheld(ctx, graderOnSheet) ? WithheldGrader : grader.Label) + "):** "
                         + (grader.Score.HasValue ? "score " + Inv(grader.Score.Value) + "." : "not scored.")
                         + (string.IsNullOrWhiteSpace(grader.Comment) ? string.Empty : " " + OneLine(grader.Comment)));
-                    foreach (var evidence in grader.Evidence)
+                    foreach (var evidence in grader.Evidence.Where(e => !IsNoFaultEvidence(e)))
                     {
                         Line(sb, "  - " + OneLine(evidence));
                     }
@@ -959,15 +961,37 @@ public static partial class BenchmarkReportPackRenderer
                 Line(sb, "**Claim verifier:**");
                 Line(sb);
                 if (item.ClaimRulings.Count == 0) Line(sb, "- No claims were checked.");
+                int supported = 0;
                 foreach (var ruling in item.ClaimRulings)
                 {
+                    if (IsSupportedAnswerSentence(ruling))
+                    {
+                        supported++;
+                        continue;
+                    }
                     Line(sb, "- **" + BenchmarkReportContent.RulingLabel(ruling.Role, ruling.Verdict) + ":** \"" + OneLine(ruling.Claim) + "\""
                         + (string.IsNullOrWhiteSpace(ruling.Rationale) ? string.Empty : " — " + OneLine(ruling.Rationale)));
+                }
+                if (supported > 0)
+                {
+                    Line(sb, "- " + Inv(supported) + (supported < item.ClaimRulings.Count ? " further" : string.Empty)
+                        + (supported == 1 ? " answer sentence" : " answer sentences") + " supported.");
                 }
                 Line(sb);
             }
         }
     }
+
+    /// <summary>A grader's evidence line that records no fault: <c>Accuracy: Matches rubric.</c>, ignoring case.</summary>
+    private const string NoFaultEvidencePattern = @"^[\p{L}][\p{L} ]*:\s*matches rubric\.$";
+
+    private static bool IsNoFaultEvidence(string evidence)
+        => Regex.IsMatch(OneLine(evidence).Trim(), NoFaultEvidencePattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>A ruling that the answer's own sentence is supported, on no grader's accusation.</summary>
+    private static bool IsSupportedAnswerSentence(BenchmarkReportContentClaimRuling ruling)
+        => string.Equals((ruling.Verdict ?? string.Empty).Trim(), "supported", StringComparison.Ordinal)
+           && ruling.Role is null or BenchmarkReportContent.ClaimRole;
 
     private static void ComparisonAboutBenchmark(StringBuilder sb, Context ctx)
     {

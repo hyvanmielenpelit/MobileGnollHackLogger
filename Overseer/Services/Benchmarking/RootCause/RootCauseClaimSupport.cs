@@ -23,8 +23,7 @@ using Overseer.Models;
 /// <item>A certainty word (<see cref="CertaintyWords"/>), anywhere, needs in the same sentence a token of a
 /// hypothesis graded High, its label included, or the <c>rca.axis.&lt;axis&gt;.status</c> token of an axis whose
 /// root cause is established. A certainty word after <c>not</c>, <c>never</c> or <c>cannot</c> is not one.</item>
-/// <item>The conclusions cite every axis' <see cref="StatusKey"/>, and each answer slot its question's
-/// <see cref="QuestionStatusKey"/>.</item>
+/// <item>The conclusions cite every axis' <see cref="StatusKey"/>.</item>
 /// </list>
 /// </summary>
 public sealed class RootCauseClaimSupport
