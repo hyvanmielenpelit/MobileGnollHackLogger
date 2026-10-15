@@ -5273,16 +5273,6 @@ progress.job-progress {
 
 /* --- The job --- */
 
-.rp-job-status {
-  margin: 0;
-  font-size: var(--text-body);
-  color: #e4e4e7;
-
-  &:empty {
-    display: none;
-  }
-}
-
 .rp-job {
   display: flex;
   flex-direction: column;

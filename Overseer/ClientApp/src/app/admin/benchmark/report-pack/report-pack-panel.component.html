@@ -312,8 +312,9 @@
   <div runReportMain class="rp-main">
     <h5 class="rp-subsection-title rp-progress-heading" [id]="idPrefix + '-progress-heading'" tabindex="-1">Report pack progress</h5>
 
-    <!-- One polite live line, in place before a job exists; it changes with the job's phase only. -->
-    <p class="rp-job-status" role="status" aria-live="polite">{{ jobStatusLine }}</p>
+    <!-- One polite live line for screen readers, in place before a job exists; it changes with the
+         job's phase only. The job card shows the same facts. -->
+    <p class="visually-hidden rp-job-status" role="status" aria-live="polite">{{ jobStatusLine }}</p>
 
     <!-- From Generate until the job's first reading: the start request checks the comparison, the
          writer and the cost on the server before it answers. -->

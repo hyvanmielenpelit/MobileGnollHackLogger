@@ -1333,6 +1333,8 @@ describe('ReportPackPanelComponent', () => {
     expect(q('.rp-job')).toBeNull();
     const line = q('.rp-job-status')!;
     expect(line.getAttribute('role')).toBe('status');
+    expect(line.getAttribute('aria-live')).toBe('polite');
+    expect(line.classList).toContain('visually-hidden');
     expect(line.textContent!.trim()).toBe('');
     expect(text('.rp-idle-note')).toContain('step 4, Documents');
     expect(component.jobRunning).toBe(false);
@@ -1365,6 +1367,7 @@ describe('ReportPackPanelComponent', () => {
     expect(cellText(ExecutiveSummary, '.rp-doc-calls')).toBe('Model calls: 1');
     expect(cellText(RootCauseAnalysis, '.job-status-chip')).toBe('Pending');
     expect(q('.rp-job-status')!.getAttribute('role')).toBe('status');
+    expect(q('.rp-job-status')!.classList).toContain('visually-hidden');
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Gemini Flash: 0 of 2 finished.');
     expect(q('.rp-job-log')).not.toBeNull();
     expect(generateButton().disabled).toBe(true);
