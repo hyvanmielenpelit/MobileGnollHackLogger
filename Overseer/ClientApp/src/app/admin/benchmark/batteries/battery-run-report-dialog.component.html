@@ -176,7 +176,7 @@
                 <span class="score-label">Overall Intelligence Index</span>
                 @if (headline; as overall) {
                   <span class="score-value" [class]="scoreClass(overall.pointEstimate)">{{ formatNumber(overall.pointEstimate) }} / 100</span>
-                  <span class="score-note">± {{ formatNumber(overall.combinedHalfWidth) }} · 95 % interval {{ formatInterval(overall.combinedLower, overall.combinedUpper) }}</span>
+                  <span class="score-note">± {{ formatNumber(overall.combinedHalfWidth) }} · 95% interval {{ formatInterval(overall.combinedLower, overall.combinedUpper) }}</span>
                   @if (result; as r) {
                     <span class="score-note">{{ schemeLabel(r.scheme) }} · {{ r.suiteCount }} suites</span>
                   }
@@ -475,7 +475,7 @@
                             } @else {
                               <span class="text-muted">&mdash;</span>
                             }
-                            <span class="brr-suite-metric-note">95 % {{ formatInterval(p.combinedLower, p.combinedUpper) }}@if (p.combinedIntervalTruncated) {<span class="visually-hidden"> (truncated)</span><span aria-hidden="true">*</span>}</span>
+                            <span class="brr-suite-metric-note">95% {{ formatInterval(p.combinedLower, p.combinedUpper) }}@if (p.combinedIntervalTruncated) {<span class="visually-hidden"> (truncated)</span><span aria-hidden="true">*</span>}</span>
                           } @else {
                             <span class="text-muted">&mdash;</span>
                             <span class="brr-suite-metric-note">Not analyzed</span>
@@ -529,7 +529,7 @@
                   <p class="bb-headline-label">Overall Intelligence Index</p>
                   <p class="bb-headline-value">{{ formatIndexWithHalfWidth(overall.pointEstimate, overall.combinedHalfWidth) }}</p>
                   <p class="bb-headline-interval">
-                    95 % interval {{ formatInterval(overall.combinedLower, overall.combinedUpper) }}
+                    95% interval {{ formatInterval(overall.combinedLower, overall.combinedUpper) }}
                     @if (overall.combinedIntervalTruncated) { (truncated at the scale's ends) }
                     · {{ schemeLabel(r.scheme) }}
                   </p>
@@ -988,7 +988,7 @@
                     <p class="bb-headline-value bb-compare-d">{{ formatSigned(cmp.compositeDifference) }}</p>
                     <p class="bb-headline-interval">
                       @if (cmp.compositeConfidenceHalfWidth != null) {
-                        95 % interval {{ formatInterval(cmp.compositeConfidenceLower, cmp.compositeConfidenceUpper) }}
+                        95% interval {{ formatInterval(cmp.compositeConfidenceLower, cmp.compositeConfidenceUpper) }}
                         · t({{ formatNumber(cmp.compositeDegreesOfFreedom, 1) }} df) = {{ formatNumber(cmp.compositeCriticalValue, 3) }}
                       } @else if (cmp.standardErrorWithheldBySuiteIndex.length > 0) {
                         No interval: {{ suiteNames(cmp.standardErrorWithheldBySuiteIndex) }} has fewer than three paired items.

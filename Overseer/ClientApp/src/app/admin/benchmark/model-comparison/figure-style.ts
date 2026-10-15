@@ -203,7 +203,7 @@ export interface AvailabilityFigureStyle {
   readonly measure: AvailabilityMeasure;
   /** Rates cluster near 0; a square-root scale spreads them and keeps 0. Bar family. */
   readonly scale: AvailabilityScale;
-  /** A dashed ring and a label on a scatter mark whose interval's lower bound exceeds 2 %. Scatter family. */
+  /** A dashed ring and a label on a scatter mark whose interval's lower bound exceeds 2%. Scatter family. */
   readonly markers: AvailabilitySwitch;
 }
 

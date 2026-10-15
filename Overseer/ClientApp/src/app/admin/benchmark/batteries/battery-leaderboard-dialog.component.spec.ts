@@ -398,7 +398,7 @@ describe('BatteryLeaderboardDialogComponent', () => {
 
     expect(q('.gh-datatable-scroll .bl-table')!.classList).toContain('gh-datatable');
     const headers = qa('.bl-table thead th').map(th => (th.textContent ?? '').replace(/\s+/g, ' ').trim());
-    expect(headers).toEqual(['Rank', 'Model', 'Overall Index', '95 % interval', 'Speed', 'Pass cost', 'Provider errors', 'R', 'Analyzed', 'Actions']);
+    expect(headers).toEqual(['Rank', 'Model', 'Overall Index', '95% interval', 'Speed', 'Pass cost', 'Provider errors', 'R', 'Analyzed', 'Actions']);
     expect(rankedIds()).toEqual([1, 2, 3]);
     expect(ranks()).toEqual(['1', '2', '3']);
 
@@ -481,7 +481,7 @@ describe('BatteryLeaderboardDialogComponent', () => {
     expect(strips[0].classList).toContain('is-top');
     expect(strips[1].classList).not.toContain('is-top');
 
-    // Scale: 47 – 84, padded by 5 % of 37 on each side.
+    // Scale: 47 – 84, padded by 5% of 37 on each side.
     const scale = intervalStripScale(threeRows())!;
     expect(scale.min).toBeCloseTo(47 - 1.85, 6);
     expect(scale.max).toBeCloseTo(84 + 1.85, 6);

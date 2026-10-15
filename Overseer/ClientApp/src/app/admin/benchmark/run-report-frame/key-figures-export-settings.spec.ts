@@ -22,7 +22,7 @@ describe('key figures export settings', () => {
     localStorage.removeItem(KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY);
   });
 
-  it('defaults to PNG, quality 85, Fit the figures at 200 %', () => {
+  it('defaults to PNG, quality 85, Fit the figures at 200%', () => {
     expect(defaultKeyFiguresExportSettings()).toEqual({
       format: 'png',
       webpQuality: 85,

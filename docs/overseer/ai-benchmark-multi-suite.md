@@ -694,7 +694,7 @@ Comparison** and an icon-only **Refresh**.
   per separating key. A visible note says that each table ranks one class and that overlapping
   intervals are not a ranking. Results of different classes are never placed in one order.
 - **Columns:** *Rank* (the index rank; *≈* marks an interval that overlaps the row above), *Model*
-  with its provider and thinking badges, *Overall Index* ± half-width, *95 % interval* with an interval
+  with its provider and thinking badges, *Overall Index* ± half-width, *95% interval* with an interval
   strip on one scale for the whole class, *Speed*, *Pass cost*, *R*, *Analyzed*, *Provider errors* (the
   battery run's provider error rate with its count, or *Not recorded*; § 3.10), and an icon-only
   **View the report of battery run #N**, which opens the Battery Run Report over the dialog. *Model*,

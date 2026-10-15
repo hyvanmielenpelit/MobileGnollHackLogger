@@ -92,8 +92,8 @@ describe('paired-test-format', () => {
     expect(formatP(null)).toBe('—');
     expect(formatDz(0.451)).toBe('+0.45');
     expect(formatDz(-0.2)).toBe('−0.20');
-    expect(effectHeader(measure())).toBe('Difference with 95 % interval');
-    expect(effectHeader(measure({ category: 'Speed', pairs: [] }))).toBe('Ratio with 95 % interval');
+    expect(effectHeader(measure())).toBe('Difference with 95% interval');
+    expect(effectHeader(measure({ category: 'Speed', pairs: [] }))).toBe('Ratio with 95% interval');
     expect(measureTitle(measure())).toBe('Intelligence Index (primary test)');
     expect(measureTitle(measure({ primary: false, label: 'Accuracy' }))).toBe('Accuracy');
   });

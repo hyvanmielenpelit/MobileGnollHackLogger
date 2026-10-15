@@ -92,7 +92,7 @@ export class CcResultsImageDialogComponent implements OnInit {
   /** The settings every control shows. */
   settings: CcResultsImageSettings = defaultCcResultsImageSettings();
 
-  /** What the size section resets to: Fit the content at 200 %. */
+  /** What the size section resets to: Fit the content at 200%. */
   readonly sizeDefaults: FigureSizeSettings = defaultCcResultsImageSettings().size;
 
   /** The density of the display the dialog opened on, marked in the density options. */

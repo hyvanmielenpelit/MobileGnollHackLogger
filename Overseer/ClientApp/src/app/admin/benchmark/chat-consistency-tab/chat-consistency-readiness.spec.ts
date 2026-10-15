@@ -84,7 +84,7 @@ describe('chat consistency readiness', () => {
 
     it('writes a margin in its unit', () => {
       expect(ccMarginText(3, 'index points')).toBe('±3 index points');
-      expect(ccMarginText(15, '%')).toBe('±15 %');
+      expect(ccMarginText(15, '%')).toBe('±15%');
       expect(ccMarginText(1, 'pp')).toBe('±1.0 percentage point');
       expect(ccMarginText(1.5, 'pp')).toBe('±1.5 percentage points');
     });
@@ -133,10 +133,10 @@ describe('chat consistency readiness', () => {
       const rows = readiness([101, 102, 103], [104, 105, 106]);
       expect(rows.map(row => [row.id, row.marginText, row.status])).toEqual([
         ['P1', '±3 index points', 'meets'],
-        ['P2', '±15 %', 'belowMinimum'],
-        ['P3', '±10 %', 'belowMinimum'],
-        ['P4', '±15 %', 'meets'],
-        ['P5', '±10 %', 'meets']
+        ['P2', '±15%', 'belowMinimum'],
+        ['P3', '±10%', 'belowMinimum'],
+        ['P4', '±15%', 'meets'],
+        ['P5', '±10%', 'meets']
       ]);
       expect(rows[0].fact).toBe('Baseline 3 runs on 3 days · Comparison 3 runs on 3 days');
       // Run 103 has no call telemetry, so the baseline has two telemetry runs in the stratum.

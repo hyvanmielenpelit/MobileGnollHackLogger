@@ -74,7 +74,7 @@ export function defaultCcResultsImageExclusions(): CcResultsImageExclusions {
   };
 }
 
-/** *Fit the content* at 200 % and 100 % text. The custom pair is where a switch to Custom starts. */
+/** *Fit the content* at 200% and 100% text. The custom pair is where a switch to Custom starts. */
 export function defaultCcResultsImageSize(): FigureSizeSettings {
   return {
     resolutionId: FIT_RESOLUTION_ID,
@@ -86,7 +86,7 @@ export function defaultCcResultsImageSize(): FigureSizeSettings {
   };
 }
 
-/** PNG, quality 85 for a later WebP, fit at 200 %, the dark scheme, and the default exclusions. */
+/** PNG, quality 85 for a later WebP, fit at 200%, the dark scheme, and the default exclusions. */
 export function defaultCcResultsImageSettings(): CcResultsImageSettings {
   return {
     format: 'png',

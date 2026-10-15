@@ -84,7 +84,7 @@ export interface ModelComparisonEntry {
   /** Intelligence Index point estimate, 0-100. */
   readonly intelligenceIndex: number;
   /**
-   * Half-width of the 95 % interval on the Intelligence Index: item-sampling only at R = 1,
+   * Half-width of the 95% interval on the Intelligence Index: item-sampling only at R = 1,
    * item-sampling combined with reproducibility at R >= 3.
    */
   readonly intelligenceIndexCi95HalfWidth: number;
@@ -137,7 +137,7 @@ export interface ModelComparisonEntry {
 
 /**
  * One entry's provider availability: candidate attempts only, as observed in GnollBench runs. The
- * bounds are the server's cluster-adjusted Wilson 95 % interval, all as proportions.
+ * bounds are the server's cluster-adjusted Wilson 95% interval, all as proportions.
  */
 export interface ModelComparisonAvailability {
   /** False before the provider attempt ledger (harness 56): the entry has no figure, only "not recorded". */
@@ -250,7 +250,7 @@ export const CHART_INK = {
 } as const;
 
 /**
- * The dark theme's de-emphasis for marks that are not the emphasised one: the muted ink at 45 % over the surface.
+ * The dark theme's de-emphasis for marks that are not the emphasised one: the muted ink at 45% over the surface.
  * It reuses a documented ink rather than introducing an undocumented gray, and the opacity keeps it
  * well below the axis labels drawn in the same hue at full strength.
  */
@@ -1793,14 +1793,14 @@ export const directLabelPlugin: Plugin = {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * A scatter marks a model only when the lower bound of its provider error rate's 95 % interval is
+ * A scatter marks a model only when the lower bound of its provider error rate's 95% interval is
  * above this: more than 1 in 50 attempts failing at the provider on the data, not on noise.
  */
 export const AVAILABILITY_MARKER_THRESHOLD = 0.02;
 
 /** The scatter caption line that states the marker rule. */
 export const AVAILABILITY_MARKER_NOTE =
-  'A dashed ring marks a model whose provider errors exceed 2 % of attempts with the whole 95 % interval above 2 %.';
+  'A dashed ring marks a model whose provider errors exceed 2% of attempts with the whole 95% interval above 2%.';
 
 /** One model's plotted provider error rate under a measure, as proportions. */
 export interface AvailabilityPoint {
@@ -1841,13 +1841,13 @@ export function availabilityGapText(entry: ModelComparisonEntry): string | null 
   return a.validAttempts <= 0 ? 'no valid attempts' : null;
 }
 
-/** `0.81 % (12 of 1,480 attempts; 95 % CI 0.46–1.4 %)`, or the gap text. */
+/** `0.81% (12 of 1,480 attempts; 95% CI 0.46–1.4%)`, or the gap text. */
 export function availabilityText(entry: ModelComparisonEntry, measure: AvailabilityMeasure): string {
   const point = availabilityPoint(entry, measure);
   return point ? formatRate(point.k, point.n, point.low, point.high) : availabilityGapText(entry) ?? '';
 }
 
-/** Whether a scatter marks the entry: its strict provider error rate's lower bound exceeds 2 %. */
+/** Whether a scatter marks the entry: its strict provider error rate's lower bound exceeds 2%. */
 export function availabilityMarked(entry: ModelComparisonEntry): boolean {
   const point = availabilityPoint(entry, 'strict');
   return point !== null && point.low > AVAILABILITY_MARKER_THRESHOLD;
@@ -1855,7 +1855,7 @@ export function availabilityMarked(entry: ModelComparisonEntry): boolean {
 
 /** What the marker plugin reads off the chart options. */
 export interface AvailabilityMarkerPluginOptions {
-  /** One per marked model dataset: its index and its label, `3.1 % provider errors`. */
+  /** One per marked model dataset: its index and its label, `3.1% provider errors`. */
   readonly marks: readonly { readonly datasetIndex: number; readonly text: string }[];
   /** The scatter's mark radius, which the ring keeps clear of. */
   readonly markRadiusPx: number;
@@ -1950,7 +1950,7 @@ interface ScatterAxisSpec {
 /** Both indices: 0-100, never narrower than 20 points. */
 const INDEX_BOUNDS: AxisBounds = { min: 0, max: 100 };
 const INDEX_MIN_SPAN = (): number => 20;
-/** Time and cost: non-negative, never narrower than 30 % of the largest value. */
+/** Time and cost: non-negative, never narrower than 30% of the largest value. */
 const MEASURE_BOUNDS: AxisBounds = { min: 0 };
 const MEASURE_MIN_SPAN = (largest: number): number => 0.3 * Math.abs(largest);
 
@@ -2181,7 +2181,7 @@ function resolveAxis(
 }
 
 /**
- * True when the two entries' 95 % intervals overlap on every axis that carries one, and at least one
+ * True when the two entries' 95% intervals overlap on every axis that carries one, and at least one
  * axis does. An axis carries an interval here when either entry has a whisker on it.
  */
 function intervalsOverlap(
@@ -2210,7 +2210,7 @@ function intervalsOverlap(
 
 /** The info note a scatter carries when a dominated model is within the intervals of a frontier model. */
 export const FRONTIER_UNCERTAINTY_NOTE =
-  'Some differences are within the 95 % intervals, so treat the frontier as indicative rather than a clear win.';
+  'Some differences are within the 95% intervals, so treat the frontier as indicative rather than a clear win.';
 
 /**
  * What one mark's plate carries, from the two toggles the wizard offers.
@@ -2366,7 +2366,7 @@ function buildScatter(
 
   const highlightedIndex = plotted.findIndex((entry) => entry.key === highlightedKey);
 
-  // A drawn model whose provider errors are clearly above 2 % gets a dashed ring and its rate.
+  // A drawn model whose provider errors are clearly above 2% gets a dashed ring and its rate.
   const markersOn = (options.style ?? DEFAULT_FIGURE_STYLE).availability.markers === 'on';
   const marks = markersOn
     ? plotted.flatMap((entry, datasetIndex) => {
@@ -2488,7 +2488,7 @@ function buildScatter(
     [xAxis.errLow, xAxis.errHigh, yAxis.errLow, yAxis.errHigh].some((err) => drawnWhisker(err(entry)) > 0);
   const anyWhisker = measured.some(whiskered);
   if (style.intervals && anyWhisker) {
-    key.push({ glyph: 'interval', text: '95 % interval' });
+    key.push({ glyph: 'interval', text: '95% interval' });
   }
   if (frontierDrawn) {
     key.push({ glyph: 'frontier', text: 'Pareto frontier: models nothing beats on both axes' });
@@ -2539,7 +2539,7 @@ function buildScatter(
     ...(frontierLabels.length > 0 ? [`Pareto frontier: ${frontierLabels.join(', ')}`] : []),
     ...(faded.length > 0 ? [`Faded: ${faded.map((entry) => entry.label).join(', ')}`] : []),
     ...(marks.length > 0
-      ? [`Provider errors above 2 %: ${marks.map((mark) => `${plotted[mark.datasetIndex].label}, ${mark.text}`).join('; ')}`]
+      ? [`Provider errors above 2%: ${marks.map((mark) => `${plotted[mark.datasetIndex].label}, ${mark.text}`).join('; ')}`]
       : []),
   ];
 
@@ -3092,10 +3092,10 @@ export const AVAILABILITY_FIGURE_IDS: readonly string[] = [P1_AVAILABILITY_ID, A
 /** The definition under the dot plot's badges: the numerator and the denominator, where the number appears. */
 export const AVAILABILITY_DETAIL_STRICT =
   'Share of valid candidate attempts that failed at the provider, as observed in GnollBench runs; ' +
-  'whiskers are 95 % intervals widened for bursts of errors.';
+  'whiskers are 95% intervals widened for bursts of errors.';
 export const AVAILABILITY_DETAIL_INCLUSIVE =
   'Share of valid candidate attempts that failed at the provider or for a reason that could not be ' +
-  'attributed, as observed in GnollBench runs: an upper bound; whiskers are 95 % intervals widened for bursts of errors.';
+  'attributed, as observed in GnollBench runs: an upper bound; whiskers are 95% intervals widened for bursts of errors.';
 
 const DOT_RADIUS = 5;
 const DOT_HOVER_RADIUS = 7;
@@ -3106,7 +3106,7 @@ const SQRT_TICK_CANDIDATES_PCT: readonly number[] = [0.1, 0.2, 0.5, 1, 2, 5, 10,
 
 /**
  * The square-root axis: its top, the first candidate at or above the largest plotted bound, and the
- * ticks from 0 to it, each at least 15 % of the axis from the one before so the crowd near zero
+ * ticks from 0 to it, each at least 15% of the axis from the one before so the crowd near zero
  * stays legible. In percent.
  */
 export function availabilitySqrtTicks(maxPct: number): { readonly top: number; readonly ticks: readonly number[] } {
@@ -3128,9 +3128,9 @@ export function availabilitySqrtTicks(maxPct: number): { readonly top: number; r
   return { top, ticks };
 }
 
-/** A percent tick: `0 %`, `0.5 %`, `2 %`. */
+/** A percent tick: `0%`, `0.5%`, `2%`. */
 function percentTick(pct: number): string {
-  return `${Number(pct.toPrecision(6))} %`;
+  return `${Number(pct.toPrecision(6))}%`;
 }
 
 /** The dot plot's value-axis title, by measure and scale. */
@@ -3141,7 +3141,7 @@ function availabilityAxisTitle(measure: AvailabilityMeasure, scale: Availability
 
 /**
  * The provider-error dot plot: one dot per model at its error rate, the server's cluster-adjusted
- * Wilson 95 % interval as its whisker, `k/n` beside it, a hollow dot below 100 valid attempts, and
+ * Wilson 95% interval as its whisker, `k/n` beside it, a hollow dot below 100 valid attempts, and
  * `not recorded` without a dot for a model whose runs predate the ledger. Strict or inclusive and
  * square-root or linear, as `style.availability` says; descriptive only, with no ranking or test.
  * The model order and the category labels are P1's, so the panel lines up with the other three.
@@ -3315,7 +3315,7 @@ function buildAvailabilityDotPlot(
   }
   const whiskered = errHighs.some((err) => drawnWhisker(err) > 0) || errLows.some((err) => drawnWhisker(err) > 0);
   if (style.intervals && whiskered) {
-    key.push({ glyph: 'interval', text: '95 % interval' });
+    key.push({ glyph: 'interval', text: '95% interval' });
   }
   key.push(...providerKeyItems(drawn, theme));
 
@@ -3433,7 +3433,7 @@ export interface ProfileNormalization {
 /**
  * Puts every model on three shared scales, oriented so that up is better on each.
  *
- * Intelligence is linear over the union of the plotted models' 95 % intervals, at least
+ * Intelligence is linear over the union of the plotted models' 95% intervals, at least
  * {@link PROFILE_INDEX_MIN_SPAN} points wide and inside 0-100, so a small spread inside overlapping
  * intervals never spans the whole axis. Times and costs are logarithmic over
  * [best / {@link PROFILE_LOG_PADDING}, worst x {@link PROFILE_LOG_PADDING}] and inverted, so faster
@@ -3796,7 +3796,7 @@ function bestRaw(axis: ProfileAxis, rows: readonly ProfileRow[], index: number):
  * *Ideal* line at the better end of every axis. Each tile's dip away from that line is what the
  * model gives up; no model is best everywhere is the point the figure shows.
  *
- * The model's own values are printed on its points and its intelligence carries its 95 % interval.
+ * The model's own values are printed on its points and its intelligence carries its 95% interval.
  */
 export function buildProfilePlot(
   plotted: readonly ModelComparisonEntry[],
@@ -3968,7 +3968,7 @@ export function buildProfilePlot(
     { glyph: 'ideal', text: 'Ideal: best on every axis', color: theme.chart.accent },
     ...(rows.length > 1 ? [{ glyph: 'other', text: 'Other models' } satisfies FigureKeyItem] : []),
     ...(plotted.some((entry) => drawnWhisker(entry.intelligenceIndexCi95HalfWidth) > 0)
-      ? [{ glyph: 'interval', text: '95 % interval' } satisfies FigureKeyItem]
+      ? [{ glyph: 'interval', text: '95% interval' } satisfies FigureKeyItem]
       : []),
     ...providerKeyItems(plotted, theme),
   ];

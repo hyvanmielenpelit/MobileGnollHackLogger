@@ -159,7 +159,7 @@ export function normalizeCcDocumentChartLayout(value: unknown): CcDocumentChartL
   const source = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   const d = CC_DEFAULT_DOCUMENT_CHART_LAYOUT;
   const normalized = normalizePickerDocumentLayout({ ...d, ...source }, CC_REPORT_FIGURE_KEYS);
-  // The Report Pack's normalizer falls back to its own 60 %; an unknown height here takes this default.
+  // The Report Pack's normalizer falls back to its own 60%; an unknown height here takes this default.
   const maxHeightPercent = REPORT_CHART_MAX_HEIGHT_PERCENTS.includes(source['maxHeightPercent'] as number)
     ? normalized.maxHeightPercent
     : d.maxHeightPercent;

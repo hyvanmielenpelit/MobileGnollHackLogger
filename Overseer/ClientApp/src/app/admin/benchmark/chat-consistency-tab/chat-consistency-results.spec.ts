@@ -28,7 +28,7 @@ import {
   ccUnitView
 } from './chat-consistency-tab.testing';
 
-const INCONCLUSIVE_REASON = 'Inconclusive: the data cannot tell a change from no change at the margin ±15 %.';
+const INCONCLUSIVE_REASON = 'Inconclusive: the data cannot tell a change from no change at the margin ±15%.';
 const TELEMETRY_REASON = 'Fewer than two runs with call telemetry in a period.';
 
 /** An endpoint the server could not compute, as it sends one: the reason repeated as a grade reason. */
@@ -231,7 +231,7 @@ describe('chat consistency results', () => {
 
     it('lifts the verdict sentence into the meaning, without its prefix', () => {
       const notes = ccEndpointNotes(inconclusive('P5', { minimumDetectableEffectNote: 'one run per period: the effect is capped.' }));
-      expect(notes.meaning).toBe('The data cannot tell a change from no change at the margin ±15 %.');
+      expect(notes.meaning).toBe('The data cannot tell a change from no change at the margin ±15%.');
       expect(notes.notes).toEqual(['one run per period: the effect is capped.']);
     });
 
@@ -261,7 +261,7 @@ describe('chat consistency results', () => {
 
   describe('ccEstimateParts', () => {
     it('splits a log-ratio estimate from its percent interval', () => {
-      expect(ccEstimateParts(inconclusive('P5'))).toEqual({ estimate: '−7.0 %', interval: '−19.7 to +6.8 %' });
+      expect(ccEstimateParts(inconclusive('P5'))).toEqual({ estimate: '−7.0%', interval: '−19.7 to +6.8%' });
     });
 
     it('writes a difference estimate and interval in its unit', () => {
@@ -291,11 +291,11 @@ describe('chat consistency results', () => {
       expect(geometry.marginStart).toBeCloseTo(at(marginLower), 6);
       expect(geometry.marginEnd).toBeCloseTo(at(marginUpper), 6);
       expect(geometry.marginValue).toBeCloseTo(marginUpper, 6);
-      expect(geometry.unitSuffix).toBe(' %');
+      expect(geometry.unitSuffix).toBe('%');
       expect(geometry.crossesMargin).toBe(true);
       expect(geometry.withinMargin).toBe(false);
       expect(geometry.label).toBe(
-        'Estimate −7.0 %, 95 % interval −19.7 % to +6.8 %, margin ±15 %. The interval reaches beyond the margin.');
+        'Estimate −7.0%, 95% interval −19.7% to +6.8%, margin ±15%. The interval reaches beyond the margin.');
     });
 
     it('places a difference interval inside its margin, the margin setting the axis', () => {
@@ -307,7 +307,7 @@ describe('chat consistency results', () => {
       expect(geometry.withinMargin).toBe(true);
       expect(geometry.crossesMargin).toBe(false);
       expect(geometry.label).toBe(
-        'Estimate +0.5 index points, 95 % interval −1.0 to +2.0 index points, margin ±3 index points. '
+        'Estimate +0.5 index points, 95% interval −1.0 to +2.0 index points, margin ±3 index points. '
         + 'The whole interval lies inside the margin.');
     });
 

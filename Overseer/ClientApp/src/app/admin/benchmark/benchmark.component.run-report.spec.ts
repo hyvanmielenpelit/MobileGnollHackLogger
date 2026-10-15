@@ -975,7 +975,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(routing).toBeTruthy();
       const rows = Array.from(routing.querySelectorAll('tbody tr')).map((tr: any) =>
         Array.from(tr.querySelectorAll('td')).map((td: any) => td.textContent.trim()));
-      expect(rows).toEqual([['Source Code', '3', '50 %'], ['Wiki', '3', '50 %']]);
+      expect(rows).toEqual([['Source Code', '3', '50%'], ['Wiki', '3', '50%']]);
       expect(tools.textContent).toContain('(n = 2)');
     });
 

@@ -28,7 +28,7 @@ export const KEY_FIGURES_EXPORT_SECTIONS_STORAGE_KEY = 'overseer.benchmark.keyFi
 
 const STORAGE_VERSION = 1;
 
-/** *Fit the figures* at 200 %: the size every key-figures image had before it could be chosen. */
+/** *Fit the figures* at 200%: the size every key-figures image had before it could be chosen. */
 export function defaultKeyFiguresSize(): FigureSizeSettings {
   return {
     resolutionId: FIT_RESOLUTION_ID,

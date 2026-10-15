@@ -57,7 +57,7 @@ export function formatEffectValue(pair: BenchmarkPairedTestDto): string {
   return formatSigned(pair.effect, differenceDecimals(pair.effect, pair.effectLower, pair.effectUpper));
 }
 
-/** The pair's 95 % interval alone: "−0.8 to 7.1", "0.71–0.95", or empty when the interval is withheld. */
+/** The pair's 95% interval alone: "−0.8 to 7.1", "0.71–0.95", or empty when the interval is withheld. */
 export function formatEffectInterval(pair: BenchmarkPairedTestDto): string {
   const { effectLower: lower, effectUpper: upper } = pair;
   if (lower == null || upper == null || !Number.isFinite(lower) || !Number.isFinite(upper)) {
@@ -98,7 +98,7 @@ export function formatDz(value: number | null | undefined): string {
 
 /** What the effect column is called for a measure: a difference, or a ratio for speed and cost. */
 export function effectHeader(measure: BenchmarkPairedMeasureDto): string {
-  return measureEffectKind(measure) === 'Ratio' ? 'Ratio with 95 % interval' : 'Difference with 95 % interval';
+  return measureEffectKind(measure) === 'Ratio' ? 'Ratio with 95% interval' : 'Difference with 95% interval';
 }
 
 /** The measure's effect kind: its pairs', else ratio for speed and cost. */

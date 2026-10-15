@@ -48,7 +48,7 @@ export interface FigureSizeSettings {
 }
 
 /**
- * Full HD, at the display's own density and at 100 % text.
+ * Full HD, at the display's own density and at 100% text.
  *
  * A function rather than a constant because "this display" is a property of the window the view
  * opens in: a density no listed step matches is held in the custom field, prefilled.
@@ -90,7 +90,7 @@ export function writeStoredFigureSize(settings: FigureSizeSettings): void {
 }
 
 /**
- * The table image's default: *Fit the table* at 200 % and 100 % text, which is the content-sized,
+ * The table image's default: *Fit the table* at 200% and 100% text, which is the content-sized,
  * 2× image the table was always written as. The custom pair is where a switch to Custom starts.
  */
 export function defaultTableImageSize(): FigureSizeSettings {
@@ -248,7 +248,7 @@ export function sizeErrors(settings: FigureSizeSettings, noun = 'figure'): SizeE
       && percent <= FIGURE_EXPORT_MAX_DENSITY_PERCENT)
     ? ''
     : `The pixel density must be between ${FIGURE_EXPORT_MIN_DENSITY_PERCENT} and ` +
-      `${FIGURE_EXPORT_MAX_DENSITY_PERCENT} %.`;
+      `${FIGURE_EXPORT_MAX_DENSITY_PERCENT}%.`;
   let bitmap = '';
   if (customResolution === '' && customDensity === '' && settings.resolutionId !== FIT_RESOLUTION_ID) {
     const resolution = resolveSizeResolution(settings);
@@ -291,7 +291,7 @@ export function sizeWrittenLabel(settings: FigureSizeSettings): string {
   const percent = densityPercentLabel(density);
   const written = `${Math.round(resolution.widthPx * density)} × ` +
     `${Math.round(resolution.heightPx * density)} px`;
-  // At 100 % the requested size and the written one are the same number, and printing it twice
+  // At 100% the requested size and the written one are the same number, and printing it twice
   // would read as an error rather than as a multiplication.
   const requested = density === 1
     ? `at ${percent}`
@@ -312,7 +312,7 @@ export function sizeReadout(settings: FigureSizeSettings, fitLabel = 'Fit the ta
   const size = settings.resolutionId === 'custom'
     ? `Custom ${resolution.widthPx} × ${resolution.heightPx}`
     : resolution.label;
-  return withTextSize ? `${size} · ${density} · text ${settings.textScalePercent} %` : `${size} · ${density}`;
+  return withTextSize ? `${size} · ${density} · text ${settings.textScalePercent}%` : `${size} · ${density}`;
 }
 
 function isOfferedResolutionId(value: unknown): value is string {

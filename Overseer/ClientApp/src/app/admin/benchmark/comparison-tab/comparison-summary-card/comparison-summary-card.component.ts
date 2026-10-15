@@ -63,7 +63,7 @@ export class ComparisonSummaryCardComponent {
     return formatUsdText(value);
   }
 
-  /** The 95 % interval under the point, or null when the record has none. */
+  /** The 95% interval under the point, or null when the record has none. */
   intervalText(entry: LastComparisonEntry): string | null {
     return entry.qualityLower === null || entry.qualityUpper === null
       ? null

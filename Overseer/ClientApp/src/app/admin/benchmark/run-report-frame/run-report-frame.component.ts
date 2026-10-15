@@ -18,7 +18,7 @@ import { PaneResizerComponent } from '../../../shared/pane-resizer/pane-resizer.
 export const RRF_SIDEBAR_WIDTH_MIN = 320;
 /** The sidebar's width until the user resizes it, in CSS px (24rem). */
 export const RRF_SIDEBAR_WIDTH_DEFAULT = 384;
-/** The sidebar's widest width, in CSS px (32rem); never more than 40 % of the body either. */
+/** The sidebar's widest width, in CSS px (32rem); never more than 40% of the body either. */
 export const RRF_SIDEBAR_WIDTH_MAX = 512;
 /** The share of the body the sidebar may take at most. */
 export const RRF_SIDEBAR_MAX_SHARE = 0.4;
@@ -97,7 +97,7 @@ export class RunReportFrameComponent implements OnChanges {
   readonly sidebarWidthDefault = RRF_SIDEBAR_WIDTH_DEFAULT;
 
   /**
-   * The widest the resizer goes: 32rem, or 40 % of the body when that is narrower. Measured when
+   * The widest the resizer goes: 32rem, or 40% of the body when that is narrower. Measured when
    * the handle is grabbed or focused, never inside a change-detection pass that renders from it.
    */
   sidebarWidthMax = RRF_SIDEBAR_WIDTH_MAX;

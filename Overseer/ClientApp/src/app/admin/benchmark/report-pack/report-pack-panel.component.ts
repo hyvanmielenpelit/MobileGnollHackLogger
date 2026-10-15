@@ -1584,7 +1584,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return `For ${subjects.size} models, each against the others. ${repair}`;
   }
 
-  /** The amber warning when a checked document's prompt fills 70 % or more of the writer's context window. */
+  /** The amber warning when a checked document's prompt fills 70% or more of the writer's context window. */
   get contextWindowWarning(): string | null {
     const items = this.checkedEstimates
       .filter(item => (item.estimate.contextWindowShare ?? 0) >= REPORT_PACK_CONTEXT_WARNING_SHARE);
@@ -1593,8 +1593,8 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     }
     const fullest = items.reduce((a, b) => ((b.estimate.contextWindowShare ?? 0) > (a.estimate.contextWindowShare ?? 0) ? b : a));
     const percent = Math.round((fullest.estimate.contextWindowShare ?? 0) * 100);
-    return `The ${fullest.row.name}'s prompt would fill about ${percent} % of the writer's context window; from `
-      + `${Math.round(REPORT_PACK_CONTEXT_REFUSAL_SHARE * 100)} % it is refused. Fewer models, or a writer with a larger `
+    return `The ${fullest.row.name}'s prompt would fill about ${percent}% of the writer's context window; from `
+      + `${Math.round(REPORT_PACK_CONTEXT_REFUSAL_SHARE * 100)}% it is refused. Fewer models, or a writer with a larger `
       + 'context window, leaves the writer more room.';
   }
 

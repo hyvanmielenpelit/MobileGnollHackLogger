@@ -3263,8 +3263,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    * The display's density when the component initialised, which the matching option is labelled
    * with and which the control opens on.
    *
-   * Sampled once and then left alone: a reader who chose 300 % and dragged the window to another
-   * display keeps 300 %, and the labelled option is how they find their way back.
+   * Sampled once and then left alone: a reader who chose 300% and dragged the window to another
+   * display keeps 300%, and the labelled option is how they find their way back.
    */
   readonly displayDensity = displayDensity();
 
@@ -3275,19 +3275,19 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
    */
   figureSize: FigureSizeSettings = readStoredFigureSize(this.displayDensity);
 
-  /** Full HD, the display's own density and 100 % text: what the Chart size section resets to. */
+  /** Full HD, the display's own density and 100% text: what the Chart size section resets to. */
   readonly defaultChartSize: FigureSizeSettings = defaultFigureSize(this.displayDensity);
 
   /** The table image's size, stored apart from the charts'. */
   tableImageSize: FigureSizeSettings = readStoredTableImageSize();
 
-  /** *Fit the table* at 200 % and 100 % text: the table image as it was always written. */
+  /** *Fit the table* at 200% and 100% text: the table image as it was always written. */
   readonly defaultTableImageSize: FigureSizeSettings = defaultTableImageSize();
 
-  /** The one-line meaning of 100 % text in each size section. */
+  /** The one-line meaning of 100% text in each size section. */
   readonly chartTextSizeHint = 'Scales the caption, notes and chart text together without changing the pixel size.';
   readonly tableTextSizeHint =
-    '100 % draws the table text at the size Fit the table uses; the table is laid out in the pixels above, before density.';
+    '100% draws the table text at the size Fit the table uses; the table is laid out in the pixels above, before density.';
 
   get isCustomResolution(): boolean {
     return this.figureSize.resolutionId === 'custom';
@@ -3391,7 +3391,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return sameFigureSize(this.figureSize, this.defaultChartSize);
   }
 
-  /** Restores Full HD, the display's own density and 100 % text. */
+  /** Restores Full HD, the display's own density and 100% text. */
   resetFigureSize(): void {
     if (this.figureSizeIsDefault) {
       return;
@@ -3466,7 +3466,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.setTableImageSize(settings);
   }
 
-  /** Restores *Fit the table* at 200 % and 100 % text. */
+  /** Restores *Fit the table* at 200% and 100% text. */
   resetTableImageSize(): void {
     if (!this.tableImageSizeIsDefault) {
       this.setTableImageSize(this.defaultTableImageSize);
@@ -4406,7 +4406,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return previewZoomRange(this.previewScreenFitZoom);
   }
 
-  /** The requested view as device pixels per export pixel: 1 is 100 %. */
+  /** The requested view as device pixels per export pixel: 1 is 100%. */
   get previewZoomValue(): number {
     return resolvePreviewZoom(this.previewView, this.previewScreenFitZoom);
   }
@@ -5009,7 +5009,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   //
   // Every figure as a tile, each composed by the same pipeline as the download and drawn onto its
   // own canvas, so the page shows the file a reader would get. A tile's box is the figure's export
-  // size over the display ratio, times the All zoom — Single's zoom, where 100 % is actual pixels —
+  // size over the display ratio, times the All zoom — Single's zoom, where 100% is actual pixels —
   // and its bitmap is that box at the display's density, never more than the export itself.
   // Tiles re-compose once changes pause, and only once they come within a viewport's height of view.
   // ---------------------------------------------------------------------------------------------
@@ -5075,7 +5075,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     return previewZoomRange(this.allFitHeightZoom);
   }
 
-  /** The requested view as device pixels per export pixel: 1 is 100 %, as on the Single tab. */
+  /** The requested view as device pixels per export pixel: 1 is 100%, as on the Single tab. */
   get allZoomValue(): number {
     return clampPreviewZoom(this.allView === 'fitHeight' ? this.allFitHeightZoom : this.allView, this.allZoomRange);
   }

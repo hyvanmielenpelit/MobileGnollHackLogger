@@ -154,7 +154,7 @@ function unpricedNote(points: readonly AiTelemetryPointDto[]): FigureNote | null
   if (requests <= 0 || priced >= requests) return null;
   const share = (requests - priced) / requests * 100;
   const text = share < 1 ? share.toFixed(1) : String(Math.round(share));
-  return { text: `${text} % of requests have no price and are not in the cost.`, tone: 'warning' };
+  return { text: `${text}% of requests have no price and are not in the cost.`, tone: 'warning' };
 }
 
 const USAGE_VALUE: Readonly<Record<Exclude<TelemetryFigureKey, 'activeUsers' | 'chats' | 'messages'>, (point: AiTelemetryPointDto) => number | null>> = {
@@ -338,7 +338,7 @@ function compact(value: number): string {
 function percent(value: number): string {
   const pct = value * 100;
   const decimals = pct === 0 ? 0 : pct < 1 ? 2 : pct < 10 ? 1 : 0;
-  return `${pct.toFixed(decimals)} %`;
+  return `${pct.toFixed(decimals)}%`;
 }
 
 function duration(ms: number): string {

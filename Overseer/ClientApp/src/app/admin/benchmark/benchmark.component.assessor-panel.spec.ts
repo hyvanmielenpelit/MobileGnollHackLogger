@@ -453,7 +453,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(names).toContain('Co-assessor');
       expect(names).toContain('Co-assessor synthesis');
       // Candidate, assessor, co-assessor and synthesis at 1 each and co-synthesis at 0: a quarter.
-      expect(component.candidateCostShareLabel(run)).toBe('25 % of estimated total');
+      expect(component.candidateCostShareLabel(run)).toBe('25% of estimated total');
     });
 
     describe('re-assessment', () => {

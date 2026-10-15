@@ -606,7 +606,7 @@ export function formatPanelIndexText(value: number | null | undefined, rank: num
   return finite(rank) ? `${index} (#${rank})` : index;
 }
 
-/** A signed quality-point estimate with its 95 % interval in brackets: `+3.2 [-1.0, +7.4]`. */
+/** A signed quality-point estimate with its 95% interval in brackets: `+3.2 [-1.0, +7.4]`. */
 export function formatPanelEstimateText(estimate: BenchmarkPanelEstimateDto | null | undefined): string {
   const value = estimate?.value;
   if (!finite(value)) {
@@ -795,7 +795,7 @@ export function comparisonTableCells(entry: BenchmarkModelComparisonEntryDto): R
 
 /**
  * The provider-availability parts, from the table's lineage-pooled figures: the rate as a proportion
- * written `0.81 %`, the counts with thousands separators. An entry whose runs predate the ledger
+ * written `0.81%`, the counts with thousands separators. An entry whose runs predate the ledger
  * reads `Not recorded` in place of the rate; every figure is then null.
  */
 function providerCells(entry: BenchmarkModelComparisonEntryDto): Record<string, ComparisonTableCell> {

@@ -1,6 +1,6 @@
 /**
  * Zoom arithmetic for the Charts step's composed charts, on Model Comparison's preview model
- * (`preview-view.ts`): a zoom is **device pixels per file pixel**, so 1 (100 %) shows one pixel of
+ * (`preview-view.ts`): a zoom is **device pixels per file pixel**, so 1 (100%) shows one pixel of
  * the downloaded file on one pixel of the display. The views show the download itself, rasterized
  * for the screen (`previewLayoutFor`), never a different composition.
  *
@@ -114,7 +114,7 @@ export function ccFitWidthWithScrollbar(
   return height <= contentHeight ? fit : ccFitWidthZoom(target, contentWidth - scrollbar, chrome, dpr);
 }
 
-/** Every zoom the controls reach: 10 % to 800 %, the floor following a lower fit (`previewZoomRange`). */
+/** Every zoom the controls reach: 10% to 800%, the floor following a lower fit (`previewZoomRange`). */
 export function ccZoomRange(fit: number): PreviewZoomRange {
   return previewZoomRange(fit);
 }

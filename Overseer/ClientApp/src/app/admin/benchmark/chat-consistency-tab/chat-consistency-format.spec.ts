@@ -70,8 +70,8 @@ describe('chat-consistency-format', () => {
     });
 
     it('formats percentages, times, rates and dollars invariantly', () => {
-      expect(formatFractionPercent(0.025)).toBe('2.5 %');
-      expect(formatSignedPercent(4.21)).toBe('+4.2 %');
+      expect(formatFractionPercent(0.025)).toBe('2.5%');
+      expect(formatSignedPercent(4.21)).toBe('+4.2%');
       expect(formatMs(850)).toBe('850 ms');
       expect(formatMs(2430)).toBe('2.4 s');
       expect(formatTokenRate(41.96)).toBe('42.0 tok/s');
@@ -107,16 +107,16 @@ describe('chat-consistency-format', () => {
   });
 
   describe('endpoint estimates', () => {
-    it('writes a difference endpoint in its unit with the 95 % interval', () => {
+    it('writes a difference endpoint in its unit with the 95% interval', () => {
       const p1 = ccEndpoint('P1', { estimate: -4.2, ci95: { lower: -6.1, upper: -2.3 }, unit: 'index points' });
-      expect(endpointEstimateText(p1)).toBe(`${MINUS}4.2 index points (95 % CI [${MINUS}6.1, ${MINUS}2.3])`);
+      expect(endpointEstimateText(p1)).toBe(`${MINUS}4.2 index points (95% CI [${MINUS}6.1, ${MINUS}2.3])`);
       expect(endpointMdeText({ ...p1, minimumDetectableEffect: 2.04 })).toBe('±2.0 index points');
     });
 
     it('writes a log-ratio endpoint as a signed percentage', () => {
       const p2 = ccEndpoint('P2', { scale: 'logRatio', estimatePercent: 18.4, ci95Percent: { lower: 9.1, upper: 28.7 } });
-      expect(endpointEstimateText(p2)).toBe('+18.4 % (95 % CI [+9.1, +28.7] %)');
-      expect(endpointMdeText({ ...p2, minimumDetectableEffectPercent: 11.25 })).toBe('±11.3 %');
+      expect(endpointEstimateText(p2)).toBe('+18.4% (95% CI [+9.1, +28.7]%)');
+      expect(endpointMdeText({ ...p2, minimumDetectableEffectPercent: 11.25 })).toBe('±11.3%');
     });
 
     it('says Not computed for an endpoint that was not computed', () => {
@@ -214,7 +214,7 @@ describe('chat-consistency-format', () => {
         name: 'Provider error rate', unit: 'pp', scale: 'difference', margin: 1, marginText: '±1 pp',
         estimate: 1.24, ci95: { lower: 0.3, upper: 2.1 }, minimumDetectableEffect: 0.84
       });
-      expect(endpointEstimateText(p6)).toBe('+1.2 pp (95 % CI [+0.3, +2.1])');
+      expect(endpointEstimateText(p6)).toBe('+1.2 pp (95% CI [+0.3, +2.1])');
       expect(endpointMdeText(p6)).toBe('±0.8 pp');
     });
   });

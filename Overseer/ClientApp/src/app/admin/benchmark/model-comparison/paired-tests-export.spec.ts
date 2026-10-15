@@ -123,8 +123,8 @@ describe('paired-tests-export', () => {
     expect(markdown).toContain('2 tests against Model A · Holm-adjusted');
     expect(markdown).toContain('At least one entry has a single run.');
     expect(markdown).toContain('### Intelligence Index (primary test)');
-    expect(markdown).toContain('| Model | Against | Paired questions | Difference (95 % interval) | dz | p | Adjusted p | Verdict |');
-    expect(markdown).toContain('| Model | Against | Paired questions | Ratio (95 % interval) | dz | p | Adjusted p | Verdict |');
+    expect(markdown).toContain('| Model | Against | Paired questions | Difference (95% interval) | dz | p | Adjusted p | Verdict |');
+    expect(markdown).toContain('| Model | Against | Paired questions | Ratio (95% interval) | dz | p | Adjusted p | Verdict |');
     expect(markdown).toContain('| Model B \\| fast | Model A | 18 | +3.2 (−0.8 to 7.1) | +0.45 | 0.01 | 0.02 | Higher on the same questions |');
     expect(markdown).toContain('Not tested: The cost axis is degraded: the price lists differ.');
     expect(markdown).not.toContain('\r');

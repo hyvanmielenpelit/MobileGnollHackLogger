@@ -477,7 +477,7 @@ describe('MultiRunComponent', () => {
     openAnalysed();
 
     const combined = text('.mr-combined');
-    expect(combined).toContain('Combined 95 % interval');
+    expect(combined).toContain('Combined 95% interval');
     expect(combined).toContain('both');
   });
 
@@ -516,8 +516,8 @@ describe('MultiRunComponent', () => {
     expect(row).toContain('62.5');   // mean
     expect(row).toContain('63.0');   // median
     expect(row).toContain('17.40');  // sample SD
-    expect(row).toContain('27.8 %'); // coefficient of variation
-    expect(row).toContain('33 %');   // critical-error rate
+    expect(row).toContain('27.8%'); // coefficient of variation
+    expect(row).toContain('33%');   // critical-error rate
     expect(row).toContain('Unstable');
   });
 

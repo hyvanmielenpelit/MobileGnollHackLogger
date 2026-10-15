@@ -309,7 +309,7 @@ describe('AdminBenchmarkComponent: Run History battery runs', () => {
     const sort = fixture.nativeElement.querySelector('#rh-sort') as HTMLSelectElement;
     sort.value = 'provider-errors-desc';
     sort.dispatchEvent(new Event('change'));
-    // 0.81 %, 0.50 %, 0 %, then the battery run that records nothing.
+    // 0.81%, 0.50%, 0%, then the battery run that records nothing.
     expect(shownKeys()).toEqual(['battery:9', 'run:3', 'battery:8', 'battery:7']);
   });
 

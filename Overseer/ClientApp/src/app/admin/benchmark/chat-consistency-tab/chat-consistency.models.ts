@@ -149,7 +149,7 @@ export interface CcTimelinePoint {
   providerErrorCount?: number | null;
   unattributedErrorCount?: number | null;
   providerErrorRate?: CcNumber | null;
-  /** The cluster-adjusted Wilson 95 % interval of `providerErrorRate`. */
+  /** The cluster-adjusted Wilson 95% interval of `providerErrorRate`. */
   providerErrorRateLow?: CcNumber | null;
   providerErrorRateHigh?: CcNumber | null;
   /** Repair passes plus replaced runs through the lineage, and the provider-caused part. */
@@ -181,7 +181,7 @@ export interface CcBatteryTimelinePoint extends CcTimelinePoint {
   /** The latest current battery analysis's Overall Index; null with `overallIndexNote` saying why. */
   overallIndex: CcNumber | null;
   overallIndexNote: string | null;
-  /** The 95 % half-width of `overallIndex`; null or absent when there is none. */
+  /** The 95% half-width of `overallIndex`; null or absent when there is none. */
   overallIndexHalfWidth?: CcNumber | null;
   /** `question sampling only` when the half-width rests on one round; else null. */
   overallIndexIntervalNote?: string | null;
@@ -391,7 +391,7 @@ export interface CcProtocol {
 
 /**
  * The overrides a request may apply. Margins are keyed by endpoint id: the endpoint's own unit for a
- * difference endpoint (index points, or percentage points for P6), a fraction (0.15 = ±15 %) for a
+ * difference endpoint (index points, or percentage points for P6), a fraction (0.15 = ±15%) for a
  * log-ratio one.
  */
 export interface CcProtocolOverrides {
@@ -925,7 +925,7 @@ export interface CcPeriodLevels {
   unattributedErrorCount?: number | null;
   ourSideFailureCount?: number | null;
   providerErrorRate?: CcNumber | null;
-  /** The cluster-adjusted Wilson 95 % interval of `providerErrorRate`. */
+  /** The cluster-adjusted Wilson 95% interval of `providerErrorRate`. */
   providerErrorRateLow?: CcNumber | null;
   providerErrorRateHigh?: CcNumber | null;
   /** Repair passes plus replaced runs of the counted runs and their lineage, and the provider-caused part. */

@@ -37,7 +37,7 @@ describe('figure-size', () => {
     localStorage.setItem(FIGURE_SIZE_STORAGE_KEY, typeof value === 'string' ? value : JSON.stringify(value));
   }
 
-  it('defaults to Full HD at the display’s own density and 100 % text', () => {
+  it('defaults to Full HD at the display’s own density and 100% text', () => {
     const size = defaultFigureSize(2);
     expect(size.resolutionId).toBe('fullhd');
     expect(DEFAULT_FIGURE_RESOLUTION_ID).toBe('fullhd');
@@ -149,7 +149,7 @@ describe('figure-size', () => {
     beforeEach(() => localStorage.removeItem(TABLE_IMAGE_SIZE_STORAGE_KEY));
     afterEach(() => localStorage.removeItem(TABLE_IMAGE_SIZE_STORAGE_KEY));
 
-    it('defaults to Fit the table at 200 % and 100 % text, whatever the display', () => {
+    it('defaults to Fit the table at 200% and 100% text, whatever the display', () => {
       expect(defaultTableImageSize()).toEqual({
         resolutionId: 'fit',
         customWidthPx: 1920,
@@ -205,7 +205,7 @@ describe('figure-size', () => {
         .toBe('The image width and height must be between 320 and 8000 px.');
 
       const badDensity = sizeErrors({ ...base, densitySelection: 'custom', customDensityPercent: 10 });
-      expect(badDensity.customDensity).toBe('The pixel density must be between 50 and 800 %.');
+      expect(badDensity.customDensity).toBe('The pixel density must be between 50 and 800%.');
 
       const oversized = sizeErrors({ ...base, resolutionId: 'a4p', densitySelection: 'custom', customDensityPercent: 800 });
       expect(oversized.bitmap).toContain('at most 16384 px');
@@ -222,9 +222,9 @@ describe('figure-size', () => {
     });
 
     it('reads out a size in one line', () => {
-      expect(sizeReadout(base)).toBe('Full HD — 1920 × 1080 · 100% · text 100 %');
+      expect(sizeReadout(base)).toBe('Full HD — 1920 × 1080 · 100% · text 100%');
       expect(sizeReadout({ ...base, resolutionId: 'custom', customWidthPx: 1480, customHeightPx: 620 }))
-        .toBe('Custom 1480 × 620 · 100% · text 100 %');
+        .toBe('Custom 1480 × 620 · 100% · text 100%');
       expect(sizeReadout(defaultTableImageSize())).toBe('Fit the table · 200%');
     });
 

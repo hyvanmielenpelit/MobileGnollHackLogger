@@ -139,7 +139,7 @@ export class KeyFiguresChooserComponent implements OnInit, OnChanges {
   /** The format, quality and size the Image file column shows. */
   settings: KeyFiguresExportSettings = defaultKeyFiguresExportSettings();
 
-  /** What the size section resets to: Fit the figures at 200 %. */
+  /** What the size section resets to: Fit the figures at 200%. */
   readonly sizeDefaults: FigureSizeSettings = defaultKeyFiguresExportSettings().size;
 
   /** The density of the display the dialog opened on, marked in the density options. */

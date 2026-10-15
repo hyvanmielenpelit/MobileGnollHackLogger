@@ -1193,7 +1193,7 @@ reason the next step is unavailable, and *Next* — *Next: Charts* on step 1, *A
        as text; the **interval bar**, which draws the estimate, the 95 % interval, the margin band and
        the zero line on an axis symmetric around zero, its ends labeled *worse* and *better* (*less work*
        and *more work* for P4), and is read by assistive technology as one sentence (*Estimate +1.2 index
-       points, 95 % interval −1.0 to +3.4 index points, margin ±3 index points. The interval reaches
+       points, 95% interval −1.0 to +3.4 index points, margin ±3 index points. The interval reaches
        beyond the margin.*); then
        *What it means*, *Smallest change this sample can detect* (an inconclusive endpoint only) and
        *Compared* (*3 runs vs 3 runs · 60 paired items*, member runs in a battery analysis); two notes,
@@ -1420,7 +1420,7 @@ Intelligence point, and the takeaway and the data card's *Note* field say why (*
 Compute it from the battery report.*). A battery point also carries `overallIndexHalfWidth`, the
 battery analysis's combined 95 % half-width, and `overallIndexIntervalNote` (*question sampling only*
 when the interval has no reproducibility part, that is, one round); the Intelligence figure draws it as a
-whisker at the point, its data gain a *95 % interval* column, and the takeaway says the bars are each
+whisker at the point, its data gain a *95% interval* column, and the takeaway says the bars are each
 battery run's own interval, not the interval of the change between the periods. Run points carry no
 interval. Every data card of a battery chart adds *Suites* and *Member
 runs*, the members named with their suites. **Plot by** on the Data tab switches to *Member runs*, the
@@ -1538,7 +1538,7 @@ The sidebar has six tabs:
 The two views are **All charts**, every shown chart in one column, each tile with **Copy**, **Download**
 and **Open in Single view** under its chart, and a toolbar with the zoom, *Fit width*, *Fit to screen*
 and **Download all**; and **Single chart**, one chart with *Previous chart*, a chart select and *Next
-chart*, the zoom, *Fit to screen*, *Actual size* (100 %), **Copy** and **Download**. Both views open at
+chart*, the zoom, *Fit to screen*, *Actual size* (100%), **Copy** and **Download**. Both views open at
 **Fit to screen**: one whole chart — the image and the HTML under it, its takeaway, footer row and
 *Show data* summary — fits the view without any scrollbar. In All charts the column of tiles keeps its
 scrollbar, and Fit to screen fits one whole tile.

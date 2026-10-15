@@ -122,7 +122,7 @@ const STRIP_FIXTURE = `
     <div class="score-card" data-figure="model-cost">
       <span class="score-label">Candidate Cost</span>
       <span class="score-subvalue">$1.0000 <span class="degraded-tag" title="Some participating models lack pricing">*</span></span>
-      <span class="score-note">31 % of estimated total</span>
+      <span class="score-note">31% of estimated total</span>
       <span class="score-note">$0.0556 per question · 18 asked</span>
     </div>
     <div class="score-card">
@@ -309,7 +309,7 @@ describe('key figures image', () => {
       const cells = readKeyFigureCells(root);
       expect(cells[9].notes).toEqual(['ICC 0.81 · mean B − A +1.2', '3 disagreement(s) over 10 answers both scored']);
       expect(cells[3].notes).toEqual(['Q3, Q7', '1 disputed by the second reader']);
-      expect(cells[11].notes).toEqual(['31 % of estimated total', '$0.0556 per question · 18 asked']);
+      expect(cells[11].notes).toEqual(['31% of estimated total', '$0.0556 per question · 18 asked']);
     });
 
     it('reads one card without changing it', () => {
@@ -523,7 +523,7 @@ describe('key figures image', () => {
     it('joins each figure to its unit with a non-breaking space', () => {
       expect(bindFigureUnits('median 14.3 s')).toBe('median 14.3\u00A0s');
       expect(bindFigureUnits('850 ms, 4 min 05 s')).toBe('850\u00A0ms, 4\u00A0min 05\u00A0s');
-      expect(bindFigureUnits('31 % of estimated total')).toBe('31\u00A0% of estimated total');
+      expect(bindFigureUnits('31% of estimated total')).toBe('31% of estimated total');
       expect(bindFigureUnits('3 disagreement(s) over 10 answers')).toBe('3 disagreement(s) over 10 answers');
       expect(bindFigureUnits('2 suites · 18 asked')).toBe('2 suites · 18 asked');
     });
@@ -645,7 +645,7 @@ describe('key figures image', () => {
       expect(second.map(item => item.text)).toEqual(['tail']);
     });
 
-    it('stacks labels above values when the value column would be under 60 % of the width', () => {
+    it('stacks labels above values when the value column would be under 60% of the width', () => {
       const wide = layoutFactRows([textRow('Scoring profile', 'Default')], 300, halfWidth, SIZES);
       expect(wide.stacked).toBe(false);
 
@@ -1005,7 +1005,7 @@ describe('key figures image', () => {
       expect(await exportKeyFiguresImage('copy', root, null, CONTEXT)).toBe('Could not copy the image.');
     });
 
-    it('writes a Full HD box at exactly 1920 × 1080 at 100 % and 3840 × 2160 at 200 %', async () => {
+    it('writes a Full HD box at exactly 1920 × 1080 at 100% and 3840 × 2160 at 200%', async () => {
       const cells = readKeyFigureCells(root);
       const single = await composeStripImage(cells, CONTEXT, { wide: null, emblem: null }, NOW, boxSettings('fullhd', 1));
       expect([single.width, single.height]).toEqual([1920, 1080]);
@@ -1020,7 +1020,7 @@ describe('key figures image', () => {
       expect([canvas.width, canvas.height]).toEqual([1080, 1080]);
     });
 
-    it('writes fit at 200 % at the same size as without settings', async () => {
+    it('writes fit at 200% at the same size as without settings', async () => {
       const cells = readKeyFigureCells(root);
       const plain = await composeStripImage(cells, CONTEXT, { wide: null, emblem: null }, NOW);
       const fit = await composeStripImage(cells, CONTEXT, { wide: null, emblem: null }, NOW, defaultKeyFiguresExportSettings());

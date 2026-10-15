@@ -101,7 +101,7 @@ const ZOOM_PRESETS: readonly ZoomOption[] = [
 
 const ZOOM_OPTIONS: readonly ZoomOption[] = [
   ...ZOOM_PRESETS,
-  ...[0.5, 0.75, 1, 1.25, 1.5, 2].map(scale => ({ value: String(scale), label: `${Math.round(scale * 100)} %` }))
+  ...[0.5, 0.75, 1, 1.25, 1.5, 2].map(scale => ({ value: String(scale), label: `${Math.round(scale * 100)}%` }))
 ];
 
 /** The zoom select's value while the scale matches none of its options. */
@@ -576,7 +576,7 @@ export class PdfViewerDialogComponent implements OnInit, OnDestroy {
       const numeric = ZOOM_OPTIONS.find(option => !ZOOM_PRESETS.includes(option) && Math.abs(Number(option.value) - event.scale) < 0.001);
       const match = preset ?? numeric;
       this.zoomValue = match ? match.value : CUSTOM_ZOOM;
-      this.customZoomLabel = match ? '' : `${Math.round(event.scale * 100)} %`;
+      this.customZoomLabel = match ? '' : `${Math.round(event.scale * 100)}%`;
     });
   };
 

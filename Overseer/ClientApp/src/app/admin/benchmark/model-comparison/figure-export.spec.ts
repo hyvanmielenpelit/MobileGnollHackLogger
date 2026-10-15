@@ -803,7 +803,7 @@ describe('figure-export', () => {
         chrome: figureChrome({
           key: [
             { glyph: 'solid', text: 'Mean of 2+ runs' },
-            { glyph: 'interval', text: '95 % interval' },
+            { glyph: 'interval', text: '95% interval' },
             { glyph: 'frontier', text: 'Pareto frontier' },
             { glyph: 'faded', text: 'Faded: another model is better on both axes' },
             { glyph: 'provider', text: 'Anthropic', color: '#d95926' },
@@ -924,7 +924,7 @@ describe('figure-export', () => {
       }
     });
 
-    it('composes Full HD at 200 % to a 3840 × 2160 bitmap of the same figure', () => {
+    it('composes Full HD at 200% to a 3840 × 2160 bitmap of the same figure', () => {
       const { layout } = resolveFigureLayout(sourceOf(), preset('fullhd'), 2, 1);
 
       const composed = composeFigureImage(request({ layout }));
@@ -949,7 +949,7 @@ describe('figure-export', () => {
       expect(refused.refusal).toContain('24000 × 24000');
       expect(refused.refusal).toContain(String(FIGURE_EXPORT_MAX_BITMAP_DIMENSION));
 
-      // 16 000 px a side is under the cap, so the same size at 200 % is written rather than refused.
+      // 16 000 px a side is under the cap, so the same size at 200% is written rather than refused.
       const accepted = resolveFigureLayout(sourceOf(), custom, 2, 1);
       expect(accepted.refusal).toBeNull();
       expect(accepted.layout!.pixelWidth).toBe(16000);
@@ -1478,14 +1478,14 @@ describe('figure-export', () => {
 
       expect(fitted.zoom).toBeCloseTo(3000 / 1280, 12);
       expect(fitted.cssWidth).toBeCloseTo(3000, 9);
-      // Above 100 % the raster is the export's own pixels, magnified by CSS.
+      // Above 100% the raster is the export's own pixels, magnified by CSS.
       expect(fitted.layout.pixelWidth).toBe(1280);
       expect(fitted.layout.pixelHeight).toBe(720);
       expect(standard.zoom).toBe(1);
       expect(standard.cssWidth).toBe(1280);
     });
 
-    it('shows the target’s own raster at twice its CSS size at 200 %', () => {
+    it('shows the target’s own raster at twice its CSS size at 200%', () => {
       const full = target('fullhd');
 
       const fit = previewLayoutFor(full, { width: 800, height: 600, devicePixelRatio: 2 }, 2)!;
@@ -1501,7 +1501,7 @@ describe('figure-export', () => {
       expect(fit.layout.plotHeight).toBe(full.plotHeight);
     });
 
-    it('rasterises half the target at 50 %', () => {
+    it('rasterises half the target at 50%', () => {
       const fit = previewLayoutFor(
         target('fullhd'), { width: 800, height: 600, devicePixelRatio: 2 }, 0.5)!;
 
@@ -1521,7 +1521,7 @@ describe('figure-export', () => {
       expect(fit.cssWidth).toBe(32000);
     });
 
-    it('clamps the screen fit to 800 % for a tiny target in a huge stage', () => {
+    it('clamps the screen fit to 800% for a tiny target in a huge stage', () => {
       const tiny: FigureExportLayout = { ...target('hd'), pixelWidth: 100, pixelHeight: 50 };
 
       const fit = previewLayoutFor(tiny, { width: 4000, height: 3000, devicePixelRatio: 1 }, 'fitScreen')!;

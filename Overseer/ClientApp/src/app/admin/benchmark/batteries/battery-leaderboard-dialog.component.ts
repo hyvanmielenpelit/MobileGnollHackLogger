@@ -74,7 +74,7 @@ function finite(value: number | null | undefined): value is number {
 
 /**
  * The scale every strip of one class shares: its lowest lower bound to its highest upper bound,
- * padded by 5 % of the span on each side. A row without an interval contributes its point
+ * padded by 5% of the span on each side. A row without an interval contributes its point
  * estimate. Null when no row has a value.
  */
 export function intervalStripScale(rows: readonly BenchmarkBatteryLeaderboardRowDto[]): IntervalStripScale | null {
@@ -117,7 +117,7 @@ export function intervalStripGeometry(
   };
 }
 
-/** Whether two rows' 95 % intervals share at least one value; false when either has none. */
+/** Whether two rows' 95% intervals share at least one value; false when either has none. */
 export function intervalsOverlap(a: BenchmarkBatteryLeaderboardRowDto, b: BenchmarkBatteryLeaderboardRowDto): boolean {
   if (!finite(a.overallIndexLower) || !finite(a.overallIndexUpper)
     || !finite(b.overallIndexLower) || !finite(b.overallIndexUpper)) {
@@ -261,7 +261,7 @@ export class BatteryLeaderboardDialogComponent implements OnInit, OnDestroy {
   readonly formatNumber = formatNumber;
   readonly statusLabel = batteryRunStatusLabel;
 
-  /** The Provider errors cell: `0.81 % (12/1,480)`, `—` without valid attempts, or `Not recorded`. */
+  /** The Provider errors cell: `0.81% (12/1,480)`, `—` without valid attempts, or `Not recorded`. */
   providerErrorsText(row: BenchmarkBatteryLeaderboardRowDto): string {
     if (row.providerValidAttempts == null) {
       return NOT_RECORDED_TEXT;

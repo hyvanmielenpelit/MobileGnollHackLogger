@@ -37,11 +37,11 @@ export interface CcVerdictTipFact {
 export const CC_VERDICT_DEFINITIONS: readonly { readonly term: string; readonly text: string }[] = [
   {
     term: 'Degraded or improved',
-    text: 'The change is significant after Holm\'s correction and the whole 95 % interval lies beyond the margin. '
+    text: 'The change is significant after Holm\'s correction and the whole 95% interval lies beyond the margin. '
       + 'Work per turn reads more work or less work instead, never better or worse.'
   },
-  { term: 'Changed, negligible', text: 'The 95 % interval excludes zero but lies inside the margin: a change too small to matter.' },
-  { term: 'Equivalent', text: 'The 90 % interval lies inside the margin.' },
+  { term: 'Changed, negligible', text: 'The 95% interval excludes zero but lies inside the margin: a change too small to matter.' },
+  { term: 'Equivalent', text: 'The 90% interval lies inside the margin.' },
   {
     term: 'Inconclusive',
     text: 'Neither: the data cannot tell. Never read it as no change; the smallest change the sample can detect says how large a change could go unseen.'

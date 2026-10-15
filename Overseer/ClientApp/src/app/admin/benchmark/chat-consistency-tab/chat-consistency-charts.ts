@@ -9,7 +9,7 @@
  * logo), the period bands and their names, the area wash of a single-series chart whose value axis
  * starts at zero, composite Overseer events, annotations and served-model changes as labeled markers
  * (their tags staggered in a band above the plot), and the value of every point of a chart drawing at
- * most two series (`ccPlaceLabels`). A battery run's Overall Index carries its 95 % interval as a
+ * most two series (`ccPlaceLabels`). A battery run's Overall Index carries its 95% interval as a
  * whisker (`ccWhiskerPlugin`). A line breaks between the periods where the analysis found them not
  * comparable (`ccPeriodBreak`). A legacy latency proxy is drawn with hollow points and a dashed line,
  * so it is told apart by shape as well as by its legend label. Every dataset carries a stable series
@@ -374,10 +374,10 @@ export interface CcChartOptions {
   /** The provider availability figure's form; `CC_DEFAULT_AVAILABILITY_FORM` when absent. */
   availabilityForm?: CcAvailabilityForm;
   /**
-   * The time axis spans the plotted points and the markers near them, padded by 8 % of that span or
+   * The time axis spans the plotted points and the markers near them, padded by 8% of that span or
    * 45 minutes, whichever is more; the period bands are clipped to it, widening it only where a band
    * cut by its edge would be under `CC_MIN_BAND_SHARE` of the plot. Absent spans the bands too, padded
-   * by 3 % or 12 hours.
+   * by 3% or 12 hours.
    */
   fitToData?: boolean;
 }
@@ -1646,7 +1646,7 @@ function drawPeriodLabels(
   return written;
 }
 
-/** A battery run's 95 % interval of its Overall Index, drawn as a whisker at its point. */
+/** A battery run's 95% interval of its Overall Index, drawn as a whisker at its point. */
 export interface CcWhisker {
   /** The point's time, epoch ms. */
   x: number;
@@ -1758,8 +1758,8 @@ export function ccStepDecimals(step: number): number {
 }
 
 /**
- * A value axis for `values` under `policy`. From the values padded by 15 % of their span (at least
- * 5 % of `minSpan`), or from zero for a zero-based measure, clamped to the floor and ceiling; a step
+ * A value axis for `values` under `policy`. From the values padded by 15% of their span (at least
+ * 5% of `minSpan`), or from zero for a zero-based measure, clamped to the floor and ceiling; a step
  * for about five intervals; both bounds snapped outward to the step; then widened step by step to
  * `minSpan` (alternately down and up for a bounded score, starting down; up for a zero-based measure;
  * the other side where a bound stops it). Without values: `minSpan` from zero or the floor.
@@ -1852,7 +1852,7 @@ interface AxisSpec {
   policy: CcAxisPolicy | null;
 }
 
-/** The fitted time axis's padding on each side: 8 % of the span, at least 45 minutes. */
+/** The fitted time axis's padding on each side: 8% of the span, at least 45 minutes. */
 const FIT_PAD_SHARE = 0.08;
 const FIT_PAD_MIN_MS = 45 * 60_000;
 
@@ -2406,8 +2406,8 @@ function noteReason(note: string): string {
 
 // --- Interval whiskers ---
 
-/** The data table's column of a battery run's 95 % interval. */
-export const CC_INTERVAL_COLUMN = '95 % interval';
+/** The data table's column of a battery run's 95% interval. */
+export const CC_INTERVAL_COLUMN = '95% interval';
 
 /** The interval cell of a point without one. */
 const NO_INTERVAL = '—';
@@ -2446,7 +2446,7 @@ function whiskerSentence(points: readonly CcTimelinePoint[], whiskers: readonly 
   const samplingOnly = points
     .filter(point => ids.has(point.runId))
     .every(point => batteryPointOf(point)?.overallIndexIntervalNote?.trim().toLowerCase() === QUESTION_SAMPLING_ONLY);
-  return `Bars show each battery run's 95 % interval for its own Overall Index${samplingOnly ? ' (question sampling only)' : ''}; `
+  return `Bars show each battery run's 95% interval for its own Overall Index${samplingOnly ? ' (question sampling only)' : ''}; `
     + 'they are not the interval of the change between the periods.';
 }
 
@@ -2502,7 +2502,7 @@ export function qualityFigure(input: CcFigureInput, options: CcChartOptions = {}
   if (grader && primaryValues.length > 0 && commonValues.length > 0) {
     takeaway += ` ${plural(commonValues.length, noun)} also ${commonValues.length === 1 ? 'has' : 'have'} a common-grader figure.`;
   }
-  // A battery run's 95 % interval of its own Overall Index, where its battery analysis gives one.
+  // A battery run's 95% interval of its own Overall Index, where its battery analysis gives one.
   const whiskers = battery ? overallIndexWhiskers(points, primary, primaryId) : [];
   if (whiskers.length > 0) takeaway += ` ${whiskerSentence(points, whiskers)}`;
   takeaway += notAnalyzedNote(input, [primary, common]);
@@ -2767,7 +2767,7 @@ export function reliabilityFigure(input: CcFigureInput, options: CcChartOptions 
   }
   const counted = points.filter(point => RELIABILITY_RATES.some(rate => ccNumber(point[rate.key] as number | string | null) !== null)).length;
   const places = options.decimals?.reliability ?? 1;
-  const percent = (value: number) => `${formatFixed(value, places)} %`;
+  const percent = (value: number) => `${formatFixed(value, places)}%`;
   const takeaway = (counted === 0
     ? `No ${noun} in this range has reliability figures.`
     : worst === null
@@ -2783,7 +2783,7 @@ export function reliabilityFigure(input: CcFigureInput, options: CcChartOptions 
       seriesSpec('reliability', `reliability.${rate.key}`, rate.data, theme.series[i % theme.series.length], { pointStyle: rate.pointStyle })),
       input, markers, options, {
         title: 'Share of answers (%)',
-        tick: (value, axis) => `${numberTick(value, axis)} %`,
+        tick: (value, axis) => `${numberTick(value, axis)}%`,
         format: percent,
         policy: ratioPolicy(10, 100)
       }),
@@ -2970,7 +2970,7 @@ function ccGlyphPlugin(glyphs: readonly CcPointGlyph[], theme: CcChartTheme, siz
 export const CC_STRIP_SHARE_STEPS: readonly number[] = [0.01, 0.05, 0.2];
 
 /** The strip's legend words per shade, in ramp order. */
-const STRIP_SHADE_LABELS: readonly string[] = ['0 %', 'up to 1 %', 'up to 5 %', 'up to 20 %', 'over 20 %'];
+const STRIP_SHADE_LABELS: readonly string[] = ['0%', 'up to 1%', 'up to 5%', 'up to 20%', 'over 20%'];
 
 /**
  * A single-hue sequential ramp ordered by lightness alone, so it reads the same under every color-vision
@@ -3098,7 +3098,7 @@ export function availabilityFigure(input: CcFigureInput, options: CcChartOptions
   const units = availabilityUnits(points);
   const unrecorded = points.filter(point => point.availabilityRecorded !== true).length;
   const places = options.decimals?.availability;
-  const percentOf = (proportion: number) => places === undefined ? formatSharedPercent(proportion) : `${formatFixed(proportion * 100, places)} %`;
+  const percentOf = (proportion: number) => places === undefined ? formatSharedPercent(proportion) : `${formatFixed(proportion * 100, places)}%`;
   const percentValue = (value: number) => percentOf(value / 100);
   const intervalOf = (unit: AvailabilityUnit) => unit.low !== null && unit.high !== null
     ? `${percentOf(unit.low)}–${percentOf(unit.high)}` : '—';
@@ -3111,11 +3111,11 @@ export function availabilityFigure(input: CcFigureInput, options: CcChartOptions
     : '';
   const yAxis: AxisSpec = {
     title: 'Provider errors (% of valid attempts)',
-    tick: (value, axis) => `${numberTick(value, axis)} %`,
+    tick: (value, axis) => `${numberTick(value, axis)}%`,
     format: percentValue,
     policy: ratioPolicy(2, 100)
   };
-  const unitColumns = [...leadColumns(input), 'Provider errors', 'Rate', '95 % interval', 'Unattributed', 'Re-runs', 'Availability only'];
+  const unitColumns = [...leadColumns(input), 'Provider errors', 'Rate', '95% interval', 'Unattributed', 'Re-runs', 'Availability only'];
   const unitCells = (point: CcTimelinePoint): string[] => {
     const unit = units.find(entry => entry.point === point);
     if (!unit) {
@@ -3311,7 +3311,7 @@ export function availabilityFigure(input: CcFigureInput, options: CcChartOptions
   let takeaway = units.length === 0
     ? none
     : `The provider error rate ${spanPhrase(rates, percentValue, noun)} (${totals}). `
-      + `A dot's area follows its ${noun}'s valid attempts and its bar is the ${noun}'s 95 % interval.`;
+      + `A dot's area follows its ${noun}'s valid attempts and its bar is the ${noun}'s 95% interval.`;
   if (onlyCount > 0) {
     takeaway += ` ${plural(onlyCount, 'failed or canceled run')} ${onlyCount === 1 ? 'is' : 'are'} drawn hollow: `
       + `${onlyCount === 1 ? 'its' : 'their'} attempts count for provider availability only.`;

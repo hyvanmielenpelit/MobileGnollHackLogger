@@ -427,7 +427,7 @@
                          (change)="setAvailability('panel', checkedOf($event) ? 'on' : 'off')">
                   Show the provider availability panel
                 </label>
-                <app-info-tip [tipId]="tipId('bar', 'availabilityPanel')" subject="the provider availability panel">A fourth panel beside Intelligence, Speed and Cost: each model's share of attempts that failed at the provider, with its 95 % interval and its count. A model whose runs did not record it is named as not recorded. The Provider errors figure shows the same plot whether or not the panel is shown.</app-info-tip>
+                <app-info-tip [tipId]="tipId('bar', 'availabilityPanel')" subject="the provider availability panel">A fourth panel beside Intelligence, Speed and Cost: each model's share of attempts that failed at the provider, with its 95% interval and its count. A model whose runs did not record it is named as not recorded. The Provider errors figure shows the same plot whether or not the panel is shown.</app-info-tip>
               </div>
               <fieldset class="gh-choice" [attr.aria-labelledby]="controlId('bar', 'availabilityMeasure-label')"
                         [attr.aria-describedby]="tipId('bar', 'availabilityMeasure')">
@@ -635,7 +635,7 @@
 
         <ng-container *ngTemplateOutlet="footerSection; context: { family: 'scatter', section: section('scatter', 'footer') }"></ng-container>
 
-        <!-- Provider availability: the markers on a model whose provider errors are clearly above 2 %. -->
+        <!-- Provider availability: the markers on a model whose provider errors are clearly above 2%. -->
         <div class="fsp-section">
           <details class="gh-disclosure gh-disclosure--section" [id]="sectionId('scatter', 'availability')"
                    [open]="isOpen('scatter', 'availability')" (toggle)="onSectionToggle('scatter', 'availability', $event)">
@@ -646,9 +646,9 @@
                   <input type="checkbox" [id]="controlId('scatter', 'availabilityMarkers')" [checked]="availability.markers === 'on'"
                          [attr.aria-describedby]="tipId('scatter', 'availabilityMarkers')"
                          (change)="setAvailability('markers', checkedOf($event) ? 'on' : 'off')">
-                  Mark models with provider errors above 2 %
+                  Mark models with provider errors above 2%
                 </label>
-                <app-info-tip [tipId]="tipId('scatter', 'availabilityMarkers')" subject="the provider error markers">A dashed ring and a label such as "3.1 % provider errors" on a model whose 95 % interval lies wholly above 2 %, so noise alone never marks a model. A caption line states the rule.</app-info-tip>
+                <app-info-tip [tipId]="tipId('scatter', 'availabilityMarkers')" subject="the provider error markers">A dashed ring and a label such as "3.1% provider errors" on a model whose 95% interval lies wholly above 2%, so noise alone never marks a model. A caption line states the rule.</app-info-tip>
               </div>
             </div>
           </details>
@@ -1004,7 +1004,7 @@
         <ng-container *ngTemplateOutlet="footerSection; context: { family: 'timeline', section: section('timeline', 'footer') }"></ng-container>
       </div>
 
-      <p class="fsp-note">The sizes are at 100 % text; Download → Text size scales them all.</p>
+      <p class="fsp-note">The sizes are at 100% text; Download → Text size scales them all.</p>
 
       <div class="fsp-actions">
         <button type="button" class="btn-ghost" [id]="controlId('timeline', 'reset')" (click)="resetTimeline()">Reset timeline style</button>

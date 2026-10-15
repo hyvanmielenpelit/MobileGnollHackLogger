@@ -39,7 +39,7 @@ function clearStorage(): void {
   }
 }
 
-/** A small chart size at 100 % density, so every composition stays quick. */
+/** A small chart size at 100% density, so every composition stays quick. */
 function storeSmallChartSize(): void {
   localStorage.setItem(TL_CHARTS_SIZE_STORAGE_KEY, JSON.stringify({
     version: 1, resolutionId: 'custom', customWidthPx: 640, customHeightPx: 400,

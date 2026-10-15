@@ -525,9 +525,9 @@ describe('AdminBenchmarkComponent', () => {
 
       const critical = lines.findIndex(l => l.startsWith('critical errors:'));
       expect(lines[critical]).toContain('critical errors: 0, unverified claims:');
-      expect(lines[critical + 1]).toBe('critical error resolution: confirmed 0, unresolved 0, overturned 1 (Q1); rate 0 % (95 % CI 0–66 %) of 2 classified');
+      expect(lines[critical + 1]).toBe('critical error resolution: confirmed 0, unresolved 0, overturned 1 (Q1); rate 0% (95% CI 0–66%) of 2 classified');
       expect(lines[critical + 2]).toBe('answer outcomes: correct 1, partial 0, incorrect 0, not attempted 1 (Q2), no answer 0; '
-        + 'correct when attempted 100 %, wrong instead of abstaining 0 %');
+        + 'correct when attempted 100%, wrong instead of abstaining 0%');
     });
 
     it('should leave the resolution and outcome lines out before scoring method 13', () => {
@@ -1322,7 +1322,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const rows = component.toolRoutingFamilies();
 
-      // Dropping it would make the shares sum to 100 % of a total that is not the run's.
+      // Dropping it would make the shares sum to 100% of a total that is not the run's.
       expect(component.totalRoutedToolCalls()).toBe(4);
       expect(rows.find(r => r.family === 'Other')?.count).toBe(1);
     });
@@ -1339,7 +1339,7 @@ describe('AdminBenchmarkComponent', () => {
 
     // --- Budget pressure ---
 
-    it('should select answers at or above 90 % of budget that never reached it', () => {
+    it('should select answers at or above 90% of budget that never reached it', () => {
       withAnswers([
         answer({ orderIndex: 11, toolCallCount: 41, toolCallBudgetUsed: 45 }),
         answer({ orderIndex: 16, toolCallCount: 43, toolCallBudgetUsed: 45 }),
@@ -1349,7 +1349,7 @@ describe('AdminBenchmarkComponent', () => {
       expect(component.budgetPressuredAnswers().map(a => a.orderIndex)).toEqual([11, 16]);
     });
 
-    it('should treat the 90 % threshold as inclusive and the budget itself as exclusive', () => {
+    it('should treat the 90% threshold as inclusive and the budget itself as exclusive', () => {
       withAnswers([
         // 40.5 is the threshold: 40 is below it, 41 is not.
         answer({ orderIndex: 1, toolCallCount: 40, toolCallBudgetUsed: 45 }),
@@ -1521,7 +1521,7 @@ describe('AdminBenchmarkComponent', () => {
 
       const content = card!.textContent?.replace(/\s+/g, ' ').trim() || '';
       expect(content).toContain('$2.3000');
-      expect(content).toContain('76 % of estimated total');
+      expect(content).toContain('76% of estimated total');
       // No answer rows, so no per-question figure.
       expect(content).not.toContain('per question');
       expect(card!.querySelector('app-key-figure-card-actions')).toBeTruthy();
@@ -1562,7 +1562,7 @@ describe('AdminBenchmarkComponent', () => {
         pricingIncomplete: true,
         answers: []
       } as any;
-      expect(component.candidateCostShareLabel(run)).toBe('25 % of the priced roles');
+      expect(component.candidateCostShareLabel(run)).toBe('25% of the priced roles');
     });
 
     // H4. The card and the cost panel below it apportion the same five role amounts, in the same
@@ -1588,10 +1588,10 @@ describe('AdminBenchmarkComponent', () => {
 
       // Exact shares: candidate 25.42, assessor 29.36, second opinion 3.67, claim verifier 40.37,
       // synthesis 1.18 -- the floors sum to 98, so the two largest remainders (second opinion,
-      // then candidate) each get one extra point, giving the candidate 26 %.
+      // then candidate) each get one extra point, giving the candidate 26%.
       const cards = Array.from(fixture.nativeElement.querySelectorAll('.score-card')) as HTMLElement[];
       const card = cards.find(c => c.querySelector('.score-label')?.textContent?.trim() === 'Candidate Cost');
-      expect(card!.textContent).toContain('26 % of estimated total');
+      expect(card!.textContent).toContain('26% of estimated total');
 
       const panelShares = Array.from(
         (fixture.nativeElement as HTMLElement).querySelectorAll<HTMLElement>(

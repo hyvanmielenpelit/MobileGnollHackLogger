@@ -1022,7 +1022,7 @@ To find specific popups, look in the corresponding component's `.html` template:
       - *Verdicts*: `endpoint-card/` (`app-cc-endpoint-card`, `[endpoint]`, `[batteryAnalysis]`;
         `article.cc-ep-card#cc-ep-<id>[tabindex=-1][data-status]`) per computed endpoint, changed,
         improved, within, inconclusive, then by id: the head (the id as a `.gh-tag`, the `h6` name, the
-        margin, the status and the grade unless `notEstablished`), the estimate and `95 % interval`, the
+        margin, the status and the grade unless `notEstablished`), the estimate and `95% interval`, the
         bar `.cc-ep-interval[role=img]` named by the geometry's `label` with its end captions
         (`intervalEnds`) hidden from assistive technology, `dl.cc-ep-facts` (*What it means*, the MDE
         only while inconclusive, *Compared*), `CC_EP_VISIBLE_NOTES` (2) notes with a shortfall first,
@@ -1977,7 +1977,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     and *Differs from other classes on* with one `gh-tag` per key; `table.gh-table.gh-datatable.bl-table`
     in a `gh-datatable-scroll` with a sticky header and a hidden caption — *Rank* (index rank, an *≈*
     with hidden *interval overlaps the result above*), *Model* (badges with hidden prefixes), *Overall
-    Index*, *95 % interval* with an `aria-hidden` interval strip (one scale per class, padded 5 %, the top
+    Index*, *95% interval* with an `aria-hidden` interval strip (one scale per class, padded 5 %, the top
     row gold, chevrons for truncation, hidden below 48 rem), *Speed*, *Pass cost*, *R*, *Analyzed*
     (`<time>`) and an icon-only **View the report of battery run #N** (*eye*), which asks the shell
     through the bridge to open the Battery Run Report over the dialog; `TableState` with
@@ -2224,7 +2224,7 @@ To find specific popups, look in the corresponding component's `.html` template:
       configuration, is refused), the refusal or the amber same-provider warning (*Writer from a chosen
       model's provider*), the `.gh-estimate-panel` estimate (the checked rows summed, per row and model
       when several; *Estimating…* with an inline `app-loading-indicator`, no reveal delay, while it is
-      computed) with an amber warning from 70 % of the writer's context window
+      computed) with an amber warning from 70% of the writer's context window
       (`REPORT_PACK_CONTEXT_WARNING_SHARE`), and **Generate** (*zap*), sending `scope`,
       `coveredEntryKeys` or `subjectKeys`, the checked audiences and `replaceDocumentIds`. Its blocked
       reason (`#{idPrefix}-generate-blocked`, always in Generate's `aria-describedby`) is a visible note,
@@ -2305,7 +2305,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     caption, its `aria-label` *Width of … in the …*; beside the figure, and under its title, indented
     past the checkbox, below a 20 rem `rcp` container width) and each document type a
     closed *Layout* `details.gh-disclosure` — *Bar orientation*, *Side by side*, *Label size* (7–10 pt),
-    *Maximum height* (40 / 50 / 60 % of the page), *Heading inside the chart*, *GnollBench logo*,
+    *Maximum height* (40 / 50 / 60% of the page), *Heading inside the chart*, *GnollBench logo*,
     *Theme* — 1 rem below the figures, with no projected content. A choice that does not fit stays offered with
     `aria-disabled` and *(does not fit)*; choosing it keeps the current value and a `role="status"` line
     says why, and the reasons are listed in the disclosure. It never touches storage: the wizard
@@ -2316,7 +2316,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     Cause Analysis (its only browser-drawn figures; it also always carries the four server-drawn
     charts, which the picker notes and never lists), dropping stored settings of the retired document
     types on reading, and to
-    `DEFAULT_DOCUMENT_CHART_LAYOUT` (*As in step 2*, full column, side by side, 8 pt, 60 %, no heading,
+    `DEFAULT_DOCUMENT_CHART_LAYOUT` (*As in step 2*, full column, side by side, 8 pt, 60%, no heading,
     no logo, *Light, for print*).
     **It has two hosts**: Model Comparison (step 3 and the Download Center's *Update charts* dialog)
     and the Chat Consistency Write step. Five optional inputs default to Model Comparison's exact

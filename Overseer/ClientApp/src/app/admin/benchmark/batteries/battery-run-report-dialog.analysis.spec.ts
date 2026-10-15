@@ -110,14 +110,14 @@ describe('BatteryRunReportDialogComponent analysis', () => {
     h.open();
 
     expect(h.text('#brr-panel-dimensions .bb-dimensions')).toContain('Accuracy');
-    expect(h.text('#brr-panel-dimensions .bb-dimensions')).toContain('8.0 %');
+    expect(h.text('#brr-panel-dimensions .bb-dimensions')).toContain('8.0%');
     expect(h.text('#brr-panel-speed .bb-speed')).toContain('4.2 s / 9.0 s / 12.0 s');
     expect(h.text('#brr-panel-cost .bb-cost')).toContain('Pass cost: Candidate');
     expect(h.text('#brr-panel-cost .bb-usage')).toContain('Tool calls: wiki');
     expect(h.el().querySelector('#brr-panel-cost')?.classList).toContain('rr-panel-narrow');
     expect(h.el().querySelector('#brr-panel-configuration')?.classList).toContain('rr-panel-medium');
     expect(h.text('#brr-panel-configuration')).toContain(HASH);
-    expect(h.text('#brr-panel-configuration .brr-config-suites')).toContain('60.0 %');
+    expect(h.text('#brr-panel-configuration .brr-config-suites')).toContain('60.0%');
   });
 
   it('lists each suite\'s recorded instrument hashes on the Configuration tab, short and in full', () => {

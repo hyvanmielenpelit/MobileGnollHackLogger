@@ -126,7 +126,7 @@ describe('results image layout', () => {
     expect(composition.frame).toEqual({ pixelWidth: 1920, pixelHeight: 1080, scale: 2 });
   });
 
-  it('scales content taller than the box down, to no less than 70 %', () => {
+  it('scales content taller than the box down, to no less than 70%', () => {
     const fits = composeResultsImageLayout(input(tallBlocks(2)), box('hd'), 'Details');
     const taller = composeResultsImageLayout(input(tallBlocks(22)), box('hd'), 'Details');
     expect('layout' in fits && fits.contentScale).toBe(1);
@@ -139,7 +139,7 @@ describe('results image layout', () => {
     expect([taller.frame.pixelWidth, taller.frame.pixelHeight]).toEqual([1280, 720]);
   });
 
-  it('refuses a box the content does not fit at 70 %', () => {
+  it('refuses a box the content does not fit at 70%', () => {
     const composition = composeResultsImageLayout(input(tallBlocks(120)), box('hd'), 'Details');
     expect(composition).toEqual({ refusal: ccResultsImageFitRefusal('Details', 1280, 720) });
     expect(ccResultsImageFitRefusal('Details', 1280, 720))

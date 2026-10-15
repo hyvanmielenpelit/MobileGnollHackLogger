@@ -71,7 +71,7 @@ export function modelComparisonQueryParams(query: BenchmarkModelComparisonQuery)
   return params;
 }
 
-/** The quality axis: the Intelligence Index with its 95 % interval and the two components behind it. */
+/** The quality axis: the Intelligence Index with its 95% interval and the two components behind it. */
 export interface BenchmarkModelComparisonQualityDto {
   pointEstimate: number;
   /** Items behind the estimate: questions with a scored answer. */
@@ -355,7 +355,7 @@ export interface BenchmarkPanelRankedPairDto {
   description: string;
 }
 
-/** A point estimate with its 95 % interval; all null when the data are insufficient. */
+/** A point estimate with its 95% interval; all null when the data are insufficient. */
 export interface BenchmarkPanelEstimateDto {
   value?: number | null;
   ciLow?: number | null;

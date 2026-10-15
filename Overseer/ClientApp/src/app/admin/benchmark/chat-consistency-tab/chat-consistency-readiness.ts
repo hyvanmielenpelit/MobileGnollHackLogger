@@ -76,9 +76,9 @@ export function ccProtocolEndpoints(version: CcProtocolVersion | string | null |
   return (version ?? '').trim().toUpperCase() === 'V2' ? CC_PROTOCOL_V2_ENDPOINTS : CC_PROTOCOL_V1_ENDPOINTS;
 }
 
-/** `±3 index points`, `±15 %`, `±1.0 percentage point`. */
+/** `±3 index points`, `±15%`, `±1.0 percentage point`. */
 export function ccMarginText(margin: number, unit: CcProtocolEndpoint['unit']): string {
-  if (unit === '%') return `±${margin} %`;
+  if (unit === '%') return `±${margin}%`;
   if (unit === 'pp') {
     return `±${Number.isInteger(margin) ? margin.toFixed(1) : String(margin)} percentage ${margin === 1 ? 'point' : 'points'}`;
   }
@@ -177,7 +177,7 @@ export const CC_READINESS_STATUS_TEXT: Readonly<Record<CcReadinessStatus, string
 export interface CcEndpointReadiness {
   id: string;
   name: string;
-  /** `±3 index points`, `±15 %`. */
+  /** `±3 index points`, `±15%`. */
   marginText: string;
   status: CcReadinessStatus;
   /** The one fact behind the status. */

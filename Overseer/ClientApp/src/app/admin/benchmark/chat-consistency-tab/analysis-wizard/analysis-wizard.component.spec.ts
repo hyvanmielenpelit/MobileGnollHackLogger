@@ -477,8 +477,8 @@ describe('CcAnalysisWizardComponent', () => {
       const rows = Array.from(panel.querySelectorAll('dl.cc-an-endpoints > div'))
         .map(row => [textOf(row.querySelector('dt')), textOf(row.querySelector('dd'))]);
       expect(rows).toEqual([
-        ['P1 Quality', '±3 index points'], ['P2 Time to first answer text', '±15 %'], ['P3 Answer streaming rate', '±10 %'],
-        ['P4 Work per turn', '±15 %'], ['P5 Cost per question', '±10 %'], ['P6 Provider error rate', '±1.0 percentage point']
+        ['P1 Quality', '±3 index points'], ['P2 Time to first answer text', '±15%'], ['P3 Answer streaming rate', '±10%'],
+        ['P4 Work per turn', '±15%'], ['P5 Cost per question', '±10%'], ['P6 Provider error rate', '±1.0 percentage point']
       ]);
       expect(textOf(panel.querySelector('.cc-wiz-protocol-facts'))).toContain('0.05, Holm-adjusted across P1–P6');
       expect(textOf(panel.querySelector('.cc-wiz-protocol-facts [data-fact="p6"] dd')))
@@ -755,7 +755,7 @@ describe('CcAnalysisWizardComponent', () => {
       alpha.dispatchEvent(new Event('input'));
       el.querySelector<HTMLInputElement>('#cc-wiz-relaxed')!.click();
       chooseRule('annotation');
-      expect(fact('protocol')).toBe('V2 with overrides: P2 margin 20 %, α 0.1');
+      expect(fact('protocol')).toBe('V2 with overrides: P2 margin 20%, α 0.1');
       expect(fact('pooling')).toBe('On — grades capped at Indicated');
       expect(fact('rule')).toBe('Before vs after an annotation · A1 (2026-09-20)');
     });

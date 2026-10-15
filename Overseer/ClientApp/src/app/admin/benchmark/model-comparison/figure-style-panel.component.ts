@@ -490,12 +490,13 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
     return `${value} ${control.unit === '%' ? 'percent' : value === 1 ? 'pixel' : 'pixels'}`;
   }
 
-  /** What the `<output>` beside the range shows: `24 px`, `28 %`. */
+  /** What the `<output>` beside the range shows: `24 px`, `28%`. */
   valueLabel(family: PanelFamily, control: RangeControl<string>): string {
     if (family === 'bar' && control.key === 'maxBarWidthPx' && this.bar.maxBarWidthPx === null) {
       return 'No limit';
     }
-    return `${this.rangeValue(family, control.key)} ${control.unit}`;
+    const value = this.rangeValue(family, control.key);
+    return control.unit === '%' ? `${value}%` : `${value} ${control.unit}`;
   }
 
   onRange(family: PanelFamily, control: RangeControl<string>, event: Event): void {
@@ -984,7 +985,7 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
   private availabilityReadout(family: PanelFamily): string {
     const a = this.availability;
     if (family === 'scatter') {
-      return a.markers === 'on' ? 'markers above 2 %' : 'no markers';
+      return a.markers === 'on' ? 'markers above 2%' : 'no markers';
     }
     return [
       a.panel === 'on' ? 'panel shown' : 'panel hidden',
@@ -1027,7 +1028,7 @@ export class FigureStylePanelComponent implements OnChanges, OnInit {
     switch (name) {
       case 'bars':
         return [
-          `${bar.gapPercent} % space`,
+          `${bar.gapPercent}% space`,
           bar.maxBarWidthPx === null ? 'no width limit' : `max ${bar.maxBarWidthPx} px`,
           bar.filledBars ? 'filled' : 'outlined'
         ].join(' · ');

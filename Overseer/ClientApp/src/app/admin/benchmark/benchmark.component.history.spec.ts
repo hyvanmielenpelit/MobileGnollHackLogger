@@ -740,7 +740,7 @@ describe('AdminBenchmarkComponent', () => {
         select.value = 'provider-errors-desc';
         select.dispatchEvent(new Event('change'));
 
-        // 3 % first; 1 % twice, the larger count first; 0 %; the legacy run last.
+        // 3% first; 1% twice, the larger count first; 0%; the legacy run last.
         expect(shownIds()).toEqual([1, 2, 4, 3, 5]);
         expect(ctx.workspace.historyTable.sortColumn).toBe('providerErrors');
         expect(ctx.workspace.historyTable.sortDirection).toBe('desc');

@@ -21,7 +21,7 @@ import {
   composeCcFigure
 } from './cc-figure-compose';
 
-/** A size at 100 % density and 100 % text, with overrides. */
+/** A size at 100% density and 100% text, with overrides. */
 function size(overrides: Partial<FigureSizeSettings> = {}): FigureSizeSettings {
   return { ...defaultFigureSize(1), ...overrides };
 }
@@ -169,7 +169,7 @@ describe('cc-figure-compose', () => {
       expect(layout!.plotHeight).toBeLessThan(540);
     });
 
-    it('keeps the pixel size and shrinks the layout box at 140 % text', () => {
+    it('keeps the pixel size and shrinks the layout box at 140% text', () => {
       const plain = ccFigureLayout(figure(), context(), size()).layout!;
       const large = ccFigureLayout(figure(), context(), size({ textScalePercent: 140 })).layout!;
       expect([large.pixelWidth, large.pixelHeight]).toEqual([plain.pixelWidth, plain.pixelHeight]);

@@ -191,8 +191,8 @@ describe('chat-consistency-charts', () => {
     const clean = reliabilityFigure(input);
     expect(clean.takeaway).toBe('No terminal failures, timeouts, empty answers, refusals or exhausted tool budgets in 6 runs.');
     const points = [ccPoint(1, '2026-09-01T00:00:00Z'), ccPoint(2, '2026-09-02T00:00:00Z', { timeoutRate: 0.04 })];
-    expect(reliabilityFigure({ points }).takeaway).toBe('The highest rate was timeouts at 4.0 % in run #2, across 2 runs.');
-    expect(reliabilityFigure({ points }).table.rows[1][3]).toBe('4.0 %');
+    expect(reliabilityFigure({ points }).takeaway).toBe('The highest rate was timeouts at 4.0% in run #2, across 2 runs.');
+    expect(reliabilityFigure({ points }).table.rows[1][3]).toBe('4.0%');
   });
 
   describe('markers', () => {
@@ -511,14 +511,14 @@ describe('chat-consistency-charts', () => {
       return (Math.min(band.end, range.max) - Math.max(band.start, range.min)) / (range.max - range.min);
     };
 
-    it('pads by 8 % of the span or 45 minutes, and widens a period band cut by the edge to a tenth of the plot', () => {
+    it('pads by 8% of the span or 45 minutes, and widens a period band cut by the edge to a tenth of the plot', () => {
       const range = xBounds(qualityFigure(sameDay, { fitToData: true }));
       // 45 minutes before the first battery run; the comparison side is widened beyond its padding.
       expect(range.min).toBe(at('2026-10-08T07:14:00Z') - 0.75 * HOUR);
       expect(range.max).toBeGreaterThan(at('2026-10-08T14:52:00Z') + 0.75 * HOUR);
       expect(visibleShare(range, 'Comparison')).toBeGreaterThanOrEqual(CC_MIN_BAND_SHARE - 1e-9);
       expect(visibleShare(range, 'Comparison')).toBeLessThan(CC_MIN_BAND_SHARE + 1e-6);
-      // A long span pads by 8 %.
+      // A long span pads by 8%.
       const long: CcFigureInput = { ...sameDay, bands: [], points: [sameDay.points[0], ccBatteryPoint(12, '2026-10-18T07:14:00Z', { overallIndex: 81.7 })] };
       expect(xBounds(qualityFigure(long, { fitToData: true })).min).toBeCloseTo(at('2026-10-08T07:14:00Z') - 0.08 * 240 * HOUR, 0);
     });
@@ -686,7 +686,7 @@ describe('chat-consistency-charts', () => {
       expect(ccValueAxis([38_700, 39_300], ratio(1000)).min).toBe(0);
       expect(ccValueAxis([317, 422], ratio(10))).toEqual({ min: 0, max: 500, stepSize: 100 });
       expect(ccValueAxis([0, 0], ratio(1))).toEqual({ min: 0, max: 1, stepSize: 0.2 });
-      // Reliability at all zero reads 0–10 %, not 0–1 %.
+      // Reliability at all zero reads 0–10%, not 0–1%.
       expect(ccValueAxis([0, 0, 0], ratio(10, 100))).toEqual({ min: 0, max: 10, stepSize: 2 });
       for (const figure of buildCcFigures(input).filter(f => f.key !== 'quality' && f.key !== 'timeline' && drawsFromFixtures(f.key))) {
         expect(bounds(figure).min, figure.key).toBe(0);
@@ -800,7 +800,7 @@ describe('chat-consistency-charts', () => {
 
       it('writes no point values on the reliability chart', () => {
         mount(reliabilityFigure({ points: [ccPoint(1, '2026-09-01T00:00:00Z', { timeoutRate: 0.04 }), ccPoint(2, '2026-09-02T00:00:00Z')] }));
-        expect(drawn.some(text => text.endsWith(' %') && text.includes('.'))).toBe(false);
+        expect(drawn.some(text => text.endsWith('%') && text.includes('.'))).toBe(false);
       });
     });
   });
@@ -1091,7 +1091,7 @@ describe('chat-consistency-charts', () => {
       const failing = reliabilityFigure({
         ...battery, points: [...battery.points.slice(1), ccBatteryPoint(12, '2026-10-08T10:00:00Z', { timeoutRate: 0.05 })]
       });
-      expect(failing.takeaway).toBe('The highest rate was timeouts at 5.0 % in battery run #12, across 2 battery runs.');
+      expect(failing.takeaway).toBe('The highest rate was timeouts at 5.0% in battery run #12, across 2 battery runs.');
     });
 
     it('says the Overall Intelligence Index was one value when both battery runs format alike, never that it held', () => {
@@ -1155,7 +1155,7 @@ describe('chat-consistency-charts', () => {
         expect(yBounds(figure).max).toBeGreaterThanOrEqual(88.4);
         expect(figure.table.columns).toEqual(
           ['Battery run', 'Started', 'Overall Intelligence Index', CC_INTERVAL_COLUMN, 'Note', 'Suites', 'Member runs']);
-        expect(CC_INTERVAL_COLUMN).toBe('95 % interval');
+        expect(CC_INTERVAL_COLUMN).toBe('95% interval');
         expect(figure.table.rows.map(cells => cells[3])).toEqual(['—', '83.6–88.4']);
         expect(ccIntervalText(79.64, 84.51)).toBe('79.6–84.5');
 
@@ -1171,13 +1171,13 @@ describe('chat-consistency-charts', () => {
       it('says what the bars are, with question sampling only when every bar rests on it', () => {
         expect(qualityFigure(whiskered).takeaway).toBe(
           'The Overall Intelligence Index ranged from 80.0 to 86.0 across 2 battery runs; the latest battery run scored 86.0. '
-          + 'Bars show each battery run\'s 95 % interval for its own Overall Index (question sampling only); '
+          + 'Bars show each battery run\'s 95% interval for its own Overall Index (question sampling only); '
           + 'they are not the interval of the change between the periods.');
         const mixed = qualityFigure({
           ...whiskered,
           points: [whiskered.points[0], ccBatteryPoint(11, '2026-10-08T06:00:00Z', { overallIndex: 80, overallIndexHalfWidth: 1.5 })]
         });
-        expect(mixed.takeaway).toContain('Bars show each battery run\'s 95 % interval for its own Overall Index; they are not');
+        expect(mixed.takeaway).toContain('Bars show each battery run\'s 95% interval for its own Overall Index; they are not');
         expect(qualityFigure(battery).takeaway).not.toContain('Bars show');
       });
 
@@ -1310,10 +1310,10 @@ describe('chat-consistency-charts', () => {
     it('writes reliability rates to the chosen decimals', () => {
       const figure = reliabilityFigure(withFirst({ timeoutRate: 0.05 }), { decimals: { reliability: 0 } });
       expect(figure.table.columns[3]).toBe('Timeouts');
-      expect(figure.table.rows[0][3]).toBe('5 %');
-      expect(figure.table.rows[1][3]).toBe('0 %');
-      expect(figure.takeaway).toBe('The highest rate was timeouts at 5 % in run #101, across 6 runs.');
-      expect(label(figure, 1)).toBe('Timeouts: 5 %');
+      expect(figure.table.rows[0][3]).toBe('5%');
+      expect(figure.table.rows[1][3]).toBe('0%');
+      expect(figure.takeaway).toBe('The highest rate was timeouts at 5% in run #101, across 6 runs.');
+      expect(label(figure, 1)).toBe('Timeouts: 5%');
     });
 
     it('leaves every figure\'s axis ticks as their step writes them', () => {
@@ -1430,7 +1430,7 @@ describe('chat-consistency-charts', () => {
     it('fits the title and subject, or the logo where it is taller', () => {
       expect(ccHeaderHeight({ title: 'Quality per run', subject: 'GPT-5 high · runs' }, null, 600)).toBe(42);
       expect(ccHeaderHeight({ title: null, subject: null }, logo(), 600)).toBe(36);
-      // At 100 px the logo is capped at 40 % of the width.
+      // At 100 px the logo is capped at 40% of the width.
       expect(ccHeaderHeight({ title: null, subject: null }, logo(), 100)).toBe(Math.ceil(40 / (3248 / 850) + 8));
     });
 
@@ -1891,11 +1891,11 @@ describe('chat-consistency-charts', () => {
       const only = figure.config!.data.datasets[1];
       expect((only.pointRadius as unknown as (ctx: { raw: CcChartPoint }) => number)({ raw: (only.data as CcChartPoint[])[2] })).toBe(2);
       expect(figure.takeaway).toBe('The provider error rate ranged from 1.0% to 20% across 3 runs (23 of 1,290 attempts in all). '
-        + 'A dot\'s area follows its run\'s valid attempts and its bar is the run\'s 95 % interval. '
+        + 'A dot\'s area follows its run\'s valid attempts and its bar is the run\'s 95% interval. '
         + '1 failed or canceled run is drawn hollow: its attempts count for provider availability only. '
         + '▲ marks 1 run that needed a re-run for provider errors. 1 run recorded no provider attempts (before harness 56).');
       expect(figure.altText).toBe(`Provider errors per run. ${figure.takeaway}`);
-      expect(figure.table.columns).toEqual(['Run', 'Started', 'Provider errors', 'Rate', '95 % interval', 'Unattributed', 'Re-runs', 'Availability only']);
+      expect(figure.table.columns).toEqual(['Run', 'Started', 'Provider errors', 'Rate', '95% interval', 'Unattributed', 'Re-runs', 'Availability only']);
       expect(figure.table.rows).toEqual([
         ['#1', '2026-09-01 08:00 UTC', '10 of 1,000 attempts', '1.0%', '0.50%–1.8%', '2', '0', 'No'],
         ['#2', '2026-09-02 08:00 UTC', '5 of 250 attempts', '2.0%', '0.80%–5.0%', '0', '1 (1 for provider errors)', 'No'],
@@ -1949,7 +1949,7 @@ describe('chat-consistency-charts', () => {
       const y = figure.config!.options.scales!['y'] as unknown as { min: number; max: number; ticks: { callback: (value: number) => string } };
       expect([y.min, y.max, y.ticks.callback(1), y.ticks.callback(0)]).toEqual([-0.5, 1.5, 'Strict', 'Inclusive']);
       const legend = figure.config!.options.plugins!.legend!.labels!.generateLabels!(null as unknown as Chart);
-      expect(legend.map(item => item.text)).toEqual(['0 %', 'up to 1 %', 'up to 5 %', 'up to 20 %', 'over 20 %', 'No recorded attempts']);
+      expect(legend.map(item => item.text)).toEqual(['0%', 'up to 1%', 'up to 5%', 'up to 20%', 'over 20%', 'No recorded attempts']);
       expect(figure.plottedUnits).toBe(3);
       expect(figure.table.columns).toEqual(['Day (UTC)', 'Runs', 'Valid attempts', 'Strict', 'Inclusive']);
       expect(figure.table.rows).toEqual([
@@ -1967,7 +1967,7 @@ describe('chat-consistency-charts', () => {
       expect(CC_AVAILABILITY_FORMS.map(form => form.id)).toEqual(['points', 'controlChart', 'strip']);
       expect(CC_DECIMAL_CHOICES.availability).toEqual([0, 1, 2, 3]);
       expect(ccAutoDecimalsText('availability', 'run')).toBe('Automatic (2 significant digits)');
-      expect(availabilityFigure(availability, { decimals: { availability: 2 } }).table.rows[0][3]).toBe('1.00 %');
+      expect(availabilityFigure(availability, { decimals: { availability: 2 } }).table.rows[0][3]).toBe('1.00%');
     });
 
     it('draws an analysis\'s availability-only runs with its periods\' runs', () => {
@@ -2007,7 +2007,7 @@ describe('chat-consistency-charts', () => {
       return { min: x.min, max: x.max };
     };
 
-    it('fits the time axis to the plotted points, padded by the larger of 8 % and 45 minutes, not to the periods', () => {
+    it('fits the time axis to the plotted points, padded by the larger of 8% and 45 minutes, not to the periods', () => {
       const fitted = xBounds(qualityFigure(oneDay, { fitToData: true }));
       const span = 12 * HOUR_MS;
       expect(fitted.min).toBe(at('2026-10-08T08:00:00Z') - span * 0.08);

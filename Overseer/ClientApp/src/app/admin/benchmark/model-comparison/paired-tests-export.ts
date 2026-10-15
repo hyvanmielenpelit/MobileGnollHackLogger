@@ -138,7 +138,7 @@ export function pairedTestsMarkdown(dto: BenchmarkPairedComparisonDto, labelOf: 
   }
   for (const measure of dto.measures) {
     const measureRows = rows.filter(row => row.measure === measure.measure);
-    const effectHeader = measureEffectKind(measure) === 'Ratio' ? 'Ratio (95 % interval)' : 'Difference (95 % interval)';
+    const effectHeader = measureEffectKind(measure) === 'Ratio' ? 'Ratio (95% interval)' : 'Difference (95% interval)';
     lines.push('', `### ${markdownCell(measureTitle(measure))}`, '', markdownCell(measure.adjustmentNote));
     if (measure.caption) {
       lines.push('', markdownCell(measure.caption));
@@ -168,7 +168,7 @@ export function pairedTestsMarkdown(dto: BenchmarkPairedComparisonDto, labelOf: 
 /** The CSV columns, in order. */
 export const PAIRED_CSV_HEADERS: readonly string[] = [
   'Measure', 'Primary', 'Model', 'Model key', 'Against', 'Against key', 'Paired questions', 'Effect kind',
-  'Effect', 'Lower 95 %', 'Upper 95 %', 'dz', 'p', 'Adjusted p', 'Adjustment', 'Family size', 'Verdict',
+  'Effect', 'Lower 95%', 'Upper 95%', 'dz', 'p', 'Adjusted p', 'Adjustment', 'Family size', 'Verdict',
   'Established', 'Not tested', 'Method', 'Note'
 ];
 

@@ -189,7 +189,7 @@ export const keyFiguresImageIo = {
   now: (): Date => new Date()
 };
 
-/** Device pixels per logical pixel in both images at the default density, 200 %. */
+/** Device pixels per logical pixel in both images at the default density, 200%. */
 export const KEY_FIGURES_IMAGE_SCALE = 2;
 
 /** Colors of the dialog's dark theme; the card fill and border are `canvas-drawing.ts`'s defaults. */
@@ -538,7 +538,7 @@ export interface FactLayoutRow {
 export interface FactLayout {
   /** The widest label, upper-cased, at the label size. */
   readonly labelWidth: number;
-  /** Labels above their values, for a width that leaves the value column under 60 %. */
+  /** Labels above their values, for a width that leaves the value column under 60%. */
   readonly stacked: boolean;
   /** Where the values start. */
   readonly valueX: number;
@@ -594,7 +594,7 @@ function fitText(text: string, maxWidth: number, measure: TextMeasurer, sizePx: 
 /**
  * Lays out fact rows in two columns, label and value, at `width`: values flow left to right, text
  * breaking at spaces and a badge never splitting; a word or badge wider than the value column is cut
- * with an ellipsis on a line of its own. Where the value column would be under 60 % of `width`, labels
+ * with an ellipsis on a line of its own. Where the value column would be under 60% of `width`, labels
  * go above their values. Rows whose labels are all empty take the whole width. No rows is a block of
  * height 0.
  */
@@ -1333,8 +1333,8 @@ export function chooseCardImageLayout(
 // Drawing
 // -----------------------------------------------------------------------------------------------
 
-/** A unit after a figure in a caption: `14.3 s`, `850 ms`, `4 min`, `2 h`, `31 %`. */
-const FIGURE_UNIT = /(\d)[ \t]+(ms|s|min|h|%)(?=$|[\s.,;:)*·/])/g;
+/** A unit after a figure in a caption: `14.3 s`, `850 ms`, `4 min`, `2 h`. A `31%` has no space to bind. */
+const FIGURE_UNIT = /(\d)[ \t]+(ms|s|min|h)(?=$|[\s.,;:)*·/])/g;
 
 /** Ordinary whitespace, where a caption may wrap; U+00A0 is not part of it. */
 const BREAKABLE_SPACE = /[^\S ]+/;
@@ -1529,7 +1529,7 @@ export interface KeyFiguresImageFrame {
  * The frame a `width` × `height` layout is written in, or the refusal of a size the browser cannot
  * write. Fit: the layout times the density. A box W × H: `round(W × density)` × `round(H × density)`,
  * the layout padded to the box's aspect and scaled by `W × density` over the padded width, centered.
- * Absent settings are the defaults, fit at 200 %.
+ * Absent settings are the defaults, fit at 200%.
  */
 export function keyFiguresImageFrame(
   width: number,
@@ -1636,7 +1636,7 @@ function stripLayoutFor(
 
 /**
  * The whole key-figures strip on one canvas, laid out by {@link chooseStripLayout} at the size the
- * settings give; absent, fit at 200 %. Throws {@link KeyFiguresImageRefusal} for a size it cannot write.
+ * settings give; absent, fit at 200%. Throws {@link KeyFiguresImageRefusal} for a size it cannot write.
  */
 export async function composeStripImage(
   cells: readonly KeyFigureCell[],
@@ -1689,7 +1689,7 @@ export async function composeStripImage(
 
 /**
  * One card, enlarged and centered, laid out by {@link chooseCardImageLayout} at the size the settings
- * give; absent, fit at 200 %. Throws {@link KeyFiguresImageRefusal} for a size it cannot write.
+ * give; absent, fit at 200%. Throws {@link KeyFiguresImageRefusal} for a size it cannot write.
  */
 export async function composeCardImage(
   cell: KeyFigureCell,

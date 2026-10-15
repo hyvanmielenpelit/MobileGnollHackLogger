@@ -654,7 +654,7 @@ describe('model-comparison-charts', () => {
       }
     });
 
-    it('carries the 95 % interval the trade-off charts use on the Intelligence bars', () => {
+    it('carries the 95% interval the trade-off charts use on the Intelligence bars', () => {
       const figure = buildSmallMultiples(PROFILE_FIXTURE, smallMultiplesOptions());
       const point = pointsOf(figure.quality.config)[0];
       expect(point['yErrLow']).toBe(PROFILE_FIXTURE[0].intelligenceIndexCi95HalfWidth);
@@ -1263,7 +1263,7 @@ describe('model-comparison-charts', () => {
         directLabels: true,
       });
       const datasets = datasetsOf(spec.config);
-      // 35 % of the provider hue, on the fill, the ring and the whiskers alike.
+      // 35% of the provider hue, on the fill, the ring and the whiskers alike.
       expect(datasets[1]['backgroundColor']).toBe('rgba(217, 89, 38, 0.35)');
       expect(datasets[1]['borderColor']).toBe('rgba(11, 11, 11, 0.35)');
       expect(pointsOf(spec.config, 1)[0]['alpha']).toBe(0.35);
@@ -1366,7 +1366,7 @@ describe('model-comparison-charts', () => {
       }
     });
 
-    it('keeps both screenshot models at least 5 % of the span inside every edge', () => {
+    it('keeps both screenshot models at least 5% of the span inside every edge', () => {
       const spec = buildQualitySpeedScatter(SCREENSHOT, SCREENSHOT_OPTIONS);
       for (const axis of ['x', 'y'] as const) {
         const scale = scaleOf(spec.config, axis);
@@ -1386,7 +1386,7 @@ describe('model-comparison-charts', () => {
       expect(frontier).toBeUndefined();
       expect(spec.chrome.highlight).toBe('GPT-5.6 Luna is best on both axes');
       expect(spec.chrome.notes).toContainEqual({
-        text: 'Some differences are within the 95 % intervals, so treat the frontier as indicative rather than a clear win.',
+        text: 'Some differences are within the 95% intervals, so treat the frontier as indicative rather than a clear win.',
         tone: 'info',
       });
       // GPT-6 Luna is faded; the fixture carries no provider, so the key's one provider is Other.
@@ -3891,7 +3891,7 @@ describe('provider availability', () => {
     rate: null, low: null, high: null, inclusiveRate: null, inclusiveLow: null, inclusiveHigh: null, fewAttempts: false,
   };
 
-  /** A recorded model, a high-error one clearly above 2 %, a few-attempts one and a legacy one. */
+  /** A recorded model, a high-error one clearly above 2%, a few-attempts one and a legacy one. */
   const ENTRIES: ModelComparisonEntry[] = [
     makeEntry({ key: 'A', provider: 'google', intelligenceIndex: 90, availability: availabilityOf(12, 1480, 0.0044, 0.015) }),
     makeEntry({ key: 'B', provider: 'anthropic', intelligenceIndex: 70, availability: availabilityOf(60, 1480, 0.031, 0.052) }),
@@ -3939,10 +3939,10 @@ describe('provider availability', () => {
     expect(availabilityText(ENTRIES[2], 'strict')).toBe('2.5% (1 of 40 attempts; 95% CI 0.40–13%; few attempts)');
   });
 
-  it('marks a model only when the lower bound of its provider error rate exceeds 2 %', () => {
+  it('marks a model only when the lower bound of its provider error rate exceeds 2%', () => {
     expect(AVAILABILITY_MARKER_THRESHOLD).toBe(0.02);
     expect(ENTRIES.map(availabilityMarked)).toEqual([false, true, false, false]);
-    // A rate above 2 % whose interval reaches below it is noise, not a mark.
+    // A rate above 2% whose interval reaches below it is noise, not a mark.
     expect(availabilityMarked(makeEntry({ key: 'G', availability: availabilityOf(45, 1480, 0.015, 0.045) }))).toBe(false);
   });
 
@@ -3979,11 +3979,11 @@ describe('provider availability', () => {
     expect(spec.chrome.key).toContainEqual({ glyph: 'hollow', text: 'Fewer than 100 attempts' });
     expect(spec.chrome.direction).toEqual({ y: 'bottom', label: 'Better' });
 
-    // C's upper bound, 13 %, sets the axis top at 20 %.
+    // C's upper bound, 13%, sets the axis top at 20%.
     const value = probe.config.options.scales['y'];
     expect(value.max).toBeCloseTo(Math.sqrt(20), 10);
     expect(ticksOf(value)).toEqual(availabilitySqrtTicks(13).ticks.map((pct) => Math.sqrt(pct)));
-    expect(value.ticks!.callback!(Math.sqrt(2), 0, [])).toBe('2 %');
+    expect(value.ticks!.callback!(Math.sqrt(2), 0, [])).toBe('2%');
     expect(JSON.stringify(value.title!.text)).toContain('square-root scale');
   });
 
@@ -3992,7 +3992,7 @@ describe('provider availability', () => {
     const data = linear.config.data.datasets[0]['data'] as { y: number }[];
     expect(data[0].y).toBeCloseTo(1200 / 1480, 10);
     expect(linear.config.options.scales['y'].suggestedMax).toBeCloseTo(13, 10);
-    expect(linear.config.options.scales['y'].ticks!.callback!(0.5, 0, [])).toBe('0.5 %');
+    expect(linear.config.options.scales['y'].ticks!.callback!(0.5, 0, [])).toBe('0.5%');
 
     const inclusive = dotPlot(styleWith({ measure: 'inclusive' }));
     expect(labelsOf(inclusive)).toEqual(['15/1,480', '63/1,480', '4/40', 'not recorded']);
@@ -4044,7 +4044,7 @@ describe('provider availability', () => {
       const marker = (spec.config.options!.plugins as unknown as Record<string, AvailabilityMarkerPluginOptions>)[availabilityMarkerPlugin.id];
       expect(marker.marks, spec.id).toEqual([{ datasetIndex: 1, text: '4.1% provider errors' }]);
       expect(spec.chrome.notes.map((note) => note.text), spec.id).toContain(AVAILABILITY_MARKER_NOTE);
-      expect(spec.summary, spec.id).toContain('Provider errors above 2 %: B, 4.1% provider errors');
+      expect(spec.summary, spec.id).toContain('Provider errors above 2%: B, 4.1% provider errors');
     }
   });
 
@@ -4068,10 +4068,10 @@ describe('provider availability', () => {
       getDatasetMeta: () => ({ hidden: false, data: [{ x: 100, y: 100 }] }),
     };
     const options: AvailabilityMarkerPluginOptions = {
-      marks: [{ datasetIndex: 0, text: '4.1 % provider errors' }],
+      marks: [{ datasetIndex: 0, text: '4.1% provider errors' }],
       markRadiusPx: 6, fontSizePx: 11, ringColor: '#e0ba6d', inkColor: '#c3c2b7', surfaceColor: '#0b0b0b',
     };
     availabilityMarkerPlugin.afterDatasetsDraw?.(chart as unknown as Chart, {} as never, options as never, false as never);
-    expect(calls).toEqual(['dash 3,3', 'arc 100,100,10', 'stroke', 'dash ', 'halo 4.1 % provider errors', 'text 4.1 % provider errors']);
+    expect(calls).toEqual(['dash 3,3', 'arc 100,100,10', 'stroke', 'dash ', 'halo 4.1% provider errors', 'text 4.1% provider errors']);
   });
 });

@@ -459,7 +459,7 @@ export class AdminTelemetryTabComponent implements OnInit, OnDestroy {
     return a.providerErrorRate != null ? formatPercent(a.providerErrorRate) : 'No attempts';
   }
 
-  /** `12 of 1,480 attempts · 95 % CI 0.42–1.4 %`, with `· few attempts` below the threshold; empty while not recorded. */
+  /** `12 of 1,480 attempts · 95% CI 0.42–1.4%`, with `· few attempts` below the threshold; empty while not recorded. */
   get availabilityCountText(): string {
     const a = this.telemetrySummary?.chatAvailability;
     if (!a || !a.recorded) {

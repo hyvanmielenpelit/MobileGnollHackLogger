@@ -1981,7 +1981,7 @@ shared kicker badge for GnollBench provider availability: Run History's run and 
 in `div.rh-card-kicker` after its `span.rh-sep`, like the other kicker badges, and the Model Comparison
 source cards, which have no kicker, at the end of `p.csp-card-meta`. It **renders only when the figure is
 non-zero** — provider errors or re-runs above 0 — so a card shows nothing while all is well. It is a
-plain **outlined** badge whose words carry the state (*Provider errors 0.81 %*, *2 re-runs*), **never
+plain **outlined** badge whose words carry the state (*Provider errors 0.81%*, *2 re-runs*), **never
 color alone** and never a red, amber or green fill. Its full sentence (*12 of 1,480 attempts; 3
 unattributed; 2 re-runs, 1 for provider errors*) is an `interestfor` tooltip; because its inputs carry no
 id, the component **generates its own unique id** for the `interestfor` / `anchor-name` pair, and it calls

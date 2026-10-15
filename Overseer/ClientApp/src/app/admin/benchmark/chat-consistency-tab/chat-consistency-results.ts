@@ -323,10 +323,10 @@ export function ccEndpointNotes(endpoint: CcEndpointResult): CcEndpointNotes {
 
 // --- Estimate and interval ---
 
-/** An endpoint's estimate and its 95 % interval as separate texts. */
+/** An endpoint's estimate and its 95% interval as separate texts. */
 export interface CcEstimateParts {
   estimate: string;
-  /** `−19.7 to +6.8 %`; null when the endpoint is not computed or has no interval. */
+  /** `−19.7 to +6.8%`; null when the endpoint is not computed or has no interval. */
   interval: string | null;
 }
 
@@ -334,9 +334,9 @@ function isLogRatio(endpoint: CcEndpointResult): boolean {
   return endpoint.scale === 'logRatio';
 }
 
-/** The unit written after a value: ` %` on a log-ratio endpoint, ` index points` and the like otherwise. */
+/** The unit written after a value: `%` on a log-ratio endpoint, ` index points` and the like otherwise. */
 function unitSuffix(endpoint: CcEndpointResult): string {
-  if (isLogRatio(endpoint)) return ' %';
+  if (isLogRatio(endpoint)) return '%';
   return endpoint.unit ? ` ${endpoint.unit}` : '';
 }
 
@@ -353,7 +353,7 @@ function estimateValue(endpoint: CcEndpointResult): number | null {
 }
 
 /**
- * The estimate alone (`+4.2 %`, `+1.2 index points`) and the 95 % interval alone (`−19.7 to +6.8 %`),
+ * The estimate alone (`+4.2%`, `+1.2 index points`) and the 95% interval alone (`−19.7 to +6.8%`),
  * in the number formatting of `endpointEstimateText`; *Not computed* and no interval when not computed.
  */
 export function ccEstimateParts(endpoint: CcEndpointResult): CcEstimateParts {
@@ -377,7 +377,7 @@ export function ccEstimateParts(endpoint: CcEndpointResult): CcEstimateParts {
  * endpoint, whose margin band is `(exp(±margin) − 1) × 100` and therefore slightly asymmetric).
  */
 export interface CcIntervalGeometry {
-  /** Half the axis, in the reporting unit: the largest of the bounds and the margin, plus 15 %. */
+  /** Half the axis, in the reporting unit: the largest of the bounds and the margin, plus 15%. */
   axisHalfWidth: number;
   marginStart: number;
   marginEnd: number;
@@ -393,7 +393,7 @@ export interface CcIntervalGeometry {
   marginUpperValue: number;
   /** The margin as `marginText` states it: `(exp(margin) − 1) × 100` on a log-ratio endpoint, `margin` otherwise. */
   marginValue: number;
-  /** ` %`, or ` index points` and the like. */
+  /** `%`, or ` index points` and the like. */
   unitSuffix: string;
   /** Part of the interval lies outside the margin band. */
   crossesMargin: boolean;
@@ -424,7 +424,7 @@ export function ccIntervalGeometry(endpoint: CcEndpointResult): CcIntervalGeomet
     ? `${formatSigned(lowerValue, 1)}${suffix} to ${formatSigned(upperValue, 1)}${suffix}`
     : `${formatSigned(lowerValue, 1)} to ${formatSigned(upperValue, 1)}${suffix}`;
   const marginText = (endpoint.marginText || '').trim() || `±${formatFixed(marginUpperValue, 1)}${suffix}`;
-  const label = `Estimate ${formatSigned(estimate, 1)}${suffix}, 95 % interval ${intervalText}, margin ${marginText}. `
+  const label = `Estimate ${formatSigned(estimate, 1)}${suffix}, 95% interval ${intervalText}, margin ${marginText}. `
     + (withinMargin ? 'The whole interval lies inside the margin.' : 'The interval reaches beyond the margin.');
   return {
     axisHalfWidth: half,

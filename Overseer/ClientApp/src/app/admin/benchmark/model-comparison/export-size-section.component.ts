@@ -70,7 +70,7 @@ export class ExportSizeSectionComponent implements OnInit, OnChanges {
   @Input() refusal = '';
   /** Shown only in custom mode, under the width and height fields. */
   @Input() fitInfo = '';
-  /** The one-line meaning of 100 % text size. Absent, the row still renders with no hint under it. */
+  /** The one-line meaning of 100% text size. Absent, the row still renders with no hint under it. */
   @Input() textSizeHint = '';
   @Input() errorNoun = 'figure';
   @Input() layoutRule: 'figure' | 'plain' = 'figure';

@@ -497,7 +497,7 @@ export function formatSigned(value: number | null | undefined, digits = 1): stri
 
 /** A weight in 0–1 as a percentage with one decimal, or an em dash. */
 export function formatPercent(weight: number | null | undefined, digits = 1): string {
-  return weight === null || weight === undefined || !Number.isFinite(weight) ? DASH : `${(weight * 100).toFixed(digits)} %`;
+  return weight === null || weight === undefined || !Number.isFinite(weight) ? DASH : `${(weight * 100).toFixed(digits)}%`;
 }
 
 /** A p-value: three significant figures, `< 0.001` below that. */

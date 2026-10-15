@@ -428,7 +428,7 @@ describe('BatteryRunReportDialogComponent', () => {
       expect(h.text('[data-figure="answered"] .score-subvalue')).toBe('18 / 18');
       expect(h.text('[data-figure="speed"] .score-subvalue')).toBe('61.2 / 100');
       expect(h.text('[data-figure="model-cost"] .score-subvalue')).toBe('$1.00');
-      expect(h.text('[data-figure="model-cost"] .score-note')).toBe('29 % of the total cost');
+      expect(h.text('[data-figure="model-cost"] .score-note')).toBe('29% of the total cost');
       expect(h.text('[data-figure="estimated-cost"] .score-subvalue')).toBe('$3.50');
       expect(h.text('[data-figure="wall-time"] .score-subvalue')).toBe('1 h 00 min');
       expect(h.text('[data-figure="provider-errors"] .score-subvalue')).toBe('Not recorded');
@@ -720,14 +720,14 @@ describe('BatteryRunReportDialogComponent', () => {
       h.open();
 
       const card = h.el().querySelector('#brr-panel-suites .brr-suite-card[data-suite-index="1"]') as HTMLElement;
-      expect(accessibleText(card.querySelector('.brr-suite-kicker') as HTMLElement)).toBe('Suite 2 of 2, 60.0 % weight');
+      expect(accessibleText(card.querySelector('.brr-suite-kicker') as HTMLElement)).toBe('Suite 2 of 2, 60.0% weight');
       expect(accessibleText(card.querySelector('.brr-suite-meta') as HTMLElement)).toBe('8 of 8 scored items, 1 usable run');
       const index = card.querySelector('[data-metric="index"] .score-badge') as HTMLElement;
       expect(index.textContent?.trim()).toBe('74.0');
       expect(index.classList).toContain('badge-score-mid');
-      expect(card.querySelector('[data-metric="index"] .brr-suite-metric-note')?.textContent?.trim()).toBe('95 % [64.1, 75.9]');
+      expect(card.querySelector('[data-metric="index"] .brr-suite-metric-note')?.textContent?.trim()).toBe('95% [64.1, 75.9]');
       expect(card.querySelector('[data-metric="contribution"] dd')?.textContent?.trim()).toBe('44.4');
-      expect(card.querySelector('[data-metric="critical-errors"] dd')?.textContent?.trim()).toBe('10.0 %');
+      expect(card.querySelector('[data-metric="critical-errors"] dd')?.textContent?.trim()).toBe('10.0%');
       expect(card.querySelector('.brr-suite-members')?.getAttribute('aria-labelledby')).toBe('brr-suite-members-1');
       expect(h.text('#brr-suite-members-1')).toBe('Member runs');
     });

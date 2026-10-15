@@ -1153,14 +1153,14 @@ export class BatteryRunReportDialogComponent implements OnInit, OnDestroy {
     return this.result?.cost?.totalCost ?? this.detail?.totalCost ?? null;
   }
 
-  /** `28 % of the total cost`, or null without both figures. */
+  /** `28% of the total cost`, or null without both figures. */
   get candidateCostShare(): string | null {
     const candidate = this.candidateCost;
     const total = this.totalCost;
     if (candidate == null || total == null || !(total > 0)) {
       return null;
     }
-    return `${Math.round((candidate / total) * 100)} % of the total cost`;
+    return `${Math.round((candidate / total) * 100)}% of the total cost`;
   }
 
   /** The Provider Errors card: every member run, superseded ones and their predecessors included. */

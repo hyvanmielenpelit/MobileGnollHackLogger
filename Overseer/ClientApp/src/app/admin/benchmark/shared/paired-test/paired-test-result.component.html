@@ -41,7 +41,7 @@
           <p class="ptr-headline-value">
             <span class="ptr-headline-effect">{{ row.effect }}</span>
             @if (row.interval) {
-              <span class="ptr-headline-interval">95 % interval {{ row.interval }}</span>
+              <span class="ptr-headline-interval">95% interval {{ row.interval }}</span>
             }
           </p>
           <dl class="ptr-facts">
@@ -136,7 +136,7 @@
                     <tr>
                       <th scope="col">Measure</th>
                       <th scope="col" class="ptr-num">Paired questions</th>
-                      <th scope="col">{{ section === 'dimensions' ? 'Difference' : 'Ratio' }} with 95 % interval</th>
+                      <th scope="col">{{ section === 'dimensions' ? 'Difference' : 'Ratio' }} with 95% interval</th>
                       @if (section === 'dimensions') {
                         <th scope="col" class="ptr-num">dz</th>
                       }

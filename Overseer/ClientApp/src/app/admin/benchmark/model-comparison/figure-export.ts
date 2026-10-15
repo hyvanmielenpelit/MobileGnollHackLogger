@@ -63,14 +63,14 @@ export function webpEncoderQuality(quality: WebpQuality): number {
   return quality / 100;
 }
 
-/** The multiplier applied to a size's bitmap, as a factor: 2 is 200 %. */
+/** The multiplier applied to a size's bitmap, as a factor: 2 is 200%. */
 export type FigureExportDensity = number;
 
 /**
  * Every Windows display scaling step, ascending. `'custom'` is not among them: the view builds it.
  *
- * A browser at a zoom other than 100 % reports densities no fixed list contains — 220 % at 110 %
- * zoom on a 200 % display — which is what the custom percentage beside this list exists for.
+ * A browser at a zoom other than 100% reports densities no fixed list contains — 220% at 110%
+ * zoom on a 200% display — which is what the custom percentage beside this list exists for.
  */
 export const FIGURE_EXPORT_DENSITY_PRESETS: readonly FigureExportDensity[] =
   [1, 1.25, 1.5, 1.75, 2, 2.5, 3, 3.5, 4];
@@ -551,7 +551,7 @@ export interface PreviewLayout {
  * Every field that shapes the composition — layoutWidth, layoutHeight, plotWidth, plotHeight —
  * is carried over unchanged, so the preview is the export re-rendered, never a different
  * composition: only density, pixelWidth and pixelHeight differ. The raster is the displayed pixels
- * below 100 % and the target's own at and above it, so an enlarged view shows the export's pixels
+ * below 100% and the target's own at and above it, so an enlarged view shows the export's pixels
  * magnified rather than a sharper rendering the file would not contain; past
  * `PREVIEW_MAX_RASTER_PIXELS` it is scaled down further. `'default'` letterboxes the figure
  * into the stage and never enlarges it. Returns null for a stage with no usable area.

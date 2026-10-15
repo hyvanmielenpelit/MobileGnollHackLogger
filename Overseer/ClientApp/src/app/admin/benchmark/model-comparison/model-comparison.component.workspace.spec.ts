@@ -508,7 +508,7 @@ describe('ModelComparisonComponent', () => {
     second.destroy();
   });
 
-  it('resets Chart size to Full HD at the display’s density and 100 % text', () => {
+  it('resets Chart size to Full HD at the display’s density and 100% text', () => {
     render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     const reset = (): HTMLButtonElement =>
@@ -827,7 +827,7 @@ describe('ModelComparisonComponent', () => {
     return fixture.debugElement.query(By.css(`.mc-all-tile[data-figure-id="${card.id}"]`)).nativeElement as HTMLElement;
   }
 
-  /** A 1200 × 900 viewport at DPR 2, with Full HD at 100 % density: Fit height is 868 × 2 / 1080. */
+  /** A 1200 × 900 viewport at DPR 2, with Full HD at 100% density: Fit height is 868 × 2 / 1080. */
   async function openFittedAll(): Promise<void> {
     vi.spyOn(component, 'measureAllViewport').mockReturnValue({ width: 1200, height: 900, devicePixelRatio: 2 });
     component.onExportDensityChange(1);

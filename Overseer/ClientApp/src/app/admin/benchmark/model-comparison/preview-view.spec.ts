@@ -79,7 +79,7 @@ describe('preview-view', () => {
       expect(fitHeightZoom(900, 0, 2, 16)).toBe(0.1);
     });
 
-    it('keeps a fit below 10 % rather than raising it to the fixed floor', () => {
+    it('keeps a fit below 10% rather than raising it to the fixed floor', () => {
       const fit = fitHeightZoom(300, 8000, 1, 0);
       expect(fit).toBeCloseTo(300 / 8000, 12);
       expect(fit).toBeLessThan(0.1);
@@ -87,7 +87,7 @@ describe('preview-view', () => {
   });
 
   describe('previewZoomRange', () => {
-    it('floors at 10 %, or lower where the screen fit is lower', () => {
+    it('floors at 10%, or lower where the screen fit is lower', () => {
       expect(previewZoomRange(0.8)).toEqual({ min: 0.1, max: 8 });
       expect(previewZoomRange(0.04)).toEqual({ min: 0.04, max: 8 });
     });
@@ -205,7 +205,7 @@ describe('preview-view', () => {
     it('holds for a centred canvas that grows past the viewport', () => {
       // Centred at 100..500 in a 600 px viewport; grown to 800 px, it starts at the padding edge.
       const delta = anchoredScrollDelta(100, 400, 12, 800, 200);
-      // The point 25 % along lands at 12 + 200 = 212, 12 px right of the pointer.
+      // The point 25% along lands at 12 + 200 = 212, 12 px right of the pointer.
       expect(delta).toBe(12);
     });
 
@@ -216,7 +216,7 @@ describe('preview-view', () => {
   });
 
   describe('previewRasterZoom', () => {
-    it('rasterises the displayed pixels below 100 % and the target’s own above it', () => {
+    it('rasterises the displayed pixels below 100% and the target’s own above it', () => {
       expect(previewRasterZoom(0.5, 1920, 1080)).toEqual({ zoom: 0.5, capped: false });
       expect(previewRasterZoom(4, 1920, 1080)).toEqual({ zoom: 1, capped: false });
     });

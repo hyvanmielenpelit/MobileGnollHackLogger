@@ -777,7 +777,7 @@ describe('table-export', () => {
       return count;
     }
 
-    it('draws Fit the table at 200 % when no options are given, at the natural size times two', () => {
+    it('draws Fit the table at 200% when no options are given, at the natural size times two', () => {
       const built = readingModel();
       const implicit = composeTableImage(built);
       const explicit = composeTableImage(built, { size: { mode: 'fit', density: 2 } });

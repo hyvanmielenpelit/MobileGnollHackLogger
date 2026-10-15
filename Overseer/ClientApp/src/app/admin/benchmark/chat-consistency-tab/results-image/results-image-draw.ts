@@ -1,7 +1,7 @@
 /**
  * The Results images' draw pass: paints a laid-out section ({@link CcResultsImageLayout}) on a canvas
  * in the chosen palette. Status icons are Feather path data drawn with `Path2D`; the interval bar is the
- * margin band, the zero line, the 95 % interval and the estimate dot at `ccIntervalGeometry` positions.
+ * margin band, the zero line, the 95% interval and the estimate dot at `ccIntervalGeometry` positions.
  *
  * Every position comes from the layout; this module only resolves colors and strokes shapes.
  */

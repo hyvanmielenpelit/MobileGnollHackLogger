@@ -298,7 +298,7 @@ describe('report-charts', () => {
     const layout = (overrides: Partial<ReportChartDocumentLayout> = {}): ReportChartDocumentLayout =>
       ({ ...DEFAULT_DOCUMENT_CHART_LAYOUT, ...overrides });
 
-    it('is every figure full column on its own row, at 60 %, by default', () => {
+    it('is every figure full column on its own row, at 60%, by default', () => {
       expect(reportDocumentChartLayout(RootCauseAnalysis, ['p1b-speed', 'p1a-quality'], layout())).toEqual({
         version: 1,
         figures: [
@@ -372,7 +372,7 @@ describe('report-charts', () => {
       });
     });
 
-    it('defaults to As in step 2, full column, side by side, 8 pt, 60 %, no heading, no logo, Light, for print', () => {
+    it('defaults to As in step 2, full column, side by side, 8 pt, 60%, no heading, no logo, Light, for print', () => {
       expect(DEFAULT_DOCUMENT_CHART_LAYOUT).toEqual({
         orientation: 'asInStep2', widths: {}, sideBySide: true, labelPt: 8, maxHeightPercent: 60,
         heading: 'none', logo: false, theme: 'lightPrint'

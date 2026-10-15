@@ -281,7 +281,7 @@ export interface CcImageEndpointCard {
   /** The grade word, or null where it says no more than *Not established*. */
   readonly grade: string | null;
   readonly estimate: string;
-  /** `95 % interval −19.7 to +6.8 %`, or null. */
+  /** `95% interval −19.7 to +6.8%`, or null. */
   readonly interval: string | null;
   readonly geometry: CcIntervalGeometry | null;
   readonly ends: CcIntervalEnds;
@@ -619,7 +619,7 @@ export function ccImageEndpointCard(
     statusText: ccEndpointStatusText(endpoint),
     grade: endpoint.grade !== 'notEstablished' ? gradeText(endpoint.grade) : null,
     estimate: parts.estimate,
-    interval: parts.interval ? `95 % interval ${parts.interval}` : null,
+    interval: parts.interval ? `95% interval ${parts.interval}` : null,
     geometry: ccIntervalGeometry(endpoint),
     ends: intervalEnds(endpoint.direction),
     facts,

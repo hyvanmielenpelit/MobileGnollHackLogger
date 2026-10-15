@@ -281,7 +281,7 @@ describe('RunReportFrameComponent in sidebar layout', () => {
     expect(q('section.rrf-main').getBoundingClientRect().top).toBeGreaterThan(sidebarTop);
   });
 
-  it('applies the stored width, and keeps it within 40 % of the columns', () => {
+  it('applies the stored width, and keeps it within 40% of the columns', () => {
     fixture.componentInstance.sidebarWidth = 448;
     setWidth(1200);
     expect(tracks()[0]).toBe('448px');

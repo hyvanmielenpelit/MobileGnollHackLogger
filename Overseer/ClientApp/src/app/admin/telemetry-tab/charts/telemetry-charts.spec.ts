@@ -132,7 +132,7 @@ describe('telemetry-charts', () => {
         series: [line('chat', 'Chat', [point({ requests: 4, pricedRequests: 3 }), point(), point()])]
       });
       expect(buildFigureSeries(dto, 'cost').notes).toEqual([
-        { text: '25 % of requests have no price and are not in the cost.', tone: 'warning' },
+        { text: '25% of requests have no price and are not in the cost.', tone: 'warning' },
         { text: 'Cost recorded since 2026-10-02.', tone: 'info' }
       ]);
       expect(buildFigureSeries(dto, 'providerErrors').notes).toEqual([{ text: 'Attempts recorded since 2026-10-02.', tone: 'info' }]);
@@ -308,7 +308,7 @@ describe('telemetry-charts', () => {
   });
 
   describe('layout and composition', () => {
-    /** A small custom size at 100 % density, so the composition stays quick. */
+    /** A small custom size at 100% density, so the composition stays quick. */
     const small: FigureSizeSettings = {
       ...defaultFigureSize(1), resolutionId: 'custom', customWidthPx: 640, customHeightPx: 400, densitySelection: 1
     };

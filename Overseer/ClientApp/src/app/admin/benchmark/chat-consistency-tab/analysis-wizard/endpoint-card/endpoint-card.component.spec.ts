@@ -5,7 +5,7 @@ import { CcEndpointResult } from '../../chat-consistency.models';
 import { ccEndpoint, textOf } from '../../chat-consistency-tab.testing';
 import { CcEndpointCardComponent, intervalEnds } from './endpoint-card.component';
 
-/** Work per turn, inconclusive: −7.0 % with a 95 % interval reaching past the −15 % margin. */
+/** Work per turn, inconclusive: −7.0% with a 95% interval reaching past the −15% margin. */
 function inconclusiveP4(overrides: Partial<CcEndpointResult> = {}): CcEndpointResult {
   return ccEndpoint('P4', {
     estimatePercent: -7,
@@ -81,7 +81,7 @@ describe('CcEndpointCardComponent', () => {
     expect(article?.getAttribute('aria-labelledby')).toBe('cc-ep-P4-name');
     expect(textOf(el.querySelector('h6.cc-ep-name#cc-ep-P4-name'))).toBe('Work per turn');
     expect(textOf(el.querySelector('.cc-ep-head .gh-tag.cc-ep-id'))).toBe('P4');
-    expect(textOf(el.querySelector('.cc-ep-margin'))).toBe('Margin ±15 %');
+    expect(textOf(el.querySelector('.cc-ep-margin'))).toBe('Margin ±15%');
   });
 
   it('shows the status with its icon, and the grade only when it is not Not established', () => {
@@ -105,14 +105,14 @@ describe('CcEndpointCardComponent', () => {
     expect(textOf(el.querySelector('.cc-ep-grade'))).toBe('Grade: Indicated');
   });
 
-  it('shows the estimate large and its 95 % interval under it', () => {
+  it('shows the estimate large and its 95% interval under it', () => {
     show(inconclusiveP4());
-    expect(textOf(el.querySelector('p.cc-ep-estimate'))).toBe('−7.0 %');
-    expect(textOf(el.querySelector('p.interval'))).toBe('95 % interval −19.7 to +6.8 %');
+    expect(textOf(el.querySelector('p.cc-ep-estimate'))).toBe('−7.0%');
+    expect(textOf(el.querySelector('p.interval'))).toBe('95% interval −19.7 to +6.8%');
 
     show(ccEndpoint('P1'));
     expect(textOf(el.querySelector('p.cc-ep-estimate'))).toBe('+0.5 index points');
-    expect(textOf(el.querySelector('p.interval'))).toBe('95 % interval −1.0 to +2.0 index points');
+    expect(textOf(el.querySelector('p.interval'))).toBe('95% interval −1.0 to +2.0 index points');
   });
 
   it('draws the interval bar as one image named by its reading, with its end captions hidden', () => {
@@ -121,7 +121,7 @@ describe('CcEndpointCardComponent', () => {
     const geometry = ccIntervalGeometry(endpoint)!;
     const bar = el.querySelector('div.cc-ep-interval[role="img"]');
     expect(bar?.getAttribute('aria-label'))
-      .toBe('Estimate −7.0 %, 95 % interval −19.7 % to +6.8 %, margin ±15 %. The interval reaches beyond the margin.');
+      .toBe('Estimate −7.0%, 95% interval −19.7% to +6.8%, margin ±15%. The interval reaches beyond the margin.');
     expect(bar?.classList.contains('is-crossing')).toBe(true);
     expect(percentOf(bar?.querySelector('.cc-ep-band') ?? null, 'left')).toBeCloseTo(geometry.marginStart, 3);
     expect(percentOf(bar?.querySelector('.cc-ep-band') ?? null, 'width')).toBeCloseTo(geometry.marginEnd - geometry.marginStart, 3);
@@ -137,7 +137,7 @@ describe('CcEndpointCardComponent', () => {
 
     show(ccEndpoint('P1'));
     expect(el.querySelector('.cc-ep-interval')?.getAttribute('aria-label'))
-      .toBe('Estimate +0.5 index points, 95 % interval −1.0 to +2.0 index points, margin ±3 index points. '
+      .toBe('Estimate +0.5 index points, 95% interval −1.0 to +2.0 index points, margin ±3 index points. '
         + 'The whole interval lies inside the margin.');
     expect(el.querySelector('.cc-ep-interval')?.classList.contains('is-within')).toBe(true);
     expect(textOf(el.querySelector('.cc-ep-end-start'))).toBe('worse');
@@ -165,7 +165,7 @@ describe('CcEndpointCardComponent', () => {
     expect(textOf(fact('meaning')?.querySelector('dt'))).toBe('What it means');
     expect(textOf(fact('meaning')?.querySelector('dd'))).toBe('The interval reaches beyond the margin.');
     expect(textOf(fact('mde')?.querySelector('dt'))).toBe('Smallest change this sample can detect');
-    expect(textOf(fact('mde')?.querySelector('dd'))).toBe('±9.0 %');
+    expect(textOf(fact('mde')?.querySelector('dd'))).toBe('±9.0%');
 
     show(ccEndpoint('P1'));
     expect(fact('meaning')).toBeNull();

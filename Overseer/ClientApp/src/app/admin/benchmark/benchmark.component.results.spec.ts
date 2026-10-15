@@ -365,7 +365,7 @@ describe('AdminBenchmarkComponent', () => {
           expect(figureValue('critical-errors')).toBe('1');
           expect(figureNotes('critical-errors')).toEqual([
             'Q3',
-            'rate 6 % (95 % CI 1–26 %)',
+            'rate 6% (95% CI 1–26%)',
             '1 unresolved (Q5) · 1 overturned by the verifier (Q9)'
           ]);
         });
@@ -383,7 +383,7 @@ describe('AdminBenchmarkComponent', () => {
           fixture.detectChanges();
 
           expect(figureValue('critical-errors')).toBe('None');
-          expect(figureNotes('critical-errors')).toEqual(['rate 0 % (95 % CI 0–18 %)']);
+          expect(figureNotes('critical-errors')).toEqual(['rate 0% (95% CI 0–18%)']);
         });
 
         it('should keep the flag rule and its notes before scoring method 13', () => {

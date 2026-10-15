@@ -85,7 +85,7 @@
                    [attr.aria-describedby]="textScaleDescribedBy"
                    (input)="onTextScaleChange(+$any($event.target).value)">
             <output class="ess-range-value" aria-hidden="true"
-                    [attr.for]="idPrefix + '-text-scale'">{{ settings.textScalePercent }} %</output>
+                    [attr.for]="idPrefix + '-text-scale'">{{ settings.textScalePercent }}%</output>
           </div>
           @if (textSizeHint) {
             <p class="ess-field-hint" [id]="idPrefix + '-text-scale-hint'">{{ textSizeHint }}</p>

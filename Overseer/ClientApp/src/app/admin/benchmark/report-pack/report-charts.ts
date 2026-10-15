@@ -250,7 +250,7 @@ export const DOCUMENT_CHART_MIN_LAYOUT_WIDTH = DOCUMENT_MIN_CONTENT_WIDTH + FIGU
  */
 export const DOCUMENT_MIN_PLOT_HEIGHT = 200;
 
-/** What `resolveFigureLayout` lays a composition out against: 960 × 540 layout px at 100 % text. */
+/** What `resolveFigureLayout` lays a composition out against: 960 × 540 layout px at 100% text. */
 const FIGURE_LAYOUT_WIDTH = 960;
 const FIGURE_LAYOUT_HEIGHT = 540;
 

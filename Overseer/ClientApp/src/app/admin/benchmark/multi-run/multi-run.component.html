@@ -741,7 +741,7 @@
               </div>
 
               <div class="mr-combined">
-                <h5>Combined 95 % interval</h5>
+                <h5>Combined 95% interval</h5>
                 <p class="mr-combined-value">
                   {{ formatNumber(indexStats.pointEstimate, 1) }}
                   ± {{ formatNumber(indexStats.combinedHalfWidth, 2) }}
@@ -812,7 +812,7 @@
                       <th scope="col">Dimension</th>
                       <th scope="col" class="col-num">Mean</th>
                       <th scope="col" class="col-num">SD</th>
-                      <th scope="col" class="col-num">95 % ±</th>
+                      <th scope="col" class="col-num">95% ±</th>
                       <th scope="col" class="col-num">Min</th>
                       <th scope="col" class="col-num">Max</th>
                       <th scope="col">Per-run means</th>
@@ -1181,7 +1181,7 @@
                   <dd>{{ formatSigned(comparison.meanDifference, 2) }}</dd>
                 </div>
                 <div class="mr-stat">
-                  <dt>95 % CI</dt>
+                  <dt>95% CI</dt>
                   <dd>
                     @if (comparison.differenceConfidenceLower != null && comparison.differenceConfidenceUpper != null) {
                       {{ formatSigned(comparison.differenceConfidenceLower, 2) }} – {{ formatSigned(comparison.differenceConfidenceUpper, 2) }}

@@ -736,13 +736,13 @@ describe('FigureStylePanelComponent', () => {
     expect(readout()).toBe('no markers');
     const markers = control('mc-style-scatter-availabilityMarkers');
     expect(markers.checked).toBe(false);
-    expect(hintOf(markers)).toContain('wholly above 2 %');
+    expect(hintOf(markers)).toContain('wholly above 2%');
 
     setChecked(markers, true);
     expect(emitted[0].availability).toEqual({ ...DEFAULT_FIGURE_STYLE.availability, markers: 'on' });
     expect(emitted[0].scatter).toBe(DEFAULT_FIGURE_STYLE.scatter);
     acceptLast();
-    expect(readout()).toBe('markers above 2 %');
+    expect(readout()).toBe('markers above 2%');
     expect(host().querySelector('#mc-style-scatter-availabilityPanel')).toBeNull();
 
     resetButton('mc-style-scatter-section-availability-reset').click();
@@ -1452,7 +1452,7 @@ describe('FigureStylePanelComponent', () => {
       expect(host().querySelector('#mc-style-timeline-section-numbers')).toBeNull();
       expect(host().querySelectorAll('select').length).toBe(0);
       expect(FIGURE_STYLE_SECTIONS.timeline.some(section => section.shared)).toBe(false);
-      expect(host().querySelector('.fsp-note')?.textContent?.trim()).toBe('The sizes are at 100 % text; Download → Text size scales them all.');
+      expect(host().querySelector('.fsp-note')?.textContent?.trim()).toBe('The sizes are at 100% text; Download → Text size scales them all.');
       const reset = host().querySelector('#mc-style-timeline-reset') as HTMLButtonElement;
       expect(reset.textContent!.trim()).toBe('Reset timeline style');
     });

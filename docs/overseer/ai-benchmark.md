@@ -5630,7 +5630,7 @@ A review of the Summary tab's key-figure cards for errors, omissions and ambigui
 whole-strip images read the cards from the page, so every wording below reaches them too.
 
 **Candidate Cost** (`model-cost`, was *Model Under Test*, which read as a model name). The note is the
-candidate's share *"10 % of estimated total"*, or *"10 % of the priced roles"* when pricing is
+candidate's share *"10% of estimated total"*, or *"10% of the priced roles"* when pricing is
 incomplete and there is no total; the arithmetic is unchanged, so it still agrees with the cost panel.
 A second note gives the candidate's spend per question asked, *"$0.0221 per question · 18 asked"*:
 candidate cost divided by every answer row, whatever its status, as the report's At a Glance *Cost*
@@ -6630,8 +6630,9 @@ All three change text written by C# code, not a file under `Overseer/ToolGuides`
   thinking level and reasoning mode, from the battery run's `assessorProvider`,
   `assessorThinkingLevel`, `assessorReasoningMode` and their `coAssessor…` counterparts; the
   key-figures images draw the same row.
-- **Key-figures images.** A figure and its unit (`ms`, `s`, `min`, `h`, `%`) are joined with a
-  non-breaking space, and a caption wraps only at ordinary whitespace, so *14.3 s* never splits.
+- **Key-figures images.** A figure and its unit (`ms`, `s`, `min`, `h`) are joined with a
+  non-breaking space, and a caption wraps only at ordinary whitespace, so *14.3 s* never splits. A
+  percent sign follows its number directly (*31%*), so there is nothing to join.
 - **Progress dialogs.** The run, multi-run and battery progress dialogs share one elapsed format and
   one tick schedule aligned to whole seconds (§ *Run Progress Dialog*, *Elapsed*). The battery
   dialog's writer badges, members table and *Overall Index* tile, and the shared `app-index-badge`,

@@ -86,16 +86,16 @@ export function formatGrouped(value: CcNumber | null | undefined, digits: number
   return sign + grouped + (fraction === undefined ? '' : `.${fraction}`);
 }
 
-/** A fraction as a percentage: `0.025` → `2.5 %`. */
+/** A fraction as a percentage: `0.025` → `2.5%`. */
 export function formatFractionPercent(fraction: CcNumber | null | undefined, digits = 1): string {
   const n = ccNumber(fraction);
-  return n === null ? NO_VALUE : `${formatFixed(n * 100, digits)} %`;
+  return n === null ? NO_VALUE : `${formatFixed(n * 100, digits)}%`;
 }
 
-/** A percentage with its sign: `4.2` → `+4.2 %`. */
+/** A percentage with its sign: `4.2` → `+4.2%`. */
 export function formatSignedPercent(percent: CcNumber | null | undefined, digits = 1): string {
   const n = ccNumber(percent);
-  return n === null ? NO_VALUE : `${formatSigned(n, digits)} %`;
+  return n === null ? NO_VALUE : `${formatSigned(n, digits)}%`;
 }
 
 /**
@@ -154,26 +154,26 @@ export function formatInterval(
 
 /**
  * An endpoint's estimate as the verdict table shows it: index points for a difference endpoint, a
- * signed percentage for a log-ratio one, with the 95 % interval in the same unit.
+ * signed percentage for a log-ratio one, with the 95% interval in the same unit.
  */
 export function endpointEstimateText(endpoint: CcEndpointResult): string {
   if (!endpoint.computed) return 'Not computed';
   if (endpoint.scale === 'logRatio') {
     const estimate = formatSignedPercent(endpoint.estimatePercent);
     const ci = formatInterval(endpoint.ci95Percent, value => formatSigned(value, 1));
-    return ci === NO_VALUE ? estimate : `${estimate} (95 % CI ${ci} %)`;
+    return ci === NO_VALUE ? estimate : `${estimate} (95% CI ${ci}%)`;
   }
   const unit = endpoint.unit ? ` ${endpoint.unit}` : '';
   const estimate = formatSigned(endpoint.estimate, 1);
   const ci = formatInterval(endpoint.ci95);
-  return ci === NO_VALUE ? `${estimate}${unit}` : `${estimate}${unit} (95 % CI ${ci})`;
+  return ci === NO_VALUE ? `${estimate}${unit}` : `${estimate}${unit} (95% CI ${ci})`;
 }
 
 /** The minimum detectable effect in the endpoint's reporting unit. */
 export function endpointMdeText(endpoint: CcEndpointResult): string {
   if (endpoint.scale === 'logRatio') {
     const percent = ccNumber(endpoint.minimumDetectableEffectPercent);
-    return percent === null ? NO_VALUE : `±${formatFixed(Math.abs(percent), 1)} %`;
+    return percent === null ? NO_VALUE : `±${formatFixed(Math.abs(percent), 1)}%`;
   }
   const mde = ccNumber(endpoint.minimumDetectableEffect);
   return mde === null ? NO_VALUE : `±${formatFixed(Math.abs(mde), 1)}${endpoint.unit ? ` ${endpoint.unit}` : ''}`;
@@ -410,7 +410,7 @@ export type CcAvailabilityFields = Pick<CcRunRow,
   'availabilityRecorded' | 'validAttemptCount' | 'providerErrorCount' | 'rerunsNeeded' | 'providerRerunsNeeded'>;
 
 /**
- * A row's *Provider errors* fact, the rate always with its count: `0.81 % (12 of 1,480 attempts)`,
+ * A row's *Provider errors* fact, the rate always with its count: `0.81% (12 of 1,480 attempts)`,
  * with `; 2 re-runs (1 for provider errors)` when any; `Not recorded` before harness 56.
  */
 export function providerErrorsText(row: CcAvailabilityFields): string {

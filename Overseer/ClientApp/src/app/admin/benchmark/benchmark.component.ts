@@ -981,7 +981,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /**
    * H5. What the model under test alone cost, beside the catalog total. The two are a pair: on run
-   * 13 the candidate was 28 % of the spend, so the total on its own invites the reading that a
+   * 13 the candidate was 28% of the spend, so the total on its own invites the reading that a
    * benchmark's cost is the model it grades.
    */
   formatRunCandidateCost(run: BenchmarkRunSummaryDto | BenchmarkRunDetailDto): string {
@@ -1019,8 +1019,8 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
       return 'share unknown';
     }
     return run.pricingIncomplete
-      ? `${shares[candidateIndex]} % of the priced roles`
-      : `${shares[candidateIndex]} % of estimated total`;
+      ? `${shares[candidateIndex]}% of the priced roles`
+      : `${shares[candidateIndex]}% of estimated total`;
   }
 
   /**
@@ -4692,7 +4692,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
   }
 
   /**
-   * Answers that used at least 90 % of their tool call budget **without** reaching it.
+   * Answers that used at least 90% of their tool call budget **without** reaching it.
    *
    * Rendered in addition to the exhausted list rather than instead of it: the two describe different
    * outcomes, and on run 14 the exhausted list was empty while Q11 (41/45, scored 81) and Q16
@@ -5000,13 +5000,13 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
     return Math.round(fraction * 100);
   }
 
-  /** *rate 6 % (95 % CI 1–26 %)*, or null when the summary has no rate. */
+  /** *rate 6% (95% CI 1–26%)*, or null when the summary has no rate. */
   private criticalErrorRateLabel(summary: BenchmarkRunOutcomeSummaryDto): string | null {
     if (summary.criticalErrorRate == null) return null;
     const interval = summary.criticalErrorRateLow != null && summary.criticalErrorRateHigh != null
-      ? ` (95 % CI ${this.wholePercent(summary.criticalErrorRateLow)}–${this.wholePercent(summary.criticalErrorRateHigh)} %)`
+      ? ` (95% CI ${this.wholePercent(summary.criticalErrorRateLow)}–${this.wholePercent(summary.criticalErrorRateHigh)}%)`
       : '';
-    return `rate ${this.wholePercent(summary.criticalErrorRate)} %${interval}`;
+    return `rate ${this.wholePercent(summary.criticalErrorRate)}%${interval}`;
   }
 
   /** The diagnostics capture's critical-error resolution line, scoring method 13 on. */
@@ -5021,7 +5021,7 @@ export class AdminBenchmarkComponent implements OnInit, AfterViewInit, OnDestroy
 
   /** The diagnostics capture's outcome-class line, scoring method 13 on. */
   private outcomeDiagnosticsLine(summary: BenchmarkRunOutcomeSummaryDto): string {
-    const percent = (fraction: number | null) => fraction == null ? 'n/a' : `${this.wholePercent(fraction)} %`;
+    const percent = (fraction: number | null) => fraction == null ? 'n/a' : `${this.wholePercent(fraction)}%`;
     const counts = [
       `correct ${summary.correctCount}`,
       `partial ${summary.partialCount}`,

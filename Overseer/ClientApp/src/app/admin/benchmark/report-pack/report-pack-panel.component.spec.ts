@@ -1121,7 +1121,7 @@ describe('ReportPackPanelComponent', () => {
     fixture.destroy();
   }));
 
-  it('warns from 70 % of the writer\'s context window', fakeAsync(() => {
+  it('warns from 70% of the writer\'s context window', fakeAsync(() => {
     openPanel();
     chooseWriter(7, comparisonPreview({
       estimates: [estimate(ExecutiveSummary, 0.05), estimate(RootCauseAnalysis, 0.16, 'comparison:12', 0.78)]
@@ -1130,8 +1130,8 @@ describe('ReportPackPanelComponent', () => {
     const warning = q('.rp-context-warning')!;
     expect(warning.classList).toContain('alert-warning');
     expect(warning.textContent!.replace(/\s+/g, ' ').trim()).toBe(
-      'The Root Cause Analysis\'s prompt would fill about 78 % of the writer\'s context window; '
-      + 'from 90 % it is refused. Fewer models, or a writer with a larger context window, leaves the writer more room.');
+      'The Root Cause Analysis\'s prompt would fill about 78% of the writer\'s context window; '
+      + 'from 90% it is refused. Fewer models, or a writer with a larger context window, leaves the writer more room.');
     expect(generateButton().disabled).toBe(false);
 
     // An unchecked document's prompt does not count.

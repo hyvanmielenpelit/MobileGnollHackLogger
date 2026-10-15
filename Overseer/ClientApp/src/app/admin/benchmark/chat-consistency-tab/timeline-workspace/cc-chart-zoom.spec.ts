@@ -14,7 +14,7 @@ import {
   ccTargetPixels
 } from './cc-chart-zoom';
 
-/** A size at 100 % density and 100 % text, with overrides. */
+/** A size at 100% density and 100% text, with overrides. */
 function size(overrides: Partial<FigureSizeSettings> = {}): FigureSizeSettings {
   return { ...defaultFigureSize(1), ...overrides };
 }
@@ -23,7 +23,7 @@ const NO_CHROME = { width: 0, height: 0 };
 
 describe('cc-chart-zoom', () => {
   describe('ccTargetPixels', () => {
-    it('is the resolution at its density: Full HD at 200 % is 3840 × 2160', () => {
+    it('is the resolution at its density: Full HD at 200% is 3840 × 2160', () => {
       expect(ccTargetPixels(size())).toEqual({ pixelWidth: 1920, pixelHeight: 1080 });
       expect(ccTargetPixels(size({ densitySelection: 2 }))).toEqual({ pixelWidth: 3840, pixelHeight: 2160 });
       expect(ccTargetPixels(size({ resolutionId: 'a4p' }))).toEqual({ pixelWidth: 2480, pixelHeight: 3508 });
@@ -55,7 +55,7 @@ describe('cc-chart-zoom', () => {
 
     it('fits the width against the target pixels and the device ratio, less the HTML across', () => {
       expect(ccFitWidthZoom(fullHd, 986, chrome, 1)).toBeCloseTo(0.5, 9);
-      // 100 % on a 2× display is 960 CSS px wide for a 1920 px file.
+      // 100% on a 2× display is 960 CSS px wide for a 1920 px file.
       expect(ccFitWidthZoom(fullHd, 986, chrome, 2)).toBeCloseTo(1, 9);
       expect(ccFitWidthZoom(fullHd2x, 1946, chrome, 2)).toBeCloseTo(1, 9);
     });
@@ -72,7 +72,7 @@ describe('cc-chart-zoom', () => {
       expect(ccFitScreenZoom(a4, 3000, 120 + 877, chrome, 1)).toBeCloseTo(877 / 3508, 9);
     });
 
-    it('caps a fit at 800 % and lets it fall below 10 %', () => {
+    it('caps a fit at 800% and lets it fall below 10%', () => {
       expect(ccFitWidthZoom({ pixelWidth: 100, pixelHeight: 100 }, 10_000, NO_CHROME, 1)).toBe(PREVIEW_MAX_ZOOM);
       expect(ccFitWidthZoom(fullHd, 96, NO_CHROME, 1)).toBeCloseTo(0.05, 9);
     });
@@ -98,7 +98,7 @@ describe('cc-chart-zoom', () => {
   describe('ccDisplaySize', () => {
     const fullHd: CcTargetPixels = { pixelWidth: 1920, pixelHeight: 1080 };
 
-    it('shows one file pixel on one device pixel at 100 %', () => {
+    it('shows one file pixel on one device pixel at 100%', () => {
       expect(ccDisplaySize(fullHd, 1, 2, false)).toEqual({ cssWidth: 960, cssHeight: 540 });
       expect(ccDisplaySize({ pixelWidth: 3840, pixelHeight: 2160 }, 1, 2, false)).toEqual({ cssWidth: 1920, cssHeight: 1080 });
     });
@@ -130,7 +130,7 @@ describe('cc-chart-zoom', () => {
       expect(fit.layout).toEqual({ ...target, density: 960 / 960, pixelWidth: 960, pixelHeight: 540 });
     });
 
-    it('rasterizes at the file pixels from 100 % up', () => {
+    it('rasterizes at the file pixels from 100% up', () => {
       const fit = ccPreviewLayout(target, 2, 1)!;
       expect(fit.layout.pixelWidth).toBe(1920);
       expect(fit.cssWidth).toBeCloseTo(3840, 9);
@@ -157,7 +157,7 @@ describe('cc-chart-zoom', () => {
       expect(ccResolveZoom(Number.NaN, fits)).toBe(PREVIEW_MIN_ZOOM_FLOOR);
     });
 
-    it('lowers the floor to the lowest fit, so a fit below 10 % stays reachable', () => {
+    it('lowers the floor to the lowest fit, so a fit below 10% stays reachable', () => {
       const narrow = { width: 0.05, height: 0.5, screen: 0.05 };
       expect(ccResolveZoom('fitScreen', narrow)).toBeCloseTo(0.05, 9);
       expect(ccResolveZoom(0.01, narrow)).toBeCloseTo(0.05, 9);

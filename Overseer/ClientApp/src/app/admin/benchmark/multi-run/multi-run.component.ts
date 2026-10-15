@@ -1269,12 +1269,12 @@ export class MultiRunComponent implements OnInit, OnChanges {
   /** A coefficient of variation arrives as a fraction and reads as a percentage. */
   formatPercentFromFraction(value: number | null | undefined): string {
     if (value == null) return '—';
-    return `${this.formatNumber(value * 100, 1)} %`;
+    return `${this.formatNumber(value * 100, 1)}%`;
   }
 
   formatRate(value: number | null | undefined): string {
     if (value == null) return '—';
-    return `${this.formatNumber(value * 100, 0)} %`;
+    return `${this.formatNumber(value * 100, 0)}%`;
   }
 
   formatMs(value: number | null | undefined): string {
@@ -1324,7 +1324,7 @@ export class MultiRunComponent implements OnInit, OnChanges {
   /** A percentage that arrives already scaled, unlike `formatPercentFromFraction`. */
   formatPercent(value: number | null | undefined, digits = 1): string {
     if (value == null) return '—';
-    return `${this.formatNumber(value, digits)} %`;
+    return `${this.formatNumber(value, digits)}%`;
   }
 
   /** The batching mode, whose numeric enum selects a tool policy file and so is prompt text. */

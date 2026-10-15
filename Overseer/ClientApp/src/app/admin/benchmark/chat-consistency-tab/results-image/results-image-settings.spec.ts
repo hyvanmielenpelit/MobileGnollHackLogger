@@ -28,7 +28,7 @@ describe('results image settings', () => {
     expect(CC_RESULTS_IMAGE_SECTIONS_STORAGE_KEY).toBe('overseer.benchmark.chatConsistency.resultsImage.sections');
   });
 
-  it('defaults to a PNG at Fit the content and 200 %, dark, with the long parts of three sections off', () => {
+  it('defaults to a PNG at Fit the content and 200%, dark, with the long parts of three sections off', () => {
     const defaults = defaultCcResultsImageSettings();
     expect(defaults.format).toBe('png');
     expect(defaults.webpQuality).toBe(85);

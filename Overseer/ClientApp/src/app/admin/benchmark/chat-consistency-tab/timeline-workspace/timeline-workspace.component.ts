@@ -448,7 +448,7 @@ const REFUSED_BOX = { cssWidth: 480, cssHeight: 270 } as const;
  * The Charts step of the Chat Consistency wizard: a resizable, collapsible settings sidebar (Data,
  * Events, Annotations, Theme, Charts, Download) beside the *All charts* and *Single chart* views, with
  * zoom, Copy, Download and Download all. Each view shows the download itself: every chart is composed
- * by `cc-figure-compose.ts` at the chart size and rasterized for the screen, so at 100 % zoom one pixel
+ * by `cc-figure-compose.ts` at the chart size and rasterized for the screen, so at 100% zoom one pixel
  * of the file is one device pixel.
  */
 @Component({
@@ -1420,7 +1420,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
     this.scheduleMeasure();
   }
 
-  /** 100 %: one pixel of the download on one pixel of the display. */
+  /** 100%: one pixel of the download on one pixel of the display. */
   actualSize(): void {
     this.setZoomView(1);
   }
@@ -1438,7 +1438,7 @@ export class CcTimelineWorkspaceComponent implements OnInit, OnChanges, AfterVie
 
   /**
    * `+` / `=` zoom in, `-` out, `0` fits one whole chart to the screen and, in
-   * Single, `1` is 100 %; anywhere in the panel but a form field, and without Ctrl, ⌘ or Alt, which
+   * Single, `1` is 100%; anywhere in the panel but a form field, and without Ctrl, ⌘ or Alt, which
    * stay the browser's zoom.
    */
   onPanelKeydown(event: KeyboardEvent): void {

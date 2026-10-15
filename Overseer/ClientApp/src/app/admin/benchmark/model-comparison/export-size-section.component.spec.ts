@@ -281,7 +281,7 @@ describe('ExportSizeSectionComponent', () => {
     render({ settings: { ...defaultTableImageSize(), resolutionId: 'fullhd' }, defaults: defaultTableImageSize(), allowFit: true, idPrefix: 'mc-table-image' });
     expect(control('mc-table-image-text-scale')).not.toBeNull();
     expect(maybeControl('mc-table-image-box-hint')).toBeNull();
-    expect(host().querySelector('.gh-disclosure-summary-value')?.textContent?.trim()).toBe('Full HD — 1920 × 1080 · 200% · text 100 %');
+    expect(host().querySelector('.gh-disclosure-summary-value')?.textContent?.trim()).toBe('Full HD — 1920 × 1080 · 200% · text 100%');
   });
 
   it('mirrors the disclosure open state through openChange', () => {

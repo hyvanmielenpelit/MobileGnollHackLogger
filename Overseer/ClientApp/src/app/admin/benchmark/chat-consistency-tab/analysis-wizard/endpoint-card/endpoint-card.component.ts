@@ -47,7 +47,7 @@ const SHORTFALL_PREFIX = /^below the minimum sample:/i;
 
 /**
  * One computed endpoint of the Results step: its id, name, margin, status and grade, the estimate with
- * its 95 % interval and the interval bar against the margin, what the verdict means, how much was
+ * its 95% interval and the interval bar against the margin, what the verdict means, how much was
  * compared, and its notes, two of them shown and the rest with the robustness checks in a disclosure.
  */
 @Component({

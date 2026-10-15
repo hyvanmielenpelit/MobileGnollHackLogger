@@ -85,7 +85,7 @@ describe('ModelComparisonComponent', () => {
     render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
     // The control opens on the test machine's own display, which the pixel counts below are not
-    // about; every one of them is the composition at 100 %.
+    // about; every one of them is the composition at 100%.
     component.onExportDensityChange(1);
     refresh();
     expect(fixture.debugElement.query(By.css('#mc-export-width'))).toBeNull();
@@ -142,7 +142,7 @@ describe('ModelComparisonComponent', () => {
   });
 
   it('holds a display density no step matches in the custom field, prefilled', () => {
-    // 110 % browser zoom on a 200 % display.
+    // 110% browser zoom on a 200% display.
     withDisplayDensity(2.2);
     render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
@@ -181,7 +181,7 @@ describe('ModelComparisonComponent', () => {
     expect(doubled).toContain('4× density');
     expect(textOf('#mc-tip-download-all')).toContain('200%');
 
-    // At 100 % the requested size and the written one are one number, printed once.
+    // At 100% the requested size and the written one are one number, printed once.
     component.onExportDensityChange(1);
     refresh();
     const plain = component.exportDimensionsLabel;
@@ -190,7 +190,7 @@ describe('ModelComparisonComponent', () => {
     expect(plain).not.toContain('(1920 × 1080 at');
   });
 
-  it('opens every figure at Full HD, the display’s own density and 100 % text, and offers no On-screen size', () => {
+  it('opens every figure at Full HD, the display’s own density and 100% text, and offers no On-screen size', () => {
     withDisplayDensity(1.5);
     render(buildDto(comparableSet(3)), 2);
     openSidebarTab('download');
@@ -726,7 +726,7 @@ describe('ModelComparisonComponent', () => {
     expect(drawnNotes('panels', 0)).not.toContain(HIDDEN_INTERVALS_NOTE);
   });
 
-  it('rings a scatter mark whose provider errors are clearly above 2 % once the markers are on, and states the rule', () => {
+  it('rings a scatter mark whose provider errors are clearly above 2% once the markers are on, and states the rule', () => {
     const entries = comparableSet(3);
     entries[1] = {
       ...entries[1],
@@ -746,10 +746,10 @@ describe('ModelComparisonComponent', () => {
     for (const card of component.scatterCards) {
       expect(card.plugins.map(plugin => plugin.id), card.id).toContain(availabilityMarkerPlugin.id);
       const options = (card.options?.plugins as unknown as Record<string, AvailabilityMarkerPluginOptions>)[availabilityMarkerPlugin.id];
-      // Only the model whose whole interval lies above 2 %: 0.81 % with its bound at 0.44 % is never marked.
+      // Only the model whose whole interval lies above 2%: 0.81% with its bound at 0.44% is never marked.
       expect(options.marks.map(mark => mark.text), card.id).toEqual(['4.1% provider errors']);
       expect(exportNotesOf(card), card.id).toContain(AVAILABILITY_MARKER_NOTE);
-      expect(card.ariaLabel, card.id).toContain('Provider errors above 2 %');
+      expect(card.ariaLabel, card.id).toContain('Provider errors above 2%');
     }
   });
 
@@ -1225,7 +1225,7 @@ describe('ModelComparisonComponent', () => {
     return component.previewCanvas!.nativeElement;
   }
 
-  /** Full HD at 100 % density on an 800 × 600 stage at DPR 2: the screen fit is 5/6. */
+  /** Full HD at 100% density on an 800 × 600 stage at DPR 2: the screen fit is 5/6. */
   async function openFullHdPreview(): Promise<void> {
     render(buildDto(comparableSet(3)), 2);
     vi.spyOn(component, 'measureStage').mockReturnValue({ width: 800, height: 600, devicePixelRatio: 2 });
@@ -1235,7 +1235,7 @@ describe('ModelComparisonComponent', () => {
     await composePreview();
   }
 
-  /** A custom 800 × 600 at 100 % density on the same stage: the screen fit is 2. */
+  /** A custom 800 × 600 at 100% density on the same stage: the screen fit is 2. */
   async function openCustomPreview(): Promise<void> {
     render(buildDto(comparableSet(3)), 2);
     vi.spyOn(component, 'measureStage').mockReturnValue({ width: 800, height: 600, devicePixelRatio: 2 });
@@ -1258,7 +1258,7 @@ describe('ModelComparisonComponent', () => {
     expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(800, 6);
   });
 
-  it('zooms in from the button, rasterising the export’s own pixels at 100 %', async () => {
+  it('zooms in from the button, rasterising the export’s own pixels at 100%', async () => {
     await openFullHdPreview();
 
     clickAndRefresh(zoomButton('Zoom the preview in'));
@@ -1274,7 +1274,7 @@ describe('ModelComparisonComponent', () => {
     expect(stageCanvas().classList).not.toContain('is-pixelated');
   });
 
-  it('enlarges past 100 % by CSS alone, square-edged from 200 %', async () => {
+  it('enlarges past 100% by CSS alone, square-edged from 200%', async () => {
     await openFullHdPreview();
     clickAndRefresh(zoomButton('Zoom the preview in'));
     await composePreview();
@@ -1320,7 +1320,7 @@ describe('ModelComparisonComponent', () => {
     expect(parseFloat(stageCanvas().style.height)).toBeCloseTo(600, 6);
   });
 
-  it('fills the stage on Fit to screen, past 100 % for a small export', async () => {
+  it('fills the stage on Fit to screen, past 100% for a small export', async () => {
     await openCustomPreview();
     expect(component.previewZoomValue).toBe(1);
     expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(400, 6);
@@ -1352,7 +1352,7 @@ describe('ModelComparisonComponent', () => {
     expect(parseFloat(stageCanvas().style.width)).toBeCloseTo(320, 6);
   });
 
-  it('shows the target’s own size over the display ratio at 100 %', async () => {
+  it('shows the target’s own size over the display ratio at 100%', async () => {
     await openCustomPreview();
     clickAndRefresh(viewButton('Fit to screen'));
 
@@ -1391,7 +1391,7 @@ describe('ModelComparisonComponent', () => {
     expect(arrow.defaultPrevented).toBe(false);
   });
 
-  it('marks zoom in unavailable at 800 %, and refuses it there', async () => {
+  it('marks zoom in unavailable at 800%, and refuses it there', async () => {
     await openFullHdPreview();
     component.setPreviewView(8);
     refresh();

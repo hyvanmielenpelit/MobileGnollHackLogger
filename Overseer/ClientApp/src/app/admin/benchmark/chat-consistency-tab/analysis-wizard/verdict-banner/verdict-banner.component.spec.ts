@@ -171,7 +171,7 @@ describe('CcVerdictBannerComponent', () => {
     expect(textOf(scopeFact('blocks')?.querySelector('dt'))).toBe('Blocks both periods sampled');
     expect(textOf(scopeFact('blocks')?.querySelector('dd'))).toBe('weekday 08–12 UTC');
     expect(textOf(scopeFact('excluded')?.querySelector('dt'))).toBe('Answers outside them');
-    expect(textOf(scopeFact('excluded')?.querySelector('dd'))).toBe('0.0 %');
+    expect(textOf(scopeFact('excluded')?.querySelector('dd'))).toBe('0.0%');
     expect(textOf(scopeFact('business')?.querySelector('dt'))).toBe('US business hours');
     expect(textOf(scopeFact('business')?.querySelector('dd'))).toBe('Not sampled US business hours are weekdays 14–22 UTC.');
     expect(textOf(scopeFact('outside')?.querySelector('dt'))).toBe('Outside them');
@@ -185,7 +185,7 @@ describe('CcVerdictBannerComponent', () => {
     show(result);
     expect(textOf(el.querySelector('[data-meta="scope"] .cc-vb-meta-value'))).toBe('No common time stratum');
     expect(textOf(scopeFact('blocks')?.querySelector('dd'))).toBe('None');
-    expect(textOf(scopeFact('excluded')?.querySelector('dd'))).toBe('25.0 %');
+    expect(textOf(scopeFact('excluded')?.querySelector('dd'))).toBe('25.0%');
     expect(textOf(scopeFact('business')?.querySelector('dd'))).toContain('Sampled');
     expect(textOf(el.querySelector('#cc-vb-scope-tip .cc-vb-tip-closing')))
       .toBe('Speed (P2, P3) needs runs at the same hours in both periods.');
@@ -203,7 +203,7 @@ describe('CcVerdictBannerComponent', () => {
       .toBe('The endpoints, margins and tests were fixed before the data was seen.');
     expect(textOf(protocolFact('endpoint-P1')?.querySelector('dt'))).toBe('P1 Quality');
     expect(textOf(protocolFact('endpoint-P1')?.querySelector('dd'))).toBe('Margin ±3 index points');
-    expect(textOf(protocolFact('endpoint-P4')?.querySelector('dd'))).toBe('Margin ±15 %');
+    expect(textOf(protocolFact('endpoint-P4')?.querySelector('dd'))).toBe('Margin ±15%');
     expect(textOf(protocolFact('significance')?.querySelector('dd'))).toBe('α 0.05, with Holm\'s correction across P1–P5.');
     expect(textOf(protocolFact('sample')?.querySelector('dd'))).toBe(
       'P1, P4, P5: at least 2 runs per period on at least 2 UTC days, and 20 paired items. '

@@ -212,7 +212,7 @@ describe('BenchmarkBatteriesComponent', () => {
       const rows = c.querySelectorAll('.bb-suite-table tbody tr');
       expect(rows.length).toBe(2);
       expect(rows[1].textContent!.replace(/\s+/g, ' ')).toContain('Board Reading');
-      expect(rows[1].textContent).toContain('60.0 %');
+      expect(rows[1].textContent).toContain('60.0%');
       expect(c.querySelector('.bb-suites-toggle')).toBeNull();
       expect(c.querySelectorAll('.bb-suite-table tbody').length).toBe(1);
     });

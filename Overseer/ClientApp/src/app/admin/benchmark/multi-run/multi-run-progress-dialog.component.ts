@@ -923,7 +923,7 @@ export class MultiRunProgressDialogComponent implements OnInit, OnChanges, OnDes
   }
 
   /**
-   * A member's provider errors: `0.81 % (12/1,480)`; null while it is unfinished or recorded without
+   * A member's provider errors: `0.81% (12/1,480)`; null while it is unfinished or recorded without
    * valid attempts; `Not recorded` for a finished run that predates the ledger.
    */
   private memberProviderErrors(member: BenchmarkRunSeriesMemberDto): string | null {

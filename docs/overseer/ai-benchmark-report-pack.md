@@ -810,7 +810,7 @@ comparison-wide 12 of 2026-10-06. What the formats add
 ([`ai-benchmark-provider-availability.md`](ai-benchmark-provider-availability.md) is the method):
 
 - **Key Figures** gains a fifth code-written bullet, *Provider availability:*
-  the rate *of attempts failed at the provider* (*k of n*; *95 % CI …*), *plus* the re-runs, from the
+  the rate *of attempts failed at the provider* (*k of n*; *95% CI …*), *plus* the re-runs, from the
   facts' display values.
 - **A `### Provider availability` subsection** holds the table *class · count · share* with a footnote
   that defines the classes and the denominator, where a document prints one (the Root Cause Analysis,

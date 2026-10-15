@@ -1,7 +1,7 @@
 /**
  * Zoom arithmetic for the figures' two views, All and Single.
  *
- * A zoom is **device pixels per export pixel**, so 1 is 100 %: one pixel of the written file on one
+ * A zoom is **device pixels per export pixel**, so 1 is 100%: one pixel of the written file on one
  * pixel of the display, in either view. None of it reaches an export; only the views' own
  * rasterisation and their CSS boxes read it.
  *
@@ -12,7 +12,7 @@
  * What the reader asked the stage to show.
  *
  * `'default'` shrinks the figure to fit and never enlarges it; `'fitScreen'` fills the stage, past
- * 100 % where the export is smaller than it; a number is an explicit zoom.
+ * 100% where the export is smaller than it; a number is an explicit zoom.
  */
 export type PreviewViewRequest = 'default' | 'fitScreen' | number;
 
@@ -40,7 +40,7 @@ export const PREVIEW_MAX_RASTER_PIXELS = 7680 * 4320;
 /** Relative, so being on a stop steps past it however the zoom was reached. */
 const STOP_TOLERANCE = 1e-6;
 
-/** Every zoom the stage accepts. The floor drops below 10 % where the screen fit itself does. */
+/** Every zoom the stage accepts. The floor drops below 10% where the screen fit itself does. */
 export function previewZoomRange(screenFitZoom: number): PreviewZoomRange {
   const fit = isUsableZoom(screenFitZoom) ? screenFitZoom : PREVIEW_MIN_ZOOM_FLOOR;
   return { min: Math.min(fit, PREVIEW_MIN_ZOOM_FLOOR), max: PREVIEW_MAX_ZOOM };
@@ -201,7 +201,7 @@ export function anchoredScrollDelta(
 
 /**
  * The fraction of the target the preview rasterises at a zoom: the target's own pixels at and above
- * 100 %, the displayed pixels below it, and less where the result would pass the raster budget.
+ * 100%, the displayed pixels below it, and less where the result would pass the raster budget.
  */
 export function previewRasterZoom(
   zoom: number,
@@ -216,7 +216,7 @@ export function previewRasterZoom(
   return { zoom: Math.sqrt(PREVIEW_MAX_RASTER_PIXELS / (pixelWidth * pixelHeight)), capped: true };
 }
 
-/** `"38%"`, `"12.5%"`, `"800%"`: one decimal below 20 %, where the stops are not whole numbers. */
+/** `"38%"`, `"12.5%"`, `"800%"`: one decimal below 20%, where the stops are not whole numbers. */
 export function formatPreviewZoom(zoom: number): string {
   const percent = zoom * 100;
   if (percent >= 20) {

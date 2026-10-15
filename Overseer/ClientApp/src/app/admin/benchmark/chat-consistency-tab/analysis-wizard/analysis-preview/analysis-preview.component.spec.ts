@@ -151,7 +151,7 @@ describe('CcAnalysisPreviewComponent', () => {
     const p2 = endpoint('P2');
     expect(p2?.getAttribute('data-status')).toBe('belowMinimum');
     expect(textOf(p2?.querySelector('.cc-ap-endpoint-name'))).toBe('Time to first answer text');
-    expect(textOf(p2?.querySelector('.cc-ap-margin'))).toBe('±15 %');
+    expect(textOf(p2?.querySelector('.cc-ap-margin'))).toBe('±15%');
     expect(textOf(p2?.querySelector('.cc-ap-status'))).toBe('At most Indicated');
     expect(textOf(p2?.querySelector('.cc-ap-fact'))).toBe('No common stratum has 3 runs in each period: weekday 08–12 UTC: 2 / 3.');
   });
@@ -159,7 +159,7 @@ describe('CcAnalysisPreviewComponent', () => {
   it('reads Not computable for an endpoint the periods cannot compute', () => {
     set({
       endpoints: [{
-        id: 'P5', name: 'Cost per question', marginText: '±10 %', status: 'notComputed',
+        id: 'P5', name: 'Cost per question', marginText: '±10%', status: 'notComputed',
         fact: 'No run in the baseline is eligible for Cost.'
       }]
     });
@@ -201,7 +201,7 @@ describe('CcAnalysisPreviewComponent', () => {
           fact: 'Grading changed between the periods (harness 53 → 54). Re-grade every compared run with a common grader to compare quality.'
         },
         {
-          id: 'P4', name: 'Work per turn', marginText: '±15 %', status: 'capped',
+          id: 'P4', name: 'Work per turn', marginText: '±15%', status: 'capped',
           fact: 'Pooled across a grading change (harness 53 → 54), which caps the grade at Indicated: Baseline 2 runs on 2 days · Comparison 2 runs on 2 days.'
         }
       ]

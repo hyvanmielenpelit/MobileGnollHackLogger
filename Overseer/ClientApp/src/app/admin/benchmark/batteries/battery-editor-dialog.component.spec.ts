@@ -165,12 +165,12 @@ describe('BatteryEditorDialogComponent', () => {
     expect(service.getQuestions).toHaveBeenCalledWith(11);
     expect(service.getQuestions).toHaveBeenCalledWith(12);
     // List order is by name, so Board Reading (250 / 350) precedes Gameplay Help (100 / 350).
-    expect(chosenWeights()).toEqual(['71.4 %', '28.6 %']);
+    expect(chosenWeights()).toEqual(['71.4%', '28.6%']);
     // Questions only (4 / 6), then Equal per suite.
-    expect(texts('.bbe-weight-card .bbe-weight-others dd').slice(0, 2)).toEqual(['66.7 %', '50.0 %']);
+    expect(texts('.bbe-weight-card .bbe-weight-others dd').slice(0, 2)).toEqual(['66.7%', '50.0%']);
 
     chooseScheme('Equal');
-    expect(chosenWeights()).toEqual(['50.0 %', '50.0 %']);
+    expect(chosenWeights()).toEqual(['50.0%', '50.0%']);
     const checked = el().querySelector('input[name="bbeScheme"]:checked') as HTMLInputElement;
     expect(checked.closest('label')?.textContent?.trim()).toBe('Equal per suite');
     expect(texts('.bbe-weight-card .bbe-metric-weight dt')[0]).toContain('under Equal per suite');
@@ -242,12 +242,12 @@ describe('BatteryEditorDialogComponent', () => {
     const inputs = el().querySelectorAll('.bbe-custom-input') as NodeListOf<HTMLInputElement>;
     expect(inputs.length).toBe(2);
     expect(inputs[0].value).toBe('1');
-    expect(chosenWeights()).toEqual(['50.0 %', '50.0 %']);
+    expect(chosenWeights()).toEqual(['50.0%', '50.0%']);
 
     inputs[0].value = '3';
     inputs[0].dispatchEvent(new Event('input'));
     fixture.detectChanges();
-    expect(chosenWeights()).toEqual(['75.0 %', '25.0 %']);
+    expect(chosenWeights()).toEqual(['75.0%', '25.0%']);
 
     chooseScheme('ItemCount');
     expect(el().querySelectorAll('.bbe-custom-input').length).toBe(0);
@@ -409,7 +409,7 @@ describe('BatteryEditorDialogComponent', () => {
     expect(el().querySelector('#bbeTitle')?.textContent?.trim()).toBe('Edit Battery');
     expect(el().querySelector('#bbeRevisionNote')?.textContent).toContain('creates revision 3');
     expect(service.getQuestions).not.toHaveBeenCalled();
-    expect(chosenWeights()).toEqual(['71.4 %', '28.6 %']);
+    expect(chosenWeights()).toEqual(['71.4%', '28.6%']);
 
     clickSave();
     expect(service.updateBattery).toHaveBeenCalledTimes(1);

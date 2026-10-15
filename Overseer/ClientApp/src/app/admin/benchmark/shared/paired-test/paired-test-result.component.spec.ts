@@ -128,7 +128,7 @@ describe('PairedTestResultComponent', () => {
 
     expect(text('.ptr-headline-title')).toBe('Intelligence Index (primary test)');
     expect(text('.ptr-headline-effect')).toBe('+3.2');
-    expect(text('.ptr-headline-interval')).toBe('95 % interval −0.8 to 7.1');
+    expect(text('.ptr-headline-interval')).toBe('95% interval −0.8 to 7.1');
     expect(text('.ptr-p')).toBe('0.04');
     // A single pair carries no adjustment line and no adjusted p.
     expect(el().querySelector('.ptr-adjusted-p')).toBeNull();

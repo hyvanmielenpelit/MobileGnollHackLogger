@@ -448,7 +448,7 @@ export function ccEndpoint(id: string, overrides: Partial<CcEndpointResult> = {}
     unit: id === 'P1' ? 'index points' : 'log ratio',
     scale: id === 'P1' ? 'difference' : 'logRatio',
     margin: id === 'P1' ? 3 : 0.14,
-    marginText: id === 'P1' ? '±3 index points' : '±15 %',
+    marginText: id === 'P1' ? '±3 index points' : '±15%',
     direction: id === 'P4' ? 'work' : id === 'P1' || id === 'P3' ? 'higherIsBetter' : 'lowerIsBetter',
     computed: true,
     notComputedReason: null,

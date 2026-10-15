@@ -1258,7 +1258,7 @@ export class CcAnalysisWizardComponent implements OnInit, OnChanges, OnDestroy {
   }
 
   /**
-   * `V2`, or `V2 with overrides: P2 margin 20 %, α 0.1`; an invalid override is named as the note, and a
+   * `V2`, or `V2 with overrides: P2 margin 20%, α 0.1`; an invalid override is named as the note, and a
    * protocol kept from the stored analysis says so.
    */
   private get protocolFact(): { value: string; note?: string } {

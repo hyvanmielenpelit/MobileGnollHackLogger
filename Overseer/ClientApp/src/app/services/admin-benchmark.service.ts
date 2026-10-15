@@ -1748,7 +1748,7 @@ export interface BenchmarkRunOutcomeSummaryDto {
   confirmedCriticalErrorCount: number;
   unresolvedCriticalErrorCount: number;
   overturnedCriticalErrorCount: number;
-  /** Confirmed critical errors ÷ classified answers, a fraction, with its 95 % Wilson interval. Null when nothing is classified. */
+  /** Confirmed critical errors ÷ classified answers, a fraction, with its 95% Wilson interval. Null when nothing is classified. */
   criticalErrorRate: number | null;
   criticalErrorRateLow: number | null;
   criticalErrorRateHigh: number | null;
@@ -3154,7 +3154,7 @@ export interface BenchmarkGroupIndexStatisticsDto {
   reproducibilityStandardError?: number | null;
   reproducibilityStandardDeviation?: number | null;
   /**
-   * The chi-square 95 % interval on the reproducibility SD itself. At R = 3 the upper bound is over
+   * The chi-square 95% interval on the reproducibility SD itself. At R = 3 the upper bound is over
    * six times the point estimate, so two groups' SDs are not comparable numbers and any surface
    * showing one must show the interval beside it. Null below three runs and above df 19.
    */
@@ -3743,7 +3743,7 @@ export type ReportDocumentChartNaming = 'named' | 'anonymized';
 /**
  * How the server places a document's charts: each figure's share of the text column, the row a
  * figure shares with the next one, and the tallest a figure may be as a share of the page. Stored in
- * the chart manifest; a manifest without it renders every figure full width, one per row, at 60 %.
+ * the chart manifest; a manifest without it renders every figure full width, one per row, at 60%.
  */
 export interface ReportDocumentChartLayout {
   version: 1;
