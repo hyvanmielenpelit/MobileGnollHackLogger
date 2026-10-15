@@ -840,6 +840,16 @@ words (§ 17). Comparison documents of both types open with the document type as
 comparison's name as the H1 (§ 15). A document stored earlier keeps its stored facts and writer text,
 so its numbers keep their old spacing; it re-renders in the new template.
 
+**Root Cause Analysis claim and question fixes (2026-10-15)** move comparison-wide documents to
+**format 19** (`ComparisonReportFormatVersion` 18 → 19) and `RootCauseEngine.Version` 3 → 4; per-model
+documents stay at 14 and chat consistency documents at 4. A research question is asked only when its
+model is strictly first or last on its axis, says when that place is not established against the
+neighbor, and keeps comparative and within-model hypotheses apart; a causal word must cite a hypothesis
+graded Low or higher, hedged when Low; an axis in a document with pairs needs a pair hypothesis for
+*Probable cause* or better; and the tool-use and answer-length notable findings compare a model with the
+median of all models, three or more (§§ 15 and 17). A document stored earlier keeps its stored facts:
+its research questions render as before, apart from its footer.
+
 **Comparison format version 14** (2026-10-14) moves comparison-wide documents only
 (`ComparisonReportFormatVersion` 13 → 14); per-model documents stay at 12 and chat consistency documents
 at 3. It adds the reference model and the baseline model, the failure profile, the comparison with the
@@ -3065,7 +3075,7 @@ order, at most two per kind and ten in all:
 |---|---|
 | `cheaperAndBetter` | X's quality is established above Y's (a paired verdict, or 95 % intervals that do not overlap) and X costs at most half of Y per question |
 | `fasterAndBetter` | the same, with median model time |
-| `thinkingLevelInversion` | two covered entries of one provider and model id at different thinking levels, the lower level's index at least the higher's; says whether the order is established, with the time and cost ratios |
+| `thinkingLevelInversion` | two covered entries of one provider and model id at different thinking levels, the lower level's index at least the higher's, and the higher level not established above the lower (a paired verdict or non-overlapping 95 % intervals in its favor rule the finding out); says whether the order is established, with the time and cost ratios |
 | `leaderMiss` | model A, or the reference, scored 50 or less where the others' median is 75 or more |
 | `underdogWin` | the lowest-index model scored at least 15 points above every other model on a question |
 | `sharedFailure` | every covered model scored below 50 on a question (up to three questions in one finding): likely a chat, corpus or question problem |
@@ -3074,8 +3084,8 @@ order, at most two per kind and ten in all:
 | `graderDisagreementConcentration` | at least 3 panel disagreements and at least twice the others' median rate |
 | `judgeDependentOrder` | a pair whose order depends on which panel member grades |
 | `outputTrouble` | truncated answers plus tool-limit hits at least 10 % of its answers |
-| `toolUseOutlier` | tool calls per question at most half or at least twice the others' median (median above 0.5) |
-| `answerLengthOutlier` | median answer length at most half or at least twice the others' median |
+| `toolUseOutlier` | tool calls per question at most half or at least twice the median of all models, its own value included (median above 0.5); three models or more |
+| `answerLengthOutlier` | median answer length at most half or at least twice the median of all models, its own value included; three models or more |
 | `providerErrors` | a provider error rate of at least 2 % and at least five times the median |
 
 The facts are `notable.count` and per finding `notable.<n>.kind`, `.models`, `.questions` and `.summary`; a
@@ -3791,7 +3801,12 @@ pair rules only).
 Each axis then gets a status, the fact `rca.axis.<axis>.status` with `rca.axis.<axis>.best`:
 **Root cause established** (a non-null hypothesis graded High and its `H0` rejected), **Probable cause**
 (the best hypothesis is Moderate), or **Not established** (otherwise, with the best hypothesis' grade
-and reasons, or *"No hypothesis fired on this axis."*).
+and reasons, or *"No hypothesis fired on this axis."*). In a document with pairs (a comparison or a
+per-model pack) the first two need a **pair** hypothesis: a within-model hypothesis says where one
+model's own time, cost or points go, not why the models differ, so an axis on which only within-model
+hypotheses fired reads *Not established* with *"Only hypotheses about one model's own breakdown fired on
+this axis; none compares the models."* A run- or battery-completion document has no pairs and takes the
+best hypothesis of either kind.
 
 ### The hypothesis rules
 
@@ -3852,13 +3867,18 @@ models, and its wording says so.
 
 **What is kept.** Every null hypothesis is kept; of the rest, the strongest three per axis and group (a
 pair, or one model's own rules), and at most **12 per axis** in total (`KeepPerGroup`, `MaxPerAxis`), so
-the prompt stays bounded. Hypotheses rank (`RootCauseHypotheses.Ranked`) by grade; then a pair whose null
-is rejected before one whose null stands; then by **the amount they explain in the axis' own unit**
-(`Explains`: the share, at most 100 %, of the pair's gap in index points, milliseconds or dollars per
-question, or of the model's own points at risk, time or cost per question; a hypothesis without such a
-share last); then by rule id. A share above 100 % arises when another component pulls the other way and
-is largest on the smallest gaps, so ranking by the share itself would put a negligible gap first. The
-axis' best hypothesis is the first in this order. Each kept hypothesis becomes the
+the prompt stays bounded. A research question (below) that no kept comparative hypothesis graded Low or
+higher answers **reserves** the best comparative one that does, even beyond the cap, or, when there is
+none and no kept within-model one answers it either, the best within-model one: at most one per question, so intelligence holds at most `MaxPerAxis` + 2 and speed and
+cost `MaxPerAxis` + 1, and a question printed with no hypothesis truly has none. Hypotheses rank
+(`RootCauseHypotheses.Ranked`) by grade; then a pair whose null is rejected before one whose null stands;
+then by **the amount they explain in the axis' own unit** (`Explains`: the share, between 0 and 100 %,
+of the pair's gap in index points, milliseconds or dollars per question, or of the model's own points at
+risk, time or cost per question; a hypothesis without such a share last); then by rule id. A share above
+100 % arises when another component pulls the other way and is largest on the smallest gaps, so ranking
+by the share itself would put a negligible gap first; a negative share works against the gap and
+explains none of it (HQ1 is *Not supported* when the worse model's answers without tools put no more of
+its points at risk than the better model's). The axis' best hypothesis is the first in this order. Each kept hypothesis becomes the
 facts `rca.hypothesis.<id>.<n>.statement`, `.label`, `.axis`, `.models`, `.locus`, `.grade`,
 `.gradeReasons`, `.for`, `.against`, `.refutedIf`, `.nextRun` or `.check`, and `.share` and `.interval`
 where it has a share; `<n>` numbers the hypotheses of one rule from 1. The **label**
@@ -3879,7 +3899,8 @@ the rule's *"A, or B"* (`RootCauseHypotheses.CheckReason`, `NullStandsReason`, `
 
 **The four questions** (`RootCauseProfiles.Questions`) are the ones a reader brings to the document, each
 about an axis extreme `AxisExtremes` already picks, and asked only when that axis has at least two
-comparable models:
+comparable models and the model is **strictly** ahead of its neighbor there: a tie at the top, the
+bottom, the slowest time or the highest cost asks nothing (`RootCauseProfiles.Targets`):
 
 | n | Question | Model |
 |---|---|---|
@@ -3888,14 +3909,27 @@ comparable models:
 | 3 | *Why is {model} slowest?* | Slowest by median answer time |
 | 4 | *Why is {model} the most expensive?* | Highest cost per question |
 
+For questions 1 and 2 the model's place against its neighbor is **established** when a paired
+Intelligence test favoring it is established, or when the two 95 % intervals do not overlap (bounds that
+touch overlap, as in tied ranks). When it is not, the question says so: *"Why did {model} score highest,
+though its lead over {neighbor} is not established?"*, *"Why did {model} score lowest, though its gap to
+{neighbor} is not established?"*.
+
 Each is the facts `rca.question.<n>.text`, `.model`, `.hypotheses` (the kept hypotheses that answer it,
-in rank order, *"none fired"* without one), `.status` (the best grade among them in plain words:
-*Established (High)*, *Probable (Moderate)*, *Suggestive (Low)*, or *Unknown*) and `.signals` (the
-model's top measured signals, from its profile). Question 1 takes the pair hypotheses where the model is
-the **better** side, and only its strengths as signals; questions 2 to 4 take the pair hypotheses where it
-is the **worse** side and its own within-model hypotheses. HQ3 (shared failures) answers none of them.
-The writer answers each in its answer slot, starting with the reason; code prints the answer's strength
-and hypothesis ids above it, or *"no hypothesis about this model fired — see its profile"*.
+comparative first, then within-model, *"none fired"* without one), `.status` (the strength in plain
+words: *Established (High)*, *Probable (Moderate)*, *Suggestive (Low)*, or *Unknown*), `.signals` (the
+model's top measured signals, from its profile), `.withinOnly` (no comparative hypothesis graded Low or
+higher answers it) and, for questions 1 and 2, `.orderEstablished`. Question 1 takes the pair hypotheses
+where the model is the **better** side, and only its strengths as signals; questions 2 to 4 take the pair
+hypotheses where it is the **worse** side and its own within-model hypotheses. HQ3 (shared failures)
+answers none of them. The strength is the best **comparative** grade at Low or higher; when there is
+none it is the best within-model grade capped at Low, so a question answered only by the model's own
+breakdown reads *Suggestive* at most; with neither it is *Unknown*. The writer answers each in its answer
+slot, starting with the reason, and is told when the order is not established or only the model's own
+breakdown answers; code prints the answer's strength above it with the comparative and within-model
+hypotheses named apart (*"Answer strength: Probable (Moderate) — against the other models, see HS1.1;
+its own breakdown, see WS3.3."*), or *"no hypothesis about this model fired — see its profile"*. A result
+stored before engine 4 prints the single list it was written with.
 
 **Model profiles** (`RootCauseProfiles.Build`), `rca.profile.<T>.*`, are code-written from facts already
 on the sheet, so they cannot be dropped by a rule and never use a causal word:
@@ -4213,14 +4247,16 @@ names exactly the tokens the validator accepts.
 | Rule | Check | Effect |
 |---|---|---|
 | 32 (`RootCauseEvidenceCausalRule`) | A causal word (`RootCauseClaimSupport.CausalWords`: *because*, *due to*, *caused*, *causes*, *explains*, *driven by*, *root cause*, *leads to*, *results in*, whole words and phrases ignoring case) in `scope`, an `evidence*` slot or an observation | The paragraph or item is dropped |
-| 33 (`RootCauseCausalClaimRule`) | A causal word in an answer slot, a `hypotheses*` slot, `conclusions` or `nextRuns` with no token of a hypothesis the sheet holds (`rca.hypothesis.<id>.<n>.*`, its `.label` included) or of an axis (`rca.axis.<axis>.*`) in the same sentence; in `nextRuns` only, an `rca.run.<n>.*` token serves as well, since the run order is decided by code | The paragraph is dropped |
+| 33 (`RootCauseCausalClaimRule`) | A causal word in an answer slot, a `hypotheses*` slot, `conclusions` or `nextRuns` with no token of a hypothesis graded **Low or higher** (`rca.hypothesis.<id>.<n>.*`, its `.label` included) or of an axis (`rca.axis.<axis>.*`) in the same sentence; in `nextRuns` only, an `rca.run.<n>.*` token serves as well, since the run order is decided by code. A causal word resting only on hypotheses graded Low needs a hedge word (`HedgeWords`: *may*, *might*, *could*, *possibly*, *probably*, *likely*, *perhaps*, *suggests*, *suggest*, *consistent with*) in the sentence. A **negated** causal word (directly after *not*, *never* or *cannot*, with *be*, *been*, *the* or *a* allowed between; *not only* asserts a cause and does not count) rules a cause out and may cite any hypothesis, *Not supported* included | The paragraph is dropped |
 | 34 (`RootCauseCertaintyRule`) | A certainty word (`CertaintyWords`: *established*, *confirmed*, *proven*, *definitely*, *certainly*, *root cause was found*), anywhere, without a token of a *High* hypothesis, or the `rca.axis.<axis>.status` token of an axis whose root cause is established, in the same sentence; a certainty word after *not*, *never* or *cannot* does not count | The paragraph or item is dropped |
 | 35 (`RootCauseWriterHypothesisRule`) | A `writerHypotheses` item without an axis, a statement, evidence for, a refuted-if statement or a known locus (`model`, `chat`, `harness`, `suite`, `corpus`, `provider`), with a confidence other than *Low*, or citing a model or fact that does not exist; each of its texts is capped at 40 words | The item is dropped |
 | 36 (`RootCauseAxisStatusRule`) | `conclusions` does not cite each axis' `rca.axis.<axis>.status`. An answer slot need not cite its question's `rca.question.<n>.status`: code prints the answer strength above it | A **warning**, checked over the kept text |
 
 A hypothesis' **label** is a noun phrase, so rule 31 lets it sit inside a sentence, while it still
 carries a cause for rule 33 and, for a *High* hypothesis, certainty for rule 34; its **statement** is a
-sentence and stands alone. The answer slots exist only for the questions the sheet asks: an answer slot
+sentence and stands alone. CLAIM SUPPORT lists only the hypotheses graded Low or higher as support for a
+cause, and says that a *Not supported* hypothesis' tokens support only a negated one (*not due to*, *not
+because*). A *Low* hypothesis is a lead, not a cause, which is why rule 33 asks for the hedge. The answer slots exist only for the questions the sheet asks: an answer slot
 is required when `rca.question.<n>.text` is on the sheet, and a filled slot for a question not asked is a
 rule-1 issue.
 
@@ -4233,7 +4269,8 @@ asking for a topic for every question the document cites whose text the writer w
 **The prompt** states each claim rule once, in CLAIM DISCIPLINE, rule 16 with a worked example for
 quality and one for cost; the system prompt points to a *CHECK BEFORE YOU ANSWER* block at the end of
 the user message — one line each for rules 3, 16, 31, 33, 34 and 36, each with an example built from the
-sheet's own tokens (a mechanism hypothesis, never a null one, for the cause example). The examples live
+sheet's own tokens (a mechanism hypothesis graded Low or higher, never a null one, for the cause
+example, worded *may be due to* when it is Low). The examples live
 in the user message so the system prompt, whose SHA-256 identifies it, holds no data. The user message
 also lists THE QUESTIONS with their tokens.
 

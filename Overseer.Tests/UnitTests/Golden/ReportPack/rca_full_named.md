@@ -19,7 +19,7 @@
 ### The questions
 
 > [!NOTE]
-> **Question.** **Why did Orion Max score highest?**
+> **Question.** **Why did Orion Max score highest, though its lead over Vega Pro is not established?**
 >
 > *Answer strength: no hypothesis about this model fired — see its profile.*
 >
@@ -35,14 +35,14 @@
 > [!NOTE]
 > **Question.** **Why is Zeta Prime slowest?**
 >
-> *Answer strength: Probable (Moderate) — see HS3.1.*
+> *Answer strength: Probable (Moderate) — against the other models, see HS3.1.*
 >
 > For Model D the measured signals are median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer. The answer strength is Probable (Moderate). The leading hypothesis is Model D's more output tokens, compared with Orion Max.
 
 > [!NOTE]
 > **Question.** **Why is Nova Lite the most expensive?**
 >
-> *Answer strength: Probable (Moderate) — see HC2.2 and HC4.2.*
+> *Answer strength: Probable (Moderate) — against the other models, see HC2.2 and HC4.2.*
 >
 > For Model C the measured signals are $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache. The answer strength is Probable (Moderate). The leading hypothesis is Model C's higher price per token, compared with Orion Max.
 
@@ -4851,6 +4851,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
+      "display": "not established",
+      "key": "rca.question.1.orderEstablished",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness",
       "key": "rca.question.1.signals"
     },
@@ -4862,8 +4868,14 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Why did Orion Max score highest?",
+      "display": "Why did Orion Max score highest, though its lead over Model A is not established?",
       "key": "rca.question.1.text"
+    },
+    {
+      "available": true,
+      "display": "not answered by the model's own breakdown alone",
+      "key": "rca.question.1.withinOnly",
+      "value": false
     },
     {
       "available": true,
@@ -4876,6 +4888,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "display": "Model D",
       "key": "rca.question.2.model",
       "value": "D"
+    },
+    {
+      "available": true,
+      "display": "established",
+      "key": "rca.question.2.orderEstablished",
+      "value": true
     },
     {
       "available": true,
@@ -4892,6 +4910,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Why did Model D score lowest?",
       "key": "rca.question.2.text"
+    },
+    {
+      "available": true,
+      "display": "not answered by the model's own breakdown alone",
+      "key": "rca.question.2.withinOnly",
+      "value": false
     },
     {
       "available": true,
@@ -4923,6 +4947,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
+      "display": "not answered by the model's own breakdown alone",
+      "key": "rca.question.3.withinOnly",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "HC2.2 and HC4.2",
       "key": "rca.question.4.hypotheses",
       "value": 2
@@ -4948,6 +4978,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Why is Model C the most expensive?",
       "key": "rca.question.4.text"
+    },
+    {
+      "available": true,
+      "display": "not answered by the model's own breakdown alone",
+      "key": "rca.question.4.withinOnly",
+      "value": false
     },
     {
       "available": true,
@@ -6953,7 +6989,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "unit": "usd"
       }
     ],
-    "engineVersion": 3,
+    "engineVersion": 4,
     "evidence": [
       {
         "atRisk": [
@@ -9380,28 +9416,39 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     "questions": [
       {
         "axis": "intelligence",
+        "comparativeKeys": [],
         "hypothesisKeys": [],
         "number": 1,
+        "orderEstablished": false,
         "signals": [
           "tied for first of 5 models on Accuracy",
           "tied for first of 5 models on Completeness"
         ],
-        "text": "Why did Orion Max score highest?",
-        "token": "subject"
+        "text": "Why did Orion Max score highest, though its lead over Model A is not established?",
+        "token": "subject",
+        "withinKeys": [],
+        "withinOnly": false
       },
       {
         "axis": "intelligence",
+        "comparativeKeys": [],
         "hypothesisKeys": [],
         "number": 2,
+        "orderEstablished": true,
         "signals": [
           "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
           "1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more"
         ],
         "text": "Why did Model D score lowest?",
-        "token": "D"
+        "token": "D",
+        "withinKeys": [],
+        "withinOnly": false
       },
       {
         "axis": "speed",
+        "comparativeKeys": [
+          "HS3.1"
+        ],
         "grade": "Moderate",
         "hypothesisKeys": [
           "HS3.1"
@@ -9413,10 +9460,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "2.5 model calls per answer"
         ],
         "text": "Why is Model D slowest?",
-        "token": "D"
+        "token": "D",
+        "withinKeys": [],
+        "withinOnly": false
       },
       {
         "axis": "cost",
+        "comparativeKeys": [
+          "HC2.2",
+          "HC4.2"
+        ],
         "grade": "Moderate",
         "hypothesisKeys": [
           "HC2.2",
@@ -9429,7 +9482,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "27% of input tokens read from the cache"
         ],
         "text": "Why is Model C the most expensive?",
-        "token": "C"
+        "token": "C",
+        "withinKeys": [],
+        "withinOnly": false
       }
     ],
     "recommendedRuns": [

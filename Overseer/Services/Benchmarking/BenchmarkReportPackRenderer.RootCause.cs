@@ -219,10 +219,7 @@ public static partial class BenchmarkReportPackRenderer
                 {
                     "**Question.** **" + SheetText(ctx, question.Text) + "**",
                     string.Empty,
-                    question.HypothesisKeys.Count > 0
-                        ? "*Answer strength: " + RootCauseGrades.WordWithGrade(question.Grade)
-                            + " — see " + BenchmarkReportFormat.LetterList(question.HypothesisKeys) + ".*"
-                        : "*Answer strength: no hypothesis about this model fired — see its profile.*",
+                    "*Answer strength: " + RcaAnswerStrength(question) + "*",
                     string.Empty
                 };
                 lines.Add(RcaAnswer(ctx, question.Number, answered));
@@ -250,6 +247,32 @@ public static partial class BenchmarkReportPackRenderer
                 + (string.IsNullOrWhiteSpace(result.ControlLimitReason) ? "." : ": " + OneLine(result.ControlLimitReason).TrimEnd('.') + "."));
         }
         Callout(sb, "WARNING", caveat);
+    }
+
+    /// <summary>
+    /// A research question's answer strength, after <c>Answer strength: </c>: the grade with the comparative
+    /// hypotheses apart from the model's own within-model ones; the grade with every hypothesis together for a
+    /// result stored before engine version 4 or when no hypothesis is graded Low or higher; a note when none fired.
+    /// </summary>
+    internal static string RcaAnswerStrength(RootCauseQuestion question)
+    {
+        ArgumentNullException.ThrowIfNull(question);
+        string grade = RootCauseGrades.WordWithGrade(question.Grade);
+        if (question.HypothesisKeys.Count == 0) return "no hypothesis about this model fired — see its profile.";
+        if (question.ComparativeKeys is not { } comparative || question.Grade == null || (comparative.Count == 0 && !question.WithinOnly))
+        {
+            return grade + " — see " + BenchmarkReportFormat.LetterList(question.HypothesisKeys) + ".";
+        }
+
+        var within = question.WithinKeys ?? new List<string>();
+        string own = within.Count > 0 ? BenchmarkReportFormat.LetterList(within) : string.Empty;
+        if (question.WithinOnly)
+        {
+            return grade + " — no hypothesis graded Low or higher compares it with the other models; its own breakdown, see "
+                   + own + ", says where its own time, cost or points go.";
+        }
+        return grade + " — against the other models, see " + BenchmarkReportFormat.LetterList(comparative)
+               + (within.Count > 0 ? "; its own breakdown, see " + own : string.Empty) + ".";
     }
 
     /// <summary>

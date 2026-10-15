@@ -143,8 +143,11 @@ public static class BenchmarkNotableFindings
     /// <summary>Output trouble: truncated answers plus tool-limit hits at least this share of the model's answers.</summary>
     public const double OutputTroubleShare = 0.10;
 
-    /// <summary>A tool-use outlier: the others' median tool calls per question is above this.</summary>
-    public const double ToolUseMinOthersMedian = 0.5;
+    /// <summary>A tool-use outlier: the median tool calls per question of all models is above this.</summary>
+    public const double ToolUseMinMedian = 0.5;
+
+    /// <summary>A tool-use or answer-length outlier needs at least this many models with the figure.</summary>
+    public const int OutlierMinModels = 3;
 
     /// <summary>A provider error rate at least this…</summary>
     public const double ProviderErrorRateAtLeast = 0.02;
@@ -155,7 +158,7 @@ public static class BenchmarkNotableFindings
     /// <summary>What the section printing the findings says the rules are.</summary>
     public const string RulesNote = "Detected by code from the figures, in this order, at most two of a kind and ten in all: "
         + "a model established as scoring higher than another (by a paired test or by 95% intervals that do not overlap) at no more than half its cost per question, or half its median answer time; "
-        + "one model at two thinking levels where the lower level's Intelligence Index is at least the higher's; "
+        + "one model at two thinking levels where the lower level's Intelligence Index is at least the higher's and the higher level is not established above it; "
         + "the highest-Index or reference model scoring 50 or less where the other models' median is 75 or more; "
         + "the lowest-Index model scoring at least 15 points above every other model on a question; "
         + "every model scoring below 50 on a question; "
@@ -163,7 +166,7 @@ public static class BenchmarkNotableFindings
         + "at least two critical errors, or three panel disagreements counted over the answers both panel members graded, at twice the other models' median rate or more; "
         + "a pair whose order depends on which panel member grades; "
         + "truncated answers and tool-limit hits on at least 10% of a model's answers; "
-        + "tool calls per question or median answer length at most half or at least twice the other models' median; "
+        + "tool calls per question or median answer length at most half or at least twice the median of all models, with three models or more; "
         + "and a provider error rate of at least 2% and five times the other models' median.";
 
     /// <summary>What a section prints when no rule found anything.</summary>
@@ -304,7 +307,10 @@ public static class BenchmarkNotableFindings
         return found;
     }
 
-    /// <summary>One model at two thinking levels whose lower level's Intelligence Index is at least the higher's.</summary>
+    /// <summary>
+    /// One model at two thinking levels whose lower level's Intelligence Index is at least the higher's, where
+    /// neither a paired test nor the intervals establish the higher level above the lower.
+    /// </summary>
     private static List<Candidate> Inversions(IReadOnlyList<BenchmarkNotableModel> models, IReadOnlyList<BenchmarkReportPairedFamily> families)
     {
         var found = new List<Candidate>();
@@ -314,6 +320,7 @@ public static class BenchmarkNotableFindings
             {
                 if (!SameModel(low, high) || CompareLevels(low.ThinkingLevel, high.ThinkingLevel) is not < 0) continue;
                 if (low.Quality is not double lowQuality || high.Quality is not double highQuality || lowQuality < highQuality) continue;
+                if (EstablishedAbove(high, low, families) is not null) continue;
 
                 string order = EstablishedAbove(low, high, families) is { } basis
                     ? "the order is " + basis.How
@@ -633,20 +640,23 @@ public static class BenchmarkNotableFindings
         return found;
     }
 
-    /// <summary>Tool calls per question or median answer length at most half or at least twice the other models' median.</summary>
+    /// <summary>
+    /// Tool calls per question or median answer length at most half or at least twice the median of every model
+    /// with the figure, the model's own included; nothing with fewer than <see cref="OutlierMinModels"/> such models.
+    /// </summary>
     private static List<Candidate> Outliers(IReadOnlyList<BenchmarkNotableModel> models, string kind)
     {
         bool tools = kind == ToolUseOutlier;
         double? Of(BenchmarkNotableModel m) => tools ? m.ToolCallsPerQuestion : m.MedianAnswerChars;
 
         var found = new List<Candidate>();
+        var values = models.Select(Of).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+        if (values.Count < OutlierMinModels || BenchmarkComparisonModelProfile.Median(values) is not double median || median <= 0) return found;
+        if (tools && median <= ToolUseMinMedian) return found;
+
         foreach (var m in models)
         {
             if (Of(m) is not double own) continue;
-
-            var others = models.Where(o => o.Letter != m.Letter).Select(Of).Where(v => v.HasValue).Select(v => v!.Value).ToList();
-            if (others.Count == 0 || BenchmarkComparisonModelProfile.Median(others) is not double median || median <= 0) continue;
-            if (tools && median <= ToolUseMinOthersMedian) continue;
 
             bool low = own <= median * AtMostHalf;
             bool high = own >= median / AtMostHalf;
@@ -654,8 +664,8 @@ public static class BenchmarkNotableFindings
 
             string side = low ? "at most half" : "at least twice";
             string summary = tools
-                ? $"Model {m.Letter} made {BenchmarkReportFormat.OneDecimal(own)} tool calls per question, {side} the other models' median of {BenchmarkReportFormat.OneDecimal(median)}."
-                : $"Model {m.Letter}'s median answer is {BenchmarkReportFormat.Count(own)} characters, {side} the other models' median of {BenchmarkReportFormat.Count(median)}.";
+                ? $"Model {m.Letter} made {BenchmarkReportFormat.OneDecimal(own)} tool calls per question, {side} the median of all {Inv(values.Count)} models ({BenchmarkReportFormat.OneDecimal(median)})."
+                : $"Model {m.Letter}'s median answer is {BenchmarkReportFormat.Count(own)} characters, {side} the median of all {Inv(values.Count)} models ({BenchmarkReportFormat.Count(median)}).";
             found.Add(new Candidate(kind, new[] { m.Letter }, Array.Empty<int>(),
                 new[] { Model(m, tools ? "tools.callsPerQuestion" : "profile.answerChars.median") }, summary,
                 Math.Abs(Math.Log(Math.Max(own, 1e-9) / median))));

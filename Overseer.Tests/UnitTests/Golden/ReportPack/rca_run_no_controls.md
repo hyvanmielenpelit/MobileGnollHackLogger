@@ -2320,7 +2320,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "unit": "usd"
       }
     ],
-    "engineVersion": 3,
+    "engineVersion": 4,
     "evidence": [
       {
         "atRisk": [

@@ -992,6 +992,113 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("'95% interval'", lines[1]);
     }
 
+    /// <summary>
+    /// The fixture comparison's Root Cause Analysis prompt with every hypothesis graded Not supported except the
+    /// first mechanism with a label (<c>Kept</c>), graded <paramref name="grade"/>; <c>Refuted</c> is the next
+    /// mechanism with a label. The sheet's research questions are replaced by <paramref name="questions"/>, each
+    /// with its status and, where given, its <c>orderEstablished</c> and <c>withinOnly</c> facts.
+    /// </summary>
+    private static (BenchmarkReportWriterPrompt Prompt, string Kept, string Refuted) RegradedRootCausePrompt(
+        string grade, params (int Number, string Status, bool? OrderEstablished, bool? WithinOnly)[] questions)
+    {
+        const string hypothesis = "rca.hypothesis.";
+        const string notSupported = "NotSupported";
+        static BenchmarkReportFact NewFact(string key, System.Text.Json.Nodes.JsonNode? value, string display) => new() { Key = key, Value = value, Display = display };
+        static bool IsGrade(string key) => key.StartsWith(hypothesis, StringComparison.Ordinal) && key.EndsWith(".grade", StringComparison.Ordinal);
+        static string Shown(string g) => g == notSupported ? "Not supported" : g;
+
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var sheet = built.Sheet!;
+        var keys = sheet.Facts.Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        var mechanisms = keys
+            .Where(k => IsGrade(k) && !k.StartsWith(hypothesis + "H0", StringComparison.Ordinal))
+            .Select(k => k[..^"grade".Length])
+            .Where(p => keys.Contains(p + "label"))
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+        Assert.True(mechanisms.Count >= 2, "The fixture needs two mechanism hypotheses with labels.");
+        string kept = mechanisms[0];
+        string refuted = mechanisms[1];
+
+        var facts = sheet.Facts
+            .Where(f => !f.Key.StartsWith("rca.question.", StringComparison.Ordinal))
+            .Select(f => IsGrade(f.Key)
+                ? NewFact(f.Key, System.Text.Json.Nodes.JsonValue.Create(f.Key == kept + "grade" ? grade : notSupported), Shown(f.Key == kept + "grade" ? grade : notSupported))
+                : f)
+            .ToList();
+        foreach (var q in questions)
+        {
+            string prefix = "rca.question." + q.Number.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".";
+            facts.Add(NewFact(prefix + "text", System.Text.Json.Nodes.JsonValue.Create("Why does this model stand where it does?"), "Why does this model stand where it does?"));
+            facts.Add(NewFact(prefix + "status", System.Text.Json.Nodes.JsonValue.Create(q.Status), q.Status));
+            if (q.OrderEstablished is bool order) facts.Add(NewFact(prefix + "orderEstablished", System.Text.Json.Nodes.JsonValue.Create(order), order ? "yes" : "no"));
+            if (q.WithinOnly is bool within) facts.Add(NewFact(prefix + "withinOnly", System.Text.Json.Nodes.JsonValue.Create(within), within ? "yes" : "no"));
+        }
+        sheet.Facts = facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
+
+        return (BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, built.Content!), kept, refuted);
+    }
+
+    [Theory]
+    [InlineData("Low", "may be due to")]
+    [InlineData("Moderate", "is due to")]
+    public void TheRootCauseClaimSupport_ListsOnlyHypothesesGradedLowOrHigher_AndRule33sExampleIsHedgedWhenLow(string grade, string wording)
+    {
+        var (prompt, kept, refuted) = RegradedRootCausePrompt(grade);
+        var lines = prompt.UserMessage.Split('\n');
+
+        int support = Array.FindIndex(lines, l => l.StartsWith("CLAIM SUPPORT (", StringComparison.Ordinal));
+        Assert.True(support > 0);
+        int causal = Array.FindIndex(lines, support, l => l.StartsWith("- Causal words in ", StringComparison.Ordinal));
+        Assert.True(causal > support);
+        Assert.Contains(kept + "*", lines[causal], StringComparison.Ordinal);
+        Assert.DoesNotContain(refuted + "*", lines[causal], StringComparison.Ordinal);
+        Assert.Equal("- The tokens of a Not supported hypothesis support only a negated cause (not due to, not because).", lines[causal + 1]);
+
+        string rule33 = Assert.Single(lines, l => l.StartsWith("- Rule 33, causes:", StringComparison.Ordinal));
+        Assert.Contains("'Part of the gap " + wording + " {{" + kept + "label}}.'", rule33, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheRootCauseQuestions_SayWhenNoHypothesisAnswers_WhenTheOrderIsNotEstablished_AndWhenOnlyTheModelsOwnBreakdownAnswers()
+    {
+        const string noAnswer = "  no hypothesis answers this question:";
+        const string order = "  the order is not established: say so in the answer's first sentence.";
+        const string within = "  only hypotheses about this model's own breakdown answer it: say that they describe where its own time, cost or points go, not why it differs from the other models.";
+        var (prompt, _, _) = RegradedRootCausePrompt("Moderate",
+            (1, "Unknown", false, false),
+            (2, "Moderate", true, false),
+            (3, "Low", null, true),
+            (4, "Unknown", null, true));
+
+        string message = prompt.UserMessage;
+        int start = message.IndexOf("THE QUESTIONS (", StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        int end = message.IndexOf("\n\n", start, StringComparison.Ordinal);
+        var lines = message[start..end].Split('\n').Skip(1).ToList();
+
+        List<string> NotesOf(int question)
+        {
+            string slot = Overseer.Services.Benchmarking.RootCause.RootCauseClaimSupport.AnswerSlot(question);
+            int at = lines.FindIndex(l => l.StartsWith("- " + slot + ":", StringComparison.Ordinal));
+            Assert.True(at >= 0, "No line for question " + question);
+            return lines.Skip(at + 1).TakeWhile(l => l.StartsWith("  ", StringComparison.Ordinal)).ToList();
+        }
+
+        var first = NotesOf(1);
+        Assert.Equal(2, first.Count);
+        Assert.StartsWith(noAnswer, first[0], StringComparison.Ordinal);
+        Assert.Equal(order, first[1]);
+
+        Assert.Empty(NotesOf(2));
+
+        Assert.Equal(new[] { within }, NotesOf(3));
+
+        // A question no hypothesis answers says so; the within-only line would contradict it.
+        var fourth = Assert.Single(NotesOf(4));
+        Assert.StartsWith(noAnswer, fourth, StringComparison.Ordinal);
+    }
+
     // Comparison scope --------------------------------------------------------------------------
 
     public static TheoryData<BenchmarkReportAudience, string> ComparisonPromptFiles => new()

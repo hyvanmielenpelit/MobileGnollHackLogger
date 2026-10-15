@@ -98,8 +98,10 @@ public sealed class BenchmarkReportCleanResult
 /// <para>A Root Cause Analysis, in comparison or model scope, adds the claim discipline of rules 32 to 36,
 /// each built from <see cref="RootCauseClaimSupport"/>, which the prompt shares: rule 32, a causal word in
 /// the scope or an evidence slot, or in an observation, drops the paragraph or item; rule 33, a causal word
-/// in an answer slot, a hypotheses slot, the conclusions or the next runs without a hypothesis or axis token
-/// in its sentence (in the next runs, a run token too), drops the paragraph; rule 34, a certainty word
+/// in an answer slot, a hypotheses slot, the conclusions or the next runs that states a cause without a token of
+/// a hypothesis graded Low or higher or of an axis in its sentence (in the next runs, a run token too), or on
+/// hypotheses graded Low only without a hedge word, or a negated causal word without any hypothesis or axis
+/// token, drops the paragraph; rule 34, a certainty word
 /// anywhere without a High hypothesis token or an established axis status token in its sentence, drops the
 /// paragraph or item; rule 35, a writer hypothesis without an axis, statement, evidence for, refuted-if
 /// statement or known locus, with a confidence other than Low, or citing a model or fact that does not
@@ -243,7 +245,11 @@ public static class BenchmarkReportPackValidator
     /// <summary>Rule 32: a causal word in the scope or an evidence slot, or in an observation.</summary>
     public const int RootCauseEvidenceCausalRule = 32;
 
-    /// <summary>Rule 33: a causal word in a hypotheses slot, the conclusions or the next runs needs a hypothesis or axis token in its sentence.</summary>
+    /// <summary>
+    /// Rule 33: a causal word in an answer slot, a hypotheses slot, the conclusions or the next runs needs in its sentence a
+    /// token of a hypothesis graded Low or higher, hedged when the hypotheses are Low only, or of an axis; a negated one
+    /// may cite any hypothesis, a Not supported one included.
+    /// </summary>
     public const int RootCauseCausalClaimRule = 33;
 
     /// <summary>Rule 34: a certainty word needs a High hypothesis token or an established axis status token in its sentence.</summary>
@@ -1989,6 +1995,7 @@ public static class BenchmarkReportPackValidator
         bool inferring = slot != null && RootCauseClaimSupport.InferenceSlots.Contains(slot, StringComparer.Ordinal);
         var observed = new List<string>();
         var unsupported = new List<string>();
+        var unhedged = new List<string>();
         var certain = new List<string>();
 
         foreach (var (plain, tokens) in TokenSentences(text))
@@ -1997,9 +2004,24 @@ public static class BenchmarkReportPackValidator
             {
                 observed.AddRange(RootCauseClaimSupport.CausalPhrases(plain));
             }
-            else if (inferring && !tokens.Any(t => claims.SupportsCausal(t, slot)))
+            else if (inferring)
             {
-                unsupported.AddRange(RootCauseClaimSupport.CausalPhrases(plain));
+                var stated = RootCauseClaimSupport.UnnegatedCausalPhrases(plain).ToList();
+                if (stated.Count > 0)
+                {
+                    if (!tokens.Any(t => claims.SupportsCausal(t, slot)))
+                    {
+                        unsupported.AddRange(stated);
+                    }
+                    else if (claims.NeedsHedge(tokens, slot) && !RootCauseClaimSupport.HedgePhrases(plain).Any())
+                    {
+                        unhedged.AddRange(stated);
+                    }
+                }
+                if (!tokens.Any(t => claims.SupportsNegatedCausal(t, slot)))
+                {
+                    unsupported.AddRange(RootCauseClaimSupport.NegatedCausalPhrases(plain));
+                }
             }
             if (!tokens.Any(claims.SupportsCertainty))
             {
@@ -2016,9 +2038,15 @@ public static class BenchmarkReportPackValidator
         }
         if (unsupported.Count > 0)
         {
-            Issue(notes, RootCauseCausalClaimRule, location, $"Uses the causal wording {Quoted(unsupported)} without a hypothesis token in the same sentence: "
-                + "state a cause only as a hypothesis of the analysis states it, citing one of its rca.hypothesis tokens, its label, or its axis' rca.axis tokens in that sentence (CLAIM SUPPORT lists them)"
-                + (string.Equals(slot, BenchmarkReportSlots.NextRuns, StringComparison.Ordinal) ? ", or the rca.run token of the run it describes." : "."));
+            Issue(notes, RootCauseCausalClaimRule, location, $"Uses the causal wording {Quoted(unsupported)} without a hypothesis graded Low or higher in the same sentence: "
+                + "cite one (CLAIM SUPPORT lists them)"
+                + (string.Equals(slot, BenchmarkReportSlots.NextRuns, StringComparison.Ordinal) ? ", or the rca.run token of the run it describes" : string.Empty)
+                + ". A Not supported hypothesis may be cited only to rule a cause out (not due to …).");
+        }
+        if (unhedged.Count > 0)
+        {
+            Issue(notes, RootCauseCausalClaimRule, location, $"Uses the causal wording {Quoted(unhedged)} on a hypothesis graded Low only: "
+                + "a Low hypothesis is a lead, so say so (may, possibly, consistent with …).");
         }
         if (certain.Count > 0)
         {

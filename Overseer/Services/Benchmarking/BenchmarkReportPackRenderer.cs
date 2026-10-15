@@ -118,8 +118,11 @@ public static partial class BenchmarkReportPackRenderer
     /// version 17 each question is answered only by the hypotheses that answer it, the answers start with
     /// the reason, and a model is named only through its token. From version 18 the Root Cause Analysis
     /// explains its terms (a Key terms section and first-use glosses) and its writer is asked for plain language.
+    /// From version 19 a research question is asked only when its model is strictly first or last, says when that
+    /// order is not established, and separates comparative from within-model hypotheses; a causal word cites a
+    /// hypothesis graded Low or higher.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 18;
+    public const int ComparisonReportFormatVersion = 19;
 
     /// <summary>The comparison format version whose Root Cause Analysis writer output first carries the answer slots.</summary>
     private const int AnswerSlotsFormatVersion = 16;

@@ -49,8 +49,11 @@ internal sealed class RootCauseDraft
     /// </summary>
     public double? Scale { get; set; }
 
-    /// <summary>The amount of <see cref="Scale"/> the hypothesis accounts for: its share, at most one, of it.</summary>
-    public double? Explains => Share is double s && Scale is double g ? Math.Min(Math.Abs(s), 1.0) * Math.Abs(g) : null;
+    /// <summary>
+    /// The amount of <see cref="Scale"/> the hypothesis accounts for: its share, between zero and one, of it. A share
+    /// pulling the other way accounts for none.
+    /// </summary>
+    public double? Explains => Share is double s && Scale is double g ? Math.Clamp(s, 0.0, 1.0) * Math.Abs(g) : null;
 
     public List<RootCauseRobustnessCheck> Robustness { get; } = new();
     public List<string> Confounds { get; } = new();
@@ -77,7 +80,10 @@ public static class RootCauseHypotheses
     /// <summary>Hypotheses kept per axis and group (a pair, or one model's own rules).</summary>
     public const int KeepPerGroup = 3;
 
-    /// <summary>Non-null hypotheses kept per axis at most.</summary>
+    /// <summary>
+    /// Non-null hypotheses the rank cut keeps per axis at most; the keep rule then reserves at most one more for each
+    /// research question on the axis.
+    /// </summary>
     public const int MaxPerAxis = 12;
 
     /// <summary>A question scored below this is a miss.</summary>
@@ -249,14 +255,27 @@ public static class RootCauseHypotheses
         };
     }
 
+    /// <summary>The hypotheses kept, with no research question to reserve a hypothesis for.</summary>
+    internal static List<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> Keep(IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> graded)
+        => Keep(graded, Array.Empty<RootCauseQuestionTarget>(), (_, _) => false);
+
     /// <summary>
     /// The hypotheses kept: every null, then per axis and group the strongest <see cref="KeepPerGroup"/>
     /// non-null hypotheses (in <see cref="Ranked"/> order), and at most <see cref="MaxPerAxis"/> per axis.
-    /// Each numbered within its rule.
+    /// A research question of <paramref name="targets"/> that no kept comparative hypothesis graded Low or higher
+    /// answers (as <paramref name="answers"/> decides) then has the best comparative one that does reserved for
+    /// it, beyond <see cref="MaxPerAxis"/>; with none, and no kept within-model one either, the best within-model
+    /// one. Each in <see cref="Ranked"/> order, at most one per question. Each numbered within its rule.
     /// </summary>
-    internal static List<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> Keep(IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> graded)
+    internal static List<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> Keep(
+        IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> graded,
+        IReadOnlyList<RootCauseQuestionTarget> targets,
+        Func<RootCauseQuestionTarget, RootCauseHypothesis, bool> answers)
     {
-        var kept = new List<(RootCauseHypothesis, RootCauseDraft)>();
+        ArgumentNullException.ThrowIfNull(targets);
+        ArgumentNullException.ThrowIfNull(answers);
+        int lowRank = RootCauseGrades.Rank(RootCauseGrades.Low);
+        var kept = new List<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)>();
         foreach (string axis in RootCauseAxes.All)
         {
             var nulls = graded.Where(g => g.Hypothesis.Axis == axis && g.Hypothesis.Kind == "null").ToList();
@@ -266,6 +285,26 @@ public static class RootCauseHypotheses
                 .SelectMany(group => Ranked(group).Take(KeepPerGroup));
             kept.AddRange(nulls);
             kept.AddRange(Ranked(ranked).Take(MaxPerAxis));
+
+            foreach (var target in targets.Where(t => t.Axis == axis))
+            {
+                bool Supported((RootCauseHypothesis Hypothesis, RootCauseDraft Draft) g)
+                    => RootCauseGrades.Rank(g.Hypothesis.Grade) >= lowRank && answers(target, g.Hypothesis);
+
+                if (kept.Any(k => k.Hypothesis.Kind == "pair" && Supported(k))) continue;
+                var candidates = graded
+                    .Where(g => g.Hypothesis.Axis == axis && g.Hypothesis.Kind != "null" && Supported(g))
+                    .ToList();
+                var comparative = Ranked(candidates.Where(g => g.Hypothesis.Kind == "pair")).FirstOrDefault();
+                if (comparative.Hypothesis != null)
+                {
+                    kept.Add(comparative);
+                    continue;
+                }
+                if (kept.Any(Supported)) continue;
+                var within = Ranked(candidates.Where(g => g.Hypothesis.Kind != "pair")).FirstOrDefault();
+                if (within.Hypothesis != null) kept.Add(within);
+            }
         }
 
         var counters = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -292,16 +331,26 @@ public static class RootCauseHypotheses
             .ThenBy(g => g.Hypothesis.Id, StringComparer.Ordinal)
             .ThenBy(g => g.Draft.Group, StringComparer.Ordinal);
 
+    /// <summary>The reason of an axis whose only non-null hypotheses are within-model ones in a document with pairs.</summary>
+    public const string WithinOnlyAxisReason = "Only hypotheses about one model's own breakdown fired on this axis; none compares the models.";
+
+    /// <summary>The status of an axis in a document without pairs (a run or battery completion).</summary>
+    internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept)
+        => AxisStatus(axis, kept, hasPairs: false);
+
     /// <summary>
     /// The status of an axis (§ A2): established when a non-null hypothesis is High and its null is
-    /// rejected; probable when the best is Moderate; otherwise not established. The reason names the best
-    /// hypothesis' grade and the grade reasons that applied to it, each one clause.
+    /// rejected; probable when the best is Moderate; otherwise not established. With
+    /// <paramref name="hasPairs"/> (a comparison or a per-model pack), only pair hypotheses count, and an axis
+    /// with within-model hypotheses alone is not established. The reason names the best hypothesis' grade and
+    /// the grade reasons that applied to it, each one clause.
     /// </summary>
-    internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept)
+    internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept, bool hasPairs)
     {
-        var candidates = kept
+        var nonNull = kept
             .Where(k => k.Hypothesis.Axis == axis && k.Hypothesis.Kind != "null")
             .ToList();
+        var candidates = hasPairs ? nonNull.Where(k => k.Hypothesis.Kind == "pair").ToList() : nonNull;
         var best = candidates.FirstOrDefault();
         if (best.Hypothesis == null)
         {
@@ -309,7 +358,7 @@ public static class RootCauseHypotheses
             {
                 Axis = axis,
                 Status = RootCauseStatuses.NotEstablished,
-                Reason = "No rule found a possible cause on this axis."
+                Reason = nonNull.Count > 0 ? WithinOnlyAxisReason : "No rule found a possible cause on this axis."
             };
         }
 
@@ -575,6 +624,11 @@ public static class RootCauseHypotheses
                     else if (withA.Count == 0 || withoutA.Count == 0) d.Against.Add("There is no contrast between answers with and without tools.");
                 }
                 double points = atA.Points[0] - atB.Points[0];
+                if (points <= 0)
+                {
+                    d.NotSupported = true;
+                    d.Against.Add("Answers without tools put no more of " + A + "'s index points at risk than of " + B + "'s.");
+                }
                 d.Share = gap > 0 ? points / gap : null;
                 d.For.Add("Answers without tools put " + OneDecimal(atA.Points[0]) + " index points of " + A + " at risk (upper bound), " + OneDecimal(atB.Points[0]) + " of " + B + "'s.");
                 bool contrast = mw != null && mw.PValue < RootCauseStatistics.SignificanceLevel;

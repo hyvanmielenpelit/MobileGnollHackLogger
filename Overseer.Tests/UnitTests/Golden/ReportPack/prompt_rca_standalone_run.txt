@@ -137,7 +137,7 @@ TERMS (each term with a plain gloss you may add in parentheses after it; a gloss
 
 CLAIM DISCIPLINE (code checks every sentence; a paragraph or item that breaks one of the first four rules is removed, and the others ask for a revision):
 - Causal words (because, due to, caused, causes, explains, driven by, root cause, leads to, results in) never appear in the scope, the evidence slots or the observations.
-- In the answer slots, the hypotheses slots, the conclusions and the next runs, a causal word needs, in the same sentence, a token of the hypothesis it states (rca.hypothesis.<id>.<n>.*, its label included) or of its axis (rca.axis.<axis>.*), as CLAIM SUPPORT lists them. In the next runs, the rca.run.<n>.* token of the run the sentence describes serves as well.
+- In the answer slots, the hypotheses slots, the conclusions and the next runs, a causal word needs, in the same sentence, a token of the hypothesis it states (rca.hypothesis.<id>.<n>.*, its label included) or of its axis (rca.axis.<axis>.*), as CLAIM SUPPORT lists them. In the next runs, the rca.run.<n>.* token of the run the sentence describes serves as well. That hypothesis is graded Low or higher, and the sentence is hedged (may, might, could, possibly, probably, likely, perhaps, suggests, suggest, consistent with) when it is Low; a Not supported hypothesis is cited only to rule a cause out ('is not due to').
 - Certainty words (established, confirmed, proven, definitely, certainly, root cause was found) need, in the same sentence, a token of a hypothesis graded High or the status token of an axis whose root cause is established, as CLAIM SUPPORT lists them. Elsewhere write probable, consistent with or not established; 'not established' is always allowed. Describe a paired test's result as what the paired test finds, never as established or confirmed.
 - A writer hypothesis without an axis, a statement, evidence for, a refuted-if statement or a known locus, with a confidence other than Low, or citing a model or a fact the data does not have, is removed.
 - The conclusions cite every axis' status token: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.
@@ -554,7 +554,8 @@ THE QUESTIONS (answer each listed question in its slot, starting with the reason
 
 CLAIM SUPPORT (derived from FACTS: what a sentence must cite for each kind of claim)
 - Causal words never appear in: scope, evidenceIntelligence, evidenceSpeed, evidenceCost, and the observations.
-- Causal words in answerBest, answerWorst, answerSpeed, answerCost, hypothesesIntelligence, hypothesesSpeed, hypothesesCost, conclusions, nextRuns need, in the same sentence, one of: rca.hypothesis.H0-W.1.*, rca.hypothesis.WC1.1.*, rca.hypothesis.WS2.1.*, rca.hypothesis.WS3.1.*, rca.axis.intelligence.*, rca.axis.speed.*, rca.axis.cost.*; a hypothesis' label counts as its token. In nextRuns, an rca.run.<n>.* token counts as well.
+- Causal words in answerBest, answerWorst, answerSpeed, answerCost, hypothesesIntelligence, hypothesesSpeed, hypothesesCost, conclusions, nextRuns need, in the same sentence, one of: rca.hypothesis.H0-W.1.*, rca.hypothesis.WC1.1.*, rca.hypothesis.WS3.1.*, rca.axis.intelligence.*, rca.axis.speed.*, rca.axis.cost.*; a hypothesis' label counts as its token. In nextRuns, an rca.run.<n>.* token counts as well.
+- The tokens of a Not supported hypothesis support only a negated cause (not due to, not because).
 - Certainty words need, in the same sentence, one of: none: no hypothesis is graded High and no axis has an established root cause, so use no certainty word and write probable or not established
 - The conclusions cite: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}}, {{rca.axis.cost.status}}
 

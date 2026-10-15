@@ -187,7 +187,7 @@ public sealed class RootCauseInput
 public static class RootCauseEngine
 {
     /// <summary>The version stored on every result.</summary>
-    public const int Version = 3;
+    public const int Version = 4;
 
     public const string ComparisonScope = "Comparison";
     public const string ModelScope = "Model";
@@ -279,7 +279,8 @@ public static class RootCauseEngine
         if (RootCauseHypotheses.SharedLeadGroupNote(ctx, drafts) is { } sharedGroupNote) result.Notes.Add(sharedGroupNote);
 
         var graded = drafts.Select(d => (Hypothesis: RootCauseHypotheses.Grade(d, ctx.Name), Draft: d)).ToList();
-        var kept = RootCauseHypotheses.Keep(graded);
+        var targets = RootCauseProfiles.Targets(ctx);
+        var kept = RootCauseHypotheses.Keep(graded, targets, RootCauseProfiles.Answers);
         kept = kept
             .OrderBy(k => RootCauseAxes.All.ToList().IndexOf(k.Hypothesis.Axis))
             .ThenBy(k => k.Hypothesis.Kind == "null" ? 0 : 1)
@@ -300,7 +301,7 @@ public static class RootCauseEngine
             hypothesis.Label = RootCauseLabels.Of(hypothesis, ctx.Name);
         }
         result.Hypotheses = kept.Select(k => k.Hypothesis).ToList();
-        result.Axes = RootCauseAxes.All.Select(axis => RootCauseHypotheses.AxisStatus(axis, kept)).ToList();
+        result.Axes = RootCauseAxes.All.Select(axis => RootCauseHypotheses.AxisStatus(axis, kept, ctx.Pairs.Count > 0)).ToList();
 
         result.SystemFirst = kept.Any(k => k.Hypothesis.Kind != "null"
                                            && k.Hypothesis.Loci.Count > 0
@@ -315,7 +316,7 @@ public static class RootCauseEngine
         AddChartRows(ctx, result);
         result.KnownFacts = RootCauseKnownFacts.Build(ctx, result);
         result.Profiles = RootCauseProfiles.Build(ctx);
-        result.Questions = RootCauseProfiles.Questions(ctx, result);
+        result.Questions = RootCauseProfiles.Questions(ctx, result, targets);
         result.GradeCap = RootCauseProfiles.GradeCap(ctx);
 
         if (input.PricingBasisKind == BenchmarkReportFacts.PricingBasisCatalog && input.Models.Any(m => m.Evidence.Priced))
@@ -1383,6 +1384,15 @@ public static class RootCauseFacts
             facts.Add(prefix + "hypotheses", question.HypothesisKeys.Count,
                 question.HypothesisKeys.Count == 0 ? "none fired" : BenchmarkReportFormat.LetterList(question.HypothesisKeys));
             facts.Text(prefix + "signals", question.Signals.Count == 0 ? "none recorded" : string.Join("; ", question.Signals));
+            if (question.ComparativeKeys != null)
+            {
+                facts.Add(prefix + "withinOnly", question.WithinOnly,
+                    question.WithinOnly ? "only the model's own breakdown answers it" : "not answered by the model's own breakdown alone");
+            }
+            if (question.OrderEstablished is bool order)
+            {
+                facts.Add(prefix + "orderEstablished", order, order ? "established" : "not established");
+            }
         }
 
         foreach (var profile in result.Profiles)
@@ -1644,6 +1654,13 @@ public static class RootCauseLabels
 }
 
 /// <summary>
+/// A research question before its hypotheses: its number, axis and model, the model's neighbor on the axis (the
+/// next model toward the middle), its text, and for questions 1 and 2 whether the order against the neighbor is
+/// established (null for questions 3 and 4).
+/// </summary>
+internal sealed record RootCauseQuestionTarget(int Number, string Axis, RootCauseModelInput Model, RootCauseModelInput Neighbor, string Text, bool? OrderEstablished);
+
+/// <summary>
 /// The model profiles, the research questions and the grade cap of a result: each a measured count, share or
 /// rank with its questions, built from the evidence the engine read. No entry states a cause.
 /// </summary>
@@ -1703,49 +1720,115 @@ public static class RootCauseProfiles
     }
 
     /// <summary>
-    /// The research questions whose axis has at least two comparable models: why the model with the highest
-    /// Intelligence Index scored highest (1), why the lowest scored lowest (2), why the slowest by median model
-    /// time is slowest (3) and why the most expensive per question is the most expensive (4).
+    /// The research questions' targets, from the inputs alone: why the model with the highest Intelligence Index
+    /// scored highest (1), why the lowest scored lowest (2), why the slowest by median model time is slowest (3)
+    /// and why the most expensive per question is the most expensive (4). A question is asked only when its axis
+    /// has at least two comparable models and its model is strictly ahead of its neighbor there. Questions 1 and 2
+    /// say when the order against the neighbor is not established.
     /// </summary>
-    internal static List<RootCauseQuestion> Questions(RootCauseContext ctx, RootCauseResult result)
+    internal static List<RootCauseQuestionTarget> Targets(RootCauseContext ctx)
     {
         var models = ctx.Models;
         var quality = models.Where(m => m.QualityIndex.HasValue).OrderByDescending(m => m.QualityIndex!.Value).ThenBy(m => m.Token, StringComparer.Ordinal).ToList();
         var speed = models.Where(m => !m.SpeedDegraded && m.ModelTimeP50Ms.HasValue).OrderBy(m => m.ModelTimeP50Ms!.Value).ThenBy(m => m.Token, StringComparer.Ordinal).ToList();
         var cost = models.Where(m => !m.CostDegraded && m.CostPerQuestionUsd.HasValue).OrderBy(m => m.CostPerQuestionUsd!.Value).ThenBy(m => m.Token, StringComparer.Ordinal).ToList();
 
-        var questions = new List<RootCauseQuestion>();
-        void Add(int number, string axis, RootCauseModelInput model, string text)
-        {
-            // Question 1 asks why a model did well: the pair hypotheses where it is the better side. The others ask
-            // why it did badly: the pair hypotheses where it is the worse side, and its own within-model ones.
-            // result.Hypotheses is already in rank order.
-            var hypotheses = result.Hypotheses
-                .Where(h => h.Axis == axis && h.Id != "HQ3" && h.Models.Count > 0)
-                .Where(h => number == 1
-                    ? h.Kind == "pair" && h.Models.Count == 2 && h.Models[1] == model.Token
-                    : (h.Kind == "pair" && h.Models.Count == 2 && h.Models[0] == model.Token) || (h.Kind == "within" && h.Models[0] == model.Token))
-                .ToList();
-            var best = hypotheses.FirstOrDefault(h => RootCauseGrades.Rank(h.Grade) >= RootCauseGrades.Rank(RootCauseGrades.Low));
-            questions.Add(new RootCauseQuestion
-            {
-                Number = number,
-                Axis = axis,
-                Token = model.Token,
-                Text = text,
-                Grade = best?.Grade,
-                HypothesisKeys = hypotheses.Select(h => h.Key).ToList(),
-                Signals = Signals(number, model, result)
-            });
-        }
-
+        var targets = new List<RootCauseQuestionTarget>();
         if (quality.Count >= 2)
         {
-            Add(1, RootCauseAxes.Intelligence, quality[0], "Why did " + ctx.Name(quality[0].Token) + " score highest?");
-            Add(2, RootCauseAxes.Intelligence, quality[^1], "Why did " + ctx.Name(quality[^1].Token) + " score lowest?");
+            var (top, next) = (quality[0], quality[1]);
+            if (top.QualityIndex!.Value > next.QualityIndex!.Value)
+            {
+                bool established = OrderEstablished(ctx, top, next);
+                string text = "Why did " + ctx.Name(top.Token) + " score highest"
+                              + (established ? "?" : ", though its lead over " + ctx.Name(next.Token) + " is not established?");
+                targets.Add(new RootCauseQuestionTarget(1, RootCauseAxes.Intelligence, top, next, text, established));
+            }
+
+            var (last, above) = (quality[^1], quality[^2]);
+            if (last.QualityIndex!.Value < above.QualityIndex!.Value)
+            {
+                bool established = OrderEstablished(ctx, last, above);
+                string text = "Why did " + ctx.Name(last.Token) + " score lowest"
+                              + (established ? "?" : ", though its gap to " + ctx.Name(above.Token) + " is not established?");
+                targets.Add(new RootCauseQuestionTarget(2, RootCauseAxes.Intelligence, last, above, text, established));
+            }
         }
-        if (speed.Count >= 2) Add(3, RootCauseAxes.Speed, speed[^1], "Why is " + ctx.Name(speed[^1].Token) + " slowest?");
-        if (cost.Count >= 2) Add(4, RootCauseAxes.Cost, cost[^1], "Why is " + ctx.Name(cost[^1].Token) + " the most expensive?");
+        if (speed.Count >= 2 && speed[^1].ModelTimeP50Ms!.Value > speed[^2].ModelTimeP50Ms!.Value)
+        {
+            targets.Add(new RootCauseQuestionTarget(3, RootCauseAxes.Speed, speed[^1], speed[^2], "Why is " + ctx.Name(speed[^1].Token) + " slowest?", null));
+        }
+        if (cost.Count >= 2 && cost[^1].CostPerQuestionUsd!.Value > cost[^2].CostPerQuestionUsd!.Value)
+        {
+            targets.Add(new RootCauseQuestionTarget(4, RootCauseAxes.Cost, cost[^1], cost[^2], "Why is " + ctx.Name(cost[^1].Token) + " the most expensive?", null));
+        }
+        return targets;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="model"/>'s place on the Intelligence Index against <paramref name="neighbor"/> is
+    /// established: a paired test of the two is established and favors the model, or their 95% intervals do not
+    /// overlap (touching bounds overlap).
+    /// </summary>
+    private static bool OrderEstablished(RootCauseContext ctx, RootCauseModelInput model, RootCauseModelInput neighbor)
+    {
+        var pair = new RootCausePair(model.Token, neighbor.Token);
+        bool tested = ctx.TestsFor(pair, RootCauseAxes.Intelligence)
+            .Any(t => t.Established && (t.Favors == "First" ? t.First : t.Favors == "Second" ? t.Second : null) == model.Token);
+        return tested || ctx.IntervalsOverlap(pair) == false;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="hypothesis"/> answers the research question of <paramref name="target"/>. Question 1
+    /// asks why a model did well: the pair hypotheses on the axis where it is the better side. The others ask why
+    /// it did badly: the pair hypotheses on the axis where it is the worse side, and its own within-model ones.
+    /// HQ3, which is about every model, answers none.
+    /// </summary>
+    internal static bool Answers(RootCauseQuestionTarget target, RootCauseHypothesis hypothesis)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(hypothesis);
+        var h = hypothesis;
+        string token = target.Model.Token;
+        if (h.Axis != target.Axis || h.Id == "HQ3" || h.Models.Count == 0) return false;
+        return target.Number == 1
+            ? h.Kind == "pair" && h.Models.Count == 2 && h.Models[1] == token
+            : (h.Kind == "pair" && h.Models.Count == 2 && h.Models[0] == token) || (h.Kind == "within" && h.Models[0] == token);
+    }
+
+    /// <summary>
+    /// The research questions of <paramref name="targets"/>, each with the kept hypotheses that answer it: the
+    /// comparative (pair) ones, then the model's own within-model ones, each in rank order. The grade is the best
+    /// comparative grade at Low or higher; when there is none, the best within-model grade at Low or higher,
+    /// capped at Low.
+    /// </summary>
+    internal static List<RootCauseQuestion> Questions(RootCauseContext ctx, RootCauseResult result, IReadOnlyList<RootCauseQuestionTarget> targets)
+    {
+        int lowRank = RootCauseGrades.Rank(RootCauseGrades.Low);
+        var questions = new List<RootCauseQuestion>();
+        foreach (var target in targets)
+        {
+            // result.Hypotheses is already in rank order.
+            var answering = result.Hypotheses.Where(h => Answers(target, h)).ToList();
+            var comparative = answering.Where(h => h.Kind == "pair").ToList();
+            var within = answering.Where(h => h.Kind == "within").ToList();
+            var bestComparative = comparative.FirstOrDefault(h => RootCauseGrades.Rank(h.Grade) >= lowRank);
+            var bestWithin = within.FirstOrDefault(h => RootCauseGrades.Rank(h.Grade) >= lowRank);
+            questions.Add(new RootCauseQuestion
+            {
+                Number = target.Number,
+                Axis = target.Axis,
+                Token = target.Model.Token,
+                Text = target.Text,
+                Grade = bestComparative?.Grade ?? (bestWithin != null ? RootCauseGrades.Capped(bestWithin.Grade, RootCauseGrades.Low) : null),
+                HypothesisKeys = comparative.Concat(within).Select(h => h.Key).ToList(),
+                ComparativeKeys = comparative.Select(h => h.Key).ToList(),
+                WithinKeys = within.Select(h => h.Key).ToList(),
+                WithinOnly = bestComparative == null && within.Count > 0,
+                OrderEstablished = target.OrderEstablished,
+                Signals = Signals(target.Number, target.Model, result)
+            });
+        }
         return questions;
     }
 

@@ -121,6 +121,51 @@ public class BenchmarkNotableFindingsTests
         Assert.Empty(OfKind(Detect(budget), BenchmarkNotableFindings.ThinkingLevelInversion));
     }
 
+    /// <summary>The same model at a thinking level, with an Intelligence Index and its 95% interval.</summary>
+    private static BenchmarkNotableModel Leveled(string letter, string level, double quality, double lower, double upper) => new()
+    {
+        Letter = letter, Provider = "Northwind", ModelId = "same-model", ThinkingLevel = level,
+        Quality = quality, QualityLower = lower, QualityUpper = upper
+    };
+
+    [Fact]
+    public void AThinkingLevelInversion_IsNotReported_WhereAPairedTestEstablishesTheHigherLevelAbove()
+    {
+        BenchmarkReportPairedFamily Verdict(string favors) => new()
+        {
+            Mode = "Reference",
+            ReferenceLetter = "A",
+            Measures =
+            {
+                new BenchmarkReportPairedMeasure
+                {
+                    Measure = BenchmarkPairedTests.IntelligenceMeasure,
+                    Pairs = { new BenchmarkReportPairedTest { FirstLetter = "A", SecondLetter = "B", Established = true, Favors = favors, AdjustedPValue = 0.01 } }
+                }
+            }
+        };
+        var models = new[] { Leveled("A", "low", 80, 75, 85), Leveled("B", "high", 80, 75, 85) };
+
+        Assert.Empty(OfKind(Detect(models, families: new[] { Verdict("Second") }), BenchmarkNotableFindings.ThinkingLevelInversion));
+
+        // A paired test establishing the lower level above the higher still reports the inversion.
+        var found = Assert.Single(OfKind(Detect(models, families: new[] { Verdict("First") }), BenchmarkNotableFindings.ThinkingLevelInversion));
+        Assert.Contains("the order is established by a paired test after its adjustment", found.Summary);
+    }
+
+    [Fact]
+    public void AThinkingLevelInversion_IsNotReported_WhereTheIntervalsEstablishTheHigherLevelAbove()
+    {
+        // The intervals need not center on the index: the higher level's lies wholly above the lower's.
+        var separated = new[] { Leveled("A", "low", 80, 70, 81), Leveled("B", "high", 80, 82, 90) };
+        Assert.Empty(OfKind(Detect(separated), BenchmarkNotableFindings.ThinkingLevelInversion));
+
+        // Intervals that touch establish nothing.
+        var touching = new[] { Leveled("A", "low", 80, 70, 81), Leveled("B", "high", 80, 81, 90) };
+        var found = Assert.Single(OfKind(Detect(touching), BenchmarkNotableFindings.ThinkingLevelInversion));
+        Assert.Contains("the order between them is not established", found.Summary);
+    }
+
     private static BenchmarkNotableModel Copy(BenchmarkNotableModel m, double? quality = null, string? thinkingLevel = null) => new()
     {
         Letter = m.Letter, Provider = m.Provider, ModelId = m.ModelId, ThinkingLevel = thinkingLevel ?? m.ThinkingLevel,
@@ -255,20 +300,50 @@ public class BenchmarkNotableFindingsTests
         Assert.Empty(Detect(new[] { Output(21), Model("B", 70) }));
     }
 
-    [Fact]
-    public void ToolUse_AndAnswerLength_AreOutliersAtHalfOrTwiceTheOthersMedian()
-    {
-        BenchmarkNotableModel Tools(string letter, double calls) => new() { Letter = letter, Quality = 80, ToolCallsPerQuestion = calls };
-        BenchmarkNotableModel Length(string letter, double chars) => new() { Letter = letter, Quality = 80, MedianAnswerChars = chars };
+    private static BenchmarkNotableModel Tools(string letter, double calls) => new() { Letter = letter, Quality = 80, ToolCallsPerQuestion = calls };
+    private static BenchmarkNotableModel Length(string letter, double chars) => new() { Letter = letter, Quality = 80, MedianAnswerChars = chars };
 
+    [Fact]
+    public void ToolUse_AndAnswerLength_AreOutliersAtHalfOrTwiceTheMedianOfAllModels()
+    {
         var tools = Assert.Single(Detect(new[] { Tools("A", 1.0), Tools("B", 2.0), Tools("C", 2.0) }));
-        Assert.Equal("Model A made 1.0 tool calls per question, at most half the other models' median of 2.0.", tools.Summary);
+        Assert.Equal("Model A made 1.0 tool calls per question, at most half the median of all 3 models (2.0).", tools.Summary);
         Assert.Empty(Detect(new[] { Tools("A", 1.01), Tools("B", 2.0), Tools("C", 2.0) }));
         Assert.Empty(Detect(new[] { Tools("A", 0.0), Tools("B", 0.5), Tools("C", 0.5) }));
 
         var length = Assert.Single(Detect(new[] { Length("A", 2000), Length("B", 1000), Length("C", 1000) }));
-        Assert.Equal("Model A's median answer is 2,000 characters, at least twice the other models' median of 1,000.", length.Summary);
+        Assert.Equal("Model A's median answer is 2,000 characters, at least twice the median of all 3 models (1,000).", length.Summary);
         Assert.Empty(Detect(new[] { Length("A", 1999), Length("B", 1000), Length("C", 1000) }));
+    }
+
+    [Fact]
+    public void AnOutlier_NeedsThreeModelsWithTheFigure()
+    {
+        Assert.Empty(Detect(new[] { Length("A", 2000), Length("B", 1000) }));
+        Assert.Empty(Detect(new[] { Tools("A", 4.0), Tools("B", 1.0) }));
+
+        // A model without the figure does not count toward the three.
+        Assert.Empty(Detect(new[] { Length("A", 2000), Length("B", 1000), Model("C", 70) }));
+    }
+
+    [Fact]
+    public void AnOutlier_IsMeasuredAgainstTheMedianOfAllModels_ItsOwnValueIncluded()
+    {
+        var found = Assert.Single(Detect(new[] { Length("A", 1000), Length("B", 1000), Length("C", 4000) }));
+
+        Assert.Equal(BenchmarkNotableFindings.AnswerLengthOutlier, found.Kind);
+        Assert.Equal(new[] { "C" }, found.Models);
+        Assert.Equal("Model C's median answer is 4,000 characters, at least twice the median of all 3 models (1,000).", found.Summary);
+    }
+
+    [Fact]
+    public void ToolUse_IsNoOutlier_WhereTheMedianOfAllModelsIsAtMostHalfACall()
+    {
+        // Model A's 0.2 is under half the other two models' median of 0.85, but the median of all three is 0.5.
+        Assert.Empty(Detect(new[] { Tools("A", 0.2), Tools("B", 0.5), Tools("C", 1.2) }));
+        Assert.Empty(Detect(new[] { Tools("A", 0.0), Tools("B", 0.0), Tools("C", 3.0) }));
+
+        Assert.Equal(new[] { "A" }, Assert.Single(Detect(new[] { Tools("A", 0.2), Tools("B", 0.6), Tools("C", 1.1) })).Models);
     }
 
     [Fact]

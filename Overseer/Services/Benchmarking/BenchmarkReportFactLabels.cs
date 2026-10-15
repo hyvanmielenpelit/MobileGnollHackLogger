@@ -696,6 +696,8 @@ public static class BenchmarkReportFactLabels
         ["status"] = "answer strength",
         ["hypotheses"] = "hypotheses about the model",
         ["signals"] = "measured signals",
+        ["withinOnly"] = "answered only by the model's own breakdown",
+        ["orderEstablished"] = "order against the neighbor established",
     };
 
     /// <summary>The unindexed parts of a model profile's facts (<c>rca.profile.&lt;T&gt;.&lt;part&gt;</c>).</summary>

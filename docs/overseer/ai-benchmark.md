@@ -7913,6 +7913,31 @@ is [`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) § 17, with §§
   server-drawn figure takes the full width (**PDF layout 9**). Per-model documents move to format 13 and
   comparison-wide documents to format 15.
 
+### Root Cause Analysis Claim and Question Fixes, and Two Notable-Finding Fixes (2026-10-15) — No Harness Version Bump
+
+No `HarnessVersion`, `ScoringMethodVersion` or comparability key moves, and no run is graded or scored
+differently. `RootCauseEngine.Version` moves 3 → 4 and comparison-wide documents move to format 19;
+per-model and chat consistency documents keep their formats. The full description is
+[`ai-benchmark-report-pack.md`](ai-benchmark-report-pack.md) §§ 7, 15 and 17.
+
+- **Claim rule 33** accepts a causal word only beside a hypothesis graded Low or higher, or an axis,
+  and asks for a hedge (*may*, *possibly*, *consistent with* …) when the hypotheses it rests on are all
+  Low. A *Not supported* hypothesis may be cited only to rule a cause out (*not due to*). The prompt's
+  CLAIM SUPPORT, CHECK BEFORE YOU ANSWER and THE QUESTIONS blocks say the same.
+- **Research questions** are not asked about a tie, say when the leader's lead or the last model's gap
+  is not established, keep comparative and within-model hypotheses apart, and take their strength from
+  the comparative ones (a question answered only by the model's own breakdown reads *Suggestive* at
+  most). A question whose answering hypotheses all fell below the per-axis cap reserves its best one.
+- **Ranking and axis status**: a share that works against the gap explains none of it, HQ1 is
+  *Not supported* when the sign is wrong, and in a comparison or per-model pack an axis needs a pair
+  hypothesis for *Probable cause* or better.
+- **Notable findings**: the tool-use and answer-length outliers compare a model with the median of all
+  models and need three or more; a thinking-level inversion is not reported when the higher level is
+  established above the lower.
+
+A document stored earlier keeps its stored facts and renders as before, apart from the comparison
+footer.
+
 ---
 
 ## 3. Assessor Strategy

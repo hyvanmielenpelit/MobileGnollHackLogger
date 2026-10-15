@@ -17,12 +17,12 @@
 ### What we found
 
 > [!IMPORTANT]
-> **Key finding.** Intelligence: Not established; speed: Probable cause; cost: Probable cause.
+> **Key finding.** Intelligence: Not established; speed: Not established; cost: Probable cause.
 
 ### The questions
 
 > [!NOTE]
-> **Question.** **Why did Orion Max score highest?**
+> **Question.** **Why did Orion Max score highest, though its lead over Vega Pro is not established?**
 >
 > *Answer strength: no hypothesis about this model fired — see its profile.*
 >
@@ -38,16 +38,16 @@
 > [!NOTE]
 > **Question.** **Why is Zeta Prime slowest?**
 >
-> *Answer strength: Probable (Moderate) — see WS3.3 and WS2.1.*
+> *Answer strength: Suggestive (Low) — no hypothesis graded Low or higher compares it with the other models; its own breakdown, see WS3.3 and WS2.1, says where its own time, cost or points go.*
 >
-> For Zeta Prime the measured signals are median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer. The answer strength is Probable (Moderate). The leading hypothesis is Zeta Prime's time spent on tool rounds.
+> For Zeta Prime the measured signals are median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer. The answer strength is Suggestive (Low). The leading hypothesis is Zeta Prime's time spent on tool rounds.
 
 > [!NOTE]
 > **Question.** **Why is Nova Lite the most expensive?**
 >
-> *Answer strength: Probable (Moderate) — see WC1.2, HC2.2 and HC4.2.*
+> *Answer strength: Probable (Moderate) — against the other models, see HC2.2 and HC4.2; its own breakdown, see WC1.2.*
 >
-> For Nova Lite the measured signals are $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache. The answer strength is Probable (Moderate). The leading hypothesis is Nova Lite's output cost.
+> For Nova Lite the measured signals are $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache. The answer strength is Probable (Moderate). The leading hypothesis is Nova Lite's higher price per token, compared with Orion Max.
 
 ### At a glance
 
@@ -330,11 +330,11 @@ The strongest hypothesis in the table: Output (with reasoning) is Zeta Prime's l
 | Axis | Status | Best hypothesis | Why |
 |---|---|---|---|
 | Intelligence | Not established | HQ3.1: shared failures on the same questions | Suggestive (Low) because it is observed, not measured. |
-| Speed | Probable cause | WS3.1: Orion Max's time spent on tool rounds | Probable (Moderate) because Orion Max ran only once per suite. |
-| Cost | Probable cause | WC1.1: Zeta Prime's output cost | Probable (Moderate) because Zeta Prime ran only once per suite. |
+| Speed | Not established | — | Only hypotheses about one model's own breakdown fired on this axis; none compares the models. |
+| Cost | Probable cause | HC2.1: Zeta Prime's higher price per token, compared with Orion Max | Probable (Moderate) because both models ran only once per suite. |
 
 > [!TIP]
-> **Conclusion.** Intelligence: Not established. Speed: Probable cause. Cost: Probable cause.
+> **Conclusion.** Intelligence: Not established. Speed: Not established. Cost: Probable cause.
 
 ## What to run next
 
@@ -6812,9 +6812,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "WC1.1",
+      "display": "HC2.1",
       "key": "rca.axis.cost.best",
-      "value": "WC1.1"
+      "value": "HC2.1"
     },
     {
       "available": true,
@@ -6835,16 +6835,16 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "value": "NotEstablished"
     },
     {
-      "available": true,
-      "display": "WS3.1",
+      "available": false,
+      "display": "not available",
       "key": "rca.axis.speed.best",
-      "value": "WS3.1"
+      "unavailableReason": "Only hypotheses about one model's own breakdown fired on this axis; none compares the models."
     },
     {
       "available": true,
-      "display": "Probable cause",
+      "display": "Not established",
       "key": "rca.axis.speed.status",
-      "value": "ProbableCause"
+      "value": "NotEstablished"
     },
     {
       "available": true,
@@ -9977,6 +9977,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
+      "display": "not established",
+      "key": "rca.question.1.orderEstablished",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness",
       "key": "rca.question.1.signals"
     },
@@ -9988,8 +9994,14 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Why did Model A score highest?",
+      "display": "Why did Model A score highest, though its lead over Model B is not established?",
       "key": "rca.question.1.text"
+    },
+    {
+      "available": true,
+      "display": "not answered by the model's own breakdown alone",
+      "key": "rca.question.1.withinOnly",
+      "value": false
     },
     {
       "available": true,
@@ -10002,6 +10014,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "display": "Model E",
       "key": "rca.question.2.model",
       "value": "E"
+    },
+    {
+      "available": true,
+      "display": "established",
+      "key": "rca.question.2.orderEstablished",
+      "value": true
     },
     {
       "available": true,
@@ -10018,6 +10036,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Why did Model E score lowest?",
       "key": "rca.question.2.text"
+    },
+    {
+      "available": true,
+      "display": "not answered by the model's own breakdown alone",
+      "key": "rca.question.2.withinOnly",
+      "value": false
     },
     {
       "available": true,
@@ -10038,9 +10062,9 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "Probable (Moderate)",
+      "display": "Suggestive (Low)",
       "key": "rca.question.3.status",
-      "value": "Moderate"
+      "value": "Low"
     },
     {
       "available": true,
@@ -10049,7 +10073,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     },
     {
       "available": true,
-      "display": "WC1.2, HC2.2 and HC4.2",
+      "display": "only the model's own breakdown answers it",
+      "key": "rca.question.3.withinOnly",
+      "value": true
+    },
+    {
+      "available": true,
+      "display": "HC2.2, HC4.2 and WC1.2",
       "key": "rca.question.4.hypotheses",
       "value": 3
     },
@@ -10074,6 +10104,12 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       "available": true,
       "display": "Why is Model D the most expensive?",
       "key": "rca.question.4.text"
+    },
+    {
+      "available": true,
+      "display": "not answered by the model's own breakdown alone",
+      "key": "rca.question.4.withinOnly",
+      "value": false
     },
     {
       "available": true,
@@ -11922,14 +11958,13 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
       },
       {
         "axis": "speed",
-        "bestHypothesis": "WS3.1",
-        "reason": "Probable (Moderate) because Model A ran only once per suite.",
-        "status": "ProbableCause"
+        "reason": "Only hypotheses about one model's own breakdown fired on this axis; none compares the models.",
+        "status": "NotEstablished"
       },
       {
         "axis": "cost",
-        "bestHypothesis": "WC1.1",
-        "reason": "Probable (Moderate) because Model E ran only once per suite.",
+        "bestHypothesis": "HC2.1",
+        "reason": "Probable (Moderate) because both models ran only once per suite.",
         "status": "ProbableCause"
       }
     ],
@@ -12751,7 +12786,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
         "unit": "usd"
       }
     ],
-    "engineVersion": 3,
+    "engineVersion": 4,
     "evidence": [
       {
         "atRisk": [
@@ -15553,29 +15588,38 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
     "questions": [
       {
         "axis": "intelligence",
+        "comparativeKeys": [],
         "hypothesisKeys": [],
         "number": 1,
+        "orderEstablished": false,
         "signals": [
           "tied for first of 5 models on Accuracy",
           "tied for first of 5 models on Completeness"
         ],
-        "text": "Why did Model A score highest?",
-        "token": "A"
+        "text": "Why did Model A score highest, though its lead over Model B is not established?",
+        "token": "A",
+        "withinKeys": [],
+        "withinOnly": false
       },
       {
         "axis": "intelligence",
+        "comparativeKeys": [],
         "hypothesisKeys": [],
         "number": 2,
+        "orderEstablished": true,
         "signals": [
           "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
           "1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more"
         ],
         "text": "Why did Model E score lowest?",
-        "token": "E"
+        "token": "E",
+        "withinKeys": [],
+        "withinOnly": false
       },
       {
         "axis": "speed",
-        "grade": "Moderate",
+        "comparativeKeys": [],
+        "grade": "Low",
         "hypothesisKeys": [
           "WS3.3",
           "WS2.1"
@@ -15587,15 +15631,24 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "2.5 model calls per answer"
         ],
         "text": "Why is Model E slowest?",
-        "token": "E"
+        "token": "E",
+        "withinKeys": [
+          "WS3.3",
+          "WS2.1"
+        ],
+        "withinOnly": true
       },
       {
         "axis": "cost",
-        "grade": "Moderate",
-        "hypothesisKeys": [
-          "WC1.2",
+        "comparativeKeys": [
           "HC2.2",
           "HC4.2"
+        ],
+        "grade": "Moderate",
+        "hypothesisKeys": [
+          "HC2.2",
+          "HC4.2",
+          "WC1.2"
         ],
         "number": 4,
         "signals": [
@@ -15604,7 +15657,11 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
           "27% of input tokens read from the cache"
         ],
         "text": "Why is Model D the most expensive?",
-        "token": "D"
+        "token": "D",
+        "withinKeys": [
+          "WC1.2"
+        ],
+        "withinOnly": false
       }
     ],
     "recommendedRuns": [
@@ -15970,6 +16027,6 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 ---
 
-*Document ID 212 · format version 18 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
+*Document ID 212 · format version 19 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

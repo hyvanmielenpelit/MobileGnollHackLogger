@@ -337,11 +337,29 @@ public sealed class RootCauseQuestion
     /// <summary><c>Why did Model A score highest?</c></summary>
     public string Text { get; set; } = string.Empty;
 
-    /// <summary>The best grade among <see cref="HypothesisKeys"/> other than Not supported; null when none.</summary>
+    /// <summary>
+    /// The best grade among <see cref="ComparativeKeys"/> at Low or higher; when there is none, the best grade among
+    /// <see cref="WithinKeys"/> at Low or higher, capped at Low; null when neither has one.
+    /// </summary>
     public string? Grade { get; set; }
 
-    /// <summary>The kept non-null hypotheses about the model on the axis, best grade first.</summary>
+    /// <summary>The kept non-null hypotheses about the model on the axis: the comparative ones, then the within-model ones, each best grade first.</summary>
     public List<string> HypothesisKeys { get; set; } = new();
+
+    /// <summary>The kept pair hypotheses that answer the question, best grade first; null in a result written before engine version 4.</summary>
+    public List<string>? ComparativeKeys { get; set; }
+
+    /// <summary>The kept within-model hypotheses of the model on the axis, best grade first; null in a result written before engine version 4.</summary>
+    public List<string>? WithinKeys { get; set; }
+
+    /// <summary>No comparative hypothesis graded Low or higher answers the question, and at least one within-model hypothesis of the model is kept.</summary>
+    public bool WithinOnly { get; set; }
+
+    /// <summary>
+    /// Questions 1 and 2 only: whether the model's place at the top or bottom is established against its neighbor,
+    /// by a paired test or by intervals that do not overlap; null for questions 3 and 4.
+    /// </summary>
+    public bool? OrderEstablished { get; set; }
 
     /// <summary>The model's top measured signals on the axis, each a descriptive phrase.</summary>
     public List<string> Signals { get; set; } = new();

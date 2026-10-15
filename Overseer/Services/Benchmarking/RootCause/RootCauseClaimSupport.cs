@@ -16,10 +16,13 @@ using Overseer.Models;
 ///
 /// <list type="bullet">
 /// <item>A causal word (<see cref="CausalWords"/>) never appears in an observation slot
-/// (<see cref="ObservationSlots"/>) or in an observation; in an inference slot (<see cref="InferenceSlots"/>)
-/// it needs, in the same sentence, a token of a hypothesis the sheet holds (<c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.*</c>,
-/// its <c>.label</c> included), or of an axis (<c>rca.axis.&lt;axis&gt;.*</c>), whose status rests on the
-/// hypotheses; in the next runs, an <c>rca.run.&lt;n&gt;.*</c> token as well.</item>
+/// (<see cref="ObservationSlots"/>) or in an observation. In an inference slot (<see cref="InferenceSlots"/>)
+/// a causal word that states a cause needs, in the same sentence, a token of a hypothesis graded Low or higher
+/// (<c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.*</c>, its <c>.label</c> included), or of an axis (<c>rca.axis.&lt;axis&gt;.*</c>),
+/// whose status rests on the hypotheses; in the next runs, an <c>rca.run.&lt;n&gt;.*</c> token as well. When that
+/// support is only hypotheses graded Low, the sentence also holds a hedge word (<see cref="HedgeWords"/>). A
+/// causal word directly after <c>not</c>, <c>never</c> or <c>cannot</c> rules a cause out: any hypothesis' token,
+/// a Not supported one's included, or an axis token supports it.</item>
 /// <item>A certainty word (<see cref="CertaintyWords"/>), anywhere, needs in the same sentence a token of a
 /// hypothesis graded High, its label included, or the <c>rca.axis.&lt;axis&gt;.status</c> token of an axis whose
 /// root cause is established. A certainty word after <c>not</c>, <c>never</c> or <c>cannot</c> is not one.</item>
@@ -48,6 +51,12 @@ public sealed class RootCauseClaimSupport
         "established", "confirmed", "proven", "definitely", "certainly", "root cause was found"
     };
 
+    /// <summary>Hedge wording, matched as whole words and phrases, ignoring case: a cause resting on Low hypotheses only needs one.</summary>
+    public static readonly IReadOnlyList<string> HedgeWords = new[]
+    {
+        "may", "might", "could", "possibly", "probably", "likely", "perhaps", "suggests", "suggest", "consistent with"
+    };
+
     /// <summary>The slots that state what was measured: a causal word there drops the paragraph (rule 32), as it drops an observation.</summary>
     public static readonly IReadOnlyList<string> ObservationSlots = new[]
     {
@@ -68,15 +77,32 @@ public sealed class RootCauseClaimSupport
         RootCauseLoci.Model, RootCauseLoci.Chat, RootCauseLoci.Harness, RootCauseLoci.Suite, RootCauseLoci.Corpus, RootCauseLoci.Provider
     };
 
+    /// <summary>
+    /// A negation directly before a causal phrase: <c>not</c>, <c>never</c> or <c>cannot</c>, with at most two of
+    /// <c>be</c>, <c>been</c>, <c>the</c> and <c>a</c> between. <c>not only because</c> is no negation.
+    /// </summary>
+    private const string CausalNegation = @"(?<![\p{L}\p{N}])(?:not|never|cannot)\s+(?:(?:be|been|the|a)\s+){0,2}";
+
+    /// <summary>Every causal phrase, negated or not.</summary>
     internal static readonly Regex CausalRegex = PhraseRegex(CausalWords);
+
+    /// <summary>A causal phrase that rules a cause out: <c>is not due to</c>, <c>cannot be caused by</c>, <c>is not the root cause</c>.</summary>
+    internal static readonly Regex NegatedCausalRegex = PhraseRegex(CausalWords, "(?<=" + CausalNegation + ")");
+
+    /// <summary>A causal phrase that states a cause: every one that no negation precedes.</summary>
+    internal static readonly Regex UnnegatedCausalRegex = PhraseRegex(CausalWords, "(?<!" + CausalNegation + ")");
 
     internal static readonly Regex CertaintyRegex = PhraseRegex(
         CertaintyWords, @"(?<!(?<![\p{L}\p{N}])(?:not|never|cannot)\s+(?:yet\s+)?(?:be\s+|been\s+)?)");
+
+    internal static readonly Regex HedgeRegex = PhraseRegex(HedgeWords);
 
     private static readonly Regex LocusSplitRegex = new(@"\s*(?:/|,|;|\bor\b|\band\b)\s*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private readonly Dictionary<string, BenchmarkReportFact> _facts;
     private readonly HashSet<string> _highPrefixes;
+    private readonly HashSet<string> _supportedPrefixes;
+    private readonly HashSet<string> _lowPrefixes;
 
     private RootCauseClaimSupport(Dictionary<string, BenchmarkReportFact> facts)
     {
@@ -91,6 +117,13 @@ public sealed class RootCauseClaimSupport
         _highPrefixes = new HashSet<string>(
             HypothesisPrefixes.Where(p => string.Equals(Value(p + "grade"), RootCauseGrades.High, StringComparison.Ordinal)),
             StringComparer.Ordinal);
+        _supportedPrefixes = new HashSet<string>(
+            HypothesisPrefixes.Where(p => RootCauseGrades.Rank(Value(p + "grade")) >= RootCauseGrades.Rank(RootCauseGrades.Low)),
+            StringComparer.Ordinal);
+        _lowPrefixes = new HashSet<string>(
+            HypothesisPrefixes.Where(p => string.Equals(Value(p + "grade"), RootCauseGrades.Low, StringComparison.Ordinal)),
+            StringComparer.Ordinal);
+        SupportedHypothesisPrefixes = HypothesisPrefixes.Where(_supportedPrefixes.Contains).ToList();
         Axes = RootCauseAxes.All.Where(a => facts.ContainsKey(StatusKey(a))).ToList();
         EstablishedAxes = Axes.Where(a => string.Equals(Value(StatusKey(a)), RootCauseStatuses.Established, StringComparison.Ordinal)).ToList();
         Questions = Enumerable.Range(1, BenchmarkReportSlots.RootCauseAnswerSlots.Count)
@@ -124,6 +157,12 @@ public sealed class RootCauseClaimSupport
 
     /// <summary>Every hypothesis' token prefix, <c>rca.hypothesis.HQ1.1.</c>, ordinal.</summary>
     public IReadOnlyList<string> HypothesisPrefixes { get; }
+
+    /// <summary>
+    /// The token prefixes of the hypotheses graded Low or higher, ordinal: the ones whose tokens let a causal word
+    /// state a cause. A hypothesis without a grade fact is not among them.
+    /// </summary>
+    public IReadOnlyList<string> SupportedHypothesisPrefixes { get; }
 
     /// <summary>The axes the sheet states a status for, in document order.</summary>
     public IReadOnlyList<string> Axes { get; }
@@ -222,16 +261,43 @@ public sealed class RootCauseClaimSupport
     /// <summary>A token of a next run (<c>rca.run.&lt;n&gt;.*</c>) that the sheet holds.</summary>
     public bool IsRunToken(string key) => key.StartsWith(RunPrefix, StringComparison.Ordinal) && _facts.ContainsKey(key);
 
-    /// <summary>The token lets a causal word stand in its sentence (rule 33).</summary>
-    public bool SupportsCausal(string key) => IsHypothesisToken(key) || IsAxisToken(key);
+    /// <summary>A token of a hypothesis graded Low or higher that the sheet holds, its label included.</summary>
+    public bool IsSupportedHypothesisToken(string key) => _facts.ContainsKey(key) && PrefixesOf(key).Any(_supportedPrefixes.Contains);
+
+    /// <summary>A token of a hypothesis graded Low or higher whose hypotheses at that grade or higher are all graded exactly Low.</summary>
+    public bool IsLowHypothesisToken(string key)
+        => IsSupportedHypothesisToken(key) && PrefixesOf(key).Where(_supportedPrefixes.Contains).All(_lowPrefixes.Contains);
 
     /// <summary>
-    /// The token lets a causal word stand in its sentence of <paramref name="slot"/> (rule 33): in the next
-    /// runs, a run token as well, since each run names what it settles.
+    /// The token lets a causal word state a cause in its sentence of <paramref name="slot"/> (rule 33): a token of a
+    /// hypothesis graded Low or higher, or of an axis; in the next runs, a run token as well, since each run names
+    /// what it settles.
     /// </summary>
-    public bool SupportsCausal(string key, string? slot)
-        => SupportsCausal(key)
-           || (string.Equals(slot, BenchmarkReportSlots.NextRuns, StringComparison.Ordinal) && IsRunToken(key));
+    public bool SupportsCausal(string key, string? slot = null)
+        => IsSupportedHypothesisToken(key) || IsAxisToken(key) || IsNextRunToken(key, slot);
+
+    /// <summary>
+    /// The token lets a negated causal word rule a cause out in its sentence of <paramref name="slot"/> (rule 33):
+    /// any hypothesis' token, a Not supported one's included, or an axis token; in the next runs, a run token as well.
+    /// </summary>
+    public bool SupportsNegatedCausal(string key, string? slot = null)
+        => IsHypothesisToken(key) || IsAxisToken(key) || IsNextRunToken(key, slot);
+
+    /// <summary>
+    /// A sentence of <paramref name="slot"/> citing <paramref name="tokens"/> states a cause on hypotheses graded Low
+    /// only, so it needs a hedge word (rule 33): it has causal support, and every supporting token is a hypothesis
+    /// token graded Low, with no axis token and no run token among them.
+    /// </summary>
+    public bool NeedsHedge(IEnumerable<string> tokens, string? slot = null)
+    {
+        ArgumentNullException.ThrowIfNull(tokens);
+        var supporting = tokens.Where(t => SupportsCausal(t, slot)).ToList();
+        return supporting.Count > 0 && supporting.All(IsLowHypothesisToken);
+    }
+
+    /// <summary>A run token in the next runs.</summary>
+    private bool IsNextRunToken(string key, string? slot)
+        => string.Equals(slot, BenchmarkReportSlots.NextRuns, StringComparison.Ordinal) && IsRunToken(key);
 
     /// <summary>The token lets a certainty word stand in its sentence (rule 34).</summary>
     public bool SupportsCertainty(string key)
@@ -258,10 +324,10 @@ public sealed class RootCauseClaimSupport
         }
     }
 
-    /// <summary>What CLAIM SUPPORT lists for causal words: each hypothesis' tokens, then the axis tokens.</summary>
+    /// <summary>What CLAIM SUPPORT lists for causal words: the tokens of each hypothesis graded Low or higher, then the axis tokens.</summary>
     public IReadOnlyList<string> CausalSupport()
     {
-        var items = HypothesisPrefixes.Select(p => p + "*").ToList();
+        var items = SupportedHypothesisPrefixes.Select(p => p + "*").ToList();
         items.AddRange(Axes.Select(a => AxisPrefix + a + ".*"));
         return items;
     }
@@ -276,6 +342,15 @@ public sealed class RootCauseClaimSupport
 
     /// <summary>Every causal phrase in <paramref name="plain"/>, its whitespace folded.</summary>
     public static IEnumerable<string> CausalPhrases(string plain) => Phrases(CausalRegex, plain);
+
+    /// <summary>Every causal phrase in <paramref name="plain"/> that a negation precedes, its whitespace folded.</summary>
+    public static IEnumerable<string> NegatedCausalPhrases(string plain) => Phrases(NegatedCausalRegex, plain);
+
+    /// <summary>Every causal phrase in <paramref name="plain"/> that no negation precedes, its whitespace folded.</summary>
+    public static IEnumerable<string> UnnegatedCausalPhrases(string plain) => Phrases(UnnegatedCausalRegex, plain);
+
+    /// <summary>Every hedge phrase in <paramref name="plain"/>, its whitespace folded.</summary>
+    public static IEnumerable<string> HedgePhrases(string plain) => Phrases(HedgeRegex, plain);
 
     /// <summary>Every certainty phrase in <paramref name="plain"/> that no negation precedes, its whitespace folded.</summary>
     public static IEnumerable<string> CertaintyPhrases(string plain) => Phrases(CertaintyRegex, plain);

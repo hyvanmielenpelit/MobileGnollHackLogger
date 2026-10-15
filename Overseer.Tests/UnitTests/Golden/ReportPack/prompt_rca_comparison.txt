@@ -132,7 +132,7 @@ TERMS (each term with a plain gloss you may add in parentheses after it; a gloss
 
 CLAIM DISCIPLINE (code checks every sentence; a paragraph or item that breaks one of the first four rules is removed, and the others ask for a revision):
 - Causal words (because, due to, caused, causes, explains, driven by, root cause, leads to, results in) never appear in the scope, the evidence slots or the observations.
-- In the answer slots, the hypotheses slots, the conclusions and the next runs, a causal word needs, in the same sentence, a token of the hypothesis it states (rca.hypothesis.<id>.<n>.*, its label included) or of its axis (rca.axis.<axis>.*), as CLAIM SUPPORT lists them. In the next runs, the rca.run.<n>.* token of the run the sentence describes serves as well.
+- In the answer slots, the hypotheses slots, the conclusions and the next runs, a causal word needs, in the same sentence, a token of the hypothesis it states (rca.hypothesis.<id>.<n>.*, its label included) or of its axis (rca.axis.<axis>.*), as CLAIM SUPPORT lists them. In the next runs, the rca.run.<n>.* token of the run the sentence describes serves as well. That hypothesis is graded Low or higher, and the sentence is hedged (may, might, could, possibly, probably, likely, perhaps, suggests, suggest, consistent with) when it is Low; a Not supported hypothesis is cited only to rule a cause out ('is not due to').
 - Certainty words (established, confirmed, proven, definitely, certainly, root cause was found) need, in the same sentence, a token of a hypothesis graded High or the status token of an axis whose root cause is established, as CLAIM SUPPORT lists them. Elsewhere write probable, consistent with or not established; 'not established' is always allowed. Describe a paired test's result as what the paired test finds, never as established or confirmed.
 - A writer hypothesis without an axis, a statement, evidence for, a refuted-if statement or a known locus, with a confidence other than Low, or citing a model or a fact the data does not have, is removed.
 - The conclusions cite every axis' status token: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.
@@ -1166,12 +1166,12 @@ rca.atRisk.E.criticalError = 0.0 index points at risk (upper bound, not a causal
 rca.atRisk.E.noTool = 0.0 index points at risk (upper bound, not a causal estimate)
 rca.atRisk.E.otherLow = 5.6 index points at risk (upper bound, not a causal estimate)
 rca.atRisk.E.total = 5.6 index points at risk against the model's median answer of 54 (upper bound, not a causal estimate)
-rca.axis.cost.best = WC1.1
+rca.axis.cost.best = HC2.1
 rca.axis.cost.status = Probable cause
 rca.axis.intelligence.best = HQ3.1
 rca.axis.intelligence.status = Not established
-rca.axis.speed.best = WS3.1
-rca.axis.speed.status = Probable cause
+rca.axis.speed.best = unavailable: Only hypotheses about one model's own breakdown fired on this axis; none compares the models.
+rca.axis.speed.status = Not established
 rca.check.1 = Check the rubric of Q3 against the source, and whether the tools' corpus holds the facts the question needs.
 rca.check.2 = No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test WS2.1.
 rca.check.3 = No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2.
@@ -1764,24 +1764,30 @@ rca.quality.D.E.other.points = +0.8 points
 rca.quality.D.E.total = +15.0 index points (Model D minus Model E)
 rca.question.1.hypotheses = none fired
 rca.question.1.model = Model A
+rca.question.1.orderEstablished = not established
 rca.question.1.signals = tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness
 rca.question.1.status = Unknown
-rca.question.1.text = Why did Model A score highest?
+rca.question.1.text = Why did Model A score highest, though its lead over Model B is not established?
+rca.question.1.withinOnly = not answered by the model's own breakdown alone
 rca.question.2.hypotheses = none fired
 rca.question.2.model = Model E
+rca.question.2.orderEstablished = established
 rca.question.2.signals = lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more
 rca.question.2.status = Unknown
 rca.question.2.text = Why did Model E score lowest?
+rca.question.2.withinOnly = not answered by the model's own breakdown alone
 rca.question.3.hypotheses = WS3.3 and WS2.1
 rca.question.3.model = Model E
 rca.question.3.signals = median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer
-rca.question.3.status = Probable (Moderate)
+rca.question.3.status = Suggestive (Low)
 rca.question.3.text = Why is Model E slowest?
-rca.question.4.hypotheses = WC1.2, HC2.2 and HC4.2
+rca.question.3.withinOnly = only the model's own breakdown answers it
+rca.question.4.hypotheses = HC2.2, HC4.2 and WC1.2
 rca.question.4.model = Model D
 rca.question.4.signals = $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache
 rca.question.4.status = Probable (Moderate)
 rca.question.4.text = Why is Model D the most expensive?
+rca.question.4.withinOnly = not answered by the model's own breakdown alone
 rca.run.1.summary = Run 1, a replicate of Model A, Model D, Model E and Model C
 rca.run.2.summary = Run 2, a thinking-level pair of Model A and another configured model
 rca.speed.A.B.total = -1.6 s per question (Model A minus Model B, model time; the difference may be chance, so it is not split into parts)
@@ -1898,8 +1904,8 @@ NOTABLE FINDINGS (detected by code from the facts; cite one as {{notable.N.summa
 
 AXES (each axis' status; never change one)
 - Intelligence: {{rca.axis.intelligence.status}} = Not established; best hypothesis {{rca.axis.intelligence.best}} = HQ3.1; Suggestive (Low) because it is observed, not measured.
-- Speed: {{rca.axis.speed.status}} = Probable cause; best hypothesis {{rca.axis.speed.best}} = WS3.1; Probable (Moderate) because Model A ran only once per suite.
-- Cost: {{rca.axis.cost.status}} = Probable cause; best hypothesis {{rca.axis.cost.best}} = WC1.1; Probable (Moderate) because Model E ran only once per suite.
+- Speed: {{rca.axis.speed.status}} = Not established; best hypothesis {{rca.axis.speed.best}} = none; Only hypotheses about one model's own breakdown fired on this axis; none compares the models.
+- Cost: {{rca.axis.cost.status}} = Probable cause; best hypothesis {{rca.axis.cost.best}} = HC2.1; Probable (Moderate) because both models ran only once per suite.
 
 KNOWN FACTS (what a test, a count, a decomposition or the configuration proves; each is a sentence)
 - {{rca.known.1}} (decomposition; rests on: rca.cost.A.B.uncachedInput.price.share): Uncached input, price per token accounts for 45% (44–46%) of the per-question cost difference between Model A and Model B.
@@ -2154,16 +2160,19 @@ CHECKS (what a run cannot settle: a rubric, a corpus, a configuration or the gra
 - {{rca.check.3}} (configuration) (settles rca.hypothesis.WS2.2.*): No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2.
 
 THE QUESTIONS (answer each listed question in its slot, starting with the reason; leave the slot of a question not listed out)
-- answerBest: text {{rca.question.1.text}} = Why did Model A score highest? | model {{rca.question.1.model}} = Model A | status {{rca.question.1.status}} = Unknown | hypotheses {{rca.question.1.hypotheses}} = none fired | signals {{rca.question.1.signals}} = tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness
+- answerBest: text {{rca.question.1.text}} = Why did Model A score highest, though its lead over Model B is not established? | model {{rca.question.1.model}} = Model A | status {{rca.question.1.status}} = Unknown | hypotheses {{rca.question.1.hypotheses}} = none fired | signals {{rca.question.1.signals}} = tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness
   no hypothesis answers this question: answer it from the profile's measured signals ({{rca.question.1.signals}}) and use no causal word.
+  the order is not established: say so in the answer's first sentence.
 - answerWorst: text {{rca.question.2.text}} = Why did Model E score lowest? | model {{rca.question.2.model}} = Model E | status {{rca.question.2.status}} = Unknown | hypotheses {{rca.question.2.hypotheses}} = none fired | signals {{rca.question.2.signals}} = lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), questions where it scored 50 or less while the other models' median is 75 or more
   no hypothesis answers this question: answer it from the profile's measured signals ({{rca.question.2.signals}}) and use no causal word.
-- answerSpeed: text {{rca.question.3.text}} = Why is Model E slowest? | model {{rca.question.3.model}} = Model E | status {{rca.question.3.status}} = Probable (Moderate) | hypotheses {{rca.question.3.hypotheses}} = WS3.3 and WS2.1 | signals {{rca.question.3.signals}} = median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer
-- answerCost: text {{rca.question.4.text}} = Why is Model D the most expensive? | model {{rca.question.4.model}} = Model D | status {{rca.question.4.status}} = Probable (Moderate) | hypotheses {{rca.question.4.hypotheses}} = WC1.2, HC2.2 and HC4.2 | signals {{rca.question.4.signals}} = $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache
+- answerSpeed: text {{rca.question.3.text}} = Why is Model E slowest? | model {{rca.question.3.model}} = Model E | status {{rca.question.3.status}} = Suggestive (Low) | hypotheses {{rca.question.3.hypotheses}} = WS3.3 and WS2.1 | signals {{rca.question.3.signals}} = median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer
+  only hypotheses about this model's own breakdown answer it: say that they describe where its own time, cost or points go, not why it differs from the other models.
+- answerCost: text {{rca.question.4.text}} = Why is Model D the most expensive? | model {{rca.question.4.model}} = Model D | status {{rca.question.4.status}} = Probable (Moderate) | hypotheses {{rca.question.4.hypotheses}} = HC2.2, HC4.2 and WC1.2 | signals {{rca.question.4.signals}} = $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache
 
 CLAIM SUPPORT (derived from FACTS: what a sentence must cite for each kind of claim)
 - Causal words never appear in: scope, evidenceIntelligence, evidenceSpeed, evidenceCost, and the observations.
-- Causal words in answerBest, answerWorst, answerSpeed, answerCost, hypothesesIntelligence, hypothesesSpeed, hypothesesCost, conclusions, nextRuns need, in the same sentence, one of: rca.hypothesis.H0-C.1.*, rca.hypothesis.H0-C.2.*, rca.hypothesis.H0-C.3.*, rca.hypothesis.H0-C.4.*, rca.hypothesis.H0-C.5.*, rca.hypothesis.H0-Q.1.*, rca.hypothesis.H0-Q.2.*, rca.hypothesis.H0-Q.3.*, rca.hypothesis.H0-Q.4.*, rca.hypothesis.H0-Q.5.*, rca.hypothesis.H0-S.1.*, rca.hypothesis.H0-S.2.*, rca.hypothesis.H0-S.3.*, rca.hypothesis.H0-S.4.*, rca.hypothesis.H0-S.5.*, rca.hypothesis.H0-W.1.*, rca.hypothesis.H0-W.2.*, rca.hypothesis.HC2.1.*, rca.hypothesis.HC2.2.*, rca.hypothesis.HC2.3.*, rca.hypothesis.HC2.4.*, rca.hypothesis.HC2.5.*, rca.hypothesis.HC4.1.*, rca.hypothesis.HC4.2.*, rca.hypothesis.HC4.3.*, rca.hypothesis.HC4.4.*, rca.hypothesis.HQ3.1.*, rca.hypothesis.WC1.1.*, rca.hypothesis.WC1.2.*, rca.hypothesis.WC1.3.*, rca.hypothesis.WS2.1.*, rca.hypothesis.WS2.2.*, rca.hypothesis.WS2.3.*, rca.hypothesis.WS3.1.*, rca.hypothesis.WS3.2.*, rca.hypothesis.WS3.3.*, rca.axis.intelligence.*, rca.axis.speed.*, rca.axis.cost.*; a hypothesis' label counts as its token. In nextRuns, an rca.run.<n>.* token counts as well.
+- Causal words in answerBest, answerWorst, answerSpeed, answerCost, hypothesesIntelligence, hypothesesSpeed, hypothesesCost, conclusions, nextRuns need, in the same sentence, one of: rca.hypothesis.H0-Q.1.*, rca.hypothesis.H0-Q.2.*, rca.hypothesis.H0-Q.3.*, rca.hypothesis.H0-Q.4.*, rca.hypothesis.H0-Q.5.*, rca.hypothesis.H0-S.1.*, rca.hypothesis.H0-S.2.*, rca.hypothesis.H0-S.3.*, rca.hypothesis.H0-S.4.*, rca.hypothesis.H0-S.5.*, rca.hypothesis.H0-W.1.*, rca.hypothesis.H0-W.2.*, rca.hypothesis.HC2.1.*, rca.hypothesis.HC2.2.*, rca.hypothesis.HC2.3.*, rca.hypothesis.HC2.4.*, rca.hypothesis.HC2.5.*, rca.hypothesis.HQ3.1.*, rca.hypothesis.WC1.1.*, rca.hypothesis.WC1.2.*, rca.hypothesis.WC1.3.*, rca.hypothesis.WS3.1.*, rca.hypothesis.WS3.2.*, rca.hypothesis.WS3.3.*, rca.axis.intelligence.*, rca.axis.speed.*, rca.axis.cost.*; a hypothesis' label counts as its token. In nextRuns, an rca.run.<n>.* token counts as well.
+- The tokens of a Not supported hypothesis support only a negated cause (not due to, not because).
 - Certainty words need, in the same sentence, one of: none: no hypothesis is graded High and no axis has an established root cause, so use no certainty word and write probable or not established
 - The conclusions cite: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}}, {{rca.axis.cost.status}}
 

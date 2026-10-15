@@ -38,8 +38,9 @@ public class RootCauseValidatorTests
         return BenchmarkReportPackValidator.Validate(Rca, output, sheet, content);
     }
 
-    private static string HighOrAnyHypothesisToken(BenchmarkReportFactSheet sheet)
-        => "{{rca.hypothesis." + sheet.RootCause!.Hypotheses.First(h => h.Kind != "null").Key + ".statement}}";
+    private static string SupportedHypothesisToken(BenchmarkReportFactSheet sheet)
+        => "{{rca.hypothesis." + sheet.RootCause!.Hypotheses
+            .First(h => h.Kind != "null" && RootCauseGrades.Rank(h.Grade) >= RootCauseGrades.Rank(RootCauseGrades.Low)).Key + ".statement}}";
 
     // --- The fixture writer ----------------------------------------------------------------------
 
@@ -114,7 +115,7 @@ public class RootCauseValidatorTests
         Assert.Contains(Validate(comparison, bare), n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule);
 
         var cited = Writer(comparison);
-        cited.Sections[BenchmarkReportSlots.HypothesesSpeed] = "The gap is caused by the output length, as " + HighOrAnyHypothesisToken(sheet) + " reads.";
+        cited.Sections[BenchmarkReportSlots.HypothesesSpeed] = "The gap may be caused by the output length, as " + SupportedHypothesisToken(sheet) + " reads.";
         Assert.DoesNotContain(Validate(comparison, cited), n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule);
     }
 
@@ -266,8 +267,8 @@ public class RootCauseValidatorTests
 
     /// <summary>
     /// A comparison-scope Root Cause Analysis sheet of two models asking <paramref name="questions"/>: three
-    /// axes not established, a Moderate hypothesis and a High one (each with a statement and a label), and one
-    /// next run.
+    /// axes not established, a Moderate hypothesis, a High one, a Low one and a Not supported one (each with a
+    /// statement and a label), and one next run.
     /// </summary>
     private static BenchmarkReportFactSheet QuestionSheet(params int[] questions)
     {
@@ -276,12 +277,18 @@ public class RootCauseValidatorTests
             TextFact("rca.axis.cost.status", RootCauseStatuses.NotEstablished, "Not established"),
             TextFact("rca.axis.intelligence.status", RootCauseStatuses.NotEstablished, "Not established"),
             TextFact("rca.axis.speed.status", RootCauseStatuses.NotEstablished, "Not established"),
+            TextFact("rca.hypothesis.HC1.1.grade", RootCauseGrades.Low),
+            TextFact("rca.hypothesis.HC1.1.label", "higher output price of Model B"),
+            TextFact("rca.hypothesis.HC1.1.statement", "Model B pays a higher output price than Model A."),
             TextFact("rca.hypothesis.HQ1.1.grade", RootCauseGrades.Moderate),
             TextFact("rca.hypothesis.HQ1.1.label", "critical errors of Model B against Model A"),
             TextFact("rca.hypothesis.HQ1.1.statement", "Model B made more critical errors than Model A."),
             TextFact("rca.hypothesis.HS1.1.grade", RootCauseGrades.High),
             TextFact("rca.hypothesis.HS1.1.label", "longer outputs of Model B"),
             TextFact("rca.hypothesis.HS1.1.statement", "Model B writes longer answers than Model A."),
+            TextFact("rca.hypothesis.HS4.1.grade", RootCauseGrades.NotSupported, RootCauseGrades.Display(RootCauseGrades.NotSupported)),
+            TextFact("rca.hypothesis.HS4.1.label", "slower first token of Model B"),
+            TextFact("rca.hypothesis.HS4.1.statement", "Model B waits longer for its first token than Model A."),
             TextFact("rca.run.1.summary", "a replicate of every model"),
         };
         foreach (int q in questions)
@@ -321,6 +328,102 @@ public class RootCauseValidatorTests
 
         Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule && n.Location.StartsWith("sections.nextRuns", StringComparison.Ordinal));
         Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule && n.Location.StartsWith("sections.conclusions", StringComparison.Ordinal));
+    }
+
+    // --- Rule 33: the grade a cause rests on, hedges and negations ------------------------------------
+
+    private static List<BenchmarkReportValidationNote> CausalClaimNotes(string slot, string paragraph)
+        => ValidateSections(QuestionSheet(), new Dictionary<string, string> { [slot] = paragraph })
+            .Where(n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule && n.Location.StartsWith("sections." + slot, StringComparison.Ordinal))
+            .ToList();
+
+    [Theory]
+    [InlineData("The speed gap is due to {{rca.hypothesis.HS4.1.label}}.", false)]
+    [InlineData("The speed gap is not due to {{rca.hypothesis.HS4.1.label}}.", true)]
+    [InlineData("The speed gap cannot be caused by {{rca.hypothesis.HS4.1.label}}.", true)]
+    [InlineData("The speed gap widens not only because of {{rca.hypothesis.HS4.1.label}}.", false)]
+    [InlineData("The speed gap is due to {{rca.hypothesis.HQ1.1.label}}.", true)]
+    [InlineData("The speed gap is due to {{rca.hypothesis.HC1.1.label}}.", false)]
+    [InlineData("The speed gap may be due to {{rca.hypothesis.HC1.1.label}}.", true)]
+    [InlineData("The speed gap is consistent with, and possibly due to, {{rca.hypothesis.HC1.1.label}}.", true)]
+    [InlineData("The speed gap is unlikely to be due to anything but {{rca.hypothesis.HC1.1.label}}.", false)]
+    [InlineData("The speed gap is due to {{rca.hypothesis.HC1.1.label}} and {{rca.hypothesis.HQ1.1.label}}.", true)]
+    [InlineData("Per {{rca.axis.speed.status}}, the speed gap is due to the output length.", true)]
+    public void Rule33_ACauseNeedsAHypothesisGradedLowOrHigher_HedgedWhenLow_AndARuledOutCauseMayCiteAnyHypothesis(string paragraph, bool kept)
+    {
+        var notes = CausalClaimNotes(BenchmarkReportSlots.HypothesesSpeed, paragraph);
+
+        if (kept) Assert.Empty(notes);
+        else Assert.NotEmpty(notes);
+    }
+
+    [Fact]
+    public void Rule33_ACauseOnANotSupportedHypothesis_AndAnUnhedgedCauseOnALowOne_AreDropped_WithTheirNotes()
+    {
+        const string refuted = "The speed gap is due to {{rca.hypothesis.HS4.1.label}}.";
+        const string unhedged = "The cost gap is due to {{rca.hypothesis.HC1.1.label}}.";
+        const string measured = "The cost tables split the cost per question.";
+        const string hedged = "The intelligence gap may be due to {{rca.hypothesis.HC1.1.label}}.";
+        var sheet = QuestionSheet();
+        var output = new BenchmarkReportWriterOutput { Headline = "The models differ on every axis." };
+        output.Sections[BenchmarkReportSlots.HypothesesSpeed] = refuted;
+        output.Sections[BenchmarkReportSlots.HypothesesCost] = unhedged + "\n\n" + measured;
+        output.Sections[BenchmarkReportSlots.HypothesesIntelligence] = hedged;
+
+        var notes = BenchmarkReportPackValidator.Validate(Rca, output, sheet, new BenchmarkReportContentSnapshot())
+            .Where(n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule)
+            .ToList();
+
+        var speed = Assert.Single(notes, n => n.Location.StartsWith("sections." + BenchmarkReportSlots.HypothesesSpeed, StringComparison.Ordinal));
+        Assert.Contains("without a hypothesis graded Low or higher in the same sentence", speed.Message, StringComparison.Ordinal);
+        Assert.Contains("A Not supported hypothesis may be cited only to rule a cause out", speed.Message, StringComparison.Ordinal);
+        var cost = Assert.Single(notes, n => n.Location.StartsWith("sections." + BenchmarkReportSlots.HypothesesCost, StringComparison.Ordinal));
+        Assert.Contains("on a hypothesis graded Low only", cost.Message, StringComparison.Ordinal);
+        Assert.Contains("a Low hypothesis is a lead", cost.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(notes, n => n.Location.StartsWith("sections." + BenchmarkReportSlots.HypothesesIntelligence, StringComparison.Ordinal));
+
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, sheet, new BenchmarkReportContentSnapshot());
+        Assert.Equal(measured, cleaned.Output.Sections[BenchmarkReportSlots.HypothesesCost]);
+        Assert.Equal(hedged, cleaned.Output.Sections[BenchmarkReportSlots.HypothesesIntelligence]);
+    }
+
+    [Fact]
+    public void Rule32_ANegatedCausalWordInAnEvidenceSlot_IsStillDropped()
+    {
+        var notes = ValidateSections(QuestionSheet(), new Dictionary<string, string>
+        {
+            [BenchmarkReportSlots.EvidenceSpeed] = "The speed gap is not due to {{rca.hypothesis.HS1.1.label}}."
+        });
+
+        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseEvidenceCausalRule
+                                    && n.Location.StartsWith("sections." + BenchmarkReportSlots.EvidenceSpeed, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData("The gap is not due to the price.", "due to", true)]
+    [InlineData("It never leads to a lower score.", "leads to", true)]
+    [InlineData("The gap cannot be caused by the price.", "caused", true)]
+    [InlineData("It has not been caused by the price.", "caused", true)]
+    [InlineData("The price is not the root cause.", "root cause", true)]
+    [InlineData("The gap widens not only because of the price.", "because", false)]
+    [InlineData("The gap is due to the price.", "due to", false)]
+    public void TheCausalPhraseReaders_TellARuledOutCauseFromAStatedOne(string plain, string phrase, bool negated)
+    {
+        var none = Array.Empty<string>();
+
+        Assert.Equal(new[] { phrase }, RootCauseClaimSupport.CausalPhrases(plain));
+        Assert.Equal(negated ? new[] { phrase } : none, RootCauseClaimSupport.NegatedCausalPhrases(plain));
+        Assert.Equal(negated ? none : new[] { phrase }, RootCauseClaimSupport.UnnegatedCausalPhrases(plain));
+    }
+
+    [Theory]
+    [InlineData("The gap may be due to the price.", true)]
+    [InlineData("It is consistent with the price.", true)]
+    [InlineData("The price is unlikely to matter.", false)]
+    [InlineData("The price matters.", false)]
+    public void TheHedgeWords_MatchAsWholeWords(string plain, bool hedged)
+    {
+        Assert.Equal(hedged, RootCauseClaimSupport.HedgePhrases(plain).Any());
     }
 
     [Fact]

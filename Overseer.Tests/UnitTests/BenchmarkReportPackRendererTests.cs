@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.Benchmarking.RootCause;
 using Xunit;
 using static Overseer.Tests.UnitTests.BenchmarkReportPackFixture;
 
@@ -1529,13 +1530,84 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion18()
+    public void AComparisonDocument_IsCurrentAtFormatVersion19()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(18, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 18 · ", text);
+        Assert.Equal(19, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 19 · ", text);
         Assert.Contains(" · models named*", text);
+    }
+
+    [Fact]
+    public void AStoredRootCauseAnalysis_WithoutComparativeKeys_PrintsTheAnswerStrengthItPrintedThen()
+    {
+        var document = RootCauseReportFixture.ComparisonDocument();
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        var questions = sheet.RootCause!.Questions;
+        Assert.NotEmpty(questions);
+        foreach (var question in questions)
+        {
+            question.ComparativeKeys = null;
+            question.WithinKeys = null;
+            question.WithinOnly = false;
+        }
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+
+        string text = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
+
+        foreach (var question in questions)
+        {
+            string strength = question.HypothesisKeys.Count > 0
+                ? RootCauseGrades.WordWithGrade(question.Grade) + " — see " + BenchmarkReportFormat.LetterList(question.HypothesisKeys) + "."
+                : "no hypothesis about this model fired — see its profile.";
+            Assert.Contains("> *Answer strength: " + strength + "*\n", text);
+        }
+        Assert.DoesNotContain("— against the other models, see ", text);
+        Assert.DoesNotContain("its own breakdown, see ", text);
+
+        // Stored without the new fields, the JSON reads back null.
+        var stored = BenchmarkReportJson.Deserialize<RootCauseQuestion>("{\"number\":1,\"axis\":\"intelligence\",\"token\":\"A\",\"text\":\"Why?\",\"hypothesisKeys\":[\"HQ1.1\"]}");
+        Assert.Null(stored.ComparativeKeys);
+        Assert.Null(stored.WithinKeys);
+        Assert.False(stored.WithinOnly);
+        Assert.Null(stored.OrderEstablished);
+        Assert.Equal("Unknown — see HQ1.1.", BenchmarkReportPackRenderer.RcaAnswerStrength(stored));
+    }
+
+    [Fact]
+    public void ANewRootCauseAnalysis_SeparatesComparativeFromWithinModelHypotheses_InTheAnswerStrength()
+    {
+        static RootCauseQuestion Question(string? grade, IReadOnlyList<string> comparative, IReadOnlyList<string> within, bool withinOnly) => new()
+        {
+            Number = 3,
+            Axis = RootCauseAxes.Speed,
+            Token = "E",
+            Text = "Why is Model E slowest?",
+            Grade = grade,
+            HypothesisKeys = comparative.Concat(within).ToList(),
+            ComparativeKeys = comparative.ToList(),
+            WithinKeys = within.ToList(),
+            WithinOnly = withinOnly
+        };
+
+        Assert.Equal("Probable (Moderate) — against the other models, see HS1.1; its own breakdown, see WS3.3 and WS2.1.",
+            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(RootCauseGrades.Moderate, new[] { "HS1.1" }, new[] { "WS3.3", "WS2.1" }, false)));
+        Assert.Equal("Established (High) — against the other models, see HS1.1 and HS3.2.",
+            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(RootCauseGrades.High, new[] { "HS1.1", "HS3.2" }, Array.Empty<string>(), false)));
+        Assert.Equal("Suggestive (Low) — no hypothesis graded Low or higher compares it with the other models; its own breakdown, see WS3.3 and WS2.1, "
+                     + "says where its own time, cost or points go.",
+            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(RootCauseGrades.Low, Array.Empty<string>(), new[] { "WS3.3", "WS2.1" }, true)));
+        Assert.Equal("Suggestive (Low) — no hypothesis graded Low or higher compares it with the other models; its own breakdown, see WS2.1, "
+                     + "says where its own time, cost or points go.",
+            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(RootCauseGrades.Low, new[] { "HS4.1" }, new[] { "WS2.1" }, true)));
+
+        // Every hypothesis Not supported: the grade is unknown, with every hypothesis together.
+        Assert.Equal("Unknown — see HS4.1 and WS2.1.",
+            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(null, new[] { "HS4.1" }, new[] { "WS2.1" }, true)));
+        Assert.Equal("no hypothesis about this model fired — see its profile.",
+            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(null, Array.Empty<string>(), Array.Empty<string>(), false)));
     }
 
     [Fact]
@@ -1715,9 +1787,9 @@ public class BenchmarkReportPackRendererTests
         Assert.Equal(4, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
         Assert.Equal(4, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
         Assert.Equal(14, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(18, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(19, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
         Assert.Equal(14, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(18, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(19, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         Assert.Contains(" · format version 4 · ", text);
