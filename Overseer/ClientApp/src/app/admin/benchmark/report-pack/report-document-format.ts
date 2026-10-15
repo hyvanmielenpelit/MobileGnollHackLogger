@@ -178,6 +178,33 @@ export function statusLabel(status: string | null | undefined): string {
   return words.map((word, i) => (i === 0 ? word : word.toLowerCase())).join(' ');
 }
 
+/**
+ * A Report Pack job's document status on its progress row: `Writing` reads *Writing draft* and
+ * `Repairing` *Revising*, the revision being a routine step rather than a fault; the rest as `statusLabel`.
+ */
+export function documentProgressLabel(status: string | null | undefined): string {
+  switch (status) {
+    case 'Writing': return 'Writing draft';
+    case 'Repairing': return 'Revising';
+    default: return statusLabel(status);
+  }
+}
+
+/** The steps of a document's progress row in words; the server's wire value for an unknown one, empty while it waits. */
+export function reportPhaseLabel(phase: string | null | undefined): string {
+  switch (phase) {
+    case 'Preparing': return 'Preparing';
+    case 'Writing': return 'Writing draft';
+    case 'Checking': return 'Checking the draft';
+    case 'Revising': return 'Revising the draft';
+    case 'CheckingRevision': return 'Checking the revision';
+    case 'Storing': return 'Storing';
+    case 'DrawingCharts': return 'Drawing charts';
+    case 'Done': return 'Done';
+    default: return phase ?? '';
+  }
+}
+
 /** A stored document's status as the AI Reports tab words it: *Written*, *Written with warnings*. */
 export function documentStatusLabel(status: string | null | undefined): string {
   switch (status) {

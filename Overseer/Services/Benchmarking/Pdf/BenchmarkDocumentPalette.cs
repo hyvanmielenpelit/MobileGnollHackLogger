@@ -25,4 +25,24 @@ internal static class BenchmarkDocumentPalette
     public const string InternalText = "8A1C1C";
     public const string ProviderBanner = "FFF4DC";
     public const string ProviderText = "7A5200";
+
+    // Callouts: a rule in the kind's color down the left of a light tint. The text on the tint is ink,
+    // at least 4.5 : 1 against every tint; the rule is at least 3 : 1 against its tint and white.
+    public const string CalloutNoteRule = "2F6FB5";
+    public const string CalloutNoteTint = "EAF2FB";
+    public const string CalloutImportantRule = "7048B8";
+    public const string CalloutImportantTint = "F2EDFA";
+    public const string CalloutTipRule = "2B7A4B";
+    public const string CalloutTipTint = "E8F4EC";
+    public const string CalloutWarningRule = "9A6200";
+    public const string CalloutWarningTint = "FFF4D6";
+
+    /// <summary>A callout kind's rule color and tint.</summary>
+    public static (string Rule, string Tint) Callout(BenchmarkCalloutKind kind) => kind switch
+    {
+        BenchmarkCalloutKind.Important => (CalloutImportantRule, CalloutImportantTint),
+        BenchmarkCalloutKind.Tip => (CalloutTipRule, CalloutTipTint),
+        BenchmarkCalloutKind.Warning => (CalloutWarningRule, CalloutWarningTint),
+        _ => (CalloutNoteRule, CalloutNoteTint)
+    };
 }

@@ -17,18 +17,25 @@ using Overseer.Models;
 /// <list type="bullet">
 /// <item>A causal word (<see cref="CausalWords"/>) never appears in an observation slot
 /// (<see cref="ObservationSlots"/>) or in an observation; in an inference slot (<see cref="InferenceSlots"/>)
-/// it needs, in the same sentence, a token of a hypothesis the sheet holds (<c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.*</c>)
-/// or of an axis (<c>rca.axis.&lt;axis&gt;.*</c>), whose status rests on the hypotheses.</item>
+/// it needs, in the same sentence, a token of a hypothesis the sheet holds (<c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.*</c>,
+/// its <c>.label</c> included), or of an axis (<c>rca.axis.&lt;axis&gt;.*</c>), whose status rests on the
+/// hypotheses; in the next runs, an <c>rca.run.&lt;n&gt;.*</c> token as well.</item>
 /// <item>A certainty word (<see cref="CertaintyWords"/>), anywhere, needs in the same sentence a token of a
-/// hypothesis graded High, or the <c>rca.axis.&lt;axis&gt;.status</c> token of an axis whose root cause is
-/// established. A certainty word after <c>not</c>, <c>never</c> or <c>cannot</c> is not one.</item>
-/// <item>The conclusions cite every axis' <see cref="StatusKey"/>.</item>
+/// hypothesis graded High, its label included, or the <c>rca.axis.&lt;axis&gt;.status</c> token of an axis whose
+/// root cause is established. A certainty word after <c>not</c>, <c>never</c> or <c>cannot</c> is not one.</item>
+/// <item>The conclusions cite every axis' <see cref="StatusKey"/>, and each answer slot its question's
+/// <see cref="QuestionStatusKey"/>.</item>
 /// </list>
 /// </summary>
 public sealed class RootCauseClaimSupport
 {
     public const string HypothesisPrefix = "rca.hypothesis.";
     public const string AxisPrefix = "rca.axis.";
+    public const string RunPrefix = "rca.run.";
+    public const string QuestionPrefix = "rca.question.";
+
+    /// <summary>The suffix of a hypothesis' label, a noun phrase that may sit inside a sentence.</summary>
+    public const string LabelSuffix = ".label";
 
     /// <summary>Causal wording, matched as whole words and phrases, ignoring case.</summary>
     public static readonly IReadOnlyList<string> CausalWords = new[]
@@ -51,6 +58,7 @@ public sealed class RootCauseClaimSupport
     /// <summary>The slots that weigh the hypotheses: a causal word there needs a hypothesis or axis token in its sentence (rule 33).</summary>
     public static readonly IReadOnlyList<string> InferenceSlots = new[]
     {
+        BenchmarkReportSlots.AnswerBest, BenchmarkReportSlots.AnswerWorst, BenchmarkReportSlots.AnswerSpeed, BenchmarkReportSlots.AnswerCost,
         BenchmarkReportSlots.HypothesesIntelligence, BenchmarkReportSlots.HypothesesSpeed, BenchmarkReportSlots.HypothesesCost,
         BenchmarkReportSlots.Conclusions, BenchmarkReportSlots.NextRuns
     };
@@ -86,6 +94,9 @@ public sealed class RootCauseClaimSupport
             StringComparer.Ordinal);
         Axes = RootCauseAxes.All.Where(a => facts.ContainsKey(StatusKey(a))).ToList();
         EstablishedAxes = Axes.Where(a => string.Equals(Value(StatusKey(a)), RootCauseStatuses.Established, StringComparison.Ordinal)).ToList();
+        Questions = Enumerable.Range(1, BenchmarkReportSlots.RootCauseAnswerSlots.Count)
+            .Where(n => facts.ContainsKey(QuestionTextKey(n)))
+            .ToList();
     }
 
     /// <summary>The support of <paramref name="sheet"/>'s facts; the first fact of a repeated key counts.</summary>
@@ -121,26 +132,85 @@ public sealed class RootCauseClaimSupport
     /// <summary>The axes whose status is Root cause established, in document order.</summary>
     public IReadOnlyList<string> EstablishedAxes { get; }
 
+    /// <summary>
+    /// The research questions the sheet asks, from 1 to 4, ascending: each has its <c>rca.question.&lt;n&gt;.text</c>
+    /// fact, and its answer slot is <see cref="BenchmarkReportSlots.RootCauseAnswerSlots"/>' n-th.
+    /// </summary>
+    public IReadOnlyList<int> Questions { get; }
+
     /// <summary><c>rca.axis.&lt;axis&gt;.status</c>.</summary>
     public static string StatusKey(string axis) => AxisPrefix + axis + ".status";
+
+    /// <summary><c>rca.question.&lt;n&gt;.status</c>.</summary>
+    public static string QuestionStatusKey(int question) => QuestionPrefix + question.ToString(CultureInfo.InvariantCulture) + ".status";
+
+    /// <summary><c>rca.question.&lt;n&gt;.text</c>, whose presence says the sheet asks the question.</summary>
+    public static string QuestionTextKey(int question) => QuestionPrefix + question.ToString(CultureInfo.InvariantCulture) + ".text";
+
+    /// <summary>The answer slot of question <paramref name="question"/> (1 to 4).</summary>
+    public static string AnswerSlot(int question) => BenchmarkReportSlots.RootCauseAnswerSlots[question - 1];
+
+    /// <summary>The question an answer slot answers, 1 to 4; null for any other slot.</summary>
+    public static int? QuestionOf(string slot)
+    {
+        for (int i = 0; i < BenchmarkReportSlots.RootCauseAnswerSlots.Count; i++)
+        {
+            if (string.Equals(BenchmarkReportSlots.RootCauseAnswerSlots[i], slot, StringComparison.Ordinal)) return i + 1;
+        }
+        return null;
+    }
 
     /// <summary>The token is a fact of the sheet.</summary>
     public bool HasFact(string key) => _facts.ContainsKey(key);
 
-    /// <summary>A token of a hypothesis the sheet holds.</summary>
-    public bool IsHypothesisToken(string key)
-        => HypothesisPrefixOf(key) is string prefix && HypothesisPrefixes.Contains(prefix, StringComparer.Ordinal) && _facts.ContainsKey(key);
+    /// <summary>A hypothesis' label, <c>rca.hypothesis.&lt;id&gt;.label</c>: a noun phrase, not a sentence.</summary>
+    public static bool IsLabel(string key)
+        => key.StartsWith(HypothesisPrefix, StringComparison.Ordinal) && key.EndsWith(LabelSuffix, StringComparison.Ordinal);
+
+    /// <summary>A token of a hypothesis the sheet holds, its label included.</summary>
+    public bool IsHypothesisToken(string key) => _facts.ContainsKey(key) && PrefixesOf(key).Any();
 
     /// <summary>A token of an axis' status or best hypothesis that the sheet holds.</summary>
     public bool IsAxisToken(string key) => key.StartsWith(AxisPrefix, StringComparison.Ordinal) && _facts.ContainsKey(key);
 
+    /// <summary>A token of a next run (<c>rca.run.&lt;n&gt;.*</c>) that the sheet holds.</summary>
+    public bool IsRunToken(string key) => key.StartsWith(RunPrefix, StringComparison.Ordinal) && _facts.ContainsKey(key);
+
     /// <summary>The token lets a causal word stand in its sentence (rule 33).</summary>
     public bool SupportsCausal(string key) => IsHypothesisToken(key) || IsAxisToken(key);
 
+    /// <summary>
+    /// The token lets a causal word stand in its sentence of <paramref name="slot"/> (rule 33): in the next
+    /// runs, a run token as well, since each run names what it settles.
+    /// </summary>
+    public bool SupportsCausal(string key, string? slot)
+        => SupportsCausal(key)
+           || (string.Equals(slot, BenchmarkReportSlots.NextRuns, StringComparison.Ordinal) && IsRunToken(key));
+
     /// <summary>The token lets a certainty word stand in its sentence (rule 34).</summary>
     public bool SupportsCertainty(string key)
-        => (HypothesisPrefixOf(key) is string prefix && _highPrefixes.Contains(prefix) && _facts.ContainsKey(key))
+        => (_facts.ContainsKey(key) && PrefixesOf(key).Any(_highPrefixes.Contains))
            || EstablishedAxes.Any(a => string.Equals(StatusKey(a), key, StringComparison.Ordinal));
+
+    /// <summary>
+    /// The hypothesis prefixes a key belongs to: its own for a key under one, and for a label keyed by the
+    /// rule id alone (<c>rca.hypothesis.HQ1.label</c>), every hypothesis of that rule.
+    /// </summary>
+    private IEnumerable<string> PrefixesOf(string key)
+    {
+        if (HypothesisPrefixOf(key) is string prefix)
+        {
+            if (HypothesisPrefixes.Contains(prefix, StringComparer.Ordinal)) yield return prefix;
+            yield break;
+        }
+        if (!IsLabel(key) || key.Length <= HypothesisPrefix.Length + LabelSuffix.Length) yield break;
+
+        string id = key[HypothesisPrefix.Length..^LabelSuffix.Length];
+        foreach (string rule in HypothesisPrefixes.Where(h => h.StartsWith(HypothesisPrefix + id + ".", StringComparison.Ordinal)))
+        {
+            yield return rule;
+        }
+    }
 
     /// <summary>What CLAIM SUPPORT lists for causal words: each hypothesis' tokens, then the axis tokens.</summary>
     public IReadOnlyList<string> CausalSupport()

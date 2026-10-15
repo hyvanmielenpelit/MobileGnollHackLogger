@@ -7,9 +7,11 @@ import {
   BenchmarkReportAudience,
   BenchmarkReportDocumentListItemDto,
   BenchmarkReportPackAudienceEstimateDto,
+  BenchmarkReportPackCallDto,
   BenchmarkReportPackDocumentProgressDto,
   BenchmarkReportPackJobDto,
   BenchmarkReportPackPreviewDto,
+  BenchmarkReportPackValidationIssueDto,
   BenchmarkReportPackWrittenDocumentDto,
   BenchmarkReportScope
 } from '../../../services/admin-benchmark.service';
@@ -211,7 +213,7 @@ function jobDto(overrides: Partial<BenchmarkReportPackJobDto> = {}): BenchmarkRe
       { audience: ExecutiveSummary, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1 },
       { audience: RootCauseAnalysis, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0 }
     ],
-    log: [{ timestampUtc: '2026-09-28T10:00:00Z', message: 'Started.', severity: 'Info' }],
+    log: [{ timestampUtc: '2026-09-28T10:00:00Z', message: 'Started.', severity: 'info' }],
     ...overrides
   };
 }
@@ -1282,7 +1284,7 @@ describe('ReportPackPanelComponent', () => {
     fixture.detectChanges();
 
     expect(cellText(ExecutiveSummary, '.rp-doc-name')).toBe('Executive Summary');
-    expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Writing');
+    expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Writing draft');
     expect(cellText(ExecutiveSummary, '.rp-doc-calls')).toBe('Model calls: 1');
     expect(cellText(RootCauseAnalysis, '.job-status-chip')).toBe('Pending');
     expect(q('.rp-job-status')!.getAttribute('role')).toBe('status');
@@ -1319,7 +1321,8 @@ describe('ReportPackPanelComponent', () => {
     }));
     fixture.detectChanges();
     expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Completed');
-    expect(cellText(RootCauseAnalysis, '.job-status-chip')).toBe('Repairing');
+    // The revision is a routine step, not a fault.
+    expect(cellText(RootCauseAnalysis, '.job-status-chip')).toBe('Revising');
     expect(cellText(RootCauseAnalysis, '.rp-doc-calls')).toBe('Model calls: 2');
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Gemini Flash: 1 of 2 finished.');
     expect(text('.rp-job-rail .run-stage.is-current .run-stage-name')).toBe('Root Cause Analysis');
@@ -1337,7 +1340,7 @@ describe('ReportPackPanelComponent', () => {
     fixture.detectChanges();
 
     expect(text('.rp-job-status')).toBe('Report pack for Gemini Flash: Completed.');
-    expect(text('.rp-job-summary')).toBe('Written: 2 documents, 2 min 05 s, $0.13');
+    expect(text('.rp-job-summary')).toBe('Written: 2 documents (1 with warnings), 2 min 05 s, $0.13');
     expect(q('.rp-job-rail')).toBeNull();
     // The strip stays, with Cost and the estimate, under the summary line and Dismiss.
     expect(q('.rp-job-stats')).not.toBeNull();
@@ -1523,7 +1526,7 @@ describe('ReportPackPanelComponent', () => {
     expect(chip.classList).toContain('status-generating');
     expect(q(`.rp-job-row[data-audience="${RootCauseAnalysis}"] .job-status-chip`)!.classList).toContain('status-failed');
     expect(cellText(RootCauseAnalysis, '.rp-job-row-error')).toBe('The writer refused.');
-    expect(cellText(ExecutiveSummary, '.rp-doc-status')).toBe('Status: Writing');
+    expect(cellText(ExecutiveSummary, '.rp-doc-status')).toBe('Status: Writing draft');
     expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-calls`)!.classList).toContain('rp-num');
 
     // On the server's clock: 30 s at its last reading, one more second later.
@@ -1690,6 +1693,172 @@ describe('ReportPackPanelComponent', () => {
     tick(1000);
     fixture.detectChanges();
     expect(text('.rp-job-elapsed')).toBe('43 s');
+    fixture.destroy();
+  }));
+
+  // -------------------------------------------------------------------------------------------
+  // Phases and validation outcomes
+  // -------------------------------------------------------------------------------------------
+
+  function issue(
+    rule: number, ruleName: string, severity: string, locationLabel: string, message: string, dropped: boolean, issueText: string | null = null
+  ): BenchmarkReportPackValidationIssueDto {
+    return { rule, ruleName, severity, location: 'sections.conclusions[0]', locationLabel, message, dropped, text: issueText };
+  }
+
+  const RANKING = issue(16, 'Ranking without the overlap caveat', 'warning', 'Hypotheses: cost, paragraph 2',
+    'The sentence ranks two models whose intervals overlap.', false);
+  const DIGIT = issue(3, 'Digit in prose', 'removesItem', 'Conclusions, paragraph 1', 'The paragraph holds a number of its own.', true,
+    'The model scored 72.');
+
+  function call(kind: string): BenchmarkReportPackCallDto {
+    return {
+      kind, startedAtUtc: '2026-09-28T10:00:05Z', durationMs: 30000, inputTokens: 6000, cachedInputTokens: 0, outputTokens: 1500,
+      costUsd: 0.05, finishReason: 'stop', requestMessages: kind === 'Draft' ? 2 : 4, requestCharacters: 20000
+    };
+  }
+
+  it('shows each document\'s phase under its chip, and announces a phase change only when the phase changes', fakeAsync(() => {
+    const pending: BenchmarkReportPackDocumentProgressDto = {
+      audience: RootCauseAnalysis, status: 'Pending', documentId: null, errorMessage: null, modelCalls: 0, phase: ''
+    };
+    const writing: BenchmarkReportPackDocumentProgressDto = {
+      audience: ExecutiveSummary, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1, phase: 'Writing'
+    };
+    openPanel({ activeJob: jobDto({ id: 'job-5', serverTimeUtc: '2026-09-28T10:01:00Z', documents: [writing, pending] }) });
+
+    expect(cellText(ExecutiveSummary, '.rp-doc-phase')).toBe('Writing draft');
+    expect(q(`.rp-job-row[data-audience="${RootCauseAnalysis}"] .rp-doc-phase`)).toBeNull();
+    const writingLine = 'Writing 2 documents for Gemini Flash: 0 of 2 finished. Executive Summary: Writing draft.';
+    expect(text('.rp-job-status')).toBe(writingLine);
+    expect(q('.rp-job-status')!.getAttribute('aria-live')).toBe('polite');
+    // The phase line itself is not live: the one live line announces the change.
+    expect(q('.rp-doc-phase')!.closest('[role="status"], [aria-live]')).toBeNull();
+
+    // Neither the clock nor a reading in the same phase changes the live line.
+    tick(1000);
+    fixture.detectChanges();
+    expect(text('.rp-job-status')).toBe(writingLine);
+    tick(REPORT_PACK_POLL_MS - 1000);
+    http.expectOne(jobUrl('job-5')).flush(jobDto({ id: 'job-5', serverTimeUtc: '2026-09-28T10:01:02Z', documents: [{ ...writing }, { ...pending }] }));
+    fixture.detectChanges();
+    expect(text('.rp-job-status')).toBe(writingLine);
+
+    // Revising: the chip reads Revising, the phase line counts the first draft's issues.
+    tick(REPORT_PACK_POLL_MS);
+    http.expectOne(jobUrl('job-5')).flush(jobDto({
+      id: 'job-5',
+      documents: [{
+        ...writing, status: 'Repairing', modelCalls: 2, phase: 'Revising', firstDraftClean: false, firstTurnIssues: [RANKING, DIGIT],
+        phaseDetail: 'The automatic check found 2 issues in the first draft: 1 ranking without the overlap caveat, 1 digit in prose.'
+      }, { ...pending }]
+    }));
+    fixture.detectChanges();
+    expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Revising');
+    expect(cellText(ExecutiveSummary, '.rp-doc-phase')).toBe('Revising the draft — 2 issues found by the automatic check');
+    expect(text('.rp-job-status')).toBe(
+      'Writing 2 documents for Gemini Flash: 0 of 2 finished. Executive Summary: Revising the draft — 2 issues found by the automatic check.');
+
+    // The phase line's info button lists the first draft's issues by rule in a dialog.
+    const draftButton = q<HTMLButtonElement>(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-draft button.gh-info-btn`)!;
+    expect(draftButton.getAttribute('aria-label')).toBe('About the first draft check of the Executive Summary of Gemini Flash');
+    expect(draftButton.hasAttribute('title')).toBe(false);
+    draftButton.click();
+    fixture.detectChanges();
+    const draftDialog = q<HTMLDialogElement>(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-draft dialog`)!;
+    expect(draftDialog.open).toBe(true);
+    expect(draftDialog.querySelector('.report-validation-summary')!.textContent!.trim())
+      .toBe('The automatic check found 2 issues in the first draft: 1 ranking without the overlap caveat, 1 digit in prose.');
+    expect(draftDialog.querySelectorAll('.report-validation-group').length).toBe(2);
+    draftDialog.close();
+
+    // Finished: the phase line says how each draft was checked.
+    tick(REPORT_PACK_POLL_MS);
+    http.expectOne(jobUrl('job-5')).flush(jobDto({
+      id: 'job-5',
+      status: 'Completed',
+      completedAtUtc: '2026-09-28T10:03:00Z',
+      documents: [
+        {
+          ...written(ExecutiveSummary, 31, 'CompletedWithWarnings'), modelCalls: 2, phase: 'Done', firstDraftClean: false,
+          firstTurnIssues: [RANKING, DIGIT], finalIssues: [DIGIT, RANKING], calls: [call('Draft'), call('Revision')]
+        },
+        { ...written(RootCauseAnalysis, 32), phase: 'Done', firstDraftClean: true, firstTurnIssues: [], finalIssues: [], calls: [call('Draft')] }
+      ]
+    }));
+    fixture.detectChanges();
+    expect(cellText(ExecutiveSummary, '.rp-doc-phase')).toBe('Revised once — 2 issues in the first draft');
+    expect(cellText(RootCauseAnalysis, '.rp-doc-phase')).toBe('First draft passed every check');
+    expect(q(`.rp-job-row[data-audience="${RootCauseAnalysis}"] .rp-doc-draft`)).toBeNull();
+    expect(text('.rp-job-status')).toBe('Report pack for Gemini Flash: Completed.');
+    fixture.destroy();
+  }));
+
+  it('explains a document completed with warnings, and a failed one, in a dialog whose heading takes focus', fakeAsync(() => {
+    openPanel({
+      activeJob: jobDto({
+        id: 'job-5',
+        status: 'CompletedWithErrors',
+        completedAtUtc: '2026-09-28T10:03:00Z',
+        documents: [
+          {
+            ...written(ExecutiveSummary, 31, 'CompletedWithWarnings'), modelCalls: 2, firstDraftClean: false,
+            firstTurnIssues: [RANKING, DIGIT], finalIssues: [DIGIT, RANKING], calls: [call('Draft'), call('Revision')]
+          },
+          {
+            audience: RootCauseAnalysis, status: 'Failed', documentId: null, errorMessage: 'The headline is missing.', modelCalls: 2,
+            firstDraftClean: false, firstTurnIssues: [], finalIssues: [], failedReply: '{"headline": ""}'
+          }
+        ]
+      })
+    });
+
+    expect(text('.rp-job-summary')).toContain('Written with errors: 1 of 2 documents (1 with warnings)');
+    const row = (audience: BenchmarkReportAudience): HTMLElement => q(`.rp-job-row[data-audience="${audience}"]`)!;
+    const why = row(ExecutiveSummary).querySelector<HTMLButtonElement>('.rp-doc-why button.gh-info-btn')!;
+    expect(why.getAttribute('aria-label')).toBe('About warnings in the Executive Summary of Gemini Flash');
+    expect(why.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(why.hasAttribute('title')).toBe(false);
+
+    why.click();
+    fixture.detectChanges();
+    const dialog = row(ExecutiveSummary).querySelector<HTMLDialogElement>('.rp-doc-why dialog')!;
+    expect(dialog.open).toBe(true);
+    const heading = dialog.querySelector('h3')!;
+    expect(heading.textContent!.trim()).toBe('Why the Executive Summary of Gemini Flash was completed with warnings');
+    expect(dialog.getAttribute('aria-labelledby')).toBe(heading.id);
+    expect(document.activeElement).toBe(heading);
+    expect(dialog.querySelector('.report-validation-summary')!.textContent!.trim())
+      .toBe('This document is usable. One paragraph was removed and one warning was kept.');
+    expect(dialog.querySelector('.report-validation-removed .report-validation-quote')!.textContent).toBe('The model scored 72.');
+    dialog.close();
+
+    const failed = row(RootCauseAnalysis).querySelector<HTMLButtonElement>('.rp-doc-why button.gh-info-btn')!;
+    expect(failed.getAttribute('aria-label')).toBe('About failure of the Root Cause Analysis of Gemini Flash');
+    failed.click();
+    fixture.detectChanges();
+    const failedDialog = row(RootCauseAnalysis).querySelector<HTMLDialogElement>('.rp-doc-why dialog')!;
+    expect(failedDialog.querySelector('h3')!.textContent!.trim()).toBe('Why the Root Cause Analysis of Gemini Flash failed');
+    expect(failedDialog.querySelector('.report-validation-summary')!.textContent!.trim()).toBe('This document could not be stored.');
+    expect(failedDialog.querySelector('.report-validation-reply')!.textContent).toBe('{"headline": ""}');
+    failedDialog.close();
+    fixture.destroy();
+  }));
+
+  it('styles only a warning entry of the log as a warning, whatever the case the server sends', fakeAsync(() => {
+    openPanel({
+      activeJob: jobDto({
+        id: 'job-5',
+        log: [
+          { timestampUtc: '2026-09-28T10:00:00Z', message: 'Started.', severity: 'info' },
+          { timestampUtc: '2026-09-28T10:00:40Z', message: 'Revising the Executive Summary.', severity: 'warning' },
+          { timestampUtc: '2026-09-28T10:00:50Z', message: 'Executive Summary written.', severity: 'Info' }
+        ]
+      })
+    });
+
+    const entries = Array.from(host.querySelectorAll('.rp-log-list li'));
+    expect(entries.map(entry => entry.classList.contains('rp-log-warning'))).toEqual([false, true, false]);
     fixture.destroy();
   }));
 

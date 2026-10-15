@@ -49,9 +49,9 @@ public static partial class BenchmarkReportPackPrompt
 
     /// <summary>
     /// The user message of the one repair turn of a per-model (<paramref name="comparisonScope"/> false) or
-    /// comparison-scope document. When an issue is the headline's, <paramref name="headline"/>, the headline
-    /// as written, adds its word count against the cap; a Root Cause Analysis' claim issues add its claim
-    /// reminders.
+    /// comparison-scope document: the issues grouped by rule (<see cref="AppendGroupedIssues"/>), then the
+    /// reminders. When an issue is the headline's, <paramref name="headline"/>, the headline as written, adds
+    /// its word count against the cap; a Root Cause Analysis' claim issues add its claim reminders.
     /// </summary>
     public static string BuildRepairMessage(IReadOnlyList<BenchmarkReportValidationNote> issues, bool comparisonScope, string? headline = null)
     {
@@ -67,19 +67,15 @@ public static partial class BenchmarkReportPackPrompt
         var sb = new StringBuilder();
         Line(sb, "Your previous answer broke the document rules. Fix every issue below and answer again with the complete, corrected JSON object only: no text before or after it and no code fence.");
         Line(sb);
-        Line(sb, "ISSUES");
-        foreach (var issue in issues)
-        {
-            Line(sb, $"- rule {issue.Rule.ToString(CultureInfo.InvariantCulture)} at {issue.Location}: {issue.Message}");
-        }
+        AppendGroupedIssues(sb, issues);
         Line(sb);
         Line(sb, "REMINDERS");
         Line(sb, "- Figures appear only as {{key}} with a key from FACTS exactly as written; a model only as {{model:X}} with its letter from MODELS. No other {{...}} tokens.");
-        Line(sb, "- No digits in prose except question references as the QUESTION MATRIX shows them. Write counts as number words, and no numbered lists.");
+        Line(sb, "- No digits in prose except question references as the QUESTION MATRIX shows them and the fixed phrase for the interval level. Write counts as number words, and no numbered lists.");
         Line(sb, "- Every question number, question reference and evidence id must exist in the data. Every point about a model cites at least one evidence id.");
         Line(sb, "- Never quote the questions, rubrics, answers or grader comments: no run of eight words may match them. Describe a question by its topic.");
-        Line(sb, "- Never name a model, provider or product. Never call a difference significant, statistically anything, reliably better or worse, or say a model clearly outperforms another; say whether intervals overlap, or what a paired test established after its adjustment.");
-        Line(sb, "- A sentence ranking one model above another whose interval overlaps it says that the intervals overlap or that the order is not established, unless it states the paired result that the pair's facts establish. No hype or filler words.");
+        Line(sb, "- Never name a model, provider or product. Never call a difference significant, statistically anything, reliably better or worse, or say a model clearly outperforms another; say whether the intervals overlap, or cite the pair's paired-result token.");
+        Line(sb, "- A sentence ranking one model above another whose interval overlaps it says that the intervals overlap or that the order is not established, or cites the pair's interval-overlap or paired-result token. A speed or cost ranking cites the pair's speed or cost paired-result token instead, or says that the order is not established. One ranking per sentence. No hype or filler words.");
         foreach (string rule in TokenShapeReminders)
         {
             Line(sb, "- " + rule);
@@ -113,7 +109,7 @@ public static partial class BenchmarkReportPackPrompt
     public static IReadOnlyList<string> TokenShapeReminders => new[]
     {
         "A fact whose value is a whole sentence — every notable.N.summary, and any value that begins with a capital letter and ends with a full stop — is written as a sentence of its own, at most once, never inside parentheses, and never continued after its full stop.",
-        "A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took 1.49 times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.",
+        "A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took one and a half times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.",
         "Never list several 'N of M' tokens in a row: say what each counts."
     };
 

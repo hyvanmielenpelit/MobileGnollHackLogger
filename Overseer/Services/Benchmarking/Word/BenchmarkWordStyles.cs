@@ -61,6 +61,12 @@ internal static class BenchmarkWordStyles
 
     public static string Heading(int level) => "Heading" + Math.Clamp(level, 1, 6).ToString(CultureInfo.InvariantCulture);
 
+    /// <summary>The paragraph style of a callout of <paramref name="kind"/>: <c>CalloutNote</c>, <c>CalloutImportant</c>, <c>CalloutTip</c> or <c>CalloutWarning</c>.</summary>
+    public static string Callout(BenchmarkCalloutKind kind) => "Callout" + kind.ToString();
+
+    /// <summary>The left indent of a callout's text, in twips: the box's padding and its rule.</summary>
+    public static readonly int CalloutIndent = Twips(10);
+
     /// <summary>A length in points as twentieths of a point, rounded.</summary>
     public static int Twips(double points) => (int)Math.Round(points * 20, MidpointRounding.AwayFromZero);
 
@@ -192,6 +198,11 @@ internal static class BenchmarkWordStyles
                 p.Indentation = new Indentation { Left = Twips(10).ToString(CultureInfo.InvariantCulture) };
             },
             run: r => r.Color = Color(Palette.Muted)));
+
+        foreach (var kind in Enum.GetValues<BenchmarkCalloutKind>())
+        {
+            styles.Append(CalloutStyle(kind));
+        }
 
         styles.Append(ParagraphStyle(CodeBlock, "Code Block", Normal, null, custom: true,
             paragraph: p =>
@@ -399,6 +410,34 @@ internal static class BenchmarkWordStyles
                 r.BoldComplexScript = new BoldComplexScript();
                 r.Color = Color(text);
             });
+
+    /// <summary>
+    /// A callout paragraph: ink text on the kind's tint, a 3 pt rule in the kind's color down the left,
+    /// and 4 pt of padding drawn by borders in the tint. Consecutive paragraphs of one kind share one box,
+    /// because their borders are identical.
+    /// </summary>
+    private static Style CalloutStyle(BenchmarkCalloutKind kind)
+    {
+        var (rule, tint) = Palette.Callout(kind);
+        return ParagraphStyle(Callout(kind), "Callout " + kind.ToString(), Normal, null, custom: true,
+            paragraph: p =>
+            {
+                p.ParagraphBorders = new ParagraphBorders
+                {
+                    TopBorder = new TopBorder { Val = BorderValues.Single, Size = 4U, Space = 4U, Color = tint },
+                    LeftBorder = new LeftBorder { Val = BorderValues.Single, Size = 24U, Space = 7U, Color = rule },
+                    BottomBorder = new BottomBorder { Val = BorderValues.Single, Size = 4U, Space = 4U, Color = tint },
+                    RightBorder = new RightBorder { Val = BorderValues.Single, Size = 4U, Space = 4U, Color = tint }
+                };
+                p.Shading = Fill(tint);
+                p.SpacingBetweenLines = LineSpacing(before: 4, after: BenchmarkPdfStyle.BlockSpacing, line: BenchmarkPdfStyle.LineHeight);
+                p.Indentation = new Indentation
+                {
+                    Left = CalloutIndent.ToString(CultureInfo.InvariantCulture),
+                    Right = Twips(4.5).ToString(CultureInfo.InvariantCulture)
+                };
+            });
+    }
 
     /// <summary>The running header or footer: 8.5 pt muted text with a center and a right tab, and its rule.</summary>
     private static Style FrameStyle(string id, string name, int textWidth, BorderType border)

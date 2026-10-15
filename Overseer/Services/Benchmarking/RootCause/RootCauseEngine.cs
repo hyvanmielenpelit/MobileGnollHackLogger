@@ -187,7 +187,7 @@ public sealed class RootCauseInput
 public static class RootCauseEngine
 {
     /// <summary>The version stored on every result.</summary>
-    public const int Version = 1;
+    public const int Version = 2;
 
     public const string ComparisonScope = "Comparison";
     public const string ModelScope = "Model";
@@ -232,7 +232,7 @@ public static class RootCauseEngine
             return result;
         }
 
-        // Decompositions of every analyzed pair.
+        // Every analyzed pair: decomposed where its difference is established, its difference alone otherwise.
         foreach (var pair in ctx.Pairs)
         {
             var first = ctx.Model(pair.First);
@@ -294,6 +294,7 @@ public static class RootCauseEngine
             counters[hypothesis.Id] = n;
             hypothesis.Number = n;
             hypothesis.Key = hypothesis.Id + "." + n.ToString(CultureInfo.InvariantCulture);
+            hypothesis.Label = RootCauseLabels.Of(hypothesis, ctx.Name);
         }
         result.Hypotheses = kept.Select(k => k.Hypothesis).ToList();
         result.Axes = RootCauseAxes.All.Select(axis => RootCauseHypotheses.AxisStatus(axis, kept)).ToList();
@@ -310,6 +311,9 @@ public static class RootCauseEngine
         result.Evidence = input.Models.Select(m => ctx.EvidenceSummary(m)).ToList();
         AddChartRows(ctx, result);
         result.KnownFacts = RootCauseKnownFacts.Build(ctx, result);
+        result.Profiles = RootCauseProfiles.Build(ctx);
+        result.Questions = RootCauseProfiles.Questions(ctx, result);
+        result.GradeCap = RootCauseProfiles.GradeCap(ctx);
 
         if (input.PricingBasisKind == BenchmarkReportFacts.PricingBasisCatalog && input.Models.Any(m => m.Evidence.Priced))
         {
@@ -543,40 +547,76 @@ internal sealed class RootCauseContext
         return string.Empty;
     }
 
+    /// <summary>
+    /// The pair's speed decomposition: its components only where the difference is established
+    /// (<see cref="DifferenceEstablished"/>), else the difference and its interval, marked not established.
+    /// </summary>
     public RootCausePairDecomposition? SpeedPair(RootCausePair pair)
     {
         if (!_speed.TryGetValue(pair.Key, out var value))
         {
             var first = Model(pair.First);
             var second = Model(pair.Second);
-            value = first.SpeedDegraded || second.SpeedDegraded
-                ? new RootCausePairDecomposition
+            if (first.SpeedDegraded || second.SpeedDegraded)
+            {
+                value = new RootCausePairDecomposition
                 {
                     Axis = RootCauseAxes.Speed, First = pair.First, Second = pair.Second,
                     UnavailableReason = first.SpeedDegraded ? first.SpeedDegradedReason ?? "The speed axis is degraded." : second.SpeedDegradedReason ?? "The speed axis is degraded."
+                };
+            }
+            else
+            {
+                value = RootCauseDecomposition.Speed(pair.First, first.Evidence, pair.Second, second.Evidence, decompose: false);
+                if (value.NotEstablished && DifferenceEstablished(pair, RootCauseAxes.Speed, value))
+                {
+                    value = RootCauseDecomposition.Speed(pair.First, first.Evidence, pair.Second, second.Evidence);
                 }
-                : RootCauseDecomposition.Speed(pair.First, first.Evidence, pair.Second, second.Evidence);
+            }
             _speed[pair.Key] = value;
         }
         return value;
     }
 
+    /// <summary>The pair's cost decomposition, decomposed only where the difference is established, as <see cref="SpeedPair"/>.</summary>
     public RootCausePairDecomposition? CostPair(RootCausePair pair)
     {
         if (!_cost.TryGetValue(pair.Key, out var value))
         {
             var first = Model(pair.First);
             var second = Model(pair.Second);
-            value = first.CostDegraded || second.CostDegraded
-                ? new RootCausePairDecomposition
+            if (first.CostDegraded || second.CostDegraded)
+            {
+                value = new RootCausePairDecomposition
                 {
                     Axis = RootCauseAxes.Cost, First = pair.First, Second = pair.Second,
                     UnavailableReason = first.CostDegraded ? first.CostDegradedReason ?? "The cost axis is degraded." : second.CostDegradedReason ?? "The cost axis is degraded."
+                };
+            }
+            else
+            {
+                value = RootCauseDecomposition.Cost(pair.First, first.Evidence, pair.Second, second.Evidence, decompose: false);
+                if (value.NotEstablished && DifferenceEstablished(pair, RootCauseAxes.Cost, value))
+                {
+                    value = RootCauseDecomposition.Cost(pair.First, first.Evidence, pair.Second, second.Evidence);
                 }
-                : RootCauseDecomposition.Cost(pair.First, first.Evidence, pair.Second, second.Evidence);
+            }
             _cost[pair.Key] = value;
         }
         return value;
+    }
+
+    /// <summary>
+    /// Whether the pair's difference on a speed or cost axis is established, as its null hypothesis is
+    /// rejected: a family test established after its adjustment; without a family test that was made, the
+    /// 95 % bootstrap interval of the per-question difference excluding zero.
+    /// </summary>
+    public bool DifferenceEstablished(RootCausePair pair, string axis, RootCausePairDecomposition difference)
+    {
+        var tests = TestsFor(pair, axis);
+        if (tests.Any(t => t.Established && t.Favors != "None")) return true;
+        if (tests.Any(t => t.NotTestedReason == null)) return false;
+        return difference.DifferenceLower is double lo && difference.DifferenceUpper is double hi && (lo > 0 || hi < 0);
     }
 
     /// <summary>The family tests of a pair on an axis, the reference family first.</summary>
@@ -1207,9 +1247,12 @@ internal sealed class RootCauseContext
 /// Fact keys (T is a model token: a letter, or <c>subject</c>):
 ///   rca.axis.&lt;axis&gt;.status, rca.axis.&lt;axis&gt;.best           axis = intelligence, speed, cost
 ///   rca.known.&lt;n&gt;
-///   rca.hypothesis.&lt;id&gt;.&lt;n&gt;.statement, .axis, .models, .locus, .grade, .gradeReasons, .for, .against,
+///   rca.hypothesis.&lt;id&gt;.&lt;n&gt;.statement, .label, .axis, .models, .locus, .grade, .gradeReasons, .for, .against,
 ///     .refutedIf, .nextRun or .check, .share, .interval
-///   rca.speed.&lt;T&gt;.&lt;T&gt;.total; rca.speed.&lt;T&gt;.&lt;T&gt;.&lt;component&gt;.share, .interval
+///   rca.question.&lt;n&gt;.text, .model, .status, .hypotheses, .signals      n = 1 highest score, 2 lowest, 3 slowest, 4 most expensive
+///   rca.profile.&lt;T&gt;.lostPointsOn, .weakestDimension, .lowestRank, .strength.&lt;n&gt;, .flag.&lt;n&gt;, .flags
+///   rca.speed.&lt;T&gt;.&lt;T&gt;.total (a difference not established is stated, not decomposed);
+///     rca.speed.&lt;T&gt;.&lt;T&gt;.&lt;component&gt;.share, .interval
 ///   rca.cost.&lt;T&gt;.&lt;T&gt;.total; rca.cost.&lt;T&gt;.&lt;T&gt;.&lt;component&gt;.&lt;volume|price&gt;.share (component all: every component)
 ///   rca.quality.&lt;T&gt;.&lt;T&gt;.total; rca.quality.&lt;T&gt;.&lt;T&gt;.dimension.&lt;d&gt;.points, .other.points
 ///   rca.atRisk.&lt;T&gt;.&lt;segment&gt;, rca.atRisk.&lt;T&gt;.total
@@ -1229,8 +1272,9 @@ public static class RootCauseFacts
     /// <summary>
     /// Whether a fact stays off the Executive Summary's fact list: every <c>rca.*</c> fact, and every
     /// evidence fact only the Root Cause Analysis reads (the per-model facts of § A3, a per-model sheet's
-    /// <c>profile.*</c>, and the <c>pair.&lt;L&gt;.&lt;M&gt;.dimension.*</c> and <c>.configDifferences</c> facts),
-    /// whether bare or under a model's <c>model.&lt;L&gt;.</c> prefix. The facts stay on the sheet.
+    /// <c>profile.*</c>, and the <c>pair.&lt;L&gt;.&lt;M&gt;.dimension.*</c>, <c>.configDifferences</c> and
+    /// <c>.&lt;axis&gt;.short</c> facts), whether bare or under a model's <c>model.&lt;L&gt;.</c> prefix. The facts
+    /// stay on the sheet.
     /// </summary>
     public static bool WriterHidden(string? key)
     {
@@ -1238,7 +1282,9 @@ public static class RootCauseFacts
         if (key.StartsWith(Prefix, StringComparison.Ordinal)) return true;
         if (key.StartsWith("profile.", StringComparison.Ordinal)) return true;
         if (key.StartsWith("pair.", StringComparison.Ordinal)
-            && (key.Contains(".dimension.", StringComparison.Ordinal) || key.EndsWith(".configDifferences", StringComparison.Ordinal)))
+            && (key.Contains(".dimension.", StringComparison.Ordinal)
+                || key.EndsWith(".configDifferences", StringComparison.Ordinal)
+                || key.EndsWith(".short", StringComparison.Ordinal)))
         {
             return true;
         }
@@ -1266,6 +1312,7 @@ public static class RootCauseFacts
         {
             string prefix = "rca.hypothesis." + h.Id + "." + Inv(h.Number) + ".";
             facts.Text(prefix + "statement", h.Statement);
+            if (!string.IsNullOrWhiteSpace(h.Label)) facts.Text(prefix + "label", h.Label);
             facts.Text(prefix + "axis", RootCauseAxes.Name(h.Axis));
             facts.Text(prefix + "models", h.ModelsText);
             facts.Text(prefix + "locus", h.Locus);
@@ -1286,26 +1333,55 @@ public static class RootCauseFacts
         foreach (var pair in result.SpeedPairs)
         {
             string prefix = "rca.speed." + pair.First + "." + pair.Second + ".";
-            if (pair.UnavailableReason != null || pair.Difference is not double total)
+            string notDecomposed = pair.NotEstablished ? ", not established, so not decomposed" : string.Empty;
+            if ((pair.UnavailableReason != null && !pair.NotEstablished) || pair.Difference is not double total)
             {
                 facts.Unavailable(prefix + "total", pair.UnavailableReason ?? "Not computed.");
                 continue;
             }
             facts.Add(prefix + "total", total / 1000.0,
-                BenchmarkReportFormat.SignedOneDecimal(total / 1000.0) + " s per question (" + name(pair.First) + " minus " + name(pair.Second) + ", model time)");
+                BenchmarkReportFormat.SignedOneDecimal(total / 1000.0) + " s per question (" + name(pair.First) + " minus " + name(pair.Second) + ", model time" + notDecomposed + ")");
             foreach (var c in pair.Components) AddShare(facts, prefix + c.Key, c);
         }
 
         foreach (var pair in result.CostPairs)
         {
             string prefix = "rca.cost." + pair.First + "." + pair.Second + ".";
-            if (pair.UnavailableReason != null || pair.Difference is not double total)
+            string notDecomposed = pair.NotEstablished ? ", not established, so not decomposed" : string.Empty;
+            if ((pair.UnavailableReason != null && !pair.NotEstablished) || pair.Difference is not double total)
             {
                 facts.Unavailable(prefix + "total", pair.UnavailableReason ?? "Not computed.");
                 continue;
             }
-            facts.Add(prefix + "total", total, Signed(BenchmarkReportFormat.Usd(Math.Abs(total)), total) + " per question (" + name(pair.First) + " minus " + name(pair.Second) + ")");
+            facts.Add(prefix + "total", total, Signed(BenchmarkReportFormat.Usd(Math.Abs(total)), total) + " per question (" + name(pair.First) + " minus " + name(pair.Second) + notDecomposed + ")");
             foreach (var c in pair.Components) AddShare(facts, prefix + c.Key + "." + c.Effect, c);
+        }
+
+        foreach (var question in result.Questions)
+        {
+            string prefix = "rca.question." + Inv(question.Number) + ".";
+            facts.Text(prefix + "text", question.Text);
+            facts.Add(prefix + "model", question.Token, name(question.Token));
+            facts.Add(prefix + "status", question.Grade ?? RootCauseGrades.Word(null), RootCauseGrades.WordWithGrade(question.Grade));
+            facts.Add(prefix + "hypotheses", question.HypothesisKeys.Count,
+                question.HypothesisKeys.Count == 0 ? "none fired" : BenchmarkReportFormat.LetterList(question.HypothesisKeys));
+            facts.Text(prefix + "signals", question.Signals.Count == 0 ? "none recorded" : string.Join("; ", question.Signals));
+        }
+
+        foreach (var profile in result.Profiles)
+        {
+            string prefix = "rca.profile." + profile.Token + ".";
+            var lost = profile.Weaknesses.FirstOrDefault(w => w.Kind == RootCauseProfiles.LostPointsOn);
+            if (lost != null) facts.Text(prefix + "lostPointsOn", lost.Text);
+            else facts.Unavailable(prefix + "lostPointsOn", "No scored answer fell below the model's median answer.");
+            var weakest = profile.Weaknesses.FirstOrDefault(w => w.Kind == RootCauseProfiles.WeakestDimension);
+            if (weakest != null) facts.Text(prefix + "weakestDimension", weakest.Text);
+            else facts.Unavailable(prefix + "weakestDimension", "No dimension is below the model's Accuracy.");
+            var lowest = profile.Weaknesses.FirstOrDefault(w => w.Kind == RootCauseProfiles.LowestRank);
+            if (lowest != null) facts.Text(prefix + "lowestRank", lowest.Text);
+            for (int i = 0; i < profile.Strengths.Count; i++) facts.Text(prefix + "strength." + Inv(i + 1), profile.Strengths[i].Text);
+            for (int i = 0; i < profile.Flags.Count; i++) facts.Text(prefix + "flag." + Inv(i + 1), profile.Flags[i].Text);
+            facts.Add(prefix + "flags", profile.Flags.Count, profile.Flags.Count == 0 ? "none" : string.Join("; ", profile.Flags.Select(f => f.Text)));
         }
 
         foreach (var split in result.QualitySplits)
@@ -1429,7 +1505,7 @@ public static class RootCauseFacts
             => analyzed.TryGetValue(label, out var known) ? known : comparison ? "another configured model" : label;
         foreach (var run in result.RecommendedRuns)
         {
-            facts.Text("rca.run." + Inv(run.Number) + ".summary", RootCauseNextRuns.Summary(run, RunModelName));
+            facts.Text("rca.run." + Inv(run.Number) + ".summary", RootCauseNextRuns.Summary(run, RunModelName, result.Models.Count));
         }
         foreach (var check in result.Checks) facts.Text("rca.check." + Inv(check.Number), check.Text);
 
@@ -1452,6 +1528,506 @@ public static class RootCauseFacts
     }
 
     private static string Signed(string text, double value) => value > 0 ? "+" + text : value < 0 ? "-" + text : text;
+
+    private static string Inv(int value) => value.ToString(CultureInfo.InvariantCulture);
+}
+
+/// <summary>
+/// The hypothesis labels: a noun phrase of at most <see cref="MaxWords"/> words naming what a rule measures
+/// and its models, as the models are named in fact displays (<c>critical errors of Model F against Model E</c>).
+/// </summary>
+public static class RootCauseLabels
+{
+    public const int MaxWords = 10;
+
+    private static readonly IReadOnlyDictionary<string, string> Topics = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["HQ1"] = "answers without tools",
+        ["HQ2"] = "critical errors",
+        ["HQ5"] = "the concise response style",
+        ["HQ6"] = "guessing instead of abstaining",
+        ["HQ7"] = "budget, truncation or output defects",
+        ["HQ8"] = "the lower thinking level",
+        ["HQ9"] = "verifier-cleared accuracy",
+        ["HS1"] = "more model calls",
+        ["HS2"] = "longer latency per call",
+        ["HS3"] = "more output tokens",
+        ["HS4"] = "slower decoding",
+        ["HS5"] = "own waits and retries",
+        ["HS6"] = "a served-tier mismatch",
+        ["HC1"] = "higher token volume",
+        ["HC2"] = "higher price per token",
+        ["HC3"] = "reasoning tokens",
+        ["HC4"] = "weak prompt caching",
+        ["HC5"] = "tool rounds in the input tokens",
+        ["WQ1"] = "answers without tools",
+        ["WQ3"] = "critical errors",
+        ["WQ4"] = "guessing instead of abstaining",
+        ["WQ5"] = "budget, truncation or output defects",
+        ["WQ6"] = "grader disagreement",
+        ["WS1"] = "time to first token",
+        ["WS2"] = "output generation",
+        ["WS3"] = "tool rounds in the time",
+        ["WS4"] = "tool execution time",
+        ["WS5"] = "own waits and retries",
+        ["WC1"] = "output cost",
+        ["WC2"] = "uncached input cost",
+        ["WC3"] = "tool rounds in the input cost"
+    };
+
+    /// <summary>The label of <paramref name="hypothesis"/>; <paramref name="name"/> names a model by token.</summary>
+    public static string Of(RootCauseHypothesis hypothesis, Func<string, string> name)
+    {
+        ArgumentNullException.ThrowIfNull(hypothesis);
+        ArgumentNullException.ThrowIfNull(name);
+
+        string first = hypothesis.Models.Count > 0 ? name(hypothesis.Models[0]) : "the models";
+        string? second = hypothesis.Models.Count > 1 ? name(hypothesis.Models[1]) : null;
+        string full;
+        string brief;
+        switch (hypothesis.Id)
+        {
+            case "H0-Q":
+            case "H0-S":
+            case "H0-C":
+                string axis = hypothesis.Id == "H0-S" ? "speed" : hypothesis.Id == "H0-C" ? "cost" : "intelligence";
+                full = "no " + axis + " difference between " + first + " and " + (second ?? "the others");
+                brief = "no " + axis + " difference for " + first;
+                break;
+            case "H0-W":
+                full = brief = "no contrast within " + first + "'s own questions";
+                break;
+            case "HQ3":
+                full = brief = "shared failures on the same questions";
+                break;
+            case "HQ4":
+                full = "grader-dependent order of " + first + (second != null ? " and " + second : string.Empty);
+                brief = "grader-dependent order of " + first;
+                break;
+            case "WQ2":
+                const string LostIn = "Lost in ";
+                string group = hypothesis.ShortStatement.StartsWith(LostIn, StringComparison.Ordinal)
+                    ? hypothesis.ShortStatement[LostIn.Length..]
+                    : "one group";
+                full = brief = "points lost in " + group + " by " + first;
+                break;
+            default:
+                string topic = Topics.TryGetValue(hypothesis.Id, out var known)
+                    ? known
+                    : RootCauseHypotheses.LowerFirst(hypothesis.ShortStatement.Split(':')[0].Trim());
+                full = topic + " of " + first + (second != null && hypothesis.Kind == "pair" ? " against " + second : string.Empty);
+                brief = topic + " of " + first;
+                break;
+        }
+
+        string label = Words(full).Length <= MaxWords ? full : brief;
+        var words = Words(label);
+        return words.Length <= MaxWords ? label : string.Join(' ', words.Take(MaxWords));
+    }
+
+    /// <summary>The words of <paramref name="text"/>, split on whitespace.</summary>
+    public static string[] Words(string text) => (text ?? string.Empty).Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+}
+
+/// <summary>
+/// The model profiles, the research questions and the grade cap of a result: each a measured count, share or
+/// rank with its questions, built from the evidence the engine read. No entry states a cause.
+/// </summary>
+public static class RootCauseProfiles
+{
+    public const string Strength = "strength";
+    public const string LostPointsOn = "lostPointsOn";
+    public const string WeakestDimension = "weakestDimension";
+    public const string LowestRank = "lowestRank";
+    public const string CriticalErrors = "criticalErrors";
+    public const string NoTool = "noTool";
+    public const string PanelDisagreement = "panelDisagreement";
+    public const string IsolatedMisses = "isolatedMisses";
+    public const string OutputDefects = "outputDefects";
+
+    public const int MaxStrengths = 2;
+    public const int MaxWeaknesses = 3;
+
+    /// <summary>A profile entry lists at most this many questions, then counts the rest.</summary>
+    private const int ListedQuestions = 3;
+
+    private static readonly string[] DimensionNames = { "Accuracy", "Completeness", "Conciseness", "Readability" };
+
+    /// <summary>Each analyzed model's profile, in model order.</summary>
+    internal static List<RootCauseModelProfile> Build(RootCauseContext ctx)
+    {
+        var models = ctx.Models;
+        var refs = ctx.Input.Questions.GroupBy(q => q.ItemKey, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        double? noToolMedian = Median(models
+            .Select(m => m.Evidence.Scored.ToList())
+            .Where(s => s.Count > 0)
+            .Select(s => s.Count(a => a.NoTool) / (double)s.Count));
+        double? panelMedian = Median(models
+            .Where(m => m.Evidence.PanelAnswers is > 0)
+            .Select(m => m.Evidence.PanelDisagreements.GetValueOrDefault() / (double)m.Evidence.PanelAnswers!.Value));
+        var means = models.GroupBy(m => m.Token, StringComparer.Ordinal).ToDictionary(g => g.Key, g => RootCauseContext.ItemMeans(g.First()), StringComparer.Ordinal);
+
+        var profiles = new List<RootCauseModelProfile>();
+        foreach (var model in models)
+        {
+            var profile = new RootCauseModelProfile
+            {
+                Token = model.Token,
+                Letter = model.Letter,
+                QualityIndex = model.QualityIndex,
+                Dimensions = Enumerable.Range(0, 4).Select(k => k < model.Dimensions.Count ? model.Dimensions[k] : null).ToList()
+            };
+            profile.Strengths.AddRange(Strengths(models, model).Take(MaxStrengths));
+
+            var weaknesses = new List<RootCauseProfileEntry>();
+            if (Lost(ctx, model, refs) is { } lost) weaknesses.Add(lost);
+            if (Weakest(model) is { } weakest) weaknesses.Add(weakest);
+            if (Lowest(models, model) is { } lowest) weaknesses.Add(lowest);
+            profile.Weaknesses.AddRange(weaknesses.Take(MaxWeaknesses));
+
+            profile.Flags.AddRange(Flags(models, model, refs, noToolMedian, panelMedian, means));
+            profiles.Add(profile);
+        }
+        return profiles;
+    }
+
+    /// <summary>
+    /// The research questions whose axis has at least two comparable models: why the model with the highest
+    /// Intelligence Index scored highest (1), why the lowest scored lowest (2), why the slowest by median model
+    /// time is slowest (3) and why the most expensive per question is the most expensive (4).
+    /// </summary>
+    internal static List<RootCauseQuestion> Questions(RootCauseContext ctx, RootCauseResult result)
+    {
+        var models = ctx.Models;
+        var quality = models.Where(m => m.QualityIndex.HasValue).OrderByDescending(m => m.QualityIndex!.Value).ThenBy(m => m.Token, StringComparer.Ordinal).ToList();
+        var speed = models.Where(m => !m.SpeedDegraded && m.ModelTimeP50Ms.HasValue).OrderBy(m => m.ModelTimeP50Ms!.Value).ThenBy(m => m.Token, StringComparer.Ordinal).ToList();
+        var cost = models.Where(m => !m.CostDegraded && m.CostPerQuestionUsd.HasValue).OrderBy(m => m.CostPerQuestionUsd!.Value).ThenBy(m => m.Token, StringComparer.Ordinal).ToList();
+
+        var questions = new List<RootCauseQuestion>();
+        void Add(int number, string axis, RootCauseModelInput model, string text)
+        {
+            var hypotheses = result.Hypotheses
+                .Where(h => h.Kind != "null" && h.Axis == axis && h.Models.Contains(model.Token, StringComparer.Ordinal))
+                .OrderByDescending(h => RootCauseGrades.Rank(h.Grade))
+                .ThenByDescending(h => Math.Abs(h.Share ?? 0))
+                .ThenBy(h => h.Key, StringComparer.Ordinal)
+                .ToList();
+            var best = hypotheses.FirstOrDefault(h => RootCauseGrades.Rank(h.Grade) >= RootCauseGrades.Rank(RootCauseGrades.Low));
+            questions.Add(new RootCauseQuestion
+            {
+                Number = number,
+                Axis = axis,
+                Token = model.Token,
+                Text = text,
+                Grade = best?.Grade,
+                HypothesisKeys = hypotheses.Select(h => h.Key).ToList(),
+                Signals = Signals(number, model, result)
+            });
+        }
+
+        if (quality.Count >= 2)
+        {
+            Add(1, RootCauseAxes.Intelligence, quality[0], "Why did " + ctx.Name(quality[0].Token) + " score highest?");
+            Add(2, RootCauseAxes.Intelligence, quality[^1], "Why did " + ctx.Name(quality[^1].Token) + " score lowest?");
+        }
+        if (speed.Count >= 2) Add(3, RootCauseAxes.Speed, speed[^1], "Why is " + ctx.Name(speed[^1].Token) + " slowest?");
+        if (cost.Count >= 2) Add(4, RootCauseAxes.Cost, cost[^1], "Why is " + ctx.Name(cost[^1].Token) + " the most expensive?");
+        return questions;
+    }
+
+    /// <summary>
+    /// The highest grade the run counts allow: a model with a single run per suite fails the replicates check of
+    /// every hypothesis about it, so none can be graded above Moderate. Null when every model has two or more.
+    /// </summary>
+    internal static string? GradeCap(RootCauseContext ctx)
+    {
+        var single = ctx.Models.Where(m => m.Evidence.RunsPerSuite < 2).ToList();
+        if (single.Count == 0) return null;
+
+        string cap = RootCauseGrades.WordWithGrade(RootCauseGrades.Moderate);
+        if (single.Count == ctx.Models.Count)
+        {
+            return (ctx.Models.Count == 1 ? "One run per suite" : "One run per suite for every model")
+                   + ": the replicates check fails for every hypothesis, so no cause can be graded above " + cap + ".";
+        }
+        return "One run per suite for " + BenchmarkReportFormat.LetterList(single.Select(m => ctx.Name(m.Token)).ToList())
+               + ": the replicates check fails for every hypothesis about " + (single.Count == 1 ? "it" : "them")
+               + ", so none of those can be graded above " + cap + ".";
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Profile entries
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>The dimensions the model ranks first or second on among the models with that dimension, best rank first.</summary>
+    private static IEnumerable<RootCauseProfileEntry> Strengths(IReadOnlyList<RootCauseModelInput> models, RootCauseModelInput model)
+    {
+        var ranked = new List<(int Rank, int Dimension, string Text)>();
+        for (int d = 0; d < 4; d++)
+        {
+            if (DimensionOf(model, d) is not double own) continue;
+            var values = models.Select(m => DimensionOf(m, d)).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+            int above = values.Count(v => v > own + 1e-9);
+            int below = values.Count(v => v < own - 1e-9);
+            bool tied = values.Count(v => Math.Abs(v - own) <= 1e-9) > 1;
+            int rank = above + 1;
+            if (below == 0 || (rank == 1 && values.Count < 2) || (rank == 2 && values.Count < 3) || rank > 2) continue;
+            string place = (tied ? "joint " : string.Empty) + (rank == 1 ? "first" : "second") + " on " + DimensionNames[d];
+            ranked.Add((rank, d, place));
+        }
+        return ranked.OrderBy(r => r.Rank).ThenBy(r => r.Dimension)
+            .Select(r => new RootCauseProfileEntry
+            {
+                Kind = Strength,
+                Text = r.Text + " of " + Inv(models.Count(m => DimensionOf(m, r.Dimension).HasValue)) + " models",
+                Short = r.Text
+            });
+    }
+
+    /// <summary>The largest segment of the model's index points at risk, with its points and the questions behind it.</summary>
+    private static RootCauseProfileEntry? Lost(RootCauseContext ctx, RootCauseModelInput model, IReadOnlyDictionary<string, RootCauseQuestionRef> refs)
+    {
+        var at = ctx.AtRisk(model.Token);
+        if (at.Total <= 0) return null;
+
+        int segment = Array.IndexOf(at.Points, at.Points.Max());
+        var questionRefs = model.Evidence.Scored
+            .GroupBy(a => a.QuestionKey, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => refs.GetValueOrDefault(g.First().ItemKey), StringComparer.Ordinal);
+        var contributing = at.ByQuestion
+            .Where(kv => kv.Value[segment] > 0)
+            .OrderByDescending(kv => kv.Value[segment])
+            .ThenBy(kv => kv.Key, StringComparer.Ordinal)
+            .ToList();
+        var listed = contributing
+            .Select(kv => questionRefs.GetValueOrDefault(kv.Key))
+            .OfType<RootCauseQuestionRef>()
+            .ToList();
+
+        string label = RootCauseSegments.Label(RootCauseSegments.AtRisk[segment]);
+        string points = BenchmarkReportFormat.OneDecimal(at.Points[segment]);
+        string text = label + ": " + points + " index points on " + Inv(contributing.Count) + (contributing.Count == 1 ? " question" : " questions")
+                      + Listed(listed, byContribution: true);
+        return new RootCauseProfileEntry
+        {
+            Kind = LostPointsOn,
+            Text = text,
+            Short = label + ", " + points + " points",
+            Questions = listed.Select(r => r.Reference).ToList()
+        };
+    }
+
+    /// <summary>The dimension furthest below the model's Accuracy, with the gap; null when none is below it.</summary>
+    private static RootCauseProfileEntry? Weakest(RootCauseModelInput model)
+    {
+        if (DimensionOf(model, 0) is not double accuracy) return null;
+        var lowest = Enumerable.Range(1, 3)
+            .Select(d => (Dimension: d, Value: DimensionOf(model, d)))
+            .Where(x => x.Value.HasValue)
+            .OrderBy(x => x.Value!.Value)
+            .ThenBy(x => x.Dimension)
+            .FirstOrDefault();
+        if (lowest.Value is not double value || accuracy - value < 0.05) return null;
+
+        string gap = BenchmarkReportFormat.OneDecimal(accuracy - value);
+        return new RootCauseProfileEntry
+        {
+            Kind = WeakestDimension,
+            Text = DimensionNames[lowest.Dimension] + ", " + gap + " points below Accuracy",
+            Short = DimensionNames[lowest.Dimension] + " " + gap + " below Accuracy"
+        };
+    }
+
+    /// <summary>The first dimension the model ranks last on among three or more models; null when there is none.</summary>
+    private static RootCauseProfileEntry? Lowest(IReadOnlyList<RootCauseModelInput> models, RootCauseModelInput model)
+    {
+        for (int d = 0; d < 4; d++)
+        {
+            if (DimensionOf(model, d) is not double own) continue;
+            var values = models.Select(m => DimensionOf(m, d)).Where(v => v.HasValue).Select(v => v!.Value).ToList();
+            if (values.Count < 3 || values.Any(v => v < own - 1e-9) || !values.Any(v => v > own + 1e-9)) continue;
+            bool tied = values.Count(v => Math.Abs(v - own) <= 1e-9) > 1;
+            string place = (tied ? "joint last" : "last") + " on " + DimensionNames[d];
+            return new RootCauseProfileEntry
+            {
+                Kind = LowestRank,
+                Text = place + " of " + Inv(values.Count) + " models",
+                Short = place
+            };
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// What stands out in the model's answers: critical errors; answers without tools at a rate above the
+    /// models' median; panel disagreement at twice the median rate or more; isolated misses; budget,
+    /// tool-limit or output defects.
+    /// </summary>
+    private static IEnumerable<RootCauseProfileEntry> Flags(
+        IReadOnlyList<RootCauseModelInput> models, RootCauseModelInput model, IReadOnlyDictionary<string, RootCauseQuestionRef> refs,
+        double? noToolMedian, double? panelMedian, IReadOnlyDictionary<string, Dictionary<string, double>> means)
+    {
+        var scored = model.Evidence.Scored.ToList();
+        List<RootCauseQuestionRef> RefsOf(IEnumerable<RootCauseAnswerRecord> answers)
+            => answers.Select(a => refs.GetValueOrDefault(a.ItemKey)).OfType<RootCauseQuestionRef>()
+                .GroupBy(r => r.Reference, StringComparer.Ordinal).Select(g => g.First()).ToList();
+
+        var critical = scored.Where(a => a.CriticalError).ToList();
+        if (critical.Count > 0)
+        {
+            var listed = RefsOf(critical);
+            string count = Inv(critical.Count) + (critical.Count == 1 ? " critical error" : " critical errors");
+            yield return new RootCauseProfileEntry
+            {
+                Kind = CriticalErrors,
+                Text = count + Listed(listed),
+                Short = count,
+                Questions = listed.Select(r => r.Reference).ToList()
+            };
+        }
+
+        var noTool = scored.Where(a => a.NoTool).ToList();
+        if (scored.Count > 0 && noToolMedian is double median && noTool.Count / (double)scored.Count > median + 1e-9)
+        {
+            var listed = RefsOf(noTool);
+            string count = Inv(noTool.Count) + " of " + Inv(scored.Count) + " answers without tools";
+            yield return new RootCauseProfileEntry
+            {
+                Kind = NoTool,
+                Text = count + Listed(listed) + ", above the models' median of " + RootCauseHypotheses.Pct(median),
+                Short = count,
+                Questions = listed.Select(r => r.Reference).ToList()
+            };
+        }
+
+        if (model.Evidence.PanelAnswers is > 0 && panelMedian is double panel && panel > 0)
+        {
+            double rate = model.Evidence.PanelDisagreements.GetValueOrDefault() / (double)model.Evidence.PanelAnswers.Value;
+            if (rate >= 2 * panel)
+            {
+                yield return new RootCauseProfileEntry
+                {
+                    Kind = PanelDisagreement,
+                    Text = "panel disagreement on " + RootCauseHypotheses.Pct(rate) + " of the answers both members graded, at least twice the models' median of "
+                           + RootCauseHypotheses.Pct(panel),
+                    Short = "panel disagreement " + RootCauseHypotheses.Pct(rate)
+                };
+            }
+        }
+
+        if (models.Count >= BenchmarkComparisonModelProfile.MatrixMinModels && means.TryGetValue(model.Token, out var own))
+        {
+            var isolated = own
+                .Where(kv => kv.Value <= BenchmarkComparisonModelProfile.IsolatedMissAtMost)
+                .Where(kv =>
+                {
+                    var others = models.Where(m => m.Token != model.Token && means.TryGetValue(m.Token, out var theirs) && theirs.ContainsKey(kv.Key))
+                        .Select(m => means[m.Token][kv.Key])
+                        .ToList();
+                    return others.Count >= BenchmarkComparisonModelProfile.IsolatedMissMinOthers
+                           && RootCauseStatistics.Median(others) >= BenchmarkComparisonModelProfile.IsolatedMissOthersMedianAtLeast;
+                })
+                .Select(kv => kv.Key)
+                .ToList();
+            if (isolated.Count > 0)
+            {
+                var listed = isolated.Select(k => refs.GetValueOrDefault(k)).OfType<RootCauseQuestionRef>().ToList();
+                string count = Inv(isolated.Count) + (isolated.Count == 1 ? " isolated miss" : " isolated misses");
+                yield return new RootCauseProfileEntry
+                {
+                    Kind = IsolatedMisses,
+                    Text = count + Listed(listed) + ", scored 50 or less where the other models' median is 75 or more",
+                    Short = count,
+                    Questions = listed.Select(r => r.Reference).ToList()
+                };
+            }
+        }
+
+        var defects = scored.Where(a => a.BudgetOrDefect).ToList();
+        if (defects.Count > 0)
+        {
+            var listed = RefsOf(defects);
+            string count = Inv(defects.Count) + (defects.Count == 1 ? " answer" : " answers");
+            yield return new RootCauseProfileEntry
+            {
+                Kind = OutputDefects,
+                Text = count + " with budget, tool-limit, truncation or output defects" + Listed(listed),
+                Short = count + " with defects",
+                Questions = listed.Select(r => r.Reference).ToList()
+            };
+        }
+    }
+
+    /// <summary>The model's top measured signals for a research question.</summary>
+    private static List<string> Signals(int number, RootCauseModelInput model, RootCauseResult result)
+    {
+        var profile = result.Profiles.FirstOrDefault(p => p.Token == model.Token);
+        var evidence = result.Evidence.FirstOrDefault(e => e.Token == model.Token);
+        var signals = new List<string>();
+        string? lost = profile?.Weaknesses.FirstOrDefault(w => w.Kind == LostPointsOn)?.Text;
+        string? weakest = profile?.Weaknesses.FirstOrDefault(w => w.Kind == WeakestDimension)?.Text;
+
+        switch (number)
+        {
+            case 1:
+                signals.AddRange(profile?.Strengths.Select(s => s.Text) ?? Enumerable.Empty<string>());
+                if (lost != null) signals.Add("lost points on " + lost);
+                break;
+            case 2:
+                if (lost != null) signals.Add("lost points on " + lost);
+                if (weakest != null) signals.Add("weakest dimension " + weakest);
+                signals.AddRange((profile?.Flags ?? new List<RootCauseProfileEntry>()).Take(2).Select(f => f.Text));
+                break;
+            case 3:
+                if (model.ModelTimeP50Ms is double p50) signals.Add("median model time " + BenchmarkReportFormat.Seconds(p50));
+                if (evidence != null && evidence.Time.Count > 0 && evidence.Time.Sum(s => s.Value) > 0)
+                {
+                    var lead = evidence.Time.OrderByDescending(s => s.Value).First();
+                    signals.Add(lead.Label + " " + RootCauseHypotheses.Pct(lead.Value / evidence.Time.Sum(s => s.Value)) + " of its time per question");
+                }
+                if (evidence?.CallsPerAnswer is double calls) signals.Add(BenchmarkReportFormat.CompactDecimal(calls) + " model calls per answer");
+                break;
+            default:
+                if (model.CostPerQuestionUsd is double usd) signals.Add(BenchmarkReportFormat.Usd(usd) + " per question");
+                if (evidence != null && evidence.Cost.Count > 0 && evidence.Cost.Sum(s => s.Value) > 0)
+                {
+                    var lead = evidence.Cost.OrderByDescending(s => s.Value).First();
+                    signals.Add(lead.Label + " " + RootCauseHypotheses.Pct(lead.Value / evidence.Cost.Sum(s => s.Value)) + " of its cost per question");
+                }
+                if (evidence?.CacheReadShare is double cache) signals.Add(RootCauseHypotheses.Pct(cache) + " of input tokens read from the cache");
+                break;
+        }
+        return signals;
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------------------------------
+
+    private static double? DimensionOf(RootCauseModelInput model, int dimension)
+        => dimension < model.Dimensions.Count ? model.Dimensions[dimension] : null;
+
+    /// <summary>
+    /// <c> (Q3, Q5 and Q7)</c>: at most <see cref="ListedQuestions"/> references, the rest counted; empty for none.
+    /// By contribution the first ones are kept, then shown in question order.
+    /// </summary>
+    private static string Listed(IReadOnlyList<RootCauseQuestionRef> refs, bool byContribution = false)
+    {
+        if (refs.Count == 0) return string.Empty;
+        var shown = (byContribution ? refs.Take(ListedQuestions) : refs.OrderBy(r => r.Number).ThenBy(r => r.Reference, StringComparer.Ordinal).Take(ListedQuestions))
+            .OrderBy(r => r.Number)
+            .ThenBy(r => r.Reference, StringComparer.Ordinal)
+            .Select(r => r.Reference)
+            .ToList();
+        int more = refs.Count - shown.Count;
+        return " (" + (more > 0 ? string.Join(", ", shown) + " and " + Inv(more) + " more" : BenchmarkReportFormat.LetterList(shown)) + ")";
+    }
+
+    private static double? Median(IEnumerable<double> values)
+    {
+        var list = values.ToList();
+        return list.Count >= 2 ? RootCauseStatistics.Median(list) : null;
+    }
 
     private static string Inv(int value) => value.ToString(CultureInfo.InvariantCulture);
 }

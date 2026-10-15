@@ -12,6 +12,7 @@ import {
   chatConsistencySubjectKey,
   disclosureLabel,
   documentChipClass,
+  documentProgressLabel,
   documentStatusLabel,
   formatCostUsd,
   formatElapsed,
@@ -20,6 +21,7 @@ import {
   reportAudiencesFor,
   reportDocumentScope,
   reportPackAudienceScope,
+  reportPhaseLabel,
   reportKindSlug,
   reportScopeLabel,
   statusLabel
@@ -115,6 +117,23 @@ describe('report-document-format', () => {
     expect(documentStatusLabel('Completed')).toBe('Written');
     expect(documentStatusLabel('CompletedWithWarnings')).toBe('Written with warnings');
     expect(documentStatusLabel('Failed')).toBe('Failed');
+  });
+
+  it('words a job document\'s progress, the revision as a routine step, and each phase', () => {
+    expect(documentProgressLabel('Writing')).toBe('Writing draft');
+    expect(documentProgressLabel('Repairing')).toBe('Revising');
+    expect(documentProgressLabel('CompletedWithWarnings')).toBe('Completed with warnings');
+    expect(documentProgressLabel('Pending')).toBe('Pending');
+    expect(documentProgressLabel(null)).toBe('');
+
+    expect(['Preparing', 'Writing', 'Checking', 'Revising', 'CheckingRevision', 'Storing', 'DrawingCharts', 'Done']
+      .map(reportPhaseLabel)).toEqual([
+      'Preparing', 'Writing draft', 'Checking the draft', 'Revising the draft', 'Checking the revision', 'Storing',
+      'Drawing charts', 'Done'
+    ]);
+    expect(reportPhaseLabel('')).toBe('');
+    expect(reportPhaseLabel(undefined)).toBe('');
+    expect(reportPhaseLabel('Polishing')).toBe('Polishing');
   });
 
   it('gives each document status its chip class', () => {

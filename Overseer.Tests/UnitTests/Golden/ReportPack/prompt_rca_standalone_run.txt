@@ -41,24 +41,28 @@ WHAT THE BENCHMARK DOES NOT MEASURE:
 - Read a dimension against the response style it was graded under. Never blame the model, or credit the style, for a Completeness gap without a controlled pair of runs.
 - A hypothesis or a check is an input to the team's triage into a harness defect, a suite defect, a chat-transferable finding or a corpus or environment defect; it is never a finding in itself.
 
-SLOTS (the keys of "sections"; each one is required and holds Markdown paragraphs, printed under the code-rendered part of its section):
+SLOTS (the keys of "sections"; each holds Markdown paragraphs, printed under the code-rendered part of its section, and is required, except that an answer slot is written only for a question THE QUESTIONS lists and left out otherwise):
+- answerBest: Only when THE QUESTIONS lists question 1: answer the first question in at most 60 words. Cite its rca.question.1.status token, the hypothesis tokens it lists, and the measured signals of the model's profile. Use a causal word only beside a hypothesis token or its label.
+- answerWorst: Only when THE QUESTIONS lists question 2: answer the second question in at most 60 words. Cite its rca.question.2.status token, the hypothesis tokens it lists, and the measured signals of the model's profile. Use a causal word only beside a hypothesis token or its label.
+- answerSpeed: Only when THE QUESTIONS lists question 3: answer the third question in at most 60 words. Cite its rca.question.3.status token, the hypothesis tokens it lists, and the measured signals of the model's profile. Use a causal word only beside a hypothesis token or its label.
+- answerCost: Only when THE QUESTIONS lists question 4: answer the fourth question in at most 60 words. Cite its rca.question.4.status token, the hypothesis tokens it lists, and the measured signals of the model's profile. Use a causal word only beside a hypothesis token or its label.
 - scope: At most 120 words, under the code-rendered design: what this design can and cannot decide: how many models and runs it rests on, whether they share graders and settings, which entries are degraded or excluded, and, where CONTROLS applies, which controls there are and the control limit. State it; use no causal word.
-- evidenceIntelligence: At most 150 words, or 100 in a document about a run or battery run on its own (SCOPE gives this document's cap), under the intelligence evidence tables: what stands out in them: where the points were lost, which failure signals several models share and which only one shows, what the per-question results and the item-level controls show. State what was measured; use no causal word.
-- evidenceSpeed: At most 150 words, or 100 in a document about a run or battery run on its own (SCOPE gives this document's cap), under the timing decomposition: which components make up the time per question and how they differ between the models or the groups of questions. State what was measured; use no causal word.
-- evidenceCost: At most 150 words, or 100 in a document about a run or battery run on its own (SCOPE gives this document's cap), under the cost decomposition: which components make up the cost per question, volume against price, and how they differ. State what was measured; use no causal word.
-- hypothesesIntelligence: At most 200 words, under that axis' hypothesis table: weigh its hypotheses. Say first whether the null stands, then which hypotheses survive their evidence against, which are only Low or Not supported and why, and what their refuted-if statements ask. Cite each hypothesis you discuss by one of its rca.hypothesis.<id>.<n> tokens, in the sentence that discusses it.
-- hypothesesSpeed: At most 200 words, under that axis' hypothesis table: weigh its hypotheses. Say first whether the null stands, then which hypotheses survive their evidence against, which are only Low or Not supported and why, and what their refuted-if statements ask. Cite each hypothesis you discuss by one of its rca.hypothesis.<id>.<n> tokens, in the sentence that discusses it.
-- hypothesesCost: At most 200 words, under that axis' hypothesis table: weigh its hypotheses. Say first whether the null stands, then which hypotheses survive their evidence against, which are only Low or Not supported and why, and what their refuted-if statements ask. Cite each hypothesis you discuss by one of its rca.hypothesis.<id>.<n> tokens, in the sentence that discusses it.
-- conclusions: At most 200 words: for each of the three axes, cite its rca.axis.<axis>.status token, then its root cause with that hypothesis' token and grade, or why it is not established and what would establish it.
-- nextRuns: At most 120 words, beside the runs and checks code proposed: why they come in this order (the chat first, then the benchmark, then model selection) and what each would settle, citing its rca.run.<n>.summary or rca.check.<n> token. Never propose a run code did not.
+- evidenceIntelligence: At most 100 words, under the intelligence evidence tables: where the points were lost, which failure signals several models share and which only one shows, what the per-question results and the item-level controls show. Say what stands out and why it matters for choosing a model; do not restate the table rows; one sentence per point. State what was measured; use no causal word.
+- evidenceSpeed: At most 100 words, under the timing decomposition: which components make up the time per question and how they differ between the models or the groups of questions. Say what stands out and why it matters for choosing a model; do not restate the table rows; one sentence per point. State what was measured; use no causal word.
+- evidenceCost: At most 100 words, under the cost decomposition: which components make up the cost per question, volume against price, and how they differ. Say what stands out and why it matters for choosing a model; do not restate the table rows; one sentence per point. State what was measured; use no causal word.
+- hypothesesIntelligence: At most 120 words, under that axis' hypothesis table: weigh its hypotheses. Say first whether the null stands, then which hypotheses survive their evidence against, which are only Low or Not supported and why, and what their refuted-if statements ask. Cite each hypothesis you discuss by one of its rca.hypothesis.<id>.<n> tokens or its label, in the sentence that discusses it.
+- hypothesesSpeed: At most 120 words, under that axis' hypothesis table: weigh its hypotheses. Say first whether the null stands, then which hypotheses survive their evidence against, which are only Low or Not supported and why, and what their refuted-if statements ask. Cite each hypothesis you discuss by one of its rca.hypothesis.<id>.<n> tokens or its label, in the sentence that discusses it.
+- hypothesesCost: At most 120 words, under that axis' hypothesis table: weigh its hypotheses. Say first whether the null stands, then which hypotheses survive their evidence against, which are only Low or Not supported and why, and what their refuted-if statements ask. Cite each hypothesis you discuss by one of its rca.hypothesis.<id>.<n> tokens or its label, in the sentence that discusses it.
+- conclusions: At most 120 words: for each of the three axes, cite its rca.axis.<axis>.status token, then its root cause with that hypothesis' token and grade, or why it is not established and what would establish it.
+- nextRuns: In at most 50 words, say which run to make first and what it settles, citing its rca.run.<n>.summary token. Never propose a run code did not.
 - limitations: At most 120 words, after the code-printed list of what the benchmark does not measure: what else limits this analysis, such as a single run per suite, missing telemetry, a degraded entry or the control limit.
 
 FIELDS AND LISTS:
-- headline: in one sentence of at most 35 words, which axes have an established root cause and the strongest reading on the others. A certainty word in it needs its status or High hypothesis token in the sentence.
+- headline: in one plain sentence of at most 35 words, say what most explains the differences between the models, using the strongest reading on each axis. A reader with no statistics should understand it. A certainty word in it needs its status or High hypothesis token in the sentence.
 - observations: at most eight items, each at most 35 words: a fact the graders recorded in the excerpts and comments the data gives, stated with no causal word. Each item gives the question in "questions" and cites at least one evidence id in "evidence": a question reference, a fact key or a finding row id.
 - writerHypotheses: at most four items: hypotheses of your own that the code's rule table does not cover, drawn from the grader comments and excerpts. Each has "axis" (intelligence, speed or cost), "models" (subject and the letters of the peers it names), "locus" (one or more of model, chat, harness, suite, corpus and provider), "statement", "for" (one or more pieces of evidence), "against" (what speaks against it; may be empty), "refutedIf" (the result that would refute it), "confidence" (always "Low": code has not tested it) and "evidence" (the fact keys and question references it rests on). Each text is at most 40 words. Leave the list empty when you have none.
 - questionTopics: one entry for every question you cite anywhere in the document that is listed under QUESTIONS NEEDING A TOPIC. Each topic names what the question is about in at most twelve words, without quoting it.
-- strengths, weaknesses and models: leave them out.
+- strengths, weaknesses and models: leave them out. Code writes each model's profile; the answer slots explain the models the questions name.
 
 NUMBERS AND NAMES:
 - Every figure appears only as a fact token {{key}}, with a key from FACTS written exactly as listed and no spaces inside the braces. The document prints the fact's value in its place.
@@ -68,7 +72,7 @@ NUMBERS AND NAMES:
 - Never write a hypothesis id, a run number or a check number in the prose: cite the hypothesis by one of its rca.hypothesis.<id>.<n> tokens, a run by its rca.run.<n>.summary token and a check by its rca.check.<n> token.
 - A token whose value reads 'N of M' is a noun phrase. Never put it after 'no' or make it the object of 'made'.
 - A fact whose value is a whole sentence — every notable.N.summary, and any value that begins with a capital letter and ends with a full stop — is written as a sentence of its own, at most once, never inside parentheses, and never continued after its full stop.
-- A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took 1.49 times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.
+- A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took one and a half times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.
 - Never list several 'N of M' tokens in a row: say what each counts.
 - A hypothesis' statement, a known fact and a check read as whole sentences: cite each as a sentence of its own.
 - Refer to a question as its QUESTIONS row does, for example Q7 (S2-Q7 in a battery report). This is the only form in which a digit may appear.
@@ -76,12 +80,15 @@ NUMBERS AND NAMES:
 - Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.
 - In the prose, never write a fact key outside its {{key}} token, and never describe the facts list, the fact sheet or how the data was given to you.
 
-CLAIM DISCIPLINE (code checks every sentence; a paragraph or item that breaks one of the first four rules is removed):
+CLAIM DISCIPLINE (code checks every sentence; a paragraph or item that breaks one of the first four rules is removed, and the others ask for a revision):
 - Causal words (because, due to, caused, causes, explains, driven by, root cause, leads to, results in) never appear in the scope, the evidence slots or the observations.
-- In the hypotheses slots, the conclusions and the next runs, a causal word needs, in the same sentence, a token of the hypothesis it states (rca.hypothesis.<id>.<n>.*) or of its axis (rca.axis.<axis>.*), as CLAIM SUPPORT lists them.
+- In the answer slots, the hypotheses slots, the conclusions and the next runs, a causal word needs, in the same sentence, a token of the hypothesis it states (rca.hypothesis.<id>.<n>.*, its label included) or of its axis (rca.axis.<axis>.*), as CLAIM SUPPORT lists them. In the next runs, the rca.run.<n>.* token of the run the sentence describes serves as well.
 - Certainty words (established, confirmed, proven, definitely, certainly, root cause was found) need, in the same sentence, a token of a hypothesis graded High or the status token of an axis whose root cause is established, as CLAIM SUPPORT lists them. Elsewhere write probable, consistent with or not established; 'not established' is always allowed. Describe a paired test's result as what the paired test finds, never as established or confirmed.
 - A writer hypothesis without an axis, a statement, evidence for, a refuted-if statement or a known locus, with a confidence other than Low, or citing a model or a fact the data does not have, is removed.
-- The conclusions cite every axis' status token: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.
+- The conclusions cite every axis' status token: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}. Each answer slot cites its question's rca.question.<n>.status token.
+- A hypothesis' label (rca.hypothesis.<id>.<n>.label) is a noun phrase: it may sit inside a sentence. Its statement is a sentence: it stands alone as a sentence of its own.
+- A sentence that ranks {{subject}} above or below a peer whose interval overlaps the subject's (that peer's intervalOverlap fact is true) says in the same sentence that the intervals overlap or that the order is not established, or cites that fact: '{{subject}} scored higher than {{peer:A}}, though the intervals overlap and the order is not established.' Where that peer's pairedExcludesZero fact is true, it says instead that the paired interval excludes zero. A speed or cost ranking needs no interval caveat, since no paired speed or cost result exists between the subject and a peer: '{{subject}} has a higher cost per question than {{peer:A}}.'
+- The interval level may be written as text only in the fixed phrase '95 % interval'; no other digit may appear in the prose.
 - Never re-grade a hypothesis, never raise a qualitative reading above Low, and never invent a cause, a figure or a run.
 
 EVIDENCE:
@@ -96,7 +103,6 @@ WEIGHING THE EVIDENCE:
 - Points at risk are an upper bound on what a failure signal could have cost: never call them points lost because of that signal.
 - A difference between suites, or between difficulty bands, compares different questions. Never explain it by what a suite or a question contains; say only where the model scored lower.
 - Use the peers, or the item-level controls, to tell the model from the system. Where they answered a question well and the subject missed it, that is evidence about the subject. Where they all missed it, suspect the chat, its tools, the corpus or the rubric first. Without either, say that the data cannot tell the model from the instrument.
-- A sentence that ranks {{subject}} above or below a peer whose interval overlaps the subject's (that peer's intervalOverlap fact is true) says in the same sentence that the intervals overlap or that the order is not established; where that peer's pairedExcludesZero fact is true, it says instead that the paired interval excludes zero.
 - Never use the words significant, significantly or statistically, and never write reliably better, reliably worse or clearly outperforms.
 - When a response-style conflict fact is true, that model's completeness is its lowest dimension, well below its accuracy, and it answered under the production chat's concise response style. Where that completeness is discussed, say that it was graded under that style; never say that the style caused the gap, and never present the gap as the model's failing alone.
 - A claim-verifier ruling is an advisory judgment by an AI model that is sometimes wrong. Attribute it ('the claim verifier judged …') and never state it as a fact about the game. A ruling on a grader's statement tests the grader, not the answer.
@@ -122,11 +128,17 @@ READABILITY:
 - Name the category of a finding, for example tool use or reading the game state, rather than writing "issues across many topics".
 - No hype, filler or overclaiming words: impressive, remarkable, outstanding, stellar, exceptional, robust, seamless, leverage, delve, game-changing, cutting-edge, settled, proven, definitive, definitively, conclusive, conclusively.
 
+CHECK BEFORE YOU ANSWER: the data ends with one check per claim rule, each with an example built from its own tokens. Read every sentence of your draft against them before you answer.
+
 OUTPUT:
 Answer with one JSON object in exactly this shape, and include no other keys:
 {
   "headline": "string",
   "sections": {
+    "answerBest": "Markdown paragraph, only when THE QUESTIONS lists question 1",
+    "answerWorst": "Markdown paragraph, only when THE QUESTIONS lists question 2",
+    "answerSpeed": "Markdown paragraph, only when THE QUESTIONS lists question 3",
+    "answerCost": "Markdown paragraph, only when THE QUESTIONS lists question 4",
     "scope": "Markdown paragraphs",
     "evidenceIntelligence": "Markdown paragraphs",
     "evidenceSpeed": "Markdown paragraphs",
@@ -308,6 +320,7 @@ rca.hypothesis.H0-W.1.axis = Intelligence
 rca.hypothesis.H0-W.1.for = No contrast could be made.
 rca.hypothesis.H0-W.1.grade = Low
 rca.hypothesis.H0-W.1.gradeReasons = capped at Low: a single run per suite gives the contrasts little power
+rca.hypothesis.H0-W.1.label = no contrast within Orion Max's own questions
 rca.hypothesis.H0-W.1.locus = —
 rca.hypothesis.H0-W.1.models = Orion Max
 rca.hypothesis.H0-W.1.refutedIf = A Mann–Whitney contrast is established after the Holm adjustment.
@@ -317,6 +330,7 @@ rca.hypothesis.WC1.1.axis = Cost
 rca.hypothesis.WC1.1.for = Visible output and reasoning are 69 % of Orion Max's cost per question.
 rca.hypothesis.WC1.1.grade = Moderate
 rca.hypothesis.WC1.1.gradeReasons = replicates failed: Orion Max has a single run per suite.
+rca.hypothesis.WC1.1.label = output cost of Orion Max
 rca.hypothesis.WC1.1.locus = model
 rca.hypothesis.WC1.1.models = Orion Max
 rca.hypothesis.WC1.1.refutedIf = Another component is larger.
@@ -328,6 +342,7 @@ rca.hypothesis.WS2.1.for = Output generation is 70 % (69–71 %) of model time p
 rca.hypothesis.WS2.1.grade = Not supported
 rca.hypothesis.WS2.1.gradeReasons = the rule's own test refutes it: reasoning is 31 % of Orion Max's output tokens.
 rca.hypothesis.WS2.1.interval = 69–71 %
+rca.hypothesis.WS2.1.label = output generation of Orion Max
 rca.hypothesis.WS2.1.locus = model
 rca.hypothesis.WS2.1.models = Orion Max
 rca.hypothesis.WS2.1.nextRun = next run 3
@@ -339,6 +354,7 @@ rca.hypothesis.WS3.1.axis = Speed
 rca.hypothesis.WS3.1.for = Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
 rca.hypothesis.WS3.1.grade = Moderate
 rca.hypothesis.WS3.1.gradeReasons = replicates failed: Orion Max has a single run per suite.
+rca.hypothesis.WS3.1.label = tool rounds in the time of Orion Max
 rca.hypothesis.WS3.1.locus = model / chat
 rca.hypothesis.WS3.1.models = Orion Max
 rca.hypothesis.WS3.1.nextRun = next run 2
@@ -349,9 +365,12 @@ rca.known.2 = Orion Max answered 2 of 6 scored questions without a tool call.
 rca.known.3 = Output generation is 59 % of Orion Max's time per question.
 rca.known.4 = Visible output is 48 % of Orion Max's cost per question.
 rca.pricingBasis = Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.
-rca.run.1.summary = Control run (B, recommended): Lyra Mini (high) and Zeta Prime (high) on suite GnollHack Core Suite, 1 per model. Separates the model from the instrument: once two controls, one from another provider, have run on the same questions under the same graders, the intelligence hypotheses are graded without the control cap.
-rca.run.2.summary = Replicate (M, recommended): Orion Max on suite GnollHack Core Suite, 3 per model. Confirms WS3.1 if model time keeps rising with the calls per answer; refutes it if the ρ interval includes zero.
-rca.run.3.summary = Thinking-level pair (M, optional): Orion Max and Orion Max (medium) on suite GnollHack Core Suite, 1 per model. Confirms WS2.1 if the decode share stays the largest and reasoning stays at least half the output; refutes it if the reasoning share is under one half.
+rca.profile.subject.flags = none
+rca.profile.subject.lostPointsOn = answers without tools: 9.8 index points on 1 question (Q3)
+rca.profile.subject.weakestDimension = unavailable: No dimension is below the model's Accuracy.
+rca.run.1.summary = Run 1, a control run of Lyra Mini (high) and Zeta Prime (high)
+rca.run.2.summary = Run 2, a replicate of Orion Max
+rca.run.3.summary = Run 3, a thinking-level pair of Orion Max and Orion Max (medium)
 rca.systemFirst = no harness or suite hypothesis holds model-selection runs back
 rca.within.subject.cost.cacheRead.share = 1 % of the cost per question
 rca.within.subject.cost.cacheWrite.share = 0 % of the cost per question
@@ -475,9 +494,12 @@ No harness or suite hypothesis holds the model-selection runs back.
 CHECKS (what a run cannot settle: a rubric, a corpus, a configuration or the grading to look at)
 (none)
 
+THE QUESTIONS (answer each listed question in its slot, citing its status token; leave the slot of a question not listed out)
+(none: the data asks no question, so leave every answer slot out)
+
 CLAIM SUPPORT (derived from FACTS: what a sentence must cite for each kind of claim)
 - Causal words never appear in: scope, evidenceIntelligence, evidenceSpeed, evidenceCost, and the observations.
-- Causal words in hypothesesIntelligence, hypothesesSpeed, hypothesesCost, conclusions, nextRuns need, in the same sentence, one of: rca.hypothesis.H0-W.1.*, rca.hypothesis.WC1.1.*, rca.hypothesis.WS2.1.*, rca.hypothesis.WS3.1.*, rca.axis.intelligence.*, rca.axis.speed.*, rca.axis.cost.*
+- Causal words in answerBest, answerWorst, answerSpeed, answerCost, hypothesesIntelligence, hypothesesSpeed, hypothesesCost, conclusions, nextRuns need, in the same sentence, one of: rca.hypothesis.H0-W.1.*, rca.hypothesis.WC1.1.*, rca.hypothesis.WS2.1.*, rca.hypothesis.WS3.1.*, rca.axis.intelligence.*, rca.axis.speed.*, rca.axis.cost.*; a hypothesis' label counts as its token. In nextRuns, an rca.run.<n>.* token counts as well.
 - Certainty words need, in the same sentence, one of: none: no hypothesis is graded High and no axis has an established root cause, so use no certainty word and write probable or not established
 - The conclusions cite: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}}, {{rca.axis.cost.status}}
 
@@ -552,3 +574,12 @@ QUESTIONS
     - Assessor, score 95: (no comment)
 
 QUESTIONS NEEDING A TOPIC (give a topic to each you cite): Q1, Q2, Q3, Q4, Q5, Q6
+
+CHECK BEFORE YOU ANSWER (one check per claim rule, each with an example from this data)
+- Rule 3, digits: write every figure as its token, such as {{quality.index}}; the only digits prose may hold are question references and the phrase '95 % interval'.
+- Rule 16, rankings, one per sentence: say in the ranking's own sentence that the intervals overlap and that the order is not established.
+- Rule 31, sentence shapes: {{rca.hypothesis.WC1.1.statement}} stands alone as a sentence of its own, as does every known fact and check; a label such as {{rca.hypothesis.WC1.1.label}} is a noun phrase and may sit inside a sentence.
+- Rule 33, causes: 'Part of the gap is due to {{rca.hypothesis.WC1.1.label}}.' In the next runs, the run's own rca.run token serves too.
+- Rule 34, certainty: no hypothesis is graded High and no axis is established, so use no certainty word; write probable or not established.
+- Rule 36, statuses: the conclusions cite {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.
+

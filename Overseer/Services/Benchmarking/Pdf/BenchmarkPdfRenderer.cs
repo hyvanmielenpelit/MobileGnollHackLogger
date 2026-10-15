@@ -40,8 +40,8 @@ public sealed class BenchmarkPdfSourceTooLargeException : Exception
 /// </summary>
 public static class BenchmarkPdfRenderer
 {
-    /// <summary>The page layout's version, printed in the title block and footer as "PDF layout 9".</summary>
-    public const int LayoutVersion = 9;
+    /// <summary>The page layout's version, printed in the title block and footer as "PDF layout 10".</summary>
+    public const int LayoutVersion = 10;
 
     /// <summary>The longest source text rendered; a longer one is refused before rendering starts.</summary>
     public const int MaxSourceCharacters = 6_000_000;

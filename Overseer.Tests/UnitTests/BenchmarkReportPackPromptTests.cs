@@ -912,21 +912,84 @@ public class BenchmarkReportPackPromptTests
     // Repair ------------------------------------------------------------------------------------
 
     [Fact]
-    public void RepairMessage_QuotesEveryIssue()
+    public void RepairMessage_GroupsIssuesByRule()
     {
+        const string ranking = "Ranks {{subject}} against {{peer:A}}, whose interval overlaps the subject's, without saying so.";
         var issues = new List<BenchmarkReportValidationNote>
         {
+            new() { Rule = 16, Location = "sections.meaning[p1]", Message = ranking },
             new() { Rule = 3, Location = "sections.meaning[p2]", Message = "Contains the digit form \"80\"." },
+            new() { Rule = 16, Location = "sections.meaning[p3]", Message = ranking },
             new() { Rule = 9, Location = "strengths[1]", Message = "Shares an eight-word run with the rubric of Q1." },
+            new() { Rule = 16, Location = "sections.confidence[p1]", Message = "Ranks {{subject}} against {{peer:B}}, whose interval overlaps the subject's, without saying so." },
         };
 
         string message = BenchmarkReportPackPrompt.BuildRepairMessage(issues);
 
-        Assert.Contains("- rule 3 at sections.meaning[p2]: Contains the digit form \"80\".", message);
-        Assert.Contains("- rule 9 at strengths[1]: Shares an eight-word run with the rubric of Q1.", message);
+        var rule16 = BenchmarkReportRuleCatalog.Get(16);
+        Assert.Contains($"- Rule 16 — {rule16.Name} (3): {rule16.Fix}\n", message);
+        Assert.Contains($"- Rule 3 — {BenchmarkReportRuleCatalog.Name(3)} (1): {BenchmarkReportRuleCatalog.Get(3).Fix}\n", message);
+        Assert.Contains("  - sections.meaning[p1]: " + ranking + "\n", message);
+        Assert.Contains("  - sections.meaning[p3]: as above.\n", message);
+        Assert.Contains("  - sections.confidence[p1]: Ranks {{subject}} against {{peer:B}}", message);
+        Assert.Contains("  - sections.meaning[p2]: Contains the digit form \"80\".\n", message);
+        Assert.Contains("  - strengths[1]: Shares an eight-word run with the rubric of Q1.\n", message);
+        Assert.Single(AllIndexesOf(message, ranking));
+
+        // Groups follow the rule order.
+        Assert.True(message.IndexOf("- Rule 3 ", StringComparison.Ordinal) < message.IndexOf("- Rule 9 ", StringComparison.Ordinal));
+        Assert.True(message.IndexOf("- Rule 9 ", StringComparison.Ordinal) < message.IndexOf("- Rule 16 ", StringComparison.Ordinal));
+
         Assert.Contains("complete, corrected JSON object only", message);
         Assert.Contains("{{subject}}", message);
         Assert.Contains("{{peer:X}}", message);
+    }
+
+    private static List<int> AllIndexesOf(string text, string value)
+    {
+        var found = new List<int>();
+        for (int i = text.IndexOf(value, StringComparison.Ordinal); i >= 0; i = text.IndexOf(value, i + 1, StringComparison.Ordinal)) found.Add(i);
+        return found;
+    }
+
+    [Fact]
+    public void TheComparisonRepairReminders_HoldNoDigitAndNoEstablished()
+    {
+        string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>(), comparisonScope: true);
+        string reminders = message[message.IndexOf("REMINDERS", StringComparison.Ordinal)..];
+
+        Assert.False(reminders.Any(char.IsDigit), reminders);
+        Assert.DoesNotMatch(@"(?<!not )establish", reminders);
+        Assert.Contains("paired-result token", reminders);
+    }
+
+    [Fact]
+    public void TheRootCausePrompt_HasTheCheckBeforeYouAnswerBlock()
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var prompt = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, built.Sheet!, built.Content!);
+
+        // The system prompt points to the block just before its output schema; it carries no data.
+        int pointer = prompt.SystemPrompt.IndexOf("CHECK BEFORE YOU ANSWER", StringComparison.Ordinal);
+        Assert.True(pointer > 0);
+        Assert.True(pointer < prompt.SystemPrompt.IndexOf("OUTPUT:", StringComparison.Ordinal));
+
+        // The data ends with one line per claim rule, each with an example from its own tokens.
+        string message = prompt.UserMessage;
+        int start = message.IndexOf("CHECK BEFORE YOU ANSWER (", StringComparison.Ordinal);
+        Assert.True(start > 0);
+        var lines = message[start..].Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        Assert.Equal(7, lines.Length);
+        Assert.StartsWith("- Rule 3, digits:", lines[1]);
+        Assert.StartsWith("- Rule 16, rankings", lines[2]);
+        Assert.StartsWith("- Rule 31, sentence shapes:", lines[3]);
+        Assert.StartsWith("- Rule 33, causes:", lines[4]);
+        Assert.StartsWith("- Rule 34, certainty:", lines[5]);
+        Assert.StartsWith("- Rule 36, statuses:", lines[6]);
+        Assert.Contains("{{rca.axis.intelligence.status}}", lines[6]);
+        Assert.Contains("{{model:", lines[2]);
+        Assert.Contains("noun phrase", lines[3]);
+        Assert.Contains("'95 % interval'", lines[1]);
     }
 
     // Comparison scope --------------------------------------------------------------------------
@@ -1171,7 +1234,7 @@ public class BenchmarkReportPackPromptTests
 
         string message = BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparisonScope: true);
 
-        Assert.Contains("- rule 2 at headline: Unknown token {{subject}}.", message);
+        Assert.Contains("  - headline: Unknown token {{subject}}.", message);
         Assert.Contains("{{model:X}}", message);
         Assert.DoesNotContain("{{peer:X}}", message);
         Assert.Equal(BenchmarkReportPackPrompt.BuildRepairMessage(issues), BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparisonScope: false));

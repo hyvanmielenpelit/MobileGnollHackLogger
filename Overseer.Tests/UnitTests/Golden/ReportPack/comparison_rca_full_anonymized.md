@@ -10,9 +10,71 @@
 - **Models:** 5 models (A to E), identities withheld
 - **Pricing basis:** Catalog prices on 2026-09-21
 
-## The root causes in one sentence
+## Summary
 
-Intelligence: Not established; speed: Probable cause; cost: Probable cause.
+### What we found
+
+> [!IMPORTANT]
+> **Key finding.** Intelligence: Not established; speed: Probable cause; cost: Probable cause.
+
+### The questions
+
+> [!NOTE]
+> **Question.** **Why did Model A score highest?**
+>
+> *Answer strength: Suggestive (Low) — see HQ3.1.*
+>
+> For Model A the measured signals are joint first on Accuracy of 5 models; joint first on Completeness of 5 models; lost points on answers without tools: 9.8 index points on 1 question (Q3). The answer strength is Suggestive (Low). The leading hypothesis is shared failures on the same questions.
+
+> [!NOTE]
+> **Question.** **Why did Model E score lowest?**
+>
+> *Answer strength: Suggestive (Low) — see HQ3.1.*
+>
+> For Model E the measured signals are lost points on other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more. The answer strength is Suggestive (Low). The leading hypothesis is shared failures on the same questions.
+
+> [!NOTE]
+> **Question.** **Why is Model E slowest?**
+>
+> *Answer strength: Probable (Moderate) — see WS3.3 and WS2.3.*
+>
+> For Model E the measured signals are median model time 20.0 s; output generation 59 % of its time per question; 2.5 model calls per answer. The answer strength is Probable (Moderate). The leading hypothesis is tool rounds in the time of Model E.
+
+> [!NOTE]
+> **Question.** **Why is Model D the most expensive?**
+>
+> *Answer strength: Probable (Moderate) — see HC2.3, HC2.5, WC1.2, HC4.1 and HC4.3.*
+>
+> For Model D the measured signals are $0.060 per question; uncached input 44 % of its cost per question; 27 % of input tokens read from the cache. The answer strength is Probable (Moderate). The leading hypothesis is higher price per token of Model D against Model A.
+
+### At a glance
+
+| Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |
+|---|---|---|---|---|---|
+| Model A (reference) | 85 (82–88), rank joint 1 | 12.0 s | $0.050 | answers without tools, 9.8 points | none |
+| Model B | 80 (77–83), rank joint 1 | 9.0 s | $0.030 | other low-scoring answers, 2.8 points | none |
+| Model C | 70 (66–74), rank joint 3 | 15.0 s | $0.020 | confirmed critical errors, 7.2 points | 1 critical error |
+| Model D | 70 (64–76), rank joint 3 | 8.0 s | $0.060 | answers without tools, 6.3 points | none |
+| Model E | 55 (50–60), rank 5 | 20.0 s | $0.010 | other low-scoring answers, 5.6 points | 1 isolated miss |
+
+### How sure are we?
+
+> [!WARNING]
+> **Caveat.** Established (High): measured, established after adjustment, robust, with two or more runs per suite on both sides. Probable (Moderate): one of those conditions is missed. Suggestive (Low): qualitative only, two or more conditions missed, or the difference may be noise. Ruled out (Not supported): the rule's own test refutes it.
+>
+> One run per suite for every model: the replicates check fails for every hypothesis, so no cause can be graded above Probable (Moderate).
+
+## Why each model scored as it did
+
+| Model | Index | Strengths | Lost points on | Flags |
+|---|---|---|---|---|
+| Model A (reference) | 85 | joint first on Accuracy of 5 models; joint first on Completeness of 5 models | answers without tools: 9.8 index points on 1 question (Q3) | none |
+| Model B | 80 | joint first on Accuracy of 5 models; joint first on Completeness of 5 models | other low-scoring answers: 2.8 index points on 2 questions (Q3 and Q4) | none |
+| Model C | 70 | none ranked first or second | confirmed critical errors: 7.2 index points on 1 question (Q3) | 1 critical error (Q3) |
+| Model D | 70 | none ranked first or second | answers without tools: 6.3 index points on 1 question (Q3) | none |
+| Model E | 55 | none ranked first or second | other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4); last on Accuracy of 5 models | 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more |
+
+*Each entry is a count, a share or a rank that was measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (Appendix A), with its questions.*
 
 ## Scope and design
 
@@ -28,6 +90,222 @@ Intelligence: Not established; speed: Probable cause; cost: Probable cause.
 - **Comparability:** every model in this report was measured under one instrument condition, signature `sig-7f3a91`.
 - **Pricing basis:** Catalog prices on 2026-09-21
 - **Versions:** harness 41; scoring method 12.
+
+One run per suite on each side limits what this design can decide; the next runs add replicates.
+
+## Evidence: intelligence
+
+| Model | Intelligence Index | 95 % interval | Rank | Critical errors |
+|---|---|---|---|---|
+| Model A (reference) | 85 | 82–88 | joint 1 | 0 of 6 answers |
+| Model B | 80 | 77–83 | joint 1 | 0 of 6 answers |
+| Model C | 70 | 66–74 | joint 3 | 1 of 6 answers |
+| Model D | 70 | 64–76 | joint 3 | 0 of 6 answers |
+| Model E | 55 | 50–60 | 5 | 0 of 6 answers |
+
+*A joint rank means the model's 95 % interval overlaps a neighbor's, so the intervals do not establish the order between them.*
+
+| Model | Accuracy | Completeness | Conciseness | Readability |
+|---|---|---|---|---|
+| Model A (reference) | 80 | 80 | 80 | 80 |
+| Model B | 80 | 80 | 80 | 80 |
+| Model C | 65 | 65 | 65 | 65 |
+| Model D | 64 | 64 | 64 | 64 |
+| Model E | 50 | 50 | 50 | 50 |
+
+### Paired tests against Model A
+
+| Pair | Questions | Difference (95 % interval) | Result |
+|---|---|---|---|
+| Model A vs Model B | 6 | 0.0 points (-21.0 to +21.0) | not established |
+| Model A vs Model C | 6 | +15.2 points (+6.6 to +23.8) | not established |
+| Model A vs Model D | 6 | +15.8 points (+5.6 to +26.1) | not established |
+| Model A vs Model E | 6 | +30.0 points (+16.1 to +43.9) | not established |
+
+*Intelligence: Holm-adjusted across 4 tests. Difference: the mean per-question difference, first model minus second, on the questions both answered. Appendix A gives every family.*
+
+*At least one entry has a single run. With one run a side, a paired test captures question sampling only, not run-to-run variation, so it can look more certain than it is.*
+
+### What the graders recorded
+
+- The grader recorded a comment on this answer.
+  - *Evidence:* Q1
+
+The first known fact: Uncached input, price per token accounts for 45 % (44–46 %) of the per-question cost difference between Model A and Model B.
+
+## Evidence: speed
+
+### Where the time goes
+
+| Model | Seconds per question | Time to first token | Output generation | Tool execution | Own waits and retries | Other |
+|---|---|---|---|---|---|---|
+| Model A | 8.9 s | 1.9 s | 5.2 s | 1.5 s | 0.0 s | 0.3 s |
+| Model B | 10.4 s | 2.5 s | 6.1 s | 1.5 s | 0.0 s | 0.3 s |
+| Model C | 11.9 s | 3.1 s | 7.0 s | 1.5 s | 0.0 s | 0.3 s |
+| Model D | 13.4 s | 3.8 s | 7.9 s | 1.5 s | 0.0 s | 0.3 s |
+| Model E | 14.9 s | 4.4 s | 8.7 s | 1.5 s | 0.0 s | 0.3 s |
+
+*Seconds per question: the median of the per-question time, split into its parts in proportion to their means. Tool execution is excluded from the model's own time elsewhere in this document.*
+
+### Paired tests against Model A
+
+| Pair | Time ratio (95 % interval) | Result |
+|---|---|---|
+| Model A vs Model B | 0.83 (0.53 to 1.31) | not established |
+| Model A vs Model C | 0.71 (0.70 to 0.73) | not established |
+| Model A vs Model D | 0.62 (0.40 to 0.98) | not established |
+| Model A vs Model E | 0.56 (0.54 to 0.57) | not established |
+
+*Speed: Holm-adjusted across 4 tests. A ratio is the first model's own time per question divided by the second's, on the questions both answered. Appendix A gives every family.*
+
+### Time differences between the models
+
+Not decomposed, as the difference is not established: Model A vs Model B, Model A vs Model C, Model A vs Model D, Model A vs Model E and Model D vs Model E.
+
+The speed tables split the time per question into its components.
+
+## Evidence: cost
+
+### Where the cost goes
+
+| Model | Cost per question | Uncached input | Cache reads | Cache writes | Visible output | Reasoning |
+|---|---|---|---|---|---|---|
+| Model A | $0.014 | $0.0042 | $0.0001 | $0.0000 | $0.0067 | $0.0030 |
+| Model B | $0.022 | $0.0082 | $0.0001 | $0.0000 | $0.0089 | $0.0046 |
+| Model C | $0.031 | $0.013 | $0.0002 | $0.0000 | $0.011 | $0.0064 |
+| Model D | $0.041 | $0.018 | $0.0002 | $0.0000 | $0.014 | $0.0086 |
+| Model E | $0.052 | $0.024 | $0.0002 | $0.0000 | $0.017 | $0.011 |
+
+*Mean cost per question by component, priced on this basis: Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.*
+
+### Paired tests against Model A
+
+Cost: not tested. No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
+
+### Cost differences between the models
+
+- **Model A vs Model B:** -$0.0078 per question; leading component uncached input, price per token, -$0.0035, 45 % (44–46 %) of the difference.
+- **Model A vs Model C:** -$0.017 per question; leading component uncached input, price per token, -$0.0074, 44 % (43–45 %) of the difference.
+- **Model A vs Model D:** -$0.027 per question; leading component uncached input, price per token, -$0.012, 43 % (42–44 %) of the difference.
+- **Model A vs Model E:** -$0.038 per question; leading component uncached input, price per token, -$0.016, 42 % (42–43 %) of the difference.
+- **Model D vs Model E:** -$0.011 per question; leading component uncached input, price per token, -$0.0044, 39 % (38–39 %) of the difference.
+
+*Each difference is split exactly into parts that sum to it (logarithmic-mean Divisia index), over the questions both models have figures for; a share's interval is a 95 % bootstrap interval over those questions. The difference is the first model's minus the second's; a share can pass 100 % when another component pulls the other way. Appendix B gives every component.*
+
+The cost tables split the cost per question into volume and price.
+
+## Hypotheses
+
+### Intelligence
+
+| Hypothesis | Statement | Grade | Share | Settled by |
+|---|---|---|---|---|
+| HQ3.1: shared failures on the same questions | Shared failures on specific questions point to the instrument, not the models. | Suggestive (Low) | — | check 1 |
+
+*Ids: H0 is a null hypothesis, H one between two models, W one within a single model; Q, S and C mark intelligence, speed and cost. Appendix C gives each hypothesis' evidence for and against.*
+
+*Null hypotheses (the difference is within sampling noise):* it stands for Model A vs Model B, Model A vs Model C, Model A vs Model D, Model A vs Model E, Model D vs Model E, within Model A's own questions and within Model E's own questions.
+
+The strongest hypothesis in the table: Shared failures on specific questions point to the instrument, not the models. Its grade and the evidence against it stand beside it.
+
+### Speed
+
+| Hypothesis | Statement | Grade | Share | Settled by |
+|---|---|---|---|---|
+| WS3.1: tool rounds in the time of Model A | Tool rounds multiply Model A's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
+| WS3.2: tool rounds in the time of Model D | Tool rounds multiply Model D's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
+| WS3.3: tool rounds in the time of Model E | Tool rounds multiply Model E's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
+| WS2.1: output generation of Model A | Most of Model A's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 70 % (69–71 %) | run 2 |
+| WS2.2: output generation of Model D | Most of Model D's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 66 % (65–67 %) | check 2 |
+| WS2.3: output generation of Model E | Most of Model E's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 65 % (64–66 %) | check 3 |
+
+*Null hypotheses (the difference is within sampling noise):* it stands for Model A vs Model B, Model A vs Model C, Model A vs Model D, Model A vs Model E and Model D vs Model E.
+
+The strongest hypothesis in the table: Tool rounds multiply Model A's time (where its time goes, not a comparison). Its grade and the evidence against it stand beside it.
+
+### Cost
+
+| Hypothesis | Statement | Grade | Share | Settled by |
+|---|---|---|---|---|
+| HC2.1: higher price per token of Model B against Model A | Model B costs more than Model A mainly from its price per token. | Probable (Moderate) | 72 % (71–73 %) | — |
+| HC2.2: higher price per token of Model C against Model A | Model C costs more than Model A mainly from its price per token. | Probable (Moderate) | 71 % (70–71 %) | — |
+| HC2.3: higher price per token of Model D against Model A | Model D costs more than Model A mainly from its price per token. | Probable (Moderate) | 70 % (69–70 %) | — |
+| WC1.1: output cost of Model A | Output (with reasoning) is Model A's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 69 % | — |
+| HC2.4: higher price per token of Model E against Model A | Model E costs more than Model A mainly from its price per token. | Probable (Moderate) | 69 % (68–69 %) | — |
+| HC2.5: higher price per token of Model E against Model D | Model E costs more than Model D mainly from its price per token. | Probable (Moderate) | 65 % (64–65 %) | — |
+| WC1.2: output cost of Model D | Output (with reasoning) is Model D's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 55 % | — |
+| WC1.3: output cost of Model E | Output (with reasoning) is Model E's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 54 % | — |
+| HC4.1: weak prompt caching of Model E against Model D | Weak prompt caching raises Model E's cost against Model D. | Ruled out (Not supported) | 12 % (12–13 %) | run 1 |
+| HC4.2: weak prompt caching of Model E against Model A | Weak prompt caching raises Model E's cost against Model A. | Ruled out (Not supported) | 9 % (9–9 %) | run 1 |
+| HC4.3: weak prompt caching of Model D against Model A | Weak prompt caching raises Model D's cost against Model A. | Ruled out (Not supported) | 8 % (8–9 %) | run 1 |
+| HC4.4: weak prompt caching of Model C against Model A | Weak prompt caching raises Model C's cost against Model A. | Ruled out (Not supported) | 8 % (7–8 %) | run 1 |
+
+*Null hypotheses (the difference is within sampling noise):* a paired result rejects it for Model A vs Model B, Model A vs Model C, Model A vs Model D, Model A vs Model E and Model D vs Model E.
+
+The strongest hypothesis in the table: Model B costs more than Model A mainly from its price per token. Its grade and the evidence against it stand beside it.
+
+### The writer's hypotheses
+
+> [!WARNING]
+> **Not tested by code.** Hypotheses the report writer added from the grader comments and excerpts. Code has not tested them, so their confidence is Low.
+>
+> - **Intelligence · Low** (Model A; locus suite): Model A may have lost points to a rubric that asks for more than the question states.
+>   - *For:* The grader comment on Q1 names a missing point.
+>   - *Against:* Other models answered the same question well.
+>   - *Refuted if:* A rubric check finds every point stated in the question.
+
+## Conclusions
+
+| Axis | Status | Best hypothesis | Why |
+|---|---|---|---|
+| Intelligence | Not established | HQ3.1: shared failures on the same questions | The best hypothesis, HQ3.1, is graded Low: qualitative only. |
+| Speed | Probable cause | WS3.1: tool rounds in the time of Model A | WS3.1 is the best hypothesis, graded Moderate: replicates failed: Model A has a single run per suite. |
+| Cost | Probable cause | HC2.1: higher price per token of Model B against Model A | HC2.1 is the best hypothesis, graded Moderate: replicates failed: Model B and Model A have a single run per suite. |
+
+> [!TIP]
+> **Conclusion.** Intelligence: Not established. Speed: Probable cause. Cost: Probable cause.
+
+## What to run next
+
+In the order to make them: the Overseer chat first (C), then the benchmark (B), then model selection (M). Appendix D gives each run's launcher settings.
+
+| # | Run | Purpose | Models | Settles | Estimate |
+|---|---|---|---|---|---|
+| 1 | Replicate (recommended) | M, model selection | Model A, Model D, Model E and Model C | WS3.1: tool rounds in the time of Model A; WS3.2: tool rounds in the time of Model D; WS3.3: tool rounds in the time of Model E; HC4.1: weak prompt caching of Model E against Model D; HC4.2: weak prompt caching of Model E against Model A; HC4.3: weak prompt caching of Model D against Model A; HC4.4: weak prompt caching of Model C against Model A | not estimated |
+| 2 | Thinking-level pair (optional) | M, model selection | Model A and another configured model | WS2.1: output generation of Model A | not estimated |
+
+### Checks
+
+1. Check the rubric of Q3 against the source, and whether the tools' corpus holds the facts the question needs. *(rubric; settles HQ3.1)*
+2. No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2. *(configuration; settles WS2.2)*
+3. No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test WS2.3. *(configuration; settles WS2.3)*
+
+The runs are ordered chat first, then the benchmark, then model selection.
+
+## Limitations and threats to validity
+
+- The benchmark asks single-turn questions under one chat configuration: live chat carries the conversation before each question, and spoiler-free mode, web search and subagents are off, so a cause found here holds for that configuration only.
+- It runs without the wiki text that live chat always gives the model before it answers, so a reading about retrieval or tool routing was measured under a condition live chat does not share.
+- The hypotheses come from a fixed rule table over these runs; points at risk are upper bounds, and a decomposition rests on the questions both sides have figures for. The writer's own hypotheses are qualitative.
+- Intervals: Item sampling only.
+- The graders are AI models. Each grader's provider relation to the models is stated under Setup and method; a grader from a model's own provider may read that model more favorably.
+- Paired tests: each measure's family is Holm-adjusted across the tests it makes over these models only.
+- Costs are priced at today's catalog cards, as the comparison prices them.
+
+The benchmark asks single questions, so longer conversations are not measured.
+
+## Appendices
+
+- **A. Intelligence detail:** the compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, every paired test and the per-question matrix.
+- **B. Speed and cost decompositions:** calls, latency, tokens and every component of each decomposed difference.
+- **C. Hypothesis details:** each hypothesis' evidence for and against, grade reasons and robustness checks, and the null hypotheses.
+- **D. Run settings:** every launcher setting of each run to make next.
+- **E. Known facts:** what a test, a count, a decomposition or the configuration proves.
+- **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
+- **G. Question details:** the questions this document cites, with their answers.
+- **H. Glossary:** the statistical terms in plain words.
+
+## Appendix A: Intelligence detail
 
 ### Compared models
 
@@ -47,9 +325,7 @@ Intelligence: Not established; speed: Probable cause; cost: Probable cause.
 - **Model A against Model E: config differences:** provider and model
 - **Model D against Model E: config differences:** provider and model
 
-One run per suite on each side limits what this design can decide; the next runs add replicates.
-
-## Evidence: intelligence
+### Results
 
 | Model | Intelligence Index | 95 % interval | Rank | Median answer time | Speed rank | Cost per question | Cost rank | Critical errors |
 |---|---|---|---|---|---|---|---|---|
@@ -58,19 +334,6 @@ One run per suite on each side limits what this design can decide; the next runs
 | Model C | 70 | 66–74 | joint 3 | 15.0 s | 4 | $0.020 | 2 | 1 of 6 answers |
 | Model D | 70 | 64–76 | joint 3 | 8.0 s | 1 | $0.060 | 5 | 0 of 6 answers |
 | Model E | 55 | 50–60 | 5 | 20.0 s | 5 | $0.010 | 1 | 0 of 6 answers |
-
-| Model | Accuracy | Completeness | Conciseness | Readability |
-|---|---|---|---|---|
-| Model A (reference) | 80 | 80 | 80 | 80 |
-| Model B | 80 | 80 | 80 | 80 |
-| Model C | 65 | 65 | 65 | 65 |
-| Model D | 64 | 64 | 64 | 64 |
-| Model E | 50 | 50 | 50 | 50 |
-
-- **Accuracy:** from 50 (Model E) to 80 (Model A), 30 points apart
-- **Completeness:** from 50 (Model E) to 80 (Model A), 30 points apart
-- **Conciseness:** from 50 (Model E) to 80 (Model A), 30 points apart
-- **Readability:** from 50 (Model E) to 80 (Model A), 30 points apart
 
 ### Failure profile
 
@@ -132,7 +395,7 @@ No model was graded by an assessor panel in every run, so no panel agreement fig
 
 *Index points, first model minus second, split by the scoring weights; the parts sum to the difference. Other is the critical-error cap and the difficulty weighting.*
 
-### Paired tests: intelligence, speed and cost
+### Paired tests: every family
 
 *Each pair is compared on the questions both models answered. Each measure is its own family of tests, Holm-adjusted across the tests it makes over these models; a result is established when its adjusted p-value is below 0.05. Another set of models gives another family and another adjustment.*
 
@@ -213,21 +476,7 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 
 *Each model's column is headed by its letter in the models table. CE marks a critical error; Spread is the highest score minus the lowest. — under a model marks a question it was not asked or not scored on. — under Topic marks a question not given in detail.*
 
-The first known fact: Output tokens accounts for 55 % (53–56 %) of the per-question time difference between Model A and Model C.
-
-## Evidence: speed
-
-### Where the time goes
-
-| Model | Seconds per question | Time to first token | Output generation | Tool execution | Own waits and retries | Other |
-|---|---|---|---|---|---|---|
-| Model A | 8.9 s | 1.9 s | 5.2 s | 1.5 s | 0.0 s | 0.3 s |
-| Model B | 10.4 s | 2.5 s | 6.1 s | 1.5 s | 0.0 s | 0.3 s |
-| Model C | 11.9 s | 3.1 s | 7.0 s | 1.5 s | 0.0 s | 0.3 s |
-| Model D | 13.4 s | 3.8 s | 7.9 s | 1.5 s | 0.0 s | 0.3 s |
-| Model E | 14.9 s | 4.4 s | 8.7 s | 1.5 s | 0.0 s | 0.3 s |
-
-*Seconds per question: the median of the per-question time, split into its parts in proportion to their means. Tool execution is excluded from the model's own time elsewhere in this document.*
+## Appendix B: Speed and cost decompositions
 
 ### Calls, latency and output
 
@@ -239,62 +488,6 @@ The first known fact: Output tokens accounts for 55 % (53–56 %) of the per-que
 | Model D | 2.5 | 1.5 s | — | 38 % | 1,420 |
 | Model E | 2.5 | 1.8 s | — | 39 % | 1,570 |
 
-### Speed differences, decomposed
-
-| Pair | Questions | Difference per question | Component | Part | Share (95 % interval) |
-|---|---|---|---|---|---|
-| Model A vs Model B | 6 | -1.6 s | Number of model calls | 0.0 s | 0 % (-73–103 %) |
-| Model A vs Model B | 6 | -1.6 s | Latency per call (time to first token) | -0.6 s | 41 % (-104–149 %) |
-| Model A vs Model B | 6 | -1.6 s | Output tokens | -0.8 s | 53 % (-143–203 %) |
-| Model A vs Model B | 6 | -1.6 s | Decode rate | -0.1 s | 6 % (-180–244 %) |
-| Model A vs Model B | 6 | -1.6 s | Time outside the calls | 0.0 s | 0 % (0–0 %) |
-| Model A vs Model C | 6 | -3.0 s | Number of model calls | 0.0 s | 0 % (0–0 %) |
-| Model A vs Model C | 6 | -3.0 s | Latency per call (time to first token) | -1.3 s | 42 % (42–42 %) |
-| Model A vs Model C | 6 | -3.0 s | Output tokens | -1.6 s | 55 % (53–56 %) |
-| Model A vs Model C | 6 | -3.0 s | Decode rate | -0.1 s | 4 % (2–5 %) |
-| Model A vs Model C | 6 | -3.0 s | Time outside the calls | 0.0 s | 0 % (0–0 %) |
-| Model A vs Model D | 6 | -4.6 s | Number of model calls | 0.0 s | 0 % (-38–11 %) |
-| Model A vs Model D | 6 | -4.6 s | Latency per call (time to first token) | -1.9 s | 41 % (27–94 %) |
-| Model A vs Model D | 6 | -4.6 s | Output tokens | -2.5 s | 55 % (35–127 %) |
-| Model A vs Model D | 6 | -4.6 s | Decode rate | -0.2 s | 4 % (-83–28 %) |
-| Model A vs Model D | 6 | -4.6 s | Time outside the calls | 0.0 s | 0 % (0–0 %) |
-| Model A vs Model E | 6 | -6.0 s | Number of model calls | 0.0 s | 0 % (0–0 %) |
-| Model A vs Model E | 6 | -6.0 s | Latency per call (time to first token) | -2.5 s | 42 % (42–42 %) |
-| Model A vs Model E | 6 | -6.0 s | Output tokens | -3.3 s | 55 % (54–56 %) |
-| Model A vs Model E | 6 | -6.0 s | Decode rate | -0.2 s | 3 % (2–5 %) |
-| Model A vs Model E | 6 | -6.0 s | Time outside the calls | 0.0 s | 0 % (0–0 %) |
-| Model D vs Model E | 6 | -1.5 s | Number of model calls | 0.0 s | 0 % (0–427 %) |
-| Model D vs Model E | 6 | -1.5 s | Latency per call (time to first token) | -0.6 s | 43 % (-479–45 %) |
-| Model D vs Model E | 6 | -1.5 s | Output tokens | -0.8 s | 58 % (-646–62 %) |
-| Model D vs Model E | 6 | -1.5 s | Decode rate | 0.0 s | -1 % (-8–798 %) |
-| Model D vs Model E | 6 | -1.5 s | Time outside the calls | 0.0 s | 0 % (0–0 %) |
-
-*Each difference is split exactly into parts that sum to it (logarithmic-mean Divisia index), over the questions both models have figures for; a share's interval is a 95 % bootstrap interval over those questions. The difference is the first model's minus the second's.*
-
-| Model | Median answer time | Cost per question | Input tokens per question | Output tokens per question |
-|---|---|---|---|---|
-| Model A (reference) | 12.0 s | $0.050 | 4,350 | 970 |
-| Model B | 9.0 s | $0.030 | 4,850 | 1,120 |
-| Model C | 15.0 s | $0.020 | 5,350 | 1,270 |
-| Model D | 8.0 s | $0.060 | 5,850 | 1,420 |
-| Model E | 20.0 s | $0.010 | 6,350 | 1,570 |
-
-The speed tables split the time per question into its components.
-
-## Evidence: cost
-
-### Where the cost goes
-
-| Model | Cost per question | Uncached input | Cache reads | Cache writes | Visible output | Reasoning |
-|---|---|---|---|---|---|---|
-| Model A | $0.014 | $0.0042 | $0.0001 | $0.0000 | $0.0067 | $0.0030 |
-| Model B | $0.022 | $0.0082 | $0.0001 | $0.0000 | $0.0089 | $0.0046 |
-| Model C | $0.031 | $0.013 | $0.0002 | $0.0000 | $0.011 | $0.0064 |
-| Model D | $0.041 | $0.018 | $0.0002 | $0.0000 | $0.014 | $0.0086 |
-| Model E | $0.052 | $0.024 | $0.0002 | $0.0000 | $0.017 | $0.011 |
-
-*Mean cost per question by component, priced on this basis: Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.*
-
 ### Tokens per question
 
 | Model | Uncached input | Cache reads | Cache writes | Visible output | Reasoning | Cache-read share |
@@ -304,6 +497,16 @@ The speed tables split the time per question into its components.
 | Model C | 3,950 | 1,400 | 0 | 810 | 460 | 26 % |
 | Model D | 4,250 | 1,600 | 0 | 880 | 540 | 27 % |
 | Model E | 4,550 | 1,800 | 0 | 950 | 620 | 28 % |
+
+### Speed and cost figures
+
+| Model | Median answer time | Cost per question | Input tokens per question | Output tokens per question |
+|---|---|---|---|---|
+| Model A (reference) | 12.0 s | $0.050 | 4,350 | 970 |
+| Model B | 9.0 s | $0.030 | 4,850 | 1,120 |
+| Model C | 15.0 s | $0.020 | 5,350 | 1,270 |
+| Model D | 8.0 s | $0.060 | 5,850 | 1,420 |
+| Model E | 20.0 s | $0.010 | 6,350 | 1,570 |
 
 ### Cost differences, decomposed
 
@@ -372,385 +575,161 @@ The speed tables split the time per question into its components.
 
 *Each difference is split exactly into parts that sum to it (logarithmic-mean Divisia index), over the questions both models have figures for; a share's interval is a 95 % bootstrap interval over those questions. The difference is the first model's minus the second's.*
 
-The cost tables split the cost per question into volume and price.
-
-## Known facts
-
-1. Output tokens accounts for 55 % (53–56 %) of the per-question time difference between Model A and Model C.
-2. Output tokens accounts for 55 % (35–127 %) of the per-question time difference between Model A and Model D.
-3. Output tokens accounts for 55 % (54–56 %) of the per-question time difference between Model A and Model E.
-4. Uncached input, price per token accounts for 45 % (44–46 %) of the per-question cost difference between Model A and Model B.
-5. Uncached input, price per token accounts for 44 % (43–45 %) of the per-question cost difference between Model A and Model C.
-6. Uncached input, price per token accounts for 43 % (42–44 %) of the per-question cost difference between Model A and Model D.
-7. Uncached input, price per token accounts for 42 % (42–43 %) of the per-question cost difference between Model A and Model E.
-8. Uncached input, price per token accounts for 39 % (38–39 %) of the per-question cost difference between Model D and Model E.
-9. Model A answered 2 of 6 scored questions without a tool call.
-10. Model B answered 2 of 6 scored questions without a tool call.
-11. Model C answered 2 of 6 scored questions without a tool call.
-12. Model C has 1 critical error in 6 scored answers.
-13. Model D answered 2 of 6 scored questions without a tool call.
-14. Model E answered 2 of 6 scored questions without a tool call.
-
-### What the graders recorded
-
-- The grader recorded a comment on this answer.
-  - *Evidence:* Q1
-
-## Hypotheses
+## Appendix C: Hypothesis details
 
 *Code fired each hypothesis on a pre-declared rule and graded it: High (quantified, established after adjustment, its null rejected, no open confound, every robustness check passed, two or more runs per suite on both sides), Moderate (exactly one of those conditions missed), Low (qualitative only, two or more conditions missed, or the null stands) or Not supported (refuted by the rule's own test). Each null hypothesis says that the difference is within sampling noise.*
 
 ### Intelligence
 
-| Hypothesis | Statement | Models | Locus | Grade |
-|---|---|---|---|---|
-| H0-Q.1 | The Intelligence Index difference between Model A and Model B is within sampling noise. | Model A and Model B | — | Low |
-| H0-Q.2 | The Intelligence Index difference between Model A and Model C is within sampling noise. | Model A and Model C | — | Low |
-| H0-Q.3 | The Intelligence Index difference between Model A and Model D is within sampling noise. | Model A and Model D | — | Low |
-| H0-Q.4 | The Intelligence Index difference between Model A and Model E is within sampling noise. | Model A and Model E | — | Low |
-| H0-Q.5 | The Intelligence Index difference between Model D and Model E is within sampling noise. | Model D and Model E | — | Low |
-| H0-W.1 | The contrasts between groups of Model A's own questions are within sampling noise. | Model A | — | Low |
-| H0-W.2 | The contrasts between groups of Model E's own questions are within sampling noise. | Model E | — | Low |
-| HQ3.1 | Shared failures on specific questions point to the instrument, not the models. | Model A, Model B, Model C, Model D and Model E | suite / corpus / chat | Low |
-
-- **H0-Q.1**
-  - *For:* The paired Intelligence Index test is not established after the Holm adjustment across 4 tests. The paired Intelligence Index test is not established after the Holm adjustment across 10 tests. The two 95 % intervals overlap.
-  - *Against:* none recorded.
-  - *Grade reasons:* capped at Low: a single run per suite gives the tests little power.
-  - *Refuted if:* A paired test of the two on the Intelligence Index is established after adjustment.
-- **H0-Q.2**
-  - *For:* The paired Intelligence Index test is not established after the Holm adjustment across 4 tests. The paired Intelligence Index test is not established after the Holm adjustment across 10 tests.
-  - *Against:* The two 95 % intervals do not overlap.
-  - *Grade reasons:* capped at Low: a single run per suite gives the tests little power.
-  - *Refuted if:* A paired test of the two on the Intelligence Index is established after adjustment.
-- **H0-Q.3**
-  - *For:* The paired Intelligence Index test is not established after the Holm adjustment across 4 tests. The paired Intelligence Index test is not established after the Holm adjustment across 10 tests.
-  - *Against:* The two 95 % intervals do not overlap.
-  - *Grade reasons:* capped at Low: a single run per suite gives the tests little power.
-  - *Refuted if:* A paired test of the two on the Intelligence Index is established after adjustment.
-- **H0-Q.4**
-  - *For:* The paired Intelligence Index test is not established after the Holm adjustment across 4 tests. The paired Intelligence Index test is not established after the Holm adjustment across 10 tests.
-  - *Against:* The two 95 % intervals do not overlap.
-  - *Grade reasons:* capped at Low: a single run per suite gives the tests little power.
-  - *Refuted if:* A paired test of the two on the Intelligence Index is established after adjustment.
-- **H0-Q.5**
-  - *For:* The paired Intelligence Index test is not established after the Holm adjustment across 10 tests.
-  - *Against:* The two 95 % intervals do not overlap.
-  - *Grade reasons:* capped at Low: a single run per suite gives the tests little power.
-  - *Refuted if:* A paired test of the two on the Intelligence Index is established after adjustment.
-- **H0-W.1**
-  - *For:* No contrast could be made.
-  - *Against:* none recorded.
-  - *Grade reasons:* capped at Low: a single run per suite gives the contrasts little power.
-  - *Refuted if:* A Mann–Whitney contrast is established after the Holm adjustment.
-- **H0-W.2**
-  - *For:* No contrast could be made.
-  - *Against:* none recorded.
-  - *Grade reasons:* capped at Low: a single run per suite gives the contrasts little power.
-  - *Refuted if:* A Mann–Whitney contrast is established after the Holm adjustment.
-- **HQ3.1**
+- **HQ3.1: shared failures on the same questions** (Model A, Model B, Model C, Model D and Model E; locus suite / corpus / chat; Suggestive (Low))
   - *For:* Q3: 4 of 5 models scored below 50.
   - *Against:* none recorded.
   - *Grade reasons:* qualitative only.
   - *Refuted if:* One model answered the question well.
-  - *Settled by:* check 1.
 
-The strongest hypothesis in the table: Shared failures on specific questions point to the instrument, not the models. Its grade and the evidence against it stand beside it.
+| Hypothesis | Pair | Paired result | Grade |
+|---|---|---|---|
+| H0-Q.1 | Model A vs Model B | 0.0 points, not established | Suggestive (Low) |
+| H0-Q.2 | Model A vs Model C | +15.2 points, not established | Suggestive (Low) |
+| H0-Q.3 | Model A vs Model D | +15.8 points, not established | Suggestive (Low) |
+| H0-Q.4 | Model A vs Model E | +30.0 points, not established | Suggestive (Low) |
+| H0-Q.5 | Model D vs Model E | +14.2 points, not established | Suggestive (Low) |
+| H0-W.1 | within Model A | No contrast could be made. | Suggestive (Low) |
+| H0-W.2 | within Model E | No contrast could be made. | Suggestive (Low) |
 
 ### Speed
 
-| Hypothesis | Statement | Models | Locus | Grade |
-|---|---|---|---|---|
-| H0-S.1 | The model time difference between Model A and Model B is within sampling noise. | Model A and Model B | — | Low |
-| H0-S.2 | The model time difference between Model A and Model C is within sampling noise. | Model A and Model C | — | Low |
-| H0-S.3 | The model time difference between Model A and Model D is within sampling noise. | Model A and Model D | — | Low |
-| H0-S.4 | The model time difference between Model A and Model E is within sampling noise. | Model A and Model E | — | Low |
-| H0-S.5 | The model time difference between Model D and Model E is within sampling noise. | Model D and Model E | — | Low |
-| WS3.1 | Tool rounds multiply Model A's time (where its time goes, not a comparison). | Model A | model / chat | Moderate |
-| WS3.2 | Tool rounds multiply Model D's time (where its time goes, not a comparison). | Model D | model / chat | Moderate |
-| WS3.3 | Tool rounds multiply Model E's time (where its time goes, not a comparison). | Model E | model / chat | Moderate |
-| HS3.1 | Model E is slower than Model D mainly from more output (reasoning) tokens. | Model E and Model D | model | Low |
-| HS3.2 | Model E is slower than Model A mainly from more output (reasoning) tokens. | Model E and Model A | model | Low |
-| HS3.3 | Model C is slower than Model A mainly from more output (reasoning) tokens. | Model C and Model A | model | Low |
-| HS3.4 | Model D is slower than Model A mainly from more output (reasoning) tokens. | Model D and Model A | model | Low |
-| HS3.5 | Model B is slower than Model A mainly from more output (reasoning) tokens. | Model B and Model A | model | Low |
-| WS2.1 | Most of Model A's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Model A | model | Not supported |
-| WS2.2 | Most of Model D's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Model D | model | Not supported |
-| WS2.3 | Most of Model E's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Model E | model | Not supported |
-
-- **H0-S.1**
-  - *For:* The paired model time test is not established after the Holm adjustment across 4 tests. The paired model time test is not established after the Holm adjustment across 10 tests.
-  - *Against:* none recorded.
-  - *Grade reasons:* capped at Low: a single run per suite gives the tests little power.
-  - *Refuted if:* A paired test of the two on the model time is established after adjustment.
-- **H0-S.2**
-  - *For:* The paired model time test is not established after the Holm adjustment across 4 tests. The paired model time test is not established after the Holm adjustment across 10 tests.
-  - *Against:* none recorded.
-  - *Grade reasons:* capped at Low: a single run per suite gives the tests little power.
-  - *Refuted if:* A paired test of the two on the model time is established after adjustment.
-- **H0-S.3**
-  - *For:* The paired model time test is not established after the Holm adjustment across 4 tests. The paired model time test is not established after the Holm adjustment across 10 tests.
-  - *Against:* none recorded.
-  - *Grade reasons:* capped at Low: a single run per suite gives the tests little power.
-  - *Refuted if:* A paired test of the two on the model time is established after adjustment.
-- **H0-S.4**
-  - *For:* The paired model time test is not established after the Holm adjustment across 4 tests. The paired model time test is not established after the Holm adjustment across 10 tests.
-  - *Against:* none recorded.
-  - *Grade reasons:* capped at Low: a single run per suite gives the tests little power.
-  - *Refuted if:* A paired test of the two on the model time is established after adjustment.
-- **H0-S.5**
-  - *For:* The paired model time test is not established after the Holm adjustment across 10 tests.
-  - *Against:* none recorded.
-  - *Grade reasons:* capped at Low: a single run per suite gives the tests little power.
-  - *Refuted if:* A paired test of the two on the model time is established after adjustment.
-- **WS3.1**
+- **WS3.1: tool rounds in the time of Model A** (Model A; locus model / chat; Probable (Moderate))
   - *For:* Across Model A's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
   - *Against:* none recorded.
   - *Grade reasons:* replicates failed: Model A has a single run per suite.
   - *Refuted if:* The ρ interval includes zero.
   - *Robustness:* Replicates failed (Model A has a single run per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
-  - *Settled by:* next run 1.
-- **WS3.2**
+- **WS3.2: tool rounds in the time of Model D** (Model D; locus model / chat; Probable (Moderate))
   - *For:* Across Model D's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
   - *Against:* none recorded.
   - *Grade reasons:* replicates failed: Model D has a single run per suite.
   - *Refuted if:* The ρ interval includes zero.
   - *Robustness:* Replicates failed (Model D has a single run per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
-  - *Settled by:* next run 1.
-- **WS3.3**
+- **WS3.3: tool rounds in the time of Model E** (Model E; locus model / chat; Probable (Moderate))
   - *For:* Across Model E's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95 % interval 0.23 to 0.99, n 6).
   - *Against:* none recorded.
   - *Grade reasons:* replicates failed: Model E has a single run per suite.
   - *Refuted if:* The ρ interval includes zero.
   - *Robustness:* Replicates failed (Model E has a single run per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
-  - *Settled by:* next run 1.
-- **HS3.1**
-  - *For:* Output tokens accounts for 58 % (-646–62 %) of the 1.5 s per-question difference in model time. Model E's reasoning share of output is 39 %, Model D's 38 %.
-  - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Model E and Model D have a single run per suite.; the share's 95 % interval includes zero.
-  - *Refuted if:* The decode-rate share is larger.
-  - *Share:* 58 % (95 % interval -646–62 %)
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model E and Model D have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-  - *Settled by:* check 2.
-- **HS3.2**
-  - *For:* Output tokens accounts for 55 % (54–56 %) of the 6.0 s per-question difference in model time. Model E's reasoning share of output is 39 %, Model A's 31 %.
-  - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Model E and Model A have a single run per suite.; the pair's null hypothesis stands.
-  - *Refuted if:* The decode-rate share is larger.
-  - *Share:* 55 % (95 % interval 54–56 %)
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model E and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-  - *Settled by:* check 3.
-- **HS3.3**
-  - *For:* Output tokens accounts for 55 % (53–56 %) of the 3.0 s per-question difference in model time. Model C's reasoning share of output is 36 %, Model A's 31 %.
-  - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Model C and Model A have a single run per suite.; the pair's null hypothesis stands.
-  - *Refuted if:* The decode-rate share is larger.
-  - *Share:* 55 % (95 % interval 53–56 %)
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model C and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-  - *Settled by:* check 4.
-- **HS3.4**
-  - *For:* Output tokens accounts for 55 % (35–127 %) of the 4.6 s per-question difference in model time. Model D's reasoning share of output is 38 %, Model A's 31 %.
-  - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Model D and Model A have a single run per suite.; the pair's null hypothesis stands.
-  - *Refuted if:* The decode-rate share is larger.
-  - *Share:* 55 % (95 % interval 35–127 %)
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model D and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-  - *Settled by:* check 5.
-- **HS3.5**
-  - *For:* Output tokens accounts for 53 % (-143–203 %) of the 1.6 s per-question difference in model time. Model B's reasoning share of output is 34 %, Model A's 31 %.
-  - *Against:* none recorded.
-  - *Grade reasons:* replicates failed: Model B and Model A have a single run per suite.; the share's 95 % interval includes zero.
-  - *Refuted if:* The decode-rate share is larger.
-  - *Share:* 53 % (95 % interval -143–203 %)
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model B and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-  - *Settled by:* check 6.
-- **WS2.1**
+- **WS2.1: output generation of Model A** (Model A; locus model; Ruled out (Not supported))
   - *For:* Output generation is 70 % (69–71 %) of model time per question.
   - *Against:* Reasoning is 31 % of Model A's output tokens.
   - *Grade reasons:* the rule's own test refutes it: reasoning is 31 % of Model A's output tokens.
   - *Refuted if:* The reasoning share is under one half.
-  - *Share:* 70 % (95 % interval 69–71 %)
   - *Robustness:* Replicates failed (Model A has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
-  - *Settled by:* next run 2.
-- **WS2.2**
+- **WS2.2: output generation of Model D** (Model D; locus model; Ruled out (Not supported))
   - *For:* Output generation is 66 % (65–67 %) of model time per question.
   - *Against:* Reasoning is 38 % of Model D's output tokens.
   - *Grade reasons:* the rule's own test refutes it: reasoning is 38 % of Model D's output tokens.
   - *Refuted if:* The reasoning share is under one half.
-  - *Share:* 66 % (95 % interval 65–67 %)
   - *Robustness:* Replicates failed (Model D has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
-  - *Settled by:* check 7.
-- **WS2.3**
+- **WS2.3: output generation of Model E** (Model E; locus model; Ruled out (Not supported))
   - *For:* Output generation is 65 % (64–66 %) of model time per question.
   - *Against:* Reasoning is 39 % of Model E's output tokens.
   - *Grade reasons:* the rule's own test refutes it: reasoning is 39 % of Model E's output tokens.
   - *Refuted if:* The reasoning share is under one half.
-  - *Share:* 65 % (95 % interval 64–66 %)
   - *Robustness:* Replicates failed (Model E has a single run per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
-  - *Settled by:* check 8.
 
-The strongest hypothesis in the table: Tool rounds multiply Model A's time (where its time goes, not a comparison). Its grade and the evidence against it stand beside it.
+| Hypothesis | Pair | Paired result | Grade |
+|---|---|---|---|
+| H0-S.1 | Model A vs Model B | 0.83 times as long, not established | Suggestive (Low) |
+| H0-S.2 | Model A vs Model C | 0.71 times as long, not established | Suggestive (Low) |
+| H0-S.3 | Model A vs Model D | 0.62 times as long, not established | Suggestive (Low) |
+| H0-S.4 | Model A vs Model E | 0.56 times as long, not established | Suggestive (Low) |
+| H0-S.5 | Model D vs Model E | 0.89 times as long, not established | Suggestive (Low) |
 
 ### Cost
 
-| Hypothesis | Statement | Models | Locus | Grade |
-|---|---|---|---|---|
-| H0-C.1 | The cost per question difference between Model A and Model B is within sampling noise. | Model A and Model B | — | Not supported |
-| H0-C.2 | The cost per question difference between Model A and Model C is within sampling noise. | Model A and Model C | — | Not supported |
-| H0-C.3 | The cost per question difference between Model A and Model D is within sampling noise. | Model A and Model D | — | Not supported |
-| H0-C.4 | The cost per question difference between Model A and Model E is within sampling noise. | Model A and Model E | — | Not supported |
-| H0-C.5 | The cost per question difference between Model D and Model E is within sampling noise. | Model D and Model E | — | Not supported |
-| HC2.1 | Model B costs more than Model A mainly from its price per token. | Model B and Model A | model | Moderate |
-| HC2.2 | Model C costs more than Model A mainly from its price per token. | Model C and Model A | model | Moderate |
-| HC2.3 | Model D costs more than Model A mainly from its price per token. | Model D and Model A | model | Moderate |
-| WC1.1 | Output (with reasoning) is Model A's largest cost component (where its cost goes, not a comparison). | Model A | model | Moderate |
-| HC2.4 | Model E costs more than Model A mainly from its price per token. | Model E and Model A | model | Moderate |
-| HC2.5 | Model E costs more than Model D mainly from its price per token. | Model E and Model D | model | Moderate |
-| WC1.2 | Output (with reasoning) is Model D's largest cost component (where its cost goes, not a comparison). | Model D | model | Moderate |
-| WC1.3 | Output (with reasoning) is Model E's largest cost component (where its cost goes, not a comparison). | Model E | model | Moderate |
-| HC4.1 | Weak prompt caching raises Model E's cost against Model D. | Model E and Model D | chat / provider | Not supported |
-| HC4.2 | Weak prompt caching raises Model E's cost against Model A. | Model E and Model A | chat / provider | Not supported |
-| HC4.3 | Weak prompt caching raises Model D's cost against Model A. | Model D and Model A | chat / provider | Not supported |
-| HC4.4 | Weak prompt caching raises Model C's cost against Model A. | Model C and Model A | chat / provider | Not supported |
-
-- **H0-C.1**
-  - *For:* none recorded.
-  - *Against:* No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).
-  - *Grade reasons:* the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).
-  - *Refuted if:* A paired test of the two on the cost per question is established after adjustment.
-- **H0-C.2**
-  - *For:* none recorded.
-  - *Against:* No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).
-  - *Grade reasons:* the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).
-  - *Refuted if:* A paired test of the two on the cost per question is established after adjustment.
-- **H0-C.3**
-  - *For:* none recorded.
-  - *Against:* No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).
-  - *Grade reasons:* the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).
-  - *Refuted if:* A paired test of the two on the cost per question is established after adjustment.
-- **H0-C.4**
-  - *For:* none recorded.
-  - *Against:* No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).
-  - *Grade reasons:* the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).
-  - *Refuted if:* A paired test of the two on the cost per question is established after adjustment.
-- **H0-C.5**
-  - *For:* none recorded.
-  - *Against:* No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).
-  - *Grade reasons:* the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).
-  - *Refuted if:* A paired test of the two on the cost per question is established after adjustment.
-- **HC2.1**
+- **HC2.1: higher price per token of Model B against Model A** (Model B and Model A; locus model; Probable (Moderate))
   - *For:* Price per token, all components accounts for 72 % (71–73 %) of the $0.0078 per-question cost difference.
   - *Against:* The volume effect is 28 % (27–29 %) of the difference.
   - *Grade reasons:* replicates failed: Model B and Model A have a single run per suite.
   - *Refuted if:* The volume effect is larger.
-  - *Share:* 72 % (95 % interval 71–73 %)
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model B and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC2.2**
+- **HC2.2: higher price per token of Model C against Model A** (Model C and Model A; locus model; Probable (Moderate))
   - *For:* Price per token, all components accounts for 71 % (70–71 %) of the $0.017 per-question cost difference.
   - *Against:* The volume effect is 29 % (29–30 %) of the difference.
   - *Grade reasons:* replicates failed: Model C and Model A have a single run per suite.
   - *Refuted if:* The volume effect is larger.
-  - *Share:* 71 % (95 % interval 70–71 %)
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model C and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC2.3**
+- **HC2.3: higher price per token of Model D against Model A** (Model D and Model A; locus model; Probable (Moderate))
   - *For:* Price per token, all components accounts for 70 % (69–70 %) of the $0.027 per-question cost difference.
   - *Against:* The volume effect is 30 % (30–31 %) of the difference.
   - *Grade reasons:* replicates failed: Model D and Model A have a single run per suite.
   - *Refuted if:* The volume effect is larger.
-  - *Share:* 70 % (95 % interval 69–70 %)
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model D and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **WC1.1**
+- **WC1.1: output cost of Model A** (Model A; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 69 % of Model A's cost per question.
   - *Against:* none recorded.
   - *Grade reasons:* replicates failed: Model A has a single run per suite.
   - *Refuted if:* Another component is larger.
-  - *Share:* 69 %
   - *Robustness:* Replicates failed (Model A has a single run per suite).
-- **HC2.4**
+- **HC2.4: higher price per token of Model E against Model A** (Model E and Model A; locus model; Probable (Moderate))
   - *For:* Price per token, all components accounts for 69 % (68–69 %) of the $0.038 per-question cost difference.
   - *Against:* The volume effect is 31 % (31–32 %) of the difference.
   - *Grade reasons:* replicates failed: Model E and Model A have a single run per suite.
   - *Refuted if:* The volume effect is larger.
-  - *Share:* 69 % (95 % interval 68–69 %)
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model E and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **HC2.5**
+- **HC2.5: higher price per token of Model E against Model D** (Model E and Model D; locus model; Probable (Moderate))
   - *For:* Price per token, all components accounts for 65 % (64–65 %) of the $0.011 per-question cost difference.
   - *Against:* The volume effect is 35 % (35–36 %) of the difference.
   - *Grade reasons:* replicates failed: Model E and Model D have a single run per suite.
   - *Refuted if:* The volume effect is larger.
-  - *Share:* 65 % (95 % interval 64–65 %)
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model E and Model D have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-- **WC1.2**
+- **WC1.2: output cost of Model D** (Model D; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 55 % of Model D's cost per question.
   - *Against:* none recorded.
   - *Grade reasons:* replicates failed: Model D has a single run per suite.
   - *Refuted if:* Another component is larger.
-  - *Share:* 55 %
   - *Robustness:* Replicates failed (Model D has a single run per suite).
-- **WC1.3**
+- **WC1.3: output cost of Model E** (Model E; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 54 % of Model E's cost per question.
   - *Against:* none recorded.
   - *Grade reasons:* replicates failed: Model E has a single run per suite.
   - *Refuted if:* Another component is larger.
-  - *Share:* 54 %
   - *Robustness:* Replicates failed (Model E has a single run per suite).
-- **HC4.1**
+- **HC4.1: weak prompt caching of Model E against Model D** (Model E and Model D; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 12 % (12–13 %) of the $0.011 per-question cost difference.
   - *Against:* Model E's cache-read share is 28 % against the models' median of 26 %.
   - *Grade reasons:* the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %.
   - *Refuted if:* The cache-read share is comparable to the other models'.
-  - *Share:* 12 % (95 % interval 12–13 %)
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model E and Model D have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-  - *Settled by:* next run 1.
-- **HC4.2**
+- **HC4.2: weak prompt caching of Model E against Model A** (Model E and Model A; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 9 % (9–9 %) of the $0.038 per-question cost difference.
   - *Against:* Model E's cache-read share is 28 % against the models' median of 26 %.
   - *Grade reasons:* the rule's own test refutes it: Model E's cache-read share is 28 % against the models' median of 26 %.
   - *Refuted if:* The cache-read share is comparable to the other models'.
-  - *Share:* 9 % (95 % interval 9–9 %)
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model E and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-  - *Settled by:* next run 1.
-- **HC4.3**
+- **HC4.3: weak prompt caching of Model D against Model A** (Model D and Model A; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 8 % (8–9 %) of the $0.027 per-question cost difference.
   - *Against:* Model D's cache-read share is 27 % against the models' median of 26 %.
   - *Grade reasons:* the rule's own test refutes it: Model D's cache-read share is 27 % against the models' median of 26 %.
   - *Refuted if:* The cache-read share is comparable to the other models'.
-  - *Share:* 8 % (95 % interval 8–9 %)
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model D and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-  - *Settled by:* next run 1.
-- **HC4.4**
+- **HC4.4: weak prompt caching of Model C against Model A** (Model C and Model A; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 8 % (7–8 %) of the $0.017 per-question cost difference.
   - *Against:* Model C's cache-read share is 26 % against the models' median of 26 %.
   - *Grade reasons:* the rule's own test refutes it: Model C's cache-read share is 26 % against the models' median of 26 %.
   - *Refuted if:* The cache-read share is comparable to the other models'.
-  - *Share:* 8 % (95 % interval 7–8 %)
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Model C and Model A have a single run per suite); Configuration passed (No configuration key differs beyond the model).
-  - *Settled by:* next run 1.
 
-The strongest hypothesis in the table: Model B costs more than Model A mainly from its price per token. Its grade and the evidence against it stand beside it.
-
-### The writer's hypotheses
-
-*Hypotheses the report writer added from the grader comments and excerpts. Code has not tested them, so their confidence is Low.*
-
-- **Intelligence · Low** (Model A; locus suite): Model A may have lost points to a rubric that asks for more than the question states.
-  - *For:* The grader comment on Q1 names a missing point.
-  - *Against:* Other models answered the same question well.
-  - *Refuted if:* A rubric check finds every point stated in the question.
-
-## Conclusions
-
-| Axis | Status | Best hypothesis | Why |
+| Hypothesis | Pair | Paired result | Grade |
 |---|---|---|---|
-| Intelligence | Not established | HQ3.1 | The best hypothesis, HQ3.1, is graded Low: qualitative only. |
-| Speed | Probable cause | WS3.1 | WS3.1 is the best hypothesis, graded Moderate: replicates failed: Model A has a single run per suite. |
-| Cost | Probable cause | HC2.1 | HC2.1 is the best hypothesis, graded Moderate: replicates failed: Model B and Model A have a single run per suite. |
+| H0-C.1 | Model A vs Model B | No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted). | Ruled out (Not supported) |
+| H0-C.2 | Model A vs Model C | No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted). | Ruled out (Not supported) |
+| H0-C.3 | Model A vs Model D | No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted). | Ruled out (Not supported) |
+| H0-C.4 | Model A vs Model E | No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted). | Ruled out (Not supported) |
+| H0-C.5 | Model D vs Model E | No family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted). | Ruled out (Not supported) |
 
-Intelligence: Not established. Speed: Probable cause. Cost: Probable cause.
+## Appendix D: Run settings
 
-## Next runs and checks
-
-Runs are listed in the order to make them: the Overseer chat first (C), then the benchmark (B), then model selection (M). Each one's settings are the launcher's, copied from the analyzed runs unless its kind changes them; a setting the runs did not share is left for you to choose.
+Each run's settings are the launcher's, copied from the analyzed runs unless its kind changes them; a setting the runs did not share is left for you to choose.
 
 ### Run 1: Replicate (M, model selection, recommended)
 
@@ -806,37 +785,21 @@ Runs are listed in the order to make them: the Overseer chat first (C), then the
 
 - The estimate for a model without analyzed runs is the analyzed models' mean.
 
-### Checks
+## Appendix E: Known facts
 
-1. Check the rubric of Q3 against the source, and whether the tools' corpus holds the facts the question needs. *(rubric; settles HQ3.1)*
-2. No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test HS3.1. *(configuration; settles HS3.1)*
-3. No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test HS3.2. *(configuration; settles HS3.2)*
-4. No configured, enabled Benchmark-role configuration of Model C exists at another thinking level; add one to test HS3.3. *(configuration; settles HS3.3)*
-5. No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test HS3.4. *(configuration; settles HS3.4)*
-6. No configured, enabled Benchmark-role configuration of Model B exists at another thinking level; add one to test HS3.5. *(configuration; settles HS3.5)*
-7. No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2. *(configuration; settles WS2.2)*
-8. No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test WS2.3. *(configuration; settles WS2.3)*
+1. Uncached input, price per token accounts for 45 % (44–46 %) of the per-question cost difference between Model A and Model B.
+2. Uncached input, price per token accounts for 44 % (43–45 %) of the per-question cost difference between Model A and Model C.
+3. Uncached input, price per token accounts for 43 % (42–44 %) of the per-question cost difference between Model A and Model D.
+4. Uncached input, price per token accounts for 42 % (42–43 %) of the per-question cost difference between Model A and Model E.
+5. Uncached input, price per token accounts for 39 % (38–39 %) of the per-question cost difference between Model D and Model E.
+6. Model A answered 2 of 6 scored questions without a tool call.
+7. Model B answered 2 of 6 scored questions without a tool call.
+8. Model C answered 2 of 6 scored questions without a tool call.
+9. Model C has 1 critical error in 6 scored answers.
+10. Model D answered 2 of 6 scored questions without a tool call.
+11. Model E answered 2 of 6 scored questions without a tool call.
 
-The runs are ordered chat first, then the benchmark, then model selection.
-
-## Limitations
-
-- The benchmark asks single-turn questions; live chat carries the conversation before each question.
-- It runs without the wiki text that live chat always gives the model before it answers, so a reading about retrieval or tool routing was measured under a condition live chat does not share.
-- Spoiler-free mode, web search and subagents are off, and one combination of the chat's options is graded; a cause found here holds for that configuration only.
-- The hypotheses come from a fixed rule table over these runs; points at risk are upper bounds, and a decomposition rests on the questions both sides have figures for. The writer's own hypotheses are qualitative.
-- Costs are priced at today's catalog cards, as the comparison prices them.
-
-The benchmark asks single questions, so longer conversations are not measured.
-
-## Threats to validity
-
-- The benchmark asks single-turn questions under one chat configuration. It does not exercise conversation history, pre-injected wiki context, spoiler-free mode, web search or subagents.
-- Intervals: Item sampling only.
-- The graders are AI models. Each grader's provider relation to the models is stated under Setup and method; a grader from a model's own provider may read that model more favorably.
-- Paired tests: each measure's family is Holm-adjusted across the tests it makes over these models only.
-
-## Reproducibility appendix
+## Appendix F: Reproducibility
 
 - **Model A**: run ids 31; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
 - **Model B**: run ids 32; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
@@ -847,7 +810,7 @@ The benchmark asks single questions, so longer conversations are not measured.
 - **Comparability signature:** `sig-7f3a91`
 - **Pricing basis:** Catalog prices on 2026-09-21
 
-## Question details
+## Appendix G: Question details
 
 *Each answer shown is one the writer was given as an excerpt; the excerpts were chosen for the questions with critical errors or refuted sentences first, then the widest spread between models, then those every model scored low.*
 
@@ -1011,6 +974,98 @@ The benchmark asks single questions, so longer conversations are not measured.
 **Claim verifier:**
 
 - No claims were checked.
+
+### Q4
+
+**Question:**
+
+> Question 204
+
+**Rubric:**
+
+> - Rubric 204
+
+#### Model A, run 31
+
+**Answer:**
+
+> Answer 204
+
+**Graders:**
+
+- **Assessor (Gemini 3.8 Flash):** score 90.
+
+**Claim verifier:**
+
+- No claims were checked.
+
+#### Model B, run 32
+
+**Answer:**
+
+> Answer 204
+
+**Graders:**
+
+- **Assessor (Gemini 3.8 Flash):** score 75.
+
+**Claim verifier:**
+
+- No claims were checked.
+
+#### Model C, run 33
+
+**Answer:**
+
+> Answer 204
+
+**Graders:**
+
+- **Assessor (Gemini 3.8 Flash):** score 65.
+
+**Claim verifier:**
+
+- No claims were checked.
+
+#### Model D, run 34
+
+**Answer:**
+
+> Answer 204
+
+**Graders:**
+
+- **Assessor (Gemini 3.8 Flash):** score 72.
+
+**Claim verifier:**
+
+- No claims were checked.
+
+#### Model E, run 35
+
+**Answer:**
+
+> Answer 204
+
+**Graders:**
+
+- **Assessor (Gemini 3.8 Flash):** score 52.
+
+**Claim verifier:**
+
+- No claims were checked.
+
+## Appendix H: Glossary
+
+- **95 % interval:** a range built so that, if the questions were sampled again and again, 95 of 100 such ranges would hold the true value. When two models' intervals overlap, the intervals alone do not say which is higher.
+- **Paired test:** a comparison of two models question by question, on the questions both answered, so that how hard each question is counts the same for both.
+- **Holm adjustment:** testing many pairs at once turns up some differences by chance. The Holm adjustment raises each p-value so that the whole family of tests keeps a 5 % chance of a false finding; a result is established when its adjusted p-value is below 0.05.
+- **Null hypothesis:** the statement that a difference is within sampling noise. It stands until a paired test, or without one a bootstrap interval that excludes zero, rejects it; a null that stands is not proof that the two are equal.
+- **Grade words:** Established (High) is measured, established after adjustment, robust and replicated; Probable (Moderate) misses one of those conditions; Suggestive (Low) is qualitative, misses two or more, or may be noise; Ruled out (Not supported) is refuted by its own rule's test.
+- **Points at risk:** the index points a model lost on its answers below its own median answer, each answer counted once under its first signal (no tool call, a defect, a critical error). An upper bound of what each signal costs, not an estimate of its effect.
+- **Decomposition share:** the part of a speed or cost difference one component accounts for; the parts sum exactly to the difference. A share can pass 100 % when two components pull in opposite directions: if the difference is 2 s, one component adding 3 s and another taking 1 s back are 150 % and −50 %. Over few questions or a small difference, a share's interval can be very wide.
+- **Isolated miss:** a question a model scored 50 or less on while the other models' median was 75 or more.
+- **Joint rank:** two models share a rank when their 95 % intervals overlap.
 
 ## Fact sheet
 
@@ -5364,6 +5419,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "unavailableReason": "No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown."
     },
     {
+      "available": false,
+      "display": "not available",
+      "key": "pair.A.B.cost.short",
+      "unavailableReason": "No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown."
+    },
+    {
       "available": true,
       "display": "no Accuracy difference established after the Holm adjustment across 10 tests (adjusted p 0.813)",
       "key": "pair.A.B.dimension.accuracy.allPairs",
@@ -5442,6 +5503,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "0.0 points, not established",
+      "key": "pair.A.B.quality.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "6 questions",
       "key": "pair.A.B.sharedQuestions",
       "value": 6
@@ -5466,6 +5533,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "0.83 times as long, not established",
+      "key": "pair.A.B.speed.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "provider and model",
       "key": "pair.A.C.configDifferences",
       "value": 2
@@ -5486,6 +5559,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": false,
       "display": "not available",
       "key": "pair.A.C.cost.reference",
+      "unavailableReason": "No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "pair.A.C.cost.short",
       "unavailableReason": "No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown."
     },
     {
@@ -5567,6 +5646,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "+15.2 points, not established",
+      "key": "pair.A.C.quality.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "6 questions",
       "key": "pair.A.C.sharedQuestions",
       "value": 6
@@ -5591,6 +5676,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "0.71 times as long, not established",
+      "key": "pair.A.C.speed.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "provider and model",
       "key": "pair.A.D.configDifferences",
       "value": 2
@@ -5611,6 +5702,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": false,
       "display": "not available",
       "key": "pair.A.D.cost.reference",
+      "unavailableReason": "No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "pair.A.D.cost.short",
       "unavailableReason": "No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown."
     },
     {
@@ -5692,6 +5789,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "+15.8 points, not established",
+      "key": "pair.A.D.quality.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "6 questions",
       "key": "pair.A.D.sharedQuestions",
       "value": 6
@@ -5716,6 +5819,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "0.62 times as long, not established",
+      "key": "pair.A.D.speed.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "provider and model",
       "key": "pair.A.E.configDifferences",
       "value": 2
@@ -5736,6 +5845,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": false,
       "display": "not available",
       "key": "pair.A.E.cost.reference",
+      "unavailableReason": "No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "pair.A.E.cost.short",
       "unavailableReason": "No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown."
     },
     {
@@ -5817,6 +5932,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "+30.0 points, not established",
+      "key": "pair.A.E.quality.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "6 questions",
       "key": "pair.A.E.sharedQuestions",
       "value": 6
@@ -5840,6 +5961,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "value": false
     },
     {
+      "available": true,
+      "display": "0.56 times as long, not established",
+      "key": "pair.A.E.speed.short",
+      "value": false
+    },
+    {
       "available": false,
       "display": "not available",
       "key": "pair.B.C.cost.allPairs",
@@ -5849,6 +5976,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": false,
       "display": "not available",
       "key": "pair.B.C.cost.ratio",
+      "unavailableReason": "No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "pair.B.C.cost.short",
       "unavailableReason": "No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown."
     },
     {
@@ -5900,6 +6033,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "+15.2 points, not established",
+      "key": "pair.B.C.quality.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "6 questions",
       "key": "pair.B.C.sharedQuestions",
       "value": 6
@@ -5917,6 +6056,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "value": 0.8571412636633363
     },
     {
+      "available": true,
+      "display": "0.86 times as long, not established",
+      "key": "pair.B.C.speed.short",
+      "value": false
+    },
+    {
       "available": false,
       "display": "not available",
       "key": "pair.B.D.cost.allPairs",
@@ -5926,6 +6071,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": false,
       "display": "not available",
       "key": "pair.B.D.cost.ratio",
+      "unavailableReason": "No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "pair.B.D.cost.short",
       "unavailableReason": "No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown."
     },
     {
@@ -5977,6 +6128,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "+15.8 points, not established",
+      "key": "pair.B.D.quality.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "6 questions",
       "key": "pair.B.D.sharedQuestions",
       "value": 6
@@ -5994,6 +6151,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "value": 0.7499073528471929
     },
     {
+      "available": true,
+      "display": "0.75 times as long, not established",
+      "key": "pair.B.D.speed.short",
+      "value": false
+    },
+    {
       "available": false,
       "display": "not available",
       "key": "pair.B.E.cost.allPairs",
@@ -6003,6 +6166,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": false,
       "display": "not available",
       "key": "pair.B.E.cost.ratio",
+      "unavailableReason": "No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "pair.B.E.cost.short",
       "unavailableReason": "No candidate price card was resolved for run #32 of Model B on this pricing basis, so its cost is unknown."
     },
     {
@@ -6054,6 +6223,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "+30.0 points, not established",
+      "key": "pair.B.E.quality.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "6 questions",
       "key": "pair.B.E.sharedQuestions",
       "value": 6
@@ -6071,6 +6246,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "value": 0.6666111334212095
     },
     {
+      "available": true,
+      "display": "0.67 times as long, not established",
+      "key": "pair.B.E.speed.short",
+      "value": false
+    },
+    {
       "available": false,
       "display": "not available",
       "key": "pair.C.D.cost.allPairs",
@@ -6080,6 +6261,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": false,
       "display": "not available",
       "key": "pair.C.D.cost.ratio",
+      "unavailableReason": "No candidate price card was resolved for run #33 of Model C on this pricing basis, so its cost is unknown."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "pair.C.D.cost.short",
       "unavailableReason": "No candidate price card was resolved for run #33 of Model C on this pricing basis, so its cost is unknown."
     },
     {
@@ -6131,6 +6318,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "+0.7 points, not established",
+      "key": "pair.C.D.quality.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "6 questions",
       "key": "pair.C.D.sharedQuestions",
       "value": 6
@@ -6148,6 +6341,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "value": 0.8748935381341502
     },
     {
+      "available": true,
+      "display": "0.87 times as long, not established",
+      "key": "pair.C.D.speed.short",
+      "value": false
+    },
+    {
       "available": false,
       "display": "not available",
       "key": "pair.C.E.cost.allPairs",
@@ -6157,6 +6356,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": false,
       "display": "not available",
       "key": "pair.C.E.cost.ratio",
+      "unavailableReason": "No candidate price card was resolved for run #33 of Model C on this pricing basis, so its cost is unknown."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "pair.C.E.cost.short",
       "unavailableReason": "No candidate price card was resolved for run #33 of Model C on this pricing basis, so its cost is unknown."
     },
     {
@@ -6208,6 +6413,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "+14.8 points, not established",
+      "key": "pair.C.E.quality.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "6 questions",
       "key": "pair.C.E.sharedQuestions",
       "value": 6
@@ -6226,6 +6437,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "0.78 times as long, not established",
+      "key": "pair.C.E.speed.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "provider and model",
       "key": "pair.D.E.configDifferences",
       "value": 2
@@ -6240,6 +6457,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": false,
       "display": "not available",
       "key": "pair.D.E.cost.ratio",
+      "unavailableReason": "No candidate price card was resolved for run #34 of Model D on this pricing basis, so its cost is unknown."
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "pair.D.E.cost.short",
       "unavailableReason": "No candidate price card was resolved for run #34 of Model D on this pricing basis, so its cost is unknown."
     },
     {
@@ -6291,6 +6514,12 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "+14.2 points, not established",
+      "key": "pair.D.E.quality.short",
+      "value": false
+    },
+    {
+      "available": true,
       "display": "6 questions",
       "key": "pair.D.E.sharedQuestions",
       "value": 6
@@ -6306,6 +6535,12 @@ The benchmark asks single questions, so longer conversations are not measured.
       "display": "Model D took 0.89 times as long as Model E on the same questions (0.56 to 1.41)",
       "key": "pair.D.E.speed.ratio",
       "value": 0.8889246530124949
+    },
+    {
+      "available": true,
+      "display": "0.89 times as long, not established",
+      "key": "pair.D.E.speed.short",
+      "value": false
     },
     {
       "available": true,
@@ -6518,38 +6753,13 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
-      "display": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test HS3.1.",
+      "display": "No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2.",
       "key": "rca.check.2"
     },
     {
       "available": true,
-      "display": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test HS3.2.",
-      "key": "rca.check.3"
-    },
-    {
-      "available": true,
-      "display": "No configured, enabled Benchmark-role configuration of Model C exists at another thinking level; add one to test HS3.3.",
-      "key": "rca.check.4"
-    },
-    {
-      "available": true,
-      "display": "No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test HS3.4.",
-      "key": "rca.check.5"
-    },
-    {
-      "available": true,
-      "display": "No configured, enabled Benchmark-role configuration of Model B exists at another thinking level; add one to test HS3.5.",
-      "key": "rca.check.6"
-    },
-    {
-      "available": true,
-      "display": "No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2.",
-      "key": "rca.check.7"
-    },
-    {
-      "available": true,
       "display": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test WS2.3.",
-      "key": "rca.check.8"
+      "key": "rca.check.3"
     },
     {
       "available": true,
@@ -7269,6 +7479,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "no cost difference between Model A and Model B",
+      "key": "rca.hypothesis.H0-C.1.label"
+    },
+    {
+      "available": true,
       "display": "—",
       "key": "rca.hypothesis.H0-C.1.locus"
     },
@@ -7312,6 +7527,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
       "key": "rca.hypothesis.H0-C.2.gradeReasons"
+    },
+    {
+      "available": true,
+      "display": "no cost difference between Model A and Model C",
+      "key": "rca.hypothesis.H0-C.2.label"
     },
     {
       "available": true,
@@ -7361,6 +7581,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "no cost difference between Model A and Model D",
+      "key": "rca.hypothesis.H0-C.3.label"
+    },
+    {
+      "available": true,
       "display": "—",
       "key": "rca.hypothesis.H0-C.3.locus"
     },
@@ -7404,6 +7629,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "the rule's own test refutes it: no family test exists; the 95 % bootstrap interval of the per-question difference excludes zero (unadjusted).",
       "key": "rca.hypothesis.H0-C.4.gradeReasons"
+    },
+    {
+      "available": true,
+      "display": "no cost difference between Model A and Model E",
+      "key": "rca.hypothesis.H0-C.4.label"
     },
     {
       "available": true,
@@ -7453,6 +7683,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "no cost difference between Model D and Model E",
+      "key": "rca.hypothesis.H0-C.5.label"
+    },
+    {
+      "available": true,
       "display": "—",
       "key": "rca.hypothesis.H0-C.5.locus"
     },
@@ -7496,6 +7731,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "capped at Low: a single run per suite gives the tests little power",
       "key": "rca.hypothesis.H0-Q.1.gradeReasons"
+    },
+    {
+      "available": true,
+      "display": "no intelligence difference between Model A and Model B",
+      "key": "rca.hypothesis.H0-Q.1.label"
     },
     {
       "available": true,
@@ -7545,6 +7785,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "no intelligence difference between Model A and Model C",
+      "key": "rca.hypothesis.H0-Q.2.label"
+    },
+    {
+      "available": true,
       "display": "—",
       "key": "rca.hypothesis.H0-Q.2.locus"
     },
@@ -7588,6 +7833,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "capped at Low: a single run per suite gives the tests little power",
       "key": "rca.hypothesis.H0-Q.3.gradeReasons"
+    },
+    {
+      "available": true,
+      "display": "no intelligence difference between Model A and Model D",
+      "key": "rca.hypothesis.H0-Q.3.label"
     },
     {
       "available": true,
@@ -7637,6 +7887,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "no intelligence difference between Model A and Model E",
+      "key": "rca.hypothesis.H0-Q.4.label"
+    },
+    {
+      "available": true,
       "display": "—",
       "key": "rca.hypothesis.H0-Q.4.locus"
     },
@@ -7680,6 +7935,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "capped at Low: a single run per suite gives the tests little power",
       "key": "rca.hypothesis.H0-Q.5.gradeReasons"
+    },
+    {
+      "available": true,
+      "display": "no intelligence difference between Model D and Model E",
+      "key": "rca.hypothesis.H0-Q.5.label"
     },
     {
       "available": true,
@@ -7729,6 +7989,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "no speed difference between Model A and Model B",
+      "key": "rca.hypothesis.H0-S.1.label"
+    },
+    {
+      "available": true,
       "display": "—",
       "key": "rca.hypothesis.H0-S.1.locus"
     },
@@ -7772,6 +8037,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "capped at Low: a single run per suite gives the tests little power",
       "key": "rca.hypothesis.H0-S.2.gradeReasons"
+    },
+    {
+      "available": true,
+      "display": "no speed difference between Model A and Model C",
+      "key": "rca.hypothesis.H0-S.2.label"
     },
     {
       "available": true,
@@ -7821,6 +8091,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "no speed difference between Model A and Model D",
+      "key": "rca.hypothesis.H0-S.3.label"
+    },
+    {
+      "available": true,
       "display": "—",
       "key": "rca.hypothesis.H0-S.3.locus"
     },
@@ -7864,6 +8139,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "capped at Low: a single run per suite gives the tests little power",
       "key": "rca.hypothesis.H0-S.4.gradeReasons"
+    },
+    {
+      "available": true,
+      "display": "no speed difference between Model A and Model E",
+      "key": "rca.hypothesis.H0-S.4.label"
     },
     {
       "available": true,
@@ -7913,6 +8193,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "no speed difference between Model D and Model E",
+      "key": "rca.hypothesis.H0-S.5.label"
+    },
+    {
+      "available": true,
       "display": "—",
       "key": "rca.hypothesis.H0-S.5.locus"
     },
@@ -7959,6 +8244,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "no contrast within Model A's own questions",
+      "key": "rca.hypothesis.H0-W.1.label"
+    },
+    {
+      "available": true,
       "display": "—",
       "key": "rca.hypothesis.H0-W.1.locus"
     },
@@ -8002,6 +8292,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "capped at Low: a single run per suite gives the contrasts little power",
       "key": "rca.hypothesis.H0-W.2.gradeReasons"
+    },
+    {
+      "available": true,
+      "display": "no contrast within Model E's own questions",
+      "key": "rca.hypothesis.H0-W.2.label"
     },
     {
       "available": true,
@@ -8053,6 +8348,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "71–73 %",
       "key": "rca.hypothesis.HC2.1.interval"
+    },
+    {
+      "available": true,
+      "display": "higher price per token of Model B against Model A",
+      "key": "rca.hypothesis.HC2.1.label"
     },
     {
       "available": true,
@@ -8113,6 +8413,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "higher price per token of Model C against Model A",
+      "key": "rca.hypothesis.HC2.2.label"
+    },
+    {
+      "available": true,
       "display": "model",
       "key": "rca.hypothesis.HC2.2.locus"
     },
@@ -8167,6 +8472,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "69–70 %",
       "key": "rca.hypothesis.HC2.3.interval"
+    },
+    {
+      "available": true,
+      "display": "higher price per token of Model D against Model A",
+      "key": "rca.hypothesis.HC2.3.label"
     },
     {
       "available": true,
@@ -8227,6 +8537,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "higher price per token of Model E against Model A",
+      "key": "rca.hypothesis.HC2.4.label"
+    },
+    {
+      "available": true,
       "display": "model",
       "key": "rca.hypothesis.HC2.4.locus"
     },
@@ -8284,6 +8599,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "higher price per token of Model E against Model D",
+      "key": "rca.hypothesis.HC2.5.label"
+    },
+    {
+      "available": true,
       "display": "model",
       "key": "rca.hypothesis.HC2.5.locus"
     },
@@ -8338,6 +8658,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "12–13 %",
       "key": "rca.hypothesis.HC4.1.interval"
+    },
+    {
+      "available": true,
+      "display": "weak prompt caching of Model E against Model D",
+      "key": "rca.hypothesis.HC4.1.label"
     },
     {
       "available": true,
@@ -8404,6 +8729,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "weak prompt caching of Model E against Model A",
+      "key": "rca.hypothesis.HC4.2.label"
+    },
+    {
+      "available": true,
       "display": "chat / provider",
       "key": "rca.hypothesis.HC4.2.locus"
     },
@@ -8467,6 +8797,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "weak prompt caching of Model D against Model A",
+      "key": "rca.hypothesis.HC4.3.label"
+    },
+    {
+      "available": true,
       "display": "chat / provider",
       "key": "rca.hypothesis.HC4.3.locus"
     },
@@ -8527,6 +8862,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "7–8 %",
       "key": "rca.hypothesis.HC4.4.interval"
+    },
+    {
+      "available": true,
+      "display": "weak prompt caching of Model C against Model A",
+      "key": "rca.hypothesis.HC4.4.label"
     },
     {
       "available": true,
@@ -8594,6 +8934,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "shared failures on the same questions",
+      "key": "rca.hypothesis.HQ3.1.label"
+    },
+    {
+      "available": true,
       "display": "suite / corpus / chat",
       "key": "rca.hypothesis.HQ3.1.locus"
     },
@@ -8611,321 +8956,6 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "Shared failures on specific questions point to the instrument, not the models.",
       "key": "rca.hypothesis.HQ3.1.statement"
-    },
-    {
-      "available": true,
-      "display": "none recorded",
-      "key": "rca.hypothesis.HS3.1.against"
-    },
-    {
-      "available": true,
-      "display": "Speed",
-      "key": "rca.hypothesis.HS3.1.axis"
-    },
-    {
-      "available": true,
-      "display": "check 2",
-      "key": "rca.hypothesis.HS3.1.check",
-      "value": 2
-    },
-    {
-      "available": true,
-      "display": "Output tokens accounts for 58 % (-646–62 %) of the 1.5 s per-question difference in model time. Model E's reasoning share of output is 39 %, Model D's 38 %.",
-      "key": "rca.hypothesis.HS3.1.for"
-    },
-    {
-      "available": true,
-      "display": "Low",
-      "key": "rca.hypothesis.HS3.1.grade",
-      "value": "Low"
-    },
-    {
-      "available": true,
-      "display": "replicates failed: Model E and Model D have a single run per suite.; the share's 95 % interval includes zero",
-      "key": "rca.hypothesis.HS3.1.gradeReasons"
-    },
-    {
-      "available": true,
-      "display": "-646–62 %",
-      "key": "rca.hypothesis.HS3.1.interval"
-    },
-    {
-      "available": true,
-      "display": "model",
-      "key": "rca.hypothesis.HS3.1.locus"
-    },
-    {
-      "available": true,
-      "display": "Model E and Model D",
-      "key": "rca.hypothesis.HS3.1.models"
-    },
-    {
-      "available": true,
-      "display": "The decode-rate share is larger.",
-      "key": "rca.hypothesis.HS3.1.refutedIf"
-    },
-    {
-      "available": true,
-      "display": "58 %",
-      "key": "rca.hypothesis.HS3.1.share",
-      "value": 0.5777970237100366
-    },
-    {
-      "available": true,
-      "display": "Model E is slower than Model D mainly from more output (reasoning) tokens.",
-      "key": "rca.hypothesis.HS3.1.statement"
-    },
-    {
-      "available": true,
-      "display": "none recorded",
-      "key": "rca.hypothesis.HS3.2.against"
-    },
-    {
-      "available": true,
-      "display": "Speed",
-      "key": "rca.hypothesis.HS3.2.axis"
-    },
-    {
-      "available": true,
-      "display": "check 3",
-      "key": "rca.hypothesis.HS3.2.check",
-      "value": 3
-    },
-    {
-      "available": true,
-      "display": "Output tokens accounts for 55 % (54–56 %) of the 6.0 s per-question difference in model time. Model E's reasoning share of output is 39 %, Model A's 31 %.",
-      "key": "rca.hypothesis.HS3.2.for"
-    },
-    {
-      "available": true,
-      "display": "Low",
-      "key": "rca.hypothesis.HS3.2.grade",
-      "value": "Low"
-    },
-    {
-      "available": true,
-      "display": "replicates failed: Model E and Model A have a single run per suite.; the pair's null hypothesis stands",
-      "key": "rca.hypothesis.HS3.2.gradeReasons"
-    },
-    {
-      "available": true,
-      "display": "54–56 %",
-      "key": "rca.hypothesis.HS3.2.interval"
-    },
-    {
-      "available": true,
-      "display": "model",
-      "key": "rca.hypothesis.HS3.2.locus"
-    },
-    {
-      "available": true,
-      "display": "Model E and Model A",
-      "key": "rca.hypothesis.HS3.2.models"
-    },
-    {
-      "available": true,
-      "display": "The decode-rate share is larger.",
-      "key": "rca.hypothesis.HS3.2.refutedIf"
-    },
-    {
-      "available": true,
-      "display": "55 %",
-      "key": "rca.hypothesis.HS3.2.share",
-      "value": 0.5511151205368906
-    },
-    {
-      "available": true,
-      "display": "Model E is slower than Model A mainly from more output (reasoning) tokens.",
-      "key": "rca.hypothesis.HS3.2.statement"
-    },
-    {
-      "available": true,
-      "display": "none recorded",
-      "key": "rca.hypothesis.HS3.3.against"
-    },
-    {
-      "available": true,
-      "display": "Speed",
-      "key": "rca.hypothesis.HS3.3.axis"
-    },
-    {
-      "available": true,
-      "display": "check 4",
-      "key": "rca.hypothesis.HS3.3.check",
-      "value": 4
-    },
-    {
-      "available": true,
-      "display": "Output tokens accounts for 55 % (53–56 %) of the 3.0 s per-question difference in model time. Model C's reasoning share of output is 36 %, Model A's 31 %.",
-      "key": "rca.hypothesis.HS3.3.for"
-    },
-    {
-      "available": true,
-      "display": "Low",
-      "key": "rca.hypothesis.HS3.3.grade",
-      "value": "Low"
-    },
-    {
-      "available": true,
-      "display": "replicates failed: Model C and Model A have a single run per suite.; the pair's null hypothesis stands",
-      "key": "rca.hypothesis.HS3.3.gradeReasons"
-    },
-    {
-      "available": true,
-      "display": "53–56 %",
-      "key": "rca.hypothesis.HS3.3.interval"
-    },
-    {
-      "available": true,
-      "display": "model",
-      "key": "rca.hypothesis.HS3.3.locus"
-    },
-    {
-      "available": true,
-      "display": "Model C and Model A",
-      "key": "rca.hypothesis.HS3.3.models"
-    },
-    {
-      "available": true,
-      "display": "The decode-rate share is larger.",
-      "key": "rca.hypothesis.HS3.3.refutedIf"
-    },
-    {
-      "available": true,
-      "display": "55 %",
-      "key": "rca.hypothesis.HS3.3.share",
-      "value": 0.5477737497394417
-    },
-    {
-      "available": true,
-      "display": "Model C is slower than Model A mainly from more output (reasoning) tokens.",
-      "key": "rca.hypothesis.HS3.3.statement"
-    },
-    {
-      "available": true,
-      "display": "none recorded",
-      "key": "rca.hypothesis.HS3.4.against"
-    },
-    {
-      "available": true,
-      "display": "Speed",
-      "key": "rca.hypothesis.HS3.4.axis"
-    },
-    {
-      "available": true,
-      "display": "check 5",
-      "key": "rca.hypothesis.HS3.4.check",
-      "value": 5
-    },
-    {
-      "available": true,
-      "display": "Output tokens accounts for 55 % (35–127 %) of the 4.6 s per-question difference in model time. Model D's reasoning share of output is 38 %, Model A's 31 %.",
-      "key": "rca.hypothesis.HS3.4.for"
-    },
-    {
-      "available": true,
-      "display": "Low",
-      "key": "rca.hypothesis.HS3.4.grade",
-      "value": "Low"
-    },
-    {
-      "available": true,
-      "display": "replicates failed: Model D and Model A have a single run per suite.; the pair's null hypothesis stands",
-      "key": "rca.hypothesis.HS3.4.gradeReasons"
-    },
-    {
-      "available": true,
-      "display": "35–127 %",
-      "key": "rca.hypothesis.HS3.4.interval"
-    },
-    {
-      "available": true,
-      "display": "model",
-      "key": "rca.hypothesis.HS3.4.locus"
-    },
-    {
-      "available": true,
-      "display": "Model D and Model A",
-      "key": "rca.hypothesis.HS3.4.models"
-    },
-    {
-      "available": true,
-      "display": "The decode-rate share is larger.",
-      "key": "rca.hypothesis.HS3.4.refutedIf"
-    },
-    {
-      "available": true,
-      "display": "55 %",
-      "key": "rca.hypothesis.HS3.4.share",
-      "value": 0.5452041367539779
-    },
-    {
-      "available": true,
-      "display": "Model D is slower than Model A mainly from more output (reasoning) tokens.",
-      "key": "rca.hypothesis.HS3.4.statement"
-    },
-    {
-      "available": true,
-      "display": "none recorded",
-      "key": "rca.hypothesis.HS3.5.against"
-    },
-    {
-      "available": true,
-      "display": "Speed",
-      "key": "rca.hypothesis.HS3.5.axis"
-    },
-    {
-      "available": true,
-      "display": "check 6",
-      "key": "rca.hypothesis.HS3.5.check",
-      "value": 6
-    },
-    {
-      "available": true,
-      "display": "Output tokens accounts for 53 % (-143–203 %) of the 1.6 s per-question difference in model time. Model B's reasoning share of output is 34 %, Model A's 31 %.",
-      "key": "rca.hypothesis.HS3.5.for"
-    },
-    {
-      "available": true,
-      "display": "Low",
-      "key": "rca.hypothesis.HS3.5.grade",
-      "value": "Low"
-    },
-    {
-      "available": true,
-      "display": "replicates failed: Model B and Model A have a single run per suite.; the share's 95 % interval includes zero",
-      "key": "rca.hypothesis.HS3.5.gradeReasons"
-    },
-    {
-      "available": true,
-      "display": "-143–203 %",
-      "key": "rca.hypothesis.HS3.5.interval"
-    },
-    {
-      "available": true,
-      "display": "model",
-      "key": "rca.hypothesis.HS3.5.locus"
-    },
-    {
-      "available": true,
-      "display": "Model B and Model A",
-      "key": "rca.hypothesis.HS3.5.models"
-    },
-    {
-      "available": true,
-      "display": "The decode-rate share is larger.",
-      "key": "rca.hypothesis.HS3.5.refutedIf"
-    },
-    {
-      "available": true,
-      "display": "53 %",
-      "key": "rca.hypothesis.HS3.5.share",
-      "value": 0.5299426617583792
-    },
-    {
-      "available": true,
-      "display": "Model B is slower than Model A mainly from more output (reasoning) tokens.",
-      "key": "rca.hypothesis.HS3.5.statement"
     },
     {
       "available": true,
@@ -8952,6 +8982,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "replicates failed: Model A has a single run per suite.",
       "key": "rca.hypothesis.WC1.1.gradeReasons"
+    },
+    {
+      "available": true,
+      "display": "output cost of Model A",
+      "key": "rca.hypothesis.WC1.1.label"
     },
     {
       "available": true,
@@ -9007,6 +9042,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "output cost of Model D",
+      "key": "rca.hypothesis.WC1.2.label"
+    },
+    {
+      "available": true,
       "display": "model",
       "key": "rca.hypothesis.WC1.2.locus"
     },
@@ -9056,6 +9096,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "replicates failed: Model E has a single run per suite.",
       "key": "rca.hypothesis.WC1.3.gradeReasons"
+    },
+    {
+      "available": true,
+      "display": "output cost of Model E",
+      "key": "rca.hypothesis.WC1.3.label"
     },
     {
       "available": true,
@@ -9116,6 +9161,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "output generation of Model A",
+      "key": "rca.hypothesis.WS2.1.label"
+    },
+    {
+      "available": true,
       "display": "model",
       "key": "rca.hypothesis.WS2.1.locus"
     },
@@ -9158,9 +9208,9 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
-      "display": "check 7",
+      "display": "check 2",
       "key": "rca.hypothesis.WS2.2.check",
-      "value": 7
+      "value": 2
     },
     {
       "available": true,
@@ -9182,6 +9232,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "65–67 %",
       "key": "rca.hypothesis.WS2.2.interval"
+    },
+    {
+      "available": true,
+      "display": "output generation of Model D",
+      "key": "rca.hypothesis.WS2.2.label"
     },
     {
       "available": true,
@@ -9221,9 +9276,9 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
-      "display": "check 8",
+      "display": "check 3",
       "key": "rca.hypothesis.WS2.3.check",
-      "value": 8
+      "value": 3
     },
     {
       "available": true,
@@ -9245,6 +9300,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "64–66 %",
       "key": "rca.hypothesis.WS2.3.interval"
+    },
+    {
+      "available": true,
+      "display": "output generation of Model E",
+      "key": "rca.hypothesis.WS2.3.label"
     },
     {
       "available": true,
@@ -9300,6 +9360,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "tool rounds in the time of Model A",
+      "key": "rca.hypothesis.WS3.1.label"
+    },
+    {
+      "available": true,
       "display": "model / chat",
       "key": "rca.hypothesis.WS3.1.locus"
     },
@@ -9349,6 +9414,11 @@ The benchmark asks single questions, so longer conversations are not measured.
       "available": true,
       "display": "replicates failed: Model D has a single run per suite.",
       "key": "rca.hypothesis.WS3.2.gradeReasons"
+    },
+    {
+      "available": true,
+      "display": "tool rounds in the time of Model D",
+      "key": "rca.hypothesis.WS3.2.label"
     },
     {
       "available": true,
@@ -9404,6 +9474,11 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
+      "display": "tool rounds in the time of Model E",
+      "key": "rca.hypothesis.WS3.3.label"
+    },
+    {
+      "available": true,
       "display": "model / chat",
       "key": "rca.hypothesis.WS3.3.locus"
     },
@@ -9430,78 +9505,183 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
-      "display": "Output tokens accounts for 55 % (53–56 %) of the per-question time difference between Model A and Model C.",
+      "display": "Uncached input, price per token accounts for 45 % (44–46 %) of the per-question cost difference between Model A and Model B.",
       "key": "rca.known.1"
     },
     {
       "available": true,
-      "display": "Model B answered 2 of 6 scored questions without a tool call.",
+      "display": "Model D answered 2 of 6 scored questions without a tool call.",
       "key": "rca.known.10"
     },
     {
       "available": true,
-      "display": "Model C answered 2 of 6 scored questions without a tool call.",
+      "display": "Model E answered 2 of 6 scored questions without a tool call.",
       "key": "rca.known.11"
     },
     {
       "available": true,
-      "display": "Model C has 1 critical error in 6 scored answers.",
-      "key": "rca.known.12"
-    },
-    {
-      "available": true,
-      "display": "Model D answered 2 of 6 scored questions without a tool call.",
-      "key": "rca.known.13"
-    },
-    {
-      "available": true,
-      "display": "Model E answered 2 of 6 scored questions without a tool call.",
-      "key": "rca.known.14"
-    },
-    {
-      "available": true,
-      "display": "Output tokens accounts for 55 % (35–127 %) of the per-question time difference between Model A and Model D.",
+      "display": "Uncached input, price per token accounts for 44 % (43–45 %) of the per-question cost difference between Model A and Model C.",
       "key": "rca.known.2"
     },
     {
       "available": true,
-      "display": "Output tokens accounts for 55 % (54–56 %) of the per-question time difference between Model A and Model E.",
+      "display": "Uncached input, price per token accounts for 43 % (42–44 %) of the per-question cost difference between Model A and Model D.",
       "key": "rca.known.3"
     },
     {
       "available": true,
-      "display": "Uncached input, price per token accounts for 45 % (44–46 %) of the per-question cost difference between Model A and Model B.",
+      "display": "Uncached input, price per token accounts for 42 % (42–43 %) of the per-question cost difference between Model A and Model E.",
       "key": "rca.known.4"
     },
     {
       "available": true,
-      "display": "Uncached input, price per token accounts for 44 % (43–45 %) of the per-question cost difference between Model A and Model C.",
+      "display": "Uncached input, price per token accounts for 39 % (38–39 %) of the per-question cost difference between Model D and Model E.",
       "key": "rca.known.5"
     },
     {
       "available": true,
-      "display": "Uncached input, price per token accounts for 43 % (42–44 %) of the per-question cost difference between Model A and Model D.",
+      "display": "Model A answered 2 of 6 scored questions without a tool call.",
       "key": "rca.known.6"
     },
     {
       "available": true,
-      "display": "Uncached input, price per token accounts for 42 % (42–43 %) of the per-question cost difference between Model A and Model E.",
+      "display": "Model B answered 2 of 6 scored questions without a tool call.",
       "key": "rca.known.7"
     },
     {
       "available": true,
-      "display": "Uncached input, price per token accounts for 39 % (38–39 %) of the per-question cost difference between Model D and Model E.",
+      "display": "Model C answered 2 of 6 scored questions without a tool call.",
       "key": "rca.known.8"
     },
     {
       "available": true,
-      "display": "Model A answered 2 of 6 scored questions without a tool call.",
+      "display": "Model C has 1 critical error in 6 scored answers.",
       "key": "rca.known.9"
     },
     {
       "available": true,
       "display": "Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.",
       "key": "rca.pricingBasis"
+    },
+    {
+      "available": true,
+      "display": "none",
+      "key": "rca.profile.A.flags",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "answers without tools: 9.8 index points on 1 question (Q3)",
+      "key": "rca.profile.A.lostPointsOn"
+    },
+    {
+      "available": true,
+      "display": "joint first on Accuracy of 5 models",
+      "key": "rca.profile.A.strength.1"
+    },
+    {
+      "available": true,
+      "display": "joint first on Completeness of 5 models",
+      "key": "rca.profile.A.strength.2"
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "rca.profile.A.weakestDimension",
+      "unavailableReason": "No dimension is below the model's Accuracy."
+    },
+    {
+      "available": true,
+      "display": "none",
+      "key": "rca.profile.B.flags",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "other low-scoring answers: 2.8 index points on 2 questions (Q3 and Q4)",
+      "key": "rca.profile.B.lostPointsOn"
+    },
+    {
+      "available": true,
+      "display": "joint first on Accuracy of 5 models",
+      "key": "rca.profile.B.strength.1"
+    },
+    {
+      "available": true,
+      "display": "joint first on Completeness of 5 models",
+      "key": "rca.profile.B.strength.2"
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "rca.profile.B.weakestDimension",
+      "unavailableReason": "No dimension is below the model's Accuracy."
+    },
+    {
+      "available": true,
+      "display": "1 critical error (Q3)",
+      "key": "rca.profile.C.flag.1"
+    },
+    {
+      "available": true,
+      "display": "1 critical error (Q3)",
+      "key": "rca.profile.C.flags",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "confirmed critical errors: 7.2 index points on 1 question (Q3)",
+      "key": "rca.profile.C.lostPointsOn"
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "rca.profile.C.weakestDimension",
+      "unavailableReason": "No dimension is below the model's Accuracy."
+    },
+    {
+      "available": true,
+      "display": "none",
+      "key": "rca.profile.D.flags",
+      "value": 0
+    },
+    {
+      "available": true,
+      "display": "answers without tools: 6.3 index points on 1 question (Q3)",
+      "key": "rca.profile.D.lostPointsOn"
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "rca.profile.D.weakestDimension",
+      "unavailableReason": "No dimension is below the model's Accuracy."
+    },
+    {
+      "available": true,
+      "display": "1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more",
+      "key": "rca.profile.E.flag.1"
+    },
+    {
+      "available": true,
+      "display": "1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more",
+      "key": "rca.profile.E.flags",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
+      "key": "rca.profile.E.lostPointsOn"
+    },
+    {
+      "available": true,
+      "display": "last on Accuracy of 5 models",
+      "key": "rca.profile.E.lowestRank"
+    },
+    {
+      "available": false,
+      "display": "not available",
+      "key": "rca.profile.E.weakestDimension",
+      "unavailableReason": "No dimension is below the model's Accuracy."
     },
     {
       "available": true,
@@ -9685,316 +9865,153 @@ The benchmark asks single questions, so longer conversations are not measured.
     },
     {
       "available": true,
-      "display": "Replicate (M, recommended): Model A, Model D, Model E and Model C on suite GnollHack Core Suite, 3 per model. Confirms WS3.1 if model time keeps rising with the calls per answer; refutes it if the ρ interval includes zero. Confirms WS3.2 if model time keeps rising with the calls per answer; refutes it if the ρ interval includes zero. Confirms WS3.3 if model time keeps rising with the calls per answer; refutes it if the ρ interval includes zero. Confirms HC4.1 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'. Confirms HC4.2 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'. Confirms HC4.3 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'. Confirms HC4.4 if the cache-read share stays low; refutes it if the cache-read share is comparable to the other models'.",
+      "display": "HQ3.1",
+      "key": "rca.question.1.hypotheses",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "Model A",
+      "key": "rca.question.1.model",
+      "value": "A"
+    },
+    {
+      "available": true,
+      "display": "joint first on Accuracy of 5 models; joint first on Completeness of 5 models; lost points on answers without tools: 9.8 index points on 1 question (Q3)",
+      "key": "rca.question.1.signals"
+    },
+    {
+      "available": true,
+      "display": "Suggestive (Low)",
+      "key": "rca.question.1.status",
+      "value": "Low"
+    },
+    {
+      "available": true,
+      "display": "Why did Model A score highest?",
+      "key": "rca.question.1.text"
+    },
+    {
+      "available": true,
+      "display": "HQ3.1",
+      "key": "rca.question.2.hypotheses",
+      "value": 1
+    },
+    {
+      "available": true,
+      "display": "Model E",
+      "key": "rca.question.2.model",
+      "value": "E"
+    },
+    {
+      "available": true,
+      "display": "lost points on other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more",
+      "key": "rca.question.2.signals"
+    },
+    {
+      "available": true,
+      "display": "Suggestive (Low)",
+      "key": "rca.question.2.status",
+      "value": "Low"
+    },
+    {
+      "available": true,
+      "display": "Why did Model E score lowest?",
+      "key": "rca.question.2.text"
+    },
+    {
+      "available": true,
+      "display": "WS3.3 and WS2.3",
+      "key": "rca.question.3.hypotheses",
+      "value": 2
+    },
+    {
+      "available": true,
+      "display": "Model E",
+      "key": "rca.question.3.model",
+      "value": "E"
+    },
+    {
+      "available": true,
+      "display": "median model time 20.0 s; output generation 59 % of its time per question; 2.5 model calls per answer",
+      "key": "rca.question.3.signals"
+    },
+    {
+      "available": true,
+      "display": "Probable (Moderate)",
+      "key": "rca.question.3.status",
+      "value": "Moderate"
+    },
+    {
+      "available": true,
+      "display": "Why is Model E slowest?",
+      "key": "rca.question.3.text"
+    },
+    {
+      "available": true,
+      "display": "HC2.3, HC2.5, WC1.2, HC4.1 and HC4.3",
+      "key": "rca.question.4.hypotheses",
+      "value": 5
+    },
+    {
+      "available": true,
+      "display": "Model D",
+      "key": "rca.question.4.model",
+      "value": "D"
+    },
+    {
+      "available": true,
+      "display": "$0.060 per question; uncached input 44 % of its cost per question; 27 % of input tokens read from the cache",
+      "key": "rca.question.4.signals"
+    },
+    {
+      "available": true,
+      "display": "Probable (Moderate)",
+      "key": "rca.question.4.status",
+      "value": "Moderate"
+    },
+    {
+      "available": true,
+      "display": "Why is Model D the most expensive?",
+      "key": "rca.question.4.text"
+    },
+    {
+      "available": true,
+      "display": "Run 1, a replicate of Model A, Model D, Model E and Model C",
       "key": "rca.run.1.summary"
     },
     {
       "available": true,
-      "display": "Thinking-level pair (M, optional): Model A and another configured model on suite GnollHack Core Suite, 1 per model. Confirms WS2.1 if the decode share stays the largest and reasoning stays at least half the output; refutes it if the reasoning share is under one half.",
+      "display": "Run 2, a thinking-level pair of Model A and another configured model",
       "key": "rca.run.2.summary"
     },
     {
       "available": true,
-      "display": "-73–103 %",
-      "key": "rca.speed.A.B.callCount.interval"
-    },
-    {
-      "available": true,
-      "display": "0 % of the difference",
-      "key": "rca.speed.A.B.callCount.share",
-      "value": -0
-    },
-    {
-      "available": true,
-      "display": "-180–244 %",
-      "key": "rca.speed.A.B.decodeRate.interval"
-    },
-    {
-      "available": true,
-      "display": "6 % of the difference",
-      "key": "rca.speed.A.B.decodeRate.share",
-      "value": 0.06360572533839493
-    },
-    {
-      "available": true,
-      "display": "0–0 %",
-      "key": "rca.speed.A.B.gap.interval"
-    },
-    {
-      "available": true,
-      "display": "0 % of the difference",
-      "key": "rca.speed.A.B.gap.share",
-      "value": -0
-    },
-    {
-      "available": true,
-      "display": "-143–203 %",
-      "key": "rca.speed.A.B.outputTokens.interval"
-    },
-    {
-      "available": true,
-      "display": "53 % of the difference",
-      "key": "rca.speed.A.B.outputTokens.share",
-      "value": 0.5299426617583792
-    },
-    {
-      "available": true,
-      "display": "-104–149 %",
-      "key": "rca.speed.A.B.perCallLatency.interval"
-    },
-    {
-      "available": true,
-      "display": "41 % of the difference",
-      "key": "rca.speed.A.B.perCallLatency.share",
-      "value": 0.4064516129032258
-    },
-    {
-      "available": true,
-      "display": "-1.6 s per question (Model A minus Model B, model time)",
+      "display": "-1.6 s per question (Model A minus Model B, model time, not established, so not decomposed)",
       "key": "rca.speed.A.B.total",
       "value": -1.55
     },
     {
       "available": true,
-      "display": "0–0 %",
-      "key": "rca.speed.A.C.callCount.interval"
-    },
-    {
-      "available": true,
-      "display": "0 % of the difference",
-      "key": "rca.speed.A.C.callCount.share",
-      "value": -0
-    },
-    {
-      "available": true,
-      "display": "2–5 %",
-      "key": "rca.speed.A.C.decodeRate.interval"
-    },
-    {
-      "available": true,
-      "display": "4 % of the difference",
-      "key": "rca.speed.A.C.decodeRate.share",
-      "value": 0.0355595835938916
-    },
-    {
-      "available": true,
-      "display": "0–0 %",
-      "key": "rca.speed.A.C.gap.interval"
-    },
-    {
-      "available": true,
-      "display": "0 % of the difference",
-      "key": "rca.speed.A.C.gap.share",
-      "value": -0
-    },
-    {
-      "available": true,
-      "display": "53–56 %",
-      "key": "rca.speed.A.C.outputTokens.interval"
-    },
-    {
-      "available": true,
-      "display": "55 % of the difference",
-      "key": "rca.speed.A.C.outputTokens.share",
-      "value": 0.5477737497394417
-    },
-    {
-      "available": true,
-      "display": "42–42 %",
-      "key": "rca.speed.A.C.perCallLatency.interval"
-    },
-    {
-      "available": true,
-      "display": "42 % of the difference",
-      "key": "rca.speed.A.C.perCallLatency.share",
-      "value": 0.4166666666666667
-    },
-    {
-      "available": true,
-      "display": "-3.0 s per question (Model A minus Model C, model time)",
+      "display": "-3.0 s per question (Model A minus Model C, model time, not established, so not decomposed)",
       "key": "rca.speed.A.C.total",
       "value": -3
     },
     {
       "available": true,
-      "display": "-38–11 %",
-      "key": "rca.speed.A.D.callCount.interval"
-    },
-    {
-      "available": true,
-      "display": "0 % of the difference",
-      "key": "rca.speed.A.D.callCount.share",
-      "value": -0
-    },
-    {
-      "available": true,
-      "display": "-83–28 %",
-      "key": "rca.speed.A.D.decodeRate.interval"
-    },
-    {
-      "available": true,
-      "display": "4 % of the difference",
-      "key": "rca.speed.A.D.decodeRate.share",
-      "value": 0.041609050059208896
-    },
-    {
-      "available": true,
-      "display": "0–0 %",
-      "key": "rca.speed.A.D.gap.interval"
-    },
-    {
-      "available": true,
-      "display": "0 % of the difference",
-      "key": "rca.speed.A.D.gap.share",
-      "value": -0
-    },
-    {
-      "available": true,
-      "display": "35–127 %",
-      "key": "rca.speed.A.D.outputTokens.interval"
-    },
-    {
-      "available": true,
-      "display": "55 % of the difference",
-      "key": "rca.speed.A.D.outputTokens.share",
-      "value": 0.5452041367539779
-    },
-    {
-      "available": true,
-      "display": "27–94 %",
-      "key": "rca.speed.A.D.perCallLatency.interval"
-    },
-    {
-      "available": true,
-      "display": "41 % of the difference",
-      "key": "rca.speed.A.D.perCallLatency.share",
-      "value": 0.41318681318681316
-    },
-    {
-      "available": true,
-      "display": "-4.6 s per question (Model A minus Model D, model time)",
+      "display": "-4.6 s per question (Model A minus Model D, model time, not established, so not decomposed)",
       "key": "rca.speed.A.D.total",
       "value": -4.55
     },
     {
       "available": true,
-      "display": "0–0 %",
-      "key": "rca.speed.A.E.callCount.interval"
-    },
-    {
-      "available": true,
-      "display": "0 % of the difference",
-      "key": "rca.speed.A.E.callCount.share",
-      "value": -0
-    },
-    {
-      "available": true,
-      "display": "2–5 %",
-      "key": "rca.speed.A.E.decodeRate.interval"
-    },
-    {
-      "available": true,
-      "display": "3 % of the difference",
-      "key": "rca.speed.A.E.decodeRate.share",
-      "value": 0.03221821279644276
-    },
-    {
-      "available": true,
-      "display": "0–0 %",
-      "key": "rca.speed.A.E.gap.interval"
-    },
-    {
-      "available": true,
-      "display": "0 % of the difference",
-      "key": "rca.speed.A.E.gap.share",
-      "value": -0
-    },
-    {
-      "available": true,
-      "display": "54–56 %",
-      "key": "rca.speed.A.E.outputTokens.interval"
-    },
-    {
-      "available": true,
-      "display": "55 % of the difference",
-      "key": "rca.speed.A.E.outputTokens.share",
-      "value": 0.5511151205368906
-    },
-    {
-      "available": true,
-      "display": "42–42 %",
-      "key": "rca.speed.A.E.perCallLatency.interval"
-    },
-    {
-      "available": true,
-      "display": "42 % of the difference",
-      "key": "rca.speed.A.E.perCallLatency.share",
-      "value": 0.4166666666666667
-    },
-    {
-      "available": true,
-      "display": "-6.0 s per question (Model A minus Model E, model time)",
+      "display": "-6.0 s per question (Model A minus Model E, model time, not established, so not decomposed)",
       "key": "rca.speed.A.E.total",
       "value": -6
     },
     {
       "available": true,
-      "display": "0–427 %",
-      "key": "rca.speed.D.E.callCount.interval"
-    },
-    {
-      "available": true,
-      "display": "0 % of the difference",
-      "key": "rca.speed.D.E.callCount.share",
-      "value": -0
-    },
-    {
-      "available": true,
-      "display": "-8–798 %",
-      "key": "rca.speed.D.E.decodeRate.interval"
-    },
-    {
-      "available": true,
-      "display": "-1 % of the difference",
-      "key": "rca.speed.D.E.decodeRate.share",
-      "value": -0.005383230606588345
-    },
-    {
-      "available": true,
-      "display": "0–0 %",
-      "key": "rca.speed.D.E.gap.interval"
-    },
-    {
-      "available": true,
-      "display": "0 % of the difference",
-      "key": "rca.speed.D.E.gap.share",
-      "value": -0
-    },
-    {
-      "available": true,
-      "display": "-646–62 %",
-      "key": "rca.speed.D.E.outputTokens.interval"
-    },
-    {
-      "available": true,
-      "display": "58 % of the difference",
-      "key": "rca.speed.D.E.outputTokens.share",
-      "value": 0.5777970237100366
-    },
-    {
-      "available": true,
-      "display": "-479–45 %",
-      "key": "rca.speed.D.E.perCallLatency.interval"
-    },
-    {
-      "available": true,
-      "display": "43 % of the difference",
-      "key": "rca.speed.D.E.perCallLatency.share",
-      "value": 0.42758620689655175
-    },
-    {
-      "available": true,
-      "display": "-1.5 s per question (Model D minus Model E, model time)",
+      "display": "-1.5 s per question (Model D minus Model E, model time, not established, so not decomposed)",
       "key": "rca.speed.D.E.total",
       "value": -1.45
     },
@@ -11812,50 +11829,10 @@ The benchmark asks single questions, so longer conversations are not measured.
       },
       {
         "hypothesisIds": [
-          "HS3.1"
-        ],
-        "kind": "configuration",
-        "number": 2,
-        "text": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test HS3.1."
-      },
-      {
-        "hypothesisIds": [
-          "HS3.2"
-        ],
-        "kind": "configuration",
-        "number": 3,
-        "text": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test HS3.2."
-      },
-      {
-        "hypothesisIds": [
-          "HS3.3"
-        ],
-        "kind": "configuration",
-        "number": 4,
-        "text": "No configured, enabled Benchmark-role configuration of Model C exists at another thinking level; add one to test HS3.3."
-      },
-      {
-        "hypothesisIds": [
-          "HS3.4"
-        ],
-        "kind": "configuration",
-        "number": 5,
-        "text": "No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test HS3.4."
-      },
-      {
-        "hypothesisIds": [
-          "HS3.5"
-        ],
-        "kind": "configuration",
-        "number": 6,
-        "text": "No configured, enabled Benchmark-role configuration of Model B exists at another thinking level; add one to test HS3.5."
-      },
-      {
-        "hypothesisIds": [
           "WS2.2"
         ],
         "kind": "configuration",
-        "number": 7,
+        "number": 2,
         "text": "No configured, enabled Benchmark-role configuration of Model D exists at another thinking level; add one to test WS2.2."
       },
       {
@@ -11863,7 +11840,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "WS2.3"
         ],
         "kind": "configuration",
-        "number": 8,
+        "number": 3,
         "text": "No configured, enabled Benchmark-role configuration of Model E exists at another thinking level; add one to test WS2.3."
       }
     ],
@@ -11988,6 +11965,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "differenceUpper": -0.0076033333333333335,
         "first": "A",
         "firstTotal": 0.0140125,
+        "notEstablished": false,
         "second": "B",
         "secondTotal": 0.021802500000000002,
         "sharedQuestions": 6
@@ -12109,6 +12087,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "differenceUpper": -0.016406666666666667,
         "first": "A",
         "firstTotal": 0.0140125,
+        "notEstablished": false,
         "second": "C",
         "secondTotal": 0.0307925,
         "sharedQuestions": 6
@@ -12230,6 +12209,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "differenceUpper": -0.02640999999999999,
         "first": "A",
         "firstTotal": 0.0140125,
+        "notEstablished": false,
         "second": "D",
         "secondTotal": 0.0409825,
         "sharedQuestions": 6
@@ -12351,6 +12331,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "differenceUpper": -0.03761333333333333,
         "first": "A",
         "firstTotal": 0.0140125,
+        "notEstablished": false,
         "second": "E",
         "secondTotal": 0.052372499999999995,
         "sharedQuestions": 6
@@ -12472,6 +12453,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "differenceUpper": -0.011203333333333336,
         "first": "D",
         "firstTotal": 0.0409825,
+        "notEstablished": false,
         "second": "E",
         "secondTotal": 0.052372499999999995,
         "sharedQuestions": 6
@@ -12654,7 +12636,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "unit": "usd"
       }
     ],
-    "engineVersion": 1,
+    "engineVersion": 2,
     "evidence": [
       {
         "atRisk": [
@@ -13257,6 +13239,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "ttftPerCallP50Ms": 1760
       }
     ],
+    "gradeCap": "One run per suite for every model: the replicates check fails for every hypothesis, so no cause can be graded above Probable (Moderate).",
     "hypotheses": [
       {
         "against": [],
@@ -13278,6 +13261,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-Q",
         "key": "H0-Q.1",
         "kind": "null",
+        "label": "no intelligence difference between Model A and Model B",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13312,6 +13296,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-Q",
         "key": "H0-Q.2",
         "kind": "null",
+        "label": "no intelligence difference between Model A and Model C",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13346,6 +13331,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-Q",
         "key": "H0-Q.3",
         "kind": "null",
+        "label": "no intelligence difference between Model A and Model D",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13380,6 +13366,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-Q",
         "key": "H0-Q.4",
         "kind": "null",
+        "label": "no intelligence difference between Model A and Model E",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13412,6 +13399,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-Q",
         "key": "H0-Q.5",
         "kind": "null",
+        "label": "no intelligence difference between Model D and Model E",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13440,6 +13428,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-W",
         "key": "H0-W.1",
         "kind": "null",
+        "label": "no contrast within Model A's own questions",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13467,6 +13456,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-W",
         "key": "H0-W.2",
         "kind": "null",
+        "label": "no contrast within Model E's own questions",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13497,6 +13487,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "HQ3",
         "key": "HQ3.1",
         "kind": "pair",
+        "label": "shared failures on the same questions",
         "loci": [
           "suite",
           "corpus",
@@ -13536,6 +13527,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-S",
         "key": "H0-S.1",
         "kind": "null",
+        "label": "no speed difference between Model A and Model B",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13568,6 +13560,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-S",
         "key": "H0-S.2",
         "kind": "null",
+        "label": "no speed difference between Model A and Model C",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13600,6 +13593,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-S",
         "key": "H0-S.3",
         "kind": "null",
+        "label": "no speed difference between Model A and Model D",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13632,6 +13626,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-S",
         "key": "H0-S.4",
         "kind": "null",
+        "label": "no speed difference between Model A and Model E",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13662,6 +13657,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-S",
         "key": "H0-S.5",
         "kind": "null",
+        "label": "no speed difference between Model D and Model E",
         "loci": [],
         "locus": "—",
         "models": [
@@ -13692,6 +13688,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "WS3",
         "key": "WS3.1",
         "kind": "within",
+        "label": "tool rounds in the time of Model A",
         "loci": [
           "model",
           "chat"
@@ -13736,6 +13733,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "WS3",
         "key": "WS3.2",
         "kind": "within",
+        "label": "tool rounds in the time of Model D",
         "loci": [
           "model",
           "chat"
@@ -13780,6 +13778,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "WS3",
         "key": "WS3.3",
         "kind": "within",
+        "label": "tool rounds in the time of Model E",
         "loci": [
           "model",
           "chat"
@@ -13808,286 +13807,6 @@ The benchmark asks single questions, so longer conversations are not measured.
         "statement": "Tool rounds multiply Model E's time (where its time goes, not a comparison)."
       },
       {
-        "against": [],
-        "axis": "speed",
-        "checkNumber": 2,
-        "confounds": [],
-        "factKeys": [
-          "rca.speed.D.E.outputTokens.share",
-          "rca.speed.D.E.total",
-          "model.E.tokens.reasoningShare"
-        ],
-        "for": [
-          "Output tokens accounts for 58 % (-646–62 %) of the 1.5 s per-question difference in model time.",
-          "Model E's reasoning share of output is 39 %, Model D's 38 %."
-        ],
-        "grade": "Low",
-        "gradeReasons": [
-          "replicates failed: Model E and Model D have a single run per suite.",
-          "the share's 95 % interval includes zero"
-        ],
-        "id": "HS3",
-        "key": "HS3.1",
-        "kind": "pair",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "E",
-          "D"
-        ],
-        "modelsText": "Model E and Model D",
-        "number": 1,
-        "refutedIf": "The decode-rate share is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Model E and Model D have a single run per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.5777970237100366,
-        "shareLower": -6.45853729989413,
-        "shareUpper": 0.6234992260468345,
-        "shortStatement": "More output tokens: Model E",
-        "statement": "Model E is slower than Model D mainly from more output (reasoning) tokens."
-      },
-      {
-        "against": [],
-        "axis": "speed",
-        "checkNumber": 3,
-        "confounds": [],
-        "factKeys": [
-          "rca.speed.A.E.outputTokens.share",
-          "rca.speed.A.E.total",
-          "model.E.tokens.reasoningShare"
-        ],
-        "for": [
-          "Output tokens accounts for 55 % (54–56 %) of the 6.0 s per-question difference in model time.",
-          "Model E's reasoning share of output is 39 %, Model A's 31 %."
-        ],
-        "grade": "Low",
-        "gradeReasons": [
-          "replicates failed: Model E and Model A have a single run per suite.",
-          "the pair's null hypothesis stands"
-        ],
-        "id": "HS3",
-        "key": "HS3.2",
-        "kind": "pair",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "E",
-          "A"
-        ],
-        "modelsText": "Model E and Model A",
-        "number": 2,
-        "refutedIf": "The decode-rate share is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Model E and Model A have a single run per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.5511151205368906,
-        "shareLower": 0.5378380657822239,
-        "shareUpper": 0.5641345737176965,
-        "shortStatement": "More output tokens: Model E",
-        "statement": "Model E is slower than Model A mainly from more output (reasoning) tokens."
-      },
-      {
-        "against": [],
-        "axis": "speed",
-        "checkNumber": 4,
-        "confounds": [],
-        "factKeys": [
-          "rca.speed.A.C.outputTokens.share",
-          "rca.speed.A.C.total",
-          "model.C.tokens.reasoningShare"
-        ],
-        "for": [
-          "Output tokens accounts for 55 % (53–56 %) of the 3.0 s per-question difference in model time.",
-          "Model C's reasoning share of output is 36 %, Model A's 31 %."
-        ],
-        "grade": "Low",
-        "gradeReasons": [
-          "replicates failed: Model C and Model A have a single run per suite.",
-          "the pair's null hypothesis stands"
-        ],
-        "id": "HS3",
-        "key": "HS3.3",
-        "kind": "pair",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "C",
-          "A"
-        ],
-        "modelsText": "Model C and Model A",
-        "number": 3,
-        "refutedIf": "The decode-rate share is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Model C and Model A have a single run per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.5477737497394417,
-        "shareLower": 0.5330607172279814,
-        "shareUpper": 0.5621770710553743,
-        "shortStatement": "More output tokens: Model C",
-        "statement": "Model C is slower than Model A mainly from more output (reasoning) tokens."
-      },
-      {
-        "against": [],
-        "axis": "speed",
-        "checkNumber": 5,
-        "confounds": [],
-        "factKeys": [
-          "rca.speed.A.D.outputTokens.share",
-          "rca.speed.A.D.total",
-          "model.D.tokens.reasoningShare"
-        ],
-        "for": [
-          "Output tokens accounts for 55 % (35–127 %) of the 4.6 s per-question difference in model time.",
-          "Model D's reasoning share of output is 38 %, Model A's 31 %."
-        ],
-        "grade": "Low",
-        "gradeReasons": [
-          "replicates failed: Model D and Model A have a single run per suite.",
-          "the pair's null hypothesis stands"
-        ],
-        "id": "HS3",
-        "key": "HS3.4",
-        "kind": "pair",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "D",
-          "A"
-        ],
-        "modelsText": "Model D and Model A",
-        "number": 4,
-        "refutedIf": "The decode-rate share is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Model D and Model A have a single run per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.5452041367539779,
-        "shareLower": 0.3475635820013107,
-        "shareUpper": 1.2744376428533912,
-        "shortStatement": "More output tokens: Model D",
-        "statement": "Model D is slower than Model A mainly from more output (reasoning) tokens."
-      },
-      {
-        "against": [],
-        "axis": "speed",
-        "checkNumber": 6,
-        "confounds": [],
-        "factKeys": [
-          "rca.speed.A.B.outputTokens.share",
-          "rca.speed.A.B.total",
-          "model.B.tokens.reasoningShare"
-        ],
-        "for": [
-          "Output tokens accounts for 53 % (-143–203 %) of the 1.6 s per-question difference in model time.",
-          "Model B's reasoning share of output is 34 %, Model A's 31 %."
-        ],
-        "grade": "Low",
-        "gradeReasons": [
-          "replicates failed: Model B and Model A have a single run per suite.",
-          "the share's 95 % interval includes zero"
-        ],
-        "id": "HS3",
-        "key": "HS3.5",
-        "kind": "pair",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "B",
-          "A"
-        ],
-        "modelsText": "Model B and Model A",
-        "number": 5,
-        "refutedIf": "The decode-rate share is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "Model B and Model A have a single run per suite.",
-            "name": "Replicates",
-            "status": "Failed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.5299426617583792,
-        "shareLower": -1.4282357869036282,
-        "shareUpper": 2.034112412068067,
-        "shortStatement": "More output tokens: Model B",
-        "statement": "Model B is slower than Model A mainly from more output (reasoning) tokens."
-      },
-      {
         "against": [
           "Reasoning is 31 % of Model A's output tokens."
         ],
@@ -14107,6 +13826,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "WS2",
         "key": "WS2.1",
         "kind": "within",
+        "label": "output generation of Model A",
         "loci": [
           "model"
         ],
@@ -14141,7 +13861,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "Reasoning is 38 % of Model D's output tokens."
         ],
         "axis": "speed",
-        "checkNumber": 7,
+        "checkNumber": 2,
         "confounds": [],
         "factKeys": [
           "rca.within.D.time.outputGeneration.share",
@@ -14157,6 +13877,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "WS2",
         "key": "WS2.2",
         "kind": "within",
+        "label": "output generation of Model D",
         "loci": [
           "model"
         ],
@@ -14190,7 +13911,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "Reasoning is 39 % of Model E's output tokens."
         ],
         "axis": "speed",
-        "checkNumber": 8,
+        "checkNumber": 3,
         "confounds": [],
         "factKeys": [
           "rca.within.E.time.outputGeneration.share",
@@ -14206,6 +13927,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "WS2",
         "key": "WS2.3",
         "kind": "within",
+        "label": "output generation of Model E",
         "loci": [
           "model"
         ],
@@ -14252,6 +13974,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-C",
         "key": "H0-C.1",
         "kind": "null",
+        "label": "no cost difference between Model A and Model B",
         "loci": [],
         "locus": "—",
         "models": [
@@ -14283,6 +14006,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-C",
         "key": "H0-C.2",
         "kind": "null",
+        "label": "no cost difference between Model A and Model C",
         "loci": [],
         "locus": "—",
         "models": [
@@ -14314,6 +14038,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-C",
         "key": "H0-C.3",
         "kind": "null",
+        "label": "no cost difference between Model A and Model D",
         "loci": [],
         "locus": "—",
         "models": [
@@ -14345,6 +14070,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-C",
         "key": "H0-C.4",
         "kind": "null",
+        "label": "no cost difference between Model A and Model E",
         "loci": [],
         "locus": "—",
         "models": [
@@ -14375,6 +14101,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "H0-C",
         "key": "H0-C.5",
         "kind": "null",
+        "label": "no cost difference between Model D and Model E",
         "loci": [],
         "locus": "—",
         "models": [
@@ -14409,6 +14136,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "HC2",
         "key": "HC2.1",
         "kind": "pair",
+        "label": "higher price per token of Model B against Model A",
         "loci": [
           "model"
         ],
@@ -14464,6 +14192,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "HC2",
         "key": "HC2.2",
         "kind": "pair",
+        "label": "higher price per token of Model C against Model A",
         "loci": [
           "model"
         ],
@@ -14519,6 +14248,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "HC2",
         "key": "HC2.3",
         "kind": "pair",
+        "label": "higher price per token of Model D against Model A",
         "loci": [
           "model"
         ],
@@ -14571,6 +14301,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "WC1",
         "key": "WC1.1",
         "kind": "within",
+        "label": "output cost of Model A",
         "loci": [
           "model"
         ],
@@ -14613,6 +14344,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "HC2",
         "key": "HC2.4",
         "kind": "pair",
+        "label": "higher price per token of Model E against Model A",
         "loci": [
           "model"
         ],
@@ -14668,6 +14400,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "HC2",
         "key": "HC2.5",
         "kind": "pair",
+        "label": "higher price per token of Model E against Model D",
         "loci": [
           "model"
         ],
@@ -14720,6 +14453,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "WC1",
         "key": "WC1.2",
         "kind": "within",
+        "label": "output cost of Model D",
         "loci": [
           "model"
         ],
@@ -14759,6 +14493,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "WC1",
         "key": "WC1.3",
         "kind": "within",
+        "label": "output cost of Model E",
         "loci": [
           "model"
         ],
@@ -14801,6 +14536,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "HC4",
         "key": "HC4.1",
         "kind": "pair",
+        "label": "weak prompt caching of Model E against Model D",
         "loci": [
           "chat",
           "provider"
@@ -14858,6 +14594,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "HC4",
         "key": "HC4.2",
         "kind": "pair",
+        "label": "weak prompt caching of Model E against Model A",
         "loci": [
           "chat",
           "provider"
@@ -14915,6 +14652,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "HC4",
         "key": "HC4.3",
         "kind": "pair",
+        "label": "weak prompt caching of Model D against Model A",
         "loci": [
           "chat",
           "provider"
@@ -14972,6 +14710,7 @@ The benchmark asks single questions, so longer conversations are not measured.
         "id": "HC4",
         "key": "HC4.4",
         "kind": "pair",
+        "label": "weak prompt caching of Model C against Model A",
         "loci": [
           "chat",
           "provider"
@@ -15012,34 +14751,10 @@ The benchmark asks single questions, so longer conversations are not measured.
     "knownFacts": [
       {
         "factKeys": [
-          "rca.speed.A.C.outputTokens.share"
-        ],
-        "kind": "decomposition",
-        "number": 1,
-        "text": "Output tokens accounts for 55 % (53–56 %) of the per-question time difference between Model A and Model C."
-      },
-      {
-        "factKeys": [
-          "rca.speed.A.D.outputTokens.share"
-        ],
-        "kind": "decomposition",
-        "number": 2,
-        "text": "Output tokens accounts for 55 % (35–127 %) of the per-question time difference between Model A and Model D."
-      },
-      {
-        "factKeys": [
-          "rca.speed.A.E.outputTokens.share"
-        ],
-        "kind": "decomposition",
-        "number": 3,
-        "text": "Output tokens accounts for 55 % (54–56 %) of the per-question time difference between Model A and Model E."
-      },
-      {
-        "factKeys": [
           "rca.cost.A.B.uncachedInput.price.share"
         ],
         "kind": "decomposition",
-        "number": 4,
+        "number": 1,
         "text": "Uncached input, price per token accounts for 45 % (44–46 %) of the per-question cost difference between Model A and Model B."
       },
       {
@@ -15047,7 +14762,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "rca.cost.A.C.uncachedInput.price.share"
         ],
         "kind": "decomposition",
-        "number": 5,
+        "number": 2,
         "text": "Uncached input, price per token accounts for 44 % (43–45 %) of the per-question cost difference between Model A and Model C."
       },
       {
@@ -15055,7 +14770,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "rca.cost.A.D.uncachedInput.price.share"
         ],
         "kind": "decomposition",
-        "number": 6,
+        "number": 3,
         "text": "Uncached input, price per token accounts for 43 % (42–44 %) of the per-question cost difference between Model A and Model D."
       },
       {
@@ -15063,7 +14778,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "rca.cost.A.E.uncachedInput.price.share"
         ],
         "kind": "decomposition",
-        "number": 7,
+        "number": 4,
         "text": "Uncached input, price per token accounts for 42 % (42–43 %) of the per-question cost difference between Model A and Model E."
       },
       {
@@ -15071,7 +14786,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "rca.cost.D.E.uncachedInput.price.share"
         ],
         "kind": "decomposition",
-        "number": 8,
+        "number": 5,
         "text": "Uncached input, price per token accounts for 39 % (38–39 %) of the per-question cost difference between Model D and Model E."
       },
       {
@@ -15079,7 +14794,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "model.A.profile.noToolAnswers"
         ],
         "kind": "count",
-        "number": 9,
+        "number": 6,
         "text": "Model A answered 2 of 6 scored questions without a tool call."
       },
       {
@@ -15087,7 +14802,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "model.B.profile.noToolAnswers"
         ],
         "kind": "count",
-        "number": 10,
+        "number": 7,
         "text": "Model B answered 2 of 6 scored questions without a tool call."
       },
       {
@@ -15095,7 +14810,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "model.C.profile.noToolAnswers"
         ],
         "kind": "count",
-        "number": 11,
+        "number": 8,
         "text": "Model C answered 2 of 6 scored questions without a tool call."
       },
       {
@@ -15103,7 +14818,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "model.C.errors.critical"
         ],
         "kind": "count",
-        "number": 12,
+        "number": 9,
         "text": "Model C has 1 critical error in 6 scored answers."
       },
       {
@@ -15111,7 +14826,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "model.D.profile.noToolAnswers"
         ],
         "kind": "count",
-        "number": 13,
+        "number": 10,
         "text": "Model D answered 2 of 6 scored questions without a tool call."
       },
       {
@@ -15119,7 +14834,7 @@ The benchmark asks single questions, so longer conversations are not measured.
           "model.E.profile.noToolAnswers"
         ],
         "kind": "count",
-        "number": 14,
+        "number": 11,
         "text": "Model E answered 2 of 6 scored questions without a tool call."
       }
     ],
@@ -15348,6 +15063,176 @@ The benchmark asks single questions, so longer conversations are not measured.
     ],
     "pricingBasis": "Priced from the catalog as of 2026-09-20. Comparable across dates; not what was actually spent.",
     "pricingBasisKind": "catalog",
+    "profiles": [
+      {
+        "dimensions": [
+          80,
+          80,
+          80,
+          80
+        ],
+        "flags": [],
+        "letter": "A",
+        "qualityIndex": 85,
+        "strengths": [
+          {
+            "kind": "strength",
+            "questions": [],
+            "short": "joint first on Accuracy",
+            "text": "joint first on Accuracy of 5 models"
+          },
+          {
+            "kind": "strength",
+            "questions": [],
+            "short": "joint first on Completeness",
+            "text": "joint first on Completeness of 5 models"
+          }
+        ],
+        "token": "A",
+        "weaknesses": [
+          {
+            "kind": "lostPointsOn",
+            "questions": [
+              "Q3"
+            ],
+            "short": "answers without tools, 9.8 points",
+            "text": "answers without tools: 9.8 index points on 1 question (Q3)"
+          }
+        ]
+      },
+      {
+        "dimensions": [
+          80,
+          80,
+          80,
+          80
+        ],
+        "flags": [],
+        "letter": "B",
+        "qualityIndex": 80,
+        "strengths": [
+          {
+            "kind": "strength",
+            "questions": [],
+            "short": "joint first on Accuracy",
+            "text": "joint first on Accuracy of 5 models"
+          },
+          {
+            "kind": "strength",
+            "questions": [],
+            "short": "joint first on Completeness",
+            "text": "joint first on Completeness of 5 models"
+          }
+        ],
+        "token": "B",
+        "weaknesses": [
+          {
+            "kind": "lostPointsOn",
+            "questions": [
+              "Q3",
+              "Q4"
+            ],
+            "short": "other low-scoring answers, 2.8 points",
+            "text": "other low-scoring answers: 2.8 index points on 2 questions (Q3 and Q4)"
+          }
+        ]
+      },
+      {
+        "dimensions": [
+          64.83333333333333,
+          64.83333333333333,
+          64.83333333333333,
+          64.83333333333333
+        ],
+        "flags": [
+          {
+            "kind": "criticalErrors",
+            "questions": [
+              "Q3"
+            ],
+            "short": "1 critical error",
+            "text": "1 critical error (Q3)"
+          }
+        ],
+        "letter": "C",
+        "qualityIndex": 70,
+        "strengths": [],
+        "token": "C",
+        "weaknesses": [
+          {
+            "kind": "lostPointsOn",
+            "questions": [
+              "Q3"
+            ],
+            "short": "confirmed critical errors, 7.2 points",
+            "text": "confirmed critical errors: 7.2 index points on 1 question (Q3)"
+          }
+        ]
+      },
+      {
+        "dimensions": [
+          64.16666666666667,
+          64.16666666666667,
+          64.16666666666667,
+          64.16666666666667
+        ],
+        "flags": [],
+        "letter": "D",
+        "qualityIndex": 70,
+        "strengths": [],
+        "token": "D",
+        "weaknesses": [
+          {
+            "kind": "lostPointsOn",
+            "questions": [
+              "Q3"
+            ],
+            "short": "answers without tools, 6.3 points",
+            "text": "answers without tools: 6.3 index points on 1 question (Q3)"
+          }
+        ]
+      },
+      {
+        "dimensions": [
+          50,
+          50,
+          50,
+          50
+        ],
+        "flags": [
+          {
+            "kind": "isolatedMisses",
+            "questions": [
+              "Q1"
+            ],
+            "short": "1 isolated miss",
+            "text": "1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more"
+          }
+        ],
+        "letter": "E",
+        "qualityIndex": 55,
+        "strengths": [],
+        "token": "E",
+        "weaknesses": [
+          {
+            "kind": "lostPointsOn",
+            "questions": [
+              "Q3",
+              "Q1",
+              "Q4"
+            ],
+            "short": "other low-scoring answers, 5.6 points",
+            "text": "other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4)"
+          },
+          {
+            "kind": "lowestRank",
+            "questions": [],
+            "short": "last on Accuracy",
+            "text": "last on Accuracy of 5 models"
+          }
+        ]
+      }
+    ],
     "qualitySplits": [
       {
         "components": [
@@ -15535,6 +15420,72 @@ The benchmark asks single questions, so longer conversations are not measured.
         "second": "E"
       }
     ],
+    "questions": [
+      {
+        "axis": "intelligence",
+        "grade": "Low",
+        "hypothesisKeys": [
+          "HQ3.1"
+        ],
+        "number": 1,
+        "signals": [
+          "joint first on Accuracy of 5 models",
+          "joint first on Completeness of 5 models",
+          "lost points on answers without tools: 9.8 index points on 1 question (Q3)"
+        ],
+        "text": "Why did Model A score highest?",
+        "token": "A"
+      },
+      {
+        "axis": "intelligence",
+        "grade": "Low",
+        "hypothesisKeys": [
+          "HQ3.1"
+        ],
+        "number": 2,
+        "signals": [
+          "lost points on other low-scoring answers: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
+          "1 isolated miss (Q1), scored 50 or less where the other models' median is 75 or more"
+        ],
+        "text": "Why did Model E score lowest?",
+        "token": "E"
+      },
+      {
+        "axis": "speed",
+        "grade": "Moderate",
+        "hypothesisKeys": [
+          "WS3.3",
+          "WS2.3"
+        ],
+        "number": 3,
+        "signals": [
+          "median model time 20.0 s",
+          "output generation 59 % of its time per question",
+          "2.5 model calls per answer"
+        ],
+        "text": "Why is Model E slowest?",
+        "token": "E"
+      },
+      {
+        "axis": "cost",
+        "grade": "Moderate",
+        "hypothesisKeys": [
+          "HC2.3",
+          "HC2.5",
+          "WC1.2",
+          "HC4.1",
+          "HC4.3"
+        ],
+        "number": 4,
+        "signals": [
+          "$0.060 per question",
+          "uncached input 44 % of its cost per question",
+          "27 % of input tokens read from the cache"
+        ],
+        "text": "Why is Model D the most expensive?",
+        "token": "D"
+      }
+    ],
     "recommendedRuns": [
       {
         "afterSystemHypotheses": false,
@@ -15620,268 +15571,73 @@ The benchmark asks single questions, so longer conversations are not measured.
     "speedPairs": [
       {
         "axis": "speed",
-        "components": [
-          {
-            "amount": 0,
-            "key": "callCount",
-            "label": "number of model calls",
-            "share": -0,
-            "shareLower": -0.72831217251313,
-            "shareUpper": 1.029913280643998
-          },
-          {
-            "amount": -630,
-            "key": "perCallLatency",
-            "label": "latency per call (time to first token)",
-            "share": 0.4064516129032258,
-            "shareLower": -1.041609187076746,
-            "shareUpper": 1.4906072544803424
-          },
-          {
-            "amount": -821.4111257254879,
-            "key": "outputTokens",
-            "label": "output tokens",
-            "share": 0.5299426617583792,
-            "shareLower": -1.4282357869036282,
-            "shareUpper": 2.034112412068067
-          },
-          {
-            "amount": -98.58887427451214,
-            "key": "decodeRate",
-            "label": "decode rate",
-            "share": 0.06360572533839493,
-            "shareLower": -1.7964074940352797,
-            "shareUpper": 2.4399316933363773
-          },
-          {
-            "amount": 0,
-            "key": "gap",
-            "label": "time outside the calls",
-            "share": -0,
-            "shareLower": -2.2364623814088433E-15,
-            "shareUpper": 9.607338399009793E-16
-          }
-        ],
+        "components": [],
         "difference": -1550,
         "differenceLower": -3803.333333333334,
         "differenceUpper": 670.0000000000009,
         "first": "A",
         "firstTotal": 7480,
+        "notEstablished": true,
         "second": "B",
         "secondTotal": 9030,
-        "sharedQuestions": 6
+        "sharedQuestions": 6,
+        "unavailableReason": "Not decomposed: the difference is not established."
       },
       {
         "axis": "speed",
-        "components": [
-          {
-            "amount": 0,
-            "key": "callCount",
-            "label": "number of model calls",
-            "share": -0,
-            "shareLower": 0,
-            "shareUpper": 0
-          },
-          {
-            "amount": -1250,
-            "key": "perCallLatency",
-            "label": "latency per call (time to first token)",
-            "share": 0.4166666666666667,
-            "shareLower": 0.41666666666666646,
-            "shareUpper": 0.41666666666666685
-          },
-          {
-            "amount": -1643.3212492183252,
-            "key": "outputTokens",
-            "label": "output tokens",
-            "share": 0.5477737497394417,
-            "shareLower": 0.5330607172279814,
-            "shareUpper": 0.5621770710553743
-          },
-          {
-            "amount": -106.67875078167481,
-            "key": "decodeRate",
-            "label": "decode rate",
-            "share": 0.0355595835938916,
-            "shareLower": 0.02115626227795871,
-            "shareUpper": 0.05027261610535221
-          },
-          {
-            "amount": 0,
-            "key": "gap",
-            "label": "time outside the calls",
-            "share": -0,
-            "shareLower": -4.3725706816006183E-16,
-            "shareUpper": 4.0602442043434285E-16
-          }
-        ],
+        "components": [],
         "difference": -3000,
         "differenceLower": -3400,
         "differenceUpper": -2599.999999999999,
         "first": "A",
         "firstTotal": 7480,
+        "notEstablished": true,
         "second": "C",
         "secondTotal": 10480,
-        "sharedQuestions": 6
+        "sharedQuestions": 6,
+        "unavailableReason": "Not decomposed: the difference is not established."
       },
       {
         "axis": "speed",
-        "components": [
-          {
-            "amount": 0,
-            "key": "callCount",
-            "label": "number of model calls",
-            "share": -0,
-            "shareLower": -0.37563372811907053,
-            "shareUpper": 0.10591689197476477
-          },
-          {
-            "amount": -1880,
-            "key": "perCallLatency",
-            "label": "latency per call (time to first token)",
-            "share": 0.41318681318681316,
-            "shareLower": 0.2685704363368654,
-            "shareUpper": 0.9352192203470497
-          },
-          {
-            "amount": -2480.6788222305995,
-            "key": "outputTokens",
-            "label": "output tokens",
-            "share": 0.5452041367539779,
-            "shareLower": 0.3475635820013107,
-            "shareUpper": 1.2744376428533912
-          },
-          {
-            "amount": -189.3211777694005,
-            "key": "decodeRate",
-            "label": "decode rate",
-            "share": 0.041609050059208896,
-            "shareLower": -0.8340231350813705,
-            "shareUpper": 0.27753861063630864
-          },
-          {
-            "amount": 0,
-            "key": "gap",
-            "label": "time outside the calls",
-            "share": -0,
-            "shareLower": -2.807082412879409E-16,
-            "shareUpper": 2.3280581103402595E-16
-          }
-        ],
+        "components": [],
         "difference": -4550,
         "differenceLower": -7203.333333333334,
         "differenceUpper": -1930,
         "first": "A",
         "firstTotal": 7480,
+        "notEstablished": true,
         "second": "D",
         "secondTotal": 12030,
-        "sharedQuestions": 6
+        "sharedQuestions": 6,
+        "unavailableReason": "Not decomposed: the difference is not established."
       },
       {
         "axis": "speed",
-        "components": [
-          {
-            "amount": 0,
-            "key": "callCount",
-            "label": "number of model calls",
-            "share": -0,
-            "shareLower": 0,
-            "shareUpper": 0
-          },
-          {
-            "amount": -2500,
-            "key": "perCallLatency",
-            "label": "latency per call (time to first token)",
-            "share": 0.4166666666666667,
-            "shareLower": 0.4166666666666666,
-            "shareUpper": 0.4166666666666668
-          },
-          {
-            "amount": -3306.6907232213434,
-            "key": "outputTokens",
-            "label": "output tokens",
-            "share": 0.5511151205368906,
-            "shareLower": 0.5378380657822239,
-            "shareUpper": 0.5641345737176965
-          },
-          {
-            "amount": -193.30927677865657,
-            "key": "decodeRate",
-            "label": "decode rate",
-            "share": 0.03221821279644276,
-            "shareLower": 0.019198759615636614,
-            "shareUpper": 0.04549526755110954
-          },
-          {
-            "amount": 0,
-            "key": "gap",
-            "label": "time outside the calls",
-            "share": -0,
-            "shareLower": -1.900701818158268E-16,
-            "shareUpper": 1.7490282726402464E-16
-          }
-        ],
+        "components": [],
         "difference": -6000,
         "differenceLower": -6800,
         "differenceUpper": -5199.999999999999,
         "first": "A",
         "firstTotal": 7480,
+        "notEstablished": true,
         "second": "E",
         "secondTotal": 13480,
-        "sharedQuestions": 6
+        "sharedQuestions": 6,
+        "unavailableReason": "Not decomposed: the difference is not established."
       },
       {
         "axis": "speed",
-        "components": [
-          {
-            "amount": 0,
-            "key": "callCount",
-            "label": "number of model calls",
-            "share": -0,
-            "shareLower": 0,
-            "shareUpper": 4.265880109197202
-          },
-          {
-            "amount": -620,
-            "key": "perCallLatency",
-            "label": "latency per call (time to first token)",
-            "share": 0.42758620689655175,
-            "shareLower": -4.79219589867088,
-            "shareUpper": 0.45185185185185184
-          },
-          {
-            "amount": -837.8056843795531,
-            "key": "outputTokens",
-            "label": "output tokens",
-            "share": 0.5777970237100366,
-            "shareLower": -6.45853729989413,
-            "shareUpper": 0.6234992260468345
-          },
-          {
-            "amount": 7.8056843795530995,
-            "key": "decodeRate",
-            "label": "decode rate",
-            "share": -0.005383230606588345,
-            "shareLower": -0.07535107789868638,
-            "shareUpper": 7.984853089367797
-          },
-          {
-            "amount": 0,
-            "key": "gap",
-            "label": "time outside the calls",
-            "share": -0,
-            "shareLower": -6.018714938203218E-15,
-            "shareUpper": 4.704282940204786E-15
-          }
-        ],
+        "components": [],
         "difference": -1450,
         "differenceLower": -4870,
         "differenceUpper": 2003.333333333334,
         "first": "D",
         "firstTotal": 12030,
+        "notEstablished": true,
         "second": "E",
         "secondTotal": 13480,
-        "sharedQuestions": 6
+        "sharedQuestions": 6,
+        "unavailableReason": "Not decomposed: the difference is not established."
       }
     ],
     "speedRows": [
@@ -16093,6 +15849,6 @@ The benchmark asks single questions, so longer conversations are not measured.
 
 ---
 
-*Document ID 212 · format version 15 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models anonymized*
+*Document ID 212 · format version 16 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

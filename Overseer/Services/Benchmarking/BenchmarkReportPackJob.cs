@@ -37,7 +37,10 @@ public class BenchmarkReportPackDocumentProgress
     public long OutputTokens { get; set; }
     public decimal? CostUsd { get; set; }
 
-    /// <summary>The first turn's validation issues, at most <see cref="BenchmarkReportPackJob.MaxDiagnosticIssues"/>; null until the document ends.</summary>
+    /// <summary>
+    /// The first turn's validation issues, at most <see cref="BenchmarkReportPackJob.MaxDiagnosticIssues"/>; set
+    /// when the revision starts, or when the document ends; null before.
+    /// </summary>
     public List<BenchmarkReportValidationNote>? FirstTurnIssues { get; set; }
 
     /// <summary>The issues left after the last validation, at most <see cref="BenchmarkReportPackJob.MaxDiagnosticIssues"/>; null until the document ends.</summary>
@@ -45,6 +48,21 @@ public class BenchmarkReportPackDocumentProgress
 
     /// <summary>A Failed document's last raw reply, cut at <see cref="BenchmarkReportPackJob.MaxFailedReplyChars"/>; null otherwise.</summary>
     public string? FailedReply { get; set; }
+
+    /// <summary>The step the document is at (<see cref="BenchmarkReportPackPhases"/>); empty while it waits.</summary>
+    public string Phase { get; set; } = string.Empty;
+
+    /// <summary>A plain sentence on the current phase; null when there is none.</summary>
+    public string? PhaseDetail { get; set; }
+
+    /// <summary>Every phase the document reached, in order; kept in memory for diagnostics.</summary>
+    public List<string> PhaseHistory { get; } = new();
+
+    /// <summary>Whether the first draft passed every check; null until it has been checked.</summary>
+    public bool? FirstDraftClean { get; set; }
+
+    /// <summary>Every writer call of the document, in order.</summary>
+    public List<BenchmarkReportPackCallDto> Calls { get; } = new();
 }
 
 public class BenchmarkReportPackJobLogEntry
@@ -112,6 +130,24 @@ public class BenchmarkReportPackJob
     public long InputTokens { get; set; }
     public long OutputTokens { get; set; }
     public decimal? CostUsd { get; set; }
+
+    /// <summary>The SHA-256 of the writer's system prompt of the job's first document; null until it is built.</summary>
+    public string? WriterPromptSha256 { get; set; }
+
+    /// <summary>The writer's provider, model id and thinking level, from the configuration the job writes with; null until bound.</summary>
+    public string? WriterProvider { get; set; }
+
+    public string? WriterModelId { get; set; }
+    public string? WriterThinkingLevel { get; set; }
+
+    /// <summary>The comparison's reference model, as its label; null when it has none.</summary>
+    public string? ReferenceModel { get; set; }
+
+    /// <summary>The comparison's entry keys, e.g. <c>battery:13</c>; empty for a completion job.</summary>
+    public List<string> Entries { get; set; } = new();
+
+    /// <summary>The notes of the job's preparation (fact sheet and engine).</summary>
+    public List<BenchmarkReportValidationNote> PreparationNotes { get; } = new();
 
     public CancellationTokenSource Cts { get; set; } = null!;
 
@@ -214,20 +250,98 @@ public class BenchmarkReportPackJob
         }
     }
 
-    private static List<BenchmarkReportValidationNote> CopyIssues(IEnumerable<BenchmarkReportValidationNote>? issues)
+    /// <summary>
+    /// A document's first-turn issues while it is revised, each cut at <see cref="MaxDiagnosticIssues"/>: they
+    /// travel on a running job's polls once the document is <see cref="BenchmarkReportPackPhases.Revising"/> or later.
+    /// </summary>
+    public void SetFirstTurnIssues(BenchmarkReportPackDocumentProgress document, IEnumerable<BenchmarkReportValidationNote>? issues)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        var first = CopyIssues(issues);
+        lock (_lock)
+        {
+            document.FirstTurnIssues = first;
+        }
+    }
+
+    /// <summary>The step a document is at, with its plain sentence; each phase is added to its history.</summary>
+    public void SetDocumentPhase(BenchmarkReportPackDocumentProgress document, string phase, string? detail = null)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        lock (_lock)
+        {
+            document.Phase = phase;
+            document.PhaseDetail = detail;
+            document.PhaseHistory.Add(phase);
+        }
+    }
+
+    /// <summary>Whether a document's first draft passed every check.</summary>
+    public void SetFirstDraftClean(BenchmarkReportPackDocumentProgress document, bool clean)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        lock (_lock)
+        {
+            document.FirstDraftClean = clean;
+        }
+    }
+
+    /// <summary>One writer call of a document, in call order; its usage is counted by <see cref="AddUsage(BenchmarkReportPackDocumentProgress?, long, long, decimal?)"/>.</summary>
+    public void RecordCall(BenchmarkReportPackDocumentProgress document, BenchmarkReportPackCallDto call)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(call);
+        lock (_lock)
+        {
+            document.Calls.Add(call);
+        }
+    }
+
+    /// <summary>The notes a subject's preparation recorded, kept once each for the job's diagnostics.</summary>
+    public void AddPreparationNotes(IEnumerable<BenchmarkReportValidationNote>? notes)
+    {
+        var copies = CopyIssues(notes, int.MaxValue);
+        lock (_lock)
+        {
+            foreach (var note in copies)
+            {
+                if (!PreparationNotes.Any(n => n.Rule == note.Rule && n.Location == note.Location && n.Message == note.Message))
+                {
+                    PreparationNotes.Add(note);
+                }
+            }
+        }
+    }
+
+    private static List<BenchmarkReportValidationNote> CopyIssues(IEnumerable<BenchmarkReportValidationNote>? issues, int max = MaxDiagnosticIssues)
         => (issues ?? Enumerable.Empty<BenchmarkReportValidationNote>())
-            .Take(MaxDiagnosticIssues)
-            .Select(n => new BenchmarkReportValidationNote { Rule = n.Rule, Location = n.Location, Message = n.Message, Dropped = n.Dropped })
+            .Take(max)
+            .Select(n => new BenchmarkReportValidationNote { Rule = n.Rule, Location = n.Location, Message = n.Message, Dropped = n.Dropped, Text = n.Text })
             .ToList();
 
-    private static List<BenchmarkReportPackValidationIssueDto>? IssueDtos(List<BenchmarkReportValidationNote>? issues)
-        => issues?.Select(n => new BenchmarkReportPackValidationIssueDto
-        {
-            Rule = n.Rule,
-            Location = n.Location,
-            Message = n.Message,
-            Dropped = n.Dropped
-        }).ToList();
+    private static List<BenchmarkReportPackValidationIssueDto>? IssueDtos(List<BenchmarkReportValidationNote>? issues, BenchmarkReportAudience audience)
+        => issues?.Select(n => BenchmarkReportRuleCatalog.ToIssueDto(n, BenchmarkReportRuleCatalog.SlotTitlesFor(audience))).ToList();
+
+    /// <summary>The phases from <see cref="BenchmarkReportPackPhases.Revising"/> on, when the first draft's issues are known.</summary>
+    private static readonly HashSet<string> RevisingOrLater = new(StringComparer.Ordinal)
+    {
+        BenchmarkReportPackPhases.Revising, BenchmarkReportPackPhases.CheckingRevision, BenchmarkReportPackPhases.Storing,
+        BenchmarkReportPackPhases.DrawingCharts, BenchmarkReportPackPhases.Done
+    };
+
+    private static BenchmarkReportPackCallDto CopyCall(BenchmarkReportPackCallDto call) => new()
+    {
+        Kind = call.Kind,
+        StartedAtUtc = call.StartedAtUtc,
+        DurationMs = call.DurationMs,
+        InputTokens = call.InputTokens,
+        CachedInputTokens = call.CachedInputTokens,
+        OutputTokens = call.OutputTokens,
+        CostUsd = call.CostUsd,
+        FinishReason = call.FinishReason,
+        RequestMessages = call.RequestMessages,
+        RequestCharacters = call.RequestCharacters
+    };
 
     public void SetStatus(BenchmarkReportPackJobStatus status)
     {
@@ -245,7 +359,8 @@ public class BenchmarkReportPackJob
     {
         lock (_lock)
         {
-            // The validation detail travels once the job has ended, never on a running job's polls.
+            // The validation detail travels once the job has ended; on a running job's polls, only the
+            // first-turn issues of a document under revision or past it.
             bool terminal = Status != BenchmarkReportPackJobStatus.Running;
             return new BenchmarkReportPackJobDto
             {
@@ -281,9 +396,13 @@ public class BenchmarkReportPackJob
                     InputTokens = d.InputTokens,
                     OutputTokens = d.OutputTokens,
                     CostUsd = d.CostUsd == null ? null : (double)d.CostUsd.Value,
-                    FirstTurnIssues = terminal ? IssueDtos(d.FirstTurnIssues) : null,
-                    FinalIssues = terminal ? IssueDtos(d.FinalIssues) : null,
-                    FailedReply = terminal ? d.FailedReply : null
+                    FirstTurnIssues = terminal || RevisingOrLater.Contains(d.Phase) ? IssueDtos(d.FirstTurnIssues, d.Audience) : null,
+                    FinalIssues = terminal ? IssueDtos(d.FinalIssues, d.Audience) : null,
+                    FailedReply = terminal ? d.FailedReply : null,
+                    Phase = d.Phase,
+                    PhaseDetail = d.PhaseDetail,
+                    FirstDraftClean = d.FirstDraftClean,
+                    Calls = d.Calls.Select(CopyCall).ToList()
                 }).ToList(),
                 Log = Log.Select(l => new BenchmarkReportPackJobLogEntryDto
                 {
@@ -291,7 +410,25 @@ public class BenchmarkReportPackJob
                     Message = l.Message,
                     Severity = l.Severity
                 }).ToList(),
-                ServerTimeUtc = DateTime.UtcNow
+                ServerTimeUtc = DateTime.UtcNow,
+                ReportFormatVersion = BenchmarkReportPackRenderer.CurrentFormatVersion(Scope),
+                EngineVersion = Documents.Any(d => d.Audience == BenchmarkReportAudience.RootCauseAnalysis)
+                    ? RootCause.RootCauseEngine.Version
+                    : null,
+                PdfLayoutVersion = Pdf.BenchmarkPdfRenderer.LayoutVersion,
+                WordLayoutVersion = Word.BenchmarkWordRenderer.LayoutVersion,
+                WriterPromptSha256 = WriterPromptSha256,
+                WriterProvider = WriterProvider,
+                WriterModelId = WriterModelId,
+                WriterThinkingLevel = WriterThinkingLevel,
+                ReferenceModel = ReferenceModel,
+                Entries = Entries.ToList(),
+                PreparationNotes = PreparationNotes.Select(n =>
+                {
+                    var issue = BenchmarkReportRuleCatalog.ToIssueDto(n);
+                    issue.Severity = BenchmarkReportRuleCatalog.WarningSeverity;
+                    return issue;
+                }).ToList()
             };
         }
     }

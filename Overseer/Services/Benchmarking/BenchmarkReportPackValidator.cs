@@ -40,8 +40,8 @@ public sealed class BenchmarkReportCleanResult
 /// the sheet has peers); no unknown slots; no lists the audience does not use; item texts non-empty.</item>
 /// <item>Tokens: <c>{{key}}</c> names a fact, <c>{{peer:X}}</c> a peer letter, <c>{{subject}}</c> the subject;
 /// written exactly, without inner spaces; no stray braces.</item>
-/// <item>No bare digit once tokens, known names and <c>Q&lt;n&gt;</c> / <c>R&lt;n&gt;</c> references (on a battery
-/// sheet also <c>S&lt;suite&gt;-Q&lt;n&gt;</c>) are masked.</item>
+/// <item>No bare digit once tokens, known names, the fixed phrase <c>95 % interval</c> (<see cref="IntervalLevelRegex"/>)
+/// and <c>Q&lt;n&gt;</c> / <c>R&lt;n&gt;</c> references (on a battery sheet also <c>S&lt;suite&gt;-Q&lt;n&gt;</c>) are masked.</item>
 /// <item>Every question number exists in the subject's exam; topics cover every question where required
 /// (on a battery sheet, every question given in detail). A battery sheet's questions are referred to as
 /// <c>S&lt;suite&gt;-Q&lt;n&gt;</c>, never as a bare <c>Q&lt;n&gt;</c>.</item>
@@ -66,8 +66,9 @@ public sealed class BenchmarkReportCleanResult
 /// <item>Retired (question notes); the number is never reused.</item>
 /// <item>A sentence holding <c>{{subject}}</c>, a <c>{{peer:X}}</c> token and a word of
 /// <see cref="ComparativeWords"/>, where <c>peer.X.intervalOverlap</c> is true, also says
-/// <c>overlap</c> or <c>not established</c>; where <c>peer.X.pairedExcludesZero</c> is true, saying
-/// that the paired interval excludes zero (or citing that fact) does as well. A warning.</item>
+/// <c>overlap</c> or <c>not established</c>, or cites that fact; where <c>peer.X.pairedExcludesZero</c> is
+/// true, saying that the paired interval excludes zero (or citing that fact) does as well. A speed or cost
+/// sentence (<see cref="RankingAxes"/>) is not checked against the quality intervals. A warning.</item>
 /// <item>No word of <see cref="HypeWords"/>, whole words ignoring case. A warning.</item>
 /// <item>Retired (<c>model_developers</c> recommendations); the number is never reused.</item>
 /// <item>No negation (<see cref="NegationWords"/>) within <see cref="NegationWindowWords"/> words before a
@@ -80,8 +81,10 @@ public sealed class BenchmarkReportCleanResult
 /// model's letter and its fact keys, with no <c>{{subject}}</c> or <c>{{peer:X}}</c>; every covered
 /// model's name is a name of rule 10; rule 16 reads, for each comparative word, the pair it relates
 /// (the nearest <c>{{model:X}}</c> before it and the nearest after it in the sentence, or every pair of
-/// the sentence when either is missing) and the pair's <c>pair.X.Y.intervalOverlap</c>, where a family's
-/// established result (<c>pair.X.Y.quality.reference</c> or <c>.allPairs</c>) may be stated instead; its
+/// the sentence when either is missing), and gives at most one note per sentence: a quality sentence is
+/// read against the pair's <c>pair.X.Y.intervalOverlap</c>, where a family's established result
+/// (<c>pair.X.Y.quality.reference</c> or <c>.allPairs</c>) may be stated instead, and a speed or cost
+/// sentence against the pair's paired result on that axis, where it has one; its
 /// <c>models</c> list gives each covered model at most the audience's points, each citing evidence; and
 /// rule 21, a warning, asks for an entry for every covered model. Rule 31 (<see cref="ComparisonTokenShapeRule"/>),
 /// a warning, reads the text with every token resolved to its display: a sentence continued after a full
@@ -91,14 +94,15 @@ public sealed class BenchmarkReportCleanResult
 /// <para>A Root Cause Analysis, in comparison or model scope, adds the claim discipline of rules 32 to 36,
 /// each built from <see cref="RootCauseClaimSupport"/>, which the prompt shares: rule 32, a causal word in
 /// the scope or an evidence slot, or in an observation, drops the paragraph or item; rule 33, a causal word
-/// in a hypotheses slot, the conclusions or the next runs without a hypothesis or axis token in its sentence,
-/// drops the paragraph; rule 34, a certainty word anywhere without a High hypothesis token or an established
-/// axis status token in its sentence, drops the paragraph or item; rule 35, a writer hypothesis without an
-/// axis, statement, evidence for, refuted-if statement or known locus, with a confidence other than Low, or
-/// citing a model or fact that does not exist, is dropped; rule 36, a warning, wants the conclusions to cite
-/// every axis' status. Rule 31 applies to it in both scopes, and rule 4 wants a topic for every question it
-/// cites whose text the writer was given. Its evidence slots are capped lower in a run- or battery-completion
-/// document.</para>
+/// in an answer slot, a hypotheses slot, the conclusions or the next runs without a hypothesis or axis token
+/// in its sentence (in the next runs, a run token too), drops the paragraph; rule 34, a certainty word
+/// anywhere without a High hypothesis token or an established axis status token in its sentence, drops the
+/// paragraph or item; rule 35, a writer hypothesis without an axis, statement, evidence for, refuted-if
+/// statement or known locus, with a confidence other than Low, or citing a model or fact that does not
+/// exist, is dropped; rule 36, a warning, wants the conclusions to cite every axis' status and each answer
+/// slot its question's status. An answer slot is required only for a question the sheet asks
+/// (<see cref="RootCauseClaimSupport.Questions"/>). Rule 31 applies to it in both scopes, a hypothesis'
+/// label excepted, and rule 4 wants a topic for every question it cites whose text the writer was given.</para>
 ///
 /// <para>A chat consistency sheet (<see cref="BenchmarkReportFactSheet.IsChatConsistency"/>) is checked
 /// against its audience's chat consistency slots and word caps, with the claim discipline of rules
@@ -249,15 +253,18 @@ public static class BenchmarkReportPackValidator
 
     // Root Cause Analysis slot caps.
     public const int RootCauseScopeMaxWords = 120;
-    public const int RootCauseEvidenceMaxWords = 150;
+    public const int RootCauseEvidenceMaxWords = 100;
 
     /// <summary>An evidence slot's cap in a run- or battery-completion Root Cause Analysis.</summary>
     public const int RootCauseCompletionEvidenceMaxWords = 100;
 
-    public const int RootCauseHypothesesMaxWords = 200;
-    public const int RootCauseConclusionsMaxWords = 200;
-    public const int RootCauseNextRunsMaxWords = 120;
+    public const int RootCauseHypothesesMaxWords = 120;
+    public const int RootCauseConclusionsMaxWords = 120;
+    public const int RootCauseNextRunsMaxWords = 50;
     public const int RootCauseLimitationsMaxWords = 120;
+
+    /// <summary>Each answer slot of a Root Cause Analysis (<see cref="BenchmarkReportSlots.RootCauseAnswerSlots"/>).</summary>
+    public const int RootCauseAnswerMaxWords = 60;
 
     /// <summary>Each observation of a Root Cause Analysis.</summary>
     public const int RootCauseObservationMaxWords = 35;
@@ -420,6 +427,24 @@ public static class BenchmarkReportPackValidator
         @"(?<![\p{L}\p{N}])(?:overlap\p{L}*|not\s+established)(?![\p{L}\p{N}])",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    /// <summary>Words rule 16 reads as a sentence about speed, matched as whole words, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> SpeedWords = new[] { "time", "faster", "slower", "latency", "seconds" };
+
+    /// <summary>Words rule 16 reads as a sentence about cost, matched as whole words, ignoring case.</summary>
+    public static readonly IReadOnlyList<string> CostWords = new[] { "cost", "costs", "cheaper", "expensive", "spend", "price", "priced", "tokens" };
+
+    /// <summary>Words that keep a sentence about quality for rule 16 whatever speed or cost word it holds.</summary>
+    public static readonly IReadOnlyList<string> QualityWords = new[] { "score", "scored", "index", "intelligence", "accuracy", "quality", "completeness" };
+
+    private static readonly Regex SpeedWordRegex = WordListRegex(SpeedWords);
+    private static readonly Regex CostWordRegex = WordListRegex(CostWords);
+    private static readonly Regex QualityWordRegex = WordListRegex(QualityWords);
+
+    /// <summary>The fixed interval-level phrase rule 3 masks before its digit search: <c>95 % interval</c> and its variants.</summary>
+    private static readonly Regex IntervalLevelRegex = new(
+        @"\b95\s?%\s?(?:bootstrap\s+|confidence\s+|paired\s+)?intervals?\b",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     /// <summary>
     /// What rule 16 accepts, for a peer whose <c>peer.X.pairedExcludesZero</c> is true, as stating the
     /// paired result: "paired" and "excludes zero" (or "exclude", "excluding") in one sentence.
@@ -513,6 +538,11 @@ public static class BenchmarkReportPackValidator
             RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     }
 
+    /// <summary>Whole words of <paramref name="words"/>, ignoring case.</summary>
+    private static Regex WordListRegex(IEnumerable<string> words)
+        => new(@"(?<![\p{L}\p{N}])(?:" + string.Join("|", words.Select(Regex.Escape)) + @")(?![\p{L}\p{N}])",
+            RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     private enum ItemKind
     {
         Strength,
@@ -531,6 +561,8 @@ public static class BenchmarkReportPackValidator
     /// </summary>
     public static int? RootCauseSlotMaxWords(string slot, bool completion) => slot switch
     {
+        BenchmarkReportSlots.AnswerBest or BenchmarkReportSlots.AnswerWorst or BenchmarkReportSlots.AnswerSpeed or BenchmarkReportSlots.AnswerCost
+            => RootCauseAnswerMaxWords,
         BenchmarkReportSlots.Scope => RootCauseScopeMaxWords,
         BenchmarkReportSlots.EvidenceIntelligence or BenchmarkReportSlots.EvidenceSpeed or BenchmarkReportSlots.EvidenceCost
             => completion ? RootCauseCompletionEvidenceMaxWords : RootCauseEvidenceMaxWords,
@@ -642,10 +674,7 @@ public static class BenchmarkReportPackValidator
             var paragraphs = SplitParagraphs(text);
             for (int p = 0; p < paragraphs.Count; p++)
             {
-                CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), notes);
-                CheckIntervalWidth(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), notes);
-                CheckChatClaims(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), notes);
-                CheckRootCauseClaims(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), notes);
+                notes.AddRange(WithText(ParagraphIssues(ctx, slot, paragraphs[p], ParagraphLocation(slot, p)), paragraphs[p]));
             }
             CheckChatSlot(ctx, slot, text, location, notes);
 
@@ -797,7 +826,8 @@ public static class BenchmarkReportPackValidator
     /// cannot be dropped, so an invalid one is fatal, as is a required slot left empty; when the headline
     /// is the only fatal cause, <see cref="BenchmarkReportCleanResult.HeadlineOnlyFatal"/> says so. Missing
     /// question topics are recorded but not fatal, and so are the warnings of
-    /// <see cref="IsWarningRule"/>: their text is kept.
+    /// <see cref="IsWarningRule"/>: their text is kept. A note on a paragraph or item carries that paragraph's
+    /// or item's raw text in <see cref="BenchmarkReportValidationNote.Text"/>, removed or kept.
     /// </summary>
     public static BenchmarkReportCleanResult DropInvalid(
         BenchmarkReportAudience audience,
@@ -842,18 +872,14 @@ public static class BenchmarkReportPackValidator
             var kept = new List<(int Index, string Text)>();
             for (int p = 0; p < paragraphs.Count; p++)
             {
-                var issues = new List<BenchmarkReportValidationNote>();
-                CheckProse(ctx, paragraphs[p], ParagraphLocation(slot, p), issues);
-                CheckIntervalWidth(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), issues);
-                CheckChatClaims(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), issues);
-                CheckRootCauseClaims(ctx, slot, paragraphs[p], ParagraphLocation(slot, p), issues);
+                var issues = ParagraphIssues(ctx, slot, paragraphs[p], ParagraphLocation(slot, p));
                 if (issues.Any(Blocks))
                 {
-                    notes.AddRange(MarkDropped(issues));
+                    notes.AddRange(WithText(MarkDropped(issues), paragraphs[p]));
                 }
                 else
                 {
-                    notes.AddRange(issues);
+                    notes.AddRange(WithText(issues, paragraphs[p]));
                     kept.Add((p, paragraphs[p]));
                 }
             }
@@ -864,7 +890,7 @@ public static class BenchmarkReportPackValidator
                 {
                     var last = kept[^1];
                     kept.RemoveAt(kept.Count - 1);
-                    Dropped(notes, 7, ParagraphLocation(slot, last.Index), $"Removed to bring {LowerFirst(SlotName(slot))} within {cap.ToString(CultureInfo.InvariantCulture)} words.");
+                    Dropped(notes, 7, ParagraphLocation(slot, last.Index), $"Removed to bring {LowerFirst(SlotName(slot))} within {cap.ToString(CultureInfo.InvariantCulture)} words.", last.Text);
                 }
             }
 
@@ -889,7 +915,7 @@ public static class BenchmarkReportPackValidator
 
         foreach (string key in ExtraSlots(ctx.RequiredSlots, sections))
         {
-            Dropped(notes, 1, SectionLocation(key), UnknownSlotMessage(ctx, key));
+            Dropped(notes, 1, SectionLocation(key), UnknownSlotMessage(ctx, key), sections[key]);
         }
 
         if (spec.UsesStrengthsAndWeaknesses)
@@ -899,8 +925,8 @@ public static class BenchmarkReportPackValidator
         }
         else
         {
-            if (output.Strengths is { Count: > 0 }) Dropped(notes, 1, "strengths", UnusedListMessage(spec, "strengths"));
-            if (output.Weaknesses is { Count: > 0 }) Dropped(notes, 1, "weaknesses", UnusedListMessage(spec, "weaknesses"));
+            if (output.Strengths is { Count: > 0 }) Dropped(notes, 1, "strengths", UnusedListMessage(spec, "strengths"), ItemTexts(output.Strengths));
+            if (output.Weaknesses is { Count: > 0 }) Dropped(notes, 1, "weaknesses", UnusedListMessage(spec, "weaknesses"), ItemTexts(output.Weaknesses));
         }
 
         if (spec.MaxModelPoints > 0)
@@ -909,7 +935,7 @@ public static class BenchmarkReportPackValidator
         }
         else if (output.Models is { Count: > 0 })
         {
-            Dropped(notes, 1, "models", UnusedListMessage(spec, "models"));
+            Dropped(notes, 1, "models", UnusedListMessage(spec, "models"), ItemTexts(output.Models.SelectMany(m => m?.Points ?? new List<BenchmarkReportWriterItem>())));
         }
 
         if (spec.MaxObservations > 0)
@@ -918,7 +944,7 @@ public static class BenchmarkReportPackValidator
         }
         else if (output.Observations is { Count: > 0 })
         {
-            Dropped(notes, 1, "observations", UnusedListMessage(spec, "observations"));
+            Dropped(notes, 1, "observations", UnusedListMessage(spec, "observations"), ItemTexts(output.Observations));
         }
 
         if (spec.MaxWriterHypotheses > 0)
@@ -927,7 +953,7 @@ public static class BenchmarkReportPackValidator
         }
         else if (output.WriterHypotheses is { Count: > 0 })
         {
-            Dropped(notes, 1, "writerHypotheses", UnusedListMessage(spec, "writerHypotheses"));
+            Dropped(notes, 1, "writerHypotheses", UnusedListMessage(spec, "writerHypotheses"), string.Join("\n\n", output.WriterHypotheses.Select(HypothesisText)));
         }
 
         var topicSeen = new HashSet<int>();
@@ -944,11 +970,11 @@ public static class BenchmarkReportPackValidator
 
             if (issues.Any(Blocks))
             {
-                notes.AddRange(MarkDropped(issues));
+                notes.AddRange(WithText(MarkDropped(issues), topic.Topic));
                 continue;
             }
 
-            notes.AddRange(issues);
+            notes.AddRange(WithText(issues, topic.Topic));
             topicSeen.Add(topic.Question);
             copy.QuestionTopics.Add(new BenchmarkReportQuestionTopic { Question = topic.Question, Topic = topic.Topic });
         }
@@ -1012,8 +1038,23 @@ public static class BenchmarkReportPackValidator
         }
     }
 
-    /// <summary>Rules 2, 3, 4 (question references), 5 (row references), 8, 9, 10 and 11 on one prose string.</summary>
-    private static void CheckProse(Context ctx, string text, string location, List<BenchmarkReportValidationNote> notes)
+    /// <summary>Every paragraph-level rule on one paragraph of <paramref name="slot"/>.</summary>
+    private static List<BenchmarkReportValidationNote> ParagraphIssues(Context ctx, string slot, string paragraph, string location)
+    {
+        var issues = new List<BenchmarkReportValidationNote>();
+        CheckProse(ctx, paragraph, location, issues, slot);
+        CheckIntervalWidth(ctx, slot, paragraph, location, issues);
+        CheckChatClaims(ctx, slot, paragraph, location, issues);
+        CheckRootCauseClaims(ctx, slot, paragraph, location, issues);
+        return issues;
+    }
+
+    /// <summary>
+    /// Rules 2, 3, 4 (question references), 5 (row references), 8 to 12, 16, 17, 19 and 31 on one prose
+    /// string; <paramref name="slot"/> is null for the headline and an item, and lets rule 16 read a speed or
+    /// cost slot's sentences on that axis.
+    /// </summary>
+    private static void CheckProse(Context ctx, string text, string location, List<BenchmarkReportValidationNote> notes, string? slot = null)
     {
         string stripped = TokenRegex.Replace(text, " ");
 
@@ -1034,8 +1075,9 @@ public static class BenchmarkReportPackValidator
             Issue(notes, 2, location, "Unbalanced token braces: write every token as {{...}} with nothing but the token name between the braces.");
         }
 
-        // Rule 3: bare digits.
+        // Rule 3: bare digits; the fixed interval-level phrase is the one digit prose may hold.
         string masked = ctx.MaskKnownNames(stripped);
+        masked = IntervalLevelRegex.Replace(masked, " ");
         if (ctx.Battery) masked = BatteryRefRegex.Replace(masked, " ");
         masked = QuestionRefRegex.Replace(masked, " ");
         masked = RowRefRegex.Replace(masked, " ");
@@ -1145,29 +1187,28 @@ public static class BenchmarkReportPackValidator
         }
 
         // Rule 16: an unhedged ranking against a peer whose interval overlaps the subject's; on a
-        // comparison-scope sheet, of one model against another whose interval overlaps it.
+        // comparison-scope sheet, of one model against another whose interval overlaps it, or whose
+        // paired speed or cost result is not established. One note per sentence.
         if (ctx.Comparison)
         {
-            foreach (var (first, second, established) in UnhedgedOverlappingPairs(ctx, text))
+            foreach (var found in UnhedgedRankings(ctx, text, slot))
             {
-                Issue(notes, OverlapHedgeRule, location, established
-                    ? $"Ranks {{{{model:{first}}}}} against {{{{model:{second}}}}}, whose 95 % intervals overlap, without the paired result: in the same sentence, say what the paired test established on the same questions and after which family's adjustment, or that the intervals overlap."
-                    : $"Ranks {{{{model:{first}}}}} against {{{{model:{second}}}}}, whose 95 % intervals overlap, without saying so: in the same sentence, say that the intervals overlap and that the order between them is not established.");
+                Issue(notes, OverlapHedgeRule, location, RankingMessage(ctx, found));
             }
         }
 
-        var unhedged = ctx.Comparison ? new List<string>() : UnhedgedOverlappingPeers(ctx, text);
+        var unhedged = ctx.Comparison ? new List<string>() : UnhedgedOverlappingPeers(ctx, text, slot);
         var unpaired = unhedged.Where(l => !ctx.PairedExcludesZero(l)).ToList();
         var paired = unhedged.Where(ctx.PairedExcludesZero).ToList();
         if (unpaired.Count > 0)
         {
             string peers = string.Join(", ", unpaired.Select(l => "{{peer:" + l + "}}"));
-            Issue(notes, OverlapHedgeRule, location, $"Ranks {{{{subject}}}} against {peers}, whose 95 % interval overlaps the subject's, without saying so: in the same sentence, say that the intervals overlap and that the order between them is not established.");
+            Issue(notes, OverlapHedgeRule, location, $"Ranks {{{{subject}}}} against {peers}, whose interval overlaps the subject's, without saying so: in the same sentence, say that the intervals overlap and that the order between them is not established, or cite the peer's interval-overlap token.");
         }
         if (paired.Count > 0)
         {
             string peers = string.Join(", ", paired.Select(l => "{{peer:" + l + "}}"));
-            Issue(notes, OverlapHedgeRule, location, $"Ranks {{{{subject}}}} against {peers}, whose 95 % interval overlaps the subject's, without the paired result: in the same sentence, say that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero, not adjusted for comparing several models.");
+            Issue(notes, OverlapHedgeRule, location, $"Ranks {{{{subject}}}} against {peers}, whose interval overlaps the subject's, without the paired result: in the same sentence, say that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero, not adjusted for comparing several models.");
         }
 
         // Rule 31: the shape of the fact tokens.
@@ -1239,12 +1280,13 @@ public static class BenchmarkReportPackValidator
     /// <summary>
     /// Rule 16: the letters of the peers a sentence ranks <c>{{subject}}</c> against with a word of
     /// <see cref="ComparativeWords"/> while <c>peer.X.intervalOverlap</c> is true, and the sentence
-    /// says neither <c>overlap</c> nor <c>not established</c>. A peer whose
-    /// <c>peer.X.pairedExcludesZero</c> is true is also hedged by a sentence saying that the paired
-    /// interval excludes zero, or citing that fact as a token. Tokens are set aside before the text is
-    /// split into sentences, so the dots of a fact key never end one.
+    /// says neither <c>overlap</c> nor <c>not established</c> and cites no <c>peer.X.intervalOverlap</c>. A
+    /// peer whose <c>peer.X.pairedExcludesZero</c> is true is also hedged by a sentence saying that the
+    /// paired interval excludes zero, or citing that fact as a token. A speed or cost sentence
+    /// (<see cref="RankingAxes"/>) is left alone: a peer has no paired speed or cost result. Tokens are set
+    /// aside before the text is split into sentences, so the dots of a fact key never end one.
     /// </summary>
-    private static List<string> UnhedgedOverlappingPeers(Context ctx, string text)
+    private static List<string> UnhedgedOverlappingPeers(Context ctx, string text, string? slot)
     {
         var tokens = new List<string>();
         string masked = TokenRegex.Replace(text ?? string.Empty, m =>
@@ -1264,12 +1306,14 @@ public static class BenchmarkReportPackValidator
 
             string plain = TokenPlaceholderRegex.Replace(sentence, " ");
             if (!ComparativeRegex.IsMatch(plain) || OverlapHedgeRegex.IsMatch(plain)) continue;
+            if (!RankingAxes(slot, plain).Contains(RootCauseAxes.Intelligence, StringComparer.Ordinal)) continue;
 
             bool statesPaired = PairedWordRegex.IsMatch(plain) && ExcludesZeroRegex.IsMatch(plain);
             letters.AddRange(inSentence
                 .Where(t => t.StartsWith("peer:", StringComparison.Ordinal))
                 .Select(t => t["peer:".Length..])
                 .Where(ctx.OverlapsSubject)
+                .Where(l => !inSentence.Contains(BenchmarkReportFacts.PeerPrefix(l) + "intervalOverlap", StringComparer.Ordinal))
                 .Where(l => !ctx.PairedExcludesZero(l)
                             || !(statesPaired || inSentence.Contains(BenchmarkReportFacts.PeerPrefix(l) + "pairedExcludesZero", StringComparer.Ordinal))));
         }
@@ -1278,16 +1322,52 @@ public static class BenchmarkReportPackValidator
     }
 
     /// <summary>
-    /// Rule 16 on a comparison-scope sheet: each pair of models, earlier letter first, that a sentence
-    /// ranks against each other with a word of <see cref="ComparativeWords"/> while their
-    /// <c>pair.X.Y.intervalOverlap</c> is true, and the sentence says neither <c>overlap</c> nor
-    /// <c>not established</c>. A comparative word relates the nearest <c>{{model:X}}</c> before it and the
-    /// nearest after it; when either is missing, the sentence's every pair is read. Where a family
-    /// establishes the pair's quality order, saying <c>paired</c>, or citing one of the pair's own facts,
-    /// hedges it as well; <c>Established</c> tells the two cases apart. Tokens are set aside before the
-    /// text is split into sentences.
+    /// The axes rule 16 reads a ranking sentence on: speed or cost by its slot (an evidence, hypotheses or
+    /// answer slot of that axis); otherwise speed and cost by their words (<see cref="SpeedWords"/>,
+    /// <see cref="CostWords"/>) when the sentence holds no <see cref="QualityWords"/> word; and the quality
+    /// axis, <see cref="RootCauseAxes.Intelligence"/>, for every other sentence.
     /// </summary>
-    private static List<(string First, string Second, bool Established)> UnhedgedOverlappingPairs(Context ctx, string text)
+    private static IReadOnlyList<string> RankingAxes(string? slot, string plain)
+    {
+        switch (slot)
+        {
+            case BenchmarkReportSlots.EvidenceSpeed or BenchmarkReportSlots.HypothesesSpeed or BenchmarkReportSlots.AnswerSpeed:
+                return new[] { RootCauseAxes.Speed };
+            case BenchmarkReportSlots.EvidenceCost or BenchmarkReportSlots.HypothesesCost or BenchmarkReportSlots.AnswerCost:
+                return new[] { RootCauseAxes.Cost };
+        }
+
+        if (!QualityWordRegex.IsMatch(plain))
+        {
+            var axes = new List<string>();
+            if (SpeedWordRegex.IsMatch(plain)) axes.Add(RootCauseAxes.Speed);
+            if (CostWordRegex.IsMatch(plain)) axes.Add(RootCauseAxes.Cost);
+            if (axes.Count > 0) return axes;
+        }
+        return new[] { RootCauseAxes.Intelligence };
+    }
+
+    /// <summary>One pair a sentence ranks without its caveat, earlier letter first, and on which axis.</summary>
+    private readonly record struct UnhedgedRanking(string First, string Second, string Axis, bool Established);
+
+    /// <summary>
+    /// Rule 16 on a comparison-scope sheet, sentence by sentence: the pairs of models, earlier letter first,
+    /// that a sentence ranks against each other with a word of <see cref="ComparativeWords"/> without the
+    /// caveat its axis (<see cref="RankingAxes"/>) needs; a sentence saying <c>overlap</c> or
+    /// <c>not established</c> needs none. A comparative word relates the nearest <c>{{model:X}}</c> before it
+    /// and the nearest after it; when either is missing, the sentence's every pair is read.
+    /// <list type="bullet">
+    /// <item>Quality: a pair whose <c>pair.X.Y.intervalOverlap</c> is true. Citing that fact hedges it, as does
+    /// a cited <c>model.X.quality.rank</c> of either model or <c>pair.X.Y.*.short</c> whose display carries the
+    /// caveat; where a family establishes the pair's quality order, saying <c>paired</c> or citing one of
+    /// the pair's own facts hedges it as well, and <c>Established</c> tells the two cases apart.</item>
+    /// <item>Speed or cost: a pair with a paired result on that axis (<c>pair.X.Y.&lt;axis&gt;.reference</c>,
+    /// <c>.allPairs</c> or <c>.short</c>) that is not established, unless the sentence cites one of those
+    /// facts. A pair with no paired result on the axis is not checked.</item>
+    /// </list>
+    /// Each list holds one sentence's pairs. Tokens are set aside before the text is split into sentences.
+    /// </summary>
+    private static List<List<UnhedgedRanking>> UnhedgedRankings(Context ctx, string text, string? slot)
     {
         var tokens = new List<string>();
         string masked = TokenRegex.Replace(text ?? string.Empty, m =>
@@ -1295,8 +1375,8 @@ public static class BenchmarkReportPackValidator
             tokens.Add(m.Groups[1].Value);
             return "\u0001" + (tokens.Count - 1).ToString(CultureInfo.InvariantCulture) + "\u0002";
         });
-        var found = new List<(string First, string Second, bool Established)>();
-        if (tokens.Count == 0) return found;
+        var sentences = new List<List<UnhedgedRanking>>();
+        if (tokens.Count == 0) return sentences;
 
         foreach (string sentence in SentenceSplitRegex.Split(masked))
         {
@@ -1337,21 +1417,101 @@ public static class BenchmarkReportPackValidator
                 }
             }
 
+            var axes = RankingAxes(slot, plain);
+            var found = new List<UnhedgedRanking>();
             foreach (var (a, b) in related)
             {
                 var (first, second) = ctx.LetterIndex(a) <= ctx.LetterIndex(b) ? (a, b) : (b, a);
                 string prefix = BenchmarkComparisonReportFacts.PairPrefix(first, second);
-                if (!ctx.FactIsTrue(prefix + "intervalOverlap")) continue;
+                foreach (string axis in axes)
+                {
+                    if (axis == RootCauseAxes.Intelligence)
+                    {
+                        if (!ctx.FactIsTrue(prefix + "intervalOverlap")) continue;
 
-                bool established = ctx.PairEstablished(prefix);
-                bool statesPaired = PairedWordRegex.IsMatch(plain)
-                                    || inSentence.Any(t => t.StartsWith(prefix, StringComparison.Ordinal));
-                if (established && statesPaired) continue;
-                found.Add((first, second, established));
+                        bool established = ctx.PairEstablished(prefix);
+                        bool statesPaired = PairedWordRegex.IsMatch(plain)
+                                            || inSentence.Any(t => t.StartsWith(prefix, StringComparison.Ordinal));
+                        if (established && statesPaired) continue;
+                        if (QualityHedged(ctx, inSentence, prefix, first, second)) continue;
+                        found.Add(new UnhedgedRanking(first, second, axis, established));
+                    }
+                    else
+                    {
+                        if (!ctx.PairHasResult(prefix, axis) || ctx.PairAxisEstablished(prefix, axis)) continue;
+                        if (inSentence.Any(t => IsAxisResultKey(t, prefix, axis))) continue;
+                        found.Add(new UnhedgedRanking(first, second, axis, false));
+                    }
+                }
             }
+
+            var distinct = found.Distinct().ToList();
+            if (distinct.Count > 0) sentences.Add(distinct);
         }
 
-        return found.Distinct().ToList();
+        return sentences;
+    }
+
+    /// <summary>
+    /// A cited token hedges a quality ranking of the pair: its <c>intervalOverlap</c> fact, or a
+    /// <c>model.X.quality.rank</c> of either model or a <c>.short</c> fact of the pair whose display says
+    /// that the intervals overlap or that the order is not established.
+    /// </summary>
+    private static bool QualityHedged(Context ctx, IReadOnlyList<string> inSentence, string prefix, string first, string second)
+    {
+        foreach (string token in inSentence)
+        {
+            if (string.Equals(token, prefix + "intervalOverlap", StringComparison.Ordinal)) return true;
+
+            bool rank = string.Equals(token, BenchmarkComparisonReportFacts.ModelPrefix(first) + "quality.rank", StringComparison.Ordinal)
+                        || string.Equals(token, BenchmarkComparisonReportFacts.ModelPrefix(second) + "quality.rank", StringComparison.Ordinal);
+            bool shortResult = token.StartsWith(prefix, StringComparison.Ordinal) && token.EndsWith(".short", StringComparison.Ordinal);
+            if ((rank || shortResult) && ctx.FactDisplay(token) is string display && OverlapHedgeRegex.IsMatch(display)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>A pair's paired-result fact on a speed or cost axis: its family results or its short display.</summary>
+    private static bool IsAxisResultKey(string key, string prefix, string axis)
+        => string.Equals(key, prefix + axis + "." + BenchmarkComparisonReportFacts.ReferenceFamilyName, StringComparison.Ordinal)
+           || string.Equals(key, prefix + axis + "." + BenchmarkComparisonReportFacts.AllPairsFamilyName, StringComparison.Ordinal)
+           || string.Equals(key, prefix + axis + ".short", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Rule 16's one note for a sentence: the models it ranks, and for each kind of shortfall what would
+    /// clear it. Holds no digit, and never asks the writer to call a result established.
+    /// </summary>
+    private static string RankingMessage(Context ctx, IReadOnlyList<UnhedgedRanking> found)
+    {
+        string Who(IReadOnlyList<UnhedgedRanking> pairs)
+        {
+            if (pairs.Count == 1) return $"{{{{model:{pairs[0].First}}}}} against {{{{model:{pairs[0].Second}}}}}";
+            var letters = pairs.SelectMany(p => new[] { p.First, p.Second })
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(ctx.LetterIndex)
+                .Select(l => "{{model:" + l + "}}")
+                .ToList();
+            return BenchmarkReportFormat.LetterList(letters) + " against each other";
+        }
+
+        var parts = new List<string>();
+        var open = found.Where(f => f.Axis == RootCauseAxes.Intelligence && !f.Established).ToList();
+        var paired = found.Where(f => f.Axis == RootCauseAxes.Intelligence && f.Established).ToList();
+        if (open.Count > 0)
+        {
+            parts.Add($"Ranks {Who(open)}, whose intervals overlap, without saying so: in the same sentence, say that the intervals overlap and that the order between them is not established, or cite the pair's interval-overlap token.");
+        }
+        if (paired.Count > 0)
+        {
+            parts.Add($"Ranks {Who(paired)}, whose intervals overlap, without the paired result: in the same sentence, cite the pair's paired-result token, or say that the intervals overlap.");
+        }
+        foreach (string axis in new[] { RootCauseAxes.Speed, RootCauseAxes.Cost })
+        {
+            var onAxis = found.Where(f => f.Axis == axis).ToList();
+            if (onAxis.Count == 0) continue;
+            parts.Add($"Ranks {Who(onAxis)} on {axis}, though the paired {axis} result is not established: in the same sentence, say that the order is not established, or cite the pair's {axis} paired-result token.");
+        }
+        return string.Join(" ", parts);
     }
 
     /// <summary>
@@ -1626,7 +1786,8 @@ public static class BenchmarkReportPackValidator
     /// starts with a capital and ends with a full stop) after anything but the paragraph's start, a list
     /// marker or <c>.</c>, <c>!</c>, <c>?</c> or <c>:</c>, or before <c>)</c>; a clause-valued fact
     /// (<c>Model A took …</c>) right after a model or its own verb; and two or more <c>N of M</c> facts
-    /// separated only by commas and semicolons. One note per kind found.
+    /// separated only by commas and semicolons. One note per kind found. A hypothesis' label
+    /// (<see cref="RootCauseClaimSupport.IsLabel"/>) is a noun phrase, never read as either shape.
     /// </summary>
     private static void CheckTokenShape(Context ctx, string text, string location, List<BenchmarkReportValidationNote> notes)
     {
@@ -1662,6 +1823,9 @@ public static class BenchmarkReportPackValidator
         var doubled = new List<string>();
         foreach (var span in spans)
         {
+            // A hypothesis' label is a noun phrase: it may stand anywhere in a sentence.
+            if (RootCauseClaimSupport.IsLabel(span.Key)) continue;
+
             string display = span.Display.Trim();
             if (display.Length > 1 && char.IsUpper(display[0]) && display.EndsWith('.')
                 && !span.Key.StartsWith("model:", StringComparison.Ordinal) && !span.Key.StartsWith("peer:", StringComparison.Ordinal))
@@ -1757,7 +1921,7 @@ public static class BenchmarkReportPackValidator
             {
                 observed.AddRange(RootCauseClaimSupport.CausalPhrases(plain));
             }
-            else if (inferring && !tokens.Any(claims.SupportsCausal))
+            else if (inferring && !tokens.Any(t => claims.SupportsCausal(t, slot)))
             {
                 unsupported.AddRange(RootCauseClaimSupport.CausalPhrases(plain));
             }
@@ -1777,7 +1941,8 @@ public static class BenchmarkReportPackValidator
         if (unsupported.Count > 0)
         {
             Issue(notes, RootCauseCausalClaimRule, location, $"Uses the causal wording {Quoted(unsupported)} without a hypothesis token in the same sentence: "
-                + "state a cause only as a hypothesis of the analysis states it, citing one of its rca.hypothesis.<id>.<n> tokens or its axis' rca.axis tokens in that sentence (CLAIM SUPPORT lists them).");
+                + "state a cause only as a hypothesis of the analysis states it, citing one of its rca.hypothesis tokens, its label, or its axis' rca.axis tokens in that sentence (CLAIM SUPPORT lists them)"
+                + (string.Equals(slot, BenchmarkReportSlots.NextRuns, StringComparison.Ordinal) ? ", or the rca.run token of the run it describes." : "."));
         }
         if (certain.Count > 0)
         {
@@ -1787,20 +1952,43 @@ public static class BenchmarkReportPackValidator
         }
     }
 
-    /// <summary>Rule 36, a warning: the conclusions cite every axis' <c>rca.axis.&lt;axis&gt;.status</c>.</summary>
+    /// <summary>
+    /// Rule 36, a warning: the conclusions cite every axis' <c>rca.axis.&lt;axis&gt;.status</c>, and each answer
+    /// slot of the document its question's <c>rca.question.&lt;n&gt;.status</c>.
+    /// </summary>
     private static void CheckRootCauseConclusions(Context ctx, IReadOnlyDictionary<string, string> sections, List<BenchmarkReportValidationNote> notes)
     {
-        if (!ctx.RootCause || !sections.TryGetValue(BenchmarkReportSlots.Conclusions, out string? text) || string.IsNullOrWhiteSpace(text)) return;
+        if (!ctx.RootCause) return;
 
-        var cited = TokenRegex.Matches(text).Select(m => m.Groups[1].Value.Trim()).ToHashSet(StringComparer.Ordinal);
-        var missing = ctx.RootCauseClaims.Axes.Where(a => !cited.Contains(RootCauseClaimSupport.StatusKey(a))).ToList();
-        if (missing.Count > 0)
+        if (sections.TryGetValue(BenchmarkReportSlots.Conclusions, out string? text) && !string.IsNullOrWhiteSpace(text))
         {
-            Issue(notes, RootCauseAxisStatusRule, SectionLocation(BenchmarkReportSlots.Conclusions),
-                $"Does not cite {string.Join(", ", missing.Select(a => "{{" + RootCauseClaimSupport.StatusKey(a) + "}}"))}: "
-                + "the conclusions state every axis' status, citing its token, and then its root cause or why it is not established.");
+            var cited = CitedTokens(text);
+            var missing = ctx.RootCauseClaims.Axes.Where(a => !cited.Contains(RootCauseClaimSupport.StatusKey(a))).ToList();
+            if (missing.Count > 0)
+            {
+                Issue(notes, RootCauseAxisStatusRule, SectionLocation(BenchmarkReportSlots.Conclusions),
+                    $"Does not cite {string.Join(", ", missing.Select(a => "{{" + RootCauseClaimSupport.StatusKey(a) + "}}"))}: "
+                    + "the conclusions state every axis' status, citing its token, and then its root cause or why it is not established.");
+            }
+        }
+
+        foreach (int question in ctx.RootCauseClaims.Questions)
+        {
+            string slot = RootCauseClaimSupport.AnswerSlot(question);
+            if (!sections.TryGetValue(slot, out string? answer) || string.IsNullOrWhiteSpace(answer)) continue;
+
+            string status = RootCauseClaimSupport.QuestionStatusKey(question);
+            if (!CitedTokens(answer).Contains(status))
+            {
+                Issue(notes, RootCauseAxisStatusRule, SectionLocation(slot),
+                    $"Does not cite {{{{{status}}}}}: each answer states its question's status, citing its token, before the hypotheses and signals that answer it.");
+            }
         }
     }
+
+    /// <summary>The fact keys a text cites, trimmed.</summary>
+    private static HashSet<string> CitedTokens(string text)
+        => TokenRegex.Matches(text).Select(m => m.Groups[1].Value.Trim()).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>
     /// Rule 35 and the prose rules on one writer hypothesis of a Root Cause Analysis: an axis, a statement,
@@ -1888,18 +2076,19 @@ public static class BenchmarkReportPackValidator
         {
             string location = ItemLocation("writerHypotheses", i);
             var issues = WriterHypothesisIssues(ctx, hypotheses[i], location);
+            string text = HypothesisText(hypotheses[i]);
             if (issues.Any(Blocks))
             {
-                notes.AddRange(MarkDropped(issues));
+                notes.AddRange(WithText(MarkDropped(issues), text));
                 continue;
             }
             if (kept.Count >= max)
             {
-                Dropped(notes, 7, location, $"Removed: the writerHypotheses list holds at most {max.ToString(CultureInfo.InvariantCulture)} items.");
+                Dropped(notes, 7, location, $"Removed: the writerHypotheses list holds at most {max.ToString(CultureInfo.InvariantCulture)} items.", text);
                 continue;
             }
 
-            notes.AddRange(issues);
+            notes.AddRange(WithText(issues, text));
             var h = hypotheses[i];
             kept.Add(new BenchmarkReportWriterHypothesis
             {
@@ -2079,19 +2268,20 @@ public static class BenchmarkReportPackValidator
         {
             string location = ItemLocation(array, i);
             var issues = ItemIssues(ctx, items[i], kind, location);
+            string? text = items[i]?.Text;
             if (issues.Any(Blocks))
             {
-                notes.AddRange(MarkDropped(issues));
+                notes.AddRange(WithText(MarkDropped(issues), text));
                 continue;
             }
 
             if (kept.Count >= max)
             {
-                Dropped(notes, 7, location, $"Removed: the {array} list holds at most {max.ToString(CultureInfo.InvariantCulture)} items.");
+                Dropped(notes, 7, location, $"Removed: the {array} list holds at most {max.ToString(CultureInfo.InvariantCulture)} items.", text);
                 continue;
             }
 
-            notes.AddRange(issues);
+            notes.AddRange(WithText(issues, text));
             kept.Add(clone(items[i]));
         }
 
@@ -2115,7 +2305,7 @@ public static class BenchmarkReportPackValidator
             var entryIssues = ModelEntryIssues(ctx, entry, location, seen);
             if (entryIssues.Any(Blocks))
             {
-                notes.AddRange(MarkDropped(entryIssues));
+                notes.AddRange(WithText(MarkDropped(entryIssues), ItemTexts(entry.Points)));
                 continue;
             }
 
@@ -2125,17 +2315,18 @@ public static class BenchmarkReportPackValidator
             {
                 string pointLocation = location + ".points[" + p.ToString(CultureInfo.InvariantCulture) + "]";
                 var issues = ItemIssues(ctx, source[p], ItemKind.ModelPoint, pointLocation);
+                string? text = source[p]?.Text;
                 if (issues.Any(Blocks))
                 {
-                    notes.AddRange(MarkDropped(issues));
+                    notes.AddRange(WithText(MarkDropped(issues), text));
                     continue;
                 }
                 if (points.Count >= ctx.Spec.MaxModelPoints)
                 {
-                    Dropped(notes, 7, pointLocation, $"Removed: a model holds at most {ctx.Spec.MaxModelPoints.ToString(CultureInfo.InvariantCulture)} points.");
+                    Dropped(notes, 7, pointLocation, $"Removed: a model holds at most {ctx.Spec.MaxModelPoints.ToString(CultureInfo.InvariantCulture)} points.", text);
                     continue;
                 }
-                notes.AddRange(issues);
+                notes.AddRange(WithText(issues, text));
                 points.Add(CloneItem(source[p]));
             }
 
@@ -2346,6 +2537,8 @@ public static class BenchmarkReportPackValidator
     private static string UnknownSlotMessage(Context ctx, string key)
         => ctx.Spec.PeerOnlySlots.Contains(key, StringComparer.Ordinal)
             ? $"\"{key}\" is a slot of the {DocumentName(ctx.Spec.Audience)} with peers only; a stand-alone document has none. Its slots are {string.Join(", ", ctx.RequiredSlots)}."
+            : ctx.RootCause && RootCauseClaimSupport.QuestionOf(key) != null
+            ? $"\"{key}\" answers a question this data does not ask; leave it out. The document's slots are {string.Join(", ", ctx.RequiredSlots)}."
             : $"\"{key}\" is not a slot of the {DocumentName(ctx.Spec.Audience)}; its slots are {string.Join(", ", ctx.RequiredSlots)}.";
 
     private static string UnusedListMessage(BenchmarkReportAudienceSpec spec, string array)
@@ -2398,17 +2591,48 @@ public static class BenchmarkReportPackValidator
 
     private static string Plural(int count) => count == 1 ? string.Empty : "s";
 
-    private static BenchmarkReportValidationNote Note(int rule, string location, string message, bool dropped = false)
-        => new() { Rule = rule, Location = location, Message = message, Dropped = dropped };
+    private static BenchmarkReportValidationNote Note(int rule, string location, string message, bool dropped = false, string? text = null)
+        => new() { Rule = rule, Location = location, Message = message, Dropped = dropped, Text = CapText(text) };
 
     private static void Issue(List<BenchmarkReportValidationNote> notes, int rule, string location, string message)
         => notes.Add(Note(rule, location, message));
 
-    private static void Dropped(List<BenchmarkReportValidationNote> notes, int rule, string location, string message)
-        => notes.Add(Note(rule, location, message, dropped: true));
+    private static void Dropped(List<BenchmarkReportValidationNote> notes, int rule, string location, string message, string? text = null)
+        => notes.Add(Note(rule, location, message, dropped: true, text: text));
 
     private static IEnumerable<BenchmarkReportValidationNote> MarkDropped(IEnumerable<BenchmarkReportValidationNote> issues)
-        => issues.Select(n => Note(n.Rule, n.Location, n.Message, dropped: true));
+        => issues.Select(n => Note(n.Rule, n.Location, n.Message, dropped: true, text: n.Text));
+
+    /// <summary>The notes, each given <paramref name="text"/> unless it already holds a text of its own.</summary>
+    private static IEnumerable<BenchmarkReportValidationNote> WithText(IEnumerable<BenchmarkReportValidationNote> issues, string? text)
+        => issues.Select(n => Note(n.Rule, n.Location, n.Message, n.Dropped, n.Text ?? text));
+
+    /// <summary><paramref name="text"/> cut at <see cref="BenchmarkReportValidationNote.MaxTextLength"/>; null for an empty one.</summary>
+    private static string? CapText(string? text)
+        => string.IsNullOrWhiteSpace(text) ? null
+            : text.Length <= BenchmarkReportValidationNote.MaxTextLength ? text
+            : text[..BenchmarkReportValidationNote.MaxTextLength];
+
+    /// <summary>The items' texts, a blank line between them; null when none has one.</summary>
+    private static string? ItemTexts(IEnumerable<BenchmarkReportWriterItem?>? items)
+    {
+        var texts = (items ?? Enumerable.Empty<BenchmarkReportWriterItem?>())
+            .Select(i => i?.Text)
+            .Where(t => !string.IsNullOrWhiteSpace(t))
+            .ToList();
+        return texts.Count == 0 ? null : string.Join("\n\n", texts);
+    }
+
+    /// <summary>A writer hypothesis as its texts: the statement, each item for and against, and the refuted-if statement.</summary>
+    private static string HypothesisText(BenchmarkReportWriterHypothesis? hypothesis)
+    {
+        var h = hypothesis ?? new BenchmarkReportWriterHypothesis();
+        var parts = new List<string?> { h.Statement };
+        parts.AddRange((h.For ?? new List<string>()).Select(t => "For: " + t));
+        parts.AddRange((h.Against ?? new List<string>()).Select(t => "Against: " + t));
+        if (!string.IsNullOrWhiteSpace(h.RefutedIf)) parts.Add("Refuted if: " + h.RefutedIf);
+        return string.Join("\n", parts.Where(p => !string.IsNullOrWhiteSpace(p)));
+    }
 
     private static BenchmarkReportWriterItem CloneItem(BenchmarkReportWriterItem item) => new()
     {
@@ -2440,10 +2664,16 @@ public static class BenchmarkReportPackValidator
                 : new HashSet<string>(StringComparer.Ordinal);
             _factDisplays = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var fact in sheet.Facts) _factDisplays.TryAdd(fact.Key, fact.Display ?? string.Empty);
-            RequiredSlots = Comparison
+            var slots = Comparison
                 ? Spec.ComparisonSlotsFor(hasNotableFindings: BenchmarkNotableFindings.CountOf(sheet) > 0)
                 : Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
+
+            // An answer slot belongs to the document only when the sheet asks its question.
+            RequiredSlots = RootCause
+                ? slots.Where(s => RootCauseClaimSupport.QuestionOf(s) is not int n || RootCauseClaims.Questions.Contains(n)).ToList()
+                : slots;
             FactKeys = new HashSet<string>(sheet.Facts.Select(f => f.Key), StringComparer.Ordinal);
+            _availableFacts = new HashSet<string>(sheet.Facts.Where(f => f.Available).Select(f => f.Key), StringComparer.Ordinal);
             _trueFacts = new HashSet<string>(
                 sheet.Facts.Where(BenchmarkReportPackPrompt.IsTrue).Select(f => f.Key), StringComparer.Ordinal);
             OrderedLetters = BenchmarkReportPackPrompt.OrderedPeers(sheet.Peers).Select(p => p.Letter).ToList();
@@ -2560,6 +2790,7 @@ public static class BenchmarkReportPackValidator
         private readonly Dictionary<string, int> _numberByReference;
         private readonly IReadOnlySet<string> _chatHiddenKeys;
         private readonly Dictionary<string, string> _factDisplays;
+        private readonly HashSet<string> _availableFacts;
 
         public BenchmarkReportAudienceSpec Spec { get; }
 
@@ -2648,10 +2879,26 @@ public static class BenchmarkReportPackValidator
         /// <summary>The fact is available and true (<see cref="BenchmarkReportPackPrompt.IsTrue"/>).</summary>
         public bool FactIsTrue(string key) => _trueFacts.Contains(key);
 
-        /// <summary>A family of the paired tests establishes the pair's quality order: its <c>quality.reference</c> or <c>quality.allPairs</c> fact is true.</summary>
-        public bool PairEstablished(string pairPrefix)
-            => FactIsTrue(pairPrefix + "quality." + BenchmarkComparisonReportFacts.ReferenceFamilyName)
-               || FactIsTrue(pairPrefix + "quality." + BenchmarkComparisonReportFacts.AllPairsFamilyName);
+        /// <summary>
+        /// A family of the paired tests establishes the pair's quality order: its <c>quality.reference</c>,
+        /// <c>quality.allPairs</c> or <c>quality.short</c> fact is true.
+        /// </summary>
+        public bool PairEstablished(string pairPrefix) => PairAxisEstablished(pairPrefix, "quality");
+
+        /// <summary>
+        /// A family of the paired tests establishes the pair's order on <paramref name="measure"/>
+        /// (<c>quality</c>, <c>speed</c> or <c>cost</c>): its family fact or its <c>.short</c> fact is true.
+        /// </summary>
+        public bool PairAxisEstablished(string pairPrefix, string measure)
+            => FactIsTrue(pairPrefix + measure + "." + BenchmarkComparisonReportFacts.ReferenceFamilyName)
+               || FactIsTrue(pairPrefix + measure + "." + BenchmarkComparisonReportFacts.AllPairsFamilyName)
+               || FactIsTrue(pairPrefix + measure + ".short");
+
+        /// <summary>The pair has a paired result on <paramref name="measure"/>: an available family fact or <c>.short</c> fact.</summary>
+        public bool PairHasResult(string pairPrefix, string measure)
+            => _availableFacts.Contains(pairPrefix + measure + "." + BenchmarkComparisonReportFacts.ReferenceFamilyName)
+               || _availableFacts.Contains(pairPrefix + measure + "." + BenchmarkComparisonReportFacts.AllPairsFamilyName)
+               || _availableFacts.Contains(pairPrefix + measure + ".short");
 
         public bool IsValidToken(string inner)
         {

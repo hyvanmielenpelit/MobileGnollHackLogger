@@ -67,6 +67,10 @@ public static class BenchmarkReportPackParser
         BenchmarkReportSlots.HypothesesCost,
         BenchmarkReportSlots.Conclusions,
         BenchmarkReportSlots.Limitations,
+        BenchmarkReportSlots.AnswerBest,
+        BenchmarkReportSlots.AnswerWorst,
+        BenchmarkReportSlots.AnswerSpeed,
+        BenchmarkReportSlots.AnswerCost,
     };
 
     /// <summary>Never throws: every failure is a result with <see cref="BenchmarkReportParseResult.Error"/> set.</summary>

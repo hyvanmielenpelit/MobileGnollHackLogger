@@ -56,6 +56,20 @@ public static class RootCauseGrades
 
     /// <summary>The weaker of <paramref name="grade"/> and <paramref name="cap"/>; Not supported is never raised.</summary>
     public static string Capped(string grade, string cap) => Rank(grade) <= Rank(cap) ? grade : cap;
+
+    /// <summary>The grade in plain words: Established, Probable, Suggestive, Ruled out, or Unknown for none.</summary>
+    public static string Word(string? grade) => grade switch
+    {
+        High => "Established",
+        Moderate => "Probable",
+        Low => "Suggestive",
+        NotSupported => "Ruled out",
+        _ => "Unknown"
+    };
+
+    /// <summary><c>Probable (Moderate)</c>: the plain word with the grade; <c>Unknown</c> for none.</summary>
+    public static string WordWithGrade(string? grade)
+        => Rank(grade) < 0 ? Word(grade) : Word(grade) + " (" + Display(grade) + ")";
 }
 
 /// <summary>The status of one axis (§ A2): the <c>rca.axis.&lt;axis&gt;.status</c> fact's value.</summary>
@@ -276,8 +290,89 @@ public sealed class RootCauseResult
     /// <summary>Each model's own timing, token, cost and failure figures, in <see cref="Models"/> order.</summary>
     public List<RootCauseModelEvidenceSummary> Evidence { get; set; } = new();
 
+    /// <summary>The research questions of the analysis, numbered 1 to 4; only those whose axis has two comparable models.</summary>
+    public List<RootCauseQuestion> Questions { get; set; } = new();
+
+    /// <summary>Each model's measured profile, in <see cref="Models"/> order.</summary>
+    public List<RootCauseModelProfile> Profiles { get; set; } = new();
+
+    /// <summary>The highest grade the run counts allow, in a sentence; null when every model has two or more runs per suite.</summary>
+    public string? GradeCap { get; set; }
+
     /// <summary>What the computation could not do and why, in words.</summary>
     public List<string> Notes { get; set; } = new();
+}
+
+/// <summary>
+/// One research question: why a model sits at an extreme of an axis (the highest or lowest Intelligence
+/// Index, the slowest, the most expensive), with the hypotheses about it and its measured signals.
+/// </summary>
+public sealed class RootCauseQuestion
+{
+    /// <summary>1 highest score, 2 lowest score, 3 slowest, 4 most expensive.</summary>
+    public int Number { get; set; }
+
+    /// <summary>One of <see cref="RootCauseAxes"/>.</summary>
+    public string Axis { get; set; } = string.Empty;
+
+    /// <summary>The model the question is about, by token.</summary>
+    public string Token { get; set; } = string.Empty;
+
+    /// <summary><c>Why did Model A score highest?</c></summary>
+    public string Text { get; set; } = string.Empty;
+
+    /// <summary>The best grade among <see cref="HypothesisKeys"/> other than Not supported; null when none.</summary>
+    public string? Grade { get; set; }
+
+    /// <summary>The kept non-null hypotheses about the model on the axis, best grade first.</summary>
+    public List<string> HypothesisKeys { get; set; } = new();
+
+    /// <summary>The model's top measured signals on the axis, each a descriptive phrase.</summary>
+    public List<string> Signals { get; set; } = new();
+}
+
+/// <summary>
+/// One model's measured profile: what it does best among the models, where it lost points, and what was
+/// flagged. Every entry is a count or a measurement with its questions, never a cause.
+/// </summary>
+public sealed class RootCauseModelProfile
+{
+    public string Token { get; set; } = string.Empty;
+
+    /// <summary>The model's letter; null for the subject of a per-model sheet.</summary>
+    public string? Letter { get; set; }
+
+    public double? QualityIndex { get; set; }
+
+    /// <summary>The mean dimension scores, accuracy to readability; null where missing.</summary>
+    public List<double?> Dimensions { get; set; } = new();
+
+    /// <summary>At most two: a dimension the model ranks first or second on.</summary>
+    public List<RootCauseProfileEntry> Strengths { get; set; } = new();
+
+    /// <summary>At most three: where it lost most points, its weakest dimension, a dimension it ranks last on.</summary>
+    public List<RootCauseProfileEntry> Weaknesses { get; set; } = new();
+
+    /// <summary>Critical errors, answers without tools, panel disagreement, isolated misses and output defects, where they stand out.</summary>
+    public List<RootCauseProfileEntry> Flags { get; set; } = new();
+}
+
+/// <summary>One measured entry of a model's profile.</summary>
+public sealed class RootCauseProfileEntry
+{
+    /// <summary>
+    /// <c>strength</c>, <c>lostPointsOn</c>, <c>weakestDimension</c>, <c>lowestRank</c>, <c>criticalErrors</c>,
+    /// <c>noTool</c>, <c>panelDisagreement</c>, <c>isolatedMisses</c> or <c>outputDefects</c>.
+    /// </summary>
+    public string Kind { get; set; } = string.Empty;
+
+    public string Text { get; set; } = string.Empty;
+
+    /// <summary>The entry in a few words, for a table cell: <c>2 critical errors</c>.</summary>
+    public string Short { get; set; } = string.Empty;
+
+    /// <summary>The questions it rests on, as the sheet refers to them.</summary>
+    public List<string> Questions { get; set; } = new();
 }
 
 /// <summary>One analyzed model.</summary>
@@ -394,6 +489,9 @@ public sealed class RootCauseHypothesis
     /// <summary>The statement in at most a few words, for the hypothesis chart's row label.</summary>
     public string ShortStatement { get; set; } = string.Empty;
 
+    /// <summary>A noun phrase of at most ten words naming the rule and its models: <c>critical errors of Model F against Model E</c>.</summary>
+    public string Label { get; set; } = string.Empty;
+
     /// <summary>The loci it may point to, in the rule table's order.</summary>
     public List<string> Loci { get; set; } = new();
 
@@ -503,6 +601,9 @@ public sealed class RootCauseRecommendedRun
 
     /// <summary>A model-selection run marked to wait until the system hypotheses are settled.</summary>
     public bool AfterSystemHypotheses { get; set; }
+
+    /// <summary>When to make the run's passes, in words (<c>start each run at a different time of day</c>); null for any time.</summary>
+    public string? When { get; set; }
 
     /// <summary><c>Suite</c> or <c>Battery</c>, as <c>BenchmarkModelBatchTargetKind</c> names them.</summary>
     public string TargetKind { get; set; } = "Suite";
@@ -614,6 +715,12 @@ public sealed class RootCausePairDecomposition
 
     /// <summary>Why the decomposition is missing; null when it is present.</summary>
     public string? UnavailableReason { get; set; }
+
+    /// <summary>
+    /// The difference is not established, so it is not decomposed: the difference and its interval are
+    /// stated, the components are not.
+    /// </summary>
+    public bool NotEstablished { get; set; }
 }
 
 /// <summary>One component of a decomposition.</summary>

@@ -669,6 +669,7 @@ public static class BenchmarkReportFactLabels
     private static readonly IReadOnlyDictionary<string, string> HypothesisParts = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["statement"] = "statement",
+        ["label"] = "label",
         ["axis"] = "axis",
         ["models"] = "models",
         ["locus"] = "locus",
@@ -681,6 +682,25 @@ public static class BenchmarkReportFactLabels
         ["check"] = "check",
         ["share"] = "share of the difference",
         ["interval"] = "95 % interval of the share",
+    };
+
+    /// <summary>The parts of a research question's facts (<c>rca.question.&lt;n&gt;.&lt;part&gt;</c>).</summary>
+    private static readonly IReadOnlyDictionary<string, string> QuestionParts = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["text"] = "question",
+        ["model"] = "model",
+        ["status"] = "answer strength",
+        ["hypotheses"] = "hypotheses about the model",
+        ["signals"] = "measured signals",
+    };
+
+    /// <summary>The unindexed parts of a model profile's facts (<c>rca.profile.&lt;T&gt;.&lt;part&gt;</c>).</summary>
+    private static readonly IReadOnlyDictionary<string, string> ProfileParts = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["lostPointsOn"] = "lost points on",
+        ["weakestDimension"] = "weakest dimension",
+        ["lowestRank"] = "lowest rank",
+        ["flags"] = "flags",
     };
 
     /// <summary>The parts of a control's facts (<c>rca.controls.&lt;n&gt;.&lt;part&gt;</c>).</summary>
@@ -757,6 +777,25 @@ public static class BenchmarkReportFactLabels
             case "hypothesis" when parts.Length == 5 && IsIndex(parts[3]) && HypothesisParts.TryGetValue(parts[4], out var part):
                 label = "Hypothesis " + parts[2] + " (" + parts[3] + "): " + part;
                 return true;
+
+            // rca.question.<n>.<part>
+            case "question" when parts.Length == 4 && IsIndex(parts[2]) && QuestionParts.TryGetValue(parts[3], out var questionPart):
+                label = "Research question " + parts[2] + ": " + questionPart;
+                return true;
+
+            // rca.profile.<T>.<part>, rca.profile.<T>.strength.<n>, rca.profile.<T>.flag.<n>
+            case "profile" when parts.Length >= 4 && TokenName(parts[2]) is string profiled:
+                if (parts.Length == 4 && ProfileParts.TryGetValue(parts[3], out var profilePart))
+                {
+                    label = "Profile, " + profiled + ": " + profilePart;
+                    return true;
+                }
+                if (parts.Length == 5 && parts[3] is "strength" or "flag" && IsIndex(parts[4]))
+                {
+                    label = "Profile, " + profiled + ": " + parts[3] + " " + parts[4];
+                    return true;
+                }
+                return false;
 
             // rca.speed.<F>.<S>.total, rca.speed.<F>.<S>.<component>.share or .interval
             case "speed" when parts.Length >= 5 && TokenName(parts[2]) is string first && TokenName(parts[3]) is string second:
@@ -912,6 +951,7 @@ public static class BenchmarkReportFactLabels
     {
         BenchmarkComparisonReportFacts.ReferenceFamilyName => name + " result against the reference",
         BenchmarkComparisonReportFacts.AllPairsFamilyName => name + " result among all pairs",
+        "short" => name + " result in short",
         _ => null
     };
 

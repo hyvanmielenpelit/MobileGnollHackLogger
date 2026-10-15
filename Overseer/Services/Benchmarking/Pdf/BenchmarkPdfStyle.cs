@@ -62,6 +62,13 @@ internal static class BenchmarkPdfStyle
     /// <summary>Hairline and table rule thickness, in points.</summary>
     public const float Hairline = 0.5f;
 
+    /// <summary>The width of a callout's left rule, in points.</summary>
+    public const float CalloutRule = 3f;
+
+    public static Color CalloutRuleColor(BenchmarkCalloutKind kind) => Hex(BenchmarkDocumentPalette.Callout(kind).Rule);
+
+    public static Color CalloutTint(BenchmarkCalloutKind kind) => Hex(BenchmarkDocumentPalette.Callout(kind).Tint);
+
     public static Color BannerBackground(BenchmarkPdfClassification classification)
         => classification == BenchmarkPdfClassification.Internal ? InternalBanner : ProviderBanner;
 

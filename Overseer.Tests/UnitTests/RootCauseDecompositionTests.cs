@@ -64,6 +64,32 @@ public class RootCauseDecompositionTests
     }
 
     [Fact]
+    public void Speed_NotDecomposed_KeepsTheDifferenceAndTheSameInterval_WithoutAComponent()
+    {
+        var a = new RootCauseModelEvidence { SpeedItems = SlowItems() };
+        var b = new RootCauseModelEvidence { SpeedItems = FastItems() };
+
+        var full = RootCauseDecomposition.Speed("A", a, "B", b);
+        var bare = RootCauseDecomposition.Speed("A", a, "B", b, decompose: false);
+
+        Assert.False(full.NotEstablished);
+        Assert.True(bare.NotEstablished);
+        Assert.Equal(RootCauseDecomposition.NotEstablishedReason, bare.UnavailableReason);
+        Assert.Empty(bare.Components);
+        Assert.Equal(full.Difference, bare.Difference);
+        Assert.Equal(full.SharedQuestions, bare.SharedQuestions);
+        Assert.Equal(full.DifferenceLower, bare.DifferenceLower);
+        Assert.Equal(full.DifferenceUpper, bare.DifferenceUpper);
+
+        var cost = RootCauseDecomposition.Cost("A", new RootCauseModelEvidence { Priced = true, CostItems = SlowItems().Select(i => CostItem(i.Key, new double[] { 1000, 0, 0, 500, 0 }, new double[] { 0.002, 0, 0, 0.004, 0 })).ToList() },
+            "B", new RootCauseModelEvidence { Priced = true, CostItems = FastItems().Select(i => CostItem(i.Key, new double[] { 800, 0, 0, 300, 0 }, new double[] { 0.001, 0, 0, 0.002, 0 })).ToList() },
+            decompose: false);
+        Assert.True(cost.NotEstablished);
+        Assert.Empty(cost.Components);
+        Assert.NotNull(cost.Difference);
+    }
+
+    [Fact]
     public void Speed_WithFewerThanFiveSharedQuestions_IsUnavailable_WithAReason()
     {
         var a = new RootCauseModelEvidence { SpeedItems = SlowItems().Take(4).ToList() };

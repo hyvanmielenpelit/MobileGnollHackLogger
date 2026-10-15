@@ -52,8 +52,8 @@ public sealed class BenchmarkWordSourceTooLargeException : Exception
 /// </summary>
 public static class BenchmarkWordRenderer
 {
-    /// <summary>The page layout's version, printed in the title block and footer as "Word layout 2".</summary>
-    public const int LayoutVersion = 2;
+    /// <summary>The page layout's version, printed in the title block and footer as "Word layout 3".</summary>
+    public const int LayoutVersion = 3;
 
     /// <summary>The longest source text rendered, the PDF's limit; a longer one is refused before rendering starts.</summary>
     public const int MaxSourceCharacters = BenchmarkPdfRenderer.MaxSourceCharacters;

@@ -3515,21 +3515,60 @@ export interface BenchmarkReportPackDocumentProgressDto {
   /** The subject the document is written for: a model's entry key or the comparison-scope subject key. */
   subjectKey?: string;
   subjectLabel?: string;
-  /** The first turn's validation issues (at most 80); null while the job runs. */
+  /** The first draft's validation issues (at most 80); null until the document is in revision or later. */
   firstTurnIssues?: BenchmarkReportPackValidationIssueDto[] | null;
   /** The issues left after the last validation (at most 80); null while the job runs. */
   finalIssues?: BenchmarkReportPackValidationIssueDto[] | null;
   /** A failed document's last raw writer reply, capped at 200,000 characters; null otherwise. */
   failedReply?: string | null;
+  /** The step the document is at (`BenchmarkReportPackPhase`); empty while it waits, absent from an older server. */
+  phase?: BenchmarkReportPackPhase | '';
+  /** A plain sentence on the current phase, e.g. why the draft is being revised; null when there is none. */
+  phaseDetail?: string | null;
+  /** Whether the first draft passed every check; null until the first draft has been checked. */
+  firstDraftClean?: boolean | null;
+  /** Every writer call of the document, in order. */
+  calls?: BenchmarkReportPackCallDto[];
 }
 
-/** One validation issue of a writer turn, as a finished job's progress row reports it. */
+/** The phases of a document's progress row. */
+export type BenchmarkReportPackPhase =
+  'Preparing' | 'Writing' | 'Checking' | 'Revising' | 'CheckingRevision' | 'Storing' | 'DrawingCharts' | 'Done';
+
+/** One writer call of a document. */
+export interface BenchmarkReportPackCallDto {
+  /** `Draft`, `Revision` (the repair turn) or `Headline` (a headline-only retry). */
+  kind: string;
+  startedAtUtc: string;
+  durationMs: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  /** Null when the call had no resolvable price. */
+  costUsd: number | null;
+  /** The provider's finish or stop reason; null when it gave none. */
+  finishReason: string | null;
+  /** The number of messages sent, the system prompt included. */
+  requestMessages: number;
+  /** The characters of every message sent. */
+  requestCharacters: number;
+}
+
+/** One validation issue of a writer turn, as a job's progress row or a stored document reports it. */
 export interface BenchmarkReportPackValidationIssueDto {
   rule: number;
   location: string;
   message: string;
   /** The offending item was removed from the output. */
   dropped: boolean;
+  /** The rule's short name, e.g. "Ranking without the overlap caveat"; absent from an older server. */
+  ruleName?: string;
+  /** `removesItem`, `warning` or `failsDocument`. */
+  severity?: string;
+  /** The location in words, e.g. "Conclusions, paragraph 1". */
+  locationLabel?: string;
+  /** The removed or flagged text, with its tokens unresolved; null when none was kept. */
+  text?: string | null;
 }
 
 export interface BenchmarkReportPackJobLogEntryDto {
@@ -3562,6 +3601,23 @@ export interface BenchmarkReportPackJobDto {
   serverTimeUtc?: string;
   scope?: BenchmarkReportScope;
   comparisonId?: number | null;
+  /** The report format version the job's documents are rendered at. */
+  reportFormatVersion?: number;
+  /** The Root Cause Analysis engine version; null when the job writes no Root Cause Analysis. */
+  engineVersion?: number | null;
+  pdfLayoutVersion?: number;
+  wordLayoutVersion?: number;
+  /** The SHA-256 of the writer's system prompt of the job's first document; null until it is built. */
+  writerPromptSha256?: string | null;
+  writerProvider?: string | null;
+  writerModelId?: string | null;
+  writerThinkingLevel?: string | null;
+  /** The comparison's reference model, as its label; null when it has none. */
+  referenceModel?: string | null;
+  /** The comparison's entries, e.g. `battery:13`; empty for a completion job. */
+  entries?: string[];
+  /** The notes of the job's preparation (fact sheet and engine). */
+  preparationNotes?: BenchmarkReportPackValidationIssueDto[];
 }
 
 /** A stored document in a list; never carries rendered text. */
@@ -3733,13 +3789,15 @@ export interface ReportDocumentChartsSummaryDto {
 
 /** One validation problem, and whether the offending item was dropped. */
 export interface BenchmarkReportValidationNote {
-  /** The validator rule number, 1–12. */
+  /** The validator rule number (`BenchmarkReportRuleCatalog` on the server). */
   rule: number;
   /** Where: `headline`, `sections.abstract`, `weaknesses[1]`, …. */
   location: string;
   message: string;
   /** The item or paragraph was removed from the stored output. */
   dropped: boolean;
+  /** The removed or flagged text, with its tokens unresolved; null or absent on older notes. */
+  text?: string | null;
 }
 
 export interface BenchmarkReportDocumentDetailDto extends BenchmarkReportDocumentListItemDto {
@@ -3747,6 +3805,8 @@ export interface BenchmarkReportDocumentDetailDto extends BenchmarkReportDocumen
   answerExcerptChars: number;
   writerPromptSha256: string;
   validationNotes: BenchmarkReportValidationNote[];
+  /** The same notes with their rule names, severities and locations in words; absent from an older server. */
+  validationIssues?: BenchmarkReportPackValidationIssueDto[];
   factsJson: string;
   /** A Root Cause Analysis' recommended runs, in order (C, then B, then M); null or absent for other documents. */
   recommendedRuns?: RecommendedRun[] | null;

@@ -15,6 +15,21 @@
       <span class="gh-tag cds-status"
             [class.is-warning]="row.document?.status === 'CompletedWithWarnings'"
             [class.is-missing]="!row.document">{{ statusText(row) }}</span>
+      @if (row.document?.status === 'CompletedWithWarnings') {
+        <!-- The stored issues are read when the dialog is first opened. -->
+        @let check = validation.get(row.document!.documentId);
+        <app-info-tip class="cds-why" trigger="dialog" [tipId]="rid + '-why'"
+                      [subject]="whySubject(row)" [dialogTitle]="whyTitle(row)"
+                      (click)="loadValidation(row)">
+          @if (check?.state === 'ready') {
+            <app-report-validation-details [document]="check!.document" source="stored"></app-report-validation-details>
+          } @else if (check?.state === 'error') {
+            <p class="gh-field-error cds-why-error">The check results of this document could not be read. Close this and open it again to retry.</p>
+          } @else {
+            <p class="cds-why-loading">Reading the check results…</p>
+          }
+        </app-info-tip>
+      }
       @if (comparisonChanged(row.listItem)) {
         <span class="gh-tag gh-tag-changed cds-changed">Comparison changed since written</span>
       }

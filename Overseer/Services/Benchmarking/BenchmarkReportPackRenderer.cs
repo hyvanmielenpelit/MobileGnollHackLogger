@@ -111,8 +111,15 @@ public static partial class BenchmarkReportPackRenderer
 {
     public const int ReportFormatVersion = 13;
 
-    /// <summary>The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>).</summary>
-    public const int ComparisonReportFormatVersion = 15;
+    /// <summary>
+    /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
+    /// version 16 its Root Cause Analysis opens with a summary that answers the research questions, its
+    /// writer output carries an answer slot per question, and its detail is in lettered appendices.
+    /// </summary>
+    public const int ComparisonReportFormatVersion = 16;
+
+    /// <summary>The comparison format version whose Root Cause Analysis writer output first carries the answer slots.</summary>
+    private const int AnswerSlotsFormatVersion = 16;
 
     /// <summary>The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.</summary>
     public const int ChatConsistencyReportFormatVersion = 3;
@@ -742,6 +749,53 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
+    /// The availability threats of several models, each by its name and fact prefix: the models whose
+    /// availability is not recorded in one sentence per reason, <c>Provider availability is not recorded for any
+    /// of the 9 models (runs before harness 56), so …</c>, then each recorded model's own threats, named.
+    /// </summary>
+    private static List<string> GroupedAvailabilityThreats(Context ctx, IReadOnlyList<(string Name, string Prefix)> models)
+    {
+        var lines = new List<string>();
+        var withFacts = models
+            .Select(m => (m.Name, m.Prefix, Attempts: Fact(ctx, m.Prefix + "availability.attempts")))
+            .Where(m => m.Attempts != null)
+            .ToList();
+
+        foreach (var group in withFacts.Where(m => !m.Attempts!.Available).GroupBy(m => NotRecordedText(m.Attempts!), StringComparer.Ordinal))
+        {
+            var names = group.Select(m => m.Name).ToList();
+            string who = names.Count == models.Count
+                ? models.Count switch
+                {
+                    1 => string.Empty,
+                    2 => " for either model",
+                    _ => " for any of the " + Inv(models.Count) + " models"
+                }
+                : " for " + BenchmarkReportFormat.LetterList(names);
+            lines.Add("Provider availability is not recorded" + who + NotRecordedParenthesis(group.Key)
+                + ", so provider errors cannot be separated from failures on Overseer's side.");
+        }
+
+        foreach (var model in withFacts.Where(m => m.Attempts!.Available))
+        {
+            foreach (string threat in AvailabilityThreats(ctx, model.Prefix))
+            {
+                lines.Add((models.Count == 1 ? "Provider availability: " : "Provider availability of " + model.Name + ": ") + threat);
+            }
+        }
+        return lines;
+    }
+
+    /// <summary><c> (runs before harness 56)</c> from the reason <c>not recorded before harness 56</c>; empty when it says no more.</summary>
+    private static string NotRecordedParenthesis(string reason)
+    {
+        const string NotRecorded = "not recorded";
+        string rest = reason.StartsWith(NotRecorded, StringComparison.OrdinalIgnoreCase) ? reason[NotRecorded.Length..].Trim() : reason.Trim();
+        if (rest.Length == 0) return string.Empty;
+        return " (" + (rest.StartsWith("before ", StringComparison.Ordinal) ? "runs " + rest : rest) + ")";
+    }
+
+    /// <summary>
     /// The caveat of a document whose writer shares the subject's provider (trimmed, case-insensitive,
     /// as <see cref="BenchmarkComplianceGuard.IsSameProvider(string?, string?)"/> compares); null for an independent writer.
     /// </summary>
@@ -867,7 +921,8 @@ public static partial class BenchmarkReportPackRenderer
     private static string? PricingBasisKind(BenchmarkReportFactSheet sheet)
         => SheetFact(sheet, "comparison.pricingBasisKind") is { Available: true } kind ? kind.Display : null;
 
-    private static void SetupAndMethod(StringBuilder sb, Context ctx, string heading = "## Setup and method")
+    /// <summary>The setup and method bullets, then, with <paramref name="comparedModels"/> and peers, the compared models' table.</summary>
+    private static void SetupAndMethod(StringBuilder sb, Context ctx, string heading = "## Setup and method", bool comparedModels = true)
     {
         var sheet = ctx.Sheet;
         int runs = sheet.SubjectRunIds.Count;
@@ -933,7 +988,7 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb, "- **Versions:** harness " + D(ctx, "run.harnessVersion") + ", scoring method " + D(ctx, "scoring.methodVersion") + ".");
         Line(sb);
 
-        if (!ctx.Standalone)
+        if (comparedModels && !ctx.Standalone)
         {
             ComparedModels(sb, ctx);
         }
@@ -945,7 +1000,7 @@ public static partial class BenchmarkReportPackRenderer
     /// left out; the letter column is printed under both namings, so a named and an anonymized copy can
     /// be matched.
     /// </summary>
-    private static void ComparedModels(StringBuilder sb, Context ctx)
+    private static void ComparedModels(StringBuilder sb, Context ctx, string heading = "### Compared models")
     {
         var rows = OrderedEntries(ctx.Sheet);
         if (rows.Count == 0) return;
@@ -957,7 +1012,7 @@ public static partial class BenchmarkReportPackRenderer
         if (harness) columns.Add("Harness version");
         if (dates) columns.Add("Run dates (UTC)");
 
-        Heading(sb, "### Compared models");
+        Heading(sb, heading);
         TableHeader(sb, ctx, columns);
         foreach (var (entry, peer) in rows)
         {
@@ -1441,10 +1496,10 @@ public static partial class BenchmarkReportPackRenderer
     /// level below it and each run's two.
     /// </summary>
     private static void QuestionDetails(
-        StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions, bool grading, int level)
+        StringBuilder sb, Context ctx, IReadOnlyList<BenchmarkReportQuestion> questions, bool grading, int level, string? title = null)
     {
         string prefix = new('#', level);
-        Heading(sb, prefix + (grading ? " Question details" : " Questions and answers"));
+        Heading(sb, prefix + " " + (title ?? (grading ? "Question details" : "Questions and answers")));
 
         if (ctx.Battery)
         {
@@ -1715,48 +1770,12 @@ public static partial class BenchmarkReportPackRenderer
         LabeledLine(sb, ctx, key);
     }
 
-    private static void ThreatsToValidity(StringBuilder sb, Context ctx)
-    {
-        var sheet = ctx.Sheet;
-
-        Heading(sb, "## Threats to validity");
-        Line(sb, "- The benchmark asks single-turn questions under one chat configuration. It does not exercise conversation "
-            + "history, pre-injected wiki context, spoiler-free mode, web search or subagents.");
-        Line(sb, "- Interval: " + D(ctx, "quality.intervalBasis"));
-        Line(sb, "- The graders are AI models. Each grader's provider relation to the model under test is stated under "
-            + "Setup and method; a grader from the model's own provider may read it more favorably.");
-        if (string.Equals(sheet.SubjectState, "Degraded", StringComparison.Ordinal))
-        {
-            Line(sb, "- Comparability: " + sheet.SubjectExplanation);
-        }
-        if (ctx.Battery)
-        {
-            Line(sb, "- Composite: the Overall Index weights the suites under the battery's scheme; another scheme or "
-                + "another set of suites gives another figure, and it is not comparable with a single suite's index.");
-            Line(sb, "- Detail: the writer was given the full text of at most a few questions per suite, each with one answer, "
-                + "and the other questions as one-line rows.");
-            foreach (var fact in BatteryCaveats(ctx))
-            {
-                Line(sb, "- Battery analysis: " + OneLine(fact.Display));
-            }
-        }
-        foreach (string threat in AvailabilityThreats(ctx, string.Empty))
-        {
-            Line(sb, "- Provider availability: " + threat);
-        }
-        if (WriterIndependenceCaveat(ctx) is string caveat)
-        {
-            Line(sb, "- " + caveat);
-        }
-        Line(sb);
-    }
-
-    private static void Reproducibility(StringBuilder sb, Context ctx)
+    private static void Reproducibility(StringBuilder sb, Context ctx, string heading = "## Reproducibility appendix")
     {
         var sheet = ctx.Sheet;
         var (pricing, includesCardDate) = PricingBasisText(sheet);
 
-        Heading(sb, "## Reproducibility appendix");
+        Heading(sb, heading);
         LabeledLine(sb, ctx, "run.ids");
         LabeledLine(sb, ctx, "run.dates");
         Line(sb, "- **Model under test:** " + sheet.SubjectProvider + " " + sheet.SubjectModelId + ", thinking level "
@@ -1799,14 +1818,70 @@ public static partial class BenchmarkReportPackRenderer
 
         Line(sb, "Automatic validation removed these items from the writer's output before it was stored:");
         Line(sb);
+        bool full = ctx.Options.Disclosure == BenchmarkReportDisclosure.Full;
+        if (ctx.Document.Audience != BenchmarkReportAudience.RootCauseAnalysis)
+        {
+            foreach (var note in dropped)
+            {
+                Line(sb, "- `" + note.Location + "` (rule " + Inv(note.Rule) + ")"
+                    + (full && !string.IsNullOrWhiteSpace(note.Message) ? ": " + OneLine(note.Message) : string.Empty));
+            }
+            Line(sb);
+            return;
+        }
+
+        // A Root Cause Analysis names each location and rule in words and, at Full, prints what was removed.
+        var titles = BenchmarkReportRuleCatalog.SlotTitlesFor(ctx.Document.Audience);
         foreach (var note in dropped)
         {
-            Line(sb, "- `" + note.Location + "` (rule " + Inv(note.Rule) + ")"
-                + (ctx.Options.Disclosure == BenchmarkReportDisclosure.Full && !string.IsNullOrWhiteSpace(note.Message)
-                    ? ": " + OneLine(note.Message)
-                    : string.Empty));
+            Line(sb, "- **" + Cell(BenchmarkReportRuleCatalog.LocationLabel(note.Location, titles)) + "** (rule " + Inv(note.Rule) + ", "
+                + BenchmarkReportRuleCatalog.Name(note.Rule) + ")"
+                + (full && !string.IsNullOrWhiteSpace(note.Message) ? ": " + OneLine(note.Message) : string.Empty));
+            if (full && !string.IsNullOrWhiteSpace(note.Text))
+            {
+                Line(sb, "  - *Removed text:* " + OneLine(RemovedText(ctx, note.Text)));
+            }
         }
         Line(sb);
+    }
+
+    /// <summary>
+    /// A removed paragraph or item with its tokens resolved as the prose's are. An anonymized copy also letters
+    /// every peer name, model id and provider the copy withholds, which the writer may have written out.
+    /// </summary>
+    private static string RemovedText(Context ctx, string text)
+    {
+        string resolved = Prose(ctx, text);
+        if (!ctx.Anonymized) return resolved;
+
+        var sheet = ctx.Sheet;
+        var kept = new List<string?> { sheet.SubjectLabel, sheet.SubjectDisplayName, sheet.SubjectModelId, sheet.SubjectProvider, sheet.SuiteName };
+        foreach (var grader in sheet.Graders)
+        {
+            kept.Add(grader.Label);
+            kept.Add(grader.ModelId);
+            kept.Add(grader.Provider);
+        }
+
+        var replacements = new List<(string Name, string Alias)>();
+        foreach (var peer in sheet.Peers)
+        {
+            string alias = "Model " + peer.Letter;
+            foreach (var name in new[] { peer.Label, peer.DisplayName, peer.ModelId })
+            {
+                if (!string.IsNullOrWhiteSpace(name) && !kept.Contains(name, StringComparer.Ordinal)) replacements.Add((name.Trim(), alias));
+            }
+            if (!string.IsNullOrWhiteSpace(peer.Provider) && !kept.Contains(peer.Provider, StringComparer.Ordinal))
+            {
+                replacements.Add((peer.Provider.Trim(), WithheldProvider));
+            }
+        }
+        foreach (var (name, alias) in replacements.OrderByDescending(r => r.Name.Length).ThenBy(r => r.Name, StringComparer.Ordinal))
+        {
+            resolved = Regex.Replace(resolved, @"(?<![\p{L}\p{N}])" + Regex.Escape(name) + @"(?![\p{L}\p{N}])", alias,
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        }
+        return resolved;
     }
 
     /// <summary>

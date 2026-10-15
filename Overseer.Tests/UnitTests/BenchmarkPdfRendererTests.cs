@@ -708,9 +708,120 @@ public class BenchmarkPdfRendererTests
     // --- The last section ----------------------------------------------------------------------------
 
     [Fact]
-    public void TheLayoutVersion_IsNine()
+    public void TheLayoutVersion_IsTen()
     {
-        Assert.Equal(9, BenchmarkPdfRenderer.LayoutVersion);
+        Assert.Equal(10, BenchmarkPdfRenderer.LayoutVersion);
+    }
+
+    // --- Callouts ----------------------------------------------------------------------------------
+
+    /// <summary>A labeled callout of two paragraphs, a callout without a label, and an ordinary quote.</summary>
+    internal const string CalloutMarkdown =
+        "Before the callouts.\n\n" +
+        "> [!IMPORTANT]\n" +
+        "> **Key finding.** CALLOUTHEAD the headline text.\n" +
+        ">\n" +
+        "> CALLOUTBODY a second paragraph.\n\n" +
+        "> [!WARNING]\n" +
+        "> Unlabeled caveat text.\n\n" +
+        "> QUOTEMARKER an ordinary quoted paragraph.\n";
+
+    [Fact]
+    public void ACallout_RendersAsALabelledBox()
+    {
+        byte[] pdf = BenchmarkPdfRenderer.RenderMarkdown(CalloutMarkdown, Info(), TestContext.Current.CancellationToken);
+
+        string text = AllText(pdf);
+        Assert.DoesNotContain("[!IMPORTANT]", text);
+        Assert.DoesNotContain("[!WARNING]", text);
+        Assert.Contains(Squash("Key finding. CALLOUTHEAD the headline text."), text);
+        Assert.Contains(Squash("CALLOUTBODY a second paragraph."), text);
+        Assert.Single(AllIndexesOf(text, "Keyfinding."));
+        // A callout without a bold label of its own prints its kind's.
+        Assert.Contains(Squash("Caveat. Unlabeled caveat text."), text);
+        Assert.Contains(Squash("QUOTEMARKER an ordinary quoted paragraph."), text);
+
+        using var reader = PdfDocument.Open(pdf);
+        var page = reader.GetPage(1);
+        foreach (var kind in new[] { BenchmarkCalloutKind.Important, BenchmarkCalloutKind.Warning })
+        {
+            var (rule, tint) = BenchmarkDocumentPalette.Callout(kind);
+            Assert.Contains(page.Paths, p => p.IsFilled && SameColor(p.FillColor, tint));
+            Assert.Contains(page.Paths, p => (p.IsFilled && SameColor(p.FillColor, rule)) || (p.IsStroked && SameColor(p.StrokeColor, rule)));
+        }
+
+        // The callout's label and text are in the body color; an ordinary quote stays muted.
+        var words = page.GetWords().ToList();
+        Assert.True(SameColor(words.First(w => w.Text.Contains("CALLOUTBODY", StringComparison.Ordinal)).Letters[0].Color, BenchmarkDocumentPalette.Ink));
+        Assert.True(SameColor(words.First(w => w.Text.Contains("CALLOUTHEAD", StringComparison.Ordinal)).Letters[0].Color, BenchmarkDocumentPalette.Ink));
+        Assert.True(SameColor(words.First(w => w.Text.StartsWith("Caveat", StringComparison.Ordinal)).Letters[0].Color, BenchmarkDocumentPalette.Ink));
+        Assert.True(SameColor(words.First(w => w.Text.Contains("QUOTEMARKER", StringComparison.Ordinal)).Letters[0].Color, BenchmarkDocumentPalette.Muted));
+    }
+
+    [Fact]
+    public void ACalloutMarker_IsRecognized_OnlyAloneOnTheFirstLineOfAQuote()
+    {
+        string source = "> [!TIP]\n>\n> **Conclusion.** Ship it.\n\n> [!NOTE] inline text\n\n> [!CAUTION]\n> Not a kind.\n\n> [!warning]\n> Lower case.\n";
+        var quotes = BenchmarkPdfMarkdownComposer.Parse(source).OfType<Markdig.Syntax.QuoteBlock>().ToList();
+        Assert.Equal(4, quotes.Count);
+
+        // A marker in a paragraph of its own: the next paragraph is the lead, and its bold run the label.
+        var tip = BenchmarkPdfMarkdownComposer.CalloutOf(quotes[0], source);
+        Assert.NotNull(tip);
+        Assert.Equal(BenchmarkCalloutKind.Tip, tip!.Kind);
+        Assert.True(tip.HasLabel);
+        Assert.Empty(tip.Rest);
+
+        Assert.Null(BenchmarkPdfMarkdownComposer.CalloutOf(quotes[1], source));
+        Assert.Null(BenchmarkPdfMarkdownComposer.CalloutOf(quotes[2], source));
+
+        var warning = BenchmarkPdfMarkdownComposer.CalloutOf(quotes[3], source);
+        Assert.Equal(BenchmarkCalloutKind.Warning, warning!.Kind);
+        Assert.False(warning.HasLabel);
+        Assert.Equal("Caveat", BenchmarkPdfMarkdownComposer.CalloutLabel(warning.Kind));
+    }
+
+    [Fact]
+    public void TheCalloutColors_MeetTextContrast()
+    {
+        foreach (var kind in Enum.GetValues<BenchmarkCalloutKind>())
+        {
+            var (rule, tint) = BenchmarkDocumentPalette.Callout(kind);
+
+            // The text on the tint, and the rule that carries the kind against its tint and the page.
+            Assert.True(Contrast(BenchmarkDocumentPalette.Ink, tint) >= 4.5, $"{kind}: ink on {tint} is {Contrast(BenchmarkDocumentPalette.Ink, tint):0.00} : 1.");
+            Assert.True(Contrast(rule, tint) >= 3, $"{kind}: the rule {rule} on {tint} is {Contrast(rule, tint):0.00} : 1.");
+            Assert.True(Contrast(rule, "FFFFFF") >= 3, $"{kind}: the rule {rule} on white is {Contrast(rule, "FFFFFF"):0.00} : 1.");
+        }
+
+        Assert.Equal(4, Enum.GetValues<BenchmarkCalloutKind>().Select(k => BenchmarkDocumentPalette.Callout(k).Tint).Distinct().Count());
+        Assert.Equal(4, Enum.GetValues<BenchmarkCalloutKind>().Select(k => BenchmarkDocumentPalette.Callout(k).Rule).Distinct().Count());
+    }
+
+    /// <summary>The WCAG 2 contrast ratio of two six-digit hex colors.</summary>
+    private static double Contrast(string a, string b)
+    {
+        static double Luminance(string hex)
+        {
+            double Linear(int index)
+            {
+                double c = Convert.ToInt32(hex.Substring(index * 2, 2), 16) / 255.0;
+                return c <= 0.04045 ? c / 12.92 : Math.Pow((c + 0.055) / 1.055, 2.4);
+            }
+            return 0.2126 * Linear(0) + 0.7152 * Linear(1) + 0.0722 * Linear(2);
+        }
+
+        double la = Luminance(a), lb = Luminance(b);
+        return (Math.Max(la, lb) + 0.05) / (Math.Min(la, lb) + 0.05);
+    }
+
+    /// <summary>Whether a PDF color is the six-digit hex color, within rounding.</summary>
+    private static bool SameColor(UglyToad.PdfPig.Graphics.Colors.IColor? color, string hex)
+    {
+        if (color == null) return false;
+        var (r, g, b) = color.ToRGBValues();
+        double Channel(int index) => Convert.ToInt32(hex.Substring(index * 2, 2), 16) / 255.0;
+        return Math.Abs(r - Channel(0)) < 0.02 && Math.Abs(g - Channel(1)) < 0.02 && Math.Abs(b - Channel(2)) < 0.02;
     }
 
     [Fact]

@@ -60,7 +60,7 @@ public static partial class BenchmarkReportPackPrompt
             ? Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(BuildComparisonSystemPrompt(audience))))
             : PromptSha256(audience);
 
-    /// <summary>The user message of the one repair turn: every issue, then the output rules in brief.</summary>
+    /// <summary>The user message of the one repair turn: every issue grouped by rule, then the output rules in brief.</summary>
     public static string BuildRepairMessage(IReadOnlyList<BenchmarkReportValidationNote> issues)
     {
         ArgumentNullException.ThrowIfNull(issues);
@@ -68,11 +68,7 @@ public static partial class BenchmarkReportPackPrompt
         var sb = new StringBuilder();
         Line(sb, "Your previous answer broke the document rules. Fix every issue below and answer again with the complete, corrected JSON object only: no text before or after it and no code fence.");
         Line(sb);
-        Line(sb, "ISSUES");
-        foreach (var issue in issues)
-        {
-            Line(sb, $"- rule {issue.Rule.ToString(CultureInfo.InvariantCulture)} at {issue.Location}: {issue.Message}");
-        }
+        AppendGroupedIssues(sb, issues);
         Line(sb);
         Line(sb, "REMINDERS");
         Line(sb, "- Figures appear only as {{key}} with a key from FACTS exactly as written; the subject is {{subject}}; another model only {{peer:X}} with its letter from PEERS. No other {{...}} tokens.");
@@ -85,6 +81,32 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- A token whose value reads 'N of M' is a noun phrase; never put it after 'no' or make it the object of 'made'.");
         Line(sb, "- No headings, tables or HTML inside any text. Keep the word and item limits.");
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The ISSUES block of a repair message, one group per rule in rule order: <c>Rule 16 — Ranking without
+    /// the overlap caveat (13): &lt;fix&gt;</c> (<see cref="BenchmarkReportRuleCatalog"/>), then each location,
+    /// with its message unless it repeats the one before it.
+    /// </summary>
+    internal static void AppendGroupedIssues(StringBuilder sb, IReadOnlyList<BenchmarkReportValidationNote> issues)
+    {
+        ArgumentNullException.ThrowIfNull(sb);
+        ArgumentNullException.ThrowIfNull(issues);
+
+        Line(sb, "ISSUES (grouped by rule; fix every location listed)");
+        foreach (var group in issues.GroupBy(i => i.Rule).OrderBy(g => g.Key))
+        {
+            var info = BenchmarkReportRuleCatalog.Get(group.Key);
+            Line(sb, $"- Rule {group.Key.ToString(CultureInfo.InvariantCulture)} — {info.Name} ({group.Count().ToString(CultureInfo.InvariantCulture)}): {info.Fix}");
+            string? previous = null;
+            foreach (var issue in group)
+            {
+                Line(sb, string.Equals(issue.Message, previous, StringComparison.Ordinal)
+                    ? $"  - {issue.Location}: as above."
+                    : $"  - {issue.Location}: {issue.Message}");
+                previous = issue.Message;
+            }
+        }
     }
 
     /// <summary>

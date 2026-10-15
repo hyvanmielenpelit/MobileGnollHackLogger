@@ -74,15 +74,25 @@ import {
   ReportPackAudienceOption,
   audienceLabel,
   documentChipClass,
+  documentProgressLabel,
   formatCostRangeUsd,
   formatCostUsd,
   formatElapsed,
   formatUtc,
   isCostRange,
   reportAudiencesFor,
+  reportPhaseLabel,
   statusLabel
 } from './report-document-format';
 import { buildReportPackDiagnostics, reportPackDiagnosticsFileName, reportPackIo } from './report-pack-diagnostics';
+import { ReportValidationDetailsComponent } from './report-validation-details.component';
+import {
+  documentStatusQuestion,
+  documentStatusSubject,
+  firstDraftPassed,
+  revisionCount,
+  timesWord
+} from './report-validation-explanation';
 
 /** What the Write step works on: the comparison request, its entries and its suite. */
 export interface ReportPackContext {
@@ -152,6 +162,16 @@ export interface ReportPackDocumentRow {
   readonly modelCalls: string;
   readonly errorMessage: string | null;
   readonly charts: ReportPackChartCell;
+  /** The stem of the row's info tip ids, unique in the document. */
+  readonly tipStem: string;
+  /** `the Executive Summary`, or `the Executive Summary of GPT Sol` in a per-model job. */
+  readonly title: string;
+  /** The status explanation's button and dialog, for a document completed with warnings or failed; null otherwise. */
+  readonly why: { readonly subject: string; readonly title: string } | null;
+  /** The step the document is at, or how its draft was checked once it is finished; null when there is nothing to say. */
+  readonly phaseLine: string | null;
+  /** The first draft's issue count, for the phase line's info button; 0 when there are none to list. */
+  readonly draftIssueCount: number;
 }
 
 /** The two document scopes, as the segmented tab row offers them; `note` is a second, smaller line. */
@@ -230,6 +250,38 @@ const numberFormat = new Intl.NumberFormat('en-US');
 
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
+}
+
+/** The statuses whose chip has an explanation beside it. */
+const EXPLAINED_DOCUMENT_STATUSES = new Set(['CompletedWithWarnings', 'Failed']);
+
+/**
+ * A document's phase line: while it is written, its step (*Revising the draft — 20 issues found by the
+ * automatic check*); once finished, how its draft was checked (*First draft passed every check*,
+ * *Revised once — 20 issues in the first draft*). Null when there is nothing to say.
+ */
+export function documentPhaseLine(doc: BenchmarkReportPackDocumentProgressDto): string | null {
+  const issues = doc.firstTurnIssues?.length ?? 0;
+  if (FINISHED_DOCUMENT_STATUSES.has(doc.status)) {
+    const passed = firstDraftPassed(doc);
+    if (passed === true) {
+      return 'First draft passed every check';
+    }
+    if (passed === false) {
+      const revisions = revisionCount(doc) ?? 0;
+      const head = revisions > 0 ? `Revised ${timesWord(revisions)}` : 'Not revised';
+      return issues > 0 ? `${head} — ${plural(issues, 'issue', 'issues')} in the first draft` : head;
+    }
+    return null;
+  }
+  const phase = reportPhaseLabel(doc.phase);
+  if (!phase || doc.phase === 'Done') {
+    return null;
+  }
+  if ((doc.phase === 'Revising' || doc.phase === 'CheckingRevision') && issues > 0) {
+    return `${phase} — ${plural(issues, 'issue', 'issues')} found by the automatic check`;
+  }
+  return phase;
 }
 
 function isJobDto(body: unknown): body is BenchmarkReportPackJobDto {
@@ -346,7 +398,7 @@ interface CheckedEstimate {
   standalone: true,
   imports: [
     RunReportFrameComponent, ModelPickerComponent, ModelMultiPickerComponent, InfoTipComponent, ReportChartPickerComponent,
-    ComparisonDocumentsStatusComponent, PdfViewerDialogComponent
+    ComparisonDocumentsStatusComponent, PdfViewerDialogComponent, ReportValidationDetailsComponent
   ],
   templateUrl: './report-pack-panel.component.html',
   styleUrls: ['./report-pack-panel.component.scss'],
@@ -1770,7 +1822,10 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return count > 1 ? `${count} models` : job.subjectLabel;
   }
 
-  /** The live line: it changes as the job moves from phase to phase, never with the clock. */
+  /**
+   * The live line: it changes as the job, or the document being written, moves from phase to phase,
+   * never with the clock.
+   */
   get jobStatusLine(): string {
     const job = this.job;
     if (!job) {
@@ -1779,7 +1834,16 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     const total = job.documents.length;
     const finished = job.documents.filter(d => FINISHED_DOCUMENT_STATUSES.has(d.status)).length;
     if (job.status === 'Running') {
-      return `Writing ${total} ${total === 1 ? 'document' : 'documents'} for ${this.jobSubjectText}: ${finished} of ${total} finished.`;
+      const line = `Writing ${total} ${total === 1 ? 'document' : 'documents'} for ${this.jobSubjectText}: ${finished} of ${total} finished.`;
+      const current = job.documents.find(d => !FINISHED_DOCUMENT_STATUSES.has(d.status) && !!d.phase && d.phase !== 'Done');
+      const phase = current ? documentPhaseLine(current) : null;
+      if (!current || !phase) {
+        return line;
+      }
+      const name = this.jobSubjectCount > 1
+        ? `${audienceLabel(current.audience)} of ${current.subjectLabel ?? job.subjectLabel}`
+        : audienceLabel(current.audience);
+      return `${line} ${name}: ${phase}.`;
     }
     return `Report pack for ${this.jobSubjectText}: ${statusLabel(job.status)}.`;
   }
@@ -1822,29 +1886,44 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     }));
   }
 
-  /** One row per document: its model, its chip, its duration on the server's clock, its model calls and its charts. */
+  /**
+   * One row per document: its model, its chip (with the explanation of a warning or a failure), its
+   * phase line, its duration on the server's clock, its model calls and its charts.
+   */
   get documentRows(): ReportPackDocumentRow[] {
     const job = this.job;
     if (!job) {
       return [];
     }
     const finished = FINISHED_JOB_STATUSES.has(job.status);
+    const perModel = this.jobHasModelColumn;
     return job.documents.map((doc): ReportPackDocumentRow => {
       const duration = doc.startedAtUtc
         ? this.spanToNow(doc.startedAtUtc, doc.completedAtUtc ?? (finished ? job.completedAtUtc : null))
         : null;
+      const key = `${doc.subjectKey ?? job.subjectKey}|${doc.audience}`;
+      const name = audienceLabel(doc.audience);
+      const subjectLabel = doc.subjectLabel ?? job.subjectLabel;
+      const title = perModel ? `the ${name} of ${subjectLabel}` : `the ${name}`;
       return {
-        key: `${doc.subjectKey ?? job.subjectKey}|${doc.audience}`,
+        key,
         doc,
         audience: doc.audience,
-        name: audienceLabel(doc.audience),
-        subjectLabel: doc.subjectLabel ?? job.subjectLabel,
-        statusWord: statusLabel(doc.status),
+        name,
+        subjectLabel,
+        statusWord: documentProgressLabel(doc.status),
         chipClass: documentChipClass(doc.status),
         duration: duration === null ? '—' : formatElapsed(duration),
         modelCalls: numberFormat.format(doc.modelCalls),
         errorMessage: doc.errorMessage || null,
-        charts: this.chartCell(doc)
+        charts: this.chartCell(doc),
+        tipStem: `${this.idPrefix}-doc-${key.replace(/[^A-Za-z0-9_-]/g, '-')}`,
+        title,
+        why: EXPLAINED_DOCUMENT_STATUSES.has(doc.status)
+          ? { subject: documentStatusSubject(title, doc.status), title: documentStatusQuestion(title, doc.status) }
+          : null,
+        phaseLine: documentPhaseLine(doc),
+        draftIssueCount: doc.firstTurnIssues?.length ?? 0
       };
     });
   }
@@ -1889,7 +1968,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     return this.jobEstimateUsd === null ? null : `about ${formatCostRangeUsd(this.jobEstimateUsd.low, this.jobEstimateUsd.high)}`;
   }
 
-  /** The finished job in one line: `Written: 2 documents, 1 min 12 s, $0.21`. */
+  /** The finished job in one line: `Written: 2 documents (1 with warnings), 1 min 12 s, $0.21`. */
   get jobSummary(): string {
     const job = this.job;
     if (!job) {
@@ -1897,14 +1976,16 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     }
     const total = job.documents.length;
     const written = job.documents.filter(d => WRITTEN_DOCUMENT_STATUSES.has(d.status)).length;
+    const warned = job.documents.filter(d => d.status === 'CompletedWithWarnings').length;
+    const warnings = warned > 0 ? ` (${warned} with warnings)` : '';
     const tail = [this.jobElapsed, formatCostUsd(job.costUsd)].filter(part => part !== '').join(', ');
     let head: string;
     switch (job.status) {
       case 'Completed':
-        head = `Written: ${plural(written, 'document', 'documents')}`;
+        head = `Written: ${plural(written, 'document', 'documents')}${warnings}`;
         break;
       case 'CompletedWithErrors':
-        head = `Written with errors: ${written} of ${plural(total, 'document', 'documents')}`;
+        head = `Written with errors: ${written} of ${plural(total, 'document', 'documents')}${warnings}`;
         break;
       case 'Canceled':
         head = `Canceled: ${written} of ${plural(total, 'document', 'documents')} written`;

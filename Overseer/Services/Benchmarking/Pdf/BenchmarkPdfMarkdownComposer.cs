@@ -20,6 +20,15 @@ using MdTableCell = Markdig.Extensions.Tables.TableCell;
 using MdTableColumnAlign = Markdig.Extensions.Tables.TableColumnAlign;
 using MdTableRow = Markdig.Extensions.Tables.TableRow;
 
+/// <summary>The kind a callout's GitHub alert marker names: <c>[!NOTE]</c>, <c>[!IMPORTANT]</c>, <c>[!TIP]</c> or <c>[!WARNING]</c>.</summary>
+internal enum BenchmarkCalloutKind
+{
+    Note,
+    Important,
+    Tip,
+    Warning
+}
+
 /// <summary>
 /// Walks a Markdig syntax tree into QuestPDF elements for the body of a benchmark PDF. The page
 /// frame (title block, running header, footer, watermark) is <see cref="BenchmarkPdfRenderer"/>'s;
@@ -35,6 +44,10 @@ using MdTableRow = Markdig.Extensions.Tables.TableRow;
 /// otherwise. Any other <c>[[…]]</c> text prints literally. A chart layout
 /// (<see cref="BenchmarkReportChartLayout"/>) sets each figure's share of the column width, pairs
 /// consecutive figures of one row group side by side, and sets the height cap.</para>
+///
+/// <para>A block quote whose first line is a GitHub alert marker is a callout (<see cref="CalloutOf"/>),
+/// drawn as a box on its kind's tint with a rule in its kind's color down the left; the marker line
+/// never prints.</para>
 /// </summary>
 internal static class BenchmarkPdfMarkdownComposer
 {
@@ -66,6 +79,10 @@ internal static class BenchmarkPdfMarkdownComposer
     /// <summary>A paragraph's whole source text when it is a figure marker; group 1 is the figure key.</summary>
     private static readonly Regex FigureMarker = new(
         @"^\[\[figure:([A-Za-z0-9][A-Za-z0-9_.\-]*)\]\]$", RegexOptions.CultureInvariant);
+
+    /// <summary>A block quote's trimmed first line when it is a callout marker; group 1 is the kind.</summary>
+    private static readonly Regex CalloutMarker = new(
+        @"^\[!(NOTE|IMPORTANT|TIP|WARNING)\]$", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 
     /// <summary>The largest share of the page's content height a figure's image may take without a layout.</summary>
     internal const double FigureMaxHeightShare = BenchmarkReportChartLayout.DefaultMaxHeightShare;
@@ -152,6 +169,66 @@ internal static class BenchmarkPdfMarkdownComposer
     /// column width and its row group from the layout.
     /// </summary>
     internal sealed record Figure(int Number, BenchmarkReportRenderChart Chart, double WidthShare = 1, int? RowGroup = null);
+
+    /// <summary>
+    /// A callout: its kind; <paramref name="Lead"/>, the inlines of its first paragraph after the marker
+    /// line, empty when it has none; <paramref name="Rest"/>, the blocks after that paragraph; and
+    /// whether the lead opens with a bold run, which is its label.
+    /// </summary>
+    internal sealed record Callout(BenchmarkCalloutKind Kind, IReadOnlyList<Inline> Lead, IReadOnlyList<Block> Rest, bool HasLabel);
+
+    /// <summary>The label a callout of <paramref name="kind"/> prints when its Markdown gives none.</summary>
+    internal static string CalloutLabel(BenchmarkCalloutKind kind) => kind switch
+    {
+        BenchmarkCalloutKind.Important => "Key finding",
+        BenchmarkCalloutKind.Tip => "Conclusion",
+        BenchmarkCalloutKind.Warning => "Caveat",
+        _ => "Question"
+    };
+
+    /// <summary>
+    /// The callout a block quote is when its first paragraph's first line is a GitHub alert marker and
+    /// nothing else (<c>&gt; [!IMPORTANT]</c>); null for any other quote. When the marker stands alone
+    /// in its paragraph, the next paragraph is the lead.
+    /// </summary>
+    internal static Callout? CalloutOf(QuoteBlock quote, string source)
+    {
+        if (quote.Count == 0 || quote[0] is not ParagraphBlock first || first.Inline == null) return null;
+
+        string firstLine = SourceOf(first, source).Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n')[0].Trim();
+        var match = CalloutMarker.Match(firstLine);
+        if (!match.Success) return null;
+
+        // The marker line's inlines are plain text up to the paragraph's first line break.
+        var inlines = first.Inline.ToList();
+        int lineBreak = inlines.FindIndex(i => i is LineBreakInline);
+        var marker = lineBreak < 0 ? inlines : inlines.Take(lineBreak).ToList();
+        if (!marker.All(i => i is LiteralInline)
+            || !string.Equals(string.Concat(marker.Select(i => ((LiteralInline)i).Content.ToString())).Trim(), firstLine, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var kind = match.Groups[1].Value.ToUpperInvariant() switch
+        {
+            "IMPORTANT" => BenchmarkCalloutKind.Important,
+            "TIP" => BenchmarkCalloutKind.Tip,
+            "WARNING" => BenchmarkCalloutKind.Warning,
+            _ => BenchmarkCalloutKind.Note
+        };
+
+        IReadOnlyList<Inline> lead = lineBreak < 0 ? Array.Empty<Inline>() : inlines.Skip(lineBreak + 1).ToList();
+        var rest = quote.Skip(1).ToList();
+        if (lead.Count == 0 && rest.Count > 0 && rest[0] is ParagraphBlock next && next.Inline != null && FigureKeyOf(next, source) == null)
+        {
+            lead = next.Inline.ToList();
+            rest = rest.Skip(1).ToList();
+        }
+
+        var opening = lead.FirstOrDefault(i => !(i is LiteralInline literal && string.IsNullOrWhiteSpace(literal.Content.ToString())));
+        bool hasLabel = opening is EmphasisInline { DelimiterCount: 2, DelimiterChar: '*' or '_' };
+        return new Callout(kind, lead, rest, hasLabel);
+    }
 
     /// <summary>The layout's height cap when it is within its bounds; <see cref="FigureMaxHeightShare"/> otherwise.</summary>
     internal static double MaxHeightShareOf(BenchmarkReportChartLayout? layout)
@@ -640,6 +717,9 @@ internal static class BenchmarkPdfMarkdownComposer
             case ListBlock list:
                 ComposeList(container, list, ctx, listDepth);
                 break;
+            case QuoteBlock callout when CalloutOf(callout, ctx.Document.Source) is { } parsed:
+                ComposeCallout(container, parsed, ctx, listDepth);
+                break;
             case QuoteBlock quote:
                 container.SemanticBlockQuotation()
                     .BorderLeft(2f).BorderColor(BenchmarkPdfStyle.QuoteRule)
@@ -668,6 +748,33 @@ internal static class BenchmarkPdfMarkdownComposer
                 Literal(container, SourceOf(block, ctx.Document.Source));
                 break;
         }
+    }
+
+    /// <summary>
+    /// A callout, tagged as a division: a box on its kind's tint with a 3 pt rule in its kind's color
+    /// down the left, its text in the body color. The lead paragraph opens with the Markdown's bold
+    /// label, or with the kind's <see cref="CalloutLabel"/> in bold when the Markdown has none.
+    /// </summary>
+    private static void ComposeCallout(IContainer container, Callout callout, Context ctx, int listDepth)
+    {
+        container.SemanticDivision()
+            .Background(BenchmarkPdfStyle.CalloutTint(callout.Kind))
+            .BorderLeft(BenchmarkPdfStyle.CalloutRule).BorderColor(BenchmarkPdfStyle.CalloutRuleColor(callout.Kind))
+            .PaddingVertical(5).PaddingLeft(10).PaddingRight(8)
+            .Column(col =>
+            {
+                col.Spacing(4);
+                col.Item().Text(t =>
+                {
+                    if (!callout.HasLabel)
+                    {
+                        string label = CalloutLabel(callout.Kind) + "." + (callout.Lead.Count > 0 ? " " : string.Empty);
+                        Styled(t.Span(label), default(InlineStyle) with { Bold = true });
+                    }
+                    Inlines(t, callout.Lead, default, ctx);
+                });
+                Blocks(col, callout.Rest, ctx, listDepth);
+            });
     }
 
     private static void Heading(IContainer container, HeadingBlock heading, Context ctx)
@@ -1432,7 +1539,7 @@ internal static class BenchmarkPdfMarkdownComposer
     // Inlines
     // ---------------------------------------------------------------------------------------------
 
-    private static void Inlines(TextDescriptor text, ContainerInline? container, InlineStyle style, Context ctx)
+    private static void Inlines(TextDescriptor text, IEnumerable<Inline>? container, InlineStyle style, Context ctx)
     {
         if (container == null) return;
 

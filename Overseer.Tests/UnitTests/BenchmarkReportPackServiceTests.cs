@@ -1564,6 +1564,173 @@ public class BenchmarkReportPackServiceTests
         Assert.Contains(await h.Db.BenchmarkReportDocuments.AsNoTracking().ToListAsync(TestContext.Current.CancellationToken), d => d.Id == es);
     }
 
+    // --- Phases, calls and the repair loop's records ------------------------------------------------------
+
+    [Fact]
+    public async Task ADropThatUncitesAnAxis_AddsTheOverseerParagraph_AndRecordsRule36()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync(standalone: true);
+        var writer = RootCauseReportFixture.Writer(prep.Sheet, comparison: false);
+        const string removed = "The cost gap is due to the price. Cost: {{rca.axis.cost.status}}.";
+        writer.Sections[BenchmarkReportSlots.Conclusions] =
+            "Intelligence: {{rca.axis.intelligence.status}}.\n\nSpeed: {{rca.axis.speed.status}}.\n\n" + removed;
+        string reply = Reply(writer);
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(reply);
+
+        var job = await h.RunCompletionAsync(BenchmarkReportAudience.RootCauseAnalysis);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
+
+        string conclusions = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson).Sections[BenchmarkReportSlots.Conclusions];
+        Assert.DoesNotContain("due to the price", conclusions);
+        var paragraphs = BenchmarkReportPackValidator.SplitParagraphs(conclusions);
+        Assert.Equal(3, paragraphs.Count);
+        Assert.StartsWith(BenchmarkReportPackService.AddedByOverseer + " Cost: {{rca.axis.cost.status}}.", paragraphs[2]);
+
+        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson);
+        var drop = Assert.Single(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule && n.Dropped);
+        Assert.Equal("sections.conclusions[p3]", drop.Location);
+        Assert.Equal(removed, drop.Text);
+        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule
+                                    && n.Location == "sections.conclusions" && !n.Dropped && n.Message.Contains("{{rca.axis.cost.status}}", StringComparison.Ordinal));
+
+        var log = job.ToDto().Log;
+        Assert.Contains(log, l => l.Message.Contains("1 item(s) removed by validation: Conclusions, paragraph 3 ("
+                                                     + BenchmarkReportRuleCatalog.Name(BenchmarkReportPackValidator.RootCauseCausalClaimRule) + ")", StringComparison.Ordinal));
+        Assert.Contains(log, l => l.Message.Contains("Overseer added the axis' status", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ThePhases_RunWritingCheckingRevisingStoring()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, headline: "{{subject}} answered 3 questions well."));
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(
+            new[]
+            {
+                BenchmarkReportPackPhases.Preparing, BenchmarkReportPackPhases.Writing, BenchmarkReportPackPhases.Checking,
+                BenchmarkReportPackPhases.Revising, BenchmarkReportPackPhases.CheckingRevision, BenchmarkReportPackPhases.Storing,
+                BenchmarkReportPackPhases.Done
+            },
+            job.Documents[0].PhaseHistory);
+        var progress = Assert.Single(job.ToDto().Documents);
+        Assert.Equal(BenchmarkReportPackPhases.Done, progress.Phase);
+        Assert.False(progress.FirstDraftClean);
+
+        // The revision's detail counts the first draft's issues by rule, in plain words.
+        var issues = new List<BenchmarkReportValidationNote>
+        {
+            new() { Rule = 16, Location = "sections.meaning[p1]" },
+            new() { Rule = 16, Location = "sections.meaning[p2]" },
+            new() { Rule = 3, Location = "headline" },
+        };
+        Assert.Equal(
+            "The automatic check found 3 issues in the first draft: "
+            + "ranking without the overlap caveat (2), " + BenchmarkReportRuleCatalog.Name(3).ToLowerInvariant() + " (1).",
+            BenchmarkReportPackService.RevisionDetail(issues));
+    }
+
+    [Fact]
+    public void FirstTurnIssues_AreVisibleWhileRunning()
+    {
+        var job = new BenchmarkReportPackJob
+        {
+            Request = new BenchmarkReportPackRequest(),
+            Cts = new CancellationTokenSource(),
+            Documents = new List<BenchmarkReportPackDocumentProgress> { new() { Audience = BenchmarkReportAudience.ExecutiveSummary } }
+        };
+        var document = job.Documents[0];
+        var note = new BenchmarkReportValidationNote { Rule = 16, Location = "sections.meaning[p1]", Message = "Ranks {{subject}} against {{peer:A}}.", Text = "The paragraph." };
+        job.SetFirstTurnIssues(document, new[] { note });
+
+        // Before the revision starts, nothing travels on a running job's polls.
+        Assert.Null(Assert.Single(job.ToDto().Documents).FirstTurnIssues);
+
+        job.SetDocumentPhase(document, BenchmarkReportPackPhases.Revising, "The automatic check found one issue in the first draft.");
+        var running = Assert.Single(job.ToDto().Documents);
+        var issue = Assert.Single(running.FirstTurnIssues!);
+        Assert.Equal(16, issue.Rule);
+        Assert.Equal(BenchmarkReportRuleCatalog.Name(16), issue.RuleName);
+        Assert.Equal(BenchmarkReportRuleCatalog.WarningSeverity, issue.Severity);
+        Assert.Equal("What this means for use as a game assistant, paragraph 1", issue.LocationLabel);
+        Assert.Equal("The paragraph.", issue.Text);
+        Assert.Null(running.FinalIssues);
+        Assert.Null(running.FailedReply);
+        Assert.Equal(BenchmarkReportPackPhases.Revising, running.Phase);
+        Assert.Equal("The automatic check found one issue in the first draft.", running.PhaseDetail);
+    }
+
+    [Fact]
+    public async Task EachCall_IsRecordedWithItsKind()
+    {
+        await using var h = await Harness.CreateAsync();
+        var request = h.ComparisonRequest();
+        var prep = await h.PrepareComparisonAsync(request);
+        var writer = BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, prep.Sheet);
+        string valid = writer.Headline;
+        writer.Headline = Overlong(valid);
+        h.Provider.Replies.Enqueue(Reply(writer));
+        h.Provider.Replies.Enqueue(Reply(writer));
+        h.Provider.Replies.Enqueue(JsonSerializer.Serialize(new { headline = valid }));
+
+        var job = await h.RunComparisonAsync(request);
+
+        var dto = job.ToDto();
+        var calls = Assert.Single(dto.Documents).Calls;
+        Assert.Equal(
+            new[] { BenchmarkReportPackCallKinds.Draft, BenchmarkReportPackCallKinds.Revision, BenchmarkReportPackCallKinds.Headline },
+            calls.Select(c => c.Kind));
+        Assert.All(calls, c => Assert.Equal(WriterProvider.PromptTokens, c.InputTokens));
+        Assert.All(calls, c => Assert.Equal(WriterProvider.OutputTokens, c.OutputTokens));
+        Assert.Equal(new[] { 2, 4, 6 }, calls.Select(c => c.RequestMessages));
+        Assert.True(calls[0].RequestCharacters > 0);
+        Assert.True(calls[1].RequestCharacters > calls[0].RequestCharacters);
+        Assert.True(calls[2].RequestCharacters > calls[1].RequestCharacters);
+        Assert.True(calls[0].StartedAtUtc <= calls[1].StartedAtUtc && calls[1].StartedAtUtc <= calls[2].StartedAtUtc);
+
+        // The sums stay as they were.
+        Assert.Equal(3, dto.Documents[0].ModelCalls);
+        Assert.Equal(calls.Sum(c => c.InputTokens), dto.Documents[0].InputTokens);
+
+        // The job's context.
+        Assert.Equal(BenchmarkReportPackRenderer.ComparisonReportFormatVersion, dto.ReportFormatVersion);
+        Assert.Null(dto.EngineVersion);
+        Assert.Equal(Overseer.Services.Benchmarking.Pdf.BenchmarkPdfRenderer.LayoutVersion, dto.PdfLayoutVersion);
+        Assert.Equal(Overseer.Services.Benchmarking.Word.BenchmarkWordRenderer.LayoutVersion, dto.WordLayoutVersion);
+        Assert.Equal(BenchmarkReportPackPrompt.PromptSha256(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportScope.Comparison), dto.WriterPromptSha256);
+        Assert.Equal(WriterProvider.Name, dto.WriterProvider);
+        Assert.Equal(h.Writer.ModelId, dto.WriterModelId);
+        Assert.Equal(prep.Comparison.Entries.Select(e => e.Key), dto.Entries);
+        Assert.Equal(prep.Covered.Single(c => c.Key == prep.ReferenceEntryKey).Label, dto.ReferenceModel);
+    }
+
+    [Fact]
+    public async Task ACleanFirstDraft_IsFlagged_AndNotRevised()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(1, h.Provider.Calls);
+        var progress = Assert.Single(job.ToDto().Documents);
+        Assert.True(progress.FirstDraftClean);
+        Assert.Equal(BenchmarkReportPackCallKinds.Draft, Assert.Single(progress.Calls).Kind);
+        Assert.DoesNotContain(BenchmarkReportPackPhases.Revising, job.Documents[0].PhaseHistory);
+        Assert.Empty(progress.FirstTurnIssues!);
+        Assert.DoesNotContain(job.ToDto().Log, l => l.Message.Contains("removed by validation", StringComparison.Ordinal));
+    }
+
     // --- Replies -----------------------------------------------------------------------------------------
 
     private static string ValidExecutiveReply(BenchmarkReportPackPreparation prep) => ExecutiveReply(prep);

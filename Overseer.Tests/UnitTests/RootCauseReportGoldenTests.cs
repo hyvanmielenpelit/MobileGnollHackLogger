@@ -1,12 +1,14 @@
 namespace Overseer.Tests.UnitTests;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking;
+using Overseer.Services.Benchmarking.RootCause;
 using Xunit;
 
 /// <summary>
@@ -61,7 +63,7 @@ public class RootCauseReportGoldenTests
     [InlineData("runWithControls")]
     [InlineData("runNoControls")]
     [InlineData("battery")]
-    public void EveryRootCauseAnalysis_HasItsSectionsInOrder_AndItsFourServerFigureMarkers(string name)
+    public void EveryRootCauseAnalysis_HasItsSectionsInOrder_ThenItsAppendices(string name)
     {
         var options = new BenchmarkReportRenderOptions
         {
@@ -81,19 +83,196 @@ public class RootCauseReportGoldenTests
         };
         string text = BenchmarkReportPackRenderer.Render(Document(name), options);
 
-        string[] headings = { "Scope and design", "Evidence: intelligence", "Evidence: speed", "Evidence: cost", "Known facts", "Hypotheses", "Conclusions", "Next runs", "Limitations" };
+        string[] headings =
+        {
+            "Summary", "Why each model scored as it did", "Scope and design", "Evidence: intelligence", "Evidence: speed", "Evidence: cost",
+            "Hypotheses", "Conclusions", "What to run next", "Limitations and threats to validity", "Appendices",
+            "Appendix A: Intelligence detail", "Appendix B: Speed and cost decompositions", "Appendix C: Hypothesis details",
+            "Appendix D: Run settings", "Appendix E: Known facts", "Appendix F: Reproducibility", "Appendix G: Question details",
+            "Appendix H: Glossary", "Fact sheet", "Evaluation terms"
+        };
         int last = -1;
         foreach (string heading in headings)
         {
-            int at = text.IndexOf("## " + heading, StringComparison.Ordinal);
+            int at = text.IndexOf("\n## " + heading + "\n", StringComparison.Ordinal);
             Assert.True(at > last, heading + " is missing or out of order");
             last = at;
         }
+        foreach (string retired in new[] { "## The root causes in one sentence", "## Known facts", "## Threats to validity", "## Next runs and checks", "## Reproducibility appendix" })
+        {
+            Assert.DoesNotContain(retired + "\n", text);
+        }
+
+        // Every figure is in the body, before the appendices.
+        int appendices = text.IndexOf("\n## Appendices\n", StringComparison.Ordinal);
         foreach (string key in BenchmarkReportChartPlacement.ServerFigureKeys)
         {
-            Assert.Contains("[[figure:" + key + "]]", text);
+            int at = text.IndexOf("[[figure:" + key + "]]", StringComparison.Ordinal);
+            Assert.True(at > 0 && at < appendices, key + " is missing or not in the body");
         }
         Assert.Contains("INTERNAL", text);
+    }
+
+    [Fact]
+    public void TheSummary_PutsTheQuestionsInCallouts()
+    {
+        var document = Document("comparison");
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        string text = BenchmarkReportPackRenderer.Render(document, FullNamed);
+        string summary = Section(text, "## Summary");
+
+        Assert.Contains("### What we found\n\n> [!IMPORTANT]\n> **Key finding.** ", summary);
+        Assert.Contains("### How sure are we?\n\n> [!WARNING]\n> **Caveat.** Established (High): ", summary);
+        Assert.Contains("> One run per suite for every model: the replicates check fails for every hypothesis, so no cause can be graded above Probable (Moderate).\n", summary);
+        Assert.Contains("| Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |\n", summary);
+
+        var questions = sheet.RootCause!.Questions;
+        Assert.Equal(new[] { 1, 2, 3, 4 }, questions.Select(q => q.Number));
+        Assert.Equal(questions.Count, CountOf(summary, "> [!NOTE]\n> **Question.** **Why "));
+        foreach (var question in questions)
+        {
+            int at = summary.IndexOf("> **Question.** **" + NamedQuestion(sheet, question.Text) + "**\n>\n> *Answer strength: "
+                + RootCauseGrades.WordWithGrade(question.Grade), StringComparison.Ordinal);
+            Assert.True(at >= 0, question.Text);
+            string callout = summary[at..summary.IndexOf("\n\n", at, StringComparison.Ordinal)];
+            Assert.Contains(">\n> For ", callout);
+            Assert.Contains(" the measured signals are ", callout);
+            Assert.All(callout.Split('\n'), line => Assert.StartsWith(">", line));
+        }
+
+        // One model on its own has no question to answer.
+        string alone = BenchmarkReportPackRenderer.Render(Document("runNoControls"), FullNamed);
+        Assert.DoesNotContain("### The questions", alone);
+        Assert.Contains("> [!IMPORTANT]\n> **Key finding.** ", alone);
+    }
+
+    [Fact]
+    public void AnOldRootCauseAnalysis_SaysToRegenerate_InItsAnswerCallouts()
+    {
+        var document = Document("comparison");
+        var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
+        foreach (string slot in BenchmarkReportSlots.RootCauseAnswerSlots) writer.Sections.Remove(slot);
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+        document.ReportFormatVersion = 15;
+
+        string text = BenchmarkReportPackRenderer.Render(document, FullNamed);
+        string summary = Section(text, "## Summary");
+
+        Assert.Equal(4, CountOf(summary, "> *Written before format 16; regenerate to get the answers.*\n"));
+        Assert.DoesNotContain("*Not written.*", summary);
+
+        // A current document missing one answer says it was not written.
+        var current = Document("comparison");
+        var partial = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(current.WriterOutputJson);
+        partial.Sections.Remove(BenchmarkReportSlots.AnswerCost);
+        current.WriterOutputJson = BenchmarkReportJson.Serialize(partial);
+        string missing = Section(BenchmarkReportPackRenderer.Render(current, FullNamed), "## Summary");
+        Assert.Equal(1, CountOf(missing, "> *Not written.*\n"));
+        Assert.DoesNotContain("Written before format 16", missing);
+    }
+
+    [Theory]
+    [InlineData("comparison", false)]
+    [InlineData("comparison", true)]
+    [InlineData("pack", false)]
+    [InlineData("runWithControls", false)]
+    [InlineData("runNoControls", false)]
+    [InlineData("battery", false)]
+    public void TheProfileSection_HoldsNoCausalWord(string name, bool anonymized)
+    {
+        string text = BenchmarkReportPackRenderer.Render(Document(name), anonymized ? FullAnonymized : FullNamed);
+        string profiles = Section(text, "## Why each model scored as it did");
+
+        Assert.Contains("| Model | Index | Strengths | Lost points on | Flags |\n", profiles);
+        Assert.Empty(Overseer.Services.Benchmarking.RootCause.RootCauseClaimSupport.CausalPhrases(profiles));
+    }
+
+    [Fact]
+    public void TheAvailabilityThreats_AreGroupedByReason()
+    {
+        var document = Document("comparison");
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        foreach (var peer in sheet.Peers)
+        {
+            sheet.Facts.Add(new BenchmarkReportFact
+            {
+                Key = BenchmarkComparisonReportFacts.ModelPrefix(peer.Letter) + "availability.attempts",
+                Display = BenchmarkReportFacts.NotAvailable,
+                Available = false,
+                UnavailableReason = BenchmarkReportFacts.AvailabilityNotRecordedReason
+            });
+        }
+        sheet.Facts = sheet.Facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+
+        string text = BenchmarkReportPackRenderer.Render(document, FullNamed);
+        string threats = Section(text, "## Limitations and threats to validity");
+
+        Assert.Contains("- Provider availability is not recorded for any of the 5 models (runs before harness 56), so provider errors cannot be "
+            + "separated from failures on Overseer's side.\n", threats);
+        Assert.DoesNotContain("Provider availability of ", threats);
+        Assert.Equal(1, CountOf(threats, "Provider availability"));
+
+        // The setup says it once too, without a table of rows that all say "not recorded".
+        string scope = Section(text, "## Scope and design");
+        Assert.Contains("Provider availability is not recorded for any of the 5 models (runs before harness 56).\n", scope);
+        Assert.DoesNotContain("### Provider availability", scope);
+    }
+
+    [Fact]
+    public void RemovedContent_PrintsTheRemovedText_AtFullDisclosure()
+    {
+        var document = Document("comparison");
+        document.Status = BenchmarkReportDocumentStatus.CompletedWithWarnings;
+        document.ValidationNotesJson = BenchmarkReportJson.Serialize(new List<BenchmarkReportValidationNote>
+        {
+            new()
+            {
+                Rule = 3,
+                Location = "sections.conclusions[p1]",
+                Message = "Holds the digit 7.",
+                Dropped = true,
+                Text = "{{model:B}} answered 7 questions well, as Vega Pro did before."
+            }
+        });
+
+        string named = Section(BenchmarkReportPackRenderer.Render(document, FullNamed), "## Removed content");
+        Assert.Contains("- **Conclusions, paragraph 1** (rule 3, Digit in prose): Holds the digit 7.\n", named);
+        Assert.Contains("  - *Removed text:* Vega Pro answered 7 questions well, as Vega Pro did before.\n", named);
+
+        string anonymized = Section(BenchmarkReportPackRenderer.Render(document, FullAnonymized), "## Removed content");
+        Assert.Contains("  - *Removed text:* Model B answered 7 questions well, as Model B did before.\n", anonymized);
+        foreach (var m in BenchmarkReportPackFixture.ComparisonModels)
+        {
+            Assert.DoesNotContain(m.Label, anonymized);
+            Assert.DoesNotContain(m.Provider, anonymized);
+        }
+    }
+
+    /// <summary>The text from <paramref name="heading"/> to the next level-two heading.</summary>
+    private static string Section(string text, string heading)
+    {
+        int start = text.IndexOf(heading + "\n", StringComparison.Ordinal);
+        Assert.True(start >= 0, heading + " is missing");
+        int end = text.IndexOf("\n## ", start + heading.Length, StringComparison.Ordinal);
+        return end < 0 ? text[start..] : text[start..(end + 1)];
+    }
+
+    private static int CountOf(string text, string value)
+    {
+        int count = 0;
+        for (int at = text.IndexOf(value, StringComparison.Ordinal); at >= 0; at = text.IndexOf(value, at + value.Length, StringComparison.Ordinal)) count++;
+        return count;
+    }
+
+    /// <summary>A question's text as a named copy prints it: each <c>Model X</c> by its label.</summary>
+    private static string NamedQuestion(BenchmarkReportFactSheet sheet, string text)
+    {
+        foreach (var peer in sheet.Peers.OrderByDescending(p => p.Letter.Length))
+        {
+            text = text.Replace("Model " + peer.Letter + " ", peer.Label + " ", StringComparison.Ordinal);
+        }
+        return text;
     }
 
     [Fact]

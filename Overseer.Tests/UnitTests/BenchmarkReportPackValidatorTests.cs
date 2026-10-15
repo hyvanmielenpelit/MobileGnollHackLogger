@@ -809,7 +809,7 @@ public class BenchmarkReportPackValidatorTests
         Assert.Contains(limit.ToString(System.Globalization.CultureInfo.InvariantCulture), note.Message);
 
         // A note from Validate is what sends the writer its repair turn.
-        Assert.Contains("- rule 7 at sections." + slot + ":", BenchmarkReportPackPrompt.BuildRepairMessage(new[] { note }));
+        Assert.Contains("  - sections." + slot + ":", BenchmarkReportPackPrompt.BuildRepairMessage(new[] { note }));
 
         // Without a repair, the paragraphs past the cap are dropped. Four words, then enough to reach
         // the cap exactly, then four more: only the last paragraph goes.
@@ -1612,7 +1612,8 @@ public class BenchmarkReportPackValidatorTests
 
         // Any note asks for the repair turn; the repair message carries it.
         string repair = BenchmarkReportPackPrompt.BuildRepairMessage(Validate(Es, output, ZeroCountSheet()));
-        Assert.Contains("- rule 19 at sections.meaning[p1]: Puts \"no\" before {{errors.critical}}", repair);
+        Assert.Contains("- Rule 19 — " + BenchmarkReportRuleCatalog.Name(19) + " (1):", repair);
+        Assert.Contains("  - sections.meaning[p1]: Puts \"no\" before {{errors.critical}}", repair);
     }
 
     [Fact]
@@ -1623,6 +1624,174 @@ public class BenchmarkReportPackValidatorTests
             Assert.Equal(rule >= 12 && rule != 15 && rule != 18, BenchmarkReportPackValidator.IsWarningRule(rule));
         }
         Assert.False(BenchmarkReportPackValidator.IsWarningRule(20));
+    }
+
+    // Rule 3: the interval-level phrase ---------------------------------------------------------
+
+    [Theory]
+    [InlineData("Its 95 % interval overlaps that of {{peer:A}}.")]
+    [InlineData("The 95% intervals of the two models overlap.")]
+    [InlineData("A 95 % bootstrap interval spans the share.")]
+    [InlineData("The 95 % confidence interval is wide enough to matter.")]
+    [InlineData("The 95 % paired interval excludes zero.")]
+    public void Rule3_TheIntervalLevelPhrase_Passes(string text)
+    {
+        Assert.DoesNotContain(ValidateMeaning(text), n => n.Rule == 3);
+    }
+
+    [Theory]
+    [InlineData("It answered 95 % of the questions.")]
+    [InlineData("Its 90 % interval is shown.")]
+    [InlineData("It scored 95 points within its interval.")]
+    [InlineData("The 95 % interval of 80 points holds.")]
+    public void Rule3_OtherPercentages_StillFail(string text)
+    {
+        Assert.Contains(ValidateMeaning(text), n => n.Rule == 3 && n.Location == MeaningP1);
+    }
+
+    // Rule 16: axes, one note per sentence, and the hedging tokens --------------------------------
+
+    private const string OverviewP1 = "sections.overview[p1]";
+
+    /// <summary>
+    /// A comparison-scope sheet of four models: A, B and C overlap pairwise and D overlaps none. A and B
+    /// have a cost result that is not established, A and C one that is; B and C have no cost result. A's
+    /// rank and the A–B quality short display carry the overlap caveat. With <paramref name="bcEstablished"/>
+    /// a family establishes the B–C quality order.
+    /// </summary>
+    private static BenchmarkReportFactSheet PairSheet(bool bcEstablished = false)
+    {
+        static BenchmarkReportFact F(string key, JsonNode? value, string display) => new() { Key = key, Value = value, Display = display };
+        var facts = new List<BenchmarkReportFact>
+        {
+            F("model.A.quality.rank", JsonValue.Create(1), "joint 1st of 4 (intervals overlap)"),
+            F("pair.A.B.cost.reference", JsonValue.Create(false), "not established"),
+            F("pair.A.B.intervalOverlap", JsonValue.Create(true), "the intervals of Model A and Model B overlap"),
+            F("pair.A.B.quality.short", JsonValue.Create(false), "two points apart, not established"),
+            F("pair.A.C.cost.reference", JsonValue.Create(true), "established"),
+            F("pair.A.C.intervalOverlap", JsonValue.Create(true), "the intervals of Model A and Model C overlap"),
+            F("pair.A.D.intervalOverlap", JsonValue.Create(false), "the intervals of Model A and Model D do not overlap"),
+            F("pair.B.C.intervalOverlap", JsonValue.Create(true), "the intervals of Model B and Model C overlap"),
+        };
+        if (bcEstablished) facts.Add(F("pair.B.C.quality.reference", JsonValue.Create(true), "established"));
+
+        return new BenchmarkReportFactSheet
+        {
+            Scope = BenchmarkReportFactSheet.ComparisonScopeValue,
+            SubjectKey = "comparison:1",
+            SubjectLabel = "Comparison #1",
+            Peers = new[] { "A", "B", "C", "D" }
+                .Select((l, i) => new BenchmarkReportPeer { Letter = l, EntryKey = "run:" + (40 + i), Label = "Orion " + l, Provider = "Northwind", State = "Comparable" })
+                .ToList(),
+            Facts = facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList(),
+        };
+    }
+
+    /// <summary>The rule 16 notes of an overview paragraph on <see cref="PairSheet"/>; every other slot is left empty.</summary>
+    private static List<BenchmarkReportValidationNote> RankingNotes(string overview, bool bcEstablished = false)
+    {
+        var output = new BenchmarkReportWriterOutput { Headline = "The models were compared on one suite." };
+        output.Sections[BenchmarkReportSlots.Overview] = overview;
+        return BenchmarkReportPackValidator.Validate(Es, output, PairSheet(bcEstablished), new BenchmarkReportContentSnapshot())
+            .Where(n => n.Rule == BenchmarkReportPackValidator.OverlapHedgeRule && n.Location == OverviewP1)
+            .ToList();
+    }
+
+    [Fact]
+    public void Rule16_Messages_HoldNoDigit()
+    {
+        var messages = new List<string>();
+        messages.AddRange(ValidateMeaning("{{subject}} scored higher than {{peer:A}} on item lore.", OverlapSheet()).Select(n => n.Message));
+        messages.AddRange(ValidateMeaning("{{subject}} scored lower than {{peer:A}} on item lore.", PairedSheet()).Select(n => n.Message));
+        messages.AddRange(RankingNotes("{{model:A}}, {{model:B}} and {{model:C}} scored higher than the others.").Select(n => n.Message));
+        messages.AddRange(RankingNotes("{{model:B}} scored higher than {{model:C}} on the questions.", bcEstablished: true).Select(n => n.Message));
+        messages.AddRange(RankingNotes("{{model:A}} has a higher cost per question than {{model:B}}.").Select(n => n.Message));
+
+        Assert.Equal(5, messages.Count);
+        Assert.All(messages, m => Assert.False(m.Any(char.IsDigit), m));
+    }
+
+    [Fact]
+    public void Rule16_ACostRanking_IsCheckedAgainstTheCostPairedResult()
+    {
+        var note = Assert.Single(RankingNotes("{{model:A}} has a higher cost per question than {{model:B}}."));
+        Assert.Contains("{{model:A}} against {{model:B}} on cost", note.Message);
+        Assert.Contains("cost paired-result token", note.Message);
+        Assert.DoesNotContain("intervals overlap", note.Message);
+
+        // Citing the pair's cost result hedges it; a pair with no cost result is not checked at all,
+        // though its quality intervals overlap.
+        Assert.Empty(RankingNotes("{{model:A}} has a higher cost per question than {{model:B}}: {{pair.A.B.cost.reference}}."));
+        Assert.Empty(RankingNotes("{{model:B}} has a lower cost per question than {{model:C}}."));
+    }
+
+    [Fact]
+    public void Rule16_ACostRankingOfAnEstablishedCostPair_Passes()
+    {
+        Assert.Empty(RankingNotes("{{model:A}} has a higher cost per question than {{model:C}}."));
+
+        // A quality word keeps the sentence on the quality axis, whose intervals overlap.
+        Assert.Single(RankingNotes("{{model:A}} scored higher than {{model:C}} at a higher cost."));
+    }
+
+    [Fact]
+    public void Rule16_OneNotePerSentence_ListsEveryUnhedgedPair()
+    {
+        var note = Assert.Single(RankingNotes("{{model:A}}, {{model:B}} and {{model:C}} scored higher than the others."));
+        Assert.Contains("{{model:A}}, {{model:B}} and {{model:C}} against each other", note.Message);
+
+        var two = RankingNotes("{{model:A}} scored higher than {{model:B}}. {{model:B}} scored higher than {{model:C}}.");
+        Assert.Equal(2, two.Count);
+    }
+
+    [Theory]
+    [InlineData("{{model:A}} scored higher than {{model:B}}; {{pair.A.B.intervalOverlap}}.")]
+    [InlineData("{{model:A}} scored higher than {{model:B}}, ranked {{model.A.quality.rank}}.")]
+    [InlineData("{{model:A}} scored higher than {{model:B}}, by {{pair.A.B.quality.short}}.")]
+    public void Rule16_AnOverlapToken_CountsAsTheHedge(string text)
+    {
+        Assert.Empty(RankingNotes(text));
+    }
+
+    [Fact]
+    public void Rule16_TheEstablishedVariant_DoesNotAskForTheWordEstablished()
+    {
+        var note = Assert.Single(RankingNotes("{{model:B}} scored higher than {{model:C}} on the questions.", bcEstablished: true));
+
+        Assert.Contains("paired-result token", note.Message);
+        Assert.DoesNotContain("establish", note.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(RankingNotes("{{model:B}} scored higher than {{model:C}}: {{pair.B.C.quality.reference}}.", bcEstablished: true));
+    }
+
+    // DropInvalid keeps the text it removes --------------------------------------------------------
+
+    [Fact]
+    public void DropInvalid_KeepsTheRemovedText()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.Meaning] = "A player will usually get sound advice.\n\nIt scored 80 points on lore.\n\nIts outstanding lore helped.";
+        output.Strengths.Add(new BenchmarkReportWriterItem { Text = "It handled 7 hard questions.", Questions = { 1 }, Evidence = { "R1" } });
+        string overlong = "It scored 9 points. " + new string('x', BenchmarkReportValidationNote.MaxTextLength + 500);
+        output.Weaknesses.Add(new BenchmarkReportWriterItem { Text = overlong, Questions = { 2 }, Evidence = { "R2" } });
+
+        var result = Drop(Es, output);
+
+        var paragraph = Assert.Single(result.Notes, n => n.Rule == 3 && n.Location == "sections.meaning[p2]");
+        Assert.True(paragraph.Dropped);
+        Assert.Equal("It scored 80 points on lore.", paragraph.Text);
+
+        var strength = Assert.Single(result.Notes, n => n.Rule == 3 && n.Location == "strengths[1]");
+        Assert.True(strength.Dropped);
+        Assert.Equal("It handled 7 hard questions.", strength.Text);
+
+        var weakness = Assert.Single(result.Notes, n => n.Rule == 3 && n.Location == "weaknesses[1]");
+        Assert.Equal(BenchmarkReportValidationNote.MaxTextLength, weakness.Text!.Length);
+        Assert.StartsWith("It scored 9 points.", weakness.Text);
+
+        // A kept warning carries its paragraph too.
+        var hype = Assert.Single(result.Notes, n => n.Rule == BenchmarkReportPackValidator.HypeWordRule);
+        Assert.False(hype.Dropped);
+        Assert.Equal("Its outstanding lore helped.", hype.Text);
     }
 }
 

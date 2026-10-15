@@ -704,7 +704,8 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
     }
 
-    private static void ComparisonSetup(StringBuilder sb, Context ctx, string heading = "## Setup and method")
+    /// <summary>The setup and method bullets with the graders, then, with <paramref name="comparedModels"/>, the compared models' table.</summary>
+    private static void ComparisonSetup(StringBuilder sb, Context ctx, string heading = "## Setup and method", bool comparedModels = true)
     {
         var sheet = ctx.Sheet;
         var models = OrderedPeers(sheet);
@@ -747,7 +748,14 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb, "- **Versions:** harness " + SharedOrPerModel(ctx, "run.harnessVersion") + "; scoring method " + SharedOrPerModel(ctx, "scoring.methodVersion") + ".");
         Line(sb);
 
-        Heading(sb, "### Compared models");
+        if (comparedModels) ComparisonModelsTable(sb, ctx, "### Compared models");
+    }
+
+    /// <summary>One row per covered model: its letter, name, kind, runs, thinking level, harness version, run dates and price card.</summary>
+    private static void ComparisonModelsTable(StringBuilder sb, Context ctx, string heading)
+    {
+        var sheet = ctx.Sheet;
+        Heading(sb, heading);
         bool harness = sheet.Entries.Any(e => e.HarnessVersion != null);
         bool dates = sheet.Entries.Any(e => e.FirstRunUtc.HasValue || e.LastRunUtc.HasValue);
         var header = new List<string> { "Letter" };
@@ -809,38 +817,6 @@ public static partial class BenchmarkReportPackRenderer
             : "same provider as " + BenchmarkReportFormat.LetterList(sharing);
     }
 
-    private static void ComparisonThreats(StringBuilder sb, Context ctx)
-    {
-        Heading(sb, "## Threats to validity");
-        Line(sb, "- The benchmark asks single-turn questions under one chat configuration. It does not exercise conversation "
-            + "history, pre-injected wiki context, spoiler-free mode, web search or subagents.");
-        Line(sb, "- Intervals: " + SharedOrPerModel(ctx, "quality.intervalBasis"));
-        Line(sb, "- The graders are AI models. Each grader's provider relation to the models is stated under Setup and method; "
-            + "a grader from a model's own provider may read that model more favorably.");
-        Line(sb, "- Paired tests: each measure's family is Holm-adjusted across the tests it makes over these models only.");
-        foreach (var peer in OrderedPeers(ctx.Sheet).Where(p => string.Equals(p.State, "Degraded", StringComparison.Ordinal)))
-        {
-            Line(sb, "- Comparability: " + ProseName(ctx, peer) + ": " + SheetText(ctx, peer.Explanation));
-        }
-        if (IsBatteryComparison(ctx))
-        {
-            Line(sb, "- Composite: each Overall Index weights the suites under the battery's scheme; another scheme gives another figure.");
-            Line(sb, "- Detail: the writer was given the full text of " + DetailQuestionsText(ctx) + ", and the other questions as matrix rows.");
-        }
-        foreach (var peer in OrderedPeers(ctx.Sheet))
-        {
-            foreach (string threat in AvailabilityThreats(ctx, BenchmarkComparisonReportFacts.ModelPrefix(peer.Letter)))
-            {
-                Line(sb, "- Provider availability of " + ProseName(ctx, peer) + ": " + threat);
-            }
-        }
-        if (ComparisonWriterCaveat(ctx) is string caveat)
-        {
-            Line(sb, "- " + caveat);
-        }
-        Line(sb);
-    }
-
     /// <summary>
     /// How many distinct questions the writer was given in full: <c>17 questions (8 of suite 1, 9 of suite 2)</c>,
     /// each suite of the matrix in suite order; without the breakdown when the matrix has one suite, and
@@ -871,10 +847,10 @@ public static partial class BenchmarkReportPackRenderer
         return total + " (" + string.Join(", ", perSuite) + ")";
     }
 
-    private static void ComparisonReproducibility(StringBuilder sb, Context ctx)
+    private static void ComparisonReproducibility(StringBuilder sb, Context ctx, string heading = "## Reproducibility appendix")
     {
         var (pricing, _) = PricingBasisText(ctx.Sheet);
-        Heading(sb, "## Reproducibility appendix");
+        Heading(sb, heading);
         foreach (var peer in OrderedPeers(ctx.Sheet))
         {
             string identity = ctx.Anonymized ? string.Empty : " (" + peer.Provider + " " + peer.ModelId + ", thinking level " + (peer.ThinkingLevel ?? "not set") + ")";
@@ -898,7 +874,8 @@ public static partial class BenchmarkReportPackRenderer
     /// at Full, with the graders and the claim verifier. <paramref name="only"/>, when given, keeps the
     /// questions it holds.
     /// </summary>
-    private static void ComparisonQuestionDetails(StringBuilder sb, Context ctx, bool grading, int level, IReadOnlySet<int>? only = null)
+    private static void ComparisonQuestionDetails(
+        StringBuilder sb, Context ctx, bool grading, int level, IReadOnlySet<int>? only = null, string? title = null)
     {
         string prefix = new('#', level);
         var questions = (ctx.Content.Questions ?? new List<BenchmarkReportContentQuestion>())
@@ -907,7 +884,7 @@ public static partial class BenchmarkReportPackRenderer
             .ToList();
         if (questions.Count == 0) return;
 
-        Heading(sb, prefix + (grading ? " Question details" : " Questions and answers"));
+        Heading(sb, prefix + " " + (title ?? (grading ? "Question details" : "Questions and answers")));
         Line(sb, "*Each answer shown is one the writer was given as an excerpt; the excerpts were chosen for the questions with critical errors or refuted sentences first, then the widest spread between models, then those every model scored low.*");
         Line(sb);
 
@@ -1466,6 +1443,18 @@ public static partial class BenchmarkReportPackRenderer
     private static void ComparisonAvailabilityTable(StringBuilder sb, Context ctx)
     {
         if (!HasComparisonAvailability(ctx)) return;
+
+        // A table whose every row would say "not recorded" is one sentence.
+        var models = OrderedPeers(ctx.Sheet);
+        var modelAttempts = models.Select(p => Fact(ctx, ModelKey(p.Letter, "availability.attempts"))).ToList();
+        if (modelAttempts.All(a => a is { Available: false }))
+        {
+            var reasons = modelAttempts.Select(a => NotRecordedText(a!)).Distinct(StringComparer.Ordinal).ToList();
+            Line(sb, "Provider availability is not recorded for " + (models.Count == 2 ? "either model" : "any of the " + Inv(models.Count) + " models")
+                + (reasons.Count == 1 ? NotRecordedParenthesis(reasons[0]) : string.Empty) + ".");
+            Line(sb);
+            return;
+        }
 
         Heading(sb, "### Provider availability");
         var header = ModelColumns(ctx);

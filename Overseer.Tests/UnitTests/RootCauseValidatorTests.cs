@@ -236,14 +236,156 @@ public class RootCauseValidatorTests
     // --- Caps ---------------------------------------------------------------------------------------
 
     [Fact]
-    public void TheEvidenceSlots_AreCappedLowerInARunCompletion()
+    public void TheEvidenceSlots_AreCappedAtAHundredWords_InEveryScope()
     {
         Assert.Equal(BenchmarkReportPackValidator.RootCauseEvidenceMaxWords,
             BenchmarkReportPackValidator.SlotMaxWords(Rca, BenchmarkReportSlots.EvidenceSpeed, ComparisonSheet));
         Assert.Equal(BenchmarkReportPackValidator.RootCauseCompletionEvidenceMaxWords,
             BenchmarkReportPackValidator.SlotMaxWords(Rca, BenchmarkReportSlots.EvidenceSpeed, RunSheetNoControls.Value));
         Assert.Equal(100, BenchmarkReportPackValidator.RootCauseCompletionEvidenceMaxWords);
-        Assert.Equal(150, BenchmarkReportPackValidator.RootCauseEvidenceMaxWords);
+        Assert.Equal(100, BenchmarkReportPackValidator.RootCauseEvidenceMaxWords);
+    }
+
+    [Theory]
+    [InlineData(BenchmarkReportSlots.HypothesesIntelligence, 120)]
+    [InlineData(BenchmarkReportSlots.Conclusions, 120)]
+    [InlineData(BenchmarkReportSlots.NextRuns, 50)]
+    [InlineData(BenchmarkReportSlots.AnswerBest, 60)]
+    [InlineData(BenchmarkReportSlots.AnswerCost, 60)]
+    public void TheSlotCaps_AreTheirWordLimits(string slot, int cap)
+    {
+        Assert.Equal(cap, BenchmarkReportPackValidator.RootCauseSlotMaxWords(slot, completion: false));
+        Assert.Equal(cap, BenchmarkReportPackValidator.RootCauseSlotMaxWords(slot, completion: true));
+    }
+
+    // --- Answer slots, run tokens and labels (sheets built by hand) ---------------------------------
+
+    private static BenchmarkReportFact TextFact(string key, string value, string? display = null)
+        => new() { Key = key, Value = System.Text.Json.Nodes.JsonValue.Create(value), Display = display ?? value };
+
+    /// <summary>
+    /// A comparison-scope Root Cause Analysis sheet of two models asking <paramref name="questions"/>: three
+    /// axes not established, a Moderate hypothesis and a High one (each with a statement and a label), and one
+    /// next run.
+    /// </summary>
+    private static BenchmarkReportFactSheet QuestionSheet(params int[] questions)
+    {
+        var facts = new List<BenchmarkReportFact>
+        {
+            TextFact("rca.axis.cost.status", RootCauseStatuses.NotEstablished, "Not established"),
+            TextFact("rca.axis.intelligence.status", RootCauseStatuses.NotEstablished, "Not established"),
+            TextFact("rca.axis.speed.status", RootCauseStatuses.NotEstablished, "Not established"),
+            TextFact("rca.hypothesis.HQ1.1.grade", RootCauseGrades.Moderate),
+            TextFact("rca.hypothesis.HQ1.1.label", "critical errors of Model B against Model A"),
+            TextFact("rca.hypothesis.HQ1.1.statement", "Model B made more critical errors than Model A."),
+            TextFact("rca.hypothesis.HS1.1.grade", RootCauseGrades.High),
+            TextFact("rca.hypothesis.HS1.1.label", "longer outputs of Model B"),
+            TextFact("rca.hypothesis.HS1.1.statement", "Model B writes longer answers than Model A."),
+            TextFact("rca.run.1.summary", "a replicate of every model"),
+        };
+        foreach (int q in questions)
+        {
+            facts.Add(TextFact("rca.question." + q + ".text", "why this model stands where it does"));
+            facts.Add(TextFact("rca.question." + q + ".status", "Probable"));
+        }
+
+        return new BenchmarkReportFactSheet
+        {
+            Scope = BenchmarkReportFactSheet.ComparisonScopeValue,
+            SubjectKey = "comparison:1",
+            SubjectLabel = "Comparison #1",
+            Peers = new[] { "A", "B" }
+                .Select((l, i) => new BenchmarkReportPeer { Letter = l, EntryKey = "run:" + (50 + i), Label = "Orion " + l, Provider = "Northwind", State = "Comparable" })
+                .ToList(),
+            Facts = facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList(),
+        };
+    }
+
+    private static IReadOnlyList<BenchmarkReportValidationNote> ValidateSections(BenchmarkReportFactSheet sheet, IReadOnlyDictionary<string, string> sections)
+    {
+        var output = new BenchmarkReportWriterOutput { Headline = "The models differ on every axis." };
+        foreach (var (slot, text) in sections) output.Sections[slot] = text;
+        return BenchmarkReportPackValidator.Validate(Rca, output, sheet, new BenchmarkReportContentSnapshot());
+    }
+
+    [Fact]
+    public void Rule33_ARunTokenSupportsACausalWord_InNextRunsOnly()
+    {
+        const string sentence = "Make this run first because it settles the grading: {{rca.run.1.summary}}.";
+        var notes = ValidateSections(QuestionSheet(), new Dictionary<string, string>
+        {
+            [BenchmarkReportSlots.NextRuns] = sentence,
+            [BenchmarkReportSlots.Conclusions] = sentence,
+        });
+
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule && n.Location.StartsWith("sections.nextRuns", StringComparison.Ordinal));
+        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule && n.Location.StartsWith("sections.conclusions", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Rule31_ALabelToken_MayStandInsideASentence()
+    {
+        const string slot = BenchmarkReportSlots.HypothesesIntelligence;
+        var labeled = ValidateSections(QuestionSheet(), new Dictionary<string, string>
+        {
+            [slot] = "Part of the gap is due to {{rca.hypothesis.HQ1.1.label}} on the hard questions."
+        }).Where(n => n.Location.StartsWith("sections." + slot, StringComparison.Ordinal)).ToList();
+
+        Assert.DoesNotContain(labeled, n => n.Rule == BenchmarkReportPackValidator.ComparisonTokenShapeRule);
+        Assert.DoesNotContain(labeled, n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule);
+
+        // The statement is a sentence: inside another one it is still flagged.
+        var stated = ValidateSections(QuestionSheet(), new Dictionary<string, string>
+        {
+            [slot] = "Part of the gap is due to {{rca.hypothesis.HQ1.1.statement}} on the hard questions."
+        });
+        Assert.Contains(stated, n => n.Rule == BenchmarkReportPackValidator.ComparisonTokenShapeRule && n.Location.StartsWith("sections." + slot, StringComparison.Ordinal));
+
+        // A High hypothesis' label supports a certainty word as its other tokens do; a Moderate one's does not.
+        var certain = ValidateSections(QuestionSheet(), new Dictionary<string, string>
+        {
+            [BenchmarkReportSlots.HypothesesSpeed] = "The speed gap is certainly due to {{rca.hypothesis.HS1.1.label}}.",
+            [BenchmarkReportSlots.HypothesesCost] = "The cost gap is certainly due to {{rca.hypothesis.HQ1.1.label}}.",
+        });
+        Assert.DoesNotContain(certain, n => n.Rule == BenchmarkReportPackValidator.RootCauseCertaintyRule && n.Location.StartsWith("sections.hypothesesSpeed", StringComparison.Ordinal));
+        Assert.Contains(certain, n => n.Rule == BenchmarkReportPackValidator.RootCauseCertaintyRule && n.Location.StartsWith("sections.hypothesesCost", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void TheAnswerSlots_CiteTheirQuestionStatus()
+    {
+        var sheet = QuestionSheet(1, 3);
+
+        // Only the questions the sheet asks have a slot of the document.
+        var empty = ValidateSections(sheet, new Dictionary<string, string>());
+        Assert.Contains(empty, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.AnswerBest);
+        Assert.Contains(empty, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.AnswerSpeed);
+        Assert.DoesNotContain(empty, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.AnswerWorst);
+        Assert.DoesNotContain(empty, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.AnswerCost);
+
+        const string uncited = "The best model scored highest on the hard questions.";
+        var sections = new Dictionary<string, string>
+        {
+            [BenchmarkReportSlots.AnswerBest] = uncited,
+            [BenchmarkReportSlots.AnswerSpeed] = "Its speed cause is {{rca.question.3.status}}, as {{rca.hypothesis.HS1.1.label}} suggests.",
+            [BenchmarkReportSlots.AnswerWorst] = "The lowest model lost points on hard questions.",
+        };
+        var notes = ValidateSections(sheet, sections);
+
+        var missing = Assert.Single(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule && n.Location == "sections." + BenchmarkReportSlots.AnswerBest);
+        Assert.Contains("{{rca.question.1.status}}", missing.Message);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(missing.Rule));
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule && n.Location == "sections." + BenchmarkReportSlots.AnswerSpeed);
+        Assert.Contains(notes, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.AnswerWorst && n.Message.Contains("does not ask", StringComparison.Ordinal));
+
+        // The warning keeps the answer, and the note is recorded against it.
+        var output = new BenchmarkReportWriterOutput { Headline = "The models differ on every axis." };
+        foreach (var (slot, text) in sections) output.Sections[slot] = text;
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, sheet, new BenchmarkReportContentSnapshot());
+        Assert.Equal(uncited, cleaned.Output.Sections[BenchmarkReportSlots.AnswerBest]);
+        Assert.Contains(cleaned.Notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule
+                                            && n.Location == "sections." + BenchmarkReportSlots.AnswerBest && !n.Dropped);
+        Assert.False(cleaned.Output.Sections.ContainsKey(BenchmarkReportSlots.AnswerWorst));
     }
 
     // --- Rule 16: the pair a comparative word relates (v1) ------------------------------------------

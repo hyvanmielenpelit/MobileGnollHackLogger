@@ -48,14 +48,17 @@ using Overseer.Services.Benchmarking.RootCause;
 //                                                  reference or allPairs)
 //   pair.<L>.<M>.speed.ratio, .cost.ratio          L's model time and spend per question relative to M's
 //   pair.<L>.<M>.speed.<family>, .cost.<family>    established after the family's Holm adjustment
+//   pair.<L>.<M>.quality.short, .speed.short, .cost.short
+//                                                  the effect and whether it is established, without the adjustment
+//                                                  (true when established), from the first family that tests the pair
 //   pair.<L>.<M>.dimension.<d>.<family>            a quality dimension's paired test, established after its family's
 //                                                  Holm adjustment
 //   pair.<L>.<M>.configDifferences                 the configuration keys that differ between the two
 //   notable.count, notable.<n>.kind, .models, .questions, .summary   the notable findings (BenchmarkNotableFindings)
 //   rca.*                                          the root-cause engine over the covered models (RootCauseFacts)
 //
-// Every model.<L>.* fact of RootCauseEvidence, the dimension and configuration pair facts and rca.* are kept
-// off the Executive Summary's prompt (RootCauseFacts.WriterHidden).
+// Every model.<L>.* fact of RootCauseEvidence, the dimension, configuration and short pair facts and rca.* are
+// kept off the Executive Summary's prompt (RootCauseFacts.WriterHidden).
 //
 // L is always the earlier letter of a pair.
 
@@ -1188,11 +1191,40 @@ public static class BenchmarkComparisonReportFacts
                 foreach (var pair in measure.Pairs)
                 {
                     string prefix = PairPrefix(pair.FirstLetter, pair.SecondLetter);
-                    if (effects.Add(prefix + axis)) AddEffectFacts(facts, prefix, axis, pair);
+                    if (effects.Add(prefix + axis))
+                    {
+                        AddEffectFacts(facts, prefix, axis, pair);
+                        AddShortFact(facts, prefix + axis + ".short", axis, measure, pair);
+                    }
                     AddVerdictFact(facts, prefix + axis + "." + familyName, axis, measure, pair);
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// <c>pair.&lt;L&gt;.&lt;M&gt;.&lt;axis&gt;.short</c>: the pair's effect and whether it is established, in a few
+    /// words for a sentence or a table cell (<c>+4.2 points, established</c>, <c>1.84 times as long, not
+    /// established</c>), from the first family that tests it; the adjustment is stated once under the table.
+    /// Its value is whether the result is established.
+    /// </summary>
+    private static void AddShortFact(
+        BenchmarkReportFacts.FactList facts, string key, string axis, BenchmarkReportPairedMeasure measure, BenchmarkReportPairedTest pair)
+    {
+        if (pair.NotTestedReason != null || pair.AdjustedPValue == null || pair.Effect is not double effect)
+        {
+            facts.Unavailable(key, pair.NotTestedReason ?? measure.NotTestedReason ?? "The pair was not tested.");
+            return;
+        }
+
+        bool established = pair.Established && pair.Favors != "None";
+        string size = axis switch
+        {
+            "speed" => Ratio(effect) + " times as long",
+            "cost" => Ratio(effect) + " times as much",
+            _ => BenchmarkReportFormat.SignedOneDecimal(effect) + " points"
+        };
+        facts.Add(key, established, size + (established ? ", established" : ", not established"));
     }
 
     /// <summary>The pair's effect and interval on one axis, family-independent; Intelligence also gives the shared questions.</summary>

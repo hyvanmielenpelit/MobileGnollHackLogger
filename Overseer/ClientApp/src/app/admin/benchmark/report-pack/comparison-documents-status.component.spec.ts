@@ -457,6 +457,62 @@ describe('ComparisonDocumentsStatusComponent', () => {
     expect(text(q('.cds-redraw-error'))).toBe('The document has no stored facts.');
   });
 
+  it('explains a document written with warnings from an info button, reading its issues when first opened', () => {
+    show({ preview: preview({ writtenDocuments: [written(ExecutiveSummary, 41, { status: 'CompletedWithWarnings' })] }) });
+    const executive = row(`comparison|${ExecutiveSummary}`);
+    expect(row(`comparison|${RootCauseAnalysis}`).querySelector('.cds-why')).toBeNull();
+
+    const button = executive.querySelector<HTMLButtonElement>('.cds-why button.gh-info-btn')!;
+    const name = 'warnings in the Executive Summary of GPT-6.1 Sol (medium), GPT-5.6 Luna (max), Claude 5 Opus (high)';
+    expect(button.getAttribute('aria-label')).toBe(`About ${name}`);
+    expect(button.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(button.hasAttribute('title')).toBe(false);
+    // Nothing is read until the dialog is opened.
+    http.expectNone('/api/admin/benchmark/report-documents/41');
+
+    button.click();
+    fixture.detectChanges();
+    const dialog = executive.querySelector<HTMLDialogElement>('.cds-why dialog')!;
+    expect(dialog.open).toBe(true);
+    expect(text(dialog.querySelector('h3'))).toBe(
+      'Why the Executive Summary of GPT-6.1 Sol (medium), GPT-5.6 Luna (max), Claude 5 Opus (high) was completed with warnings');
+    expect(document.activeElement).toBe(dialog.querySelector('h3'));
+    expect(text(dialog.querySelector('.cds-why-loading'))).toBe('Reading the check results…');
+
+    http.expectOne('/api/admin/benchmark/report-documents/41').flush({
+      validationNotes: [{ rule: 16, location: 'sections.abstract', message: 'Ranks overlapping models.', dropped: false }],
+      validationIssues: [{
+        rule: 16, location: 'sections.abstract', message: 'Ranks overlapping models.', dropped: false,
+        ruleName: 'Ranking without the overlap caveat', severity: 'warning', locationLabel: 'Abstract, paragraph 1', text: 'A beats B.'
+      }]
+    });
+    fixture.detectChanges();
+    expect(text(dialog.querySelector('.report-validation-summary'))).toBe('This document is usable. One warning was kept.');
+    expect(text(dialog.querySelector('.report-validation-kept .report-validation-rule'))).toBe('Ranking without the overlap caveat');
+    expect(text(dialog.querySelector('.report-validation-kept .report-validation-location'))).toBe('Abstract, paragraph 1');
+    // A stored document offers no diagnostics to copy.
+    expect(text(dialog.querySelector('.report-validation-actions'))).not.toContain('diagnostics');
+    dialog.close();
+
+    // Opened again, it is not read again.
+    button.click();
+    http.expectNone('/api/admin/benchmark/report-documents/41');
+  });
+
+  it('falls back to the notes without rule names from a server that sends no validation issues', () => {
+    show({ preview: preview({ writtenDocuments: [written(ExecutiveSummary, 41, { status: 'CompletedWithWarnings' })] }) });
+    const executive = row(`comparison|${ExecutiveSummary}`);
+    executive.querySelector<HTMLButtonElement>('.cds-why button.gh-info-btn')!.click();
+    http.expectOne('/api/admin/benchmark/report-documents/41').flush({
+      validationNotes: [{ rule: 12, location: 'sections.abstract', message: 'British spelling.', dropped: false }]
+    });
+    fixture.detectChanges();
+    const dialog = executive.querySelector<HTMLDialogElement>('.cds-why dialog')!;
+    expect(text(dialog.querySelector('.report-validation-kept .report-validation-rule'))).toBe('Rule 12');
+    expect(text(dialog.querySelector('.report-validation-kept .report-validation-location'))).toBe('sections.abstract');
+    dialog.close();
+  });
+
   it('hosts the next runs under a written Root Cause Analysis and sets one up through the bridge', () => {
     const prefills: LauncherSetupPrefill[] = [];
     TestBed.inject(BenchmarkShellBridge).prefillSetup$.subscribe(prefill => prefills.push(prefill));

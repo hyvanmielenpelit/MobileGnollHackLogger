@@ -653,6 +653,19 @@ describe('CcReportsStepComponent', () => {
     expect(el.querySelector('.rp-job-summary')).toBeNull();
   });
 
+  it('styles only a warning entry of the job log as a warning, in the lower case the server sends', () => {
+    openAnalysis(ccReportJob({}, {
+      log: [
+        { timestampUtc: '2026-10-02T10:00:05Z', message: 'Writing Executive Summary.', severity: 'info' },
+        { timestampUtc: '2026-10-02T10:00:45Z', message: 'Revising the Executive Summary.', severity: 'warning' },
+        { timestampUtc: '2026-10-02T10:01:05Z', message: 'Executive Summary written.', severity: 'info' }
+      ]
+    }));
+
+    const entries = Array.from(el.querySelectorAll('.rp-job-log .rp-log-list li'));
+    expect(entries.map(entry => entry.classList.contains('rp-log-warning'))).toEqual([false, true, false]);
+  });
+
   it('says how many jobs are ahead while the job is queued', () => {
     openAnalysis(ccReportJob({ phase: 'Queued', status: BenchmarkRunReportDocumentsStatus.Pending, slotAcquiredAtUtc: null, jobsAhead: 2 }));
     expect(textOf(el.querySelector('.cc-rep-status'))).toBe('Waiting for the report writer · 2 ahead in the queue · Claude writer');

@@ -34,7 +34,8 @@ using WordStyles = Overseer.Services.Benchmarking.Word.BenchmarkWordStyles;
 /// <see cref="BenchmarkWordStyles"/>; runs carry direct formatting only for what the Markdown itself
 /// marks (bold, italic, strike, underline, mark) and a wide table's smaller text size, and paragraphs
 /// only for an indent inside a list item, a table cell's alignment, and keeping a table row with the
-/// second line under it.
+/// second line under it. A callout (<see cref="BenchmarkPdfMarkdownComposer.CalloutOf"/>) takes its
+/// kind's <c>Callout…</c> style.
 ///
 /// <para>Raw HTML is never interpreted or imported: a tag prints as the literal text it is. Markdown
 /// images print as their alternative text in brackets, only absolute http, https and mailto links
@@ -72,9 +73,9 @@ internal sealed class BenchmarkWordMarkdownWriter
 
     /// <summary>
     /// Where a block sits: the text indent of the list item it belongs to, in twips, whether it is
-    /// inside a block quote, and how many lists enclose it.
+    /// inside a block quote, how many lists enclose it, and the kind of the callout it is in.
     /// </summary>
-    private sealed record Scope(int Indent, bool Quote, int ListDepth)
+    private sealed record Scope(int Indent, bool Quote, int ListDepth, BenchmarkCalloutKind? Callout = null)
     {
         public static readonly Scope Body = new(0, false, 0);
 
@@ -183,6 +184,9 @@ internal sealed class BenchmarkWordMarkdownWriter
                 case ListBlock list:
                     WriteList(target, list, scope);
                     break;
+                case QuoteBlock callout when Composer.CalloutOf(callout, _document.Source) is { } parsed:
+                    WriteCallout(target, parsed, scope);
+                    break;
                 case QuoteBlock quote:
                     Blocks(target, quote.ToList(), scope with { Quote = true });
                     break;
@@ -228,6 +232,26 @@ internal sealed class BenchmarkWordMarkdownWriter
         return paragraph;
     }
 
+    /// <summary>
+    /// A callout as paragraphs in its kind's <c>Callout…</c> style, which Word draws as one shaded box
+    /// with a rule down the left. The lead paragraph opens with the Markdown's bold label, or with the
+    /// kind's label in bold when the Markdown has none; the blocks after it take the same style.
+    /// </summary>
+    private void WriteCallout(OpenXmlElement target, BenchmarkPdfMarkdownComposer.Callout callout, Scope scope)
+    {
+        var inner = scope with { Quote = false, Callout = callout.Kind };
+        var lead = new Paragraph(Properties(ParagraphStyleOf(inner), IndentOf(inner)));
+        if (!callout.HasLabel)
+        {
+            string label = Composer.CalloutLabel(callout.Kind) + "." + (callout.Lead.Count > 0 ? " " : string.Empty);
+            AppendRun(lead, label, default(InlineStyle) with { Bold = true });
+        }
+        Inlines(lead, callout.Lead, default);
+        target.Append(lead);
+
+        Blocks(target, callout.Rest, inner);
+    }
+
     /// <summary>Literal source text, its line breaks kept, in the style a paragraph would take.</summary>
     private static void Literal(OpenXmlElement target, string text, Scope scope)
     {
@@ -245,10 +269,17 @@ internal sealed class BenchmarkWordMarkdownWriter
     }
 
     private static string? ParagraphStyleOf(Scope scope)
-        => scope.Quote ? WordStyles.Quote : scope.Indent > 0 ? WordStyles.ListParagraph : null;
+        => scope.Callout is BenchmarkCalloutKind kind ? WordStyles.Callout(kind)
+            : scope.Quote ? WordStyles.Quote
+            : scope.Indent > 0 ? WordStyles.ListParagraph
+            : null;
 
-    /// <summary>The direct left indent of a block inside a list item; none elsewhere, where its style's applies.</summary>
-    private static int? IndentOf(Scope scope) => scope.Indent > 0 ? scope.Offset : null;
+    /// <summary>
+    /// The direct left indent of a block inside a list item, a callout's moved in by the callout's own
+    /// indent; none elsewhere, where its style's applies.
+    /// </summary>
+    private static int? IndentOf(Scope scope)
+        => scope.Indent > 0 ? scope.Offset + (scope.Callout != null ? WordStyles.CalloutIndent : 0) : null;
 
     /// <summary>The left indent of a code block inside a list item or a quote; none in the body, where its style's applies.</summary>
     private static int? CodeIndent(Scope scope) => scope.Offset > 0 ? scope.Offset + WordStyles.Twips(6) : null;
@@ -789,7 +820,7 @@ internal sealed class BenchmarkWordMarkdownWriter
     // Inlines
     // ---------------------------------------------------------------------------------------------
 
-    private void Inlines(OpenXmlElement paragraph, ContainerInline? container, InlineStyle style)
+    private void Inlines(OpenXmlElement paragraph, IEnumerable<Markdig.Syntax.Inlines.Inline>? container, InlineStyle style)
     {
         if (container == null) return;
 

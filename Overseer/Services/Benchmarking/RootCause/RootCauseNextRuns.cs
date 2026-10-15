@@ -80,25 +80,62 @@ public static class RootCauseNextRuns
     }
 
     /// <summary>
-    /// One run's summary in a sentence, the display of its <c>rca.run.&lt;n&gt;.summary</c> fact. Each model
-    /// name is written through <paramref name="modelName"/> when it is given, so a comparison-scope fact
-    /// names no model.
+    /// One run in a short phrase, the display of its <c>rca.run.&lt;n&gt;.summary</c> fact: <c>Run 1, a replicate
+    /// of all nine models (about $260 and 528 minutes)</c>. The run's card in the document holds its details.
+    /// Each model name is written through <paramref name="modelName"/> when it is given, so a comparison-scope
+    /// fact names no model; a run of every one of <paramref name="analyzedModels"/> models (three or more)
+    /// says so instead of listing them.
     /// </summary>
-    public static string Summary(RootCauseRecommendedRun run, Func<string, string>? modelName = null)
+    public static string Summary(RootCauseRecommendedRun run, Func<string, string>? modelName = null, int? analyzedModels = null)
     {
         ArgumentNullException.ThrowIfNull(run);
-        string target = run.TargetKind == "Battery" ? "battery " + (run.BatteryName ?? "(not resolved)") : "suite " + (run.SuiteName ?? "(not resolved)");
         var names = run.ModelNames.Select(n => modelName == null ? n : modelName(n)).Distinct(StringComparer.Ordinal).ToList();
-        string models = names.Count == 0 ? "no model resolved" : BenchmarkReportFormat.LetterList(names);
-        string runs = run.RunMode == "Batch"
-            ? Inv(run.RunsPerModel) + (run.TargetKind == "Battery" ? " per suite" : " per model")
-            : Inv(run.RunCount) + (run.RunCount == 1 ? " run" : " runs");
-        string estimate = run.EstimatedCostUsd is double cost
-            ? "; about " + BenchmarkReportFormat.Usd(cost) + (run.EstimatedMinutes is double minutes ? " and " + BenchmarkReportFormat.Whole(minutes) + " minutes" : string.Empty)
-            : string.Empty;
-        return KindName(run.Kind) + " (" + run.Purpose + ", " + run.Mark.ToLowerInvariant() + "): " + models + " on " + target + ", " + runs + estimate
-               + ". " + run.Decides + (run.AfterSystemHypotheses ? " Make it after the system hypotheses are settled." : string.Empty);
+        string models = names.Count == 0 ? "no model resolved"
+            : analyzedModels is int all && all >= 3 && names.Count == all ? "all " + CountWord(all) + " models"
+            : BenchmarkReportFormat.LetterList(names);
+        string estimate = EstimateText(run);
+        return "Run " + Inv(run.Number) + ", " + Article(KindPhrase(run.Kind)) + " of " + models + (estimate.Length > 0 ? " (" + estimate + ")" : string.Empty);
     }
+
+    /// <summary><c>about $260 and 528 minutes</c>: whole dollars from ten up; empty when the run is not estimated.</summary>
+    public static string EstimateText(RootCauseRecommendedRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        if (run.EstimatedCostUsd is not double cost) return string.Empty;
+        string usd = cost >= 10 ? "$" + BenchmarkReportFormat.Count(cost) : BenchmarkReportFormat.Usd(cost);
+        return "about " + usd + (run.EstimatedMinutes is double minutes ? " and " + BenchmarkReportFormat.Count(minutes) + " minutes" : string.Empty);
+    }
+
+    /// <summary>The kind as a phrase inside a sentence: <c>replicate</c>, <c>thinking-level pair</c>, ….</summary>
+    public static string KindPhrase(string kind) => kind switch
+    {
+        RootCauseRunKinds.Replicate => "replicate",
+        RootCauseRunKinds.ThinkingPair => "thinking-level pair",
+        RootCauseRunKinds.StylePair => "response-style pair",
+        RootCauseRunKinds.PanelSwap => "panel swap",
+        RootCauseRunKinds.TimeStratum => "time-of-day repeat",
+        RootCauseRunKinds.Control => "control run",
+        _ => kind
+    };
+
+    private static string Article(string phrase) => (phrase.Length > 0 && "aeiou".Contains(phrase[0]) ? "an " : "a ") + phrase;
+
+    /// <summary>Two to twelve in words, digits above.</summary>
+    private static string CountWord(int count) => count switch
+    {
+        2 => "two",
+        3 => "three",
+        4 => "four",
+        5 => "five",
+        6 => "six",
+        7 => "seven",
+        8 => "eight",
+        9 => "nine",
+        10 => "ten",
+        11 => "eleven",
+        12 => "twelve",
+        _ => Inv(count)
+    };
 
     /// <summary>The kind in words.</summary>
     public static string KindName(string kind) => kind switch
@@ -134,6 +171,9 @@ public static class RootCauseNextRuns
         public List<string> Notes { get; } = new();
         public string? Decides { get; set; }
         public int Insertion { get; init; }
+
+        /// <summary>A time-of-day repeat was folded into the plan: its runs start at different times of day.</summary>
+        public bool TimeOfDay { get; set; }
     }
 
     internal static (List<RootCauseRecommendedRun> Runs, List<RootCauseCheck> Checks) Build(
@@ -265,6 +305,8 @@ public static class RootCauseNextRuns
             replicate.Purpose = RootCausePurposes.Benchmark;
         }
 
+        Fold(plans);
+
         var ordered = plans.Values
             .Where(p => p.Models.Count > 0)
             .OrderBy(p => RootCausePurposes.Order(p.Purpose))
@@ -281,6 +323,35 @@ public static class RootCauseNextRuns
         }
 
         return (runs, checks);
+    }
+
+    /// <summary>
+    /// Folds every time-of-day repeat and thinking-level pair whose models all belong to a replicate of
+    /// <see cref="ReplicateRuns"/> or more runs per suite into that replicate: it settles their hypotheses too,
+    /// starts each run at a different time of day when a time-of-day repeat was folded, and takes the most
+    /// urgent purpose among them (the chat, then the benchmark, then model selection).
+    /// </summary>
+    private static void Fold(Dictionary<string, Plan> plans)
+    {
+        if (!plans.TryGetValue("replicate", out var replicate) || !replicate.Batch || replicate.RunsPerModel < ReplicateRuns) return;
+
+        bool Covers(RunModel model)
+            => replicate.Models.Any(m => (model.ConfigurationId.HasValue && m.ConfigurationId == model.ConfigurationId) || m.Name == model.Name);
+
+        var folded = plans.Values
+            .Where(p => p.Kind is RootCauseRunKinds.TimeStratum or RootCauseRunKinds.ThinkingPair && p.Models.Count > 0 && p.Models.All(Covers))
+            .OrderBy(p => p.Insertion)
+            .ToList();
+        foreach (var plan in folded)
+        {
+            foreach (var hypothesis in plan.Hypotheses)
+            {
+                if (!replicate.Hypotheses.Any(x => x.Hypothesis.Key == hypothesis.Hypothesis.Key)) replicate.Hypotheses.Add(hypothesis);
+            }
+            if (plan.Kind == RootCauseRunKinds.TimeStratum) replicate.TimeOfDay = true;
+            if (RootCausePurposes.Order(plan.Purpose) < RootCausePurposes.Order(replicate.Purpose)) replicate.Purpose = plan.Purpose;
+            plans.Remove(plan.Key);
+        }
     }
 
     private static void AddModel(Plan plan, RootCauseModelInput model)
@@ -449,7 +520,8 @@ public static class RootCauseNextRuns
             SecondOpinionMode = settings.SecondOpinionMode,
             ClaimVerifierModelConfigurationId = settings.ClaimVerifierModelConfigurationId,
             ReportWriterModelConfigurationId = null,
-            AfterSystemHypotheses = systemFirst && plan.Purpose == RootCausePurposes.ModelSelection
+            AfterSystemHypotheses = systemFirst && plan.Purpose == RootCausePurposes.ModelSelection,
+            When = plan.TimeOfDay ? "start each run at a different time of day" : null
         };
 
         foreach (var model in plan.Models)
@@ -484,6 +556,7 @@ public static class RootCauseNextRuns
             RootCauseRunKinds.Control => "Model comparison: every must-match key agrees and only the model differs",
             _ => "Not predicted"
         };
+        if (plan.TimeOfDay && plan.Kind == RootCauseRunKinds.Replicate) run.PredictedTier += "; time of day differs, which the speed comparison discloses";
 
         run.Decides = plan.Decides ?? string.Join(" ", plan.Hypotheses.Select(x =>
             "Confirms " + x.Hypothesis.Key + " if " + (string.IsNullOrWhiteSpace(x.Draft.ConfirmIf) ? "the result repeats" : x.Draft.ConfirmIf)

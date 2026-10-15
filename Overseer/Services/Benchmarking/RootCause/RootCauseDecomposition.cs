@@ -44,6 +44,9 @@ public static class RootCauseDecomposition
     /// <summary>A pair decomposition needs at least this many shared questions.</summary>
     public const int MinSharedQuestions = 5;
 
+    /// <summary>Why a pair whose difference is not established carries no components.</summary>
+    public const string NotEstablishedReason = "Not decomposed: the difference is not established.";
+
     public static string SpeedComponentLabel(string key) => key switch
     {
         "callCount" => "number of model calls",
@@ -75,9 +78,12 @@ public static class RootCauseDecomposition
 
     /// <summary>
     /// The speed decomposition of two models over the questions both have candidate telemetry for, with a
-    /// bootstrap interval for each component's share and for the difference.
+    /// bootstrap interval for each component's share and for the difference. Without
+    /// <paramref name="decompose"/>, only the difference and its interval: the pair is marked
+    /// <see cref="RootCausePairDecomposition.NotEstablished"/> and carries no component.
     /// </summary>
-    public static RootCausePairDecomposition Speed(string firstToken, RootCauseModelEvidence first, string secondToken, RootCauseModelEvidence second)
+    public static RootCausePairDecomposition Speed(
+        string firstToken, RootCauseModelEvidence first, string secondToken, RootCauseModelEvidence second, bool decompose = true)
     {
         var result = new RootCausePairDecomposition { Axis = RootCauseAxes.Speed, First = firstToken, Second = secondToken };
         var (a, b) = Shared(first.SpeedItems, second.SpeedItems);
@@ -98,6 +104,7 @@ public static class RootCauseDecomposition
         result.Difference = total;
         result.FirstTotal = firstTotal;
         result.SecondTotal = secondTotal;
+        if (!decompose) return DifferenceOnly(result, a.Count, sample => SpeedEffects(a, b, sample).Total);
 
         var intervals = RootCauseStatistics.Bootstrap(a.Count, effects.Length + 1, sample =>
         {
@@ -154,8 +161,12 @@ public static class RootCauseDecomposition
         return (effects, firstTotal - secondTotal, firstTotal, secondTotal);
     }
 
-    /// <summary>The cost decomposition of two models over the questions both have token counts and prices for.</summary>
-    public static RootCausePairDecomposition Cost(string firstToken, RootCauseModelEvidence first, string secondToken, RootCauseModelEvidence second)
+    /// <summary>
+    /// The cost decomposition of two models over the questions both have token counts and prices for;
+    /// without <paramref name="decompose"/>, only the difference and its interval, as <see cref="Speed"/>.
+    /// </summary>
+    public static RootCausePairDecomposition Cost(
+        string firstToken, RootCauseModelEvidence first, string secondToken, RootCauseModelEvidence second, bool decompose = true)
     {
         var result = new RootCausePairDecomposition { Axis = RootCauseAxes.Cost, First = firstToken, Second = secondToken };
         if (!first.Priced || !second.Priced)
@@ -176,6 +187,7 @@ public static class RootCauseDecomposition
         result.Difference = total;
         result.FirstTotal = firstTotal;
         result.SecondTotal = secondTotal;
+        if (!decompose) return DifferenceOnly(result, a.Count, sample => CostEffects(a, b, sample).Total);
 
         var intervals = RootCauseStatistics.Bootstrap(a.Count, effects.Length + 3, sample =>
         {
@@ -229,6 +241,20 @@ public static class RootCauseDecomposition
         });
         result.DifferenceLower = intervals[effects.Length + 2]?.Lower;
         result.DifferenceUpper = intervals[effects.Length + 2]?.Upper;
+        return result;
+    }
+
+    /// <summary>
+    /// The pair with the difference's bootstrap interval and no component, marked not established. The
+    /// resamples are the ones a full decomposition draws, so the interval is the same as its own.
+    /// </summary>
+    private static RootCausePairDecomposition DifferenceOnly(RootCausePairDecomposition result, int count, Func<IReadOnlyList<int>, double> total)
+    {
+        var interval = RootCauseStatistics.Bootstrap(count, sample => total(sample));
+        result.DifferenceLower = interval?.Lower;
+        result.DifferenceUpper = interval?.Upper;
+        result.NotEstablished = true;
+        result.UnavailableReason = NotEstablishedReason;
         return result;
     }
 

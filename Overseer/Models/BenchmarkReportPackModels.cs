@@ -169,6 +169,13 @@ public static class BenchmarkReportSlots
     public const string HypothesesCost = "hypothesesCost";                 // Weighing the cost hypotheses
     public const string Conclusions = "conclusions";                       // Per axis: the root cause and its confidence, or why it is not established
     public const string Limitations = "limitations";                       // Limitations
+    public const string AnswerBest = "answerBest";                         // The questions: why the best model scored highest
+    public const string AnswerWorst = "answerWorst";                       // The questions: why the lowest model scored lowest
+    public const string AnswerSpeed = "answerSpeed";                       // The questions: why the slowest model is slowest
+    public const string AnswerCost = "answerCost";                         // The questions: why the most expensive model costs most
+
+    /// <summary>A Root Cause Analysis' answer slots, one per research question, in question order.</summary>
+    public static IReadOnlyList<string> RootCauseAnswerSlots { get; } = new[] { AnswerBest, AnswerWorst, AnswerSpeed, AnswerCost };
 
     /// <summary>The most items of a Root Cause Analysis' <c>observations</c> list.</summary>
     public const int RootCauseMaxObservations = 8;
@@ -179,6 +186,7 @@ public static class BenchmarkReportSlots
     /// <summary>A Root Cause Analysis' slots, in document order.</summary>
     public static IReadOnlyList<string> RootCauseSlotOrder { get; } = new[]
     {
+        AnswerBest, AnswerWorst, AnswerSpeed, AnswerCost,
         Scope, EvidenceIntelligence, EvidenceSpeed, EvidenceCost, HypothesesIntelligence, HypothesesSpeed, HypothesesCost,
         Conclusions, NextRuns, Limitations
     };
@@ -186,6 +194,10 @@ public static class BenchmarkReportSlots
     /// <summary>The section title of each Root Cause Analysis slot.</summary>
     public static IReadOnlyDictionary<string, string> RootCauseSlotTitles { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        [AnswerBest] = "The questions: the highest score",
+        [AnswerWorst] = "The questions: the lowest score",
+        [AnswerSpeed] = "The questions: the slowest model",
+        [AnswerCost] = "The questions: the most expensive model",
         [Scope] = "Scope and design",
         [EvidenceIntelligence] = "Evidence: intelligence",
         [EvidenceSpeed] = "Evidence: speed",
@@ -1233,6 +1245,15 @@ public sealed class BenchmarkReportValidationNote
 
     /// <summary>The item or paragraph was removed from the stored output.</summary>
     public bool Dropped { get; set; }
+
+    /// <summary>
+    /// The removed or flagged text, with its tokens unresolved, at most <see cref="MaxTextLength"/>
+    /// characters; null on notes stored before it was kept.
+    /// </summary>
+    public string? Text { get; set; }
+
+    /// <summary>The longest <see cref="Text"/> kept.</summary>
+    public const int MaxTextLength = 2000;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1536,6 +1557,73 @@ public class BenchmarkReportPackDocumentProgressDto
 
     /// <summary>The last reply's raw text of a Failed document, cut at 200,000 characters; null otherwise and while the job runs.</summary>
     public string? FailedReply { get; set; }
+
+    /// <summary>
+    /// The step the document is at (<see cref="BenchmarkReportPackPhases"/>): <c>Preparing</c>, <c>Writing</c>,
+    /// <c>Checking</c>, <c>Revising</c>, <c>CheckingRevision</c>, <c>Storing</c>, <c>DrawingCharts</c> or
+    /// <c>Done</c>; empty while it waits.
+    /// </summary>
+    public string Phase { get; set; } = string.Empty;
+
+    /// <summary>A plain sentence on the current phase, e.g. why the draft is being revised; null when there is none.</summary>
+    public string? PhaseDetail { get; set; }
+
+    /// <summary>Whether the first draft passed every check; null until the first draft has been checked.</summary>
+    public bool? FirstDraftClean { get; set; }
+
+    /// <summary>Every writer call of the document, in order.</summary>
+    public List<BenchmarkReportPackCallDto> Calls { get; set; } = new();
+}
+
+/// <summary>The phases of a document's progress row (<see cref="BenchmarkReportPackDocumentProgressDto.Phase"/>).</summary>
+public static class BenchmarkReportPackPhases
+{
+    public const string Preparing = "Preparing";
+    public const string Writing = "Writing";
+    public const string Checking = "Checking";
+    public const string Revising = "Revising";
+    public const string CheckingRevision = "CheckingRevision";
+    public const string Storing = "Storing";
+    public const string DrawingCharts = "DrawingCharts";
+    public const string Done = "Done";
+}
+
+/// <summary>The kinds of writer call (<see cref="BenchmarkReportPackCallDto.Kind"/>).</summary>
+public static class BenchmarkReportPackCallKinds
+{
+    /// <summary>The first draft.</summary>
+    public const string Draft = "Draft";
+
+    /// <summary>The repair turn after a draft with validation issues.</summary>
+    public const string Revision = "Revision";
+
+    /// <summary>A headline-only retry.</summary>
+    public const string Headline = "Headline";
+}
+
+/// <summary>One writer call of a document, as the job diagnostics show it.</summary>
+public class BenchmarkReportPackCallDto
+{
+    /// <summary><c>Draft</c>, <c>Revision</c> or <c>Headline</c> (<see cref="BenchmarkReportPackCallKinds"/>).</summary>
+    public string Kind { get; set; } = string.Empty;
+
+    public DateTime StartedAtUtc { get; set; }
+    public long DurationMs { get; set; }
+    public long InputTokens { get; set; }
+    public long CachedInputTokens { get; set; }
+    public long OutputTokens { get; set; }
+
+    /// <summary>Null when the call had no resolvable price.</summary>
+    public double? CostUsd { get; set; }
+
+    /// <summary>The provider's finish or stop reason; null when it gave none.</summary>
+    public string? FinishReason { get; set; }
+
+    /// <summary>The number of messages sent, the system prompt included.</summary>
+    public int RequestMessages { get; set; }
+
+    /// <summary>The characters of every message sent.</summary>
+    public long RequestCharacters { get; set; }
 }
 
 /// <summary>One validation issue of a writer turn, as the job diagnostics show it.</summary>
@@ -1545,6 +1633,18 @@ public class BenchmarkReportPackValidationIssueDto
     public string Location { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
     public bool Dropped { get; set; }
+
+    /// <summary>The rule's short name (<c>BenchmarkReportRuleCatalog</c>).</summary>
+    public string RuleName { get; set; } = string.Empty;
+
+    /// <summary><c>removesItem</c>, <c>warning</c> or <c>failsDocument</c>.</summary>
+    public string Severity { get; set; } = string.Empty;
+
+    /// <summary>The location in words, e.g. "Conclusions, paragraph 1".</summary>
+    public string LocationLabel { get; set; } = string.Empty;
+
+    /// <summary>The removed or flagged text; null when none was kept.</summary>
+    public string? Text { get; set; }
 }
 
 public class BenchmarkReportPackJobLogEntryDto
@@ -1590,6 +1690,31 @@ public class BenchmarkReportPackJobDto
 
     /// <summary>The server's clock when the view was built, for elapsed times the client shows.</summary>
     public DateTime ServerTimeUtc { get; set; }
+
+    /// <summary>The report format version the job's documents are rendered at.</summary>
+    public int ReportFormatVersion { get; set; }
+
+    /// <summary>The Root Cause Analysis engine version; null when the job writes no Root Cause Analysis.</summary>
+    public int? EngineVersion { get; set; }
+
+    public int PdfLayoutVersion { get; set; }
+    public int WordLayoutVersion { get; set; }
+
+    /// <summary>The SHA-256 of the writer's system prompt of the job's first document; null until it is built.</summary>
+    public string? WriterPromptSha256 { get; set; }
+
+    public string? WriterProvider { get; set; }
+    public string? WriterModelId { get; set; }
+    public string? WriterThinkingLevel { get; set; }
+
+    /// <summary>The comparison's reference model, as its label; null when it has none.</summary>
+    public string? ReferenceModel { get; set; }
+
+    /// <summary>The comparison's entries, e.g. <c>battery:13</c>; empty for a completion job.</summary>
+    public List<string> Entries { get; set; } = new();
+
+    /// <summary>The notes of the job's preparation (fact sheet and engine), in the validation issue shape.</summary>
+    public List<BenchmarkReportPackValidationIssueDto> PreparationNotes { get; set; } = new();
 }
 
 /// <summary>A stored document in a list; never carries rendered text.</summary>
@@ -1735,6 +1860,10 @@ public class BenchmarkReportDocumentDetailDto : BenchmarkReportDocumentListItemD
     public int AnswerExcerptChars { get; set; }
     public string WriterPromptSha256 { get; set; } = string.Empty;
     public List<BenchmarkReportValidationNote> ValidationNotes { get; set; } = new();
+
+    /// <summary>The same notes with their rule names, severities and locations in words.</summary>
+    public List<BenchmarkReportPackValidationIssueDto> ValidationIssues { get; set; } = new();
+
     public string FactsJson { get; set; } = string.Empty;
 
     /// <summary>A Root Cause Analysis's recommended runs, from its stored fact sheet; null on other documents.</summary>

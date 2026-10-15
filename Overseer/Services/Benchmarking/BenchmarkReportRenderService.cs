@@ -449,6 +449,9 @@ public class BenchmarkReportRenderService
             AnswerExcerptChars = d.AnswerExcerptChars,
             WriterPromptSha256 = d.WriterPromptSha256,
             ValidationNotes = DeserializeNotes(d.ValidationNotesJson, d.Id),
+            ValidationIssues = DeserializeNotes(d.ValidationNotesJson, d.Id)
+                .Select(n => BenchmarkReportRuleCatalog.ToIssueDto(n, BenchmarkReportRuleCatalog.SlotTitlesFor(d.Audience)))
+                .ToList(),
             FactsJson = d.FactsJson,
             MissingRunIds = missing,
             ChatConsistencyAnalysisId = d.ChatConsistencyAnalysisId,

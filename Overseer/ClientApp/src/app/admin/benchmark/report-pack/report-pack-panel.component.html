@@ -395,10 +395,32 @@
                   }
                   <span class="rp-doc-name">{{ row.name }}</span>
                   <span class="rp-doc-status">
-                    <span class="visually-hidden">Status: </span>
-                    <span [class]="row.chipClass">{{ row.statusWord }}</span>
+                    <span class="rp-doc-chip-row">
+                      <span class="visually-hidden">Status: </span>
+                      <span [class]="row.chipClass">{{ row.statusWord }}</span>
+                      @if (row.why; as why) {
+                        <app-info-tip class="rp-doc-why" trigger="dialog" [tipId]="row.tipStem + '-why'"
+                                      [subject]="why.subject" [dialogTitle]="why.title">
+                          <app-report-validation-details [document]="row.doc" source="job"></app-report-validation-details>
+                        </app-info-tip>
+                      }
+                    </span>
                     @if (row.errorMessage) {
                       <span class="rp-job-row-error">{{ row.errorMessage }}</span>
+                    }
+                    @if (row.phaseLine) {
+                      <!-- One line; the full text is in the dialog. -->
+                      <span class="rp-doc-phase-row">
+                        <span class="rp-doc-phase">{{ row.phaseLine }}</span>
+                        @if (row.draftIssueCount > 0) {
+                          <app-info-tip class="rp-doc-draft" trigger="dialog" [tipId]="row.tipStem + '-draft'"
+                                        [subject]="'the first draft check of ' + row.title"
+                                        [dialogTitle]="'What the automatic check found in the first draft of ' + row.title">
+                            <app-report-validation-details [document]="row.doc" source="job" view="firstDraft"
+                                                           [phaseDetail]="row.doc.phaseDetail ?? null"></app-report-validation-details>
+                          </app-info-tip>
+                        }
+                      </span>
                     }
                   </span>
                   <span class="rp-doc-duration"><span class="visually-hidden">Duration: </span>{{ row.duration }}</span>
@@ -454,7 +476,7 @@
               @if (job.log.length > 0) {
                 <ol class="rp-log-list">
                   @for (entry of job.log; track $index) {
-                    <li [class.rp-log-warning]="entry.severity !== 'Info'">
+                    <li [class.rp-log-warning]="entry.severity.toLowerCase() !== 'info'">
                       <span class="rp-log-time">{{ logTime(entry.timestampUtc) }}</span>
                       <span class="rp-log-severity">{{ entry.severity }}</span>
                       {{ entry.message }}

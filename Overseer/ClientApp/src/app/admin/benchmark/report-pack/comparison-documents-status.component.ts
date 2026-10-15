@@ -27,6 +27,7 @@ import {
   reportDisclosureParam,
   reportPeerNamingParam
 } from '../../../services/admin-benchmark.service';
+import { InfoTipComponent } from '../../../shared/info-tip/info-tip.component';
 import { PdfViewerDialogComponent } from '../../../shared/pdf-viewer/pdf-viewer-dialog.component';
 import { ensureOverlayPolyfills } from '../../../utils/polyfills.util';
 import { rememberedPdfPaper, reportDocumentFileStem } from '../download-center/download-center-panel.component';
@@ -44,7 +45,15 @@ import {
   formatUtc,
   reportAudiencesFor
 } from './report-document-format';
+import { ReportValidationDetailsComponent } from './report-validation-details.component';
+import { DocumentStatusInput, documentStatusQuestion, documentStatusSubject } from './report-validation-explanation';
 import { RootCauseRunsComponent } from './root-cause-runs.component';
+
+/** A stored document's validation outcome, read when its explanation is first opened. */
+export interface StoredValidationState {
+  readonly state: 'loading' | 'ready' | 'error';
+  readonly document: DocumentStatusInput | null;
+}
 
 /** Step 3's document scope: comparison-wide (or model subset) documents, or per-model ones. */
 export type ReportDocumentScopeMode = 'comparison' | 'model';
@@ -255,7 +264,9 @@ function serverMessage(error: HttpErrorResponse): string | null {
  * Step 3's *Documents of this comparison*: every document the chosen models can have, written or not,
  * with its writer, date, duration, cost and charts, a Write or Rewrite checkbox the host turns into
  * the next job, and icon-only View (the PDF viewer) and Delete (after a confirmation). A written Root
- * Cause Analysis adds an icon-only Redraw charts and, under its row, its next runs and checks. In
+ * Cause Analysis adds an icon-only Redraw charts and, under its row, its next runs and checks. A
+ * document written with warnings has an (i) button beside its status whose dialog says what was removed
+ * and what was kept, read from the stored document when it is first opened. In
  * comparison scope, the other covered sets with documents follow in a closed disclosure, each with
  * **Choose these models**.
  *
@@ -264,7 +275,7 @@ function serverMessage(error: HttpErrorResponse): string | null {
 @Component({
   selector: 'app-comparison-documents-status',
   standalone: true,
-  imports: [NgTemplateOutlet, PdfViewerDialogComponent, RootCauseRunsComponent],
+  imports: [NgTemplateOutlet, PdfViewerDialogComponent, RootCauseRunsComponent, InfoTipComponent, ReportValidationDetailsComponent],
   templateUrl: './comparison-documents-status.component.html',
   styleUrls: ['./comparison-documents-status.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -312,10 +323,14 @@ export class ComparisonDocumentsStatusComponent implements OnInit, OnDestroy {
   /** Why the last redraw failed. */
   redrawError: string | null = null;
 
+  /** Each stored document's validation outcome, by document id, once its explanation has been opened. */
+  readonly validation = new Map<number, StoredValidationState>();
+
   private returnFocus: HTMLElement | null = null;
   private focusHeadingAfterDelete = false;
   private deleteSub: Subscription | null = null;
   private redrawSub: Subscription | null = null;
+  private readonly validationSubs = new Map<number, Subscription>();
   private destroyed = false;
 
   get headingId(): string {
@@ -336,6 +351,8 @@ export class ComparisonDocumentsStatusComponent implements OnInit, OnDestroy {
     this.deleteSub = null;
     this.redrawSub?.unsubscribe();
     this.redrawSub = null;
+    this.validationSubs.forEach(sub => sub.unsubscribe());
+    this.validationSubs.clear();
   }
 
   /** A row's id stem: unique within the list. */
@@ -400,6 +417,59 @@ export class ComparisonDocumentsStatusComponent implements OnInit, OnDestroy {
       return;
     }
     this.chooseModels.emit(set.entryKeys);
+  }
+
+  // -------------------------------------------------------------------------------------------
+  // Why a document was written with warnings
+  // -------------------------------------------------------------------------------------------
+
+  /** `warnings in the Executive Summary of …`: the explanation button's subject. */
+  whySubject(row: ComparisonDocumentRow): string {
+    return documentStatusSubject(this.rowName(row), row.document?.status ?? 'CompletedWithWarnings');
+  }
+
+  /** `Why the Executive Summary of … was completed with warnings`: the explanation dialog's title. */
+  whyTitle(row: ComparisonDocumentRow): string {
+    return documentStatusQuestion(this.rowName(row), row.document?.status ?? 'CompletedWithWarnings');
+  }
+
+  /**
+   * Reads the stored document's validation issues the first time its explanation is opened, and again
+   * after a failed read. A server that sends no `validationIssues` gives its notes without rule names.
+   */
+  loadValidation(row: ComparisonDocumentRow): void {
+    const doc = row.document;
+    if (!doc) {
+      return;
+    }
+    const id = doc.documentId;
+    const current = this.validation.get(id);
+    if (current && current.state !== 'error') {
+      return;
+    }
+    const status = doc.status ?? 'CompletedWithWarnings';
+    this.validation.set(id, { state: 'loading', document: null });
+    this.validationSubs.get(id)?.unsubscribe();
+    this.validationSubs.set(id, this.benchmarkService.getReportDocument(id).subscribe({
+      next: detail => {
+        if (this.destroyed) {
+          return;
+        }
+        this.validation.set(id, {
+          state: 'ready',
+          document: { status, finalIssues: detail?.validationIssues ?? detail?.validationNotes ?? [] }
+        });
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        if (this.destroyed) {
+          return;
+        }
+        this.validation.set(id, { state: 'error', document: null });
+        this.cdr.markForCheck();
+      }
+    }));
+    this.cdr.markForCheck();
   }
 
   // -------------------------------------------------------------------------------------------

@@ -1,6 +1,10 @@
 import {
   BenchmarkReportAudience,
-  BenchmarkReportPackJobDto
+  BenchmarkReportPackCallDto,
+  BenchmarkReportPackDocumentProgressDto,
+  BenchmarkReportPackJobDto,
+  BenchmarkReportPackValidationIssueDto,
+  BenchmarkReportScope
 } from '../../../services/admin-benchmark.service';
 import type { BenchmarkModelComparisonEntryDto } from '../model-comparison/model-comparison.models';
 import { DEFAULT_CHART_SELECTION } from './report-charts';
@@ -11,6 +15,7 @@ import {
   reportPackDiagnosticsFileName
 } from './report-pack-diagnostics';
 import type { ReportPackContext } from './report-pack-panel.component';
+import { explainDocumentStatus, explanationLines } from './report-validation-explanation';
 
 const { ExecutiveSummary, RootCauseAnalysis } = BenchmarkReportAudience;
 
@@ -58,8 +63,8 @@ function job(overrides: Partial<BenchmarkReportPackJobDto> = {}): BenchmarkRepor
       { audience: RootCauseAnalysis, status: 'Failed', documentId: 23, errorMessage: 'The writer\nrefused.', modelCalls: 1 }
     ],
     log: [
-      { timestampUtc: '2026-09-28T10:00:00Z', message: 'Started.', severity: 'Info' },
-      { timestampUtc: '2026-09-28T10:00:50Z', message: 'Repaired once.', severity: 'Warning' }
+      { timestampUtc: '2026-09-28T10:00:00Z', message: 'Started.', severity: 'info' },
+      { timestampUtc: '2026-09-28T10:00:50Z', message: 'Repaired once.', severity: 'warning' }
     ],
     serverTimeUtc: '2026-09-28T10:01:10Z',
     ...overrides
@@ -98,7 +103,8 @@ describe('report-pack-diagnostics', () => {
     expect(lines).toContain('Captured: 2026-09-28 10:01:12 UTC');
     const sections = lines.filter(line => line.startsWith('== '));
     expect(sections).toEqual([
-      '== Comparison ==', '== Job ==', '== Charts ==', '== Documents ==', '== Totals ==', '== Client polling ==', '== Job log =='
+      '== Comparison ==', '== Job ==', '== Charts ==', '== Documents ==', '== Why document 3 (Root Cause Analysis) failed ==',
+      '== Totals ==', '== Client polling ==', '== Job log =='
     ]);
 
     expect(lines).toContain('Suite: Board Suite');
@@ -131,7 +137,100 @@ describe('report-pack-diagnostics', () => {
     expect(lines).toContain('Estimate: $0.12');
     expect(lines).toContain('Polls: 7');
     expect(lines).toContain('Last error: HTTP 503: Service Unavailable');
-    expect(lines).toContain('[2026-09-28 10:00:50 UTC] [Warning] Repaired once.');
+    expect(lines).toContain('[2026-09-28 10:00:50 UTC] [warning] Repaired once.');
+  });
+
+  it('adds the job\'s context, writer and versions, the preparation notes, each call, the rule names and the removed text', () => {
+    const ranking: BenchmarkReportPackValidationIssueDto = {
+      rule: 16, ruleName: 'Ranking without the overlap caveat', severity: 'warning', location: 'sections.hypothesesCost[1]',
+      locationLabel: 'Hypotheses: cost, paragraph 2', message: 'The sentence ranks two overlapping models.', dropped: false, text: null
+    };
+    const digit: BenchmarkReportPackValidationIssueDto = {
+      rule: 3, ruleName: 'Digit in prose', severity: 'removesItem', location: 'sections.conclusions[0]',
+      locationLabel: 'Conclusions, paragraph 1', message: 'The paragraph holds a number of its own.', dropped: true,
+      text: 'The model scored 72\non {{model.index}}.'
+    };
+    const call = (kind: string, startedAtUtc: string, costUsd: number | null): BenchmarkReportPackCallDto => ({
+      kind, startedAtUtc, durationMs: 32000, inputTokens: 6000, cachedInputTokens: 1000, outputTokens: 1500, costUsd,
+      finishReason: kind === 'Draft' ? 'stop' : null, requestMessages: kind === 'Draft' ? 2 : 4, requestCharacters: 20000
+    });
+    const warned: BenchmarkReportPackDocumentProgressDto = {
+      audience: ExecutiveSummary, status: 'CompletedWithWarnings', documentId: 21, errorMessage: null, modelCalls: 2,
+      phase: 'Done', phaseDetail: null, firstDraftClean: false, firstTurnIssues: [ranking, digit], finalIssues: [digit, ranking],
+      calls: [call('Draft', '2026-09-28T10:00:05Z', 0.05), call('Revision', '2026-09-28T10:00:40Z', null)]
+    };
+    const battery = job({
+      scope: BenchmarkReportScope.Comparison,
+      comparisonId: 12,
+      suiteId: null,
+      referenceModel: 'GPT-6 Sol (medium)',
+      entries: ['battery:13', 'battery:14'],
+      writerProvider: 'Anthropic',
+      writerModelId: 'claude-opus-5-5',
+      writerThinkingLevel: 'medium',
+      reportFormatVersion: 14,
+      engineVersion: 3,
+      pdfLayoutVersion: 5,
+      wordLayoutVersion: 2,
+      writerPromptSha256: 'ab12cd34',
+      preparationNotes: [{ ...ranking, rule: 90, ruleName: 'Question detail left out', location: 'facts', locationLabel: 'Fact sheet', message: 'Six questions were summarized.' }],
+      status: 'Completed',
+      documents: [warned]
+    });
+    const text = buildReportPackDiagnostics(input({
+      context: { ...CONTEXT, runIds: [], groupIds: [], batteryRunIds: [13, 14], suiteId: null, entryKeys: ['battery:13', 'battery:14'] },
+      job: battery
+    }));
+    const lines = text.split('\n');
+
+    expect(lines).toContain('Scope: Comparison');
+    expect(lines).toContain('Comparison id: 12');
+    expect(lines).toContain('Reference model: GPT-6 Sol (medium)');
+    expect(lines).toContain('Suite id: not applicable (battery comparison)');
+    expect(lines).toContain('Entries: 2 (battery:13, battery:14)');
+    expect(lines).toContain('Battery runs: 13, 14');
+    expect(lines).toContain('Writer provider: Anthropic');
+    expect(lines).toContain('Writer model id: claude-opus-5-5');
+    expect(lines).toContain('Writer thinking level: medium');
+    expect(lines).toContain('Report format version: 14');
+    expect(lines).toContain('Engine version: 3');
+    expect(lines).toContain('PDF layout version: 5');
+    expect(lines).toContain('Word layout version: 2');
+    expect(lines).toContain('Writer prompt SHA-256: ab12cd34');
+
+    expect(lines.filter(line => line.startsWith('== '))).toEqual([
+      '== Comparison ==', '== Job ==', '== Charts ==', '== Preparation notes ==', '== Documents ==', '== Validation ==',
+      '== Why document 1 (Executive Summary) was completed with warnings ==', '== Totals ==', '== Client polling ==', '== Job log =='
+    ]);
+    expect(lines).toContain('rule 90 (Question detail left out, warning) at Fact sheet: Six questions were summarized.');
+
+    expect(lines).toContain('  Phase: Done (Done)');
+    expect(lines).toContain('  First draft clean: no');
+    expect(lines).toContain('    Call 1: Draft, started 2026-09-28 10:00:05 UTC, 32 s, 6,000 in / 1,000 cached / 1,500 out tokens, $0.05, finish stop, 2 messages, 20,000 characters');
+    expect(lines).toContain('    Call 2: Revision, started 2026-09-28 10:00:40 UTC, 32 s, 6,000 in / 1,000 cached / 1,500 out tokens, not recorded, finish not recorded, 4 messages, 20,000 characters');
+
+    const final = lines.indexOf('  Final: 2 issues (rule 3: 1, rule 16: 1)');
+    expect(lines.slice(final + 1, final + 4)).toEqual([
+      '    rule 3 (Digit in prose, removes the item) at Conclusions, paragraph 1: The paragraph holds a number of its own. (dropped)',
+      '      Removed text: The model scored 72 on {{model.index}}.',
+      '    rule 16 (Ranking without the overlap caveat, warning) at Hypotheses: cost, paragraph 2: The sentence ranks two overlapping models.'
+    ]);
+
+    // The same explanation as the dialog.
+    const why = lines.indexOf('== Why document 1 (Executive Summary) was completed with warnings ==');
+    const expected = explanationLines(explainDocumentStatus(warned, 'job'), '');
+    expect(lines.slice(why + 1, why + 1 + expected.length)).toEqual(expected);
+    expect(expected[0]).toBe('This document is usable. One paragraph was removed and one warning was kept.');
+  });
+
+  it('reads the suite id as not recorded for a comparison that is not of battery results, and the preparation notes as none', () => {
+    const lines = buildReportPackDiagnostics(input({ job: job({ suiteId: null, preparationNotes: [] }), context: { ...CONTEXT, suiteId: null } })).split('\n');
+    expect(lines).toContain('Suite id: not recorded');
+    expect(lines).toContain('Preparation notes: none');
+    expect(lines).toContain('Engine version: not recorded');
+    expect(lines).toContain('  First draft clean: not checked');
+    // A server that sends no phases writes no phase line.
+    expect(lines.some(line => line.startsWith('  Phase:'))).toBe(false);
   });
 
   it('prints the estimate as a range from the first call to one repair turn per document, when both ends are known and differ', () => {
@@ -164,7 +263,7 @@ describe('report-pack-diagnostics', () => {
 
     expect(lines.filter(line => line.startsWith('== '))).toEqual([
       '== Comparison ==', '== Job ==', '== Charts ==', '== Documents ==', '== Validation ==', '== Failed writer replies ==',
-      '== Totals ==', '== Client polling ==', '== Job log =='
+      '== Why document 2 (Root Cause Analysis) failed ==', '== Totals ==', '== Client polling ==', '== Job log =='
     ]);
     const validation = lines.slice(lines.indexOf('== Validation =='), lines.indexOf('== Failed writer replies =='));
     expect(validation).toEqual([
@@ -182,7 +281,7 @@ describe('report-pack-diagnostics', () => {
       '    rule 7 at headline: Missing.',
       ''
     ]);
-    const replies = lines.slice(lines.indexOf('== Failed writer replies =='), lines.indexOf('== Totals =='));
+    const replies = lines.slice(lines.indexOf('== Failed writer replies =='), lines.indexOf('== Why document 2 (Root Cause Analysis) failed =='));
     expect(replies).toEqual([
       '== Failed writer replies ==', 'Document 2: Root Cause Analysis', '--- reply ---', '{"headline":', '""}', '--- end of reply ---', ''
     ]);

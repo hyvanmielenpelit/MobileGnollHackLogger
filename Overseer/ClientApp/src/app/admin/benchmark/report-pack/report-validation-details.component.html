@@ -1,0 +1,121 @@
+<!-- The body of a dialog-mode info tip: its sections are h4s under the dialog's h3. -->
+@if (explanation; as ex) {
+  @if (view === 'firstDraft') {
+    <div class="report-validation report-validation-first-draft">
+      <p class="report-validation-summary">{{ phaseDetail || ex.checks }}</p>
+      @if (draftGroups.length > 0) {
+        <dl class="report-validation-groups">
+          @for (group of draftGroups; track group.rule) {
+            <div class="report-validation-group" [attr.data-rule]="group.rule">
+              <dt>
+                <span class="report-validation-rule">{{ group.ruleName }}</span>
+                <span class="gh-info-badge report-validation-count">{{ group.count }} {{ group.count === 1 ? 'issue' : 'issues' }}</span>
+              </dt>
+              <dd>
+                <ul class="report-validation-list">
+                  @for (issue of group.issues; track $index) {
+                    <li><span class="report-validation-location">{{ issue.location }}</span>: {{ issue.meaning }}</li>
+                  }
+                </ul>
+              </dd>
+            </div>
+          }
+        </dl>
+      }
+    </div>
+  } @else {
+    <div class="report-validation">
+      <p class="report-validation-summary">{{ ex.summary }}</p>
+
+      @if (ex.blocking.length > 0) {
+        <section class="report-validation-section report-validation-blocking">
+          <h4 class="report-validation-heading">What stopped the document</h4>
+          <ul class="report-validation-items">
+            @for (item of ex.blocking; track $index) {
+              <li class="report-validation-item">
+                <p class="report-validation-item-head">
+                  <span class="report-validation-location">{{ item.location }}</span>
+                  <span class="report-validation-rule">{{ item.ruleName }}</span>
+                </p>
+                <p class="report-validation-meaning">{{ item.meaning }}</p>
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
+      @if (ex.removed.length > 0) {
+        <section class="report-validation-section report-validation-removed">
+          <h4 class="report-validation-heading">What was removed</h4>
+          <ul class="report-validation-items">
+            @for (item of ex.removed; track $index) {
+              <li class="report-validation-item">
+                <p class="report-validation-item-head">
+                  <span class="report-validation-location">{{ item.location }}</span>
+                  <span class="report-validation-rule">{{ item.ruleName }}</span>
+                </p>
+                <p class="report-validation-meaning">{{ item.meaning }}</p>
+                @if (item.text) {
+                  <details class="report-validation-text">
+                    <summary>Removed text<span class="visually-hidden"> at {{ item.location }}</span></summary>
+                    <p class="report-validation-quote">{{ item.text }}</p>
+                  </details>
+                }
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
+      @if (ex.kept.length > 0) {
+        <section class="report-validation-section report-validation-kept">
+          <h4 class="report-validation-heading">What was kept with a warning</h4>
+          <ul class="report-validation-items">
+            @for (item of ex.kept; track $index) {
+              <li class="report-validation-item">
+                <p class="report-validation-item-head">
+                  <span class="report-validation-location">{{ item.location }}</span>
+                  <span class="report-validation-rule">{{ item.ruleName }}</span>
+                </p>
+                <p class="report-validation-meaning">{{ item.meaning }}</p>
+                @if (item.text) {
+                  <details class="report-validation-text">
+                    <summary>Flagged text<span class="visually-hidden"> at {{ item.location }}</span></summary>
+                    <p class="report-validation-quote">{{ item.text }}</p>
+                  </details>
+                }
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
+      @if (ex.checks) {
+        <section class="report-validation-section report-validation-checks">
+          <h4 class="report-validation-heading">How the draft was checked</h4>
+          <p>{{ ex.checks }}</p>
+        </section>
+      }
+
+      @if (ex.actions.length > 0 || ex.error || ex.failedReplyExcerpt) {
+        <section class="report-validation-section report-validation-actions">
+          <h4 class="report-validation-heading">What you can do</h4>
+          @if (ex.error) {
+            <p class="report-validation-error">The error: {{ ex.error }}</p>
+          }
+          @if (ex.failedReplyExcerpt) {
+            <p>The writer’s last reply began:</p>
+            <pre class="report-validation-reply">{{ ex.failedReplyExcerpt }}</pre>
+          }
+          @if (ex.actions.length > 0) {
+            <ul>
+              @for (action of ex.actions; track $index) {
+                <li>{{ action }}</li>
+              }
+            </ul>
+          }
+        </section>
+      }
+    </div>
+  }
+}

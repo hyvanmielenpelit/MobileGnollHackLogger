@@ -126,7 +126,8 @@ public class BenchmarkComparisonReportFactsTests
         Assert.Equal("1 of 6 answers", Display(sheet, "model.C.errors.critical"));
         Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("peer.", StringComparison.Ordinal));
         Assert.DoesNotContain(sheet.Facts, f => f.Key.EndsWith(".peerMean", StringComparison.Ordinal));
-        Assert.DoesNotContain(sheet.Facts, f => f.Key.Contains(".label", StringComparison.Ordinal) || f.Key.Contains(".provider", StringComparison.Ordinal)
+        Assert.DoesNotContain(sheet.Facts, f => (f.Key.Contains(".label", StringComparison.Ordinal) && !f.Key.StartsWith("rca.hypothesis.", StringComparison.Ordinal))
+            || f.Key.Contains(".provider", StringComparison.Ordinal)
             || f.Key.EndsWith(".modelId", StringComparison.Ordinal));
         Assert.All(ComparisonModels, m => Assert.DoesNotContain(sheet.Facts, f => f.Display.Contains(m.Label, StringComparison.Ordinal)
             || f.Display.Contains(m.Provider, StringComparison.Ordinal)));

@@ -968,6 +968,20 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     /// <summary>One writer turn: the raw reply, the terminal error, and what it cost.</summary>
     private sealed record WriterTurn(string? FinalText, string? Error, int InputTokens, int OutputTokens, long DurationMs, decimal? CostUsd);
 
+    /// <summary>
+    /// The messages a writer call sends and their characters: the system prompt and every message of its
+    /// history, each counted by its <c>content</c> text.
+    /// </summary>
+    private static (int Messages, long Characters) RequestSize(AgentRunRequest request)
+    {
+        long characters = (request.SystemPrompt ?? string.Empty).Length;
+        foreach (object message in request.SeedHistory ?? new List<object>())
+        {
+            if (message?.GetType().GetProperty("content")?.GetValue(message) is string content) characters += content.Length;
+        }
+        return (1 + (request.SeedHistory?.Count ?? 0), characters);
+    }
+
     public async Task RunAsync(string jobId, CancellationToken ct)
     {
         var job = _jobManager.TryGet(jobId);
@@ -1028,6 +1042,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 await EnsureComparisonAsync(job, state, ct);
             }
 
+            SetPhase(job, subjects[0].Rows, BenchmarkReportPackPhases.Preparing);
             var (firstPrep, firstRefusal) = await PrepareSubjectAsync(job, subjects[0].Key, state, excerptChars, ct);
             if (firstPrep == null && subjects.Count == 1)
             {
@@ -1049,6 +1064,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             {
                 ct.ThrowIfCancellationRequested();
                 var (subjectKey, rows) = subjects[i];
+                if (i > 0) SetPhase(job, rows, BenchmarkReportPackPhases.Preparing);
                 var (prep, refusal) = i == 0 ? (firstPrep, firstRefusal) : await PrepareSubjectAsync(job, subjectKey, state, excerptChars, ct);
                 if (prep == null)
                 {
@@ -1068,6 +1084,11 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 foreach (var note in prep.Notes)
                 {
                     job.AddLog(note.Message, "warning");
+                }
+                job.AddPreparationNotes(prep.Notes);
+                if (origin == BenchmarkReportDocumentOrigin.ReportPack && job.Entries.Count == 0)
+                {
+                    SetComparisonContext(job, prep);
                 }
 
                 foreach (var row in rows)
@@ -1133,6 +1154,10 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         {
             return (null, $"Configuration '{config.DisplayName}': its custom endpoint is not allowed by the endpoint policy: {endpointError}");
         }
+
+        job.WriterProvider = config.Provider;
+        job.WriterModelId = config.ModelId;
+        job.WriterThinkingLevel = config.ThinkingLevel;
 
         string apiKey = _cryptoService.Decrypt(config.EncryptedApiKey!, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
         var pricing = _pricingService.Resolve(config);
@@ -1231,6 +1256,20 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         ReplaceDocumentIds = request.ReplaceDocumentIds
     };
 
+    private static void SetPhase(BenchmarkReportPackJob job, IEnumerable<BenchmarkReportPackDocumentProgress> rows, string phase)
+    {
+        foreach (var row in rows) job.SetDocumentPhase(row, phase);
+    }
+
+    /// <summary>The job's comparison as its diagnostics show it: the entry keys, and a comparison-scope job's reference model by its label.</summary>
+    private static void SetComparisonContext(BenchmarkReportPackJob job, BenchmarkReportPackPreparation prep)
+    {
+        job.Entries = (prep.Comparison?.Entries ?? new List<BenchmarkModelComparisonEntryDto>()).Select(e => e.Key).ToList();
+        job.ReferenceModel = prep.Scope == BenchmarkReportScope.Comparison && prep.ReferenceEntryKey is string reference
+            ? prep.Covered.FirstOrDefault(c => string.Equals(c.Key, reference, StringComparison.Ordinal))?.Label
+            : null;
+    }
+
     private static void FailAll(BenchmarkReportPackJob job, string message)
     {
         job.AddLog(message, "error");
@@ -1267,9 +1306,11 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         string name = BenchmarkReportRenderService.AudienceName(audience) + (state.SeveralSubjects ? " about " + prep.Sheet.SubjectLabel : string.Empty);
 
         job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Writing);
+        job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Writing);
         job.AddLog($"Writing the {name} with {config.DisplayName}...");
 
         var prompt = BenchmarkReportPackPrompt.Build(audience, prep.Sheet, prep.Content);
+        job.WriterPromptSha256 ??= BenchmarkReportPackPrompt.PromptSha256(audience, prep.Scope);
         var runRequest = new AgentRunRequest
         {
             ProviderName = config.Provider,
@@ -1314,7 +1355,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         var notes = new List<BenchmarkReportValidationNote>(prep.Notes);
         try
         {
-            var first = await RunTurnAsync(job, progress, runRequest, config, pricing, ct);
+            var first = await RunTurnAsync(job, progress, runRequest, config, pricing, BenchmarkReportPackCallKinds.Draft, ct);
             turns.Add(first);
             if (first.Error != null)
             {
@@ -1322,21 +1363,26 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 return Fail(first.Error, log: false);
             }
 
+            job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Checking);
             var (parsed, issues) = ParseAndValidate(audience, first.FinalText, prep);
             var firstOutput = parsed;
             firstIssues = issues;
             finalIssues = issues;
+            job.SetFirstDraftClean(progress, issues.Count == 0);
             WriterTurn? repair = null;
             if (issues.Count > 0)
             {
                 job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Repairing);
+                job.SetFirstTurnIssues(progress, issues);
+                job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Revising, RevisionDetail(issues));
                 job.AddLog($"{name}: {issues.Count} validation issue(s) ({RuleCounts(issues)}); sending one repair turn.", "warning");
 
                 runRequest.SeedHistory.Add(new { role = "assistant", content = first.FinalText ?? string.Empty });
                 runRequest.SeedHistory.Add(new { role = "user", content = RepairMessage(issues, prep.Scope, parsed?.Headline) });
 
-                repair = await RunTurnAsync(job, progress, runRequest, config, pricing, ct);
+                repair = await RunTurnAsync(job, progress, runRequest, config, pricing, BenchmarkReportPackCallKinds.Revision, ct);
                 turns.Add(repair);
+                job.SetDocumentPhase(progress, BenchmarkReportPackPhases.CheckingRevision);
                 if (repair.Error != null)
                 {
                     job.AddLog($"{name}: provider error on the repair turn: {repair.Error}", "error");
@@ -1389,11 +1435,13 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                         var headlineIssues = BenchmarkReportPackValidator.HeadlineIssues(audience, parsed.Headline, prep.Sheet, prep.Content);
                         int words = BenchmarkReportPackValidator.WordCount(parsed.Headline ?? string.Empty);
                         job.AddLog($"{name}: the repaired headline is invalid ({invalid}); sending one headline-only turn.", "warning");
+                        job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Revising, $"The revised headline is invalid ({invalid}); the writer is asked for a new headline only.");
                         runRequest.SeedHistory.Add(new { role = "assistant", content = repair.FinalText ?? string.Empty });
                         runRequest.SeedHistory.Add(new { role = "user", content = BenchmarkReportPackPrompt.BuildHeadlineRepairMessage(headlineIssues, words) });
 
-                        var headlineTurn = await RunTurnAsync(job, progress, runRequest, config, pricing, ct);
+                        var headlineTurn = await RunTurnAsync(job, progress, runRequest, config, pricing, BenchmarkReportPackCallKinds.Headline, ct);
                         turns.Add(headlineTurn);
+                        job.SetDocumentPhase(progress, BenchmarkReportPackPhases.CheckingRevision);
                         var (headline, failure, rewrittenIssues) = HeadlineFromTurn(audience, headlineTurn, prep);
                         if (headline != null)
                         {
@@ -1417,9 +1465,21 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                     return Fail(fatalReason ?? cleaned.FatalReason ?? "Required content failed validation after the repair turn.");
                 }
 
+                var restored = RestoreUncitedAxes(parsed, cleaned.Output, prep.Sheet);
                 parsed = cleaned.Output;
                 notes.AddRange(cleaned.Notes);
-                job.AddLog($"{name}: {notes.Count(n => n.Dropped)} item(s) removed by validation.", "warning");
+                var removed = cleaned.Notes.Where(n => n.Dropped).ToList();
+                if (removed.Count > 0)
+                {
+                    var titles = BenchmarkReportRuleCatalog.SlotTitlesFor(audience);
+                    job.AddLog($"{name}: {removed.Count} item(s) removed by validation: "
+                        + string.Join("; ", removed.Select(n => BenchmarkReportRuleCatalog.LocationLabel(n.Location, titles) + " (" + BenchmarkReportRuleCatalog.Name(n.Rule) + ")"))
+                        + ".", "warning");
+                }
+                foreach (string axis in restored)
+                {
+                    job.AddLog($"{name}: the conclusions' paragraph on {RootCauseAxes.Name(axis).ToLowerInvariant()} was removed; Overseer added the axis' status in its place.", "warning");
+                }
                 if (rescued != null)
                 {
                     notes.Add(rescued);
@@ -1436,6 +1496,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             throw;
         }
         job.SetDocumentDiagnostics(progress, firstIssues, finalIssues);
+        job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Storing);
 
         // A warning note (BenchmarkReportPackValidator.IsWarningRule) keeps its text but still marks the document, and so does
         // a chat consistency document-level note (C6 or C7 recorded against the kept text).
@@ -1533,6 +1594,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         // A drawing failure is logged and never fails the stored document.
         if (audience == BenchmarkReportAudience.RootCauseAnalysis && _rootCauseCharts != null)
         {
+            job.SetDocumentPhase(progress, BenchmarkReportPackPhases.DrawingCharts);
             var drawn = await _rootCauseCharts.PublishAsync(document.Id, prep.Sheet, ct);
             if (drawn.Succeeded)
             {
@@ -1543,8 +1605,78 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 job.AddLog($"Root Cause Analysis: the charts were not drawn: {drawn.Error}", "warning");
             }
         }
+        job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Done);
         return true;
     }
+
+    /// <summary>
+    /// The phase detail of a revision: how many issues the first draft had, by rule in plain words, the
+    /// most frequent first: "The automatic check found 20 issues in the first draft: ranking without the
+    /// overlap caveat (13), fact placed in the wrong sentence shape (5), …".
+    /// </summary>
+    public static string RevisionDetail(IReadOnlyList<BenchmarkReportValidationNote> issues)
+    {
+        ArgumentNullException.ThrowIfNull(issues);
+        string count = issues.Count == 1 ? "one issue" : issues.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) + " issues";
+        var groups = issues
+            .GroupBy(i => string.Equals(i.Location, "reply", StringComparison.Ordinal) ? "the reply could not be read" : LowerFirst(BenchmarkReportRuleCatalog.Name(i.Rule)))
+            .OrderByDescending(g => g.Count())
+            .ThenBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => g.Key + " (" + g.Count().ToString(System.Globalization.CultureInfo.InvariantCulture) + ")");
+        return $"The automatic check found {count} in the first draft: {string.Join(", ", groups)}.";
+    }
+
+    private static string LowerFirst(string text)
+        => text.Length > 1 && char.IsUpper(text[0]) && !char.IsUpper(text[1]) ? char.ToLowerInvariant(text[0]) + text[1..] : text;
+
+    /// <summary>
+    /// After a Root Cause Analysis' drops: for each axis whose status the writer's conclusions cited before
+    /// the drop and the kept conclusions no longer cite, appends to <paramref name="cleaned"/>'s conclusions a
+    /// code-written paragraph citing that status, marked as Overseer's. Returns the axes restored, in
+    /// document order; the rule 36 note of each stays recorded.
+    /// </summary>
+    private static List<string> RestoreUncitedAxes(BenchmarkReportWriterOutput written, BenchmarkReportWriterOutput cleaned, BenchmarkReportFactSheet sheet)
+    {
+        var restored = new List<string>();
+        if (sheet.RootCause == null
+            || !written.Sections.TryGetValue(BenchmarkReportSlots.Conclusions, out string? before)
+            || !cleaned.Sections.TryGetValue(BenchmarkReportSlots.Conclusions, out string? after)
+            || string.IsNullOrWhiteSpace(after))
+        {
+            return restored;
+        }
+
+        var keys = new HashSet<string>(sheet.Facts.Select(f => f.Key), StringComparer.Ordinal);
+        var paragraphs = new List<string>();
+        foreach (var axis in sheet.RootCause.Axes)
+        {
+            string status = "{{" + RootCauseClaimSupport.StatusKey(axis.Axis) + "}}";
+            if (!keys.Contains(RootCauseClaimSupport.StatusKey(axis.Axis))
+                || !(before ?? string.Empty).Contains(status, StringComparison.Ordinal)
+                || after.Contains(status, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            string text = AddedByOverseer + " " + RootCauseAxes.Name(axis.Axis) + ": " + status + ".";
+            string statement = axis.BestHypothesis == null ? string.Empty : RootCauseClaimSupport.HypothesisPrefix + axis.BestHypothesis + ".statement";
+            if (statement.Length > 0 && keys.Contains(statement))
+            {
+                text += " The best hypothesis on this axis: {{" + statement + "}}";
+            }
+            paragraphs.Add(text);
+            restored.Add(axis.Axis);
+        }
+
+        if (paragraphs.Count > 0)
+        {
+            cleaned.Sections[BenchmarkReportSlots.Conclusions] = after.TrimEnd() + "\n\n" + string.Join("\n\n", paragraphs);
+        }
+        return restored;
+    }
+
+    /// <summary>The Markdown italics that open a conclusions paragraph Overseer wrote in place of a removed one.</summary>
+    public const string AddedByOverseer = "*Added by Overseer, because the writer's paragraph on this axis was removed:*";
 
     /// <summary>
     /// The documents of <c>ReplaceDocumentIds</c> this new document replaces, always of its audience:
@@ -1670,16 +1802,22 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         return (parsed.Output, BenchmarkReportPackValidator.Validate(audience, parsed.Output, prep.Sheet, prep.Content));
     }
 
-    /// <summary>Sends the request once and records the call's usage under <see cref="UsageRoleContext"/>.</summary>
+    /// <summary>
+    /// Sends the request once, records the call's usage under <see cref="UsageRoleContext"/>, and records the
+    /// call on the document's progress row as <paramref name="kind"/> (<see cref="BenchmarkReportPackCallKinds"/>).
+    /// </summary>
     private async Task<WriterTurn> RunTurnAsync(
         BenchmarkReportPackJob job,
         BenchmarkReportPackDocumentProgress progress,
         AgentRunRequest runRequest,
         SystemAiApiConfiguration config,
         ModelPricing? pricing,
+        string kind,
         CancellationToken ct)
     {
         var runResult = new AgentRunResult();
+        var (messages, characters) = RequestSize(runRequest);
+        var startedAtUtc = DateTime.UtcNow;
         var sw = Stopwatch.StartNew();
         string? terminalError = null;
         try
@@ -1694,7 +1832,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             sw.Stop();
             if (runResult.TotalPromptTokens > 0 || runResult.OutputTokens > 0)
             {
-                await TryRecordUsageAsync(job, progress, config, pricing, runResult, sw.ElapsedMilliseconds);
+                var (canceledInput, canceledOutput, canceledCost) = await TryRecordUsageAsync(job, progress, config, pricing, runResult, sw.ElapsedMilliseconds);
+                RecordCall(job, progress, kind, startedAtUtc, sw.ElapsedMilliseconds, canceledInput, canceledOutput, canceledCost, runResult, messages, characters);
             }
             throw;
         }
@@ -1705,8 +1844,27 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         sw.Stop();
 
         var (inputTokens, outputTokens, cost) = await TryRecordUsageAsync(job, progress, config, pricing, runResult, sw.ElapsedMilliseconds);
+        RecordCall(job, progress, kind, startedAtUtc, sw.ElapsedMilliseconds, inputTokens, outputTokens, cost, runResult, messages, characters);
         return new WriterTurn(runResult.FinalText, terminalError, inputTokens, outputTokens, sw.ElapsedMilliseconds, cost);
     }
+
+    /// <summary>One writer call on the document's progress row: its kind, timing, tokens, cost, finish reason and request size.</summary>
+    private static void RecordCall(
+        BenchmarkReportPackJob job, BenchmarkReportPackDocumentProgress progress, string kind, DateTime startedAtUtc, long durationMs,
+        int inputTokens, int outputTokens, decimal? cost, AgentRunResult runResult, int messages, long characters)
+        => job.RecordCall(progress, new BenchmarkReportPackCallDto
+        {
+            Kind = kind,
+            StartedAtUtc = startedAtUtc,
+            DurationMs = durationMs,
+            InputTokens = inputTokens,
+            CachedInputTokens = runResult.CacheReadTokens,
+            OutputTokens = outputTokens,
+            CostUsd = cost == null ? null : (double)cost.Value,
+            FinishReason = runResult.ProviderFinishReason,
+            RequestMessages = messages,
+            RequestCharacters = characters
+        });
 
     private async Task<(int InputTokens, int OutputTokens, decimal? Cost)> TryRecordUsageAsync(
         BenchmarkReportPackJob job,
@@ -2356,6 +2514,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             foreach (var row in job.Documents.ToList())
             {
                 ct.ThrowIfCancellationRequested();
+                job.SetDocumentPhase(row, BenchmarkReportPackPhases.Preparing);
                 if (row.Audience == BenchmarkReportAudience.ProviderIssueReport)
                 {
                     requestIds ??= await ChatConsistencySampleRequestIdsAsync(result, ct);

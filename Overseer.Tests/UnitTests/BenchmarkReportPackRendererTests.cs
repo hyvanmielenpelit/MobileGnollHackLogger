@@ -1528,12 +1528,12 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion15()
+    public void AComparisonDocument_IsCurrentAtFormatVersion16()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(15, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 15 · ", text);
+        Assert.Equal(16, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 16 · ", text);
         Assert.Contains(" · models named*", text);
     }
 
@@ -1695,9 +1695,9 @@ public class BenchmarkReportPackRendererTests
         Assert.Equal(3, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
         Assert.Equal(3, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
         Assert.Equal(13, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(15, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(16, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
         Assert.Equal(13, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(15, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(16, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         Assert.Contains(" · format version 3 · ", text);

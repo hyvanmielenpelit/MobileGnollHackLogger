@@ -343,7 +343,7 @@
               @if (job.job.log.length > 0) {
                 <ol class="rp-log-list">
                   @for (entry of job.job.log; track $index) {
-                    <li [class.rp-log-warning]="entry.severity !== 'Info'">
+                    <li [class.rp-log-warning]="entry.severity.toLowerCase() !== 'info'">
                       <span class="rp-log-time">{{ logTime(entry.timestampUtc) }}</span>
                       <span class="rp-log-severity">{{ entry.severity }}</span>
                       {{ entry.message }}

@@ -30,7 +30,7 @@ NUMBERS AND NAMES:
 - Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as "1st". Number words such as "three" or "twice" are allowed for a plain count, but prefer a fact token for any figure.
 - A token whose value reads 'N of M' is a noun phrase. Never put it after 'no' or make it the object of 'made'.
 - A fact whose value is a whole sentence — every notable.N.summary, and any value that begins with a capital letter and ends with a full stop — is written as a sentence of its own, at most once, never inside parentheses, and never continued after its full stop.
-- A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took 1.49 times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.
+- A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took one and a half times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.
 - Never list several 'N of M' tokens in a row: say what each counts.
 - Refer to a question exactly as the QUESTION MATRIX does, for example Q7. This is the only form in which a digit may appear.
 - Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader). In the Executive Summary say 'one grader' or 'both graders' instead.

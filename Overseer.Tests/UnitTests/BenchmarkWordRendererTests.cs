@@ -147,6 +147,59 @@ public class BenchmarkWordRendererTests
     }
 
     [Fact]
+    public void TheLayoutVersion_IsThree()
+    {
+        Assert.Equal(3, BenchmarkWordRenderer.LayoutVersion);
+    }
+
+    [Fact]
+    public void ACallout_RendersAsAShadedParagraph()
+    {
+        byte[] docx = BenchmarkWordRenderer.RenderMarkdown(BenchmarkPdfRendererTests.CalloutMarkdown, Info(), TestContext.Current.CancellationToken);
+
+        AssertValid(docx);
+        using var package = Open(docx);
+        var main = package.MainDocumentPart!;
+        var body = main.Document!.Body!;
+        var paragraphs = body.Descendants<W.Paragraph>().ToList();
+        string text = TextOf(body);
+        Assert.DoesNotContain("[!IMPORTANT]", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("[!WARNING]", text, StringComparison.Ordinal);
+
+        // Both paragraphs of the labeled callout take its kind's style; the label is the Markdown's bold run.
+        var head = paragraphs.Single(p => TextOf(p).Contains("CALLOUTHEAD", StringComparison.Ordinal));
+        var second = paragraphs.Single(p => TextOf(p).Contains("CALLOUTBODY", StringComparison.Ordinal));
+        Assert.Equal("CalloutImportant", StyleOf(head));
+        Assert.Equal("CalloutImportant", StyleOf(second));
+        Assert.Equal("Key finding. CALLOUTHEAD the headline text.", TextOf(head));
+        var label = head.Descendants<W.Run>().First();
+        Assert.Equal("Key finding.", TextOf(label));
+        Assert.NotNull(label.RunProperties?.Bold);
+
+        // A callout without a label of its own prints its kind's, in bold.
+        var caveat = paragraphs.Single(p => TextOf(p).Contains("Unlabeled caveat text.", StringComparison.Ordinal));
+        Assert.Equal("CalloutWarning", StyleOf(caveat));
+        Assert.Equal("Caveat. Unlabeled caveat text.", TextOf(caveat));
+        Assert.NotNull(caveat.Descendants<W.Run>().First().RunProperties?.Bold);
+
+        // An ordinary quote keeps the Quote style.
+        Assert.Equal("Quote", StyleOf(paragraphs.Single(p => TextOf(p).Contains("QUOTEMARKER", StringComparison.Ordinal))));
+
+        // Each kind's style is a shaded paragraph with a 3 pt left rule in its color.
+        var styles = main.StyleDefinitionsPart!.Styles!.Elements<W.Style>().ToDictionary(s => s.StyleId!.Value!);
+        foreach (var kind in Enum.GetValues<BenchmarkCalloutKind>())
+        {
+            var (rule, tint) = BenchmarkDocumentPalette.Callout(kind);
+            var properties = styles["Callout" + kind.ToString()].StyleParagraphProperties!;
+            Assert.Equal(tint, properties.Shading!.Fill!.Value);
+            var left = properties.ParagraphBorders!.LeftBorder!;
+            Assert.Equal(rule, left.Color!.Value);
+            Assert.Equal(24U, left.Size!.Value);
+            Assert.Null(styles["Callout" + kind.ToString()].StyleRunProperties?.Color);
+        }
+    }
+
+    [Fact]
     public void CodeBlocks_AreOneCodeBlockParagraphPerLine_WithLeadingSpacesKept()
     {
         using var package = Open(BenchmarkWordRenderer.RenderMarkdown(RichMarkdown, Info(), TestContext.Current.CancellationToken));
@@ -330,7 +383,7 @@ public class BenchmarkWordRendererTests
             var instructions = footer.Footer!.Descendants<W.SimpleField>().Select(f => f.Instruction!.Value!.Trim()).ToList();
             Assert.Contains("PAGE", instructions);
             Assert.Contains("NUMPAGES", instructions);
-            Assert.Contains("Word layout 2", TextOf(footer.Footer), StringComparison.Ordinal);
+            Assert.Contains("Word layout 3", TextOf(footer.Footer), StringComparison.Ordinal);
         });
     }
 
@@ -353,7 +406,7 @@ public class BenchmarkWordRendererTests
         }
         Assert.Contains("\u22124.2", body, StringComparison.Ordinal);
         Assert.DoesNotContain("Source ", body, StringComparison.Ordinal);
-        Assert.Contains("Word layout 2", body, StringComparison.Ordinal);
+        Assert.Contains("Word layout 3", body, StringComparison.Ordinal);
 
         Assert.All(main.FooterParts, footer =>
         {
