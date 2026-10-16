@@ -78,7 +78,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, $"- No causal word ({string.Join(", ", RootCauseClaimSupport.CausalWords)}) in the scope, the evidence slots or the observations; in the answer slots, the hypotheses slots, the conclusions and the next runs, only in a sentence that cites a hypothesis graded Low or higher (an rca.hypothesis token such as its .ref), hedged with a word such as may or possibly when it is Low, or its axis (an rca.axis token); in the next runs, the run's rca.run token serves too. A Not supported hypothesis is cited only to rule a cause out (not due to).");
         Line(sb, $"- A certainty word ({string.Join(", ", RootCauseClaimSupport.CertaintyWords)}) only in a sentence that cites a High hypothesis or an established axis status, as CLAIM SUPPORT lists them; otherwise write probable or not established.");
         Line(sb, "- Every writer hypothesis has an axis, a statement, evidence for, a refuted-if statement, a locus of model, chat, harness, suite, corpus or provider, and confidence Low, and cites only models and facts of the data.");
-        Line(sb, "- The conclusions cite every axis' rca.axis.<axis>.status token. Never write a hypothesis id or label in the prose: say in your own words what the hypothesis is about, then cite its rca.hypothesis.<id>.<n>.ref token, which prints its id.");
+        Line(sb, "- The conclusions cite every axis's rca.axis.<axis>.status token. Never write a hypothesis id or label in the prose: say in your own words what the hypothesis is about, then cite its rca.hypothesis.<id>.<n>.ref token, which prints its id.");
     }
 
     private static void AppendRootCauseDocument(StringBuilder sb)
@@ -114,7 +114,9 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Low: qualitative only, or two or more of the Moderate conditions, or the pair's null stands.");
         Line(sb, "- Not supported: under the rule's own test, the evidence against outweighs the evidence for.");
         Line(sb, "- Each axis has a status, its rca.axis.<axis>.status fact: Root cause established (a non-null hypothesis is High and its null is rejected), Probable cause (the best hypothesis is Moderate), or Not established.");
-        Line(sb, "- A price-per-token difference read off the price cards is graded Known from the price cards, with its grade: it supports a sentence about cost but no certainty word, and it never makes an axis' root cause established.");
+        Line(sb, "- A price-per-token difference read off the price cards is graded Known from the price cards, with its grade: it supports a sentence about cost but no certainty word, and it never makes an axis's root cause established.");
+        Line(sb, "- A price effect is known from the price cards: give it no refutation.");
+        Line(sb, "- When {{rca.axis.<axis>.priceNote}} exists, the headline (printed as the Key finding) and the conclusions say that price per token explains the largest gaps on that axis, and that the best hypothesis explains its own pair only.");
         Line(sb, "- A Low hypothesis is a lead, not a cause; a Not supported one is refuted by its own test. Never present either as a finding.");
         Line(sb);
     }
@@ -184,7 +186,7 @@ public static partial class BenchmarkReportPackPrompt
             return $"Only when THE QUESTIONS lists question {n}: answer the {QuestionOrdinal(question)} question in at most {RootCauseCap(slot, false)} words. "
                    + "Code prints the answer strength and the hypothesis ids above the answer, so do not restate them: start with the reason. "
                    + "Cite the hypothesis tokens THE QUESTIONS lists for it and the measured signals of the model's profile; where it lists no hypothesis, answer from those signals alone with no causal word. "
-                   + "Use a causal word only beside a hypothesis' rca.hypothesis.<id>.<n>.ref token. "
+                   + "Use a causal word only beside a hypothesis's rca.hypothesis.<id>.<n>.ref token. "
                    + priceCard
                    + GapsCauseRule;
         }
@@ -202,11 +204,11 @@ public static partial class BenchmarkReportPackPrompt
             BenchmarkReportSlots.EvidenceCost =>
                 evidenceCap + ", under the cost decomposition: which components make up the cost per question, volume against price, and how they differ. " + evidenceUse,
             BenchmarkReportSlots.HypothesesIntelligence or BenchmarkReportSlots.HypothesesSpeed or BenchmarkReportSlots.HypothesesCost =>
-                $"At most {RootCauseCap(slot, false)} words, under that axis' hypothesis table: weigh its hypotheses. Say first whether the null stands, then which hypotheses survive their evidence against, which are only Low or Not supported and why, and what their refuted-if statements ask. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it.",
+                $"At most {RootCauseCap(slot, false)} words, under that axis's hypothesis table: weigh its hypotheses. Say first whether the null stands, then which hypotheses survive their evidence against, which are only Low or Not supported and why, and what their refuted-if statements ask. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it.",
             BenchmarkReportSlots.Conclusions =>
-                $"At most {RootCauseCap(slot, false)} words: take the axes in the order intelligence, speed, cost; for each, write its status once, as 'Cost: {{{{rca.axis.cost.status}}}}.', and never repeat beside it the words the token prints (Root cause established, Probable cause, Not established); then give its root cause with that hypothesis' rca.hypothesis.<id>.<n>.ref token and grade, or why it is not established and what would establish it. A price-per-token difference (a hypothesis graded Known from the price cards) is what the price cards show: say so, and never call it the axis' root cause.",
+                $"At most {RootCauseCap(slot, false)} words: take the axes in the order intelligence, speed, cost; for each, write its status once, as 'Cost: {{{{rca.axis.cost.status}}}}.', and never repeat beside it the words the token prints (Root cause established, Probable cause, Not established); then give its root cause with that hypothesis's rca.hypothesis.<id>.<n>.ref token and grade, or why it is not established and what would establish it. A price-per-token difference (a hypothesis graded Known from the price cards) is what the price cards show: say so, and never call it the axis's root cause.",
             BenchmarkReportSlots.NextRuns =>
-                $"In at most {RootCauseCap(slot, false)} words, say which run to make first and what it settles, citing its rca.run.<n>.summary token. Never propose a run code did not.",
+                $"In at most {RootCauseCap(slot, false)} words, say which run to make first and what it settles, citing its rca.run.<n>.summary token, and cite a check only by its rca.check.<n>.summary token. Never propose a run code did not.",
             BenchmarkReportSlots.Limitations => comparisonScope
                 ? $"At most {RootCauseCap(slot, false)} words, after the code-printed list of what the benchmark does not measure: what else limits this analysis, such as a single run per suite, missing telemetry or a degraded entry."
                 : $"At most {RootCauseCap(slot, false)} words, after the code-printed list of what the benchmark does not measure: what else limits this analysis, such as a single run per suite, missing telemetry, a degraded entry or the control limit.",
@@ -243,13 +245,15 @@ public static partial class BenchmarkReportPackPrompt
         }
         Line(sb, "- Any other {{...}} token is an error.");
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" are allowed for a plain count, but prefer a fact token for any figure.");
-        Line(sb, "- Never write a hypothesis id, a run number or a check number in the prose: cite the hypothesis by its rca.hypothesis.<id>.<n>.ref token, a run by its rca.run.<n>.summary token and a check by its rca.check.<n> token. A hypothesis' label (rca.hypothesis.<id>.<n>.label) appears only in the tables; never cite it in the prose.");
+        Line(sb, "- Never write a hypothesis id, a run number or a check number in the prose: cite the hypothesis by its rca.hypothesis.<id>.<n>.ref token, a run by its rca.run.<n>.summary token and a check by its rca.check.<n>.summary token. A hypothesis's label (rca.hypothesis.<id>.<n>.label) appears only in the tables; never cite it in the prose.");
+        Line(sb, "- {{rca.check.<n>}} is a whole sentence the document prints in its Checks list; inside your own sentence cite a check by {{rca.check.<n>.summary}}, and never repeat {{rca.check.<n>}} under What to run next.");
+        Line(sb, "- A model's figure token describes that model only; for several models, cite each one's token or a count across them.");
         Line(sb, "- A token whose value reads 'N of M' is a noun phrase. Never put it after 'no', make it the object of 'made', or end a clause with it: say right after it what it counts.");
         foreach (string rule in TokenShapeReminders)
         {
             Line(sb, "- " + rule);
         }
-        Line(sb, "- A hypothesis' statement, a known fact and a check read as whole sentences: cite each as a sentence of its own.");
+        Line(sb, "- A hypothesis's statement, a known fact, a check (rca.check.<n>) and an axis's price note (rca.axis.<axis>.priceNote) read as whole sentences: cite each as a sentence of its own.");
         Line(sb, comparisonScope
             ? "- Never write a version number, in digits or in words. For the harness a model's runs used, cite its model.X.run.harnessVersion token; to say that older harness versions did not record a figure, say so without a number."
             : "- Never write a version number, in digits or in words. For the harness the runs used, cite the run.harnessVersion token; to say that older harness versions did not record a figure, say so without a number.");
@@ -266,13 +270,14 @@ public static partial class BenchmarkReportPackPrompt
     {
         Line(sb, "PLAIN LANGUAGE (the headline, the answer slots and the conclusions are read by people without statistics training):");
         Line(sb, "- In the headline, the answer slots and the conclusions, state the finding in everyday words first, then cite the hypothesis or status token that supports it.");
-        Line(sb, "- A hypothesis' rca.hypothesis.<id>.<n>.ref token prints its id alone. Name what the hypothesis is about in your own words, once per paragraph, then cite its .ref token after it: 'answering without tools ({{rca.hypothesis.<id>.<n>.ref}})'.");
+        Line(sb, "- A hypothesis's rca.hypothesis.<id>.<n>.ref token prints its id alone. Name what the hypothesis is about in your own words, once per paragraph, then cite its .ref token after it: 'answering without tools ({{rca.hypothesis.<id>.<n>.ref}})'.");
         Line(sb, "- Cite at most two hypotheses in one sentence. Cite several hypotheses of one rule once, as a range of their first and last .ref tokens joined by an en dash: '{{rca.hypothesis.<id>.1.ref}}–{{rca.hypothesis.<id>.3.ref}}'. When more hypotheses share a topic, name the topic and how many there are, and cite the strongest one or their range.");
         Line(sb, "- Never put a parenthesis inside another, and never put a model token inside parentheses: model names carry their own.");
-        Line(sb, "- Give a hypothesis' share after the cause it measures, as its .share token followed by 'of the gap': 'longer waits per call, {{rca.hypothesis.<id>.<n>.share}} of the gap'.");
+        Line(sb, "- Write an axis's name before its status token (Speed: {{rca.axis.speed.status}}); never put two status or grade tokens side by side.");
+        Line(sb, "- Give a hypothesis's share after the cause it measures, as its .share token followed by 'of the gap': 'longer waits per call, {{rca.hypothesis.<id>.<n>.share}} of the gap'.");
         Line(sb, "- " + ControlWordRule);
         Line(sb, "- A token whose value is a whole sentence (a statement, a known fact, a check, a profile flag) stands as a sentence of its own, or follows a colon. Never put it after 'at', 'with', 'as' or 'and' inside another sentence.");
-        Line(sb, "- Say what a null hypothesis' result means in these words: a null that \"stands (may be chance)\", or one that is \"rejected (a real difference)\". Never explain a rejected null through its grade or with a double negative.");
+        Line(sb, "- Say what a null hypothesis's result means in these words: a null that \"stands (may be chance)\", or one that is \"rejected (a real difference)\". Never explain a rejected null through its grade or with a double negative.");
         Line(sb, "- Do not gloss terms; the document glosses them.");
         Line(sb, "- Prefer verbs to chains of nouns: 'the model waits longest before it starts writing', not 'deliberation time before output'.");
         Line(sb);
@@ -302,8 +307,8 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, $"- In the answer slots, the hypotheses slots, the conclusions and the next runs, a causal word needs, in the same sentence, a token of the hypothesis it states (rca.hypothesis.<id>.<n>.*, normally its .ref) or of its axis (rca.axis.<axis>.*), as CLAIM SUPPORT lists them. In the next runs, the rca.run.<n>.* token of the run the sentence describes serves as well. That hypothesis is graded Low or higher, and the sentence is hedged ({Join(RootCauseClaimSupport.HedgeWords)}) when it is Low; a Not supported hypothesis is cited only to rule a cause out ('is not due to').");
         Line(sb, $"- Certainty words ({Join(RootCauseClaimSupport.CertaintyWords)}) need, in the same sentence, a token of a hypothesis graded High or the status token of an axis whose root cause is established, as CLAIM SUPPORT lists them. Elsewhere write probable, consistent with or not established; 'not established' is always allowed. Describe a paired test's result as what the paired test finds, never as established or confirmed.");
         Line(sb, "- A writer hypothesis without an axis, a statement, evidence for, a refuted-if statement or a known locus, with a confidence other than Low, or citing a model or a fact the data does not have, is removed.");
-        Line(sb, "- The conclusions cite every axis' status token: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.");
-        Line(sb, "- A hypothesis' reference (rca.hypothesis.<id>.<n>.ref) is a noun phrase that prints the hypothesis' id: it sits inside a sentence, after your own words for what the hypothesis is about, and it is how the prose cites the hypothesis; its label appears only in the tables. Its statement is a sentence: it stands alone as a sentence of its own.");
+        Line(sb, "- The conclusions cite every axis's status token: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.");
+        Line(sb, "- A hypothesis's reference (rca.hypothesis.<id>.<n>.ref) is a noun phrase that prints the hypothesis's id: it sits inside a sentence, after your own words for what the hypothesis is about, and it is how the prose cites the hypothesis; its label appears only in the tables. Its statement is a sentence: it stands alone as a sentence of its own.");
         if (comparisonScope)
         {
             Line(sb, "- A sentence that ranks one model above or below another with a word such as higher, lower, better, worse, ahead, behind, outperforms, beats, leads or trails needs its caveat in the same sentence, one ranking per sentence. On intelligence, where their intervals overlap, say that the intervals overlap or that the order is not established, or cite the pair's interval-overlap or paired-result token: '{{model:A}} scored higher than {{model:B}}, though the intervals overlap and the order is not established.' On speed or cost, where the pair's paired result is not established, cite that result: '{{model:A}} has a higher cost per question than {{model:B}}: {{pair.A.B.cost.short}}.'");
@@ -768,8 +773,9 @@ public static partial class BenchmarkReportPackPrompt
         string? share = prefixes.FirstOrDefault(p => !IsNull(p) && facts.ContainsKey(p + "share") && facts.ContainsKey(p + "ref"));
         Line(sb, "- Rule 31, sentence shapes: " + (hypothesis != null
             ? $"{T(hypothesis + "statement")} stands alone as a sentence of its own, as does every known fact and check"
-            : "a hypothesis' statement, a known fact and a check each stand alone as a sentence of its own")
-            + (label != null ? $"; a label such as {T(label)} is a noun phrase, never a sentence of its own" : "; a hypothesis' label is a noun phrase, never a sentence of its own")
+            : "a hypothesis's statement, a known fact and a check each stand alone as a sentence of its own")
+            + "; inside your own sentence, a check is cited by its rca.check.<n>.summary token"
+            + (label != null ? $"; a label such as {T(label)} is a noun phrase, never a sentence of its own" : "; a hypothesis's label is a noun phrase, never a sentence of its own")
             + "; the prose cites a hypothesis by its .ref token, after your own words for what it is about"
             + (range != null ? $", and several of one rule once, as a range such as {T(range[0] + "ref")}–{T(range[^1] + "ref")}" : ", and several of one rule once, as a range of their first and last .ref tokens")
             + (share != null ? $"; a share follows its cause as '{T(share + "share")} of the gap'" : "; a share follows its cause as its .share token and 'of the gap'")
@@ -804,7 +810,7 @@ public static partial class BenchmarkReportPackPrompt
 
         var statuses = claims.Axes.Select(a => T(RootCauseClaimSupport.StatusKey(a))).ToList();
         Line(sb, "- Rule 36, statuses: " + (statuses.Count == 0
-            ? "the conclusions cite every axis' status token."
+            ? "the conclusions cite every axis's status token."
             : "the conclusions cite " + BenchmarkReportFormat.LetterList(statuses) + "."));
         Line(sb);
     }
@@ -940,11 +946,12 @@ public static partial class BenchmarkReportPackPrompt
     {
         if (result == null) return;
 
-        Line(sb, "AXES (each axis' status; never change one)");
+        Line(sb, "AXES (each axis's status; never change one)");
         foreach (var axis in result.Axes)
         {
             string prefix = RootCauseClaimSupport.AxisPrefix + axis.Axis + ".";
-            Line(sb, $"- {RootCauseAxes.Name(axis.Axis)}: {{{{{prefix}status}}}} = {RootCauseStatuses.Display(axis.Status)}; best hypothesis {{{{{prefix}best}}}} = {axis.BestHypothesis ?? "none"}; {OneLine(axis.Reason)}");
+            string priceNote = string.IsNullOrWhiteSpace(axis.PriceNote) ? string.Empty : $" Price note {{{{{prefix}priceNote}}}} = {OneLine(axis.PriceNote)}";
+            Line(sb, $"- {RootCauseAxes.Name(axis.Axis)}: {{{{{prefix}status}}}} = {RootCauseStatuses.Display(axis.Status)}; best hypothesis {{{{{prefix}best}}}} = {axis.BestHypothesis ?? "none"}; {OneLine(axis.Reason)}{priceNote}");
         }
         Line(sb);
 
@@ -992,7 +999,7 @@ public static partial class BenchmarkReportPackPrompt
                 }
                 else if (h.CheckNumber is int check)
                 {
-                    Line(sb, $"  settled by: {{{{rca.check.{check.ToString(CultureInfo.InvariantCulture)}}}}}");
+                    Line(sb, $"  settled by: {{{{rca.check.{check.ToString(CultureInfo.InvariantCulture)}.summary}}}}");
                 }
             }
         }
@@ -1013,15 +1020,17 @@ public static partial class BenchmarkReportPackPrompt
             : "No harness or suite hypothesis holds the model-selection runs back.");
         Line(sb);
 
-        Line(sb, "CHECKS (what a run cannot settle: a rubric, a corpus, a configuration or the grading to look at)");
+        Line(sb, "CHECKS (what a run cannot settle: a rubric, a corpus, a configuration or the grading to look at; the document prints each check's sentence in its Checks list, and your prose cites a check by its .summary token)");
         if (result.Checks.Count == 0)
         {
             Line(sb, "(none)");
         }
         foreach (var check in result.Checks.OrderBy(c => c.Number))
         {
+            string number = check.Number.ToString(CultureInfo.InvariantCulture);
             string settles = check.HypothesisIds.Count == 0 ? string.Empty : " (settles " + string.Join(", ", check.HypothesisIds.Select(id => RootCauseClaimSupport.HypothesisPrefix + id + ".*")) + ")";
-            Line(sb, $"- {{{{rca.check.{check.Number.ToString(CultureInfo.InvariantCulture)}}}}} ({OneLine(check.Kind)}){settles}: {OneLine(check.Text)}");
+            Line(sb, $"- {{{{rca.check.{number}}}}} ({OneLine(check.Kind)}){settles}: {OneLine(check.Text)}");
+            Line(sb, $"  summary {{{{rca.check.{number}.summary}}}} = {OneLine(RootCauseNextRuns.Summary(check))}");
         }
         Line(sb);
     }

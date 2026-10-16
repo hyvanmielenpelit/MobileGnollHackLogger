@@ -446,7 +446,7 @@ public static partial class BenchmarkReportPackRenderer
             return RootCauseGrades.PriceCardWord + " — see " + key + (within.Count > 0 ? "; its own breakdown, see " + own : string.Empty) + ".";
         }
 
-        if (question.HypothesisKeys.Count == 0) return "no hypothesis about this model fired — see its profile.";
+        if (question.HypothesisKeys.Count == 0) return "No hypothesis about this model fired — see its profile.";
         if (question.ComparativeKeys is not { } comparative || question.Grade == null || (comparative.Count == 0 && !question.WithinOnly))
         {
             return grade + " — see " + BenchmarkReportFormat.LetterList(question.HypothesisKeys) + ".";
@@ -496,8 +496,7 @@ public static partial class BenchmarkReportPackRenderer
             var profile = result?.Profiles.FirstOrDefault(p => p.Token == token);
             string lost = profile?.Weaknesses.FirstOrDefault(w => w.Kind == RootCauseProfiles.LostPointsOn)?.Short ?? NoValue;
             string flags = profile == null ? NoValue : profile.Flags.Count == 0 ? "none" : string.Join("; ", profile.Flags.Select(f => f.Short));
-            Line(sb, "| " + RcaRowName(ctx, peer) + " | " + index + " | " + TimeCell(entry) + " | " + CostCell(entry)
-                + " | " + Cell(SheetText(ctx, lost)) + " | " + Cell(SheetText(ctx, flags)) + " |");
+            Line(sb, RcaRow(RcaRowName(ctx, peer), index, TimeCell(entry), CostCell(entry), Cell(SheetText(ctx, lost)), Cell(SheetText(ctx, flags))));
         }
         Line(sb);
     }
@@ -531,11 +530,12 @@ public static partial class BenchmarkReportPackRenderer
                 lost.Add(weakness.Kind == RootCauseProfiles.WeakestDimension ? "weakest dimension " + weakness.Text : weakness.Text);
             }
             string flags = profile.Flags.Count == 0 ? "none" : string.Join("; ", profile.Flags.Select(f => f.Text));
-            Line(sb, "| " + RcaRowName(ctx, peer)
-                + " | " + (entry.QualityIndex.HasValue ? BenchmarkReportFormat.Whole(entry.QualityIndex.Value) : NoValue)
-                + " | " + Cell(SheetText(ctx, strengths))
-                + " | " + Cell(SheetText(ctx, lost.Count == 0 ? "no answer below the model's median" : string.Join("; ", lost)))
-                + " | " + Cell(SheetText(ctx, flags)) + " |");
+            Line(sb, RcaRow(
+                RcaRowName(ctx, peer),
+                entry.QualityIndex.HasValue ? BenchmarkReportFormat.Whole(entry.QualityIndex.Value) : NoValue,
+                Cell(SheetText(ctx, strengths)),
+                Cell(SheetText(ctx, lost.Count == 0 ? "no answer below the model's median" : string.Join("; ", lost))),
+                Cell(SheetText(ctx, flags))));
         }
         Line(sb);
         Line(sb, "*" + RcaProfileNote(ctx, result) + "*");
@@ -675,8 +675,8 @@ public static partial class BenchmarkReportPackRenderer
         foreach (var control in controls.OrderBy(c => c.Number))
         {
             string name = control.ModelLabel + (string.IsNullOrWhiteSpace(control.ThinkingLevel) ? string.Empty : " (" + control.ThinkingLevel + ")");
-            string run = control.RunId is long runId ? "run " + Inv(runId)
-                : control.BatteryRunId is long batteryRunId ? "battery run " + Inv(batteryRunId)
+            string run = control.RunId is long runId ? "Run " + Inv(runId)
+                : control.BatteryRunId is long batteryRunId ? "Battery run " + Inv(batteryRunId)
                 : NoValue;
             Line(sb, "| " + Cell(name) + " | " + Cell(control.Provider) + " | " + run + " | "
                 + control.DateUtc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " | " + Inv(control.SharedQuestions) + " |");
@@ -684,8 +684,8 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
 
         Line(sb, "- **Control limit:** " + (result!.ControlLimit == null
-            ? "none: two or more controls, at least one from another provider, so the intelligence hypotheses are graded as any other."
-            : "the intelligence hypotheses that could lie in the model or in the instrument are capped at " + RootCauseGrades.Display(result.ControlLimit)
+            ? "None: two or more controls, at least one from another provider, so the intelligence hypotheses are graded as any other."
+            : "The intelligence hypotheses that could lie in the model or in the instrument are capped at " + RootCauseGrades.Display(result.ControlLimit)
               + (string.IsNullOrWhiteSpace(result.ControlLimitReason) ? "." : ": " + OneLine(result.ControlLimitReason).TrimEnd('.') + ".")));
         if (result.ControlDeficitMean is double mean)
         {
@@ -737,8 +737,7 @@ public static partial class BenchmarkReportPackRenderer
             string interval = entry.QualityLower.HasValue && entry.QualityUpper.HasValue
                 ? BenchmarkReportFormat.Whole(entry.QualityLower.Value) + "–" + BenchmarkReportFormat.Whole(entry.QualityUpper.Value)
                 : BenchmarkReportFacts.NotAvailable;
-            Line(sb, "| " + RcaRowName(ctx, peer) + " | " + index + " | " + interval + " | " + QualityRankCell(ctx, entry)
-                + " | " + CriticalErrorsCell(ctx, entry, peer) + " |");
+            Line(sb, RcaRow(RcaRowName(ctx, peer), index, interval, QualityRankCell(ctx, entry), CriticalErrorsCell(ctx, entry, peer)));
         }
         Line(sb);
         UseTerms(ctx, RootCauseGlossary.IntelligenceIndex, RootCauseGlossary.CriticalError);
@@ -887,7 +886,7 @@ public static partial class BenchmarkReportPackRenderer
                           ? " (" + BenchmarkReportFormat.SignedOneDecimal(l) + " to " + BenchmarkReportFormat.SignedOneDecimal(u) + ")"
                           : string.Empty)
                     : NoValue;
-                Line(sb, "| " + Cell(PairName(ctx, pair)) + " | " + Inv(pair.PairedItems) + " | " + difference + " | " + Cell(ResultText(ctx, pair, "scored higher")) + " |");
+                Line(sb, RcaRow(Cell(PairName(ctx, pair)), Inv(pair.PairedItems), difference, Cell(ResultText(ctx, pair, "scored higher"))));
             }
         }
         else
@@ -897,7 +896,7 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "|---|---|---|");
             foreach (var pair in pairs)
             {
-                Line(sb, "| " + Cell(PairName(ctx, pair)) + " | " + RatioCell(pair) + " | " + Cell(ResultText(ctx, pair, speed ? "was faster" : "was cheaper")) + " |");
+                Line(sb, RcaRow(Cell(PairName(ctx, pair)), RatioCell(pair), Cell(ResultText(ctx, pair, speed ? "was faster" : "was cheaper"))));
             }
         }
         Line(sb);
@@ -933,7 +932,7 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb, "|---|---|");
         foreach (var peer in peers)
         {
-            Line(sb, "| " + TableName(ctx, peer) + " | " + PairedCell(ctx, peer) + " |");
+            Line(sb, RcaRow(TableName(ctx, peer), PairedCell(ctx, peer)));
         }
         Line(sb);
         Line(sb, "*" + PairedDifferenceNote + "*");
@@ -1167,7 +1166,7 @@ public static partial class BenchmarkReportPackRenderer
 
         var (shown, shownRows, dropped) = DropConstantColumns(header, cells, keepFirst: 2);
         TableHeaderOf(sb, shown);
-        foreach (var line in shownRows) Line(sb, "| " + string.Join(" | ", line) + " |");
+        foreach (var line in shownRows) Line(sb, RcaRow(line));
         Line(sb);
         return DroppedColumnsSentence(dropped);
     }
@@ -1269,8 +1268,7 @@ public static partial class BenchmarkReportPackRenderer
                 if (fired.Any(h => h.Share.HasValue)) UseTerms(ctx, RootCauseGlossary.DecompositionShare);
                 foreach (var h in fired)
                 {
-                    Line(sb, "| " + Cell(h.Key) + " | " + Cell(SheetText(ctx, h.Statement)) + " | " + RootCauseGrades.HypothesisWordWithGrade(h)
-                        + " | " + RcaShareText(h) + " | " + RcaSettledBy(h) + " |");
+                    Line(sb, RcaRow(Cell(h.Key), Cell(SheetText(ctx, h.Statement)), RootCauseGrades.HypothesisWordWithGrade(h), RcaShareText(h), RcaSettledBy(h)));
                 }
                 Line(sb);
                 Line(sb, "*" + RcaShareNote + "*");
@@ -1305,7 +1303,7 @@ public static partial class BenchmarkReportPackRenderer
             string models = h.Models.Count == 0 ? string.Empty : BenchmarkReportFormat.LetterList(h.Models.Select(t => RcaTokenName(ctx, t)).ToList()) + "; ";
             lines.Add("- **" + RootCauseAxes.Name(h.Axis) + " · " + RootCauseGrades.Low + "** (" + models + "locus " + OneLine(h.Locus) + "): " + OneLine(Prose(ctx, h.Statement)));
             lines.Add("  - *For:* " + string.Join(" ", h.For.Select(t => OneLine(Prose(ctx, t)))));
-            lines.Add("  - *Against:* " + (h.Against.Count == 0 ? "none given." : string.Join(" ", h.Against.Select(t => OneLine(Prose(ctx, t))))));
+            lines.Add("  - *Against:* " + (h.Against.Count == 0 ? "None given." : string.Join(" ", h.Against.Select(t => OneLine(Prose(ctx, t))))));
             lines.Add("  - *Refuted if:* " + OneLine(Prose(ctx, h.RefutedIf)));
         }
         Callout(sb, "WARNING", lines);
@@ -1324,7 +1322,7 @@ public static partial class BenchmarkReportPackRenderer
             : NoValue;
 
     private static string RcaSettledBy(RootCauseHypothesis h)
-        => h.NextRunNumber is int run ? "run " + Inv(run) : h.CheckNumber is int check ? "check " + Inv(check) : NoValue;
+        => h.NextRunNumber is int run ? "Run " + Inv(run) : h.CheckNumber is int check ? "Check " + Inv(check) : NoValue;
 
     /// <summary>
     /// How to read a hypothesis id, with the null hypothesis glossed at its first use.
@@ -1365,7 +1363,7 @@ public static partial class BenchmarkReportPackRenderer
             {
                 lines.Add(lead + count + ":");
                 lines.Add(string.Empty);
-                lines.AddRange(subjects.Select(s => "- " + s));
+                lines.AddRange(subjects.Select(s => "- " + BenchmarkReportSentenceCase.UpperFirst(s)));
             }
             lines.Add(string.Empty);
         }
@@ -1396,8 +1394,8 @@ public static partial class BenchmarkReportPackRenderer
                 UseReasonTerms(ctx, axis.Reason);
                 var best = axis.BestHypothesis == null ? null : result.Hypotheses.FirstOrDefault(h => h.Key == axis.BestHypothesis);
                 string name = best != null ? RcaHypothesisName(ctx, best) : axis.BestHypothesis ?? NoValue;
-                Line(sb, "| " + RootCauseAxes.Name(axis.Axis) + " | " + RootCauseStatuses.Display(axis.Status) + " | " + Cell(name)
-                    + " | " + Cell(SheetText(ctx, axis.Reason)) + " |");
+                string why = string.IsNullOrWhiteSpace(axis.PriceNote) ? axis.Reason : WithPeriod(axis.Reason) + " " + axis.PriceNote;
+                Line(sb, RcaRow(RootCauseAxes.Name(axis.Axis), RootCauseStatuses.Display(axis.Status), Cell(name), Cell(SheetText(ctx, why))));
             }
             Line(sb);
         }
@@ -1442,21 +1440,19 @@ public static partial class BenchmarkReportPackRenderer
                     : models.Count >= 3 && models.Count == analysis.Models.Count ? "all " + Inv(models.Count) + " models"
                     : BenchmarkReportFormat.LetterList(models);
                 string estimate = RootCauseNextRuns.EstimateText(run);
-                Line(sb, "| " + Inv(run.Number)
-                    + " | " + Capitalized(RootCauseNextRuns.KindPhrase(run.Kind)) + " (" + run.Mark.ToLowerInvariant() + ")"
-                    + " | " + RcaPurposeText(run.Purpose)
-                    + " | " + Cell(modelText)
-                    + " | " + Cell(RcaSettlesText(run.HypothesisIds))
-                    + " | " + (estimate.Length == 0 ? "not estimated" : estimate) + " |");
+                Line(sb, RcaRow(
+                    Inv(run.Number),
+                    Capitalized(RootCauseNextRuns.KindPhrase(run.Kind)) + " (" + run.Mark.ToLowerInvariant() + ")",
+                    RcaPurposeText(run.Purpose),
+                    Cell(modelText),
+                    Cell(RcaSettlesText(run.HypothesisIds)),
+                    estimate.Length == 0 ? "not estimated" : estimate));
             }
             Line(sb);
 
             foreach (var run in runs.Where(r => r.When != null || r.AfterSystemHypotheses))
             {
-                var when = new List<string>();
-                if (run.When != null) when.Add(run.When);
-                if (run.AfterSystemHypotheses) when.Add("after the system hypotheses are settled");
-                Line(sb, "- **Run " + Inv(run.Number) + ", when:** " + string.Join("; ", when) + ".");
+                Line(sb, "- **Run " + Inv(run.Number) + ", when:** " + RcaWhenText(run) + ".");
             }
             if (runs.Any(r => r.When != null || r.AfterSystemHypotheses)) Line(sb);
         }
@@ -1475,6 +1471,18 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
 
         Slot(sb, ctx, BenchmarkReportSlots.NextRuns);
+    }
+
+    /// <summary>
+    /// When to make a run, after its label: <c>Start each run at a different time of day; after the system hypotheses are
+    /// settled</c>, its first word capitalized; empty for any time.
+    /// </summary>
+    private static string RcaWhenText(RootCauseRecommendedRun run)
+    {
+        var when = new List<string>();
+        if (run.When != null) when.Add(run.When);
+        if (run.AfterSystemHypotheses) when.Add("after the system hypotheses are settled");
+        return BenchmarkReportSentenceCase.UpperFirst(string.Join("; ", when));
     }
 
     /// <summary>The most hypothesis ids a run's Settles cell lists before it refers to Appendix D.</summary>
@@ -1687,7 +1695,7 @@ public static partial class BenchmarkReportPackRenderer
         Heading(sb, "## Appendices");
         Line(sb, "- **A. Intelligence detail:** the compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, the paired tests the body does not give and the per-question matrix.");
         Line(sb, "- **B. Speed and cost decompositions:** calls, latency, tokens and every component of each decomposed difference.");
-        Line(sb, "- **C. Hypothesis details:** each hypothesis' evidence for and against, grade reasons and robustness checks, and the null hypotheses.");
+        Line(sb, "- **C. Hypothesis details:** each hypothesis's evidence for and against, grade reasons and robustness checks, and the null hypotheses.");
         Line(sb, "- **D. Run settings:** every launcher setting of each run to make next.");
         if (letters.KnownFacts)
         {
@@ -1778,7 +1786,8 @@ public static partial class BenchmarkReportPackRenderer
         }
         foreach (var fact in facts)
         {
-            Line(sb, "- **" + (ctx.Comparison ? ComparisonFactLabel(ctx, fact.Key) : FactLabel(ctx, fact.Key)) + ":** " + Shown(ctx, fact));
+            Line(sb, "- **" + (ctx.Comparison ? ComparisonFactLabel(ctx, fact.Key) : FactLabel(ctx, fact.Key)) + ":** "
+                + BenchmarkReportSentenceCase.UpperFirst(Shown(ctx, fact)));
         }
         if (confounds.Count > 0) UseTerms(ctx, RootCauseGlossary.Confound);
         foreach (var hypothesis in confounds)
@@ -1851,7 +1860,7 @@ public static partial class BenchmarkReportPackRenderer
                 cells.Add(BenchmarkReportFormat.OneDecimal(summary.AtRisk.Sum(s => s.Value)));
                 cells.Add(BenchmarkReportFormat.Whole(summary.MedianQuality.Value));
             }
-            Line(sb, "| " + string.Join(" | ", cells) + " |");
+            Line(sb, RcaRow(cells));
         }
         foreach (var row in result.PointsAtRisk.Where(r => r.Kind != "model"))
         {
@@ -1867,7 +1876,7 @@ public static partial class BenchmarkReportPackRenderer
                 cells.Add(BenchmarkReportFormat.OneDecimal(row.Total.Value));
             }
             cells.Add(NoValue);
-            Line(sb, "| " + string.Join(" | ", cells) + " |");
+            Line(sb, RcaRow(cells));
         }
         Line(sb);
         Line(sb, "*" + RcaAtRiskNote + "*");
@@ -1922,13 +1931,14 @@ public static partial class BenchmarkReportPackRenderer
         foreach (var item in result.ControlItems.OrderBy(i => i.Number))
         {
             string mark = item.InstrumentSuspect ? "instrument-suspect" : item.ModelSpecific ? "model-specific" : NoValue;
-            Line(sb, "| " + Cell(string.IsNullOrWhiteSpace(item.Reference) ? ctx.QuestionLabel(item.Number) : item.Reference)
-                + " | " + Cell(Topic(ctx, item.Number) ?? NoValue)
-                + " | " + BenchmarkReportFormat.Whole(item.SubjectScore)
-                + " | " + BenchmarkReportFormat.Whole(item.ControlsMean)
-                + " | " + BenchmarkReportFormat.WholeDifference(item.SubjectScore, item.ControlsMean)
-                + " | " + Inv(item.ControlCount)
-                + " | " + mark + " |");
+            Line(sb, RcaRow(
+                Cell(string.IsNullOrWhiteSpace(item.Reference) ? ctx.QuestionLabel(item.Number) : item.Reference),
+                Cell(Topic(ctx, item.Number) ?? NoValue),
+                BenchmarkReportFormat.Whole(item.SubjectScore),
+                BenchmarkReportFormat.Whole(item.ControlsMean),
+                BenchmarkReportFormat.WholeDifference(item.SubjectScore, item.ControlsMean),
+                Inv(item.ControlCount),
+                mark));
         }
         Line(sb);
         Line(sb, "*" + RcaControlsNote + "*");
@@ -1953,16 +1963,17 @@ public static partial class BenchmarkReportPackRenderer
         {
             if (summary.TimeUnavailableReason != null)
             {
-                Line(sb, "| " + Cell(RcaTokenName(ctx, summary.Token)) + " | not recorded (" + Cell(OneLine(summary.TimeUnavailableReason).TrimEnd('.')) + ") | " + NoValue + " | " + NoValue + " | " + NoValue + " | " + NoValue + " |");
+                Line(sb, RcaRow(Cell(RcaTokenName(ctx, summary.Token)), "not recorded (" + Cell(OneLine(summary.TimeUnavailableReason).TrimEnd('.')) + ")",
+                    NoValue, NoValue, NoValue, NoValue));
                 continue;
             }
-            Line(sb, "| " + Cell(RcaTokenName(ctx, summary.Token))
-                + " | " + (summary.CallsPerAnswer is double calls ? BenchmarkReportFormat.CompactDecimal(calls) : NoValue)
-                + " | " + (summary.TtftPerCallP50Ms is double ttft ? BenchmarkReportFormat.Seconds(ttft) : NoValue)
-                + " | " + (summary.DecodeTokensPerSecond is double rate ? BenchmarkReportFormat.Whole(rate) + " tokens/s" : NoValue)
-                + " | " + (summary.ReasoningShare is double share ? RootCauseHypotheses.Pct(share) : NoValue)
-                + " | " + (summary.OutputTokens is double tokens ? BenchmarkReportFormat.Count(tokens) : NoValue)
-                + " |");
+            Line(sb, RcaRow(
+                Cell(RcaTokenName(ctx, summary.Token)),
+                summary.CallsPerAnswer is double calls ? BenchmarkReportFormat.CompactDecimal(calls) : NoValue,
+                summary.TtftPerCallP50Ms is double ttft ? BenchmarkReportFormat.Seconds(ttft) : NoValue,
+                summary.DecodeTokensPerSecond is double rate ? BenchmarkReportFormat.Whole(rate) + " tokens/s" : NoValue,
+                summary.ReasoningShare is double share ? RootCauseHypotheses.Pct(share) : NoValue,
+                summary.OutputTokens is double tokens ? BenchmarkReportFormat.Count(tokens) : NoValue));
         }
         Line(sb);
         UseTerms(ctx, RootCauseGlossary.TimeToFirstToken, RootCauseGlossary.OutputGeneration, RootCauseGlossary.MedianAndMean, RootCauseGlossary.Tokens);
@@ -1989,7 +2000,7 @@ public static partial class BenchmarkReportPackRenderer
         }
         var (shown, shownRows, dropped) = DropConstantColumns(header, rows, keepFirst: 1);
         TableHeaderOf(sb, shown);
-        foreach (var cells in shownRows) Line(sb, "| " + string.Join(" | ", cells) + " |");
+        foreach (var cells in shownRows) Line(sb, RcaRow(cells));
         Line(sb);
         var tokenNotes = new List<string>();
         if (DroppedColumnsSentence(dropped) is { Length: > 0 } droppedSentence) tokenNotes.Add(droppedSentence);
@@ -2047,9 +2058,11 @@ public static partial class BenchmarkReportPackRenderer
                 string share = component.Share is double s
                     ? RootCauseHypotheses.Pct(s) + (component.ShareLower is double lo && component.ShareUpper is double hi ? " (" + RootCauseHypotheses.Interval(lo, hi) + ")" : string.Empty)
                     : NoValue;
-                Line(sb, "| " + name + " | " + Inv(pair.SharedQuestions) + " | " + difference + " | " + Cell(Capitalized(component.Label))
-                    + (cost ? " | " + Cell(component.Effect ?? NoValue) : string.Empty)
-                    + " | " + RcaAmount(component.Amount, cost) + " | " + share + " |");
+                var cells = new List<string> { name, Inv(pair.SharedQuestions), difference, Cell(Capitalized(component.Label)) };
+                if (cost) cells.Add(Cell(component.Effect ?? NoValue));
+                cells.Add(RcaAmount(component.Amount, cost));
+                cells.Add(share);
+                Line(sb, RcaRow(cells));
             }
         }
         Line(sb);
@@ -2092,13 +2105,13 @@ public static partial class BenchmarkReportPackRenderer
                 if (h.Robustness.Count > 0) UseTerms(ctx, RootCauseGlossary.RobustnessCheck);
                 if (h.Confounds.Count > 0) UseTerms(ctx, RootCauseGlossary.Confound);
                 Line(sb, "- **" + RcaHypothesisName(ctx, h) + "** (" + SheetText(ctx, h.ModelsText) + "; locus " + h.Locus + "; " + RootCauseGrades.HypothesisWordWithGrade(h) + ")");
-                Line(sb, "  - *For:* " + (h.For.Count == 0 ? "none recorded." : SheetText(ctx, string.Join(" ", h.For))));
-                Line(sb, "  - *Against:* " + (h.Against.Count == 0 ? "none recorded." : SheetText(ctx, string.Join(" ", h.Against))));
+                Line(sb, "  - *For:* " + (h.For.Count == 0 ? "None recorded." : BenchmarkReportSentenceCase.UpperFirst(SheetText(ctx, string.Join(" ", h.For)))));
+                Line(sb, "  - *Against:* " + (h.Against.Count == 0 ? "None recorded." : BenchmarkReportSentenceCase.UpperFirst(SheetText(ctx, string.Join(" ", h.Against)))));
                 var reasons = h.GradeReasons.Where(r => !IsRobustnessReason(h, r)).ToList();
-                Line(sb, "  - *Grade reasons:* " + (h.GradeReasons.Count == 0 ? "every condition of the grade is met."
-                    : reasons.Count == 0 ? "see Robustness."
-                    : SheetText(ctx, string.Join("; ", reasons)).TrimEnd('.') + "."));
-                Line(sb, "  - *Refuted if:* " + SheetText(ctx, h.RefutedIf));
+                Line(sb, "  - *Grade reasons:* " + (h.GradeReasons.Count == 0 ? "Every condition of the grade is met."
+                    : reasons.Count == 0 ? "See Robustness."
+                    : BenchmarkReportSentenceCase.UpperFirst(SheetText(ctx, string.Join("; ", reasons)).TrimEnd('.') + ".")));
+                Line(sb, "  - *Refuted if:* " + BenchmarkReportSentenceCase.UpperFirst(SheetText(ctx, h.RefutedIf)));
                 if (h.Robustness.Count > 0)
                 {
                     Line(sb, "  - *Robustness:* " + SheetText(ctx, string.Join("; ", h.Robustness.Select(r => r.Name + " " + RcaCheckText(r.Status)
@@ -2121,7 +2134,7 @@ public static partial class BenchmarkReportPackRenderer
                     string pair = h.Id == "H0-W" || h.Models.Count < 2
                         ? "within " + RcaTokenName(ctx, h.Models.FirstOrDefault() ?? string.Empty)
                         : RcaPairName(ctx, h.Models[0], h.Models[1]);
-                    Line(sb, "| " + Cell(h.Key) + " | " + Cell(pair) + " | " + Cell(RcaNullResult(ctx, h)) + " | " + RootCauseGrades.HypothesisWordWithGrade(h) + " |");
+                    Line(sb, RcaRow(Cell(h.Key), Cell(pair), Cell(RcaNullResult(ctx, h)), RootCauseGrades.HypothesisWordWithGrade(h)));
                 }
             }
             Line(sb);
@@ -2199,19 +2212,16 @@ public static partial class BenchmarkReportPackRenderer
             {
                 Line(sb, "- **Decides:** " + SheetText(ctx, decides.Count == 1 ? decides[0] : run.Decides));
             }
-            Line(sb, "- **Predicted comparability:** " + (string.IsNullOrWhiteSpace(run.PredictedTier) ? "not predicted" : OneLine(run.PredictedTier)));
+            Line(sb, "- **Predicted comparability:** " + (string.IsNullOrWhiteSpace(run.PredictedTier) ? "Not predicted" : OneLine(run.PredictedTier)));
             string estimate = RootCauseNextRuns.EstimateText(run);
-            Line(sb, "- **Estimate:** " + (estimate.Length == 0 ? "not estimated" : estimate));
+            Line(sb, "- **Estimate:** " + BenchmarkReportSentenceCase.UpperFirst(estimate.Length == 0 ? "not estimated" : estimate));
             if (run.HypothesisIds.Count > 0)
             {
                 Line(sb, "- **Settles:** " + string.Join(", ", run.HypothesisIds));
             }
-            var when = new List<string>();
-            if (run.When != null) when.Add(run.When);
-            if (run.AfterSystemHypotheses) when.Add("after the system hypotheses are settled");
-            if (when.Count > 0)
+            if (run.When != null || run.AfterSystemHypotheses)
             {
-                Line(sb, "- **When:** " + string.Join("; ", when) + ".");
+                Line(sb, "- **When:** " + RcaWhenText(run) + ".");
             }
             Line(sb);
 
@@ -2219,7 +2229,7 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "|---|---|");
             foreach (var (field, setting) in RcaLauncherSettings(ctx, run))
             {
-                Line(sb, "| " + field + " | " + Cell(setting) + " |");
+                Line(sb, RcaRow(field, Cell(setting)));
             }
             Line(sb);
 
@@ -2490,6 +2500,16 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     private static string Capitalized(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
+
+    /// <summary>
+    /// A table row of a Root Cause Analysis: the cells, already escaped, each opening with a capital
+    /// (<see cref="BenchmarkReportSentenceCase.UpperFirst"/>), between pipes.
+    /// </summary>
+    private static string RcaRow(IEnumerable<string> cells)
+        => "| " + string.Join(" | ", cells.Select(c => BenchmarkReportSentenceCase.UpperFirst(c))) + " |";
+
+    /// <inheritdoc cref="RcaRow(IEnumerable{string})"/>
+    private static string RcaRow(params string[] cells) => RcaRow((IEnumerable<string>)cells);
 
     /// <summary>The text ending in one period: <c>item sampling only.</c></summary>
     private static string WithPeriod(string text)

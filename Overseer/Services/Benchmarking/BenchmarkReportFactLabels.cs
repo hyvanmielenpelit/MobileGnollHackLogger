@@ -779,12 +779,13 @@ public static class BenchmarkReportFactLabels
 
         switch (parts[1])
         {
-            // rca.axis.<axis>.status, rca.axis.<axis>.best
+            // rca.axis.<axis>.status, rca.axis.<axis>.best, rca.axis.<axis>.priceNote
             case "axis" when parts.Length == 4 && RootCauseAxisNames.TryGetValue(parts[2], out var axis):
                 label = parts[3] switch
                 {
                     "status" => "Root cause, " + axis + ": status",
                     "best" => "Root cause, " + axis + ": best hypothesis",
+                    "priceNote" => "Root cause, " + axis + ": price note",
                     _ => string.Empty
                 };
                 return label.Length > 0;
@@ -931,12 +932,15 @@ public static class BenchmarkReportFactLabels
                 label = "Control " + parts[2] + ": " + controlPart;
                 return true;
 
-            // rca.run.<n>.summary, rca.check.<n>
+            // rca.run.<n>.summary, rca.check.<n>, rca.check.<n>.summary
             case "run" when parts.Length == 4 && IsIndex(parts[2]) && parts[3] == "summary":
                 label = "Recommended run " + parts[2];
                 return true;
             case "check" when parts.Length == 3 && IsIndex(parts[2]):
                 label = "Check " + parts[2];
+                return true;
+            case "check" when parts.Length == 4 && IsIndex(parts[2]) && parts[3] == "summary":
+                label = "Check " + parts[2] + ", in short";
                 return true;
         }
 

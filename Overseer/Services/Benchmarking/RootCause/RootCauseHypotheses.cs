@@ -68,6 +68,12 @@ internal sealed class RootCauseDraft
     /// <summary>The check that would settle it, in words; null when none.</summary>
     public string? CheckText { get; set; }
 
+    /// <summary>
+    /// <see cref="CheckText"/> as a noun phrase without its number, <c>a comparison of the two models' price cards</c>,
+    /// which <see cref="RootCauseCheck.Summary"/> numbers; set with <see cref="CheckText"/>.
+    /// </summary>
+    public string? CheckSummary { get; set; }
+
     public string CheckKind { get; set; } = "rubric";
     public List<string> FactKeys { get; } = new();
 }
@@ -352,6 +358,9 @@ public static class RootCauseHypotheses
     /// <summary>The reason of an axis whose price effects stand beside other hypotheses that were all ruled out.</summary>
     public const string PriceCardsAxisReason = "Known from the price cards: the differences in price per token account for the gap, which the price cards show rather than a cause the runs found; every other hypothesis on this axis was ruled out.";
 
+    /// <summary>The refuted-if statement of a price effect (<see cref="RootCauseDraft.PriceEffect"/>), which no run can change.</summary>
+    public const string PriceEffectRefutedIf = "Not testable by a run: the share follows from the price cards and these runs' token counts.";
+
     /// <summary>The status of an axis in a document without pairs (a run or battery completion).</summary>
     internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept)
         => AxisStatus(axis, kept, hasPairs: false);
@@ -364,9 +373,72 @@ public static class RootCauseHypotheses
     /// other candidate is graded Low or higher, the axis is not established and its best hypothesis is the
     /// highest-ranked price effect, with <see cref="PriceOnlyAxisReason"/> when it stands alone and
     /// <see cref="PriceCardsAxisReason"/> when the others were ruled out. Otherwise the reason names the best
-    /// hypothesis' grade and the grade reasons that applied to it, each one clause.
+    /// hypothesis' grade and the grade reasons that applied to it, each one clause, and the status carries a
+    /// <see cref="RootCauseAxisStatus.PriceNote"/> when price effects cover larger differences than its pair
+    /// (<see cref="PriceNote"/>).
     /// </summary>
     internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept, bool hasPairs)
+    {
+        var status = StatusOf(axis, kept, hasPairs);
+        var best = status.BestHypothesis == null ? default : kept.FirstOrDefault(k => k.Hypothesis.Key == status.BestHypothesis);
+        if (best.Hypothesis != null && !best.Hypothesis.PriceEffect)
+        {
+            status.PriceNote = PriceNote(axis, best.Draft, kept.Where(k => k.Hypothesis.Axis == axis && k.Hypothesis.PriceEffect).ToList());
+        }
+        return status;
+    }
+
+    /// <summary>
+    /// <c>Price per token, known from the price cards, explains the largest cost differences (HC2.1–HC2.7; 103% of the
+    /// largest).</c>: the price effects graded Low or higher whose pair's difference (<see cref="RootCauseDraft.Scale"/>) is
+    /// larger than <paramref name="best"/>'s, by their keys as ranges, with the share of the largest of them where it has
+    /// one; null when none is, or when the best hypothesis has no difference to compare.
+    /// </summary>
+    internal static string? PriceNote(string axis, RootCauseDraft best, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> priceEffects)
+    {
+        ArgumentNullException.ThrowIfNull(best);
+        if (best.Scale is not double own) return null;
+        var larger = priceEffects
+            .Where(k => k.Hypothesis.PriceEffect
+                        && RootCauseGrades.Rank(k.Hypothesis.Grade) >= RootCauseGrades.Rank(RootCauseGrades.Low)
+                        && k.Draft.Scale is double scale && Math.Abs(scale) > Math.Abs(own))
+            .ToList();
+        if (larger.Count == 0) return null;
+
+        var largest = larger.OrderByDescending(k => Math.Abs(k.Draft.Scale!.Value)).First();
+        string share = largest.Hypothesis.Share is double s ? "; " + Pct(s) + " of the largest" : string.Empty;
+        return "Price per token, known from the price cards, explains the largest " + RootCauseAxes.Name(axis).ToLowerInvariant()
+               + " differences (" + KeyRanges(larger.Select(k => k.Hypothesis.Key).ToList()) + share + ").";
+    }
+
+    /// <summary>
+    /// Hypothesis keys as ranges of consecutive numbers of one rule, each rule where its first key stands:
+    /// <c>HC2.1–HC2.4 and HC2.6</c>.
+    /// </summary>
+    internal static string KeyRanges(IReadOnlyList<string> keys)
+    {
+        var parts = new List<string>();
+        foreach (var rule in keys
+                     .Select(k => (Key: k, Dot: k.LastIndexOf('.')))
+                     .Select(x => (x.Key, Id: x.Dot > 0 ? x.Key[..x.Dot] : x.Key,
+                         Number: x.Dot > 0 && int.TryParse(x.Key[(x.Dot + 1)..], NumberStyles.None, CultureInfo.InvariantCulture, out int n) ? n : (int?)null))
+                     .Distinct()
+                     .GroupBy(x => x.Id, StringComparer.Ordinal))
+        {
+            var numbered = rule.Where(x => x.Number.HasValue).OrderBy(x => x.Number!.Value).ToList();
+            parts.AddRange(rule.Where(x => !x.Number.HasValue).Select(x => x.Key));
+            for (int i = 0; i < numbered.Count;)
+            {
+                int j = i;
+                while (j + 1 < numbered.Count && numbered[j + 1].Number == numbered[j].Number + 1) j++;
+                parts.Add(j == i ? numbered[i].Key : numbered[i].Key + "–" + numbered[j].Key);
+                i = j + 1;
+            }
+        }
+        return BenchmarkReportFormat.LetterList(parts);
+    }
+
+    private static RootCauseAxisStatus StatusOf(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept, bool hasPairs)
     {
         var nonNull = kept
             .Where(k => k.Hypothesis.Axis == axis && k.Hypothesis.Kind != "null")
@@ -1081,10 +1153,16 @@ public static class RootCauseHypotheses
         {
             var d = Make("HC2", A + " costs more than " + B + " mainly from its price per token.", "Price per token: " + A,
                 "The volume effect is larger.", "the price effect stays the larger", price, RootCauseLoci.Model);
+            if (d.PriceEffect)
+            {
+                d.RefutedIf = PriceEffectRefutedIf;
+                d.ConfirmIf = LowerFirst(PriceEffectRefutedIf).TrimEnd('.');
+            }
             d.Against.Add("The volume effect is " + SharePct(volume) + " of the difference.");
             d.FactKeys.Add(ctx.Key(a.Token, "price.output.perMillion"));
             d.CheckKind = "configuration";
             d.CheckText = "Compare the two models' price cards; the price effect follows from them.";
+            d.CheckSummary = "a comparison of the two models' price cards";
             yield return d;
         }
 
@@ -1200,8 +1278,11 @@ public static class RootCauseHypotheses
         {
             draft.Against.Add(q.Reference + ": one model scored 75 or above.");
         }
-        draft.CheckText = "Check the rubric of " + BenchmarkReportFormat.LetterList(flagged.Take(6).Select(q => q.Reference).ToList())
+        var checkedQuestions = flagged.Take(6).Select(q => q.Reference).ToList();
+        draft.CheckText = "Check the rubric of " + BenchmarkReportFormat.LetterList(checkedQuestions)
                           + " against the source, and whether the tools' corpus holds the facts the question needs.";
+        draft.CheckSummary = "a review of the " + (checkedQuestions.Count == 1 ? "rubric" : "rubrics") + " of "
+                             + BenchmarkReportFormat.LetterList(checkedQuestions);
         draft.FactKeys.Add("questions.sharedLow");
         return draft;
     }

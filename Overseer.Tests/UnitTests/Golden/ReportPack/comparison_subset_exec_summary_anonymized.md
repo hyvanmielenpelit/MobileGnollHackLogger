@@ -39,10 +39,10 @@ For the best answers, choose Model A or Model B; their intervals overlap, so the
 | Model A (reference) | 80 | 80 | 80 | 80 |
 | Model B | 50 | 50 | 50 | 50 |
 
-- **Accuracy:** from 50 (Model B) to 80 (Model A), 30 points apart
-- **Completeness:** from 50 (Model B) to 80 (Model A), 30 points apart
-- **Conciseness:** from 50 (Model B) to 80 (Model A), 30 points apart
-- **Readability:** from 50 (Model B) to 80 (Model A), 30 points apart
+- **Accuracy:** From Model B at 50 to Model A at 80, 30 points apart
+- **Completeness:** From Model B at 50 to Model A at 80, 30 points apart
+- **Conciseness:** From Model B at 50 to Model A at 80, 30 points apart
+- **Readability:** From Model B at 50 to Model A at 80, 30 points apart
 
 ## Compared with the reference model
 
@@ -107,6 +107,6 @@ What it does not measure: conversations longer than one question, the wiki text 
 
 ---
 
-*Document ID 212 · format version 21 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · models anonymized*
+*Document ID 212 · format version 22 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · models anonymized*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

@@ -65,7 +65,8 @@ public class BenchmarkNotableFindingsTests
 
         Assert.Equal(BenchmarkNotableFindings.CheaperAndBetter, found.Kind);
         Assert.Equal(new[] { "A", "B" }, found.Models);
-        Assert.Equal("Model A scored higher than Model B (established by 95% intervals that do not overlap) at 0.50 times its cost per question.", found.Summary);
+        Assert.Equal("Model A scored higher than Model B at 0.50 times its cost per question, established by 95% intervals that do not overlap.", found.Summary);
+        Assert.DoesNotContain("Model B (", found.Summary, StringComparison.Ordinal);
         Assert.Contains("pair.A.B.intervalOverlap", found.Facts);
         Assert.Equal(1, found.Number);
 

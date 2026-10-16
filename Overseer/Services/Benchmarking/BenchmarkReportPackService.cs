@@ -1283,9 +1283,13 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     /// <summary>
     /// Writes, validates, repairs once, drops what still fails, and persists one document. True when
     /// stored. When the headline is the only fatal cause after the repair, the first draft's headline is
-    /// kept if it passes; otherwise, in comparison scope, one headline-only turn on the same conversation
-    /// rewrites it. Every ending records the first-turn and final issues on the progress row, and a
-    /// failure its last reply. A stored Root Cause Analysis then gets its server-drawn charts.
+    /// kept if it passes. When the repaired draft's only blocking problems are sections over their word caps
+    /// and/or the headline, or the headline is still the only fatal cause, one final turn on the same
+    /// conversation asks for those sections shortened and the headline rewritten (<see cref="BenchmarkReportPackCallKinds.Shorten"/>,
+    /// or <see cref="BenchmarkReportPackCallKinds.Headline"/> for the headline alone); its reply is used only when
+    /// it leaves no more blocking issues and nothing fatal. Every ending records the first-turn, revision and final
+    /// issues and the word counts on the progress row, and a failure its last reply. A stored Root Cause Analysis
+    /// then gets its server-drawn charts.
     /// </summary>
     private async Task<bool> WriteDocumentAsync(
         BenchmarkReportPackJob job,
@@ -1331,8 +1335,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             SystemModelId = config.Id,
             PromptCacheKey = $"benchmark:report-pack:{config.ModelId}",
             CacheConversationTail = false,
-            // First turn, repair turn, headline-only turn.
-            Budget = new AgentRunBudget { MaxTotalModelCalls = 3 },
+            // First turn, repair turn, final shortening or headline turn.
+            Budget = new AgentRunBudget { MaxTotalModelCalls = MaxWriterCalls },
             SeedHistory = new List<object>
             {
                 new { role = "user", content = prompt.UserMessage }
@@ -1342,11 +1346,18 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         var turns = new List<WriterTurn>();
         IReadOnlyList<BenchmarkReportValidationNote> firstIssues = Array.Empty<BenchmarkReportValidationNote>();
         IReadOnlyList<BenchmarkReportValidationNote> finalIssues = Array.Empty<BenchmarkReportValidationNote>();
+        IReadOnlyList<BenchmarkReportValidationNote>? revisionIssues = null;
+        IReadOnlyList<BenchmarkReportSlotWordCount>? draftCounts = null;
+        IReadOnlyList<BenchmarkReportSlotWordCount>? revisionCounts = null;
+        IReadOnlyList<BenchmarkReportSlotWordCount>? finalCounts = null;
+        var shortenedCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        List<BenchmarkReportPackWordCountDto>? WordCounts() => WordCountDtos(draftCounts, revisionCounts, shortenedCounts, finalCounts);
 
         bool Fail(string message, bool log = true)
         {
             if (log) job.AddLog($"{name}: {message}", "error");
-            job.SetDocumentDiagnostics(progress, firstIssues, finalIssues, LastReply(turns));
+            job.SetDocumentDiagnostics(progress, firstIssues, finalIssues, LastReply(turns), revisionIssues, WordCounts());
             job.SetDocumentStatus(progress, BenchmarkReportPackDocumentStatus.Failed, message);
             return false;
         }
@@ -1366,6 +1377,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Checking);
             var (parsed, issues) = ParseAndValidate(audience, first.FinalText, prep);
             var firstOutput = parsed;
+            if (parsed != null) draftCounts = BenchmarkReportPackValidator.SlotWordCounts(audience, parsed, prep.Sheet, prep.Content);
             firstIssues = issues;
             finalIssues = issues;
             job.SetFirstDraftClean(progress, issues.Count == 0);
@@ -1378,7 +1390,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 job.AddLog($"{name}: {issues.Count} validation issue(s) ({RuleCounts(issues)}); sending one repair turn.", "warning");
 
                 runRequest.SeedHistory.Add(new { role = "assistant", content = first.FinalText ?? string.Empty });
-                runRequest.SeedHistory.Add(new { role = "user", content = RepairMessage(issues, prep.Scope, parsed?.Headline) });
+                runRequest.SeedHistory.Add(new { role = "user", content = RepairMessage(issues, prep.Scope, parsed?.Headline, draftCounts, audience) });
 
                 repair = await RunTurnAsync(job, progress, runRequest, config, pricing, BenchmarkReportPackCallKinds.Revision, ct);
                 turns.Add(repair);
@@ -1396,6 +1408,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                         parsed = repairedOutput;
                         issues = repairedIssues;
                         finalIssues = repairedIssues;
+                        revisionIssues = repairedIssues;
+                        revisionCounts = BenchmarkReportPackValidator.SlotWordCounts(audience, repairedOutput, prep.Sheet, prep.Content);
                     }
                     else if (parsed != null)
                     {
@@ -1417,45 +1431,166 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             if (issues.Count > 0)
             {
                 var cleaned = BenchmarkReportPackValidator.DropInvalid(audience, parsed, prep.Sheet, prep.Content);
-                BenchmarkReportValidationNote? rescued = null;
+                var rescues = new List<BenchmarkReportValidationNote>();
                 string? fatalReason = null;
-                if (cleaned.Fatal && cleaned.HeadlineOnlyFatal)
+                bool headlineRescued = false;
+                if (cleaned.Fatal && cleaned.HeadlineOnlyFatal && firstOutput != null
+                    && BlockingHeadlineIssue(audience, firstOutput.Headline, prep) == null)
                 {
+                    // The first draft's headline passes every blocking check: it replaces the repaired one.
                     string invalid = (BlockingHeadlineIssue(audience, parsed.Headline, prep)?.Message ?? "it is not valid").TrimEnd('.');
-                    if (firstOutput != null && BlockingHeadlineIssue(audience, firstOutput.Headline, prep) == null)
+                    parsed.Headline = firstOutput.Headline;
+                    cleaned = BenchmarkReportPackValidator.DropInvalid(audience, parsed, prep.Sheet, prep.Content);
+                    rescues.Add(HeadlineRescueNote($"The repaired headline was invalid ({invalid}); the first draft's headline was kept."));
+                    headlineRescued = true;
+                }
+
+                // One final turn, decided on the repaired draft's own issues before anything is trimmed: the sections
+                // over their word caps when they and the headline are the only blocking problems left, and the
+                // headline when it is invalid.
+                var baseIssues = headlineRescued ? BenchmarkReportPackValidator.Validate(audience, parsed, prep.Sheet, prep.Content) : issues;
+                var blocking = baseIssues.Where(BlocksForFinalTurn).ToList();
+                var headlineBlocking = blocking.Where(IsHeadlineNote).ToList();
+                bool capsOrHeadlineOnly = blocking.Count > 0 && blocking.All(n => IsHeadlineNote(n) || IsSlotCapNote(n));
+                var slots = capsOrHeadlineOnly
+                    ? BenchmarkReportPackValidator.SlotWordCounts(audience, parsed, prep.Sheet, prep.Content).Where(c => c.OverCap).ToList()
+                    : new List<BenchmarkReportSlotWordCount>();
+                bool askHeadline = headlineBlocking.Count > 0 && (capsOrHeadlineOnly || (cleaned.Fatal && cleaned.HeadlineOnlyFatal));
+                if ((slots.Count > 0 || askHeadline) && repair is { Error: null } && turns.Count < MaxWriterCalls)
+                {
+                    string invalid = askHeadline ? headlineBlocking[0].Message.TrimEnd('.') : string.Empty;
+                    if (slots.Count > 0)
                     {
-                        // The first draft's headline passes every blocking check: it replaces the repaired one.
-                        parsed.Headline = firstOutput.Headline;
-                        cleaned = BenchmarkReportPackValidator.DropInvalid(audience, parsed, prep.Sheet, prep.Content);
-                        rescued = HeadlineRescueNote($"The repaired headline was invalid ({invalid}); the first draft's headline was kept.");
+                        string them = slots.Count == 1 ? "it" : "them";
+                        job.AddLog($"{name}: {slots.Count} section(s) over their word caps after the repair ("
+                            + string.Join("; ", slots.Select(c => c.LocationLabel + ", " + Number(c.Words ?? 0) + " of " + Number(c.Cap))) + ")"
+                            + (askHeadline ? $" and the headline is invalid ({invalid})" : string.Empty)
+                            + "; sending one shortening turn.", "warning");
+                        job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Revising, askHeadline
+                            ? $"The revised draft is over the word cap in {JoinAnd(slots.Select(c => c.LocationLabel))} and its headline is invalid ({invalid}); the writer is asked to shorten {them} and to rewrite the headline."
+                            : $"The revised draft is over the word cap in {JoinAnd(slots.Select(c => c.LocationLabel))}; the writer is asked to shorten {them}.");
                     }
-                    else if (comparisonScope && repair is { Error: null })
+                    else
                     {
-                        // One headline-only turn on the same conversation.
-                        var headlineIssues = BenchmarkReportPackValidator.HeadlineIssues(audience, parsed.Headline, prep.Sheet, prep.Content);
-                        int words = BenchmarkReportPackValidator.WordCount(parsed.Headline ?? string.Empty);
                         job.AddLog($"{name}: the repaired headline is invalid ({invalid}); sending one headline-only turn.", "warning");
                         job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Revising, $"The revised headline is invalid ({invalid}); the writer is asked for a new headline only.");
-                        runRequest.SeedHistory.Add(new { role = "assistant", content = repair.FinalText ?? string.Empty });
-                        runRequest.SeedHistory.Add(new { role = "user", content = BenchmarkReportPackPrompt.BuildHeadlineRepairMessage(headlineIssues, words) });
+                    }
 
-                        var headlineTurn = await RunTurnAsync(job, progress, runRequest, config, pricing, BenchmarkReportPackCallKinds.Headline, ct);
-                        turns.Add(headlineTurn);
-                        job.SetDocumentPhase(progress, BenchmarkReportPackPhases.CheckingRevision);
-                        var (headline, failure, rewrittenIssues) = HeadlineFromTurn(audience, headlineTurn, prep);
-                        if (headline != null)
+                    var headlineIssues = askHeadline
+                        ? BenchmarkReportPackValidator.HeadlineIssues(audience, parsed.Headline, prep.Sheet, prep.Content)
+                        : Array.Empty<BenchmarkReportValidationNote>();
+                    runRequest.SeedHistory.Add(new { role = "assistant", content = repair.FinalText ?? string.Empty });
+                    runRequest.SeedHistory.Add(new
+                    {
+                        role = "user",
+                        content = BenchmarkReportPackPrompt.BuildShortenMessage(
+                            slots, headlineIssues, BenchmarkReportPackValidator.WordCount(parsed.Headline ?? string.Empty),
+                            audience == BenchmarkReportAudience.RootCauseAnalysis)
+                    });
+
+                    var finalTurn = await RunTurnAsync(job, progress, runRequest, config, pricing,
+                        slots.Count > 0 ? BenchmarkReportPackCallKinds.Shorten : BenchmarkReportPackCallKinds.Headline, ct);
+                    turns.Add(finalTurn);
+                    job.SetDocumentPhase(progress, BenchmarkReportPackPhases.CheckingRevision);
+
+                    var reply = finalTurn.Error == null ? BenchmarkReportPackParser.Parse(finalTurn.FinalText) : null;
+                    IReadOnlyList<BenchmarkReportValidationNote> turnHeadlineIssues = Array.Empty<BenchmarkReportValidationNote>();
+                    string? turnFailure;
+                    if (finalTurn.Error != null)
+                    {
+                        turnFailure = "Provider error on the final turn: " + finalTurn.Error;
+                        job.AddLog($"{name}: provider error on the final turn: {finalTurn.Error}", "warning");
+                    }
+                    else if (reply is not { Success: true, Output: not null })
+                    {
+                        string error = reply?.Error ?? "it is not a JSON object.";
+                        turnFailure = "The final turn's reply could not be parsed: " + error;
+                        job.AddLog($"{name}: the final turn's reply could not be parsed ({error.TrimEnd('.')}); it is ignored.", "warning");
+                    }
+                    else
+                    {
+                        var rewritten = reply!.Output!;
+                        var shortened = slots
+                            .Where(c => rewritten.Sections.TryGetValue(c.Slot, out string? text) && !string.IsNullOrWhiteSpace(text))
+                            .ToList();
+                        foreach (var c in shortened)
                         {
-                            parsed.Headline = headline;
-                            cleaned = BenchmarkReportPackValidator.DropInvalid(audience, parsed, prep.Sheet, prep.Content);
-                            rescued = HeadlineRescueNote($"The repaired headline was invalid ({invalid}); it was rewritten in a headline-only turn.");
+                            shortenedCounts[c.Slot] = BenchmarkReportPackValidator.WordCount(rewritten.Sections[c.Slot]);
+                        }
+                        bool headlineGiven = askHeadline && !string.IsNullOrWhiteSpace(rewritten.Headline);
+                        if (askHeadline)
+                        {
+                            turnHeadlineIssues = BenchmarkReportPackValidator.HeadlineIssues(audience, rewritten.Headline, prep.Sheet, prep.Content);
+                        }
+
+                        // The merge is kept only when it adds no blocking issue and nothing in it is fatal; when the
+                        // shortened sections spoil it, the rewritten headline alone is tried.
+                        BenchmarkReportWriterOutput current = parsed;
+                        (BenchmarkReportWriterOutput Output, BenchmarkReportCleanResult Clean)? Merge(bool withSlots, bool withHeadline)
+                        {
+                            if (!withSlots && !withHeadline) return null;
+                            var merged = CopyOutput(current);
+                            if (withSlots)
+                            {
+                                foreach (var c in shortened) merged.Sections[c.Slot] = rewritten.Sections[c.Slot];
+                            }
+                            if (withHeadline) merged.Headline = rewritten.Headline;
+                            int after = BenchmarkReportPackValidator.Validate(audience, merged, prep.Sheet, prep.Content)
+                                .Count(BlocksForFinalTurn);
+                            var mergedClean = BenchmarkReportPackValidator.DropInvalid(audience, merged, prep.Sheet, prep.Content);
+                            return after <= blocking.Count && !mergedClean.Fatal ? (merged, mergedClean) : null;
+                        }
+
+                        bool usedSlots = shortened.Count > 0;
+                        bool usedHeadline = headlineGiven;
+                        var kept = Merge(usedSlots, usedHeadline);
+                        if (kept == null && usedSlots && usedHeadline)
+                        {
+                            usedSlots = false;
+                            kept = Merge(withSlots: false, withHeadline: true);
+                        }
+
+                        if (kept is { } accepted)
+                        {
+                            parsed = accepted.Output;
+                            cleaned = accepted.Clean;
+                            turnFailure = null;
+                            if (usedSlots)
+                            {
+                                bool one = shortened.Count == 1;
+                                rescues.Add(new BenchmarkReportValidationNote
+                                {
+                                    Rule = 7,
+                                    Location = "sections",
+                                    Dropped = false,
+                                    Message = $"{JoinAnd(shortened.Select(c => c.LocationLabel))} {(one ? "was" : "were")} over {(one ? "its cap" : "their caps")} after the repair; "
+                                        + $"{(one ? "it was" : "they were")} shortened in a final turn."
+                                });
+                            }
+                            if (usedHeadline)
+                            {
+                                rescues.Add(HeadlineRescueNote(slots.Count > 0
+                                    ? $"The repaired headline was invalid ({invalid}); it was rewritten in a final turn."
+                                    : $"The repaired headline was invalid ({invalid}); it was rewritten in a headline-only turn."));
+                            }
                         }
                         else
                         {
-                            fatalReason = failure;
-                            finalIssues = rewrittenIssues.Count > 0
-                                ? rewrittenIssues.Concat(cleaned.Notes.Where(n => n.Location != "headline")).ToList()
-                                : cleaned.Notes;
+                            job.AddLog($"{name}: the final turn's reply was not used: it left more blocking issues, or a required part failed validation.", "warning");
+                            var stillInvalid = turnHeadlineIssues.FirstOrDefault(BenchmarkReportPackValidator.BlocksText);
+                            turnFailure = !askHeadline ? null
+                                : !headlineGiven ? "The final turn's reply gave no headline."
+                                : stillInvalid != null ? "The headline is invalid and cannot be dropped: " + stillInvalid.Message
+                                : null;
                         }
+                    }
+
+                    if (cleaned.Fatal && turnFailure != null)
+                    {
+                        fatalReason = turnFailure;
+                        finalIssues = turnHeadlineIssues.Count > 0
+                            ? turnHeadlineIssues.Concat(cleaned.Notes.Where(n => !IsHeadlineNote(n))).ToList()
+                            : cleaned.Notes;
                     }
                 }
 
@@ -1465,10 +1600,10 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                     return Fail(fatalReason ?? cleaned.FatalReason ?? "Required content failed validation after the repair turn.");
                 }
 
-                var restored = RestoreUncitedAxes(parsed, cleaned.Output, prep.Sheet);
+                var (restored, cleanedNotes) = RestoreUncitedAxes(parsed, cleaned.Output, prep.Sheet, cleaned.Notes);
                 parsed = cleaned.Output;
-                notes.AddRange(cleaned.Notes);
-                var removed = cleaned.Notes.Where(n => n.Dropped).ToList();
+                notes.AddRange(cleanedNotes);
+                var removed = cleanedNotes.Where(n => n.Dropped).ToList();
                 if (removed.Count > 0)
                 {
                     var titles = BenchmarkReportRuleCatalog.SlotTitlesFor(audience);
@@ -1478,30 +1613,32 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 }
                 foreach (string axis in restored)
                 {
-                    job.AddLog($"{name}: the conclusions' paragraph on {RootCauseAxes.Name(axis).ToLowerInvariant()} was removed; Overseer added the axis' status in its place.", "warning");
+                    job.AddLog($"{name}: the conclusions' paragraph on {RootCauseAxes.Name(axis).ToLowerInvariant()} was removed; Overseer wrote the axis's status in its place.", "warning");
                 }
-                if (rescued != null)
+                foreach (var rescued in rescues)
                 {
                     notes.Add(rescued);
                     job.AddLog($"{name}: {rescued.Message}", "warning");
                 }
-                finalIssues = rescued == null ? cleaned.Notes : cleaned.Notes.Append(rescued).ToList();
+                finalIssues = cleanedNotes.Concat(rescues).ToList();
             }
 
             output = parsed;
         }
         catch (OperationCanceledException)
         {
-            job.SetDocumentDiagnostics(progress, firstIssues, finalIssues);
+            job.SetDocumentDiagnostics(progress, firstIssues, finalIssues, revisionIssues: revisionIssues, wordCounts: WordCounts());
             throw;
         }
-        job.SetDocumentDiagnostics(progress, firstIssues, finalIssues);
+        finalCounts = BenchmarkReportPackValidator.SlotWordCounts(audience, output, prep.Sheet, prep.Content);
+        job.SetDocumentDiagnostics(progress, firstIssues, finalIssues, revisionIssues: revisionIssues, wordCounts: WordCounts());
         job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Storing);
 
-        // A warning note (BenchmarkReportPackValidator.IsWarningRule) keeps its text but still marks the document, and so does
-        // a chat consistency document-level note (C6 or C7 recorded against the kept text).
+        // A warning note (BenchmarkReportPackValidator.IsWarningRule) keeps its text but still marks the document, and so do
+        // a word-cap note recorded against kept text (a section kept over its cap, or shortened in the final turn) and a
+        // chat consistency document-level note (C6 or C7 recorded against the kept text).
         bool chatConsistency = prep.Scope == BenchmarkReportScope.ChatConsistency;
-        var status = notes.Any(n => n.Dropped || BenchmarkReportPackValidator.IsWarningRule(n.Rule)
+        var status = notes.Any(n => n.Dropped || BenchmarkReportPackValidator.IsWarningRule(n.Rule) || IsKeptWordCapNote(n)
                                     || (chatConsistency && IsChatConsistencyDocumentNote(n)))
             ? BenchmarkReportDocumentStatus.CompletedWithWarnings
             : BenchmarkReportDocumentStatus.Completed;
@@ -1630,25 +1767,32 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         => text.Length > 1 && char.IsUpper(text[0]) && !char.IsUpper(text[1]) ? char.ToLowerInvariant(text[0]) + text[1..] : text;
 
     /// <summary>
-    /// After a Root Cause Analysis' drops: for each axis whose status the writer's conclusions cited before
-    /// the drop and the kept conclusions no longer cite, appends to <paramref name="cleaned"/>'s conclusions a
-    /// code-written paragraph citing that status, marked as Overseer's. Returns the axes restored, in
-    /// document order; the rule 36 note of each stays recorded.
+    /// After a Root Cause Analysis's drops: for each axis whose status the writer's conclusions cited before
+    /// the drop and the kept conclusions no longer cite, inserts into <paramref name="cleaned"/>'s conclusions a
+    /// code-written paragraph citing that status, marked as Overseer's, at its axis's place (intelligence, speed,
+    /// cost, among the kept paragraphs by the first axis status each cites); it is not counted against the cap.
+    /// Returns the axes restored, in axis order, and <paramref name="cleanedNotes"/> with each restored axis's rule-36
+    /// note replaced by an added-by-Overseer note holding the paragraph: a rule-36 note keeps only the axes still
+    /// uncited, and goes when none is.
     /// </summary>
-    private static List<string> RestoreUncitedAxes(BenchmarkReportWriterOutput written, BenchmarkReportWriterOutput cleaned, BenchmarkReportFactSheet sheet)
+    private static (List<string> Axes, List<BenchmarkReportValidationNote> Notes) RestoreUncitedAxes(
+        BenchmarkReportWriterOutput written, BenchmarkReportWriterOutput cleaned, BenchmarkReportFactSheet sheet,
+        IReadOnlyList<BenchmarkReportValidationNote> cleanedNotes)
     {
         var restored = new List<string>();
+        var notes = cleanedNotes.ToList();
         if (sheet.RootCause == null
             || !written.Sections.TryGetValue(BenchmarkReportSlots.Conclusions, out string? before)
             || !cleaned.Sections.TryGetValue(BenchmarkReportSlots.Conclusions, out string? after)
             || string.IsNullOrWhiteSpace(after))
         {
-            return restored;
+            return (restored, notes);
         }
 
         var keys = new HashSet<string>(sheet.Facts.Select(f => f.Key), StringComparer.Ordinal);
-        var paragraphs = new List<string>();
-        foreach (var axis in sheet.RootCause.Axes)
+        var paragraphs = BenchmarkReportPackValidator.SplitParagraphs(after);
+        var added = new List<BenchmarkReportValidationNote>();
+        foreach (var axis in sheet.RootCause.Axes.OrderBy(a => AxisRank(a.Axis)))
         {
             string status = "{{" + RootCauseClaimSupport.StatusKey(axis.Axis) + "}}";
             if (!keys.Contains(RootCauseClaimSupport.StatusKey(axis.Axis))
@@ -1664,15 +1808,93 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             {
                 text += " The best hypothesis on this axis: {{" + statement + "}}";
             }
-            paragraphs.Add(text);
+            paragraphs.Insert(AxisInsertionIndex(paragraphs, AxisRank(axis.Axis)), text);
             restored.Add(axis.Axis);
+            added.Add(new BenchmarkReportValidationNote
+            {
+                Rule = BenchmarkReportPackValidator.RootCauseAxisStatusRule,
+                Location = "sections." + BenchmarkReportSlots.Conclusions,
+                Message = $"The writer's paragraph on {RootCauseAxes.Name(axis.Axis).ToLowerInvariant()} was removed; Overseer wrote the axis's status in its place.",
+                Dropped = false,
+                AddedByOverseer = true,
+                Text = text
+            });
         }
+        if (restored.Count == 0) return (restored, notes);
 
-        if (paragraphs.Count > 0)
+        string conclusions = string.Join("\n\n", paragraphs);
+        cleaned.Sections[BenchmarkReportSlots.Conclusions] = conclusions;
+
+        int axisNote = notes.FindIndex(n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule && !n.AddedByOverseer
+                                            && n.Location == "sections." + BenchmarkReportSlots.Conclusions);
+        if (axisNote >= 0)
         {
-            cleaned.Sections[BenchmarkReportSlots.Conclusions] = after.TrimEnd() + "\n\n" + string.Join("\n\n", paragraphs);
+            var uncited = RootCauseClaimSupport.From(sheet).Axes
+                .Where(a => !conclusions.Contains("{{" + RootCauseClaimSupport.StatusKey(a) + "}}", StringComparison.Ordinal))
+                .ToList();
+            if (uncited.Count == 0)
+            {
+                notes.RemoveAt(axisNote);
+            }
+            else
+            {
+                var old = notes[axisNote];
+                notes[axisNote] = new BenchmarkReportValidationNote
+                {
+                    Rule = old.Rule,
+                    Location = old.Location,
+                    Message = BenchmarkReportPackValidator.AxisStatusMessage(uncited),
+                    Dropped = old.Dropped,
+                    Text = old.Text
+                };
+            }
         }
-        return restored;
+        notes.AddRange(added);
+        return (restored, notes);
+    }
+
+    /// <summary>An axis's place in the order intelligence, speed, cost; an unknown axis after them.</summary>
+    private static int AxisRank(string axis)
+    {
+        for (int i = 0; i < RootCauseAxes.All.Count; i++)
+        {
+            if (string.Equals(RootCauseAxes.All[i], axis, StringComparison.Ordinal)) return i;
+        }
+        return RootCauseAxes.All.Count;
+    }
+
+    /// <summary>
+    /// Where a conclusions paragraph on the axis of <paramref name="rank"/> goes among <paramref name="paragraphs"/>:
+    /// before the first paragraph whose first axis status is of a later axis; else after the last paragraph that
+    /// cites an axis status; else at the end.
+    /// </summary>
+    private static int AxisInsertionIndex(IReadOnlyList<string> paragraphs, int rank)
+    {
+        int lastRanked = -1;
+        for (int i = 0; i < paragraphs.Count; i++)
+        {
+            if (FirstStatusRank(paragraphs[i]) is not int r) continue;
+            if (r > rank) return i;
+            lastRanked = i;
+        }
+        return lastRanked >= 0 ? lastRanked + 1 : paragraphs.Count;
+    }
+
+    /// <summary>The rank (<see cref="AxisRank"/>) of the first axis status a paragraph cites; null when it cites none.</summary>
+    private static int? FirstStatusRank(string paragraph)
+    {
+        int? rank = null;
+        int at = int.MaxValue;
+        foreach (string axis in RootCauseAxes.All)
+        {
+            int index = paragraph.IndexOf("{{" + RootCauseClaimSupport.StatusKey(axis) + "}}", StringComparison.Ordinal);
+            if (index >= 0 && index < at)
+            {
+                at = index;
+                rank = AxisRank(axis);
+            }
+        }
+        return rank;
     }
 
     /// <summary>The Markdown italics that open a conclusions paragraph Overseer wrote in place of a removed one.</summary>
@@ -1715,11 +1937,92 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             .ToList();
     }
 
-    /// <summary>The repair turn's message: a chat consistency document's own, else the per-model or comparison one with the headline as written.</summary>
-    private static string RepairMessage(IReadOnlyList<BenchmarkReportValidationNote> issues, BenchmarkReportScope scope, string? headline)
+    /// <summary>
+    /// The repair turn's message: a chat consistency document's own, else the per-model or comparison one with the
+    /// headline as written and the draft's word budget (<paramref name="wordCounts"/>).
+    /// </summary>
+    private static string RepairMessage(
+        IReadOnlyList<BenchmarkReportValidationNote> issues, BenchmarkReportScope scope, string? headline,
+        IReadOnlyList<BenchmarkReportSlotWordCount>? wordCounts, BenchmarkReportAudience audience)
         => scope == BenchmarkReportScope.ChatConsistency
             ? BenchmarkReportPackPrompt.BuildRepairMessage(issues, scope)
-            : BenchmarkReportPackPrompt.BuildRepairMessage(issues, scope == BenchmarkReportScope.Comparison, headline);
+            : BenchmarkReportPackPrompt.BuildRepairMessage(issues, scope == BenchmarkReportScope.Comparison, headline,
+                wordCounts, audience == BenchmarkReportAudience.RootCauseAnalysis);
+
+    /// <summary>The writer calls a document may take: the first turn, the repair turn and one final turn.</summary>
+    private const int MaxWriterCalls = 3;
+
+    private static bool IsHeadlineNote(BenchmarkReportValidationNote note)
+        => string.Equals(note.Location, "headline", StringComparison.Ordinal);
+
+    /// <summary>
+    /// A blocking note that removes text or fails the document: not a warning, and not one recorded against kept text
+    /// with nothing to remove (a missing question topic, and the document-level halves of C6 and C7).
+    /// </summary>
+    private static bool BlocksForFinalTurn(BenchmarkReportValidationNote note)
+        => BenchmarkReportPackValidator.BlocksText(note)
+           && !string.Equals(note.Location, "questionTopics", StringComparison.Ordinal)
+           && !(note.Rule is BenchmarkReportPackValidator.ChatHoursRule or BenchmarkReportPackValidator.ChatProviderReportRule
+                && note.Location.StartsWith("sections", StringComparison.Ordinal) && !note.Location.Contains('[', StringComparison.Ordinal));
+
+    /// <summary>A rule-7 note on a whole section, <c>sections.&lt;slot&gt;</c>: the section is over its word cap.</summary>
+    private static bool IsSlotCapNote(BenchmarkReportValidationNote note)
+        => note.Rule == 7 && note.Location.StartsWith("sections.", StringComparison.Ordinal) && !note.Location.Contains('[', StringComparison.Ordinal);
+
+    /// <summary>A rule-7 note recorded against kept text: a section kept over its cap, or shortened in the final turn.</summary>
+    private static bool IsKeptWordCapNote(BenchmarkReportValidationNote note)
+        => note.Rule == 7 && !note.Dropped && note.Location.StartsWith("sections", StringComparison.Ordinal);
+
+    /// <summary>A copy of the output whose sections can be replaced without touching the original.</summary>
+    private static BenchmarkReportWriterOutput CopyOutput(BenchmarkReportWriterOutput output) => new()
+    {
+        Headline = output.Headline,
+        Sections = new Dictionary<string, string>(output.Sections ?? new Dictionary<string, string>(), StringComparer.Ordinal),
+        Strengths = output.Strengths,
+        Weaknesses = output.Weaknesses,
+        QuestionTopics = output.QuestionTopics,
+        Models = output.Models,
+        Observations = output.Observations,
+        WriterHypotheses = output.WriterHypotheses
+    };
+
+    /// <summary>"A", "A and B", "A, B and C".</summary>
+    private static string JoinAnd(IEnumerable<string> items)
+    {
+        var list = items.ToList();
+        return list.Count <= 1 ? string.Concat(list) : string.Join(", ", list.Take(list.Count - 1)) + " and " + list[^1];
+    }
+
+    private static string Number(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The word count of every capped section, turn by turn, in slot order: the first draft's, the revision's, the
+    /// final turn's and the stored text's, with the stored text's per paragraph; null when no turn was readable.
+    /// </summary>
+    private static List<BenchmarkReportPackWordCountDto>? WordCountDtos(
+        IReadOnlyList<BenchmarkReportSlotWordCount>? draft,
+        IReadOnlyList<BenchmarkReportSlotWordCount>? revision,
+        IReadOnlyDictionary<string, int> shortened,
+        IReadOnlyList<BenchmarkReportSlotWordCount>? final)
+    {
+        var shape = draft ?? revision ?? final;
+        if (shape == null) return null;
+
+        BenchmarkReportSlotWordCount? Of(IReadOnlyList<BenchmarkReportSlotWordCount>? counts, string slot)
+            => counts?.FirstOrDefault(c => string.Equals(c.Slot, slot, StringComparison.Ordinal));
+
+        return shape.Select(c => new BenchmarkReportPackWordCountDto
+        {
+            Location = c.Location,
+            LocationLabel = c.LocationLabel,
+            Cap = c.Cap,
+            Draft = Of(draft, c.Slot)?.Words,
+            Revision = Of(revision, c.Slot)?.Words,
+            Shortened = shortened.TryGetValue(c.Slot, out int words) ? words : null,
+            Final = Of(final, c.Slot)?.Words,
+            FinalParagraphs = Of(final, c.Slot)?.Paragraphs.ToList() ?? new List<int>()
+        }).ToList();
+    }
 
     /// <summary>The issues counted by rule, ascending: <c>rule 2: 5, rule 16: 12</c>.</summary>
     private static string RuleCounts(IEnumerable<BenchmarkReportValidationNote> issues)
@@ -1737,32 +2040,6 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     /// <summary>The note a rescued headline leaves: rule 7 at <c>headline</c>, marked dropped so the document carries a warning.</summary>
     private static BenchmarkReportValidationNote HeadlineRescueNote(string message)
         => new() { Rule = 7, Location = "headline", Dropped = true, Message = message };
-
-    /// <summary>
-    /// The headline of a headline-only turn when it passes every blocking check; otherwise the reason
-    /// the document fails, with the rewritten headline's issues when it was readable.
-    /// </summary>
-    private static (string? Headline, string? Failure, IReadOnlyList<BenchmarkReportValidationNote> Issues) HeadlineFromTurn(
-        BenchmarkReportAudience audience, WriterTurn turn, BenchmarkReportPackPreparation prep)
-    {
-        if (turn.Error != null)
-        {
-            return (null, "Provider error on the headline-only turn: " + turn.Error, Array.Empty<BenchmarkReportValidationNote>());
-        }
-
-        var parsed = BenchmarkReportPackParser.Parse(turn.FinalText);
-        if (!parsed.Success || parsed.Output == null)
-        {
-            return (null, "The headline-only reply could not be parsed: " + (parsed.Error ?? "it is not a JSON object."),
-                Array.Empty<BenchmarkReportValidationNote>());
-        }
-
-        var issues = BenchmarkReportPackValidator.HeadlineIssues(audience, parsed.Output.Headline, prep.Sheet, prep.Content);
-        var blocking = issues.FirstOrDefault(BenchmarkReportPackValidator.BlocksText);
-        return blocking == null
-            ? (parsed.Output.Headline, null, issues)
-            : (null, "The headline is invalid and cannot be dropped: " + blocking.Message, issues);
-    }
 
     /// <summary>The last raw reply of the document's turns, for a failed document's diagnostics.</summary>
     private static string? LastReply(IReadOnlyList<WriterTurn> turns)
@@ -1833,7 +2110,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             if (runResult.TotalPromptTokens > 0 || runResult.OutputTokens > 0)
             {
                 var (canceledInput, canceledOutput, canceledCost) = await TryRecordUsageAsync(job, progress, config, pricing, runResult, sw.ElapsedMilliseconds);
-                RecordCall(job, progress, kind, startedAtUtc, sw.ElapsedMilliseconds, canceledInput, canceledOutput, canceledCost, runResult, messages, characters);
+                RecordCall(job, progress, kind, startedAtUtc, sw.ElapsedMilliseconds, canceledInput, canceledOutput, canceledCost, runResult, messages, characters, "canceled");
             }
             throw;
         }
@@ -1844,14 +2121,17 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         sw.Stop();
 
         var (inputTokens, outputTokens, cost) = await TryRecordUsageAsync(job, progress, config, pricing, runResult, sw.ElapsedMilliseconds);
-        RecordCall(job, progress, kind, startedAtUtc, sw.ElapsedMilliseconds, inputTokens, outputTokens, cost, runResult, messages, characters);
+        RecordCall(job, progress, kind, startedAtUtc, sw.ElapsedMilliseconds, inputTokens, outputTokens, cost, runResult, messages, characters, terminalError);
         return new WriterTurn(runResult.FinalText, terminalError, inputTokens, outputTokens, sw.ElapsedMilliseconds, cost);
     }
 
-    /// <summary>One writer call on the document's progress row: its kind, timing, tokens, cost, finish reason and request size.</summary>
+    /// <summary>
+    /// One writer call on the document's progress row: its kind, timing, tokens, cost, finish reason and request size,
+    /// with its raw reply and provider error kept on the job for the writer-replies download.
+    /// </summary>
     private static void RecordCall(
         BenchmarkReportPackJob job, BenchmarkReportPackDocumentProgress progress, string kind, DateTime startedAtUtc, long durationMs,
-        int inputTokens, int outputTokens, decimal? cost, AgentRunResult runResult, int messages, long characters)
+        int inputTokens, int outputTokens, decimal? cost, AgentRunResult runResult, int messages, long characters, string? error)
         => job.RecordCall(progress, new BenchmarkReportPackCallDto
         {
             Kind = kind,
@@ -1864,7 +2144,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             FinishReason = runResult.ProviderFinishReason,
             RequestMessages = messages,
             RequestCharacters = characters
-        });
+        }, runResult.FinalText, error);
 
     private async Task<(int InputTokens, int OutputTokens, decimal? Cost)> TryRecordUsageAsync(
         BenchmarkReportPackJob job,

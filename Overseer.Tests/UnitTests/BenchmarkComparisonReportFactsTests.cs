@@ -85,8 +85,8 @@ public class BenchmarkComparisonReportFactsTests
     {
         var values = new List<(string Letter, double? Value)> { ("A", 85.2), ("B", 83.8) };
 
-        Assert.Equal("from 84 (Model B) to 85 (Model A), 1 point apart",
-            BenchmarkComparisonReportFacts.SpreadDisplay(values, BenchmarkReportFormat.Whole, higherIsBetter: true, unit: " points"));
+        Assert.Equal("from Model B at 84 to Model A at 85, 1 point apart",
+            BenchmarkComparisonReportFacts.SpreadDisplay(values, BenchmarkReportFormat.Whole, unit: " points"));
     }
 
     [Fact]
@@ -95,9 +95,33 @@ public class BenchmarkComparisonReportFactsTests
         var values = new List<(string Letter, double? Value)> { ("A", 97.2), ("B", 96.8), ("C", 97.0) };
 
         Assert.Equal("97 for every model",
-            BenchmarkComparisonReportFacts.SpreadDisplay(values, BenchmarkReportFormat.Whole, higherIsBetter: true, unit: " points"));
+            BenchmarkComparisonReportFacts.SpreadDisplay(values, BenchmarkReportFormat.Whole, unit: " points"));
         Assert.Equal("97 for every model with this figure",
-            BenchmarkComparisonReportFacts.SpreadDisplay(values.Append(("D", (double?)null)).ToList(), BenchmarkReportFormat.Whole, higherIsBetter: true, unit: " points"));
+            BenchmarkComparisonReportFacts.SpreadDisplay(values.Append(("D", (double?)null)).ToList(), BenchmarkReportFormat.Whole, unit: " points"));
+    }
+
+    [Fact]
+    public void EverySpread_RunsFromTheLowestValueToTheHighest_WithNoModelInParentheses()
+    {
+        var quality = new List<(string Letter, double? Value)> { ("A", 87), ("I", 76), ("C", 80) };
+        var speed = new List<(string Letter, double? Value)> { ("B", 60_300), ("I", 8_900), ("C", 20_000) };
+        var cost = new List<(string Letter, double? Value)> { ("A", 0.194), ("C", 0.0029), ("B", 0.05) };
+
+        Assert.Equal("from Model I at 76 to Model A at 87, 11 points apart",
+            BenchmarkComparisonReportFacts.SpreadDisplay(quality, BenchmarkReportFormat.Whole, unit: " points"));
+        Assert.Equal("from Model I at 8.9 s to Model B at 60.3 s",
+            BenchmarkComparisonReportFacts.SpreadDisplay(speed, BenchmarkReportFormat.Seconds, unit: null));
+        Assert.Equal("from Model C at $0.0029 to Model A at $0.194",
+            BenchmarkComparisonReportFacts.SpreadDisplay(cost, BenchmarkReportFormat.Usd, unit: null));
+        foreach (var display in new[]
+        {
+            BenchmarkComparisonReportFacts.SpreadDisplay(quality, BenchmarkReportFormat.Whole, unit: " points"),
+            BenchmarkComparisonReportFacts.SpreadDisplay(speed, BenchmarkReportFormat.Seconds, unit: null),
+            BenchmarkComparisonReportFacts.SpreadDisplay(cost, BenchmarkReportFormat.Usd, unit: null)
+        })
+        {
+            Assert.DoesNotContain("(", display!, StringComparison.Ordinal);
+        }
     }
 
     private static bool BenchmarkReportPackPromptIsTrue(BenchmarkReportFact fact) => BenchmarkReportPackPrompt.IsTrue(fact);
@@ -113,7 +137,7 @@ public class BenchmarkComparisonReportFactsTests
         Assert.Equal("Models B, C, D and E", Display(sheet, "frontier.speedCost"));
         Assert.Equal("on the intelligence against speed and speed against cost frontiers", Display(sheet, "model.D.frontier"));
         Assert.Equal("on the intelligence against cost and intelligence against speed frontiers", Display(sheet, "model.A.frontier"));
-        Assert.Equal("from 55 (Model E) to 85 (Model A), 30 points apart", Display(sheet, "spread.quality"));
+        Assert.Equal("from Model E at 55 to Model A at 85, 30 points apart", Display(sheet, "spread.quality"));
     }
 
     [Fact]

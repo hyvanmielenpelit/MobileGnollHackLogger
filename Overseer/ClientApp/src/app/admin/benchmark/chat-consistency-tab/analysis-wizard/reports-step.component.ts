@@ -41,6 +41,11 @@ import { reportDisclosureInfo } from '../../report-disclosure-guide';
 import { ReportChartPickerComponent } from '../../report-pack/report-chart-picker.component';
 import { ReportChartLayoutSettings, ReportChartSelection } from '../../report-pack/report-charts';
 import { disclosureLabel, documentStatusLabel, formatCostUsd } from '../../report-pack/report-document-format';
+import {
+  ReportJobDocumentCharts,
+  ReportJobDocumentsComponent,
+  reuseReportJobDocumentCards
+} from '../../report-pack/report-job-documents.component';
 import { RunReportFrameComponent } from '../../run-report-frame/run-report-frame.component';
 import {
   isReportWriterSameProviderWarning,
@@ -191,7 +196,7 @@ function chartDocumentOf(doc: BenchmarkReportDocumentListItemDto): CcReportChart
  * sidebar with the analysis's two documents (a written one with View and Delete, an unwritten one
  * with its Write checkbox) and Update charts, the charts each document type carries
  * (`app-report-chart-picker`, remembered per browser), the report writer, its estimate and Write
- * Reports; and a main area that follows the job (the stage rail, the stat strip, one row per document,
+ * Reports; and a main area that follows the job (the stage rail, the stat strip, one card per document,
  * the log and diagnostics, Cancel), then summarizes it. The header carries the out-of-date notice of
  * the analysis. The same-provider and out-of-date confirmations, the delete confirmation and the PDF
  * viewer are nested in the wizard's dialog and stop their own close and cancel events.
@@ -206,7 +211,7 @@ function chartDocumentOf(doc: BenchmarkReportDocumentListItemDto): CcReportChart
   standalone: true,
   imports: [
     RunReportFrameComponent, ModelPickerComponent, InfoTipComponent, PdfViewerDialogComponent, CcModelBadgesComponent,
-    ReportChartPickerComponent, CcFreshnessNoticeComponent, LoadingIndicatorComponent
+    ReportChartPickerComponent, CcFreshnessNoticeComponent, LoadingIndicatorComponent, ReportJobDocumentsComponent
   ],
   templateUrl: './reports-step.component.html',
   styleUrls: ['./reports-step.component.scss'],
@@ -337,6 +342,8 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
   private focusAfterDelete = false;
   private writerBadgesKey = '';
   private writerBadgesCache: CcBadgedModel | null = null;
+  /** The progress cards last shown. */
+  private jobCards: readonly CcReportJobRow[] = [];
 
   constructor() {
     this.estimateSub = this.estimateRequests.pipe(
@@ -850,8 +857,13 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
     return this.job ? ccReportJobStats(this.job, this.serverNow()) : null;
   }
 
-  get jobRows(): CcReportJobRow[] {
-    return this.job ? ccReportJobRows(this.job, this.serverNow()) : [];
+  /** One progress card per document, with the charts line of a written one; kept while nothing on them changes. */
+  get jobRows(): readonly CcReportJobRow[] {
+    const rows = this.job
+      ? ccReportJobRows(this.job, this.serverNow()).map(row => ({ ...row, charts: this.chartsOf(row) }))
+      : [];
+    this.jobCards = reuseReportJobDocumentCards(this.jobCards, rows);
+    return this.jobCards;
   }
 
   get jobSummary(): string {
@@ -874,14 +886,17 @@ export class CcReportsStepComponent implements OnInit, OnChanges, OnDestroy {
     return this.writerBadgesCache;
   }
 
-  /** A row's charts cell: the step attaches charts for the whole job, so every written row reads the same. */
-  chartsText(row: CcReportJobRow): string {
-    if (row.documentId === null) return '—';
+  /**
+   * A card's charts line: the step attaches charts for the whole job, so every written document reads the
+   * same; none before a document is written or while no charts are being attached.
+   */
+  private chartsOf(row: CcReportJobRow): ReportJobDocumentCharts | null {
+    if (row.documentId === null) return null;
     switch (this.chartState) {
-      case 'attaching': return 'Charts: attaching…';
-      case 'done': return 'Charts: attached';
-      case 'failed': return 'Charts: failed';
-      default: return '—';
+      case 'attaching': return { text: 'Charts: attaching…', retry: false };
+      case 'done': return { text: 'Charts: attached', retry: false };
+      case 'failed': return { text: 'Charts: failed', retry: false };
+      default: return null;
     }
   }
 

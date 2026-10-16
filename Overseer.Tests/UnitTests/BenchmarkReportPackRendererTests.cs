@@ -266,7 +266,7 @@ public class BenchmarkReportPackRendererTests
         string text = BenchmarkReportPackRenderer.Render(document,
             new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named });
 
-        Assert.Contains("- **Speed:** not available. Speed was measured with parallel execution disabled.\n", text);
+        Assert.Contains("- **Speed:** Not available. Speed was measured with parallel execution disabled.\n", text);
     }
 
     [Fact]
@@ -734,7 +734,7 @@ public class BenchmarkReportPackRendererTests
 
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
 
-        Assert.Contains("- **Purpose statement:** not recorded for this document.\n", text);
+        Assert.Contains("- **Purpose statement:** Not recorded for this document.\n", text);
     }
 
     [Fact]
@@ -748,7 +748,7 @@ public class BenchmarkReportPackRendererTests
                 string text = BenchmarkReportPackRenderer.Render(
                     StandaloneDocument(audience), new BenchmarkReportRenderOptions { Disclosure = disclosure, PeerNaming = naming });
 
-                Assert.Contains("- **Peers:** none; this is a stand-alone report\n", text);
+                Assert.Contains("- **Peers:** None; this is a stand-alone report\n", text);
                 Assert.DoesNotContain("Results against peers", text);
                 Assert.DoesNotContain("Peer mean", text);
                 Assert.DoesNotContain("peer mean", text);
@@ -922,8 +922,8 @@ public class BenchmarkReportPackRendererTests
         Assert.Contains("## How it compares\n\n"
             + "| Model | Intelligence Index | Median answer time | Cost per question | Critical errors |\n|---|---|---|---|---|\n"
             + "| **GPT-5.6 Luna** | 80 (77–83) | 12.3 s | $0.036 | 1 of 4 answers |\n"
-            + "| Grok 5 | 85 (81–89) | 9.8 s | $0.052 | not available |\n"
-            + "| Mistral Large 4 | 78 (74–83) | not available | $0.021 | not available |\n\n"
+            + "| Grok 5 | 85 (81–89) | 9.8 s | $0.052 | Not available |\n"
+            + "| Mistral Large 4 | 78 (74–83) | Not available | $0.021 | Not available |\n\n"
             + "| Dimension | GPT-5.6 Luna | Peer mean | Difference |\n|---|---|---|---|\n"
             + "| Accuracy | 84 | 82 | +2 |\n"
             + "| Completeness | 70 | 78 | -8 |\n"
@@ -931,7 +931,7 @@ public class BenchmarkReportPackRendererTests
             + "| Readability | 90 | 89 | +1 |\n\n"
             + "GPT-5.6 Luna places 1–3 of 3 (tied: intervals overlap) on intelligence, but its interval overlaps those of Grok 5 and Mistral Large 4, so the order "
             + "is not established. Its paired difference from Grok 5 is -4.6 points.\n\n## What it did well\n", named);
-        Assert.Contains("| Model A | 85 (81–89) | 9.8 s | $0.052 | not available |\n", anonymized);
+        Assert.Contains("| Model A | 85 (81–89) | 9.8 s | $0.052 | Not available |\n", anonymized);
         Assert.Contains("its interval overlaps those of Model A and Model B, so the order is not established.", anonymized);
 
         Assert.True(named.IndexOf("## Key figures", StringComparison.Ordinal) < named.IndexOf("## How it compares", StringComparison.Ordinal));
@@ -1117,7 +1117,7 @@ public class BenchmarkReportPackRendererTests
 
         Assert.Contains("| **GPT-5.6 Luna** | 80 (77–83) | 12.3 s | $0.036 | 1 of 4 answers |\n"
             + "| Grok 5 | 85 (81–89) | 9.8 s | $0.052 | 0 of 4 answers |\n"
-            + "| Mistral Large 4 | 78 (74–83) | not available | $0.021 | not available |\n", text);
+            + "| Mistral Large 4 | 78 (74–83) | Not available | $0.021 | Not available |\n", text);
     }
 
     [Fact]
@@ -1156,7 +1156,7 @@ public class BenchmarkReportPackRendererTests
         Assert.DoesNotContain("- **Peers:**", named);
 
         string standalone = BenchmarkReportPackRenderer.Render(StandaloneDocument(BenchmarkReportAudience.ExecutiveSummary), new BenchmarkReportRenderOptions());
-        Assert.Contains("- **Peers:** none; this is a stand-alone report\n\n", standalone);
+        Assert.Contains("- **Peers:** None; this is a stand-alone report\n\n", standalone);
         Assert.DoesNotContain("Compared with", standalone);
         Assert.DoesNotContain("- **Pricing basis:**", standalone);
     }
@@ -1329,7 +1329,7 @@ public class BenchmarkReportPackRendererTests
     {
         string executive = BenchmarkReportPackRenderer.Render(Version9Document(BenchmarkReportAudience.ExecutiveSummary),
             new BenchmarkReportRenderOptions { PeerNaming = BenchmarkReportPeerNaming.Named });
-        Assert.Contains("- **Speed:** median answer time 12.3 s, mean 14.0 s, 2nd of 2.\n", executive);
+        Assert.Contains("- **Speed:** Median answer time 12.3 s, mean 14.0 s, 2nd of 2.\n", executive);
     }
 
     [Fact]
@@ -1342,7 +1342,7 @@ public class BenchmarkReportPackRendererTests
         string text = BenchmarkReportPackRenderer.Render(document,
             new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Named });
 
-        Assert.Contains("- **Speed:** median answer time 12.3 s, 2nd of 2.\n", text);
+        Assert.Contains("- **Speed:** Median answer time 12.3 s, 2nd of 2.\n", text);
         Assert.DoesNotContain("Mean answer time", text);
         Assert.DoesNotContain("{{", text);
     }
@@ -1530,12 +1530,12 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion21()
+    public void AComparisonDocument_IsCurrentAtFormatVersion22()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(21, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 21 · ", text);
+        Assert.Equal(22, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 22 · ", text);
         Assert.Contains(" · models named*", text);
     }
 
@@ -1561,7 +1561,7 @@ public class BenchmarkReportPackRendererTests
         {
             string strength = question.HypothesisKeys.Count > 0
                 ? RootCauseGrades.WordWithGrade(question.Grade) + " — see " + BenchmarkReportFormat.LetterList(question.HypothesisKeys) + "."
-                : "no hypothesis about this model fired — see its profile.";
+                : "No hypothesis about this model fired — see its profile.";
             Assert.Contains("> *Answer strength: " + strength + "*\n", text);
         }
         Assert.DoesNotContain("— against the other models, see ", text);
@@ -1606,7 +1606,7 @@ public class BenchmarkReportPackRendererTests
         // Every hypothesis Not supported: the grade is unknown, with every hypothesis together.
         Assert.Equal("Unknown — see HS4.1 and WS2.1.",
             BenchmarkReportPackRenderer.RcaAnswerStrength(Question(null, new[] { "HS4.1" }, new[] { "WS2.1" }, true)));
-        Assert.Equal("no hypothesis about this model fired — see its profile.",
+        Assert.Equal("No hypothesis about this model fired — see its profile.",
             BenchmarkReportPackRenderer.RcaAnswerStrength(Question(null, Array.Empty<string>(), Array.Empty<string>(), false)));
     }
 
@@ -1712,7 +1712,7 @@ public class BenchmarkReportPackRendererTests
         Assert.DoesNotContain("The cited source text.", appendix);
         Assert.Contains("**Answer excerpt:**\n\n> The excerpt of the answer.\n", appendix);
         Assert.DoesNotContain("The complete answer", appendix);
-        Assert.Contains("**Critical error:** overturned by the claim verifier (cap lifted).\n", appendix);
+        Assert.Contains("**Critical error:** Overturned by the claim verifier (cap lifted).\n", appendix);
         Assert.Contains("Rubrics are shown without their source paragraphs.", appendix);
         Assert.DoesNotContain("No answer to this question was given as an excerpt.", appendix);
     }
@@ -2194,7 +2194,7 @@ public class BenchmarkReportPackRendererTests
         Assert.Contains("| Scoring Profile | Default profile (profile 1) |\n", named);
 
         string anonymized = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaAnonymized), "## Appendix D: Run settings");
-        Assert.Contains("| Assessor | configuration 19 |\n", anonymized);
+        Assert.Contains("| Assessor | Configuration 19 |\n", anonymized);
         Assert.DoesNotContain("Northwind Grader", anonymized);
     }
 
@@ -2220,11 +2220,11 @@ public class BenchmarkReportPackRendererTests
 
         string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
 
-        Assert.Contains(" · generated under format version 19 · rendered with format version 21 · ", text);
+        Assert.Contains(" · generated under format version 19 · rendered with format version 22 · ", text);
         Assert.DoesNotContain("Grader family:", text);
         foreach (string resolution in new[] { "agreed by both members", "upheld by the claim verifier", "overturned by the claim verifier", "unresolved (averaged)", "single assessor" })
         {
-            Assert.DoesNotContain("**Critical error:** " + resolution, text);
+            Assert.DoesNotContain("**Critical error:** " + resolution, text, StringComparison.OrdinalIgnoreCase);
         }
         Assert.DoesNotContain("*Critical errors:*", text);
         Assert.Contains("*Each answer shown is one the writer was given as an excerpt; the excerpts were chosen for the questions with critical errors "
@@ -2234,10 +2234,10 @@ public class BenchmarkReportPackRendererTests
         string settings = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaAnonymized), "## Appendix D: Run settings");
         foreach (var run in sheet.RootCause!.RecommendedRuns)
         {
-            Assert.Contains("- **Decides:** " + run.Decides.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd().Replace('\n', ' ') + "\n", settings);
+            Assert.Contains("- **Decides:** " + BenchmarkReportSentenceCase.UpperFirst(run.Decides.Replace("\r\n", "\n", StringComparison.Ordinal).TrimEnd().Replace('\n', ' ')) + "\n", settings);
             if (run.AssessorModelConfigurationId is long id)
             {
-                Assert.Contains("| Assessor | configuration " + id.ToString(CultureInfo.InvariantCulture) + " |\n", settings);
+                Assert.Contains("| Assessor | Configuration " + id.ToString(CultureInfo.InvariantCulture) + " |\n", settings);
             }
         }
     }
@@ -2428,22 +2428,22 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AChatConsistencyDocument_IsCurrentAtFormatVersion4_AndTheOtherScopesKeepTheirs()
+    public void AChatConsistencyDocument_IsCurrentAtFormatVersion5_AndTheOtherScopesKeepTheirs()
     {
-        Assert.Equal(4, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
-        Assert.Equal(4, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(16, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(21, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
-        Assert.Equal(16, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(21, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(5, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
+        Assert.Equal(5, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
+        Assert.Equal(17, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(22, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(17, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(22, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-        Assert.Contains(" · format version 4 · ", text);
+        Assert.Contains(" · format version 5 · ", text);
         Assert.Contains(" · controls named*", text);
 
         string provider = RenderChatConsistency(BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
-        Assert.Contains(" · format version 4 · ", provider);
-        Assert.Contains("- **Report format version:** 4\n", provider);
+        Assert.Contains(" · format version 5 · ", provider);
+        Assert.Contains("- **Report format version:** 5\n", provider);
     }
 
     [Theory]
@@ -2461,7 +2461,7 @@ public class BenchmarkReportPackRendererTests
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full });
 
         string current = Overseer.Services.ChatConsistency.ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion.ToString(CultureInfo.InvariantCulture);
-        Assert.Contains("> **This document comes from an out-of-date analysis:** it was saved under analysis code version 4, and Overseer now "
+        Assert.Contains("> **This document comes from an out-of-date analysis:** It was saved under analysis code version 4, and Overseer now "
             + "analyzes under version " + current + ". Saved analyses never change; analyze the same periods again for a current result before relying on this document.\n", text);
         AssertInOrder(text.IndexOf("> **This document comes from", StringComparison.Ordinal), text.IndexOf("## Overall verdict", StringComparison.Ordinal));
         Assert.DoesNotContain("**Where the chat stands**", text);
@@ -2476,7 +2476,7 @@ public class BenchmarkReportPackRendererTests
 
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
 
-        Assert.Contains("> **This document comes from an out-of-date analysis:** its runs, grades, controls, annotations or prices changed after it was saved. ", text);
+        Assert.Contains("> **This document comes from an out-of-date analysis:** Its runs, grades, controls, annotations or prices changed after it was saved. ", text);
     }
 
     [Fact]
@@ -2495,9 +2495,9 @@ public class BenchmarkReportPackRendererTests
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
 
         Assert.Contains("**Where the chat stands**\n\n| Measure | Baseline | Comparison |\n", text);
-        Assert.Contains("| Quality | mean score 82.4 points | mean score 78.1 points |\n", text);
-        Assert.Contains("| Answer streaming rate (not comparable) | median 61.2 tokens/s | median 59.8 tokens/s |\n", text);
-        Assert.Contains("| Work per turn (output tokens per answer) | mean 9,044 output tokens per answer | mean 8,233 output tokens per answer |\n", text);
+        Assert.Contains("| Quality | Mean score 82.4 points | Mean score 78.1 points |\n", text);
+        Assert.Contains("| Answer streaming rate (not comparable) | Median 61.2 tokens/s | Median 59.8 tokens/s |\n", text);
+        Assert.Contains("| Work per turn (output tokens per answer) | Mean 9,044 output tokens per answer | Mean 8,233 output tokens per answer |\n", text);
         Assert.Contains("| Failed answers | 0 of 40 answers | 1 of 40 answers |\n", text);
         Assert.Contains("*Descriptive levels of each period, not a comparison: the verdicts above say what changed.*\n", text);
         Assert.Contains("- **Answer streaming rate not computable:** Speed cannot be compared: the baseline ran weekdays 04–12 UTC and the comparison weekdays 04–16 UTC, and response times vary with the time of day.\n", text);
@@ -2550,11 +2550,11 @@ public class BenchmarkReportPackRendererTests
 
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
 
-        Assert.Contains("| E1 | 2026-09-11 00:00 | battery run #12 (run #20) | Game snapshot: off → on |\n", text);
+        Assert.Contains("| E1 | 2026-09-11 00:00 | Battery run #12 (run #20) | Game snapshot: off → on |\n", text);
         // A control's run belongs to no analyzed battery run, so it keeps its run number.
-        Assert.Contains("| E2 | 2026-09-12 00:00 | run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |\n", text);
+        Assert.Contains("| E2 | 2026-09-12 00:00 | Run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |\n", text);
         Assert.Contains("- **Baseline period:** 2026-10-08 00:00 UTC until 14:49 UTC, 1 battery run\n", text);
-        Assert.Contains("- **Comparison period:** from 2026-10-08 14:49 UTC to 2026-10-08 23:59 UTC, 1 battery run\n", text);
+        Assert.Contains("- **Comparison period:** From 2026-10-08 14:49 UTC to 2026-10-08 23:59 UTC, 1 battery run\n", text);
     }
 
     [Fact]
@@ -2574,7 +2574,7 @@ public class BenchmarkReportPackRendererTests
         string text = BenchmarkReportPackRenderer.Render(document, new BenchmarkReportRenderOptions());
 
         Assert.Contains("| Measure | Baseline → comparison, or change (95% interval) | Verdict |\n", text);
-        Assert.Contains("| Failures of any kind | none in either period (429 responses, terminal failures and timeouts) | no established increase |\n", text);
+        Assert.Contains("| Failures of any kind | None in either period (429 responses, terminal failures and timeouts) | No established increase |\n", text);
         Assert.DoesNotContain("| Timeouts |", text);
     }
 
@@ -2602,7 +2602,7 @@ public class BenchmarkReportPackRendererTests
         Assert.DoesNotContain("The analysis's headline", text);
         Assert.DoesNotContain("out-of-date analysis", text);
         Assert.Contains("- **Sample:** Met: at least 2 runs on 2 days per period and 20 paired items\n", text);
-        Assert.Contains("- **Hours:** every result holds for weekdays 04–12 UTC only, the hours both periods share\n", text);
+        Assert.Contains("- **Hours:** Every result holds for weekdays 04–12 UTC only, the hours both periods share\n", text);
         Assert.Contains("- **Controls:** 1 control model (A), identity withheld, run on the same suites in both periods; 1 missing-control note\n", text);
 
         if (executive)
@@ -2628,15 +2628,15 @@ public class BenchmarkReportPackRendererTests
             Assert.Contains("| Quality (P1) | \u22124.2\u00A0index points (\u22126.0 to \u22123.1\u00A0index points) | ±3\u00A0index points | Degraded, Indicated | ±2.5\u00A0index points |\n", text);
             Assert.Contains("- **Answer streaming rate (P3), not computable:** No telemetry run in the baseline.\n", text);
             Assert.Contains("| Event | When (UTC) | Run | What changed |\n", text);
-            Assert.Contains("| E1 | 2026-09-11 00:00 | run #20 | Game snapshot: off → on |\n", text);
-            Assert.Contains("| E2 | 2026-09-12 00:00 | run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |\n", text);
+            Assert.Contains("| E1 | 2026-09-11 00:00 | Run #20 | Game snapshot: off → on |\n", text);
+            Assert.Contains("| E2 | 2026-09-12 00:00 | Run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |\n", text);
             Assert.Contains("- **Model A:** 2 runs in the baseline and comparison; difference in differences Quality (P1) \u22124.0\u00A0index points (\u22126.1 to \u22122.0\u00A0index points)\n", text);
             Assert.Contains("| Period | Run (suite) | What to do |\n", text);
             Assert.Contains("| Comparison | Run #21 (Core suite) | Run Model A on Core suite under the build of run #21. |\n", text);
             Assert.Contains("- **Time strata:** 2 strata (weekdays 04–08 UTC, weekdays 08–12 UTC); time of day not assessable: ", text);
             Assert.Contains("- **Analysis code version:** " + Overseer.Services.ChatConsistency.ChatConsistencyAnalysisService.CurrentAnalysisCodeVersion.ToString(CultureInfo.InvariantCulture) + "\n", text);
-            Assert.Contains("- **Baseline:** runs #10 and #11\n", text);
-            Assert.Contains("- **Comparison:** runs #20 and #21\n", text);
+            Assert.Contains("- **Baseline:** Runs #10 and #11\n", text);
+            Assert.Contains("- **Comparison:** Runs #20 and #21\n", text);
             Assert.Contains("- **Control runs:** #30, #31\n", text);
             Assert.Contains("Holm-adjusted p ", text);
             Assert.DoesNotContain("| Check |", text);
@@ -2718,8 +2718,8 @@ public class BenchmarkReportPackRendererTests
         string text = BenchmarkReportPackRenderer.Render(document,
             new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Detailed, PeerNaming = BenchmarkReportPeerNaming.Anonymized });
 
-        Assert.Contains("| E1 | 2026-09-11 00:00 | run #20 | Game snapshot: off → on |\n", text);
-        Assert.Contains("| E2 | 2026-09-12 00:00 | run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |\n", text);
+        Assert.Contains("| E1 | 2026-09-11 00:00 | Run #20 | Game snapshot: off → on |\n", text);
+        Assert.Contains("| E2 | 2026-09-12 00:00 | Run #31 | Re-indexed: GnollHack wiki (812 → 815 files) (in the runs of Model A) |\n", text);
         Assert.Contains("| Time to first answer text (P2) | +2.0% (", text);
         Assert.Contains(" | ±12.7% |", text);
         Assert.Contains("Analysis #7 ran on input not shown, after the earlier value.", text);
@@ -2923,7 +2923,7 @@ public class BenchmarkReportPackRendererTests
         string text = RenderWithCharts(document, BenchmarkReportDisclosure.Summary, BenchmarkReportPeerNaming.Named, Charts("cc1-quality"));
 
         Assert.Single(AllIndexesOf(text, MarkerOf("cc1-quality")));
-        Assert.Contains("- **Control models:** none\n", text);
+        Assert.Contains("- **Control models:** None\n", text);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -2975,7 +2975,7 @@ public class BenchmarkReportPackRendererTests
     {
         string text = RenderAvailability(BenchmarkReportAudience.ExecutiveSummary, ProviderAvailabilitySummary.NotRecorded(1));
 
-        Assert.Contains("- **Critical errors:** 1 of 4 answers.\n- **Provider availability:** not recorded before harness 56.\n", text);
+        Assert.Contains("- **Critical errors:** 1 of 4 answers.\n- **Provider availability:** Not recorded before harness 56.\n", text);
         Assert.DoesNotContain("| Class | Count |", text);
         Assert.DoesNotContain("### Provider availability", text);
     }
@@ -3031,5 +3031,95 @@ public class BenchmarkReportPackRendererTests
         string withChart = RenderWithCharts(ComparisonDocumentWithAvailability(BenchmarkReportAudience.ExecutiveSummary),
             BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named, Charts(BenchmarkReportChartPlacement.AvailabilityKey));
         Assert.DoesNotContain(MarkerOf("a1-availability"), withChart);
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Sentence case (model format 17, comparison format 22, chat consistency format 5)
+    // ---------------------------------------------------------------------------------------------
+
+    [Fact]
+    public void AModelDocument_StartsEveryWriterSentence_AndAFactDisplayThatStartsOne_WithACapital()
+    {
+        var document = Document(BenchmarkReportAudience.ExecutiveSummary);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        string overlap = sheet.Facts.Single(f => f.Key == "quality.intervalOverlap").Display;
+        var writer = Writer();
+        writer.Headline = "the model answered well. it was also fast.";
+        writer.Sections[BenchmarkReportSlots.Meaning] = "It is usable. {{quality.intervalOverlap}}.\n\nso the order is open.";
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+
+        string text = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Anonymized });
+
+        Assert.StartsWith("its ", overlap);
+        Assert.Contains("## The result in one sentence\n\nThe model answered well. It was also fast.\n", text);
+        Assert.Contains("It is usable. I" + overlap[1..] + ".\n\nSo the order is open.\n", text);
+    }
+
+    [Fact]
+    public void AComparisonDocument_StartsEveryWriterSentence_AndASpreadThatStartsOne_WithACapital()
+    {
+        var document = ComparisonDocument(BenchmarkReportAudience.ExecutiveSummary);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        string spread = sheet.Facts.Single(f => f.Key == "spread.quality").Display;
+        var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
+        writer.Headline = "the models are close. {{spread.quality}} on intelligence.";
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+
+        string text = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Anonymized });
+
+        Assert.StartsWith("from Model ", spread);
+        Assert.DoesNotContain("(Model", spread);
+        Assert.Contains("## The result in one sentence\n\nThe models are close. From" + spread["from".Length..] + " on intelligence.\n", text);
+    }
+
+    [Fact]
+    public void AChatConsistencyDocument_StartsEveryWriterSentence_AndAFactDisplayThatStartsOne_WithACapital()
+    {
+        var document = ChatConsistencyDocument(BenchmarkReportAudience.ExecutiveSummary);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        string hours = sheet.Facts.Single(f => f.Key == "scope.hours").Display;
+        var writer = ChatConsistencyReportTestData.ValidOutput(BenchmarkReportAudience.ExecutiveSummary);
+        writer.Headline = "{{scope.hours}} is the window. the chat held.";
+        document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+
+        string text = BenchmarkReportPackRenderer.Render(document,
+            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Summary, PeerNaming = BenchmarkReportPeerNaming.Anonymized });
+
+        Assert.True(char.IsLower(hours[0]), "The fixture's hours display starts in lowercase.");
+        Assert.Contains("## The result in one sentence\n\n" + BenchmarkReportSentenceCase.UpperFirst(hours) + " is the window. The chat held.\n", text);
+    }
+
+    [Fact]
+    public void ATableCell_AndTheTextAfterARunInLabel_StartWithACapital_ButAQuotedClaimIsLeftAsWritten()
+    {
+        var document = RcaDocument(content: c =>
+        {
+            foreach (var item in c.Runs.SelectMany(r => r.Questions))
+            {
+                item.ClaimRulings.Add(new BenchmarkReportContentClaimRuling
+                {
+                    Claim = "worthless glass angers the unicorn.", Verdict = "refuted", Rationale = "Glass is caught (dothrow.c).",
+                    Role = BenchmarkReportContent.AccusedSentenceRole
+                });
+            }
+        });
+
+        string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
+
+        Assert.Contains(":** \"worthless glass angers the unicorn.\" — Glass is caught (dothrow.c).\n", text);
+        Assert.DoesNotContain("\"Worthless glass", text);
+        Assert.Contains("):** Score ", text);
+        Assert.DoesNotContain("):** score ", text);
+        foreach (string row in text.Split('\n').Where(l => l.StartsWith("| ", StringComparison.Ordinal)))
+        {
+            foreach (string cell in row.Split(" | "))
+            {
+                string trimmed = cell.Trim().Trim('|').Trim().Trim('*');
+                Assert.False(trimmed is "none" or "not established" or "not tested" or "volume" or "price" or "yes" or "no",
+                    "A table cell starts in lowercase: " + row);
+            }
+        }
     }
 }

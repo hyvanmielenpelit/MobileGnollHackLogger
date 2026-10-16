@@ -81,6 +81,8 @@ FORMAT OF THE TEXT:
 - No headings, no tables, no HTML, no numbered lists and no code blocks anywhere in the text.
 - Keep each text self-contained: it is placed into a document whose headings and tables code has already written.
 - Write in US English: color, behavior, analyze, center, gray, labeled, canceled.
+- Word caps count every {{token}} as one word, however long its value.
+- Begin every sentence, paragraph and list item with a capital letter, including a sentence that follows a fact ending in a full stop.
 
 READABILITY:
 - One idea per sentence, in sentences of at most about twenty-five words.
@@ -681,15 +683,15 @@ model.E.vsReference.worse = 5 of 6 questions
 notable.1.kind = cheaper and better
 notable.1.models = Models B and D
 notable.1.questions = none
-notable.1.summary = Model B scored higher than Model D (established by 95% intervals that do not overlap) at 0.50 times its cost per question.
+notable.1.summary = Model B scored higher than Model D at 0.50 times its cost per question, established by 95% intervals that do not overlap.
 notable.2.kind = faster and better
 notable.2.models = Models D and E
 notable.2.questions = none
-notable.2.summary = Model D scored higher than Model E (established by 95% intervals that do not overlap) at 0.40 times its median answer time.
+notable.2.summary = Model D scored higher than Model E at 0.40 times its median answer time, established by 95% intervals that do not overlap.
 notable.3.kind = faster and better
 notable.3.models = Models B and E
 notable.3.questions = none
-notable.3.summary = Model B scored higher than Model E (established by 95% intervals that do not overlap) at 0.45 times its median answer time.
+notable.3.summary = Model B scored higher than Model E at 0.45 times its median answer time, established by 95% intervals that do not overlap.
 notable.count = 3 notable findings
 pair.A.B.cost.allPairs = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
 pair.A.B.cost.ratio = unavailable: No candidate price card was resolved for run #31 of Model A on this pricing basis, so its cost is unknown.
@@ -796,13 +798,13 @@ pair.D.E.speed.ratio = Model D took 1.00 times as long as Model E on the same qu
 questions.anyCriticalError = 1 of 6 questions
 questions.sharedLow = 0 of 6 questions
 questions.wideSpread = 6 of 6 questions
-spread.cost = from $0.060 (Model D) to $0.010 (Model E)
-spread.dimension.accuracy = from 50 (Model E) to 80 (Model A), 30 points apart
-spread.dimension.completeness = from 50 (Model E) to 80 (Model A), 30 points apart
-spread.dimension.conciseness = from 50 (Model E) to 80 (Model A), 30 points apart
-spread.dimension.readability = from 50 (Model E) to 80 (Model A), 30 points apart
-spread.quality = from 55 (Model E) to 85 (Model A), 30 points apart
-spread.speed = from 20.0 s (Model E) to 8.0 s (Model D)
+spread.cost = from Model E at $0.010 to Model D at $0.060
+spread.dimension.accuracy = from Model E at 50 to Model A at 80, 30 points apart
+spread.dimension.completeness = from Model E at 50 to Model A at 80, 30 points apart
+spread.dimension.conciseness = from Model E at 50 to Model A at 80, 30 points apart
+spread.dimension.readability = from Model E at 50 to Model A at 80, 30 points apart
+spread.quality = from Model E at 55 to Model A at 85, 30 points apart
+spread.speed = from Model D at 8.0 s to Model E at 20.0 s
 suite.name = GnollHack Core Suite
 
 RESPONSE STYLE
@@ -813,9 +815,9 @@ RESPONSE STYLE
 {{model.E.style.responseStyleConflict}} is not true: that model's completeness is not its lowest dimension by that margin.
 
 NOTABLE FINDINGS (detected by code from the facts; cite one as {{notable.N.summary}}, explain it, and never restate it)
-- {{notable.1.summary}} (cheaper and better): Model B scored higher than Model D (established by 95% intervals that do not overlap) at 0.50 times its cost per question.; rests on: pair.B.D.intervalOverlap, model.B.quality.index, model.D.quality.index, model.B.cost.perQuestion, model.D.cost.perQuestion
-- {{notable.2.summary}} (faster and better): Model D scored higher than Model E (established by 95% intervals that do not overlap) at 0.40 times its median answer time.; rests on: pair.D.E.intervalOverlap, model.D.quality.index, model.E.quality.index, model.D.speed.modelTimeP50, model.E.speed.modelTimeP50
-- {{notable.3.summary}} (faster and better): Model B scored higher than Model E (established by 95% intervals that do not overlap) at 0.45 times its median answer time.; rests on: pair.B.E.intervalOverlap, model.B.quality.index, model.E.quality.index, model.B.speed.modelTimeP50, model.E.speed.modelTimeP50
+- {{notable.1.summary}} (cheaper and better): Model B scored higher than Model D at 0.50 times its cost per question, established by 95% intervals that do not overlap.; rests on: pair.B.D.intervalOverlap, model.B.quality.index, model.D.quality.index, model.B.cost.perQuestion, model.D.cost.perQuestion
+- {{notable.2.summary}} (faster and better): Model D scored higher than Model E at 0.40 times its median answer time, established by 95% intervals that do not overlap.; rests on: pair.D.E.intervalOverlap, model.D.quality.index, model.E.quality.index, model.D.speed.modelTimeP50, model.E.speed.modelTimeP50
+- {{notable.3.summary}} (faster and better): Model B scored higher than Model E at 0.45 times its median answer time, established by 95% intervals that do not overlap.; rests on: pair.B.E.intervalOverlap, model.B.quality.index, model.E.quality.index, model.B.speed.modelTimeP50, model.E.speed.modelTimeP50
 
 QUESTION MATRIX (each model's cell: score, CE for a critical error, refuted answer sentences, tool calls, model time; n/a where it was not scored)
 [Q1] band: Intermediate | A: 92, 0 calls, 10.0 s | B: 85, 0 calls, 10.0 s | C: 70, 0 calls, 10.0 s | D: 75, 0 calls, 10.0 s | E: 50, 0 calls, 10.0 s | spread 42

@@ -46,6 +46,21 @@ public class BenchmarkReportPackDocumentProgress
     /// <summary>The issues left after the last validation, at most <see cref="BenchmarkReportPackJob.MaxDiagnosticIssues"/>; null until the document ends.</summary>
     public List<BenchmarkReportValidationNote>? FinalIssues { get; set; }
 
+    /// <summary>
+    /// The repaired reply's own validation issues, before anything was removed, at most
+    /// <see cref="BenchmarkReportPackJob.MaxDiagnosticIssues"/>; null without a revision and until the document ends.
+    /// </summary>
+    public List<BenchmarkReportValidationNote>? RevisionIssues { get; set; }
+
+    /// <summary>The word count of every capped section, turn by turn; null until the document ends.</summary>
+    public List<BenchmarkReportPackWordCountDto>? WordCounts { get; set; }
+
+    /// <summary>
+    /// Each writer call's raw reply, in the order of <see cref="Calls"/>; kept in memory for the writer-replies
+    /// download and never sent with the job's polls.
+    /// </summary>
+    public List<BenchmarkReportPackCallReply> CallReplies { get; } = new();
+
     /// <summary>A Failed document's last raw reply, cut at <see cref="BenchmarkReportPackJob.MaxFailedReplyChars"/>; null otherwise.</summary>
     public string? FailedReply { get; set; }
 
@@ -63,6 +78,22 @@ public class BenchmarkReportPackDocumentProgress
 
     /// <summary>Every writer call of the document, in order.</summary>
     public List<BenchmarkReportPackCallDto> Calls { get; } = new();
+}
+
+/// <summary>One writer call's raw reply as the job holds it in memory.</summary>
+public sealed class BenchmarkReportPackCallReply
+{
+    /// <summary>The reply, cut at <see cref="BenchmarkReportPackJob.MaxFailedReplyChars"/>; null when the call returned none.</summary>
+    public string? Text { get; init; }
+
+    /// <summary>The reply's length before any cut; zero when there was none.</summary>
+    public int Length { get; init; }
+
+    /// <summary>The reply was cut at <see cref="BenchmarkReportPackJob.MaxFailedReplyChars"/>.</summary>
+    public bool Truncated { get; init; }
+
+    /// <summary>The provider's error when the call failed; null otherwise.</summary>
+    public string? Error { get; init; }
 }
 
 public class BenchmarkReportPackJobLogEntry
@@ -228,17 +259,21 @@ public class BenchmarkReportPackJob
     }
 
     /// <summary>
-    /// A document's validation record once it has ended: its first-turn and final issues, each cut at
-    /// <see cref="MaxDiagnosticIssues"/>, and the last raw reply of a failed one, cut at
-    /// <see cref="MaxFailedReplyChars"/> with <see cref="TruncatedMarker"/>.
+    /// A document's validation record once it has ended: its first-turn, revision and final issues, each cut at
+    /// <see cref="MaxDiagnosticIssues"/> (the revision's null when there was none), the word count of every capped
+    /// section, and the last raw reply of a failed one, cut at <see cref="MaxFailedReplyChars"/> with
+    /// <see cref="TruncatedMarker"/>.
     /// </summary>
     public void SetDocumentDiagnostics(BenchmarkReportPackDocumentProgress document,
         IEnumerable<BenchmarkReportValidationNote>? firstTurnIssues, IEnumerable<BenchmarkReportValidationNote>? finalIssues,
-        string? failedReply = null)
+        string? failedReply = null, IEnumerable<BenchmarkReportValidationNote>? revisionIssues = null,
+        IEnumerable<BenchmarkReportPackWordCountDto>? wordCounts = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         var first = CopyIssues(firstTurnIssues);
         var final = CopyIssues(finalIssues);
+        var revision = revisionIssues == null ? null : CopyIssues(revisionIssues);
+        var counts = wordCounts?.Select(CopyWordCount).ToList();
         string? reply = failedReply == null || failedReply.Length <= MaxFailedReplyChars
             ? failedReply
             : failedReply[..MaxFailedReplyChars] + TruncatedMarker;
@@ -247,6 +282,8 @@ public class BenchmarkReportPackJob
             document.FirstTurnIssues = first;
             document.FinalIssues = final;
             document.FailedReply = reply;
+            document.RevisionIssues = revision;
+            document.WordCounts = counts;
         }
     }
 
@@ -286,14 +323,54 @@ public class BenchmarkReportPackJob
         }
     }
 
-    /// <summary>One writer call of a document, in call order; its usage is counted by <see cref="AddUsage(BenchmarkReportPackDocumentProgress?, long, long, decimal?)"/>.</summary>
-    public void RecordCall(BenchmarkReportPackDocumentProgress document, BenchmarkReportPackCallDto call)
+    /// <summary>
+    /// One writer call of a document, in call order, with its raw reply and its provider error; its usage is counted
+    /// by <see cref="AddUsage(BenchmarkReportPackDocumentProgress?, long, long, decimal?)"/>. The reply is kept in
+    /// memory, cut at <see cref="MaxFailedReplyChars"/>, and only its length travels on the call
+    /// (<see cref="BenchmarkReportPackCallDto.ReplyChars"/>).
+    /// </summary>
+    public void RecordCall(BenchmarkReportPackDocumentProgress document, BenchmarkReportPackCallDto call, string? reply = null, string? error = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(call);
+        bool hasReply = !string.IsNullOrEmpty(reply);
+        bool truncated = hasReply && reply!.Length > MaxFailedReplyChars;
+        var kept = new BenchmarkReportPackCallReply
+        {
+            Text = !hasReply ? null : truncated ? reply![..MaxFailedReplyChars] : reply,
+            Length = hasReply ? reply!.Length : 0,
+            Truncated = truncated,
+            Error = error
+        };
+        call.ReplyChars = hasReply ? reply!.Length : null;
         lock (_lock)
         {
             document.Calls.Add(call);
+            document.CallReplies.Add(kept);
+        }
+    }
+
+    /// <summary>
+    /// A consistent copy of every document's calls and their replies, for the writer-replies download: each
+    /// document's progress row with its calls paired to their replies, in order.
+    /// </summary>
+    public List<(BenchmarkReportPackDocumentProgressDto Document, List<(BenchmarkReportPackCallDto Call, BenchmarkReportPackCallReply Reply)> Calls)> WriterReplies()
+    {
+        lock (_lock)
+        {
+            return Documents.Select(d => (
+                new BenchmarkReportPackDocumentProgressDto
+                {
+                    Audience = d.Audience,
+                    SubjectKey = d.SubjectKey,
+                    SubjectLabel = d.SubjectLabel,
+                    Status = d.Status.ToString(),
+                    DocumentId = d.DocumentId,
+                    ErrorMessage = d.ErrorMessage,
+                    ModelCalls = d.ModelCalls
+                },
+                d.Calls.Select((c, i) => (CopyCall(c), i < d.CallReplies.Count ? d.CallReplies[i] : new BenchmarkReportPackCallReply())).ToList()))
+                .ToList();
         }
     }
 
@@ -316,11 +393,30 @@ public class BenchmarkReportPackJob
     private static List<BenchmarkReportValidationNote> CopyIssues(IEnumerable<BenchmarkReportValidationNote>? issues, int max = MaxDiagnosticIssues)
         => (issues ?? Enumerable.Empty<BenchmarkReportValidationNote>())
             .Take(max)
-            .Select(n => new BenchmarkReportValidationNote { Rule = n.Rule, Location = n.Location, Message = n.Message, Dropped = n.Dropped, Text = n.Text })
+            .Select(n => new BenchmarkReportValidationNote
+            {
+                Rule = n.Rule, Location = n.Location, Message = n.Message, Dropped = n.Dropped, Text = n.Text, AddedByOverseer = n.AddedByOverseer
+            })
             .ToList();
 
-    private static List<BenchmarkReportPackValidationIssueDto>? IssueDtos(List<BenchmarkReportValidationNote>? issues, BenchmarkReportAudience audience)
-        => issues?.Select(n => BenchmarkReportRuleCatalog.ToIssueDto(n, BenchmarkReportRuleCatalog.SlotTitlesFor(audience))).ToList();
+    private static BenchmarkReportPackWordCountDto CopyWordCount(BenchmarkReportPackWordCountDto count) => new()
+    {
+        Location = count.Location,
+        LocationLabel = count.LocationLabel,
+        Cap = count.Cap,
+        Draft = count.Draft,
+        Revision = count.Revision,
+        Shortened = count.Shortened,
+        Final = count.Final,
+        FinalParagraphs = count.FinalParagraphs.ToList()
+    };
+
+    /// <summary>
+    /// The issues as the diagnostics show them; <paramref name="draft"/> marks a draft's own issues, whose severity is
+    /// what each rule would do (<see cref="BenchmarkReportRuleCatalog.SeverityFor"/>).
+    /// </summary>
+    private static List<BenchmarkReportPackValidationIssueDto>? IssueDtos(List<BenchmarkReportValidationNote>? issues, BenchmarkReportAudience audience, bool draft = false)
+        => issues?.Select(n => BenchmarkReportRuleCatalog.ToIssueDto(n, BenchmarkReportRuleCatalog.SlotTitlesFor(audience), draft)).ToList();
 
     /// <summary>The phases from <see cref="BenchmarkReportPackPhases.Revising"/> on, when the first draft's issues are known.</summary>
     private static readonly HashSet<string> RevisingOrLater = new(StringComparer.Ordinal)
@@ -340,7 +436,8 @@ public class BenchmarkReportPackJob
         CostUsd = call.CostUsd,
         FinishReason = call.FinishReason,
         RequestMessages = call.RequestMessages,
-        RequestCharacters = call.RequestCharacters
+        RequestCharacters = call.RequestCharacters,
+        ReplyChars = call.ReplyChars
     };
 
     public void SetStatus(BenchmarkReportPackJobStatus status)
@@ -396,8 +493,10 @@ public class BenchmarkReportPackJob
                     InputTokens = d.InputTokens,
                     OutputTokens = d.OutputTokens,
                     CostUsd = d.CostUsd == null ? null : (double)d.CostUsd.Value,
-                    FirstTurnIssues = terminal || RevisingOrLater.Contains(d.Phase) ? IssueDtos(d.FirstTurnIssues, d.Audience) : null,
+                    FirstTurnIssues = terminal || RevisingOrLater.Contains(d.Phase) ? IssueDtos(d.FirstTurnIssues, d.Audience, draft: true) : null,
                     FinalIssues = terminal ? IssueDtos(d.FinalIssues, d.Audience) : null,
+                    RevisionIssues = terminal ? IssueDtos(d.RevisionIssues, d.Audience, draft: true) : null,
+                    WordCounts = terminal ? d.WordCounts?.Select(CopyWordCount).ToList() : null,
                     FailedReply = terminal ? d.FailedReply : null,
                     Phase = d.Phase,
                     PhaseDetail = d.PhaseDetail,

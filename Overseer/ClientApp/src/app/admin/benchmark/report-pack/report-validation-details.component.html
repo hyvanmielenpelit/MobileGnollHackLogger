@@ -1,4 +1,7 @@
 <!-- The body of a dialog-mode info tip: its sections are h4s under the dialog's h3. -->
+<!-- A message or a quote with its fact tokens as code, so a fact name reads as a name. -->
+<ng-template #withTokens let-parts>@for (part of parts; track $index) {@if (part.token) {<code class="report-validation-token">{{ part.text }}</code>}@else {<span>{{ part.text }}</span>}}</ng-template>
+
 @if (explanation; as ex) {
   @if (view === 'firstDraft') {
     <div class="report-validation report-validation-first-draft">
@@ -14,7 +17,7 @@
               <dd>
                 <ul class="report-validation-list">
                   @for (issue of group.issues; track $index) {
-                    <li><span class="report-validation-location">{{ issue.location }}</span>: {{ issue.meaning }}</li>
+                    <li><span class="report-validation-location">{{ issue.location }}</span>: <ng-container [ngTemplateOutlet]="withTokens" [ngTemplateOutletContext]="{ $implicit: issue.meaningParts }"></ng-container></li>
                   }
                 </ul>
               </dd>
@@ -37,7 +40,7 @@
                   <span class="report-validation-location">{{ item.location }}</span>
                   <span class="report-validation-rule">{{ item.ruleName }}</span>
                 </p>
-                <p class="report-validation-meaning">{{ item.meaning }}</p>
+                <p class="report-validation-meaning"><ng-container [ngTemplateOutlet]="withTokens" [ngTemplateOutletContext]="{ $implicit: item.meaningParts }"></ng-container></p>
               </li>
             }
           </ul>
@@ -49,16 +52,43 @@
           <h4 class="report-validation-heading">What was removed</h4>
           <ul class="report-validation-items">
             @for (item of ex.removed; track $index) {
+              <li class="report-validation-item" [class.is-shortened]="item.shortened">
+                <p class="report-validation-item-head">
+                  <span class="report-validation-location">{{ item.location }}</span>
+                  <span class="report-validation-rule">{{ item.ruleName }}</span>
+                  @if (item.shortened) {
+                    <span class="report-validation-severity">shortened</span>
+                  }
+                </p>
+                <p class="report-validation-meaning"><ng-container [ngTemplateOutlet]="withTokens" [ngTemplateOutletContext]="{ $implicit: item.meaningParts }"></ng-container></p>
+                @if (item.textParts; as parts) {
+                  <details class="report-validation-text">
+                    <summary>Removed text<span class="visually-hidden"> at {{ item.location }}</span></summary>
+                    <p class="report-validation-quote"><ng-container [ngTemplateOutlet]="withTokens" [ngTemplateOutletContext]="{ $implicit: parts }"></ng-container></p>
+                  </details>
+                }
+              </li>
+            }
+          </ul>
+        </section>
+      }
+
+      @if (ex.added.length > 0) {
+        <section class="report-validation-section report-validation-added">
+          <h4 class="report-validation-heading">What Overseer added</h4>
+          <ul class="report-validation-items">
+            @for (item of ex.added; track $index) {
               <li class="report-validation-item">
                 <p class="report-validation-item-head">
                   <span class="report-validation-location">{{ item.location }}</span>
                   <span class="report-validation-rule">{{ item.ruleName }}</span>
+                  <span class="report-validation-severity">added by Overseer</span>
                 </p>
-                <p class="report-validation-meaning">{{ item.meaning }}</p>
-                @if (item.text) {
+                <p class="report-validation-meaning"><ng-container [ngTemplateOutlet]="withTokens" [ngTemplateOutletContext]="{ $implicit: item.meaningParts }"></ng-container></p>
+                @if (item.textParts; as parts) {
                   <details class="report-validation-text">
-                    <summary>Removed text<span class="visually-hidden"> at {{ item.location }}</span></summary>
-                    <p class="report-validation-quote">{{ item.text }}</p>
+                    <summary>Added text<span class="visually-hidden"> at {{ item.location }}</span></summary>
+                    <p class="report-validation-quote"><ng-container [ngTemplateOutlet]="withTokens" [ngTemplateOutletContext]="{ $implicit: parts }"></ng-container></p>
                   </details>
                 }
               </li>
@@ -76,12 +106,15 @@
                 <p class="report-validation-item-head">
                   <span class="report-validation-location">{{ item.location }}</span>
                   <span class="report-validation-rule">{{ item.ruleName }}</span>
+                  @if (item.severity === 'warningTextKept') {
+                    <span class="report-validation-severity">warning, text kept</span>
+                  }
                 </p>
-                <p class="report-validation-meaning">{{ item.meaning }}</p>
-                @if (item.text) {
+                <p class="report-validation-meaning"><ng-container [ngTemplateOutlet]="withTokens" [ngTemplateOutletContext]="{ $implicit: item.meaningParts }"></ng-container></p>
+                @if (item.textParts; as parts) {
                   <details class="report-validation-text">
                     <summary>Flagged text<span class="visually-hidden"> at {{ item.location }}</span></summary>
-                    <p class="report-validation-quote">{{ item.text }}</p>
+                    <p class="report-validation-quote"><ng-container [ngTemplateOutlet]="withTokens" [ngTemplateOutletContext]="{ $implicit: parts }"></ng-container></p>
                   </details>
                 }
               </li>

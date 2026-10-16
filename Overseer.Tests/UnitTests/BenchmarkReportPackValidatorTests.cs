@@ -821,6 +821,90 @@ public class BenchmarkReportPackValidatorTests
         Assert.Contains(cleaned.Notes, n => n.Rule == 7 && n.Dropped && n.Location == "sections." + slot + "[p3]");
     }
 
+    /// <summary>A sentence of <paramref name="words"/> words: "Lore" and then "lore" repeated, ending in a full stop.</summary>
+    private static string Sentence(int words) => "Lore " + string.Join(" ", Enumerable.Repeat("lore", words - 1)) + ".";
+
+    [Fact]
+    public void Rule7_ASectionOverItsCap_LosesOnlyTheTrailingSentenceThatBringsItWithin()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        string first = Sentence(40);
+        string kept = Sentence(40);
+        string trailing = Sentence(15);
+        output.Sections[BenchmarkReportSlots.Meaning] = first + "\n\n" + kept + " " + trailing;
+
+        var cleaned = Drop(Es, output);
+
+        Assert.False(cleaned.Fatal);
+        Assert.Equal(first + "\n\n" + kept, cleaned.Output.Sections[BenchmarkReportSlots.Meaning]);
+        var note = Assert.Single(cleaned.Notes, n => n.Rule == 7);
+        Assert.True(note.Dropped);
+        Assert.Equal(MeaningP1.Replace("[p1]", "[p2]"), note.Location);
+        Assert.StartsWith("Removed its last sentence to bring ", note.Message, StringComparison.Ordinal);
+        Assert.Contains("within 90 words.", note.Message, StringComparison.Ordinal);
+        Assert.Equal(trailing, note.Text);
+    }
+
+    [Fact]
+    public void Rule7_TrimmingCountsTheSentencesItRemoves_AndKeepsTheParagraphsBefore()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        string first = Sentence(45);
+        string kept = Sentence(40);
+        output.Sections[BenchmarkReportSlots.Meaning] = first + "\n\n" + kept + " " + Sentence(6) + " " + Sentence(6);
+
+        var cleaned = Drop(Es, output);
+
+        Assert.Equal(first + "\n\n" + kept, cleaned.Output.Sections[BenchmarkReportSlots.Meaning]);
+        var note = Assert.Single(cleaned.Notes, n => n.Rule == 7);
+        Assert.Equal("sections.meaning[p2]", note.Location);
+        Assert.StartsWith("Removed its last 2 sentences to bring ", note.Message, StringComparison.Ordinal);
+        Assert.Equal(Sentence(6) + " " + Sentence(6), note.Text);
+        Assert.True(BenchmarkReportPackValidator.WordCount(cleaned.Output.Sections[BenchmarkReportSlots.Meaning]) <= BenchmarkReportPackValidator.MeaningMaxWords);
+    }
+
+    [Fact]
+    public void Rule7_AParagraphLeftWithNoSentence_IsRemovedWhole()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        string first = Sentence(85);
+        string last = Sentence(10);
+        output.Sections[BenchmarkReportSlots.Meaning] = first + "\n\n" + last;
+
+        var cleaned = Drop(Es, output);
+
+        Assert.Equal(first, cleaned.Output.Sections[BenchmarkReportSlots.Meaning]);
+        var note = Assert.Single(cleaned.Notes, n => n.Rule == 7);
+        Assert.Equal("sections.meaning[p2]", note.Location);
+        Assert.StartsWith("Removed to bring ", note.Message, StringComparison.Ordinal);
+        Assert.Equal(last, note.Text);
+    }
+
+    [Fact]
+    public void SlotWordCounts_GiveEachCappedSection_ItsCapItsWordsAndItsParagraphs()
+    {
+        var output = ReportPackWriterTestData.ValidOutput(Es);
+        output.Sections[BenchmarkReportSlots.Meaning] = Sentence(12) + "\n\n" + Sentence(30) + " " + Sentence(5);
+
+        var counts = BenchmarkReportPackValidator.SlotWordCounts(Es, output, ReportPackWriterTestData.Sheet(), ReportPackWriterTestData.Content());
+
+        var meaning = Assert.Single(counts, c => c.Slot == BenchmarkReportSlots.Meaning);
+        Assert.Equal("sections.meaning", meaning.Location);
+        Assert.Equal("What this means for use as a game assistant", meaning.LocationLabel);
+        Assert.Equal(BenchmarkReportPackValidator.MeaningMaxWords, meaning.Cap);
+        Assert.Equal(47, meaning.Words);
+        Assert.Equal(new[] { 12, 35 }, meaning.Paragraphs);
+        Assert.False(meaning.OverCap);
+        Assert.Contains(counts, c => c.Slot == BenchmarkReportSlots.Confidence && c.Cap == BenchmarkReportPackValidator.ConfidenceMaxWords);
+
+        // A token counts as one word, however long its value; a section the output lacks has no count.
+        output.Sections[BenchmarkReportSlots.Meaning] = "{{subject}} scored {{quality.index}}.";
+        output.Sections.Remove(BenchmarkReportSlots.Confidence);
+        counts = BenchmarkReportPackValidator.SlotWordCounts(Es, output, ReportPackWriterTestData.Sheet(), ReportPackWriterTestData.Content());
+        Assert.Equal(3, Assert.Single(counts, c => c.Slot == BenchmarkReportSlots.Meaning).Words);
+        Assert.Null(Assert.Single(counts, c => c.Slot == BenchmarkReportSlots.Confidence).Words);
+    }
+
     [Fact]
     public void Rule7_APerModelExecutiveSummaryHasNoCapOnTheSlotsOfOtherDocuments()
     {

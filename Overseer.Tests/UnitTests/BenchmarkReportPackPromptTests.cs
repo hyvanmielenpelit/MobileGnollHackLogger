@@ -1242,7 +1242,7 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("is what the price cards show, never the cause the runs found", headline);
         string conclusions = Assert.Single(system.Split('\n'), l => l.StartsWith("- " + BenchmarkReportSlots.Conclusions + ":", StringComparison.Ordinal));
         Assert.Contains("take the axes in the order intelligence, speed, cost;", conclusions);
-        Assert.Contains("never call it the axis' root cause", conclusions);
+        Assert.Contains("never call it the axis's root cause", conclusions);
 
         // Prove is a certainty word now, so the instructions never use it.
         Assert.DoesNotContain("configuration proves", system);
@@ -1256,7 +1256,7 @@ public class BenchmarkReportPackPromptTests
     {
         string system = BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(comparison);
 
-        Assert.Contains("- A hypothesis' rca.hypothesis.<id>.<n>.ref token prints its id alone. Name what the hypothesis is about in your own words, once per paragraph, then cite its .ref token after it", system);
+        Assert.Contains("- A hypothesis's rca.hypothesis.<id>.<n>.ref token prints its id alone. Name what the hypothesis is about in your own words, once per paragraph, then cite its .ref token after it", system);
         Assert.Contains("Cite several hypotheses of one rule once, as a range of their first and last .ref tokens joined by an en dash", system);
         Assert.Contains("- Never put a parenthesis inside another, and never put a model token inside parentheses: model names carry their own.", system);
         Assert.Contains("as its .share token followed by 'of the gap'", system);
@@ -1645,6 +1645,115 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("{{model:X}}", message);
         Assert.DoesNotContain("{{peer:X}}", message);
         Assert.Equal(BenchmarkReportPackPrompt.BuildRepairMessage(issues), BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparisonScope: false));
+    }
+
+    // Word budget, sentence capitals and the final shortening turn ------------------------------------
+
+    private const string TokenCountLine = "- Word caps count every {{token}} as one word, however long its value.";
+    private const string CapitalLine = "- Begin every sentence, paragraph and list item with a capital letter, including a sentence that follows a fact ending in a full stop.";
+
+    [Fact]
+    public void EverySystemPrompt_StatesHowTokensCount_AndThatSentencesBeginWithACapital()
+    {
+        var prompts = new[]
+        {
+            BenchmarkReportPackPrompt.BuildSystemPrompt(BenchmarkReportAudience.ExecutiveSummary),
+            BenchmarkReportPackPrompt.BuildSystemPrompt(BenchmarkReportAudience.RootCauseAnalysis),
+            BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(BenchmarkReportAudience.ExecutiveSummary),
+            BenchmarkReportPackPrompt.BuildComparisonSystemPrompt(BenchmarkReportAudience.RootCauseAnalysis),
+            BenchmarkReportPackPrompt.BuildChatConsistencySystemPrompt(BenchmarkReportAudience.ExecutiveSummary),
+            BenchmarkReportPackPrompt.BuildChatConsistencySystemPrompt(BenchmarkReportAudience.ProviderIssueReport),
+        };
+
+        Assert.All(prompts, p =>
+        {
+            Assert.Contains(TokenCountLine, p);
+            Assert.Contains(CapitalLine, p);
+        });
+    }
+
+    private static BenchmarkReportSlotWordCount SlotCount(string slot, string label, int cap, params int[] paragraphs)
+        => new(slot, "sections." + slot, label, cap, paragraphs.Sum(), paragraphs);
+
+    [Fact]
+    public void TheRepairMessage_GivesTheWordBudget_WhenASectionIsOverItsCap()
+    {
+        var issues = new List<BenchmarkReportValidationNote>
+        {
+            new() { Rule = 7, Location = "sections.hypothesesSpeed", Message = "\"Hypotheses: speed\" has 135 words; the limit is 120." }
+        };
+        var counts = new[]
+        {
+            SlotCount(BenchmarkReportSlots.HypothesesSpeed, "Hypotheses: speed", 120, 52, 83),
+            SlotCount(BenchmarkReportSlots.Conclusions, "Conclusions", 120, 104),
+        };
+
+        foreach (bool comparison in new[] { true, false })
+        {
+            string message = BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparison, headline: null, counts, rootCause: true);
+
+            Assert.Contains("WORD BUDGET", message);
+            Assert.Contains("- Hypotheses: speed has 135 words (paragraph 1: 52; paragraph 2: 83); its cap is 120: cut at least 15 words.", message);
+            Assert.Contains("- Conclusions: 104 of 120.", message);
+            Assert.Contains("Do not lengthen a section to fix another issue. A section still over its cap after this reply loses sentences from its end.", message);
+            Assert.Contains("Keep one conclusions paragraph per axis, in the order intelligence, speed, cost; shorten each rather than removing one.", message);
+        }
+
+        // Outside a Root Cause Analysis the conclusions rule is left out.
+        Assert.DoesNotContain("conclusions paragraph per axis",
+            BenchmarkReportPackPrompt.BuildRepairMessage(issues, comparisonScope: true, headline: null, counts, rootCause: false));
+    }
+
+    [Fact]
+    public void TheRepairMessage_GivesTheWordBudget_OnlyForACapIssue_OrASectionNearItsCap()
+    {
+        var other = new List<BenchmarkReportValidationNote> { new() { Rule = 3, Location = "sections.meaning[p1]", Message = "Contains the digit form \"3\"." } };
+
+        string far = BenchmarkReportPackPrompt.BuildRepairMessage(other, comparisonScope: false, headline: null,
+            new[] { SlotCount(BenchmarkReportSlots.Meaning, "What this means for use as a game assistant", 90, 40) });
+        Assert.DoesNotContain("WORD BUDGET", far);
+
+        string near = BenchmarkReportPackPrompt.BuildRepairMessage(other, comparisonScope: false, headline: null,
+            new[] { SlotCount(BenchmarkReportSlots.Meaning, "What this means for use as a game assistant", 90, 82) });
+        Assert.Contains("WORD BUDGET", near);
+        Assert.Contains("- What this means for use as a game assistant: 82 of 90.", near);
+
+        // The catalog's fix text stays free of digits.
+        Assert.DoesNotMatch(@"\d", BenchmarkReportRuleCatalog.Get(7).Fix);
+    }
+
+    [Fact]
+    public void TheShortenMessage_NamesEachSectionWithItsCounts_AndAsksForThemAlone()
+    {
+        var slots = new[] { SlotCount(BenchmarkReportSlots.HypothesesSpeed, "Hypotheses: speed", 120, 60, 68) };
+
+        string message = BenchmarkReportPackPrompt.BuildShortenMessage(slots, Array.Empty<BenchmarkReportValidationNote>(), 20, rootCause: true);
+
+        Assert.Contains("- hypothesesSpeed: Hypotheses: speed has 128 words (paragraph 1: 60; paragraph 2: 68); its cap is 120: cut at least 8 words.", message);
+        Assert.Contains("Reply with one JSON object holding only \"sections\"", message);
+        Assert.Contains("the full replacement text of each section named above", message);
+        Assert.Contains("Keep one conclusions paragraph per axis", message);
+        Assert.DoesNotContain("HEADLINE", message);
+        Assert.DoesNotContain("\"headline\"", message);
+    }
+
+    [Fact]
+    public void TheShortenMessage_AsksForTheHeadline_WithItsIssuesAndWordCount()
+    {
+        var headline = new[] { new BenchmarkReportValidationNote { Rule = 7, Location = "headline", Message = "The headline has 40 words; the limit is 35." } };
+
+        string alone = BenchmarkReportPackPrompt.BuildShortenMessage(Array.Empty<BenchmarkReportSlotWordCount>(), headline, 40);
+        Assert.Contains("HEADLINE", alone);
+        Assert.Contains("rule 7: The headline has 40 words; the limit is 35.", alone);
+        Assert.Contains("Reply with one JSON object holding only \"headline\"", alone);
+        Assert.DoesNotContain("SECTIONS TO SHORTEN", alone);
+
+        var slots = new[] { SlotCount(BenchmarkReportSlots.Conclusions, "Conclusions", 120, 131) };
+        string both = BenchmarkReportPackPrompt.BuildShortenMessage(slots, headline, 40);
+        Assert.Contains("SECTIONS TO SHORTEN", both);
+        Assert.Contains("HEADLINE", both);
+        Assert.Contains("Reply with one JSON object holding only \"headline\" and \"sections\"", both);
+        Assert.DoesNotContain("conclusions paragraph per axis", both);
     }
 
     // Chat consistency scope --------------------------------------------------------------------

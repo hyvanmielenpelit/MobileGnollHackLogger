@@ -99,6 +99,19 @@ public static class RootCauseNextRuns
     }
 
     /// <summary>
+    /// One check in a short phrase, the display of its <c>rca.check.&lt;n&gt;.summary</c> fact: <c>Check 1, a comparison of
+    /// the two models' price cards</c>; <c>Check 1</c> alone for a check stored without its summary.
+    /// </summary>
+    public static string Summary(RootCauseCheck check)
+    {
+        ArgumentNullException.ThrowIfNull(check);
+        return string.IsNullOrWhiteSpace(check.Summary) ? "Check " + Inv(check.Number) : check.Summary;
+    }
+
+    /// <summary><c>Check 2, a review of the rubric of Q3</c>: the check's number and its noun phrase.</summary>
+    private static string CheckSummary(int number, string phrase) => "Check " + Inv(number) + ", " + phrase;
+
+    /// <summary>
     /// <c>about $7.50 and 14 minutes</c>, <c>about $240 and 7 h 50 min</c>: each figure to two significant figures,
     /// whole dollars from $10 and cents below, and from 90 minutes up in hours and minutes. Empty when the run
     /// is not estimated.
@@ -241,12 +254,13 @@ public static class RootCauseNextRuns
             return plan;
         }
 
-        void Check(string kind, string text, RootCauseHypothesis hypothesis)
+        void Check(string kind, string text, string phrase, RootCauseHypothesis hypothesis)
         {
             var existing = checks.FirstOrDefault(c => c.Text == text);
             if (existing == null)
             {
-                existing = new RootCauseCheck { Number = checks.Count + 1, Kind = kind, Text = text };
+                int number = checks.Count + 1;
+                existing = new RootCauseCheck { Number = number, Kind = kind, Text = text, Summary = CheckSummary(number, phrase) };
                 checks.Add(existing);
             }
             if (!existing.HypothesisIds.Contains(hypothesis.Key)) existing.HypothesisIds.Add(hypothesis.Key);
@@ -273,12 +287,13 @@ public static class RootCauseNextRuns
 
             if (d.CheckText != null)
             {
-                Check(d.CheckKind, d.CheckText, h);
+                Check(d.CheckKind, d.CheckText, d.CheckSummary ?? "a review of the " + d.CheckKind + " behind " + h.Key, h);
                 continue;
             }
             if (d.Loci.Count > 0 && d.Loci.All(l => l is RootCauseLoci.Suite or RootCauseLoci.Corpus))
             {
-                Check("rubric", "Review the questions behind " + h.Key + " against the source and the tools' corpus.", h);
+                Check("rubric", "Review the questions behind " + h.Key + " against the source and the tools' corpus.",
+                    "a review of the questions behind " + h.Key, h);
                 continue;
             }
 
@@ -315,7 +330,8 @@ public static class RootCauseNextRuns
                     if (plan == null)
                     {
                         Check("configuration", "No configured, enabled Benchmark-role configuration of " + ctx.Name(worse.Token)
-                            + " exists at another thinking level; add one to test " + h.Key + ".", h);
+                            + " exists at another thinking level; add one to test " + h.Key + ".",
+                            "a new configuration of " + ctx.Name(worse.Token) + " at another thinking level", h);
                     }
                     break;
 
@@ -337,7 +353,8 @@ public static class RootCauseNextRuns
                     plan = PanelSwap(ctx, models.Count > 0 ? models : new List<RootCauseModelInput> { anchor }, GetOrAdd);
                     if (plan == null)
                     {
-                        Check("graders", "No two configured, enabled Benchmark-role graders of other providers exist for a panel swap; add them to test the grader-dependent hypotheses.", h);
+                        Check("graders", "No two configured, enabled Benchmark-role graders of other providers exist for a panel swap; add them to test the grader-dependent hypotheses.",
+                            "a panel swap with two graders of other providers", h);
                     }
                     break;
 
@@ -556,7 +573,17 @@ public static class RootCauseNextRuns
         if (picks.Count == 0)
         {
             const string text = "No configured, enabled Benchmark-role configuration of a recommended model of another provider exists; add one to run a control.";
-            if (!checks.Any(c => c.Text == text)) checks.Add(new RootCauseCheck { Number = checks.Count + 1, Kind = "configuration", Text = text });
+            if (!checks.Any(c => c.Text == text))
+            {
+                int number = checks.Count + 1;
+                checks.Add(new RootCauseCheck
+                {
+                    Number = number,
+                    Kind = "configuration",
+                    Text = text,
+                    Summary = CheckSummary(number, "a new configuration of a recommended model of another provider, for a control run")
+                });
+            }
             return null;
         }
 
@@ -613,7 +640,7 @@ public static class RootCauseNextRuns
             ClaimVerifierName = settings.ClaimVerifierName,
             ReportWriterModelConfigurationId = null,
             AfterSystemHypotheses = systemFirst && plan.Purpose == RootCausePurposes.ModelSelection,
-            When = plan.TimeOfDay ? "start each run at a different time of day" : null
+            When = plan.TimeOfDay ? "Start each run at a different time of day" : null
         };
 
         foreach (var model in plan.Models)

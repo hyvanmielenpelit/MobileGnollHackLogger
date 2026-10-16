@@ -114,9 +114,10 @@ public static partial class BenchmarkReportPackRenderer
     /// question's answer excerpts and rubric without its source paragraphs, states the wall time per question
     /// with tools included, and glosses each term once. From version 16 its Root Cause Analysis gives in Appendix G only
     /// the cited and the critical-error questions, leaves out an empty Appendix E and letters the rest on, and prints one
-    /// output cost column.
+    /// output cost column. From version 17 every sentence of the writer's prose, every table cell and the text after every
+    /// run-in label start with a capital.
     /// </summary>
-    public const int ReportFormatVersion = 16;
+    public const int ReportFormatVersion = 17;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
@@ -134,8 +135,10 @@ public static partial class BenchmarkReportPackRenderer
     /// From version 21 a price effect reads as known from the price cards, question 1 without a comparative cause
     /// states the measured lead, Appendix G gives only the cited and the critical-error questions, an empty Appendix E
     /// is left out with the rest lettered on, the cost tables have one output column, and an evidence line names its models.
+    /// From version 22 every sentence of the writer's prose, every table cell and the text after every run-in label start
+    /// with a capital, and a spread runs from its lowest value to its highest, each model named before its value.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 21;
+    public const int ComparisonReportFormatVersion = 22;
 
     /// <summary>The comparison format version whose Root Cause Analysis writer output first carries the answer slots.</summary>
     private const int AnswerSlotsFormatVersion = 16;
@@ -143,8 +146,11 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>The comparison format version whose answer excerpts were first allotted in rounds across the questions.</summary>
     private const int RoundExcerptsFormatVersion = 20;
 
-    /// <summary>The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.</summary>
-    public const int ChatConsistencyReportFormatVersion = 4;
+    /// <summary>
+    /// The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.
+    /// From version 5 every sentence of the writer's prose, every table cell and the text after every run-in label start with a capital.
+    /// </summary>
+    public const int ChatConsistencyReportFormatVersion = 5;
 
     /// <summary>The format version a document of <paramref name="scope"/> is written and rendered under now.</summary>
     public static int CurrentFormatVersion(BenchmarkReportScope scope) => scope switch
@@ -470,7 +476,7 @@ public static partial class BenchmarkReportPackRenderer
         }
         else
         {
-            string text = LowerFirst(Label("speed.modelTimeP50")) + " " + speed.Display;
+            string text = Label("speed.modelTimeP50") + " " + speed.Display;
             // A sheet stored before format version 9 has no mean.
             if (IsAvailable(ctx, "speed.modelTimeMean")) text += ", mean " + D(ctx, "speed.modelTimeMean");
             if (IsAvailable(ctx, "speed.rank")) text += ", " + D(ctx, "speed.rank");
@@ -760,7 +766,7 @@ public static partial class BenchmarkReportPackRenderer
 
         if (!attempts.Available)
         {
-            lines.Add(NotRecordedText(attempts) + ", so provider errors cannot be separated from failures on Overseer's side.");
+            lines.Add(BenchmarkReportSentenceCase.UpperFirst(NotRecordedText(attempts)) + ", so provider errors cannot be separated from failures on Overseer's side.");
             return lines;
         }
 
@@ -813,7 +819,8 @@ public static partial class BenchmarkReportPackRenderer
         {
             foreach (string threat in AvailabilityThreats(ctx, model.Prefix))
             {
-                lines.Add((models.Count == 1 ? "Provider availability: " : "Provider availability of " + model.Name + ": ") + threat);
+                lines.Add((models.Count == 1 ? "Provider availability: " : "Provider availability of " + model.Name + ": ")
+                    + BenchmarkReportSentenceCase.UpperFirst(threat));
             }
         }
         return lines;
@@ -1112,7 +1119,7 @@ public static partial class BenchmarkReportPackRenderer
                 Line(sb);
                 foreach (var (peer, fact) in unpaired)
                 {
-                    Line(sb, "- " + PlainName(ctx, peer) + ": " + NotAvailableReason(fact));
+                    Line(sb, "- " + PlainName(ctx, peer) + ": " + BenchmarkReportSentenceCase.UpperFirst(NotAvailableReason(fact)));
                 }
                 Line(sb);
             }
@@ -1120,7 +1127,7 @@ public static partial class BenchmarkReportPackRenderer
 
         if (IsAvailable(ctx, "quality.intervalOverlap"))
         {
-            Line(sb, "*" + sheet.SubjectLabel + ": " + D(ctx, "quality.intervalOverlap")
+            Line(sb, "*" + sheet.SubjectLabel + ": " + BenchmarkReportSentenceCase.UpperFirst(D(ctx, "quality.intervalOverlap"))
                 + ". This describes where the intervals overlap; it is not a significance test.*");
             Line(sb);
         }
@@ -1206,7 +1213,7 @@ public static partial class BenchmarkReportPackRenderer
         foreach (var (_, peer) in flagged)
         {
             string explanation = peer == null ? ctx.Sheet.SubjectExplanation : peer.Explanation;
-            Line(sb, "- " + PlainName(ctx, peer) + ": " + (ctx.Comparison ? SheetText(ctx, explanation) : explanation));
+            Line(sb, "- " + PlainName(ctx, peer) + ": " + BenchmarkReportSentenceCase.UpperFirst(ctx.Comparison ? SheetText(ctx, explanation) : explanation));
         }
         Line(sb);
     }
@@ -1332,7 +1339,7 @@ public static partial class BenchmarkReportPackRenderer
             Heading(sb, "### Weighting sensitivity");
             foreach (var fact in sensitivity)
             {
-                Line(sb, "- " + OneLine(fact.Display));
+                Line(sb, "- " + BenchmarkReportSentenceCase.UpperFirst(OneLine(fact.Display)));
             }
             Line(sb);
         }
@@ -1346,7 +1353,8 @@ public static partial class BenchmarkReportPackRenderer
             Heading(sb, "### Leave one suite out");
             foreach (var fact in leaveOneOut)
             {
-                Line(sb, "- S" + Inv(NumberAfter(fact.Key, "loo.")) + ": " + (fact.Available ? OneLine(fact.Display) : NotAvailableText(fact)));
+                Line(sb, "- S" + Inv(NumberAfter(fact.Key, "loo.")) + ": "
+                    + (fact.Available ? BenchmarkReportSentenceCase.UpperFirst(OneLine(fact.Display)) : NotAvailableText(fact)));
             }
             Line(sb);
         }
@@ -2602,16 +2610,19 @@ public static partial class BenchmarkReportPackRenderer
     private static string NotAvailableText(BenchmarkReportFact? fact)
     {
         string reason = fact?.UnavailableReason?.Trim() ?? string.Empty;
-        return reason.Length == 0 ? "not available." : "not available. " + reason;
+        return reason.Length == 0 ? "Not available." : "Not available. " + reason;
     }
 
     /// <summary>
     /// Writer prose with its tokens resolved: <c>{{subject}}</c>, <c>{{peer:X}}</c> and <c>{{fact.key}}</c>;
     /// on a comparison-scope sheet <c>{{model:X}}</c> as a peer's. A resolved value that ends in a period,
     /// followed by the prose's own period, prints one. In a document that explains its terms, a term's gloss
-    /// in parentheses is printed once: a gloss the document has already printed is left out.
+    /// in parentheses is printed once: a gloss the document has already printed is left out. Every sentence then
+    /// starts with a capital (<see cref="BenchmarkReportSentenceCase.Apply(string, bool)"/>); with
+    /// <paramref name="sentenceStart"/> false the text continues a sentence the fixed text began, so its first word
+    /// is left alone.
     /// </summary>
-    private static string Prose(Context ctx, string? text)
+    private static string Prose(Context ctx, string? text, bool sentenceStart = true)
     {
         string resolved = Regex.Replace(ProseLetters(ctx, Normalize(text)), TokenPattern + @"(\.)?", match =>
         {
@@ -2619,7 +2630,8 @@ public static partial class BenchmarkReportPackRenderer
             if (!match.Groups[2].Success) return value;
             return value.EndsWith('.') ? value : value + ".";
         }, RegexOptions.CultureInvariant);
-        return ctx.TracksTerms ? WithoutRepeatedGlosses(ctx, resolved) : resolved;
+        if (ctx.TracksTerms) resolved = WithoutRepeatedGlosses(ctx, resolved);
+        return BenchmarkReportSentenceCase.Apply(resolved, sentenceStart);
     }
 
     /// <summary>
@@ -2792,7 +2804,55 @@ public static partial class BenchmarkReportPackRenderer
 
     private static void Line(StringBuilder sb) => sb.Append('\n');
 
-    private static void Line(StringBuilder sb, string text) => sb.Append(text).Append('\n');
+    /// <summary>The text and a line break, each table cell and each run-in label's text starting with a capital (<see cref="StructureCase"/>).</summary>
+    private static void Line(StringBuilder sb, string text) => sb.Append(StructureCase(text)).Append('\n');
+
+    /// <summary>
+    /// A run-in label at the start of a line, alone or after a list marker, with the spaces after it: <c>**Label:** </c>,
+    /// <c>**Label.** </c> or <c>- *Label:* </c>, followed by text. Callout and quote lines (<c>&gt; </c>) never match.
+    /// </summary>
+    private const string RunInLabelPattern =
+        @"^(?:[ \t]*(?:(?:[-+*]|\d+\.)[ \t]+)?\*\*[^*\n]+?[:.]\*\*[ \t]+|[ \t]*(?:[-+*]|\d+\.)[ \t]+\*[^*\n]+?:\*[ \t]+)(?=\S)";
+
+    /// <summary>
+    /// Sentence case for the structure of a Markdown line: each cell of a table row (<c>| … |</c>) and the text after
+    /// a run-in label start with a capital (<see cref="BenchmarkReportSentenceCase.UpperFirst"/>). A cell or a label's
+    /// text that opens with a quotation mark or a code span is left as written, as is every other line. Text of several
+    /// lines is taken line by line.
+    /// </summary>
+    private static string StructureCase(string text)
+    {
+        if (text.Length < 2) return text;
+        if (text.IndexOf('\n') >= 0) return string.Join("\n", text.Split('\n').Select(StructureCase));
+        if (text.StartsWith("| ", StringComparison.Ordinal)) return TableRowCase(text);
+
+        var label = Regex.Match(text, RunInLabelPattern, RegexOptions.CultureInvariant);
+        return label.Success ? text[..label.Length] + UpperFirstUnquoted(text[label.Length..]) : text;
+    }
+
+    /// <summary>A table row with each cell's first word capitalized; an escaped pipe (<c>\|</c>) separates no cells.</summary>
+    private static string TableRowCase(string row)
+    {
+        var parts = new List<string>();
+        int from = 0;
+        for (int i = 0; i < row.Length; i++)
+        {
+            if (row[i] != '|' || (i > 0 && row[i - 1] == '\\')) continue;
+            parts.Add(row[from..i]);
+            from = i + 1;
+        }
+        parts.Add(row[from..]);
+
+        for (int k = 1; k < parts.Count; k++) parts[k] = UpperFirstUnquoted(parts[k]);
+        return string.Join("|", parts);
+    }
+
+    /// <summary><see cref="BenchmarkReportSentenceCase.UpperFirst"/>, except for text that opens with a quotation mark or a code span.</summary>
+    private static string UpperFirstUnquoted(string text)
+    {
+        string trimmed = text.TrimStart();
+        return trimmed.Length == 0 || "\"'“‘`".IndexOf(trimmed[0]) >= 0 ? text : BenchmarkReportSentenceCase.UpperFirst(text);
+    }
 
     /// <summary>Everything one render reads, deserialized once.</summary>
     private sealed class Context

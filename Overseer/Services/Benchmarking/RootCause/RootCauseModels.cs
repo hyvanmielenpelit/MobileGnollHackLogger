@@ -687,6 +687,13 @@ public sealed class RootCauseAxisStatus
     public string? BestHypothesis { get; set; }
 
     public string Reason { get; set; } = string.Empty;
+
+    /// <summary>
+    /// <c>Price per token, known from the price cards, explains the largest cost differences (HC2.1–HC2.7; 103% of the
+    /// largest).</c>: set when the best hypothesis is no price effect and a price effect of the axis covers a larger
+    /// difference than the best hypothesis's pair; null otherwise, and in a result written before engine version 7.
+    /// </summary>
+    public string? PriceNote { get; set; }
 }
 
 /// <summary>A check a run cannot settle: a rubric, a corpus or a configuration to look at.</summary>
@@ -698,6 +705,13 @@ public sealed class RootCauseCheck
     public string Kind { get; set; } = string.Empty;
 
     public string Text { get; set; } = string.Empty;
+
+    /// <summary>
+    /// The check as a noun phrase, the display of its <c>rca.check.&lt;n&gt;.summary</c> fact: <c>Check 1, a comparison of
+    /// the two models' price cards</c>. Empty in a result written before engine version 7
+    /// (<see cref="RootCauseNextRuns.Summary(RootCauseCheck)"/> then gives the number alone).
+    /// </summary>
+    public string Summary { get; set; } = string.Empty;
 
     /// <summary>The hypothesis keys it would settle.</summary>
     public List<string> HypothesisIds { get; set; } = new();
@@ -743,7 +757,10 @@ public sealed class RootCauseRecommendedRun
     /// <summary>A model-selection run marked to wait until the system hypotheses are settled.</summary>
     public bool AfterSystemHypotheses { get; set; }
 
-    /// <summary>When to make the run's passes, in words (<c>start each run at a different time of day</c>); null for any time.</summary>
+    /// <summary>
+    /// When to make the run's passes, in words (<c>Start each run at a different time of day</c>; lowercase in a result
+    /// written before engine version 7); null for any time.
+    /// </summary>
     public string? When { get; set; }
 
     /// <summary><c>Suite</c> or <c>Battery</c>, as <c>BenchmarkModelBatchTargetKind</c> names them.</summary>

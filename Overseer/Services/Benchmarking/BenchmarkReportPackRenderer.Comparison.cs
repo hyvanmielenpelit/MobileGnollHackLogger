@@ -477,10 +477,10 @@ public static partial class BenchmarkReportPackRenderer
     /// </summary>
     private static string FamilySizeText(Context ctx, string measure, BenchmarkReportPairedMeasure family)
         => family.NotTestedReason != null
-            ? measure + ": not tested. " + SheetText(ctx, family.NotTestedReason)
+            ? measure + ": Not tested. " + BenchmarkReportSentenceCase.UpperFirst(SheetText(ctx, family.NotTestedReason))
             : measure + ": " + (family.FamilySize > 1
                 ? "Holm-adjusted across " + Inv(family.FamilySize) + " tests" + Gloss(ctx, RootCause.RootCauseGlossary.Holm) + "."
-                : family.FamilySize == 1 ? "a single test, no adjustment." : "no test could be made.");
+                : family.FamilySize == 1 ? "A single test, no adjustment." : "No test could be made.");
 
     private static string AdjustedCell(BenchmarkReportPairedTest pair)
         => pair.AdjustedPValue is double p ? BenchmarkComparisonReportFacts.PValue(p) : NoValue;
@@ -852,7 +852,7 @@ public static partial class BenchmarkReportPackRenderer
         foreach (var peer in OrderedPeers(ctx.Sheet))
         {
             string identity = ctx.Anonymized ? string.Empty : " (" + peer.Provider + " " + peer.ModelId + ", thinking level " + (peer.ThinkingLevel ?? "not set") + ")";
-            Line(sb, "- **" + ProseName(ctx, peer) + "**" + identity + ": " + Label("run.ids").ToLowerInvariant() + " " + D(ctx, ModelKey(peer.Letter, "run.ids"))
+            Line(sb, "- **" + ProseName(ctx, peer) + "**" + identity + ": " + Label("run.ids") + " " + D(ctx, ModelKey(peer.Letter, "run.ids"))
                 + "; " + Label("run.dates").ToLowerInvariant() + " " + D(ctx, ModelKey(peer.Letter, "run.dates"))
                 + "; " + Label("run.promptSha256") + " `" + D(ctx, ModelKey(peer.Letter, "run.promptSha256")) + "`"
                 + "; " + Label("run.toolGuidesSha256") + " `" + D(ctx, ModelKey(peer.Letter, "run.toolGuidesSha256")) + "`");

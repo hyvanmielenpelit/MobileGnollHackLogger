@@ -3,7 +3,21 @@ import {
   BenchmarkReportPackDocumentProgressDto,
   BenchmarkRunReportJobDto
 } from '../../../../services/admin-benchmark.service';
-import { audienceLabel, documentChipClass, formatCostUsd, formatElapsed, statusLabel } from '../../report-pack/report-document-format';
+import {
+  audienceLabel,
+  documentChipClass,
+  documentRowPhaseLine,
+  formatCostUsd,
+  formatElapsed,
+  statusLabel
+} from '../../report-pack/report-document-format';
+import {
+  REPORT_JOB_DOCUMENT_CARD_DEFAULTS,
+  ReportJobDocumentCard,
+  reportJobDocumentCost,
+  reportJobDocumentTokens,
+  reportJobDocumentTone
+} from '../../report-pack/report-job-documents.component';
 import {
   ClientPollState,
   NOT_RECORDED,
@@ -15,7 +29,7 @@ import { CC_REPORT_AUDIENCES } from '../chat-consistency.models';
 
 /*
  * The Write step's view of a chat consistency report-writing job (`BenchmarkRunReportJobDto`): the
- * stage rail, the stat strip, one row per document, the one-line summary of a finished job, and the
+ * stage rail, the stat strip, one progress card per document, the one-line summary of a finished job, and the
  * plain-text diagnostics. Pure: every time is measured against the `nowUtc` the caller passes, which
  * is the server's clock run on since its last response.
  */
@@ -41,18 +55,9 @@ export interface CcReportJobStats {
   readonly costLabel: string;
 }
 
-/** One row of the document progress list. */
-export interface CcReportJobRow {
-  readonly key: string;
-  readonly audience: BenchmarkReportAudience;
-  readonly name: string;
+/** One document's progress card, with its status; the step adds the charts line. */
+export interface CcReportJobRow extends ReportJobDocumentCard {
   readonly status: string;
-  readonly statusWord: string;
-  readonly chipClass: string;
-  readonly duration: string;
-  readonly modelCalls: string;
-  readonly errorMessage: string | null;
-  readonly documentId: number | null;
 }
 
 /** What the diagnostics say beside the job: the analysis, the charts, the client's polling and the estimate. */
@@ -164,7 +169,10 @@ export function ccReportJobStats(job: BenchmarkRunReportJobDto, nowUtc: Date): C
   };
 }
 
-/** One row per document: its chip, its duration (to now while it is written), its model calls and its error. */
+/**
+ * One card per document: its chip, its phase line, its duration (to now while it is written), its model
+ * calls, tokens, cost and error. No charts line: the step attaches charts for the whole job and adds it.
+ */
 export function ccReportJobRows(job: BenchmarkRunReportJobDto, nowUtc: Date): CcReportJobRow[] {
   const finished = ccReportJobFinished(job);
   const jobEnd = job.finishedAtUtc ?? job.job?.completedAtUtc ?? null;
@@ -172,17 +180,25 @@ export function ccReportJobRows(job: BenchmarkRunReportJobDto, nowUtc: Date): Cc
     const duration = doc.startedAtUtc
       ? spanToNow(doc.startedAtUtc, doc.completedAtUtc ?? (finished ? jobEnd ?? nowUtc.toISOString() : null), nowUtc)
       : null;
+    const title = ccReportAudienceLabel(doc.audience);
     return {
+      ...REPORT_JOB_DOCUMENT_CARD_DEFAULTS,
       key: `doc-${doc.audience}`,
       audience: doc.audience,
-      name: ccReportAudienceLabel(doc.audience),
+      title,
+      phrase: `the ${title}`,
       status: doc.status,
       statusWord: statusLabel(doc.status),
       chipClass: documentChipClass(doc.status),
+      tone: reportJobDocumentTone(doc.status),
+      phaseLine: documentRowPhaseLine(doc),
+      errorMessage: doc.errorMessage || null,
       duration: duration === null ? '—' : formatElapsed(duration),
       modelCalls: numberFormat.format(doc.modelCalls),
-      errorMessage: doc.errorMessage || null,
-      documentId: doc.documentId
+      tokens: reportJobDocumentTokens(doc.inputTokens, doc.outputTokens),
+      cost: reportJobDocumentCost(doc.costUsd),
+      documentId: doc.documentId,
+      tipStem: `cc-rep-card-${doc.audience}`
     };
   });
 }

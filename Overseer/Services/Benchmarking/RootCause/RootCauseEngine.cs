@@ -193,7 +193,7 @@ public sealed class RootCauseInput
 public static class RootCauseEngine
 {
     /// <summary>The version stored on every result.</summary>
-    public const int Version = 6;
+    public const int Version = 7;
 
     public const string ComparisonScope = "Comparison";
     public const string ModelScope = "Model";
@@ -1393,7 +1393,7 @@ internal sealed class RootCauseContext
 /// Summary's prompt.
 ///
 /// Fact keys (T is a model token: a letter, or <c>subject</c>):
-///   rca.axis.&lt;axis&gt;.status, rca.axis.&lt;axis&gt;.best           axis = intelligence, speed, cost
+///   rca.axis.&lt;axis&gt;.status, rca.axis.&lt;axis&gt;.best, .priceNote (when set)           axis = intelligence, speed, cost
 ///   rca.known.&lt;n&gt;
 ///   rca.hypothesis.&lt;id&gt;.&lt;n&gt;.statement, .label, .ref, .axis, .models, .locus, .grade, .gradeReasons, .for, .against,
 ///     .refutedIf, .nextRun or .check, .share, .interval, .priceCard (a price effect only)
@@ -1409,7 +1409,7 @@ internal sealed class RootCauseContext
 ///   rca.within.&lt;T&gt;.time.&lt;segment&gt;.seconds, .time.&lt;segment&gt;.share; rca.within.&lt;T&gt;.cost.&lt;component&gt;.share
 ///   rca.controls.count, .providers, .limit; rca.controls.&lt;n&gt;.model, .runId or .batteryRunId, .date, .provider, .sharedQuestions
 ///   rca.control.deficit.mean, .interval; rca.control.instrumentSuspect, rca.control.modelSpecific
-///   rca.run.&lt;n&gt;.summary, rca.check.&lt;n&gt;, rca.systemFirst, rca.pricingBasis
+///   rca.run.&lt;n&gt;.summary, rca.check.&lt;n&gt;, rca.check.&lt;n&gt;.summary, rca.systemFirst, rca.pricingBasis
 /// </summary>
 public static class RootCauseFacts
 {
@@ -1463,6 +1463,7 @@ public static class RootCauseFacts
             facts.Add(prefix + "status", axis.Status, RootCauseStatuses.Display(axis.Status));
             if (axis.BestHypothesis != null) facts.Add(prefix + "best", axis.BestHypothesis, axis.BestHypothesis);
             else facts.Unavailable(prefix + "best", axis.Reason);
+            if (!string.IsNullOrWhiteSpace(axis.PriceNote)) facts.Text(prefix + "priceNote", axis.PriceNote);
         }
 
         foreach (var known in result.KnownFacts) facts.Text("rca.known." + Inv(known.Number), known.Text);
@@ -1683,7 +1684,11 @@ public static class RootCauseFacts
         {
             facts.Text("rca.run." + Inv(run.Number) + ".summary", RootCauseNextRuns.Summary(run, RunModelName, result.Models.Count));
         }
-        foreach (var check in result.Checks) facts.Text("rca.check." + Inv(check.Number), check.Text);
+        foreach (var check in result.Checks)
+        {
+            facts.Text("rca.check." + Inv(check.Number), check.Text);
+            facts.Text("rca.check." + Inv(check.Number) + ".summary", RootCauseNextRuns.Summary(check));
+        }
 
         facts.Add("rca.systemFirst", result.SystemFirst, result.SystemFirst
             ? "a harness or suite hypothesis is graded Moderate or higher, so model-selection runs wait until it is settled"

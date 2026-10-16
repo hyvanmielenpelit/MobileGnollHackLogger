@@ -6,7 +6,7 @@
 - **Battery:** Core knowledge, revision 2: 2 suites, 2 runs per suite, weighting scheme Questions and difficulty
 - **Questions:** 4
 - **Member runs:** 4 (battery run 9)
-- **Peers:** none; this is a stand-alone report
+- **Peers:** None; this is a stand-alone report
 
 ## Summary
 
@@ -21,7 +21,7 @@
 
 | Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |
 |---|---|---|---|---|---|
-| **GPT-5.6 Luna** | 80 (77–83), rank 2 | 12.3 s | $0.036 | confirmed critical errors, 5.6 points | 1 critical error |
+| **GPT-5.6 Luna** | 80 (77–83), rank 2 | 12.3 s | $0.036 | Confirmed critical errors, 5.6 points | 1 critical error |
 
 ### How sure are we?
 
@@ -55,7 +55,7 @@ The terms the summary and the conclusions use, each in plain words. A term is al
 
 | Model | Index | Strengths | Lost points on | Flags |
 |---|---|---|---|---|
-| **GPT-5.6 Luna** | 80 | none ranked first or second | confirmed critical errors: 5.6 index points on 1 question (S2-Q3); weakest dimension Completeness, 2.0 points below Accuracy | 1 critical error (S2-Q3) |
+| **GPT-5.6 Luna** | 80 | None ranked first or second | Confirmed critical errors: 5.6 index points on 1 question (S2-Q3); weakest dimension Completeness, 2.0 points below Accuracy | 1 critical error (S2-Q3) |
 
 *Each entry is a count, a share or a rank measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (the most index points a failure signal could have cost), with its questions (Appendix A). Flags: critical errors (a mistake serious enough to cap the answer's score).*
 
@@ -68,17 +68,17 @@ This analysis describes battery run 9 of GPT-5.6 Luna on its own. Other models e
 - **Battery:** Core knowledge, revision 2: 2 suites, 2 runs per suite, weighting scheme Questions and difficulty; 4 questions in all.
 - **Chat configuration under test:** Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed
 - **Model under test:** GPT-5.6 Luna (OpenAI, gpt-5.6-luna), thinking level high; 4 member runs.
-- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
+- **Grading:** Each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
 - **Graders:**
   - Panel member A: Gemini 3.8 Flash (Google, gemini-3.8-flash), different provider from the model under test
   - Panel member B: Claude Haiku 5 (Anthropic, claude-haiku-5), different provider from the model under test
   - Reference reader: DeepSeek V4 (DeepSeek, deepseek-v4), different provider from the model under test
   - Claim verifier: Gemini 3.8 Flash (Google, gemini-3.8-flash), different provider from the model under test
-- **Formulas:** answer quality is the weighted geometric mean (an average that one very low score pulls down sharply) of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean (an average in which harder questions count for more) of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
-- **Battery composite:** the Overall Index is the sum over the suites of each suite's weight times its Intelligence Index, under the battery's weighting scheme; it is not comparable with a single suite's index. Speed and cost are pooled over the member runs, and cost per run is per battery pass, one run of every suite.
-- **Comparability:** this report describes the battery result on its own, measured in the comparability class `5e1d0c7b3a91f08c`.
+- **Formulas:** Answer quality is the weighted geometric mean (an average that one very low score pulls down sharply) of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean (an average in which harder questions count for more) of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
+- **Battery composite:** The Overall Index is the sum over the suites of each suite's weight times its Intelligence Index, under the battery's weighting scheme; it is not comparable with a single suite's index. Speed and cost are pooled over the member runs, and cost per run is per battery pass, one run of every suite.
+- **Comparability:** This report describes the battery result on its own, measured in the comparability class `5e1d0c7b3a91f08c`.
 - **Pricing basis:** Catalog prices on 2026-09-20 (price card dated 2026-09-01)
-- **Versions:** harness 41, scoring method 12.
+- **Versions:** Harness 41, scoring method 12.
 
 ### Controls
 
@@ -139,7 +139,7 @@ The cost tables split the cost per question into volume and price.
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WQ2.1 | GPT-5.6 Luna's points are lost mostly in suite 2 (where its points go, not a comparison). | Suggestive (Low) | 100% | run 1 |
+| WQ2.1 | GPT-5.6 Luna's points are lost mostly in suite 2 (where its points go, not a comparison). | Suggestive (Low) | 100% | Run 1 |
 | WQ3.1 | Confirmed critical errors cost GPT-5.6 Luna most of its points (where its points go, not a comparison). | Suggestive (Low) | 66% | — |
 
 *Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
@@ -154,7 +154,7 @@ The strongest hypothesis in the table: GPT-5.6 Luna's points are lost mostly in 
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WS2.1 | Most of GPT-5.6 Luna's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Probable (Moderate) | 83% (82–84%) | run 2 |
+| WS2.1 | Most of GPT-5.6 Luna's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Probable (Moderate) | 83% (82–84%) | Run 2 |
 
 *Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
@@ -197,8 +197,8 @@ In the order to make them: the Overseer chat first (C), then the benchmark (B), 
 
 | # | Run | Purpose | Models | Settles | Estimate |
 |---|---|---|---|---|---|
-| 1 | Control run (recommended) | B, the benchmark | Lyra Mini (high) and Zeta Prime (high) | WQ2.1 | about $0.48 and 28 minutes |
-| 2 | Thinking-level pair (recommended) | M, model selection | GPT-5.6 Luna and Orion Max (medium) | WS2.1 | about $0.48 and 28 minutes |
+| 1 | Control run (recommended) | B, the benchmark | Lyra Mini (high) and Zeta Prime (high) | WQ2.1 | About $0.48 and 28 minutes |
+| 2 | Thinking-level pair (recommended) | M, model selection | GPT-5.6 Luna and Orion Max (medium) | WS2.1 | About $0.48 and 28 minutes |
 
 ### Checks
 
@@ -223,21 +223,21 @@ The benchmark asks single questions, so longer conversations are not measured.
 
 ## Appendices
 
-- **A. Intelligence detail:** the compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, the paired tests the body does not give and the per-question matrix.
-- **B. Speed and cost decompositions:** calls, latency, tokens and every component of each decomposed difference.
-- **C. Hypothesis details:** each hypothesis' evidence for and against, grade reasons and robustness checks, and the null hypotheses.
-- **D. Run settings:** every launcher setting of each run to make next.
-- **E. Known facts:** the counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
-- **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
-- **G. Question details:** the questions the writer cites, those with a critical error, confirmed or overturned, and the control items, each with its answer excerpts.
-- **H. Glossary:** every term this document uses, in plain words.
+- **A. Intelligence detail:** The compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, the paired tests the body does not give and the per-question matrix.
+- **B. Speed and cost decompositions:** Calls, latency, tokens and every component of each decomposed difference.
+- **C. Hypothesis details:** Each hypothesis's evidence for and against, grade reasons and robustness checks, and the null hypotheses.
+- **D. Run settings:** Every launcher setting of each run to make next.
+- **E. Known facts:** The counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
+- **F. Reproducibility:** Run ids, dates, hashes and the pricing basis.
+- **G. Question details:** The questions the writer cites, those with a critical error, confirmed or overturned, and the control items, each with its answer excerpts.
+- **H. Glossary:** Every term this document uses, in plain words.
 
 ## Appendix A: Intelligence detail
 
 ### Key figures
 
 - **Intelligence:** 80 / 100 (interval 77–83).
-- **Speed:** median answer time 12.3 s.
+- **Speed:** Median answer time 12.3 s.
 - **Cost:** $0.036 per question.
 - **Critical errors:** 1 of 4 answers.
 
@@ -255,7 +255,7 @@ The Overall Index is the sum over the suites of each suite's weight times its In
 - **Complete rounds:** 2 complete rounds
 - **Standard deviation of the suite indices:** 7.1 points
 - **Range of the suite indices:** 10.0 points
-- **Pooled identity:** the Overall Index equals one difficulty-weighted index over every question of every suite
+- **Pooled identity:** The Overall Index equals one difficulty-weighted index over every question of every suite
 - **Critical-error rate:** 13%
 - **Speed Index:** 82 / 100
 - **Member runs left out of the analysis:** 0 member runs
@@ -299,7 +299,7 @@ The Overall Index is the sum over the suites of each suite's weight times its In
 - **Panel member B alone:** 79 / 100
 - **Reference reader (advisory, third provider):** 90 / 100
 - **Reference reader's mean offset from the panel:** +16.8 points. Its scores do not count toward the score; its neutrality between the two panel families is an assumption.
-- **Response-style conflict:** none
+- **Response-style conflict:** None
 
 A battery report lists no synthesis findings; each member run's report has its own.
 
@@ -311,8 +311,8 @@ A battery report lists no synthesis findings; each member run's report has its o
 - **Structured lookup share:** 14%
 - **Knowledge base share:** 0%
 - **Other tools share:** 0%
-- **Failed tool calls:** not available
-- **Calls refused by the tool budget:** not available
+- **Failed tool calls:** Not available
+- **Calls refused by the tool budget:** Not available
 
 *Recorded success or failure describes whether a tool call executed. It does not show that the query was well chosen, that the result was relevant, or that the corpus was current.*
 
@@ -373,28 +373,28 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
 ### Intelligence
 
 - **WQ2.1: GPT-5.6 Luna's points lost in suite 2** (GPT-5.6 Luna; locus model / suite; Suggestive (Low))
-  - *For:* suite 2 holds 100% of GPT-5.6 Luna's points at risk.
-  - *Against:* none recorded.
-  - *Grade reasons:* see Robustness.
+  - *For:* Suite 2 holds 100% of GPT-5.6 Luna's points at risk.
+  - *Against:* None recorded.
+  - *Grade reasons:* See Robustness.
   - *Refuted if:* The contrast stands within noise, or the shares are even.
   - *Robustness:* Replicates passed (Every model ran at least twice per suite); Across suites failed (Leaving the suite out moves the Overall Index by less than the interval half-width); Panel agreement could not be assessed (The model was not graded by a panel).
 - **WQ3.1: GPT-5.6 Luna's critical errors** (GPT-5.6 Luna; locus model; Suggestive (Low))
   - *For:* Confirmed critical errors hold 66% of the points at risk (5.6 index points, upper bound).
-  - *Against:* none recorded.
-  - *Grade reasons:* critical errors may not clearly hold more of the lost points than the next cause.
+  - *Against:* None recorded.
+  - *Grade reasons:* Critical errors may not clearly hold more of the lost points than the next cause.
   - *Refuted if:* The caps are unconfirmed.
   - *Robustness:* Replicates passed (Every model ran at least twice per suite); Leave one question out could not be assessed (Fewer than two questions put points at risk in this segment); Panel agreement could not be assessed (The model was not graded by a panel).
 
 | Hypothesis | Pair | Paired result | Grade |
 |---|---|---|---|
-| H0-W.1 | within GPT-5.6 Luna | suite 2 against the rest: adjusted p 0.030. | Rejected — a real difference (Not supported) |
+| H0-W.1 | Within GPT-5.6 Luna | Suite 2 against the rest: adjusted p 0.030. | Rejected — a real difference (Not supported) |
 
 ### Speed
 
 - **WS2.1: GPT-5.6 Luna's time spent generating output** (GPT-5.6 Luna; locus model; Probable (Moderate))
   - *For:* Output generation is 83% (82–84%) of model time per question.
   - *Against:* The reasoning tokens are not recorded separately.
-  - *Grade reasons:* the reasoning tokens are not recorded separately.
+  - *Grade reasons:* The reasoning tokens are not recorded separately.
   - *Refuted if:* The reasoning share is under one half.
   - *Robustness:* Replicates passed (Every model ran at least twice per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
 
@@ -402,8 +402,8 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
 
 - **WC1.1: GPT-5.6 Luna's output cost** (GPT-5.6 Luna; locus model; Established (High))
   - *For:* Visible output and reasoning are 73% of GPT-5.6 Luna's cost per question.
-  - *Against:* none recorded.
-  - *Grade reasons:* every condition of the grade is met.
+  - *Against:* None recorded.
+  - *Grade reasons:* Every condition of the grade is met.
   - *Refuted if:* Another component is larger.
   - *Robustness:* Replicates passed (Every model ran at least twice per suite).
 
@@ -415,7 +415,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 - **Decides:** Separates the model from the instrument: once two controls, one from another provider, have run on the same questions under the same graders, the intelligence hypotheses are graded without the control cap.
 - **Predicted comparability:** Model comparison: every must-match key agrees and only the model differs
-- **Estimate:** about $0.48 and 28 minutes
+- **Estimate:** About $0.48 and 28 minutes
 - **Settles:** WQ2.1
 
 | Launcher field | Setting |
@@ -424,15 +424,15 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 | Models Under Test | Lyra Mini (high), Zeta Prime (high) |
 | Run Target | Battery |
 | Battery | Core knowledge |
-| Scoring Profile | profile 1 |
+| Scoring Profile | Profile 1 |
 | Response Style | Concise — production default |
 | Source Code References | Allowed — answers cite source files and lines |
-| Assessor | configuration 21 |
-| Co-Assessor | none |
-| Second Reader | none |
-| Coverage | not shared by the analyzed runs: choose it |
-| Claim Verifier | none |
-| Report Writer | none |
+| Assessor | Configuration 21 |
+| Co-Assessor | None |
+| Second Reader | None |
+| Coverage | Not shared by the analyzed runs: choose it |
+| Claim Verifier | None |
+| Report Writer | None |
 | Runs per Suite | 2 |
 | Model order | Randomized (recommended) |
 
@@ -443,7 +443,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 
 - **Decides:** Confirms WS2.1 if the decode share stays the largest and reasoning stays at least half the output; refutes it if the reasoning share is under one half.
 - **Predicted comparability:** Model comparison: only the thinking level differs
-- **Estimate:** about $0.48 and 28 minutes
+- **Estimate:** About $0.48 and 28 minutes
 - **Settles:** WS2.1
 
 | Launcher field | Setting |
@@ -452,15 +452,15 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 | Models Under Test | GPT-5.6 Luna, Orion Max (medium) |
 | Run Target | Battery |
 | Battery | Core knowledge |
-| Scoring Profile | profile 1 |
+| Scoring Profile | Profile 1 |
 | Response Style | Concise — production default |
 | Source Code References | Allowed — answers cite source files and lines |
-| Assessor | configuration 21 |
-| Co-Assessor | none |
-| Second Reader | none |
-| Coverage | not shared by the analyzed runs: choose it |
-| Claim Verifier | none |
-| Report Writer | none |
+| Assessor | Configuration 21 |
+| Co-Assessor | None |
+| Second Reader | None |
+| Coverage | Not shared by the analyzed runs: choose it |
+| Claim Verifier | None |
+| Report Writer | None |
 | Runs per Suite | 2 |
 | Model order | Randomized (recommended) |
 
@@ -512,9 +512,9 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 **Graders:**
 
-- **Panel member A (Gemini 3.8 Flash):** score 92. Accurate and brief.
+- **Panel member A (Gemini 3.8 Flash):** Score 92. Accurate and brief.
   - Accuracy: Matches rubric.
-- **Panel member B (Claude Haiku 5):** score 88. Correct.
+- **Panel member B (Claude Haiku 5):** Score 88. Correct.
 
 **Claim verifier:**
 
@@ -538,10 +538,10 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 **Graders:**
 
-- **Panel member A (Gemini 3.8 Flash):** score 25. Critical error.
+- **Panel member A (Gemini 3.8 Flash):** Score 25. Critical error.
   - Accuracy: The gem does not always shatter.
   - Critical error: "A thrown gem always shatters on impact"
-- **Panel member B (Claude Haiku 5):** score 25. Fabricated breakage.
+- **Panel member B (Claude Haiku 5):** Score 25. Fabricated breakage.
 
 **Claim verifier:**
 
@@ -2153,7 +2153,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 6,
+    "engineVersion": 7,
     "evidence": [
       {
         "atRisk": [
@@ -2909,6 +2909,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 202 · format version 16 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 202 · format version 17 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

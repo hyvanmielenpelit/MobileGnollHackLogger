@@ -100,12 +100,26 @@ describe('cc-report-job-view', () => {
   });
 
   describe('ccReportJobRows', () => {
-    it('gives each document its chip, its duration to now while written, its model calls and its id', () => {
+    it('gives each document a progress card with its chip, its duration to now while written, its model calls and its id', () => {
       const rows = ccReportJobRows(ccReportJob(), NOW);
-      expect(rows.map(row => [row.name, row.statusWord, row.chipClass, row.duration, row.modelCalls, row.documentId])).toEqual([
+      expect(rows.map(row => [row.title, row.statusWord, row.chipClass, row.duration, row.modelCalls, row.documentId])).toEqual([
         ['Executive Summary', 'Completed', 'job-status-chip status-completed', '1 min 00 s', '2', 501],
         ['Provider Issue Report', 'Writing', 'job-status-chip status-generating', '25 s', '1', null]
       ]);
+      // The step adds the charts line; the cards carry no meta line, no tips and no View.
+      expect(rows.map(row => [row.phrase, row.meta, row.charts, row.doc, row.viewable])).toEqual([
+        ['the Executive Summary', [], null, null, false],
+        ['the Provider Issue Report', [], null, null, false]
+      ]);
+    });
+
+    it('gives each card its tokens, its cost and an edge for a failure', () => {
+      const job = finishedJob('CompletedWithErrors', ['Completed', 'Failed']);
+      job.job.documents[0] = { ...job.job.documents[0], inputTokens: 30_000, outputTokens: 6_000, costUsd: 0.12 };
+      const rows = ccReportJobRows(job, NOW);
+      expect(rows[0].tokens).toBe('30,000 in · 6,000 out');
+      expect(rows[0].cost).toBe('$0.12');
+      expect(rows.map(row => row.tone)).toEqual([null, 'failed']);
     });
 
     it('ends an unfinished document\'s duration at the job\'s end, and carries its error', () => {

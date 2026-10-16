@@ -280,7 +280,7 @@ public static partial class BenchmarkReportPackRenderer
         var reasons = ChatOutOfDateReasons(ctx.Sheet);
         if (reasons.Count == 0) return;
 
-        Line(sb, "> **This document comes from an out-of-date analysis:** " + string.Join("; and ", reasons)
+        Line(sb, "> **This document comes from an out-of-date analysis:** " + BenchmarkReportSentenceCase.UpperFirst(string.Join("; and ", reasons))
             + ". Saved analyses never change; analyze the same periods again for a current result before relying on this document.");
         Line(sb);
     }
@@ -920,7 +920,7 @@ public static partial class BenchmarkReportPackRenderer
         if (attributions.Count == 1)
         {
             string p = "attribution." + Inv(attributions[0]) + ".";
-            Line(sb, OneLine(D(ctx, p + "label")) + ": " + LowerFirstWord(ChatAttributionStatement(ctx, p, plain: false)));
+            Line(sb, OneLine(D(ctx, p + "label")) + ": " + ChatAttributionStatement(ctx, p, plain: false));
             Line(sb);
         }
         else
@@ -1068,7 +1068,7 @@ public static partial class BenchmarkReportPackRenderer
             return;
         }
 
-        foreach (int n in limitations) Line(sb, "- " + OneLine(D(ctx, "limitation." + Inv(n))));
+        foreach (int n in limitations) Line(sb, "- " + BenchmarkReportSentenceCase.UpperFirst(OneLine(D(ctx, "limitation." + Inv(n)))));
         foreach (int n in dataQuality) Line(sb, "- **Data quality:** " + OneLine(D(ctx, "limitation.dataQuality." + Inv(n))));
         Line(sb);
     }
@@ -1096,7 +1096,7 @@ public static partial class BenchmarkReportPackRenderer
         }
         Line(sb, "- **" + Label("quality.commonGrader") + ":** " + (IsAvailable(ctx, "quality.commonGrader")
             ? D(ctx, "quality.commonGrader")
-            : "none. " + NotAvailableReason(Fact(ctx, "quality.commonGrader"))));
+            : "None. " + BenchmarkReportSentenceCase.UpperFirst(NotAvailableReason(Fact(ctx, "quality.commonGrader")))));
         Line(sb, "- **" + Label("pricing.card") + ":** " + D(ctx, "pricing.card"));
         Line(sb, "- **Baseline:** " + ChatPeriodRuns(ctx, "baseline", subject.BaselineRunIds));
         Line(sb, "- **Comparison:** " + ChatPeriodRuns(ctx, "comparison", subject.ComparisonRunIds));

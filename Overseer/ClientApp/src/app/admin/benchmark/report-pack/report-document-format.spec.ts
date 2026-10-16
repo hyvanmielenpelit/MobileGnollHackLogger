@@ -1,4 +1,11 @@
-import { BenchmarkReportAudience, BenchmarkReportDisclosure, BenchmarkReportScope } from '../../../services/admin-benchmark.service';
+import {
+  BenchmarkReportAudience,
+  BenchmarkReportDisclosure,
+  BenchmarkReportPackCallDto,
+  BenchmarkReportPackDocumentProgressDto,
+  BenchmarkReportPackValidationIssueDto,
+  BenchmarkReportScope
+} from '../../../services/admin-benchmark.service';
 import {
   CHAT_CONSISTENCY_REPORT_AUDIENCE_OPTIONS,
   COMPARISON_REPORT_AUDIENCE_OPTIONS,
@@ -12,13 +19,16 @@ import {
   chatConsistencySubjectKey,
   disclosureLabel,
   documentChipClass,
+  documentPhaseLine,
   documentProgressLabel,
+  documentRowPhaseLine,
   documentStatusLabel,
   formatCostUsd,
   formatElapsed,
   formatUtc,
   peerCountLabel,
   reportAudiencesFor,
+  reportCallKindLabel,
   reportDocumentScope,
   reportPackAudienceScope,
   reportPhaseLabel,
@@ -134,6 +144,45 @@ describe('report-document-format', () => {
     expect(reportPhaseLabel('')).toBe('');
     expect(reportPhaseLabel(undefined)).toBe('');
     expect(reportPhaseLabel('Polishing')).toBe('Polishing');
+  });
+
+  it('names each writer call kind, the shortening turn included', () => {
+    expect(['Draft', 'Revision', 'Shorten', 'Headline'].map(reportCallKindLabel))
+      .toEqual(['Draft', 'Revision', 'Shortening turn', 'Headline retry']);
+    expect(reportCallKindLabel('Polish')).toBe('Polish');
+    expect(reportCallKindLabel(null)).toBe('');
+  });
+
+  describe('documentPhaseLine', () => {
+    const issue = (rule: number): BenchmarkReportPackValidationIssueDto => ({ rule, location: 'headline', message: 'Too long.', dropped: false });
+    const call = (kind: string): BenchmarkReportPackCallDto => ({
+      kind, startedAtUtc: '2026-10-16T10:00:00Z', durationMs: 1000, inputTokens: 10, cachedInputTokens: 0, outputTokens: 5,
+      costUsd: 0.01, finishReason: 'stop', requestMessages: 2, requestCharacters: 100
+    });
+    const doc = (extra: Partial<BenchmarkReportPackDocumentProgressDto>): BenchmarkReportPackDocumentProgressDto => ({
+      audience: BenchmarkReportAudience.RootCauseAnalysis, status: 'Completed', documentId: 65, errorMessage: null, modelCalls: 1, ...extra
+    });
+
+    it('says how a finished document\'s draft was checked, naming a shortening turn', () => {
+      expect(documentPhaseLine(doc({ firstDraftClean: true, firstTurnIssues: [], calls: [call('Draft')] })))
+        .toBe('First draft passed every check');
+      expect(documentPhaseLine(doc({ firstDraftClean: false, firstTurnIssues: [issue(7), issue(31)], calls: [call('Draft'), call('Revision')] })))
+        .toBe('Revised once — 2 issues in the first draft');
+      expect(documentPhaseLine(doc({
+        status: 'CompletedWithWarnings', firstDraftClean: false, firstTurnIssues: [issue(7)],
+        calls: [call('Draft'), call('Revision'), call('Shorten')]
+      }))).toBe('Revised once and shortened — 1 issue in the first draft');
+      expect(documentPhaseLine(doc({ firstDraftClean: null }))).toBeNull();
+    });
+
+    it('names the step while the document is written, and leaves out what the chip already says', () => {
+      const revising = doc({ status: 'Repairing', phase: 'Revising', firstTurnIssues: [issue(7), issue(7)] });
+      expect(documentPhaseLine(revising)).toBe('Revising the draft — 2 issues found by the automatic check');
+      expect(documentRowPhaseLine(revising)).toBeNull();
+      expect(documentRowPhaseLine({ ...revising, phase: 'CheckingRevision' })).toBe('Checking the revision — 2 issues found by the automatic check');
+      expect(documentRowPhaseLine(doc({ status: 'Writing', phase: 'Writing' }))).toBeNull();
+      expect(documentPhaseLine(doc({ status: 'Pending', phase: '' }))).toBeNull();
+    });
   });
 
   it('gives each document status its chip class', () => {

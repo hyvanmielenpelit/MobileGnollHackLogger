@@ -1270,6 +1270,13 @@ public sealed class BenchmarkReportValidationNote
     /// </summary>
     public string? Text { get; set; }
 
+    /// <summary>
+    /// The text is Overseer's, written in place of a removed one (a Root Cause Analysis' axis status in
+    /// its conclusions); false on every other note and on notes stored before it was kept.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool AddedByOverseer { get; set; }
+
     /// <summary>The longest <see cref="Text"/> kept.</summary>
     public const int MaxTextLength = 2000;
 }
@@ -1573,6 +1580,15 @@ public class BenchmarkReportPackDocumentProgressDto
     /// <summary>The issues left after the last validation, at most 80; null while the job runs.</summary>
     public List<BenchmarkReportPackValidationIssueDto>? FinalIssues { get; set; }
 
+    /// <summary>
+    /// The repaired reply's own validation issues, before anything was removed, at most 80; null while the job
+    /// runs and when the document had no revision.
+    /// </summary>
+    public List<BenchmarkReportPackValidationIssueDto>? RevisionIssues { get; set; }
+
+    /// <summary>The word count of every capped section, turn by turn; null while the job runs.</summary>
+    public List<BenchmarkReportPackWordCountDto>? WordCounts { get; set; }
+
     /// <summary>The last reply's raw text of a Failed document, cut at 200,000 characters; null otherwise and while the job runs.</summary>
     public string? FailedReply { get; set; }
 
@@ -1615,14 +1631,44 @@ public static class BenchmarkReportPackCallKinds
     /// <summary>The repair turn after a draft with validation issues.</summary>
     public const string Revision = "Revision";
 
-    /// <summary>A headline-only retry.</summary>
+    /// <summary>A final turn asking for the headline alone.</summary>
     public const string Headline = "Headline";
+
+    /// <summary>A final turn asking for sections over their word caps shortened, and the headline when it is invalid.</summary>
+    public const string Shorten = "Shorten";
+}
+
+/// <summary>The word counts of one capped section of a document, turn by turn (raw writer words; a token counts as one).</summary>
+public class BenchmarkReportPackWordCountDto
+{
+    /// <summary>The section's location, e.g. <c>sections.hypothesesSpeed</c>.</summary>
+    public string Location { get; set; } = string.Empty;
+
+    /// <summary>The section in words, e.g. "Hypotheses: speed".</summary>
+    public string LocationLabel { get; set; } = string.Empty;
+
+    public int Cap { get; set; }
+
+    /// <summary>The first draft's count; null when the draft did not hold the section.</summary>
+    public int? Draft { get; set; }
+
+    /// <summary>The repaired reply's count; null without a revision.</summary>
+    public int? Revision { get; set; }
+
+    /// <summary>The shortening turn's count; null when the section was not in one.</summary>
+    public int? Shortened { get; set; }
+
+    /// <summary>The stored text's count, after trimming and Overseer's additions; null when nothing was stored.</summary>
+    public int? Final { get; set; }
+
+    /// <summary>The stored text's count per paragraph, in order.</summary>
+    public List<int> FinalParagraphs { get; set; } = new();
 }
 
 /// <summary>One writer call of a document, as the job diagnostics show it.</summary>
 public class BenchmarkReportPackCallDto
 {
-    /// <summary><c>Draft</c>, <c>Revision</c> or <c>Headline</c> (<see cref="BenchmarkReportPackCallKinds"/>).</summary>
+    /// <summary><c>Draft</c>, <c>Revision</c>, <c>Headline</c> or <c>Shorten</c> (<see cref="BenchmarkReportPackCallKinds"/>).</summary>
     public string Kind { get; set; } = string.Empty;
 
     public DateTime StartedAtUtc { get; set; }
@@ -1642,6 +1688,9 @@ public class BenchmarkReportPackCallDto
 
     /// <summary>The characters of every message sent.</summary>
     public long RequestCharacters { get; set; }
+
+    /// <summary>The characters of the call's reply; null when there was none. The text itself is served separately.</summary>
+    public int? ReplyChars { get; set; }
 }
 
 /// <summary>One validation issue of a writer turn, as the job diagnostics show it.</summary>
@@ -1655,7 +1704,7 @@ public class BenchmarkReportPackValidationIssueDto
     /// <summary>The rule's short name (<c>BenchmarkReportRuleCatalog</c>).</summary>
     public string RuleName { get; set; } = string.Empty;
 
-    /// <summary><c>removesItem</c>, <c>warning</c> or <c>failsDocument</c>.</summary>
+    /// <summary><c>removesItem</c>, <c>warning</c>, <c>warningTextKept</c>, <c>addedByOverseer</c> or <c>failsDocument</c>.</summary>
     public string Severity { get; set; } = string.Empty;
 
     /// <summary>The location in words, e.g. "Conclusions, paragraph 1".</summary>
@@ -1663,6 +1712,9 @@ public class BenchmarkReportPackValidationIssueDto
 
     /// <summary>The removed or flagged text; null when none was kept.</summary>
     public string? Text { get; set; }
+
+    /// <summary>The text is Overseer's, written in place of a removed one.</summary>
+    public bool AddedByOverseer { get; set; }
 }
 
 public class BenchmarkReportPackJobLogEntryDto

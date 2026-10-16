@@ -6,7 +6,7 @@
 - **Suite:** GnollHack Core Suite
 - **Questions:** 1
 - **Runs:** 1 (run 31)
-- **Peers:** none; this is a stand-alone report
+- **Peers:** None; this is a stand-alone report
 
 ## Summary
 
@@ -21,7 +21,7 @@
 
 | Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |
 |---|---|---|---|---|---|
-| **Orion Max** | 85 (82–88), rank 1 | 12.0 s | $0.050 | answers without tools, 9.8 points | none |
+| **Orion Max** | 85 (82–88), rank 1 | 12.0 s | $0.050 | Answers without tools, 9.8 points | None |
 
 ### How sure are we?
 
@@ -52,7 +52,7 @@ The terms the summary and the conclusions use, each in plain words. A term is al
 
 | Model | Index | Strengths | Lost points on | Flags |
 |---|---|---|---|---|
-| **Orion Max** | 85 | none ranked first or second | answers without tools: 9.8 index points on 1 question (Q3) | none |
+| **Orion Max** | 85 | None ranked first or second | Answers without tools: 9.8 index points on 1 question (Q3) | None |
 
 *Each entry is a count, a share or a rank measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (the most index points a failure signal could have cost), with its questions (Appendix A).*
 
@@ -65,13 +65,13 @@ This analysis describes run 31 of Orion Max on its own. Other models enter only 
 - **Suite:** GnollHack Core Suite, 1 questions.
 - **Chat configuration under test:** Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed
 - **Model under test:** Orion Max (Northwind, orion-max), thinking level not set; 1 run.
-- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error (a mistake serious enough to cap the answer's score) caps the answer's quality at 25.
+- **Grading:** Each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error (a mistake serious enough to cap the answer's score) caps the answer's quality at 25.
 - **Graders:**
   - Assessor: Gemini 3.8 Flash (Google, gemini-3.8-flash), different provider from the model under test
-- **Formulas:** answer quality is the weighted geometric mean (an average that one very low score pulls down sharply) of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean (an average in which harder questions count for more) of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
-- **Comparability:** this report describes the model on its own, measured under the instrument condition with signature `sig-7f3a91`.
+- **Formulas:** Answer quality is the weighted geometric mean (an average that one very low score pulls down sharply) of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean (an average in which harder questions count for more) of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is the model under test's spend divided by the questions asked.
+- **Comparability:** This report describes the model on its own, measured under the instrument condition with signature `sig-7f3a91`.
 - **Pricing basis:** Catalog prices on 2026-09-21
-- **Versions:** harness 41, scoring method 12.
+- **Versions:** Harness 41, scoring method 12.
 
 ### Controls
 
@@ -79,10 +79,10 @@ Earlier runs of other models on the same exam under the same instrument; their p
 
 | Control | Provider | Run | Date (UTC) | Shared questions |
 |---|---|---|---|---|
-| Vega Pro (high) (high) | Southstar | run 32 | 2026-09-21 | 6 |
-| Zeta Prime (high) (high) | Midland | run 35 | 2026-09-21 | 6 |
+| Vega Pro (high) (high) | Southstar | Run 32 | 2026-09-21 | 6 |
+| Zeta Prime (high) (high) | Midland | Run 35 | 2026-09-21 | 6 |
 
-- **Control limit:** none: two or more controls, at least one from another provider, so the intelligence hypotheses are graded as any other.
+- **Control limit:** None: two or more controls, at least one from another provider, so the intelligence hypotheses are graded as any other.
 - **Against the controls:** +15.0 points on average over 6 shared questions (95% interval +1.6 to +23.9).
 
 One run per suite on each side limits what this design can decide; the next runs add replicates.
@@ -146,7 +146,7 @@ No hypothesis on this axis has more support than its null.
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WS3.1 | Tool rounds multiply Orion Max's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
+| WS3.1 | Tool rounds multiply Orion Max's time (where its time goes, not a comparison). | Probable (Moderate) | — | Run 1 |
 | WS2.1 | Most of Orion Max's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 70% (69–71%) | — |
 
 *Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
@@ -192,7 +192,7 @@ In the order to make them: the Overseer chat first (C), then the benchmark (B), 
 
 | # | Run | Purpose | Models | Settles | Estimate |
 |---|---|---|---|---|---|
-| 1 | Replicate (recommended) | M, model selection | Orion Max | H0-W.1, WS3.1 | not estimated |
+| 1 | Replicate (recommended) | M, model selection | Orion Max | H0-W.1, WS3.1 | Not estimated |
 
 ### Checks
 
@@ -214,21 +214,21 @@ The benchmark asks single questions, so longer conversations are not measured.
 
 ## Appendices
 
-- **A. Intelligence detail:** the compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, the paired tests the body does not give and the per-question matrix.
-- **B. Speed and cost decompositions:** calls, latency, tokens and every component of each decomposed difference.
-- **C. Hypothesis details:** each hypothesis' evidence for and against, grade reasons and robustness checks, and the null hypotheses.
-- **D. Run settings:** every launcher setting of each run to make next.
-- **E. Known facts:** the counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
-- **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
-- **G. Question details:** the questions the writer cites, those with a critical error, confirmed or overturned, and the control items, each with its answer excerpts.
-- **H. Glossary:** every term this document uses, in plain words.
+- **A. Intelligence detail:** The compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, the paired tests the body does not give and the per-question matrix.
+- **B. Speed and cost decompositions:** Calls, latency, tokens and every component of each decomposed difference.
+- **C. Hypothesis details:** Each hypothesis's evidence for and against, grade reasons and robustness checks, and the null hypotheses.
+- **D. Run settings:** Every launcher setting of each run to make next.
+- **E. Known facts:** The counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
+- **F. Reproducibility:** Run ids, dates, hashes and the pricing basis.
+- **G. Question details:** The questions the writer cites, those with a critical error, confirmed or overturned, and the control items, each with its answer excerpts.
+- **H. Glossary:** Every term this document uses, in plain words.
 
 ## Appendix A: Intelligence detail
 
 ### Key figures
 
 - **Intelligence:** 85 / 100 (interval 82–88).
-- **Speed:** median answer time 12.0 s.
+- **Speed:** Median answer time 12.0 s.
 - **Cost:** $0.050 per question.
 - **Critical errors:** 0 of 6 answers.
 
@@ -270,23 +270,23 @@ The benchmark asks single questions, so longer conversations are not measured.
 
 ### Grader findings and panel agreement
 
-- **Panel mean absolute difference:** not available
-- **Intraclass correlation, ICC(A,1):** not available
-- **Panel disagreements:** not available
-- **Panel member A alone:** not available
-- **Panel member B alone:** not available
-- **Response-style conflict:** none
+- **Panel mean absolute difference:** Not available
+- **Intraclass correlation, ICC(A,1):** Not available
+- **Panel disagreements:** Not available
+- **Panel member A alone:** Not available
+- **Panel member B alone:** Not available
+- **Response-style conflict:** None
 
 No synthesis findings were recorded.
 
 ### Tool use
 
 - **Tool calls per question:** 0.0
-- **Source code share:** not available
-- **Wiki share:** not available
-- **Structured lookup share:** not available
-- **Knowledge base share:** not available
-- **Other tools share:** not available
+- **Source code share:** Not available
+- **Wiki share:** Not available
+- **Structured lookup share:** Not available
+- **Knowledge base share:** Not available
+- **Other tools share:** Not available
 - **Failed tool calls:** 0
 - **Calls refused by the tool budget:** 0
 
@@ -307,12 +307,12 @@ No synthesis findings were recorded.
 
 | Q | Topic | Assessed band | Authored | Score | Critical error | Refuted answer sentences | Tool calls | Model time |
 |---|---|---|---|---|---|---|---|---|
-| Q1 | An item question about gems | Intermediate | Simple | 92 | no | 0 | 0 | 8.2 s |
-| Q2 | — | Intermediate | Simple | 88 | no | 0 | 0 | 5.7 s |
-| Q3 | — | Intermediate | Simple | 30 | no | 0 | 0 | 8.8 s |
-| Q4 | — | Intermediate | Simple | 90 | no | 0 | 0 | 6.1 s |
-| Q5 | — | Intermediate | Simple | 85 | no | 0 | 0 | 9.4 s |
-| Q6 | — | Intermediate | Simple | 95 | no | 0 | 0 | 6.5 s |
+| Q1 | An item question about gems | Intermediate | Simple | 92 | No | 0 | 0 | 8.2 s |
+| Q2 | — | Intermediate | Simple | 88 | No | 0 | 0 | 5.7 s |
+| Q3 | — | Intermediate | Simple | 30 | No | 0 | 0 | 8.8 s |
+| Q4 | — | Intermediate | Simple | 90 | No | 0 | 0 | 6.1 s |
+| Q5 | — | Intermediate | Simple | 85 | No | 0 | 0 | 9.4 s |
+| Q6 | — | Intermediate | Simple | 95 | No | 0 | 0 | 6.5 s |
 
 ### Item-level controls
 
@@ -360,20 +360,20 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
 
 | Hypothesis | Pair | Paired result | Grade |
 |---|---|---|---|
-| H0-W.1 | within Orion Max | No contrast could be made. | Stands — may be chance (Low) |
+| H0-W.1 | Within Orion Max | No contrast could be made. | Stands — may be chance (Low) |
 
 ### Speed
 
 - **WS3.1: Orion Max's time spent on tool rounds** (Orion Max; locus model / chat; Probable (Moderate))
   - *For:* Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).
-  - *Against:* none recorded.
-  - *Grade reasons:* see Robustness.
+  - *Against:* None recorded.
+  - *Grade reasons:* See Robustness.
   - *Refuted if:* The ρ interval includes zero.
   - *Robustness:* Replicates failed (Orion Max ran only once per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
 - **WS2.1: Orion Max's time spent generating output** (Orion Max; locus model; Ruled out (Not supported))
   - *For:* Output generation is 70% (69–71%) of model time per question.
   - *Against:* Reasoning is 31% of Orion Max's output tokens.
-  - *Grade reasons:* its own test rules it out: reasoning is 31% of Orion Max's output tokens.
+  - *Grade reasons:* Its own test rules it out: reasoning is 31% of Orion Max's output tokens.
   - *Refuted if:* The reasoning share is under one half.
   - *Robustness:* Replicates failed (Orion Max ran only once per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
 
@@ -381,8 +381,8 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
 
 - **WC1.1: Orion Max's output cost** (Orion Max; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 69% of Orion Max's cost per question.
-  - *Against:* none recorded.
-  - *Grade reasons:* see Robustness.
+  - *Against:* None recorded.
+  - *Grade reasons:* See Robustness.
   - *Refuted if:* Another component is larger.
   - *Robustness:* Replicates failed (Orion Max ran only once per suite).
 
@@ -396,7 +396,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
   - Confirms H0-W.1 if the contrasts still find no difference with three runs per model; refutes it if a Mann–Whitney contrast is established after the Holm adjustment.
   - Confirms WS3.1 if model time keeps rising with the calls per answer; refutes it if the ρ interval includes zero.
 - **Predicted comparability:** Model comparison with the analyzed runs; a replicate (Tier A) of each model's own runs
-- **Estimate:** not estimated
+- **Estimate:** Not estimated
 - **Settles:** H0-W.1, WS3.1
 
 | Launcher field | Setting |
@@ -405,15 +405,15 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 | Models Under Test | Orion Max |
 | Run Target | Single suite |
 | Benchmark Suite | GnollHack Core Suite |
-| Scoring Profile | not shared by the analyzed runs: choose it |
+| Scoring Profile | Not shared by the analyzed runs: choose it |
 | Response Style | Concise — production default |
 | Source Code References | Allowed — answers cite source files and lines |
-| Assessor | not shared by the analyzed runs: choose it |
-| Co-Assessor | none |
-| Second Reader | none |
+| Assessor | Not shared by the analyzed runs: choose it |
+| Co-Assessor | None |
+| Second Reader | None |
 | Coverage | Never |
-| Claim Verifier | none |
-| Report Writer | none |
+| Claim Verifier | None |
+| Report Writer | None |
 | Runs per model | 3 |
 | Model order | Randomized (recommended) |
 
@@ -456,7 +456,7 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 92.
+- **Assessor (Gemini 3.8 Flash):** Score 92.
 
 **Claim verifier:**
 
@@ -2395,7 +2395,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 6,
+    "engineVersion": 7,
     "evidence": [
       {
         "atRisk": [
@@ -2968,6 +2968,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 131 · format version 16 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 17 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

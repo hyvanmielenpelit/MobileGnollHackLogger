@@ -6,7 +6,7 @@
 - **Battery:** Core knowledge, revision 2: 2 suites, 2 runs per suite, weighting scheme Questions and difficulty
 - **Questions:** 4
 - **Member runs:** 4 (battery run 9)
-- **Peers:** none; this is a stand-alone report
+- **Peers:** None; this is a stand-alone report
 
 ## The result in one sentence
 
@@ -15,7 +15,7 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 ## Key figures
 
 - **Intelligence:** 80 / 100 (interval 77–83).
-- **Speed:** median answer time 12.3 s.
+- **Speed:** Median answer time 12.3 s.
 - **Cost:** $0.036 per question.
 - **Critical errors:** 1 of 4 answers.
 
@@ -65,6 +65,6 @@ What it does not measure: conversations longer than one question, the wiki text 
 
 ---
 
-*Document ID 202 · format version 16 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 202 · format version 17 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

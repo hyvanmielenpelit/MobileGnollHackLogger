@@ -9,8 +9,8 @@ using Xunit;
 /// <summary>
 /// The grading of the root-cause hypotheses (§ A2): every grade boundary, the null cap, the control
 /// limit, the per-axis keep limits and the hypothesis a research question reserves (question 1 only one about the
-/// pair itself, the slowest model its preferred partner's), the amount a hypothesis explains, and the axis status
-/// with and without pairs and beside a price effect.
+/// pair itself, the slowest model its preferred partner's), the amount a hypothesis explains, the axis status
+/// with and without pairs and beside a price effect, its price note, and the noun phrase of a check a draft proposes.
 /// </summary>
 public class RootCauseHypothesesTests
 {
@@ -440,6 +440,66 @@ public class RootCauseHypothesesTests
         Assert.Equal(RootCauseStatuses.NotEstablished, lowStatus.Status);
         Assert.Equal("HC1.1", lowStatus.BestHypothesis);
         Assert.StartsWith(RootCauseGrades.WordWithGrade(RootCauseGrades.Low), lowStatus.Reason, StringComparison.Ordinal);
+    }
+
+    /// <summary>A price effect (HC2) about a pair whose cost difference is <paramref name="scale"/>.</summary>
+    private static RootCauseDraft PriceEffect(string group, double scale, double share, bool notSupported = false)
+    {
+        var draft = Draft(id: "HC2", axis: RootCauseAxes.Cost, group: group, share: share, scale: scale, notSupported: notSupported, checks: AllPassed());
+        draft.PriceEffect = true;
+        return draft;
+    }
+
+    [Fact]
+    public void TheAxisStatus_NotesThePriceEffects_ThatCoverLargerDifferencesThanItsBestHypothesis()
+    {
+        var volumeChecks = AllPassed();
+        volumeChecks[1] = Check(RootCauseHypotheses.Replicates, RootCauseCheckStatuses.Failed);
+        var volume = Draft(id: "HC1", axis: RootCauseAxes.Cost, group: "A|C", scale: 0.1, checks: volumeChecks);
+        var largest = PriceEffect("A|B", scale: 0.19, share: 1.03);
+        var larger = PriceEffect("A|D", scale: 0.15, share: 0.9);
+        var smaller = PriceEffect("A|E", scale: 0.05, share: 0.6);
+        var ruledOut = PriceEffect("A|F", scale: 0.5, share: 0.9, notSupported: true);
+        var kept = RootCauseHypotheses.Keep(new[] { volume, largest, larger, smaller, ruledOut }.Select(d => (Grade(d), d)).ToList());
+        Assert.Equal(new[] { "HC2.1", "HC2.2", "HC2.3" }, new[] { largest, larger, smaller }.Select(d => kept.Single(k => ReferenceEquals(k.Draft, d)).Hypothesis.Key));
+
+        // The axis status is unchanged; the note names the two price effects whose pairs differ more than HC1.1's.
+        var status = RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, kept, hasPairs: true);
+        Assert.Equal(RootCauseStatuses.Probable, status.Status);
+        Assert.Equal("HC1.1", status.BestHypothesis);
+        Assert.Equal("Price per token, known from the price cards, explains the largest cost differences (HC2.1–HC2.2; 103% of the largest).", status.PriceNote);
+
+        // No price effect covers a larger difference: no note.
+        var none = RootCauseHypotheses.Keep(new[] { volume, smaller }.Select(d => (Grade(d), d)).ToList());
+        Assert.Null(RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, none, hasPairs: true).PriceNote);
+
+        // The price effect is the axis's best hypothesis itself: no note.
+        var alone = RootCauseHypotheses.Keep(new[] { largest }.Select(d => (Grade(d), d)).ToList());
+        var priceOnly = RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, alone, hasPairs: true);
+        Assert.Equal(RootCauseHypotheses.PriceOnlyAxisReason, priceOnly.Reason);
+        Assert.Null(priceOnly.PriceNote);
+    }
+
+    [Theory]
+    [InlineData(new[] { "HC2.1", "HC2.2", "HC2.3" }, "HC2.1–HC2.3")]
+    [InlineData(new[] { "HC2.4", "HC2.1", "HC2.2" }, "HC2.1–HC2.2 and HC2.4")]
+    [InlineData(new[] { "HC2.3" }, "HC2.3")]
+    [InlineData(new[] { "HC2.1", "HC1.2", "HC2.2" }, "HC2.1–HC2.2 and HC1.2")]
+    public void KeyRanges_JoinConsecutiveNumbersOfOneRule(string[] keys, string expected)
+        => Assert.Equal(expected, RootCauseHypotheses.KeyRanges(keys));
+
+    [Fact]
+    public void EveryDraftThatProposesACheck_NamesItAsANounPhrase()
+    {
+        var ctx = Compared(Timed("A", 1000, 0, reasoningReported: true), Timed("B", 1000, 0, reasoningReported: true));
+
+        var one = RootCauseHypotheses.SharedFailures(ctx, new[] { (3, "Q3", 2, 2, false) }, new[] { "A", "B" });
+        Assert.NotNull(one);
+        Assert.StartsWith("Check the rubric of Q3 ", one!.CheckText, StringComparison.Ordinal);
+        Assert.Equal("a review of the rubric of Q3", one.CheckSummary);
+
+        var two = RootCauseHypotheses.SharedFailures(ctx, new[] { (3, "Q3", 2, 2, false), (7, "Q7", 1, 2, true) }, new[] { "A", "B" });
+        Assert.Equal("a review of the rubrics of Q3 and Q7", two!.CheckSummary);
     }
 
     [Fact]

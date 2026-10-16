@@ -33,10 +33,20 @@ import { ProviderBadgeComponent } from '../../../shared/provider-badge/provider-
 import {
   audienceLabel,
   documentChipClass,
+  documentRowPhaseLine,
   formatCostUsd,
   formatElapsed,
   statusLabel
 } from '../report-pack/report-document-format';
+import {
+  REPORT_JOB_DOCUMENT_CARD_DEFAULTS,
+  ReportJobDocumentCard,
+  ReportJobDocumentsComponent,
+  reportJobDocumentCost,
+  reportJobDocumentTokens,
+  reportJobDocumentTone,
+  reuseReportJobDocumentCards
+} from '../report-pack/report-job-documents.component';
 import {
   ClientPollError,
   ClientPollState,
@@ -92,20 +102,9 @@ export interface RunReportWritingStage {
   state: 'done' | 'current' | 'pending';
 }
 
-/** One row of the Documents table. */
-export interface RunReportWritingDocumentRow {
-  audience: BenchmarkReportAudience;
-  name: string;
-  status: string;
-  statusWord: string;
-  chipClass: string;
-  duration: string;
-  modelCalls: string;
-  tokens: string;
-  cost: string;
-  documentId: number | null;
-  errorMessage: string | null;
-  viewable: boolean;
+/** One document's progress card, with its status. */
+export interface RunReportWritingDocumentRow extends ReportJobDocumentCard {
+  readonly status: string;
 }
 
 /** The interval between two job requests while nothing fails. */
@@ -190,7 +189,7 @@ type PollResult = { ok: true; view: BenchmarkRunReportJobDto | null } | { ok: fa
 
 /**
  * The progress of a run's AI report writing job: a phase line, a stage rail, an activity bar, the
- * running figures, one row per document and the diagnostics. It polls the run's job, or the job of
+ * running figures, one progress card per document and the diagnostics. It polls the run's job, or the job of
  * the context's `source` (a battery run's), every 2 s through the worker ticker, backing off on
  * failures, until the job finishes or the dialog closes.
  *
@@ -201,7 +200,7 @@ type PollResult = { ok: true; view: BenchmarkRunReportJobDto | null } | { ok: fa
 @Component({
   selector: 'app-run-report-writing-dialog',
   standalone: true,
-  imports: [ProviderBadgeComponent],
+  imports: [ProviderBadgeComponent, ReportJobDocumentsComponent],
   templateUrl: './run-report-writing-dialog.component.html',
   styleUrls: ['./run-report-writing-dialog.component.scss'],
   changeDetection: ChangeDetectionStrategy.OnPush
@@ -257,6 +256,8 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
   copyStatus = '';
   copyError: string | null = null;
 
+  /** The progress cards last shown. */
+  private documentCards: readonly RunReportWritingDocumentRow[] = [];
   private finishedEmitted = false;
   /** When the dialog was last opened (client clock), for the start grace of a 204. */
   private openedAtMs = 0;
@@ -715,7 +716,13 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     return value === null || value === undefined ? '—' : numberFormat.format(value);
   }
 
-  get documentRows(): RunReportWritingDocumentRow[] {
+  /** One progress card per requested document, then any other the job writes; kept while nothing on them changes. */
+  get documentRows(): readonly RunReportWritingDocumentRow[] {
+    this.documentCards = reuseReportJobDocumentCards(this.documentCards, this.buildDocumentCards());
+    return this.documentCards;
+  }
+
+  private buildDocumentCards(): RunReportWritingDocumentRow[] {
     const view = this.view;
     if (!view) {
       return [];
@@ -735,22 +742,26 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
       const duration = doc.startedAtUtc
         ? this.spanToNow(doc.startedAtUtc, doc.completedAtUtc ?? (finished ? view.finishedAtUtc : null))
         : null;
-      const hasTokens = doc.inputTokens !== undefined || doc.outputTokens !== undefined;
+      const title = audienceLabel(doc.audience);
       return {
+        ...REPORT_JOB_DOCUMENT_CARD_DEFAULTS,
+        key: `doc-${doc.audience}`,
         audience: doc.audience,
-        name: audienceLabel(doc.audience),
+        title,
+        phrase: documentPhrase(doc.audience),
         status: doc.status,
         statusWord: statusLabel(doc.status),
         chipClass: documentChipClass(doc.status),
+        tone: reportJobDocumentTone(doc.status),
+        phaseLine: documentRowPhaseLine(doc),
+        errorMessage: doc.status === 'Failed' ? (doc.errorMessage || 'No reason was recorded.') : null,
         duration: duration === null ? '—' : formatElapsed(duration),
         modelCalls: this.formatCount(doc.modelCalls),
-        tokens: hasTokens
-          ? `${this.formatCount(doc.inputTokens ?? 0)} in · ${this.formatCount(doc.outputTokens ?? 0)} out`
-          : '—',
-        cost: doc.costUsd === undefined ? '—' : formatCostUsd(doc.costUsd),
+        tokens: reportJobDocumentTokens(doc.inputTokens, doc.outputTokens),
+        cost: reportJobDocumentCost(doc.costUsd),
         documentId: doc.documentId,
-        errorMessage: doc.status === 'Failed' ? (doc.errorMessage || 'No reason was recorded.') : null,
-        viewable: finished && doc.documentId !== null && WRITTEN_STATUSES.has(doc.status)
+        viewable: finished && doc.documentId !== null && WRITTEN_STATUSES.has(doc.status),
+        tipStem: `${this.idPrefix}-card-${doc.audience}`
       };
     });
   }
@@ -984,7 +995,8 @@ export class RunReportWritingDialogComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  viewDocument(row: RunReportWritingDocumentRow): void {
+  /** View on a stored document's card: the host opens it. */
+  viewDocument(row: ReportJobDocumentCard): void {
     if (row.viewable && row.documentId !== null) {
       this.viewRequested.emit(row.documentId);
     }

@@ -35,7 +35,7 @@
 > [!NOTE]
 > **Question.** **Why did Zeta Prime score lowest?**
 >
-> *Answer strength: no hypothesis about this model fired — see its profile.*
+> *Answer strength: No hypothesis about this model fired — see its profile.*
 >
 > For Zeta Prime the measured signals are lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1). The answer strength is Unknown.
 
@@ -57,11 +57,11 @@
 
 | Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |
 |---|---|---|---|---|---|
-| Orion Max (reference) | 85 (82–88), rank 1–2 (tied) | 12.0 s | $0.050 | answers without tools, 9.8 points | none |
-| Vega Pro | 80 (77–83), rank 1–2 (tied) | 9.0 s | $0.030 | mostly Accuracy, 2.8 points | none |
-| Lyra Mini | 70 (66–74), rank 3–4 (tied) | 15.0 s | $0.020 | confirmed critical errors, 7.2 points | 1 critical error |
-| Nova Lite | 70 (64–76), rank 3–4 (tied) | 8.0 s | $0.060 | answers without tools, 6.3 points | none |
-| Zeta Prime | 55 (50–60), rank 5 | 20.0 s | $0.010 | mostly Accuracy, 5.6 points | 1 isolated miss |
+| Orion Max (reference) | 85 (82–88), rank 1–2 (tied) | 12.0 s | $0.050 | Answers without tools, 9.8 points | None |
+| Vega Pro | 80 (77–83), rank 1–2 (tied) | 9.0 s | $0.030 | Mostly Accuracy, 2.8 points | None |
+| Lyra Mini | 70 (66–74), rank 3–4 (tied) | 15.0 s | $0.020 | Confirmed critical errors, 7.2 points | 1 critical error |
+| Nova Lite | 70 (64–76), rank 3–4 (tied) | 8.0 s | $0.060 | Answers without tools, 6.3 points | None |
+| Zeta Prime | 55 (50–60), rank 5 | 20.0 s | $0.010 | Mostly Accuracy, 5.6 points | 1 isolated miss |
 
 ### How sure are we?
 
@@ -98,11 +98,11 @@ The terms the summary and the conclusions use, each in plain words. A term is al
 
 | Model | Index | Strengths | Lost points on | Flags |
 |---|---|---|---|---|
-| Orion Max (reference) | 85 | tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness | answers without tools: 9.8 index points on 1 question (Q3) | none |
-| Vega Pro | 80 | tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness | low-scoring answers, mostly Accuracy: 2.8 index points on 2 questions (Q3 and Q4) | none |
-| Lyra Mini | 70 | none ranked first or second | confirmed critical errors: 7.2 index points on 1 question (Q3) | 1 critical error (Q3) |
-| Nova Lite | 70 | none ranked first or second | answers without tools: 6.3 index points on 1 question (Q3) | none |
-| Zeta Prime | 55 | none ranked first or second | low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); last of 5 models on Accuracy | 1 isolated miss (Q1) |
+| Orion Max (reference) | 85 | Tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness | Answers without tools: 9.8 index points on 1 question (Q3) | None |
+| Vega Pro | 80 | Tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness | Low-scoring answers, mostly Accuracy: 2.8 index points on 2 questions (Q3 and Q4) | None |
+| Lyra Mini | 70 | None ranked first or second | Confirmed critical errors: 7.2 index points on 1 question (Q3) | 1 critical error (Q3) |
+| Nova Lite | 70 | None ranked first or second | Answers without tools: 6.3 index points on 1 question (Q3) | None |
+| Zeta Prime | 55 | None ranked first or second | Low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); last of 5 models on Accuracy | 1 isolated miss (Q1) |
 
 *Each entry is a count, a share or a rank measured over the model's scored answers; none says why. Lost points on: the largest share of the model's index points at risk (the most index points a failure signal could have cost), with its questions (Appendix A). Flags: critical errors (a mistake serious enough to cap the answer's score); isolated misses (a question one model missed while the others did well). An isolated miss is a question the model scored 50 or less on while the other models' median was 75 or more.*
 
@@ -111,15 +111,15 @@ The terms the summary and the conclusions use, each in plain words. A term is al
 ### Setup and method
 
 - **Suite:** GnollHack Core Suite, 6 questions in the per-question matrix.
-- **Coverage:** every non-excluded model of Comparison #12 — Spring model sweep.
+- **Coverage:** Every non-excluded model of Comparison #12 — Spring model sweep.
 - **Chat configuration under test:** Gameplay Help, concise (verboseMode: false), tools: enabled, web search: disabled, subagents: disabled, source code references: allowed
-- **Grading:** each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
+- **Grading:** Each answer is graded on accuracy, completeness, conciseness and readability, weighted Accuracy 55%, Completeness 25%, Conciseness 10%, Readability 10%. Each dimension is graded on behaviorally anchored levels (fixed grade steps, each described by the answer behavior that earns it) scored 1, 15, 35, 55, 72, 87, 100. A critical error caps the answer's quality at 25.
 - **Graders:**
   - Assessor: Gemini 3.8 Flash (Google, gemini-3.8-flash), a different provider from every model
-- **Formulas:** answer quality is the weighted geometric mean (an average that one very low score pulls down sharply) of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean (an average in which harder questions count for more) of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is each model's own spend divided by the questions asked.
-- **Comparability:** every model in this report was measured under one instrument condition, signature `sig-7f3a91`.
+- **Formulas:** Answer quality is the weighted geometric mean (an average that one very low score pulls down sharply) of the four dimension scores, capped by a critical error; in a panel run it is the mean of both graders' scores. The Intelligence Index is the difficulty-weighted mean (an average in which harder questions count for more) of answer quality. Median answer time is the median model time per answer, with tool time excluded. Cost per question is each model's own spend divided by the questions asked.
+- **Comparability:** Every model in this report was measured under one instrument condition, signature `sig-7f3a91`.
 - **Pricing basis:** Catalog prices on 2026-09-21
-- **Versions:** harness 41; scoring method 12.
+- **Versions:** Harness 41; scoring method 12.
 
 One run per suite on each side limits what this design can decide; the next runs add replicates.
 
@@ -147,10 +147,10 @@ One run per suite on each side limits what this design can decide; the next runs
 
 | Pair | Questions | Difference (95% interval) | Result |
 |---|---|---|---|
-| Vega Pro vs Orion Max | 6 | 0.0 points (-21.0 to +21.0) | not established |
-| Lyra Mini vs Orion Max | 6 | -15.2 points (-23.8 to -6.6) | not established |
-| Nova Lite vs Orion Max | 6 | -15.8 points (-26.1 to -5.6) | not established |
-| Zeta Prime vs Orion Max | 6 | -30.0 points (-43.9 to -16.1) | not established |
+| Vega Pro vs Orion Max | 6 | 0.0 points (-21.0 to +21.0) | Not established |
+| Lyra Mini vs Orion Max | 6 | -15.2 points (-23.8 to -6.6) | Not established |
+| Nova Lite vs Orion Max | 6 | -15.8 points (-26.1 to -5.6) | Not established |
+| Zeta Prime vs Orion Max | 6 | -30.0 points (-43.9 to -16.1) | Not established |
 
 *Each row is a paired test (a comparison of two models on the same questions). Intelligence: Holm-adjusted across 4 tests (a correction for running many comparisons at once). Difference: the mean per-question difference, first model minus the reference, on the questions both answered. Appendix A gives the tests among all pairs.*
 
@@ -179,10 +179,10 @@ The first known fact: Uncached input, price per token accounts for 45% (44–46%
 
 | Pair | Time ratio (95% interval) | Result |
 |---|---|---|
-| Vega Pro vs Orion Max | 1.20 (0.76 to 1.89) | not established |
-| Lyra Mini vs Orion Max | 1.40 (1.37 to 1.43) | not established |
-| Nova Lite vs Orion Max | 1.60 (1.02 to 2.51) | not established |
-| Zeta Prime vs Orion Max | 1.80 (1.75 to 1.86) | not established |
+| Vega Pro vs Orion Max | 1.20 (0.76 to 1.89) | Not established |
+| Lyra Mini vs Orion Max | 1.40 (1.37 to 1.43) | Not established |
+| Nova Lite vs Orion Max | 1.60 (1.02 to 2.51) | Not established |
+| Zeta Prime vs Orion Max | 1.80 (1.75 to 1.86) | Not established |
 
 *Each row is a paired test. Speed: Holm-adjusted across 4 tests. A ratio is the first model's own time per question divided by the reference's, on the questions both answered. Appendix A gives the tests among all pairs.*
 
@@ -208,7 +208,7 @@ The speed tables split the time per question into its components.
 
 ### Paired tests against Orion Max
 
-Cost: not tested. No candidate price card was resolved for run #31 of Orion Max on this pricing basis, so its cost is unknown.
+Cost: Not tested. No candidate price card was resolved for run #31 of Orion Max on this pricing basis, so its cost is unknown.
 
 ### Cost differences between the models
 
@@ -228,7 +228,7 @@ The cost tables split the cost per question into volume and price.
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| HQ3.1 | Shared failures on specific questions point to the instrument, not the models. | Suggestive (Low) | — | check 1 |
+| HQ3.1 | Shared failures on specific questions point to the instrument, not the models. | Suggestive (Low) | — | Check 1 |
 
 *Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
@@ -241,8 +241,8 @@ No real difference could be shown (the gap may be chance) for 7 comparisons:
 - Orion Max vs. Nova Lite
 - Orion Max vs. Zeta Prime
 - Nova Lite vs. Zeta Prime
-- within Orion Max's own questions
-- within Zeta Prime's own questions
+- Within Orion Max's own questions
+- Within Zeta Prime's own questions
 
 The strongest hypothesis in the table: Shared failures on specific questions point to the instrument, not the models. Its grade and the evidence against it stand beside it.
 
@@ -250,9 +250,9 @@ The strongest hypothesis in the table: Shared failures on specific questions poi
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| WS3.1 | Tool rounds multiply Orion Max's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
-| WS3.2 | Tool rounds multiply Nova Lite's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
-| WS3.3 | Tool rounds multiply Zeta Prime's time (where its time goes, not a comparison). | Probable (Moderate) | — | run 1 |
+| WS3.1 | Tool rounds multiply Orion Max's time (where its time goes, not a comparison). | Probable (Moderate) | — | Run 1 |
+| WS3.2 | Tool rounds multiply Nova Lite's time (where its time goes, not a comparison). | Probable (Moderate) | — | Run 1 |
+| WS3.3 | Tool rounds multiply Zeta Prime's time (where its time goes, not a comparison). | Probable (Moderate) | — | Run 1 |
 | WS2.1 | Most of Zeta Prime's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 65% (64–66%) | — |
 | WS2.2 | Most of Nova Lite's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 66% (65–67%) | — |
 | WS2.3 | Most of Orion Max's time is output generation, driven by reasoning tokens (where its time goes, not a comparison). | Ruled out (Not supported) | 70% (69–71%) | — |
@@ -325,7 +325,7 @@ In the order to make them: the Overseer chat first (C), then the benchmark (B), 
 
 | # | Run | Purpose | Models | Settles | Estimate |
 |---|---|---|---|---|---|
-| 1 | Replicate (recommended) | M, model selection | all 5 models | H0-Q.1, H0-Q.2, H0-Q.3, H0-Q.4, H0-Q.5, H0-W.1, H0-W.2, H0-S.1 and 7 more (Appendix D) | not estimated |
+| 1 | Replicate (recommended) | M, model selection | All 5 models | H0-Q.1, H0-Q.2, H0-Q.3, H0-Q.4, H0-Q.5, H0-W.1, H0-W.2, H0-S.1 and 7 more (Appendix D) | Not estimated |
 
 ### Checks
 
@@ -347,14 +347,14 @@ The benchmark asks single questions, so longer conversations are not measured.
 
 ## Appendices
 
-- **A. Intelligence detail:** the compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, the paired tests the body does not give and the per-question matrix.
-- **B. Speed and cost decompositions:** calls, latency, tokens and every component of each decomposed difference.
-- **C. Hypothesis details:** each hypothesis' evidence for and against, grade reasons and robustness checks, and the null hypotheses.
-- **D. Run settings:** every launcher setting of each run to make next.
-- **E. Known facts:** the counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
-- **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
-- **G. Question details:** the questions the writer cites, those with a critical error, confirmed or overturned, and the control items, each with its answer excerpts.
-- **H. Glossary:** every term this document uses, in plain words.
+- **A. Intelligence detail:** The compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, the paired tests the body does not give and the per-question matrix.
+- **B. Speed and cost decompositions:** Calls, latency, tokens and every component of each decomposed difference.
+- **C. Hypothesis details:** Each hypothesis's evidence for and against, grade reasons and robustness checks, and the null hypotheses.
+- **D. Run settings:** Every launcher setting of each run to make next.
+- **E. Known facts:** The counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
+- **F. Reproducibility:** Run ids, dates, hashes and the pricing basis.
+- **G. Question details:** The questions the writer cites, those with a critical error, confirmed or overturned, and the control items, each with its answer excerpts.
+- **H. Glossary:** Every term this document uses, in plain words.
 
 ## Appendix A: Intelligence detail
 
@@ -362,19 +362,19 @@ The benchmark asks single questions, so longer conversations are not measured.
 
 | Letter | Model | Provider | Kind | Runs | Thinking level | Harness version | Run dates (UTC) | Price card |
 |---|---|---|---|---|---|---|---|---|
-| A | Orion Max (reference) | Northwind | run | 1 | not set | 41 | 2026-09-21 | — |
-| B | Vega Pro | Southstar | run | 1 | not set | 41 | 2026-09-21 | — |
-| C | Lyra Mini | Eastgate | run | 1 | not set | 41 | 2026-09-21 | — |
-| D | Nova Lite | Westlake | run | 1 | not set | 41 | 2026-09-21 | — |
-| E | Zeta Prime | Midland | run | 1 | not set | 41 | 2026-09-21 | — |
+| A | Orion Max (reference) | Northwind | Run | 1 | Not set | 41 | 2026-09-21 | — |
+| B | Vega Pro | Southstar | Run | 1 | Not set | 41 | 2026-09-21 | — |
+| C | Lyra Mini | Eastgate | Run | 1 | Not set | 41 | 2026-09-21 | — |
+| D | Nova Lite | Westlake | Run | 1 | Not set | 41 | 2026-09-21 | — |
+| E | Zeta Prime | Midland | Run | 1 | Not set | 41 | 2026-09-21 | — |
 
 ### Configuration differences
 
-- **Orion Max against Vega Pro: config differences:** provider and model
-- **Orion Max against Lyra Mini: config differences:** provider and model
-- **Orion Max against Nova Lite: config differences:** provider and model
-- **Orion Max against Zeta Prime: config differences:** provider and model
-- **Nova Lite against Zeta Prime: config differences:** provider and model
+- **Orion Max against Vega Pro: config differences:** Provider and model
+- **Orion Max against Lyra Mini: config differences:** Provider and model
+- **Orion Max against Nova Lite: config differences:** Provider and model
+- **Orion Max against Zeta Prime: config differences:** Provider and model
+- **Nova Lite against Zeta Prime: config differences:** Provider and model
 
 ### Failure profile
 
@@ -410,7 +410,7 @@ No run of these models recorded structured grader findings; they are recorded fr
 
 No model was graded by an assessor panel in every run, so no panel agreement figures are stated.
 
-- **Response-style conflict:** none
+- **Response-style conflict:** None
 
 ### Points at risk
 
@@ -446,33 +446,33 @@ Intelligence: Holm-adjusted across 10 tests.
 
 | Pair | Questions | Difference (95% interval) | Adjusted p | Result |
 |---|---|---|---|---|
-| Orion Max vs Vega Pro | 6 | 0.0 points (-21.0 to +21.0) | 0.813 | not established |
-| Orion Max vs Lyra Mini | 6 | +15.2 points (+6.6 to +23.8) | 0.313 | not established |
-| Orion Max vs Nova Lite | 6 | +15.8 points (+5.6 to +26.1) | 0.313 | not established |
-| Orion Max vs Zeta Prime | 6 | +30.0 points (+16.1 to +43.9) | 0.313 | not established |
-| Vega Pro vs Lyra Mini | 6 | +15.2 points (+1.1 to +29.3) | 0.313 | not established |
-| Vega Pro vs Nova Lite | 6 | +15.8 points (+3.0 to +28.6) | 0.313 | not established |
-| Vega Pro vs Zeta Prime | 6 | +30.0 points (+21.0 to +39.0) | 0.313 | not established |
-| Lyra Mini vs Nova Lite | 6 | +0.7 points (-7.1 to +8.4) | 1.000 | not established |
-| Lyra Mini vs Zeta Prime | 6 | +14.8 points (+8.1 to +21.5) | 0.313 | not established |
-| Nova Lite vs Zeta Prime | 6 | +14.2 points (+5.8 to +22.5) | 0.313 | not established |
+| Orion Max vs Vega Pro | 6 | 0.0 points (-21.0 to +21.0) | 0.813 | Not established |
+| Orion Max vs Lyra Mini | 6 | +15.2 points (+6.6 to +23.8) | 0.313 | Not established |
+| Orion Max vs Nova Lite | 6 | +15.8 points (+5.6 to +26.1) | 0.313 | Not established |
+| Orion Max vs Zeta Prime | 6 | +30.0 points (+16.1 to +43.9) | 0.313 | Not established |
+| Vega Pro vs Lyra Mini | 6 | +15.2 points (+1.1 to +29.3) | 0.313 | Not established |
+| Vega Pro vs Nova Lite | 6 | +15.8 points (+3.0 to +28.6) | 0.313 | Not established |
+| Vega Pro vs Zeta Prime | 6 | +30.0 points (+21.0 to +39.0) | 0.313 | Not established |
+| Lyra Mini vs Nova Lite | 6 | +0.7 points (-7.1 to +8.4) | 1.000 | Not established |
+| Lyra Mini vs Zeta Prime | 6 | +14.8 points (+8.1 to +21.5) | 0.313 | Not established |
+| Nova Lite vs Zeta Prime | 6 | +14.2 points (+5.8 to +22.5) | 0.313 | Not established |
 
 *Difference: the mean per-question difference, first model minus second, on the questions both answered.*
 
-Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested on this measure; each pair says why.
+Speed: Holm-adjusted across 10 tests. Cost: Not tested. No pair could be tested on this measure; each pair says why.
 
 | Pair | Time ratio (95% interval) | Speed result | Spend ratio (95% interval) | Cost result |
 |---|---|---|---|---|
-| Orion Max vs Vega Pro | 0.83 (0.53 to 1.31) | not established | — | not tested |
-| Orion Max vs Lyra Mini | 0.71 (0.70 to 0.73) | not established | — | not tested |
-| Orion Max vs Nova Lite | 0.62 (0.40 to 0.98) | not established | — | not tested |
-| Orion Max vs Zeta Prime | 0.56 (0.54 to 0.57) | not established | — | not tested |
-| Vega Pro vs Lyra Mini | 0.86 (0.54 to 1.36) | not established | — | not tested |
-| Vega Pro vs Nova Lite | 0.75 (0.74 to 0.76) | not established | — | not tested |
-| Vega Pro vs Zeta Prime | 0.67 (0.42 to 1.06) | not established | — | not tested |
-| Lyra Mini vs Nova Lite | 0.87 (0.55 to 1.38) | not established | — | not tested |
-| Lyra Mini vs Zeta Prime | 0.78 (0.77 to 0.79) | not established | — | not tested |
-| Nova Lite vs Zeta Prime | 0.89 (0.56 to 1.41) | not established | — | not tested |
+| Orion Max vs Vega Pro | 0.83 (0.53 to 1.31) | Not established | — | Not tested |
+| Orion Max vs Lyra Mini | 0.71 (0.70 to 0.73) | Not established | — | Not tested |
+| Orion Max vs Nova Lite | 0.62 (0.40 to 0.98) | Not established | — | Not tested |
+| Orion Max vs Zeta Prime | 0.56 (0.54 to 0.57) | Not established | — | Not tested |
+| Vega Pro vs Lyra Mini | 0.86 (0.54 to 1.36) | Not established | — | Not tested |
+| Vega Pro vs Nova Lite | 0.75 (0.74 to 0.76) | Not established | — | Not tested |
+| Vega Pro vs Zeta Prime | 0.67 (0.42 to 1.06) | Not established | — | Not tested |
+| Lyra Mini vs Nova Lite | 0.87 (0.55 to 1.38) | Not established | — | Not tested |
+| Lyra Mini vs Zeta Prime | 0.78 (0.77 to 0.79) | Not established | — | Not tested |
+| Nova Lite vs Zeta Prime | 0.89 (0.56 to 1.41) | Not established | — | Not tested |
 
 *A ratio is the first model's own time or spend per question divided by the second's, on the questions both answered.*
 
@@ -531,49 +531,49 @@ Speed: Holm-adjusted across 10 tests. Cost: not tested. No pair could be tested 
 
 | Pair | Questions | Difference per question | Component | Effect | Part | Share (95% interval) |
 |---|---|---|---|---|---|---|
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Uncached input, token volume | volume | -$0.0005 | 7% (6–7%) |
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Uncached input, price per token | price | -$0.0035 | 45% (44–46%) |
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Visible output, token volume | volume | -$0.0008 | 10% (10–10%) |
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Visible output, price per token | price | -$0.0014 | 18% (18–18%) |
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Reasoning, token volume | volume | -$0.0009 | 11% (11–12%) |
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Reasoning, price per token | price | -$0.0007 | 9% (9–9%) |
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Token volume, all components | volume | -$0.0022 | 28% (27–29%) |
-| Orion Max vs Vega Pro | 6 | -$0.0078 | Price per token, all components | price | -$0.0056 | 72% (71–73%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Uncached input, token volume | volume | -$0.0013 | 8% (7–8%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Uncached input, price per token | price | -$0.0074 | 44% (43–45%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Cache reads, token volume | volume | -$0.0001 | 0% (0–0%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Visible output, token volume | volume | -$0.0017 | 10% (10–10%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Visible output, price per token | price | -$0.0030 | 18% (17–18%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Reasoning, token volume | volume | -$0.0019 | 11% (11–12%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Reasoning, price per token | price | -$0.0015 | 9% (9–9%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Token volume, all components | volume | -$0.0049 | 29% (29–30%) |
-| Orion Max vs Lyra Mini | 6 | -$0.017 | Price per token, all components | price | -$0.012 | 71% (70–71%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Uncached input, token volume | volume | -$0.0023 | 8% (8–9%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Uncached input, price per token | price | -$0.012 | 43% (42–44%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Cache reads, token volume | volume | -$0.0001 | 0% (0–0%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Visible output, token volume | volume | -$0.0027 | 10% (10–10%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Visible output, price per token | price | -$0.0047 | 17% (17–18%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Reasoning, token volume | volume | -$0.0031 | 12% (11–12%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Reasoning, price per token | price | -$0.0025 | 9% (9–9%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Token volume, all components | volume | -$0.0082 | 30% (30–31%) |
-| Orion Max vs Nova Lite | 6 | -$0.027 | Price per token, all components | price | -$0.019 | 70% (69–70%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Uncached input, token volume | volume | -$0.0035 | 9% (9–9%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Uncached input, price per token | price | -$0.016 | 42% (42–43%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Cache reads, token volume | volume | -$0.0001 | 0% (0–0%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Visible output, token volume | volume | -$0.0039 | 10% (10–10%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Visible output, price per token | price | -$0.0065 | 17% (17–17%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Reasoning, token volume | volume | -$0.0045 | 12% (12–12%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Reasoning, price per token | price | -$0.0037 | 10% (9–10%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Token volume, all components | volume | -$0.012 | 31% (31–32%) |
-| Orion Max vs Zeta Prime | 6 | -$0.038 | Price per token, all components | price | -$0.026 | 69% (68–69%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Uncached input, token volume | volume | -$0.0014 | 12% (12–13%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Uncached input, price per token | price | -$0.0044 | 39% (38–39%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Visible output, token volume | volume | -$0.0012 | 10% (10–11%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Visible output, price per token | price | -$0.0018 | 16% (16–16%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Reasoning, token volume | volume | -$0.0014 | 12% (12–12%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Reasoning, price per token | price | -$0.0012 | 10% (10–10%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Token volume, all components | volume | -$0.0040 | 35% (35–36%) |
-| Nova Lite vs Zeta Prime | 6 | -$0.011 | Price per token, all components | price | -$0.0074 | 65% (64–65%) |
+| Orion Max vs Vega Pro | 6 | -$0.0078 | Uncached input, token volume | Volume | -$0.0005 | 7% (6–7%) |
+| Orion Max vs Vega Pro | 6 | -$0.0078 | Uncached input, price per token | Price | -$0.0035 | 45% (44–46%) |
+| Orion Max vs Vega Pro | 6 | -$0.0078 | Visible output, token volume | Volume | -$0.0008 | 10% (10–10%) |
+| Orion Max vs Vega Pro | 6 | -$0.0078 | Visible output, price per token | Price | -$0.0014 | 18% (18–18%) |
+| Orion Max vs Vega Pro | 6 | -$0.0078 | Reasoning, token volume | Volume | -$0.0009 | 11% (11–12%) |
+| Orion Max vs Vega Pro | 6 | -$0.0078 | Reasoning, price per token | Price | -$0.0007 | 9% (9–9%) |
+| Orion Max vs Vega Pro | 6 | -$0.0078 | Token volume, all components | Volume | -$0.0022 | 28% (27–29%) |
+| Orion Max vs Vega Pro | 6 | -$0.0078 | Price per token, all components | Price | -$0.0056 | 72% (71–73%) |
+| Orion Max vs Lyra Mini | 6 | -$0.017 | Uncached input, token volume | Volume | -$0.0013 | 8% (7–8%) |
+| Orion Max vs Lyra Mini | 6 | -$0.017 | Uncached input, price per token | Price | -$0.0074 | 44% (43–45%) |
+| Orion Max vs Lyra Mini | 6 | -$0.017 | Cache reads, token volume | Volume | -$0.0001 | 0% (0–0%) |
+| Orion Max vs Lyra Mini | 6 | -$0.017 | Visible output, token volume | Volume | -$0.0017 | 10% (10–10%) |
+| Orion Max vs Lyra Mini | 6 | -$0.017 | Visible output, price per token | Price | -$0.0030 | 18% (17–18%) |
+| Orion Max vs Lyra Mini | 6 | -$0.017 | Reasoning, token volume | Volume | -$0.0019 | 11% (11–12%) |
+| Orion Max vs Lyra Mini | 6 | -$0.017 | Reasoning, price per token | Price | -$0.0015 | 9% (9–9%) |
+| Orion Max vs Lyra Mini | 6 | -$0.017 | Token volume, all components | Volume | -$0.0049 | 29% (29–30%) |
+| Orion Max vs Lyra Mini | 6 | -$0.017 | Price per token, all components | Price | -$0.012 | 71% (70–71%) |
+| Orion Max vs Nova Lite | 6 | -$0.027 | Uncached input, token volume | Volume | -$0.0023 | 8% (8–9%) |
+| Orion Max vs Nova Lite | 6 | -$0.027 | Uncached input, price per token | Price | -$0.012 | 43% (42–44%) |
+| Orion Max vs Nova Lite | 6 | -$0.027 | Cache reads, token volume | Volume | -$0.0001 | 0% (0–0%) |
+| Orion Max vs Nova Lite | 6 | -$0.027 | Visible output, token volume | Volume | -$0.0027 | 10% (10–10%) |
+| Orion Max vs Nova Lite | 6 | -$0.027 | Visible output, price per token | Price | -$0.0047 | 17% (17–18%) |
+| Orion Max vs Nova Lite | 6 | -$0.027 | Reasoning, token volume | Volume | -$0.0031 | 12% (11–12%) |
+| Orion Max vs Nova Lite | 6 | -$0.027 | Reasoning, price per token | Price | -$0.0025 | 9% (9–9%) |
+| Orion Max vs Nova Lite | 6 | -$0.027 | Token volume, all components | Volume | -$0.0082 | 30% (30–31%) |
+| Orion Max vs Nova Lite | 6 | -$0.027 | Price per token, all components | Price | -$0.019 | 70% (69–70%) |
+| Orion Max vs Zeta Prime | 6 | -$0.038 | Uncached input, token volume | Volume | -$0.0035 | 9% (9–9%) |
+| Orion Max vs Zeta Prime | 6 | -$0.038 | Uncached input, price per token | Price | -$0.016 | 42% (42–43%) |
+| Orion Max vs Zeta Prime | 6 | -$0.038 | Cache reads, token volume | Volume | -$0.0001 | 0% (0–0%) |
+| Orion Max vs Zeta Prime | 6 | -$0.038 | Visible output, token volume | Volume | -$0.0039 | 10% (10–10%) |
+| Orion Max vs Zeta Prime | 6 | -$0.038 | Visible output, price per token | Price | -$0.0065 | 17% (17–17%) |
+| Orion Max vs Zeta Prime | 6 | -$0.038 | Reasoning, token volume | Volume | -$0.0045 | 12% (12–12%) |
+| Orion Max vs Zeta Prime | 6 | -$0.038 | Reasoning, price per token | Price | -$0.0037 | 10% (9–10%) |
+| Orion Max vs Zeta Prime | 6 | -$0.038 | Token volume, all components | Volume | -$0.012 | 31% (31–32%) |
+| Orion Max vs Zeta Prime | 6 | -$0.038 | Price per token, all components | Price | -$0.026 | 69% (68–69%) |
+| Nova Lite vs Zeta Prime | 6 | -$0.011 | Uncached input, token volume | Volume | -$0.0014 | 12% (12–13%) |
+| Nova Lite vs Zeta Prime | 6 | -$0.011 | Uncached input, price per token | Price | -$0.0044 | 39% (38–39%) |
+| Nova Lite vs Zeta Prime | 6 | -$0.011 | Visible output, token volume | Volume | -$0.0012 | 10% (10–11%) |
+| Nova Lite vs Zeta Prime | 6 | -$0.011 | Visible output, price per token | Price | -$0.0018 | 16% (16–16%) |
+| Nova Lite vs Zeta Prime | 6 | -$0.011 | Reasoning, token volume | Volume | -$0.0014 | 12% (12–12%) |
+| Nova Lite vs Zeta Prime | 6 | -$0.011 | Reasoning, price per token | Price | -$0.0012 | 10% (10–10%) |
+| Nova Lite vs Zeta Prime | 6 | -$0.011 | Token volume, all components | Volume | -$0.0040 | 35% (35–36%) |
+| Nova Lite vs Zeta Prime | 6 | -$0.011 | Price per token, all components | Price | -$0.0074 | 65% (64–65%) |
 
 *Each difference is split into parts that add up exactly to it (a standard method, the logarithmic-mean Divisia index), using only the questions both models have figures for. A share's interval comes from resampling those questions (a bootstrap interval). The difference is the first model's minus the second's. A component whose part and share are both zero is left out.*
 
@@ -585,8 +585,8 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
 
 - **HQ3.1: shared failures on the same questions** (Orion Max, Vega Pro, Lyra Mini, Nova Lite and Zeta Prime; locus suite / corpus / chat; Suggestive (Low))
   - *For:* Q3: 4 of 5 models scored below 50.
-  - *Against:* none recorded.
-  - *Grade reasons:* it is observed, not measured.
+  - *Against:* None recorded.
+  - *Grade reasons:* It is observed, not measured.
   - *Refuted if:* One model answered the question well.
 
 | Hypothesis | Pair | Paired result | Grade |
@@ -596,45 +596,45 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
 | H0-Q.3 | Orion Max vs Nova Lite | +15.8 points, not established | Stands — may be chance (Low) |
 | H0-Q.4 | Orion Max vs Zeta Prime | +30.0 points, not established | Stands — may be chance (Low) |
 | H0-Q.5 | Nova Lite vs Zeta Prime | +14.2 points, not established | Stands — may be chance (Low) |
-| H0-W.1 | within Orion Max | No contrast could be made. | Stands — may be chance (Low) |
-| H0-W.2 | within Zeta Prime | No contrast could be made. | Stands — may be chance (Low) |
+| H0-W.1 | Within Orion Max | No contrast could be made. | Stands — may be chance (Low) |
+| H0-W.2 | Within Zeta Prime | No contrast could be made. | Stands — may be chance (Low) |
 
 ### Speed
 
 - **WS3.1: Orion Max's time spent on tool rounds** (Orion Max; locus model / chat; Probable (Moderate))
   - *For:* Across Orion Max's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).
-  - *Against:* none recorded.
-  - *Grade reasons:* see Robustness.
+  - *Against:* None recorded.
+  - *Grade reasons:* See Robustness.
   - *Refuted if:* The ρ interval includes zero.
   - *Robustness:* Replicates failed (Orion Max ran only once per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
 - **WS3.2: Nova Lite's time spent on tool rounds** (Nova Lite; locus model / chat; Probable (Moderate))
   - *For:* Across Nova Lite's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).
-  - *Against:* none recorded.
-  - *Grade reasons:* see Robustness.
+  - *Against:* None recorded.
+  - *Grade reasons:* See Robustness.
   - *Refuted if:* The ρ interval includes zero.
   - *Robustness:* Replicates failed (Nova Lite ran only once per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
 - **WS3.3: Zeta Prime's time spent on tool rounds** (Zeta Prime; locus model / chat; Probable (Moderate))
   - *For:* Across Zeta Prime's questions, model time rises with model calls per answer: Spearman ρ 0.88 (95% interval 0.23 to 0.99, n 6).
-  - *Against:* none recorded.
-  - *Grade reasons:* see Robustness.
+  - *Against:* None recorded.
+  - *Grade reasons:* See Robustness.
   - *Refuted if:* The ρ interval includes zero.
   - *Robustness:* Replicates failed (Zeta Prime ran only once per suite); Leave one question out passed (ρ stays at or above 0.5 without any one question).
 - **WS2.1: Zeta Prime's time spent generating output** (Zeta Prime; locus model; Ruled out (Not supported))
   - *For:* Output generation is 65% (64–66%) of model time per question.
   - *Against:* Reasoning is 39% of Zeta Prime's output tokens.
-  - *Grade reasons:* its own test rules it out: reasoning is 39% of Zeta Prime's output tokens.
+  - *Grade reasons:* Its own test rules it out: reasoning is 39% of Zeta Prime's output tokens.
   - *Refuted if:* The reasoning share is under one half.
   - *Robustness:* Replicates failed (Zeta Prime ran only once per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
 - **WS2.2: Nova Lite's time spent generating output** (Nova Lite; locus model; Ruled out (Not supported))
   - *For:* Output generation is 66% (65–67%) of model time per question.
   - *Against:* Reasoning is 38% of Nova Lite's output tokens.
-  - *Grade reasons:* its own test rules it out: reasoning is 38% of Nova Lite's output tokens.
+  - *Grade reasons:* Its own test rules it out: reasoning is 38% of Nova Lite's output tokens.
   - *Refuted if:* The reasoning share is under one half.
   - *Robustness:* Replicates failed (Nova Lite ran only once per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
 - **WS2.3: Orion Max's time spent generating output** (Orion Max; locus model; Ruled out (Not supported))
   - *For:* Output generation is 70% (69–71%) of model time per question.
   - *Against:* Reasoning is 31% of Orion Max's output tokens.
-  - *Grade reasons:* its own test rules it out: reasoning is 31% of Orion Max's output tokens.
+  - *Grade reasons:* Its own test rules it out: reasoning is 31% of Orion Max's output tokens.
   - *Refuted if:* The reasoning share is under one half.
   - *Robustness:* Replicates failed (Orion Max ran only once per suite); Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most).
 
@@ -650,75 +650,75 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
 
 - **WC1.1: Zeta Prime's output cost** (Zeta Prime; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 54% of Zeta Prime's cost per question.
-  - *Against:* none recorded.
-  - *Grade reasons:* see Robustness.
+  - *Against:* None recorded.
+  - *Grade reasons:* See Robustness.
   - *Refuted if:* Another component is larger.
   - *Robustness:* Replicates failed (Zeta Prime ran only once per suite).
 - **WC1.2: Nova Lite's output cost** (Nova Lite; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 55% of Nova Lite's cost per question.
-  - *Against:* none recorded.
-  - *Grade reasons:* see Robustness.
+  - *Against:* None recorded.
+  - *Grade reasons:* See Robustness.
   - *Refuted if:* Another component is larger.
   - *Robustness:* Replicates failed (Nova Lite ran only once per suite).
 - **WC1.3: Orion Max's output cost** (Orion Max; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 69% of Orion Max's cost per question.
-  - *Against:* none recorded.
-  - *Grade reasons:* see Robustness.
+  - *Against:* None recorded.
+  - *Grade reasons:* See Robustness.
   - *Refuted if:* Another component is larger.
   - *Robustness:* Replicates failed (Orion Max ran only once per suite).
 - **HC4.1: Zeta Prime's weak prompt caching, compared with Orion Max** (Zeta Prime and Orion Max; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 9% (9–9%) of the $0.038 per-question cost difference.
   - *Against:* Zeta Prime's cache-read share is 28% against the models' median of 26%.
-  - *Grade reasons:* its own test rules it out: Zeta Prime's cache-read share is 28% against the models' median of 26%.
+  - *Grade reasons:* Its own test rules it out: Zeta Prime's cache-read share is 28% against the models' median of 26%.
   - *Refuted if:* The cache-read share is comparable to the other models'.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
 - **HC4.2: Nova Lite's weak prompt caching, compared with Orion Max** (Nova Lite and Orion Max; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 8% (8–9%) of the $0.027 per-question cost difference.
   - *Against:* Nova Lite's cache-read share is 27% against the models' median of 26%.
-  - *Grade reasons:* its own test rules it out: Nova Lite's cache-read share is 27% against the models' median of 26%.
+  - *Grade reasons:* Its own test rules it out: Nova Lite's cache-read share is 27% against the models' median of 26%.
   - *Refuted if:* The cache-read share is comparable to the other models'.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
 - **HC4.3: Zeta Prime's weak prompt caching, compared with Nova Lite** (Zeta Prime and Nova Lite; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 12% (12–13%) of the $0.011 per-question cost difference.
   - *Against:* Zeta Prime's cache-read share is 28% against the models' median of 26%.
-  - *Grade reasons:* its own test rules it out: Zeta Prime's cache-read share is 28% against the models' median of 26%.
+  - *Grade reasons:* Its own test rules it out: Zeta Prime's cache-read share is 28% against the models' median of 26%.
   - *Refuted if:* The cache-read share is comparable to the other models'.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
 - **HC4.4: Lyra Mini's weak prompt caching, compared with Orion Max** (Lyra Mini and Orion Max; locus chat / provider; Ruled out (Not supported))
   - *For:* Uncached input, token volume accounts for 8% (7–8%) of the $0.017 per-question cost difference.
   - *Against:* Lyra Mini's cache-read share is 26% against the models' median of 26%.
-  - *Grade reasons:* its own test rules it out: Lyra Mini's cache-read share is 26% against the models' median of 26%.
+  - *Grade reasons:* Its own test rules it out: Lyra Mini's cache-read share is 26% against the models' median of 26%.
   - *Refuted if:* The cache-read share is comparable to the other models'.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
 - **HC2.1: Zeta Prime's higher price per token, compared with Orion Max** (Zeta Prime and Orion Max; locus model; Known from the price cards (High))
   - *For:* Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference.
   - *Against:* The volume effect is 31% (31–32%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
+  - *Grade reasons:* Every condition of the grade is met.
+  - *Refuted if:* Not testable by a run: the share follows from the price cards and these runs' token counts.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
 - **HC2.2: Nova Lite's higher price per token, compared with Orion Max** (Nova Lite and Orion Max; locus model; Known from the price cards (High))
   - *For:* Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference.
   - *Against:* The volume effect is 30% (30–31%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
+  - *Grade reasons:* Every condition of the grade is met.
+  - *Refuted if:* Not testable by a run: the share follows from the price cards and these runs' token counts.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
 - **HC2.3: Lyra Mini's higher price per token, compared with Orion Max** (Lyra Mini and Orion Max; locus model; Known from the price cards (High))
   - *For:* Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference.
   - *Against:* The volume effect is 29% (29–30%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
+  - *Grade reasons:* Every condition of the grade is met.
+  - *Refuted if:* Not testable by a run: the share follows from the price cards and these runs' token counts.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
 - **HC2.4: Zeta Prime's higher price per token, compared with Nova Lite** (Zeta Prime and Nova Lite; locus model; Known from the price cards (High))
   - *For:* Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference.
   - *Against:* The volume effect is 35% (35–36%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
+  - *Grade reasons:* Every condition of the grade is met.
+  - *Refuted if:* Not testable by a run: the share follows from the price cards and these runs' token counts.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
 - **HC2.5: Vega Pro's higher price per token, compared with Orion Max** (Vega Pro and Orion Max; locus model; Known from the price cards (High))
   - *For:* Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference.
   - *Against:* The volume effect is 28% (27–29%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
+  - *Grade reasons:* Every condition of the grade is met.
+  - *Refuted if:* Not testable by a run: the share follows from the price cards and these runs' token counts.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
 
 | Hypothesis | Pair | Paired result | Grade |
@@ -741,7 +741,7 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
   - Confirms H0-S.1, H0-S.2, H0-S.3, H0-S.4 and H0-S.5 if the paired test still finds no difference with three runs per model; refutes each if a paired test of the two on the model time is established after adjustment.
   - Confirms WS3.1, WS3.2 and WS3.3 if model time keeps rising with the calls per answer; refutes each if the ρ interval includes zero.
 - **Predicted comparability:** Model comparison with the analyzed runs; a replicate (Tier A) of each model's own runs
-- **Estimate:** not estimated
+- **Estimate:** Not estimated
 - **Settles:** H0-Q.1, H0-Q.2, H0-Q.3, H0-Q.4, H0-Q.5, H0-W.1, H0-W.2, H0-S.1, H0-S.2, H0-S.3, H0-S.4, H0-S.5, WS3.1, WS3.2, WS3.3
 
 | Launcher field | Setting |
@@ -750,15 +750,15 @@ Each run's settings are the launcher's, copied from the analyzed runs unless its
 | Models Under Test | Orion Max, Vega Pro, Lyra Mini, Nova Lite, Zeta Prime |
 | Run Target | Single suite |
 | Benchmark Suite | GnollHack Core Suite |
-| Scoring Profile | not shared by the analyzed runs: choose it |
+| Scoring Profile | Not shared by the analyzed runs: choose it |
 | Response Style | Concise — production default |
 | Source Code References | Allowed — answers cite source files and lines |
-| Assessor | not shared by the analyzed runs: choose it |
-| Co-Assessor | none |
-| Second Reader | none |
+| Assessor | Not shared by the analyzed runs: choose it |
+| Co-Assessor | None |
+| Second Reader | None |
 | Coverage | Never |
-| Claim Verifier | none |
-| Report Writer | none |
+| Claim Verifier | None |
+| Report Writer | None |
 | Runs per model | 3 |
 | Model order | Randomized (recommended) |
 
@@ -777,11 +777,11 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ## Appendix F: Reproducibility
 
-- **Orion Max** (Northwind orion-max, thinking level not set): run ids 31; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
-- **Vega Pro** (Southstar vega-pro, thinking level not set): run ids 32; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
-- **Lyra Mini** (Eastgate lyra-mini, thinking level not set): run ids 33; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
-- **Nova Lite** (Westlake nova-lite, thinking level not set): run ids 34; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
-- **Zeta Prime** (Midland zeta-prime, thinking level not set): run ids 35; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
+- **Orion Max** (Northwind orion-max, thinking level not set): Run IDs 31; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
+- **Vega Pro** (Southstar vega-pro, thinking level not set): Run IDs 32; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
+- **Lyra Mini** (Eastgate lyra-mini, thinking level not set): Run IDs 33; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
+- **Nova Lite** (Westlake nova-lite, thinking level not set): Run IDs 34; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
+- **Zeta Prime** (Midland zeta-prime, thinking level not set): Run IDs 35; run dates 2026-09-21; System prompt SHA-256 prefix `e9b3e9a7c4d1`; Tool guides SHA-256 prefix `f59d8b30a1c7`
 - **Grader models:** Assessor: Google gemini-3.8-flash
 - **Comparability signature:** `sig-7f3a91`
 - **Pricing basis:** Catalog prices on 2026-09-21
@@ -808,7 +808,7 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 70.
+- **Assessor (Gemini 3.8 Flash):** Score 70.
 
 **Claim verifier:**
 
@@ -822,7 +822,7 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 75.
+- **Assessor (Gemini 3.8 Flash):** Score 75.
 
 **Claim verifier:**
 
@@ -836,7 +836,7 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 50. Misses the alignment condition.
+- **Assessor (Gemini 3.8 Flash):** Score 50. Misses the alignment condition.
 
 **Claim verifier:**
 
@@ -860,7 +860,7 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 30.
+- **Assessor (Gemini 3.8 Flash):** Score 30.
 
 **Claim verifier:**
 
@@ -874,7 +874,7 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 28. Says the thrown gem always breaks, which contradicts the rubric.
+- **Assessor (Gemini 3.8 Flash):** Score 28. Says the thrown gem always breaks, which contradicts the rubric.
   - Critical error: "Answer 203"
 
 **Claim verifier:**
@@ -889,7 +889,7 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 **Graders:**
 
-- **Assessor (Gemini 3.8 Flash):** score 25.
+- **Assessor (Gemini 3.8 Flash):** Score 25.
 
 **Claim verifier:**
 
@@ -5203,9 +5203,9 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Model B scored higher than Model D (established by 95% intervals that do not overlap) at 0.50 times its cost per question.",
+      "display": "Model B scored higher than Model D at 0.50 times its cost per question, established by 95% intervals that do not overlap.",
       "key": "notable.1.summary",
-      "value": "Model B scored higher than Model D (established by 95% intervals that do not overlap) at 0.50 times its cost per question."
+      "value": "Model B scored higher than Model D at 0.50 times its cost per question, established by 95% intervals that do not overlap."
     },
     {
       "available": true,
@@ -5227,9 +5227,9 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Model D scored higher than Model E (established by 95% intervals that do not overlap) at 0.40 times its median answer time.",
+      "display": "Model D scored higher than Model E at 0.40 times its median answer time, established by 95% intervals that do not overlap.",
       "key": "notable.2.summary",
-      "value": "Model D scored higher than Model E (established by 95% intervals that do not overlap) at 0.40 times its median answer time."
+      "value": "Model D scored higher than Model E at 0.40 times its median answer time, established by 95% intervals that do not overlap."
     },
     {
       "available": true,
@@ -5251,9 +5251,9 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Model B scored higher than Model E (established by 95% intervals that do not overlap) at 0.45 times its median answer time.",
+      "display": "Model B scored higher than Model E at 0.45 times its median answer time, established by 95% intervals that do not overlap.",
       "key": "notable.3.summary",
-      "value": "Model B scored higher than Model E (established by 95% intervals that do not overlap) at 0.45 times its median answer time."
+      "value": "Model B scored higher than Model E at 0.45 times its median answer time, established by 95% intervals that do not overlap."
     },
     {
       "available": true,
@@ -6617,6 +6617,11 @@ The counts and the configuration facts the analysis states, each numbered as the
       "available": true,
       "display": "Check the rubric of Q3 against the source, and whether the tools' corpus holds the facts the question needs.",
       "key": "rca.check.1"
+    },
+    {
+      "available": true,
+      "display": "Check 1, a review of the rubric of Q3",
+      "key": "rca.check.1.summary"
     },
     {
       "available": true,
@@ -8391,7 +8396,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "The volume effect is larger.",
+      "display": "Not testable by a run: the share follows from the price cards and these runs' token counts.",
       "key": "rca.hypothesis.HC2.1.refutedIf"
     },
     {
@@ -8464,7 +8469,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "The volume effect is larger.",
+      "display": "Not testable by a run: the share follows from the price cards and these runs' token counts.",
       "key": "rca.hypothesis.HC2.2.refutedIf"
     },
     {
@@ -8537,7 +8542,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "The volume effect is larger.",
+      "display": "Not testable by a run: the share follows from the price cards and these runs' token counts.",
       "key": "rca.hypothesis.HC2.3.refutedIf"
     },
     {
@@ -8610,7 +8615,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "The volume effect is larger.",
+      "display": "Not testable by a run: the share follows from the price cards and these runs' token counts.",
       "key": "rca.hypothesis.HC2.4.refutedIf"
     },
     {
@@ -8683,7 +8688,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "The volume effect is larger.",
+      "display": "Not testable by a run: the share follows from the price cards and these runs' token counts.",
       "key": "rca.hypothesis.HC2.5.refutedIf"
     },
     {
@@ -10703,43 +10708,43 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "from $0.060 (Model D) to $0.010 (Model E)",
+      "display": "from Model E at $0.010 to Model D at $0.060",
       "key": "spread.cost",
       "value": 0.049999999999999996
     },
     {
       "available": true,
-      "display": "from 50 (Model E) to 80 (Model A), 30 points apart",
+      "display": "from Model E at 50 to Model A at 80, 30 points apart",
       "key": "spread.dimension.accuracy",
       "value": 30
     },
     {
       "available": true,
-      "display": "from 50 (Model E) to 80 (Model A), 30 points apart",
+      "display": "from Model E at 50 to Model A at 80, 30 points apart",
       "key": "spread.dimension.completeness",
       "value": 30
     },
     {
       "available": true,
-      "display": "from 50 (Model E) to 80 (Model A), 30 points apart",
+      "display": "from Model E at 50 to Model A at 80, 30 points apart",
       "key": "spread.dimension.conciseness",
       "value": 30
     },
     {
       "available": true,
-      "display": "from 50 (Model E) to 80 (Model A), 30 points apart",
+      "display": "from Model E at 50 to Model A at 80, 30 points apart",
       "key": "spread.dimension.readability",
       "value": 30
     },
     {
       "available": true,
-      "display": "from 55 (Model E) to 85 (Model A), 30 points apart",
+      "display": "from Model E at 55 to Model A at 85, 30 points apart",
       "key": "spread.quality",
       "value": 30
     },
     {
       "available": true,
-      "display": "from 20.0 s (Model E) to 8.0 s (Model D)",
+      "display": "from Model D at 8.0 s to Model E at 20.0 s",
       "key": "spread.speed",
       "value": 12000
     },
@@ -10830,7 +10835,7 @@ The counts and the configuration facts the analysis states, each numbered as the
       ],
       "number": 1,
       "questions": [],
-      "summary": "Model B scored higher than Model D (established by 95% intervals that do not overlap) at 0.50 times its cost per question."
+      "summary": "Model B scored higher than Model D at 0.50 times its cost per question, established by 95% intervals that do not overlap."
     },
     {
       "facts": [
@@ -10847,7 +10852,7 @@ The counts and the configuration facts the analysis states, each numbered as the
       ],
       "number": 2,
       "questions": [],
-      "summary": "Model D scored higher than Model E (established by 95% intervals that do not overlap) at 0.40 times its median answer time."
+      "summary": "Model D scored higher than Model E at 0.40 times its median answer time, established by 95% intervals that do not overlap."
     },
     {
       "facts": [
@@ -10864,7 +10869,7 @@ The counts and the configuration facts the analysis states, each numbered as the
       ],
       "number": 3,
       "questions": [],
-      "summary": "Model B scored higher than Model E (established by 95% intervals that do not overlap) at 0.45 times its median answer time."
+      "summary": "Model B scored higher than Model E at 0.45 times its median answer time, established by 95% intervals that do not overlap."
     }
   ],
   "pairedDifferences": [],
@@ -11997,6 +12002,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "kind": "rubric",
         "number": 1,
+        "summary": "Check 1, a review of the rubric of Q3",
         "text": "Check the rubric of Q3 against the source, and whether the tools' corpus holds the facts the question needs."
       }
     ],
@@ -12792,7 +12798,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 6,
+    "engineVersion": 7,
     "evidence": [
       {
         "atRisk": [
@@ -14701,7 +14707,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model E and Model A",
         "number": 1,
         "priceEffect": true,
-        "refutedIf": "The volume effect is larger.",
+        "refutedIf": "Not testable by a run: the share follows from the price cards and these runs' token counts.",
         "robustness": [
           {
             "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
@@ -14752,7 +14758,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model D and Model A",
         "number": 2,
         "priceEffect": true,
-        "refutedIf": "The volume effect is larger.",
+        "refutedIf": "Not testable by a run: the share follows from the price cards and these runs' token counts.",
         "robustness": [
           {
             "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
@@ -14803,7 +14809,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model C and Model A",
         "number": 3,
         "priceEffect": true,
-        "refutedIf": "The volume effect is larger.",
+        "refutedIf": "Not testable by a run: the share follows from the price cards and these runs' token counts.",
         "robustness": [
           {
             "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
@@ -14854,7 +14860,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model E and Model D",
         "number": 4,
         "priceEffect": true,
-        "refutedIf": "The volume effect is larger.",
+        "refutedIf": "Not testable by a run: the share follows from the price cards and these runs' token counts.",
         "robustness": [
           {
             "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
@@ -14905,7 +14911,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model B and Model A",
         "number": 5,
         "priceEffect": true,
-        "refutedIf": "The volume effect is larger.",
+        "refutedIf": "Not testable by a run: the share follows from the price cards and these runs' token counts.",
         "robustness": [
           {
             "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
@@ -16028,6 +16034,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 212 · format version 21 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
+*Document ID 212 · format version 22 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

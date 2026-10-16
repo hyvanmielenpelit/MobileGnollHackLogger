@@ -122,52 +122,11 @@
         </dl>
 
         @if (documentRows.length > 0) {
-          <div class="rw-table-wrap">
-            <table class="gh-table rw-documents">
-              <caption>Documents</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Document</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">Duration</th>
-                  <th scope="col">Model calls</th>
-                  <th scope="col">Tokens</th>
-                  <th scope="col">Cost</th>
-                  @if (isFinished) {
-                    <th scope="col"><span class="visually-hidden">Actions</span></th>
-                  }
-                </tr>
-              </thead>
-              <tbody>
-                @for (row of documentRows; track row.audience) {
-                  <tr class="rw-document-row" [attr.data-audience]="row.audience">
-                    <th scope="row">{{ row.name }}</th>
-                    <td>
-                      <span [class]="row.chipClass">{{ row.statusWord }}</span>
-                      @if (row.errorMessage) {
-                        <p class="gh-field-error rw-document-error">
-                          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                          <span>{{ row.errorMessage }}</span>
-                        </p>
-                      }
-                    </td>
-                    <td class="rw-num">{{ row.duration }}</td>
-                    <td class="rw-num">{{ row.modelCalls }}</td>
-                    <td class="rw-num">{{ row.tokens }}</td>
-                    <td class="rw-num">{{ row.cost }}</td>
-                    @if (isFinished) {
-                      <td class="rw-row-actions">
-                        @if (row.viewable) {
-                          <button type="button" class="btn-gh btn-gh-small rw-view"
-                                  [attr.aria-label]="'View the ' + row.name" (click)="viewDocument(row)">View</button>
-                        }
-                      </td>
-                    }
-                  </tr>
-                }
-              </tbody>
-            </table>
-          </div>
+          <section class="rw-documents" [attr.aria-labelledby]="idPrefix + '-documents-title'">
+            <h4 class="rw-documents-title" [id]="idPrefix + '-documents-title'">Documents</h4>
+            <app-report-job-documents [idPrefix]="idPrefix + '-card'" [rows]="documentRows"
+                                      (view)="viewDocument($event)"></app-report-job-documents>
+          </section>
         }
       }
 

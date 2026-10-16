@@ -51,9 +51,13 @@ public static partial class BenchmarkReportPackPrompt
     /// The user message of the one repair turn of a per-model (<paramref name="comparisonScope"/> false) or
     /// comparison-scope document: the issues grouped by rule (<see cref="AppendGroupedIssues"/>), then the
     /// reminders. When an issue is the headline's, <paramref name="headline"/>, the headline as written, adds
-    /// its word count against the cap; a Root Cause Analysis' claim issues add its claim reminders.
+    /// its word count against the cap; a Root Cause Analysis's claim issues add its claim reminders; and
+    /// <paramref name="wordCounts"/>, the draft's capped sections, add the word budget
+    /// (<see cref="AppendWordBudget"/>), with the conclusions' paragraph rule when <paramref name="rootCause"/>.
     /// </summary>
-    public static string BuildRepairMessage(IReadOnlyList<BenchmarkReportValidationNote> issues, bool comparisonScope, string? headline = null)
+    public static string BuildRepairMessage(
+        IReadOnlyList<BenchmarkReportValidationNote> issues, bool comparisonScope, string? headline = null,
+        IReadOnlyList<BenchmarkReportSlotWordCount>? wordCounts = null, bool rootCause = false)
     {
         ArgumentNullException.ThrowIfNull(issues);
         if (!comparisonScope)
@@ -61,6 +65,7 @@ public static partial class BenchmarkReportPackPrompt
             var model = new StringBuilder(BuildRepairMessage(issues));
             AppendRootCauseRepairReminders(model, issues);
             AppendHeadlineCount(model, issues, headline);
+            AppendWordBudget(model, issues, wordCounts, rootCause);
             return model.ToString();
         }
 
@@ -84,24 +89,120 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- No headings, tables or HTML inside any text. Keep the word and item limits.");
         AppendRootCauseRepairReminders(sb, issues);
         AppendHeadlineCount(sb, issues, headline);
+        AppendWordBudget(sb, issues, wordCounts, rootCause);
         return sb.ToString();
     }
 
+    /// <summary>A capped section stands this close to its cap or closer, in words, for the word budget to be shown.</summary>
+    public const int WordBudgetMargin = 10;
+
     /// <summary>
-    /// The user message of the headline-only turn: the headline's remaining issues, its word count, and the
-    /// request for one JSON object holding only a corrected headline.
+    /// The WORD BUDGET block of a repair message, written when an issue is a whole section's word cap (rule 7 at
+    /// <c>sections.&lt;slot&gt;</c>) or a capped section is within <see cref="WordBudgetMargin"/> words of its cap: each
+    /// section over its cap with its paragraphs' counts and the words to cut, then every other capped section's count,
+    /// then the rule that a section must not grow and that one still over its cap loses sentences from its end; in a
+    /// Root Cause Analysis, one conclusions paragraph per axis. The digits are the message's, never the catalog's.
     /// </summary>
-    public static string BuildHeadlineRepairMessage(IReadOnlyList<BenchmarkReportValidationNote> headlineIssues, int words)
+    internal static void AppendWordBudget(
+        StringBuilder sb, IReadOnlyList<BenchmarkReportValidationNote> issues, IReadOnlyList<BenchmarkReportSlotWordCount>? wordCounts, bool rootCause)
     {
-        ArgumentNullException.ThrowIfNull(headlineIssues);
+        var counts = (wordCounts ?? Array.Empty<BenchmarkReportSlotWordCount>()).Where(c => c.Words != null).ToList();
+        if (counts.Count == 0) return;
+
+        bool capIssue = issues.Any(i => i.Rule == 7 && i.Location.StartsWith("sections.", StringComparison.Ordinal)
+                                        && !i.Location.Contains('[', StringComparison.Ordinal));
+        bool near = counts.Any(c => c.Words >= c.Cap - WordBudgetMargin);
+        if (!capIssue && !near) return;
+
+        Line(sb);
+        Line(sb, "WORD BUDGET (every {{token}} counts as one word, however long its value)");
+        foreach (var count in counts.Where(c => c.OverCap))
+        {
+            Line(sb, "- " + OverCapLine(count));
+        }
+        foreach (var count in counts.Where(c => !c.OverCap))
+        {
+            Line(sb, $"- {count.LocationLabel}: {Digits(count.Words!.Value)} of {Digits(count.Cap)}.");
+        }
+        Line(sb, "- Do not lengthen a section to fix another issue. A section still over its cap after this reply loses sentences from its end.");
+        if (rootCause)
+        {
+            Line(sb, "- Keep one conclusions paragraph per axis, in the order intelligence, speed, cost; shorten each rather than removing one.");
+        }
+    }
+
+    /// <summary>
+    /// One section over its cap: <c>Hypotheses: speed has 135 words (paragraph 1: 52; paragraph 2: 83); its cap is 120:
+    /// cut at least 15 words.</c>
+    /// </summary>
+    private static string OverCapLine(BenchmarkReportSlotWordCount count)
+    {
+        int words = count.Words ?? 0;
+        string paragraphs = count.Paragraphs.Count > 1
+            ? " (" + string.Join("; ", count.Paragraphs.Select((p, i) => $"paragraph {Digits(i + 1)}: {Digits(p)}")) + ")"
+            : string.Empty;
+        return $"{count.LocationLabel} has {Digits(words)} words{paragraphs}; its cap is {Digits(count.Cap)}: cut at least {Digits(words - count.Cap)} words.";
+    }
+
+    private static string Digits(int value) => value.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The user message of the final turn, in every scope: each section of <paramref name="overCapSlots"/> with its
+    /// counts and the words to cut, and, when <paramref name="headlineIssues"/> holds any, the headline's issues and its
+    /// word count (<paramref name="headlineWords"/>); then the request for one JSON object holding only
+    /// <c>headline</c> (when asked) and <c>sections</c> with the full replacement text of each named section, and the
+    /// output rules in brief. <paramref name="rootCause"/> adds the conclusions' paragraph rule.
+    /// </summary>
+    public static string BuildShortenMessage(
+        IReadOnlyList<BenchmarkReportSlotWordCount> overCapSlots, IReadOnlyList<BenchmarkReportValidationNote>? headlineIssues,
+        int headlineWords, bool rootCause = false)
+    {
+        ArgumentNullException.ThrowIfNull(overCapSlots);
+        var headline = headlineIssues ?? Array.Empty<BenchmarkReportValidationNote>();
+        bool askSlots = overCapSlots.Count > 0;
+        bool askHeadline = headline.Count > 0;
 
         var sb = new StringBuilder();
-        string issues = headlineIssues.Count == 0
-            ? "it is not valid"
-            : string.Join("; ", headlineIssues.Select(i => "rule " + i.Rule.ToString(CultureInfo.InvariantCulture) + ": " + i.Message));
-        Line(sb, $"Your headline still breaks the rules: {issues}.");
-        Line(sb, $"It has {Words(words)} words; the limit is {Words(BenchmarkReportPackValidator.HeadlineMaxWords)}.");
-        Line(sb, $"Reply with one JSON object holding only \"headline\": the document's result in one sentence, at most {Words(BenchmarkReportPackValidator.HeadlineMaxWords)} words, with the same token rules. If a hedge would push it over the limit, name fewer models. No text before or after it and no code fence.");
+        Line(sb, askSlots && askHeadline
+            ? "Your revised answer is still over the word caps below, and its headline still breaks the rules. Shorten the sections named here, rewrite the headline, and change nothing else."
+            : askSlots
+            ? "Your revised answer is still over the word caps below. Shorten the sections named here and change nothing else."
+            : "Your headline still breaks the rules. Rewrite it and change nothing else.");
+        Line(sb);
+
+        if (askSlots)
+        {
+            Line(sb, "SECTIONS TO SHORTEN (every {{token}} counts as one word, however long its value)");
+            foreach (var count in overCapSlots)
+            {
+                Line(sb, $"- {count.Slot}: {OverCapLine(count)}");
+            }
+            Line(sb, "- A section still over its cap after this reply loses sentences from its end.");
+            if (rootCause)
+            {
+                Line(sb, "- Keep one conclusions paragraph per axis, in the order intelligence, speed, cost, each still citing its axis's status token; shorten each rather than removing one.");
+            }
+            Line(sb);
+        }
+
+        if (askHeadline)
+        {
+            string issues = string.Join("; ", headline.Select(i => "rule " + Digits(i.Rule) + ": " + i.Message));
+            Line(sb, "HEADLINE");
+            Line(sb, $"- It breaks the rules: {issues}");
+            Line(sb, $"- It has {Words(headlineWords)} words; the limit is {Words(BenchmarkReportPackValidator.HeadlineMaxWords)}. If a hedge would push it over the limit, name fewer models.");
+            Line(sb);
+        }
+
+        string shape = askSlots && askHeadline ? "\"headline\" and \"sections\""
+            : askSlots ? "\"sections\""
+            : "\"headline\"";
+        Line(sb, $"Reply with one JSON object holding only {shape}"
+            + (askSlots ? ", where \"sections\" holds the full replacement text of each section named above, under its key, and no other section" : string.Empty)
+            + (askHeadline ? $"; the headline is the document's result in one sentence, at most {Words(BenchmarkReportPackValidator.HeadlineMaxWords)} words" : string.Empty)
+            + ". No text before or after it and no code fence.");
+        Line(sb, "- Keep the same token rules: figures only as fact tokens written exactly as before, models only by their tokens, no digits in prose and no new claims.");
+        Line(sb, "- Remove whole sentences or clauses rather than the tokens a sentence needs, and keep every rule the text already followed.");
         return sb.ToString();
     }
 

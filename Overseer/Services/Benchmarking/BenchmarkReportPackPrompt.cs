@@ -322,6 +322,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb);
     }
 
+    /// <summary>The format and readability rules every audience and scope shares.</summary>
     private static void AppendFormatRules(StringBuilder sb)
     {
         Line(sb, "FORMAT OF THE TEXT:");
@@ -329,6 +330,8 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- No headings, no tables, no HTML, no numbered lists and no code blocks anywhere in the text.");
         Line(sb, "- Keep each text self-contained: it is placed into a document whose headings and tables code has already written.");
         Line(sb, "- Write in US English: color, behavior, analyze, center, gray, labeled, canceled.");
+        Line(sb, "- Word caps count every {{token}} as one word, however long its value.");
+        Line(sb, "- Begin every sentence, paragraph and list item with a capital letter, including a sentence that follows a fact ending in a full stop.");
         Line(sb);
 
         Line(sb, "READABILITY:");

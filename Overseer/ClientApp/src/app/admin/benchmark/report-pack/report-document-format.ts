@@ -2,10 +2,12 @@ import {
   BenchmarkReportAudience,
   BenchmarkReportDisclosure,
   BenchmarkReportDocumentListItemDto,
+  BenchmarkReportPackDocumentProgressDto,
   BenchmarkReportScope
 } from '../../../services/admin-benchmark.service';
 import { parseServerUtcDate } from '../../../utils/date.util';
 import { safeFileName } from '../../../utils/download.util';
+import { firstDraftPassed, revisionCount, shorteningCount, timesWord } from './report-validation-explanation';
 
 /** Which documents a document list holds: those of one comparison, or every Report Pack document. */
 export type ReportDocumentLibraryScope =
@@ -203,6 +205,68 @@ export function reportPhaseLabel(phase: string | null | undefined): string {
     case 'Done': return 'Done';
     default: return phase ?? '';
   }
+}
+
+/**
+ * A writer call's kind in words: *Draft*, *Revision*, *Shortening turn* (the final turn that shortens
+ * sections over their word caps), *Headline retry*; the wire value for an unknown one.
+ */
+export function reportCallKindLabel(kind: string | null | undefined): string {
+  switch (kind) {
+    case 'Draft': return 'Draft';
+    case 'Revision': return 'Revision';
+    case 'Shorten': return 'Shortening turn';
+    case 'Headline': return 'Headline retry';
+    default: return kind ?? '';
+  }
+}
+
+/** A document's statuses once it is written or given up. */
+const FINISHED_DOCUMENT_STATUSES = new Set(['Completed', 'CompletedWithWarnings', 'Failed', 'Canceled']);
+
+function issueCount(count: number): string {
+  return `${count} ${count === 1 ? 'issue' : 'issues'}`;
+}
+
+/**
+ * A document's phase line: while it is written, its step (*Revising the draft — 20 issues found by the
+ * automatic check*); once finished, how its draft was checked (*First draft passed every check*,
+ * *Revised once — 20 issues in the first draft*, *Revised once and shortened — …* after a shortening
+ * turn). Null when there is nothing to say.
+ */
+export function documentPhaseLine(doc: BenchmarkReportPackDocumentProgressDto): string | null {
+  const issues = doc.firstTurnIssues?.length ?? 0;
+  if (FINISHED_DOCUMENT_STATUSES.has(doc.status)) {
+    const passed = firstDraftPassed(doc);
+    if (passed === true) {
+      return 'First draft passed every check';
+    }
+    if (passed === false) {
+      const revisions = revisionCount(doc) ?? 0;
+      const shortened = shorteningCount(doc) > 0;
+      const head = revisions > 0
+        ? `Revised ${timesWord(revisions)}${shortened ? ' and shortened' : ''}`
+        : shortened ? 'Shortened' : 'Not revised';
+      return issues > 0 ? `${head} — ${issueCount(issues)} in the first draft` : head;
+    }
+    return null;
+  }
+  const phase = reportPhaseLabel(doc.phase);
+  if (!phase || doc.phase === 'Done') {
+    return null;
+  }
+  if ((doc.phase === 'Revising' || doc.phase === 'CheckingRevision') && issues > 0) {
+    return `${phase} — ${issueCount(issues)} found by the automatic check`;
+  }
+  return phase;
+}
+
+/** A progress card's phase line: as documentPhaseLine, except none while it only repeats the chip. */
+export function documentRowPhaseLine(doc: BenchmarkReportPackDocumentProgressDto): string | null {
+  if ((doc.status === 'Writing' && doc.phase === 'Writing') || (doc.status === 'Repairing' && doc.phase === 'Revising')) {
+    return null;
+  }
+  return documentPhaseLine(doc);
 }
 
 /** A stored document's status as the AI Reports tab words it: *Written*, *Written with warnings*. */

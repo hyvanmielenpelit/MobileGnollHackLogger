@@ -3,7 +3,7 @@
 
   A resizable sidebar that starts a report pack (the document scope, the models, the documents of
   this comparison with what the next job writes, the charts, the writer and the estimate), and a main
-  area with the job's progress, one row per document, and its log and diagnostics. The frame has no
+  area with the job's progress, one card per document, and its log and diagnostics. The frame has no
   header: the wizard's header names the comparison, and where the reports are kept is the info tip
   beside New report pack. The same-provider confirmation and the layout preview are nested in the
   wizard's dialog and stop their own close and cancel events.
@@ -388,75 +388,8 @@
         </dl>
 
         @if (documentRows.length > 0) {
-          <!-- The header row is for sight only: every cell of a row names its value itself. -->
-          <div class="rp-doc-progress-grid" [class.has-model]="jobHasModelColumn">
-            <div class="rp-doc-progress-head" aria-hidden="true">
-              @if (jobHasModelColumn) {
-                <span>Model</span>
-              }
-              <span>Document</span>
-              <span>Status</span>
-              <span>Duration</span>
-              <span class="rp-num">Model calls</span>
-              <span>Charts</span>
-            </div>
-            <ol class="rp-doc-progress" aria-label="Progress of each document">
-              @for (row of documentRows; track row.key) {
-                <li class="rp-job-row" [attr.data-audience]="row.audience" [attr.data-subject]="row.doc.subjectKey ?? null">
-                  @if (jobHasModelColumn) {
-                    <span class="rp-doc-model"><span class="visually-hidden">Model: </span>{{ row.subjectLabel }}</span>
-                  }
-                  <span class="rp-doc-name">{{ row.name }}</span>
-                  <!-- The first draft's issues: beside the chip while the document is written, beside the
-                       finished phase line once it is done. -->
-                  <ng-template #draftTip>
-                    <app-info-tip class="rp-doc-draft" trigger="dialog" [tipId]="row.tipStem + '-draft'"
-                                  [subject]="'the first draft check of ' + row.title"
-                                  [dialogTitle]="'What the automatic check found in the first draft of ' + row.title">
-                      <app-report-validation-details [document]="row.doc" source="job" view="firstDraft"
-                                                     [phaseDetail]="row.doc.phaseDetail ?? null"></app-report-validation-details>
-                    </app-info-tip>
-                  </ng-template>
-                  <span class="rp-doc-status">
-                    <span class="rp-doc-chip-row">
-                      <span class="visually-hidden">Status: </span>
-                      <span [class]="row.chipClass">{{ row.statusWord }}</span>
-                      @if (row.why; as why) {
-                        <app-info-tip class="rp-doc-why" trigger="dialog" [tipId]="row.tipStem + '-why'"
-                                      [subject]="why.subject" [dialogTitle]="why.title">
-                          <app-report-validation-details [document]="row.doc" source="job"></app-report-validation-details>
-                        </app-info-tip>
-                      }
-                      @if (row.draftTipBesideChip && row.draftIssueCount > 0) {
-                        <ng-container [ngTemplateOutlet]="draftTip"></ng-container>
-                      }
-                    </span>
-                    @if (row.errorMessage) {
-                      <span class="rp-job-row-error">{{ row.errorMessage }}</span>
-                    }
-                    @if (row.phaseLine) {
-                      <!-- One line; the full text is in the dialog. -->
-                      <span class="rp-doc-phase-row">
-                        <span class="rp-doc-phase">{{ row.phaseLine }}</span>
-                        @if (!row.draftTipBesideChip && row.draftIssueCount > 0) {
-                          <ng-container [ngTemplateOutlet]="draftTip"></ng-container>
-                        }
-                      </span>
-                    }
-                  </span>
-                  <span class="rp-doc-duration"><span class="visually-hidden">Duration: </span>{{ row.duration }}</span>
-                  <span class="rp-doc-calls rp-num"><span class="visually-hidden">Model calls: </span>{{ row.modelCalls }}</span>
-                  <span class="rp-doc-charts">
-                    @if (row.charts.retry) {
-                      <button type="button" class="btn-link rp-chart-retry" (click)="retryCharts(row)">{{ row.charts.text }}<span class="visually-hidden"> for the {{ row.name }}{{ jobHasModelColumn ? ' of ' + row.subjectLabel : '' }}</span></button>
-                    } @else {
-                      {{ row.charts.text }}
-                    }
-                  </span>
-                </li>
-              }
-            </ol>
-          </div>
+          <app-report-job-documents class="rp-documents-progress" [idPrefix]="idPrefix + '-card'" [rows]="documentRows"
+                                    (retryCharts)="retryCharts($event)"></app-report-job-documents>
         }
 
         @if (job) {
@@ -485,6 +418,19 @@
                 </button>
                 <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-download-diagnostics-tip'"
                      [attr.style]="'position-anchor: --' + idPrefix + '-download-diagnostics-tip'">Download diagnostics</div>
+                <!-- The writer's raw replies, fetched on request while Overseer still holds the finished job. -->
+                @if (showWriterReplies) {
+                  <button type="button" class="action-btn rp-download-replies"
+                          aria-label="Download the writer's replies of this report pack, as Markdown"
+                          [attr.aria-disabled]="repliesLoading ? 'true' : null"
+                          [attr.interestfor]="idPrefix + '-download-replies-tip'"
+                          [attr.style]="'anchor-name: --' + idPrefix + '-download-replies-tip'"
+                          (click)="downloadWriterReplies()">
+                    <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line><rect x="16" y="2" width="6" height="7" rx="1"></rect><line x1="18" y1="4.5" x2="20" y2="4.5"></line><line x1="18" y1="6.5" x2="20" y2="6.5"></line></svg>
+                  </button>
+                  <div popover="hint" class="gh-tooltip" [id]="idPrefix + '-download-replies-tip'"
+                       [attr.style]="'position-anchor: --' + idPrefix + '-download-replies-tip'">Download the writer's replies (Markdown)</div>
+                }
                 <p class="rp-copy-status" role="status" aria-live="polite">{{ copyStatus }}</p>
               </div>
               @if (copyError) {

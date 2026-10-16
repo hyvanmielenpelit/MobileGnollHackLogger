@@ -1,0 +1,177 @@
+/* The progress of each document: a read-only card list (frontend_ui_controls § 8h).
+ *
+ * Laid out by the list's own width, the rjd inline-size container: no viewport media query, no
+ * overflow clipping and no fixed track the content can outgrow. .job-status-chip, .gh-field-error,
+ * .btn-gh, .btn-link and the info tip come from styles.scss and are only adjusted here.
+ */
+
+:host {
+  display: block;
+}
+
+.rjd-list {
+  container: rjd / inline-size;
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--text-secondary);
+}
+
+.rjd-item {
+  min-inline-size: 0;
+}
+
+.rjd-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-glass);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #d4d4d8;
+
+  /* The edge repeats the chip's words; it never carries the state alone. */
+  &[data-tone="warning"] {
+    border-inline-start: 3px solid var(--color-warning);
+  }
+
+  &[data-tone="failed"] {
+    border-inline-start: 3px solid var(--color-error-text);
+  }
+}
+
+/* The title, then the status group, which moves under the title rather than overflow. */
+.rjd-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: safe center;
+  gap: 4px 12px;
+}
+
+.rjd-title {
+  flex: 1 1 14rem;
+  min-inline-size: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: #e4e4e7;
+}
+
+.rjd-status {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-inline-start: auto;
+  max-inline-size: 100%;
+
+  /* The chip names the state in words and nothing moves; wider than the card, it wraps its own text. */
+  .job-status-chip {
+    flex-shrink: 1;
+    min-inline-size: 0;
+    max-inline-size: 100%;
+    white-space: normal;
+    text-align: start;
+    overflow-wrap: anywhere;
+    animation: none;
+  }
+}
+
+.rjd-meta {
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #a1a1aa;
+}
+
+.rjd-sep {
+  margin-inline: 6px;
+}
+
+/* The whole phase line, wrapping; its first-draft button follows it. */
+.rjd-phase-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-inline-size: 0;
+}
+
+.rjd-phase {
+  min-inline-size: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--text-xs);
+  color: #a1a1aa;
+}
+
+.rjd-error {
+  margin: 0;
+}
+
+/* Duration, model calls, tokens and cost: 4 columns from 36rem of the list, 2 from 18rem, 1 below. */
+.rjd-metrics {
+  --rjd-cols: 1;
+  display: grid;
+  grid-template-columns: repeat(var(--rjd-cols), minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+  padding-block-start: 6px;
+  border-block-start: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+@container rjd (min-width: 18rem) {
+  .rjd-metrics {
+    --rjd-cols: 2;
+  }
+}
+
+@container rjd (min-width: 36rem) {
+  .rjd-metrics {
+    --rjd-cols: 4;
+  }
+}
+
+.rjd-metric {
+  min-inline-size: 0;
+
+  dt {
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #a1a1aa;
+  }
+
+  dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-variant-numeric: tabular-nums;
+    color: #e4e4e7;
+  }
+}
+
+/* The charts on the left, View at the right end. */
+.rjd-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+
+.rjd-charts {
+  margin: 0;
+  color: #a1a1aa;
+}
+
+.rjd-chart-retry {
+  font-size: var(--text-secondary);
+  text-align: start;
+}
+
+.rjd-view {
+  margin-inline-start: auto;
+}

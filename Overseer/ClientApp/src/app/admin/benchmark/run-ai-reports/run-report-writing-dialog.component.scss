@@ -3,9 +3,9 @@
 /* The AI report writing progress dialog.
  *
  * Layout and component-local presentation only. .btn-gh and its variants, .action-btn,
- * .btn-icon-action, .gh-tooltip, .gh-dialog, .gh-table, .gh-disclosure, .gh-field-error,
- * .run-stage-rail, .run-stat-strip, .job-progress-block, .job-status-chip, .model-name and
- * .thinking-badge come from styles.scss and are never redefined here.
+ * .btn-icon-action, .gh-tooltip, .gh-dialog, .gh-disclosure, .gh-field-error, .run-stage-rail,
+ * .run-stat-strip, .job-progress-block, .model-name and .thinking-badge come from styles.scss and
+ * are never redefined here; the document cards are app-report-job-documents'.
  */
 
 .gh-dialog.run-writing-dialog {
@@ -93,44 +93,16 @@
 
 /* --- Documents ------------------------------------------------------------------------------ */
 
-.rw-table-wrap {
-  overflow-x: auto;
+.rw-documents {
   margin-bottom: 16px;
 }
 
-.rw-documents {
-  caption {
-    caption-side: top;
-    text-align: start;
-    padding: 0 0 6px;
-    font-family: "Cinzel", serif;
-    font-weight: 600;
-    color: var(--primary-color);
-  }
-
-  th[scope="row"] {
-    min-inline-size: 14rem;
-    background: transparent;
-    color: #e4e4e7;
-  }
-
-  /* Durations, counts, tokens and costs stay on one line. */
-  .rw-num {
-    white-space: nowrap;
-  }
-
-  .rw-document-error {
-    margin-top: 6px;
-  }
-
-  .rw-row-actions {
-    text-align: end;
-  }
-
-  /* The chips name the state in words; nothing on the rail or in the table moves. */
-  .job-status-chip {
-    animation: none;
-  }
+.rw-documents-title {
+  margin: 0 0 6px;
+  font-family: "Cinzel", serif;
+  font-size: var(--text-body);
+  font-weight: 600;
+  color: var(--primary-color);
 }
 
 /* --- Poll trouble --------------------------------------------------------------------------- */

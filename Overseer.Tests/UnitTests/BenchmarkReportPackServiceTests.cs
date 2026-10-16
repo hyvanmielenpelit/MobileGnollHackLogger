@@ -1608,18 +1608,40 @@ public class BenchmarkReportPackServiceTests
             Documents = new List<BenchmarkReportPackDocumentProgress> { new() { Audience = BenchmarkReportAudience.ExecutiveSummary } }
         };
         var note = new BenchmarkReportValidationNote { Rule = 7, Location = "headline", Message = "Too long.", Dropped = false };
-        running.SetDocumentDiagnostics(running.Documents[0], new[] { note }, new[] { note }, "raw reply");
+        var digit = new BenchmarkReportValidationNote { Rule = 3, Location = "sections.meaning[p1]", Message = "Contains the digit form \"3\"." };
+        var counts = new[]
+        {
+            new BenchmarkReportPackWordCountDto
+            {
+                Location = "sections.meaning", LocationLabel = "What this means for use as a game assistant", Cap = 90,
+                Draft = 96, Revision = 94, Final = 88, FinalParagraphs = new List<int> { 40, 48 }
+            }
+        };
+        running.SetDocumentDiagnostics(running.Documents[0], new[] { note, digit }, new[] { note, digit }, "raw reply", new[] { digit }, counts);
 
         var whileRunning = Assert.Single(running.ToDto().Documents);
         Assert.Null(whileRunning.FirstTurnIssues);
         Assert.Null(whileRunning.FinalIssues);
         Assert.Null(whileRunning.FailedReply);
+        Assert.Null(whileRunning.RevisionIssues);
+        Assert.Null(whileRunning.WordCounts);
 
         running.SetStatus(BenchmarkReportPackJobStatus.CompletedWithErrors);
         var after = Assert.Single(running.ToDto().Documents);
-        Assert.Equal(7, Assert.Single(after.FirstTurnIssues!).Rule);
-        Assert.Equal("headline", Assert.Single(after.FinalIssues!).Location);
+        Assert.Equal(new[] { 7, 3 }, after.FirstTurnIssues!.Select(i => i.Rule));
+        Assert.Equal("headline", after.FinalIssues![0].Location);
         Assert.Equal("raw reply", after.FailedReply);
+
+        // A draft's issue gives what its rule would do; the same note among the final ones was recorded against kept text.
+        Assert.Equal(BenchmarkReportRuleCatalog.RemovesItemSeverity, after.FirstTurnIssues![1].Severity);
+        Assert.Equal(BenchmarkReportRuleCatalog.RemovesItemSeverity, Assert.Single(after.RevisionIssues!).Severity);
+        Assert.Equal(BenchmarkReportRuleCatalog.WarningTextKeptSeverity, after.FinalIssues![1].Severity);
+        var count = Assert.Single(after.WordCounts!);
+        Assert.Equal(96, count.Draft);
+        Assert.Equal(94, count.Revision);
+        Assert.Null(count.Shortened);
+        Assert.Equal(88, count.Final);
+        Assert.Equal(new[] { 40, 48 }, count.FinalParagraphs);
 
         await Task.CompletedTask;
     }
@@ -1694,14 +1716,14 @@ public class BenchmarkReportPackServiceTests
     // --- Phases, calls and the repair loop's records ------------------------------------------------------
 
     [Fact]
-    public async Task ADropThatUncitesAnAxis_AddsTheOverseerParagraph_AndRecordsRule36()
+    public async Task ADropThatUncitesAnAxis_AddsTheOverseerParagraphAtItsAxisPlace_AndRecordsItAsAddedByOverseer()
     {
         await using var h = await Harness.CreateAsync();
         var prep = await h.PrepareAsync(standalone: true);
         var writer = RootCauseReportFixture.Writer(prep.Sheet, comparison: false);
-        const string removed = "The cost gap is due to the price. Cost: {{rca.axis.cost.status}}.";
+        const string removed = "The speed gap is due to the price. Speed: {{rca.axis.speed.status}}.";
         writer.Sections[BenchmarkReportSlots.Conclusions] =
-            "Intelligence: {{rca.axis.intelligence.status}}.\n\nSpeed: {{rca.axis.speed.status}}.\n\n" + removed;
+            "Intelligence: {{rca.axis.intelligence.status}}.\n\n" + removed + "\n\nCost: {{rca.axis.cost.status}}.";
         string reply = Reply(writer);
         h.Provider.Replies.Enqueue(reply);
         h.Provider.Replies.Enqueue(reply);
@@ -1709,26 +1731,160 @@ public class BenchmarkReportPackServiceTests
         var job = await h.RunCompletionAsync(BenchmarkReportAudience.RootCauseAnalysis);
 
         Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        Assert.Equal(2, h.Provider.Calls);
         var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
 
+        // The paragraph Overseer wrote stands where the speed paragraph stood, between intelligence and cost.
         string conclusions = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson).Sections[BenchmarkReportSlots.Conclusions];
         Assert.DoesNotContain("due to the price", conclusions);
         var paragraphs = BenchmarkReportPackValidator.SplitParagraphs(conclusions);
         Assert.Equal(3, paragraphs.Count);
-        Assert.StartsWith(BenchmarkReportPackService.AddedByOverseer + " Cost: {{rca.axis.cost.status}}.", paragraphs[2]);
+        Assert.StartsWith("Intelligence:", paragraphs[0]);
+        Assert.StartsWith(BenchmarkReportPackService.AddedByOverseer + " Speed: {{rca.axis.speed.status}}.", paragraphs[1]);
+        Assert.StartsWith("Cost:", paragraphs[2]);
 
         var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson);
         var drop = Assert.Single(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule && n.Dropped);
-        Assert.Equal("sections.conclusions[p3]", drop.Location);
+        Assert.Equal("sections.conclusions[p2]", drop.Location);
         Assert.Equal(removed, drop.Text);
-        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule
-                                    && n.Location == "sections.conclusions" && !n.Dropped && n.Message.Contains("{{rca.axis.cost.status}}", StringComparison.Ordinal));
+
+        // The stale "Does not cite" note is gone; Overseer's paragraph is recorded as added.
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule && !n.AddedByOverseer);
+        var added = Assert.Single(notes, n => n.AddedByOverseer);
+        Assert.Equal(BenchmarkReportPackValidator.RootCauseAxisStatusRule, added.Rule);
+        Assert.Equal("sections.conclusions", added.Location);
+        Assert.False(added.Dropped);
+        Assert.Equal("The writer's paragraph on speed was removed; Overseer wrote the axis's status in its place.", added.Message);
+        Assert.Equal(paragraphs[1], added.Text);
+        var issue = BenchmarkReportRuleCatalog.ToIssueDto(added);
+        Assert.True(issue.AddedByOverseer);
+        Assert.Equal(BenchmarkReportRuleCatalog.AddedByOverseerSeverity, issue.Severity);
 
         var log = job.ToDto().Log;
-        Assert.Contains(log, l => l.Message.Contains("1 item(s) removed by validation: Conclusions, paragraph 3 ("
+        Assert.Contains(log, l => l.Message.Contains("1 item(s) removed by validation: Conclusions, paragraph 2 ("
                                                      + BenchmarkReportRuleCatalog.Name(BenchmarkReportPackValidator.RootCauseCausalClaimRule) + ")", StringComparison.Ordinal));
-        Assert.Contains(log, l => l.Message.Contains("Overseer added the axis' status", StringComparison.Ordinal));
+        Assert.Contains(log, l => l.Message.Contains("the conclusions' paragraph on speed was removed; Overseer wrote the axis's status in its place.", StringComparison.Ordinal));
+    }
+
+    // --- The final shortening turn ------------------------------------------------------------------------
+
+    private const string ShortMeaning = "{{subject}} would serve players well as a game assistant.";
+
+    /// <summary>A meaning section of ninety-six words, six over its cap: <see cref="ShortMeaning"/> and twenty-nine short sentences.</summary>
+    private static string LongMeaning() => ShortMeaning + " " + string.Join(" ", Enumerable.Repeat("Answers stayed clear.", 29));
+
+    [Fact]
+    public async Task ASectionStillOverItsCapAfterTheRepair_GetsOneShorteningTurn_AndItsReplyIsMerged()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string longReply = ExecutiveReply(prep, meaning: LongMeaning());
+        string shortReply = JsonSerializer.Serialize(new { sections = new Dictionary<string, string> { [BenchmarkReportSlots.Meaning] = ShortMeaning } });
+        h.Provider.Replies.Enqueue(longReply);
+        h.Provider.Replies.Enqueue(longReply);
+        h.Provider.Replies.Enqueue(shortReply);
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, h.Provider.Calls);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(ShortMeaning, BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson).Sections[BenchmarkReportSlots.Meaning]);
+        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
+        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson);
+        var rescued = Assert.Single(notes, n => n.Rule == 7);
+        Assert.False(rescued.Dropped);
+        Assert.Contains("shortened in a final turn", rescued.Message, StringComparison.Ordinal);
+
+        var dto = job.ToDto();
+        var progress = Assert.Single(dto.Documents);
+        Assert.Equal(
+            new[] { BenchmarkReportPackCallKinds.Draft, BenchmarkReportPackCallKinds.Revision, BenchmarkReportPackCallKinds.Shorten },
+            progress.Calls.Select(c => c.Kind));
+        Assert.Equal(new int?[] { longReply.Length, longReply.Length, shortReply.Length }, progress.Calls.Select(c => c.ReplyChars));
+        Assert.Contains(dto.Log, l => l.Message.Contains("1 section(s) over their word caps after the repair (What this means for use as a game assistant, 96 of 90); sending one shortening turn.", StringComparison.Ordinal));
+
+        // The diagnostics: the revision's own issues, and the word counts turn by turn.
+        Assert.Contains(progress.RevisionIssues!, i => i.Rule == 7 && i.Location == "sections." + BenchmarkReportSlots.Meaning);
+        var meaning = Assert.Single(progress.WordCounts!, c => c.Location == "sections." + BenchmarkReportSlots.Meaning);
+        Assert.Equal(BenchmarkReportPackValidator.MeaningMaxWords, meaning.Cap);
+        Assert.Equal(96, meaning.Draft);
+        Assert.Equal(96, meaning.Revision);
+        Assert.Equal(9, meaning.Shortened);
+        Assert.Equal(9, meaning.Final);
+        Assert.Equal(new[] { 9 }, meaning.FinalParagraphs);
+        Assert.Contains(progress.FinalIssues!, i => i.Rule == 7 && i.Severity == BenchmarkReportRuleCatalog.WarningTextKeptSeverity);
+
+        // Each reply is held on the job, and none travels with the polled job object.
+        Assert.Equal(new[] { longReply, longReply, shortReply }, job.Documents[0].CallReplies.Select(r => r.Text));
+        string polled = JsonSerializer.Serialize(dto);
+        Assert.DoesNotContain("Answers stayed clear. Answers stayed clear.", polled, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AShorteningReplyThatAddsBlockingIssues_IsNotUsed_AndTheSectionLosesSentencesFromItsEnd()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string longReply = ExecutiveReply(prep, meaning: LongMeaning());
+        h.Provider.Replies.Enqueue(longReply);
+        h.Provider.Replies.Enqueue(longReply);
+        h.Provider.Replies.Enqueue(JsonSerializer.Serialize(new
+        {
+            sections = new Dictionary<string, string> { [BenchmarkReportSlots.Meaning] = "It answered 3 questions.\n\nIt made 2 errors." }
+        }));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, h.Provider.Calls);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        string meaning = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson).Sections[BenchmarkReportSlots.Meaning];
+        Assert.StartsWith(ShortMeaning, meaning, StringComparison.Ordinal);
+        Assert.Equal(BenchmarkReportPackValidator.MeaningMaxWords, BenchmarkReportPackValidator.WordCount(meaning));
+
+        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson);
+        var trimmed = Assert.Single(notes, n => n.Rule == 7);
+        Assert.True(trimmed.Dropped);
+        Assert.Equal("sections.meaning[p1]", trimmed.Location);
+        Assert.StartsWith("Removed its last 2 sentences", trimmed.Message, StringComparison.Ordinal);
+        Assert.Contains(job.ToDto().Log, l => l.Message.Contains("the final turn's reply was not used", StringComparison.Ordinal));
+        Assert.Equal(8, Assert.Single(job.ToDto().Documents).WordCounts!.Single(c => c.Location == "sections.meaning").Shortened);
+    }
+
+    [Fact]
+    public async Task OtherBlockingIssuesAfterTheRepair_SendNoShorteningTurn()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string reply = ExecutiveReply(prep, meaning: LongMeaning(), extraStrength: "It handled 7 hard questions.");
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(reply);
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, h.Provider.Calls);
+        Assert.DoesNotContain(Assert.Single(job.ToDto().Documents).Calls, c => c.Kind == BenchmarkReportPackCallKinds.Shorten);
+        Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+    }
+
+    // --- The writer's replies, served on request ----------------------------------------------------------
+
+    [Fact]
+    public async Task TheWriterRepliesEndpoint_IsNotFoundForAnUnknownJob_AndServesMarkdownForAHeldOne()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string reply = ValidExecutiveReply(prep);
+        h.Provider.Replies.Enqueue(reply);
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.IsType<NotFoundResult>(h.Controller().GetWriterReplies("no-such-job"));
+
+        var content = Assert.IsType<ContentResult>(h.Controller().GetWriterReplies(job.Id));
+        Assert.Equal("text/markdown; charset=utf-8", content.ContentType);
+        Assert.StartsWith("# Writer replies: ", content.Content, StringComparison.Ordinal);
+        Assert.Contains("### Call 1: Draft", content.Content, StringComparison.Ordinal);
+        Assert.Contains(reply, content.Content, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1864,7 +2020,7 @@ public class BenchmarkReportPackServiceTests
 
     /// <summary>An Executive Summary reply citing a fact the sheet really has; each argument overrides one part.</summary>
     private static string ExecutiveReply(
-        BenchmarkReportPackPreparation prep, string? headline = null, string? extraStrength = null, string? confidence = null)
+        BenchmarkReportPackPreparation prep, string? headline = null, string? extraStrength = null, string? confidence = null, string? meaning = null)
     {
         string factKey = prep.Sheet.Facts.First(f => f.Available).Key;
         var strengths = new List<object>
@@ -1878,7 +2034,7 @@ public class BenchmarkReportPackServiceTests
 
         var sections = new Dictionary<string, string>
         {
-            [BenchmarkReportSlots.Meaning] = "{{subject}} would serve players well as a game assistant.",
+            [BenchmarkReportSlots.Meaning] = meaning ?? "{{subject}} would serve players well as a game assistant.",
             [BenchmarkReportSlots.Confidence] = confidence ?? "The result rests on a small set of questions, so it should be read with care."
         };
         if (prep.Sheet.Peers.Count > 0)

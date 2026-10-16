@@ -3529,6 +3529,25 @@ export interface BenchmarkReportPackDocumentProgressDto {
   firstDraftClean?: boolean | null;
   /** Every writer call of the document, in order. */
   calls?: BenchmarkReportPackCallDto[];
+  /** The revised reply's own validation issues, before any removal; null while the job runs and without a revision. */
+  revisionIssues?: BenchmarkReportPackValidationIssueDto[] | null;
+  /** The word count of each capped section at every turn; null while the job runs. */
+  wordCounts?: BenchmarkReportPackWordCountDto[] | null;
+}
+
+/** One capped section's raw word count (a token counts as one) at each turn; null where the turn did not happen. */
+export interface BenchmarkReportPackWordCountDto {
+  location: string;
+  /** The section in words, e.g. "Hypotheses: speed". */
+  locationLabel: string;
+  cap: number;
+  draft: number | null;
+  revision: number | null;
+  shortened: number | null;
+  /** After trimming and restoring. */
+  final: number | null;
+  /** The final text's words per paragraph. */
+  finalParagraphs: number[];
 }
 
 /** The phases of a document's progress row. */
@@ -3537,7 +3556,7 @@ export type BenchmarkReportPackPhase =
 
 /** One writer call of a document. */
 export interface BenchmarkReportPackCallDto {
-  /** `Draft`, `Revision` (the repair turn) or `Headline` (a headline-only retry). */
+  /** `Draft`, `Revision` (the repair turn), `Shorten` (the final shortening turn) or `Headline` (a headline-only retry). */
   kind: string;
   startedAtUtc: string;
   durationMs: number;
@@ -3552,6 +3571,8 @@ export interface BenchmarkReportPackCallDto {
   requestMessages: number;
   /** The characters of every message sent. */
   requestCharacters: number;
+  /** The characters of the call's reply; null when there was none. The text itself is a separate download. */
+  replyChars?: number | null;
 }
 
 /** One validation issue of a writer turn, as a job's progress row or a stored document reports it. */
@@ -3563,12 +3584,17 @@ export interface BenchmarkReportPackValidationIssueDto {
   dropped: boolean;
   /** The rule's short name, e.g. "Ranking without the overlap caveat"; absent from an older server. */
   ruleName?: string;
-  /** `removesItem`, `warning` or `failsDocument`. */
+  /**
+   * `removesItem`, `warning`, `warningTextKept` (a removes-the-item rule whose text was kept),
+   * `addedByOverseer` or `failsDocument`.
+   */
   severity?: string;
   /** The location in words, e.g. "Conclusions, paragraph 1". */
   locationLabel?: string;
   /** The removed or flagged text, with its tokens unresolved; null when none was kept. */
   text?: string | null;
+  /** Overseer wrote this text in place of a removed one; `text` is what it wrote. Absent from an older server. */
+  addedByOverseer?: boolean;
 }
 
 export interface BenchmarkReportPackJobLogEntryDto {
@@ -4920,6 +4946,12 @@ export class AdminBenchmarkService {
   /** The running job, or null (204) when none is running. */
   getActiveReportPackJob(): Observable<BenchmarkReportPackJobDto | null> {
     return this.http.get<BenchmarkReportPackJobDto | null>('/api/admin/benchmark/report-packs/jobs/active');
+  }
+
+  /** The writer's raw replies of a job as Markdown; 404 once the server no longer holds the job. */
+  getReportPackWriterReplies(jobId: string): Observable<string> {
+    return this.http.get(`/api/admin/benchmark/report-packs/jobs/${encodeURIComponent(jobId)}/writer-replies`,
+      { responseType: 'text' });
   }
 
   cancelReportPackJob(jobId: string): Observable<{ cancelled: boolean }> {

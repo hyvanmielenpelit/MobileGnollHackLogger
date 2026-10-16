@@ -220,18 +220,20 @@ public sealed class RootCauseClaimSupport
 
     /// <summary>The kinds of fact <see cref="IsSentenceShaped"/> marks, in words, for the prompt and the validator's notes.</summary>
     public const string SentenceShapedKinds =
-        "a hypothesis' statement, evidence for or against, refuted-if statement or grade reasons; a known fact; a check; "
-        + "a research question or its signals; a model's list of flags; a notable finding's summary; and a response-style conflict";
+        "a hypothesis's statement, evidence for or against, refuted-if statement or grade reasons; a known fact; a check; "
+        + "an axis's price note; a research question or its signals; a model's list of flags; a notable finding's summary; "
+        + "and a response-style conflict";
 
     /// <summary>
     /// Whether a fact's display is a sentence, a clause or a list of clauses rather than a noun phrase, so the
     /// writer must give it a sentence of its own, or write it after a colon, never after a word of its own
     /// sentence: <c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.statement</c>, <c>.for</c>, <c>.against</c>,
     /// <c>.refutedIf</c> and <c>.gradeReasons</c>; <c>rca.known.&lt;n&gt;</c>; <c>rca.check.&lt;n&gt;</c>;
-    /// <c>rca.question.&lt;n&gt;.text</c> and <c>.signals</c>; <c>rca.profile.&lt;T&gt;.flags</c>;
-    /// <c>notable.&lt;n&gt;.summary</c>; and <c>style.responseStyleConflict</c>, bare or under a model's letter,
-    /// when its <paramref name="display"/> states a conflict (it opens with a capital letter). A hypothesis'
-    /// label and each single flag are noun phrases and are never marked.
+    /// <c>rca.axis.&lt;axis&gt;.priceNote</c>; <c>rca.question.&lt;n&gt;.text</c> and <c>.signals</c>;
+    /// <c>rca.profile.&lt;T&gt;.flags</c>; <c>notable.&lt;n&gt;.summary</c>; and <c>style.responseStyleConflict</c>,
+    /// bare or under a model's letter, when its <paramref name="display"/> states a conflict (it opens with a capital
+    /// letter). A hypothesis' label, a check's <c>rca.check.&lt;n&gt;.summary</c> and each single flag are noun phrases
+    /// and are never marked.
     /// </summary>
     public static bool IsSentenceShaped(string key, string? display = null)
     {
@@ -251,6 +253,7 @@ public sealed class RootCauseClaimSupport
         {
             "hypothesis" => parts.Length == 5 && SentenceShapedHypothesisParts.Contains(parts[4]),
             "known" or "check" => parts.Length == 3,
+            "axis" => parts.Length == 4 && parts[3] == "priceNote",
             "question" => parts.Length == 4 && parts[3] is "text" or "signals",
             "profile" => parts.Length == 4 && parts[3] == "flags",
             _ => false
@@ -260,7 +263,7 @@ public sealed class RootCauseClaimSupport
     /// <summary>A token of a hypothesis the sheet holds, its label included.</summary>
     public bool IsHypothesisToken(string key) => _facts.ContainsKey(key) && PrefixesOf(key).Any();
 
-    /// <summary>A token of an axis' status or best hypothesis that the sheet holds.</summary>
+    /// <summary>A token of an axis' status, best hypothesis or price note that the sheet holds.</summary>
     public bool IsAxisToken(string key) => key.StartsWith(AxisPrefix, StringComparison.Ordinal) && _facts.ContainsKey(key);
 
     /// <summary>A token of a next run (<c>rca.run.&lt;n&gt;.*</c>) that the sheet holds.</summary>

@@ -12,7 +12,9 @@ import {
   explainDocumentStatus,
   explanationLines,
   groupIssuesByRule,
-  issueCountSummary
+  issueCountSummary,
+  severityWord,
+  tokenSegments
 } from './report-validation-explanation';
 
 function issue(
@@ -47,6 +49,24 @@ const WARNINGS: DocumentStatusInput = {
   finalIssues: [DIGIT, { ...RANKING(2), text: 'Model A is faster than model B.' }],
   firstDraftClean: false,
   calls: [call('Draft'), call('Revision')]
+};
+
+const SHORTENED_SPEED = issue(7, 'Over the word or item limit', 'removesItem', 'Hypotheses: speed, paragraph 2',
+  'Removed its last 2 sentences to bring "Hypotheses: speed" within 120 words.', true, 'It ran slower. It also cost more.');
+const SHORTENED_CONCLUSIONS = issue(7, 'Over the word or item limit', 'removesItem', 'Conclusions, paragraph 3',
+  'Removed its last sentence to bring "Conclusions" within 120 words.', true, 'The cost follows.');
+const ADDED: BenchmarkReportPackValidationIssueDto = {
+  ...issue(36, 'Conclusions leave an axis out', 'addedByOverseer', 'Conclusions',
+    'The writer\'s paragraph on cost was removed; Overseer wrote the axis\'s status in its place.', false, 'Cost: {{rca.axis.cost.status}}'),
+  addedByOverseer: true
+};
+
+const SHORTENED: DocumentStatusInput = {
+  status: 'CompletedWithWarnings',
+  firstTurnIssues: FIRST_DRAFT,
+  finalIssues: [SHORTENED_SPEED, SHORTENED_CONCLUSIONS, ADDED],
+  firstDraftClean: false,
+  calls: [call('Draft'), call('Revision'), call('Shorten')]
 };
 
 const FAILED: DocumentStatusInput = {
@@ -101,6 +121,45 @@ describe('explainDocumentStatus', () => {
     expect(ex.kept.map(item => [item.ruleName, item.location])).toEqual([['Rule 12', 'sections.abstract']]);
     expect(ex.summary).toBe('This document is usable. One warning was kept.');
     expect(ex.checks).toBe('Final: 1 warning.');
+  });
+
+  it('says what was shortened and what Overseer wrote in place of a removed paragraph, and names the shortening turn', () => {
+    const ex = explainDocumentStatus(SHORTENED);
+    expect(ex.summary).toBe('This document is usable. Two paragraphs were shortened, and Overseer wrote one paragraph in place of a removed one.');
+    expect(ex.checks).toBe(
+      'First draft: 4 issues (Ranking without the overlap caveat: 3; Digit in prose: 1). One revision and one shortening turn. '
+      + 'Final: 3 sentences removed, 1 paragraph added by Overseer.');
+    expect(ex.removed.map(item => item.shortened)).toEqual([true, true]);
+    expect(ex.added.map(item => [item.location, item.text])).toEqual([['Conclusions', 'Cost: {{rca.axis.cost.status}}']]);
+    expect(ex.kept).toEqual([]);
+    expect(ex.blocking).toEqual([]);
+
+    const lines = explanationLines(ex);
+    const added = lines.indexOf('  What Overseer added:');
+    expect(added).toBeGreaterThan(lines.indexOf('  What was removed:'));
+    expect(lines[added + 2]).toBe('      Added text: Cost: {{rca.axis.cost.status}}');
+  });
+
+  it('keeps a note of a removing rule whose text was kept as a warning, as the server marks it', () => {
+    const kept = issue(7, 'Over the word or item limit', 'warningTextKept', 'Conclusions',
+      'Kept over its cap at 131 words: every remaining sentence states an axis\'s status.', false);
+    const ex = explainDocumentStatus({ status: 'CompletedWithWarnings', finalIssues: [kept] }, 'stored');
+    expect(ex.kept.map(item => item.severity)).toEqual(['warningTextKept']);
+    expect(ex.summary).toBe('This document is usable. One warning was kept.');
+    expect(severityWord('warningTextKept')).toBe('warning, text kept');
+    expect(severityWord('addedByOverseer')).toBe('added by Overseer');
+    expect(severityWord('warning')).toBe('warning');
+  });
+
+  it('splits a text around its fact tokens', () => {
+    expect(tokenSegments('Continues {{rca.check.1}} after its full stop.')).toEqual([
+      { text: 'Continues ', token: false },
+      { text: '{{rca.check.1}}', token: true },
+      { text: ' after its full stop.', token: false }
+    ]);
+    expect(tokenSegments('{{a}}{{b}}')).toEqual([{ text: '{{a}}', token: true }, { text: '{{b}}', token: true }]);
+    expect(tokenSegments('')).toEqual([]);
+    expect(tokenSegments(null)).toEqual([]);
   });
 
   it('groups issues by rule and names the dialog and its button by the status', () => {
@@ -169,6 +228,26 @@ describe('ReportValidationDetailsComponent', () => {
     expect(text('.report-validation-kept .report-validation-rule')).toBe('Ranking without the overlap caveat');
     expect(text('.report-validation-kept summary')).toContain('Flagged text');
     expect(text('.report-validation-checks p')).toContain('First draft: 4 issues (Ranking without the overlap caveat: 3; Digit in prose: 1). One revision.');
+  });
+
+  it('lists what Overseer added before what was kept, marks a shortened paragraph, and shows fact names as code', () => {
+    const keptOverCap = issue(7, 'Over the word or item limit', 'warningTextKept', 'Conclusions',
+      'Kept over its cap at 131 words: every remaining sentence states an axis\'s status.', false);
+    show({ ...SHORTENED, finalIssues: [...SHORTENED.finalIssues!, keptOverCap] });
+
+    expect(headings()).toEqual(['What was removed', 'What Overseer added', 'What was kept with a warning', 'How the draft was checked', 'What you can do']);
+    expect(text('.report-validation-summary')).toBe(
+      'This document is usable. Two paragraphs were shortened and one warning was kept, and Overseer wrote one paragraph in place of a removed one.');
+    expect(Array.from(host.querySelectorAll('.report-validation-removed .report-validation-severity')).map(el => el.textContent!.trim()))
+      .toEqual(['shortened', 'shortened']);
+    expect(text('.report-validation-added .report-validation-severity')).toBe('added by Overseer');
+    expect(text('.report-validation-added summary')).toBe('Added text at Conclusions');
+    expect(text('.report-validation-kept .report-validation-severity')).toBe('warning, text kept');
+
+    // A token is a code element, never markup parsed from the text; the quote reads as before.
+    const quote = host.querySelector('.report-validation-added .report-validation-quote')!;
+    expect(quote.textContent).toBe('Cost: {{rca.axis.cost.status}}');
+    expect(Array.from(quote.querySelectorAll('code.report-validation-token')).map(code => code.textContent)).toEqual(['{{rca.axis.cost.status}}']);
   });
 
   it('shows a failed document with its error and the start of the writer\'s reply', () => {

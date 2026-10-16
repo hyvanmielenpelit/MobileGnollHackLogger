@@ -643,11 +643,14 @@ describe('CcReportsStepComponent', () => {
     expect(textOf(el.querySelector('.rp-job-cost'))).toBe('$0.21');
     expect(el.querySelector('.rp-job-estimate')).toBeNull();
 
-    const rows = Array.from(el.querySelectorAll('.rp-job-row'));
-    expect(rows.map(r => textOf(r.querySelector('.rp-doc-name')))).toEqual([
+    const cards = Array.from(el.querySelectorAll('app-report-job-documents article.rjd-card'));
+    expect(el.querySelector('app-report-job-documents ul.rjd-list')!.getAttribute('aria-label')).toBe('Progress of each document');
+    expect(cards.map(card => textOf(card.querySelector('.rjd-title')))).toEqual([
       'Executive Summary', 'Provider Issue Report'
     ]);
-    expect(rows.map(r => textOf(r.querySelector('.rp-doc-charts')))).toEqual(['—', '—']);
+    expect(cards.map(card => textOf(card.querySelector('.job-status-chip')))).toEqual(['Completed', 'Writing']);
+    // No charts are attached while the job runs: no card has a charts line.
+    expect(cards.map(card => card.querySelector('.rjd-charts'))).toEqual([null, null]);
     expect(el.querySelectorAll('.rp-job-log .rp-log-list li').length).toBe(2);
     expect(el.querySelector('.cc-rep-cancel-btn')).not.toBeNull();
     expect(el.querySelector('.rp-job-summary')).toBeNull();

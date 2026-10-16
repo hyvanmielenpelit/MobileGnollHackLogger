@@ -67,7 +67,7 @@ public class BenchmarkChatConsistencyReportServiceTests
             Assert.Equal("Test Model", document.SubjectLabel);
             Assert.Equal("Overseer Chat Consistency Report: Test Model", document.Title);
             Assert.Equal(BenchmarkReportDocumentStatus.Completed, document.Status);
-            Assert.Equal(4, document.ReportFormatVersion);
+            Assert.Equal(5, document.ReportFormatVersion);
             Assert.Equal(BenchmarkReportPackPrompt.PromptSha256(document.Audience, BenchmarkReportScope.ChatConsistency), document.WriterPromptSha256);
             Assert.Equal(0, document.AnswerExcerptChars);
             Assert.Null(document.ComparisonId);

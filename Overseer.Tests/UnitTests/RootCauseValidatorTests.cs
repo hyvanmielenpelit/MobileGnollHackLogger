@@ -704,6 +704,134 @@ public class RootCauseValidatorTests
         Assert.DoesNotContain(ValidateExecutive(paragraph), n => n.Rule == BenchmarkReportPackValidator.ComparisonTokenShapeRule);
     }
 
+    // --- Rule 31: the token a splice continues, one note per token, statuses side by side ---------------
+
+    private const string CheckSentence = "Run a panel swap to settle the grader-dependent hypotheses.";
+
+    /// <summary><see cref="QuestionSheet"/> with a check, its noun-phrase summary, and a known fact whose value is a lowercase sentence.</summary>
+    private static BenchmarkReportFactSheet CheckSheet()
+    {
+        var sheet = QuestionSheet();
+        sheet.Facts.Add(TextFact("rca.check.1", CheckSentence));
+        sheet.Facts.Add(TextFact("rca.check.1.summary", "Check 1, a panel swap with two graders of other providers"));
+        sheet.Facts.Add(TextFact("rca.known.1", "none recorded."));
+        return sheet;
+    }
+
+    private static List<BenchmarkReportValidationNote> TokenShapeNotes(BenchmarkReportFactSheet sheet, string slot, string paragraph)
+        => ValidateSections(sheet, new Dictionary<string, string> { [slot] = paragraph })
+            .Where(n => n.Rule == BenchmarkReportPackValidator.ComparisonTokenShapeRule && n.Location.StartsWith("sections." + slot, StringComparison.Ordinal))
+            .ToList();
+
+    [Fact]
+    public void Rule31_ASplice_NamesItsToken_IsReportedOnce_AndPointsACheckToItsSummary()
+    {
+        var notes = TokenShapeNotes(CheckSheet(), BenchmarkReportSlots.NextRuns, "Complete {{rca.check.1}} would settle these axes.");
+
+        var note = Assert.Single(notes);
+        Assert.StartsWith("Continues {{rca.check.1}} after its full stop (\"", note.Message, StringComparison.Ordinal);
+        Assert.Contains("hypotheses. would settle", note.Message, StringComparison.Ordinal);
+        Assert.Contains("cite it as {{rca.check.1.summary}}", note.Message, StringComparison.Ordinal);
+        Assert.Contains("It also stands inside a sentence", note.Message, StringComparison.Ordinal);
+
+        // The excerpt begins and ends with whole words.
+        string excerpt = note.Message.Split("(\"")[1].Split("\")")[0].Trim('…');
+        var words = ("Complete " + CheckSentence + " would settle these axes.").Split(' ');
+        Assert.Contains(excerpt.Split(' ')[0], words);
+        Assert.Contains(excerpt.Split(' ')[^1], words);
+    }
+
+    [Fact]
+    public void Rule31_TwoSplicesOfOneToken_AreTwoNotes_AndNoPlacementNote()
+    {
+        var notes = TokenShapeNotes(CheckSheet(), BenchmarkReportSlots.NextRuns,
+            "Complete {{rca.check.1}} would settle it. Later {{rca.check.1}} would help again.");
+
+        Assert.Equal(2, notes.Count(n => n.Message.StartsWith("Continues {{rca.check.1}} after its full stop", StringComparison.Ordinal)));
+        Assert.DoesNotContain(notes, n => n.Message.StartsWith("Places the sentence-valued", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Rule31_ACheckInsideASentence_IsPointedToItsSummary()
+    {
+        var note = Assert.Single(TokenShapeNotes(CheckSheet(), BenchmarkReportSlots.Limitations, "The next step is {{rca.check.1}}"));
+
+        Assert.StartsWith("Places the sentence-valued fact {{rca.check.1}} inside a sentence or parentheses", note.Message, StringComparison.Ordinal);
+        Assert.Contains("cite it as {{rca.check.1.summary}}", note.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("The axes stand at {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.",
+        "Lists {{rca.axis.speed.status}} and {{rca.axis.cost.status}} side by side: name each axis before its status.")]
+    [InlineData("The verdicts are in ({{rca.axis.intelligence.status}}, {{rca.axis.speed.status}}).",
+        "Lists {{rca.axis.intelligence.status}} and {{rca.axis.speed.status}} side by side: name each axis before its status.")]
+    [InlineData("The hypotheses are graded {{rca.hypothesis.HS1.1.grade}} and {{rca.hypothesis.HQ1.1.grade}}.",
+        "Lists {{rca.hypothesis.HS1.1.grade}} and {{rca.hypothesis.HQ1.1.grade}} side by side: name each hypothesis before its grade.")]
+    public void Rule31_StatusesOrGradesSideBySide_AreFlagged(string paragraph, string message)
+    {
+        Assert.Contains(TokenShapeNotes(CheckSheet(), BenchmarkReportSlots.Conclusions, paragraph), n => n.Message == message);
+    }
+
+    [Fact]
+    public void Rule31_EachAxisNamedBeforeItsStatus_IsNotFlagged()
+    {
+        var notes = TokenShapeNotes(CheckSheet(), BenchmarkReportSlots.Conclusions, "Speed: {{rca.axis.speed.status}}; cost: {{rca.axis.cost.status}}.");
+
+        Assert.DoesNotContain(notes, n => n.Message.Contains("side by side", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Rule31_ALowercaseSentenceFact_AtASentenceStart_IsNotFlagged_ButTheWritersOwnLowercaseWordIs()
+    {
+        Assert.Empty(TokenShapeNotes(CheckSheet(), BenchmarkReportSlots.Limitations, "Known facts come first. {{rca.known.1}} The rest is in the table."));
+
+        var spliced = TokenShapeNotes(CheckSheet(), BenchmarkReportSlots.Limitations, "Known facts come first. {{rca.known.1}} the rest is in the table.");
+        Assert.Contains(spliced, n => n.Message.StartsWith("Continues {{rca.known.1}} after its full stop", StringComparison.Ordinal));
+    }
+
+    // --- Rule 7: trimming never removes an axis status from the conclusions ----------------------------
+
+    /// <summary>A sentence of <paramref name="words"/> words: "Lore" and then "lore" repeated, ending in a full stop.</summary>
+    private static string Filler(int words) => "Lore " + string.Join(" ", Enumerable.Repeat("lore", words - 1)) + ".";
+
+    private static BenchmarkReportCleanResult DropConclusions(string conclusions)
+    {
+        var output = new BenchmarkReportWriterOutput { Headline = "The models differ on every axis." };
+        output.Sections[BenchmarkReportSlots.Conclusions] = conclusions;
+        return BenchmarkReportPackValidator.DropInvalid(Rca, output, QuestionSheet(), new BenchmarkReportContentSnapshot());
+    }
+
+    [Fact]
+    public void Rule7_TheConclusions_LoseATrailingSentence_ButNeverAnAxisStatus()
+    {
+        string intelligence = "Intelligence: {{rca.axis.intelligence.status}}. " + Filler(50);
+        string speed = "Speed: {{rca.axis.speed.status}}. " + Filler(50);
+        string cost = "Cost: {{rca.axis.cost.status}}.";
+
+        var cleaned = DropConclusions(intelligence + "\n\n" + speed + "\n\n" + cost + " " + Filler(30));
+
+        Assert.Equal(intelligence + "\n\n" + speed + "\n\n" + cost, cleaned.Output.Sections[BenchmarkReportSlots.Conclusions]);
+        var note = Assert.Single(cleaned.Notes, n => n.Rule == 7 && n.Location.StartsWith("sections.conclusions", StringComparison.Ordinal));
+        Assert.Equal("sections.conclusions[p3]", note.Location);
+        Assert.True(note.Dropped);
+        Assert.Equal(Filler(30), note.Text);
+    }
+
+    [Fact]
+    public void Rule7_ConclusionsWhoseEveryRemovableSentenceStatesAStatus_AreKeptOverTheCap_WithAWarning()
+    {
+        string conclusions = Filler(60) + " Intelligence: {{rca.axis.intelligence.status}}.\n\n" + Filler(60) + " Speed: {{rca.axis.speed.status}}.";
+
+        var cleaned = DropConclusions(conclusions);
+
+        Assert.Equal(conclusions, cleaned.Output.Sections[BenchmarkReportSlots.Conclusions]);
+        var note = Assert.Single(cleaned.Notes, n => n.Rule == 7 && n.Location.StartsWith("sections.conclusions", StringComparison.Ordinal));
+        Assert.False(note.Dropped);
+        Assert.Equal("sections.conclusions", note.Location);
+        Assert.StartsWith("Kept over its cap at 124 words", note.Message, StringComparison.Ordinal);
+        Assert.Equal(BenchmarkReportRuleCatalog.WarningTextKeptSeverity, BenchmarkReportRuleCatalog.ToIssueDto(note).Severity);
+    }
+
     // --- HeadlineIssues (v1) ---------------------------------------------------------------------------
 
     [Fact]

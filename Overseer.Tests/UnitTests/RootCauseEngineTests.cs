@@ -16,7 +16,8 @@ using Xunit;
 /// in, the item-level control table, the chart rows and determinism; and for three compared models: which
 /// differences are decomposed, the research questions and their signals, the model profiles, the hypothesis
 /// labels and references, the grader rules and family gaps, nulls without a family test, the thinking level as a
-/// configuration, price effects and a cost axis they alone fire on, the next runs a standing null, a thinking
+/// configuration, price effects, a cost axis they alone fire on and the price note beside a cost axis they explain
+/// best, each check's noun-phrase summary, the next runs a standing null, a thinking
 /// hypothesis and a style hypothesis propose, and reasoning a provider does not report separately; the panel
 /// indices a caller gives the engine input, the bare fact displays, the hypotheses each research question takes and
 /// in which order, the style hypothesis once per model, and the known facts' quota.
@@ -487,7 +488,7 @@ public class RootCauseEngineTests
         Assert.DoesNotContain(result.RecommendedRuns, r => r.Kind == RootCauseRunKinds.TimeStratum);
         Assert.Contains(ws1.Key, replicate.HypothesisIds);
         Assert.Equal(replicate.Number, ws1.NextRunNumber);
-        Assert.Equal("start each run at a different time of day", replicate.When);
+        Assert.Equal("Start each run at a different time of day", replicate.When);
         Assert.Equal(RootCausePurposes.Chat, replicate.Purpose);
         Assert.Equal(1, replicate.Number);
         Assert.Equal(Enumerable.Range(1, result.RecommendedRuns.Count), result.RecommendedRuns.Select(r => r.Number));
@@ -734,9 +735,82 @@ public class RootCauseEngineTests
     }
 
     [Fact]
-    public void TheEngineVersion_IsSix()
+    public void TheEngineVersion_IsSeven()
     {
-        Assert.Equal(6, RootCauseEngine.Version);
+        Assert.Equal(7, RootCauseEngine.Version);
+    }
+
+    [Fact]
+    public void EveryCheck_HasANounPhraseSummary_WhoseFactIsNoSentence()
+    {
+        // Without a configured model of another provider, the control run becomes a check, and so does any other
+        // run the catalog cannot fill.
+        var input = Input(Controls());
+        var bare = new RootCauseInput
+        {
+            Scope = input.Scope,
+            Origin = input.Origin,
+            ComputedAtUtc = input.ComputedAtUtc,
+            PricingBasis = input.PricingBasis,
+            PricingBasisKind = input.PricingBasisKind,
+            Models = input.Models,
+            Controls = input.Controls,
+            Catalog = new RootCauseCatalog(),
+            Questions = input.Questions
+        };
+
+        var result = RootCauseEngine.Compute(bare);
+
+        Assert.NotEmpty(result.Checks);
+        Assert.Contains(result.Checks, c => c.Summary.EndsWith(", a new configuration of a recommended model of another provider, for a control run", StringComparison.Ordinal));
+        var facts = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(facts, result, t => "Model " + t);
+        var byKey = facts.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
+        foreach (var check in result.Checks)
+        {
+            string key = "rca.check." + check.Number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            Assert.StartsWith("Check " + check.Number.ToString(System.Globalization.CultureInfo.InvariantCulture) + ", ", check.Summary, StringComparison.Ordinal);
+            Assert.Equal(check.Text, byKey[key].Display);
+            Assert.Equal(check.Summary, byKey[key + ".summary"].Display);
+            Assert.True(RootCauseClaimSupport.IsSentenceShaped(key));
+            Assert.False(RootCauseClaimSupport.IsSentenceShaped(key + ".summary"));
+            Assert.True(BenchmarkReportFactLabels.TryLabel(key + ".summary", out _), "No label for " + key + ".summary");
+        }
+
+        // A check stored before the summaries were added is named by its number alone.
+        Assert.Equal("Check 4", RootCauseNextRuns.Summary(new RootCauseCheck { Number = 4, Kind = "rubric", Text = "Review the rubric." }));
+    }
+
+    [Fact]
+    public void ACostAxisWhosePriceEffectsCoverLargerGaps_HasAPriceNote_ThatIsASentenceFact()
+    {
+        // Model B reads and writes 30% more tokens than Model A at its prices; Model C as many tokens at three times the price.
+        var result = RootCauseEngine.Compute(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0),
+            Compared("B", 2, 75, 1.2, 1.3),
+            Compared("C", 3, 70, 1.1, 1.0, price: 3.0)));
+
+        var cost = result.Axes.Single(a => a.Axis == RootCauseAxes.Cost);
+        var best = Assert.Single(result.Hypotheses, h => h.Key == cost.BestHypothesis);
+        Assert.False(best.PriceEffect);
+        var priceEffect = Assert.Single(result.Hypotheses, h => h.PriceEffect && h.Models.SequenceEqual(new[] { "C", "A" }));
+        Assert.NotNull(cost.PriceNote);
+        Assert.StartsWith("Price per token, known from the price cards, explains the largest cost differences (", cost.PriceNote, StringComparison.Ordinal);
+        Assert.Contains(priceEffect.Key, cost.PriceNote, StringComparison.Ordinal);
+
+        var facts = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(facts, result, t => "Model " + t);
+        var byKey = facts.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
+        Assert.Equal(cost.PriceNote, byKey["rca.axis.cost.priceNote"].Display);
+        Assert.True(RootCauseClaimSupport.IsSentenceShaped("rca.axis.cost.priceNote"));
+        Assert.True(BenchmarkReportFactLabels.TryLabel("rca.axis.cost.priceNote", out _), "No label for rca.axis.cost.priceNote");
+
+        // With every model at the same prices no price effect fires, and no axis has a note.
+        var plain = RootCauseEngine.Compute(ComparisonInput());
+        Assert.All(plain.Axes, a => Assert.Null(a.PriceNote));
+        var plainFacts = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(plainFacts, plain, t => "Model " + t);
+        Assert.DoesNotContain(plainFacts.Sorted(), f => f.Key.EndsWith(".priceNote", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1166,15 +1240,23 @@ public class RootCauseEngineTests
         Assert.DoesNotContain(hc2.Robustness, r => r.Name == RootCauseHypotheses.Replicates);
         Assert.Equal("configuration", hc2.CheckKind);
         Assert.Equal("Compare the two models' price cards; the price effect follows from them.", hc2.CheckText);
+        Assert.Equal("a comparison of the two models' price cards", hc2.CheckSummary);
         Assert.Null(hc2.NextRunKind);
+
+        // No run can refute a share that follows from the price cards.
+        Assert.True(hc2.PriceEffect);
+        Assert.Equal(RootCauseHypotheses.PriceEffectRefutedIf, hc2.RefutedIf);
+        Assert.Equal("not testable by a run: the share follows from the price cards and these runs' token counts", hc2.ConfirmIf);
 
         var result = RootCauseEngine.Compute(input);
         var kept = Assert.Single(result.Hypotheses, h => h.Id == "HC2");
         Assert.Null(kept.NextRunNumber);
+        Assert.Equal(RootCauseHypotheses.PriceEffectRefutedIf, kept.RefutedIf);
         if (kept.Grade != RootCauseGrades.High)
         {
             var check = Assert.Single(result.Checks, c => c.Number == kept.CheckNumber);
             Assert.Equal("configuration", check.Kind);
+            Assert.Equal("Check " + check.Number.ToString(System.Globalization.CultureInfo.InvariantCulture) + ", a comparison of the two models' price cards", check.Summary);
         }
         Assert.EndsWith("until a second run of each suite is made, apart from a price effect, which follows from the price cards.", result.GradeCap);
         Assert.EndsWith("until a second run of each suite is made.", RootCauseEngine.Compute(ComparisonInput()).GradeCap);

@@ -23,19 +23,33 @@ export interface DocumentStatusInput {
 /** Where the explanation is read: a job's progress row (with its diagnostics), or a stored document. */
 export type DocumentStatusSource = 'job' | 'stored';
 
+/** A run of plain text, or one `{{token}}` that the dialog shows as code. */
+export interface TextSegment {
+  readonly text: string;
+  readonly token: boolean;
+}
+
 /** One validation issue in words. */
 export interface ExplainedIssue {
   readonly rule: number;
   /** The rule's name, or `Rule 16` from a server that sends none. */
   readonly ruleName: string;
-  /** `removesItem`, `warning`, `failsDocument`, or null when not sent. */
+  /** `removesItem`, `warning`, `warningTextKept`, `addedByOverseer`, `failsDocument`, or null when not sent. */
   readonly severity: string | null;
   /** `Conclusions, paragraph 1`, or the raw location from a server that sends no label. */
   readonly location: string;
   /** What the check found, as the validator words it. */
   readonly meaning: string;
-  /** The removed or flagged text, raw with its `{{tokens}}`; null when none was kept. */
+  /** The removed, flagged or added text, raw with its `{{tokens}}`; null when none was kept. */
   readonly text: string | null;
+  /** Overseer wrote `text` in place of a removed one. */
+  readonly addedByOverseer: boolean;
+  /** Sentences were removed from the end of the paragraph, not the whole paragraph. */
+  readonly shortened: boolean;
+  /** `meaning` split around its tokens. */
+  readonly meaningParts: readonly TextSegment[];
+  /** `text` split around its tokens; null when there is no text. */
+  readonly textParts: readonly TextSegment[] | null;
 }
 
 /** First-draft issues of one rule. */
@@ -48,13 +62,19 @@ export interface IssueGroup {
 
 /** Why a document has its status, in the sections the dialog and the diagnostics both show. */
 export interface DocumentStatusExplanation {
-  /** One sentence: whether the document is usable, and what was removed or kept. */
+  /** One sentence: whether the document is usable, and what was shortened, removed, added or kept. */
   readonly summary: string;
+  /** Shortened paragraphs and removed items. */
   readonly removed: readonly ExplainedIssue[];
+  /** Paragraphs Overseer wrote in place of removed ones. */
+  readonly added: readonly ExplainedIssue[];
   readonly kept: readonly ExplainedIssue[];
   /** Issues that stop the document from being stored. */
   readonly blocking: readonly ExplainedIssue[];
-  /** `First draft: 20 issues (…). One revision. Final: 1 removal, 1 warning.`; empty when nothing is known. */
+  /**
+   * `First draft: 20 issues (…). One revision and one shortening turn. Final: 2 sentences removed, 1 paragraph
+   * added by Overseer.`; empty when nothing is known.
+   */
   readonly checks: string;
   readonly actions: readonly string[];
   /** A failed document's error message. */
@@ -88,24 +108,74 @@ export function timesWord(count: number): string {
   return count === 1 ? 'once' : count === 2 ? 'twice' : `${numberFormat.format(count)} times`;
 }
 
-/** `warning`, `removes the item`, `fails the document`; the wire value for an unknown one. */
+/**
+ * `warning`, `warning, text kept`, `removes the item`, `added by Overseer`, `fails the document`; the wire
+ * value for an unknown one.
+ */
 export function severityWord(severity: string | null | undefined): string | null {
   switch (severity) {
     case 'removesItem': return 'removes the item';
     case 'warning': return 'warning';
+    case 'warningTextKept': return 'warning, text kept';
+    case 'addedByOverseer': return 'added by Overseer';
     case 'failsDocument': return 'fails the document';
     default: return severity ? severity : null;
   }
 }
 
+const TOKEN_PATTERN = /\{\{[^{}]*\}\}/g;
+
+/** The text split into plain runs and `{{token}}`s, in order; empty for empty text. */
+export function tokenSegments(text: string | null | undefined): TextSegment[] {
+  const source = text ?? '';
+  const segments: TextSegment[] = [];
+  let last = 0;
+  for (const match of source.matchAll(TOKEN_PATTERN)) {
+    const start = match.index ?? 0;
+    if (start > last) {
+      segments.push({ text: source.slice(last, start), token: false });
+    }
+    segments.push({ text: match[0], token: true });
+    last = start + match[0].length;
+  }
+  if (last < source.length) {
+    segments.push({ text: source.slice(last), token: false });
+  }
+  return segments;
+}
+
+/** The word-cap rule, whose trimming removes sentences from the end of a section. */
+const WORD_CAP_RULE = 7;
+
+/** A word-cap note that removed trailing sentences rather than the paragraph (*Removed its last 2 sentences…*). */
+function isShortening(issue: BenchmarkReportPackValidationIssueDto): boolean {
+  return issue.rule === WORD_CAP_RULE && issue.dropped && /^Removed its last\b/i.test(issue.message ?? '');
+}
+
+/** The sentences a shortening removed: the count its message names, else one. */
+export function removedSentenceCount(issue: Pick<ExplainedIssue, 'meaning'>): number {
+  const match = /^Removed its last (\d+) sentences\b/i.exec(issue.meaning ?? '');
+  return match ? Number(match[1]) : 1;
+}
+
+/** A note of text Overseer wrote in place of a removed one. */
+function isAddedByOverseer(issue: BenchmarkReportPackValidationIssueDto): boolean {
+  return issue.addedByOverseer === true || issue.severity === 'addedByOverseer';
+}
+
 export function explainIssue(issue: BenchmarkReportPackValidationIssueDto): ExplainedIssue {
+  const text = issue.text ?? null;
   return {
     rule: issue.rule,
     ruleName: issue.ruleName?.trim() || `Rule ${issue.rule}`,
     severity: issue.severity || null,
     location: issue.locationLabel?.trim() || issue.location || 'An unknown place',
     meaning: issue.message,
-    text: issue.text ?? null
+    text,
+    addedByOverseer: isAddedByOverseer(issue),
+    shortened: isShortening(issue),
+    meaningParts: tokenSegments(issue.message),
+    textParts: text === null ? null : tokenSegments(text)
   };
 }
 
@@ -138,6 +208,11 @@ export function revisionCount(input: DocumentStatusInput): number | null {
     return 1;
   }
   return null;
+}
+
+/** The number of final shortening turns, from the calls; 0 when they are not known. */
+export function shorteningCount(input: Pick<DocumentStatusInput, 'calls'>): number {
+  return input.calls?.filter(call => call.kind === 'Shorten').length ?? 0;
 }
 
 /** Whether the first draft passed every check; null when that is not known. */
@@ -176,7 +251,27 @@ function removedNoun(removed: readonly ExplainedIssue[], count: number): string 
   return paragraphs ? (count === 1 ? 'paragraph' : 'paragraphs') : (count === 1 ? 'item' : 'items');
 }
 
-function summaryOf(input: DocumentStatusInput, removed: readonly ExplainedIssue[], kept: readonly ExplainedIssue[]): string {
+/** `a`, `a and b`, `a, b, and c`. */
+function listOf(parts: readonly string[]): string {
+  if (parts.length <= 2) {
+    return parts.join(' and ');
+  }
+  return `${parts.slice(0, -1).join(', ')}, and ${parts[parts.length - 1]}`;
+}
+
+/** `Overseer wrote one paragraph in place of a removed one`. */
+function addedClause(count: number): string {
+  return count === 1
+    ? 'Overseer wrote one paragraph in place of a removed one'
+    : `Overseer wrote ${numberWord(count)} paragraphs in place of removed ones`;
+}
+
+function summaryOf(
+  input: DocumentStatusInput,
+  removed: readonly ExplainedIssue[],
+  added: readonly ExplainedIssue[],
+  kept: readonly ExplainedIssue[]
+): string {
   switch (input.status) {
     case 'Failed':
       return 'This document could not be stored.';
@@ -185,14 +280,21 @@ function summaryOf(input: DocumentStatusInput, removed: readonly ExplainedIssue[
     case 'Completed':
     case 'CompletedWithWarnings': {
       const parts: string[] = [];
-      if (removed.length > 0) {
-        parts.push(`${numberWord(removed.length)} ${removedNoun(removed, removed.length)} ${removed.length === 1 ? 'was' : 'were'} removed`);
+      const shortened = removed.filter(issue => issue.shortened);
+      const whole = removed.filter(issue => !issue.shortened);
+      if (shortened.length > 0) {
+        parts.push(`${numberWord(shortened.length)} ${removedNoun(shortened, shortened.length)} ${shortened.length === 1 ? 'was' : 'were'} shortened`);
+      }
+      if (whole.length > 0) {
+        parts.push(`${numberWord(whole.length)} ${removedNoun(whole, whole.length)} ${whole.length === 1 ? 'was' : 'were'} removed`);
       }
       if (kept.length > 0) {
         parts.push(`${numberWord(kept.length)} ${kept.length === 1 ? 'warning was' : 'warnings were'} kept`);
       }
-      if (parts.length > 0) {
-        return `This document is usable. ${capitalize(parts.join(' and '))}.`;
+      if (parts.length > 0 || added.length > 0) {
+        const passive = parts.length > 0 ? capitalize(listOf(parts)) : '';
+        const overseer = added.length > 0 ? addedClause(added.length) : '';
+        return `This document is usable. ${passive && overseer ? `${passive}, and ${overseer}` : passive || overseer}.`;
       }
       if (!input.finalIssues && input.status === 'CompletedWithWarnings') {
         return 'This document is usable. What was removed or kept with a warning is listed once the job finishes.';
@@ -210,6 +312,7 @@ function checksOf(
   input: DocumentStatusInput,
   source: DocumentStatusSource,
   removed: readonly ExplainedIssue[],
+  added: readonly ExplainedIssue[],
   kept: readonly ExplainedIssue[],
   blocking: readonly ExplainedIssue[]
 ): string {
@@ -226,13 +329,29 @@ function checksOf(
     sentences.push('The first draft has not been checked yet.');
   }
   const revisions = revisionCount(input);
-  if (revisions !== null && (revisions > 0 || passed === false)) {
-    sentences.push(revisions === 0 ? 'No revision.' : `${capitalize(numberWord(revisions))} ${revisions === 1 ? 'revision' : 'revisions'}.`);
+  const shortenings = shorteningCount(input);
+  const shorteningPhrase = `${numberWord(shortenings)} ${shortenings === 1 ? 'shortening turn' : 'shortening turns'}`;
+  if (revisions !== null && (revisions > 0 || passed === false || shortenings > 0)) {
+    const revisionPhrase = revisions === 0 ? '' : `${numberWord(revisions)} ${revisions === 1 ? 'revision' : 'revisions'}`;
+    if (shortenings > 0) {
+      sentences.push(`${capitalize(revisionPhrase ? `${revisionPhrase} and ${shorteningPhrase}` : shorteningPhrase)}.`);
+    } else {
+      sentences.push(revisions === 0 ? 'No revision.' : `${capitalize(revisionPhrase)}.`);
+    }
   }
   if (input.finalIssues) {
     const parts: string[] = [];
-    if (removed.length > 0) {
-      parts.push(plural(removed.length, 'removal', 'removals'));
+    const shortened = removed.filter(issue => issue.shortened);
+    const whole = removed.filter(issue => !issue.shortened);
+    if (shortened.length > 0) {
+      const sentencesRemoved = shortened.reduce((sum, issue) => sum + removedSentenceCount(issue), 0);
+      parts.push(plural(sentencesRemoved, 'sentence removed', 'sentences removed'));
+    }
+    if (whole.length > 0) {
+      parts.push(plural(whole.length, 'removal', 'removals'));
+    }
+    if (added.length > 0) {
+      parts.push(plural(added.length, 'paragraph added by Overseer', 'paragraphs added by Overseer'));
     }
     if (kept.length > 0) {
       parts.push(plural(kept.length, 'warning', 'warnings'));
@@ -276,23 +395,38 @@ function actionsOf(input: DocumentStatusInput, source: DocumentStatusSource, kep
 }
 
 /**
- * Why a document has its status: one summary sentence, what was removed and what was kept with a
- * warning (each with its location, rule and meaning, and the text), how the draft was checked, and what
- * can be done. Both the validation details dialog and the Report Pack diagnostics are built from it.
+ * Why a document has its status: one summary sentence, what was shortened or removed, what Overseer added
+ * and what was kept with a warning (each with its location, rule and meaning, and the text), how the draft
+ * was checked, and what can be done. Both the validation details dialog and the Report Pack diagnostics are
+ * built from it.
  */
 export function explainDocumentStatus(input: DocumentStatusInput, source: DocumentStatusSource = 'job'): DocumentStatusExplanation {
   const final = input.finalIssues ?? [];
-  const removed = final.filter(issue => issue.dropped).map(explainIssue);
-  const blocking = final.filter(issue => !issue.dropped && issue.severity === 'failsDocument').map(explainIssue);
-  const kept = final.filter(issue => !issue.dropped && issue.severity !== 'failsDocument').map(explainIssue);
+  const added: ExplainedIssue[] = [];
+  const removed: ExplainedIssue[] = [];
+  const blocking: ExplainedIssue[] = [];
+  const kept: ExplainedIssue[] = [];
+  for (const issue of final) {
+    const item = explainIssue(issue);
+    if (item.addedByOverseer) {
+      added.push(item);
+    } else if (issue.dropped) {
+      removed.push(item);
+    } else if (issue.severity === 'failsDocument') {
+      blocking.push(item);
+    } else {
+      kept.push(item);
+    }
+  }
   const failed = input.status === 'Failed';
   const reply = failed ? input.failedReply ?? '' : '';
   return {
-    summary: summaryOf(input, removed, kept),
+    summary: summaryOf(input, removed, added, kept),
     removed,
+    added,
     kept,
     blocking,
-    checks: checksOf(input, source, removed, kept, blocking),
+    checks: checksOf(input, source, removed, added, kept, blocking),
     actions: actionsOf(input, source, kept),
     error: failed && input.errorMessage ? input.errorMessage : null,
     failedReplyExcerpt: reply
@@ -321,6 +455,9 @@ export function explanationLines(explanation: DocumentStatusExplanation, indent 
   }
   if (explanation.removed.length > 0) {
     lines.push(`${indent}What was removed:`, ...explanation.removed.flatMap(issue => issueLines(issue, 'Removed text', indent)));
+  }
+  if (explanation.added.length > 0) {
+    lines.push(`${indent}What Overseer added:`, ...explanation.added.flatMap(issue => issueLines(issue, 'Added text', indent)));
   }
   if (explanation.kept.length > 0) {
     lines.push(`${indent}What was kept with a warning:`, ...explanation.kept.flatMap(issue => issueLines(issue, 'Flagged text', indent)));

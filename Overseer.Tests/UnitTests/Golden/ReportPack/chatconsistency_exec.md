@@ -7,8 +7,8 @@
 - **Analysis:** #7
 - **Model:** Test Model (TestProvider, test-model-1, thinking level high)
 - **Baseline period:** 2026-09-01 00:00 UTC to 2026-09-08 00:00 UTC, 2 runs
-- **Comparison period:** from 2026-09-15 00:00 UTC to 2026-09-22 00:00 UTC, 2 runs
-- **Hours:** weekdays 04–12 UTC
+- **Comparison period:** From 2026-09-15 00:00 UTC to 2026-09-22 00:00 UTC, 2 runs
+- **Hours:** Weekdays 04–12 UTC
 - **Suites:** Core suite
 - **Control models:** 1 control model (A), identity withheld
 - **Protocol:** V1
@@ -18,7 +18,7 @@
 - **Verdict:** The chat changed
 - **Answer streaming rate not computable:** No telemetry run in the baseline.
 - **Sample:** Met: at least 2 runs on 2 days per period and 20 paired items
-- **Hours:** every result holds for weekdays 04–12 UTC only, the hours both periods share
+- **Hours:** Every result holds for weekdays 04–12 UTC only, the hours both periods share
 - **Controls:** 1 control model (A), identity withheld, run on the same suites in both periods; 1 missing-control note
 
 ## The result in one sentence
@@ -41,11 +41,11 @@ The Overseer chat with Test Model is Degraded: quality degraded (indicated); tim
 
 | Measure | Baseline | Comparison |
 |---|---|---|
-| Quality | mean score 82.4 points | mean score 78.1 points |
-| Time to first answer text | median 39.3 s | median 40.1 s |
-| Answer streaming rate | median 61.2 tokens/s | median 59.8 tokens/s |
-| Work per turn (output tokens per answer) | mean 9,044 output tokens per answer | mean 8,233 output tokens per answer |
-| Cost per question | mean $0.0071 per question | mean $0.0066 per question |
+| Quality | Mean score 82.4 points | Mean score 78.1 points |
+| Time to first answer text | Median 39.3 s | Median 40.1 s |
+| Answer streaming rate | Median 61.2 tokens/s | Median 59.8 tokens/s |
+| Work per turn (output tokens per answer) | Mean 9,044 output tokens per answer | Mean 8,233 output tokens per answer |
+| Cost per question | Mean $0.0071 per question | Mean $0.0066 per question |
 | Failed answers | 0 of 40 answers | 1 of 40 answers |
 
 *Descriptive levels of each period, not a comparison: the verdicts above say what changed.*
@@ -91,6 +91,6 @@ The analysis suggests one more run: Repeat the comparison runs during US busines
 
 ---
 
-*Document ID 41 · format version 4 · created 2026-09-28 10:42 UTC · writer Writer One (Anthropic, writer-1) · disclosure Detailed · controls anonymized*
+*Document ID 41 · format version 5 · created 2026-09-28 10:42 UTC · writer Writer One (Anthropic, writer-1) · disclosure Detailed · controls anonymized*
 
 *Figures and tables were computed by Overseer from the saved chat consistency analysis. The prose was written by Writer One from those figures and checked automatically for structure, permitted figures, word limits, control-model names, hype words, spelling, readable text and the claim rules on change, cause, intent, mechanism, public claims and hours; the checks do not verify the prose's interpretations.*

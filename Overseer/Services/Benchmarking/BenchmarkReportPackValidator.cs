@@ -29,6 +29,17 @@ public sealed class BenchmarkReportCleanResult
 }
 
 /// <summary>
+/// One capped section's word count (<see cref="BenchmarkReportPackValidator.SlotWordCounts"/>): raw writer words, a
+/// token counting as one; <see cref="Words"/> is null when the output lacks the section.
+/// </summary>
+public sealed record BenchmarkReportSlotWordCount(
+    string Slot, string Location, string LocationLabel, int Cap, int? Words, IReadOnlyList<int> Paragraphs)
+{
+    /// <summary>The section has more words than its cap.</summary>
+    public bool OverCap => Words > Cap;
+}
+
+/// <summary>
 /// The report-pack document rules (D7), checked against the fact sheet and the content snapshot.
 ///
 /// <para>Rules 2, 3, 8, 9, 10, 11, 12, 16, 17 and 19 apply to every prose string: the headline, each
@@ -90,7 +101,7 @@ public sealed class BenchmarkReportCleanResult
 /// a warning, reads the text with every token resolved to its display: a sentence continued after a full
 /// stop, a sentence-valued fact placed inside a sentence or parentheses, a clause-valued fact
 /// (<c>Model A took …</c>) after its own model or verb, a run of unlabeled <c>N of M</c> counts, and in a Root
-/// Cause Analysis a sentence-shaped fact (<see cref="RootCauseClaimSupport.IsSentenceShaped"/>) after words of the
+/// Cause Analysis a run of axis statuses or hypothesis grades, a sentence-shaped fact (<see cref="RootCauseClaimSupport.IsSentenceShaped"/>) after words of the
 /// writer's own sentence, a parenthesis inside another and two worded facts joined by <c>to</c>. Rule 37
 /// (<see cref="BareModelLetterRule"/>), a warning, flags a model written by its bare letter, <c>Model H</c>
 /// or <c>Models H and I</c>, outside its token.</para>
@@ -105,9 +116,9 @@ public sealed class BenchmarkReportCleanResult
 /// anywhere without a High hypothesis token or an established axis status token in its sentence, drops the
 /// paragraph or item; rule 35, a writer hypothesis without an axis, statement, evidence for, refuted-if
 /// statement or known locus, with a confidence other than Low, or citing a model or fact that does not
-/// exist, is dropped; rule 36, a warning, wants the conclusions to cite every axis' status. An answer slot
+/// exist, is dropped; rule 36, a warning, wants the conclusions to cite every axis's status. An answer slot
 /// is required only for a question the sheet asks
-/// (<see cref="RootCauseClaimSupport.Questions"/>). Rule 31 applies to it in both scopes, a hypothesis'
+/// (<see cref="RootCauseClaimSupport.Questions"/>). Rule 31 applies to it in both scopes, a hypothesis's
 /// label excepted, and rule 4 wants a topic for every question it cites whose text the writer was given.</para>
 ///
 /// <para>A chat consistency sheet (<see cref="BenchmarkReportFactSheet.IsChatConsistency"/>) is checked
@@ -258,7 +269,7 @@ public static class BenchmarkReportPackValidator
     /// <summary>Rule 35: a writer hypothesis is complete, at confidence Low, and cites only models and facts that exist.</summary>
     public const int RootCauseWriterHypothesisRule = 35;
 
-    /// <summary>Rule 36: the conclusions cite every axis' <c>rca.axis.&lt;axis&gt;.status</c>. A warning.</summary>
+    /// <summary>Rule 36: the conclusions cite every axis's <c>rca.axis.&lt;axis&gt;.status</c>. A warning.</summary>
     public const int RootCauseAxisStatusRule = 36;
 
     /// <summary>
@@ -516,15 +527,30 @@ public static class BenchmarkReportPackValidator
     private static readonly Regex AndWordRegex = new(
         @"(?<![\p{L}\p{N}])and(?![\p{L}\p{N}])", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// The abbreviations of <see cref="BenchmarkReportSentenceCase.Abbreviations"/> without their final dot, as a
+    /// regex alternation: <c>e\.g|i\.e|etc|…</c>.
+    /// </summary>
+    private static readonly string AbbreviationAlternation = string.Join("|", BenchmarkReportSentenceCase.Abbreviations
+        .Select(a => Regex.Escape(a.EndsWith('.') ? a[..^1] : a)));
+
     /// <summary>C9: a full stop followed by a lower-case <c>and</c>, except after a common abbreviation.</summary>
     private static readonly Regex SplicedSentenceRegex = new(
-        @"(?<!(?<![\p{L}])(?:e\.g|i\.e|etc|vs|cf|approx|incl|resp))\.\s+and\s",
+        @"(?<!(?<![\p{L}])(?:" + AbbreviationAlternation + @"))\.\s+and\s",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>Rule 31a: a full stop followed by a lower-case letter, except after a common abbreviation.</summary>
     private static readonly Regex TokenShapeSplicedRegex = new(
-        @"(?<!(?<![\p{L}])(?:e\.g|i\.e|etc|vs|cf|approx|incl|resp))\.\s+\p{Ll}",
+        @"(?<!(?<![\p{L}])(?:" + AbbreviationAlternation + @"))\.\s+\p{Ll}",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>Rule 31d: nothing but whitespace, commas, semicolons, parentheses and <c>and</c> between two tokens.</summary>
+    private static readonly Regex SideBySideJoinRegex = new(
+        @"^[\s,;()]*(?:(?<![\p{L}\p{N}])and(?![\p{L}\p{N}])[\s,;()]*)?$",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>A Root Cause Analysis' check fact, <c>rca.check.&lt;n&gt;</c>, whose display is a whole sentence.</summary>
+    private static readonly Regex CheckKeyRegex = new(@"^rca\.check\.\d+$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     /// <summary>Rule 31c: a clause-valued display, <c>Model A took …</c>, with its verb captured.</summary>
     private static readonly Regex ClauseValuedRegex = new(@"^Model ([A-Z]+) (\p{L}+) ", RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -855,8 +881,9 @@ public static class BenchmarkReportPackValidator
     /// cannot be dropped, so an invalid one is fatal, as is a required slot left empty; when the headline
     /// is the only fatal cause, <see cref="BenchmarkReportCleanResult.HeadlineOnlyFatal"/> says so. Missing
     /// question topics are recorded but not fatal, and so are the warnings of
-    /// <see cref="IsWarningRule"/>: their text is kept. A note on a paragraph or item carries that paragraph's
-    /// or item's raw text in <see cref="BenchmarkReportValidationNote.Text"/>, removed or kept.
+    /// <see cref="IsWarningRule"/>: their text is kept. A capped slot still over its cap loses sentences from its
+    /// end (<see cref="TrimToCap"/>). A note on a paragraph or item carries that paragraph's or item's raw text in
+    /// <see cref="BenchmarkReportValidationNote.Text"/>, removed or kept; a trimmed paragraph's, the sentences removed.
     /// </summary>
     public static BenchmarkReportCleanResult DropInvalid(
         BenchmarkReportAudience audience,
@@ -913,14 +940,10 @@ public static class BenchmarkReportPackValidator
                 }
             }
 
+            bool trimmed = false;
             if (ctx.SlotCap(slot) is int cap)
             {
-                while (kept.Count > 0 && WordCount(string.Join("\n\n", kept.Select(k => k.Text))) > cap)
-                {
-                    var last = kept[^1];
-                    kept.RemoveAt(kept.Count - 1);
-                    Dropped(notes, 7, ParagraphLocation(slot, last.Index), $"Removed to bring {LowerFirst(SlotName(slot))} within {cap.ToString(CultureInfo.InvariantCulture)} words.", last.Text);
-                }
+                trimmed = TrimToCap(slot, kept, cap, sentence => IsProtectedSentence(ctx, slot, sentence), notes);
             }
 
             if (kept.Count == 0)
@@ -932,7 +955,7 @@ public static class BenchmarkReportPackValidator
             }
             else
             {
-                copy.Sections[slot] = kept.Count == paragraphs.Count ? text : string.Join("\n\n", kept.Select(k => k.Text));
+                copy.Sections[slot] = kept.Count == paragraphs.Count && !trimmed ? text : string.Join("\n\n", kept.Select(k => k.Text));
 
                 // Nothing to drop for a slot-wide check: its note is recorded against the kept text.
                 CheckChatSlot(ctx, slot, copy.Sections[slot], location, notes);
@@ -1017,6 +1040,127 @@ public static class BenchmarkReportPackValidator
             FatalReason = fatal,
             HeadlineOnlyFatal = headlineFatal && !otherFatal
         };
+    }
+
+    /// <summary>
+    /// Brings a capped slot's kept paragraphs within <paramref name="cap"/> words by removing sentences from the end:
+    /// while the slot is over its cap, the last paragraph whose last sentence is not protected loses that sentence,
+    /// and a paragraph left with none is removed. It stops when every remaining paragraph ends with a protected
+    /// sentence. Each paragraph touched gets one dropped rule-7 note holding the removed sentences (the whole
+    /// paragraph when it went), and a slot left over its cap a rule-7 note that keeps its text. Returns whether
+    /// anything was removed.
+    /// </summary>
+    private static bool TrimToCap(
+        string slot, List<(int Index, string Text)> kept, int cap, Func<string, bool> isProtected, List<BenchmarkReportValidationNote> notes)
+    {
+        int Words() => WordCount(string.Join("\n\n", kept.Select(k => k.Text)));
+        if (kept.Count == 0 || Words() <= cap) return false;
+
+        var touched = new Dictionary<int, (string Original, List<string> Removed)>();
+        while (kept.Count > 0 && Words() > cap)
+        {
+            int at = -1;
+            List<(int Start, int End)> sentences = new();
+            for (int k = kept.Count - 1; k >= 0; k--)
+            {
+                var spans = SentenceSpans(kept[k].Text);
+                if (spans.Count > 0 && !isProtected(kept[k].Text[spans[^1].Start..spans[^1].End]))
+                {
+                    at = k;
+                    sentences = spans;
+                    break;
+                }
+            }
+            if (at < 0) break;
+
+            var (index, paragraph) = kept[at];
+            var last = sentences[^1];
+            if (!touched.ContainsKey(index)) touched[index] = (paragraph, new List<string>());
+            touched[index].Removed.Insert(0, paragraph[last.Start..last.End].Trim());
+
+            string rest = paragraph[..last.Start].TrimEnd();
+            if (sentences.Count <= 1 || rest.Length == 0) kept.RemoveAt(at);
+            else kept[at] = (index, rest);
+        }
+
+        string name = LowerFirst(SlotName(slot));
+        string capText = cap.ToString(CultureInfo.InvariantCulture);
+        foreach (int index in touched.Keys.OrderBy(i => i))
+        {
+            var (original, removed) = touched[index];
+            bool whole = !kept.Any(k => k.Index == index);
+            string message = whole ? $"Removed to bring {name} within {capText} words."
+                : removed.Count == 1 ? $"Removed its last sentence to bring {name} within {capText} words."
+                : $"Removed its last {removed.Count.ToString(CultureInfo.InvariantCulture)} sentences to bring {name} within {capText} words.";
+            Dropped(notes, 7, ParagraphLocation(slot, index), message, whole ? original : string.Join(" ", removed));
+        }
+
+        int words = Words();
+        if (kept.Count > 0 && words > cap)
+        {
+            Issue(notes, 7, SectionLocation(slot), $"Kept over its cap at {words.ToString(CultureInfo.InvariantCulture)} words: every sentence left to remove states an axis's status.");
+        }
+        return touched.Count > 0;
+    }
+
+    /// <summary>
+    /// A sentence <see cref="TrimToCap"/> never removes: in a Root Cause Analysis' conclusions, one citing an axis's
+    /// <c>rca.axis.&lt;axis&gt;.status</c>. No other slot protects anything.
+    /// </summary>
+    private static bool IsProtectedSentence(Context ctx, string slot, string sentence)
+    {
+        if (!ctx.RootCause || !string.Equals(slot, BenchmarkReportSlots.Conclusions, StringComparison.Ordinal)) return false;
+        var cited = CitedTokens(sentence);
+        return RootCauseAxes.All.Any(a => cited.Contains(RootCauseClaimSupport.StatusKey(a)));
+    }
+
+    /// <summary>
+    /// The sentences of one paragraph as spans of it, split as <see cref="SentenceSplitRegex"/> splits them with every
+    /// token set aside first, so a fact key's dots never end a sentence; blank spans are left out.
+    /// </summary>
+    private static List<(int Start, int End)> SentenceSpans(string paragraph)
+    {
+        string masked = TokenRegex.Replace(paragraph, m => new string('x', m.Length));
+        var spans = new List<(int Start, int End)>();
+        int start = 0;
+        foreach (Match boundary in SentenceSplitRegex.Matches(masked))
+        {
+            if (boundary.Index > start) spans.Add((start, boundary.Index));
+            start = boundary.Index + boundary.Length;
+        }
+        if (start < masked.Length) spans.Add((start, masked.Length));
+        return spans.Where(s => !string.IsNullOrWhiteSpace(paragraph[s.Start..s.End])).ToList();
+    }
+
+    /// <summary>
+    /// The word count of every capped slot the document requires, in slot order: raw writer words, a token counting as
+    /// one, as rule 7 counts them, with each paragraph's count. A slot the output lacks or leaves empty has no count.
+    /// </summary>
+    public static IReadOnlyList<BenchmarkReportSlotWordCount> SlotWordCounts(
+        BenchmarkReportAudience audience,
+        BenchmarkReportWriterOutput? output,
+        BenchmarkReportFactSheet sheet,
+        BenchmarkReportContentSnapshot content)
+    {
+        var ctx = new Context(audience, sheet, content);
+        var titles = BenchmarkReportRuleCatalog.SlotTitlesFor(audience);
+        var sections = output?.Sections ?? new Dictionary<string, string>();
+        var counts = new List<BenchmarkReportSlotWordCount>();
+        foreach (string slot in ctx.RequiredSlots)
+        {
+            if (ctx.SlotCap(slot) is not int cap) continue;
+
+            string location = SectionLocation(slot);
+            bool present = sections.TryGetValue(slot, out string? text) && !string.IsNullOrWhiteSpace(text);
+            counts.Add(new BenchmarkReportSlotWordCount(
+                slot,
+                location,
+                BenchmarkReportRuleCatalog.LocationLabel(location, titles),
+                cap,
+                present ? WordCount(text!) : null,
+                present ? SplitParagraphs(text!).Select(WordCount).ToList() : new List<int>()));
+        }
+        return counts;
     }
 
     /// <summary>
@@ -1747,11 +1891,16 @@ public static class BenchmarkReportPackValidator
             .Where(w => w.Length > 0)
             .ToList();
 
-    /// <summary>The match with a few words around it, cut with an ellipsis.</summary>
+    /// <summary>
+    /// The match with a few words around it, cut with an ellipsis: about thirty characters before it and twenty after,
+    /// each end widened outward to the nearest whitespace by at most twelve characters, so no word is cut in half.
+    /// </summary>
     private static string Excerpt(string text, Match match)
     {
         int start = Math.Max(0, match.Index - 30);
         int end = Math.Min(text.Length, match.Index + match.Length + 20);
+        for (int i = 0; i < 12 && start > 0 && !char.IsWhiteSpace(text[start - 1]); i++) start--;
+        for (int i = 0; i < 12 && end < text.Length && !char.IsWhiteSpace(text[end]); i++) end++;
         return (start > 0 ? "…" : string.Empty) + text[start..end].Trim() + (end < text.Length ? "…" : string.Empty);
     }
 
@@ -1829,10 +1978,14 @@ public static class BenchmarkReportPackValidator
     /// starts with a capital and ends with a full stop) after anything but the paragraph's start, a list
     /// marker or <c>.</c>, <c>!</c>, <c>?</c> or <c>:</c>, or before <c>)</c>; a clause-valued fact
     /// (<c>Model A took …</c>) right after a model or its own verb; and two or more <c>N of M</c> facts
-    /// separated only by commas and semicolons. In a Root Cause Analysis also a parenthesis inside another, and two
-    /// facts joined by <c>to</c> that are not both bare figures in one unit (<see cref="BareFigureRegex"/>). One note
-    /// per kind found. A hypothesis' label (<see cref="RootCauseClaimSupport.IsLabel"/>) is a noun phrase, never read
-    /// as either sentence shape.
+    /// separated only by commas and semicolons. In a Root Cause Analysis also two or more axis status tokens, or two or
+    /// more hypothesis grade tokens, side by side (separated only by commas, semicolons, parentheses or <c>and</c>), a
+    /// parenthesis inside another, and two facts joined by <c>to</c> that are not both bare figures in one unit
+    /// (<see cref="BareFigureRegex"/>). A full stop that ends a fact's display names that fact, one note per
+    /// occurrence, and the same fact is not reported again as placed inside a sentence; every other kind gives one
+    /// note. A check (<c>rca.check.&lt;n&gt;</c>) is pointed to its <c>.summary</c> fact for use inside a sentence. A
+    /// hypothesis's label (<see cref="RootCauseClaimSupport.IsLabel"/>) is a noun phrase, never read as either sentence
+    /// shape.
     /// </summary>
     private static void CheckTokenShape(Context ctx, string text, string location, List<BenchmarkReportValidationNote> notes)
     {
@@ -1840,18 +1993,13 @@ public static class BenchmarkReportPackValidator
 
         var (all, spans) = ResolveTokens(ctx, text);
 
-        var spliced = TokenShapeSplicedRegex.Matches(all).Select(m => Excerpt(all, m)).Distinct(StringComparer.Ordinal).ToList();
-        if (spliced.Count > 0)
-        {
-            Issue(notes, ComparisonTokenShapeRule, location, $"Continues a sentence after a full stop (\"{string.Join("\", \"", spliced)}\"): "
-                + "write a fact whose value is a sentence as a sentence of its own, and never continue it after its full stop.");
-        }
-
-        var misplaced = new List<string>();
+        var misplaced = new HashSet<int>();
         var doubled = new List<string>();
-        foreach (var span in spans)
+        for (int i = 0; i < spans.Count; i++)
         {
-            // A hypothesis' label is a noun phrase: it may stand anywhere in a sentence.
+            var span = spans[i];
+
+            // A hypothesis's label is a noun phrase: it may stand anywhere in a sentence.
             if (RootCauseClaimSupport.IsLabel(span.Key)) continue;
 
             string display = span.Display.Trim();
@@ -1861,7 +2009,7 @@ public static class BenchmarkReportPackValidator
                 while (after < all.Length && char.IsWhiteSpace(all[after])) after++;
 
                 bool closesParenthesis = after < all.Length && all[after] == ')';
-                if (!StartsSentence(all, span.Start) || closesParenthesis) misplaced.Add("{{" + span.Key + "}}");
+                if (!StartsSentence(all, span.Start) || closesParenthesis) misplaced.Add(i);
             }
 
             var clause = ClauseValuedRegex.Match(display);
@@ -1876,10 +2024,38 @@ public static class BenchmarkReportPackValidator
                 if (afterModel || afterVerb) doubled.Add("{{" + span.Key + "}}");
             }
         }
-        if (misplaced.Count > 0)
+
+        // Rule 31a: a full stop followed by a lower-case letter, naming the fact whose display ends at it.
+        var unnamed = new List<string>();
+        foreach (Match splice in TokenShapeSplicedRegex.Matches(all))
         {
-            Issue(notes, ComparisonTokenShapeRule, location, $"Places the sentence-valued fact{Plural(misplaced.Distinct().Count())} {string.Join(", ", misplaced.Distinct(StringComparer.Ordinal))} inside a sentence or parentheses: "
-                + "a fact whose value is a whole sentence stands as a sentence of its own, at most once, never inside parentheses.");
+            int named = SpanEndingAtFullStop(all, spans, splice.Index);
+            if (named < 0)
+            {
+                unnamed.Add(Excerpt(all, splice));
+                continue;
+            }
+
+            string key = spans[named].Key;
+            string message = "Continues {{" + key + "}} after its full stop (\"" + Excerpt(all, splice) + "\"): "
+                + "write a fact whose value is a sentence as a sentence of its own, and never continue it after its full stop."
+                + CheckSummaryFix(ctx, key);
+            if (misplaced.Remove(named)) message += " " + MisplacedSentenceFix;
+            Issue(notes, ComparisonTokenShapeRule, location, message);
+        }
+        unnamed = unnamed.Distinct(StringComparer.Ordinal).ToList();
+        if (unnamed.Count > 0)
+        {
+            Issue(notes, ComparisonTokenShapeRule, location, $"Continues a sentence after a full stop (\"{string.Join("\", \"", unnamed)}\"): "
+                + "write a fact whose value is a sentence as a sentence of its own, and never continue it after its full stop.");
+        }
+
+        var misplacedKeys = misplaced.OrderBy(i => i).Select(i => spans[i].Key).Distinct(StringComparer.Ordinal).ToList();
+        if (misplacedKeys.Count > 0)
+        {
+            Issue(notes, ComparisonTokenShapeRule, location, $"Places the sentence-valued fact{Plural(misplacedKeys.Count)} {string.Join(", ", misplacedKeys.Select(k => "{{" + k + "}}"))} inside a sentence or parentheses: "
+                + "a fact whose value is a whole sentence stands as a sentence of its own, at most once, never inside parentheses."
+                + string.Concat(misplacedKeys.Select(k => CheckSummaryFix(ctx, k))));
         }
         if (doubled.Count > 0)
         {
@@ -1912,6 +2088,28 @@ public static class BenchmarkReportPackValidator
 
         if (!ctx.RootCause) return;
 
+        // Rule 31d: axis statuses, or hypothesis grades, side by side with nothing saying which is which.
+        for (int i = 0; i + 1 < spans.Count; i++)
+        {
+            string? kind = SideBySideKind(spans[i].Key);
+            if (kind == null) continue;
+            int j = i;
+            while (j + 1 < spans.Count
+                   && SideBySideKind(spans[j + 1].Key) == kind
+                   && SideBySideJoinRegex.IsMatch(all[spans[j].End..spans[j + 1].Start]))
+            {
+                j++;
+            }
+            if (j == i) continue;
+
+            var keys = spans.Skip(i).Take(j - i + 1).Select(s => "{{" + s.Key + "}}").ToList();
+            string listed = string.Join(", ", keys.Take(keys.Count - 1)) + " and " + keys[^1];
+            Issue(notes, ComparisonTokenShapeRule, location, kind == StatusKind
+                ? $"Lists {listed} side by side: name each axis before its status."
+                : $"Lists {listed} side by side: name each hypothesis before its grade.");
+            i = j;
+        }
+
         // Rule 31e: a parenthesis inside another, as the writer's own parentheses around a display that has its own read.
         var nested = NestedParentheses(all);
         if (nested.Count > 0)
@@ -1939,6 +2137,52 @@ public static class BenchmarkReportPackValidator
                 + "the result repeats the words each value prints; give each fact its own clause, or cite one figure and say in words how the other differs.");
         }
     }
+
+    /// <summary>The fix rule 31 appends to a splice note on a fact that is also placed inside a sentence.</summary>
+    private const string MisplacedSentenceFix =
+        "It also stands inside a sentence: a fact whose value is a whole sentence stands as a sentence of its own, at most once, never inside parentheses.";
+
+    /// <summary>The kind <see cref="SideBySideKind"/> gives an axis status token.</summary>
+    private const string StatusKind = "status";
+
+    /// <summary>The kind <see cref="SideBySideKind"/> gives a hypothesis grade token.</summary>
+    private const string GradeKind = "grade";
+
+    /// <summary>
+    /// Rule 31d's kinds of token that read alike side by side: an axis status, <c>rca.axis.&lt;axis&gt;.status</c>, or a
+    /// hypothesis grade, <c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.grade</c>; null for any other token.
+    /// </summary>
+    private static string? SideBySideKind(string key)
+    {
+        if (RootCauseAxes.All.Any(a => string.Equals(RootCauseClaimSupport.StatusKey(a), key, StringComparison.Ordinal))) return StatusKind;
+        return RootCauseClaimSupport.HypothesisPrefixOf(key) is string prefix && string.Equals(prefix + "grade", key, StringComparison.Ordinal)
+            ? GradeKind
+            : null;
+    }
+
+    /// <summary>
+    /// The span whose display ends at the full stop at <paramref name="stop"/>, the stop its own or with only closing
+    /// quotes, parentheses or emphasis between them; -1 when the full stop is the writer's own.
+    /// </summary>
+    private static int SpanEndingAtFullStop(string all, List<(int Start, int End, string Key, string Display)> spans, int stop)
+    {
+        for (int i = spans.Count - 1; i >= 0; i--)
+        {
+            if (spans[i].End > stop + 1) continue;
+            if (spans[i].End == stop + 1) return i;
+            return all[spans[i].End..stop].All(c => c is ')' or '"' or '”' or '\'' or '’' or '*' or '_') ? i : -1;
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// For a check fact, <c>rca.check.&lt;n&gt;</c>, whose <c>.summary</c> fact the sheet holds: the instruction to cite that
+    /// noun phrase inside a sentence instead. Empty for any other key.
+    /// </summary>
+    private static string CheckSummaryFix(Context ctx, string key)
+        => CheckKeyRegex.IsMatch(key) && ctx.FactKeys.Contains(key + ".summary")
+            ? " Inside a sentence of your own, cite it as {{" + key + ".summary}}."
+            : string.Empty;
 
     /// <summary>A token span of a fact, not of a model, a peer or the subject, whose display was resolved.</summary>
     private static bool IsFactSpan((int Start, int End, string Key, string Display) span)
@@ -2009,7 +2253,8 @@ public static class BenchmarkReportPackValidator
 
     /// <summary>
     /// The text with every token resolved to its display (a model token to <c>Model X</c>), and where each display
-    /// stands in it, for rule 31.
+    /// stands in it, for rule 31. A fact's display that starts a sentence (<see cref="StartsSentence"/>) is read with
+    /// its first word capitalized (<see cref="BenchmarkReportSentenceCase.UpperFirst"/>), as the document prints it.
     /// </summary>
     private static (string All, List<(int Start, int End, string Key, string Display)> Spans) ResolveTokens(Context ctx, string text)
     {
@@ -2020,10 +2265,14 @@ public static class BenchmarkReportPackValidator
         {
             resolved.Append(text, last, match.Index - last);
             string key = match.Groups[1].Value.Trim();
+            string? fact = key.StartsWith("model:", StringComparison.Ordinal) || key.StartsWith("peer:", StringComparison.Ordinal) || key == "subject"
+                ? null
+                : ctx.FactDisplay(key);
+            if (fact != null && StartsSentence(resolved.ToString(), resolved.Length)) fact = BenchmarkReportSentenceCase.UpperFirst(fact);
             string display = key.StartsWith("model:", StringComparison.Ordinal) ? "Model " + key["model:".Length..]
                 : key.StartsWith("peer:", StringComparison.Ordinal) ? "Model " + key["peer:".Length..]
                 : key == "subject" ? "the subject"
-                : ctx.FactDisplay(key) ?? match.Value;
+                : fact ?? match.Value;
             int start = resolved.Length;
             resolved.Append(display);
             spans.Add((start, resolved.Length, key, display));
@@ -2137,7 +2386,7 @@ public static class BenchmarkReportPackValidator
     }
 
     /// <summary>
-    /// Rule 36, a warning: the conclusions cite every axis' <c>rca.axis.&lt;axis&gt;.status</c>.
+    /// Rule 36, a warning: the conclusions cite every axis's <c>rca.axis.&lt;axis&gt;.status</c>.
     /// </summary>
     private static void CheckRootCauseConclusions(Context ctx, IReadOnlyDictionary<string, string> sections, List<BenchmarkReportValidationNote> notes)
     {
@@ -2149,12 +2398,15 @@ public static class BenchmarkReportPackValidator
             var missing = ctx.RootCauseClaims.Axes.Where(a => !cited.Contains(RootCauseClaimSupport.StatusKey(a))).ToList();
             if (missing.Count > 0)
             {
-                Issue(notes, RootCauseAxisStatusRule, SectionLocation(BenchmarkReportSlots.Conclusions),
-                    $"Does not cite {string.Join(", ", missing.Select(a => "{{" + RootCauseClaimSupport.StatusKey(a) + "}}"))}: "
-                    + "the conclusions state every axis' status, citing its token, and then its root cause or why it is not established.");
+                Issue(notes, RootCauseAxisStatusRule, SectionLocation(BenchmarkReportSlots.Conclusions), AxisStatusMessage(missing));
             }
         }
     }
+
+    /// <summary>Rule 36's message for the conclusions leaving <paramref name="axes"/> uncited.</summary>
+    internal static string AxisStatusMessage(IEnumerable<string> axes)
+        => $"Does not cite {string.Join(", ", axes.Select(a => "{{" + RootCauseClaimSupport.StatusKey(a) + "}}"))}: "
+           + "the conclusions state every axis's status, citing its token, and then its root cause or why it is not established.";
 
     /// <summary>The fact keys a text cites, trimmed.</summary>
     private static HashSet<string> CitedTokens(string text)

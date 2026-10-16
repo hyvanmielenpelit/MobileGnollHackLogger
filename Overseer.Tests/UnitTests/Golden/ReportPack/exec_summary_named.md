@@ -16,7 +16,7 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 ## Key figures
 
 - **Intelligence:** 80 / 100 (interval 77–83), 1–3 of 3 (tied: intervals overlap); its 95% interval overlaps every peer's.
-- **Speed:** median answer time 12.3 s, 2nd of 2.
+- **Speed:** Median answer time 12.3 s, 2nd of 2.
 - **Cost:** $0.036 per question, 2nd of 3.
 - **Critical errors:** 1 of 4 answers.
 
@@ -25,8 +25,8 @@ GPT-5.6 Luna answers everyday GnollHack questions well but made one confident fa
 | Model | Intelligence Index | Median answer time | Cost per question | Critical errors |
 |---|---|---|---|---|
 | **GPT-5.6 Luna** | 80 (77–83) | 12.3 s | $0.036 | 1 of 4 answers |
-| Grok 5 | 85 (81–89) | 9.8 s | $0.052 | not available |
-| Mistral Large 4 | 78 (74–83) | not available | $0.021 | not available |
+| Grok 5 | 85 (81–89) | 9.8 s | $0.052 | Not available |
+| Mistral Large 4 | 78 (74–83) | Not available | $0.021 | Not available |
 
 | Dimension | GPT-5.6 Luna | Peer mean | Difference |
 |---|---|---|---|
@@ -82,6 +82,6 @@ Automatic validation removed these items from the writer's output before it was 
 
 ---
 
-*Document ID 101 · format version 16 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · peers named*
+*Document ID 101 · format version 17 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

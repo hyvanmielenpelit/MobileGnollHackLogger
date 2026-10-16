@@ -11,7 +11,6 @@ import {
   ViewChild,
   inject
 } from '@angular/core';
-import { NgTemplateOutlet } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { EMPTY, Subject, Subscription, catchError, debounceTime, interval, map, of, switchMap } from 'rxjs';
 
@@ -78,25 +77,32 @@ import {
   ReportPackAudienceOption,
   audienceLabel,
   documentChipClass,
+  documentPhaseLine,
   documentProgressLabel,
+  documentRowPhaseLine,
   formatCostRangeUsd,
   formatCostUsd,
   formatElapsed,
   formatUtc,
   isCostRange,
   reportAudiencesFor,
-  reportPhaseLabel,
   statusLabel
 } from './report-document-format';
-import { buildReportPackDiagnostics, reportPackDiagnosticsFileName, reportPackIo } from './report-pack-diagnostics';
-import { ReportValidationDetailsComponent } from './report-validation-details.component';
 import {
-  documentStatusQuestion,
-  documentStatusSubject,
-  firstDraftPassed,
-  revisionCount,
-  timesWord
-} from './report-validation-explanation';
+  ReportJobDocumentCard,
+  ReportJobDocumentsComponent,
+  reportJobDocumentCost,
+  reportJobDocumentTokens,
+  reportJobDocumentTone,
+  reuseReportJobDocumentCards
+} from './report-job-documents.component';
+import {
+  buildReportPackDiagnostics,
+  reportPackDiagnosticsFileName,
+  reportPackIo,
+  reportPackWriterRepliesFileName
+} from './report-pack-diagnostics';
+import { documentStatusQuestion, documentStatusSubject } from './report-validation-explanation';
 
 /** What the Write step works on: the comparison request, its entries and its suite. */
 export interface ReportPackContext {
@@ -145,44 +151,14 @@ export interface LayoutPreviewItem {
   readonly reason: string | null;
 }
 
-/** The charts cell of a document's progress row: its words, which are the retry button's after a failure. */
+/** The charts line of a document's progress card: its words, which are the retry button's after a failure. */
 export interface ReportPackChartCell {
   readonly text: string;
   readonly retry: boolean;
   /** The charts are being drawn and attached now. */
   readonly pending: boolean;
-}
-
-/** One row of the document progress list. */
-export interface ReportPackDocumentRow {
-  /** `<subject key>|<audience>`. */
-  readonly key: string;
-  readonly doc: BenchmarkReportPackDocumentProgressDto;
-  readonly audience: BenchmarkReportAudience;
-  readonly name: string;
-  /** The model the document is about; the comparison's label for a comparison-scope document. */
-  readonly subjectLabel: string;
-  readonly statusWord: string;
-  readonly chipClass: string;
-  readonly duration: string;
-  readonly modelCalls: string;
-  readonly errorMessage: string | null;
-  readonly charts: ReportPackChartCell;
-  /** The stem of the row's info tip ids, unique in the document. */
-  readonly tipStem: string;
-  /** `the Executive Summary`, or `the Executive Summary of GPT Sol` in a per-model job. */
-  readonly title: string;
-  /** The status explanation's button and dialog, for a document completed with warnings or failed; null otherwise. */
-  readonly why: { readonly subject: string; readonly title: string } | null;
-  /**
-   * The step the document is at, or how its draft was checked once it is finished; null when there is
-   * nothing to say or the chip already says it.
-   */
-  readonly phaseLine: string | null;
-  /** The first draft's issue count, for the draft issues' info button; 0 when there are none to list. */
-  readonly draftIssueCount: number;
-  /** The draft issues' info button sits beside the chip while the document is written, beside the phase line once finished. */
-  readonly draftTipBesideChip: boolean;
+  /** The document has charts, or is getting them: the card shows the line. */
+  readonly shown: boolean;
 }
 
 /** The two document scopes, as the segmented tab row offers them; `note` is a second, smaller line. */
@@ -276,41 +252,13 @@ function plural(count: number, one: string, many: string): string {
 const EXPLAINED_DOCUMENT_STATUSES = new Set(['CompletedWithWarnings', 'Failed']);
 
 /**
- * A document's phase line: while it is written, its step (*Revising the draft — 20 issues found by the
- * automatic check*); once finished, how its draft was checked (*First draft passed every check*,
- * *Revised once — 20 issues in the first draft*). Null when there is nothing to say.
+ * The status line while the writer's replies are fetched, after a 404 and, followed by the status code,
+ * after any other failure.
  */
-export function documentPhaseLine(doc: BenchmarkReportPackDocumentProgressDto): string | null {
-  const issues = doc.firstTurnIssues?.length ?? 0;
-  if (FINISHED_DOCUMENT_STATUSES.has(doc.status)) {
-    const passed = firstDraftPassed(doc);
-    if (passed === true) {
-      return 'First draft passed every check';
-    }
-    if (passed === false) {
-      const revisions = revisionCount(doc) ?? 0;
-      const head = revisions > 0 ? `Revised ${timesWord(revisions)}` : 'Not revised';
-      return issues > 0 ? `${head} — ${plural(issues, 'issue', 'issues')} in the first draft` : head;
-    }
-    return null;
-  }
-  const phase = reportPhaseLabel(doc.phase);
-  if (!phase || doc.phase === 'Done') {
-    return null;
-  }
-  if ((doc.phase === 'Revising' || doc.phase === 'CheckingRevision') && issues > 0) {
-    return `${phase} — ${plural(issues, 'issue', 'issues')} found by the automatic check`;
-  }
-  return phase;
-}
-
-/** The row's phase line: as documentPhaseLine, except none while it only repeats the chip. */
-export function documentRowPhaseLine(doc: BenchmarkReportPackDocumentProgressDto): string | null {
-  if ((doc.status === 'Writing' && doc.phase === 'Writing') || (doc.status === 'Repairing' && doc.phase === 'Revising')) {
-    return null;
-  }
-  return documentPhaseLine(doc);
-}
+export const REPORT_PACK_REPLIES_PREPARING_TEXT = 'Preparing the writer\'s replies…';
+export const REPORT_PACK_REPLIES_GONE_TEXT =
+  'The writer\'s replies are no longer held: Overseer keeps only the latest report job, and a newer job or a restart replaced this one.';
+export const REPORT_PACK_REPLIES_FAILED_TEXT = 'The writer\'s replies could not be downloaded';
 
 function isJobDto(body: unknown): body is BenchmarkReportPackJobDto {
   return !!body && typeof body === 'object'
@@ -423,8 +371,8 @@ interface CheckedEstimate {
  * Step 3 of the Model Comparison wizard, *Reports*: a sidebar that starts a report pack, either
  * comparison-wide documents over the chosen models (a subset when not every model is chosen) or the
  * per-model documents of each chosen model, with every document the choice can have listed as
- * written or not; and a main area that follows the job, one row per document, and its log and
- * diagnostics. The written documents are also step 4's.
+ * written or not; and a main area that follows the job, one card per document, and its log,
+ * diagnostics and the writer's replies. The written documents are also step 4's.
  *
  * The wizard creates it once and hides it while another step shows, so the job's polling and the
  * one-second clock go on while it is hidden; both stop in `ngOnDestroy`. The form resets only when
@@ -435,8 +383,8 @@ interface CheckedEstimate {
   standalone: true,
   imports: [
     RunReportFrameComponent, ModelPickerComponent, ModelMultiPickerComponent, InfoTipComponent, ReportChartPickerComponent,
-    ComparisonDocumentsStatusComponent, PdfViewerDialogComponent, ReportValidationDetailsComponent, ModelIdentityComponent,
-    LoadingIndicatorComponent, NgTemplateOutlet
+    ComparisonDocumentsStatusComponent, PdfViewerDialogComponent, ReportJobDocumentsComponent, ModelIdentityComponent,
+    LoadingIndicatorComponent
   ],
   templateUrl: './report-pack-panel.component.html',
   styleUrls: ['./report-pack-panel.component.scss'],
@@ -652,6 +600,10 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
 
   copyStatus = '';
   copyError: string | null = null;
+  /** The writer's replies are being fetched: their button is aria-disabled. */
+  repliesLoading = false;
+  /** The cards last shown, kept while nothing on them changes. */
+  private documentCards: readonly ReportJobDocumentCard[] = [];
 
   /** The sidebar's width in CSS px, as last stored; null for the frame's default. */
   sidebarWidth: number | null = readStoredSettings().sidebarWidth ?? null;
@@ -1849,7 +1801,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
    * document's charts are being drawn. Never without chart storage, which draws none.
    */
   get showKeepOpenNote(): boolean {
-    return !this.chartStorageMissing && (this.jobInProgress || this.documentRows.some(row => row.charts.pending));
+    return !this.chartStorageMissing && (this.jobInProgress || this.jobDocuments.some(doc => this.chartCell(doc).pending));
   }
 
   /** The job has finished; its card shows a one-line summary. */
@@ -1986,71 +1938,94 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     }));
   }
 
+  /** A document's card key: `<subject key>|<audience>`. */
+  private documentKey(doc: BenchmarkReportPackDocumentProgressDto): string {
+    return `${doc.subjectKey ?? this.job?.subjectKey ?? ''}|${doc.audience}`;
+  }
+
   /**
-   * One row per document: its model, its chip (with the explanation of a warning or a failure), its
-   * phase line, its duration on the server's clock, its model calls and its charts.
+   * One card per document: its chip (with the explanation of a warning or a failure), its model in a
+   * per-model job, its phase line, its duration on the server's clock, its model calls, tokens and cost,
+   * and its charts.
    */
-  get documentRows(): ReportPackDocumentRow[] {
+  get documentRows(): readonly ReportJobDocumentCard[] {
+    this.documentCards = reuseReportJobDocumentCards(this.documentCards, this.buildDocumentCards());
+    return this.documentCards;
+  }
+
+  private buildDocumentCards(): ReportJobDocumentCard[] {
     const job = this.job;
     if (!job) {
       return [];
     }
     const finished = FINISHED_JOB_STATUSES.has(job.status);
     const perModel = this.jobHasModelColumn;
-    return job.documents.map((doc): ReportPackDocumentRow => {
+    return job.documents.map((doc): ReportJobDocumentCard => {
       const duration = doc.startedAtUtc
         ? this.spanToNow(doc.startedAtUtc, doc.completedAtUtc ?? (finished ? job.completedAtUtc : null))
         : null;
-      const key = `${doc.subjectKey ?? job.subjectKey}|${doc.audience}`;
+      const key = this.documentKey(doc);
       const name = audienceLabel(doc.audience);
       const subjectLabel = doc.subjectLabel ?? job.subjectLabel;
-      const title = perModel ? `the ${name} of ${subjectLabel}` : `the ${name}`;
+      const phrase = perModel ? `the ${name} of ${subjectLabel}` : `the ${name}`;
+      const charts = this.chartCell(doc);
       return {
         key,
-        doc,
         audience: doc.audience,
-        name,
-        subjectLabel,
+        subject: doc.subjectKey ?? null,
+        title: name,
+        meta: perModel ? [subjectLabel] : [],
+        phrase,
         statusWord: documentProgressLabel(doc.status),
         chipClass: documentChipClass(doc.status),
+        tone: reportJobDocumentTone(doc.status),
+        phaseLine: documentRowPhaseLine(doc),
+        errorMessage: doc.errorMessage || null,
         duration: duration === null ? '—' : formatElapsed(duration),
         modelCalls: numberFormat.format(doc.modelCalls),
-        errorMessage: doc.errorMessage || null,
-        charts: this.chartCell(doc),
+        tokens: reportJobDocumentTokens(doc.inputTokens, doc.outputTokens),
+        cost: reportJobDocumentCost(doc.costUsd),
+        charts: charts.shown ? { text: charts.text, retry: charts.retry } : null,
+        viewable: false,
+        documentId: doc.documentId,
+        doc,
         tipStem: `${this.idPrefix}-doc-${key.replace(/[^A-Za-z0-9_-]/g, '-')}`,
-        title,
         why: EXPLAINED_DOCUMENT_STATUSES.has(doc.status)
-          ? { subject: documentStatusSubject(title, doc.status), title: documentStatusQuestion(title, doc.status) }
+          ? { subject: documentStatusSubject(phrase, doc.status), title: documentStatusQuestion(phrase, doc.status) }
           : null,
-        phaseLine: documentRowPhaseLine(doc),
         draftIssueCount: doc.firstTurnIssues?.length ?? 0,
-        draftTipBesideChip: ACTIVE_DOCUMENT_STATUSES.has(doc.status)
+        draftTipBesideChip: ACTIVE_DOCUMENT_STATUSES.has(doc.status),
+        phaseDetail: doc.phaseDetail ?? null
       };
     });
   }
 
   private chartCell(doc: BenchmarkReportPackDocumentProgressDto): ReportPackChartCell {
     if (this.chartStorageMissing || (this.chartSelection[doc.audience] ?? []).length === 0) {
-      return { text: 'Charts: none', retry: false, pending: false };
+      return { text: 'Charts: none', retry: false, pending: false, shown: false };
     }
     const status = doc.documentId === null ? undefined : this.chartStatus[doc.documentId];
     if (!status) {
-      return { text: '—', retry: false, pending: false };
+      return { text: '—', retry: false, pending: false, shown: false };
     }
     switch (status.state) {
       case 'attaching':
-        return { text: 'Charts: attaching…', retry: false, pending: true };
+        return { text: 'Charts: attaching…', retry: false, pending: true, shown: true };
       case 'done':
-        return { text: `Charts: ${numberFormat.format(status.count)}`, retry: false, pending: false };
+        return { text: `Charts: ${numberFormat.format(status.count)}`, retry: false, pending: false, shown: true };
       case 'failed':
-        return { text: 'Charts failed — retry', retry: true, pending: false };
+        return { text: 'Charts failed — retry', retry: true, pending: false, shown: true };
       default:
-        return { text: 'Charts: none', retry: false, pending: false };
+        return { text: 'Charts: none', retry: false, pending: false, shown: false };
     }
   }
 
-  retryCharts(row: ReportPackDocumentRow): void {
-    this.chartRetryRequested.emit(row.doc);
+  /** *Charts failed — retry* on a document's card: the host draws its charts again. */
+  retryCharts(card: ReportJobDocumentCard): void {
+    const doc = this.job?.documents.find(candidate => this.documentKey(candidate) === card.key);
+    if (doc) {
+      this.chartRetryRequested.emit(doc);
+    }
   }
 
   get jobTokens(): string {
@@ -2335,6 +2310,51 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     const first = this.chosenKeys[0];
     const subject = this.job?.subjectLabel ?? (first ? this.modelLabel(first) : null);
     reportPackIo.download(reportPackDiagnosticsFileName(subject, now), this.diagnosticsText(now));
+  }
+
+  /** The finished job has a writer call with a reply: *Download the writer's replies* is offered. */
+  get showWriterReplies(): boolean {
+    return this.isJobFinished
+      && (this.job?.documents ?? []).some(doc => (doc.calls ?? []).some(call => (call.replyChars ?? 0) > 0));
+  }
+
+  /**
+   * Fetches the writer's raw replies of the job as Markdown and saves them; the status line says what
+   * happens, and why when the server no longer holds the job.
+   */
+  downloadWriterReplies(): void {
+    const job = this.job;
+    if (!job || this.repliesLoading) {
+      return;
+    }
+    const generation = this.generation;
+    this.repliesLoading = true;
+    this.copyError = null;
+    this.copyStatus = REPORT_PACK_REPLIES_PREPARING_TEXT;
+    this.cdr.markForCheck();
+    this.subscriptions['replies']?.unsubscribe();
+    this.subscriptions['replies'] = this.benchmarkService.getReportPackWriterReplies(job.id).subscribe({
+      next: markdown => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.repliesLoading = false;
+        this.copyStatus = '';
+        reportPackIo.downloadMarkdown(reportPackWriterRepliesFileName(job.subjectLabel, new Date()), markdown);
+        this.cdr.markForCheck();
+      },
+      error: (error: unknown) => {
+        if (generation !== this.generation) {
+          return;
+        }
+        this.repliesLoading = false;
+        const status = error instanceof HttpErrorResponse ? error.status : 0;
+        this.copyStatus = status === 404
+          ? REPORT_PACK_REPLIES_GONE_TEXT
+          : `${REPORT_PACK_REPLIES_FAILED_TEXT} (${status > 0 ? `HTTP ${status}` : 'no answer from the server'}).`;
+        this.cdr.markForCheck();
+      }
+    });
   }
 
   logTime(timestampUtc: string): string {

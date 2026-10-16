@@ -203,7 +203,7 @@ public class RootCauseReportGoldenTests
                     ? RootCauseGrades.PriceCardWord + " — see HC2."
                     : question.HypothesisKeys.Count > 0
                         ? RootCauseGrades.WordWithGrade(question.Grade)
-                        : "no hypothesis about this model fired — see its profile.";
+                        : "No hypothesis about this model fired — see its profile.";
             int at = summary.IndexOf("> **Question.** **" + NamedQuestion(sheet, question.Text) + "**\n>\n> *Answer strength: "
                 + strength, StringComparison.Ordinal);
             Assert.True(at >= 0, question.Text);

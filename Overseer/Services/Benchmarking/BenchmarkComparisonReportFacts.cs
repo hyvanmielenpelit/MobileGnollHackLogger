@@ -810,19 +810,19 @@ public static class BenchmarkComparisonReportFacts
         IReadOnlyList<(string Letter, BenchmarkModelComparisonEntryDto Entry, BenchmarkReportFactSheet Sheet)> models)
     {
         AddSpread(facts, "spread.quality", models.Select(m => (m.Letter, Quality(m.Entry))).ToList(),
-            BenchmarkReportFormat.Whole, higherIsBetter: true, unit: " points");
+            BenchmarkReportFormat.Whole, unit: " points");
 
         foreach (string dimension in Dimensions)
         {
             AddSpread(facts, "spread.dimension." + dimension,
                 models.Select(m => (m.Letter, NumberOf(m.Sheet, "dimension." + dimension))).ToList(),
-                BenchmarkReportFormat.Whole, higherIsBetter: true, unit: " points");
+                BenchmarkReportFormat.Whole, unit: " points");
         }
 
         AddSpread(facts, "spread.speed", models.Select(m => (m.Letter, Speed(m.Entry))).ToList(),
-            BenchmarkReportFormat.Seconds, higherIsBetter: false, unit: null);
+            BenchmarkReportFormat.Seconds, unit: null);
         AddSpread(facts, "spread.cost", models.Select(m => (m.Letter, Cost(m.Entry))).ToList(),
-            BenchmarkReportFormat.Usd, higherIsBetter: false, unit: null);
+            BenchmarkReportFormat.Usd, unit: null);
     }
 
     /// <summary>
@@ -831,7 +831,7 @@ public static class BenchmarkComparisonReportFacts
     /// </summary>
     private static void AddSpread(
         BenchmarkReportFacts.FactList facts, string key, IReadOnlyList<(string Letter, double? Value)> values,
-        Func<double, string> format, bool higherIsBetter, string? unit)
+        Func<double, string> format, string? unit)
     {
         var present = values.Where(v => v.Value.HasValue).Select(v => v.Value!.Value).ToList();
         if (present.Count < 2)
@@ -840,32 +840,31 @@ public static class BenchmarkComparisonReportFacts
             return;
         }
 
-        facts.Add(key, present.Max() - present.Min(), SpreadDisplay(values, format, higherIsBetter, unit)!);
+        facts.Add(key, present.Max() - present.Min(), SpreadDisplay(values, format, unit)!);
     }
 
     /// <summary>
-    /// <c>from 62 (Model D) to 85 (Model A), 23 points apart</c>: the lowest and highest value, worst
-    /// first, <c>1 point apart</c> for a range of one; <c>97 for every model</c> when both display
-    /// alike. Null with fewer than two values.
+    /// <c>from Model D at 62 to Model A at 85, 23 points apart</c>: the lowest value, then the highest, for
+    /// every measure alike, <c>1 point apart</c> for a range of one; <c>97 for every model</c> when both
+    /// display alike. Null with fewer than two values.
     /// </summary>
     internal static string? SpreadDisplay(
-        IReadOnlyList<(string Letter, double? Value)> values, Func<double, string> format, bool higherIsBetter, string? unit)
+        IReadOnlyList<(string Letter, double? Value)> values, Func<double, string> format, string? unit)
     {
         var present = values.Where(v => v.Value.HasValue).Select(v => (v.Letter, Value: v.Value!.Value)).ToList();
         if (present.Count < 2) return null;
 
         var low = present.OrderBy(v => v.Value).ThenBy(v => v.Letter.Length).ThenBy(v => v.Letter, StringComparer.Ordinal).First();
         var high = present.OrderByDescending(v => v.Value).ThenBy(v => v.Letter.Length).ThenBy(v => v.Letter, StringComparer.Ordinal).First();
-        var (worst, best) = higherIsBetter ? (low, high) : (high, low);
 
         string display;
-        if (string.Equals(format(worst.Value), format(best.Value), StringComparison.Ordinal))
+        if (string.Equals(format(low.Value), format(high.Value), StringComparison.Ordinal))
         {
-            display = format(best.Value) + (present.Count == values.Count ? " for every model" : " for every model with this figure");
+            display = format(high.Value) + (present.Count == values.Count ? " for every model" : " for every model with this figure");
         }
         else
         {
-            display = "from " + format(worst.Value) + " (Model " + worst.Letter + ") to " + format(best.Value) + " (Model " + best.Letter + ")";
+            display = "from Model " + low.Letter + " at " + format(low.Value) + " to Model " + high.Letter + " at " + format(high.Value);
             if (unit != null)
             {
                 string apart = BenchmarkReportFormat.WholeDifference(high.Value, low.Value).TrimStart('+');

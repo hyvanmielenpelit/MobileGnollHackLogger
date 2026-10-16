@@ -1,4 +1,5 @@
 import { ChangeDetectionStrategy, Component, Input, OnChanges } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 
 import {
   DocumentStatusExplanation,
@@ -11,14 +12,16 @@ import {
 
 /**
  * Why a Report Pack document has its status, for the body of an info dialog. `outcome` shows a summary
- * sentence, what was removed (each removed text in a disclosure), what was kept with a warning, how the
- * draft was checked and what can be done; `firstDraft` lists the first draft's issues by rule, for a
- * document being revised. Presentational: the text comes from `explainDocumentStatus`, which the
- * diagnostics export shares.
+ * sentence, what was shortened or removed (each removed text in a disclosure), what Overseer added in
+ * place of removed text, what was kept with a warning, how the draft was checked and what can be done;
+ * `firstDraft` lists the first draft's issues by rule, for a document being revised. A `{{token}}` in a
+ * message or a quote is shown as code. Presentational: the text comes from `explainDocumentStatus`, which
+ * the diagnostics export shares.
  */
 @Component({
   selector: 'app-report-validation-details',
   standalone: true,
+  imports: [NgTemplateOutlet],
   templateUrl: './report-validation-details.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush
 })

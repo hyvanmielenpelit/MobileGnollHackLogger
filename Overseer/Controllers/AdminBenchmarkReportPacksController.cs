@@ -1092,6 +1092,18 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         return Ok(job.ToDto());
     }
 
+    /// <summary>
+    /// The writer's raw replies of a held job as one Markdown file (<see cref="BenchmarkReportPackWriterReplies"/>): every
+    /// call so far while the job runs. Not found once a newer job or a restart has replaced it.
+    /// </summary>
+    [HttpGet("report-packs/jobs/{jobId}/writer-replies")]
+    public IActionResult GetWriterReplies(string jobId)
+    {
+        var job = _jobManager.TryGet(jobId);
+        if (job == null) return NotFound();
+        return Content(BenchmarkReportPackWriterReplies.BuildMarkdown(job, DateTime.UtcNow), "text/markdown; charset=utf-8");
+    }
+
     [HttpGet("report-packs/jobs/active")]
     public IActionResult GetActiveJob()
     {

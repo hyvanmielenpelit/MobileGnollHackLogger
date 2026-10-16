@@ -18,7 +18,16 @@ public enum BenchmarkReportRuleSeverity
     Warning,
 
     /// <summary>The document cannot be stored: a missing or invalid headline, or a required section left empty.</summary>
-    FailsDocument
+    FailsDocument,
+
+    /// <summary>
+    /// A note of a rule that removes its item, recorded against text that was kept: a section kept over its cap,
+    /// a shortened one, a missing topic.
+    /// </summary>
+    WarningTextKept,
+
+    /// <summary>Overseer wrote the text in place of a removed one.</summary>
+    AddedByOverseer
 }
 
 /// <summary>One validation rule as a reader sees it.</summary>
@@ -51,6 +60,12 @@ public static class BenchmarkReportRuleCatalog
 
     /// <summary>The wire value of <see cref="BenchmarkReportRuleSeverity.FailsDocument"/>.</summary>
     public const string FailsDocumentSeverity = "failsDocument";
+
+    /// <summary>The wire value of <see cref="BenchmarkReportRuleSeverity.WarningTextKept"/>.</summary>
+    public const string WarningTextKeptSeverity = "warningTextKept";
+
+    /// <summary>The wire value of <see cref="BenchmarkReportRuleSeverity.AddedByOverseer"/>.</summary>
+    public const string AddedByOverseerSeverity = "addedByOverseer";
 
     private const string Kept = "The text was kept; read the flagged sentence with care.";
     private const string Removed = "The flagged paragraph or item was removed, so the document says less there than the writer wrote.";
@@ -85,7 +100,7 @@ public static class BenchmarkReportRuleCatalog
         R(7, "Over the word or item limit",
             "Each section, item and list stays within its word or item cap.",
             BenchmarkReportRuleSeverity.RemovesItem,
-            "The text past the limit was removed; the rest of the section stands.",
+            "Sentences past the cap were removed from the end of the section, or the item was removed; the rest stands.",
             "Shorten the section or list to its cap; keep the most important points."),
         R(8, "Heading, table or HTML in prose",
             "Prose holds no Markdown heading, table or HTML; the document supplies its own structure.",
@@ -177,7 +192,7 @@ public static class BenchmarkReportRuleCatalog
         R(BenchmarkReportPackValidator.ComparisonTokenShapeRule, "Fact placed in the wrong sentence shape",
             "A sentence-valued fact stands as its own sentence, a clause-valued fact follows no model or verb of its own, counts are labeled, no parenthesis sits inside another, and only bare figures in one unit are joined by to.",
             BenchmarkReportRuleSeverity.Warning, Kept,
-            "Put each sentence-valued fact (a statement, known fact or check) on its own as a full sentence, and use a short token such as a grade, share or a hypothesis' .ref, which prints its id, inside your own sentences after your own words for what it is about; never nest parentheses, and never join two worded facts with to."),
+            "Put each sentence-valued fact (a statement, known fact or check) on its own as a full sentence, and use a short token such as a grade, share or a hypothesis's .ref, which prints its id, inside your own sentences after your own words for what it is about; never nest parentheses, and never join two worded facts with to."),
         R(BenchmarkReportPackValidator.RootCauseEvidenceCausalRule, "Causal word in the evidence",
             "The scope, the evidence sections and the observations describe what was measured, without causal words.",
             BenchmarkReportRuleSeverity.RemovesItem, Removed,
@@ -195,10 +210,10 @@ public static class BenchmarkReportRuleCatalog
             BenchmarkReportRuleSeverity.RemovesItem, Removed,
             "Give every writer hypothesis all of its parts at confidence Low, citing only existing models and facts."),
         R(BenchmarkReportPackValidator.RootCauseAxisStatusRule, "Conclusions leave an axis out",
-            "The conclusions cite every axis' status, so each axis gets a verdict.",
+            "The conclusions cite every axis's status, so each axis gets a verdict.",
             BenchmarkReportRuleSeverity.Warning,
             "The conclusions do not give a writer's verdict on every axis; the axis table still does.",
-            "Cite every axis' status token in the conclusions, one paragraph per axis."),
+            "Cite every axis's status token in the conclusions, one paragraph per axis."),
         R(BenchmarkReportPackValidator.BareModelLetterRule, "Model named by its bare letter",
             "A comparison names each model only through its model token, never as Model X.",
             BenchmarkReportRuleSeverity.Warning,
@@ -260,12 +275,19 @@ public static class BenchmarkReportRuleCatalog
     public static string Name(int rule) => Get(rule).Name;
 
     /// <summary>
-    /// What a note of the rule does at its location: a warning rule warns; a non-warning issue on the
-    /// headline, or a rule-1 issue that was not dropped (a missing section), fails the document; every
-    /// other issue removes its paragraph or item.
+    /// What a note of the rule does at its location: a note of Overseer's own text is added by Overseer; a
+    /// warning rule warns; a non-warning issue on the headline, or a rule-1 issue that was not dropped (a
+    /// missing section), fails the document; every other issue removes its paragraph or item. In a document's
+    /// final notes (<paramref name="draft"/> false) such an issue that was not dropped was recorded against
+    /// kept text, so it is a warning with its text kept; a draft's issues, which nothing has dropped yet, give
+    /// what the rule would do.
     /// </summary>
-    public static BenchmarkReportRuleSeverity SeverityFor(int rule, string location, bool dropped)
+    public static BenchmarkReportRuleSeverity SeverityFor(int rule, string location, bool dropped, bool addedByOverseer = false, bool draft = false)
     {
+        if (addedByOverseer)
+        {
+            return BenchmarkReportRuleSeverity.AddedByOverseer;
+        }
         if (BenchmarkReportPackValidator.IsWarningRule(rule) || rule == BenchmarkBatteryReportFacts.PromptBudgetRule)
         {
             return BenchmarkReportRuleSeverity.Warning;
@@ -274,21 +296,29 @@ public static class BenchmarkReportRuleCatalog
         {
             return BenchmarkReportRuleSeverity.FailsDocument;
         }
-        return BenchmarkReportRuleSeverity.RemovesItem;
+        return dropped || draft ? BenchmarkReportRuleSeverity.RemovesItem : BenchmarkReportRuleSeverity.WarningTextKept;
     }
 
-    /// <summary>The wire value of a severity: <c>removesItem</c>, <c>warning</c> or <c>failsDocument</c>.</summary>
+    /// <summary>
+    /// The wire value of a severity: <c>removesItem</c>, <c>warning</c>, <c>warningTextKept</c>,
+    /// <c>addedByOverseer</c> or <c>failsDocument</c>.
+    /// </summary>
     public static string SeverityValue(BenchmarkReportRuleSeverity severity) => severity switch
     {
         BenchmarkReportRuleSeverity.Warning => WarningSeverity,
         BenchmarkReportRuleSeverity.FailsDocument => FailsDocumentSeverity,
+        BenchmarkReportRuleSeverity.WarningTextKept => WarningTextKeptSeverity,
+        BenchmarkReportRuleSeverity.AddedByOverseer => AddedByOverseerSeverity,
         _ => RemovesItemSeverity
     };
 
-    /// <summary>A severity in words: "removes the item", "warning, text kept" or "fails the document".</summary>
+    /// <summary>
+    /// A severity in words: "removes the item", "warning, text kept", "added by Overseer" or "fails the document".
+    /// </summary>
     public static string SeverityLabel(BenchmarkReportRuleSeverity severity) => severity switch
     {
-        BenchmarkReportRuleSeverity.Warning => "warning, text kept",
+        BenchmarkReportRuleSeverity.Warning or BenchmarkReportRuleSeverity.WarningTextKept => "warning, text kept",
+        BenchmarkReportRuleSeverity.AddedByOverseer => "added by Overseer",
         BenchmarkReportRuleSeverity.FailsDocument => "fails the document",
         _ => "removes the item"
     };
@@ -349,8 +379,12 @@ public static class BenchmarkReportRuleCatalog
     public static IReadOnlyDictionary<string, string>? SlotTitlesFor(BenchmarkReportAudience audience)
         => audience == BenchmarkReportAudience.RootCauseAnalysis ? BenchmarkReportSlots.RootCauseSlotTitles : null;
 
-    /// <summary>A stored validation note as the job diagnostics and the UI show it: with its rule name, severity and location in words.</summary>
-    public static BenchmarkReportPackValidationIssueDto ToIssueDto(BenchmarkReportValidationNote note, IReadOnlyDictionary<string, string>? slotTitles = null)
+    /// <summary>
+    /// A stored validation note as the job diagnostics and the UI show it: with its rule name, severity and location
+    /// in words. <paramref name="draft"/> marks a draft's issues (the first turn's or the revision's own), whose
+    /// severity is what the rule would do (<see cref="SeverityFor"/>).
+    /// </summary>
+    public static BenchmarkReportPackValidationIssueDto ToIssueDto(BenchmarkReportValidationNote note, IReadOnlyDictionary<string, string>? slotTitles = null, bool draft = false)
         => new()
         {
             Rule = note.Rule,
@@ -358,9 +392,10 @@ public static class BenchmarkReportRuleCatalog
             Message = note.Message,
             Dropped = note.Dropped,
             RuleName = Name(note.Rule),
-            Severity = SeverityValue(SeverityFor(note.Rule, note.Location, note.Dropped)),
+            Severity = SeverityValue(SeverityFor(note.Rule, note.Location, note.Dropped, note.AddedByOverseer, draft)),
             LocationLabel = LocationLabel(note.Location, slotTitles),
-            Text = note.Text
+            Text = note.Text,
+            AddedByOverseer = note.AddedByOverseer
         };
 
     private static BenchmarkReportRuleInfo R(int rule, string name, string meaning, BenchmarkReportRuleSeverity severity, string forReader, string fix)

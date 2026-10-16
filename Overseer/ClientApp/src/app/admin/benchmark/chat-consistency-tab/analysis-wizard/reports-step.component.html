@@ -4,7 +4,7 @@
   A resizable sidebar that writes the analysis's documents (each one written once: a written one with
   View and Delete, an unwritten one with its Write checkbox), with Update charts, the charts each
   document type carries, the writer and the estimate; and a main area with the job's progress, one
-  row per document, and its log and diagnostics. The header carries the analysis's out-of-date
+  card per document, and its log and diagnostics. The header carries the analysis's out-of-date
   notice. The same-provider and out-of-date confirmations, the delete confirmation and the PDF viewer
   are nested in the wizard's dialog and stop their own close and cancel events.
 -->
@@ -274,33 +274,7 @@
         }
 
         @if (jobRows.length > 0) {
-          <!-- The header row is for sight only: every cell of a row names its value itself. -->
-          <div class="rp-doc-progress-grid">
-            <div class="rp-doc-progress-head" aria-hidden="true">
-              <span>Document</span>
-              <span>Status</span>
-              <span>Duration</span>
-              <span class="rp-num">Model calls</span>
-              <span>Charts</span>
-            </div>
-            <ol class="rp-doc-progress" aria-label="Progress of each document">
-              @for (row of jobRows; track row.key) {
-                <li class="rp-job-row" [attr.data-audience]="row.audience">
-                  <span class="rp-doc-name">{{ row.name }}</span>
-                  <span class="rp-doc-status">
-                    <span class="visually-hidden">Status: </span>
-                    <span [class]="row.chipClass">{{ row.statusWord }}</span>
-                    @if (row.errorMessage) {
-                      <span class="rp-job-row-error">{{ row.errorMessage }}</span>
-                    }
-                  </span>
-                  <span class="rp-doc-duration"><span class="visually-hidden">Duration: </span>{{ row.duration }}</span>
-                  <span class="rp-doc-calls rp-num"><span class="visually-hidden">Model calls: </span>{{ row.modelCalls }}</span>
-                  <span class="rp-doc-charts">{{ chartsText(row) }}</span>
-                </li>
-              }
-            </ol>
-          </div>
+          <app-report-job-documents class="cc-rep-documents-progress" idPrefix="cc-rep-card" [rows]="jobRows"></app-report-job-documents>
         }
 
         @if (chartMessage && chartOrigin === 'job') {

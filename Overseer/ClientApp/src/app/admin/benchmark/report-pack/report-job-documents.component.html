@@ -1,0 +1,112 @@
+<!--
+  THE PROGRESS OF EACH DOCUMENT
+
+  A read-only card list: no filter, sort or batching. The title is a paragraph, not a heading, because
+  the section around the list already uses the last heading level. Each card lays itself out by the
+  list's width (the rjd container), never the viewport's.
+-->
+<ul role="list" class="rjd-list" [attr.aria-label]="label">
+  @for (row of rows; track row.key) {
+    <li class="rjd-item">
+      <article class="rjd-card" [id]="cardId(row)" [attr.aria-labelledby]="cardId(row) + '-title'"
+               [attr.data-audience]="row.audience" [attr.data-subject]="row.subject" [attr.data-tone]="row.tone">
+        <!-- The first draft's issues: beside the chip while the document is written, beside the finished
+             phase line once it is done. -->
+        <ng-template #draftTip>
+          @if (row.doc; as doc) {
+            <app-info-tip class="rjd-draft" trigger="dialog" [tipId]="row.tipStem + '-draft'"
+                          [subject]="'the first draft check of ' + row.phrase"
+                          [dialogTitle]="'What the automatic check found in the first draft of ' + row.phrase">
+              <app-report-validation-details [document]="doc" source="job" view="firstDraft"
+                                             [phaseDetail]="row.phaseDetail"></app-report-validation-details>
+            </app-info-tip>
+          }
+        </ng-template>
+
+        <div class="rjd-head">
+          <p class="rjd-title" [id]="cardId(row) + '-title'">{{ row.title }}</p>
+          <div class="rjd-status">
+            <span class="visually-hidden">Status: </span>
+            <span [class]="row.chipClass">{{ row.statusWord }}</span>
+            @if (row.why; as why) {
+              @if (row.doc; as doc) {
+                <app-info-tip class="rjd-why" trigger="dialog" [tipId]="row.tipStem + '-why'"
+                              [subject]="why.subject" [dialogTitle]="why.title">
+                  <app-report-validation-details [document]="doc" source="job"></app-report-validation-details>
+                </app-info-tip>
+              }
+            }
+            @if (row.draftTipBesideChip && row.draftIssueCount > 0) {
+              <ng-container [ngTemplateOutlet]="draftTip"></ng-container>
+            }
+          </div>
+        </div>
+
+        @if (row.meta.length > 0) {
+          <p class="rjd-meta">
+            @for (part of row.meta; track $index) {
+              @if (!$first) {
+                <span class="rjd-sep" aria-hidden="true">·</span><span class="visually-hidden">, </span>
+              }
+              <span class="rjd-meta-part">{{ part }}</span>
+            }
+          </p>
+        }
+
+        @if (row.phaseLine) {
+          <!-- The whole text, wrapping; the one live line of the host announces a change. -->
+          <div class="rjd-phase-row">
+            <p class="rjd-phase">{{ row.phaseLine }}</p>
+            @if (!row.draftTipBesideChip && row.draftIssueCount > 0) {
+              <ng-container [ngTemplateOutlet]="draftTip"></ng-container>
+            }
+          </div>
+        }
+
+        @if (row.errorMessage) {
+          <p class="gh-field-error rjd-error">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>{{ row.errorMessage }}</span>
+          </p>
+        }
+
+        <dl class="rjd-metrics">
+          <div class="rjd-metric">
+            <dt>Duration</dt>
+            <dd class="rjd-duration">{{ row.duration }}</dd>
+          </div>
+          <div class="rjd-metric">
+            <dt>Model calls</dt>
+            <dd class="rjd-calls">{{ row.modelCalls }}</dd>
+          </div>
+          <div class="rjd-metric">
+            <dt>Tokens</dt>
+            <dd class="rjd-tokens">{{ row.tokens }}</dd>
+          </div>
+          <div class="rjd-metric">
+            <dt>Cost</dt>
+            <dd class="rjd-cost">{{ row.cost }}</dd>
+          </div>
+        </dl>
+
+        @if (row.charts || row.viewable) {
+          <div class="rjd-foot">
+            @if (row.charts; as charts) {
+              <p class="rjd-charts">
+                @if (charts.retry) {
+                  <button type="button" class="btn-link rjd-chart-retry" (click)="retryCharts.emit(row)">{{ charts.text }}<span class="visually-hidden"> for {{ row.phrase }}</span></button>
+                } @else {
+                  {{ charts.text }}
+                }
+              </p>
+            }
+            @if (row.viewable) {
+              <button type="button" class="btn-gh btn-gh-small rjd-view"
+                      [attr.aria-label]="'View ' + row.phrase" (click)="view.emit(row)">View</button>
+            }
+          </div>
+        }
+      </article>
+    </li>
+  }
+</ul>

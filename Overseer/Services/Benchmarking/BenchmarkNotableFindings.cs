@@ -300,7 +300,7 @@ public static class BenchmarkNotableFindings
                 double ratio = fx / fy;
                 found.Add(new Candidate(kind, Letters(x.Letter, y.Letter), Array.Empty<int>(),
                     new[] { basis.Fact, Model(x, "quality.index"), Model(y, "quality.index"), Model(x, factKey), Model(y, factKey) },
-                    $"Model {x.Letter} scored higher than Model {y.Letter} ({basis.How}) at {Ratio(ratio)} times {what}.",
+                    $"Model {x.Letter} scored higher than Model {y.Letter} at {Ratio(ratio)} times {what}, {basis.How}.",
                     1 - ratio));
             }
         }

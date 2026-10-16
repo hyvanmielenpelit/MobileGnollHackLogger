@@ -78,6 +78,8 @@ FORMAT OF THE TEXT:
 - No headings, no tables, no HTML, no numbered lists and no code blocks anywhere in the text.
 - Keep each text self-contained: it is placed into a document whose headings and tables code has already written.
 - Write in US English: color, behavior, analyze, center, gray, labeled, canceled.
+- Word caps count every {{token}} as one word, however long its value.
+- Begin every sentence, paragraph and list item with a capital letter, including a sentence that follows a fact ending in a full stop.
 
 READABILITY:
 - One idea per sentence, in sentences of at most about twenty-five words.

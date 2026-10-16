@@ -416,12 +416,15 @@ describe('RunReportWritingDialogComponent', () => {
     expect(text('.rw-done')).toBe('Done');
     expect(el('.rw-done')?.className).toContain('btn-gh');
 
-    const rows = host.querySelectorAll('.rw-document-row');
+    // The documents are the shared progress cards under a Documents heading.
+    expect(text('.rw-documents-title')).toBe('Documents');
+    const rows = host.querySelectorAll('.rw-documents article.rjd-card');
     expect(rows.length).toBe(2);
     expect(rows[0].querySelector('.job-status-chip')?.textContent?.trim()).toBe('Completed');
-    expect(rows[0].textContent).toContain('54 s');
+    expect(rows[0].querySelector('.rjd-duration')?.textContent?.trim()).toBe('54 s');
 
-    const viewButtons = host.querySelectorAll<HTMLButtonElement>('.rw-view');
+    const viewButtons = host.querySelectorAll<HTMLButtonElement>('.rjd-view');
+    expect(viewButtons[0].classList).toContain('btn-gh-small');
     expect(viewButtons.length).toBe(2);
     expect(viewButtons[0].getAttribute('aria-label')).toBe('View the Executive Summary');
     expect(viewButtons[1].getAttribute('aria-label')).toBe('View the Root Cause Analysis');
@@ -444,8 +447,10 @@ describe('RunReportWritingDialogComponent', () => {
     service.getRunReportJob.mockReturnValue(of(jobView({ phase: 'Finished', status: BenchmarkRunReportDocumentsStatus.Failed, message: 'The writer failed.', finishedAtUtc: '2026-09-29T12:01:00Z' }, { documents: [doc(ExecutiveSummary, 'Failed', { errorMessage: 'The model refused.' }), doc(RootCauseAnalysis, 'Canceled')] })));
     open();
     expect(text('.rw-status')).toBe('Failed: The writer failed.');
-    expect(text('.rw-document-row .rw-document-error')).toBe('The model refused.');
-    expect(el('.rw-view')).toBeNull();
+    expect(text(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-error`)).toBe('The model refused.');
+    expect(el(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-error`)!.classList).toContain('gh-field-error');
+    expect(el(`.rjd-card[data-audience="${ExecutiveSummary}"]`)!.getAttribute('data-tone')).toBe('failed');
+    expect(el('.rjd-view')).toBeNull();
     stop();
   }));
 
@@ -689,7 +694,7 @@ describe('RunReportWritingDialogComponent', () => {
     expect(el('.rw-stat-writer .model-name')).toBeNull();
     expect(el('.rw-stat-writer app-provider-badge')).toBeNull();
     expect(el('.rw-stat-writer .thinking-badge')).toBeNull();
-    expect(host.querySelectorAll('.rw-document-row').length).toBe(0);
+    expect(host.querySelectorAll('.rjd-card').length).toBe(0);
     expect(Array.from(host.querySelectorAll('.run-stage-name')).map(n => n.textContent?.trim()))
       .toEqual(['Queued', 'Preparing', 'Done']);
     expect(el('.run-stage.is-current')?.getAttribute('data-stage')).toBe('queued');

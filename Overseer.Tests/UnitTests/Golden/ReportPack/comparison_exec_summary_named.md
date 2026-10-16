@@ -44,10 +44,10 @@ For the best answers, choose Orion Max or Vega Pro; their intervals overlap, so 
 | Nova Lite | Westlake | 64 | 64 | 64 | 64 |
 | Zeta Prime | Midland | 50 | 50 | 50 | 50 |
 
-- **Accuracy:** from 50 (Zeta Prime) to 80 (Orion Max), 30 points apart
-- **Completeness:** from 50 (Zeta Prime) to 80 (Orion Max), 30 points apart
-- **Conciseness:** from 50 (Zeta Prime) to 80 (Orion Max), 30 points apart
-- **Readability:** from 50 (Zeta Prime) to 80 (Orion Max), 30 points apart
+- **Accuracy:** From Zeta Prime at 50 to Orion Max at 80, 30 points apart
+- **Completeness:** From Zeta Prime at 50 to Orion Max at 80, 30 points apart
+- **Conciseness:** From Zeta Prime at 50 to Orion Max at 80, 30 points apart
+- **Readability:** From Zeta Prime at 50 to Orion Max at 80, 30 points apart
 
 ## Compared with the reference model
 
@@ -67,9 +67,9 @@ The table sets every other model against Orion Max; only the paired tests and th
 
 ## Also worth knowing
 
-- Vega Pro scored higher than Nova Lite (established by 95% intervals that do not overlap) at 0.50 times its cost per question.
-- Nova Lite scored higher than Zeta Prime (established by 95% intervals that do not overlap) at 0.40 times its median answer time.
-- Vega Pro scored higher than Zeta Prime (established by 95% intervals that do not overlap) at 0.45 times its median answer time.
+- Vega Pro scored higher than Nova Lite at 0.50 times its cost per question, established by 95% intervals that do not overlap.
+- Nova Lite scored higher than Zeta Prime at 0.40 times its median answer time, established by 95% intervals that do not overlap.
+- Vega Pro scored higher than Zeta Prime at 0.45 times its median answer time, established by 95% intervals that do not overlap.
 
 ## Model by model
 
@@ -131,6 +131,6 @@ What it does not measure: conversations longer than one question, the wiki text 
 
 ---
 
-*Document ID 212 · format version 21 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · models named*
+*Document ID 212 · format version 22 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Summary · models named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

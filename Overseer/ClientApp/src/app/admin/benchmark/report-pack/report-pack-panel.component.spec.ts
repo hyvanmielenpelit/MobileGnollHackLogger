@@ -263,8 +263,9 @@ describe('ReportPackPanelComponent', () => {
   const text = (selector: string): string => (q(selector)?.textContent ?? '').replace(/\s+/g, ' ').trim();
   const generateButton = (): HTMLButtonElement => q<HTMLButtonElement>('.rp-generate')!;
   const confirmDialog = (): HTMLDialogElement => q<HTMLDialogElement>('dialog.rp-same-provider-dialog')!;
+  /** A part of a document's progress card. */
   const cellText = (audience: BenchmarkReportAudience, selector: string): string =>
-    text(`.rp-job-row[data-audience="${audience}"] ${selector}`);
+    text(`.rjd-card[data-audience="${audience}"] ${selector}`);
   const picker = (): ModelMultiPickerComponent =>
     fixture.debugElement.query(By.directive(ModelMultiPickerComponent)).componentInstance as ModelMultiPickerComponent;
   const status = (): ComparisonDocumentsStatusComponent =>
@@ -976,7 +977,7 @@ describe('ReportPackPanelComponent', () => {
     expect(component.chosenKeys).toEqual(['run:2', 'group:4']);
     expect(component.writerId).toBeNull();
     expect(component.activeJobId).toBe('job-7');
-    expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
+    expect(host.querySelectorAll('.rjd-card').length).toBe(2);
     fixture.destroy();
   }));
 
@@ -1193,7 +1194,7 @@ describe('ReportPackPanelComponent', () => {
     start.flush({ jobId: 'job-1' });
     http.expectOne(jobUrl('job-1')).flush(jobDto());
     fixture.detectChanges();
-    expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
+    expect(host.querySelectorAll('.rjd-card').length).toBe(2);
     fixture.destroy();
   }));
 
@@ -1257,7 +1258,7 @@ describe('ReportPackPanelComponent', () => {
     expect(q('.rp-start-error')!.getAttribute('role')).toBe('alert');
     expect(text('.rp-start-error')).toContain('Another report pack is being written, for GPT Sol group');
     expect(text('.rp-start-error')).toContain('its progress is shown here.');
-    expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
+    expect(host.querySelectorAll('.rjd-card').length).toBe(2);
     expect(generateButton().disabled).toBe(true);
     // Generate stays disabled for the other job, so focus stays on the progress area.
     expect(document.activeElement).toBe(q('section.rrf-main'));
@@ -1343,7 +1344,7 @@ describe('ReportPackPanelComponent', () => {
     expect(component.jobRunning).toBe(false);
   });
 
-  it('polls a started job with a stage rail, a stat strip and a row per document, then summarizes it above the strip', fakeAsync(() => {
+  it('polls a started job with a stage rail, a stat strip and a card per document, then summarizes it above the strip', fakeAsync(() => {
     openPanel();
     const busy: boolean[] = [];
     const finished: BenchmarkReportPackJobDto[] = [];
@@ -1365,9 +1366,9 @@ describe('ReportPackPanelComponent', () => {
     fixture.detectChanges();
     expect(q('.rp-starting')).toBeNull();
 
-    expect(cellText(ExecutiveSummary, '.rp-doc-name')).toBe('Executive Summary');
+    expect(cellText(ExecutiveSummary, '.rjd-title')).toBe('Executive Summary');
     expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Writing draft');
-    expect(cellText(ExecutiveSummary, '.rp-doc-calls')).toBe('Model calls: 1');
+    expect(cellText(ExecutiveSummary, '.rjd-calls')).toBe('1');
     expect(cellText(RootCauseAnalysis, '.job-status-chip')).toBe('Pending');
     expect(q('.rp-job-status')!.getAttribute('role')).toBe('status');
     expect(q('.rp-job-status')!.classList).toContain('visually-hidden');
@@ -1406,7 +1407,7 @@ describe('ReportPackPanelComponent', () => {
     expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Completed');
     // The revision is a routine step, not a fault.
     expect(cellText(RootCauseAnalysis, '.job-status-chip')).toBe('Revising');
-    expect(cellText(RootCauseAnalysis, '.rp-doc-calls')).toBe('Model calls: 2');
+    expect(cellText(RootCauseAnalysis, '.rjd-calls')).toBe('2');
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Gemini Flash: 1 of 2 finished.');
     expect(text('.rp-job-rail .run-stage.is-current .run-stage-name')).toBe('Root Cause Analysis');
 
@@ -1469,10 +1470,11 @@ describe('ReportPackPanelComponent', () => {
     });
 
     expect(text('.rp-job-status')).toBe('Writing 2 documents for 2 models: 0 of 2 finished.');
-    const rows = Array.from(host.querySelectorAll('.rp-job-row'));
+    const rows = Array.from(host.querySelectorAll('.rjd-card'));
     expect(rows.map(row => row.getAttribute('data-subject'))).toEqual(['run:1', 'group:4']);
-    expect(rows.map(row => row.querySelector('.rp-doc-model')!.textContent!.replace(/\s+/g, ' ').trim()))
-      .toEqual(['Model: Gemini Flash', 'Model: GPT Sol group']);
+    // The model is each card's meta line.
+    expect(rows.map(row => row.querySelector('.rjd-meta')!.textContent!.replace(/\s+/g, ' ').trim()))
+      .toEqual(['Gemini Flash', 'GPT Sol group']);
     expect(Array.from(host.querySelectorAll('.rp-job-rail .run-stage-name')).map(name => name.textContent!.trim()))
       .toEqual(['Queued', 'Preparing', 'Executive Summary — Gemini Flash', 'Executive Summary — GPT Sol group', 'Done']);
     fixture.destroy();
@@ -1502,7 +1504,7 @@ describe('ReportPackPanelComponent', () => {
   it('picks up a running job on creation and backs off when its progress cannot be read', fakeAsync(() => {
     openPanel({ activeJob: jobDto({ id: 'job-5' }) });
 
-    expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
+    expect(host.querySelectorAll('.rjd-card').length).toBe(2);
     expect(text('#rp-generate-blocked')).toBe('A report pack is being written. Wait for it to finish, or cancel it.');
     // The main area shows the job and Cancel Job: the reason is out of sight, and still Generate's description.
     expect(q('#rp-generate-blocked')!.classList).toContain('visually-hidden');
@@ -1585,52 +1587,56 @@ describe('ReportPackPanelComponent', () => {
   // The document progress list (v1 Task 1)
   // -------------------------------------------------------------------------------------------
 
-  it('lists each document with its model, a chip, a live duration and centered model calls, under an aria-hidden header', fakeAsync(() => {
+  it('shows each document as a card with its model, a chip, a live duration and labeled metrics', fakeAsync(() => {
     openPanel({
       activeJob: jobDto({
         id: 'job-5',
         serverTimeUtc: '2026-09-28T10:01:00Z',
         documents: [
-          { audience: ExecutiveSummary, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1, startedAtUtc: '2026-09-28T10:00:30Z' },
+          {
+            audience: ExecutiveSummary, status: 'Writing', documentId: null, errorMessage: null, modelCalls: 1, startedAtUtc: '2026-09-28T10:00:30Z',
+            inputTokens: 390985, outputTokens: 11875, costUsd: 0.54
+          },
           { audience: RootCauseAnalysis, status: 'Failed', documentId: null, errorMessage: 'The writer refused.', modelCalls: 2 }
         ]
       })
     });
 
-    const list = q('ol.rp-doc-progress')!;
+    const list = q('app-report-job-documents ul.rjd-list')!;
+    expect(list.getAttribute('role')).toBe('list');
     expect(list.getAttribute('aria-label')).toBe('Progress of each document');
-    const head = q('.rp-doc-progress-head')!;
-    expect(head.getAttribute('aria-hidden')).toBe('true');
-    // A per-model job names its model first.
-    expect(Array.from(head.children).map(cell => cell.textContent!.trim()))
-      .toEqual(['Model', 'Document', 'Status', 'Duration', 'Model calls', 'Charts']);
-    expect(q('.rp-doc-progress-grid')!.classList).toContain('has-model');
-    expect(list.querySelectorAll('li.rp-job-row').length).toBe(2);
-    expect(cellText(ExecutiveSummary, '.rp-doc-model')).toBe('Model: Gemini Flash');
+    expect(list.querySelectorAll('li > article.rjd-card').length).toBe(2);
+    const card = q(`.rjd-card[data-audience="${ExecutiveSummary}"]`)!;
+    expect(q(`#${card.getAttribute('aria-labelledby')}`)!.textContent!.trim()).toBe('Executive Summary');
+    // A per-model job names its model on the card's meta line.
+    expect(cellText(ExecutiveSummary, '.rjd-meta')).toBe('Gemini Flash');
 
-    const chip = q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .job-status-chip`)!;
+    const chip = q(`.rjd-card[data-audience="${ExecutiveSummary}"] .job-status-chip`)!;
     expect(chip.classList).toContain('status-generating');
-    expect(q(`.rp-job-row[data-audience="${RootCauseAnalysis}"] .job-status-chip`)!.classList).toContain('status-failed');
-    expect(cellText(RootCauseAnalysis, '.rp-job-row-error')).toBe('The writer refused.');
-    expect(cellText(ExecutiveSummary, '.rp-doc-status')).toBe('Status: Writing draft');
-    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-calls`)!.classList).toContain('rp-num');
+    expect(q(`.rjd-card[data-audience="${RootCauseAnalysis}"] .job-status-chip`)!.classList).toContain('status-failed');
+    expect(q(`.rjd-card[data-audience="${RootCauseAnalysis}"]`)!.getAttribute('data-tone')).toBe('failed');
+    expect(cellText(RootCauseAnalysis, '.rjd-error')).toBe('The writer refused.');
+    expect(cellText(ExecutiveSummary, '.rjd-status')).toBe('Status: Writing draft');
+    expect(Array.from(card.querySelectorAll('.rjd-metrics dt')).map(dt => dt.textContent!.trim()))
+      .toEqual(['Duration', 'Model calls', 'Tokens', 'Cost']);
+    expect(cellText(ExecutiveSummary, '.rjd-tokens')).toBe('390,985 in · 11,875 out');
+    expect(cellText(ExecutiveSummary, '.rjd-cost')).toBe('$0.54');
+    expect(cellText(RootCauseAnalysis, '.rjd-tokens')).toBe('—');
 
     // On the server's clock: 30 s at its last reading, one more second later.
-    expect(cellText(ExecutiveSummary, '.rp-doc-duration')).toBe('Duration: 30 s');
-    expect(cellText(RootCauseAnalysis, '.rp-doc-duration')).toBe('Duration: —');
+    expect(cellText(ExecutiveSummary, '.rjd-duration')).toBe('30 s');
+    expect(cellText(RootCauseAnalysis, '.rjd-duration')).toBe('—');
     tick(1000);
     fixture.detectChanges();
-    expect(cellText(ExecutiveSummary, '.rp-doc-duration')).toBe('Duration: 31 s');
+    expect(cellText(ExecutiveSummary, '.rjd-duration')).toBe('31 s');
     fixture.destroy();
   }));
 
   it('names no model in a comparison-scope job\'s progress', fakeAsync(() => {
     openPanel({ activeJob: jobDto({ id: 'job-5', scope: BenchmarkReportScope.Comparison, subjectKey: 'comparison:12', subjectLabel: 'Comparison #12' }) });
 
-    expect(Array.from(q('.rp-doc-progress-head')!.children).map(cell => cell.textContent!.trim()))
-      .toEqual(['Document', 'Status', 'Duration', 'Model calls', 'Charts']);
-    expect(q('.rp-doc-progress-grid')!.classList).not.toContain('has-model');
-    expect(q('.rp-doc-model')).toBeNull();
+    expect(host.querySelectorAll('.rjd-card').length).toBe(2);
+    expect(q('.rjd-meta')).toBeNull();
     expect(text('.rp-job-status')).toBe('Writing 2 documents for Comparison #12: 0 of 2 finished.');
     fixture.destroy();
   }));
@@ -1654,25 +1660,26 @@ describe('ReportPackPanelComponent', () => {
         ]
       })
     });
-    const groupCharts = (): string => q('.rp-job-row[data-subject="group:4"] .rp-doc-charts')!.textContent!.replace(/\s+/g, ' ').trim();
+    const groupCharts = (): HTMLElement | null => q('.rjd-card[data-subject="group:4"] .rjd-charts');
 
-    expect(cellText(ExecutiveSummary, '.rp-doc-charts')).toBe('Charts: attaching…');
-    expect(groupCharts()).toBe('Charts: 3');
-    const retry = q<HTMLButtonElement>(`.rp-job-row[data-audience="${RootCauseAnalysis}"] .rp-chart-retry`)!;
+    expect(cellText(ExecutiveSummary, '.rjd-charts')).toBe('Charts: attaching…');
+    expect(groupCharts()!.textContent!.replace(/\s+/g, ' ').trim()).toBe('Charts: 3');
+    const retry = q<HTMLButtonElement>(`.rjd-card[data-audience="${RootCauseAnalysis}"] .rjd-chart-retry`)!;
     expect(retry.textContent!.replace(/\s+/g, ' ').trim()).toBe('Charts failed — retry for the Root Cause Analysis of Gemini Flash');
     retry.click();
     expect(retries.map(doc => doc.documentId)).toEqual([33]);
 
-    // No chart selected for a document type: none.
+    // No chart selected for a document type: it has no charts, so its card has no charts line.
     fixture.componentRef.setInput('chartSelection', { ...DEFAULT_CHART_SELECTION, [ExecutiveSummary]: [] } as ReportChartSelection);
     fixture.detectChanges();
-    expect(groupCharts()).toBe('Charts: none');
+    expect(groupCharts()).toBeNull();
+    expect(q(`.rjd-card[data-audience="${RootCauseAnalysis}"] .rjd-chart-retry`)).not.toBeNull();
 
-    // No chart storage: none everywhere.
+    // No chart storage: no charts line anywhere.
     fixture.componentRef.setInput('chartStorageMissing', true);
     fixture.detectChanges();
-    expect(cellText(ExecutiveSummary, '.rp-doc-charts')).toBe('Charts: none');
-    expect(q('.rp-chart-retry')).toBeNull();
+    expect(q('.rjd-charts')).toBeNull();
+    expect(q('.rjd-chart-retry')).toBeNull();
     fixture.destroy();
   }));
 
@@ -1737,6 +1744,100 @@ describe('ReportPackPanelComponent', () => {
     expect(fileName).toMatch(/^report-pack_gemini-flash_diagnostics_\d{8}-\d{6}\.txt$/);
     expect(body).toContain('== Documents ==');
     expect(body).toContain('Polls: ');
+    fixture.destroy();
+  }));
+
+  // -------------------------------------------------------------------------------------------
+  // The writer's replies
+  // -------------------------------------------------------------------------------------------
+
+  /** A finished comparison job whose Root Cause Analysis took a draft and a revision, each with a reply. */
+  function repliedJob(overrides: Partial<BenchmarkReportPackJobDto> = {}): BenchmarkReportPackJobDto {
+    const replied = (kind: string, replyChars: number | null): BenchmarkReportPackCallDto => ({
+      kind, startedAtUtc: '2026-10-16T11:28:39Z', durationMs: 142000, inputTokens: 191795, cachedInputTokens: 0, outputTokens: 5666,
+      costUsd: 0.44, finishReason: 'STOP', requestMessages: 2, requestCharacters: 700000, replyChars
+    });
+    return jobDto({
+      id: 'job-4',
+      scope: BenchmarkReportScope.Comparison,
+      subjectKey: 'comparison:4',
+      subjectLabel: 'Comparison #4',
+      status: 'Completed',
+      completedAtUtc: '2026-10-16T11:35:00Z',
+      documents: [
+        { ...written(RootCauseAnalysis, 65, 'CompletedWithWarnings'), modelCalls: 2, calls: [replied('Draft', 22113), replied('Revision', 27699)] }
+      ],
+      ...overrides
+    });
+  }
+
+  const repliesUrl = (id: string): string => `${jobUrl(id)}/writer-replies`;
+
+  it('offers the writer\'s replies only once the job has ended and a call has a reply', fakeAsync(() => {
+    openPanel({ activeJob: repliedJob({ status: 'Running', completedAtUtc: null }) });
+    expect(q('.rp-download-replies')).toBeNull();
+    fixture.destroy();
+  }));
+
+  it('offers no writer\'s replies when no call has one', fakeAsync(() => {
+    openPanel({
+      activeJob: repliedJob({ documents: [{ ...written(RootCauseAnalysis, 65), calls: [{ ...call('Draft'), replyChars: null }] }] })
+    });
+    expect(q('.rp-download-diagnostics')).not.toBeNull();
+    expect(q('.rp-download-replies')).toBeNull();
+    fixture.destroy();
+  }));
+
+  it('downloads the writer\'s replies as Markdown from an icon-only button beside Download diagnostics', fakeAsync(() => {
+    const save = vi.spyOn(reportPackIo, 'downloadMarkdown').mockReturnValue(undefined);
+    openPanel({ activeJob: repliedJob() });
+
+    const button = q<HTMLButtonElement>('.rp-download-replies')!;
+    expect(q('.rp-download-diagnostics')!.nextElementSibling!.nextElementSibling).toBe(button);
+    expect(button.classList).toContain('action-btn');
+    expect(button.getAttribute('aria-label')).toBe('Download the writer\'s replies of this report pack, as Markdown');
+    expect(button.getAttribute('interestfor')).toBe('rp-download-replies-tip');
+    expect(button.hasAttribute('title')).toBe(false);
+    expect(text('#rp-download-replies-tip')).toBe('Download the writer\'s replies (Markdown)');
+    expect(q('#rp-download-replies-tip')!.getAttribute('popover')).toBe('hint');
+
+    button.click();
+    fixture.detectChanges();
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(text('.rp-copy-status')).toBe('Preparing the writer\'s replies…');
+    // A second click while it is fetched asks nothing more.
+    button.click();
+    const request = http.expectOne(repliesUrl('job-4'));
+    expect(request.request.method).toBe('GET');
+    expect(request.request.responseType).toBe('text');
+    request.flush('# Writer replies: Comparison #4 (comparison:4)\n');
+    fixture.detectChanges();
+
+    expect(save).toHaveBeenCalledTimes(1);
+    const [fileName, body] = vi.mocked(save).mock.lastCall!;
+    expect(fileName).toMatch(/^report-pack_comparison-4_writer-replies_\d{8}-\d{6}\.md$/);
+    expect(body).toBe('# Writer replies: Comparison #4 (comparison:4)\n');
+    expect(button.hasAttribute('aria-disabled')).toBe(false);
+    expect(text('.rp-copy-status')).toBe('');
+    fixture.destroy();
+  }));
+
+  it('says the writer\'s replies are no longer held when the server has let the job go', fakeAsync(() => {
+    const save = vi.spyOn(reportPackIo, 'downloadMarkdown').mockReturnValue(undefined);
+    openPanel({ activeJob: repliedJob() });
+
+    q<HTMLButtonElement>('.rp-download-replies')!.click();
+    http.expectOne(repliesUrl('job-4')).flush('', { status: 404, statusText: 'Not Found' });
+    fixture.detectChanges();
+    expect(save).not.toHaveBeenCalled();
+    expect(text('.rp-copy-status')).toBe(
+      'The writer\'s replies are no longer held: Overseer keeps only the latest report job, and a newer job or a restart replaced this one.');
+    expect(q('.rp-copy-status')!.getAttribute('role')).toBe('status');
+
+    q<HTMLButtonElement>('.rp-download-replies')!.click();
+    http.expectOne(repliesUrl('job-4')).flush('', { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+    expect(text('.rp-copy-status')).toBe('The writer\'s replies could not be downloaded (HTTP 500).');
     fixture.destroy();
   }));
 
@@ -1815,9 +1916,9 @@ describe('ReportPackPanelComponent', () => {
 
     // Writing: the chip says it, so the row has no phase line; the live line still names the phase.
     expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Writing draft');
-    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-phase`)).toBeNull();
-    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-phase-row`)).toBeNull();
-    expect(q(`.rp-job-row[data-audience="${RootCauseAnalysis}"] .rp-doc-phase`)).toBeNull();
+    expect(q(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-phase`)).toBeNull();
+    expect(q(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-phase-row`)).toBeNull();
+    expect(q(`.rjd-card[data-audience="${RootCauseAnalysis}"] .rjd-phase`)).toBeNull();
     const writingLine = 'Writing 2 documents for Gemini Flash: 0 of 2 finished. Executive Summary: Writing draft.';
     expect(text('.rp-job-status')).toBe(writingLine);
     expect(q('.rp-job-status')!.getAttribute('aria-live')).toBe('polite');
@@ -1840,22 +1941,22 @@ describe('ReportPackPanelComponent', () => {
     http.expectOne(jobUrl('job-5')).flush(jobDto({ id: 'job-5', documents: [revising, { ...pending }] }));
     fixture.detectChanges();
     expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Revising');
-    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-phase`)).toBeNull();
+    expect(q(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-phase`)).toBeNull();
     expect(text('.rp-job-status')).toBe(
       'Writing 2 documents for Gemini Flash: 0 of 2 finished. Executive Summary: Revising the draft — 2 issues found by the automatic check.');
 
     // The first draft's info button sits right after the chip while the document is written.
-    const chipRow = (): HTMLElement => q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-chip-row`)!;
-    expect(chipRow().querySelector('.job-status-chip')!.nextElementSibling!.classList).toContain('rp-doc-draft');
-    expect(host.querySelectorAll(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-draft`).length).toBe(1);
+    const chipRow = (): HTMLElement => q(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-status`)!;
+    expect(chipRow().querySelector('.job-status-chip')!.nextElementSibling!.classList).toContain('rjd-draft');
+    expect(host.querySelectorAll(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-draft`).length).toBe(1);
 
     // It lists the first draft's issues by rule in a dialog.
-    const draftButton = q<HTMLButtonElement>(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-chip-row .rp-doc-draft button.gh-info-btn`)!;
+    const draftButton = q<HTMLButtonElement>(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-status .rjd-draft button.gh-info-btn`)!;
     expect(draftButton.getAttribute('aria-label')).toBe('About the first draft check of the Executive Summary of Gemini Flash');
     expect(draftButton.hasAttribute('title')).toBe(false);
     draftButton.click();
     fixture.detectChanges();
-    const draftDialog = q<HTMLDialogElement>(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-draft dialog`)!;
+    const draftDialog = q<HTMLDialogElement>(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-draft dialog`)!;
     expect(draftDialog.open).toBe(true);
     expect(draftDialog.querySelector('.report-validation-summary')!.textContent!.trim())
       .toBe('The automatic check found 2 issues in the first draft: 1 ranking without the overlap caveat, 1 digit in prose.');
@@ -1869,13 +1970,13 @@ describe('ReportPackPanelComponent', () => {
     }));
     fixture.detectChanges();
     expect(cellText(ExecutiveSummary, '.job-status-chip')).toBe('Revising');
-    expect(cellText(ExecutiveSummary, '.rp-doc-phase')).toBe('Checking the revision — 2 issues found by the automatic check');
+    expect(cellText(ExecutiveSummary, '.rjd-phase')).toBe('Checking the revision — 2 issues found by the automatic check');
     expect(text('.rp-job-status')).toBe(
       'Writing 2 documents for Gemini Flash: 0 of 2 finished. Executive Summary: Checking the revision — 2 issues found by the automatic check.');
-    expect(chipRow().querySelector('.job-status-chip')!.nextElementSibling!.classList).toContain('rp-doc-draft');
-    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-phase-row .rp-doc-draft`)).toBeNull();
+    expect(chipRow().querySelector('.job-status-chip')!.nextElementSibling!.classList).toContain('rjd-draft');
+    expect(q(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-phase-row .rjd-draft`)).toBeNull();
     // The phase line itself is not live: the one live line announces the change.
-    expect(q('.rp-doc-phase')!.closest('[role="status"], [aria-live]')).toBeNull();
+    expect(q('.rjd-phase')!.closest('[role="status"], [aria-live]')).toBeNull();
 
     // Finished: the phase line says how each draft was checked, its info button beside it.
     tick(REPORT_PACK_POLL_MS);
@@ -1892,11 +1993,11 @@ describe('ReportPackPanelComponent', () => {
       ]
     }));
     fixture.detectChanges();
-    expect(cellText(ExecutiveSummary, '.rp-doc-phase')).toBe('Revised once — 2 issues in the first draft');
-    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-phase-row .rp-doc-draft`)).not.toBeNull();
-    expect(q(`.rp-job-row[data-audience="${ExecutiveSummary}"] .rp-doc-chip-row .rp-doc-draft`)).toBeNull();
-    expect(cellText(RootCauseAnalysis, '.rp-doc-phase')).toBe('First draft passed every check');
-    expect(q(`.rp-job-row[data-audience="${RootCauseAnalysis}"] .rp-doc-draft`)).toBeNull();
+    expect(cellText(ExecutiveSummary, '.rjd-phase')).toBe('Revised once — 2 issues in the first draft');
+    expect(q(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-phase-row .rjd-draft`)).not.toBeNull();
+    expect(q(`.rjd-card[data-audience="${ExecutiveSummary}"] .rjd-status .rjd-draft`)).toBeNull();
+    expect(cellText(RootCauseAnalysis, '.rjd-phase')).toBe('First draft passed every check');
+    expect(q(`.rjd-card[data-audience="${RootCauseAnalysis}"] .rjd-draft`)).toBeNull();
     expect(text('.rp-job-status')).toBe('Report pack for Gemini Flash: Completed.');
     fixture.destroy();
   }));
@@ -1921,15 +2022,15 @@ describe('ReportPackPanelComponent', () => {
     });
 
     expect(text('.rp-job-summary')).toContain('Written with errors: 1 of 2 documents (1 with warnings)');
-    const row = (audience: BenchmarkReportAudience): HTMLElement => q(`.rp-job-row[data-audience="${audience}"]`)!;
-    const why = row(ExecutiveSummary).querySelector<HTMLButtonElement>('.rp-doc-why button.gh-info-btn')!;
+    const row = (audience: BenchmarkReportAudience): HTMLElement => q(`.rjd-card[data-audience="${audience}"]`)!;
+    const why = row(ExecutiveSummary).querySelector<HTMLButtonElement>('.rjd-why button.gh-info-btn')!;
     expect(why.getAttribute('aria-label')).toBe('About warnings in the Executive Summary of Gemini Flash');
     expect(why.getAttribute('aria-haspopup')).toBe('dialog');
     expect(why.hasAttribute('title')).toBe(false);
 
     why.click();
     fixture.detectChanges();
-    const dialog = row(ExecutiveSummary).querySelector<HTMLDialogElement>('.rp-doc-why dialog')!;
+    const dialog = row(ExecutiveSummary).querySelector<HTMLDialogElement>('.rjd-why dialog')!;
     expect(dialog.open).toBe(true);
     const heading = dialog.querySelector('h3')!;
     expect(heading.textContent!.trim()).toBe('Why the Executive Summary of Gemini Flash was completed with warnings');
@@ -1940,11 +2041,11 @@ describe('ReportPackPanelComponent', () => {
     expect(dialog.querySelector('.report-validation-removed .report-validation-quote')!.textContent).toBe('The model scored 72.');
     dialog.close();
 
-    const failed = row(RootCauseAnalysis).querySelector<HTMLButtonElement>('.rp-doc-why button.gh-info-btn')!;
+    const failed = row(RootCauseAnalysis).querySelector<HTMLButtonElement>('.rjd-why button.gh-info-btn')!;
     expect(failed.getAttribute('aria-label')).toBe('About failure of the Root Cause Analysis of Gemini Flash');
     failed.click();
     fixture.detectChanges();
-    const failedDialog = row(RootCauseAnalysis).querySelector<HTMLDialogElement>('.rp-doc-why dialog')!;
+    const failedDialog = row(RootCauseAnalysis).querySelector<HTMLDialogElement>('.rjd-why dialog')!;
     expect(failedDialog.querySelector('h3')!.textContent!.trim()).toBe('Why the Root Cause Analysis of Gemini Flash failed');
     expect(failedDialog.querySelector('.report-validation-summary')!.textContent!.trim()).toBe('This document could not be stored.');
     expect(failedDialog.querySelector('.report-validation-reply')!.textContent).toBe('{"headline": ""}');

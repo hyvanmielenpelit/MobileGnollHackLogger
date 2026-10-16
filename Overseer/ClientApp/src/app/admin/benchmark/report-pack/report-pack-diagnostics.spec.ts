@@ -12,7 +12,8 @@ import {
   ReportPackDiagnosticsInput,
   buildReportPackDiagnostics,
   reportPackChartStatusWord,
-  reportPackDiagnosticsFileName
+  reportPackDiagnosticsFileName,
+  reportPackWriterRepliesFileName
 } from './report-pack-diagnostics';
 import type { ReportPackContext } from './report-pack-panel.component';
 import { explainDocumentStatus, explanationLines } from './report-validation-explanation';
@@ -290,6 +291,68 @@ describe('report-pack-diagnostics', () => {
     const running = buildReportPackDiagnostics(input());
     expect(running).not.toContain('== Validation ==');
     expect(running).not.toContain('== Failed writer replies ==');
+  });
+
+  it('adds the word counts, the revision against the first draft, what Overseer added and a pointer to the writer\'s replies, never their text', () => {
+    const issue = (rule: number, location: string, locationLabel: string, extra: Partial<BenchmarkReportPackValidationIssueDto> = {}): BenchmarkReportPackValidationIssueDto => ({
+      rule, location, locationLabel, message: `Rule ${rule} here.`, dropped: false, ...extra
+    });
+    const call = (kind: string, replyChars: number | null): BenchmarkReportPackCallDto => ({
+      kind, startedAtUtc: '2026-10-16T11:28:39Z', durationMs: 142000, inputTokens: 191795, cachedInputTokens: 0, outputTokens: 5666,
+      costUsd: 0.44, finishReason: 'STOP', requestMessages: 2, requestCharacters: 700000, replyChars
+    });
+    const rca: BenchmarkReportPackDocumentProgressDto = {
+      audience: RootCauseAnalysis, status: 'CompletedWithWarnings', documentId: 65, errorMessage: null, modelCalls: 3,
+      firstTurnIssues: [
+        issue(16, 'sections.abstract', 'Abstract'), issue(16, 'sections.abstract', 'Abstract'),
+        issue(7, 'sections.hypothesesSpeed', 'Hypotheses: speed')
+      ],
+      revisionIssues: [
+        issue(7, 'sections.hypothesesSpeed', 'Hypotheses: speed'), issue(7, 'sections.conclusions', 'Conclusions'),
+        issue(31, 'sections.keyFinding', 'Key finding')
+      ],
+      finalIssues: [
+        issue(36, 'sections.conclusions', 'Conclusions', {
+          severity: 'addedByOverseer', addedByOverseer: true, text: 'Cost: {{rca.axis.cost.status}}',
+          message: 'The writer\'s paragraph on cost was removed; Overseer wrote the axis\'s status in its place.'
+        })
+      ],
+      wordCounts: [
+        { location: 'sections.hypothesesSpeed', locationLabel: 'Hypotheses: speed', cap: 120, draft: 135, revision: 128, shortened: 117, final: 117, finalParagraphs: [52, 65] },
+        { location: 'sections.conclusions', locationLabel: 'Conclusions', cap: 120, draft: 104, revision: null, shortened: null, final: 104, finalParagraphs: [] }
+      ],
+      calls: [call('Draft', 22113), call('Revision', 27699), call('Shorten', null)]
+    };
+    const text = buildReportPackDiagnostics(input({ job: job({ status: 'Completed', documents: [rca] }) }));
+    const lines = text.split('\n');
+
+    expect(lines.filter(line => line.startsWith('== ')).slice(3, 7)).toEqual([
+      '== Documents ==', '== Word counts ==', '== Validation ==', '== Why document 1 (Root Cause Analysis) was completed with warnings =='
+    ]);
+    expect(lines).toContain('    Call 1: Draft, started 2026-10-16 11:28:39 UTC, 2 min 22 s, 191,795 in / 0 cached / 5,666 out tokens, $0.44, finish STOP, 2 messages, 700,000 characters, reply 22,113 characters');
+    expect(lines).toContain('    Call 3: Shortening turn, started 2026-10-16 11:28:39 UTC, 2 min 22 s, 191,795 in / 0 cached / 5,666 out tokens, $0.44, finish STOP, 2 messages, 700,000 characters, no reply');
+    expect(lines).toContain('  Writer replies: 2 (49,812 characters), downloadable separately as Markdown (Log and diagnostics → Download the writer\'s replies) while Overseer still holds this job.');
+
+    expect(lines).toContain('  Hypotheses: speed — cap 120 — draft 135, revision 128, shortened 117, final 117 (raw words; a token counts as one) — paragraphs 52, 65');
+    expect(lines).toContain('  Conclusions — cap 120 — draft 104, final 104 (raw words; a token counts as one)');
+
+    expect(lines).toContain('  Revision: 3 issues (rule 7: 2, rule 31: 1)');
+    expect(lines).toContain('  Fixed by the revision: 2 (rule 16: 2)');
+    expect(lines).toContain('  Still there: 1 (rule 7 at Hypotheses: speed)');
+    expect(lines).toContain('  New in the revision: 2 (rule 7 at Conclusions; rule 31 at Key finding)');
+    expect(lines).toContain('    rule 36 at Conclusions: The writer\'s paragraph on cost was removed; Overseer wrote the axis\'s status in its place.');
+    expect(lines).toContain('      Added text: Cost: {{rca.axis.cost.status}}');
+    expect(lines).toContain('  Added by Overseer: Conclusions — Cost: {{rca.axis.cost.status}}');
+
+    // The replies are a separate download: no reply text, and no section for them.
+    expect(text).not.toContain('== Writer replies ==');
+  });
+
+  it('names the writer\'s replies file for the subject and the capture time in UTC', () => {
+    expect(reportPackWriterRepliesFileName('Comparison #4', new Date('2026-10-16T11:35:42Z')))
+      .toBe('report-pack_comparison-4_writer-replies_20261016-113542.md');
+    expect(reportPackWriterRepliesFileName(null, new Date('2026-10-16T11:35:42Z')))
+      .toBe('report-pack_no-subject_writer-replies_20261016-113542.md');
   });
 
   it('never includes the user who started the job', () => {

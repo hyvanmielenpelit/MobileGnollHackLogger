@@ -1931,8 +1931,16 @@ breakdown** (`admin/telemetry-tab/`, 2026-10-13) is the eighth; the **AI Telemet
 (`app-admin-security-tab`, 2026-10-13) are the tenth; the **Users tab's deletion requests**
 (`app-deletion-requests`, 2026-10-13) are the eleventh; the **Users tab's users** (`app-admin-user-list`
 with the shared `app-user-criteria-bar`, 2026-10-13) are the twelfth; the **Users tab's admin log**
-(`app-admin-user-log`, 2026-10-13) is the thirteenth; and the **Bulk Actions wizard's** review and results
-accounts (`app-bulk-review-step`, `app-bulk-results-step`, 2026-10-13) are two more. Use one **when every row is a
+(`app-admin-user-log`, 2026-10-13) is the thirteenth; the **Bulk Actions wizard's** review and results
+accounts (`app-bulk-review-step`, `app-bulk-results-step`, 2026-10-13) are two more; and the **document
+progress cards** of every report-writing job (`app-report-job-documents`, 2026-10-16: the Report Pack
+panel, the Chat Consistency reports step and the run- and battery-completion writing dialog) are the
+sixteenth. The progress cards have two recorded exceptions: like the AI Telemetry breakdown they are
+read-only, with no filters, sort or paging, so they take no `CardListState`; and the enclosing
+section's heading is already an `h6`, so each card's title is a `<p class="rjd-title">` the `<article>`
+is labelled by, not a heading. Their head lets the status chip's group wrap under the title, and the chip
+its own words, rather than overflow a fixed track — the table they replaced spilled *COMPLETED WITH
+WARNINGS* over the next column. Use one **when every row is a
 small form** — two selects, a group of checkboxes, several actions — rather than values to compare
 down a column, **or when a row is a record too rich for one table line**: Run History's runs carry a
 kicker of badges, a badged model name, four metrics with visible qualifier lines, four actions and five
