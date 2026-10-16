@@ -406,12 +406,21 @@ public class RootCauseHypothesesTests
         Assert.Equal(RootCauseGrades.High, kept[0].Hypothesis.Grade);
         Assert.True(kept[0].Hypothesis.PriceEffect);
 
-        // A High price effect alone does not establish the axis.
+        // A High price effect alone does not establish the axis, but it is named as the axis' best hypothesis.
         var alone = RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, kept, hasPairs: true);
         Assert.Equal(RootCauseStatuses.NotEstablished, alone.Status);
         Assert.Equal(RootCauseHypotheses.PriceOnlyAxisReason, alone.Reason);
-        Assert.Null(alone.BestHypothesis);
+        Assert.Equal("HC2.1", alone.BestHypothesis);
         Assert.Equal(RootCauseStatuses.NotEstablished, RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, kept).Status);
+
+        // Beside a hypothesis that was ruled out, the price effect is named, and the axis is still not established.
+        var caching = Draft(id: "HC4", axis: RootCauseAxes.Cost, group: "A|D", notSupported: true, nullStands: true, checks: AllPassed());
+        var ruledOut = RootCauseHypotheses.Keep(new[] { price, caching }.Select(d => (Grade(d), d)).ToList());
+        Assert.Equal(RootCauseGrades.NotSupported, ruledOut.Single(k => k.Hypothesis.Id == "HC4").Hypothesis.Grade);
+        var priceCards = RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, ruledOut, hasPairs: true);
+        Assert.Equal(RootCauseStatuses.NotEstablished, priceCards.Status);
+        Assert.Equal(RootCauseHypotheses.PriceCardsAxisReason, priceCards.Reason);
+        Assert.Equal("HC2.1", priceCards.BestHypothesis);
 
         // Beside a weaker hypothesis that is no price effect, that one sets the status.
         var volumeChecks = AllPassed();
@@ -422,6 +431,15 @@ public class RootCauseHypothesesTests
         Assert.Equal(RootCauseStatuses.Probable, status.Status);
         Assert.Equal("HC1.1", status.BestHypothesis);
         Assert.Equal(RootCauseGrades.PriceCardWordWithGrade(RootCauseGrades.High), RootCauseGrades.HypothesisWordWithGrade(both.Single(k => k.Hypothesis.Id == "HC2").Hypothesis));
+
+        // A Low one sets the status too, even beside a ruled-out neighbor.
+        var weak = Draft(id: "HC1", axis: RootCauseAxes.Cost, group: "A|C", quantified: false, checks: AllPassed());
+        var withLow = RootCauseHypotheses.Keep(new[] { price, caching, weak }.Select(d => (Grade(d), d)).ToList());
+        Assert.Equal(RootCauseGrades.Low, withLow.Single(k => k.Hypothesis.Id == "HC1").Hypothesis.Grade);
+        var lowStatus = RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, withLow, hasPairs: true);
+        Assert.Equal(RootCauseStatuses.NotEstablished, lowStatus.Status);
+        Assert.Equal("HC1.1", lowStatus.BestHypothesis);
+        Assert.StartsWith(RootCauseGrades.WordWithGrade(RootCauseGrades.Low), lowStatus.Reason, StringComparison.Ordinal);
     }
 
     [Fact]

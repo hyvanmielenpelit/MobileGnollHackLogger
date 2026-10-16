@@ -1176,7 +1176,7 @@ rca.atRisk.E.criticalError = 0.0 index points
 rca.atRisk.E.noTool = 0.0 index points
 rca.atRisk.E.otherLow = 5.6 index points
 rca.atRisk.E.total = 5.6 index points below a median answer of 54
-rca.axis.cost.best = HC4.1
+rca.axis.cost.best = HC2.1
 rca.axis.cost.status = Not established
 rca.axis.intelligence.best = HQ3.1
 rca.axis.intelligence.status = Not established
@@ -1965,7 +1965,7 @@ NOTABLE FINDINGS (detected by code from the facts; cite one as {{notable.N.summa
 AXES (each axis' status; never change one)
 - Intelligence: {{rca.axis.intelligence.status}} = Not established; best hypothesis {{rca.axis.intelligence.best}} = HQ3.1; Suggestive (Low) because it is observed, not measured.
 - Speed: {{rca.axis.speed.status}} = Not established; best hypothesis {{rca.axis.speed.best}} = none; Only hypotheses about one model's own breakdown fired on this axis; none compares the models.
-- Cost: {{rca.axis.cost.status}} = Not established; best hypothesis {{rca.axis.cost.best}} = HC4.1; Ruled out (Not supported) because its own test rules it out: Model E's cache-read share is 28% against the models' median of 26%.
+- Cost: {{rca.axis.cost.status}} = Not established; best hypothesis {{rca.axis.cost.best}} = HC2.1; Known from the price cards: the differences in price per token account for the gap, which the price cards show rather than a cause the runs found; every other hypothesis on this axis was ruled out.
 
 KNOWN FACTS (what a test, a count, a decomposition or the configuration shows; each is a sentence)
 - {{rca.known.1}} (decomposition; rests on: rca.cost.A.B.uncachedInput.price.share): Uncached input, price per token accounts for 45% (44–46%) of the per-question cost difference between Model A and Model B.

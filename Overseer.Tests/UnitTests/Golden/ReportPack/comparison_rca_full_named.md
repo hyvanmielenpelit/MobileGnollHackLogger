@@ -314,7 +314,7 @@ The strongest hypothesis in the table: Output (with reasoning) is Zeta Prime's l
 |---|---|---|---|
 | Intelligence | Not established | HQ3.1: shared failures on the same questions | Suggestive (Low) because it is observed, not measured. |
 | Speed | Not established | — | Only hypotheses about one model's own breakdown fired on this axis; none compares the models. |
-| Cost | Not established | HC4.1: Zeta Prime's weak prompt caching, compared with Orion Max | Ruled out (Not supported) because its own test rules it out: Zeta Prime's cache-read share is 28% against the models' median of 26%. |
+| Cost | Not established | HC2.1: Zeta Prime's higher price per token, compared with Orion Max | Known from the price cards: the differences in price per token account for the gap, which the price cards show rather than a cause the runs found; every other hypothesis on this axis was ruled out. |
 
 > [!TIP]
 > **Conclusion.** Intelligence: Not established. Speed: Not established. Cost: Not established.
@@ -6579,9 +6579,9 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC4.1",
+      "display": "HC2.1",
       "key": "rca.axis.cost.best",
-      "value": "HC4.1"
+      "value": "HC2.1"
     },
     {
       "available": true,
@@ -11985,8 +11985,8 @@ The counts and the configuration facts the analysis states, each numbered as the
       },
       {
         "axis": "cost",
-        "bestHypothesis": "HC4.1",
-        "reason": "Ruled out (Not supported) because its own test rules it out: Model E's cache-read share is 28% against the models' median of 26%.",
+        "bestHypothesis": "HC2.1",
+        "reason": "Known from the price cards: the differences in price per token account for the gap, which the price cards show rather than a cause the runs found; every other hypothesis on this axis was ruled out.",
         "status": "NotEstablished"
       }
     ],

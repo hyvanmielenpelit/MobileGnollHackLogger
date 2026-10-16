@@ -3881,14 +3881,19 @@ best hypothesis of either kind.
 **A price effect never decides an axis** (engine version 6). An HC2 whose price effect follows from the
 price cards — catalog pricing, or neither side's prices differing between runs — is marked `PriceEffect`
 (`RootCauseHypothesis.PriceEffect`, the fact `rca.hypothesis.<id>.<n>.priceCard`). It is what the price
-cards show, not a cause the runs found, so `AxisStatus` judges only the other candidates; an axis on
-which price effects alone fired reads *Not established* with *"Only price-per-token differences fired on
-this axis; they are known from the price cards, not a cause the runs found."* (`PriceOnlyAxisReason`).
-Where another cost hypothesis fired, it is the axis' best, even when it is ruled out. A price effect keeps
-its grade, sorts after every other hypothesis of its axis, and prints as *Known from the price cards
-(High)* (`RootCauseGrades.PriceCardWordWithGrade`, also the `.grade` display). It still answers question
-4 and supports a causal sentence about cost (rule 33), but not a certainty word (rule 34), and it is exempt
-from the single-run cap. A stored result without the flag keeps the status it was written with.
+cards show, not a cause the runs found, so it never sets an axis' status. When another candidate of the
+axis is graded Low or higher, that one is the axis' best and sets the status. When none is, the axis
+reads *Not established* and its best hypothesis is the highest-ranked price effect, which the conclusions
+row and the `rca.axis.<axis>.best` fact name. The reason is *"Only price-per-token differences fired on
+this axis; they are known from the price cards, not a cause the runs found."* (`PriceOnlyAxisReason`)
+when price effects alone fired, and *"Known from the price cards: the differences in price per token
+account for the gap, which the price cards show rather than a cause the runs found; every other
+hypothesis on this axis was ruled out."* (`PriceCardsAxisReason`) when the others were all ruled out. A
+price effect keeps its grade, sorts after every other hypothesis of its axis, and prints as *Known from
+the price cards (High)* (`RootCauseGrades.PriceCardWordWithGrade`, also the `.grade` display). It still
+answers question 4 and supports a causal sentence about cost (rule 33), but not a certainty word (rule
+34), and it is exempt from the single-run cap. A stored result without the flag keeps the status it was
+written with.
 
 ### The hypothesis rules
 

@@ -349,6 +349,9 @@ public static class RootCauseHypotheses
     /// <summary>The reason of an axis whose only candidate hypotheses are price effects, which the price cards show rather than the runs.</summary>
     public const string PriceOnlyAxisReason = "Only price-per-token differences fired on this axis; they are known from the price cards, not a cause the runs found.";
 
+    /// <summary>The reason of an axis whose price effects stand beside other hypotheses that were all ruled out.</summary>
+    public const string PriceCardsAxisReason = "Known from the price cards: the differences in price per token account for the gap, which the price cards show rather than a cause the runs found; every other hypothesis on this axis was ruled out.";
+
     /// <summary>The status of an axis in a document without pairs (a run or battery completion).</summary>
     internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept)
         => AxisStatus(axis, kept, hasPairs: false);
@@ -357,8 +360,10 @@ public static class RootCauseHypotheses
     /// The status of an axis (§ A2): established when a non-null hypothesis is High and its null is
     /// rejected; probable when the best is Moderate; otherwise not established. With
     /// <paramref name="hasPairs"/> (a comparison or a per-model pack), only pair hypotheses count, and an axis
-    /// with within-model hypotheses alone is not established. A price effect never counts: an axis with price
-    /// effects alone is not established, with <see cref="PriceOnlyAxisReason"/>. The reason names the best
+    /// with within-model hypotheses alone is not established. A price effect never decides an axis: when no
+    /// other candidate is graded Low or higher, the axis is not established and its best hypothesis is the
+    /// highest-ranked price effect, with <see cref="PriceOnlyAxisReason"/> when it stands alone and
+    /// <see cref="PriceCardsAxisReason"/> when the others were ruled out. Otherwise the reason names the best
     /// hypothesis' grade and the grade reasons that applied to it, each one clause.
     /// </summary>
     internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept, bool hasPairs)
@@ -368,6 +373,18 @@ public static class RootCauseHypotheses
             .ToList();
         var eligible = hasPairs ? nonNull.Where(k => k.Hypothesis.Kind == "pair").ToList() : nonNull;
         var candidates = eligible.Where(k => !k.Hypothesis.PriceEffect).ToList();
+        var priceEffects = eligible.Where(k => k.Hypothesis.PriceEffect).ToList();
+        if (priceEffects.Count > 0 && !candidates.Any(k => RootCauseGrades.Rank(k.Hypothesis.Grade) >= RootCauseGrades.Rank(RootCauseGrades.Low)))
+        {
+            return new RootCauseAxisStatus
+            {
+                Axis = axis,
+                Status = RootCauseStatuses.NotEstablished,
+                BestHypothesis = priceEffects[0].Hypothesis.Key,
+                Reason = candidates.Count == 0 ? PriceOnlyAxisReason : PriceCardsAxisReason
+            };
+        }
+
         var best = candidates.FirstOrDefault();
         if (best.Hypothesis == null)
         {
@@ -375,8 +392,7 @@ public static class RootCauseHypotheses
             {
                 Axis = axis,
                 Status = RootCauseStatuses.NotEstablished,
-                Reason = eligible.Count > 0 ? PriceOnlyAxisReason
-                    : nonNull.Count > 0 ? WithinOnlyAxisReason
+                Reason = nonNull.Count > 0 ? WithinOnlyAxisReason
                     : "No rule found a possible cause on this axis."
             };
         }

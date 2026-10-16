@@ -1198,7 +1198,7 @@ public class RootCauseEngineTests
         var cost = result.Axes.Single(a => a.Axis == RootCauseAxes.Cost);
         Assert.Equal(RootCauseStatuses.NotEstablished, cost.Status);
         Assert.Equal(RootCauseHypotheses.PriceOnlyAxisReason, cost.Reason);
-        Assert.Null(cost.BestHypothesis);
+        Assert.Equal(hc2.Key, cost.BestHypothesis);
 
         // A price effect sorts after every other non-null hypothesis of its axis.
         var costOrder = result.Hypotheses.Where(h => h.Axis == RootCauseAxes.Cost && h.Kind != "null").ToList();
@@ -1221,8 +1221,8 @@ public class RootCauseEngineTests
         Assert.Equal(RootCauseFacts.PriceCardDisplay, byKey[prefix + "priceCard"].Display);
         Assert.DoesNotContain(sorted, f => f.Key.EndsWith(".priceCard", StringComparison.Ordinal) && !f.Key.StartsWith(prefix, StringComparison.Ordinal));
         Assert.Equal(RootCauseGrades.PriceCardWord, byKey["rca.question.4.status"].Display);
-        Assert.False(byKey["rca.axis.cost.best"].Available);
-        Assert.Equal(RootCauseHypotheses.PriceOnlyAxisReason, byKey["rca.axis.cost.best"].UnavailableReason);
+        Assert.True(byKey["rca.axis.cost.best"].Available);
+        Assert.Equal(hc2.Key, byKey["rca.axis.cost.best"].Value!.GetValue<string>());
 
         // The price effect supports a causal word but no certainty word, and the cost axis is not established.
         var support = RootCauseClaimSupport.From(new BenchmarkReportFactSheet { Facts = sorted });
