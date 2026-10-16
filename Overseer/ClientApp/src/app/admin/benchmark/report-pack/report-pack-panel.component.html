@@ -309,9 +309,7 @@
   <!-- ===================================================================================
        MAIN: THE JOB
        =================================================================================== -->
-  <div runReportMain class="rp-main">
-    <h5 class="rp-subsection-title rp-progress-heading" [id]="idPrefix + '-progress-heading'" tabindex="-1">Report pack progress</h5>
-
+  <div runReportMain class="rp-main" [id]="idPrefix + '-progress'">
     <!-- One polite live line for screen readers, in place before a job exists; it changes with the
          job's phase only. The job card shows the same facts. -->
     <p class="visually-hidden rp-job-status" role="status" aria-live="polite">{{ jobStatusLine }}</p>

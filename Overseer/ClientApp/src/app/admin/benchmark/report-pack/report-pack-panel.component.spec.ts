@@ -367,7 +367,9 @@ describe('ReportPackPanelComponent', () => {
     expect(q('.rrf-header')).toBeNull();
     expect(q('.rp-identity, .rp-heading, .rp-subtitle, .rp-lead')).toBeNull();
     expect(text('#rp-new-heading')).toBe('New report pack');
-    expect(main.querySelector('#rp-progress-heading')?.textContent?.trim()).toBe('Report pack progress');
+    // The main column has no visible heading of its own; its region label names it.
+    expect(main.querySelector('#rp-progress-heading, .rp-progress-heading')).toBeNull();
+    expect(main.querySelector('.rp-main > h5, .rp-main > h4')).toBeNull();
 
     // Where the reports are kept is the info tip after the sidebar's heading.
     const headingRow = q('.rp-new-heading-row')!;
@@ -1257,8 +1259,8 @@ describe('ReportPackPanelComponent', () => {
     expect(text('.rp-start-error')).toContain('its progress is shown here.');
     expect(host.querySelectorAll('.rp-job-row').length).toBe(2);
     expect(generateButton().disabled).toBe(true);
-    // Generate stays disabled for the other job, so focus stays on the progress heading.
-    expect(document.activeElement).toBe(q('#rp-progress-heading'));
+    // Generate stays disabled for the other job, so focus stays on the progress area.
+    expect(document.activeElement).toBe(q('section.rrf-main'));
 
     tick(REPORT_PACK_POLL_MS);
     http.expectOne(jobUrl('job-9')).flush(jobDto({ id: 'job-9', status: 'Completed', completedAtUtc: '2026-09-28T10:01:00Z' }));
@@ -1279,7 +1281,7 @@ describe('ReportPackPanelComponent', () => {
     expect(alert.getAttribute('role')).toBe('alert');
     expect(alert.textContent!.trim()).toBe(message);
     expect(generateButton().disabled).toBe(false);
-    // Generate can be used again, so focus returns to it from the progress heading.
+    // Generate can be used again, so focus returns to it from the progress area.
     expect(document.activeElement).toBe(generateButton());
     // The starting panel is gone; no job was started.
     expect(q('.rp-starting')).toBeNull();
@@ -1291,7 +1293,7 @@ describe('ReportPackPanelComponent', () => {
   // Progress
   // -------------------------------------------------------------------------------------------
 
-  it('answers Generate at once: the starting panel, the live line and focus on the progress heading', fakeAsync(() => {
+  it('answers Generate at once: the starting panel, the live line and focus on the progress area', fakeAsync(() => {
     openPanel();
     chooseWriter(7);
     expect(q('.rp-starting')).toBeNull();
@@ -1312,7 +1314,7 @@ describe('ReportPackPanelComponent', () => {
     expect(q('.rp-idle-note')).toBeNull();
     expect(q('.rp-job')).toBeNull();
     expect(text('.rp-job-status')).toBe('Starting the report pack…');
-    expect(document.activeElement).toBe(q('#rp-progress-heading'));
+    expect(document.activeElement).toBe(q('section.rrf-main'));
     expect(generateButton().disabled).toBe(true);
     expect(generateButton().getAttribute('aria-busy')).toBe('true');
     expect(text('#rp-generate-blocked')).toBe(REPORT_PACK_JOB_RUNNING_REASON);
@@ -1450,7 +1452,7 @@ describe('ReportPackPanelComponent', () => {
     fixture.detectChanges();
     expect(q('.rp-job')).toBeNull();
     expect(text('.rp-job-status')).toBe('');
-    expect(document.activeElement).toBe(q('#rp-progress-heading'));
+    expect(document.activeElement).toBe(q('section.rrf-main'));
     fixture.destroy();
   }));
 

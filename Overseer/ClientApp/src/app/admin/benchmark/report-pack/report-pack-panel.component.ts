@@ -1734,7 +1734,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       return;
     }
     // Focus is on the progress area before Generate disables; a stacked layout scrolls it into view.
-    this.focusProgressHeading();
+    this.focusProgressArea();
     this.starting = true;
     this.startError = null;
     this.pollError = null;
@@ -1781,13 +1781,14 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.cdr.markForCheck();
   }
 
-  private focusProgressHeading(): void {
-    document.getElementById(`${this.idPrefix}-progress-heading`)?.focus();
+  /** The frame's main column: a focusable region labeled "Report pack progress". */
+  private focusProgressArea(): void {
+    document.getElementById(`${this.idPrefix}-progress`)?.closest<HTMLElement>('.rrf-main')?.focus();
   }
 
   /**
    * After a refused start: back to Generate when it can be used again; otherwise focus stays on the
-   * progress heading, and the error's `role="alert"` announces it.
+   * progress area, and the error's `role="alert"` announces it.
    */
   private focusGenerateIfEnabled(): void {
     // Renders now, so the button's disabled state is the one the refusal leaves.
@@ -2107,7 +2108,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     this.pollError = null;
     this.syncRunning();
     this.cdr.markForCheck();
-    this.focusProgressHeading();
+    this.focusProgressArea();
   }
 
   cancelJob(): void {
