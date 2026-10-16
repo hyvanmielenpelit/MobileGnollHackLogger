@@ -1040,6 +1040,13 @@ describe('SettingsComponent', () => {
       });
     });
 
+    it('gives the nav chevron a fixed icon size', () => {
+      const chevron = (fixture.nativeElement as HTMLElement).querySelector('.settings-nav-chevron') as SVGElement;
+      const style = getComputedStyle(chevron);
+      expect(style.width).toBe('18px');
+      expect(style.height).toBe('18px');
+    });
+
     it('marks aria-current="page" on General when the URL names no section', () => {
       emitSection(null);
       const compiled = fixture.nativeElement as HTMLElement;

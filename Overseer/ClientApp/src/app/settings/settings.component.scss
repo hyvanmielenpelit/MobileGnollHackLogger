@@ -84,9 +84,9 @@ label:not(.checkbox-label) { display: block; margin-bottom: 5px; font-weight: bo
   &:focus-visible { outline: 2px solid var(--primary-color); outline-offset: -2px; }
   &[aria-current="page"] { color: var(--primary-color); border-inline-start-color: var(--primary-color); background: rgba(212, 175, 55, 0.1); }
 }
-.settings-nav-text { display: flex; flex-direction: column; min-width: 0; }
+.settings-nav-text { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .settings-nav-hint { display: none; font-size: 0.78rem; color: #9a9a9a; }
-.settings-nav-chevron { display: none; flex-shrink: 0; }
+.settings-nav-chevron { display: none; flex-shrink: 0; width: 18px; height: 18px; }
 .settings-section-header { display: flex; align-items: center; gap: 12px; padding: 14px 30px 0; }
 .settings-section-title { margin: 0; font-family: "Cinzel", serif; color: var(--title-color, #e0ba6d); font-size: 1.15em; text-transform: uppercase; letter-spacing: 1px; }
 .settings-section-back { display: none; }
