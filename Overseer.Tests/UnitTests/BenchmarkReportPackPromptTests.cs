@@ -820,8 +820,27 @@ public class BenchmarkReportPackPromptTests
     {
         string system = Build(audience).SystemPrompt;
 
-        Assert.Contains("- A token whose value reads 'N of M' is a noun phrase: '{{errors.critical}} had a critical error'. Never put it after 'no' "
+        Assert.Contains("- A token whose value reads 'N of M' is a noun phrase: 'the model gave {{errors.critical}}'. Never put it after 'no' "
             + "or make it the object of 'made'; to say none occurred, write 'no critical errors across all {{answers.scored}} answers'.\n", system);
+    }
+
+    [Fact]
+    public void EveryPrompt_SaysACountAlreadySaysWhatItCounts_AndNoneAsksForWordsAfterIt()
+    {
+        const string rule = "A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after";
+        var texts = new[]
+        {
+            BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(true),
+            BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(false),
+            BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>()),
+            BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>(), comparisonScope: true),
+        };
+        Assert.All(texts, text =>
+        {
+            Assert.Contains(rule, text);
+            Assert.DoesNotContain("say right after", text);
+            Assert.DoesNotContain("had a critical error", text);
+        });
     }
 
     [Fact]
@@ -829,7 +848,7 @@ public class BenchmarkReportPackPromptTests
     {
         string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>());
 
-        Assert.Contains("A token whose value reads 'N of M' is a noun phrase; never put it after 'no', make it the object of 'made', or end a clause with it: say right after it what it counts.", message);
+        Assert.Contains("A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after; never put it after 'no' or make it the object of 'made'.", message);
     }
 
     [Theory]
@@ -1086,16 +1105,20 @@ public class BenchmarkReportPackPromptTests
         int start = message.IndexOf("CHECK BEFORE YOU ANSWER (", StringComparison.Ordinal);
         Assert.True(start > 0);
         var lines = message[start..].Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal(7, lines.Length);
+        Assert.Equal(10, lines.Length);
         Assert.StartsWith("- Rule 3, digits:", lines[1]);
         Assert.StartsWith("- Rule 16, rankings", lines[2]);
-        Assert.StartsWith("- Rule 31, sentence shapes:", lines[3]);
-        Assert.StartsWith("- Rule 33, causes:", lines[4]);
-        Assert.StartsWith("- Rule 34, certainty:", lines[5]);
-        Assert.StartsWith("- Rule 36, statuses:", lines[6]);
-        Assert.Contains("{{rca.axis.intelligence.status}}", lines[6]);
+        Assert.StartsWith("- Every model at once:", lines[3]);
+        Assert.StartsWith("- Rule 31, sentence shapes:", lines[4]);
+        Assert.StartsWith("- Rule 39, counts:", lines[5]);
+        Assert.StartsWith("- Rule 38, shares:", lines[6]);
+        Assert.StartsWith("- Rule 33, causes:", lines[7]);
+        Assert.StartsWith("- Rule 34, certainty:", lines[8]);
+        Assert.StartsWith("- Rule 36, statuses:", lines[9]);
+        Assert.Contains("{{rca.axis.intelligence.status}}", lines[9]);
+        Assert.Contains(".profile.noToolAnswers}} already prints 'without a tool call'", lines[5]);
         Assert.Contains("{{model:", lines[2]);
-        Assert.Contains("noun phrase", lines[3]);
+        Assert.Contains("noun phrase", lines[4]);
         Assert.Contains("'95% interval'", lines[1]);
     }
 
@@ -1285,7 +1308,7 @@ public class BenchmarkReportPackPromptTests
 
         Assert.Contains("where CONTROLS applies, which controls there are and the control limit", Slot(model, BenchmarkReportSlots.Scope));
         Assert.Contains("the item-level controls", Slot(model, BenchmarkReportSlots.EvidenceIntelligence));
-        Assert.Contains("or the control limit", Slot(model, BenchmarkReportSlots.Limitations));
+        Assert.Contains("and the control limit: do not repeat them", Slot(model, BenchmarkReportSlots.Limitations));
         Assert.Contains("\n- Control\n", model);
     }
 
@@ -1320,6 +1343,51 @@ public class BenchmarkReportPackPromptTests
             BenchmarkReportContent.Build(new[] { RootCauseReportFixture.Runs()[RootCauseReportFixture.SubjectRunId] }, 120)).UserMessage;
         Assert.Contains("\nprice.<component>.perMillion are prices per million tokens on the pricing basis {{rca.pricingBasis}}", alone);
         Assert.DoesNotContain("model.X.", alone);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheRootCauseSystemPrompt_GivesAFirstTurnWordBudget_AndKeepsTheHypothesesAndLimitationsToWhatCodeDoesNotPrint(bool comparison)
+    {
+        string system = BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(comparison);
+
+        Assert.Contains("WORD BUDGET (every {{token}} is one word, however long its value; count each section before answering and aim at least one sentence under its cap):", system);
+        Assert.Contains("- " + BenchmarkReportSlots.HypothesesSpeed + ", " + BenchmarkReportPackValidator.RootCauseHypothesesMaxWords + " words\n", system.Replace("\r\n", "\n"));
+        Assert.Contains("never repeat them, and never list hypothesis or null references", system);
+        Assert.Contains("one sentence on the nulls in total, such as 'most pair nulls are rejected'", system);
+        Assert.Contains("which already prints the grading panel and the harness version: do not repeat them.", system);
+        Assert.Contains("the one run per suite, the harness version and what it did not record", system);
+
+        // A share stands beside its own hypothesis; a group is described by its rule's span.
+        Assert.Contains("A share belongs to its own hypothesis: put it beside that hypothesis's .ref only, never beside a range or a list, and never write 'led by' a share.", system);
+        Assert.Contains("{{rca.rule.<id>.shareSpan}}", system);
+        Assert.Contains("the best hypothesis explains its own pair; when other hypotheses of the same rule exist, name them by their ref range with the rule's shareSpan", system);
+        Assert.DoesNotContain("explains its own pair only.", system);
+
+        if (comparison)
+        {
+            Assert.Contains("A statement about every compared model cites a comparison.* fact, never one model's or one pair's", system);
+            Assert.Contains("citing {{comparison.runsPerSuite}} and {{comparison.suiteCount}}", system);
+        }
+        else
+        {
+            Assert.DoesNotContain("comparison.runsPerSuite", system);
+        }
+    }
+
+    [Fact]
+    public void TheRootCauseChecks_ShowAShareBesideItsOwnReference_AndTheComparisonWideFacts()
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var lines = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, built.Sheet!, built.Content!).UserMessage.Split('\n');
+
+        string rule38 = Assert.Single(lines, l => l.StartsWith("- Rule 38, shares:", StringComparison.Ordinal));
+        Assert.Matches(@"'\{\{rca\.hypothesis\.(\S+)\.share\}\} of the gap \(\{\{rca\.hypothesis\.\1\.ref\}\}\)'", rule38);
+        Assert.Matches(@"'\{\{rca\.rule\.\S+\.shareSpan\}\} \(\{\{rca\.hypothesis\.\S+\.ref\}\}–\{\{rca\.hypothesis\.\S+\.ref\}\}\)'", rule38);
+
+        string wide = Assert.Single(lines, l => l.StartsWith("- Every model at once:", StringComparison.Ordinal));
+        Assert.Contains("'Each model rests on {{comparison.runsPerSuite}} across {{comparison.suiteCount}}.'", wide);
     }
 
     [Fact]
@@ -1370,6 +1438,79 @@ public class BenchmarkReportPackPromptTests
 
         Assert.DoesNotContain(TokenShapeNotes("The slowest pair waits longest ({{model:A}} against the others), as the table shows."),
             n => n.Message.StartsWith("Puts a parenthesis inside another", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Rule31_NamesTheTokenThatBroughtTheInnerParenthesis_AndTheModelAdviceOnlyForAModelToken()
+    {
+        var sheet = RootCauseReportFixture.ComparisonFacts().Sheet!;
+        string key = sheet.Facts
+            .Where(f => f.Available && f.Display.Contains('(') && !f.Display.TrimEnd().EndsWith('.') && !f.Key.StartsWith("model.", StringComparison.Ordinal))
+            .Select(f => f.Key)
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .First();
+
+        var byToken = Assert.Single(TokenShapeNotes("The slowest pair waits longest (as {{" + key + "}} shows), as the table shows."),
+            n => n.Message.StartsWith("Puts a parenthesis inside another", StringComparison.Ordinal));
+        Assert.Contains("{{" + key + "}} prints its own parentheses: write it outside parentheses, as a clause of its own.", byToken.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("model token", byToken.Message, StringComparison.Ordinal);
+
+        var byModel = Assert.Single(TokenShapeNotes("The slowest pair waits longest ({{model:A}} against the others (per call)), as the table shows."),
+            n => n.Message.StartsWith("Puts a parenthesis inside another", StringComparison.Ordinal));
+        Assert.Contains("write the inner remark as a clause or a sentence of its own.", byModel.Message, StringComparison.Ordinal);
+        Assert.Contains("Never put a model token inside parentheses", byModel.Message, StringComparison.Ordinal);
+    }
+
+    // The validator's rule 38 on a share beside another hypothesis ---------------------------------
+
+    private static List<BenchmarkReportValidationNote> ShareNotes(string paragraph)
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var output = RootCauseReportFixture.Writer(built.Sheet!, comparison: true);
+        output.Sections[BenchmarkReportSlots.HypothesesSpeed] = paragraph;
+        return BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.RootCauseAnalysis, output, built.Sheet!, built.Content!)
+            .Where(n => n.Rule == BenchmarkReportPackValidator.RootCauseShareBesideRefRule)
+            .ToList();
+    }
+
+    [Fact]
+    public void Rule38_FlagsAShareBesideARangeOrAnotherHypothesis_AndPassesItsOwnReference()
+    {
+        var sheet = RootCauseReportFixture.ComparisonFacts().Sheet!;
+        var group = sheet.RootCause!.Hypotheses
+            .Where(h => h.Kind != "null" && h.Share.HasValue)
+            .GroupBy(h => h.Id, StringComparer.Ordinal)
+            .First(g => g.Count() >= 2)
+            .OrderBy(h => h.Number)
+            .ToList();
+        string first = "rca.hypothesis." + group[0].Key + ".";
+        string last = "rca.hypothesis." + group[^1].Key + ".";
+
+        var range = Assert.Single(ShareNotes("Longer waits lead the gaps, {{" + first + "share}} of the gap ({{" + first + "ref}}–{{" + last + "ref}})."));
+        Assert.StartsWith("Places {{" + first + "share}} beside {{" + first + "ref}}, {{" + last + "ref}}:", range.Message, StringComparison.Ordinal);
+        Assert.Contains("{{rca.rule." + group[0].Id + ".shareSpan}}", range.Message, StringComparison.Ordinal);
+        Assert.False(range.Dropped);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(BenchmarkReportPackValidator.RootCauseShareBesideRefRule));
+
+        Assert.Single(ShareNotes("Longer waits lead, {{" + first + "share}} of the gap ({{" + last + "ref}})."));
+        Assert.Empty(ShareNotes("Longer waits lead, {{" + first + "share}} of the gap ({{" + first + "ref}})."));
+        Assert.Empty(ShareNotes("Longer waits explain the gaps ({{" + first + "ref}}–{{" + last + "ref}}), {{rca.rule." + group[0].Id + ".shareSpan}}."));
+    }
+
+    [Fact]
+    public void TheRuleShareSpanFacts_DescribeEachRuleWithTwoOrMoreShares()
+    {
+        var sheet = RootCauseReportFixture.ComparisonFacts().Sheet!;
+        var group = sheet.RootCause!.Hypotheses
+            .Where(h => h.Kind != "null" && h.Share.HasValue)
+            .GroupBy(h => h.Id, StringComparer.Ordinal)
+            .First(g => g.Count() >= 2)
+            .ToList();
+        var span = Assert.Single(sheet.Facts, f => f.Key == "rca.rule." + group[0].Id + ".shareSpan");
+        Assert.Matches(@" of each (gap|model's own (time|cost|points at risk))$", span.Display);
+        var count = Assert.Single(sheet.Facts, f => f.Key == "rca.rule." + group[0].Id + ".count");
+        Assert.StartsWith(group.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) + " ", count.Display, StringComparison.Ordinal);
+        Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("rca.rule.H0", StringComparison.Ordinal));
     }
 
     [Fact]

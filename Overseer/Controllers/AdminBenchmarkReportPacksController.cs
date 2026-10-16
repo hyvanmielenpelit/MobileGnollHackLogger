@@ -1086,14 +1086,26 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
     /// <summary>
     /// The writer's raw replies of a held job as one Markdown file (<see cref="BenchmarkReportPackWriterReplies"/>): every
-    /// call so far while the job runs. Not found once a newer job or a restart has replaced it.
+    /// call so far while the job runs, with the tokens each stored document's replies cite. Not found once a newer job or a
+    /// restart has replaced it.
     /// </summary>
     [HttpGet("report-packs/jobs/{jobId}/writer-replies")]
-    public IActionResult GetWriterReplies(string jobId)
+    public async Task<IActionResult> GetWriterReplies(string jobId, CancellationToken ct = default)
     {
         var job = _jobManager.TryGet(jobId);
         if (job == null) return NotFound();
-        return Content(BenchmarkReportPackWriterReplies.BuildMarkdown(job, DateTime.UtcNow), "text/markdown; charset=utf-8");
+        try
+        {
+            var ids = job.WriterReplies().Select(d => d.Document.DocumentId).OfType<long>().Distinct().ToList();
+            var stored = ids.Count == 0
+                ? new Dictionary<long, BenchmarkReportDocument>()
+                : await _db.BenchmarkReportDocuments.AsNoTracking().Where(d => ids.Contains(d.Id)).ToDictionaryAsync(d => d.Id, ct);
+            return Content(BenchmarkReportPackWriterReplies.BuildMarkdown(job, DateTime.UtcNow, stored), "text/markdown; charset=utf-8");
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status499ClientClosedRequest);
+        }
     }
 
     [HttpGet("report-packs/jobs/active")]

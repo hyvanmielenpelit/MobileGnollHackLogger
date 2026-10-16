@@ -765,9 +765,56 @@ public class RootCauseEngineTests
     }
 
     [Fact]
-    public void TheEngineVersion_IsEight()
+    public void TheEngineVersion_IsNine()
     {
-        Assert.Equal(8, RootCauseEngine.Version);
+        Assert.Equal(9, RootCauseEngine.Version);
+    }
+
+    [Fact]
+    public void ConfigDifferences_NameEveryKeyButTheModel_WithBothValues()
+    {
+        var a = new RootCauseModelInput { Token = "A", Provider = "OpenAI", ModelId = "gpt-x", ThinkingLevel = "medium" };
+        var b = new RootCauseModelInput { Token = "B", Provider = "OpenAI", ModelId = "gpt-y", ThinkingLevel = "high", ReasoningMode = "standard" };
+
+        var parts = RootCauseContext.ConfigDifferenceParts(a, b);
+
+        Assert.Equal(new[] { "thinking level", "reasoning mode" }, parts.Select(p => p.Name));
+        Assert.Equal(("medium", "high"), (parts[0].First, parts[0].Second));
+        Assert.Equal(("not set", "standard"), (parts[1].First, parts[1].Second));
+        Assert.Equal(new[] { "thinking level (medium vs high)", "reasoning mode (not set vs standard)" }, RootCauseContext.ConfigDifferences(a, b));
+
+        var other = new RootCauseModelInput { Token = "C", Provider = "Anthropic", ModelId = "claude-x", ThinkingLevel = "medium" };
+        Assert.Equal(new[] { "provider" }, RootCauseContext.ConfigDifferences(a, other));
+    }
+
+    [Fact]
+    public void ARuleWithSeveralShares_GetsItsShareSpanAndCount()
+    {
+        var result = new RootCauseResult
+        {
+            Hypotheses =
+            {
+                new RootCauseHypothesis { Id = "HQ1", Number = 1, Key = "HQ1.1", Kind = "pair", Axis = RootCauseAxes.Intelligence, Share = 0.45 },
+                new RootCauseHypothesis { Id = "HQ1", Number = 2, Key = "HQ1.2", Kind = "pair", Axis = RootCauseAxes.Intelligence, Share = 0.48 },
+                new RootCauseHypothesis { Id = "HQ1", Number = 3, Key = "HQ1.3", Kind = "pair", Axis = RootCauseAxes.Intelligence, Share = 0.29 },
+                new RootCauseHypothesis { Id = "HS1", Number = 1, Key = "HS1.1", Kind = "pair", Axis = RootCauseAxes.Speed, Share = 0.52 },
+                new RootCauseHypothesis { Id = "WC1", Number = 1, Key = "WC1.1", Kind = "within", Axis = RootCauseAxes.Cost, Share = 0.69 },
+                new RootCauseHypothesis { Id = "WC1", Number = 2, Key = "WC1.2", Kind = "within", Axis = RootCauseAxes.Cost, Share = 0.54 },
+                new RootCauseHypothesis { Id = "H0-Q", Number = 1, Key = "H0-Q.1", Kind = "null", Axis = RootCauseAxes.Intelligence },
+                new RootCauseHypothesis { Id = "H0-Q", Number = 2, Key = "H0-Q.2", Kind = "null", Axis = RootCauseAxes.Intelligence },
+            }
+        };
+        var facts = new BenchmarkReportFacts.FactList();
+
+        RootCauseFacts.Add(facts, result, t => "Model " + t);
+
+        var sorted = facts.Sorted();
+        Assert.Equal("29% to 48% of each gap", Assert.Single(sorted, f => f.Key == "rca.rule.HQ1.shareSpan").Display);
+        Assert.Equal("3 pairs", Assert.Single(sorted, f => f.Key == "rca.rule.HQ1.count").Display);
+        Assert.DoesNotContain(sorted, f => f.Key.StartsWith("rca.rule.HS1.", StringComparison.Ordinal));
+        Assert.Equal("54% to 69% of each model's own cost", Assert.Single(sorted, f => f.Key == "rca.rule.WC1.shareSpan").Display);
+        Assert.Equal("2 models", Assert.Single(sorted, f => f.Key == "rca.rule.WC1.count").Display);
+        Assert.DoesNotContain(sorted, f => f.Key.StartsWith("rca.rule.H0", StringComparison.Ordinal));
     }
 
     [Fact]

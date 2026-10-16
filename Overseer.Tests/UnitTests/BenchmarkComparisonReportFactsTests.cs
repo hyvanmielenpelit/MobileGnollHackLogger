@@ -23,6 +23,29 @@ public class BenchmarkComparisonReportFactsTests
         => Assert.Single(sheet.Facts, f => f.Key == key);
 
     [Fact]
+    public void TheComparisonWideFacts_SpeakForEveryModel_AndThePairConfigurationNamesNoModelAndNoParenthesis()
+    {
+        var sheet = RootCauseReportFixture.ComparisonFacts().Sheet!;
+
+        Assert.Matches(@"^\d+( to \d+)? runs? per suite$", Display(sheet, "comparison.runsPerSuite"));
+        Assert.Equal("1 suite", Display(sheet, "comparison.suiteCount"));
+        Assert.DoesNotContain(sheet.Facts, f => f.Key == "comparison.memberRuns");
+        string configuration = Fact(sheet, "comparison.configDifferences").Display;
+        Assert.DoesNotContain("(", configuration);
+        if (configuration != "no configuration key other than the model") Assert.DoesNotContain("model", configuration);
+
+        var pairs = sheet.Facts.Where(f => f.Key.StartsWith("pair.", StringComparison.Ordinal) && f.Key.EndsWith(".configDifferences", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(pairs);
+        Assert.All(pairs, f =>
+        {
+            Assert.DoesNotContain("(", f.Display);
+            Assert.DoesNotContain(f.Display.Split("; "), part => part == "model");
+        });
+        Assert.All(new[] { "comparison.runsPerSuite", "comparison.suiteCount", "comparison.configDifferences" },
+            k => Assert.False(BenchmarkComparisonReportFacts.IsModelFact(k)));
+    }
+
+    [Fact]
     public void Letters_FollowTheIntelligenceIndex_TiesByEntryKey()
     {
         var sheet = ComparisonFacts().Sheet!;
@@ -147,7 +170,7 @@ public class BenchmarkComparisonReportFactsTests
 
         Assert.Equal("85 / 100", Display(sheet, "model.A.quality.index"));
         Assert.Equal("1", Display(sheet, "model.A.runs"));
-        Assert.Equal("1 of 6 answers", Display(sheet, "model.C.errors.critical"));
+        Assert.Equal("1 of 6 answers with a critical error", Display(sheet, "model.C.errors.critical"));
         Assert.DoesNotContain(sheet.Facts, f => f.Key.StartsWith("peer.", StringComparison.Ordinal));
         Assert.DoesNotContain(sheet.Facts, f => f.Key.EndsWith(".peerMean", StringComparison.Ordinal));
         Assert.DoesNotContain(sheet.Facts, f => (f.Key.Contains(".label", StringComparison.Ordinal) && !f.Key.StartsWith("rca.hypothesis.", StringComparison.Ordinal))
@@ -422,13 +445,13 @@ public class BenchmarkComparisonReportFactsTests
 
         // Vega Pro minus Orion Max: -7, -8, +40, -15, -3 and -7; exactly 15 below is similar.
         Assert.Equal("6 questions", Display(sheet, "model.B.vsReference.shared"));
-        Assert.Equal("1 of 6 questions", Display(sheet, "model.B.vsReference.better"));
-        Assert.Equal("5 of 6 questions", Display(sheet, "model.B.vsReference.similar"));
-        Assert.Equal("0 of 6 questions", Display(sheet, "model.B.vsReference.worse"));
+        Assert.Equal("1 of 6 questions scored more than 15 points above the reference", Display(sheet, "model.B.vsReference.better"));
+        Assert.Equal("5 of 6 questions scored within 15 points of the reference", Display(sheet, "model.B.vsReference.similar"));
+        Assert.Equal("0 of 6 questions scored more than 15 points below the reference", Display(sheet, "model.B.vsReference.worse"));
 
         // Zeta Prime is more than 15 points below on all but Q3.
-        Assert.Equal("5 of 6 questions", Display(sheet, "model.E.vsReference.worse"));
-        Assert.Equal("1 of 6 questions", Display(sheet, "model.E.vsReference.similar"));
+        Assert.Equal("5 of 6 questions scored more than 15 points below the reference", Display(sheet, "model.E.vsReference.worse"));
+        Assert.Equal("1 of 6 questions scored within 15 points of the reference", Display(sheet, "model.E.vsReference.similar"));
     }
 
     [Fact]

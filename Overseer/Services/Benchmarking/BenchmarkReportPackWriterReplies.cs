@@ -1,9 +1,11 @@
 namespace Overseer.Services.Benchmarking;
 
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 
@@ -11,13 +13,19 @@ using Overseer.Models;
 /// The writer's raw replies of a report-pack job as one Markdown file, built on request from the job Overseer holds in
 /// memory: a header naming the job, the writer, its output limit and the versions, then one section per document and,
 /// under it, one per writer call with its timing, tokens, cost, finish reason, the user message a later turn added and
-/// the reply, each request and reply in a fence longer than any backtick run it holds. Lines end with LF. The file is internal: the replies come before Overseer's checks, removals and
+/// the reply, each request and reply in a fence longer than any backtick run it holds, and after the calls a table of
+/// every token the replies cite with what the stored document prints for it. Lines end with LF. The file is internal: the replies come before Overseer's checks, removals and
 /// additions.
 /// </summary>
 public static class BenchmarkReportPackWriterReplies
 {
-    /// <summary>The Markdown of every writer reply the job holds, captured at <paramref name="capturedUtc"/>.</summary>
-    public static string BuildMarkdown(BenchmarkReportPackJob job, DateTime capturedUtc)
+    private static readonly Regex TokenRegex = new(@"\{\{([^{}]+)\}\}", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// The Markdown of every writer reply the job holds, captured at <paramref name="capturedUtc"/>; <paramref name="stored"/>
+    /// holds the stored documents by id, for each document's table of the tokens its replies cite.
+    /// </summary>
+    public static string BuildMarkdown(BenchmarkReportPackJob job, DateTime capturedUtc, IReadOnlyDictionary<long, BenchmarkReportDocument>? stored = null)
     {
         ArgumentNullException.ThrowIfNull(job);
 
@@ -59,7 +67,7 @@ public static class BenchmarkReportPackWriterReplies
             {
                 var (call, reply) = calls[c];
                 Line(sb);
-                Line(sb, $"### Call {Number(c + 1)}: {call.Kind}");
+                Line(sb, $"### Call {Number(c + 1)}: {BenchmarkReportPackCallKinds.Label(call.Kind)}");
                 Line(sb);
                 Line(sb, CallLine(call, reply));
                 Line(sb);
@@ -78,10 +86,47 @@ public static class BenchmarkReportPackWriterReplies
 
                 Fenced(sb, reply.Text, "json", reply.Truncated);
             }
+
+            TokensCited(sb, calls.Select(c => c.Item2.Text), document.DocumentId is long stores && stored != null && stored.TryGetValue(stores, out var row) ? row : null);
         }
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// The <c>#### Tokens cited</c> table of one document: every distinct token of its replies, in the order first cited,
+    /// with what <paramref name="document"/> prints for it (<see cref="BenchmarkReportPackRenderer.TokenDisplays"/>), or
+    /// <c>not in the fact sheet</c>; one line instead when no stored document is at hand.
+    /// </summary>
+    private static void TokensCited(StringBuilder sb, IEnumerable<string?> replies, BenchmarkReportDocument? document)
+    {
+        var tokens = replies
+            .Where(r => r != null)
+            .SelectMany(r => TokenRegex.Matches(r!).Select(m => m.Groups[1].Value.Trim()))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (tokens.Count == 0) return;
+
+        Line(sb);
+        Line(sb, "#### Tokens cited");
+        Line(sb);
+        if (document == null)
+        {
+            Line(sb, "The table is unavailable: Overseer stored no document for these replies.");
+            return;
+        }
+
+        Line(sb, "| Token | Prints |");
+        Line(sb, "|---|---|");
+        foreach (var (token, display) in BenchmarkReportPackRenderer.TokenDisplays(document, tokens))
+        {
+            Line(sb, "| `{{" + token + "}}` | " + Cell(display ?? "not in the fact sheet") + " |");
+        }
+    }
+
+    /// <summary>A table cell: one line, with its pipes escaped.</summary>
+    private static string Cell(string text)
+        => text.Replace("\r\n", " ").Replace('\n', ' ').Replace('\r', ' ').Replace("|", "\\|");
 
     /// <summary>
     /// <paramref name="text"/> in a fence longer than any backtick run it holds, followed by a line saying so when it
@@ -163,13 +208,15 @@ public static class BenchmarkReportPackWriterReplies
         return longest;
     }
 
-    /// <summary><c>42 s</c> under a minute, else <c>2 min 05 s</c>.</summary>
+    /// <summary><c>42 s</c>, <c>2 min 05 s</c> or <c>1 h 02 min</c>, cut to whole seconds as the diagnostics cut them.</summary>
     private static string Duration(long ms)
     {
-        long seconds = (long)Math.Round(ms / 1000.0, MidpointRounding.AwayFromZero);
-        return seconds < 60
-            ? seconds.ToString(CultureInfo.InvariantCulture) + " s"
-            : (seconds / 60).ToString(CultureInfo.InvariantCulture) + " min " + (seconds % 60).ToString("00", CultureInfo.InvariantCulture) + " s";
+        long seconds = Math.Max(0, ms / 1000);
+        if (seconds < 60) return seconds.ToString(CultureInfo.InvariantCulture) + " s";
+        long minutes = seconds / 60;
+        return minutes < 60
+            ? minutes.ToString(CultureInfo.InvariantCulture) + " min " + (seconds % 60).ToString("00", CultureInfo.InvariantCulture) + " s"
+            : (minutes / 60).ToString(CultureInfo.InvariantCulture) + " h " + (minutes % 60).ToString("00", CultureInfo.InvariantCulture) + " min";
     }
 
     /// <summary><c>$0.44</c>; below a cent, four decimals (<c>$0.0029</c>).</summary>

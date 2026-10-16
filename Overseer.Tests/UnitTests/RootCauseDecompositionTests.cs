@@ -220,6 +220,52 @@ public class RootCauseDecompositionTests
         Assert.Contains(cost.Components, c => c.Key == RootCauseSegments.Reasoning);
     }
 
+    /// <summary>
+    /// A pair shaped like Comparison #4's HC1.2: the first model writes to the cache and folds its thinking into output,
+    /// the second writes nothing to the cache and reports its reasoning apart. Costs are the token counts on a card in USD
+    /// per million tokens: uncached input, cache read, cache write, output, reasoning (priced as output).
+    /// </summary>
+    private static (List<RootCauseItem> First, List<RootCauseItem> Second) CrossProviderItems(double[] firstCard, double[] secondCard)
+    {
+        static RootCauseItem Priced(string key, double[] tokens, double[] card)
+            => CostItem(key, tokens, tokens.Select((t, k) => t * card[k] / 1_000_000).ToArray());
+        return (Enumerable.Range(1, 12).Select(i => Priced("q" + i, new double[] { 2000 + 40 * i, 20000 + 300 * i, 3000 + 25 * i, 1500 + 30 * i, 0 }, firstCard)).ToList(),
+            Enumerable.Range(1, 12).Select(i => Priced("q" + i, new double[] { 1500 + 10 * (i % 4), 15000 + 200 * i, 0, 400 + 5 * i, 600 + 15 * (i % 3) }, secondCard)).ToList());
+    }
+
+    [Fact]
+    public void ACrossProviderPairOnIdenticalCards_HasNoPriceEffect_SoItsVolumeShareIsExactlyOneInEveryResample()
+    {
+        double[] card = { 0.10, 0.01, 0.125, 0.50, 0.50 };
+        var (first, second) = CrossProviderItems(card, card);
+
+        var result = RootCauseDecomposition.Cost("A", new RootCauseModelEvidence { Priced = true, CostItems = first }, "B", new RootCauseModelEvidence { Priced = true, CostItems = second });
+
+        var volume = Assert.Single(result.Components, c => c.Key == "all" && c.Effect == "volume");
+        var price = Assert.Single(result.Components, c => c.Key == "all" && c.Effect == "price");
+        Assert.Equal(1.0, volume.Share!.Value, 9);
+        Assert.Equal(1.0, volume.ShareLower!.Value, 9);
+        Assert.Equal(1.0, volume.ShareUpper!.Value, 9);
+        Assert.Equal(0.0, price.Amount, 12);
+    }
+
+    [Fact]
+    public void ACrossProviderPairOnDifferentCards_KeepsAPriceEffect_ThoughCacheWritesAndReasoningAreZeroOnOneSide()
+    {
+        double[] firstCard = { 0.10, 0.01, 0.125, 0.50, 0.50 };
+        double[] secondCard = { 0.15, 0.015, 0.1875, 0.75, 0.75 };
+        var (first, second) = CrossProviderItems(firstCard, secondCard);
+
+        var result = RootCauseDecomposition.Cost("A", new RootCauseModelEvidence { Priced = true, CostItems = first }, "B", new RootCauseModelEvidence { Priced = true, CostItems = second });
+
+        var price = Assert.Single(result.Components, c => c.Key == "all" && c.Effect == "price");
+        Assert.True(Math.Abs(price.Amount) > 1e-6);
+        Assert.True(price.ShareUpper!.Value - price.ShareLower!.Value > 0);
+        // The components zero on one side carry no price effect: their whole difference is volume.
+        Assert.Equal(0.0, result.Components.Single(c => c.Key == RootCauseSegments.CacheWrite && c.Effect == "price").Amount, 12);
+        Assert.Equal(0.0, result.Components.Single(c => c.Key == RootCauseSegments.Reasoning && c.Effect == "price").Amount, 12);
+    }
+
     [Fact]
     public void Cost_WithoutAPriceCard_IsUnavailable()
     {

@@ -211,7 +211,7 @@ public static partial class BenchmarkReportPackPrompt
     {
         "A fact whose value is a whole sentence — every notable.N.summary, and any value that begins with a capital letter and ends with a full stop — is written as a sentence of its own, at most once, never inside parentheses, and never continued after its full stop.",
         "A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took one and a half times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.",
-        "Never list several 'N of M' tokens in a row, and never end a clause with one: say right after each what it counts.",
+        "A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after.",
         "Never join two fact tokens with 'to', or with 'from … to', unless both print a bare figure in the same unit, such as two percentages; and never repeat beside a token the words it already prints."
     };
 
@@ -299,7 +299,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Never write a model's letter on its own, as in Model H or Models H and I: in every slot and list, a model is named only through its {{model:X}} token. Only the \"model\" field of a \"models\" entry takes a bare letter.");
         Line(sb, "- Any other {{...}} token is an error.");
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" or \"twice\" are allowed for a plain count, but prefer a fact token for any figure.");
-        Line(sb, "- A token whose value reads 'N of M' is a noun phrase. Never put it after 'no' or make it the object of 'made'.");
+        Line(sb, "- A count token, whose value reads 'N of M …', is a noun phrase. Never put it after 'no' or make it the object of 'made'.");
         foreach (string rule in TokenShapeReminders)
         {
             Line(sb, "- " + rule);

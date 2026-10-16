@@ -46,7 +46,7 @@ public class BenchmarkComparisonModelProfileTests
         Assert.Equal(2, profile.MayMislead);
         var facts = FactsOf(profile);
         Assert.Equal("4 answers", Fact(facts, "model.A.profile.answers").Display);
-        Assert.Equal("2 of 4 answers", Fact(facts, "model.A.profile.mayMislead").Display);
+        Assert.Equal("2 of 4 answers that may mislead", Fact(facts, "model.A.profile.mayMislead").Display);
         Assert.Equal("about 10 in 20 answers", Fact(facts, "model.A.profile.mayMisleadPer20").Display);
     }
 
@@ -102,7 +102,7 @@ public class BenchmarkComparisonModelProfileTests
         Assert.True(profile.OutcomesRecorded);
         Assert.Equal((1, 1, 1, 1, 0), (profile.Correct, profile.Partial, profile.Incorrect, profile.NotAttempted, profile.NoAnswer));
         var facts = FactsOf(profile);
-        Assert.Equal("1 of 4 answers", Fact(facts, "model.A.profile.outcome.correct").Display);
+        Assert.Equal("1 of 4 answers graded correct", Fact(facts, "model.A.profile.outcome.correct").Display);
         var wrong = Fact(facts, "model.A.profile.outcome.wrongInsteadOfAbstaining");
         Assert.False(wrong.Available);
         Assert.Equal("Fewer than 3 answers were incorrect or not attempted (2), too few for a rate.", wrong.UnavailableReason);
@@ -149,7 +149,7 @@ public class BenchmarkComparisonModelProfileTests
         Assert.Equal(0, profile.Deficits["accuracy"]);
         Assert.Equal(2, profile.Deficits["completeness"]);
         Assert.Equal(0, profile.Deficits["readability"]);
-        Assert.Equal("2 of 4 answers", Fact(FactsOf(profile), "model.A.profile.deficit.completeness").Display);
+        Assert.Equal("2 of 4 answers at level 2 or below on completeness", Fact(FactsOf(profile), "model.A.profile.deficit.completeness").Display);
     }
 
     [Fact]
@@ -194,8 +194,8 @@ public class BenchmarkComparisonModelProfileTests
         Assert.Equal(2, profile.NoToolAnswers);
         Assert.Equal(2, profile.ToolLimitHits);
         var facts = FactsOf(profile);
-        Assert.Equal("1 of 4 answers", Fact(facts, "model.A.profile.truncated").Display);
-        Assert.Equal("2 of 4 answers", Fact(facts, "model.A.profile.toolLimitHits").Display);
+        Assert.Equal("1 of 4 answers that were truncated", Fact(facts, "model.A.profile.truncated").Display);
+        Assert.Equal("2 of 4 answers that hit the tool limit", Fact(facts, "model.A.profile.toolLimitHits").Display);
     }
 
     [Fact]
@@ -273,9 +273,9 @@ public class BenchmarkComparisonModelProfileTests
         Assert.Equal(1, profile.WeaknessRunsByCategory["completeness"]);
         Assert.Equal(0, profile.WeaknessRunsByCategory["readability"]);
         var facts = FactsOf(profile);
-        Assert.Equal("2 of 3 runs", Fact(facts, "model.A.profile.findings.runsWithSynthesis").Display);
-        Assert.Equal("2 of 2 runs", Fact(facts, "model.A.profile.findings.accuracy").Display);
-        Assert.Equal("0 of 2 runs", Fact(facts, "model.A.profile.findings.critical_error").Display);
+        Assert.Equal("2 of 3 runs with structured grader findings", Fact(facts, "model.A.profile.findings.runsWithSynthesis").Display);
+        Assert.Equal("2 of 2 runs with an accuracy weakness in the grader findings", Fact(facts, "model.A.profile.findings.accuracy").Display);
+        Assert.Equal("0 of 2 runs with a critical-error weakness in the grader findings", Fact(facts, "model.A.profile.findings.critical_error").Display);
     }
 
     [Fact]
@@ -283,7 +283,7 @@ public class BenchmarkComparisonModelProfileTests
     {
         var facts = FactsOf(BenchmarkComparisonModelProfile.FromRuns(new[] { FourAnswerRun() }));
 
-        Assert.Equal("0 of 1 run", Fact(facts, "model.A.profile.findings.runsWithSynthesis").Display);
+        Assert.Equal("0 of 1 run with structured grader findings", Fact(facts, "model.A.profile.findings.runsWithSynthesis").Display);
         foreach (string category in BenchmarkComparisonModelProfile.FindingCategories)
         {
             var fact = Fact(facts, "model.A.profile.findings." + category);

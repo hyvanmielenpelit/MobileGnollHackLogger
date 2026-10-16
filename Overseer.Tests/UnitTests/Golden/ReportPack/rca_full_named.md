@@ -859,7 +859,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         },
         {
           "available": true,
-          "display": "0 of 6 answers",
+          "display": "0 of 6 answers with a critical error",
           "key": "errors.critical",
           "value": 0
         },
@@ -915,7 +915,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         },
         {
           "available": true,
-          "display": "0 of 6 answers",
+          "display": "0 of 6 answers with a critical error",
           "key": "errors.critical",
           "value": 0
         },
@@ -972,7 +972,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         },
         {
           "available": true,
-          "display": "1 of 6 answers",
+          "display": "1 of 6 answers with a critical error",
           "key": "errors.critical",
           "value": 1
         },
@@ -1029,7 +1029,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         },
         {
           "available": true,
-          "display": "0 of 6 answers",
+          "display": "0 of 6 answers with a critical error",
           "key": "errors.critical",
           "value": 0
         },
@@ -1086,7 +1086,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         },
         {
           "available": true,
-          "display": "0 of 6 answers",
+          "display": "0 of 6 answers with a critical error",
           "key": "errors.critical",
           "value": 0
         },
@@ -1430,7 +1430,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with a critical error",
       "key": "errors.critical",
       "value": 0
     },
@@ -1788,25 +1788,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on accuracy",
       "key": "profile.deficit.accuracy",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on completeness",
       "key": "profile.deficit.completeness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on conciseness",
       "key": "profile.deficit.conciseness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on readability",
       "key": "profile.deficit.readability",
       "value": 0
     },
@@ -1848,7 +1848,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 1 run",
+      "display": "0 of 1 run with structured grader findings",
       "key": "profile.findings.runsWithSynthesis",
       "value": 0
     },
@@ -1872,7 +1872,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that may mislead",
       "key": "profile.mayMislead",
       "value": 0
     },
@@ -1884,7 +1884,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "2 of 6 answers",
+      "display": "2 of 6 answers without a tool call",
       "key": "profile.noToolAnswers",
       "value": 2
     },
@@ -1926,7 +1926,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with output defects",
       "key": "profile.outputDefects",
       "value": 0
     },
@@ -1938,13 +1938,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that hit the tool limit",
       "key": "profile.toolLimitHits",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that were truncated",
       "key": "profile.truncated",
       "value": 0
     },
@@ -2003,7 +2003,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 1 question",
+      "display": "1 of 1 question with a scored answer",
       "key": "quality.scoredItems",
       "value": 1
     },
@@ -5035,6 +5035,42 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "4 pairs",
+      "key": "rca.rule.HC2.count",
+      "value": 4
+    },
+    {
+      "available": true,
+      "display": "69% to 72% of each gap",
+      "key": "rca.rule.HC2.shareSpan",
+      "value": 0.030709557902634188
+    },
+    {
+      "available": true,
+      "display": "4 pairs",
+      "key": "rca.rule.HC4.count",
+      "value": 4
+    },
+    {
+      "available": true,
+      "display": "7% to 9% of each gap",
+      "key": "rca.rule.HC4.shareSpan",
+      "value": 0.02450690721304924
+    },
+    {
+      "available": true,
+      "display": "3 pairs",
+      "key": "rca.rule.HS3.count",
+      "value": 3
+    },
+    {
+      "available": true,
+      "display": "55% of each gap",
+      "key": "rca.rule.HS3.shareSpan",
+      "value": 0.00591098378291266
+    },
+    {
+      "available": true,
       "display": "Run 1, a replicate of all five models",
       "key": "rca.run.1.summary"
     },
@@ -5265,7 +5301,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.022 per question, mean",
+      "display": "a mean of $0.022 per question",
       "key": "rca.within.A.cost.total",
       "value": 0.021802500000000002
     },
@@ -5277,7 +5313,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.3 s per question, mean",
+      "display": "a mean of 0.3 s per question",
       "key": "rca.within.A.time.other.seconds",
       "value": 0.3
     },
@@ -5289,7 +5325,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "6.2 s per question, mean",
+      "display": "a mean of 6.2 s per question",
       "key": "rca.within.A.time.outputGeneration.seconds",
       "value": 6.185
     },
@@ -5301,7 +5337,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 s per question, mean",
+      "display": "a mean of 0.0 s per question",
       "key": "rca.within.A.time.ownWaits.seconds",
       "value": 0
     },
@@ -5313,7 +5349,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1.5 s per question, mean",
+      "display": "a mean of 1.5 s per question",
       "key": "rca.within.A.time.toolExecution.seconds",
       "value": 1.5
     },
@@ -5325,13 +5361,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10.5 s per question, mean",
+      "display": "a mean of 10.5 s per question",
       "key": "rca.within.A.time.total",
       "value": 10.530000000000001
     },
     {
       "available": true,
-      "display": "2.5 s per question, mean",
+      "display": "a mean of 2.5 s per question",
       "key": "rca.within.A.time.ttft.seconds",
       "value": 2.545
     },
@@ -5367,7 +5403,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.031 per question, mean",
+      "display": "a mean of $0.031 per question",
       "key": "rca.within.B.cost.total",
       "value": 0.0307925
     },
@@ -5379,7 +5415,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.3 s per question, mean",
+      "display": "a mean of 0.3 s per question",
       "key": "rca.within.B.time.other.seconds",
       "value": 0.3
     },
@@ -5391,7 +5427,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "7.0 s per question, mean",
+      "display": "a mean of 7.0 s per question",
       "key": "rca.within.B.time.outputGeneration.seconds",
       "value": 7.015
     },
@@ -5403,7 +5439,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 s per question, mean",
+      "display": "a mean of 0.0 s per question",
       "key": "rca.within.B.time.ownWaits.seconds",
       "value": 0
     },
@@ -5415,7 +5451,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1.5 s per question, mean",
+      "display": "a mean of 1.5 s per question",
       "key": "rca.within.B.time.toolExecution.seconds",
       "value": 1.5
     },
@@ -5427,13 +5463,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "12.0 s per question, mean",
+      "display": "a mean of 12.0 s per question",
       "key": "rca.within.B.time.total",
       "value": 11.98
     },
     {
       "available": true,
-      "display": "3.2 s per question, mean",
+      "display": "a mean of 3.2 s per question",
       "key": "rca.within.B.time.ttft.seconds",
       "value": 3.165
     },
@@ -5469,7 +5505,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.041 per question, mean",
+      "display": "a mean of $0.041 per question",
       "key": "rca.within.C.cost.total",
       "value": 0.0409825
     },
@@ -5481,7 +5517,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.3 s per question, mean",
+      "display": "a mean of 0.3 s per question",
       "key": "rca.within.C.time.other.seconds",
       "value": 0.3
     },
@@ -5493,7 +5529,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "7.9 s per question, mean",
+      "display": "a mean of 7.9 s per question",
       "key": "rca.within.C.time.outputGeneration.seconds",
       "value": 7.935
     },
@@ -5505,7 +5541,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 s per question, mean",
+      "display": "a mean of 0.0 s per question",
       "key": "rca.within.C.time.ownWaits.seconds",
       "value": 0
     },
@@ -5517,7 +5553,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1.5 s per question, mean",
+      "display": "a mean of 1.5 s per question",
       "key": "rca.within.C.time.toolExecution.seconds",
       "value": 1.5
     },
@@ -5529,13 +5565,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "13.5 s per question, mean",
+      "display": "a mean of 13.5 s per question",
       "key": "rca.within.C.time.total",
       "value": 13.530000000000001
     },
     {
       "available": true,
-      "display": "3.8 s per question, mean",
+      "display": "a mean of 3.8 s per question",
       "key": "rca.within.C.time.ttft.seconds",
       "value": 3.795
     },
@@ -5571,7 +5607,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.052 per question, mean",
+      "display": "a mean of $0.052 per question",
       "key": "rca.within.D.cost.total",
       "value": 0.052372499999999995
     },
@@ -5583,7 +5619,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.3 s per question, mean",
+      "display": "a mean of 0.3 s per question",
       "key": "rca.within.D.time.other.seconds",
       "value": 0.3
     },
@@ -5595,7 +5631,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "8.8 s per question, mean",
+      "display": "a mean of 8.8 s per question",
       "key": "rca.within.D.time.outputGeneration.seconds",
       "value": 8.765
     },
@@ -5607,7 +5643,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 s per question, mean",
+      "display": "a mean of 0.0 s per question",
       "key": "rca.within.D.time.ownWaits.seconds",
       "value": 0
     },
@@ -5619,7 +5655,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1.5 s per question, mean",
+      "display": "a mean of 1.5 s per question",
       "key": "rca.within.D.time.toolExecution.seconds",
       "value": 1.5
     },
@@ -5631,13 +5667,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "15.0 s per question, mean",
+      "display": "a mean of 15.0 s per question",
       "key": "rca.within.D.time.total",
       "value": 14.98
     },
     {
       "available": true,
-      "display": "4.4 s per question, mean",
+      "display": "a mean of 4.4 s per question",
       "key": "rca.within.D.time.ttft.seconds",
       "value": 4.415
     },
@@ -5673,7 +5709,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.014 per question, mean",
+      "display": "a mean of $0.014 per question",
       "key": "rca.within.subject.cost.total",
       "value": 0.0140125
     },
@@ -5685,7 +5721,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.3 s per question, mean",
+      "display": "a mean of 0.3 s per question",
       "key": "rca.within.subject.time.other.seconds",
       "value": 0.3
     },
@@ -5697,7 +5733,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "5.3 s per question, mean",
+      "display": "a mean of 5.3 s per question",
       "key": "rca.within.subject.time.outputGeneration.seconds",
       "value": 5.265
     },
@@ -5709,7 +5745,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 s per question, mean",
+      "display": "a mean of 0.0 s per question",
       "key": "rca.within.subject.time.ownWaits.seconds",
       "value": 0
     },
@@ -5721,7 +5757,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1.5 s per question, mean",
+      "display": "a mean of 1.5 s per question",
       "key": "rca.within.subject.time.toolExecution.seconds",
       "value": 1.5
     },
@@ -5733,13 +5769,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "9.0 s per question, mean",
+      "display": "a mean of 9.0 s per question",
       "key": "rca.within.subject.time.total",
       "value": 8.98
     },
     {
       "available": true,
-      "display": "1.9 s per question, mean",
+      "display": "a mean of 1.9 s per question",
       "key": "rca.within.subject.time.ttft.seconds",
       "value": 1.915
     },
@@ -7015,7 +7051,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 8,
+    "engineVersion": 9,
     "evidence": [
       {
         "atRisk": [
@@ -9956,6 +9992,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 131 · format version 18 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 19 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

@@ -119,7 +119,13 @@ public sealed record BenchmarkReportSlotWordCount(
 /// exist, is dropped; rule 36, a warning, wants the conclusions to cite every axis's status. An answer slot
 /// is required only for a question the sheet asks
 /// (<see cref="RootCauseClaimSupport.Questions"/>). Rule 31 applies to it in both scopes, a hypothesis's
-/// label excepted, and rule 4 wants a topic for every question it cites whose text the writer was given.</para>
+/// label excepted, and rule 4 wants a topic for every question it cites whose text the writer was given. Rule 38
+/// (<see cref="RootCauseShareBesideRefRule"/>), a warning, flags a hypothesis's share beside a range or a list of other
+/// hypotheses' references.</para>
+///
+/// <para>Rule 39 (<see cref="CountRepetitionRule"/>), a warning in every scope, flags the writer's own words that repeat,
+/// beside a count token, what its display already says it counts; rule 31's run of counts is flagged only where one of
+/// them is bare.</para>
 ///
 /// <para>A chat consistency sheet (<see cref="BenchmarkReportFactSheet.IsChatConsistency"/>) is checked
 /// against its audience's chat consistency slots and word caps, with the claim discipline of rules
@@ -278,6 +284,44 @@ public static class BenchmarkReportPackValidator
     /// </summary>
     public const int BareModelLetterRule = 37;
 
+    /// <summary>
+    /// Rule 38: in a Root Cause Analysis, a hypothesis's <c>.share</c> token whose nearest following parenthesis, within
+    /// <see cref="ShareParenthesisWindowWords"/> words in its sentence, cites a hypothesis reference other than its own
+    /// <c>.ref</c> alone: a range or a list of hypotheses beside one hypothesis's share. A warning: it asks for the repair
+    /// turn and keeps the text.
+    /// </summary>
+    public const int RootCauseShareBesideRefRule = 38;
+
+    /// <summary>How many words may stand between a share token and the parenthesis rule 38 reads with it.</summary>
+    public const int ShareParenthesisWindowWords = 6;
+
+    /// <summary>
+    /// Rule 39, in every scope: the writer's own words beside a count token repeat what its display already says it
+    /// counts (<see cref="BenchmarkReportFormat.CountQualifier"/>). A warning: it asks for the repair turn and keeps the text.
+    /// </summary>
+    public const int CountRepetitionRule = 39;
+
+    /// <summary>How many of the writer's words before a count token rule 39 reads.</summary>
+    public const int CountRepetitionWordsBefore = 5;
+
+    /// <summary>How many of the writer's words after a count token rule 39 reads.</summary>
+    public const int CountRepetitionWordsAfter = 4;
+
+    /// <summary>Words rule 39 never reads as a repetition, however long.</summary>
+    public static readonly IReadOnlySet<string> CountRepetitionStopWords = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "with", "that", "this", "from", "each", "their", "were", "which"
+    };
+
+    /// <summary>The nouns a count counts, which rule 39 never reads as a repetition.</summary>
+    private static readonly IReadOnlySet<string> CountedNouns = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "answer", "answers", "question", "questions", "run", "runs", "attempt", "attempts", "call", "calls", "check", "checks"
+    };
+
+    /// <summary>A word of the writer's, or a token's placeholder, for rule 39.</summary>
+    private static readonly Regex CountRepetitionWordRegex = new("\u0001\\d+\u0002|[A-Za-z][A-Za-z'-]*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
     // Root Cause Analysis slot caps.
     public const int RootCauseScopeMaxWords = 120;
     public const int RootCauseEvidenceMaxWords = 100;
@@ -303,7 +347,8 @@ public static class BenchmarkReportPackValidator
     public static bool IsWarningRule(int rule)
         => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule or OverlapHedgeRule
             or HypeWordRule or ZeroTokenNegationRule or ModelCoverageRule or ChatInconclusiveMdeRule
-            or ChatRepetitionRule or ComparisonTokenShapeRule or RootCauseAxisStatusRule or BareModelLetterRule;
+            or ChatRepetitionRule or ComparisonTokenShapeRule or RootCauseAxisStatusRule or BareModelLetterRule
+            or RootCauseShareBesideRefRule or CountRepetitionRule;
 
     /// <summary>Words rule 19 reads as a negation, matched as whole words, ignoring case.</summary>
     public static readonly IReadOnlyList<string> NegationWords = new[] { "no", "none", "never", "without", "zero" };
@@ -1463,6 +1508,12 @@ public static class BenchmarkReportPackValidator
         }
         CheckSentenceShapedTokens(ctx, text, location, notes);
 
+        // Rule 38: a hypothesis's share beside another hypothesis's reference.
+        if (ctx.RootCause)
+        {
+            CheckShareBesideRef(ctx, text, location, notes);
+        }
+
         // Rule 17: hype and filler words.
         var hype = HypeWordRegex.Matches(stripped)
             .Select(m => m.Value)
@@ -1478,8 +1529,75 @@ public static class BenchmarkReportPackValidator
         if (negated.Count > 0)
         {
             string found = string.Join("; ", negated.Select(n => $"\"{n.Negation}\" before {{{{{n.Key}}}}}, which reads \"{n.Display}\""));
-            Issue(notes, ZeroTokenNegationRule, location, $"Puts {found}: a token whose value reads 'N of M' is a noun phrase, so a negation before it says none twice. Write '{{{{errors.critical}}}} had a critical error', and to say none occurred, 'no critical errors across all {{{{answers.scored}}}} answers'.");
+            Issue(notes, ZeroTokenNegationRule, location, $"Puts {found}: a token whose value reads 'N of M' is a noun phrase, so a negation before it says none twice. Cite it as a noun phrase, as in 'the model gave {{{{errors.critical}}}}', and to say none occurred, 'no critical errors across all {{{{answers.scored}}}} answers'.");
         }
+
+        // Rule 39: the writer's own words repeat what a count token already says it counts.
+        foreach (var (key, display, repeated) in RepeatedCountWords(ctx, text))
+        {
+            Issue(notes, CountRepetitionRule, location,
+                $"{{{{{key}}}}} already prints '{BenchmarkReportFormat.CountQualifier(display)}'; remove '{string.Join("', '", repeated)}' from beside it: write the token as a noun phrase and never repeat its words.");
+        }
+    }
+
+    /// <summary>
+    /// Rule 39: each count token (<see cref="CountValuedRegex"/>) whose qualifier (<see cref="BenchmarkReportFormat.CountQualifier"/>)
+    /// shares a content word with the writer's own words within <see cref="CountRepetitionWordsBefore"/> words before it or
+    /// <see cref="CountRepetitionWordsAfter"/> after it, in the same sentence; with the token's display and the writer's
+    /// repeated words. A content word has four letters or more, is no word of <see cref="CountRepetitionStopWords"/> and no
+    /// counted noun, and two words match when one's first five letters begin the other's (<c>tools</c>, <c>tool</c>).
+    /// </summary>
+    private static List<(string Key, string Display, List<string> Repeated)> RepeatedCountWords(Context ctx, string? text)
+    {
+        var found = new List<(string Key, string Display, List<string> Repeated)>();
+        if (string.IsNullOrWhiteSpace(text) || !TokenRegex.IsMatch(text)) return found;
+
+        var tokens = new List<string>();
+        string masked = TokenRegex.Replace(text, m =>
+        {
+            tokens.Add(m.Groups[1].Value.Trim());
+            return " \u0001" + (tokens.Count - 1).ToString(CultureInfo.InvariantCulture) + "\u0002 ";
+        });
+
+        static string Stem(string word) => word.ToLowerInvariant()[..Math.Min(5, word.Length)];
+        static bool Content(string word)
+            => word.Length >= 4
+               && !CountRepetitionStopWords.Contains(word.ToLowerInvariant())
+               && !CountedNouns.Contains(word.ToLowerInvariant());
+        static bool Same(string a, string b)
+        {
+            string x = Stem(a), y = Stem(b);
+            return x.StartsWith(y, StringComparison.Ordinal) || y.StartsWith(x, StringComparison.Ordinal);
+        }
+
+        foreach (string sentence in SentenceSplitRegex.Split(masked))
+        {
+            var words = CountRepetitionWordRegex.Matches(sentence).Select(m => m.Value).ToList();
+            for (int i = 0; i < words.Count; i++)
+            {
+                var placeholder = TokenPlaceholderRegex.Match(words[i]);
+                if (!placeholder.Success) continue;
+                string key = tokens[int.Parse(placeholder.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture)];
+                string? display = ctx.FactDisplay(key)?.Trim();
+                if (display == null || !CountValuedRegex.IsMatch(display)) continue;
+                var own = BenchmarkReportFormat.CountQualifier(display)
+                    .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(w => w.Trim(',', ';', '.', '(', ')'))
+                    .Where(Content)
+                    .ToList();
+                if (own.Count == 0) continue;
+
+                // The writer's own words around the token, other tokens left out.
+                var before = words.Take(i).Where(w => !TokenPlaceholderRegex.IsMatch(w)).TakeLast(CountRepetitionWordsBefore);
+                var after = words.Skip(i + 1).Where(w => !TokenPlaceholderRegex.IsMatch(w)).Take(CountRepetitionWordsAfter);
+                var repeated = before.Concat(after)
+                    .Where(w => Content(w) && own.Any(q => Same(q, w)))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+                if (repeated.Count > 0) found.Add((key, display, repeated));
+            }
+        }
+        return found;
     }
 
     /// <summary>
@@ -2122,6 +2240,7 @@ public static class BenchmarkReportPackValidator
                 + "that fact already says who did what, so write it alone as the clause, never with a model or that verb before it.");
         }
 
+        // A run of counts reads as a list of bare figures only where one of them does not say what it counts.
         var lists = new List<string>();
         for (int i = 0; i + 1 < spans.Count; i++)
         {
@@ -2135,7 +2254,11 @@ public static class BenchmarkReportPackValidator
             }
             if (j > i)
             {
-                lists.Add(string.Join(", ", spans.Skip(i).Take(j - i + 1).Select(s => "{{" + s.Key + "}}")));
+                var run = spans.Skip(i).Take(j - i + 1).ToList();
+                if (run.Any(s => BenchmarkReportFormat.CountQualifier(s.Display.Trim()).Length == 0))
+                {
+                    lists.Add(string.Join(", ", run.Select(s => "{{" + s.Key + "}}")));
+                }
                 i = j;
             }
         }
@@ -2173,8 +2296,19 @@ public static class BenchmarkReportPackValidator
         var nested = NestedParentheses(all);
         if (nested.Count > 0)
         {
-            Issue(notes, ComparisonTokenShapeRule, location, $"Puts a parenthesis inside another (\"{string.Join("\", \"", nested)}\"): "
-                + "write the inner remark as a clause or a sentence of its own, and never put a model token inside parentheses, since a model's name carries its own.");
+            // A token whose display holds a parenthesis, inside the outer one, is what brought the inner parenthesis.
+            var bringing = spans
+                .Where(s => IsFactSpan(s) && s.Display.Contains('(') && nested.Any(n => s.Start > n.Start && s.End <= n.End))
+                .Select(s => "{{" + s.Key + "}}")
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            bool modelInside = spans.Any(s => (s.Key.StartsWith("model:", StringComparison.Ordinal) || s.Key.StartsWith("peer:", StringComparison.Ordinal) || s.Key == "subject")
+                                              && nested.Any(n => s.Start > n.Start && s.End <= n.End));
+            string fix = bringing.Count > 0
+                ? $"{string.Join(" and ", bringing)} {(bringing.Count == 1 ? "prints its" : "print their")} own parentheses: write {(bringing.Count == 1 ? "it" : "them")} outside parentheses, as a clause of {(bringing.Count == 1 ? "its" : "their")} own."
+                : "write the inner remark as a clause or a sentence of its own.";
+            if (modelInside) fix += " Never put a model token inside parentheses, since a model's name carries its own.";
+            Issue(notes, ComparisonTokenShapeRule, location, $"Puts a parenthesis inside another (\"{string.Join("\", \"", nested.Select(n => n.Excerpt))}\"): " + fix);
         }
 
         // Rule 31f: two facts joined by 'to' that are not both bare figures in one unit.
@@ -2194,6 +2328,67 @@ public static class BenchmarkReportPackValidator
         {
             Issue(notes, ComparisonTokenShapeRule, location, $"Joins facts with 'to' that are not two bare figures in one unit ({string.Join("; ", joined.Distinct(StringComparer.Ordinal))}): "
                 + "the result repeats the words each value prints; give each fact its own clause, or cite one figure and say in words how the other differs.");
+        }
+    }
+
+    /// <summary>
+    /// Rule 38 on one prose string: each <c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.share</c> token whose nearest following
+    /// parenthesis in its sentence, at most <see cref="ShareParenthesisWindowWords"/> words after it, holds hypothesis
+    /// references other than the share's own <c>.ref</c> alone. Read on the writer's own text, so only the writer's
+    /// parentheses count; one note per share token.
+    /// </summary>
+    private static void CheckShareBesideRef(Context ctx, string text, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        if (string.IsNullOrWhiteSpace(text) || !TokenRegex.IsMatch(text)) return;
+
+        var tokens = new List<string>();
+        string masked = TokenRegex.Replace(text, m =>
+        {
+            tokens.Add(m.Groups[1].Value.Trim());
+            return "\u0001" + (tokens.Count - 1).ToString(CultureInfo.InvariantCulture) + "\u0002";
+        });
+        string KeyAt(Match placeholder) => tokens[int.Parse(placeholder.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture)];
+        static bool IsPart(string key, string part) => RootCauseClaimSupport.HypothesisPrefixOf(key) is string p && string.Equals(p + part, key, StringComparison.Ordinal);
+
+        var reported = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string sentence in SentenceSplitRegex.Split(masked))
+        {
+            foreach (Match share in TokenPlaceholderRegex.Matches(sentence))
+            {
+                string key = KeyAt(share);
+                if (!IsPart(key, "share")) continue;
+                string prefix = RootCauseClaimSupport.HypothesisPrefixOf(key)!;
+
+                int open = sentence.IndexOf('(', share.Index + share.Length);
+                if (open < 0) continue;
+                string gap = sentence[(share.Index + share.Length)..open];
+                if (TokenPlaceholderRegex.Matches(gap).Any(m => IsPart(KeyAt(m), "share"))) continue;
+                if (TokenPlaceholderRegex.Replace(gap, " x ").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length > ShareParenthesisWindowWords) continue;
+
+                int depth = 0, close = sentence.Length;
+                for (int i = open; i < sentence.Length; i++)
+                {
+                    if (sentence[i] == '(') depth++;
+                    else if (sentence[i] == ')' && --depth == 0)
+                    {
+                        close = i;
+                        break;
+                    }
+                }
+                var refs = TokenPlaceholderRegex.Matches(sentence[open..close]).Select(KeyAt).Where(k => IsPart(k, "ref")).ToList();
+                string own = prefix + "ref";
+                if (refs.Count == 0 || (refs.Count == 1 && string.Equals(refs[0], own, StringComparison.Ordinal))) continue;
+                if (!reported.Add(key)) continue;
+
+                string ruleId = prefix.Split('.')[2];
+                string span = "rca.rule." + ruleId + ".shareSpan";
+                string group = ctx.FactKeys.Contains(span)
+                    ? $" Describe a group of hypotheses by {{{{{span}}}}} beside their reference range."
+                    : " Give each other hypothesis its own share beside its own reference.";
+                Issue(notes, RootCauseShareBesideRefRule, location,
+                    $"Places {{{{{key}}}}} beside {string.Join(", ", refs.Distinct(StringComparer.Ordinal).Select(r => "{{" + r + "}}"))}: "
+                    + $"a share is its own hypothesis's only, so cite it beside {{{{{own}}}}} alone, never beside a range or a list of hypotheses, and never write 'led by' a share." + group);
+            }
         }
     }
 
@@ -2248,10 +2443,13 @@ public static class BenchmarkReportPackValidator
         => !span.Key.StartsWith("model:", StringComparison.Ordinal) && !span.Key.StartsWith("peer:", StringComparison.Ordinal)
            && span.Key != "subject" && !span.Display.StartsWith("{{", StringComparison.Ordinal);
 
-    /// <summary>Each outermost parenthetical of <paramref name="text"/> that holds another parenthesis, at most eighty characters of it.</summary>
-    private static List<string> NestedParentheses(string text)
+    /// <summary>
+    /// Each outermost parenthetical of <paramref name="text"/> that holds another parenthesis: where it starts and ends,
+    /// and at most eighty characters of it; one entry per distinct excerpt.
+    /// </summary>
+    private static List<(int Start, int End, string Excerpt)> NestedParentheses(string text)
     {
-        var found = new List<string>();
+        var found = new List<(int Start, int End, string Excerpt)>();
         int depth = 0;
         int start = -1;
         bool nested = false;
@@ -2273,11 +2471,11 @@ public static class BenchmarkReportPackValidator
             else if (text[i] == ')' && depth > 0)
             {
                 depth--;
-                if (depth == 0 && nested) found.Add(Clip(text[start..(i + 1)]));
+                if (depth == 0 && nested) found.Add((start, i + 1, Clip(text[start..(i + 1)])));
             }
         }
-        if (depth > 0 && nested) found.Add(Clip(text[start..]));
-        return found.Distinct(StringComparer.Ordinal).ToList();
+        if (depth > 0 && nested) found.Add((start, text.Length, Clip(text[start..])));
+        return found.GroupBy(f => f.Excerpt, StringComparer.Ordinal).Select(g => g.First()).ToList();
 
         static string Clip(string s) => s.Length <= 80 ? s : s[..80] + "…";
     }

@@ -737,7 +737,6 @@ public class RootCauseValidatorTests
     [Theory]
     [InlineData("{{model:A}} took {{pair.A.B.speed.ratio}}.")]
     [InlineData("The panel agreed ({{notable.1.summary}})")]
-    [InlineData("{{model:B}} answered {{model.B.vsReference.better}}, {{model.B.vsReference.similar}}, {{model.B.vsReference.worse}}.")]
     [InlineData("{{notable.1.summary}} because the panel agreed.")]
     public void Rule31_FlagsMisusedFactShapes_AsAWarning(string paragraph)
     {
@@ -746,6 +745,56 @@ public class RootCauseValidatorTests
         var note = Assert.Single(notes, n => n.Rule == BenchmarkReportPackValidator.ComparisonTokenShapeRule);
         Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
         Assert.False(note.Dropped);
+    }
+
+    /// <summary>The fixture comparison's Executive Summary with <paramref name="overview"/>, its sheet changed first by <paramref name="change"/>.</summary>
+    private static IReadOnlyList<BenchmarkReportValidationNote> ValidateExecutive(string overview, Action<BenchmarkReportFactSheet> change)
+    {
+        var sheet = BenchmarkReportPackFixture.ComparisonFacts().Sheet!;
+        change(sheet);
+        var content = BenchmarkReportPackFixture.ComparisonFacts().Content!;
+        var output = BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, sheet);
+        output.Sections[BenchmarkReportSlots.Overview] = overview;
+        return BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.ExecutiveSummary, output, sheet, content);
+    }
+
+    [Fact]
+    public void Rule31_FlagsARunOfCounts_OnlyWhereOneOfThemIsBare()
+    {
+        const string run = "{{model:B}} answered {{model.B.vsReference.better}}, {{model.B.vsReference.similar}}, {{model.B.vsReference.worse}}.";
+        static bool Listed(BenchmarkReportValidationNote n)
+            => n.Rule == BenchmarkReportPackValidator.ComparisonTokenShapeRule && n.Message.StartsWith("Lists counts in a row", StringComparison.Ordinal);
+
+        // Every count says what it counts: the run reads.
+        Assert.DoesNotContain(ValidateExecutive(run), Listed);
+
+        // A display stored before counts said what they count is bare: the run is a list of figures.
+        var bare = ValidateExecutive(run, sheet => sheet.Facts.Single(f => f.Key == "model.B.vsReference.similar").Display = "5 of 6 questions");
+        Assert.Single(bare, Listed);
+    }
+
+    [Theory]
+    [InlineData("{{model:A}} kept answering without tools on {{model.A.profile.noToolAnswers}}.", "without', 'tools")]
+    [InlineData("{{model:A}} gave {{model.A.profile.noToolAnswers}} without tool calls.", "without', 'tool")]
+    [InlineData("{{model:A}} hit a tool limit on {{model.A.profile.toolLimitHits}}, hitting the limit often.", "tool', 'limit")]
+    [InlineData("{{model:A}} recorded {{model.A.errors.critical}} with a critical error.", "critical', 'error")]
+    public void Rule39_FlagsWordsBesideACountThatRepeatWhatItCounts_AsAWarning(string overview, string repeated)
+    {
+        var note = Assert.Single(ValidateExecutive(overview), n => n.Rule == BenchmarkReportPackValidator.CountRepetitionRule);
+
+        Assert.Contains("'" + repeated + "'", note.Message, StringComparison.Ordinal);
+        Assert.Contains("already prints '", note.Message, StringComparison.Ordinal);
+        Assert.False(note.Dropped);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(BenchmarkReportPackValidator.CountRepetitionRule));
+        Assert.Equal("Words repeated beside a count", BenchmarkReportRuleCatalog.Name(BenchmarkReportPackValidator.CountRepetitionRule));
+    }
+
+    [Theory]
+    [InlineData("{{model:A}} wrote {{model.A.profile.noToolAnswers}}, more than any other model.")]
+    [InlineData("Without tools, {{model:A}} answered few questions well; it gave {{model.A.errors.critical}}.")]
+    public void Rule39_LeavesACountWrittenAsANounPhraseAlone(string overview)
+    {
+        Assert.DoesNotContain(ValidateExecutive(overview), n => n.Rule == BenchmarkReportPackValidator.CountRepetitionRule);
     }
 
     [Theory]
@@ -886,7 +935,14 @@ public class RootCauseValidatorTests
         Assert.Equal(BenchmarkReportRuleCatalog.WarningTextKeptSeverity, BenchmarkReportRuleCatalog.ToIssueDto(note).Severity);
     }
 
-    // --- HeadlineIssues (v1) ---------------------------------------------------------------------------
+    [Fact]
+    public void LocationLabel_NamesTheBareSectionsLocationOfAStoredShorteningNote()
+    {
+        Assert.Equal("The capped sections", BenchmarkReportRuleCatalog.LocationLabel("sections"));
+        Assert.Equal("Conclusions", BenchmarkReportRuleCatalog.LocationLabel("sections.conclusions", BenchmarkReportSlots.RootCauseSlotTitles));
+    }
+
+    // --- HeadlineIssues (v1)---------------------------------------------------------------------------
 
     [Fact]
     public void HeadlineIssues_BlocksAHeadlineOfThirtySixWords_AndPassesThirtyFive()

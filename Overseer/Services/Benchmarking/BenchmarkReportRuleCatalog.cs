@@ -219,6 +219,16 @@ public static class BenchmarkReportRuleCatalog
             BenchmarkReportRuleSeverity.Warning,
             "The text was kept; a named copy prints the models' names in place of the letters where it can.",
             "Replace every Model X or Models X and Y with the models' model tokens."),
+        R(BenchmarkReportPackValidator.RootCauseShareBesideRefRule, "Share beside another hypothesis",
+            "A hypothesis's share stands beside its own reference only, never beside a range or a list of hypotheses.",
+            BenchmarkReportRuleSeverity.Warning,
+            "The text was kept, but the share it prints belongs to one hypothesis, not to every hypothesis cited beside it.",
+            "Cite a share beside its own hypothesis's .ref token alone, and describe a group of hypotheses by its rule's shareSpan token beside their reference range."),
+        R(BenchmarkReportPackValidator.CountRepetitionRule, "Words repeated beside a count",
+            "A count token already says what it counts, so the words beside it do not say it again.",
+            BenchmarkReportRuleSeverity.Warning,
+            "The text was kept, but it says twice what the count counts.",
+            "Write each count token as a noun phrase and remove the words beside it that repeat what it already prints."),
     }.ToDictionary(r => r.Rule);
 
     private static readonly IReadOnlyDictionary<string, string> ListLabels = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -333,6 +343,7 @@ public static class BenchmarkReportRuleCatalog
     {
         if (string.IsNullOrWhiteSpace(location)) return string.Empty;
         if (string.Equals(location, "headline", StringComparison.Ordinal)) return "Headline";
+        if (string.Equals(location, "sections", StringComparison.Ordinal)) return "The capped sections";
         if (ListLabels.TryGetValue(location, out string? listOnly)) return listOnly;
 
         Match section = ParagraphLocationRegex.Match(location);

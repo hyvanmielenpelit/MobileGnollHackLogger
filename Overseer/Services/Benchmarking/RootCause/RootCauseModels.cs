@@ -676,7 +676,7 @@ public sealed class RootCauseHypothesis
 /// <summary>One robustness check of a hypothesis.</summary>
 public sealed class RootCauseRobustnessCheck
 {
-    /// <summary><c>Leave one question out</c>, <c>Across suites</c>, <c>Replicates</c>, <c>Panel agreement</c> or <c>Configuration</c>.</summary>
+    /// <summary><c>Leave one question out</c>, <c>Across suites</c>, <c>Replicates</c>, <c>Panel agreement</c>, <c>Configuration</c> or <c>Share interval</c>.</summary>
     public string Name { get; set; } = string.Empty;
 
     /// <summary>One of <see cref="RootCauseCheckStatuses"/>.</summary>

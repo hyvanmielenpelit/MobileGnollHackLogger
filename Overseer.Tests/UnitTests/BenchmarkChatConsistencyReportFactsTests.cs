@@ -875,8 +875,8 @@ public class BenchmarkChatConsistencyReportFactsTests
         Assert.Equal("mean 9,044 output tokens per answer", Fact(sheet, "level.baseline.outputTokens").Display);
         Assert.Equal("mean $0.0071 per question", Fact(sheet, "level.baseline.costPerQuestion").Display);
         Assert.Equal("mean $0.10 per question", Fact(sheet, "level.comparison.costPerQuestion").Display);
-        Assert.Equal("0 of 36 answers", Fact(sheet, "level.baseline.failedAnswers").Display);
-        Assert.Equal("1 of 36 answers", Fact(sheet, "level.comparison.failedAnswers").Display);
+        Assert.Equal("0 of 36 answers that failed", Fact(sheet, "level.baseline.failedAnswers").Display);
+        Assert.Equal("1 of 36 answers that failed", Fact(sheet, "level.comparison.failedAnswers").Display);
         Assert.False(Fact(sheet, "level.comparison.overallIndex").Available);
 
         var earlier = BenchmarkChatConsistencyReportFacts.Build(Result(), BenchmarkReportAudience.ExecutiveSummary);
@@ -1143,9 +1143,9 @@ public class BenchmarkChatConsistencyReportFactsTests
         var sheet = BenchmarkChatConsistencyReportFacts.Build(V2Result(), BenchmarkReportAudience.ExecutiveSummary);
 
         Assert.Equal("0.81% (12 of 1,480 attempts; 95% CI 0.46–1.4%)", Fact(sheet, "availability.baseline.providerErrorRate").Display);
-        Assert.Equal("12 of 1,480 attempts", Fact(sheet, "availability.baseline.providerErrors").Display);
+        Assert.Equal("12 of 1,480 attempts that ended in a provider error", Fact(sheet, "availability.baseline.providerErrors").Display);
         Assert.Equal("1,480 valid attempts", Fact(sheet, "availability.baseline.attempts").Display);
-        Assert.Equal("3 of 1,480 attempts", Fact(sheet, "availability.baseline.unattributedErrors").Display);
+        Assert.Equal("3 of 1,480 attempts that ended in an error not attributed to the provider", Fact(sheet, "availability.baseline.unattributedErrors").Display);
         Assert.Equal("1 re-run (1 for provider errors)", Fact(sheet, "availability.baseline.reruns").Display);
         Assert.Equal("recorded for 2 of 2 runs", Fact(sheet, "availability.baseline.recordedRuns").Display);
         foreach (string measure in BenchmarkChatConsistencyReportFacts.AvailabilityMeasures)

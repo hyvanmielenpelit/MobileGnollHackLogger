@@ -27,7 +27,7 @@ NUMBERS AND NAMES:
 - Refer to the model under evaluation as {{subject}}. Refer to another model only as {{peer:X}}, where X is its letter from PEERS, for example {{peer:A}}.
 - Any other {{...}} token is an error.
 - Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as "1st". Number words such as "three" or "twice" are allowed for a plain count, but prefer a fact token for any figure.
-- A token whose value reads 'N of M' is a noun phrase: '{{errors.critical}} had a critical error'. Never put it after 'no' or make it the object of 'made'; to say none occurred, write 'no critical errors across all {{answers.scored}} answers'.
+- A token whose value reads 'N of M' is a noun phrase: 'the model gave {{errors.critical}}'. Never put it after 'no' or make it the object of 'made'; to say none occurred, write 'no critical errors across all {{answers.scored}} answers'.
 - Refer to a question as Q followed by its number from the QUESTIONS block, for example Q7. This is the only form in which a digit may appear.
 - Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader). In the Executive Summary say 'one grader' or 'both graders' instead.
 - Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.

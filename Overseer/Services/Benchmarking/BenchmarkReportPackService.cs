@@ -1619,15 +1619,15 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                             turnFailure = null;
                             if (usedSlots)
                             {
-                                bool one = shortened.Count == 1;
-                                rescues.Add(new BenchmarkReportValidationNote
+                                // A section still over its cap is trimmed by DropInvalid, which records its own note.
+                                foreach (var c in shortened)
                                 {
-                                    Rule = 7,
-                                    Location = "sections",
-                                    Dropped = false,
-                                    Message = $"{JoinAnd(shortened.Select(c => c.LocationLabel))} {(one ? "was" : "were")} over {(one ? "its cap" : "their caps")} after the repair; "
-                                        + $"{(one ? "it was" : "they were")} shortened in a final turn."
-                                });
+                                    int before = c.Words ?? 0;
+                                    int now = shortenedCounts[c.Slot];
+                                    job.AddLog($"{name}: {c.LocationLabel} was {Number(before)} words, {Number(before - c.Cap)} over its cap of {Number(c.Cap)}, "
+                                        + $"after the repair; the shortening turn brought it to {Number(now)}"
+                                        + (now > c.Cap ? ", still over its cap." : "."), "info");
+                                }
                             }
                             if (usedHeadline)
                             {
@@ -1698,8 +1698,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Storing);
 
         // A warning note (BenchmarkReportPackValidator.IsWarningRule) keeps its text but still marks the document, and so do
-        // a word-cap note recorded against kept text (a section kept over its cap, or shortened in the final turn) and a
-        // chat consistency document-level note (C6 or C7 recorded against the kept text).
+        // a word-cap note recorded against kept text (a section kept over its cap) and a chat consistency document-level
+        // note (C6 or C7 recorded against the kept text).
         bool chatConsistency = prep.Scope == BenchmarkReportScope.ChatConsistency;
         var status = notes.Any(n => n.Dropped || BenchmarkReportPackValidator.IsWarningRule(n.Rule) || IsKeptWordCapNote(n)
                                     || (chatConsistency && IsChatConsistencyDocumentNote(n)))
@@ -2043,7 +2043,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     private static bool IsSlotCapNote(BenchmarkReportValidationNote note)
         => note.Rule == 7 && note.Location.StartsWith("sections.", StringComparison.Ordinal) && !note.Location.Contains('[', StringComparison.Ordinal);
 
-    /// <summary>A rule-7 note recorded against kept text: a section kept over its cap, or shortened in the final turn.</summary>
+    /// <summary>A rule-7 note recorded against kept text: a section kept over its cap.</summary>
     private static bool IsKeptWordCapNote(BenchmarkReportValidationNote note)
         => note.Rule == 7 && !note.Dropped && note.Location.StartsWith("sections", StringComparison.Ordinal);
 

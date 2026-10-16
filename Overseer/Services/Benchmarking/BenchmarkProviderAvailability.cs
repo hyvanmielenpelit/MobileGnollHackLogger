@@ -428,10 +428,18 @@ public static class BenchmarkProviderAvailability
 
     /// <summary>
     /// The count with its denominator: <c>12 of 1,480 attempts</c>; <c>1 of 1 attempt</c> when
-    /// <paramref name="n"/> is 1. Numbers use the "," thousands separator and no decimals.
+    /// <paramref name="n"/> is 1; with <paramref name="qualifier"/>, what it counts after the noun
+    /// (<c>12 of 1,480 attempts that ended in a provider error</c>). Numbers use the "," thousands separator
+    /// and no decimals.
     /// </summary>
-    public static string FormatCount(int k, int n) =>
-        FormatInteger(k) + " of " + FormatInteger(n) + (n == 1 ? " attempt" : " attempts");
+    public static string FormatCount(int k, int n, string? qualifier = null) =>
+        BenchmarkReportFormat.CountOf(k, n, "attempts", qualifier, separators: true);
+
+    /// <summary>What an <c>availability.providerErrors</c> count counts, after its noun.</summary>
+    public const string ProviderErrorQualifier = "that ended in a provider error";
+
+    /// <summary>What an <c>availability.unattributedErrors</c> count counts, after its noun.</summary>
+    public const string UnattributedErrorQualifier = "that ended in an error not attributed to the provider";
 
     /// <summary>
     /// The interval <c>95% CI 0.46–1.4%</c>: each bound by <see cref="FormatPercentNumber"/>, joined

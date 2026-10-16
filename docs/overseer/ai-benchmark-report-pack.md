@@ -351,9 +351,11 @@ the retired audiences (§ 17); their numbers stay unused.
 | 28 | **C7**, Provider Issue Report only: a model or serving term (`ChatModelServingTerms`) needs a provider-side attribution token, except in `affectedModel` and `sampleRequestIds`; and `ruledOut` cites a token of every `events.<n>` (`ChatProviderReportRule`). An error; the second half cannot drop text and marks the document *Completed with warnings* |
 | 29 | **C8**, *readable text*, chat consistency only: the headline and every paragraph hold no run of twelve or more hex digits, no JSON (`{"`), no `OverseerEventKinds` identifier (`CandidateSystemPromptSha256`, `CorpusIndexFingerprintsJson`…) as a whole word, and no token of a fact kept from the writer (`BenchmarkChatConsistencyReportFacts.WriterHidden`: `analysis.inputSha256` and an older sheet's raw `events.<n>.from` / `.to`; and the sheet's own `WriterHiddenKeys`, § 16) (`ChatReadableTextRule`). One note names every offending token. An error: the paragraph is dropped |
 | 30 | **C9**, *repetition*, chat consistency only: read with every fact token replaced by its display value, the headline and every paragraph hold no *A and A, respectively* whose two operands are the same words, ignoring case, and no full stop followed by a lower-case *and* inside one sentence — a sentence-valued fact spliced into a sentence — outside abbreviations such as *e.g.*, *i.e.*, *etc.*, *vs.*, *cf.*, *approx.*, *incl.* and *resp.* (`ChatRepetitionRule`). One note per kind, quoting the offending text. A **warning**: it asks for the repair turn and marks the document *Completed with warnings*, but never drops a paragraph |
-| 31 | *Token shape* (`ComparisonTokenShapeRule`), comparison scope and every Root Cause Analysis (both scopes), not a per-model Executive Summary: read with every token resolved to its display (a model token to *Model X*), the text holds **(a)** no full stop followed by a lower-case letter, outside abbreviations such as *e.g.* and *vs.* — a sentence-valued fact continued after its full stop; **(b)** no sentence-valued fact (a display that starts with a capital and ends with a full stop, every `notable.<n>.summary` among them) placed anywhere but at the start of a sentence, a paragraph or a list item, or just before `)`; **(c)** no clause-valued fact (*"Model A took 1.49 times as long as Model F …"*) right after a model or its own verb (*"Model A took {{…}}"*); and **(d)** no run of two or more *N of M* counts, two or more `rca.axis.<axis>.status` tokens, or two or more hypothesis grade tokens, separated only by commas, semicolons or *and* (in or out of parentheses), which leaves the reader guessing what each one is; and, in a Root Cause Analysis only, **(e)** no sentence-shaped fact (`RootCauseClaimSupport.IsSentenceShaped`: a hypothesis's statement, *for*, *against*, *refuted if* and grade reasons, a known fact, a check, a question's text and signals, a profile's joined flags, a notable finding's summary, the response-style conflict, an axis's price note) after words of the writer's own sentence — it stands alone, or after a colon or a list marker; a label, a single flag and a check's `.summary` are noun phrases and exempt, and the fix for `{{rca.check.<n>}}` says to cite `{{rca.check.<n>.summary}}` inside a sentence instead. **(a)** names the token whose full stop the writer continued (the last token ending before it). A token display that starts a sentence is sentence-cased (`BenchmarkReportSentenceCase.UpperFirst`) before the check, as the renderer prints it, so (a) fires only on the writer's own lower-case word, never on a fact such as *"none recorded."*; the abbreviations come from `BenchmarkReportSentenceCase.Abbreviations`. One note per token occurrence: where (a) fires on a token (b) or (e) also flags, only (a) is recorded, with (b)'s fix appended. Excerpts widen to the nearest whitespace, so they never cut a word in half. A **warning**: it asks for the repair turn and keeps the text |
+| 31 | *Token shape* (`ComparisonTokenShapeRule`), comparison scope and every Root Cause Analysis (both scopes), not a per-model Executive Summary: read with every token resolved to its display (a model token to *Model X*), the text holds **(a)** no full stop followed by a lower-case letter, outside abbreviations such as *e.g.* and *vs.* — a sentence-valued fact continued after its full stop; **(b)** no sentence-valued fact (a display that starts with a capital and ends with a full stop, every `notable.<n>.summary` among them) placed anywhere but at the start of a sentence, a paragraph or a list item, or just before `)`; **(c)** no clause-valued fact (*"Model A took 1.49 times as long as Model F …"*) right after a model or its own verb (*"Model A took {{…}}"*); and **(d)** no run of two or more *N of M* counts of which at least one is bare (its display is exactly its `BenchmarkReportFormat.CountHead`, as a display stored before format 23 is; a run of counts that each say what they count reads, format 23), two or more `rca.axis.<axis>.status` tokens, or two or more hypothesis grade tokens, separated only by commas, semicolons or *and* (in or out of parentheses), which leaves the reader guessing what each one is; and, in a Root Cause Analysis only, **(e)** no sentence-shaped fact (`RootCauseClaimSupport.IsSentenceShaped`: a hypothesis's statement, *for*, *against*, *refuted if* and grade reasons, a known fact, a check, a question's text and signals, a profile's joined flags, a notable finding's summary, the response-style conflict, an axis's price note) after words of the writer's own sentence — it stands alone, or after a colon or a list marker; a label, a single flag and a check's `.summary` are noun phrases and exempt, and the fix for `{{rca.check.<n>}}` says to cite `{{rca.check.<n>.summary}}` inside a sentence instead. **(a)** names the token whose full stop the writer continued (the last token ending before it). A token display that starts a sentence is sentence-cased (`BenchmarkReportSentenceCase.UpperFirst`) before the check, as the renderer prints it, so (a) fires only on the writer's own lower-case word, never on a fact such as *"none recorded."*; the abbreviations come from `BenchmarkReportSentenceCase.Abbreviations`. One note per token occurrence: where (a) fires on a token (b) or (e) also flags, only (a) is recorded, with (b)'s fix appended. Excerpts widen to the nearest whitespace, so they never cut a word in half. In a Root Cause Analysis a parenthesis inside another is flagged too; its message names the token whose display brought the inner parenthesis (*"{{pair.A.C.configDifferences}} prints its own parentheses: write it outside parentheses, as a clause of its own."*), and adds *"never put a model token inside parentheses"* only when a model token sits inside the outer one. A **warning**: it asks for the repair turn and keeps the text |
 | 32–36 | Root Cause Analysis only: the claim discipline of § 17 (`RootCauseEvidenceCausalRule`, `RootCauseCausalClaimRule`, `RootCauseCertaintyRule`, `RootCauseWriterHypothesisRule`, `RootCauseAxisStatusRule`; 36 is a warning) |
 | 37 | *Bare model letter* (`BareModelLetterRule`), comparison scope only: read with every token stripped, the prose holds no *Model X* or *Models X and Y* (`\bModels? [A-Z]{1,2}\b`, case-sensitive) — a model is named only through its `{{model:X}}` token, in every slot and list, the writer's hypotheses included. A **warning**: it asks for the repair turn and keeps the text; a named copy renders a bare letter that resolves to a peer as the model's name |
+| 38 | *Share beside another hypothesis* (`RootCauseShareBesideRefRule`), Root Cause Analysis only: a `{{rca.hypothesis.<id>.<n>.share}}` token whose nearest following parenthesis, at most six words on in the same sentence and read on the writer's own text, cites any hypothesis reference other than its own `.ref` alone — a range or a list (*"45% of the gap (HQ1.1–HQ1.3)"*). The message names the share and the references and points to `{{rca.rule.<id>.shareSpan}}` where the sheet has it. A **warning**: it asks for the repair turn and keeps the text |
+| 39 | *Words repeated beside a count* (`CountRepetitionRule`), every scope: a count token whose qualifier (`BenchmarkReportFormat.CountQualifier`) shares a content word with the writer's own words within five words before it or four after it, in the same sentence. A content word has four letters or more, is no word of `CountRepetitionStopWords` (*with, that, this, from, each, their, were, which*) and no counted noun (*answers, questions, runs, attempts, calls, checks*), and two words match when the first five letters of one begin the other (*tools*, *tool*). The message quotes what the token prints and the repeated words. A **warning**: it asks for the repair turn and keeps the text |
 
 Rules 2, 3, 8, 9, 10, 11, 12, 16, 17 and 19 apply to every prose string: the headline, each paragraph of
 each slot, and the text of every item and topic. Rule 13 applies to each paragraph of the Executive
@@ -367,8 +369,21 @@ Executive Summary keeps its plain-language rule. The comparison-scope prompts an
 Analysis prompt, and their repair messages, also carry the **token-shape reminders** rule 31 checks
 (`BenchmarkReportPackPrompt.TokenShapeReminders`): a sentence-valued fact is a sentence of its own, at
 most once, never inside parentheses and never continued after its full stop; a fact whose value names a
-model and a verb is written alone as the clause; and several *N of M* tokens are never listed in a row
-without saying what each counts.
+model and a verb is written alone as the clause; and a count token already says what it counts, so it
+is written as a noun phrase with none of its words repeated beside it (rule 39).
+
+**Counts say what they count** (format 23, per-model format 19, chat consistency format 6). Every *N of
+M* fact a writer can cite prints its own qualifier after its noun, built by
+`BenchmarkReportFormat.CountOf(count, total, noun, qualifier)`: *"9 of 36 answers without a tool call"*,
+*"1 of 36 answers with a critical error"*, *"4 of 4 questions with a scored answer"*, *"12 of 1,480
+attempts that ended in a provider error"*. The qualifier states exactly what the count counts, from the
+key's label. The display still starts with the count, so rule 19's zero test and rule 31's count test
+read it as before. Tables and code-written lines whose own words say what is counted print
+`BenchmarkReportFormat.CountHead(display)`, the leading *"k of n &lt;noun&gt;"* with a share in
+parentheses that ends the display (*"3 of 36 valid attempts (8%)"*); a display stored before this, bare,
+passes through whole. Displays that already said what they count are unchanged:
+`outcome.wrongInsteadOfAbstaining`, `<p>legacyRuns`, `availability.<p>.recordedRuns`,
+`availability.attempts` and the Root Cause Analysis flag texts.
 
 **Repair and drop policy.**
 
@@ -446,9 +461,14 @@ without saying what each counts.
    *"The revised draft is over the word cap in Hypotheses: speed and Conclusions; the writer is asked to
    shorten them."* The reply's slots and headline are merged into a copy of the repaired output, which
    is validated and trimmed, and kept when it has no more blocking notes than before and is not fatal;
-   otherwise the repaired output stands. An unparseable reply is logged as a warning and ignored. A
-   rule-7 warning records the outcome (*"Hypotheses: speed and Conclusions were over their caps after
-   the repair; they were shortened in a final turn."*). A document therefore takes **at most three model
+   otherwise the repaired output stands. An unparseable reply is logged as a warning and ignored. An
+   accepted shortening is recorded as an **info** line of the job log per section, with its figures
+   (*"Root Cause Analysis: Evidence: intelligence was 102 words, 2 over its cap of 100, after the
+   repair; the shortening turn brought it to 98."*), not as a validation note: a shortening that brings
+   every section within its cap leaves the document *Completed*. A section still over its cap after the
+   merge is trimmed by item 2 and leaves that trim's dropped rule-7 note, so the document is *Completed
+   with warnings*. Documents stored before this carry a kept rule-7 note at the bare location
+   `sections`, labeled *"The capped sections"*. A document therefore takes **at most three model
    calls, or four when the first reply was unreadable** (`AgentRunBudget.MaxTotalModelCalls = 4`, one
    budget counted across every turn of the document): the first, the repair turn, the second repair turn
    of item 1 and the shortening turn, which replaces the comparison-only headline-only turn of earlier
@@ -980,6 +1000,21 @@ and prose, the `root-cause-controls` endpoint and a document's stored controls i
 by `RootCauseControl.LabelWithLevel()`, the same rule the controls table uses; `ModelLabel` stays the
 configuration's name as recorded. A document stored earlier shows the level in its Controls line and
 table, but its prose keeps its stored fact until it is written again.
+
+**Comparison #4 warnings round (2026-10-17)** moves every scope: comparison-wide documents to **format
+23** (`ComparisonReportFormatVersion` 22 → 23), per-model documents to **format 19**
+(`ReportFormatVersion` 18 → 19) and chat consistency documents to **format 6**
+(`ChatConsistencyReportFormatVersion` 5 → 6); `RootCauseEngine.Version` moves 8 → 9; the PDF layout and
+the Word layout do not move. The writer prompt of every scope changes with it, and so its SHA-256.
+A mean figure reads *"a mean of 21.7 s per question"*; a rule with several shares gets
+`rca.rule.<id>.shareSpan` and `.count`, and rule 38 keeps a share beside its own hypothesis; the
+comparison sheet gains `comparison.runsPerSuite`, `.suiteCount`, `.memberRuns` (battery comparisons) and
+`.configDifferences`, and a pair's `configDifferences` names no model and prints no parenthesis
+(*"thinking level, medium against high"*); the cheapest-model bullet of *What we found* states the paired
+tests that cover the model; a share interval wider than one hundred percentage points fails a robustness
+check (§ 17); every count fact says what it counts, with rule 39 against repeating it (§ 3); a shortening
+turn that brings every section within its cap leaves the document *Completed* (§ 3, item 5). A document
+stored earlier keeps its stored facts and status; its tables print its bare counts as before.
 
 **Comparison format version 14** (2026-10-14) moves comparison-wide documents only
 (`ComparisonReportFormatVersion` 13 → 14); per-model documents stay at 12 and chat consistency documents
@@ -2484,8 +2519,19 @@ its report."*
   writer's replies** (`report-pack_<subject>_writer-replies_<yyyyMMdd-HHmmss>.md`, from the endpoint of
   § 9; *"Preparing the writer's replies…"* in the status line while it fetches, and on a 404 *"The
   writer's replies are no longer held: Overseer keeps only the latest report job, and a newer job or a
-  restart replaced this one."*). The diagnostics print the estimate as its range, *"Estimate: $1.04 to
-  $2.10 (first call only, to one repair turn per document)"*, and, once a document row carries them, two
+  restart replaced this one."*). The writer's replies name each call as the diagnostics do (*Shortening
+  turn*), cut durations to whole seconds as the diagnostics do, and after each document's calls give a
+  `#### Tokens cited` table: every token its replies cite with what the stored document prints for it in a
+  named, fully disclosed copy (`BenchmarkReportPackRenderer.TokenDisplays`), or *not in the fact sheet*;
+  a document with no stored row gets one line instead. The diagnostics list under *Charts selected* only
+  the selected figures the document type draws, and the others under *Selected but not drawn in this
+  document type*; a Root Cause Analysis's *Charts* line splits its count into the selected figures and
+  those Overseer drew (*"8 attached: 4 selected, 4 drawn by Overseer (16 images, named and
+  anonymized)"*). Each call line adds how close it came to the writer's output limit (*", output 85% of the
+  limit (near the limit)"*, near from 80 %); a battery comparison's *Runs* and *Groups* read *none (battery
+  comparison)*. The diagnostics print the estimate as its range, *"Estimate: $1.04 to $2.10 (first call
+  only, to one repair turn per document; a shortening turn or a second repair is not included)"*, and,
+  once a document row carries them, two
   sections after *Documents*: **`== Validation ==`**, per document its first-turn and final issues
   (counts per rule, then each issue with its rule, location and message, *(dropped)* where it was), and
   **`== Failed writer replies ==`**, the raw reply of each document that failed, between *--- reply ---*
@@ -3464,7 +3510,7 @@ of runs, with no peers to rank against.
 | `SubjectKey` | `chat-consistency:<id>` (`BenchmarkChatConsistencyReportFacts.SubjectKeyPrefix`) |
 | `ChatConsistencyAnalysisId` | the analysis, a `Restrict` foreign key: the analysis cannot be deleted while documents written from it exist (the API answers 409) |
 | `ComparisonKey`, `ComparisonId`, `CoveredEntryKeysJson` | null |
-| `ReportFormatVersion` | `ChatConsistencyReportFormatVersion`, currently **4** (§ 7) |
+| `ReportFormatVersion` | `ChatConsistencyReportFormatVersion`, currently **6** (§ 7) |
 
 The title is *Overseer Chat Consistency Report: \<model\>*. The sheet's subject block
 (`BenchmarkReportChatConsistencySubject`) carries the analysis id, name, headline, protocol label,
@@ -3775,7 +3821,7 @@ which is kept on one page, moves with the table instead of staying alone at a pa
 bold label paragraph such as **Where the chat stands** does the same before its short table, layout 8;
 the smaller inline code and full-width server-drawn figures of layout 9; the callouts of layout 10; and
 the keep-together rules of layout 11, § 8).
-`ChatConsistencyReportFormatVersion` is 4.
+`ChatConsistencyReportFormatVersion` is 6.
 
 ### Endpoints
 
@@ -3889,8 +3935,20 @@ the columns needed, never whole entities (battery preparation also loads the sub
   profile, `profile.*`, from `BenchmarkComparisonModelProfile.FromRuns` (the cross-model matrix counts —
   isolated and shared misses, lowest scorer — need three models and stay unavailable there).
 - **Configuration** — `config.serviceTier`, `.reasoningMode`, `.parallelMode`, `.maxOutputTokens`, and
-  `pair.L.M.configDifferences` (the keys that differ, from `BenchmarkPairedTests.ClassifyRunPair` and the
-  entry's `Differences`).
+  `pair.L.M.configDifferences` (the keys other than the model that differ, from
+  `RootCauseContext.ConfigDifferenceParts`, written without parentheses: *"thinking level, medium against
+  high; provider"*, engine version 9).
+- **Comparison-wide** (comparison sheet, format 23) — `comparison.runsPerSuite` (*"1 run per suite"*, or a
+  span *"1 to 2 runs per suite"*), `comparison.suiteCount` (*"2 suites"*), on a battery comparison
+  `comparison.memberRuns` (*"2 runs per model"*), and `comparison.configDifferences`, every key other than
+  the model and the provider that differs anywhere across the models with its values in letter order
+  (*"thinking level: medium, high, max, xhigh; reasoning mode: not set, standard"*, or *"no configuration
+  key other than the model"*). A statement about every compared model cites these, never one model's or
+  one pair's fact.
+- **Rule share spans** (engine version 9) — for a rule with two or more hypotheses that carry a share,
+  `rca.rule.<id>.shareSpan` (*"29% to 48% of each gap"* for pair rules; *"… of each model's own time"*,
+  *cost* or *points at risk* for within-model rules) and `rca.rule.<id>.count` (*"3 pairs"*, *"3
+  models"*); the nulls get none. A group of hypotheses is described by its span beside the reference range (rule 38).
 
 Each `sheet.Questions` row also carries the subject's per-question `InputTokens`, `OutputTokens`,
 `CostUsd`, `TtftMs` and `ModelCallCount`, means over runs, which the per-question decomposition reads.
@@ -3961,7 +4019,10 @@ difference not established*, and the HS and HC rules do not fire on it.
   each answer once (`rca.atRisk.<T>.<segment>`). They are labeled *upper bound, not a causal estimate*.
 
 LMDI uses the logarithmic mean `L(a,b) = (a − b) / (ln a − ln b)`, with `L(a,a) = a`; a zero component
-takes the standard limit, its whole difference going to volume. Every share has a 95 % percentile
+takes the standard limit, its whole difference going to volume. Two models priced on the same card (on
+the catalog basis, GPT-6 Luna and Claude 5.5 Haiku have identical cards) have no price effect in any
+component, so their volume share is exactly 100 % in every resample, *100% (100–100%)*: a correct
+reading, not a defect of the zero-component limit. Every share has a 95 % percentile
 bootstrap interval over questions: **2,000 resamples, fixed seed 20261015**, so the same inputs always
 print the same interval. Spearman's ρ (`RootCauseStatistics.Spearman`, with a Fisher-z interval over
 questions) and the Mann–Whitney test of the within-model contrasts are used only within one model,
@@ -4001,7 +4062,10 @@ contributes most is dropped); **Across suites** (battery: the same sign in every
 questions); **Replicates** (at least 2 runs per suite on both sides, or on the subject for a
 within-model rule); **Panel agreement** (both panel members' per-member indices order the pair alike,
 or show the same within-model contrast); **Configuration** (no differing key other than the model axis;
-pair rules only).
+pair rules only); **Share interval** (engine version 9: a share whose 95 % interval is wider than one
+hundred percentage points fails, one grade lower, with the reason *"the share's 95% interval, 139–825%,
+is wider than one hundred percentage points"*). A *"mainly from"* statement whose share is above 100 %
+adds *", which alone exceeds the gap while other components pull the other way"* (engine version 9).
 
 Each axis then gets a status, the fact `rca.axis.<axis>.status` with `rca.axis.<axis>.best`:
 **Root cause established** (a non-null hypothesis graded High and its `H0` rejected), **Probable cause**

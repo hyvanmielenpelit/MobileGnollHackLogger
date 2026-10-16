@@ -79,7 +79,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Never quote the questions, rubrics, answers or grader comments: no run of eight words may match them. Describe a question by its topic.");
         Line(sb, "- Never name a model, provider or product. Never call a difference significant, statistically anything, reliably better or worse, or say a model clearly outperforms another; say only whether intervals overlap, or whether a paired interval excludes zero.");
         Line(sb, "- A sentence ranking {{subject}} against a peer whose interval overlaps it says that the intervals overlap or that the order is not established; where that peer's pairedExcludesZero fact is true, it says instead that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero. No hype or filler words.");
-        Line(sb, "- A token whose value reads 'N of M' is a noun phrase; never put it after 'no', make it the object of 'made', or end a clause with it: say right after it what it counts.");
+        Line(sb, "- A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after; never put it after 'no' or make it the object of 'made'.");
         Line(sb, "- No headings, tables or HTML inside any text. Keep the word and item limits.");
         return sb.ToString();
     }
@@ -247,7 +247,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Refer to the model under evaluation as {{subject}}. Refer to another model only as {{peer:X}}, where X is its letter from PEERS, for example {{peer:A}}.");
         Line(sb, "- Any other {{...}} token is an error.");
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" or \"twice\" are allowed for a plain count, but prefer a fact token for any figure.");
-        Line(sb, "- A token whose value reads 'N of M' is a noun phrase: '{{errors.critical}} had a critical error'. Never put it after 'no' or make it the object of 'made'; to say none occurred, write 'no critical errors across all {{answers.scored}} answers'.");
+        Line(sb, "- A token whose value reads 'N of M' is a noun phrase: 'the model gave {{errors.critical}}'. Never put it after 'no' or make it the object of 'made'; to say none occurred, write 'no critical errors across all {{answers.scored}} answers'.");
         Line(sb, "- Refer to a question as Q followed by its number from the QUESTIONS block, for example Q7. This is the only form in which a digit may appear.");
         Line(sb, "- Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader). In the Executive Summary say 'one grader' or 'both graders' instead.");
         Line(sb, "- Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.");

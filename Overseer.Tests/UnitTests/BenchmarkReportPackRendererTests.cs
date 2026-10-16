@@ -1105,7 +1105,8 @@ public class BenchmarkReportPackRendererTests
     {
         var document = Document(BenchmarkReportAudience.ExecutiveSummary);
         var sheet = Sheet();
-        sheet.Entries.Single(e => e.IsSubject).Extra.Add(new BenchmarkReportFact { Key = "errors.critical", Display = "1 of 4 answers", Value = JsonValue.Create(1) });
+        // A count that says what it counts prints its head alone under the column; a bare one from an older sheet as it is.
+        sheet.Entries.Single(e => e.IsSubject).Extra.Add(new BenchmarkReportFact { Key = "errors.critical", Display = "1 of 4 answers with a critical error", Value = JsonValue.Create(1) });
         sheet.Entries.Single(e => e.PeerLetter == "A").Extra.Add(new BenchmarkReportFact { Key = "errors.critical", Display = "0 of 4 answers", Value = JsonValue.Create(0) });
         sheet.Entries.Single(e => e.PeerLetter == "B").Extra.Add(new BenchmarkReportFact
         {
@@ -1530,12 +1531,12 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion22()
+    public void AComparisonDocument_IsCurrentAtFormatVersion23()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(22, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 22 · ", text);
+        Assert.Equal(23, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 23 · ", text);
         Assert.Contains(" · models named*", text);
     }
 
@@ -2176,6 +2177,20 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
+    public void TheCheapestModelBullet_StatesItsPairedTests_AndTheIntervalOverlapOnlyWithoutThem()
+    {
+        static string Cheapest(string text) => Assert.Single(RcaSection(text, "### What we found").Split('\n'),
+            l => l.Contains(" is the cheapest model, at $", StringComparison.Ordinal));
+
+        string paired = Cheapest(BenchmarkReportPackRenderer.Render(RcaDocument(), RcaNamed));
+        Assert.Matches(@"; the paired tests( above)? establish that (none|\d+) of the \d+ (other models|models they compare it with) (differs?|differ) from it in quality\.$", paired);
+        Assert.DoesNotContain("Intelligence Index interval overlaps", paired);
+
+        string unpaired = Cheapest(BenchmarkReportPackRenderer.Render(RcaDocument(s => s.PairedTests = new List<BenchmarkReportPairedFamily>()), RcaNamed));
+        Assert.Contains(" per question, and its Intelligence Index interval overlaps", unpaired);
+    }
+
+    [Fact]
     public void AppendixD_ListsWhatARunDecides_AndNamesItsGraders_ButAnAnonymizedCopyGivesAnUnknownGradersIdAlone()
     {
         var document = RcaDocument(sheet =>
@@ -2220,7 +2235,7 @@ public class BenchmarkReportPackRendererTests
 
         string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
 
-        Assert.Contains(" · generated under format version 19 · rendered with format version 22 · ", text);
+        Assert.Contains(" · generated under format version 19 · rendered with format version 23 · ", text);
         Assert.DoesNotContain("Grader family:", text);
         foreach (string resolution in new[] { "agreed by both members", "upheld by the claim verifier", "overturned by the claim verifier", "unresolved (averaged)", "single assessor" })
         {
@@ -2428,22 +2443,22 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AChatConsistencyDocument_IsCurrentAtFormatVersion5_AndTheOtherScopesKeepTheirs()
+    public void AChatConsistencyDocument_IsCurrentAtFormatVersion6_AndTheOtherScopesKeepTheirs()
     {
-        Assert.Equal(5, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
-        Assert.Equal(5, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(18, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(22, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
-        Assert.Equal(18, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(22, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(6, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
+        Assert.Equal(6, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
+        Assert.Equal(19, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(23, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(19, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(23, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
-        Assert.Contains(" · format version 5 · ", text);
+        Assert.Contains(" · format version 6 · ", text);
         Assert.Contains(" · controls named*", text);
 
         string provider = RenderChatConsistency(BenchmarkReportAudience.ProviderIssueReport, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Anonymized);
-        Assert.Contains(" · format version 5 · ", provider);
-        Assert.Contains("- **Report format version:** 5\n", provider);
+        Assert.Contains(" · format version 6 · ", provider);
+        Assert.Contains("- **Report format version:** 6\n", provider);
     }
 
     [Theory]

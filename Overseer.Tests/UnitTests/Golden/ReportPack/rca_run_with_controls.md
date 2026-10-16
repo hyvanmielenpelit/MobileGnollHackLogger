@@ -533,7 +533,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         },
         {
           "available": true,
-          "display": "0 of 6 answers",
+          "display": "0 of 6 answers with a critical error",
           "key": "errors.critical",
           "value": 0
         },
@@ -876,7 +876,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with a critical error",
       "key": "errors.critical",
       "value": 0
     },
@@ -978,25 +978,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on accuracy",
       "key": "profile.deficit.accuracy",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on completeness",
       "key": "profile.deficit.completeness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on conciseness",
       "key": "profile.deficit.conciseness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on readability",
       "key": "profile.deficit.readability",
       "value": 0
     },
@@ -1038,7 +1038,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 1 run",
+      "display": "0 of 1 run with structured grader findings",
       "key": "profile.findings.runsWithSynthesis",
       "value": 0
     },
@@ -1062,7 +1062,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that may mislead",
       "key": "profile.mayMislead",
       "value": 0
     },
@@ -1074,7 +1074,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "2 of 6 answers",
+      "display": "2 of 6 answers without a tool call",
       "key": "profile.noToolAnswers",
       "value": 2
     },
@@ -1116,7 +1116,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with output defects",
       "key": "profile.outputDefects",
       "value": 0
     },
@@ -1128,13 +1128,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that hit the tool limit",
       "key": "profile.toolLimitHits",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that were truncated",
       "key": "profile.truncated",
       "value": 0
     },
@@ -1193,7 +1193,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 1 question",
+      "display": "1 of 1 question with a scored answer",
       "key": "quality.scoredItems",
       "value": 1
     },
@@ -1695,7 +1695,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.014 per question, mean",
+      "display": "a mean of $0.014 per question",
       "key": "rca.within.subject.cost.total",
       "value": 0.0140125
     },
@@ -1707,7 +1707,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.3 s per question, mean",
+      "display": "a mean of 0.3 s per question",
       "key": "rca.within.subject.time.other.seconds",
       "value": 0.3
     },
@@ -1719,7 +1719,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "5.3 s per question, mean",
+      "display": "a mean of 5.3 s per question",
       "key": "rca.within.subject.time.outputGeneration.seconds",
       "value": 5.265
     },
@@ -1731,7 +1731,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 s per question, mean",
+      "display": "a mean of 0.0 s per question",
       "key": "rca.within.subject.time.ownWaits.seconds",
       "value": 0
     },
@@ -1743,7 +1743,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1.5 s per question, mean",
+      "display": "a mean of 1.5 s per question",
       "key": "rca.within.subject.time.toolExecution.seconds",
       "value": 1.5
     },
@@ -1755,13 +1755,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "9.0 s per question, mean",
+      "display": "a mean of 9.0 s per question",
       "key": "rca.within.subject.time.total",
       "value": 8.98
     },
     {
       "available": true,
-      "display": "1.9 s per question, mean",
+      "display": "a mean of 1.9 s per question",
       "key": "rca.within.subject.time.ttft.seconds",
       "value": 1.915
     },
@@ -2395,7 +2395,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 8,
+    "engineVersion": 9,
     "evidence": [
       {
         "atRisk": [
@@ -2968,6 +2968,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 131 · format version 18 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 19 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

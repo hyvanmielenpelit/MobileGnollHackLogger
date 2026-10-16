@@ -231,7 +231,7 @@ public class BenchmarkReportFactsTests
         var withheld = Assert.Single(sorted, f => f.Key == "quality.withheldRuns");
         Assert.True(withheld.Available);
         Assert.Equal(1, withheld.Value!.GetValue<int>());
-        Assert.Equal("1 of 1 run", withheld.Display);
+        Assert.Equal("1 of 1 run with a withheld Intelligence Index", withheld.Display);
     }
 
     [Fact]
@@ -775,7 +775,7 @@ public class BenchmarkReportFactsTests
         var topical = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", run));
         var count = FactOf(topical, "tools.zeroKnowledgeBaseAnswers");
         Assert.True(count.Available);
-        Assert.Equal("2 of 2", count.Display);
+        Assert.Equal("2 of 2 answers without a knowledge-base article", count.Display);
     }
 
     [Fact]
@@ -783,10 +783,10 @@ public class BenchmarkReportFactsTests
     {
         var sheet = BuildSheet(Input(Comparison(Entry("group:9", new long[] { 1, 2 }, "Subject", "OpenAI", 80)), "group:9",
             SimpleRun(1, "OpenAI"), SimpleRun(2, "OpenAI")));
-        Assert.Equal("2 of 2 questions", FactOf(sheet, "quality.scoredItems").Display);
+        Assert.Equal("2 of 2 questions with a scored answer", FactOf(sheet, "quality.scoredItems").Display);
 
         var one = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));
-        Assert.Equal("1 of 1 question", FactOf(one, "quality.scoredItems").Display);
+        Assert.Equal("1 of 1 question with a scored answer", FactOf(one, "quality.scoredItems").Display);
     }
 
     [Fact]
@@ -1362,16 +1362,16 @@ public class BenchmarkReportFactsTests
         var sheet = BuildSheet(Input(comparison, "run:1", subject));
 
         var critical = FactOf(sheet, "errors.critical");
-        Assert.Equal("1 of 3 answers", critical.Display);
+        Assert.Equal("1 of 3 answers with a critical error", critical.Display);
         Assert.Equal(1, critical.Value!.GetValue<int>());
-        Assert.Equal("1 of 3 answers", Assert.Single(Assert.Single(sheet.Entries, e => e.IsSubject).Extra, f => f.Key == "errors.critical").Display);
+        Assert.Equal("1 of 3 answers with a critical error", Assert.Single(Assert.Single(sheet.Entries, e => e.IsSubject).Extra, f => f.Key == "errors.critical").Display);
         Assert.Equal(new[] { true, false, false }, sheet.Questions.OrderBy(q => q.Number).Select(q => q.CriticalError));
 
         // The same flags on a scoring method 12 run: every answer a member flagged.
         subject.ScoringMethodVersion = 12;
         var legacy = BuildSheet(Input(comparison, "run:1", subject));
 
-        Assert.Equal("3 of 3 answers", FactOf(legacy, "errors.critical").Display);
+        Assert.Equal("3 of 3 answers with a critical error", FactOf(legacy, "errors.critical").Display);
         Assert.Equal(new[] { true, true, true }, legacy.Questions.OrderBy(q => q.Number).Select(q => q.CriticalError));
     }
 
@@ -1392,7 +1392,7 @@ public class BenchmarkReportFactsTests
 
         Assert.Equal("3", FactOf(sheet, "answers.scored").Display);
         Assert.Equal(3, FactOf(sheet, "answers.scored").Value!.GetValue<int>());
-        Assert.Equal("0 of 3 answers", FactOf(sheet, "errors.critical").Display);
+        Assert.Equal("0 of 3 answers with a critical error", FactOf(sheet, "errors.critical").Display);
         Assert.Equal("14.7 s", FactOf(sheet, "speed.modelTimeP50").Display);
         Assert.Equal("17.2 s", FactOf(sheet, "speed.modelTimeMean").Display);
 
@@ -1561,11 +1561,11 @@ public class BenchmarkReportFactsTests
         Assert.All(keys, key => Assert.True(FactOf(sheet, key).Available, key));
 
         Assert.Equal("1,480 attempts", FactOf(sheet, "availability.attempts").Display);
-        Assert.Equal("12 of 1,480 attempts", FactOf(sheet, "availability.providerErrors").Display);
+        Assert.Equal("12 of 1,480 attempts that ended in a provider error", FactOf(sheet, "availability.providerErrors").Display);
         Assert.Equal("0.81%", FactOf(sheet, "availability.providerErrorRate").Display);
         Assert.Equal("0.46%", FactOf(sheet, "availability.providerErrorRateCi95Low").Display);
         Assert.Equal("1.4%", FactOf(sheet, "availability.providerErrorRateCi95High").Display);
-        Assert.Equal("3 of 1,480 attempts", FactOf(sheet, "availability.unattributedErrors").Display);
+        Assert.Equal("3 of 1,480 attempts that ended in an error not attributed to the provider", FactOf(sheet, "availability.unattributedErrors").Display);
         Assert.Equal("1.0%", FactOf(sheet, "availability.inclusiveRate").Display);
         Assert.Equal("7", FactOf(sheet, "availability.overloaded").Display);
         Assert.Equal("0", FactOf(sheet, "availability.timeouts").Display);
@@ -1727,7 +1727,7 @@ public class BenchmarkReportFactsTests
                 .Select(k => k[prefix.Length..])
                 .ToList();
             Assert.Equal(BenchmarkReportFacts.AvailabilityHeadlineKeys.OrderBy(k => k, StringComparer.Ordinal), availabilityKeys);
-            Assert.Equal("12 of 1,480 attempts", FactOf(sheet, prefix + "availability.providerErrors").Display);
+            Assert.Equal("12 of 1,480 attempts that ended in a provider error", FactOf(sheet, prefix + "availability.providerErrors").Display);
 
             var entry = Assert.Single(sheet.Entries, e => e.PeerLetter == model.Letter);
             Assert.True(entry.ProviderAvailabilityRecorded);
@@ -1739,5 +1739,32 @@ public class BenchmarkReportFactsTests
         Assert.DoesNotContain(sheet.Facts, f => f.Key.EndsWith(".availability.overloaded", StringComparison.Ordinal)
                                                 || f.Key.EndsWith(".availability.oneIn", StringComparison.Ordinal)
                                                 || f.Key.EndsWith(".availability.inclusiveRate", StringComparison.Ordinal));
+    }
+
+    // --- Counts that say what they count -----------------------------------------------------------
+
+    [Theory]
+    [InlineData(9, 36, "answers", "without a tool call", false, "9 of 36 answers without a tool call")]
+    [InlineData(1, 1, "questions", "with a scored answer", false, "1 of 1 question with a scored answer")]
+    [InlineData(0, 36, "answers", null, false, "0 of 36 answers")]
+    [InlineData(12, 1480, "attempts", "that ended in a provider error", true, "12 of 1,480 attempts that ended in a provider error")]
+    public void CountOf_PrintsTheCount_ItsNoun_AndWhatItCounts(int count, int total, string noun, string? qualifier, bool separators, string expected)
+        => Assert.Equal(expected, BenchmarkReportFormat.CountOf(count, total, noun, qualifier, separators));
+
+    [Theory]
+    [InlineData("9 of 36 answers without a tool call", "9 of 36 answers", "without a tool call")]
+    [InlineData("1 of 36 answers with a critical error", "1 of 36 answers", "with a critical error")]
+    [InlineData("3 of 36 valid attempts counted as provider overloaded (8%)", "3 of 36 valid attempts (8%)", "counted as provider overloaded")]
+    [InlineData("2 of 4 answers at level 2 or below on completeness", "2 of 4 answers", "at level 2 or below on completeness")]
+    // Displays stored before counts said what they count pass through whole.
+    [InlineData("1 of 36 answers", "1 of 36 answers", "")]
+    [InlineData("2 of 2", "2 of 2", "")]
+    [InlineData("3 of 36 valid attempts (8%)", "3 of 36 valid attempts (8%)", "")]
+    [InlineData("recorded for 2 of 2 runs", "recorded for 2 of 2 runs", "")]
+    [InlineData("72 / 100", "72 / 100", "")]
+    public void CountHead_KeepsTheCountAndItsNoun_AndCountQualifierTheRest(string display, string head, string qualifier)
+    {
+        Assert.Equal(head, BenchmarkReportFormat.CountHead(display));
+        Assert.Equal(qualifier, BenchmarkReportFormat.CountQualifier(display));
     }
 }

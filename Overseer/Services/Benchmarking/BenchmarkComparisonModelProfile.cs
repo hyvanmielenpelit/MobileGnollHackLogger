@@ -350,10 +350,10 @@ public sealed class BenchmarkComparisonModelProfile
     internal void AddFacts(BenchmarkReportFacts.FactList facts, string prefix)
     {
         string p = prefix + KeyPrefix;
-        string OfAnswers(int n) => Inv(n) + " of " + Inv(Answers) + (Answers == 1 ? " answer" : " answers");
+        string OfAnswers(int n, string qualifier) => BenchmarkReportFormat.CountOf(n, Answers, "answers", qualifier);
 
         facts.Add(p + "answers", Answers, Inv(Answers) + (Answers == 1 ? " answer" : " answers"));
-        facts.Add(p + "mayMislead", MayMislead, OfAnswers(MayMislead));
+        facts.Add(p + "mayMislead", MayMislead, OfAnswers(MayMislead, "that may mislead"));
         if (Answers > 0)
         {
             double per = (double)MayMislead / Answers * Per;
@@ -365,13 +365,14 @@ public sealed class BenchmarkComparisonModelProfile
             facts.Unavailable(p + "mayMisleadPer20", "The model has no scored answer.");
         }
 
-        var outcomes = new (string Key, int Count)[]
+        var outcomes = new (string Key, int Count, string Qualifier)[]
         {
-            ("correct", Correct), ("partial", Partial), ("incorrect", Incorrect), ("notAttempted", NotAttempted), ("noAnswer", NoAnswer)
+            ("correct", Correct, "graded correct"), ("partial", Partial, "graded partly correct"), ("incorrect", Incorrect, "graded incorrect"),
+            ("notAttempted", NotAttempted, "graded not attempted"), ("noAnswer", NoAnswer, "that were empty")
         };
-        foreach (var (key, count) in outcomes)
+        foreach (var (key, count, qualifier) in outcomes)
         {
-            if (OutcomesRecorded) facts.Add(p + "outcome." + key, count, OfAnswers(count));
+            if (OutcomesRecorded) facts.Add(p + "outcome." + key, count, OfAnswers(count, qualifier));
             else facts.Unavailable(p + "outcome." + key, OutcomesNotRecordedReason);
         }
         if (!OutcomesRecorded)
@@ -399,13 +400,13 @@ public sealed class BenchmarkComparisonModelProfile
         foreach (string dimension in Dimensions)
         {
             int count = Deficits.GetValueOrDefault(dimension);
-            facts.Add(p + "deficit." + dimension, count, OfAnswers(count));
+            facts.Add(p + "deficit." + dimension, count, OfAnswers(count, "at level " + Inv((int)DeficitLevelAtMost) + " or below on " + dimension));
         }
 
-        facts.Add(p + "truncated", Truncated, OfAnswers(Truncated));
-        facts.Add(p + "outputDefects", OutputDefects, OfAnswers(OutputDefects));
-        facts.Add(p + "noToolAnswers", NoToolAnswers, OfAnswers(NoToolAnswers));
-        facts.Add(p + "toolLimitHits", ToolLimitHits, OfAnswers(ToolLimitHits));
+        facts.Add(p + "truncated", Truncated, OfAnswers(Truncated, "that were truncated"));
+        facts.Add(p + "outputDefects", OutputDefects, OfAnswers(OutputDefects, "with output defects"));
+        facts.Add(p + "noToolAnswers", NoToolAnswers, OfAnswers(NoToolAnswers, "without a tool call"));
+        facts.Add(p + "toolLimitHits", ToolLimitHits, OfAnswers(ToolLimitHits, "that hit the tool limit"));
 
         if (MedianAnswerChars is double median)
         {
@@ -416,8 +417,8 @@ public sealed class BenchmarkComparisonModelProfile
             facts.Unavailable(p + "answerChars.median", "The model has no scored answer with text.");
         }
 
-        string OfRuns(int n) => Inv(n) + " of " + Inv(Runs) + (Runs == 1 ? " run" : " runs");
-        facts.Add(p + "findings.runsWithSynthesis", RunsWithSynthesis, OfRuns(RunsWithSynthesis));
+        facts.Add(p + "findings.runsWithSynthesis", RunsWithSynthesis,
+            BenchmarkReportFormat.CountOf(RunsWithSynthesis, Runs, "runs", "with structured grader findings"));
         foreach (string category in FindingCategories)
         {
             if (RunsWithSynthesis == 0)
@@ -427,7 +428,7 @@ public sealed class BenchmarkComparisonModelProfile
             }
             int count = WeaknessRunsByCategory.GetValueOrDefault(category);
             facts.Add(p + "findings." + category, count,
-                Inv(count) + " of " + Inv(RunsWithSynthesis) + (RunsWithSynthesis == 1 ? " run" : " runs"));
+                BenchmarkReportFormat.CountOf(count, RunsWithSynthesis, "runs", "with " + BenchmarkReportFactLabels.FindingCategoryWeakness(category) + " in the grader findings"));
         }
     }
 
@@ -495,10 +496,10 @@ public sealed class BenchmarkComparisonModelProfile
             return;
         }
 
-        string Of(int n) => Inv(n) + " of " + Inv(c.Scored) + (c.Scored == 1 ? " question" : " questions");
-        facts.Add(p + "isolatedMisses", c.Isolated, Of(c.Isolated));
-        facts.Add(p + "sharedMisses", c.Shared, Of(c.Shared));
-        facts.Add(p + "lowestScorer", c.Lowest, Of(c.Lowest));
+        string Of(int n, string qualifier) => BenchmarkReportFormat.CountOf(n, c.Scored, "questions", qualifier);
+        facts.Add(p + "isolatedMisses", c.Isolated, Of(c.Isolated, "this model missed while the others scored well"));
+        facts.Add(p + "sharedMisses", c.Shared, Of(c.Shared, "missed by this model and at least half the others"));
+        facts.Add(p + "lowestScorer", c.Lowest, Of(c.Lowest, "on which this model scored lowest"));
     }
 
     private static string Inv(int value) => value.ToString(CultureInfo.InvariantCulture);

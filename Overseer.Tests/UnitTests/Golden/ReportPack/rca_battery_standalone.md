@@ -1531,7 +1531,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.019 per question, mean",
+      "display": "a mean of $0.019 per question",
       "key": "rca.within.subject.cost.total",
       "value": 0.0191
     },
@@ -1543,7 +1543,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "3.2 s per question, mean",
+      "display": "a mean of 3.2 s per question",
       "key": "rca.within.subject.time.other.seconds",
       "value": 3.225
     },
@@ -1555,7 +1555,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "14.6 s per question, mean",
+      "display": "a mean of 14.6 s per question",
       "key": "rca.within.subject.time.outputGeneration.seconds",
       "value": 14.6
     },
@@ -1567,7 +1567,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.1 s per question, mean",
+      "display": "a mean of 0.1 s per question",
       "key": "rca.within.subject.time.ownWaits.seconds",
       "value": 0.1
     },
@@ -1579,7 +1579,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "2.0 s per question, mean",
+      "display": "a mean of 2.0 s per question",
       "key": "rca.within.subject.time.toolExecution.seconds",
       "value": 2
     },
@@ -1591,13 +1591,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "22.5 s per question, mean",
+      "display": "a mean of 22.5 s per question",
       "key": "rca.within.subject.time.total",
       "value": 22.500000000000004
     },
     {
       "available": true,
-      "display": "2.6 s per question, mean",
+      "display": "a mean of 2.6 s per question",
       "key": "rca.within.subject.time.ttft.seconds",
       "value": 2.575
     },
@@ -2153,7 +2153,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 8,
+    "engineVersion": 9,
     "evidence": [
       {
         "atRisk": [
@@ -2909,6 +2909,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 202 · format version 18 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 202 · format version 19 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

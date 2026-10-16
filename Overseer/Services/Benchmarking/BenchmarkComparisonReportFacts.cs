@@ -21,7 +21,11 @@ using Overseer.Services.Benchmarking.RootCause;
 //   comparison.models                              the covered models
 //   comparison.pricingBasis, .pricingBasisKind, .pricedOn, .signature   as on a per-model sheet
 //   comparison.reference                           the reference model's letter: the requested one, else A
-//   model.<L>.*                                    every fact a per-model sheet states about its subject,
+//   comparison.runsPerSuite, .suiteCount           every model's runs per suite and suites, or their span
+//   comparison.memberRuns                          a battery comparison's member runs per model, or their span
+//   comparison.configDifferences                   every configuration key other than the model and the provider
+//                                                  that differs anywhere across the models, with its values
+//   model.<L>.*                                  every fact a per-model sheet states about its subject,
 //                                                  under the model's letter: subject.thinkingLevel, .runs and
 //                                                  .state as model.<L>.thinkingLevel, .runs and .state; the
 //                                                  subject's name, provider and model id, the suite name, the
@@ -583,6 +587,7 @@ public static class BenchmarkComparisonReportFacts
         sheet.RootCause = rootCause;
         RootCauseFacts.Add(facts, rootCause, t => "Model " + t);
         AddConfigDifferenceFacts(facts, rootCause, modelInputs);
+        AddComparisonWideFacts(facts, lettered.Select(l => (l.Letter, l.Item)).ToList(), modelInputs, batteries);
 
         sheet.Questions = questions;
         sheet.Facts = facts.Sorted();
@@ -906,10 +911,10 @@ public static class BenchmarkComparisonReportFacts
                                         && q.PeerMax.Value - q.PeerMin.Value >= BenchmarkReportContent.WideSpreadPoints);
         int low = questions.Count(q => q.PeerMax is double max && max < BenchmarkReportContent.SharedLowScore);
 
-        string Of(int n) => Inv(n) + " of " + Inv(total) + (total == 1 ? " question" : " questions");
-        facts.Add("questions.anyCriticalError", critical, Of(critical));
-        facts.Add("questions.wideSpread", wide, Of(wide));
-        facts.Add("questions.sharedLow", low, Of(low));
+        string Of(int n, string qualifier) => BenchmarkReportFormat.CountOf(n, total, "questions", qualifier);
+        facts.Add("questions.anyCriticalError", critical, Of(critical, "with a critical error from any model"));
+        facts.Add("questions.wideSpread", wide, Of(wide, "with a wide spread between models"));
+        facts.Add("questions.sharedLow", low, Of(low, "that every model scored low"));
     }
 
     /// <summary>
@@ -970,10 +975,11 @@ public static class BenchmarkComparisonReportFacts
                 continue;
             }
 
-            string Of(int n) => Inv(n) + " of " + Inv(shared) + (shared == 1 ? " question" : " questions");
-            facts.Add(prefix + "better", better, Of(better));
-            facts.Add(prefix + "similar", similar, Of(similar));
-            facts.Add(prefix + "worse", worse, Of(worse));
+            string margin = Inv((int)VsReferenceMarginPoints) + " points";
+            string Of(int n, string qualifier) => BenchmarkReportFormat.CountOf(n, shared, "questions", qualifier);
+            facts.Add(prefix + "better", better, Of(better, "scored more than " + margin + " above the reference"));
+            facts.Add(prefix + "similar", similar, Of(similar, "scored within " + margin + " of the reference"));
+            facts.Add(prefix + "worse", worse, Of(worse, "scored more than " + margin + " below the reference"));
         }
     }
 
@@ -1542,7 +1548,10 @@ public static class BenchmarkComparisonReportFacts
         };
     }
 
-    /// <summary><c>pair.&lt;L&gt;.&lt;M&gt;.configDifferences</c> of every pair the root-cause engine analyzed.</summary>
+    /// <summary>
+    /// <c>pair.&lt;L&gt;.&lt;M&gt;.configDifferences</c> of every pair the root-cause engine analyzed, without parentheses:
+    /// <c>thinking level, medium against high; provider</c>.
+    /// </summary>
     private static void AddConfigDifferenceFacts(
         BenchmarkReportFacts.FactList facts, RootCauseResult rootCause, IReadOnlyList<RootCauseModelInput> models)
     {
@@ -1550,10 +1559,76 @@ public static class BenchmarkComparisonReportFacts
         foreach (var pair in rootCause.SpeedPairs)
         {
             if (!byToken.TryGetValue(pair.First, out var first) || !byToken.TryGetValue(pair.Second, out var second)) continue;
-            var differences = RootCauseContext.ConfigDifferences(first, second);
+            var differences = RootCauseContext.ConfigDifferenceParts(first, second);
             facts.Add(PairPrefix(pair.First, pair.Second) + "configDifferences", differences.Count,
-                differences.Count == 0 ? "no configuration key differs" : BenchmarkReportFormat.LetterList(differences));
+                differences.Count == 0
+                    ? "no configuration key differs"
+                    : string.Join("; ", differences.Select(d => d.First == null ? d.Name : d.Name + ", " + d.First + " against " + d.Second)));
         }
+    }
+
+    /// <summary>
+    /// The facts about every compared model at once: <c>comparison.runsPerSuite</c>, <c>.suiteCount</c>, on a battery
+    /// comparison <c>.memberRuns</c>, and <c>.configDifferences</c>, every configuration key other than the model and
+    /// the provider that differs anywhere across the models, with its values in letter order.
+    /// </summary>
+    private static void AddComparisonWideFacts(
+        BenchmarkReportFacts.FactList facts,
+        IReadOnlyList<(string Letter, BenchmarkComparisonReportEntry Item)> lettered,
+        IReadOnlyList<RootCauseModelInput> models,
+        bool batteries)
+    {
+        int? Whole(double? value) => value is double v ? (int)Math.Round(v, MidpointRounding.AwayFromZero) : null;
+        var perSuite = lettered.Select(l => batteries
+            ? Whole(NumberOf(l.Item.Sheet, "battery.runsPerSuite"))
+            : l.Item.Entry.RunIds.Distinct().Count()).ToList();
+        var suites = lettered.Select(l => batteries ? Whole(NumberOf(l.Item.Sheet, "battery.suiteCount")) : 1).ToList();
+
+        AddSpanFact(facts, "comparison.runsPerSuite", perSuite, "run", "runs", " per suite");
+        AddSpanFact(facts, "comparison.suiteCount", suites, "suite", "suites", string.Empty);
+        if (batteries)
+        {
+            var members = lettered.Select(l => Whole(NumberOf(l.Item.Sheet, "battery.memberRuns"))).ToList();
+            AddSpanFact(facts, "comparison.memberRuns", members, "run", "runs", " per model");
+        }
+
+        var parts = new List<string>();
+        foreach (var (name, read) in RootCauseContext.ValuedConfigKeys)
+        {
+            var values = new List<string>();
+            foreach (var model in models)
+            {
+                string text = RootCauseContext.SettingText(read(model));
+                if (!values.Any(v => RootCauseContext.SameSetting(v, text))) values.Add(text);
+            }
+            if (values.Count > 1) parts.Add(name + ": " + string.Join(", ", values));
+        }
+        var keys = models.SelectMany(m => m.DifferenceKeys)
+            .Where(k => !BenchmarkCrossModelComparability.IsModelAxisKey(k))
+            .Distinct(StringComparer.Ordinal)
+            .Where(k => models.Any(m => !m.DifferenceKeys.Contains(k)))
+            .OrderBy(k => k, StringComparer.Ordinal);
+        parts.AddRange(keys);
+        facts.Add("comparison.configDifferences", parts.Count,
+            parts.Count == 0 ? "no configuration key other than the model" : string.Join("; ", parts));
+    }
+
+    /// <summary>
+    /// A count every model shares, as <c>1 run per suite</c>, or its span, as <c>1 to 2 runs per suite</c>; unavailable when
+    /// a model lacks it. The value is the smallest count.
+    /// </summary>
+    private static void AddSpanFact(
+        BenchmarkReportFacts.FactList facts, string key, IReadOnlyList<int?> counts, string one, string many, string tail)
+    {
+        if (counts.Count == 0 || counts.Any(c => c == null))
+        {
+            facts.Unavailable(key, "Not every model records this count.");
+            return;
+        }
+        int low = counts.Min()!.Value, high = counts.Max()!.Value;
+        facts.Add(key, low, low == high
+            ? Inv(low) + " " + (low == 1 ? one : many) + tail
+            : Inv(low) + " to " + Inv(high) + " " + many + tail);
     }
 
     // ---------------------------------------------------------------------------------------------

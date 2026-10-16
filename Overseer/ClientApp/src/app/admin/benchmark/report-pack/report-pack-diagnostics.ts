@@ -15,7 +15,14 @@ import {
   spanMs
 } from '../run-ai-reports/run-report-writing-diagnostics';
 import type { ReportPackContext } from './report-pack-panel.component';
-import { REPORT_CHART_FIGURES, ReportChartRowStatus, ReportChartSelection } from './report-charts';
+import {
+  REPORT_CHART_FIGURES,
+  ReportChartFigureKey,
+  ReportChartRowStatus,
+  ReportChartScope,
+  ReportChartSelection,
+  reportChartDrawn
+} from './report-charts';
 import {
   ReportCostRange,
   audienceLabel,
@@ -100,18 +107,34 @@ function openSpan(start: string | null | undefined, end: string | null | undefin
   return soFar === null ? NOT_RECORDED : `${formatElapsed(soFar)} so far`;
 }
 
-function figureTitles(selection: ReportChartSelection, audience: BenchmarkReportAudience): string {
-  const keys = selection[audience] ?? [];
-  if (keys.length === 0) {
-    return 'none';
-  }
-  return keys.map(key => REPORT_CHART_FIGURES.find(figure => figure.key === key)?.title ?? key).join('; ');
+/** The job's documents cover several entries of a comparison as equals, as `report-charts.ts` places their figures. */
+function chartScopeOf(job: BenchmarkReportPackJobDto | null): ReportChartScope {
+  return job?.scope === BenchmarkReportScope.Comparison ? 'comparison' : 'model';
 }
 
-/** A document's chart status in words. */
+function figureTitle(key: string): string {
+  return REPORT_CHART_FIGURES.find(figure => figure.key === key)?.title ?? key;
+}
+
+/** The selected figures a document of `scope` draws, and those it does not. */
+function selectedFigures(selection: ReportChartSelection, audience: BenchmarkReportAudience, scope: ReportChartScope)
+  : { drawn: readonly ReportChartFigureKey[]; notDrawn: readonly ReportChartFigureKey[] } {
+  const keys = selection[audience] ?? [];
+  return {
+    drawn: keys.filter(key => reportChartDrawn(audience, key, scope)),
+    notDrawn: keys.filter(key => !reportChartDrawn(audience, key, scope))
+  };
+}
+
+/**
+ * A document's chart status in words. A Root Cause Analysis outside chat consistency also attaches the figures
+ * Overseer draws itself, so its count is split into the selected ones and those: `8 attached: 4 selected, 4 drawn by
+ * Overseer (16 images, named and anonymized)`.
+ */
 export function reportPackChartStatusWord(
   doc: BenchmarkReportPackDocumentProgressDto,
-  input: Pick<ReportPackDiagnosticsInput, 'chartSelection' | 'chartStatus' | 'chartStorageMissing'>
+  input: Pick<ReportPackDiagnosticsInput, 'chartSelection' | 'chartStatus' | 'chartStorageMissing'>,
+  scope: ReportChartScope = 'model'
 ): string {
   if (input.chartStorageMissing) {
     return 'none (chart storage is not configured)';
@@ -125,9 +148,14 @@ export function reportPackChartStatusWord(
   }
   switch (status.state) {
     case 'attaching': return 'attaching';
-    case 'done': return status.images === status.count
-      ? `${numberFormat.format(status.count)} attached`
-      : `${numberFormat.format(status.count)} attached (${numberFormat.format(status.images)} images, named and anonymized)`;
+    case 'done': {
+      const selected = selectedFigures(input.chartSelection, doc.audience, scope).drawn.length;
+      const byOverseer = doc.audience === BenchmarkReportAudience.RootCauseAnalysis ? status.count - selected : 0;
+      const head = byOverseer > 0
+        ? `${numberFormat.format(status.count)} attached: ${numberFormat.format(selected)} selected, ${numberFormat.format(byOverseer)} drawn by Overseer`
+        : `${numberFormat.format(status.count)} attached`;
+      return status.images === status.count ? head : `${head} (${numberFormat.format(status.images)} images, named and anonymized)`;
+    }
     case 'failed': return `failed: ${orNotRecorded(status.message)}`;
     default: return `none (${orNotRecorded(status.reason)})`;
   }
@@ -146,15 +174,28 @@ function reasoningPart(call: BenchmarkReportPackCallDto): string {
   return (call.reasoningTokens ?? 0) > 0 ? ` (${count(call.reasoningTokens)} reasoning)` : '';
 }
 
+/** A call's output against the writer's output limit at or above which the diagnostics call it near the limit. */
+const NEAR_OUTPUT_LIMIT = 0.8;
+
+/** `, output 85% of the limit (near the limit)`; empty without a known limit or output count. */
+function outputLimitPart(call: BenchmarkReportPackCallDto, limit: number | null | undefined): string {
+  if (typeof limit !== 'number' || !(limit > 0) || !Number.isFinite(call.outputTokens)) {
+    return '';
+  }
+  const share = call.outputTokens / limit;
+  return `, output ${Math.round(share * 100)}% of the limit${share >= NEAR_OUTPUT_LIMIT ? ' (near the limit)' : ''}`;
+}
+
 /**
  * `Call 2: Revision, started 2026-09-28 10:00:50 UTC, 32 s, 6,000 in / 1,000 cached / 1,500 out tokens
- * (900 reasoning), $0.05, finish stop, 4 messages, 20,000 characters, reply 5,100 characters`; a shortening
- * turn reads `Shortening turn`.
+ * (900 reasoning), output 5% of the limit, $0.05, finish stop, 4 messages, 20,000 characters, reply 5,100 characters`;
+ * a shortening turn reads `Shortening turn`.
  */
-function callLine(call: BenchmarkReportPackCallDto, index: number): string {
+function callLine(call: BenchmarkReportPackCallDto, index: number, outputLimit: number | null | undefined): string {
   const duration = Number.isFinite(call.durationMs) ? formatElapsed(call.durationMs) : NOT_RECORDED;
   return `    Call ${index + 1}: ${orNotRecorded(reportCallKindLabel(call.kind))}, started ${time(call.startedAtUtc)}, ${duration}, `
-    + `${count(call.inputTokens)} in / ${count(call.cachedInputTokens)} cached / ${count(call.outputTokens)} out tokens${reasoningPart(call)}, `
+    + `${count(call.inputTokens)} in / ${count(call.cachedInputTokens)} cached / ${count(call.outputTokens)} out tokens${reasoningPart(call)}`
+    + `${outputLimitPart(call, outputLimit)}, `
     + `${cost(call.costUsd)}, finish ${orNotRecorded(call.finishReason)}, `
     + `${count(call.requestMessages)} messages, ${count(call.requestCharacters)} characters${replyPart(call)}`;
 }
@@ -199,7 +240,7 @@ function documentLines(
     `  Model calls: ${count(doc.modelCalls)}`
   );
   if (doc.calls && doc.calls.length > 0) {
-    lines.push(...doc.calls.map(callLine));
+    lines.push(...doc.calls.map((call, i) => callLine(call, i, input.job?.writerMaxOutputTokens)));
     const replies = writerRepliesLine(doc.calls);
     if (replies) {
       lines.push(replies);
@@ -211,9 +252,14 @@ function documentLines(
     `  Cost: ${cost(doc.costUsd)}`,
     `  Document id: ${orNotRecorded(doc.documentId)}`,
     `  Error: ${orNotRecorded(doc.errorMessage)}`,
-    `  Charts selected: ${figureTitles(input.chartSelection, doc.audience)}`,
-    `  Charts: ${reportPackChartStatusWord(doc, input)}`
   );
+  const scope = chartScopeOf(input.job);
+  const figures = selectedFigures(input.chartSelection, doc.audience, scope);
+  lines.push(`  Charts selected: ${figures.drawn.length === 0 ? 'none' : figures.drawn.map(figureTitle).join('; ')}`);
+  if (figures.notDrawn.length > 0) {
+    lines.push(`  Selected but not drawn in this document type: ${figures.notDrawn.map(figureTitle).join('; ')}`);
+  }
+  lines.push(`  Charts: ${reportPackChartStatusWord(doc, input, scope)}`);
   return lines;
 }
 
@@ -456,8 +502,9 @@ export function buildReportPackDiagnostics(input: ReportPackDiagnosticsInput): s
     ? 'not applicable (battery comparison)'
     : orNotRecorded(suiteId)}`);
   lines.push(`Entries: ${entryKeys ? `${count(entryKeys.length)} (${entryKeys.join(', ') || NOT_RECORDED})` : NOT_RECORDED}`);
-  lines.push(`Runs: ${context && context.runIds.length > 0 ? context.runIds.join(', ') : NOT_RECORDED}`);
-  lines.push(`Groups: ${context && context.groupIds.length > 0 ? context.groupIds.join(', ') : NOT_RECORDED}`);
+  const noneInABattery = batteryComparison ? 'none (battery comparison)' : NOT_RECORDED;
+  lines.push(`Runs: ${context && context.runIds.length > 0 ? context.runIds.join(', ') : noneInABattery}`);
+  lines.push(`Groups: ${context && context.groupIds.length > 0 ? context.groupIds.join(', ') : noneInABattery}`);
   if (batteryRunIds.length > 0) {
     lines.push(`Battery runs: ${batteryRunIds.join(', ')}`);
   }
@@ -511,7 +558,7 @@ export function buildReportPackDiagnostics(input: ReportPackDiagnosticsInput): s
   const estimate = input.estimateUsd;
   if (estimate !== null && Number.isFinite(estimate.low)) {
     lines.push(isCostRange(estimate.low, estimate.high)
-      ? `Estimate: ${formatCostRangeUsd(estimate.low, estimate.high)} (first call only, to one repair turn per document)`
+      ? `Estimate: ${formatCostRangeUsd(estimate.low, estimate.high)} (first call only, to one repair turn per document; a shortening turn or a second repair is not included)`
       : `Estimate: ${formatCostUsd(estimate.low)}`);
   }
 

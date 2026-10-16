@@ -7,6 +7,9 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
+/// <summary>A configuration key that differs between two models; <see cref="First"/> and <see cref="Second"/> are null for a key named without its values.</summary>
+public sealed record RootCauseConfigDifference(string Name, string? First, string? Second);
+
 /// <summary>One analyzed model as the engine reads it: identity, configuration, entry figures and evidence.</summary>
 public sealed class RootCauseModelInput
 {
@@ -192,8 +195,12 @@ public sealed class RootCauseInput
 /// </summary>
 public static class RootCauseEngine
 {
-    /// <summary>The version stored on every result.</summary>
-    public const int Version = 8;
+    /// <summary>
+    /// The version stored on every result. From version 9 a share whose 95% interval is wider than one hundred
+    /// percentage points fails a robustness check, a lead share above the whole gap says that other components pull the
+    /// other way, and a rule with several shares has its share span.
+    /// </summary>
+    public const int Version = 9;
 
     public const string ComparisonScope = "Comparison";
     public const string ModelScope = "Model";
@@ -1297,41 +1304,55 @@ internal sealed class RootCauseContext
     }
 
     /// <summary>
-    /// Every configuration key that differs between two models, for <c>pair.&lt;L&gt;.&lt;M&gt;.configDifferences</c>.
-    /// The provider and the model are named as keys only, never by value, so the list names no model.
+    /// Every configuration key other than the model that differs between two models, as <c>thinking level (medium vs high)</c>.
+    /// The provider is named as a key only, never by value, so the list names no model.
     /// </summary>
     public static List<string> ConfigDifferences(RootCauseModelInput a, RootCauseModelInput b)
+        => ConfigDifferenceParts(a, b)
+            .Select(d => d.First == null ? d.Name : d.Name + " (" + d.First + " vs " + d.Second + ")")
+            .ToList();
+
+    /// <summary>
+    /// Every configuration key other than the model that differs between two models: its name and, for a valued key, both
+    /// values (<c>not set</c> when blank); the provider and a key one model's configuration lacks carry no value.
+    /// </summary>
+    public static List<RootCauseConfigDifference> ConfigDifferenceParts(RootCauseModelInput a, RootCauseModelInput b)
     {
-        var list = new List<string>();
-        void Differs(string name, string? x, string? y)
+        var list = new List<RootCauseConfigDifference>();
+        if (!SameSetting(a.Provider, b.Provider)) list.Add(new RootCauseConfigDifference("provider", null, null));
+        foreach (var (name, read) in ValuedConfigKeys)
         {
-            if (!string.Equals((x ?? string.Empty).Trim(), (y ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase))
-            {
-                list.Add(name + " (" + (string.IsNullOrWhiteSpace(x) ? "not set" : x.Trim()) + " vs " + (string.IsNullOrWhiteSpace(y) ? "not set" : y.Trim()) + ")");
-            }
+            string? x = read(a), y = read(b);
+            if (!SameSetting(x, y)) list.Add(new RootCauseConfigDifference(name, SettingText(x), SettingText(y)));
         }
-        void KeyDiffers(string name, string? x, string? y)
-        {
-            if (!string.Equals((x ?? string.Empty).Trim(), (y ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase)) list.Add(name);
-        }
-        KeyDiffers("provider", a.Provider, b.Provider);
-        KeyDiffers("model", a.ModelId, b.ModelId);
-        Differs("thinking level", a.ThinkingLevel, b.ThinkingLevel);
-        Differs("reasoning mode", a.ReasoningMode, b.ReasoningMode);
-        Differs("service tier", a.ServiceTier, b.ServiceTier);
-        Differs("output token cap", a.MaxOutputTokens?.ToString(CultureInfo.InvariantCulture), b.MaxOutputTokens?.ToString(CultureInfo.InvariantCulture));
-        Differs("parallel execution", a.ParallelMode, b.ParallelMode);
-        Differs("harness", a.HarnessVersion, b.HarnessVersion);
         foreach (string key in a.DifferenceKeys.Concat(b.DifferenceKeys)
                      .Where(k => a.DifferenceKeys.Contains(k) != b.DifferenceKeys.Contains(k))
                      .Where(k => !BenchmarkCrossModelComparability.IsModelAxisKey(k))
                      .Distinct(StringComparer.Ordinal)
                      .OrderBy(k => k, StringComparer.Ordinal))
         {
-            list.Add(key);
+            list.Add(new RootCauseConfigDifference(key, null, null));
         }
         return list;
     }
+
+    /// <summary>The valued configuration keys a pair or a comparison is compared on, in display order.</summary>
+    public static readonly IReadOnlyList<(string Name, Func<RootCauseModelInput, string?> Read)> ValuedConfigKeys = new (string, Func<RootCauseModelInput, string?>)[]
+    {
+        ("thinking level", m => m.ThinkingLevel),
+        ("reasoning mode", m => m.ReasoningMode),
+        ("service tier", m => m.ServiceTier),
+        ("output token cap", m => m.MaxOutputTokens?.ToString(CultureInfo.InvariantCulture)),
+        ("parallel execution", m => m.ParallelMode),
+        ("harness", m => m.HarnessVersion),
+    };
+
+    /// <summary>Two settings are the same when they match ignoring case and surrounding space.</summary>
+    public static bool SameSetting(string? x, string? y)
+        => string.Equals((x ?? string.Empty).Trim(), (y ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>A setting as the configuration differences print it: <c>not set</c> when blank.</summary>
+    public static string SettingText(string? value) => string.IsNullOrWhiteSpace(value) ? "not set" : value.Trim();
 
     // ---------------------------------------------------------------------------------------------
     // Evidence summaries
@@ -1397,6 +1418,7 @@ internal sealed class RootCauseContext
 ///   rca.known.&lt;n&gt;
 ///   rca.hypothesis.&lt;id&gt;.&lt;n&gt;.statement, .label, .ref, .axis, .models, .locus, .grade, .gradeReasons, .for, .against,
 ///     .refutedIf, .nextRun or .check, .share, .interval, .priceCard (a price effect only)
+///   rca.rule.&lt;id&gt;.shareSpan, .count: a rule with two or more hypotheses that carry a share, as a group
 ///   rca.graders.familyGap.count; rca.graders.familyGap.&lt;n&gt;.providers, .underA, .underB, .contrast, .notable
 ///   rca.question.&lt;n&gt;.text, .model, .neighbor (questions 1 and 2), .status, .hypotheses, .signals
 ///     n = 1 highest score, 2 lowest, 3 slowest, 4 most expensive
@@ -1492,6 +1514,29 @@ public static class RootCauseFacts
                 facts.Add(prefix + "share", share, RootCauseHypotheses.Pct(share));
                 if (h.ShareLower is double lo && h.ShareUpper is double hi) facts.Text(prefix + "interval", RootCauseHypotheses.Interval(lo, hi));
             }
+        }
+
+        // A rule with two or more hypotheses that carry a share is described as a group by the span of its shares.
+        foreach (var rule in result.Hypotheses.Where(h => h.Kind != "null" && h.Share.HasValue).GroupBy(h => h.Id, StringComparer.Ordinal))
+        {
+            var members = rule.ToList();
+            if (members.Count < 2) continue;
+            string prefix = "rca.rule." + rule.Key + ".";
+            double low = members.Min(h => h.Share!.Value), high = members.Max(h => h.Share!.Value);
+            string lowText = RootCauseHypotheses.Pct(low), highText = RootCauseHypotheses.Pct(high);
+            bool pairs = members.All(h => h.Kind == "pair"), within = members.All(h => h.Kind == "within");
+            // A pair's share is of the gap between two models; a within-model share is of the model's own total.
+            string of = pairs ? " of each gap"
+                : within ? members[0].Axis switch
+                {
+                    RootCauseAxes.Speed => " of each model's own time",
+                    RootCauseAxes.Cost => " of each model's own cost",
+                    _ => " of each model's own points at risk"
+                }
+                : " of each gap or model total";
+            facts.Add(prefix + "shareSpan", high - low, (lowText == highText ? lowText : lowText + " to " + highText) + of);
+            string noun = pairs ? "pairs" : within ? "models" : "hypotheses";
+            facts.Add(prefix + "count", members.Count, Inv(members.Count) + " " + noun);
         }
 
         // A pair total is the first model minus the second, the amount alone; a difference that may be chance is not
@@ -1594,10 +1639,10 @@ public static class RootCauseFacts
             else
             {
                 double total = summary.Time.Sum(s => s.Value);
-                facts.Add(within + "time.total", total, BenchmarkReportFormat.OneDecimal(total) + " s per question, mean");
+                facts.Add(within + "time.total", total, "a mean of " + BenchmarkReportFormat.OneDecimal(total) + " s per question");
                 foreach (var s in summary.Time)
                 {
-                    facts.Add(within + "time." + s.Key + ".seconds", s.Value, BenchmarkReportFormat.OneDecimal(s.Value) + " s per question, mean");
+                    facts.Add(within + "time." + s.Key + ".seconds", s.Value, "a mean of " + BenchmarkReportFormat.OneDecimal(s.Value) + " s per question");
                     if (total > 0) facts.Add(within + "time." + s.Key + ".share", s.Value / total, RootCauseHypotheses.Pct(s.Value / total));
                 }
             }
@@ -1609,7 +1654,7 @@ public static class RootCauseFacts
             else
             {
                 double total = summary.Cost.Sum(s => s.Value);
-                facts.Add(within + "cost.total", total, BenchmarkReportFormat.Usd(total) + " per question, mean");
+                facts.Add(within + "cost.total", total, "a mean of " + BenchmarkReportFormat.Usd(total) + " per question");
                 foreach (var s in summary.Cost)
                 {
                     if (total > 0) facts.Add(within + "cost." + s.Key + ".share", s.Value / total, RootCauseHypotheses.Pct(s.Value / total));

@@ -35,6 +35,10 @@ public static class BenchmarkReportFactLabels
 
         // Comparison scope: the fixed keys of BenchmarkComparisonReportFacts
         ["comparison.reference"] = "Reference model",
+        ["comparison.runsPerSuite"] = "Runs per suite",
+        ["comparison.suiteCount"] = "Suites",
+        ["comparison.memberRuns"] = "Member runs per model",
+        ["comparison.configDifferences"] = "Configuration differences across the models",
         ["frontier.qualityCost"] = "Intelligence against cost frontier",
         ["frontier.qualitySpeed"] = "Intelligence against speed frontier",
         ["frontier.speedCost"] = "Speed against cost frontier",
@@ -477,6 +481,10 @@ public static class BenchmarkReportFactLabels
         ["tool_use"] = "a tool-use weakness",
         ["other"] = "a weakness of another kind",
     };
+
+    /// <summary>A synthesis finding category as a weakness's words, <c>an accuracy weakness</c>; the category itself when unknown.</summary>
+    public static string FindingCategoryWeakness(string category)
+        => FindingCategoryWeaknesses.TryGetValue(category, out var weakness) ? weakness : "a " + category + " weakness";
 
     /// <summary>The labels of a pair's facts (<c>pair.&lt;L&gt;.&lt;M&gt;.&lt;suffix&gt;</c>) by suffix.</summary>
     private static readonly IReadOnlyDictionary<string, string> PairLabels = new Dictionary<string, string>(StringComparer.Ordinal)
@@ -926,6 +934,11 @@ public static class BenchmarkReportFactLabels
                     return true;
                 }
                 return false;
+
+            // rca.rule.<id>.shareSpan, rca.rule.<id>.count
+            case "rule" when parts.Length == 4 && parts[2].Length > 0 && parts[3] is "shareSpan" or "count":
+                label = "Hypotheses of rule " + parts[2] + (parts[3] == "shareSpan" ? ": span of their shares" : ": how many");
+                return true;
 
             // rca.controls.<n>.<part>
             case "controls" when parts.Length == 4 && IsIndex(parts[2]) && ControlParts.TryGetValue(parts[3], out var controlPart):

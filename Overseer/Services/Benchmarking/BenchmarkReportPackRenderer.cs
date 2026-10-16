@@ -116,9 +116,11 @@ public static partial class BenchmarkReportPackRenderer
     /// the cited and the critical-error questions, leaves out an empty Appendix E and letters the rest on, and prints one
     /// output cost column. From version 17 every sentence of the writer's prose, every table cell and the text after every
     /// run-in label start with a capital. From version 18 the controls table of a run- or battery-completion Root Cause
-    /// Analysis names each control's thinking level once.
+    /// Analysis names each control's thinking level once. From version 19 a mean figure reads "a mean of …", a group of
+    /// hypotheses is described by its share span, the cheapest-model bullet reads the paired tests where they cover the
+    /// model, and a count fact says what it counts.
     /// </summary>
-    public const int ReportFormatVersion = 18;
+    public const int ReportFormatVersion = 19;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
@@ -138,8 +140,11 @@ public static partial class BenchmarkReportPackRenderer
     /// is left out with the rest lettered on, the cost tables have one output column, and an evidence line names its models.
     /// From version 22 every sentence of the writer's prose, every table cell and the text after every run-in label start
     /// with a capital, and a spread runs from its lowest value to its highest, each model named before its value.
+    /// From version 23 a mean figure reads "a mean of …", a group of hypotheses is described by its share span, the
+    /// cheapest-model bullet reads the paired tests, comparison-wide facts give the runs, suites and configuration
+    /// differences, and a count fact says what it counts.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 22;
+    public const int ComparisonReportFormatVersion = 23;
 
     /// <summary>The comparison format version whose Root Cause Analysis writer output first carries the answer slots.</summary>
     private const int AnswerSlotsFormatVersion = 16;
@@ -150,8 +155,9 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.
     /// From version 5 every sentence of the writer's prose, every table cell and the text after every run-in label start with a capital.
+    /// From version 6 a count fact says what it counts.
     /// </summary>
-    public const int ChatConsistencyReportFormatVersion = 5;
+    public const int ChatConsistencyReportFormatVersion = 6;
 
     /// <summary>The format version a document of <paramref name="scope"/> is written and rendered under now.</summary>
     public static int CurrentFormatVersion(BenchmarkReportScope scope) => scope switch
@@ -497,7 +503,7 @@ public static partial class BenchmarkReportPackRenderer
         }
 
         var errors = Fact(ctx, "errors.critical");
-        Line(sb, "- **" + Label("errors.critical") + ":** " + (errors == null || !errors.Available ? NotAvailableText(errors) : errors.Display + "."));
+        Line(sb, "- **" + Label("errors.critical") + ":** " + (errors == null || !errors.Available ? NotAvailableText(errors) : BenchmarkReportFormat.CountHead(errors.Display) + "."));
         if (AvailabilityBullet(ctx, string.Empty) is string availability)
         {
             Line(sb, "- **Provider availability:** " + availability);
@@ -555,8 +561,8 @@ public static partial class BenchmarkReportPackRenderer
     private static string CriticalErrorsCell(Context ctx, BenchmarkReportEntryFigures entry, BenchmarkReportPeer? peer)
     {
         var own = entry.Extra?.FirstOrDefault(f => string.Equals(f.Key, "errors.critical", StringComparison.Ordinal));
-        if (own != null) return own.Available ? Cell(own.Display) : BenchmarkReportFacts.NotAvailable;
-        if (peer == null && Fact(ctx, "errors.critical") is { Available: true } sheetFigure) return Cell(sheetFigure.Display);
+        if (own != null) return own.Available ? Cell(BenchmarkReportFormat.CountHead(own.Display)) : BenchmarkReportFacts.NotAvailable;
+        if (peer == null && Fact(ctx, "errors.critical") is { Available: true } sheetFigure) return Cell(BenchmarkReportFormat.CountHead(sheetFigure.Display));
         return BenchmarkReportFacts.NotAvailable;
     }
 
@@ -574,8 +580,8 @@ public static partial class BenchmarkReportPackRenderer
             return;
         }
 
-        // A display stored before format version 6 carries no noun.
-        string scored = D(ctx, "quality.scoredItems");
+        // A display stored before format version 6 carries no noun; one from version 19 says what it counts, as this line does.
+        string scored = BenchmarkReportFormat.CountHead(D(ctx, "quality.scoredItems"));
         if (!scored.EndsWith(" question", StringComparison.Ordinal) && !scored.EndsWith(" questions", StringComparison.Ordinal))
         {
             scored += " questions";
@@ -595,7 +601,7 @@ public static partial class BenchmarkReportPackRenderer
         if (!IsAvailable(ctx, "quality.withheldRuns")) return;
 
         bool single = Fact(ctx, "quality.withheldRuns")!.Value is JsonValue value && value.TryGetValue(out int count) && count == 1;
-        Line(sb, D(ctx, "quality.withheldRuns") + (single ? " withholds its own" : " withhold their own")
+        Line(sb, BenchmarkReportFormat.CountHead(D(ctx, "quality.withheldRuns")) + (single ? " withholds its own" : " withhold their own")
             + " Intelligence Index because a question failed at the provider; the Intelligence figure above is over the scored questions.");
         Line(sb);
     }
@@ -627,7 +633,7 @@ public static partial class BenchmarkReportPackRenderer
         string text;
         if (Fact(ctx, prefix + "availability.providerErrorRate") is { Available: true } rate)
         {
-            var parts = new List<string> { D(ctx, prefix + "availability.providerErrors") };
+            var parts = new List<string> { BenchmarkReportFormat.CountHead(D(ctx, prefix + "availability.providerErrors")) };
             string interval = AvailabilityInterval(ctx, prefix + "availability.providerErrorRate");
             if (interval.Length > 0) parts.Add(interval);
             if (NumberOf(attempts) is double valid && valid < BenchmarkProviderAvailability.FewAttemptsThreshold) parts.Add("few attempts");
@@ -2271,8 +2277,9 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary><c>- **Label:** display</c> for one fact.</summary>
+    /// <summary>A fact under its label; a count prints its head alone, since the label says what it counts.</summary>
     private static void LabeledLine(StringBuilder sb, Context ctx, string key)
-        => Line(sb, "- **" + Label(key) + ":** " + D(ctx, key));
+        => Line(sb, "- **" + Label(key) + ":** " + BenchmarkReportFormat.CountHead(D(ctx, key)));
 
     /// <summary>The text as a blockquote, one <c>&gt; </c> per line; an empty line becomes <c>&gt;</c>.</summary>
     private static void Quote(StringBuilder sb, string? text)
@@ -2585,7 +2592,9 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>A numeric table cell: the fact's display, or <see cref="NoValue"/> when it is unavailable or missing.</summary>
-    private static string Num(Context ctx, string key) => Fact(ctx, key) is { Available: true } fact ? Cell(fact.Display) : NoValue;
+    /// <summary>A fact as a table cell; a count prints its head alone, under a column that says what it counts.</summary>
+    private static string Num(Context ctx, string key)
+        => Fact(ctx, key) is { Available: true } fact ? Cell(BenchmarkReportFormat.CountHead(fact.Display)) : NoValue;
 
     private static string Label(string key) => BenchmarkReportFactLabels.Label(key);
 
@@ -2668,23 +2677,45 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>The token's value; the token itself, as written, when it names nothing.</summary>
     private static string Resolve(Context ctx, Match match)
-    {
-        string token = match.Groups[1].Value.Trim();
-        string unresolved = "{{" + match.Groups[1].Value + "}}";
+        => ResolveToken(ctx, match.Groups[1].Value.Trim()) ?? "{{" + match.Groups[1].Value + "}}";
 
+    /// <summary>The value of the token whose inner text is <paramref name="token"/>; null when it names nothing.</summary>
+    private static string? ResolveToken(Context ctx, string token)
+    {
         if (string.Equals(token, "subject", StringComparison.Ordinal)) return ctx.Sheet.SubjectLabel;
 
         if (token.StartsWith("peer:", StringComparison.Ordinal) || (ctx.Comparison && token.StartsWith("model:", StringComparison.Ordinal)))
         {
             string letter = token[(token.IndexOf(':') + 1)..].Trim();
             var peer = ctx.Sheet.Peers.FirstOrDefault(p => string.Equals(p.Letter, letter, StringComparison.Ordinal));
-            if (peer == null) return unresolved;
-            return ProseName(ctx, peer);
+            return peer == null ? null : ProseName(ctx, peer);
         }
 
         if (ctx.ChatConsistency && BenchmarkChatConsistencyReportFacts.WriterHidden(token)) return HiddenFactText(token);
-        if (Fact(ctx, token) is not { } fact) return unresolved;
+        if (Fact(ctx, token) is not { } fact) return null;
         return ctx.ChatConsistency ? BenchmarkChatConsistencyReportFacts.WithoutInstrument(Shown(ctx, fact)) : Shown(ctx, fact);
+    }
+
+    /// <summary>
+    /// What each token of <paramref name="tokens"/> (the inner text of a <c>{{…}}</c>) prints in a named, fully disclosed copy
+    /// of the stored <paramref name="document"/>: a fact's shown value, a model's name; null for a token the document's fact
+    /// sheet does not resolve. For the writer-replies export, which is internal.
+    /// </summary>
+    public static IReadOnlyList<(string Token, string? Display)> TokenDisplays(BenchmarkReportDocument document, IEnumerable<string> tokens)
+    {
+        ArgumentNullException.ThrowIfNull(document);
+        ArgumentNullException.ThrowIfNull(tokens);
+        var ctx = new Context
+        {
+            Document = document,
+            Options = new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named },
+            Sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson),
+            Content = new BenchmarkReportContentSnapshot(),
+            Writer = new BenchmarkReportWriterOutput(),
+            Notes = new List<BenchmarkReportValidationNote>()
+        };
+        BenchmarkReportFacts.NormalizeSupportLabels(ctx.Sheet);
+        return tokens.Select(t => (t, ResolveToken(ctx, t.Trim()))).ToList();
     }
 
     /// <summary>

@@ -237,13 +237,62 @@ describe('report-pack-diagnostics', () => {
 
     expect(lines).toContain('Writer output limit: 32,000 tokens (reasoning included)');
     expect(lines).toContain('    Call 1: Draft, started 2026-10-16 11:28:39 UTC, 3 min 40 s, 190,000 in / 0 cached / 16,000 out tokens (14,950 reasoning), '
-      + '$0.54, finish MAX_TOKENS, 2 messages, 667,293 characters');
+      + 'output 50% of the limit, $0.54, finish MAX_TOKENS, 2 messages, 667,293 characters');
     expect(lines).toContain('    Call 2: Revision, started 2026-10-16 11:28:39 UTC, 3 min 40 s, 190,000 in / 0 cached / 16,000 out tokens, '
-      + '$0.54, finish MAX_TOKENS, 2 messages, 667,293 characters');
+      + 'output 50% of the limit, $0.54, finish MAX_TOKENS, 2 messages, 667,293 characters');
     expect(lines.filter(line => line.includes('reasoning)'))).toHaveLength(1);
 
     const older = buildReportPackDiagnostics(input()).split('\n');
     expect(older).toContain('Writer output limit: not recorded');
+    expect(older.some(line => line.includes('of the limit'))).toBe(false);
+  });
+
+  it('says how close each call came to the output limit, near it from 80%', () => {
+    const call = (outputTokens: number): BenchmarkReportPackCallDto => ({
+      kind: 'Draft', startedAtUtc: '2026-10-16T20:00:00Z', durationMs: 367600, inputTokens: 192508, cachedInputTokens: 0, outputTokens,
+      costUsd: 0.66, finishReason: 'STOP', requestMessages: 2, requestCharacters: 700000
+    });
+    const document: BenchmarkReportPackDocumentProgressDto = {
+      audience: RootCauseAnalysis, status: 'Completed', documentId: 67, errorMessage: null, modelCalls: 2, calls: [call(27109), call(25600), call(25500)]
+    };
+    const lines = buildReportPackDiagnostics(input({ job: job({ writerMaxOutputTokens: 32000, documents: [document] }) })).split('\n');
+
+    expect(lines).toContain('    Call 1: Draft, started 2026-10-16 20:00:00 UTC, 6 min 07 s, 192,508 in / 0 cached / 27,109 out tokens, '
+      + 'output 85% of the limit (near the limit), $0.66, finish STOP, 2 messages, 700,000 characters');
+    expect(lines.some(line => line.includes('out tokens, output 80% of the limit (near the limit), '))).toBe(true);
+    expect(lines.some(line => line.includes('25,500 out tokens, output 80% of the limit, $0.66'))).toBe(true);
+  });
+
+  it('lists only the selected charts a document draws, names the others, and splits the count into selected and Overseer-drawn', () => {
+    const rca: BenchmarkReportPackDocumentProgressDto = {
+      audience: RootCauseAnalysis, status: 'Completed', documentId: 67, errorMessage: null, modelCalls: 3
+    };
+    const comparison = job({ scope: BenchmarkReportScope.Comparison, comparisonId: 4, documents: [rca] });
+    const lines = buildReportPackDiagnostics(input({
+      job: comparison,
+      chartStatus: { 67: { state: 'done', count: 8, images: 16 } }
+    })).split('\n');
+
+    expect(lines).toContain('  Charts selected: Speed; Cost; Intelligence against speed; Intelligence against cost');
+    expect(lines).toContain('  Selected but not drawn in this document type: Intelligence');
+    expect(lines).toContain('  Charts: 8 attached: 4 selected, 4 drawn by Overseer (16 images, named and anonymized)');
+
+    // A per-model Root Cause Analysis draws the Intelligence bars, so nothing is left undrawn.
+    const model = buildReportPackDiagnostics(input({ job: job({ documents: [rca] }), chartStatus: { 67: { state: 'done', count: 5, images: 5 } } })).split('\n');
+    expect(model).toContain('  Charts selected: Intelligence; Speed; Cost; Intelligence against speed; Intelligence against cost');
+    expect(model.some(line => line.startsWith('  Selected but not drawn'))).toBe(false);
+    expect(model).toContain('  Charts: 5 attached');
+  });
+
+  it('reads the runs and groups of a battery comparison as none', () => {
+    const lines = buildReportPackDiagnostics(input({
+      context: { ...CONTEXT, runIds: [], groupIds: [], batteryRunIds: [13, 14], suiteId: null, entryKeys: ['battery:13', 'battery:14'] }
+    })).split('\n');
+    expect(lines).toContain('Runs: none (battery comparison)');
+    expect(lines).toContain('Groups: none (battery comparison)');
+
+    const plain = buildReportPackDiagnostics(input({ context: { ...CONTEXT, groupIds: [] } })).split('\n');
+    expect(plain).toContain('Groups: not recorded');
   });
 
   it('reads the suite id as not recorded for a comparison that is not of battery results, and the preparation notes as none', () => {
@@ -258,7 +307,8 @@ describe('report-pack-diagnostics', () => {
 
   it('prints the estimate as a range from the first call to one repair turn per document, when both ends are known and differ', () => {
     const lines = (estimateUsd: ReportPackDiagnosticsInput['estimateUsd']) => buildReportPackDiagnostics(input({ estimateUsd })).split('\n');
-    expect(lines({ low: 1.04, high: 2.1 })).toContain('Estimate: $1.04 to $2.10 (first call only, to one repair turn per document)');
+    expect(lines({ low: 1.04, high: 2.1 }))
+      .toContain('Estimate: $1.04 to $2.10 (first call only, to one repair turn per document; a shortening turn or a second repair is not included)');
     expect(lines({ low: 1.04, high: null })).toContain('Estimate: $1.04');
     expect(lines({ low: 1.04, high: 1.0401 })).toContain('Estimate: $1.04');
   });

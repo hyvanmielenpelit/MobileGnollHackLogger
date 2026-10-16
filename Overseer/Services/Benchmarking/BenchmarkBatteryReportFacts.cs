@@ -959,7 +959,7 @@ public static class BenchmarkBatteryReportFacts
         int scored = questions.Sum(q => q.RunCount);
         int critical = questions.Sum(q => q.CriticalErrorCount ?? 0);
         facts.Add("answers.scored", scored, Inv(scored));
-        facts.Add("errors.critical", critical, Inv(critical) + " of " + Inv(scored) + " answers");
+        facts.Add("errors.critical", critical, BenchmarkReportFormat.CountOf(critical, scored, "answers", BenchmarkReportFacts.CriticalErrorQualifier));
 
         var usage = result.Usage;
         if (usage == null || usage.ClaimsChecked == 0)
@@ -1146,7 +1146,7 @@ public static class BenchmarkBatteryReportFacts
             }
 
             facts.Add(prefix + "scoredItems", suite.ScoredItemCount,
-                Inv(suite.ScoredItemCount) + " of " + Inv(suite.ExamItemCount) + (suite.ExamItemCount == 1 ? " question" : " questions"));
+                BenchmarkReportFormat.CountOf(suite.ScoredItemCount, suite.ExamItemCount, "questions", "with a scored answer"));
             facts.Add(prefix + "runs", suite.UsableMemberCount, Inv(suite.UsableMemberCount) + (suite.UsableMemberCount == 1 ? " run" : " runs"));
 
             if (suite.MeanSpeedIndex is double speed)
@@ -1304,7 +1304,7 @@ public static class BenchmarkBatteryReportFacts
             {
                 int scored = items.Sum(i => i.RunCount);
                 int critical = items.Sum(i => i.CriticalErrorCount);
-                extra.Add("errors.critical", critical, Inv(critical) + " of " + Inv(scored) + " answers");
+                extra.Add("errors.critical", critical, BenchmarkReportFormat.CountOf(critical, scored, "answers", BenchmarkReportFacts.CriticalErrorQualifier));
             }
             else
             {

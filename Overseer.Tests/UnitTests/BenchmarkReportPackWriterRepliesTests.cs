@@ -1,6 +1,7 @@
 namespace Overseer.Tests.UnitTests;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using MobileGnollHackLogger.Data;
@@ -161,6 +162,62 @@ public class BenchmarkReportPackWriterRepliesTests
         Assert.Single(markdown.Split("Request (the message this turn added):").Skip(1));
         Assert.Contains("Request (the message this turn added):\n\n````text\n" + request + "\n````\n\n````json\n" + FencedReply + "\n````\n",
             markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Durations_AreCutToWholeSeconds_AndACallIsNamedAsTheDiagnosticsNameIt()
+    {
+        var job = new BenchmarkReportPackJob
+        {
+            Id = "job-3",
+            PackId = PackId,
+            SubjectLabel = "Comparison #4",
+            Scope = BenchmarkReportScope.Comparison,
+            Cts = new CancellationTokenSource(),
+            Documents = { new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.RootCauseAnalysis, SubjectLabel = "Comparison #4" } }
+        };
+        var draft = Call(BenchmarkReportPackCallKinds.Draft, 39);
+        draft.DurationMs = 367_600;
+        var shorten = Call(BenchmarkReportPackCallKinds.Shorten, 50);
+        shorten.DurationMs = 11_600;
+        job.RecordCall(job.Documents[0], draft, "{}");
+        job.RecordCall(job.Documents[0], shorten, "{}");
+
+        string markdown = BenchmarkReportPackWriterReplies.BuildMarkdown(job, Captured);
+
+        Assert.Contains("UTC · 6 min 07 s · ", markdown, StringComparison.Ordinal);
+        Assert.Contains("UTC · 11 s · ", markdown, StringComparison.Ordinal);
+        Assert.Contains("### Call 2: Shortening turn\n", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain(": Shorten\n", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EachStoredDocument_ListsTheTokensItsRepliesCite_WithWhatTheyPrint()
+    {
+        var sheet = new BenchmarkReportFactSheet
+        {
+            Scope = BenchmarkReportFactSheet.ComparisonScopeValue,
+            Peers = { new BenchmarkReportPeer { Letter = "A", Label = "Orion Max (high)" } },
+            Facts = { new BenchmarkReportFact { Key = "model.A.errors.critical", Display = "1 of 36 answers | flagged" } }
+        };
+        var (job, _) = Job();
+        job.RecordCall(job.Documents[0], Call(BenchmarkReportPackCallKinds.Shorten, 58),
+            "{ \"sections\": { \"conclusions\": \"{{model:A}} gave {{model.A.errors.critical}}; {{model:A}} again, and {{no.such.fact}}.\" } }");
+        var stored = new Dictionary<long, BenchmarkReportDocument>
+        {
+            [65] = new BenchmarkReportDocument { Id = 65, Audience = BenchmarkReportAudience.RootCauseAnalysis, FactsJson = BenchmarkReportJson.Serialize(sheet) }
+        };
+
+        string markdown = BenchmarkReportPackWriterReplies.BuildMarkdown(job, Captured, stored);
+
+        Assert.Contains("#### Tokens cited\n\n| Token | Prints |\n|---|---|\n"
+                        + "| `{{model:A}}` | Orion Max (high) |\n"
+                        + "| `{{model.A.errors.critical}}` | 1 of 36 answers \\| flagged |\n"
+                        + "| `{{no.such.fact}}` | not in the fact sheet |\n", markdown, StringComparison.Ordinal);
+
+        // Without its stored document, a document's replies get one line instead of the table.
+        string unstored = BenchmarkReportPackWriterReplies.BuildMarkdown(job, Captured);
+        Assert.Contains("#### Tokens cited\n\nThe table is unavailable: Overseer stored no document for these replies.\n", unstored, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1643,6 +1643,16 @@ public static class BenchmarkReportPackCallKinds
 
     /// <summary>A final turn asking for sections over their word caps shortened, and the headline when it is invalid.</summary>
     public const string Shorten = "Shorten";
+
+    /// <summary>A call kind as the diagnostics name it (<c>Shortening turn</c>); an unknown kind as it is.</summary>
+    public static string Label(string? kind) => kind switch
+    {
+        Draft => "Draft",
+        Revision => "Revision",
+        Shorten => "Shortening turn",
+        Headline => "Headline retry",
+        _ => kind ?? string.Empty
+    };
 }
 
 /// <summary>The word counts of one capped section of a document, turn by turn (raw writer words; a token counts as one).</summary>

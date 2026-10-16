@@ -20,7 +20,7 @@
 > **Key finding.** Intelligence: Not established; speed: Not established; cost: Not established.
 
 - Against the reference model, Orion Max, the paired tests establish no difference in intelligence.
-- Zeta Prime is the cheapest model, at $0.010 per question, and its Intelligence Index interval overlaps no other model's.
+- Zeta Prime is the cheapest model, at $0.010 per question; the paired tests establish that none of the 4 other models differs from it in quality.
 - Answers without any tool call: Orion Max, 2 of 6 scored answers (33%); Vega Pro, 2 of 6 scored answers (33%); Lyra Mini, 2 of 6 scored answers (33%); Nova Lite, 2 of 6 scored answers (33%); Zeta Prime, 2 of 6 scored answers (33%).
 
 ### The questions
@@ -370,11 +370,12 @@ The benchmark asks single questions, so longer conversations are not measured.
 
 ### Configuration differences
 
-- **Orion Max against Vega Pro: config differences:** Provider and model
-- **Orion Max against Lyra Mini: config differences:** Provider and model
-- **Orion Max against Nova Lite: config differences:** Provider and model
-- **Orion Max against Zeta Prime: config differences:** Provider and model
-- **Nova Lite against Zeta Prime: config differences:** Provider and model
+- **Configuration differences across the models:** No configuration key other than the model
+- **Orion Max against Vega Pro: config differences:** Provider
+- **Orion Max against Lyra Mini: config differences:** Provider
+- **Orion Max against Nova Lite: config differences:** Provider
+- **Orion Max against Zeta Prime: config differences:** Provider
+- **Nova Lite against Zeta Prime: config differences:** Provider
 
 ### Failure profile
 
@@ -973,7 +974,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         },
         {
           "available": true,
-          "display": "0 of 6 answers",
+          "display": "0 of 6 answers with a critical error",
           "key": "errors.critical",
           "value": 0
         },
@@ -1030,7 +1031,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         },
         {
           "available": true,
-          "display": "0 of 6 answers",
+          "display": "0 of 6 answers with a critical error",
           "key": "errors.critical",
           "value": 0
         },
@@ -1087,7 +1088,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         },
         {
           "available": true,
-          "display": "1 of 6 answers",
+          "display": "1 of 6 answers with a critical error",
           "key": "errors.critical",
           "value": 1
         },
@@ -1144,7 +1145,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         },
         {
           "available": true,
-          "display": "0 of 6 answers",
+          "display": "0 of 6 answers with a critical error",
           "key": "errors.critical",
           "value": 0
         },
@@ -1201,7 +1202,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         },
         {
           "available": true,
-          "display": "0 of 6 answers",
+          "display": "0 of 6 answers with a critical error",
           "key": "errors.critical",
           "value": 0
         },
@@ -1228,6 +1229,12 @@ The counts and the configuration facts the analysis states, each numbered as the
     }
   ],
   "facts": [
+    {
+      "available": true,
+      "display": "no configuration key other than the model",
+      "key": "comparison.configDifferences",
+      "value": 0
+    },
     {
       "available": true,
       "display": "5",
@@ -1260,9 +1267,21 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "1 run per suite",
+      "key": "comparison.runsPerSuite",
+      "value": 1
+    },
+    {
+      "available": true,
       "display": "sig-7f3a91",
       "key": "comparison.signature",
       "value": "sig-7f3a91"
+    },
+    {
+      "available": true,
+      "display": "1 suite",
+      "key": "comparison.suiteCount",
+      "value": 1
     },
     {
       "available": true,
@@ -1479,7 +1498,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with a critical error",
       "key": "model.A.errors.critical",
       "value": 0
     },
@@ -1581,25 +1600,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on accuracy",
       "key": "model.A.profile.deficit.accuracy",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on completeness",
       "key": "model.A.profile.deficit.completeness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on conciseness",
       "key": "model.A.profile.deficit.conciseness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on readability",
       "key": "model.A.profile.deficit.readability",
       "value": 0
     },
@@ -1641,7 +1660,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 1 run",
+      "display": "0 of 1 run with structured grader findings",
       "key": "model.A.profile.findings.runsWithSynthesis",
       "value": 0
     },
@@ -1653,19 +1672,19 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions this model missed while the others scored well",
       "key": "model.A.profile.isolatedMisses",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions on which this model scored lowest",
       "key": "model.A.profile.lowestScorer",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that may mislead",
       "key": "model.A.profile.mayMislead",
       "value": 0
     },
@@ -1677,7 +1696,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "2 of 6 answers",
+      "display": "2 of 6 answers without a tool call",
       "key": "model.A.profile.noToolAnswers",
       "value": 2
     },
@@ -1719,25 +1738,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with output defects",
       "key": "model.A.profile.outputDefects",
       "value": 0
     },
     {
       "available": true,
-      "display": "1 of 6 questions",
+      "display": "1 of 6 questions missed by this model and at least half the others",
       "key": "model.A.profile.sharedMisses",
       "value": 1
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that hit the tool limit",
       "key": "model.A.profile.toolLimitHits",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that were truncated",
       "key": "model.A.profile.truncated",
       "value": 0
     },
@@ -1778,7 +1797,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 1 question",
+      "display": "1 of 1 question with a scored answer",
       "key": "model.A.quality.scoredItems",
       "value": 1
     },
@@ -2240,7 +2259,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with a critical error",
       "key": "model.B.errors.critical",
       "value": 0
     },
@@ -2342,25 +2361,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on accuracy",
       "key": "model.B.profile.deficit.accuracy",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on completeness",
       "key": "model.B.profile.deficit.completeness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on conciseness",
       "key": "model.B.profile.deficit.conciseness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on readability",
       "key": "model.B.profile.deficit.readability",
       "value": 0
     },
@@ -2402,7 +2421,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 1 run",
+      "display": "0 of 1 run with structured grader findings",
       "key": "model.B.profile.findings.runsWithSynthesis",
       "value": 0
     },
@@ -2414,19 +2433,19 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions this model missed while the others scored well",
       "key": "model.B.profile.isolatedMisses",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions on which this model scored lowest",
       "key": "model.B.profile.lowestScorer",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that may mislead",
       "key": "model.B.profile.mayMislead",
       "value": 0
     },
@@ -2438,7 +2457,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "2 of 6 answers",
+      "display": "2 of 6 answers without a tool call",
       "key": "model.B.profile.noToolAnswers",
       "value": 2
     },
@@ -2480,25 +2499,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with output defects",
       "key": "model.B.profile.outputDefects",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions missed by this model and at least half the others",
       "key": "model.B.profile.sharedMisses",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that hit the tool limit",
       "key": "model.B.profile.toolLimitHits",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that were truncated",
       "key": "model.B.profile.truncated",
       "value": 0
     },
@@ -2539,7 +2558,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 1 question",
+      "display": "1 of 1 question with a scored answer",
       "key": "model.B.quality.scoredItems",
       "value": 1
     },
@@ -2806,7 +2825,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 6 questions",
+      "display": "1 of 6 questions scored more than 15 points above the reference",
       "key": "model.B.vsReference.better",
       "value": 1
     },
@@ -2818,13 +2837,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "5 of 6 questions",
+      "display": "5 of 6 questions scored within 15 points of the reference",
       "key": "model.B.vsReference.similar",
       "value": 5
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions scored more than 15 points below the reference",
       "key": "model.B.vsReference.worse",
       "value": 0
     },
@@ -3025,7 +3044,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 6 answers",
+      "display": "1 of 6 answers with a critical error",
       "key": "model.C.errors.critical",
       "value": 1
     },
@@ -3127,25 +3146,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on accuracy",
       "key": "model.C.profile.deficit.accuracy",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on completeness",
       "key": "model.C.profile.deficit.completeness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on conciseness",
       "key": "model.C.profile.deficit.conciseness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on readability",
       "key": "model.C.profile.deficit.readability",
       "value": 0
     },
@@ -3187,7 +3206,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 1 run",
+      "display": "0 of 1 run with structured grader findings",
       "key": "model.C.profile.findings.runsWithSynthesis",
       "value": 0
     },
@@ -3199,19 +3218,19 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions this model missed while the others scored well",
       "key": "model.C.profile.isolatedMisses",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions on which this model scored lowest",
       "key": "model.C.profile.lowestScorer",
       "value": 0
     },
     {
       "available": true,
-      "display": "1 of 6 answers",
+      "display": "1 of 6 answers that may mislead",
       "key": "model.C.profile.mayMislead",
       "value": 1
     },
@@ -3223,7 +3242,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "2 of 6 answers",
+      "display": "2 of 6 answers without a tool call",
       "key": "model.C.profile.noToolAnswers",
       "value": 2
     },
@@ -3265,25 +3284,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with output defects",
       "key": "model.C.profile.outputDefects",
       "value": 0
     },
     {
       "available": true,
-      "display": "1 of 6 questions",
+      "display": "1 of 6 questions missed by this model and at least half the others",
       "key": "model.C.profile.sharedMisses",
       "value": 1
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that hit the tool limit",
       "key": "model.C.profile.toolLimitHits",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that were truncated",
       "key": "model.C.profile.truncated",
       "value": 0
     },
@@ -3324,7 +3343,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 1 question",
+      "display": "1 of 1 question with a scored answer",
       "key": "model.C.quality.scoredItems",
       "value": 1
     },
@@ -3591,7 +3610,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions scored more than 15 points above the reference",
       "key": "model.C.vsReference.better",
       "value": 0
     },
@@ -3603,13 +3622,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "3 of 6 questions",
+      "display": "3 of 6 questions scored within 15 points of the reference",
       "key": "model.C.vsReference.similar",
       "value": 3
     },
     {
       "available": true,
-      "display": "3 of 6 questions",
+      "display": "3 of 6 questions scored more than 15 points below the reference",
       "key": "model.C.vsReference.worse",
       "value": 3
     },
@@ -3810,7 +3829,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with a critical error",
       "key": "model.D.errors.critical",
       "value": 0
     },
@@ -3912,25 +3931,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on accuracy",
       "key": "model.D.profile.deficit.accuracy",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on completeness",
       "key": "model.D.profile.deficit.completeness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on conciseness",
       "key": "model.D.profile.deficit.conciseness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on readability",
       "key": "model.D.profile.deficit.readability",
       "value": 0
     },
@@ -3972,7 +3991,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 1 run",
+      "display": "0 of 1 run with structured grader findings",
       "key": "model.D.profile.findings.runsWithSynthesis",
       "value": 0
     },
@@ -3984,19 +4003,19 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions this model missed while the others scored well",
       "key": "model.D.profile.isolatedMisses",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions on which this model scored lowest",
       "key": "model.D.profile.lowestScorer",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that may mislead",
       "key": "model.D.profile.mayMislead",
       "value": 0
     },
@@ -4008,7 +4027,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "2 of 6 answers",
+      "display": "2 of 6 answers without a tool call",
       "key": "model.D.profile.noToolAnswers",
       "value": 2
     },
@@ -4050,25 +4069,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with output defects",
       "key": "model.D.profile.outputDefects",
       "value": 0
     },
     {
       "available": true,
-      "display": "1 of 6 questions",
+      "display": "1 of 6 questions missed by this model and at least half the others",
       "key": "model.D.profile.sharedMisses",
       "value": 1
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that hit the tool limit",
       "key": "model.D.profile.toolLimitHits",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that were truncated",
       "key": "model.D.profile.truncated",
       "value": 0
     },
@@ -4109,7 +4128,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 1 question",
+      "display": "1 of 1 question with a scored answer",
       "key": "model.D.quality.scoredItems",
       "value": 1
     },
@@ -4376,7 +4395,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions scored more than 15 points above the reference",
       "key": "model.D.vsReference.better",
       "value": 0
     },
@@ -4388,13 +4407,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 6 questions",
+      "display": "1 of 6 questions scored within 15 points of the reference",
       "key": "model.D.vsReference.similar",
       "value": 1
     },
     {
       "available": true,
-      "display": "5 of 6 questions",
+      "display": "5 of 6 questions scored more than 15 points below the reference",
       "key": "model.D.vsReference.worse",
       "value": 5
     },
@@ -4595,7 +4614,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with a critical error",
       "key": "model.E.errors.critical",
       "value": 0
     },
@@ -4697,25 +4716,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on accuracy",
       "key": "model.E.profile.deficit.accuracy",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on completeness",
       "key": "model.E.profile.deficit.completeness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on conciseness",
       "key": "model.E.profile.deficit.conciseness",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers at level 2 or below on readability",
       "key": "model.E.profile.deficit.readability",
       "value": 0
     },
@@ -4757,7 +4776,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 1 run",
+      "display": "0 of 1 run with structured grader findings",
       "key": "model.E.profile.findings.runsWithSynthesis",
       "value": 0
     },
@@ -4769,19 +4788,19 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 6 questions",
+      "display": "1 of 6 questions this model missed while the others scored well",
       "key": "model.E.profile.isolatedMisses",
       "value": 1
     },
     {
       "available": true,
-      "display": "6 of 6 questions",
+      "display": "6 of 6 questions on which this model scored lowest",
       "key": "model.E.profile.lowestScorer",
       "value": 6
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that may mislead",
       "key": "model.E.profile.mayMislead",
       "value": 0
     },
@@ -4793,7 +4812,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "2 of 6 answers",
+      "display": "2 of 6 answers without a tool call",
       "key": "model.E.profile.noToolAnswers",
       "value": 2
     },
@@ -4835,25 +4854,25 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers with output defects",
       "key": "model.E.profile.outputDefects",
       "value": 0
     },
     {
       "available": true,
-      "display": "1 of 6 questions",
+      "display": "1 of 6 questions missed by this model and at least half the others",
       "key": "model.E.profile.sharedMisses",
       "value": 1
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that hit the tool limit",
       "key": "model.E.profile.toolLimitHits",
       "value": 0
     },
     {
       "available": true,
-      "display": "0 of 6 answers",
+      "display": "0 of 6 answers that were truncated",
       "key": "model.E.profile.truncated",
       "value": 0
     },
@@ -4894,7 +4913,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 1 question",
+      "display": "1 of 1 question with a scored answer",
       "key": "model.E.quality.scoredItems",
       "value": 1
     },
@@ -5161,7 +5180,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions scored more than 15 points above the reference",
       "key": "model.E.vsReference.better",
       "value": 0
     },
@@ -5173,13 +5192,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 6 questions",
+      "display": "1 of 6 questions scored within 15 points of the reference",
       "key": "model.E.vsReference.similar",
       "value": 1
     },
     {
       "available": true,
-      "display": "5 of 6 questions",
+      "display": "5 of 6 questions scored more than 15 points below the reference",
       "key": "model.E.vsReference.worse",
       "value": 5
     },
@@ -5263,9 +5282,9 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "provider and model",
+      "display": "provider",
       "key": "pair.A.B.configDifferences",
-      "value": 2
+      "value": 1
     },
     {
       "available": false,
@@ -5406,9 +5425,9 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "provider and model",
+      "display": "provider",
       "key": "pair.A.C.configDifferences",
-      "value": 2
+      "value": 1
     },
     {
       "available": false,
@@ -5549,9 +5568,9 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "provider and model",
+      "display": "provider",
       "key": "pair.A.D.configDifferences",
-      "value": 2
+      "value": 1
     },
     {
       "available": false,
@@ -5692,9 +5711,9 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "provider and model",
+      "display": "provider",
       "key": "pair.A.E.configDifferences",
-      "value": 2
+      "value": 1
     },
     {
       "available": false,
@@ -6310,9 +6329,9 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "provider and model",
+      "display": "provider",
       "key": "pair.D.E.configDifferences",
-      "value": 2
+      "value": 1
     },
     {
       "available": false,
@@ -6411,19 +6430,19 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1 of 6 questions",
+      "display": "1 of 6 questions with a critical error from any model",
       "key": "questions.anyCriticalError",
       "value": 1
     },
     {
       "available": true,
-      "display": "0 of 6 questions",
+      "display": "0 of 6 questions that every model scored low",
       "key": "questions.sharedLow",
       "value": 0
     },
     {
       "available": true,
-      "display": "6 of 6 questions",
+      "display": "6 of 6 questions with a wide spread between models",
       "key": "questions.wideSpread",
       "value": 6
     },
@@ -10127,6 +10146,54 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "5 pairs",
+      "key": "rca.rule.HC2.count",
+      "value": 5
+    },
+    {
+      "available": true,
+      "display": "65% to 72% of each gap",
+      "key": "rca.rule.HC2.shareSpan",
+      "value": 0.07007310416732004
+    },
+    {
+      "available": true,
+      "display": "4 pairs",
+      "key": "rca.rule.HC4.count",
+      "value": 4
+    },
+    {
+      "available": true,
+      "display": "8% to 12% of each gap",
+      "key": "rca.rule.HC4.shareSpan",
+      "value": 0.04898321238024558
+    },
+    {
+      "available": true,
+      "display": "3 models",
+      "key": "rca.rule.WC1.count",
+      "value": 3
+    },
+    {
+      "available": true,
+      "display": "54% to 69% of each model's own cost",
+      "key": "rca.rule.WC1.shareSpan",
+      "value": 0.15264291014893683
+    },
+    {
+      "available": true,
+      "display": "3 models",
+      "key": "rca.rule.WS2.count",
+      "value": 3
+    },
+    {
+      "available": true,
+      "display": "65% to 70% of each model's own time",
+      "key": "rca.rule.WS2.shareSpan",
+      "value": 0.053654453418810144
+    },
+    {
+      "available": true,
       "display": "Run 1, a replicate of all five models",
       "key": "rca.run.1.summary"
     },
@@ -10222,7 +10289,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.014 per question, mean",
+      "display": "a mean of $0.014 per question",
       "key": "rca.within.A.cost.total",
       "value": 0.0140125
     },
@@ -10234,7 +10301,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.3 s per question, mean",
+      "display": "a mean of 0.3 s per question",
       "key": "rca.within.A.time.other.seconds",
       "value": 0.3
     },
@@ -10246,7 +10313,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "5.3 s per question, mean",
+      "display": "a mean of 5.3 s per question",
       "key": "rca.within.A.time.outputGeneration.seconds",
       "value": 5.265
     },
@@ -10258,7 +10325,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 s per question, mean",
+      "display": "a mean of 0.0 s per question",
       "key": "rca.within.A.time.ownWaits.seconds",
       "value": 0
     },
@@ -10270,7 +10337,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1.5 s per question, mean",
+      "display": "a mean of 1.5 s per question",
       "key": "rca.within.A.time.toolExecution.seconds",
       "value": 1.5
     },
@@ -10282,13 +10349,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "9.0 s per question, mean",
+      "display": "a mean of 9.0 s per question",
       "key": "rca.within.A.time.total",
       "value": 8.98
     },
     {
       "available": true,
-      "display": "1.9 s per question, mean",
+      "display": "a mean of 1.9 s per question",
       "key": "rca.within.A.time.ttft.seconds",
       "value": 1.915
     },
@@ -10324,7 +10391,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.022 per question, mean",
+      "display": "a mean of $0.022 per question",
       "key": "rca.within.B.cost.total",
       "value": 0.021802500000000002
     },
@@ -10336,7 +10403,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.3 s per question, mean",
+      "display": "a mean of 0.3 s per question",
       "key": "rca.within.B.time.other.seconds",
       "value": 0.3
     },
@@ -10348,7 +10415,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "6.2 s per question, mean",
+      "display": "a mean of 6.2 s per question",
       "key": "rca.within.B.time.outputGeneration.seconds",
       "value": 6.185
     },
@@ -10360,7 +10427,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 s per question, mean",
+      "display": "a mean of 0.0 s per question",
       "key": "rca.within.B.time.ownWaits.seconds",
       "value": 0
     },
@@ -10372,7 +10439,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1.5 s per question, mean",
+      "display": "a mean of 1.5 s per question",
       "key": "rca.within.B.time.toolExecution.seconds",
       "value": 1.5
     },
@@ -10384,13 +10451,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10.5 s per question, mean",
+      "display": "a mean of 10.5 s per question",
       "key": "rca.within.B.time.total",
       "value": 10.530000000000001
     },
     {
       "available": true,
-      "display": "2.5 s per question, mean",
+      "display": "a mean of 2.5 s per question",
       "key": "rca.within.B.time.ttft.seconds",
       "value": 2.545
     },
@@ -10426,7 +10493,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.031 per question, mean",
+      "display": "a mean of $0.031 per question",
       "key": "rca.within.C.cost.total",
       "value": 0.0307925
     },
@@ -10438,7 +10505,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.3 s per question, mean",
+      "display": "a mean of 0.3 s per question",
       "key": "rca.within.C.time.other.seconds",
       "value": 0.3
     },
@@ -10450,7 +10517,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "7.0 s per question, mean",
+      "display": "a mean of 7.0 s per question",
       "key": "rca.within.C.time.outputGeneration.seconds",
       "value": 7.015
     },
@@ -10462,7 +10529,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 s per question, mean",
+      "display": "a mean of 0.0 s per question",
       "key": "rca.within.C.time.ownWaits.seconds",
       "value": 0
     },
@@ -10474,7 +10541,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1.5 s per question, mean",
+      "display": "a mean of 1.5 s per question",
       "key": "rca.within.C.time.toolExecution.seconds",
       "value": 1.5
     },
@@ -10486,13 +10553,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "12.0 s per question, mean",
+      "display": "a mean of 12.0 s per question",
       "key": "rca.within.C.time.total",
       "value": 11.98
     },
     {
       "available": true,
-      "display": "3.2 s per question, mean",
+      "display": "a mean of 3.2 s per question",
       "key": "rca.within.C.time.ttft.seconds",
       "value": 3.165
     },
@@ -10528,7 +10595,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.041 per question, mean",
+      "display": "a mean of $0.041 per question",
       "key": "rca.within.D.cost.total",
       "value": 0.0409825
     },
@@ -10540,7 +10607,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.3 s per question, mean",
+      "display": "a mean of 0.3 s per question",
       "key": "rca.within.D.time.other.seconds",
       "value": 0.3
     },
@@ -10552,7 +10619,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "7.9 s per question, mean",
+      "display": "a mean of 7.9 s per question",
       "key": "rca.within.D.time.outputGeneration.seconds",
       "value": 7.935
     },
@@ -10564,7 +10631,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 s per question, mean",
+      "display": "a mean of 0.0 s per question",
       "key": "rca.within.D.time.ownWaits.seconds",
       "value": 0
     },
@@ -10576,7 +10643,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1.5 s per question, mean",
+      "display": "a mean of 1.5 s per question",
       "key": "rca.within.D.time.toolExecution.seconds",
       "value": 1.5
     },
@@ -10588,13 +10655,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "13.5 s per question, mean",
+      "display": "a mean of 13.5 s per question",
       "key": "rca.within.D.time.total",
       "value": 13.530000000000001
     },
     {
       "available": true,
-      "display": "3.8 s per question, mean",
+      "display": "a mean of 3.8 s per question",
       "key": "rca.within.D.time.ttft.seconds",
       "value": 3.795
     },
@@ -10630,7 +10697,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.052 per question, mean",
+      "display": "a mean of $0.052 per question",
       "key": "rca.within.E.cost.total",
       "value": 0.052372499999999995
     },
@@ -10642,7 +10709,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.3 s per question, mean",
+      "display": "a mean of 0.3 s per question",
       "key": "rca.within.E.time.other.seconds",
       "value": 0.3
     },
@@ -10654,7 +10721,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "8.8 s per question, mean",
+      "display": "a mean of 8.8 s per question",
       "key": "rca.within.E.time.outputGeneration.seconds",
       "value": 8.765
     },
@@ -10666,7 +10733,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 s per question, mean",
+      "display": "a mean of 0.0 s per question",
       "key": "rca.within.E.time.ownWaits.seconds",
       "value": 0
     },
@@ -10678,7 +10745,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "1.5 s per question, mean",
+      "display": "a mean of 1.5 s per question",
       "key": "rca.within.E.time.toolExecution.seconds",
       "value": 1.5
     },
@@ -10690,13 +10757,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "15.0 s per question, mean",
+      "display": "a mean of 15.0 s per question",
       "key": "rca.within.E.time.total",
       "value": 14.98
     },
     {
       "available": true,
-      "display": "4.4 s per question, mean",
+      "display": "a mean of 4.4 s per question",
       "key": "rca.within.E.time.ttft.seconds",
       "value": 4.415
     },
@@ -12798,7 +12865,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 8,
+    "engineVersion": 9,
     "evidence": [
       {
         "atRisk": [
@@ -16034,6 +16101,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 212 · format version 22 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
+*Document ID 212 · format version 23 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

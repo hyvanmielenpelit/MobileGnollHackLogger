@@ -411,7 +411,7 @@ public class BenchmarkBatteryReportFactsTests
         });
 
         var sheet = Assert.IsType<BenchmarkReportFactSheet>(built.Sheet);
-        Assert.Equal("12 of 1,480 attempts", Fact(sheet, "availability.providerErrors").Display);
+        Assert.Equal("12 of 1,480 attempts that ended in a provider error", Fact(sheet, "availability.providerErrors").Display);
         Assert.Equal("0.81%", Fact(sheet, "availability.providerErrorRate").Display);
         Assert.Equal("1 replaced run", Fact(sheet, "availability.replacedRuns").Display);
         var subject = Assert.Single(sheet.Entries, e => e.IsSubject);
@@ -469,7 +469,7 @@ public class BenchmarkBatteryReportFactsTests
         var items = result.Suites.SelectMany(s => s.Statistics!.Items.OrderBy(i => i.OrderIndex)).ToList();
         Assert.Equal(items.Select(i => i.Mean), sheet.Questions.Select(q => q.Score!.Value));
         Assert.Equal(items.Select(i => i.QuestionId.ToString(CultureInfo.InvariantCulture)), sheet.Questions.Select(q => q.QuestionKey));
-        Assert.Equal("0 of 15 answers", Fact(sheet, "errors.critical").Display);
+        Assert.Equal("0 of 15 answers with a critical error", Fact(sheet, "errors.critical").Display);
     }
 
     [Fact]

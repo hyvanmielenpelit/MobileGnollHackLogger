@@ -749,8 +749,8 @@ public static class BenchmarkChatConsistencyReportFacts
             Level(facts, p + "streamingRate", levels.MedianStreamingRate, v => "median " + WithUnit(BenchmarkReportFormat.OneDecimal(v), "tokens/s"), "No answer of the " + period + " period has a streaming rate.");
             Level(facts, p + "outputTokens", levels.MeanOutputTokensPerAnswer, v => "mean " + WithUnit(BenchmarkReportFormat.Count(v), "output tokens per answer"), "No answer of the " + period + " period recorded output tokens.");
             Level(facts, p + "costPerQuestion", levels.MeanCostPerQuestionUsd, v => "mean " + UsdPerQuestion(v), "No price card was available, so cost was not computed.");
-            facts.Add(p + "failedAnswers", levels.FailedAnswerCount, Inv(levels.FailedAnswerCount) + " of " + Inv(levels.AnswerCount)
-                + (levels.AnswerCount == 1 ? " answer" : " answers"));
+            facts.Add(p + "failedAnswers", levels.FailedAnswerCount,
+                BenchmarkReportFormat.CountOf(levels.FailedAnswerCount, levels.AnswerCount, "answers", "that failed"));
         }
     }
 
@@ -791,7 +791,7 @@ public static class BenchmarkChatConsistencyReportFacts
 
             int k = levels.ProviderErrorCount ?? 0;
             facts.Add(p + "attempts", n, BenchmarkReportFormat.Count(n) + (n == 1 ? " valid attempt" : " valid attempts"));
-            facts.Add(p + "providerErrors", k, BenchmarkProviderAvailability.FormatCount(k, n));
+            facts.Add(p + "providerErrors", k, BenchmarkProviderAvailability.FormatCount(k, n, BenchmarkProviderAvailability.ProviderErrorQualifier));
             facts.Add(p + "providerErrorRate", levels.ProviderErrorRate ?? 0.0,
                 BenchmarkProviderAvailability.FormatRate(k, n, levels.ProviderErrorRateLow, levels.ProviderErrorRateHigh));
             if (levels.ProviderErrorRateLow is double low && levels.ProviderErrorRateHigh is double high)
@@ -807,7 +807,7 @@ public static class BenchmarkChatConsistencyReportFacts
 
             int unattributed = levels.UnattributedErrorCount ?? 0;
             int ours = levels.OurSideFailureCount ?? 0;
-            facts.Add(p + "unattributedErrors", unattributed, BenchmarkProviderAvailability.FormatCount(unattributed, n));
+            facts.Add(p + "unattributedErrors", unattributed, BenchmarkProviderAvailability.FormatCount(unattributed, n, BenchmarkProviderAvailability.UnattributedErrorQualifier));
             facts.Add(p + "ourSideFailures", ours, BenchmarkReportFormat.Count(ours) + (ours == 1 ? " attempt" : " attempts")
                 + " failed on our side, left out of the denominator");
             int reruns = levels.RerunsNeeded ?? 0;
@@ -1114,8 +1114,8 @@ public static class BenchmarkChatConsistencyReportFacts
         {
             string p = "reliability." + Unique(KeyPart(r.Id), used) + ".";
             facts.Add(p + "name", r.Name, r.Name);
-            AddRate(facts, p + "baseline", r.BaselineCount, r.BaselineTotal, r.BaselineRate, r.Denominator, "baseline");
-            AddRate(facts, p + "comparison", r.ComparisonCount, r.ComparisonTotal, r.ComparisonRate, r.Denominator, "comparison");
+            AddRate(facts, p + "baseline", r.BaselineCount, r.BaselineTotal, r.BaselineRate, r.Denominator, "baseline", r.Name);
+            AddRate(facts, p + "comparison", r.ComparisonCount, r.ComparisonTotal, r.ComparisonRate, r.Denominator, "comparison", r.Name);
             AddP(facts, p + "p", r.PValue, "No test was possible.");
             AddP(facts, p + "adjustedP", r.AdjustedPValue, "No test was possible.");
             facts.Add(p + "increased", r.Increased, r.Increased ? "higher in the comparison period" : "not higher in the comparison period");
@@ -1125,7 +1125,18 @@ public static class BenchmarkChatConsistencyReportFacts
         }
     }
 
-    private static void AddRate(BenchmarkReportFacts.FactList facts, string key, int count, int total, double? rate, string denominator, string period)
+    /// <summary>
+    /// What a reliability rate's count counts, after its noun: <c>counted as provider overloaded</c>, from the rate's name
+    /// without its parenthetical; null without a name.
+    /// </summary>
+    private static string? RateQualifier(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return null;
+        string plain = System.Text.RegularExpressions.Regex.Replace(name, @"\s*\([^()]*\)", string.Empty).Trim();
+        return plain.Length == 0 ? null : "counted as " + LowerFirst(plain);
+    }
+
+    private static void AddRate(BenchmarkReportFacts.FactList facts, string key, int count, int total, double? rate, string denominator, string period, string? name)
     {
         string noun = string.IsNullOrWhiteSpace(denominator) ? "answers" : denominator;
         if (rate is not double value || !double.IsFinite(value))
@@ -1133,7 +1144,7 @@ public static class BenchmarkChatConsistencyReportFacts
             facts.Unavailable(key, "The " + period + " period has no " + noun + " to count.");
             return;
         }
-        facts.Add(key, value, Inv(count) + " of " + Inv(total) + " " + noun + " (" + Share(value) + ")");
+        facts.Add(key, value, BenchmarkReportFormat.CountOf(count, total, noun, RateQualifier(name)) + " (" + Share(value) + ")");
     }
 
     // --- Events, controls, robustness ------------------------------------------------------------
@@ -1356,7 +1367,7 @@ public static class BenchmarkChatConsistencyReportFacts
             : ctx.Result.Endpoints.SelectMany(e => e.RobustnessChecks).ToList();
         int failed = checks.Count(c => c.Status == ChatConsistencyCheckStatus.Failed);
         facts.Add("robustness.count", checks.Count, Inv(checks.Count) + (checks.Count == 1 ? " check" : " checks"));
-        facts.Add("robustness.failed", failed, Inv(failed) + " of " + Inv(checks.Count) + (checks.Count == 1 ? " check" : " checks"));
+        facts.Add("robustness.failed", failed, BenchmarkReportFormat.CountOf(failed, checks.Count, "checks", "that failed"));
         for (int i = 0; i < checks.Count; i++)
         {
             var c = checks[i];
@@ -1413,8 +1424,8 @@ public static class BenchmarkChatConsistencyReportFacts
                 string.Join(", ", models.Select(m => m.ModelId + " (" + Inv(m.CallCount) + (m.CallCount == 1 ? " call)" : " calls)"))));
             facts.Add("identity." + period + ".calls", calls, Inv(calls) + (calls == 1 ? " candidate call" : " candidate calls"));
 
-            facts.Add("serving." + period + ".tierMismatchCalls", mismatch, Inv(mismatch) + " of " + Inv(calls) + (calls == 1 ? " call" : " calls"));
-            facts.Add("serving." + period + ".fallbackCalls", fallback, Inv(fallback) + " of " + Inv(calls) + (calls == 1 ? " call" : " calls"));
+            facts.Add("serving." + period + ".tierMismatchCalls", mismatch, BenchmarkReportFormat.CountOf(mismatch, calls, "calls", "served at another tier"));
+            facts.Add("serving." + period + ".fallbackCalls", fallback, BenchmarkReportFormat.CountOf(fallback, calls, "calls", "served by a fallback model"));
             if (speeds.Count == 0) facts.Unavailable("serving." + period + ".speeds", "No served speed was recorded in the " + period + " period.");
             else facts.Add("serving." + period + ".speeds", speeds.Count, string.Join(", ", speeds));
         }

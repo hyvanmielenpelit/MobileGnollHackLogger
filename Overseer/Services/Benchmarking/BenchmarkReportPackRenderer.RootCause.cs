@@ -363,6 +363,8 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
+    /// <c>Vega Pro is the cheapest model, at $0.030 per question; the paired tests above establish that 2 of the 4 other
+    /// models differ from it in quality.</c> where a paired intelligence test covers the cheapest model, and otherwise
     /// <c>Vega Pro is the cheapest model, at $0.030 per question, and its Intelligence Index interval overlaps those of 2 of
     /// the other 4 models.</c>; null with fewer than two models with a cost, or without the cheapest model's interval.
     /// </summary>
@@ -380,13 +382,53 @@ public static partial class BenchmarkReportPackRenderer
         if (others.Count == 0) return null;
         int overlapping = others.Count(r => !(r.Entry.QualityLower!.Value > upper) && !(lower > r.Entry.QualityUpper!.Value));
 
-        UseTerms(ctx, RootCauseGlossary.IntelligenceIndex, RootCauseGlossary.Interval95);
         string name = PlainName(ctx, cheapest.Peer);
+        string price = name + " is the cheapest model, at " + BenchmarkReportFormat.Usd(cheapest.Entry.CostPerQuestionUsd!.Value) + " per question";
+        if (ctx.Comparison && RcaCheapestPairedTests(ctx, cheapest.Peer.Letter) is { } paired)
+        {
+            UseTerms(ctx, RootCauseGlossary.PairedTest);
+            string which = paired.Tested == rows.Count - 1 ? " other models" : " models they compare it with";
+            return price + "; the paired tests" + (paired.Above ? " above" : string.Empty) + " establish "
+                + (paired.Differ == 0
+                    ? "that none of the " + Inv(paired.Tested) + which + " differs from it in quality."
+                    : "that " + Inv(paired.Differ) + " of the " + Inv(paired.Tested) + which + (paired.Differ == 1 ? " differs" : " differ") + " from it in quality.");
+        }
+
+        UseTerms(ctx, RootCauseGlossary.IntelligenceIndex, RootCauseGlossary.Interval95);
         string overlap = overlapping == 0
             ? "its Intelligence Index interval overlaps no other model's"
             : "its Intelligence Index interval overlaps " + (overlapping == others.Count ? "those of all " + Inv(others.Count) + " other models"
                 : "those of " + Inv(overlapping) + " of the other " + Inv(others.Count) + " models");
-        return name + " is the cheapest model, at " + BenchmarkReportFormat.Usd(cheapest.Entry.CostPerQuestionUsd!.Value) + " per question, and " + overlap + ".";
+        return price + ", and " + overlap + ".";
+    }
+
+    /// <summary>
+    /// The paired intelligence tests that cover the model with <paramref name="letter"/>: from the reference family when it is
+    /// the reference (the tests <see cref="RcaReferenceFinding"/> reads, so they stand above), else from the all-pairs
+    /// family, else its one test against the reference. How many were tested and how many establish a difference; null
+    /// when none covers it.
+    /// </summary>
+    private static (int Tested, int Differ, bool Above)? RcaCheapestPairedTests(Context ctx, string letter)
+    {
+        var families = ctx.Sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>();
+        var reference = families.FirstOrDefault(f => f.Mode != "AllPairs");
+        var allPairs = families.FirstOrDefault(f => f.Mode == "AllPairs");
+        string referenceLetter = reference?.ReferenceLetter ?? OrderedPeers(ctx.Sheet).FirstOrDefault()?.Letter ?? "A";
+        bool isReference = reference != null && referenceLetter == letter;
+
+        foreach (var family in isReference ? new[] { reference } : new[] { allPairs, reference })
+        {
+            var tests = family?.Measures.FirstOrDefault(m => m.Measure == BenchmarkPairedTests.IntelligenceMeasure);
+            if (tests == null || tests.NotTestedReason != null) continue;
+            var covering = tests.Pairs
+                .Where(p => (p.FirstLetter == letter || p.SecondLetter == letter) && p.NotTestedReason == null && p.AdjustedPValue != null)
+                .ToList();
+            if (covering.Count == 0) continue;
+            int differ = covering.Count(p => p.Established && p.Favors is "First" or "Second");
+            bool above = isReference && RcaReferenceFinding(ctx) != null;
+            return (covering.Count, differ, above);
+        }
+        return null;
     }
 
     /// <summary>

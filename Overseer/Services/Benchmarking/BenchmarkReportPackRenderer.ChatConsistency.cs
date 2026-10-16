@@ -411,7 +411,7 @@ public static partial class BenchmarkReportPackRenderer
             foreach (string pattern in keys)
             {
                 string key = string.Format(CultureInfo.InvariantCulture, pattern, period);
-                if (IsAvailable(ctx, key)) return (key.EndsWith(".overallIndex", StringComparison.Ordinal) ? "Overall Index " : string.Empty) + D(ctx, key);
+                if (IsAvailable(ctx, key)) return (key.EndsWith(".overallIndex", StringComparison.Ordinal) ? "Overall Index " : string.Empty) + BenchmarkReportFormat.CountHead(D(ctx, key));
             }
             return NoValue;
         }
@@ -457,7 +457,7 @@ public static partial class BenchmarkReportPackRenderer
         string Value(string period, string measure)
         {
             string key = "availability." + period + "." + measure;
-            return IsAvailable(ctx, key) ? D(ctx, key) : NoValue;
+            return IsAvailable(ctx, key) ? BenchmarkReportFormat.CountHead(D(ctx, key)) : NoValue;
         }
 
         var rows = new List<(string Measure, string Key)>
@@ -618,7 +618,7 @@ public static partial class BenchmarkReportPackRenderer
             if (prefix.StartsWith("reliability.", StringComparison.Ordinal))
             {
                 string rate = IsAvailable(ctx, prefix + "baseline") && IsAvailable(ctx, prefix + "comparison")
-                    ? D(ctx, prefix + "baseline") + " → " + D(ctx, prefix + "comparison")
+                    ? BenchmarkReportFormat.CountHead(D(ctx, prefix + "baseline")) + " → " + BenchmarkReportFormat.CountHead(D(ctx, prefix + "comparison"))
                     : NoValue;
                 string verdict = Fact(ctx, prefix + "establishedIncrease") is { } increase && BenchmarkReportPackPrompt.IsTrue(increase)
                     ? "an established increase" + (IsAvailable(ctx, prefix + "adjustedP") ? ", adjusted p " + D(ctx, prefix + "adjustedP") : string.Empty)

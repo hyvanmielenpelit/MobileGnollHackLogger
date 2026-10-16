@@ -26,7 +26,7 @@ public static partial class BenchmarkReportPackPrompt
     private const string ProviderHarnessKey = "rca.provider.harness";
 
     /// <summary>The headline's and the answer slots' rule against stretching one pair's cause over every gap.</summary>
-    private const string GapsCauseRule = "Name a cause for 'the gaps' only when the best hypotheses cover more than one pair; when you name a cause, give its share.";
+    private const string GapsCauseRule = "Name a cause for 'the gaps' only when the best hypotheses cover more than one pair; when you name a cause, give its share, or for several hypotheses of one rule its rca.rule.<id>.shareSpan beside their ref range.";
 
     /// <summary>The headline's order of the axes, which keeps a price-per-token difference from leading.</summary>
     private const string AxisOrderRule = "Take the axes in the order intelligence, speed, cost, and lead with the first whose status is Root cause established or Probable cause; cost may lead only when neither other axis has one. "
@@ -121,7 +121,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Each axis has a status, its rca.axis.<axis>.status fact: Root cause established (a non-null hypothesis is High and its null is rejected), Probable cause (the best hypothesis is Moderate), or Not established.");
         Line(sb, "- A price-per-token difference read off the price cards is graded Known from the price cards, with its grade: it supports a sentence about cost but no certainty word, and it never makes an axis's root cause established.");
         Line(sb, "- A price effect is known from the price cards: give it no refutation.");
-        Line(sb, "- When {{rca.axis.<axis>.priceNote}} exists, the headline (printed as the Key finding) and the conclusions say that price per token explains the largest gaps on that axis, and that the best hypothesis explains its own pair only.");
+        Line(sb, "- When {{rca.axis.<axis>.priceNote}} exists, the headline (printed as the Key finding) and the conclusions say that price per token explains the largest gaps on that axis, and that the best hypothesis explains its own pair; when other hypotheses of the same rule exist, name them by their ref range with the rule's shareSpan (rca.rule.<id>.shareSpan).");
         Line(sb, "- A Low hypothesis is a lead, not a cause; a Not supported one is refuted by its own test. Never present either as a finding.");
         Line(sb);
     }
@@ -154,6 +154,19 @@ public static partial class BenchmarkReportPackPrompt
         foreach (string slot in spec.RequiredSlots)
         {
             Line(sb, $"- {slot}: {RootCauseSlotDescription(slot, comparisonScope)}");
+        }
+        Line(sb);
+
+        // The first draft's word budget: every capped slot with its cap, so the draft fits before any repair.
+        Line(sb, "WORD BUDGET (every {{token}} is one word, however long its value; count each section before answering and aim at least one sentence under its cap):");
+        foreach (string slot in spec.RequiredSlots)
+        {
+            string normal = RootCauseCap(slot, completion: false);
+            if (normal == "0") continue;
+            string completion = RootCauseCap(slot, completion: true);
+            Line(sb, normal == completion
+                ? $"- {slot}, {normal} words"
+                : $"- {slot}, {normal} words, or {completion} in a document about a run or battery run on its own");
         }
         Line(sb);
     }
@@ -199,8 +212,8 @@ public static partial class BenchmarkReportPackPrompt
         return slot switch
         {
             BenchmarkReportSlots.Scope => comparisonScope
-                ? $"At most {RootCauseCap(slot, false)} words, under the code-rendered design: what this design can and cannot decide: how many models and runs it rests on, whether they share graders and settings, and which entries are degraded or excluded. State it; use no causal word."
-                : $"At most {RootCauseCap(slot, false)} words, under the code-rendered design: what this design can and cannot decide: how many models and runs it rests on, whether they share graders and settings, which entries are degraded or excluded, and, where CONTROLS applies, which controls there are and the control limit. State it; use no causal word.",
+                ? $"At most {RootCauseCap(slot, false)} words, under the code-rendered design, which already prints the grading panel and the harness version: do not repeat them. Say what this design can and cannot decide: how many models and runs it rests on, citing {{{{comparison.runsPerSuite}}}} and {{{{comparison.suiteCount}}}}, whether they share graders and settings, citing {{{{comparison.configDifferences}}}} for the settings, and which entries are degraded or excluded. State it; use no causal word."
+                : $"At most {RootCauseCap(slot, false)} words, under the code-rendered design, which already prints the grading panel and the harness version: do not repeat them. Say what this design can and cannot decide: how many models and runs it rests on, whether they share graders and settings, which entries are degraded or excluded, and, where CONTROLS applies, which controls there are and the control limit. State it; use no causal word.",
             BenchmarkReportSlots.EvidenceIntelligence =>
                 evidenceCap + ", under the intelligence evidence tables: where the points were lost, which failure signals several models share and which only one shows, "
                 + (comparisonScope ? "what the per-question results show. " : "what the per-question results and the item-level controls show. ") + evidenceUse,
@@ -209,14 +222,14 @@ public static partial class BenchmarkReportPackPrompt
             BenchmarkReportSlots.EvidenceCost =>
                 evidenceCap + ", under the cost decomposition: which components make up the cost per question, volume against price, and how they differ. " + evidenceUse,
             BenchmarkReportSlots.HypothesesIntelligence or BenchmarkReportSlots.HypothesesSpeed or BenchmarkReportSlots.HypothesesCost =>
-                $"At most {RootCauseCap(slot, false)} words, under that axis's hypothesis table: weigh its hypotheses. Say first whether the null stands, then which hypotheses survive their evidence against, which are only Low or Not supported and why, and what their refuted-if statements ask. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it.",
+                $"At most {RootCauseCap(slot, false)} words, under that axis's hypothesis table and its list of nulls, which Overseer prints beside the paragraph: never repeat them, and never list hypothesis or null references. Say, in this order: which mechanism leads the axis, with its share, or for several hypotheses of one rule the rule's shareSpan, and its grade; what would refute it; and one sentence on the nulls in total, such as 'most pair nulls are rejected'. Cite each hypothesis you discuss by its rca.hypothesis.<id>.<n>.ref token, after saying in your own words what it is about, in the sentence that discusses it.",
             BenchmarkReportSlots.Conclusions =>
                 $"At most {RootCauseCap(slot, false)} words: take the axes in the order intelligence, speed, cost; for each, write its status once, as 'Cost: {{{{rca.axis.cost.status}}}}.', and never repeat beside it the words the token prints (Root cause established, Probable cause, Not established); then give its root cause with that hypothesis's rca.hypothesis.<id>.<n>.ref token and grade, or why it is not established and what would establish it. A price-per-token difference (a hypothesis graded Known from the price cards) is what the price cards show: say so, and never call it the axis's root cause.",
             BenchmarkReportSlots.NextRuns =>
                 $"In at most {RootCauseCap(slot, false)} words, say which run to make first and what it settles, citing its rca.run.<n>.summary token, and cite a check only by its rca.check.<n>.summary token. Never propose a run code did not.",
             BenchmarkReportSlots.Limitations => comparisonScope
-                ? $"At most {RootCauseCap(slot, false)} words, after the code-printed list of what the benchmark does not measure: what else limits this analysis, such as a single run per suite, missing telemetry or a degraded entry."
-                : $"At most {RootCauseCap(slot, false)} words, after the code-printed list of what the benchmark does not measure: what else limits this analysis, such as a single run per suite, missing telemetry, a degraded entry or the control limit.",
+                ? $"At most {RootCauseCap(slot, false)} words, after the code-printed list of limits, which already says what the benchmark does not measure, the one run per suite, the harness version and what it did not record, and the graders' providers: do not repeat them. Add only what those bullets do not say, such as missing telemetry or what a degraded entry means for this analysis."
+                : $"At most {RootCauseCap(slot, false)} words, after the code-printed list of limits, which already says what the benchmark does not measure, the one run per suite, the harness version and what it did not record, the graders' providers and the control limit: do not repeat them. Add only what those bullets do not say, such as missing telemetry or what a degraded entry means for this analysis.",
             _ => "Markdown paragraphs."
         };
     }
@@ -227,7 +240,7 @@ public static partial class BenchmarkReportPackPrompt
         string ids = comparisonScope ? "a question reference or a fact key" : "a question reference, a fact key or a finding row id";
 
         Line(sb, "FIELDS AND LISTS:");
-        Line(sb, $"- headline: in one plain sentence of at most {Words(BenchmarkReportPackValidator.HeadlineMaxWords)} words, say what most explains the differences between the models. {AxisOrderRule} A reader with no statistics should understand it. A certainty word in it needs its status or High hypothesis token in the sentence. {GapsCauseRule}");
+        Line(sb, $"- headline: in one plain sentence of at most {Words(BenchmarkReportPackValidator.HeadlineMaxWords)} words, say what most explains the differences between the models. {AxisOrderRule} A reader with no statistics should understand it. A certainty word in it needs its status or High hypothesis token in the sentence. {GapsCauseRule} When the axis has a price note, the best hypothesis explains its own pair: name the other hypotheses of its rule by their ref range with the rule's shareSpan, never as 'its own pair only'.");
         Line(sb, $"- observations: at most {Words(BenchmarkReportSlots.RootCauseMaxObservations)} items, each at most {Words(BenchmarkReportPackValidator.RootCauseObservationMaxWords)} words: a fact the graders recorded in the excerpts and comments the data gives, stated with no causal word. Each item gives the question in \"questions\" and cites at least one evidence id in \"evidence\": {ids}.");
         Line(sb, $"- writerHypotheses: at most {Words(BenchmarkReportSlots.RootCauseMaxWriterHypotheses)} items: hypotheses of your own that the code's rule table does not cover, drawn from the grader comments and excerpts. Each has \"axis\" (intelligence, speed or cost), \"models\" ({models}), \"locus\" (one or more of model, chat, harness, suite, corpus and provider), \"statement\", \"for\" (one or more pieces of evidence), \"against\" (what speaks against it; may be empty), \"refutedIf\" (the result that would refute it), \"confidence\" (always \"Low\": code has not tested it) and \"evidence\" (the fact keys and question references it rests on). Each text is at most {Words(BenchmarkReportPackValidator.WriterHypothesisPartMaxWords)} words. Leave the list empty when you have none.");
         Line(sb, "- questionTopics: one entry for every question you cite anywhere in the document that is listed under QUESTIONS NEEDING A TOPIC. Each topic names what the question is about in at most twelve words, without quoting it.");
@@ -252,8 +265,10 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Write no numbers as digits anywhere in the prose: no digits, percentages, dates, numbered lists or ordinals such as \"1st\". Number words such as \"three\" are allowed for a plain count, but prefer a fact token for any figure.");
         Line(sb, "- Never write a hypothesis id, a run number or a check number in the prose: cite the hypothesis by its rca.hypothesis.<id>.<n>.ref token, a run by its rca.run.<n>.summary token and a check by its rca.check.<n>.summary token. A hypothesis's label (rca.hypothesis.<id>.<n>.label) appears only in the tables; never cite it in the prose.");
         Line(sb, "- {{rca.check.<n>}} is a whole sentence the document prints in its Checks list; inside your own sentence cite a check by {{rca.check.<n>.summary}}, and never repeat {{rca.check.<n>}} under What to run next.");
-        Line(sb, "- A model's figure token describes that model only; for several models, cite each one's token or a count across them.");
-        Line(sb, "- A token whose value reads 'N of M' is a noun phrase. Never put it after 'no', make it the object of 'made', or end a clause with it: say right after it what it counts.");
+        Line(sb, comparisonScope
+            ? "- A model's figure token describes that model only, and a pair's token that pair only. A statement about every compared model cites a comparison.* fact, never one model's or one pair's: the runs and suites as {{comparison.runsPerSuite}} and {{comparison.suiteCount}}, the configuration as {{comparison.configDifferences}}."
+            : "- A model's figure token describes that model only; for several models, cite each one's token or a count across them.");
+        Line(sb, "- A count token, whose value reads 'N of M …', is a noun phrase. Never put it after 'no' or make it the object of 'made'.");
         foreach (string rule in TokenShapeReminders)
         {
             Line(sb, "- " + rule);
@@ -279,7 +294,8 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Cite at most two hypotheses in one sentence. Cite several hypotheses of one rule once, as a range of their first and last .ref tokens joined by an en dash: '{{rca.hypothesis.<id>.1.ref}}–{{rca.hypothesis.<id>.3.ref}}'. When more hypotheses share a topic, name the topic and how many there are, and cite the strongest one or their range.");
         Line(sb, "- Never put a parenthesis inside another, and never put a model token inside parentheses: model names carry their own.");
         Line(sb, "- Write an axis's name before its status token (Speed: {{rca.axis.speed.status}}); never put two status or grade tokens side by side.");
-        Line(sb, "- Give a hypothesis's share after the cause it measures, as its .share token followed by 'of the gap': 'longer waits per call, {{rca.hypothesis.<id>.<n>.share}} of the gap'.");
+        Line(sb, "- Give a hypothesis's share after the cause it measures, as its .share token followed by 'of the gap': 'longer waits per call, {{rca.hypothesis.<id>.<n>.share}} of the gap'. A share belongs to its own hypothesis: put it beside that hypothesis's .ref only, never beside a range or a list, and never write 'led by' a share.");
+        Line(sb, "- Describe a group of hypotheses of one rule by the rule's span of shares, {{rca.rule.<id>.shareSpan}}, beside their ref range: 'longer waits per call, {{rca.rule.<id>.shareSpan}} ({{rca.hypothesis.<id>.1.ref}}–{{rca.hypothesis.<id>.3.ref}})'.");
         Line(sb, "- " + ControlWordRule);
         Line(sb, "- A token whose value is a whole sentence (a statement, a known fact, a check, a profile flag) stands as a sentence of its own, or follows a colon. Never put it after 'at', 'with', 'as' or 'and' inside another sentence.");
         Line(sb, "- Say what a null hypothesis's result means in these words: a null that \"stands (may be chance)\", or one that is \"rejected (a real difference)\". Never explain a rejected null through its grade or with a double negative.");
@@ -696,8 +712,9 @@ public static partial class BenchmarkReportPackPrompt
     }
 
     /// <summary>
-    /// The CHECK BEFORE YOU ANSWER block: one line each for rules 3, 16, 31, 33, 34 and 36, each with an
-    /// example built from the sheet's own tokens, or generic wording where the sheet has none to show.
+    /// The CHECK BEFORE YOU ANSWER block: one line each for rules 3, 16, 31, 39, 38, 33, 34 and 36, and in comparison scope
+    /// one for statements about every model, each with an example built from the sheet's own tokens, or generic wording
+    /// where the sheet has none to show.
     /// </summary>
     private static void AppendRootCauseChecks(StringBuilder sb, BenchmarkReportFactSheet sheet, RootCauseClaimSupport claims, bool comparison)
     {
@@ -751,6 +768,19 @@ public static partial class BenchmarkReportPackPrompt
         }
         Line(sb, "- Rule 16, rankings, one per sentence: " + ranking);
 
+        if (comparison)
+        {
+            string? own = new[] { "battery.memberRuns", "runs" }
+                .Select(k => facts.Keys.Where(f => f.StartsWith("model.", StringComparison.Ordinal) && f.EndsWith("." + k, StringComparison.Ordinal) && f.Split('.').Length == k.Split('.').Length + 2)
+                    .OrderBy(f => f, StringComparer.Ordinal).FirstOrDefault())
+                .FirstOrDefault(f => f != null);
+            string wide = facts.ContainsKey("comparison.runsPerSuite") && facts.ContainsKey("comparison.suiteCount")
+                ? $"as in 'Each model rests on {T("comparison.runsPerSuite")} across {T("comparison.suiteCount")}.'"
+                : "cite a comparison.* fact.";
+            Line(sb, "- Every model at once: a statement about all the compared models cites a comparison.* fact, " + wide
+                + (own != null ? $" Never stretch one model's token, such as {T(own)}, or one pair's token over every model." : " Never stretch one model's or one pair's token over every model."));
+        }
+
         // A null hypothesis states no cause, so the examples use a mechanism wherever the sheet has one; among the
         // mechanisms they take the axes in the headline's order, intelligence, speed, cost, with price effects last.
         static bool IsNull(string key) => key.StartsWith("rca.hypothesis.H0", StringComparison.Ordinal);
@@ -786,6 +816,34 @@ public static partial class BenchmarkReportPackPrompt
             + (range != null ? $", and several of one rule once, as a range such as {T(range[0] + "ref")}–{T(range[^1] + "ref")}" : ", and several of one rule once, as a range of their first and last .ref tokens")
             + (share != null ? $"; a share follows its cause as '{T(share + "share")} of the gap'" : "; a share follows its cause as its .share token and 'of the gap'")
             + "; never put a parenthesis inside another, or a model token inside parentheses; never join two worded facts with 'to'.");
+
+        // A group example is a rule's share span beside the first and last .ref of that rule.
+        string? spanKey = facts.Keys
+            .Where(k => k.StartsWith("rca.rule.", StringComparison.Ordinal) && k.EndsWith(".shareSpan", StringComparison.Ordinal))
+            .OrderBy(k => k, StringComparer.Ordinal)
+            .FirstOrDefault();
+        var spanRefs = spanKey == null ? new List<string>() : facts.Keys
+            .Where(k => RootCauseClaimSupport.HypothesisPrefixOf(k) is string p && k == p + "ref" && p.Split('.')[2] == spanKey.Split('.')[2])
+            .OrderBy(k => int.TryParse(k.Split('.')[3], NumberStyles.None, CultureInfo.InvariantCulture, out int n) ? n : int.MaxValue)
+            .ToList();
+        string group = spanKey != null && spanRefs.Count >= 2
+            ? $"'{T(spanKey)} ({T(spanRefs[0])}–{T(spanRefs[^1])})'"
+            : "the rule's rca.rule.<id>.shareSpan token beside their ref range";
+        // A count example is a count whose display says what it counts, a profile's answers without a tool call first.
+        var count = facts.Values
+            .Where(f => BenchmarkReportFormat.CountQualifier(f.Display ?? string.Empty).Length > 0)
+            .OrderBy(f => f.Key.EndsWith(".profile.noToolAnswers", StringComparison.Ordinal) ? 0 : 1)
+            .ThenBy(f => f.Key, StringComparer.Ordinal)
+            .FirstOrDefault();
+        Line(sb, "- Rule 39, counts: " + (count != null
+            ? $"{T(count.Key)} already prints '{BenchmarkReportFormat.CountQualifier(count.Display)}', so write it as a noun phrase with none of those words beside it"
+            : "a count token already prints what it counts, so write it as a noun phrase with none of its words beside it")
+            + "; never add 'with', 'without' or 'that' words after it that repeat it.");
+
+        Line(sb, "- Rule 38, shares: " + (share != null
+                ? $"a share stands beside its own hypothesis's .ref only, as '{T(share + "share")} of the gap ({T(share + "ref")})'"
+                : "a share stands beside its own hypothesis's .ref only")
+            + "; describe a group of hypotheses by " + group + "; never put a share beside a range or a list, and never write 'led by' a share.");
 
         // A cause rests on a hypothesis graded Low or higher, so its example reference is one of those, hedged when Low;
         // a sheet without .ref facts falls back to a label.

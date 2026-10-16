@@ -1948,11 +1948,10 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(3, h.Provider.Calls);
         var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
         Assert.Equal(ShortMeaning, BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson).Sections[BenchmarkReportSlots.Meaning]);
-        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
+        // A shortening that brings every section within its cap leaves no warning.
+        Assert.Equal(BenchmarkReportDocumentStatus.Completed, document.Status);
         var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson);
-        var rescued = Assert.Single(notes, n => n.Rule == 7);
-        Assert.False(rescued.Dropped);
-        Assert.Contains("shortened in a final turn", rescued.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(notes, n => n.Rule == 7);
 
         var dto = job.ToDto();
         var progress = Assert.Single(dto.Documents);
@@ -1961,6 +1960,10 @@ public class BenchmarkReportPackServiceTests
             progress.Calls.Select(c => c.Kind));
         Assert.Equal(new int?[] { longReply.Length, longReply.Length, shortReply.Length }, progress.Calls.Select(c => c.ReplyChars));
         Assert.Contains(dto.Log, l => l.Message.Contains("1 section(s) over their word caps after the repair (What this means for use as a game assistant, 96 of 90); sending one shortening turn.", StringComparison.Ordinal));
+        var shortenedLine = Assert.Single(dto.Log, l => l.Message.Contains("the shortening turn brought it to", StringComparison.Ordinal));
+        Assert.Equal("info", shortenedLine.Severity);
+        Assert.EndsWith("What this means for use as a game assistant was 96 words, 6 over its cap of 90, after the repair; the shortening turn brought it to 9.",
+            shortenedLine.Message, StringComparison.Ordinal);
 
         // The diagnostics: the revision's own issues, and the word counts turn by turn.
         Assert.Contains(progress.RevisionIssues!, i => i.Rule == 7 && i.Location == "sections." + BenchmarkReportSlots.Meaning);
@@ -1971,12 +1974,39 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(9, meaning.Shortened);
         Assert.Equal(9, meaning.Final);
         Assert.Equal(new[] { 9 }, meaning.FinalParagraphs);
-        Assert.Contains(progress.FinalIssues!, i => i.Rule == 7 && i.Severity == BenchmarkReportRuleCatalog.WarningTextKeptSeverity);
+        Assert.DoesNotContain(progress.FinalIssues!, i => i.Rule == 7);
 
         // Each reply is held on the job, and none travels with the polled job object.
         Assert.Equal(new[] { longReply, longReply, shortReply }, job.Documents[0].CallReplies.Select(r => r.Text));
         string polled = JsonSerializer.Serialize(dto);
         Assert.DoesNotContain("Answers stayed clear. Answers stayed clear.", polled, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AShortenedSectionStillOverItsCap_IsTrimmed_AndTheDocumentCompletesWithWarnings()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string longReply = ExecutiveReply(prep, meaning: LongMeaning());
+        // Ninety-three words: three over the cap of ninety.
+        string stillLong = ShortMeaning + " " + string.Join(" ", Enumerable.Repeat("Answers stayed clear.", 28));
+        h.Provider.Replies.Enqueue(longReply);
+        h.Provider.Replies.Enqueue(longReply);
+        h.Provider.Replies.Enqueue(JsonSerializer.Serialize(new { sections = new Dictionary<string, string> { [BenchmarkReportSlots.Meaning] = stillLong } }));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(3, h.Provider.Calls);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
+        string meaning = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson).Sections[BenchmarkReportSlots.Meaning];
+        Assert.Equal(BenchmarkReportPackValidator.MeaningMaxWords, BenchmarkReportPackValidator.WordCount(meaning));
+
+        var notes = BenchmarkReportJson.Deserialize<List<BenchmarkReportValidationNote>>(document.ValidationNotesJson);
+        var trimmed = Assert.Single(notes, n => n.Rule == 7);
+        Assert.True(trimmed.Dropped);
+        Assert.Contains(job.ToDto().Log, l => l.Severity == "info"
+            && l.Message.EndsWith("the shortening turn brought it to 93, still over its cap.", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -2036,13 +2066,18 @@ public class BenchmarkReportPackServiceTests
         h.Provider.Replies.Enqueue(reply);
         var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
 
-        Assert.IsType<NotFoundResult>(h.Controller().GetWriterReplies("no-such-job"));
+        Assert.IsType<NotFoundResult>(await h.Controller().GetWriterReplies("no-such-job", TestContext.Current.CancellationToken));
 
-        var content = Assert.IsType<ContentResult>(h.Controller().GetWriterReplies(job.Id));
+        var content = Assert.IsType<ContentResult>(await h.Controller().GetWriterReplies(job.Id, TestContext.Current.CancellationToken));
         Assert.Equal("text/markdown; charset=utf-8", content.ContentType);
         Assert.StartsWith("# Writer replies: ", content.Content, StringComparison.Ordinal);
         Assert.Contains("### Call 1: Draft", content.Content, StringComparison.Ordinal);
         Assert.Contains(reply, content.Content, StringComparison.Ordinal);
+
+        // The stored document resolves every token the reply cites.
+        Assert.Contains("#### Tokens cited\n\n| Token | Prints |\n|---|---|\n", content.Content, StringComparison.Ordinal);
+        Assert.Contains("| `{{subject}}` | ", content.Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("not in the fact sheet", content.Content, StringComparison.Ordinal);
     }
 
     [Fact]

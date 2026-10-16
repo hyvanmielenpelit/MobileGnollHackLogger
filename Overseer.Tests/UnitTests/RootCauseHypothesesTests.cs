@@ -94,6 +94,42 @@ public class RootCauseHypothesesTests
     }
 
     [Fact]
+    public void AShareIntervalWiderThanOneHundredPoints_FailsARobustnessCheck_OneGradeLower()
+    {
+        var checks = AllPassed();
+        checks[1] = Check(RootCauseHypotheses.Replicates, RootCauseCheckStatuses.Failed);
+        var wide = Draft(share: 2.19, checks: checks);
+        wide.ShareLower = 1.39;
+        wide.ShareUpper = 8.25;
+
+        var graded = Grade(wide);
+
+        Assert.Equal(RootCauseGrades.Low, graded.Grade);
+        var failed = Assert.Single(graded.Robustness, r => r.Name == RootCauseHypotheses.ShareInterval);
+        Assert.Equal(RootCauseCheckStatuses.Failed, failed.Status);
+        Assert.Contains("the share's 95% interval, 139–825%, is wider than one hundred percentage points", graded.GradeReasons);
+
+        // Graded again, the draft keeps one such check.
+        Assert.Single(Grade(wide).Robustness, r => r.Name == RootCauseHypotheses.ShareInterval);
+
+        var narrow = Draft(share: 0.74, checks: AllPassed());
+        narrow.ShareLower = 0.37;
+        narrow.ShareUpper = 1.12;
+        Assert.DoesNotContain(Grade(narrow).Robustness, r => r.Name == RootCauseHypotheses.ShareInterval);
+    }
+
+    [Theory]
+    [InlineData(2.19, "Model A is slower than Model B mainly from longer latency per call, which alone exceeds the gap while other components pull the other way.")]
+    [InlineData(0.93, "Model A is slower than Model B mainly from longer latency per call.")]
+    public void AMainlyFromStatement_WhoseShareExceedsTheGap_SaysOtherComponentsPullTheOtherWay(double share, string expected)
+    {
+        var draft = Draft(share: share, checks: AllPassed());
+        draft.Statement = "Model A is slower than Model B mainly from longer latency per call.";
+
+        Assert.Equal(expected, Grade(draft).Statement);
+    }
+
+    [Fact]
     public void TwoConditions_AreLow()
     {
         var checks = AllPassed();

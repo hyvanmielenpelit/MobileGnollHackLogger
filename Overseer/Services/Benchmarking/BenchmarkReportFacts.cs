@@ -222,6 +222,9 @@ public static class BenchmarkReportFacts
 
     public const string NotAvailable = "not available";
 
+    /// <summary>What an <c>errors.critical</c> count counts, after its noun: <c>1 of 36 answers with a critical error</c>.</summary>
+    public const string CriticalErrorQualifier = "with a critical error";
+
     /// <summary>Why a peer fact is unavailable on a sheet with no peers.</summary>
     public const string StandaloneReason = "A stand-alone run report has no peers.";
 
@@ -838,14 +841,14 @@ public static class BenchmarkReportFacts
             AddIntervalOverlap(facts, quality, peers);
 
             facts.Add("quality.scoredItems", quality.ItemCount,
-                Inv(quality.ItemCount) + " of " + Inv(quality.ExamItemCount) + (quality.ExamItemCount == 1 ? " question" : " questions"));
+                BenchmarkReportFormat.CountOf(quality.ItemCount, quality.ExamItemCount, "questions", "with a scored answer"));
         }
 
         int withheld = subjectRuns.Count(r => BenchmarkRunFinalizer.IndexWithheld(r, r.Answers));
         if (withheld > 0)
         {
             facts.Add("quality.withheldRuns", withheld,
-                Inv(withheld) + " of " + Inv(subjectRuns.Count) + (subjectRuns.Count == 1 ? " run" : " runs"));
+                BenchmarkReportFormat.CountOf(withheld, subjectRuns.Count, "runs", "with a withheld Intelligence Index"));
         }
 
         var peerEstimates = peers.Where(p => p.Entry.Quality != null).Select(p => p.Entry.Quality!.PointEstimate).ToList();
@@ -1125,7 +1128,7 @@ public static class BenchmarkReportFacts
     {
         facts.Add("answers.scored", subject.Counting.Count, Inv(subject.Counting.Count));
         facts.Add("errors.critical", subject.CriticalCount,
-            Inv(subject.CriticalCount) + " of " + Inv(subject.Counting.Count) + " answers");
+            BenchmarkReportFormat.CountOf(subject.CriticalCount, subject.Counting.Count, "answers", CriticalErrorQualifier));
 
         bool verified = subject.Counting.Any(a =>
             a.ClaimsSupportedCount.HasValue || a.ClaimsRefutedCount.HasValue || a.ClaimsIndeterminateCount.HasValue);
@@ -1178,7 +1181,7 @@ public static class BenchmarkReportFacts
         if (BenchmarkChatTransfer.HasKnowledgeBaseRoutingQuestion(subject.All))
         {
             facts.Add("tools.zeroKnowledgeBaseAnswers", routing.ZeroKnowledgeBaseAnswerCount,
-                Inv(routing.ZeroKnowledgeBaseAnswerCount) + " of " + Inv(routing.AnsweredQuestionCount));
+                BenchmarkReportFormat.CountOf(routing.ZeroKnowledgeBaseAnswerCount, routing.AnsweredQuestionCount, "answers", "without a knowledge-base article"));
         }
         else
         {
@@ -1246,7 +1249,7 @@ public static class BenchmarkReportFacts
 
             int graded = subjectRuns.Sum(r => r.PanelGradedAnswerCount ?? 0);
             int disagreements = subjectRuns.Sum(r => r.PanelDisagreementCount ?? 0);
-            facts.Add("panel.disagreements", disagreements, Inv(disagreements) + " of " + Inv(graded) + " answers");
+            facts.Add("panel.disagreements", disagreements, BenchmarkReportFormat.CountOf(disagreements, graded, "answers", "on which the panel members disagreed"));
 
             // A withheld run's member-alone indices are recomputed over its answers; the others are stored.
             var memberAlone = subjectRuns
@@ -1890,7 +1893,7 @@ public static class BenchmarkReportFacts
                 extra.Unavailable("tools.callsPerQuestion", "No answer counts toward the index.");
             }
             extra.Add("errors.critical", stats.CriticalCount,
-                Inv(stats.CriticalCount) + " of " + Inv(stats.Counting.Count) + " answers");
+                BenchmarkReportFormat.CountOf(stats.CriticalCount, stats.Counting.Count, "answers", CriticalErrorQualifier));
 
             var runs = RunsOf(entry, runsById);
             // The first run is dated by its start, the last by its completion.
@@ -2008,9 +2011,9 @@ public static class BenchmarkReportFacts
             attempts += "; recorded for " + Inv(summary.RecordedRuns) + " of " + Inv(summary.TotalRuns) + " runs";
         }
         facts.Add("availability.attempts", valid, attempts);
-        facts.Add("availability.providerErrors", summary.ProviderErrors, BenchmarkProviderAvailability.FormatCount(summary.ProviderErrors, valid));
+        facts.Add("availability.providerErrors", summary.ProviderErrors, BenchmarkProviderAvailability.FormatCount(summary.ProviderErrors, valid, BenchmarkProviderAvailability.ProviderErrorQualifier));
         AddAvailabilityRate(facts, "availability.providerErrorRate", summary.ProviderErrorRate, summary.ProviderErrorRateLow, summary.ProviderErrorRateHigh);
-        facts.Add("availability.unattributedErrors", summary.UnattributedErrors, BenchmarkProviderAvailability.FormatCount(summary.UnattributedErrors, valid));
+        facts.Add("availability.unattributedErrors", summary.UnattributedErrors, BenchmarkProviderAvailability.FormatCount(summary.UnattributedErrors, valid, BenchmarkProviderAvailability.UnattributedErrorQualifier));
         AddAvailabilityRate(facts, "availability.inclusiveRate", summary.InclusiveRate, summary.InclusiveRateLow, summary.InclusiveRateHigh);
 
         facts.Add("availability.overloaded", summary.Overloaded, Thousands(summary.Overloaded));
@@ -2666,6 +2669,60 @@ public static class BenchmarkReportFormat
     }
 
     public static string Rank(int rank, int of) => Ordinal(rank) + " of " + of.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>The words a count's qualifier starts with (<see cref="CountOf"/>); the noun before it is every word up to one.</summary>
+    public static readonly IReadOnlyList<string> CountQualifierStarts = new[]
+    {
+        "with", "without", "that", "on", "graded", "at", "scored", "missed", "counted", "this", "in", "served", "which", "whose", "for"
+    };
+
+    private static readonly System.Text.RegularExpressions.Regex CountHeadRegex = new(
+        @"^\d[\d,]* of \d[\d,]*(?: (?!(?:" + string.Join("|", CountQualifierStarts) + @")\b)[A-Za-z][A-Za-z-]*)*",
+        System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    private static readonly System.Text.RegularExpressions.Regex TrailingShareRegex = new(
+        @" \([^()]*\)$", System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A count fact's display that says what it counts: <c>9 of 36 answers without a tool call</c>. <paramref name="noun"/> is
+    /// the plural noun, which loses its final <c>s</c> when <paramref name="total"/> is one; <paramref name="qualifier"/>, when
+    /// given, follows it. The display starts with the count, so a zero count reads as one. With <paramref name="separators"/>
+    /// the numbers carry the "," thousands separator.
+    /// </summary>
+    public static string CountOf(int count, int total, string noun, string? qualifier = null, bool separators = false)
+    {
+        string Number(int value) => value.ToString(separators ? "#,0" : "0", CultureInfo.InvariantCulture);
+        string word = total == 1 && noun.EndsWith('s') ? noun[..^1] : noun;
+        return Number(count) + " of " + Number(total) + " " + word + (string.IsNullOrWhiteSpace(qualifier) ? string.Empty : " " + qualifier.Trim());
+    }
+
+    /// <summary>
+    /// The leading <c>k of n &lt;noun&gt;</c> of a count display (<see cref="CountOf"/>), with a share in parentheses that
+    /// ends it (<c>3 of 36 valid attempts (8%)</c>), for a table cell or a line whose own words say what it counts; any
+    /// other display, a bare one stored before counts said what they count included, unchanged.
+    /// </summary>
+    public static string CountHead(string display)
+    {
+        if (string.IsNullOrEmpty(display)) return display;
+        var head = CountHeadRegex.Match(display);
+        if (!head.Success) return display;
+        var share = TrailingShareRegex.Match(display);
+        return share.Success && share.Index >= head.Length ? head.Value + share.Value : head.Value;
+    }
+
+    /// <summary>
+    /// What a count display says it counts after its noun (<c>without a tool call</c>); empty for a bare count and for any
+    /// display that is not a count.
+    /// </summary>
+    public static string CountQualifier(string display)
+    {
+        if (string.IsNullOrEmpty(display)) return string.Empty;
+        var head = CountHeadRegex.Match(display);
+        if (!head.Success) return string.Empty;
+        var share = TrailingShareRegex.Match(display);
+        int end = share.Success && share.Index >= head.Length ? share.Index : display.Length;
+        return display[head.Length..end].Trim();
+    }
 
     /// <summary>"A", "A and B", "A, B and C".</summary>
     public static string LetterList(IReadOnlyList<string> items)

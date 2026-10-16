@@ -112,6 +112,25 @@ public static class RootCauseHypotheses
     public const string PanelAgreement = "Panel agreement";
     public const string Configuration = "Configuration";
 
+    /// <summary>The robustness check a share fails when its 95% interval is wider than <see cref="MaxShareIntervalWidth"/>.</summary>
+    public const string ShareInterval = "Share interval";
+
+    /// <summary>The widest share interval, as a fraction, that passes the <see cref="ShareInterval"/> check: one hundred percentage points.</summary>
+    public const double MaxShareIntervalWidth = 1.0;
+
+    /// <summary>The clause a "mainly from" statement takes when its share exceeds the whole gap.</summary>
+    public const string ExceedsTheGapClause = ", which alone exceeds the gap while other components pull the other way";
+
+    /// <summary>
+    /// A "mainly from" statement whose share is above one: the lead component alone is larger than the difference, so
+    /// the statement says that the others pull the other way. Any other statement is returned unchanged.
+    /// </summary>
+    public static string ExceedsTheGap(string statement, double? share)
+    {
+        if (share is not > 1.0 || !statement.Contains(" mainly from ", StringComparison.Ordinal) || !statement.EndsWith('.')) return statement;
+        return statement[..^1] + ExceedsTheGapClause + ".";
+    }
+
     private static readonly string[] ThinkingOrder = { "none", "minimal", "low", "medium", "high", "xhigh", "max" };
 
     // ---------------------------------------------------------------------------------------------
@@ -214,6 +233,16 @@ public static class RootCauseHypotheses
         }
         else
         {
+            if (draft.ShareLower is double lower && draft.ShareUpper is double upper && upper - lower > MaxShareIntervalWidth
+                && !draft.Robustness.Any(r => r.Name == ShareInterval))
+            {
+                draft.Robustness.Add(new RootCauseRobustnessCheck
+                {
+                    Name = ShareInterval,
+                    Status = RootCauseCheckStatuses.Failed,
+                    Detail = "The share's 95% interval, " + Interval(lower, upper) + ", is wider than one hundred percentage points."
+                });
+            }
             foreach (var check in draft.Robustness)
             {
                 if (check.Status is RootCauseCheckStatuses.Failed or RootCauseCheckStatuses.NotAssessable) reasons.Add(CheckReason(check));
@@ -247,7 +276,7 @@ public static class RootCauseHypotheses
             Kind = draft.Kind,
             Models = draft.Models.ToList(),
             ModelsText = BenchmarkReportFormat.LetterList(draft.Models.Select(name).ToList()),
-            Statement = draft.Statement,
+            Statement = ExceedsTheGap(draft.Statement, draft.Share),
             ShortStatement = draft.Short,
             Loci = draft.Loci.ToList(),
             Locus = draft.Loci.Count == 0 ? "—" : string.Join(" / ", draft.Loci),
