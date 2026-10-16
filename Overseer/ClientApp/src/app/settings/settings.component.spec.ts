@@ -1029,12 +1029,12 @@ describe('SettingsComponent', () => {
       fixture.detectChanges();
     }
 
-    it('renders eight nav links with the expected labels and routerLinks', () => {
+    it('renders ten nav links with the expected labels and routerLinks', () => {
       const compiled = fixture.nativeElement as HTMLElement;
       const links = compiled.querySelectorAll('.settings-nav-link');
-      const expectedLabels = ['General', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'System Model Confidentiality', 'Outbound Masking', 'Chat Data', 'Version'];
+      const expectedLabels = ['General', 'API Keys', 'AI Models', 'AI Permissions', 'AI Performance', 'Confidentiality Mode', 'System Model Confidentiality', 'Outbound Masking', 'Chat Data', 'Version'];
 
-      expect(links.length).toBe(8);
+      expect(links.length).toBe(10);
       links.forEach((link, i) => {
         expect(link.querySelector('.settings-nav-label')?.textContent).toBe(expectedLabels[i]);
       });
@@ -1111,6 +1111,45 @@ describe('SettingsComponent', () => {
 
       emitSection('masking');
       expect(compiled.querySelector('.settings-body')?.classList.contains('section-open')).toBe(true);
+    });
+
+    /* The children fetch their data through HttpClientTesting on creation; the requests stay
+       unflushed, so each renders its loading state. */
+    it('renders the API Keys component in the API Keys section and marks its nav link current', () => {
+      emitSection('api-keys');
+      const compiled = fixture.nativeElement as HTMLElement;
+
+      expect(compiled.querySelector('.settings-form app-api-keys')).toBeTruthy();
+      expect(compiled.querySelector('.settings-form app-models')).toBeNull();
+      expect(compiled.querySelector('.settings-section-title')?.textContent).toBe('API Keys');
+      const current = compiled.querySelector('.settings-nav-link[aria-current="page"]');
+      expect(current?.querySelector('.settings-nav-label')?.textContent).toBe('API Keys');
+      expect(current?.getAttribute('href')).toMatch(/\/settings\/api-keys$/);
+    });
+
+    it('renders the Models component in the AI Models section', () => {
+      emitSection('models');
+      const compiled = fixture.nativeElement as HTMLElement;
+
+      expect(compiled.querySelector('.settings-form app-models')).toBeTruthy();
+      expect(compiled.querySelector('.settings-form app-api-keys')).toBeNull();
+      expect(compiled.querySelector('.settings-section-title')?.textContent).toBe('AI Models');
+    });
+
+    it('renders neither the API Keys nor the Models component in the General section', () => {
+      emitSection(null);
+      const compiled = fixture.nativeElement as HTMLElement;
+
+      expect(compiled.querySelector('app-api-keys')).toBeNull();
+      expect(compiled.querySelector('app-models')).toBeNull();
+    });
+
+    it('links API Keys in the System Model Confidentiality intro to the API Keys section', () => {
+      emitSection('provided-models');
+      const link = (fixture.nativeElement as HTMLElement).querySelector('.system-models-intro a');
+
+      expect(link?.textContent).toBe('API Keys');
+      expect(link?.getAttribute('href')).toMatch(/\/settings\/api-keys$/);
     });
   });
 

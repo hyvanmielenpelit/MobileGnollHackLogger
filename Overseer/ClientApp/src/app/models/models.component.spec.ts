@@ -316,7 +316,7 @@ describe('ModelsComponent', () => {
       expect(document.activeElement).toBe(el().querySelector('#user-model-name-5'));
     });
 
-    it('says a deleted model was deleted and focuses the page heading', async () => {
+    it('says a deleted model was deleted and focuses Add Model', async () => {
       showModels([flash(RETIRED), gptX(AVAILABLE)]);
 
       resolveFlash({ changes: [], blockers: [], model: null, deleted: true }, [gptX(AVAILABLE)]);
@@ -324,7 +324,7 @@ describe('ModelsComponent', () => {
 
       expect(text(el().querySelector('.models-status'))).toBe("'Flash 3.7' was deleted.");
       expect(el().querySelector('#user-model-name-5')).toBeNull();
-      expect(document.activeElement).toBe(el().querySelector('#models-heading'));
+      expect(document.activeElement).toBe(el().querySelector('#add-model-btn'));
     });
 
     it('marks a custom-mode row Custom model with no notice', () => {

@@ -120,6 +120,12 @@
       </div>
 
       }
+      @case ('api-keys') {
+      <app-api-keys></app-api-keys>
+      }
+      @case ('models') {
+      <app-models></app-models>
+      }
       @case ('permissions') {
 
         <div class="margin-y-20 mt-5">
@@ -536,7 +542,7 @@
               the provider keeps your data and records whether you want to use it in confidential
               chats. Ordinary chats are not affected.
             </p>
-            <p class="form-hint">Models you use with your own key are decided under API Keys.</p>
+            <p class="form-hint">Models you use with your own key are decided under <a routerLink="/settings/api-keys" queryParamsHandling="preserve">API Keys</a>.</p>
           </div>
           <button type="button" class="btn-info system-models-info-btn" (click)="openSystemModelsInfoDialog()"
                   aria-label="How this works: system models and confidential chats" title="How this works">
@@ -841,7 +847,7 @@
     <section>
       <h4>What this page is for</h4>
       <p>Some AI models are provided for you by the people who run this Overseer, so you can use them without an API key of your own. These are the <strong>system models</strong>. This page lists the ones you can pick in chat, shows what is known about how each provider handles your data, and records your own decision about whether to use each one in a <strong>confidential chat</strong>.</p>
-      <p>Models you use with your own API key are decided in the same way under API Keys. Ordinary, non-confidential chats are not affected by anything on this page.</p>
+      <p>Models you use with your own API key are decided in the same way under <a routerLink="/settings/api-keys" queryParamsHandling="preserve" (click)="closeSystemModelsInfoDialog()">API Keys</a>. Ordinary, non-confidential chats are not affected by anything on this page.</p>
     </section>
 
     <section>

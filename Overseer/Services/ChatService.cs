@@ -651,7 +651,7 @@ public class ChatService
 
             if (string.IsNullOrEmpty(apiKey))
             {
-                yield return new ChatEvent { Type = "error", Data = $"Error: API Key not configured for {provider}. Please configure it in the API Keys page or select a system-provided model." };
+                yield return new ChatEvent { Type = "error", Data = $"Error: API Key not configured for {provider}. Please add one under Settings → API Keys or select a system-provided model." };
                 yield break;
             }
 

@@ -1,370 +1,362 @@
-<div class="settings-container gh-main-container">
-  <div class="header-row">
-    <h2>API Keys</h2>
-    <a routerLink="/chat" queryParamsHandling="preserve" class="nav-back-link">&larr; Back</a>
+<p class="settings-description">
+  Manage your API keys for different AI providers. Keys are encrypted before being stored in the database.
+  Each key is checked with its provider before it is saved.
+</p>
+
+@if (loading) {
+  <div class="loading-state">
+    <span class="sidebar-spinner"></span> Loading API Keys...
   </div>
-  <div class="api-keys-scroll-area">
-    <p class="settings-description" style="padding: 0; margin-top: 0;">
-      Manage your API keys for different AI providers. Keys are encrypted before being stored in the database.
-      Each key is checked with its provider before it is saved.
-    </p>
+}
 
-    @if (loading) {
-      <div class="loading-state">
-        <span class="sidebar-spinner"></span> Loading API Keys...
-      </div>
-    }
-
-    @if (!loading) {
-      <div class="api-keys-list">
-      @for (provider of providers; track provider) {
-        <div class="provider-card">
-          <div class="provider-header">
-            <div class="provider-title">
-              <h3>{{ provider }}</h3>
-              <button type="button" class="btn-info" (click)="apiKeyInfoDialog.showModal()">
-                <span class="info-icon">i</span>
-              </button>
-            </div>
-            <div class="provider-status">
-              <span class="status-badge" [class.has-key]="keyStatuses[provider]">
-                {{ keyStatuses[provider] ? 'Key Saved' : 'No Key' }}
-              </span>
-              @if (keyStatuses[provider] && verificationLabel(keyVerifications[provider]); as label) {
-                <span class="status-badge key-verification" tabindex="0"
-                      [class.badge-success]="keyVerifications[provider]?.status === 'Verified'"
-                      [class.badge-warning]="keyVerifications[provider]?.status === 'NotVerified'"
-                      [attr.interestfor]="'key-verif-tip-' + provider"
-                      [attr.style]="'anchor-name: --key-verif-tip-' + provider">{{ label }}</span>
-                <div popover="hint" class="gh-tooltip gh-tooltip-multiline key-verification-tip"
-                     [id]="'key-verif-tip-' + provider"
-                     [attr.style]="'position-anchor: --key-verif-tip-' + provider">{{ verificationTooltip(keyVerifications[provider]) }}</div>
-              }
-              @if (keyStatuses[provider] && keyVerifications[provider]?.status === 'NotVerified') {
-                <button type="button" class="btn-ghost key-verify-again"
-                        [attr.aria-busy]="verifyingProvider === provider ? 'true' : null"
-                        [attr.aria-disabled]="verifyingProvider !== null ? 'true' : null"
-                        (click)="verifyKey(provider)">
-                  <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                  {{ verifyingProvider === provider ? 'Verifying…' : 'Verify Again' }}
-                </button>
-              }
-            </div>
-          </div>
-          <div class="provider-body">
-            @if (keyStatuses[provider]) {
-              <div class="api-key-grid">
-                <p class="key-info-text">You have a saved API key for this provider.</p>
-                <button class="btn-gh btn-gh-delete btn-action" (click)="requestDeleteKey(provider)" [disabled]="savingProvider === provider">
-                  @if (savingProvider === provider) {
-                    <span class="sidebar-spinner small-spinner"></span>
-                  }
-                  Delete Key
-                </button>
-              </div>
-            }
-            @if (!keyStatuses[provider]) {
-              <div class="api-key-grid">
-                <label class="visually-hidden" [for]="keyInputId(provider)">{{ provider }} API key</label>
-                <input type="password" [id]="keyInputId(provider)" [(ngModel)]="newKeys[provider]"
-                       (ngModelChange)="onKeyInput(provider)"
-                       [readonly]="savingProvider === provider"
-                       [attr.aria-invalid]="keyErrors[provider] ? 'true' : null"
-                       [attr.aria-describedby]="keyErrors[provider] ? keyErrorId(provider) : null"
-                       autocomplete="off" placeholder="Enter API Key" class="gh-input m-0">
-                <button type="button" class="btn-gh btn-action save-key-btn" (click)="saveKey(provider)"
-                        [disabled]="!newKeys[provider]"
-                        [attr.aria-busy]="savingProvider === provider ? 'true' : null"
-                        [attr.aria-disabled]="savingProvider ? 'true' : null">
-                  @if (savingProvider === provider) {
-                    <span class="sidebar-spinner small-spinner"></span>
-                  }
-                  {{ savingProvider === provider ? 'Verifying…' : 'Save Key' }}
-                </button>
-              </div>
-            }
-            @if (keyErrors[provider]; as error) {
-              <p class="gh-field-error key-error" [id]="keyErrorId(provider)">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                <span>
-                  <span class="key-error-message">{{ error.message }}</span>
-                  @if (error.detail) {
-                    <span class="key-error-detail">{{ error.detail }}</span>
-                  }
-                </span>
-              </p>
-            }
-            @if (keyWarnings[provider]; as warning) {
-              <div class="alert alert-warning key-warning" role="note">
-                <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
-                <div class="alert-content"><div class="alert-body">{{ warning }}</div></div>
-              </div>
-            }
-            <p class="key-status-line" role="status">{{ keyStatusLines[provider] }}</p>
-            <details class="gh-disclosure advanced-settings">
-              <summary>
-                <span>Advanced settings</span>
-                @if (advancedSummary(provider)) {
-                  <span class="advanced-summary-status">{{ advancedSummary(provider) }}</span>
-                }
-                <button type="button" class="btn-info btn-info-small"
-                        (click)="openAdvancedInfo(); $event.preventDefault()"
-                        aria-label="About the advanced settings">
-                  <span class="info-icon">i</span>
-                </button>
-              </summary>
-              <div class="gh-disclosure-body">
-                <div class="parallel-mode-section">
-                  <div class="parallel-mode-row">
-                    <label [for]="'parallel-' + provider" class="parallel-mode-label">Parallel execution</label>
-                    <select [id]="'parallel-' + provider" class="gh-input parallel-select"
-                            [ngModel]="keyParallelModes[provider] ?? 2"
-                            (ngModelChange)="onParallelModeChange(provider, $event)"
-                            [disabled]="savingParallelProvider === provider">
-                      <option [ngValue]="2">Allowed (default)</option>
-                      <option [ngValue]="1">On request</option>
-                      <option [ngValue]="0">Sequential only</option>
-                    </select>
-                  </div>
-                  <p class="parallel-mode-hint">
-                    Leave this on Allowed. Choose Sequential only for a free or low-tier key that keeps hitting
-                    rate limits; chats get slower but stop failing. On request asks the model to stay sequential
-                    unless you ask for parallel lookups. It is a request, not a limit.
-                  </p>
-                </div>
-                @if (keyStatuses[provider]) {
-                  <section class="posture-section" [attr.aria-labelledby]="'posture-heading-' + provider">
-                    <h4 class="posture-heading" [id]="'posture-heading-' + provider">Confidential chats</h4>
-                    <p class="posture-hint">
-                      These settings only matter in chats you mark confidential. If you never use Confidentiality
-                      Mode, leave them as they are.
-                    </p>
-
-                    <div class="posture-row">
-                      <label [for]="'trust-' + provider" class="posture-label">Use this key for confidential chats</label>
-                      <select [id]="'trust-' + provider" class="gh-input posture-select"
-                              [ngModel]="keyTrusts[provider] ?? 'undecided'"
-                              (ngModelChange)="onTrustChange(provider, $event)"
-                              [disabled]="savingTrustProvider === provider">
-                        <option value="yes">Yes</option>
-                        <option value="no">No</option>
-                        <option value="undecided">Not decided yet</option>
-                      </select>
-                    </div>
-                    <p class="posture-hint">
-                      <strong>No</strong> keeps this key out of every confidential chat.
-                      <strong>Not decided yet</strong> leaves it usable; whether Overseer asks you first depends on
-                      Model Trust Requirement under Settings &rsaquo; Confidentiality.
-                    </p>
-                    <p class="posture-hint">
-                      System-provided models are decided under Settings &rsaquo; System Model Confidentiality.
-                    </p>
-                    @if (savingTrustProvider === provider || (keyTrusts[provider] !== 'undecided' && formatStamp(keyTrustDecidedUtc[provider]))) {
-                      <div class="posture-actions">
-                        @if (savingTrustProvider === provider) {
-                          <span class="sidebar-spinner small-spinner"></span>
-                        }
-                        @if (keyTrusts[provider] !== 'undecided' && formatStamp(keyTrustDecidedUtc[provider])) {
-                          <span class="posture-stamp">Decided {{ formatStamp(keyTrustDecidedUtc[provider]) }}</span>
-                        }
-                      </div>
-                    }
-                    @if (trustErrors[provider]) {
-                      <p class="posture-error" role="alert">{{ trustErrors[provider] }}</p>
-                    }
-
-                    <div class="posture-row posture-row-divided">
-                      <label [for]="'posture-' + provider" class="posture-label">What your provider agreed</label>
-                      <select [id]="'posture-' + provider" class="gh-input posture-select"
-                              [(ngModel)]="keyPostures[provider]"
-                              [disabled]="savingPostureProvider === provider">
-                        @for (p of postureOptions(provider); track p.value) {
-                          <option [value]="p.value">{{ p.label }}</option>
-                        }
-                      </select>
-                      <span class="posture-badge posture-badge-declared">{{ savedPostureBadge(provider) }}</span>
-                    </div>
-                    <p class="posture-hint">
-                      Sets the colour of the Private badge in confidential chats. Overseer cannot see your
-                      agreement, so this counts as self-declared: yellow at best, never green.
-                    </p>
-
-                    <div class="posture-row">
-                      <label [for]="'posture-note-' + provider" class="posture-label">Note (optional)</label>
-                      <input type="text" [id]="'posture-note-' + provider" class="gh-input posture-note" maxlength="1024"
-                             [(ngModel)]="keyPostureNotes[provider]"
-                             [disabled]="savingPostureProvider === provider"
-                             placeholder="e.g. Team plan, no training per DPA">
-                    </div>
-
-                    <div class="posture-actions" aria-live="polite">
-                      <button type="button" class="btn-gh"
-                              (click)="savePosture(provider)"
-                              [disabled]="!isPostureDirty(provider) || savingPostureProvider === provider">
-                        @if (savingPostureProvider === provider) {
-                          <span class="sidebar-spinner small-spinner"></span>
-                        }
-                        Save Posture
-                      </button>
-                      @if (formatStamp(keyPostureDeclaredUtc[provider])) {
-                        <span class="posture-stamp">Declared {{ formatStamp(keyPostureDeclaredUtc[provider]) }}</span>
-                      }
-                      @if (postureSavedProvider === provider) {
-                        <span class="posture-saved" role="status">Saved</span>
-                      }
-                    </div>
-                    @if (postureErrors[provider]) {
-                      <p class="posture-error" role="alert">{{ postureErrors[provider] }}</p>
-                    }
-                  </section>
-                }
-              </div>
-            </details>
-          </div>
-          <!-- API Key Info Dialog -->
-          <dialog #apiKeyInfoDialog class="gh-dialog">
-            <h3>How to get an API Key</h3>
-            @if (provider === 'OpenAI') {
-              <div>
-                <p>To use OpenAI models, you need an API key from your OpenAI account.</p>
-                <ol class="api-instructions">
-                  <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a></li>
-                  <li>Log in or sign up.</li>
-                  <li>Click <strong>Create new secret key</strong>.</li>
-                  <li>Copy the key and paste it here.</li>
-                </ol>
-              </div>
-            }
-            @if (provider === 'Anthropic') {
-              <div>
-                <p>To use Anthropic models, you need an API key from the Anthropic Console.</p>
-                <ol class="api-instructions">
-                  <li>Go to <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com/settings/keys</a></li>
-                  <li>Log in or sign up.</li>
-                  <li>Click <strong>Create Key</strong>.</li>
-                  <li>Copy the key and paste it here.</li>
-                </ol>
-              </div>
-            }
-            @if (provider === 'Google') {
-              <div>
-                <p>To use Google Gemini models, you need an API key from Google AI Studio.</p>
-                <ol class="api-instructions">
-                  <li>Go to <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a></li>
-                  <li>Log in with your Google account.</li>
-                  <li>Click <strong>Create API key</strong>.</li>
-                  <li>Copy the key and paste it here.</li>
-                </ol>
-              </div>
-            }
-            <form method="dialog" class="dialog-actions">
-              <button class="btn-gh">Close</button>
-            </form>
-          </dialog>
+@if (!loading) {
+  <div class="api-keys-list">
+  @for (provider of providers; track provider) {
+    <div class="provider-card">
+      <div class="provider-header">
+        <div class="provider-title">
+          <h3>{{ provider }}</h3>
+          <button type="button" class="btn-info" (click)="apiKeyInfoDialog.showModal()">
+            <span class="info-icon">i</span>
+          </button>
         </div>
-      }
+        <div class="provider-status">
+          <span class="status-badge" [class.has-key]="keyStatuses[provider]">
+            {{ keyStatuses[provider] ? 'Key Saved' : 'No Key' }}
+          </span>
+          @if (keyStatuses[provider] && verificationLabel(keyVerifications[provider]); as label) {
+            <span class="status-badge key-verification" tabindex="0"
+                  [class.badge-success]="keyVerifications[provider]?.status === 'Verified'"
+                  [class.badge-warning]="keyVerifications[provider]?.status === 'NotVerified'"
+                  [attr.interestfor]="'key-verif-tip-' + provider"
+                  [attr.style]="'anchor-name: --key-verif-tip-' + provider">{{ label }}</span>
+            <div popover="hint" class="gh-tooltip gh-tooltip-multiline key-verification-tip"
+                 [id]="'key-verif-tip-' + provider"
+                 [attr.style]="'position-anchor: --key-verif-tip-' + provider">{{ verificationTooltip(keyVerifications[provider]) }}</div>
+          }
+          @if (keyStatuses[provider] && keyVerifications[provider]?.status === 'NotVerified') {
+            <button type="button" class="btn-ghost key-verify-again"
+                    [attr.aria-busy]="verifyingProvider === provider ? 'true' : null"
+                    [attr.aria-disabled]="verifyingProvider !== null ? 'true' : null"
+                    (click)="verifyKey(provider)">
+              <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+              {{ verifyingProvider === provider ? 'Verifying…' : 'Verify Again' }}
+            </button>
+          }
+        </div>
+      </div>
+      <div class="provider-body">
+        @if (keyStatuses[provider]) {
+          <div class="api-key-grid">
+            <p class="key-info-text">You have a saved API key for this provider.</p>
+            <button class="btn-gh btn-gh-delete btn-action" (click)="requestDeleteKey(provider)" [disabled]="savingProvider === provider">
+              @if (savingProvider === provider) {
+                <span class="sidebar-spinner small-spinner"></span>
+              }
+              Delete Key
+            </button>
+          </div>
+        }
+        @if (!keyStatuses[provider]) {
+          <div class="api-key-grid">
+            <label class="visually-hidden" [for]="keyInputId(provider)">{{ provider }} API key</label>
+            <input type="password" [id]="keyInputId(provider)" [(ngModel)]="newKeys[provider]"
+                   (ngModelChange)="onKeyInput(provider)"
+                   [readonly]="savingProvider === provider"
+                   [attr.aria-invalid]="keyErrors[provider] ? 'true' : null"
+                   [attr.aria-describedby]="keyErrors[provider] ? keyErrorId(provider) : null"
+                   autocomplete="off" placeholder="Enter API Key" class="gh-input m-0">
+            <button type="button" class="btn-gh btn-action save-key-btn" (click)="saveKey(provider)"
+                    [disabled]="!newKeys[provider]"
+                    [attr.aria-busy]="savingProvider === provider ? 'true' : null"
+                    [attr.aria-disabled]="savingProvider ? 'true' : null">
+              @if (savingProvider === provider) {
+                <span class="sidebar-spinner small-spinner"></span>
+              }
+              {{ savingProvider === provider ? 'Verifying…' : 'Save Key' }}
+            </button>
+          </div>
+        }
+        @if (keyErrors[provider]; as error) {
+          <p class="gh-field-error key-error" [id]="keyErrorId(provider)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            <span>
+              <span class="key-error-message">{{ error.message }}</span>
+              @if (error.detail) {
+                <span class="key-error-detail">{{ error.detail }}</span>
+              }
+            </span>
+          </p>
+        }
+        @if (keyWarnings[provider]; as warning) {
+          <div class="alert alert-warning key-warning" role="note">
+            <svg class="alert-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            <div class="alert-content"><div class="alert-body">{{ warning }}</div></div>
+          </div>
+        }
+        <p class="key-status-line" role="status">{{ keyStatusLines[provider] }}</p>
+        <details class="gh-disclosure advanced-settings">
+          <summary>
+            <span>Advanced settings</span>
+            @if (advancedSummary(provider)) {
+              <span class="advanced-summary-status">{{ advancedSummary(provider) }}</span>
+            }
+            <button type="button" class="btn-info btn-info-small"
+                    (click)="openAdvancedInfo(); $event.preventDefault()"
+                    aria-label="About the advanced settings">
+              <span class="info-icon">i</span>
+            </button>
+          </summary>
+          <div class="gh-disclosure-body">
+            <div class="parallel-mode-section">
+              <div class="parallel-mode-row">
+                <label [for]="'parallel-' + provider" class="parallel-mode-label">Parallel execution</label>
+                <select [id]="'parallel-' + provider" class="gh-input parallel-select"
+                        [ngModel]="keyParallelModes[provider] ?? 2"
+                        (ngModelChange)="onParallelModeChange(provider, $event)"
+                        [disabled]="savingParallelProvider === provider">
+                  <option [ngValue]="2">Allowed (default)</option>
+                  <option [ngValue]="1">On request</option>
+                  <option [ngValue]="0">Sequential only</option>
+                </select>
+              </div>
+              <p class="parallel-mode-hint">
+                Leave this on Allowed. Choose Sequential only for a free or low-tier key that keeps hitting
+                rate limits; chats get slower but stop failing. On request asks the model to stay sequential
+                unless you ask for parallel lookups. It is a request, not a limit.
+              </p>
+            </div>
+            @if (keyStatuses[provider]) {
+              <section class="posture-section" [attr.aria-labelledby]="'posture-heading-' + provider">
+                <h4 class="posture-heading" [id]="'posture-heading-' + provider">Confidential chats</h4>
+                <p class="posture-hint">
+                  These settings only matter in chats you mark confidential. If you never use Confidentiality
+                  Mode, leave them as they are.
+                </p>
+
+                <div class="posture-row">
+                  <label [for]="'trust-' + provider" class="posture-label">Use this key for confidential chats</label>
+                  <select [id]="'trust-' + provider" class="gh-input posture-select"
+                          [ngModel]="keyTrusts[provider] ?? 'undecided'"
+                          (ngModelChange)="onTrustChange(provider, $event)"
+                          [disabled]="savingTrustProvider === provider">
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                    <option value="undecided">Not decided yet</option>
+                  </select>
+                </div>
+                <p class="posture-hint">
+                  <strong>No</strong> keeps this key out of every confidential chat.
+                  <strong>Not decided yet</strong> leaves it usable; whether Overseer asks you first depends on
+                  Model Trust Requirement under Settings &rsaquo; Confidentiality.
+                </p>
+                <p class="posture-hint">
+                  System-provided models are decided under Settings &rsaquo; System Model Confidentiality.
+                </p>
+                @if (savingTrustProvider === provider || (keyTrusts[provider] !== 'undecided' && formatStamp(keyTrustDecidedUtc[provider]))) {
+                  <div class="posture-actions">
+                    @if (savingTrustProvider === provider) {
+                      <span class="sidebar-spinner small-spinner"></span>
+                    }
+                    @if (keyTrusts[provider] !== 'undecided' && formatStamp(keyTrustDecidedUtc[provider])) {
+                      <span class="posture-stamp">Decided {{ formatStamp(keyTrustDecidedUtc[provider]) }}</span>
+                    }
+                  </div>
+                }
+                @if (trustErrors[provider]) {
+                  <p class="posture-error" role="alert">{{ trustErrors[provider] }}</p>
+                }
+
+                <div class="posture-row posture-row-divided">
+                  <label [for]="'posture-' + provider" class="posture-label">What your provider agreed</label>
+                  <select [id]="'posture-' + provider" class="gh-input posture-select"
+                          [(ngModel)]="keyPostures[provider]"
+                          [disabled]="savingPostureProvider === provider">
+                    @for (p of postureOptions(provider); track p.value) {
+                      <option [value]="p.value">{{ p.label }}</option>
+                    }
+                  </select>
+                  <span class="posture-badge posture-badge-declared">{{ savedPostureBadge(provider) }}</span>
+                </div>
+                <p class="posture-hint">
+                  Sets the colour of the Private badge in confidential chats. Overseer cannot see your
+                  agreement, so this counts as self-declared: yellow at best, never green.
+                </p>
+
+                <div class="posture-row">
+                  <label [for]="'posture-note-' + provider" class="posture-label">Note (optional)</label>
+                  <input type="text" [id]="'posture-note-' + provider" class="gh-input posture-note" maxlength="1024"
+                         [(ngModel)]="keyPostureNotes[provider]"
+                         [disabled]="savingPostureProvider === provider"
+                         placeholder="e.g. Team plan, no training per DPA">
+                </div>
+
+                <div class="posture-actions" aria-live="polite">
+                  <button type="button" class="btn-gh"
+                          (click)="savePosture(provider)"
+                          [disabled]="!isPostureDirty(provider) || savingPostureProvider === provider">
+                    @if (savingPostureProvider === provider) {
+                      <span class="sidebar-spinner small-spinner"></span>
+                    }
+                    Save Posture
+                  </button>
+                  @if (formatStamp(keyPostureDeclaredUtc[provider])) {
+                    <span class="posture-stamp">Declared {{ formatStamp(keyPostureDeclaredUtc[provider]) }}</span>
+                  }
+                  @if (postureSavedProvider === provider) {
+                    <span class="posture-saved" role="status">Saved</span>
+                  }
+                </div>
+                @if (postureErrors[provider]) {
+                  <p class="posture-error" role="alert">{{ postureErrors[provider] }}</p>
+                }
+              </section>
+            }
+          </div>
+        </details>
+      </div>
+      <!-- API Key Info Dialog -->
+      <dialog #apiKeyInfoDialog class="gh-dialog">
+        <h3>How to get an API Key</h3>
+        @if (provider === 'OpenAI') {
+          <div>
+            <p>To use OpenAI models, you need an API key from your OpenAI account.</p>
+            <ol class="api-instructions">
+              <li>Go to <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a></li>
+              <li>Log in or sign up.</li>
+              <li>Click <strong>Create new secret key</strong>.</li>
+              <li>Copy the key and paste it here.</li>
+            </ol>
+          </div>
+        }
+        @if (provider === 'Anthropic') {
+          <div>
+            <p>To use Anthropic models, you need an API key from the Anthropic Console.</p>
+            <ol class="api-instructions">
+              <li>Go to <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com/settings/keys</a></li>
+              <li>Log in or sign up.</li>
+              <li>Click <strong>Create Key</strong>.</li>
+              <li>Copy the key and paste it here.</li>
+            </ol>
+          </div>
+        }
+        @if (provider === 'Google') {
+          <div>
+            <p>To use Google Gemini models, you need an API key from Google AI Studio.</p>
+            <ol class="api-instructions">
+              <li>Go to <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">aistudio.google.com/app/apikey</a></li>
+              <li>Log in with your Google account.</li>
+              <li>Click <strong>Create API key</strong>.</li>
+              <li>Copy the key and paste it here.</li>
+            </ol>
+          </div>
+        }
+        <form method="dialog" class="dialog-actions">
+          <button class="btn-gh">Close</button>
+        </form>
+      </dialog>
     </div>
   }
+</div>
+}
+
+<!-- Advanced Settings Info Dialog, shared by every provider card -->
+<dialog #advancedInfoDialog class="gh-dialog dialog-wide advanced-info-dialog" (cancel)="closeAdvancedInfo()">
+  <h3>About the advanced settings</h3>
+
+  <div class="advanced-info-body">
+    <section class="info-section">
+      <h4 class="info-section-heading">Parallel execution</h4>
+      <p class="info-lead">How much Overseer may ask this key to do at once.</p>
+      <p>
+        Overseer can run several tool calls and subagents at the same time on one key. Keep this on
+        <strong>Allowed</strong> unless the provider rate-limits you, which mostly happens on free
+        or low-tier plans.
+      </p>
+      <dl class="info-list">
+        <div class="info-item">
+          <dt>Allowed<span class="info-tag">Default</span></dt>
+          <dd>Fastest, and the right choice for almost everyone.</dd>
+        </div>
+        <div class="info-item">
+          <dt>On request</dt>
+          <dd>Asks the model to hold back. It is a request, not a limit.</dd>
+        </div>
+        <div class="info-item">
+          <dt>Sequential only</dt>
+          <dd>One call at a time. The fix for a key that keeps hitting rate limits: chats get slower, but they stop failing.</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="info-section">
+      <h4 class="info-section-heading">Confidential chats</h4>
+      <p class="info-lead">These settings apply only in chats you mark confidential. Nothing here affects a normal chat.</p>
+      <p>
+        They decide two things: whether Overseer will use this key in a confidential chat at all,
+        and what colour the <strong>Private</strong> badge shows there.
+      </p>
+
+      <div class="info-callout">
+        <p>
+          <strong>Overseer cannot check what you agreed.</strong> Only you can see your agreement with
+          the provider, so whatever you record here is self-declared. It shows as unverified, and the
+          badge is yellow at best &mdash; never green. Green needs a model an administrator has verified.
+        </p>
+      </div>
+
+      <h5 class="info-subheading">Using this key</h5>
+      <dl class="info-list">
+        <div class="info-item">
+          <dt>Yes</dt>
+          <dd>You consider this key suitable for confidential chats.</dd>
+        </div>
+        <div class="info-item">
+          <dt>No</dt>
+          <dd>A decision, not a blank: the key is never used in a confidential chat, whatever your other settings say.</dd>
+        </div>
+        <div class="info-item">
+          <dt>Not decided yet</dt>
+          <dd>Leaves the key usable. Under Settings &rsaquo; Confidentiality &rsaquo; Model Trust Requirement,
+              <em>Ask when unclear</em> makes Overseer ask you once per key before using it; the other choices do not ask.</dd>
+        </div>
+      </dl>
+
+      <h5 class="info-subheading">What your provider agreed</h5>
+      <dl class="info-list">
+        <div class="info-item">
+          <dt>Not established<span class="posture-badge posture-weak">Orange badge</span></dt>
+          <dd>You have not looked. Overseer's own protections still apply.</dd>
+        </div>
+        <div class="info-item">
+          <dt>Standard provider terms<span class="posture-badge posture-weak">Orange badge</span></dt>
+          <dd>Ordinary consumer or pay-as-you-go terms.</dd>
+        </div>
+        <div class="info-item">
+          <dt>No training on content<span class="posture-badge posture-moderate">Yellow badge</span></dt>
+          <dd>The provider promised not to train on your content. It may still keep it for a while.</dd>
+        </div>
+        <div class="info-item">
+          <dt>Zero data retention<span class="posture-badge posture-moderate">Yellow badge</span></dt>
+          <dd>The provider promised not to keep your content after answering. Still yellow on a personal key, because it is self-declared.</dd>
+        </div>
+      </dl>
+    </section>
   </div>
 
-  <!-- Advanced Settings Info Dialog, shared by every provider card -->
-  <dialog #advancedInfoDialog class="gh-dialog dialog-wide advanced-info-dialog" (cancel)="closeAdvancedInfo()">
-    <h3>About the advanced settings</h3>
+  <form method="dialog" class="dialog-actions">
+    <button class="btn-gh btn-gh-cancel" (click)="closeAdvancedInfo()">Close</button>
+  </form>
+</dialog>
 
-    <div class="advanced-info-body">
-      <section class="info-section">
-        <h4 class="info-section-heading">Parallel execution</h4>
-        <p class="info-lead">How much Overseer may ask this key to do at once.</p>
-        <p>
-          Overseer can run several tool calls and subagents at the same time on one key. Keep this on
-          <strong>Allowed</strong> unless the provider rate-limits you, which mostly happens on free
-          or low-tier plans.
-        </p>
-        <dl class="info-list">
-          <div class="info-item">
-            <dt>Allowed<span class="info-tag">Default</span></dt>
-            <dd>Fastest, and the right choice for almost everyone.</dd>
-          </div>
-          <div class="info-item">
-            <dt>On request</dt>
-            <dd>Asks the model to hold back. It is a request, not a limit.</dd>
-          </div>
-          <div class="info-item">
-            <dt>Sequential only</dt>
-            <dd>One call at a time. The fix for a key that keeps hitting rate limits: chats get slower, but they stop failing.</dd>
-          </div>
-        </dl>
-      </section>
+<app-key-verification-dialog (saveAnyway)="onSaveAnyway()" (closed)="onVerificationDialogClosed()"></app-key-verification-dialog>
 
-      <section class="info-section">
-        <h4 class="info-section-heading">Confidential chats</h4>
-        <p class="info-lead">These settings apply only in chats you mark confidential. Nothing here affects a normal chat.</p>
-        <p>
-          They decide two things: whether Overseer will use this key in a confidential chat at all,
-          and what colour the <strong>Private</strong> badge shows there.
-        </p>
-
-        <div class="info-callout">
-          <p>
-            <strong>Overseer cannot check what you agreed.</strong> Only you can see your agreement with
-            the provider, so whatever you record here is self-declared. It shows as unverified, and the
-            badge is yellow at best &mdash; never green. Green needs a model an administrator has verified.
-          </p>
-        </div>
-
-        <h5 class="info-subheading">Using this key</h5>
-        <dl class="info-list">
-          <div class="info-item">
-            <dt>Yes</dt>
-            <dd>You consider this key suitable for confidential chats.</dd>
-          </div>
-          <div class="info-item">
-            <dt>No</dt>
-            <dd>A decision, not a blank: the key is never used in a confidential chat, whatever your other settings say.</dd>
-          </div>
-          <div class="info-item">
-            <dt>Not decided yet</dt>
-            <dd>Leaves the key usable. Under Settings &rsaquo; Confidentiality &rsaquo; Model Trust Requirement,
-                <em>Ask when unclear</em> makes Overseer ask you once per key before using it; the other choices do not ask.</dd>
-          </div>
-        </dl>
-
-        <h5 class="info-subheading">What your provider agreed</h5>
-        <dl class="info-list">
-          <div class="info-item">
-            <dt>Not established<span class="posture-badge posture-weak">Orange badge</span></dt>
-            <dd>You have not looked. Overseer's own protections still apply.</dd>
-          </div>
-          <div class="info-item">
-            <dt>Standard provider terms<span class="posture-badge posture-weak">Orange badge</span></dt>
-            <dd>Ordinary consumer or pay-as-you-go terms.</dd>
-          </div>
-          <div class="info-item">
-            <dt>No training on content<span class="posture-badge posture-moderate">Yellow badge</span></dt>
-            <dd>The provider promised not to train on your content. It may still keep it for a while.</dd>
-          </div>
-          <div class="info-item">
-            <dt>Zero data retention<span class="posture-badge posture-moderate">Yellow badge</span></dt>
-            <dd>The provider promised not to keep your content after answering. Still yellow on a personal key, because it is self-declared.</dd>
-          </div>
-        </dl>
-      </section>
-    </div>
-
-    <form method="dialog" class="dialog-actions">
-      <button class="btn-gh btn-gh-cancel" (click)="closeAdvancedInfo()">Close</button>
-    </form>
-  </dialog>
-
-  <app-key-verification-dialog (saveAnyway)="onSaveAnyway()" (closed)="onVerificationDialogClosed()"></app-key-verification-dialog>
-
-  <!-- Delete API Key Confirmation Dialog -->
-  <dialog #deleteConfirmDialog class="gh-dialog" (cancel)="closeDeleteConfirmDialog()">
-    <h3>Delete API Key</h3>
-    <p>Are you sure you want to delete your saved API key for {{ deletingProvider }}?</p>
-    <div class="dialog-actions">
-      <button class="btn-gh btn-gh-cancel" (click)="closeDeleteConfirmDialog()">Cancel</button>
-      <button class="btn-gh btn-gh-delete" (click)="confirmDeleteKey()">Delete Key</button>
-    </div>
-  </dialog>
-</div>
+<!-- Delete API Key Confirmation Dialog -->
+<dialog #deleteConfirmDialog class="gh-dialog" (cancel)="closeDeleteConfirmDialog()">
+  <h3>Delete API Key</h3>
+  <p>Are you sure you want to delete your saved API key for {{ deletingProvider }}?</p>
+  <div class="dialog-actions">
+    <button class="btn-gh btn-gh-cancel" (click)="closeDeleteConfirmDialog()">Cancel</button>
+    <button class="btn-gh btn-gh-delete" (click)="confirmDeleteKey()">Delete Key</button>
+  </div>
+</dialog>

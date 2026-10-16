@@ -29,6 +29,8 @@ import { ChatService } from '../services/chat.service';
 import { RouterModule, ActivatedRoute, ParamMap } from '@angular/router';
 import { ChangelogComponent } from '../changelog/changelog.component';
 import { TrashModalComponent } from '../shared/trash-modal/trash-modal.component';
+import { ApiKeysComponent } from '../api-keys/api-keys.component';
+import { ModelsComponent } from '../models/models.component';
 import { Subject, BehaviorSubject, Subscription, of, timer, firstValueFrom, EMPTY } from 'rxjs';
 import { debounce, tap, switchMap, catchError, filter, timeout } from 'rxjs/operators';
 import { ensureOverlayPolyfills } from '../utils/polyfills.util';
@@ -45,7 +47,7 @@ export interface DlpClassOption {
 }
 
 /** The settings sections a URL segment can name. */
-export type SettingsSection = 'general' | 'permissions' | 'performance' | 'confidentiality' | 'provided-models' | 'masking' | 'chats' | 'version';
+export type SettingsSection = 'general' | 'api-keys' | 'models' | 'permissions' | 'performance' | 'confidentiality' | 'provided-models' | 'masking' | 'chats' | 'version';
 
 /** The three states of a per-model confidential-trust decision, as the `<select>` carries them. */
 export type ProvidedModelTrustChoice = 'yes' | 'no' | 'undecided';
@@ -65,7 +67,7 @@ const DLP_FLOOR_KEYS: Record<DlpMaskClass, keyof DlpFloor> = {
 
 @Component({
     selector: 'app-settings',
-    imports: [FormsModule, RouterModule, ChangelogComponent, TrashModalComponent],
+    imports: [FormsModule, RouterModule, ChangelogComponent, TrashModalComponent, ApiKeysComponent, ModelsComponent],
     styleUrl: './settings.component.scss',
     changeDetection: ChangeDetectionStrategy.Eager,
     templateUrl: './settings.component.html'
@@ -82,6 +84,8 @@ export class SettingsComponent implements OnInit, OnDestroy {
   /** The sections offered by the nav, in display order. `label` is the nav text; `title`, when present, is the full heading the content column shows. */
   readonly sections: ReadonlyArray<{ id: SettingsSection; label: string; hint: string; title?: string }> = [
     { id: 'general', label: 'General', hint: 'Display and hints' },
+    { id: 'api-keys', label: 'API Keys', hint: 'Your own keys for each AI provider' },
+    { id: 'models', label: 'AI Models', hint: 'Models in your chat picker, and their order' },
     { id: 'permissions', label: 'AI Permissions', hint: 'What the AI may reach' },
     { id: 'performance', label: 'AI Performance', hint: 'Tool limits and timeouts' },
     { id: 'confidentiality', label: 'Confidentiality Mode', hint: 'Default for new chats, and how confidential chats are kept' },

@@ -258,7 +258,7 @@ export class ModelsComponent implements OnInit {
     const next = this.userModels.slice(formerIndex).find(flagged) ?? this.userModels.slice(0, formerIndex).find(flagged);
     const selector = next
       ? `#resolve-model-${next.id}`
-      : this.userModels.some(m => m.id === resolvedId) ? `#user-model-name-${resolvedId}` : '#models-heading';
+      : this.userModels.some(m => m.id === resolvedId) ? `#user-model-name-${resolvedId}` : '#add-model-btn';
     afterNextRender(() => {
       this.host.nativeElement.querySelector<HTMLElement>(selector)?.focus();
     }, { injector: this.injector });

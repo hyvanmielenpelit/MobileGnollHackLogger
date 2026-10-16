@@ -381,10 +381,12 @@ The Overseer project is an ASP.NET Core backend serving an Angular frontend.
 The Angular application's routes are defined in `app.routes.ts`. The primary pages include:
 - `/chat` (`chat.component`): The main chat interface.
 - `/settings` and `/settings/:section` (`settings.component`): User preferences, sectioned.
-  `:section` is one of `general`, `permissions`, `performance`, `confidentiality`, `masking`,
-  `chats`; a bare `/settings` or an unknown section shows General.
-- `/api-keys` (`api-keys.component`): Management of user API keys.
-- `/models` (`models.component`): AI Model selection and configuration.
+  `:section` is one of, in nav order, `general`, `api-keys`, `models`, `permissions`,
+  `performance`, `confidentiality`, `provided-models`, `masking`, `chats`, `version`; a bare
+  `/settings` or an unknown section shows General.
+- `/api-keys` and `/models` are redirects to `/settings/api-keys` and `/settings/models`, whose
+  content is `api-keys.component` (user API keys) and `models.component` (the user's AI models)
+  rendered inside the Settings page, with no page chrome of their own.
 - `/admin` (`admin.component`): System administration (groups, configs, rate limits). Tabs, in
   order: Users, Groups, **API Keys** (`app-admin-api-keys`, the per-provider default keys), System
   Configs, Database, AI Telemetry, GnollBench, Developer Tools.
@@ -465,7 +467,7 @@ To find specific popups, look in the corresponding component's `.html` template:
     disables; **Delete Key** (`.btn-gh btn-gh-delete`, trash).
   - `app-key-verification-dialog` (below), opened by a 409 on **Verify and Save**.
 
-- **API Keys Component (`api-keys.component.html`)**
+- **API Keys Component (`api-keys.component.html`, rendered as the Settings *API Keys* section)**
   - `#apiKeyInfoDialog`: API Key Info
   - `app-key-verification-dialog` (below), opened by a 409 on **Save Key**.
 

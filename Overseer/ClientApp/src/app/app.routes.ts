@@ -1,4 +1,4 @@
-import { Routes } from '@angular/router';
+import { RedirectFunction, Routes } from '@angular/router';
 import { LoginComponent } from './login/login.component';
 import { ChatComponent } from './chat/chat.component';
 import type { SettingsComponent } from './settings/settings.component';
@@ -22,6 +22,10 @@ const settingsCanActivate = [(route: any, state: any) => {
 const settingsCanDeactivate = [(component: SettingsComponent) => {
   return component.canDeactivate ? component.canDeactivate() : true;
 }];
+
+/** Redirects to `target` with the query string and fragment kept, which a string `redirectTo` drops. */
+const redirectKeepingQuery = (target: string): RedirectFunction =>
+  ({ queryParams, fragment }) => inject(Router).createUrlTree([target], { queryParams, fragment: fragment ?? undefined });
 
 export const routes: Routes = [
   { path: 'login', component: LoginComponent },
@@ -83,36 +87,8 @@ export const routes: Routes = [
     canActivate: settingsCanActivate,
     canDeactivate: settingsCanDeactivate
   },
-  { 
-    path: 'api-keys', 
-    loadComponent: () => import('./api-keys/api-keys.component').then(m => m.ApiKeysComponent),
-    canActivate: [(route: any, state: any) => {
-      const auth = inject(AuthService);
-      const router = inject(Router);
-      return auth.checkAuth().pipe(
-        map(user => {
-          if (user) return true;
-          return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
-        }),
-        catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
-      );
-    }]
-  },
-  { 
-    path: 'models', 
-    loadComponent: () => import('./models/models.component').then(m => m.ModelsComponent),
-    canActivate: [(route: any, state: any) => {
-      const auth = inject(AuthService);
-      const router = inject(Router);
-      return auth.checkAuth().pipe(
-        map(user => {
-          if (user) return true;
-          return router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } });
-        }),
-        catchError(() => of(router.createUrlTree(['/login'], { queryParams: { returnUrl: state.url } })))
-      );
-    }]
-  },
+  { path: 'api-keys', redirectTo: redirectKeepingQuery('/settings/api-keys') },
+  { path: 'models', redirectTo: redirectKeepingQuery('/settings/models') },
 
   // No auth guard: a privacy notice has to be readable by someone who has not signed in.
   { path: 'privacy', loadComponent: () => import('./privacy/privacy.component').then(m => m.PrivacyComponent) },

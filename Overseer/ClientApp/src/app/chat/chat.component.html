@@ -106,8 +106,6 @@
       </div>
       <div class="bottom-links">
         <a routerLink="/settings" queryParamsHandling="preserve">Settings</a>
-        <a routerLink="/api-keys" queryParamsHandling="preserve">API Keys</a>
-        <a routerLink="/models" queryParamsHandling="preserve">Models</a>
 
         @if (authService.user$ | async; as user) {
           @if (user.isAdmin) {
@@ -277,7 +275,7 @@
                   <li>Model is not set.</li>
                 }
               </ul>
-              <a [routerLink]="!hasApiKey ? '/api-keys' : '/models'" queryParamsHandling="preserve" class="btn-gh mt-10">
+              <a [routerLink]="!hasApiKey ? '/settings/api-keys' : '/settings/models'" queryParamsHandling="preserve" class="btn-gh mt-10">
                 {{ !hasApiKey ? 'Go to API Keys' : 'Go to Models' }}
               </a>
             </div>
