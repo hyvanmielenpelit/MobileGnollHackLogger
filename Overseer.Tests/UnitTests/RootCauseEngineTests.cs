@@ -443,6 +443,36 @@ public class RootCauseEngineTests
         Assert.NotNull(result.ControlDeficitMean);
     }
 
+    [Theory]
+    [InlineData("Vega Pro", "high", "Vega Pro (high)")]
+    [InlineData("Vega Pro (high)", "high", "Vega Pro (high)")]
+    [InlineData("Vega Pro (HIGH)", "high", "Vega Pro (HIGH)")]
+    [InlineData(" Vega Pro ", null, "Vega Pro")]
+    [InlineData("vega-pro", " medium ", "vega-pro (medium)")]
+    public void AControlsLabel_NamesItsThinkingLevelOnce(string label, string? level, string expected)
+    {
+        var control = new RootCauseControl { ModelLabel = label, ThinkingLevel = level };
+
+        Assert.Equal(expected, control.LabelWithLevel());
+    }
+
+    [Fact]
+    public void AControlsModelFact_CarriesItsThinkingLevelOnce()
+    {
+        var set = Controls(
+            ("Vega Pro", "Anthropic", "vega-pro", 85),
+            ("Nova Flash (high)", "Google", "nova-flash", 80));
+        set.Controls[0].ThinkingLevel = "medium";
+        set.Controls[1].ThinkingLevel = "high";
+        var result = RootCauseEngine.Compute(Input(set));
+
+        var facts = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(facts, result, t => "Model " + t);
+        var byKey = facts.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
+        Assert.Equal("Vega Pro (medium)", byKey["rca.controls.1.model"].Display);
+        Assert.Equal("Nova Flash (high)", byKey["rca.controls.2.model"].Display);
+    }
+
     [Fact]
     public void TheRecommendedRuns_AreOrderedChatBenchmarkModelSelection_AndNumberedFromOne()
     {
@@ -735,9 +765,9 @@ public class RootCauseEngineTests
     }
 
     [Fact]
-    public void TheEngineVersion_IsSeven()
+    public void TheEngineVersion_IsEight()
     {
-        Assert.Equal(7, RootCauseEngine.Version);
+        Assert.Equal(8, RootCauseEngine.Version);
     }
 
     [Fact]

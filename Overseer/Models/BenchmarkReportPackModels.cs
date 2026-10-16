@@ -1949,6 +1949,7 @@ public class BenchmarkReportDocumentDetailDto : BenchmarkReportDocumentListItemD
 /// <summary>One control of a run- or battery-completion Root Cause Analysis, as the AI reports tabs show it.</summary>
 public class RootCauseControlDto
 {
+    /// <summary>The control's model with its thinking level once, e.g. "GPT-6 Luna (high)".</summary>
     public string ModelLabel { get; set; } = string.Empty;
     public string Provider { get; set; } = string.Empty;
 
@@ -1960,6 +1961,17 @@ public class RootCauseControlDto
 
     public DateTime CompletedAtUtc { get; set; }
     public int SharedQuestions { get; set; }
+
+    /// <summary>A control as the AI reports tabs show it, its start as <see cref="CompletedAtUtc"/>.</summary>
+    public static RootCauseControlDto From(Overseer.Services.Benchmarking.RootCause.RootCauseControl control) => new()
+    {
+        ModelLabel = control.LabelWithLevel(),
+        Provider = control.Provider,
+        RunId = control.RunId,
+        BatteryRunId = control.BatteryRunId,
+        CompletedAtUtc = control.DateUtc,
+        SharedQuestions = control.SharedQuestions
+    };
 }
 
 /// <summary>The controls a Root Cause Analysis of a run or battery run would use if written now.</summary>

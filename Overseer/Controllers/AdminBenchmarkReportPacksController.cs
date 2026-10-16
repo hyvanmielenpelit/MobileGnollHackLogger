@@ -1037,15 +1037,7 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         var (cap, _) = RootCauseControls.Limit(set.Controls.Count, otherProviders);
         return new RootCauseControlsDto
         {
-            Controls = set.Controls.Select(c => new RootCauseControlDto
-            {
-                ModelLabel = c.ModelLabel,
-                Provider = c.Provider,
-                RunId = c.RunId,
-                BatteryRunId = c.BatteryRunId,
-                CompletedAtUtc = c.DateUtc,
-                SharedQuestions = c.SharedQuestions
-            }).ToList(),
+            Controls = set.Controls.Select(RootCauseControlDto.From).ToList(),
             ControlLimit = cap ?? "None",
             ControlRun = set.Controls.Count < 2 ? controlRun : null
         };

@@ -961,6 +961,7 @@ public class BenchmarkRunReportDocumentServiceTests
         var found = await Overseer.Services.Benchmarking.RootCause.RootCauseControls.FindAsync(db, "run:" + h.RunId, Ct);
         Assert.Equal(found.Controls.Select(c => c.RunId), dto.Controls.Select(c => c.RunId));
         Assert.Equal(found.Controls.Select(c => c.DateUtc), dto.Controls.Select(c => c.CompletedAtUtc));
+        Assert.Equal(found.Controls.Select(c => c.LabelWithLevel()), dto.Controls.Select(c => c.ModelLabel));
         Assert.Contains(dto.ControlLimit, new[] { "None", "Moderate", "Low" });
         if (dto.Controls.Count >= 2) Assert.Null(dto.ControlRun);
         if (dto.ControlRun != null)

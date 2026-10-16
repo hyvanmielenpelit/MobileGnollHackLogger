@@ -525,10 +525,20 @@ public sealed class RootCauseControl
     /// <summary>1-based, the <c>n</c> of <c>rca.controls.&lt;n&gt;.*</c>.</summary>
     public int Number { get; set; }
 
+    /// <summary>The configuration's display name, else its model id, as recorded; it may or may not name the level.</summary>
     public string ModelLabel { get; set; } = string.Empty;
     public string Provider { get; set; } = string.Empty;
     public string ModelId { get; set; } = string.Empty;
     public string? ThinkingLevel { get; set; }
+
+    /// <summary>The label with the thinking level once: as is when the label already ends with it.</summary>
+    public string LabelWithLevel()
+    {
+        string label = ModelLabel.Trim();
+        if (string.IsNullOrWhiteSpace(ThinkingLevel)) return label;
+        string suffix = " (" + ThinkingLevel.Trim() + ")";
+        return label.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) ? label : label + suffix;
+    }
 
     /// <summary>The control run of a run subject; null for a battery control.</summary>
     public long? RunId { get; set; }

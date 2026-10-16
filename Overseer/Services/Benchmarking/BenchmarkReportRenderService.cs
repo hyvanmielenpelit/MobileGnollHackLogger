@@ -483,17 +483,7 @@ public class BenchmarkReportRenderService
 
         dto.RecommendedRuns = rootCause.RecommendedRuns.ToList();
         dto.Checks = rootCause.Checks.ToList();
-        dto.Controls = rootCause.Controls
-            .Select(c => new RootCauseControlDto
-            {
-                ModelLabel = c.ModelLabel,
-                Provider = c.Provider,
-                RunId = c.RunId,
-                BatteryRunId = c.BatteryRunId,
-                CompletedAtUtc = c.DateUtc,
-                SharedQuestions = c.SharedQuestions
-            })
-            .ToList();
+        dto.Controls = rootCause.Controls.Select(RootCauseControlDto.From).ToList();
     }
 
     /// <summary>The stored fact sheet, deserialized whole; null, with a warning, when absent or unreadable.</summary>

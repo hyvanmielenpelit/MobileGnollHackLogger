@@ -193,7 +193,7 @@ public sealed class RootCauseInput
 public static class RootCauseEngine
 {
     /// <summary>The version stored on every result.</summary>
-    public const int Version = 7;
+    public const int Version = 8;
 
     public const string ComparisonScope = "Comparison";
     public const string ModelScope = "Model";
@@ -1630,7 +1630,7 @@ public static class RootCauseFacts
             foreach (var control in result.Controls)
             {
                 string prefix = "rca.controls." + Inv(control.Number) + ".";
-                facts.Text(prefix + "model", control.ModelLabel);
+                facts.Text(prefix + "model", control.LabelWithLevel());
                 if (control.RunId is long runId) facts.Add(prefix + "runId", (JsonNode)JsonValue.Create(runId), "run #" + runId.ToString(CultureInfo.InvariantCulture));
                 if (control.BatteryRunId is long batteryRunId) facts.Add(prefix + "batteryRunId", (JsonNode)JsonValue.Create(batteryRunId), "battery run #" + batteryRunId.ToString(CultureInfo.InvariantCulture));
                 facts.Text(prefix + "date", control.DateUtc.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));

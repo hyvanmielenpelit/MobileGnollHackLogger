@@ -654,15 +654,6 @@ public static partial class BenchmarkReportPackRenderer
             + (controls == 0 ? "none qualified." : Inv(controls) + " qualified.");
     }
 
-    /// <summary>The control's label with its thinking level once: as is when the label already ends with it.</summary>
-    private static string ControlModelName(RootCauseControl control)
-    {
-        string label = control.ModelLabel.Trim();
-        if (string.IsNullOrWhiteSpace(control.ThinkingLevel)) return label;
-        string suffix = " (" + control.ThinkingLevel.Trim() + ")";
-        return label.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) ? label : label + suffix;
-    }
-
     /// <summary>The controls of a run- or battery-completion analysis, the control limit and the deficit against them.</summary>
     private static void RcaControls(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
@@ -683,7 +674,7 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb, "|---|---|---|---|---|");
         foreach (var control in controls.OrderBy(c => c.Number))
         {
-            string name = ControlModelName(control);
+            string name = control.LabelWithLevel();
             string run = control.RunId is long runId ? "Run " + Inv(runId)
                 : control.BatteryRunId is long batteryRunId ? "Battery run " + Inv(batteryRunId)
                 : NoValue;

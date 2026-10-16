@@ -946,6 +946,14 @@ a run- or battery-completion Root Cause Analysis names each control's thinking l
 label that already ends with *(level)*, as a configuration display name often does, prints as it is;
 any other label gets the level appended. A document stored earlier re-renders with the level once.
 
+**Control names with their thinking level (2026-10-16)** moves `RootCauseEngine.Version` 7 → 8; no
+report format version, PDF layout or Word layout moves. A control is named with its
+thinking level once wherever it appears — the `rca.controls.<n>.model` fact, and so the writer's prompt
+and prose, the `root-cause-controls` endpoint and a document's stored controls in the AI reports tabs —
+by `RootCauseControl.LabelWithLevel()`, the same rule the controls table uses; `ModelLabel` stays the
+configuration's name as recorded. A document stored earlier shows the level in its Controls line and
+table, but its prose keeps its stored fact until it is written again.
+
 **Comparison format version 14** (2026-10-14) moves comparison-wide documents only
 (`ComparisonReportFormatVersion` 13 → 14); per-model documents stay at 12 and chat consistency documents
 at 3. It adds the reference model and the baseline model, the failure profile, the comparison with the
@@ -1906,7 +1914,8 @@ Either scope numbers the comparison before the job starts (§ 15).
 - `GET /api/admin/benchmark/runs/{runId}/root-cause-controls`: The controls a Root Cause Analysis of the
   run would use if written now (§ 17), as `RootCauseControlsDto`: `controls`, at most three, in the
   order the analysis uses them, each `{ modelLabel, provider, runId, batteryRunId, completedAtUtc,
-  sharedQuestions }` (`completedAtUtc` carries the control's start time); `controlLimit`, `None`,
+  sharedQuestions }` (`modelLabel` is the control's model with its thinking level once;
+  `completedAtUtc` carries the control's start time); `controlLimit`, `None`,
   `Moderate` or `Low`, against the subject's provider; and `controlRun`, the `control` run the analysis
   would propose when fewer than two controls qualify — taken from the same run-completion preparation
   the Root Cause Analysis uses, and null when the run has no final synthesis yet or no other provider
@@ -4264,7 +4273,8 @@ with a current, complete analysis in the same comparability class."*).
 - **The control limit** above. Two or more qualifying controls, one from another provider, lift it.
 
 **Recorded.** The facts `rca.controls.count`, `rca.controls.providers`, `rca.controls.limit` and
-`rca.controls.<n>.model`, `.runId` (or `.batteryRunId`), `.date`, `.provider`, `.sharedQuestions`, and
+`rca.controls.<n>.model` (the model with its thinking level once), `.runId` (or `.batteryRunId`), `.date`,
+`.provider`, `.sharedQuestions`, and
 `rca.control.instrumentSuspect` and `.modelSpecific`; the controls themselves go into `RootCauseResult`.
 Controls are **named** in every copy: they are evidence, not peers of the document. Speed and cost are
 never read from a control, because those keys may differ (time of day, service tier).
