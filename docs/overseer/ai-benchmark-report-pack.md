@@ -939,6 +939,13 @@ capital too (`UpperFirst`: *None*, *Volume*, *Price*, *Not established*, *Run 1*
 `Prose` runs at render time, a document stored earlier gets the capitals when it is downloaded again; its
 stored facts (spreads, check facts, notes) stay as stored.
 
+**Controls table thinking level (2026-10-16)** moves per-model documents to **format 18**
+(`ReportFormatVersion` 17 → 18); comparison-wide documents stay at 22, chat consistency documents at 5,
+and `RootCauseEngine.Version`, the PDF layout and the Word layout do not move. The `### Controls` table of
+a run- or battery-completion Root Cause Analysis names each control's thinking level once: a control
+label that already ends with *(level)*, as a configuration display name often does, prints as it is;
+any other label gets the level appended. A document stored earlier re-renders with the level once.
+
 **Comparison format version 14** (2026-10-14) moves comparison-wide documents only
 (`ComparisonReportFormatVersion` 13 → 14); per-model documents stay at 12 and chat consistency documents
 at 3. It adds the reference model and the baseline model, the failure profile, the comparison with the

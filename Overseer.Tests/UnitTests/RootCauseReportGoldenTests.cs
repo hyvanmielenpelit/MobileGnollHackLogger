@@ -402,6 +402,23 @@ public class RootCauseReportGoldenTests
     }
 
     [Fact]
+    public void TheControlsTable_NamesEachControlsThinkingLevelOnce()
+    {
+        var document = Document("runWithControls");
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        var controls = sheet.RootCause!.Controls.OrderBy(c => c.Number).ToList();
+        Assert.Equal("Vega Pro (high)", controls[0].ModelLabel);
+        controls[1].ModelLabel = "Zeta Prime";
+        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
+
+        string text = BenchmarkReportPackRenderer.Render(document, FullNamed);
+
+        Assert.Contains("| Vega Pro (high) | Southstar |", text);
+        Assert.Contains("| Zeta Prime (high) | Midland |", text);
+        Assert.DoesNotContain("(high) (high)", text);
+    }
+
+    [Fact]
     public void TheRootCauseAnalysis_RendersOnlyAtFullDisclosure()
     {
         Assert.Equal(new[] { BenchmarkReportDisclosure.Full }, BenchmarkReportPackRenderer.AllowedDisclosures(BenchmarkReportAudience.RootCauseAnalysis));

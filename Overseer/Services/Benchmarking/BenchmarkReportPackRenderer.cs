@@ -115,9 +115,10 @@ public static partial class BenchmarkReportPackRenderer
     /// with tools included, and glosses each term once. From version 16 its Root Cause Analysis gives in Appendix G only
     /// the cited and the critical-error questions, leaves out an empty Appendix E and letters the rest on, and prints one
     /// output cost column. From version 17 every sentence of the writer's prose, every table cell and the text after every
-    /// run-in label start with a capital.
+    /// run-in label start with a capital. From version 18 the controls table of a run- or battery-completion Root Cause
+    /// Analysis names each control's thinking level once.
     /// </summary>
-    public const int ReportFormatVersion = 17;
+    public const int ReportFormatVersion = 18;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From

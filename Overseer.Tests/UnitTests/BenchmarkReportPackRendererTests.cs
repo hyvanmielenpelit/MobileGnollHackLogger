@@ -2432,9 +2432,9 @@ public class BenchmarkReportPackRendererTests
     {
         Assert.Equal(5, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
         Assert.Equal(5, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(17, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(18, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
         Assert.Equal(22, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
-        Assert.Equal(17, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(18, BenchmarkReportPackRenderer.ReportFormatVersion);
         Assert.Equal(22, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);

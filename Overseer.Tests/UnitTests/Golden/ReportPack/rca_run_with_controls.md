@@ -79,8 +79,8 @@ Earlier runs of other models on the same exam under the same instrument; their p
 
 | Control | Provider | Run | Date (UTC) | Shared questions |
 |---|---|---|---|---|
-| Vega Pro (high) (high) | Southstar | Run 32 | 2026-09-21 | 6 |
-| Zeta Prime (high) (high) | Midland | Run 35 | 2026-09-21 | 6 |
+| Vega Pro (high) | Southstar | Run 32 | 2026-09-21 | 6 |
+| Zeta Prime (high) | Midland | Run 35 | 2026-09-21 | 6 |
 
 - **Control limit:** None: two or more controls, at least one from another provider, so the intelligence hypotheses are graded as any other.
 - **Against the controls:** +15.0 points on average over 6 shared questions (95% interval +1.6 to +23.9).
@@ -2968,6 +2968,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 131 · format version 17 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 18 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*
