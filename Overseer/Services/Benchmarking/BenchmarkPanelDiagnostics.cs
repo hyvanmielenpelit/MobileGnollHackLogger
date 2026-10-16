@@ -468,6 +468,60 @@ public static class BenchmarkPanelDiagnostics
             .ToList();
     }
 
+    /// <summary>
+    /// Every pair of <paramref name="rows"/> that the two graders' indices order strictly oppositely, on any
+    /// scale: a tie under either grader is not a reversal, and a row without both indices is skipped. The
+    /// first entry of a pair is the one <paramref name="firstName"/> ranks higher; pairs follow the order of
+    /// <paramref name="rows"/>, and each description gives the indices with one decimal.
+    /// </summary>
+    public static IReadOnlyList<BenchmarkPanelRankedPair> RankReversals(
+        IReadOnlyList<(string EntryKey, string EntryLabel, double? First, double? Second)> rows,
+        string firstName,
+        string secondName)
+    {
+        var list = rows ?? Array.Empty<(string, string, double?, double?)>();
+        var pairs = new List<(int Order1, int Order2, BenchmarkPanelRankedPair Pair)>();
+
+        static bool Finite(double? value, out double finite)
+        {
+            finite = value ?? double.NaN;
+            return double.IsFinite(finite);
+        }
+
+        for (int i = 0; i < list.Count; i++)
+        {
+            for (int j = i + 1; j < list.Count; j++)
+            {
+                var (rowI, rowJ) = (list[i], list[j]);
+                if (!Finite(rowI.First, out double fi) || !Finite(rowJ.First, out double fj)
+                    || !Finite(rowI.Second, out double si) || !Finite(rowJ.Second, out double sj))
+                {
+                    continue;
+                }
+
+                int firstOrder = Math.Sign(fi - fj);
+                int secondOrder = Math.Sign(si - sj);
+                if (firstOrder == 0 || secondOrder == 0 || firstOrder == secondOrder) continue;
+
+                var (high, low, highIndex, lowIndex) = firstOrder > 0 ? (rowI, rowJ, i, j) : (rowJ, rowI, j, i);
+                string highLabel = high.EntryLabel ?? string.Empty;
+                string lowLabel = low.EntryLabel ?? string.Empty;
+                string description =
+                    $"{firstName} ranks {highLabel} above {lowLabel} ({Format(high.First)} vs {Format(low.First)}); "
+                    + $"{secondName} ranks {lowLabel} above {highLabel} ({Format(low.Second)} vs {Format(high.Second)}).";
+
+                pairs.Add((highIndex, lowIndex, new BenchmarkPanelRankedPair(
+                    high.EntryKey ?? string.Empty, highLabel, low.EntryKey ?? string.Empty, lowLabel, description)));
+            }
+        }
+
+        return pairs
+            .OrderBy(p => p.Order1)
+            .ThenBy(p => p.Order2)
+            .Select(p => p.Pair)
+            .ToList();
+    }
+
     // --- Family gaps ----------------------------------------------------------------------------
 
     /// <summary>One family's mean quality on one question under each grader; the reference mean is null unless it graded every answer.</summary>
@@ -780,6 +834,8 @@ public static class BenchmarkPanelDiagnostics
     private static string? Trimmed(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static string Format(int? value) => value?.ToString(CultureInfo.InvariantCulture) ?? "-";
+
+    private static string Format(double? value) => value is double v ? BenchmarkReportFormat.OneDecimal(v) : "-";
 
     private static string IdList(IReadOnlyList<long> ids)
         => string.Join(", ", ids.Select(id => id.ToString(CultureInfo.InvariantCulture)));

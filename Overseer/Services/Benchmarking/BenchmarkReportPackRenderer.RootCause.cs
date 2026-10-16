@@ -19,7 +19,8 @@ using Overseer.Services.Benchmarking.RootCause;
 /// own; the conclusions; the runs to make next; limitations and threats to validity. Then the lettered appendices:
 /// A intelligence detail (in comparison scope, without the results the body gives, and only the paired tests the
 /// body does not print), B speed and cost decompositions, C hypothesis details, D run settings, E the known counts
-/// and configuration facts, F reproducibility, G the cited questions with their answer excerpts and H glossary;
+/// and configuration facts, F reproducibility, G the cited and critical-error questions with their answer excerpts
+/// and H glossary, the letters after D closing up when there is no known count or configuration fact to list;
 /// and, in the Markdown copy, the fact sheet. A table column that is zero or not recorded in every row is left out,
 /// and the table's note says so. Every table is computed by code from the stored
 /// <see cref="RootCauseResult"/> and facts; the writer's slots follow the code-rendered part of their section.
@@ -45,8 +46,12 @@ public static partial class BenchmarkReportPackRenderer
     private const string RcaWriterHypothesesNote = "Hypotheses the report writer added from the grader comments and excerpts. Code has not "
         + "tested them, so their confidence is Low.";
 
-    private const string RcaKeyTermsLead = "The terms the summary and the conclusions use, each in plain words. A term is also explained where it "
-        + "first appears, and Appendix H defines every term this document uses.";
+    /// <summary>The lead of the Key terms section, naming the glossary by its <paramref name="letter"/>.</summary>
+    private static string RcaKeyTermsLead(string letter) => "The terms the summary and the conclusions use, each in plain words. A term is also explained where it "
+        + "first appears, and Appendix " + letter + " defines every term this document uses.";
+
+    /// <summary>The note under a cost or token table whose output column marks a merged figure with <c>*</c>; the mark is escaped, so Markdown prints it.</summary>
+    private const string RcaThinkingIncludedNote = "\\* Thinking included; the provider does not report it separately.";
 
     private const string RcaShareNote = "Share: how much of the difference, or of the total it is part of, this cause accounts for, with its "
         + "95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.";
@@ -89,20 +94,36 @@ public static partial class BenchmarkReportPackRenderer
         RcaNextRuns(rest, ctx, result);
         RcaLimitations(rest, ctx, result);
 
-        RcaAppendixList(rest);
+        var letters = new RcaAppendixLetters(result == null || RcaListedKnownFacts(result).Count > 0);
+        RcaAppendixList(rest, letters);
         RcaIntelligenceDetail(rest, ctx, result);
         RcaDecompositionDetail(rest, ctx, result);
         RcaHypothesisDetail(rest, ctx, result);
         RcaRunSettings(rest, ctx, result);
-        RcaKnownFacts(rest, ctx, result);
-        if (ctx.Comparison) ComparisonReproducibility(rest, ctx, "## Appendix F: Reproducibility");
-        else Reproducibility(rest, ctx, "## Appendix F: Reproducibility");
-        RcaQuestionDetails(rest, ctx, result);
-        RcaGlossary(rest, ctx);
+        if (letters.KnownFacts) RcaKnownFacts(rest, ctx, result);
+        string reproducibility = "## Appendix " + letters.Reproducibility + ": Reproducibility";
+        if (ctx.Comparison) ComparisonReproducibility(rest, ctx, reproducibility);
+        else Reproducibility(rest, ctx, reproducibility);
+        RcaQuestionDetails(rest, ctx, result, letters.QuestionDetails);
+        RcaGlossary(rest, ctx, letters.Glossary);
         RcaFactSheet(rest, ctx);
 
-        RcaKeyTerms(sb, ctx);
+        RcaKeyTerms(sb, ctx, letters.Glossary);
         sb.Append(rest);
+    }
+
+    /// <summary>
+    /// The letters of the appendices after D: E the known facts where the document has a count or a configuration fact
+    /// to list (or no analysis at all, which E says), then reproducibility, the question details and the glossary,
+    /// lettered on without a gap when E is left out.
+    /// </summary>
+    private sealed record RcaAppendixLetters(bool KnownFacts)
+    {
+        public string Reproducibility => KnownFacts ? "F" : "E";
+
+        public string QuestionDetails => KnownFacts ? "G" : "F";
+
+        public string Glossary => KnownFacts ? "H" : "G";
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -112,15 +133,15 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// The Key terms section, after the Summary: every term the Summary and the Conclusions use
     /// (<see cref="Context.KeyTerms"/>), alphabetically, each with its short plain gloss; nothing when they use none.
-    /// Appendix H keeps every term of the document.
+    /// The glossary, Appendix <paramref name="glossaryLetter"/>, keeps every term of the document.
     /// </summary>
-    private static void RcaKeyTerms(StringBuilder sb, Context ctx)
+    private static void RcaKeyTerms(StringBuilder sb, Context ctx, string glossaryLetter)
     {
         var terms = RootCauseGlossary.Alphabetical(ctx.KeyTerms);
         if (terms.Count == 0) return;
 
         Heading(sb, "## Key terms");
-        Line(sb, RcaKeyTermsLead);
+        Line(sb, RcaKeyTermsLead(glossaryLetter));
         Line(sb);
         Line(sb, "| Term | What it means |");
         Line(sb, "|---|---|");
@@ -238,7 +259,7 @@ public static partial class BenchmarkReportPackRenderer
                 {
                     "**Question.** **" + SheetText(ctx, question.Text) + "**",
                     string.Empty,
-                    "*Answer strength: " + RcaAnswerStrength(question) + "*",
+                    "*Answer strength: " + RcaAnswerStrength(question, token => RcaTokenName(ctx, token), result?.Hypotheses) + "*",
                     string.Empty
                 };
                 lines.Add(RcaAnswer(ctx, question.Number, answered));
@@ -393,19 +414,44 @@ public static partial class BenchmarkReportPackRenderer
     /// A research question's answer strength, after <c>Answer strength: </c>: the grade with the comparative
     /// hypotheses apart from the model's own within-model ones; the grade with every hypothesis together for a
     /// result stored before engine version 4 or when no hypothesis is graded Low or higher; a note when none fired.
+    /// Question 1 with no comparative hypothesis graded Low or higher states its measured lead over the runner-up
+    /// (<see cref="RootCauseQuestion.Neighbor"/>, named by <paramref name="name"/>; unnamed in a result stored without
+    /// it) and whether that lead is established; question 4 answered from the price cards
+    /// (<see cref="RootCauseQuestion.PriceCard"/>) says so and cites its price effect, found among
+    /// <paramref name="hypotheses"/>.
     /// </summary>
-    internal static string RcaAnswerStrength(RootCauseQuestion question)
+    internal static string RcaAnswerStrength(
+        RootCauseQuestion question, Func<string, string>? name = null, IReadOnlyList<RootCauseHypothesis>? hypotheses = null)
     {
         ArgumentNullException.ThrowIfNull(question);
         string grade = RootCauseGrades.WordWithGrade(question.Grade);
+        var within = question.WithinKeys ?? new List<string>();
+        string own = within.Count > 0 ? BenchmarkReportFormat.LetterList(within) : string.Empty;
+
+        if (question.Number == 1 && question.ComparativeKeys is { } lead && question.Grade == null && within.Count == 0
+            && question.OrderEstablished is bool established)
+        {
+            string over = question.Neighbor is string neighbor ? " over " + (name?.Invoke(neighbor) ?? neighbor) : string.Empty;
+            return "Measured lead" + over + ": " + (established ? "established" : "not established") + " — see its split; "
+                   + (lead.Count == 0 ? "no cause compared." : "no cause graded Low or higher, see " + BenchmarkReportFormat.LetterList(lead) + ".");
+        }
+
+        if (question.PriceCard && question.ComparativeKeys is { Count: > 0 } priced)
+        {
+            int low = RootCauseGrades.Rank(RootCauseGrades.Low);
+            string key = priced.FirstOrDefault(k => hypotheses?.FirstOrDefault(x => x.Key == k) is { PriceEffect: true } effect
+                                                    && RootCauseGrades.Rank(effect.Grade) >= low)
+                         ?? priced.FirstOrDefault(k => k.StartsWith("HC2.", StringComparison.Ordinal))
+                         ?? priced[0];
+            return RootCauseGrades.PriceCardWord + " — see " + key + (within.Count > 0 ? "; its own breakdown, see " + own : string.Empty) + ".";
+        }
+
         if (question.HypothesisKeys.Count == 0) return "no hypothesis about this model fired — see its profile.";
         if (question.ComparativeKeys is not { } comparative || question.Grade == null || (comparative.Count == 0 && !question.WithinOnly))
         {
             return grade + " — see " + BenchmarkReportFormat.LetterList(question.HypothesisKeys) + ".";
         }
 
-        var within = question.WithinKeys ?? new List<string>();
-        string own = within.Count > 0 ? BenchmarkReportFormat.LetterList(within) : string.Empty;
         if (question.WithinOnly)
         {
             return grade + " — no hypothesis graded Low or higher compares it with the other models; its own breakdown, see "
@@ -924,9 +970,11 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// <c>Lyra Mini on Q3: upheld by the claim verifier (cap applied).</c>: each answer to a question the item cites whose
-    /// critical-error resolution the content stores, by model in a comparison and by run when the subject has several;
-    /// empty for none.
+    /// <c>Lyra Mini on Q3: upheld by the claim verifier (cap applied).</c>: how the critical errors on each question the
+    /// item cites were resolved. In a comparison, each model's resolutions on the question from its matrix cell, which
+    /// covers every answer whether or not it was excerpted, each stated once; from the content's excerpted answers for a
+    /// cell stored without them. In model scope, each answer whose resolution the content stores, by run when the
+    /// subject has several. Empty for none.
     /// </summary>
     private static string RcaResolutionsText(Context ctx, BenchmarkReportWriterItem item)
     {
@@ -938,6 +986,36 @@ public static partial class BenchmarkReportPackRenderer
         if (numbers.Count == 0) return string.Empty;
 
         var parts = new List<string>();
+        if (ctx.Comparison)
+        {
+            var cited = ctx.Sheet.Questions.Where(q => numbers.Contains(q.Number)).OrderBy(q => q.Number).ToList();
+            var letters = cited.SelectMany(q => q.Models ?? new List<BenchmarkReportQuestionModelScore>()).Select(c => c.Letter)
+                .Concat(ctx.Content.Runs.Select(r => r.Letter).OfType<string>())
+                .Where(l => !string.IsNullOrEmpty(l))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(l => l.Length)
+                .ThenBy(l => l, StringComparer.Ordinal)
+                .ToList();
+            foreach (string letter in letters)
+            {
+                foreach (var question in cited)
+                {
+                    var cell = question.Models?.FirstOrDefault(c => string.Equals(c.Letter, letter, StringComparison.Ordinal));
+                    IEnumerable<string?> names = cell?.CriticalErrorResolutions is { } stored
+                        ? stored
+                        : ctx.Content.Runs
+                            .Where(r => string.Equals(r.Letter, letter, StringComparison.Ordinal))
+                            .OrderBy(r => r.RunId)
+                            .SelectMany(r => r.Questions.Where(a => a.Number == question.Number))
+                            .Select(a => a.CriticalErrorResolution);
+                    var texts = names.Select(CriticalErrorResolutionText).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
+                    if (texts.Count == 0) continue;
+                    parts.Add(NameOfLetter(ctx, letter) + " on " + ctx.QuestionLabel(question.Number) + ": " + BenchmarkReportFormat.LetterList(texts));
+                }
+            }
+            return parts.Count == 0 ? string.Empty : string.Join("; ", parts) + ".";
+        }
+
         foreach (var run in ctx.Content.Runs
                      .OrderBy(r => (r.Letter ?? string.Empty).Length)
                      .ThenBy(r => r.Letter ?? string.Empty, StringComparer.Ordinal)
@@ -994,9 +1072,10 @@ public static partial class BenchmarkReportPackRenderer
         else
         {
             Heading(sb, "### Where the cost goes");
-            string dropped = RcaSegmentTable(sb, ctx, result.CostRows, RcaCostKeys(result.CostRows.Select(r => r.Segments)), "Cost per question",
+            string dropped = RcaSegmentTable(sb, ctx, result.CostRows, RootCauseSegments.CostComponents, "Cost per question",
                 BenchmarkReportFormat.Usd);
-            Line(sb, "*" + RcaCostNote(ctx, result) + (dropped.Length > 0 ? " " + dropped : string.Empty) + "*");
+            Line(sb, "*" + RcaCostNote(ctx, result) + (dropped.Length > 0 ? " " + dropped : string.Empty)
+                + (RcaOutputMerged(result.CostRows.Select(r => r.Segments)) ? " " + RcaThinkingIncludedNote : string.Empty) + "*");
             Line(sb);
             Figures(sb, ctx, BenchmarkReportChartAnchor.RcaCost);
             if (ctx.Comparison) RcaReferenceTests(sb, ctx, BenchmarkPairedTests.CostMeasure);
@@ -1018,43 +1097,56 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// The note under the cost table: what each token component is, and the pricing basis, glossed at their first use;
-    /// where a provider does not report reasoning separately, that its output includes the thinking.
+    /// where a provider does not report reasoning separately, the output column holds its output with the thinking.
     /// </summary>
     private static string RcaCostNote(Context ctx, RootCauseResult result)
     {
         string basis = OneLine(string.IsNullOrWhiteSpace(result.PricingBasis) ? PricingBasisText(ctx.Sheet).Text : result.PricingBasis).TrimEnd('.');
-        bool merged = result.CostRows.Any(r => r.Segments.Any(s => s.Key == RootCauseSegments.OutputWithThinking));
+        bool merged = RcaOutputMerged(result.CostRows.Select(r => r.Segments));
         return "Mean cost per question by component. Each component is a kind of token" + Gloss(ctx, RootCauseGlossary.Tokens) + ". "
             + "Uncached input is text read at the full price, and cache reads are stored input read at a lower price. "
-            + "Cache writes store input for later calls; visible output is the answer; reasoning is the model's hidden thinking. "
-            + (merged ? "A provider that does not report reasoning separately counts it inside its output, shown as output, thinking included. " : string.Empty)
+            + "Cache writes store input for later calls; " + (merged ? "output" : "visible output") + " is the answer; reasoning is the model's hidden thinking. "
             + "Priced on this basis" + Gloss(ctx, RootCauseGlossary.PricingBasis) + ": " + basis + ".";
     }
 
+    /// <summary>Whether some row holds <see cref="RootCauseSegments.OutputWithThinking"/>: a provider that does not report reasoning separately.</summary>
+    private static bool RcaOutputMerged(IEnumerable<IEnumerable<RootCauseSegment>> rows)
+        => rows.Any(r => r.Any(s => s.Key == RootCauseSegments.OutputWithThinking));
+
     /// <summary>
-    /// The cost components in table order: <see cref="RootCauseSegments.CostComponents"/>, with
-    /// <see cref="RootCauseSegments.OutputWithThinking"/> after the visible output where some row holds it.
+    /// A cost component's column header: <c>Output</c> for the visible output where <paramref name="merged"/>, since the
+    /// column then also holds the output with thinking included; the component's label otherwise.
     /// </summary>
-    private static List<string> RcaCostKeys(IEnumerable<IEnumerable<RootCauseSegment>> rows)
+    private static string RcaComponentHeader(string key, bool merged)
+        => merged && key == RootCauseSegments.Output ? "Output" : Capitalized(RootCauseSegments.Label(key));
+
+    /// <summary>
+    /// A row's figure in the column of <paramref name="key"/>: its segment formatted; in the output column, the output
+    /// with thinking included followed by <c>*</c> for a row that holds that in place of the visible output;
+    /// <see cref="NoValue"/> for none.
+    /// </summary>
+    private static string RcaSegmentCell(IEnumerable<RootCauseSegment> segments, string key, Func<double, string> format)
     {
-        var keys = RootCauseSegments.CostComponents.ToList();
-        if (rows.Any(r => r.Any(s => s.Key == RootCauseSegments.OutputWithThinking)))
+        if (segments.FirstOrDefault(s => s.Key == key) is { } segment) return format(segment.Value);
+        if (key == RootCauseSegments.Output && segments.FirstOrDefault(s => s.Key == RootCauseSegments.OutputWithThinking) is { } merged)
         {
-            keys.Insert(keys.IndexOf(RootCauseSegments.Output) + 1, RootCauseSegments.OutputWithThinking);
+            return format(merged.Value) + "*";
         }
-        return keys;
+        return NoValue;
     }
 
     /// <summary>
     /// One row per chart row of R2 or R3: each model, then for a subject on its own each difficulty band or
-    /// suite, with its total and its segments; an unavailable row says why. A segment column that is zero or
+    /// suite, with its total and its segments; an unavailable row says why. A row's output with thinking included
+    /// stands in the output column, marked <c>*</c> (<see cref="RcaSegmentCell"/>). A segment column that is zero or
     /// not recorded in every row is left out; returns the sentence that names the columns left out, or empty.
     /// </summary>
     private static string RcaSegmentTable(
         StringBuilder sb, Context ctx, IReadOnlyList<RootCauseChartRow> rows, IReadOnlyList<string> keys, string totalColumn, Func<double, string> format)
     {
+        bool merged = RcaOutputMerged(rows.Select(r => r.Segments));
         var header = new List<string> { "Model", totalColumn };
-        header.AddRange(keys.Select(k => Capitalized(RootCauseSegments.Label(k))));
+        header.AddRange(keys.Select(k => RcaComponentHeader(k, merged)));
         var cells = new List<IReadOnlyList<string>>();
         foreach (var row in rows)
         {
@@ -1068,7 +1160,7 @@ public static partial class BenchmarkReportPackRenderer
             else
             {
                 line.Add(format(total));
-                line.AddRange(keys.Select(k => row.Segments.FirstOrDefault(s => s.Key == k) is { } s ? format(s.Value) : NoValue));
+                line.AddRange(keys.Select(k => RcaSegmentCell(row.Segments, k, format)));
             }
             cells.Add(line);
         }
@@ -1589,17 +1681,21 @@ public static partial class BenchmarkReportPackRenderer
     // Appendices
     // ---------------------------------------------------------------------------------------------
 
-    private static void RcaAppendixList(StringBuilder sb)
+    /// <summary>The appendices, one bullet each under its letter; Known facts only where the document has it (<paramref name="letters"/>).</summary>
+    private static void RcaAppendixList(StringBuilder sb, RcaAppendixLetters letters)
     {
         Heading(sb, "## Appendices");
         Line(sb, "- **A. Intelligence detail:** the compared models, configuration differences, failure profiles, grader findings, panel agreement, points at risk, the index difference by dimension, the paired tests the body does not give and the per-question matrix.");
         Line(sb, "- **B. Speed and cost decompositions:** calls, latency, tokens and every component of each decomposed difference.");
         Line(sb, "- **C. Hypothesis details:** each hypothesis' evidence for and against, grade reasons and robustness checks, and the null hypotheses.");
         Line(sb, "- **D. Run settings:** every launcher setting of each run to make next.");
-        Line(sb, "- **E. Known facts:** the counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.");
-        Line(sb, "- **F. Reproducibility:** run ids, dates, hashes and the pricing basis.");
-        Line(sb, "- **G. Question details:** the questions the writer cites, those with a disputed claim or a critical error, and the control items, each with its answer excerpts.");
-        Line(sb, "- **H. Glossary:** every term this document uses, in plain words.");
+        if (letters.KnownFacts)
+        {
+            Line(sb, "- **E. Known facts:** the counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.");
+        }
+        Line(sb, "- **" + letters.Reproducibility + ". Reproducibility:** run ids, dates, hashes and the pricing basis.");
+        Line(sb, "- **" + letters.QuestionDetails + ". Question details:** the questions the writer cites, those with a critical error, confirmed or overturned, and the control items, each with its answer excerpts.");
+        Line(sb, "- **" + letters.Glossary + ". Glossary:** every term this document uses, in plain words.");
         Line(sb);
     }
 
@@ -1878,15 +1974,16 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
 
         Heading(sb, "### Tokens per question");
-        var keys = RcaCostKeys(result.Evidence.Select(e => e.Tokens));
+        var keys = RootCauseSegments.CostComponents;
+        bool mergedTokens = RcaOutputMerged(result.Evidence.Select(e => e.Tokens));
         var header = new List<string> { "Model" };
-        header.AddRange(keys.Select(k => Capitalized(RootCauseSegments.Label(k))));
+        header.AddRange(keys.Select(k => RcaComponentHeader(k, mergedTokens)));
         header.Add("Cache-read share");
         var rows = new List<IReadOnlyList<string>>();
         foreach (var summary in result.Evidence)
         {
             var cells = new List<string> { Cell(RcaTokenName(ctx, summary.Token)) };
-            cells.AddRange(keys.Select(k => summary.Tokens.FirstOrDefault(s => s.Key == k) is { } s ? BenchmarkReportFormat.Count(s.Value) : NoValue));
+            cells.AddRange(keys.Select(k => RcaSegmentCell(summary.Tokens, k, BenchmarkReportFormat.Count)));
             cells.Add(summary.CacheReadShare is double share ? RootCauseHypotheses.Pct(share) : NoValue);
             rows.Add(cells);
         }
@@ -1894,9 +1991,12 @@ public static partial class BenchmarkReportPackRenderer
         TableHeaderOf(sb, shown);
         foreach (var cells in shownRows) Line(sb, "| " + string.Join(" | ", cells) + " |");
         Line(sb);
-        if (DroppedColumnsSentence(dropped) is { Length: > 0 } droppedSentence)
+        var tokenNotes = new List<string>();
+        if (DroppedColumnsSentence(dropped) is { Length: > 0 } droppedSentence) tokenNotes.Add(droppedSentence);
+        if (mergedTokens && shown.Contains("Output")) tokenNotes.Add(RcaThinkingIncludedNote);
+        if (tokenNotes.Count > 0)
         {
-            Line(sb, "*" + droppedSentence + "*");
+            Line(sb, "*" + string.Join(" ", tokenNotes) + "*");
             Line(sb);
         }
 
@@ -2137,24 +2237,15 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// Appendix E: the known facts of kind <c>count</c> and <c>configuration</c>, numbered as their <c>rca.known.&lt;n&gt;</c>
     /// facts, so the numbering may skip; the tests and decompositions are in the body and Appendices A and B. A result
-    /// stored without the kinds lists every known fact.
+    /// stored without the kinds lists every known fact. The document leaves the appendix out when it has none to list.
     /// </summary>
     private static void RcaKnownFacts(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
         Heading(sb, "## Appendix E: Known facts");
-        var known = result?.KnownFacts ?? new List<RootCauseKnownFact>();
-        bool kinds = known.Any(k => !string.IsNullOrEmpty(k.Kind));
-        var listed = known
-            .Where(k => !kinds || k.Kind is "count" or "configuration")
-            .OrderBy(k => k.Number)
-            .ToList();
+        var listed = result == null ? new List<RootCauseKnownFact>() : RcaListedKnownFacts(result);
         if (result == null)
         {
             Line(sb, RcaNoAnalysis);
-        }
-        else if (listed.Count == 0)
-        {
-            Line(sb, "No rule found a count or a configuration fact to state.");
         }
         else
         {
@@ -2171,20 +2262,32 @@ public static partial class BenchmarkReportPackRenderer
     }
 
     /// <summary>
-    /// Appendix G: the details of the questions the writer cites in its prose and lists, those with a refuted claim
-    /// or a critical error, and each instrument-suspect or model-specific control item; only those with answers
-    /// given in detail, each answer as its excerpt and the rubric without its <c>SOURCE</c> paragraphs.
+    /// The known facts Appendix E lists, by number: those of kind <c>count</c> and <c>configuration</c>, or every one for
+    /// a result stored without the kinds.
     /// </summary>
-    private static void RcaQuestionDetails(StringBuilder sb, Context ctx, RootCauseResult? result)
+    private static List<RootCauseKnownFact> RcaListedKnownFacts(RootCauseResult result)
     {
-        const string Title = "Appendix G: Question details";
+        var known = result.KnownFacts ?? new List<RootCauseKnownFact>();
+        bool kinds = known.Any(k => !string.IsNullOrEmpty(k.Kind));
+        return known
+            .Where(k => !kinds || k.Kind is RootCauseKnownFacts.KindCount or RootCauseKnownFacts.KindConfiguration)
+            .OrderBy(k => k.Number)
+            .ToList();
+    }
+
+    /// <summary>
+    /// The question details appendix, lettered <paramref name="letter"/>: the details of the questions the writer cites
+    /// in its prose and lists, those with a critical error (<see cref="RcaHadCriticalError"/>), and each
+    /// instrument-suspect or model-specific control item; only those with answers given in detail, each answer as its
+    /// excerpt and the rubric without its <c>SOURCE</c> paragraphs.
+    /// </summary>
+    private static void RcaQuestionDetails(StringBuilder sb, Context ctx, RootCauseResult? result, string letter)
+    {
+        string title = "Appendix " + letter + ": Question details";
         var cited = new HashSet<int>(BenchmarkReportPackValidator.CitedQuestions(ctx.Writer, ctx.Sheet));
         foreach (var q in ctx.Sheet.Questions)
         {
-            bool disputed = q.Models is { } cells
-                ? cells.Any(c => c.CriticalError || (c.CriticalErrorCount ?? 0) > 0 || (c.RefutedAnswerSentences ?? c.RefutedClaims) > 0)
-                : q.CriticalError || (q.CriticalErrorCount ?? 0) > 0 || (q.RefutedAnswerSentences ?? q.RefutedClaims) > 0;
-            if (disputed) cited.Add(q.Number);
+            if (RcaHadCriticalError(ctx, q)) cited.Add(q.Number);
         }
         if (result != null)
         {
@@ -2196,7 +2299,7 @@ public static partial class BenchmarkReportPackRenderer
         {
             if (ctx.Comparison)
             {
-                ComparisonQuestionDetails(sb, ctx, grading: true, level: 2, only: cited, title: Title);
+                ComparisonQuestionDetails(sb, ctx, grading: true, level: 2, only: cited, title: title);
             }
             else
             {
@@ -2206,22 +2309,36 @@ public static partial class BenchmarkReportPackRenderer
                     .ToList();
                 if (questions.Count > 0)
                 {
-                    QuestionDetails(sb, ctx, questions, grading: ctx.Options.Disclosure == BenchmarkReportDisclosure.Full, level: 2, title: Title, excerpts: true);
+                    QuestionDetails(sb, ctx, questions, grading: ctx.Options.Disclosure == BenchmarkReportDisclosure.Full, level: 2, title: title, excerpts: true);
                 }
             }
         }
         if (sb.Length == length)
         {
-            Heading(sb, "## " + Title);
+            Heading(sb, "## " + title);
             Line(sb, "No question given in detail is cited.");
             Line(sb);
         }
     }
 
-    /// <summary>Appendix H: every term the document uses (<see cref="Context.UsedTerms"/>), alphabetically, with its full definition.</summary>
-    private static void RcaGlossary(StringBuilder sb, Context ctx)
+    /// <summary>
+    /// Whether a question had a critical error, confirmed or overturned: a model's matrix cell (on a per-model sheet,
+    /// the question itself) records one, or records a resolution other than <c>None</c>, or one of the content's
+    /// answers to it stores a resolution. A refuted sentence or a disputed claim alone does not count.
+    /// </summary>
+    private static bool RcaHadCriticalError(Context ctx, BenchmarkReportQuestion q)
     {
-        Heading(sb, "## Appendix H: Glossary");
+        bool recorded = q.Models is { } cells
+            ? cells.Any(c => c.CriticalError || (c.CriticalErrorCount ?? 0) > 0
+                             || (c.CriticalErrorResolutions ?? new List<string>()).Any(r => CriticalErrorResolutionText(r) != null))
+            : q.CriticalError || (q.CriticalErrorCount ?? 0) > 0;
+        return recorded || ContentFor(ctx, q.Number).Any(b => CriticalErrorResolutionText(b.Question.CriticalErrorResolution) != null);
+    }
+
+    /// <summary>The glossary appendix, lettered <paramref name="letter"/>: every term the document uses (<see cref="Context.UsedTerms"/>), alphabetically, with its full definition.</summary>
+    private static void RcaGlossary(StringBuilder sb, Context ctx, string letter)
+    {
+        Heading(sb, "## Appendix " + letter + ": Glossary");
         var terms = RootCauseGlossary.Alphabetical(ctx.UsedTerms);
         if (terms.Count == 0)
         {
@@ -2359,6 +2476,18 @@ public static partial class BenchmarkReportPackRenderer
         => string.Equals(token, RootCauseEngine.SubjectToken, StringComparison.Ordinal) ? ctx.Sheet.SubjectLabel : NameOfLetter(ctx, token);
 
     private static string RcaPairName(Context ctx, string first, string second) => RcaTokenName(ctx, first) + " vs " + RcaTokenName(ctx, second);
+
+    /// <summary>
+    /// A model profile's entry (<c>rca.profile.&lt;T&gt;.*</c>) as an evidence line gives it: the model as this copy names
+    /// it, then the entry, <c>Lyra Mini: 1 critical error (Q3)</c>; null for any other key and for an entry the sheet
+    /// lacks or leaves unavailable, which keep their label.
+    /// </summary>
+    private static string? RcaProfileEvidence(Context ctx, string key, BenchmarkReportFact? fact)
+    {
+        if (fact is not { Available: true } || !key.StartsWith(RootCauseFacts.Prefix + "profile.", StringComparison.Ordinal)) return null;
+        string[] parts = key.Split('.');
+        return parts.Length >= 4 && parts[2].Length > 0 ? RcaTokenName(ctx, parts[2]) + ": " + Shown(ctx, fact) : null;
+    }
 
     private static string Capitalized(string text) => text.Length == 0 ? text : char.ToUpperInvariant(text[0]) + text[1..];
 

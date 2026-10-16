@@ -2932,6 +2932,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
       orientation,
       directLabels: this.scatterDirectLabels,
       inlineValues: this.scatterInlineValues,
+      // Document figures draw their direct labels in the theme's primary and secondary inks.
+      highContrastLabels: true,
       reducedMotion: this.reducedMotion.matches,
       highlightedKey: null,
       style: look.style,

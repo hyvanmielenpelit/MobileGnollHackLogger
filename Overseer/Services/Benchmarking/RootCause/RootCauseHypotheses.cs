@@ -36,6 +36,10 @@ internal sealed class RootCauseDraft
     public string EstablishedText { get; set; } = "its result may be chance";
     public bool NotSupported { get; set; }
     public bool? PairNullStands { get; set; }
+
+    /// <summary>A price-per-token effect that follows from the price cards (<see cref="RootCauseHypothesis.PriceEffect"/>).</summary>
+    public bool PriceEffect { get; set; }
+
     public List<(string Cap, string Reason)> Caps { get; } = new();
 
     public double? Share { get; set; }
@@ -70,7 +74,8 @@ internal sealed class RootCauseDraft
 
 /// <summary>
 /// The hypothesis rule tables of § A4: the pair rules (HQ1–HQ9, HS1–HS6, HC1–HC5) between two models,
-/// the within-model rules (WQ1–WQ6, WS1–WS5, WC1–WC3) of one model, the nulls H0-Q, H0-S, H0-C and
+/// of which HQ3 spans every model and HQ5 is stated once per model, the within-model rules (WQ1–WQ6, WS1–WS5,
+/// WC1–WC3) of one model, the nulls H0-Q, H0-S, H0-C and
 /// H0-W, the control limit, the robustness checks and the grading of § A2. Each rule fires on its
 /// pre-declared condition and computes its evidence for and against; <see cref="Grade"/> turns the
 /// evidence into a grade and <see cref="Keep"/> bounds the list. Pure and deterministic.
@@ -245,6 +250,7 @@ public static class RootCauseHypotheses
             RefutedIf = draft.RefutedIf,
             Grade = grade,
             GradeReasons = reasons,
+            PriceEffect = draft.PriceEffect,
             Share = draft.Share,
             ShareLower = draft.ShareLower,
             ShareUpper = draft.ShareUpper,
@@ -262,15 +268,18 @@ public static class RootCauseHypotheses
     /// <summary>
     /// The hypotheses kept: every null, then per axis and group the strongest <see cref="KeepPerGroup"/>
     /// non-null hypotheses (in <see cref="Ranked"/> order), and at most <see cref="MaxPerAxis"/> per axis.
-    /// A research question of <paramref name="targets"/> that no kept comparative hypothesis graded Low or higher
-    /// answers (as <paramref name="answers"/> decides) then has the best comparative one that does reserved for
-    /// it, beyond <see cref="MaxPerAxis"/>; with none, and no kept within-model one either, the best within-model
-    /// one. Each in <see cref="Ranked"/> order, at most one per question. Each numbered within its rule.
+    /// A research question of <paramref name="targets"/> then has the first comparative hypothesis graded Low or
+    /// higher that answers it (as <paramref name="answers"/> decides) reserved for it, beyond
+    /// <see cref="MaxPerAxis"/>, unless a kept one answers it as well: first by <paramref name="preference"/>
+    /// (lower first; the compared model's preference for questions 3 and 4), then in <see cref="Ranked"/> order.
+    /// With no comparative one, and no kept within-model one either, the best within-model one is reserved. At
+    /// most one per question. Each numbered within its rule.
     /// </summary>
     internal static List<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> Keep(
         IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> graded,
         IReadOnlyList<RootCauseQuestionTarget> targets,
-        Func<RootCauseQuestionTarget, RootCauseHypothesis, bool> answers)
+        Func<RootCauseQuestionTarget, RootCauseHypothesis, bool> answers,
+        Func<RootCauseQuestionTarget, RootCauseHypothesis, int>? preference = null)
     {
         ArgumentNullException.ThrowIfNull(targets);
         ArgumentNullException.ThrowIfNull(answers);
@@ -290,15 +299,18 @@ public static class RootCauseHypotheses
             {
                 bool Supported((RootCauseHypothesis Hypothesis, RootCauseDraft Draft) g)
                     => RootCauseGrades.Rank(g.Hypothesis.Grade) >= lowRank && answers(target, g.Hypothesis);
+                int Preference(RootCauseHypothesis h) => preference?.Invoke(target, h) ?? 0;
 
-                if (kept.Any(k => k.Hypothesis.Kind == "pair" && Supported(k))) continue;
                 var candidates = graded
                     .Where(g => g.Hypothesis.Axis == axis && g.Hypothesis.Kind != "null" && Supported(g))
                     .ToList();
-                var comparative = Ranked(candidates.Where(g => g.Hypothesis.Kind == "pair")).FirstOrDefault();
+                var comparative = Ranked(candidates.Where(g => g.Hypothesis.Kind == "pair")).ToList()
+                    .OrderBy(g => Preference(g.Hypothesis))
+                    .FirstOrDefault();
                 if (comparative.Hypothesis != null)
                 {
-                    kept.Add(comparative);
+                    int wanted = Preference(comparative.Hypothesis);
+                    if (!kept.Any(k => k.Hypothesis.Kind == "pair" && Supported(k) && Preference(k.Hypothesis) <= wanted)) kept.Add(comparative);
                     continue;
                 }
                 if (kept.Any(Supported)) continue;
@@ -334,6 +346,9 @@ public static class RootCauseHypotheses
     /// <summary>The reason of an axis whose only non-null hypotheses are within-model ones in a document with pairs.</summary>
     public const string WithinOnlyAxisReason = "Only hypotheses about one model's own breakdown fired on this axis; none compares the models.";
 
+    /// <summary>The reason of an axis whose only candidate hypotheses are price effects, which the price cards show rather than the runs.</summary>
+    public const string PriceOnlyAxisReason = "Only price-per-token differences fired on this axis; they are known from the price cards, not a cause the runs found.";
+
     /// <summary>The status of an axis in a document without pairs (a run or battery completion).</summary>
     internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept)
         => AxisStatus(axis, kept, hasPairs: false);
@@ -342,15 +357,17 @@ public static class RootCauseHypotheses
     /// The status of an axis (§ A2): established when a non-null hypothesis is High and its null is
     /// rejected; probable when the best is Moderate; otherwise not established. With
     /// <paramref name="hasPairs"/> (a comparison or a per-model pack), only pair hypotheses count, and an axis
-    /// with within-model hypotheses alone is not established. The reason names the best hypothesis' grade and
-    /// the grade reasons that applied to it, each one clause.
+    /// with within-model hypotheses alone is not established. A price effect never counts: an axis with price
+    /// effects alone is not established, with <see cref="PriceOnlyAxisReason"/>. The reason names the best
+    /// hypothesis' grade and the grade reasons that applied to it, each one clause.
     /// </summary>
     internal static RootCauseAxisStatus AxisStatus(string axis, IReadOnlyList<(RootCauseHypothesis Hypothesis, RootCauseDraft Draft)> kept, bool hasPairs)
     {
         var nonNull = kept
             .Where(k => k.Hypothesis.Axis == axis && k.Hypothesis.Kind != "null")
             .ToList();
-        var candidates = hasPairs ? nonNull.Where(k => k.Hypothesis.Kind == "pair").ToList() : nonNull;
+        var eligible = hasPairs ? nonNull.Where(k => k.Hypothesis.Kind == "pair").ToList() : nonNull;
+        var candidates = eligible.Where(k => !k.Hypothesis.PriceEffect).ToList();
         var best = candidates.FirstOrDefault();
         if (best.Hypothesis == null)
         {
@@ -358,7 +375,9 @@ public static class RootCauseHypotheses
             {
                 Axis = axis,
                 Status = RootCauseStatuses.NotEstablished,
-                Reason = nonNull.Count > 0 ? WithinOnlyAxisReason : "No rule found a possible cause on this axis."
+                Reason = eligible.Count > 0 ? PriceOnlyAxisReason
+                    : nonNull.Count > 0 ? WithinOnlyAxisReason
+                    : "No rule found a possible cause on this axis."
             };
         }
 
@@ -757,23 +776,6 @@ public static class RootCauseHypotheses
             yield return d;
         }
 
-        // HQ5: the concise response style.
-        if (a.StyleConflict)
-        {
-            var d = PairDraft(ctx, pair, "HQ5", RootCauseAxes.Intelligence, a, b,
-                "Completeness was " + A + "'s lowest dimension under the concise response style.",
-                "Concise style: " + A,
-                "A run of the same model with the detailed response style shows that Completeness is no longer its lowest dimension.",
-                "a Detailed run raises Completeness",
-                stands, RootCauseLoci.Chat);
-            d.For.Add(A + "'s response-style conflict is true: Completeness is its lowest dimension, well below Accuracy.");
-            d.Quantified = false;
-            d.Caps.Add((RootCauseGrades.Low, "no run with the other response style exists to compare"));
-            d.FactKeys.Add(ctx.Key(a.Token, "style.responseStyleConflict"));
-            d.NextRunKind = RootCauseRunKinds.StylePair;
-            yield return d;
-        }
-
         // HQ6: guessing instead of abstaining.
         var (wrongA, deniedA) = WrongInsteadOfAbstaining(a);
         var (wrongB, deniedB) = WrongInsteadOfAbstaining(b);
@@ -1041,6 +1043,7 @@ public static class RootCauseHypotheses
             // A price effect follows from the price cards, which a rerun cannot change, unless the runs' own cards differ.
             bool priceFromCards = id == "HC2"
                                   && (ctx.Input.PricingBasisKind == BenchmarkReportFacts.PricingBasisCatalog || (!a.Evidence.PricesDiffer && !b.Evidence.PricesDiffer));
+            d.PriceEffect = priceFromCards;
             if (!priceFromCards) d.Robustness.Add(ctx.ReplicatesCheck(a, b));
             var confounds = ctx.Confounds(a, b, RootCauseAxes.Cost, skipThinking: id == "HC3" || sameModel);
             d.Confounds.AddRange(confounds);
@@ -1184,6 +1187,53 @@ public static class RootCauseHypotheses
         draft.CheckText = "Check the rubric of " + BenchmarkReportFormat.LetterList(flagged.Take(6).Select(q => q.Reference).ToList())
                           + " against the source, and whether the tools' corpus holds the facts the question needs.";
         draft.FactKeys.Add("questions.sharedLow");
+        return draft;
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // The concise response style (HQ5)
+    // ---------------------------------------------------------------------------------------------
+
+    /// <summary>What a run of the reference model with the detailed response style decides about HQ5.</summary>
+    public const string StyleRefutedIf =
+        "A run of the reference model with the detailed response style shows that Completeness is no longer its lowest dimension, "
+        + "which tests the style effect under this configuration and is indicative for the other models.";
+
+    /// <summary>
+    /// HQ5 once per model: Completeness was <paramref name="model"/>'s lowest dimension under the concise response
+    /// style. It fires when the model's response-style conflict is true and it is the worse side of an analyzed
+    /// pair on the Intelligence Index; null otherwise. It is about the model alone, so it is a within-model
+    /// hypothesis, observed rather than measured, and one Detailed run of the reference model settles it.
+    /// </summary>
+    internal static RootCauseDraft? StyleConflict(RootCauseContext ctx, RootCauseModelInput model)
+    {
+        if (!model.StyleConflict || model.QualityIndex is not double own) return null;
+        bool worse = ctx.Pairs.Any(p =>
+        {
+            string other = p.First == model.Token ? p.Second : p.Second == model.Token ? p.First : string.Empty;
+            return other.Length > 0 && ctx.Model(other).QualityIndex is double theirs && theirs > own;
+        });
+        if (!worse) return null;
+
+        string M = ctx.Name(model.Token);
+        var draft = new RootCauseDraft
+        {
+            Id = "HQ5",
+            Axis = RootCauseAxes.Intelligence,
+            Kind = "within",
+            Group = "style:" + model.Token,
+            Models = { model.Token },
+            Statement = "Completeness was " + M + "'s lowest dimension under the concise response style.",
+            Short = "Concise style: " + M,
+            RefutedIf = StyleRefutedIf,
+            ConfirmIf = "a Detailed run raises Completeness",
+            Quantified = false,
+            NextRunKind = RootCauseRunKinds.StylePair
+        };
+        draft.Loci.Add(RootCauseLoci.Chat);
+        draft.For.Add(M + "'s response-style conflict is true: Completeness is its lowest dimension, well below Accuracy.");
+        draft.Caps.Add((RootCauseGrades.Low, "no run with the other response style exists to compare"));
+        draft.FactKeys.Add(ctx.Key(model.Token, "style.responseStyleConflict"));
         return draft;
     }
 

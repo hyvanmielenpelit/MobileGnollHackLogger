@@ -229,7 +229,7 @@ The benchmark asks single questions, so longer conversations are not measured.
 - **D. Run settings:** every launcher setting of each run to make next.
 - **E. Known facts:** the counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
 - **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
-- **G. Question details:** the questions the writer cites, those with a disputed claim or a critical error, and the control items, each with its answer excerpts.
+- **G. Question details:** the questions the writer cites, those with a critical error, confirmed or overturned, and the control items, each with its answer excerpts.
 - **H. Glossary:** every term this document uses, in plain words.
 
 ## Appendix A: Intelligence detail
@@ -1012,31 +1012,31 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.subject.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "5.6 index points at risk (upper bound, not a causal estimate)",
+      "display": "5.6 index points",
       "key": "rca.atRisk.subject.criticalError",
       "value": 5.625
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.subject.noTool",
       "value": 0
     },
     {
       "available": true,
-      "display": "2.9 index points at risk (upper bound, not a causal estimate)",
+      "display": "2.9 index points",
       "key": "rca.atRisk.subject.otherLow",
       "value": 2.875
     },
     {
       "available": true,
-      "display": "8.5 index points at risk against the model's median answer of 75 (upper bound, not a causal estimate)",
+      "display": "8.5 index points below a median answer of 75",
       "key": "rca.atRisk.subject.total",
       "value": 8.5
     },
@@ -1160,7 +1160,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-W.1 (no difference within one model's own questions)",
+      "display": "H0-W.1",
       "key": "rca.hypothesis.H0-W.1.ref"
     },
     {
@@ -1216,7 +1216,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WC1.1 (output cost)",
+      "display": "WC1.1",
       "key": "rca.hypothesis.WC1.1.ref"
     },
     {
@@ -1284,7 +1284,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WQ2.1 (points lost in suite 2)",
+      "display": "WQ2.1",
       "key": "rca.hypothesis.WQ2.1.ref"
     },
     {
@@ -1346,7 +1346,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WQ3.1 (critical errors)",
+      "display": "WQ3.1",
       "key": "rca.hypothesis.WQ3.1.ref"
     },
     {
@@ -1419,7 +1419,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WS2.1 (time spent generating output)",
+      "display": "WS2.1",
       "key": "rca.hypothesis.WS2.1.ref"
     },
     {
@@ -2153,7 +2153,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 5,
+    "engineVersion": 6,
     "evidence": [
       {
         "atRisk": [
@@ -2296,6 +2296,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "GPT-5.6 Luna",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "A Mann–Whitney contrast is established after the Holm adjustment.",
         "robustness": [],
         "shortStatement": "Noise within GPT-5.6 Luna",
@@ -2330,6 +2331,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "GPT-5.6 Luna",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The contrast stands within noise, or the shares are even.",
         "robustness": [
           {
@@ -2382,6 +2384,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "GPT-5.6 Luna",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The caps are unconfirmed.",
         "robustness": [
           {
@@ -2436,6 +2439,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "GPT-5.6 Luna",
         "nextRunNumber": 2,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
@@ -2482,6 +2486,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "GPT-5.6 Luna",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
@@ -2904,6 +2909,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 202 · format version 15 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 202 · format version 16 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

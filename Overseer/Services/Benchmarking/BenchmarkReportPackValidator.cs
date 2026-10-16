@@ -91,7 +91,7 @@ public sealed class BenchmarkReportCleanResult
 /// stop, a sentence-valued fact placed inside a sentence or parentheses, a clause-valued fact
 /// (<c>Model A took …</c>) after its own model or verb, a run of unlabeled <c>N of M</c> counts, and in a Root
 /// Cause Analysis a sentence-shaped fact (<see cref="RootCauseClaimSupport.IsSentenceShaped"/>) after words of the
-/// writer's own sentence. Rule 37
+/// writer's own sentence, a parenthesis inside another and two worded facts joined by <c>to</c>. Rule 37
 /// (<see cref="BareModelLetterRule"/>), a warning, flags a model written by its bare letter, <c>Model H</c>
 /// or <c>Models H and I</c>, outside its token.</para>
 ///
@@ -531,6 +531,16 @@ public static class BenchmarkReportPackValidator
 
     /// <summary>Rule 31d: a count-valued display, <c>3 of 36 questions</c>.</summary>
     private static readonly Regex CountValuedRegex = new(@"^\d[\d,]* of \d[\d,]*(?:\s|$)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Rule 31f: a display that is a bare figure, with at most four words of unit after it (<c>48%</c>,
+    /// <c>$0.50 per million tokens</c>, <c>+46.1 s per question</c>); the unit is captured.
+    /// </summary>
+    private static readonly Regex BareFigureRegex = new(
+        @"^[+\-−]?[$€£]?\d[\d,]*(?:\.\d+)?%?(?<unit>(?:\s+[\p{L}$/]+){0,4})$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>Rule 31f: nothing but <c>to</c> between two tokens.</summary>
+    private static readonly Regex ToJoinRegex = new(@"^\s+to\s+$", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     /// <summary>A model letter as rule 31c reads the word after <c>Model</c>.</summary>
     private static readonly Regex ModelLetterRegex = new(@"^[A-Z]{1,3}$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
@@ -1819,8 +1829,10 @@ public static class BenchmarkReportPackValidator
     /// starts with a capital and ends with a full stop) after anything but the paragraph's start, a list
     /// marker or <c>.</c>, <c>!</c>, <c>?</c> or <c>:</c>, or before <c>)</c>; a clause-valued fact
     /// (<c>Model A took …</c>) right after a model or its own verb; and two or more <c>N of M</c> facts
-    /// separated only by commas and semicolons. One note per kind found. A hypothesis' label
-    /// (<see cref="RootCauseClaimSupport.IsLabel"/>) is a noun phrase, never read as either shape.
+    /// separated only by commas and semicolons. In a Root Cause Analysis also a parenthesis inside another, and two
+    /// facts joined by <c>to</c> that are not both bare figures in one unit (<see cref="BareFigureRegex"/>). One note
+    /// per kind found. A hypothesis' label (<see cref="RootCauseClaimSupport.IsLabel"/>) is a noun phrase, never read
+    /// as either sentence shape.
     /// </summary>
     private static void CheckTokenShape(Context ctx, string text, string location, List<BenchmarkReportValidationNote> notes)
     {
@@ -1897,6 +1909,74 @@ public static class BenchmarkReportPackValidator
             Issue(notes, ComparisonTokenShapeRule, location, $"Lists counts in a row without saying what each counts ({string.Join("; ", lists)}): "
                 + "each reads 'N of M', so say what each one counts.");
         }
+
+        if (!ctx.RootCause) return;
+
+        // Rule 31e: a parenthesis inside another, as the writer's own parentheses around a display that has its own read.
+        var nested = NestedParentheses(all);
+        if (nested.Count > 0)
+        {
+            Issue(notes, ComparisonTokenShapeRule, location, $"Puts a parenthesis inside another (\"{string.Join("\", \"", nested)}\"): "
+                + "write the inner remark as a clause or a sentence of its own, and never put a model token inside parentheses, since a model's name carries its own.");
+        }
+
+        // Rule 31f: two facts joined by 'to' that are not both bare figures in one unit.
+        var joined = new List<string>();
+        for (int i = 0; i + 1 < spans.Count; i++)
+        {
+            var (left, right) = (spans[i], spans[i + 1]);
+            if (!IsFactSpan(left) || !IsFactSpan(right)) continue;
+            if (!ToJoinRegex.IsMatch(all[left.End..right.Start])) continue;
+            var a = BareFigureRegex.Match(left.Display.Trim());
+            var b = BareFigureRegex.Match(right.Display.Trim());
+            bool sameUnit = a.Success && b.Success
+                && string.Equals(a.Groups["unit"].Value.Trim(), b.Groups["unit"].Value.Trim(), StringComparison.OrdinalIgnoreCase);
+            if (!sameUnit) joined.Add("{{" + left.Key + "}} to {{" + right.Key + "}}");
+        }
+        if (joined.Count > 0)
+        {
+            Issue(notes, ComparisonTokenShapeRule, location, $"Joins facts with 'to' that are not two bare figures in one unit ({string.Join("; ", joined.Distinct(StringComparer.Ordinal))}): "
+                + "the result repeats the words each value prints; give each fact its own clause, or cite one figure and say in words how the other differs.");
+        }
+    }
+
+    /// <summary>A token span of a fact, not of a model, a peer or the subject, whose display was resolved.</summary>
+    private static bool IsFactSpan((int Start, int End, string Key, string Display) span)
+        => !span.Key.StartsWith("model:", StringComparison.Ordinal) && !span.Key.StartsWith("peer:", StringComparison.Ordinal)
+           && span.Key != "subject" && !span.Display.StartsWith("{{", StringComparison.Ordinal);
+
+    /// <summary>Each outermost parenthetical of <paramref name="text"/> that holds another parenthesis, at most eighty characters of it.</summary>
+    private static List<string> NestedParentheses(string text)
+    {
+        var found = new List<string>();
+        int depth = 0;
+        int start = -1;
+        bool nested = false;
+        for (int i = 0; i < text.Length; i++)
+        {
+            if (text[i] == '(')
+            {
+                if (depth == 0)
+                {
+                    start = i;
+                    nested = false;
+                }
+                else
+                {
+                    nested = true;
+                }
+                depth++;
+            }
+            else if (text[i] == ')' && depth > 0)
+            {
+                depth--;
+                if (depth == 0 && nested) found.Add(Clip(text[start..(i + 1)]));
+            }
+        }
+        if (depth > 0 && nested) found.Add(Clip(text[start..]));
+        return found.Distinct(StringComparer.Ordinal).ToList();
+
+        static string Clip(string s) => s.Length <= 80 ? s : s[..80] + "…";
     }
 
     /// <summary>
@@ -2039,7 +2119,7 @@ public static class BenchmarkReportPackValidator
         if (unsupported.Count > 0)
         {
             Issue(notes, RootCauseCausalClaimRule, location, $"Uses the causal wording {Quoted(unsupported)} without a hypothesis graded Low or higher in the same sentence: "
-                + "cite one of its tokens, such as its .ref (CLAIM SUPPORT lists the hypotheses)"
+                + "say in your own words what the hypothesis is about and cite one of its tokens after it, such as its .ref, which prints its id (CLAIM SUPPORT lists the hypotheses)"
                 + (string.Equals(slot, BenchmarkReportSlots.NextRuns, StringComparison.Ordinal) ? ", or the rca.run token of the run it describes" : string.Empty)
                 + ". A Not supported hypothesis may be cited only to rule a cause out (not due to …).");
         }

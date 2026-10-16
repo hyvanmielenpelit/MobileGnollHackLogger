@@ -531,6 +531,14 @@ public sealed class BenchmarkReportQuestionModelScore
     public double ToolCalls { get; set; }
     public double? ModelTimeMs { get; set; }
     public int RunCount { get; set; }
+
+    /// <summary>
+    /// The critical-error resolution of each of the model's answers on the item, over all its runs, whether or not
+    /// an answer was excerpted: one <see cref="BenchmarkCriticalErrorResolution"/> name per answer that records one
+    /// (<c>None</c> included), in run-id order. Null when no answer records one, as on every run scored before
+    /// method 13 and in a sheet stored before the field existed.
+    /// </summary>
+    public List<string>? CriticalErrorResolutions { get; set; }
 }
 
 /// <summary>

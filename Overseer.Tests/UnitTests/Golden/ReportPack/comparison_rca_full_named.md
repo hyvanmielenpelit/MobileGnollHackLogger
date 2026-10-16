@@ -17,7 +17,7 @@
 ### What we found
 
 > [!IMPORTANT]
-> **Key finding.** Intelligence: Not established; speed: Not established; cost: Root cause established.
+> **Key finding.** Intelligence: Not established; speed: Not established; cost: Not established.
 
 - Against the reference model, Orion Max, the paired tests establish no difference in intelligence.
 - Zeta Prime is the cheapest model, at $0.010 per question, and its Intelligence Index interval overlaps no other model's.
@@ -28,7 +28,7 @@
 > [!NOTE]
 > **Question.** **Why did Orion Max score highest, though its lead over Vega Pro is not established?**
 >
-> *Answer strength: no hypothesis about this model fired — see its profile.*
+> *Answer strength: Measured lead over Vega Pro: not established — see its split; no cause compared.*
 >
 > For Orion Max the measured signals are tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness. The answer strength is Unknown.
 
@@ -44,14 +44,14 @@
 >
 > *Answer strength: Suggestive (Low) — no hypothesis graded Low or higher compares it with the other models; its own breakdown, see WS3.3 and WS2.1, says where its own time, cost or points go.*
 >
-> For Zeta Prime the measured signals are median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer. The answer strength is Suggestive (Low). The leading hypothesis is WS3.3 (time spent on tool rounds).
+> For Zeta Prime the measured signals are median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer. The answer strength is Suggestive (Low). The leading hypothesis about its time per question is WS3.3.
 
 > [!NOTE]
 > **Question.** **Why is Nova Lite the most expensive?**
 >
-> *Answer strength: Established (High) — against the other models, see HC2.2 and HC4.2; its own breakdown, see WC1.2.*
+> *Answer strength: Known from the price cards — see HC2.2; its own breakdown, see WC1.2.*
 >
-> For Nova Lite the measured signals are $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache. The answer strength is Established (High). The leading hypothesis is HC2.2 (higher price per token).
+> For Nova Lite the measured signals are $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache. The answer strength is Known from the price cards. The leading hypothesis about its cost per question is HC4.2.
 
 ### At a glance
 
@@ -273,11 +273,6 @@ The strongest hypothesis in the table: Tool rounds multiply Orion Max's time (wh
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| HC2.1 | Zeta Prime costs more than Orion Max mainly from its price per token. | Established (High) | 69% (68–69%) | — |
-| HC2.2 | Nova Lite costs more than Orion Max mainly from its price per token. | Established (High) | 70% (69–70%) | — |
-| HC2.3 | Lyra Mini costs more than Orion Max mainly from its price per token. | Established (High) | 71% (70–71%) | — |
-| HC2.4 | Zeta Prime costs more than Nova Lite mainly from its price per token. | Established (High) | 65% (64–65%) | — |
-| HC2.5 | Vega Pro costs more than Orion Max mainly from its price per token. | Established (High) | 72% (71–73%) | — |
 | WC1.1 | Output (with reasoning) is Zeta Prime's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 54% | — |
 | WC1.2 | Output (with reasoning) is Nova Lite's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 55% | — |
 | WC1.3 | Output (with reasoning) is Orion Max's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 69% | — |
@@ -285,6 +280,11 @@ The strongest hypothesis in the table: Tool rounds multiply Orion Max's time (wh
 | HC4.2 | Weak prompt caching raises Nova Lite's cost against Orion Max. | Ruled out (Not supported) | 8% (8–9%) | — |
 | HC4.3 | Weak prompt caching raises Zeta Prime's cost against Nova Lite. | Ruled out (Not supported) | 12% (12–13%) | — |
 | HC4.4 | Weak prompt caching raises Lyra Mini's cost against Orion Max. | Ruled out (Not supported) | 8% (7–8%) | — |
+| HC2.1 | Zeta Prime costs more than Orion Max mainly from its price per token. | Known from the price cards (High) | 69% (68–69%) | — |
+| HC2.2 | Nova Lite costs more than Orion Max mainly from its price per token. | Known from the price cards (High) | 70% (69–70%) | — |
+| HC2.3 | Lyra Mini costs more than Orion Max mainly from its price per token. | Known from the price cards (High) | 71% (70–71%) | — |
+| HC2.4 | Zeta Prime costs more than Nova Lite mainly from its price per token. | Known from the price cards (High) | 65% (64–65%) | — |
+| HC2.5 | Vega Pro costs more than Orion Max mainly from its price per token. | Known from the price cards (High) | 72% (71–73%) | — |
 
 *Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
@@ -296,7 +296,7 @@ A real difference was found for 5 pairs:
 - Orion Max vs. Zeta Prime
 - Nova Lite vs. Zeta Prime
 
-The strongest hypothesis in the table: Zeta Prime costs more than Orion Max mainly from its price per token. Its grade and the evidence against it stand beside it.
+The strongest hypothesis in the table: Output (with reasoning) is Zeta Prime's largest cost component (where its cost goes, not a comparison). Its grade and the evidence against it stand beside it.
 
 ### The writer's hypotheses
 
@@ -314,10 +314,10 @@ The strongest hypothesis in the table: Zeta Prime costs more than Orion Max main
 |---|---|---|---|
 | Intelligence | Not established | HQ3.1: shared failures on the same questions | Suggestive (Low) because it is observed, not measured. |
 | Speed | Not established | — | Only hypotheses about one model's own breakdown fired on this axis; none compares the models. |
-| Cost | Root cause established | HC2.1: Zeta Prime's higher price per token, compared with Orion Max | Established (High): it passed every check, and a real difference between the two models was shown. |
+| Cost | Not established | HC4.1: Zeta Prime's weak prompt caching, compared with Orion Max | Ruled out (Not supported) because its own test rules it out: Zeta Prime's cache-read share is 28% against the models' median of 26%. |
 
 > [!TIP]
-> **Conclusion.** Intelligence: Not established. Speed: Not established. Cost: Root cause established.
+> **Conclusion.** Intelligence: Not established. Speed: Not established. Cost: Not established.
 
 ## What to run next
 
@@ -353,7 +353,7 @@ The benchmark asks single questions, so longer conversations are not measured.
 - **D. Run settings:** every launcher setting of each run to make next.
 - **E. Known facts:** the counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
 - **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
-- **G. Question details:** the questions the writer cites, those with a disputed claim or a critical error, and the control items, each with its answer excerpts.
+- **G. Question details:** the questions the writer cites, those with a critical error, confirmed or overturned, and the control items, each with its answer excerpts.
 - **H. Glossary:** every term this document uses, in plain words.
 
 ## Appendix A: Intelligence detail
@@ -648,36 +648,6 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
 
 ### Cost
 
-- **HC2.1: Zeta Prime's higher price per token, compared with Orion Max** (Zeta Prime and Orion Max; locus model; Established (High))
-  - *For:* Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference.
-  - *Against:* The volume effect is 31% (31–32%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
-- **HC2.2: Nova Lite's higher price per token, compared with Orion Max** (Nova Lite and Orion Max; locus model; Established (High))
-  - *For:* Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference.
-  - *Against:* The volume effect is 30% (30–31%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
-- **HC2.3: Lyra Mini's higher price per token, compared with Orion Max** (Lyra Mini and Orion Max; locus model; Established (High))
-  - *For:* Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference.
-  - *Against:* The volume effect is 29% (29–30%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
-- **HC2.4: Zeta Prime's higher price per token, compared with Nova Lite** (Zeta Prime and Nova Lite; locus model; Established (High))
-  - *For:* Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference.
-  - *Against:* The volume effect is 35% (35–36%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
-- **HC2.5: Vega Pro's higher price per token, compared with Orion Max** (Vega Pro and Orion Max; locus model; Established (High))
-  - *For:* Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference.
-  - *Against:* The volume effect is 28% (27–29%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
 - **WC1.1: Zeta Prime's output cost** (Zeta Prime; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 54% of Zeta Prime's cost per question.
   - *Against:* none recorded.
@@ -720,6 +690,36 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
   - *Grade reasons:* its own test rules it out: Lyra Mini's cache-read share is 26% against the models' median of 26%.
   - *Refuted if:* The cache-read share is comparable to the other models'.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
+- **HC2.1: Zeta Prime's higher price per token, compared with Orion Max** (Zeta Prime and Orion Max; locus model; Known from the price cards (High))
+  - *For:* Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference.
+  - *Against:* The volume effect is 31% (31–32%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
+- **HC2.2: Nova Lite's higher price per token, compared with Orion Max** (Nova Lite and Orion Max; locus model; Known from the price cards (High))
+  - *For:* Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference.
+  - *Against:* The volume effect is 30% (30–31%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
+- **HC2.3: Lyra Mini's higher price per token, compared with Orion Max** (Lyra Mini and Orion Max; locus model; Known from the price cards (High))
+  - *For:* Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference.
+  - *Against:* The volume effect is 29% (29–30%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
+- **HC2.4: Zeta Prime's higher price per token, compared with Nova Lite** (Zeta Prime and Nova Lite; locus model; Known from the price cards (High))
+  - *For:* Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference.
+  - *Against:* The volume effect is 35% (35–36%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
+- **HC2.5: Vega Pro's higher price per token, compared with Orion Max** (Vega Pro and Orion Max; locus model; Known from the price cards (High))
+  - *For:* Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference.
+  - *Against:* The volume effect is 28% (27–29%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
 
 | Hypothesis | Pair | Paired result | Grade |
 |---|---|---|---|
@@ -1539,31 +1539,31 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.125 per million tokens (today's catalog)",
+      "display": "$0.125 per million tokens",
       "key": "model.A.price.cacheRead.perMillion",
       "value": 0.125
     },
     {
       "available": true,
-      "display": "$1.50 per million tokens (today's catalog)",
+      "display": "$1.50 per million tokens",
       "key": "model.A.price.cacheWrite.perMillion",
       "value": 1.5
     },
     {
       "available": true,
-      "display": "$10.00 per million tokens (today's catalog)",
+      "display": "$10.00 per million tokens",
       "key": "model.A.price.output.perMillion",
       "value": 10
     },
     {
       "available": true,
-      "display": "$10.00 per million tokens (today's catalog)",
+      "display": "$10.00 per million tokens",
       "key": "model.A.price.reasoning.perMillion",
       "value": 10
     },
     {
       "available": true,
-      "display": "$1.25 per million tokens (today's catalog)",
+      "display": "$1.25 per million tokens",
       "key": "model.A.price.uncachedInput.perMillion",
       "value": 1.25
     },
@@ -1961,7 +1961,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "23% of input tokens read from the cache",
+      "display": "23%",
       "key": "model.A.tokens.cacheReadShare",
       "value": 0.22988505747126436
     },
@@ -2300,31 +2300,31 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.125 per million tokens (today's catalog)",
+      "display": "$0.125 per million tokens",
       "key": "model.B.price.cacheRead.perMillion",
       "value": 0.125
     },
     {
       "available": true,
-      "display": "$1.50 per million tokens (today's catalog)",
+      "display": "$1.50 per million tokens",
       "key": "model.B.price.cacheWrite.perMillion",
       "value": 1.5
     },
     {
       "available": true,
-      "display": "$12.00 per million tokens (today's catalog)",
+      "display": "$12.00 per million tokens",
       "key": "model.B.price.output.perMillion",
       "value": 12
     },
     {
       "available": true,
-      "display": "$12.00 per million tokens (today's catalog)",
+      "display": "$12.00 per million tokens",
       "key": "model.B.price.reasoning.perMillion",
       "value": 12
     },
     {
       "available": true,
-      "display": "$2.25 per million tokens (today's catalog)",
+      "display": "$2.25 per million tokens",
       "key": "model.B.price.uncachedInput.perMillion",
       "value": 2.25
     },
@@ -2722,7 +2722,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "25% of input tokens read from the cache",
+      "display": "25%",
       "key": "model.B.tokens.cacheReadShare",
       "value": 0.24742268041237114
     },
@@ -3085,31 +3085,31 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.125 per million tokens (today's catalog)",
+      "display": "$0.125 per million tokens",
       "key": "model.C.price.cacheRead.perMillion",
       "value": 0.125
     },
     {
       "available": true,
-      "display": "$1.50 per million tokens (today's catalog)",
+      "display": "$1.50 per million tokens",
       "key": "model.C.price.cacheWrite.perMillion",
       "value": 1.5
     },
     {
       "available": true,
-      "display": "$14.00 per million tokens (today's catalog)",
+      "display": "$14.00 per million tokens",
       "key": "model.C.price.output.perMillion",
       "value": 14
     },
     {
       "available": true,
-      "display": "$14.00 per million tokens (today's catalog)",
+      "display": "$14.00 per million tokens",
       "key": "model.C.price.reasoning.perMillion",
       "value": 14
     },
     {
       "available": true,
-      "display": "$3.25 per million tokens (today's catalog)",
+      "display": "$3.25 per million tokens",
       "key": "model.C.price.uncachedInput.perMillion",
       "value": 3.25
     },
@@ -3507,7 +3507,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "26% of input tokens read from the cache",
+      "display": "26%",
       "key": "model.C.tokens.cacheReadShare",
       "value": 0.2616822429906542
     },
@@ -3870,31 +3870,31 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.125 per million tokens (today's catalog)",
+      "display": "$0.125 per million tokens",
       "key": "model.D.price.cacheRead.perMillion",
       "value": 0.125
     },
     {
       "available": true,
-      "display": "$1.50 per million tokens (today's catalog)",
+      "display": "$1.50 per million tokens",
       "key": "model.D.price.cacheWrite.perMillion",
       "value": 1.5
     },
     {
       "available": true,
-      "display": "$16.00 per million tokens (today's catalog)",
+      "display": "$16.00 per million tokens",
       "key": "model.D.price.output.perMillion",
       "value": 16
     },
     {
       "available": true,
-      "display": "$16.00 per million tokens (today's catalog)",
+      "display": "$16.00 per million tokens",
       "key": "model.D.price.reasoning.perMillion",
       "value": 16
     },
     {
       "available": true,
-      "display": "$4.25 per million tokens (today's catalog)",
+      "display": "$4.25 per million tokens",
       "key": "model.D.price.uncachedInput.perMillion",
       "value": 4.25
     },
@@ -4292,7 +4292,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "27% of input tokens read from the cache",
+      "display": "27%",
       "key": "model.D.tokens.cacheReadShare",
       "value": 0.27350427350427353
     },
@@ -4655,31 +4655,31 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.125 per million tokens (today's catalog)",
+      "display": "$0.125 per million tokens",
       "key": "model.E.price.cacheRead.perMillion",
       "value": 0.125
     },
     {
       "available": true,
-      "display": "$1.50 per million tokens (today's catalog)",
+      "display": "$1.50 per million tokens",
       "key": "model.E.price.cacheWrite.perMillion",
       "value": 1.5
     },
     {
       "available": true,
-      "display": "$18.00 per million tokens (today's catalog)",
+      "display": "$18.00 per million tokens",
       "key": "model.E.price.output.perMillion",
       "value": 18
     },
     {
       "available": true,
-      "display": "$18.00 per million tokens (today's catalog)",
+      "display": "$18.00 per million tokens",
       "key": "model.E.price.reasoning.perMillion",
       "value": 18
     },
     {
       "available": true,
-      "display": "$5.25 per million tokens (today's catalog)",
+      "display": "$5.25 per million tokens",
       "key": "model.E.price.uncachedInput.perMillion",
       "value": 5.25
     },
@@ -5077,7 +5077,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "28% of input tokens read from the cache",
+      "display": "28%",
       "key": "model.E.tokens.cacheReadShare",
       "value": 0.28346456692913385
     },
@@ -6429,165 +6429,165 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.A.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.A.criticalError",
       "value": 0
     },
     {
       "available": true,
-      "display": "9.8 index points at risk (upper bound, not a causal estimate)",
+      "display": "9.8 index points",
       "key": "rca.atRisk.A.noTool",
       "value": 9.833333333333334
     },
     {
       "available": true,
-      "display": "0.8 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.8 index points",
       "key": "rca.atRisk.A.otherLow",
       "value": 0.8333333333333333
     },
     {
       "available": true,
-      "display": "10.7 index points at risk against the model's median answer of 89 (upper bound, not a causal estimate)",
+      "display": "10.7 index points below a median answer of 89",
       "key": "rca.atRisk.A.total",
       "value": 10.666666666666668
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.B.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.B.criticalError",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.2 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.2 index points",
       "key": "rca.atRisk.B.noTool",
       "value": 0.16666666666666666
     },
     {
       "available": true,
-      "display": "2.8 index points at risk (upper bound, not a causal estimate)",
+      "display": "2.8 index points",
       "key": "rca.atRisk.B.otherLow",
       "value": 2.833333333333333
     },
     {
       "available": true,
-      "display": "3.0 index points at risk against the model's median answer of 81 (upper bound, not a causal estimate)",
+      "display": "3.0 index points below a median answer of 81",
       "key": "rca.atRisk.B.total",
       "value": 2.9999999999999996
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.C.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "7.2 index points at risk (upper bound, not a causal estimate)",
+      "display": "7.2 index points",
       "key": "rca.atRisk.C.criticalError",
       "value": 7.166666666666667
     },
     {
       "available": true,
-      "display": "1.2 index points at risk (upper bound, not a causal estimate)",
+      "display": "1.2 index points",
       "key": "rca.atRisk.C.noTool",
       "value": 1.1666666666666667
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.C.otherLow",
       "value": 0
     },
     {
       "available": true,
-      "display": "8.3 index points at risk against the model's median answer of 71 (upper bound, not a causal estimate)",
+      "display": "8.3 index points below a median answer of 71",
       "key": "rca.atRisk.C.total",
       "value": 8.333333333333334
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.D.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.D.criticalError",
       "value": 0
     },
     {
       "available": true,
-      "display": "6.3 index points at risk (upper bound, not a causal estimate)",
+      "display": "6.3 index points",
       "key": "rca.atRisk.D.noTool",
       "value": 6.333333333333333
     },
     {
       "available": true,
-      "display": "2.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "2.0 index points",
       "key": "rca.atRisk.D.otherLow",
       "value": 2
     },
     {
       "available": true,
-      "display": "8.3 index points at risk against the model's median answer of 70 (upper bound, not a causal estimate)",
+      "display": "8.3 index points below a median answer of 70",
       "key": "rca.atRisk.D.total",
       "value": 8.333333333333332
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.E.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.E.criticalError",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.E.noTool",
       "value": 0
     },
     {
       "available": true,
-      "display": "5.6 index points at risk (upper bound, not a causal estimate)",
+      "display": "5.6 index points",
       "key": "rca.atRisk.E.otherLow",
       "value": 5.583333333333333
     },
     {
       "available": true,
-      "display": "5.6 index points at risk against the model's median answer of 54 (upper bound, not a causal estimate)",
+      "display": "5.6 index points below a median answer of 54",
       "key": "rca.atRisk.E.total",
       "value": 5.583333333333333
     },
     {
       "available": true,
-      "display": "HC2.1",
+      "display": "HC4.1",
       "key": "rca.axis.cost.best",
-      "value": "HC2.1"
+      "value": "HC4.1"
     },
     {
       "available": true,
-      "display": "Root cause established",
+      "display": "Not established",
       "key": "rca.axis.cost.status",
-      "value": "RootCauseEstablished"
+      "value": "NotEstablished"
     },
     {
       "available": true,
@@ -6625,7 +6625,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "72% of the difference",
+      "display": "72%",
       "key": "rca.cost.A.B.all.price.share",
       "value": 0.71922009092776
     },
@@ -6636,7 +6636,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "28% of the difference",
+      "display": "28%",
       "key": "rca.cost.A.B.all.volume.share",
       "value": 0.28077990907223965
     },
@@ -6647,7 +6647,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.B.cacheRead.price.share",
       "value": 5.65413520631882E-18
     },
@@ -6658,7 +6658,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.B.cacheRead.volume.share",
       "value": 0.0032092426187419684
     },
@@ -6669,7 +6669,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.B.cacheWrite.price.share",
       "value": -0
     },
@@ -6680,7 +6680,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.B.cacheWrite.volume.share",
       "value": -0
     },
@@ -6691,7 +6691,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "18% of the difference",
+      "display": "18%",
       "key": "rca.cost.A.B.output.price.share",
       "value": 0.18112542291023093
     },
@@ -6702,7 +6702,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.A.B.output.volume.share",
       "value": 0.09872053344406923
     },
@@ -6713,7 +6713,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "9% of the difference",
+      "display": "9%",
       "key": "rca.cost.A.B.reasoning.price.share",
       "value": 0.08719899521942158
     },
@@ -6724,13 +6724,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "11% of the difference",
+      "display": "11%",
       "key": "rca.cost.A.B.reasoning.volume.share",
       "value": 0.11305774419007787
     },
     {
       "available": true,
-      "display": "-$0.0078 per question (Model A minus Model B)",
+      "display": "-$0.0078 per question",
       "key": "rca.cost.A.B.total",
       "value": -0.007790000000000002
     },
@@ -6741,7 +6741,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "45% of the difference",
+      "display": "45%",
       "key": "rca.cost.A.B.uncachedInput.price.share",
       "value": 0.45089567279810744
     },
@@ -6752,7 +6752,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "7% of the difference",
+      "display": "7%",
       "key": "rca.cost.A.B.uncachedInput.volume.share",
       "value": 0.06579238881935058
     },
@@ -6763,7 +6763,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "71% of the difference",
+      "display": "71%",
       "key": "rca.cost.A.C.all.price.share",
       "value": 0.7067857366013377
     },
@@ -6774,7 +6774,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "29% of the difference",
+      "display": "29%",
       "key": "rca.cost.A.C.all.volume.share",
       "value": 0.29321426339866247
     },
@@ -6785,7 +6785,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.C.cacheRead.price.share",
       "value": -7.268935900156093E-18
     },
@@ -6796,7 +6796,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.C.cacheRead.volume.share",
       "value": 0.0029797377830750966
     },
@@ -6807,7 +6807,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.C.cacheWrite.price.share",
       "value": -0
     },
@@ -6818,7 +6818,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.C.cacheWrite.volume.share",
       "value": -0
     },
@@ -6829,7 +6829,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "18% of the difference",
+      "display": "18%",
       "key": "rca.cost.A.C.output.price.share",
       "value": 0.17680749428237597
     },
@@ -6840,7 +6840,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.A.C.output.volume.share",
       "value": 0.09971217198699239
     },
@@ -6851,7 +6851,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "9% of the difference",
+      "display": "9%",
       "key": "rca.cost.A.C.reasoning.price.share",
       "value": 0.09029630352104531
     },
@@ -6862,13 +6862,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "11% of the difference",
+      "display": "11%",
       "key": "rca.cost.A.C.reasoning.volume.share",
       "value": 0.11470965595452089
     },
     {
       "available": true,
-      "display": "-$0.017 per question (Model A minus Model C)",
+      "display": "-$0.017 per question",
       "key": "rca.cost.A.C.total",
       "value": -0.01678
     },
@@ -6879,7 +6879,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "44% of the difference",
+      "display": "44%",
       "key": "rca.cost.A.C.uncachedInput.price.share",
       "value": 0.4396819387979164
     },
@@ -6890,7 +6890,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "8% of the difference",
+      "display": "8%",
       "key": "rca.cost.A.C.uncachedInput.volume.share",
       "value": 0.07581269767407409
     },
@@ -6901,7 +6901,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "70% of the difference",
+      "display": "70%",
       "key": "rca.cost.A.D.all.price.share",
       "value": 0.6968068304832366
     },
@@ -6912,7 +6912,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "30% of the difference",
+      "display": "30%",
       "key": "rca.cost.A.D.all.volume.share",
       "value": 0.3031931695167636
     },
@@ -6923,7 +6923,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.D.cacheRead.price.share",
       "value": -4.522534089900603E-18
     },
@@ -6934,7 +6934,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.D.cacheRead.volume.share",
       "value": 0.0027808676307007835
     },
@@ -6945,7 +6945,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.D.cacheWrite.price.share",
       "value": -0
     },
@@ -6956,7 +6956,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.D.cacheWrite.volume.share",
       "value": -0
     },
@@ -6967,7 +6967,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "17% of the difference",
+      "display": "17%",
       "key": "rca.cost.A.D.output.price.share",
       "value": 0.1731783963649792
     },
@@ -6978,7 +6978,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.A.D.output.volume.share",
       "value": 0.10045897849597754
     },
@@ -6989,7 +6989,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "9% of the difference",
+      "display": "9%",
       "key": "rca.cost.A.D.reasoning.price.share",
       "value": 0.09291798670837466
     },
@@ -7000,13 +7000,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "12% of the difference",
+      "display": "12%",
       "key": "rca.cost.A.D.reasoning.volume.share",
       "value": 0.11620325912032395
     },
     {
       "available": true,
-      "display": "-$0.027 per question (Model A minus Model D)",
+      "display": "-$0.027 per question",
       "key": "rca.cost.A.D.total",
       "value": -0.026969999999999997
     },
@@ -7017,7 +7017,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "43% of the difference",
+      "display": "43%",
       "key": "rca.cost.A.D.uncachedInput.price.share",
       "value": 0.4307104474098827
     },
@@ -7028,7 +7028,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "8% of the difference",
+      "display": "8%",
       "key": "rca.cost.A.D.uncachedInput.volume.share",
       "value": 0.08375006426976137
     },
@@ -7039,7 +7039,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "69% of the difference",
+      "display": "69%",
       "key": "rca.cost.A.E.all.price.share",
       "value": 0.6885105330251258
     },
@@ -7050,7 +7050,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "31% of the difference",
+      "display": "31%",
       "key": "rca.cost.A.E.all.volume.share",
       "value": 0.31148946697487445
     },
@@ -7061,7 +7061,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.E.cacheRead.price.share",
       "value": -1.4131936554816275E-18
     },
@@ -7072,7 +7072,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.E.cacheRead.volume.share",
       "value": 0.0026068821689259657
     },
@@ -7083,7 +7083,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.E.cacheWrite.price.share",
       "value": -0
     },
@@ -7094,7 +7094,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.A.E.cacheWrite.volume.share",
       "value": -0
     },
@@ -7105,7 +7105,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "17% of the difference",
+      "display": "17%",
       "key": "rca.cost.A.E.output.price.share",
       "value": 0.17007808201744268
     },
@@ -7116,7 +7116,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.A.E.output.volume.share",
       "value": 0.10103766355085769
     },
@@ -7127,7 +7127,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.A.E.reasoning.price.share",
       "value": 0.09517595976166772
     },
@@ -7138,13 +7138,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "12% of the difference",
+      "display": "12%",
       "key": "rca.cost.A.E.reasoning.volume.share",
       "value": 0.117545625222691
     },
     {
       "available": true,
-      "display": "-$0.038 per question (Model A minus Model E)",
+      "display": "-$0.038 per question",
       "key": "rca.cost.A.E.total",
       "value": -0.03835999999999999
     },
@@ -7155,7 +7155,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "42% of the difference",
+      "display": "42%",
       "key": "rca.cost.A.E.uncachedInput.price.share",
       "value": 0.4232564912460154
     },
@@ -7166,7 +7166,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "9% of the difference",
+      "display": "9%",
       "key": "rca.cost.A.E.uncachedInput.volume.share",
       "value": 0.09029929603239982
     },
@@ -7177,7 +7177,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "65% of the difference",
+      "display": "65%",
       "key": "rca.cost.D.E.all.price.share",
       "value": 0.6491469867604399
     },
@@ -7188,7 +7188,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "35% of the difference",
+      "display": "35%",
       "key": "rca.cost.D.E.all.volume.share",
       "value": 0.35085301323956025
     },
@@ -7199,7 +7199,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.D.E.cacheRead.price.share",
       "value": 5.651844072987431E-18
     },
@@ -7210,7 +7210,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.D.E.cacheRead.volume.share",
       "value": 0.0021949078138718083
     },
@@ -7221,7 +7221,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.D.E.cacheWrite.price.share",
       "value": -0
     },
@@ -7232,7 +7232,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.D.E.cacheWrite.volume.share",
       "value": -0
     },
@@ -7243,7 +7243,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "16% of the difference",
+      "display": "16%",
       "key": "rca.cost.D.E.output.price.share",
       "value": 0.16070948285114076
     },
@@ -7254,7 +7254,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.D.E.output.volume.share",
       "value": 0.10443538106457471
     },
@@ -7265,7 +7265,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.D.E.reasoning.price.share",
       "value": 0.10181989333148497
     },
@@ -7276,13 +7276,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "12% of the difference",
+      "display": "12%",
       "key": "rca.cost.D.E.reasoning.volume.share",
       "value": 0.11942681430679408
     },
     {
       "available": true,
-      "display": "-$0.011 per question (Model D minus Model E)",
+      "display": "-$0.011 per question",
       "key": "rca.cost.D.E.total",
       "value": -0.011389999999999997
     },
@@ -7293,7 +7293,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "39% of the difference",
+      "display": "39%",
       "key": "rca.cost.D.E.uncachedInput.price.share",
       "value": 0.38661761057781424
     },
@@ -7304,7 +7304,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "12% of the difference",
+      "display": "12%",
       "key": "rca.cost.D.E.uncachedInput.volume.share",
       "value": 0.12479591005431967
     },
@@ -7351,7 +7351,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-C.1 (no cost difference)",
+      "display": "H0-C.1",
       "key": "rca.hypothesis.H0-C.1.ref"
     },
     {
@@ -7407,7 +7407,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-C.2 (no cost difference)",
+      "display": "H0-C.2",
       "key": "rca.hypothesis.H0-C.2.ref"
     },
     {
@@ -7463,7 +7463,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-C.3 (no cost difference)",
+      "display": "H0-C.3",
       "key": "rca.hypothesis.H0-C.3.ref"
     },
     {
@@ -7519,7 +7519,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-C.4 (no cost difference)",
+      "display": "H0-C.4",
       "key": "rca.hypothesis.H0-C.4.ref"
     },
     {
@@ -7575,7 +7575,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-C.5 (no cost difference)",
+      "display": "H0-C.5",
       "key": "rca.hypothesis.H0-C.5.ref"
     },
     {
@@ -7637,7 +7637,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-Q.1 (no intelligence difference)",
+      "display": "H0-Q.1",
       "key": "rca.hypothesis.H0-Q.1.ref"
     },
     {
@@ -7699,7 +7699,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-Q.2 (no intelligence difference)",
+      "display": "H0-Q.2",
       "key": "rca.hypothesis.H0-Q.2.ref"
     },
     {
@@ -7761,7 +7761,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-Q.3 (no intelligence difference)",
+      "display": "H0-Q.3",
       "key": "rca.hypothesis.H0-Q.3.ref"
     },
     {
@@ -7823,7 +7823,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-Q.4 (no intelligence difference)",
+      "display": "H0-Q.4",
       "key": "rca.hypothesis.H0-Q.4.ref"
     },
     {
@@ -7885,7 +7885,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-Q.5 (no intelligence difference)",
+      "display": "H0-Q.5",
       "key": "rca.hypothesis.H0-Q.5.ref"
     },
     {
@@ -7947,7 +7947,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-S.1 (no speed difference)",
+      "display": "H0-S.1",
       "key": "rca.hypothesis.H0-S.1.ref"
     },
     {
@@ -8009,7 +8009,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-S.2 (no speed difference)",
+      "display": "H0-S.2",
       "key": "rca.hypothesis.H0-S.2.ref"
     },
     {
@@ -8071,7 +8071,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-S.3 (no speed difference)",
+      "display": "H0-S.3",
       "key": "rca.hypothesis.H0-S.3.ref"
     },
     {
@@ -8133,7 +8133,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-S.4 (no speed difference)",
+      "display": "H0-S.4",
       "key": "rca.hypothesis.H0-S.4.ref"
     },
     {
@@ -8195,7 +8195,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-S.5 (no speed difference)",
+      "display": "H0-S.5",
       "key": "rca.hypothesis.H0-S.5.ref"
     },
     {
@@ -8257,7 +8257,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-W.1 (no difference within one model's own questions)",
+      "display": "H0-W.1",
       "key": "rca.hypothesis.H0-W.1.ref"
     },
     {
@@ -8319,7 +8319,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-W.2 (no difference within one model's own questions)",
+      "display": "H0-W.2",
       "key": "rca.hypothesis.H0-W.2.ref"
     },
     {
@@ -8349,7 +8349,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "High",
+      "display": "Known from the price cards (High)",
       "key": "rca.hypothesis.HC2.1.grade",
       "value": "High"
     },
@@ -8380,7 +8380,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC2.1 (higher price per token)",
+      "display": "known from the price cards, not a cause the runs found",
+      "key": "rca.hypothesis.HC2.1.priceCard",
+      "value": true
+    },
+    {
+      "available": true,
+      "display": "HC2.1",
       "key": "rca.hypothesis.HC2.1.ref"
     },
     {
@@ -8416,7 +8422,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "High",
+      "display": "Known from the price cards (High)",
       "key": "rca.hypothesis.HC2.2.grade",
       "value": "High"
     },
@@ -8447,7 +8453,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC2.2 (higher price per token)",
+      "display": "known from the price cards, not a cause the runs found",
+      "key": "rca.hypothesis.HC2.2.priceCard",
+      "value": true
+    },
+    {
+      "available": true,
+      "display": "HC2.2",
       "key": "rca.hypothesis.HC2.2.ref"
     },
     {
@@ -8483,7 +8495,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "High",
+      "display": "Known from the price cards (High)",
       "key": "rca.hypothesis.HC2.3.grade",
       "value": "High"
     },
@@ -8514,7 +8526,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC2.3 (higher price per token)",
+      "display": "known from the price cards, not a cause the runs found",
+      "key": "rca.hypothesis.HC2.3.priceCard",
+      "value": true
+    },
+    {
+      "available": true,
+      "display": "HC2.3",
       "key": "rca.hypothesis.HC2.3.ref"
     },
     {
@@ -8550,7 +8568,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "High",
+      "display": "Known from the price cards (High)",
       "key": "rca.hypothesis.HC2.4.grade",
       "value": "High"
     },
@@ -8581,7 +8599,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC2.4 (higher price per token)",
+      "display": "known from the price cards, not a cause the runs found",
+      "key": "rca.hypothesis.HC2.4.priceCard",
+      "value": true
+    },
+    {
+      "available": true,
+      "display": "HC2.4",
       "key": "rca.hypothesis.HC2.4.ref"
     },
     {
@@ -8617,7 +8641,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "High",
+      "display": "Known from the price cards (High)",
       "key": "rca.hypothesis.HC2.5.grade",
       "value": "High"
     },
@@ -8648,7 +8672,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC2.5 (higher price per token)",
+      "display": "known from the price cards, not a cause the runs found",
+      "key": "rca.hypothesis.HC2.5.priceCard",
+      "value": true
+    },
+    {
+      "available": true,
+      "display": "HC2.5",
       "key": "rca.hypothesis.HC2.5.ref"
     },
     {
@@ -8715,7 +8745,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC4.1 (weak prompt caching)",
+      "display": "HC4.1",
       "key": "rca.hypothesis.HC4.1.ref"
     },
     {
@@ -8782,7 +8812,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC4.2 (weak prompt caching)",
+      "display": "HC4.2",
       "key": "rca.hypothesis.HC4.2.ref"
     },
     {
@@ -8849,7 +8879,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC4.3 (weak prompt caching)",
+      "display": "HC4.3",
       "key": "rca.hypothesis.HC4.3.ref"
     },
     {
@@ -8916,7 +8946,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC4.4 (weak prompt caching)",
+      "display": "HC4.4",
       "key": "rca.hypothesis.HC4.4.ref"
     },
     {
@@ -8984,7 +9014,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HQ3.1 (shared failures on the same questions)",
+      "display": "HQ3.1",
       "key": "rca.hypothesis.HQ3.1.ref"
     },
     {
@@ -9040,7 +9070,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WC1.1 (output cost)",
+      "display": "WC1.1",
       "key": "rca.hypothesis.WC1.1.ref"
     },
     {
@@ -9102,7 +9132,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WC1.2 (output cost)",
+      "display": "WC1.2",
       "key": "rca.hypothesis.WC1.2.ref"
     },
     {
@@ -9164,7 +9194,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WC1.3 (output cost)",
+      "display": "WC1.3",
       "key": "rca.hypothesis.WC1.3.ref"
     },
     {
@@ -9231,7 +9261,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WS2.1 (time spent generating output)",
+      "display": "WS2.1",
       "key": "rca.hypothesis.WS2.1.ref"
     },
     {
@@ -9298,7 +9328,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WS2.2 (time spent generating output)",
+      "display": "WS2.2",
       "key": "rca.hypothesis.WS2.2.ref"
     },
     {
@@ -9365,7 +9395,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WS2.3 (time spent generating output)",
+      "display": "WS2.3",
       "key": "rca.hypothesis.WS2.3.ref"
     },
     {
@@ -9433,7 +9463,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WS3.1 (time spent on tool rounds)",
+      "display": "WS3.1",
       "key": "rca.hypothesis.WS3.1.ref"
     },
     {
@@ -9495,7 +9525,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WS3.2 (time spent on tool rounds)",
+      "display": "WS3.2",
       "key": "rca.hypothesis.WS3.2.ref"
     },
     {
@@ -9557,7 +9587,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WS3.3 (time spent on tool rounds)",
+      "display": "WS3.3",
       "key": "rca.hypothesis.WS3.3.ref"
     },
     {
@@ -9782,7 +9812,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "+5.0 index points (Model A minus Model B)",
+      "display": "+5.0 index points",
       "key": "rca.quality.A.B.total",
       "value": 5
     },
@@ -9818,7 +9848,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "+15.0 index points (Model A minus Model C)",
+      "display": "+15.0 index points",
       "key": "rca.quality.A.C.total",
       "value": 15
     },
@@ -9854,7 +9884,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "+15.0 index points (Model A minus Model D)",
+      "display": "+15.0 index points",
       "key": "rca.quality.A.D.total",
       "value": 15
     },
@@ -9890,7 +9920,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "+30.0 index points (Model A minus Model E)",
+      "display": "+30.0 index points",
       "key": "rca.quality.A.E.total",
       "value": 30
     },
@@ -9926,7 +9956,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "+15.0 index points (Model D minus Model E)",
+      "display": "+15.0 index points",
       "key": "rca.quality.D.E.total",
       "value": 15
     },
@@ -9941,6 +9971,12 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "Model A",
       "key": "rca.question.1.model",
       "value": "A"
+    },
+    {
+      "available": true,
+      "display": "Model B",
+      "key": "rca.question.1.neighbor",
+      "value": "B"
     },
     {
       "available": true,
@@ -9981,6 +10017,12 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "Model E",
       "key": "rca.question.2.model",
       "value": "E"
+    },
+    {
+      "available": true,
+      "display": "Model D",
+      "key": "rca.question.2.neighbor",
+      "value": "D"
     },
     {
       "available": true,
@@ -10046,7 +10088,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC2.2, HC4.2 and WC1.2",
+      "display": "HC4.2, HC2.2 and WC1.2",
       "key": "rca.question.4.hypotheses",
       "value": 3
     },
@@ -10063,7 +10105,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Established (High)",
+      "display": "Known from the price cards",
       "key": "rca.question.4.status",
       "value": "High"
     },
@@ -10085,31 +10127,61 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "-1.6 s per question (Model A minus Model B, model time; the difference may be chance, so it is not split into parts)",
+      "display": "not split into parts: the difference may be chance",
+      "key": "rca.speed.A.B.decomposed",
+      "value": false
+    },
+    {
+      "available": true,
+      "display": "-1.6 s per question",
       "key": "rca.speed.A.B.total",
       "value": -1.55
     },
     {
       "available": true,
-      "display": "-3.0 s per question (Model A minus Model C, model time; the difference may be chance, so it is not split into parts)",
+      "display": "not split into parts: the difference may be chance",
+      "key": "rca.speed.A.C.decomposed",
+      "value": false
+    },
+    {
+      "available": true,
+      "display": "-3.0 s per question",
       "key": "rca.speed.A.C.total",
       "value": -3
     },
     {
       "available": true,
-      "display": "-4.6 s per question (Model A minus Model D, model time; the difference may be chance, so it is not split into parts)",
+      "display": "not split into parts: the difference may be chance",
+      "key": "rca.speed.A.D.decomposed",
+      "value": false
+    },
+    {
+      "available": true,
+      "display": "-4.6 s per question",
       "key": "rca.speed.A.D.total",
       "value": -4.55
     },
     {
       "available": true,
-      "display": "-6.0 s per question (Model A minus Model E, model time; the difference may be chance, so it is not split into parts)",
+      "display": "not split into parts: the difference may be chance",
+      "key": "rca.speed.A.E.decomposed",
+      "value": false
+    },
+    {
+      "available": true,
+      "display": "-6.0 s per question",
       "key": "rca.speed.A.E.total",
       "value": -6
     },
     {
       "available": true,
-      "display": "-1.5 s per question (Model D minus Model E, model time; the difference may be chance, so it is not split into parts)",
+      "display": "not split into parts: the difference may be chance",
+      "key": "rca.speed.D.E.decomposed",
+      "value": false
+    },
+    {
+      "available": true,
+      "display": "-1.5 s per question",
       "key": "rca.speed.D.E.total",
       "value": -1.45
     },
@@ -11913,9 +11985,9 @@ The counts and the configuration facts the analysis states, each numbered as the
       },
       {
         "axis": "cost",
-        "bestHypothesis": "HC2.1",
-        "reason": "Established (High): it passed every check, and a real difference between the two models was shown.",
-        "status": "RootCauseEstablished"
+        "bestHypothesis": "HC4.1",
+        "reason": "Ruled out (Not supported) because its own test rules it out: Model E's cache-read share is 28% against the models' median of 26%.",
+        "status": "NotEstablished"
       }
     ],
     "checks": [
@@ -12720,7 +12792,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 5,
+    "engineVersion": 6,
     "evidence": [
       {
         "atRisk": [
@@ -13355,6 +13427,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model A and Model B",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model B",
@@ -13391,6 +13464,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model A and Model C",
         "nextRunNumber": 1,
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model C",
@@ -13427,6 +13501,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model A and Model D",
         "nextRunNumber": 1,
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model D",
@@ -13463,6 +13538,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model A and Model E",
         "nextRunNumber": 1,
         "number": 4,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model E",
@@ -13497,6 +13573,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model D and Model E",
         "nextRunNumber": 1,
         "number": 5,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model D vs Model E",
@@ -13526,6 +13603,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model A",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "A Mann–Whitney contrast is established after the Holm adjustment.",
         "robustness": [],
         "shortStatement": "Noise within Model A",
@@ -13555,6 +13633,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model E",
         "nextRunNumber": 1,
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "A Mann–Whitney contrast is established after the Holm adjustment.",
         "robustness": [],
         "shortStatement": "Noise within Model E",
@@ -13594,6 +13673,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model A, Model B, Model C, Model D and Model E",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "One model answered the question well.",
         "robustness": [],
         "shortStatement": "Shared failures: instrument",
@@ -13628,6 +13708,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model A and Model B",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model B",
@@ -13662,6 +13743,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model A and Model C",
         "nextRunNumber": 1,
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model C",
@@ -13696,6 +13778,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model A and Model D",
         "nextRunNumber": 1,
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model D",
@@ -13730,6 +13813,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model A and Model E",
         "nextRunNumber": 1,
         "number": 4,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model E",
@@ -13762,6 +13846,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model D and Model E",
         "nextRunNumber": 1,
         "number": 5,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model D vs Model E",
@@ -13796,6 +13881,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model A",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The ρ interval includes zero.",
         "robustness": [
           {
@@ -13841,6 +13927,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model D",
         "nextRunNumber": 1,
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "The ρ interval includes zero.",
         "robustness": [
           {
@@ -13886,6 +13973,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model E",
         "nextRunNumber": 1,
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "The ρ interval includes zero.",
         "robustness": [
           {
@@ -13933,6 +14021,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model E",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
@@ -13983,6 +14072,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model D",
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
@@ -14033,6 +14123,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model A",
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
@@ -14079,6 +14170,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model A and Model B",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the cost per question is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model B",
@@ -14111,6 +14203,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model A and Model C",
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the cost per question is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model C",
@@ -14143,6 +14236,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model A and Model D",
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the cost per question is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model D",
@@ -14175,6 +14269,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model A and Model E",
         "number": 4,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the cost per question is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model A vs Model E",
@@ -14206,260 +14301,11 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model D and Model E",
         "number": 5,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the cost per question is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Model D vs Model E",
         "statement": "The cost per question difference between Model D and Model E is within sampling noise."
-      },
-      {
-        "against": [
-          "The volume effect is 31% (31–32%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.026411264046843817,
-        "factKeys": [
-          "rca.cost.A.E.all.price.share",
-          "rca.cost.A.E.total",
-          "model.E.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference."
-        ],
-        "grade": "High",
-        "gradeReasons": [],
-        "id": "HC2",
-        "key": "HC2.1",
-        "kind": "pair",
-        "label": "Model E's higher price per token, compared with Model A",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "E",
-          "A"
-        ],
-        "modelsText": "Model E and Model A",
-        "number": 1,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.6885105330251258,
-        "shareLower": 0.6821542167660242,
-        "shareUpper": 0.6946130761822287,
-        "shortStatement": "Price per token: Model E",
-        "statement": "Model E costs more than Model A mainly from its price per token."
-      },
-      {
-        "against": [
-          "The volume effect is 30% (30–31%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.018792880218132888,
-        "factKeys": [
-          "rca.cost.A.D.all.price.share",
-          "rca.cost.A.D.total",
-          "model.D.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference."
-        ],
-        "grade": "High",
-        "gradeReasons": [],
-        "id": "HC2",
-        "key": "HC2.2",
-        "kind": "pair",
-        "label": "Model D's higher price per token, compared with Model A",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "D",
-          "A"
-        ],
-        "modelsText": "Model D and Model A",
-        "number": 2,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.6968068304832366,
-        "shareLower": 0.6902657261070169,
-        "shareUpper": 0.7030744603212624,
-        "shortStatement": "Price per token: Model D",
-        "statement": "Model D costs more than Model A mainly from its price per token."
-      },
-      {
-        "against": [
-          "The volume effect is 29% (29–30%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.011859864660170447,
-        "factKeys": [
-          "rca.cost.A.C.all.price.share",
-          "rca.cost.A.C.total",
-          "model.C.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference."
-        ],
-        "grade": "High",
-        "gradeReasons": [],
-        "id": "HC2",
-        "key": "HC2.3",
-        "kind": "pair",
-        "label": "Model C's higher price per token, compared with Model A",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "C",
-          "A"
-        ],
-        "modelsText": "Model C and Model A",
-        "number": 3,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.7067857366013377,
-        "shareLower": 0.700055545622766,
-        "shareUpper": 0.7132190392428142,
-        "shortStatement": "Price per token: Model C",
-        "statement": "Model C costs more than Model A mainly from its price per token."
-      },
-      {
-        "against": [
-          "The volume effect is 35% (35–36%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.0073937841792014085,
-        "factKeys": [
-          "rca.cost.D.E.all.price.share",
-          "rca.cost.D.E.total",
-          "model.E.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference."
-        ],
-        "grade": "High",
-        "gradeReasons": [],
-        "id": "HC2",
-        "key": "HC2.4",
-        "kind": "pair",
-        "label": "Model E's higher price per token, compared with Model D",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "E",
-          "D"
-        ],
-        "modelsText": "Model E and Model D",
-        "number": 4,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.6491469867604399,
-        "shareLower": 0.643294023887542,
-        "shareUpper": 0.6548107961671323,
-        "shortStatement": "Price per token: Model E",
-        "statement": "Model E costs more than Model D mainly from its price per token."
-      },
-      {
-        "against": [
-          "The volume effect is 28% (27–29%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.005602724508327252,
-        "factKeys": [
-          "rca.cost.A.B.all.price.share",
-          "rca.cost.A.B.total",
-          "model.B.price.output.perMillion"
-        ],
-        "for": [
-          "Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference."
-        ],
-        "grade": "High",
-        "gradeReasons": [],
-        "id": "HC2",
-        "key": "HC2.5",
-        "kind": "pair",
-        "label": "Model B's higher price per token, compared with Model A",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "B",
-          "A"
-        ],
-        "modelsText": "Model B and Model A",
-        "number": 5,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.71922009092776,
-        "shareLower": 0.7123096297876061,
-        "shareUpper": 0.7258059219416408,
-        "shortStatement": "Price per token: Model B",
-        "statement": "Model B costs more than Model A mainly from its price per token."
       },
       {
         "against": [],
@@ -14490,6 +14336,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model E",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
@@ -14531,6 +14378,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model D",
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
@@ -14572,6 +14420,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model A",
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
@@ -14618,6 +14467,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model E and Model A",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
           {
@@ -14676,6 +14526,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model D and Model A",
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
           {
@@ -14734,6 +14585,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model E and Model D",
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
           {
@@ -14792,6 +14644,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model C and Model A",
         "number": 4,
+        "priceEffect": false,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
           {
@@ -14815,6 +14668,261 @@ The counts and the configuration facts the analysis states, each numbered as the
         "shareUpper": 0.07757564767873716,
         "shortStatement": "Weak caching: Model C",
         "statement": "Weak prompt caching raises Model C's cost against Model A."
+      },
+      {
+        "against": [
+          "The volume effect is 31% (31–32%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.026411264046843817,
+        "factKeys": [
+          "rca.cost.A.E.all.price.share",
+          "rca.cost.A.E.total",
+          "model.E.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.1",
+        "kind": "pair",
+        "label": "Model E's higher price per token, compared with Model A",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "E",
+          "A"
+        ],
+        "modelsText": "Model E and Model A",
+        "number": 1,
+        "priceEffect": true,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.6885105330251258,
+        "shareLower": 0.6821542167660242,
+        "shareUpper": 0.6946130761822287,
+        "shortStatement": "Price per token: Model E",
+        "statement": "Model E costs more than Model A mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 30% (30–31%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.018792880218132888,
+        "factKeys": [
+          "rca.cost.A.D.all.price.share",
+          "rca.cost.A.D.total",
+          "model.D.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.2",
+        "kind": "pair",
+        "label": "Model D's higher price per token, compared with Model A",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "D",
+          "A"
+        ],
+        "modelsText": "Model D and Model A",
+        "number": 2,
+        "priceEffect": true,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.6968068304832366,
+        "shareLower": 0.6902657261070169,
+        "shareUpper": 0.7030744603212624,
+        "shortStatement": "Price per token: Model D",
+        "statement": "Model D costs more than Model A mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 29% (29–30%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.011859864660170447,
+        "factKeys": [
+          "rca.cost.A.C.all.price.share",
+          "rca.cost.A.C.total",
+          "model.C.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.3",
+        "kind": "pair",
+        "label": "Model C's higher price per token, compared with Model A",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "C",
+          "A"
+        ],
+        "modelsText": "Model C and Model A",
+        "number": 3,
+        "priceEffect": true,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.7067857366013377,
+        "shareLower": 0.700055545622766,
+        "shareUpper": 0.7132190392428142,
+        "shortStatement": "Price per token: Model C",
+        "statement": "Model C costs more than Model A mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 35% (35–36%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.0073937841792014085,
+        "factKeys": [
+          "rca.cost.D.E.all.price.share",
+          "rca.cost.D.E.total",
+          "model.E.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 65% (64–65%) of the $0.011 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.4",
+        "kind": "pair",
+        "label": "Model E's higher price per token, compared with Model D",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "E",
+          "D"
+        ],
+        "modelsText": "Model E and Model D",
+        "number": 4,
+        "priceEffect": true,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.6491469867604399,
+        "shareLower": 0.643294023887542,
+        "shareUpper": 0.6548107961671323,
+        "shortStatement": "Price per token: Model E",
+        "statement": "Model E costs more than Model D mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 28% (27–29%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.005602724508327252,
+        "factKeys": [
+          "rca.cost.A.B.all.price.share",
+          "rca.cost.A.B.total",
+          "model.B.price.output.perMillion"
+        ],
+        "for": [
+          "Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.5",
+        "kind": "pair",
+        "label": "Model B's higher price per token, compared with Model A",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "B",
+          "A"
+        ],
+        "modelsText": "Model B and Model A",
+        "number": 5,
+        "priceEffect": true,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.71922009092776,
+        "shareLower": 0.7123096297876061,
+        "shareUpper": 0.7258059219416408,
+        "shortStatement": "Price per token: Model B",
+        "statement": "Model B costs more than Model A mainly from its price per token."
       }
     ],
     "knownFacts": [
@@ -15494,8 +15602,10 @@ The counts and the configuration facts the analysis states, each numbered as the
         "axis": "intelligence",
         "comparativeKeys": [],
         "hypothesisKeys": [],
+        "neighbor": "B",
         "number": 1,
         "orderEstablished": false,
+        "priceCard": false,
         "signals": [
           "tied for first of 5 models on Accuracy",
           "tied for first of 5 models on Completeness"
@@ -15509,8 +15619,10 @@ The counts and the configuration facts the analysis states, each numbered as the
         "axis": "intelligence",
         "comparativeKeys": [],
         "hypothesisKeys": [],
+        "neighbor": "D",
         "number": 2,
         "orderEstablished": true,
+        "priceCard": false,
         "signals": [
           "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
           "1 isolated miss (Q1)"
@@ -15529,6 +15641,7 @@ The counts and the configuration facts the analysis states, each numbered as the
           "WS2.1"
         ],
         "number": 3,
+        "priceCard": false,
         "signals": [
           "median model time 20.0 s",
           "output generation 59% of its time per question",
@@ -15545,16 +15658,17 @@ The counts and the configuration facts the analysis states, each numbered as the
       {
         "axis": "cost",
         "comparativeKeys": [
-          "HC2.2",
-          "HC4.2"
+          "HC4.2",
+          "HC2.2"
         ],
         "grade": "High",
         "hypothesisKeys": [
-          "HC2.2",
           "HC4.2",
+          "HC2.2",
           "WC1.2"
         ],
         "number": 4,
+        "priceCard": true,
         "signals": [
           "$0.060 per question",
           "uncached input 44% of its cost per question",
@@ -15914,6 +16028,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 212 · format version 20 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
+*Document ID 212 · format version 21 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

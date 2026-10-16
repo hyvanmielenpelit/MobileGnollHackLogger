@@ -15,20 +15,27 @@ public static class RootCauseKnownFacts
     /// <summary>The most known facts a result carries.</summary>
     public const int MaxFacts = 24;
 
+    /// <summary>The slots of <see cref="MaxFacts"/> kept for count and configuration facts, so tests and decompositions never crowd them out.</summary>
+    public const int ReservedCountAndConfigurationFacts = 6;
+
     public const string KindTest = "test";
     public const string KindCount = "count";
     public const string KindDecomposition = "decomposition";
     public const string KindConfiguration = "configuration";
 
+    /// <summary>
+    /// The known facts, numbered from 1 in the order the rules produce them, at most <see cref="MaxFacts"/>: the
+    /// first <see cref="ReservedCountAndConfigurationFacts"/> count and configuration facts always, then the
+    /// others in order while slots remain. A sentence is stated once.
+    /// </summary>
     internal static List<RootCauseKnownFact> Build(RootCauseContext ctx, RootCauseResult result)
     {
-        var facts = new List<RootCauseKnownFact>();
+        var candidates = new List<RootCauseKnownFact>();
         void Add(string kind, string text, params string[] keys)
         {
-            if (facts.Count >= MaxFacts || facts.Any(f => f.Text == text)) return;
-            facts.Add(new RootCauseKnownFact
+            if (candidates.Any(f => f.Text == text)) return;
+            candidates.Add(new RootCauseKnownFact
             {
-                Number = facts.Count + 1,
                 Kind = kind,
                 Text = text,
                 FactKeys = keys.Where(k => !string.IsNullOrEmpty(k)).Distinct(StringComparer.Ordinal).ToList()
@@ -153,6 +160,27 @@ public static class RootCauseKnownFacts
             }
         }
 
+        return Select(candidates);
+    }
+
+    /// <summary>
+    /// At most <see cref="MaxFacts"/> of <paramref name="candidates"/>, in their order: the first
+    /// <see cref="ReservedCountAndConfigurationFacts"/> count and configuration facts, then every other candidate in
+    /// order while slots remain; numbered from 1.
+    /// </summary>
+    internal static List<RootCauseKnownFact> Select(IReadOnlyList<RootCauseKnownFact> candidates)
+    {
+        static bool Reserved(RootCauseKnownFact f) => f.Kind is KindCount or KindConfiguration;
+
+        var chosen = new HashSet<int>();
+        foreach (int i in Enumerable.Range(0, candidates.Count).Where(i => Reserved(candidates[i])).Take(ReservedCountAndConfigurationFacts))
+        {
+            chosen.Add(i);
+        }
+        for (int i = 0; i < candidates.Count && chosen.Count < MaxFacts; i++) chosen.Add(i);
+
+        var facts = Enumerable.Range(0, candidates.Count).Where(chosen.Contains).Select(i => candidates[i]).ToList();
+        for (int n = 0; n < facts.Count; n++) facts[n].Number = n + 1;
         return facts;
     }
 

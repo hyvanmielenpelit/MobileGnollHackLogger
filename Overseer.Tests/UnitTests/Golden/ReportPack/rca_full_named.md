@@ -14,7 +14,7 @@
 ### What we found
 
 > [!IMPORTANT]
-> **Key finding.** Intelligence: Not established; speed: Probable cause; cost: Root cause established.
+> **Key finding.** Intelligence: Not established; speed: Probable cause; cost: Not established.
 
 - Zeta Prime is the cheapest model, at $0.010 per question, and its Intelligence Index interval overlaps no other model's.
 - Answers without any tool call: Orion Max, 2 of 6 scored answers (33%); Vega Pro, 2 of 6 scored answers (33%); Lyra Mini, 2 of 6 scored answers (33%); Nova Lite, 2 of 6 scored answers (33%); Zeta Prime, 2 of 6 scored answers (33%).
@@ -24,7 +24,7 @@
 > [!NOTE]
 > **Question.** **Why did Orion Max score highest, though its lead over Vega Pro is not established?**
 >
-> *Answer strength: no hypothesis about this model fired — see its profile.*
+> *Answer strength: Measured lead over Vega Pro: not established — see its split; no cause compared.*
 >
 > For Orion Max the measured signals are tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness. The answer strength is Unknown.
 
@@ -40,14 +40,14 @@
 >
 > *Answer strength: Probable (Moderate) — against the other models, see HS3.1.*
 >
-> For Model D the measured signals are median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer. The answer strength is Probable (Moderate). The leading hypothesis is HS3.1 (more output tokens).
+> For Model D the measured signals are median model time 20.0 s; against Orion Max: output tokens carries 55% of the 6.0 s difference; output generation 59% of its time per question; 2.5 model calls per answer. The answer strength is Probable (Moderate). The leading hypothesis about its time per question is HS3.1.
 
 > [!NOTE]
 > **Question.** **Why is Nova Lite the most expensive?**
 >
-> *Answer strength: Established (High) — against the other models, see HC2.2 and HC4.2.*
+> *Answer strength: Known from the price cards — see HC2.2.*
 >
-> For Model C the measured signals are $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache. The answer strength is Established (High). The leading hypothesis is HC2.2 (higher price per token).
+> For Model C the measured signals are $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache. The answer strength is Known from the price cards. The leading hypothesis about its cost per question is HC4.2.
 
 ### At a glance
 
@@ -248,21 +248,21 @@ The strongest hypothesis in the table: Model D is slower than Orion Max mainly f
 
 | Hypothesis | Statement | Grade | Share | Settled by |
 |---|---|---|---|---|
-| HC2.1 | Zeta Prime costs more than Orion Max mainly from its price per token. | Established (High) | 69% (68–69%) | — |
-| HC2.2 | Nova Lite costs more than Orion Max mainly from its price per token. | Established (High) | 70% (69–70%) | — |
-| HC2.3 | Lyra Mini costs more than Orion Max mainly from its price per token. | Established (High) | 71% (70–71%) | — |
-| HC2.4 | Vega Pro costs more than Orion Max mainly from its price per token. | Established (High) | 72% (71–73%) | — |
 | WC1.1 | Output (with reasoning) is Orion Max's largest cost component (where its cost goes, not a comparison). | Probable (Moderate) | 69% | — |
 | HC4.1 | Weak prompt caching raises Zeta Prime's cost against Orion Max. | Ruled out (Not supported) | 9% (9–9%) | — |
 | HC4.2 | Weak prompt caching raises Nova Lite's cost against Orion Max. | Ruled out (Not supported) | 8% (8–9%) | — |
 | HC4.3 | Weak prompt caching raises Lyra Mini's cost against Orion Max. | Ruled out (Not supported) | 8% (7–8%) | — |
 | HC4.4 | Weak prompt caching raises Vega Pro's cost against Orion Max. | Ruled out (Not supported) | 7% (6–7%) | — |
+| HC2.1 | Zeta Prime costs more than Orion Max mainly from its price per token. | Known from the price cards (High) | 69% (68–69%) | — |
+| HC2.2 | Nova Lite costs more than Orion Max mainly from its price per token. | Known from the price cards (High) | 70% (69–70%) | — |
+| HC2.3 | Lyra Mini costs more than Orion Max mainly from its price per token. | Known from the price cards (High) | 71% (70–71%) | — |
+| HC2.4 | Vega Pro costs more than Orion Max mainly from its price per token. | Known from the price cards (High) | 72% (71–73%) | — |
 
 *Share: how much of the difference, or of the total it is part of, this cause accounts for, with its 95% interval where one was computed. Settled by: the run or check under What to run next that would confirm or rule it out.*
 
 A real difference was found for 4 pairs: Orion Max vs. Vega Pro; Orion Max vs. Lyra Mini; Orion Max vs. Nova Lite; Orion Max vs. Zeta Prime.
 
-The strongest hypothesis in the table: Model D costs more than Orion Max mainly from its price per token. Its grade and the evidence against it stand beside it.
+The strongest hypothesis in the table: Output (with reasoning) is Orion Max's largest cost component (where its cost goes, not a comparison). Its grade and the evidence against it stand beside it.
 
 ### The writer's hypotheses
 
@@ -280,10 +280,10 @@ The strongest hypothesis in the table: Model D costs more than Orion Max mainly 
 |---|---|---|---|
 | Intelligence | Not established | HQ3.1: shared failures on the same questions | Suggestive (Low) because it is observed, not measured. |
 | Speed | Probable cause | HS3.1: Zeta Prime's more output tokens, compared with Orion Max | Probable (Moderate) because both models ran only once per suite. |
-| Cost | Root cause established | HC2.1: Zeta Prime's higher price per token, compared with Orion Max | Established (High): it passed every check, and a real difference between the two models was shown. |
+| Cost | Not established | HC4.1: Zeta Prime's weak prompt caching, compared with Orion Max | Ruled out (Not supported) because its own test rules it out: Zeta Prime's cache-read share is 28% against the models' median of 26%. |
 
 > [!TIP]
-> **Conclusion.** Intelligence: Not established. Speed: Probable cause. Cost: Root cause established.
+> **Conclusion.** Intelligence: Not established. Speed: Probable cause. Cost: Not established.
 
 ## What to run next
 
@@ -318,7 +318,7 @@ The benchmark asks single questions, so longer conversations are not measured.
 - **D. Run settings:** every launcher setting of each run to make next.
 - **E. Known facts:** the counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
 - **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
-- **G. Question details:** the questions the writer cites, those with a disputed claim or a critical error, and the control items, each with its answer excerpts.
+- **G. Question details:** the questions the writer cites, those with a critical error, confirmed or overturned, and the control items, each with its answer excerpts.
 - **H. Glossary:** every term this document uses, in plain words.
 
 ## Appendix A: Intelligence detail
@@ -641,30 +641,6 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
 
 ### Cost
 
-- **HC2.1: Zeta Prime's higher price per token, compared with Orion Max** (Zeta Prime and Orion Max; locus model; Established (High))
-  - *For:* Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference.
-  - *Against:* The volume effect is 31% (31–32%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
-- **HC2.2: Nova Lite's higher price per token, compared with Orion Max** (Nova Lite and Orion Max; locus model; Established (High))
-  - *For:* Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference.
-  - *Against:* The volume effect is 30% (30–31%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
-- **HC2.3: Lyra Mini's higher price per token, compared with Orion Max** (Lyra Mini and Orion Max; locus model; Established (High))
-  - *For:* Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference.
-  - *Against:* The volume effect is 29% (29–30%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
-- **HC2.4: Vega Pro's higher price per token, compared with Orion Max** (Vega Pro and Orion Max; locus model; Established (High))
-  - *For:* Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference.
-  - *Against:* The volume effect is 28% (27–29%) of the difference.
-  - *Grade reasons:* every condition of the grade is met.
-  - *Refuted if:* The volume effect is larger.
-  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
 - **WC1.1: Orion Max's output cost** (Orion Max; locus model; Probable (Moderate))
   - *For:* Visible output and reasoning are 69% of Orion Max's cost per question.
   - *Against:* none recorded.
@@ -695,6 +671,30 @@ Code raised each hypothesis from a rule fixed in advance and graded it. **Establ
   - *Grade reasons:* its own test rules it out: Vega Pro's cache-read share is 25% against the models' median of 26%.
   - *Refuted if:* The cache-read share is comparable to the other models'.
   - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Replicates failed (Both models ran only once per suite); Configuration passed (No configuration key differs beyond the model).
+- **HC2.1: Zeta Prime's higher price per token, compared with Orion Max** (Zeta Prime and Orion Max; locus model; Known from the price cards (High))
+  - *For:* Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference.
+  - *Against:* The volume effect is 31% (31–32%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
+- **HC2.2: Nova Lite's higher price per token, compared with Orion Max** (Nova Lite and Orion Max; locus model; Known from the price cards (High))
+  - *For:* Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference.
+  - *Against:* The volume effect is 30% (30–31%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
+- **HC2.3: Lyra Mini's higher price per token, compared with Orion Max** (Lyra Mini and Orion Max; locus model; Known from the price cards (High))
+  - *For:* Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference.
+  - *Against:* The volume effect is 29% (29–30%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
+- **HC2.4: Vega Pro's higher price per token, compared with Orion Max** (Vega Pro and Orion Max; locus model; Known from the price cards (High))
+  - *For:* Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference.
+  - *Against:* The volume effect is 28% (27–29%) of the difference.
+  - *Grade reasons:* every condition of the grade is met.
+  - *Refuted if:* The volume effect is larger.
+  - *Robustness:* Leave one question out passed (The deciding share keeps its sign and stays the largest without the question that contributes most); Configuration passed (No configuration key differs beyond the model).
 
 | Hypothesis | Pair | Paired result | Grade |
 |---|---|---|---|
@@ -1746,31 +1746,31 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.125 per million tokens (today's catalog)",
+      "display": "$0.125 per million tokens",
       "key": "price.cacheRead.perMillion",
       "value": 0.125
     },
     {
       "available": true,
-      "display": "$1.50 per million tokens (today's catalog)",
+      "display": "$1.50 per million tokens",
       "key": "price.cacheWrite.perMillion",
       "value": 1.5
     },
     {
       "available": true,
-      "display": "$10.00 per million tokens (today's catalog)",
+      "display": "$10.00 per million tokens",
       "key": "price.output.perMillion",
       "value": 10
     },
     {
       "available": true,
-      "display": "$10.00 per million tokens (today's catalog)",
+      "display": "$10.00 per million tokens",
       "key": "price.reasoning.perMillion",
       "value": 10
     },
     {
       "available": true,
-      "display": "$1.25 per million tokens (today's catalog)",
+      "display": "$1.25 per million tokens",
       "key": "price.uncachedInput.perMillion",
       "value": 1.25
     },
@@ -2015,165 +2015,165 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.A.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.A.criticalError",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.2 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.2 index points",
       "key": "rca.atRisk.A.noTool",
       "value": 0.16666666666666666
     },
     {
       "available": true,
-      "display": "2.8 index points at risk (upper bound, not a causal estimate)",
+      "display": "2.8 index points",
       "key": "rca.atRisk.A.otherLow",
       "value": 2.833333333333333
     },
     {
       "available": true,
-      "display": "3.0 index points at risk against the model's median answer of 81 (upper bound, not a causal estimate)",
+      "display": "3.0 index points below a median answer of 81",
       "key": "rca.atRisk.A.total",
       "value": 2.9999999999999996
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.B.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "7.2 index points at risk (upper bound, not a causal estimate)",
+      "display": "7.2 index points",
       "key": "rca.atRisk.B.criticalError",
       "value": 7.166666666666667
     },
     {
       "available": true,
-      "display": "1.2 index points at risk (upper bound, not a causal estimate)",
+      "display": "1.2 index points",
       "key": "rca.atRisk.B.noTool",
       "value": 1.1666666666666667
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.B.otherLow",
       "value": 0
     },
     {
       "available": true,
-      "display": "8.3 index points at risk against the model's median answer of 71 (upper bound, not a causal estimate)",
+      "display": "8.3 index points below a median answer of 71",
       "key": "rca.atRisk.B.total",
       "value": 8.333333333333334
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.C.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.C.criticalError",
       "value": 0
     },
     {
       "available": true,
-      "display": "6.3 index points at risk (upper bound, not a causal estimate)",
+      "display": "6.3 index points",
       "key": "rca.atRisk.C.noTool",
       "value": 6.333333333333333
     },
     {
       "available": true,
-      "display": "2.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "2.0 index points",
       "key": "rca.atRisk.C.otherLow",
       "value": 2
     },
     {
       "available": true,
-      "display": "8.3 index points at risk against the model's median answer of 70 (upper bound, not a causal estimate)",
+      "display": "8.3 index points below a median answer of 70",
       "key": "rca.atRisk.C.total",
       "value": 8.333333333333332
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.D.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.D.criticalError",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.D.noTool",
       "value": 0
     },
     {
       "available": true,
-      "display": "5.6 index points at risk (upper bound, not a causal estimate)",
+      "display": "5.6 index points",
       "key": "rca.atRisk.D.otherLow",
       "value": 5.583333333333333
     },
     {
       "available": true,
-      "display": "5.6 index points at risk against the model's median answer of 54 (upper bound, not a causal estimate)",
+      "display": "5.6 index points below a median answer of 54",
       "key": "rca.atRisk.D.total",
       "value": 5.583333333333333
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.subject.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.subject.criticalError",
       "value": 0
     },
     {
       "available": true,
-      "display": "9.8 index points at risk (upper bound, not a causal estimate)",
+      "display": "9.8 index points",
       "key": "rca.atRisk.subject.noTool",
       "value": 9.833333333333334
     },
     {
       "available": true,
-      "display": "0.8 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.8 index points",
       "key": "rca.atRisk.subject.otherLow",
       "value": 0.8333333333333333
     },
     {
       "available": true,
-      "display": "10.7 index points at risk against the model's median answer of 89 (upper bound, not a causal estimate)",
+      "display": "10.7 index points below a median answer of 89",
       "key": "rca.atRisk.subject.total",
       "value": 10.666666666666668
     },
     {
       "available": true,
-      "display": "HC2.1",
+      "display": "HC4.1",
       "key": "rca.axis.cost.best",
-      "value": "HC2.1"
+      "value": "HC4.1"
     },
     {
       "available": true,
-      "display": "Root cause established",
+      "display": "Not established",
       "key": "rca.axis.cost.status",
-      "value": "RootCauseEstablished"
+      "value": "NotEstablished"
     },
     {
       "available": true,
@@ -2211,7 +2211,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "72% of the difference",
+      "display": "72%",
       "key": "rca.cost.subject.A.all.price.share",
       "value": 0.71922009092776
     },
@@ -2222,7 +2222,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "28% of the difference",
+      "display": "28%",
       "key": "rca.cost.subject.A.all.volume.share",
       "value": 0.28077990907223965
     },
@@ -2233,7 +2233,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.A.cacheRead.price.share",
       "value": 5.65413520631882E-18
     },
@@ -2244,7 +2244,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.A.cacheRead.volume.share",
       "value": 0.0032092426187419684
     },
@@ -2255,7 +2255,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.A.cacheWrite.price.share",
       "value": -0
     },
@@ -2266,7 +2266,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.A.cacheWrite.volume.share",
       "value": -0
     },
@@ -2277,7 +2277,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "18% of the difference",
+      "display": "18%",
       "key": "rca.cost.subject.A.output.price.share",
       "value": 0.18112542291023093
     },
@@ -2288,7 +2288,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.subject.A.output.volume.share",
       "value": 0.09872053344406923
     },
@@ -2299,7 +2299,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "9% of the difference",
+      "display": "9%",
       "key": "rca.cost.subject.A.reasoning.price.share",
       "value": 0.08719899521942158
     },
@@ -2310,13 +2310,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "11% of the difference",
+      "display": "11%",
       "key": "rca.cost.subject.A.reasoning.volume.share",
       "value": 0.11305774419007787
     },
     {
       "available": true,
-      "display": "-$0.0078 per question (Orion Max minus Model A)",
+      "display": "-$0.0078 per question",
       "key": "rca.cost.subject.A.total",
       "value": -0.007790000000000002
     },
@@ -2327,7 +2327,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "45% of the difference",
+      "display": "45%",
       "key": "rca.cost.subject.A.uncachedInput.price.share",
       "value": 0.45089567279810744
     },
@@ -2338,7 +2338,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "7% of the difference",
+      "display": "7%",
       "key": "rca.cost.subject.A.uncachedInput.volume.share",
       "value": 0.06579238881935058
     },
@@ -2349,7 +2349,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "71% of the difference",
+      "display": "71%",
       "key": "rca.cost.subject.B.all.price.share",
       "value": 0.7067857366013377
     },
@@ -2360,7 +2360,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "29% of the difference",
+      "display": "29%",
       "key": "rca.cost.subject.B.all.volume.share",
       "value": 0.29321426339866247
     },
@@ -2371,7 +2371,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.B.cacheRead.price.share",
       "value": -7.268935900156093E-18
     },
@@ -2382,7 +2382,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.B.cacheRead.volume.share",
       "value": 0.0029797377830750966
     },
@@ -2393,7 +2393,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.B.cacheWrite.price.share",
       "value": -0
     },
@@ -2404,7 +2404,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.B.cacheWrite.volume.share",
       "value": -0
     },
@@ -2415,7 +2415,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "18% of the difference",
+      "display": "18%",
       "key": "rca.cost.subject.B.output.price.share",
       "value": 0.17680749428237597
     },
@@ -2426,7 +2426,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.subject.B.output.volume.share",
       "value": 0.09971217198699239
     },
@@ -2437,7 +2437,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "9% of the difference",
+      "display": "9%",
       "key": "rca.cost.subject.B.reasoning.price.share",
       "value": 0.09029630352104531
     },
@@ -2448,13 +2448,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "11% of the difference",
+      "display": "11%",
       "key": "rca.cost.subject.B.reasoning.volume.share",
       "value": 0.11470965595452089
     },
     {
       "available": true,
-      "display": "-$0.017 per question (Orion Max minus Model B)",
+      "display": "-$0.017 per question",
       "key": "rca.cost.subject.B.total",
       "value": -0.01678
     },
@@ -2465,7 +2465,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "44% of the difference",
+      "display": "44%",
       "key": "rca.cost.subject.B.uncachedInput.price.share",
       "value": 0.4396819387979164
     },
@@ -2476,7 +2476,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "8% of the difference",
+      "display": "8%",
       "key": "rca.cost.subject.B.uncachedInput.volume.share",
       "value": 0.07581269767407409
     },
@@ -2487,7 +2487,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "70% of the difference",
+      "display": "70%",
       "key": "rca.cost.subject.C.all.price.share",
       "value": 0.6968068304832366
     },
@@ -2498,7 +2498,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "30% of the difference",
+      "display": "30%",
       "key": "rca.cost.subject.C.all.volume.share",
       "value": 0.3031931695167636
     },
@@ -2509,7 +2509,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.C.cacheRead.price.share",
       "value": -4.522534089900603E-18
     },
@@ -2520,7 +2520,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.C.cacheRead.volume.share",
       "value": 0.0027808676307007835
     },
@@ -2531,7 +2531,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.C.cacheWrite.price.share",
       "value": -0
     },
@@ -2542,7 +2542,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.C.cacheWrite.volume.share",
       "value": -0
     },
@@ -2553,7 +2553,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "17% of the difference",
+      "display": "17%",
       "key": "rca.cost.subject.C.output.price.share",
       "value": 0.1731783963649792
     },
@@ -2564,7 +2564,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.subject.C.output.volume.share",
       "value": 0.10045897849597754
     },
@@ -2575,7 +2575,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "9% of the difference",
+      "display": "9%",
       "key": "rca.cost.subject.C.reasoning.price.share",
       "value": 0.09291798670837466
     },
@@ -2586,13 +2586,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "12% of the difference",
+      "display": "12%",
       "key": "rca.cost.subject.C.reasoning.volume.share",
       "value": 0.11620325912032395
     },
     {
       "available": true,
-      "display": "-$0.027 per question (Orion Max minus Model C)",
+      "display": "-$0.027 per question",
       "key": "rca.cost.subject.C.total",
       "value": -0.026969999999999997
     },
@@ -2603,7 +2603,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "43% of the difference",
+      "display": "43%",
       "key": "rca.cost.subject.C.uncachedInput.price.share",
       "value": 0.4307104474098827
     },
@@ -2614,7 +2614,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "8% of the difference",
+      "display": "8%",
       "key": "rca.cost.subject.C.uncachedInput.volume.share",
       "value": 0.08375006426976137
     },
@@ -2625,7 +2625,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "69% of the difference",
+      "display": "69%",
       "key": "rca.cost.subject.D.all.price.share",
       "value": 0.6885105330251258
     },
@@ -2636,7 +2636,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "31% of the difference",
+      "display": "31%",
       "key": "rca.cost.subject.D.all.volume.share",
       "value": 0.31148946697487445
     },
@@ -2647,7 +2647,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.D.cacheRead.price.share",
       "value": -1.4131936554816275E-18
     },
@@ -2658,7 +2658,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.D.cacheRead.volume.share",
       "value": 0.0026068821689259657
     },
@@ -2669,7 +2669,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.D.cacheWrite.price.share",
       "value": -0
     },
@@ -2680,7 +2680,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.cost.subject.D.cacheWrite.volume.share",
       "value": -0
     },
@@ -2691,7 +2691,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "17% of the difference",
+      "display": "17%",
       "key": "rca.cost.subject.D.output.price.share",
       "value": 0.17007808201744268
     },
@@ -2702,7 +2702,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.subject.D.output.volume.share",
       "value": 0.10103766355085769
     },
@@ -2713,7 +2713,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "10% of the difference",
+      "display": "10%",
       "key": "rca.cost.subject.D.reasoning.price.share",
       "value": 0.09517595976166772
     },
@@ -2724,13 +2724,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "12% of the difference",
+      "display": "12%",
       "key": "rca.cost.subject.D.reasoning.volume.share",
       "value": 0.117545625222691
     },
     {
       "available": true,
-      "display": "-$0.038 per question (Orion Max minus Model D)",
+      "display": "-$0.038 per question",
       "key": "rca.cost.subject.D.total",
       "value": -0.03835999999999999
     },
@@ -2741,7 +2741,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "42% of the difference",
+      "display": "42%",
       "key": "rca.cost.subject.D.uncachedInput.price.share",
       "value": 0.4232564912460154
     },
@@ -2752,7 +2752,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "9% of the difference",
+      "display": "9%",
       "key": "rca.cost.subject.D.uncachedInput.volume.share",
       "value": 0.09029929603239982
     },
@@ -2799,7 +2799,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-C.1 (no cost difference)",
+      "display": "H0-C.1",
       "key": "rca.hypothesis.H0-C.1.ref"
     },
     {
@@ -2855,7 +2855,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-C.2 (no cost difference)",
+      "display": "H0-C.2",
       "key": "rca.hypothesis.H0-C.2.ref"
     },
     {
@@ -2911,7 +2911,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-C.3 (no cost difference)",
+      "display": "H0-C.3",
       "key": "rca.hypothesis.H0-C.3.ref"
     },
     {
@@ -2967,7 +2967,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-C.4 (no cost difference)",
+      "display": "H0-C.4",
       "key": "rca.hypothesis.H0-C.4.ref"
     },
     {
@@ -3029,7 +3029,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-Q.1 (no intelligence difference)",
+      "display": "H0-Q.1",
       "key": "rca.hypothesis.H0-Q.1.ref"
     },
     {
@@ -3085,7 +3085,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-Q.2 (no intelligence difference)",
+      "display": "H0-Q.2",
       "key": "rca.hypothesis.H0-Q.2.ref"
     },
     {
@@ -3141,7 +3141,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-Q.3 (no intelligence difference)",
+      "display": "H0-Q.3",
       "key": "rca.hypothesis.H0-Q.3.ref"
     },
     {
@@ -3197,7 +3197,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-Q.4 (no intelligence difference)",
+      "display": "H0-Q.4",
       "key": "rca.hypothesis.H0-Q.4.ref"
     },
     {
@@ -3259,7 +3259,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-S.1 (no speed difference)",
+      "display": "H0-S.1",
       "key": "rca.hypothesis.H0-S.1.ref"
     },
     {
@@ -3315,7 +3315,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-S.2 (no speed difference)",
+      "display": "H0-S.2",
       "key": "rca.hypothesis.H0-S.2.ref"
     },
     {
@@ -3371,7 +3371,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-S.3 (no speed difference)",
+      "display": "H0-S.3",
       "key": "rca.hypothesis.H0-S.3.ref"
     },
     {
@@ -3427,7 +3427,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-S.4 (no speed difference)",
+      "display": "H0-S.4",
       "key": "rca.hypothesis.H0-S.4.ref"
     },
     {
@@ -3489,7 +3489,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-W.1 (no difference within one model's own questions)",
+      "display": "H0-W.1",
       "key": "rca.hypothesis.H0-W.1.ref"
     },
     {
@@ -3519,7 +3519,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "High",
+      "display": "Known from the price cards (High)",
       "key": "rca.hypothesis.HC2.1.grade",
       "value": "High"
     },
@@ -3550,7 +3550,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC2.1 (higher price per token)",
+      "display": "known from the price cards, not a cause the runs found",
+      "key": "rca.hypothesis.HC2.1.priceCard",
+      "value": true
+    },
+    {
+      "available": true,
+      "display": "HC2.1",
       "key": "rca.hypothesis.HC2.1.ref"
     },
     {
@@ -3586,7 +3592,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "High",
+      "display": "Known from the price cards (High)",
       "key": "rca.hypothesis.HC2.2.grade",
       "value": "High"
     },
@@ -3617,7 +3623,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC2.2 (higher price per token)",
+      "display": "known from the price cards, not a cause the runs found",
+      "key": "rca.hypothesis.HC2.2.priceCard",
+      "value": true
+    },
+    {
+      "available": true,
+      "display": "HC2.2",
       "key": "rca.hypothesis.HC2.2.ref"
     },
     {
@@ -3653,7 +3665,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "High",
+      "display": "Known from the price cards (High)",
       "key": "rca.hypothesis.HC2.3.grade",
       "value": "High"
     },
@@ -3684,7 +3696,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC2.3 (higher price per token)",
+      "display": "known from the price cards, not a cause the runs found",
+      "key": "rca.hypothesis.HC2.3.priceCard",
+      "value": true
+    },
+    {
+      "available": true,
+      "display": "HC2.3",
       "key": "rca.hypothesis.HC2.3.ref"
     },
     {
@@ -3720,7 +3738,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "High",
+      "display": "Known from the price cards (High)",
       "key": "rca.hypothesis.HC2.4.grade",
       "value": "High"
     },
@@ -3751,7 +3769,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC2.4 (higher price per token)",
+      "display": "known from the price cards, not a cause the runs found",
+      "key": "rca.hypothesis.HC2.4.priceCard",
+      "value": true
+    },
+    {
+      "available": true,
+      "display": "HC2.4",
       "key": "rca.hypothesis.HC2.4.ref"
     },
     {
@@ -3818,7 +3842,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC4.1 (weak prompt caching)",
+      "display": "HC4.1",
       "key": "rca.hypothesis.HC4.1.ref"
     },
     {
@@ -3885,7 +3909,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC4.2 (weak prompt caching)",
+      "display": "HC4.2",
       "key": "rca.hypothesis.HC4.2.ref"
     },
     {
@@ -3952,7 +3976,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC4.3 (weak prompt caching)",
+      "display": "HC4.3",
       "key": "rca.hypothesis.HC4.3.ref"
     },
     {
@@ -4019,7 +4043,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC4.4 (weak prompt caching)",
+      "display": "HC4.4",
       "key": "rca.hypothesis.HC4.4.ref"
     },
     {
@@ -4087,7 +4111,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HQ3.1 (shared failures on the same questions)",
+      "display": "HQ3.1",
       "key": "rca.hypothesis.HQ3.1.ref"
     },
     {
@@ -4154,7 +4178,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HS3.1 (more output tokens)",
+      "display": "HS3.1",
       "key": "rca.hypothesis.HS3.1.ref"
     },
     {
@@ -4227,7 +4251,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HS3.2 (more output tokens)",
+      "display": "HS3.2",
       "key": "rca.hypothesis.HS3.2.ref"
     },
     {
@@ -4300,7 +4324,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HS3.3 (more output tokens)",
+      "display": "HS3.3",
       "key": "rca.hypothesis.HS3.3.ref"
     },
     {
@@ -4362,7 +4386,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WC1.1 (output cost)",
+      "display": "WC1.1",
       "key": "rca.hypothesis.WC1.1.ref"
     },
     {
@@ -4429,7 +4453,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WS2.1 (time spent generating output)",
+      "display": "WS2.1",
       "key": "rca.hypothesis.WS2.1.ref"
     },
     {
@@ -4497,7 +4521,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WS3.1 (time spent on tool rounds)",
+      "display": "WS3.1",
       "key": "rca.hypothesis.WS3.1.ref"
     },
     {
@@ -4732,7 +4756,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "+5.0 index points (Orion Max minus Model A)",
+      "display": "+5.0 index points",
       "key": "rca.quality.subject.A.total",
       "value": 5
     },
@@ -4768,7 +4792,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "+15.0 index points (Orion Max minus Model B)",
+      "display": "+15.0 index points",
       "key": "rca.quality.subject.B.total",
       "value": 15
     },
@@ -4804,7 +4828,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "+15.0 index points (Orion Max minus Model C)",
+      "display": "+15.0 index points",
       "key": "rca.quality.subject.C.total",
       "value": 15
     },
@@ -4840,7 +4864,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "+30.0 index points (Orion Max minus Model D)",
+      "display": "+30.0 index points",
       "key": "rca.quality.subject.D.total",
       "value": 30
     },
@@ -4855,6 +4879,12 @@ The counts and the configuration facts the analysis states, each numbered as the
       "display": "Orion Max",
       "key": "rca.question.1.model",
       "value": "subject"
+    },
+    {
+      "available": true,
+      "display": "Model A",
+      "key": "rca.question.1.neighbor",
+      "value": "A"
     },
     {
       "available": true,
@@ -4898,6 +4928,12 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "Model C",
+      "key": "rca.question.2.neighbor",
+      "value": "C"
+    },
+    {
+      "available": true,
       "display": "established",
       "key": "rca.question.2.orderEstablished",
       "value": true
@@ -4938,7 +4974,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer",
+      "display": "median model time 20.0 s; against Orion Max: output tokens carries 55% of the 6.0 s difference; output generation 59% of its time per question; 2.5 model calls per answer",
       "key": "rca.question.3.signals"
     },
     {
@@ -4960,7 +4996,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "HC2.2 and HC4.2",
+      "display": "HC4.2 and HC2.2",
       "key": "rca.question.4.hypotheses",
       "value": 2
     },
@@ -4977,7 +5013,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "Established (High)",
+      "display": "Known from the price cards",
       "key": "rca.question.4.status",
       "value": "High"
     },
@@ -4999,7 +5035,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "-1.6 s per question (Orion Max minus Model A, model time; the difference may be chance, so it is not split into parts)",
+      "display": "not split into parts: the difference may be chance",
+      "key": "rca.speed.subject.A.decomposed",
+      "value": false
+    },
+    {
+      "available": true,
+      "display": "-1.6 s per question",
       "key": "rca.speed.subject.A.total",
       "value": -1.55
     },
@@ -5010,7 +5052,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.speed.subject.B.callCount.share",
       "value": -0
     },
@@ -5021,7 +5063,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "4% of the difference",
+      "display": "4%",
       "key": "rca.speed.subject.B.decodeRate.share",
       "value": 0.0355595835938916
     },
@@ -5032,7 +5074,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.speed.subject.B.gap.share",
       "value": -0
     },
@@ -5043,7 +5085,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "55% of the difference",
+      "display": "55%",
       "key": "rca.speed.subject.B.outputTokens.share",
       "value": 0.5477737497394417
     },
@@ -5054,13 +5096,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "42% of the difference",
+      "display": "42%",
       "key": "rca.speed.subject.B.perCallLatency.share",
       "value": 0.4166666666666667
     },
     {
       "available": true,
-      "display": "-3.0 s per question (Orion Max minus Model B, model time)",
+      "display": "-3.0 s per question",
       "key": "rca.speed.subject.B.total",
       "value": -3
     },
@@ -5071,7 +5113,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.speed.subject.C.callCount.share",
       "value": -0
     },
@@ -5082,7 +5124,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "4% of the difference",
+      "display": "4%",
       "key": "rca.speed.subject.C.decodeRate.share",
       "value": 0.041609050059208896
     },
@@ -5093,7 +5135,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.speed.subject.C.gap.share",
       "value": -0
     },
@@ -5104,7 +5146,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "55% of the difference",
+      "display": "55%",
       "key": "rca.speed.subject.C.outputTokens.share",
       "value": 0.5452041367539779
     },
@@ -5115,13 +5157,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "41% of the difference",
+      "display": "41%",
       "key": "rca.speed.subject.C.perCallLatency.share",
       "value": 0.41318681318681316
     },
     {
       "available": true,
-      "display": "-4.6 s per question (Orion Max minus Model C, model time)",
+      "display": "-4.6 s per question",
       "key": "rca.speed.subject.C.total",
       "value": -4.55
     },
@@ -5132,7 +5174,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.speed.subject.D.callCount.share",
       "value": -0
     },
@@ -5143,7 +5185,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "3% of the difference",
+      "display": "3%",
       "key": "rca.speed.subject.D.decodeRate.share",
       "value": 0.03221821279644276
     },
@@ -5154,7 +5196,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0% of the difference",
+      "display": "0%",
       "key": "rca.speed.subject.D.gap.share",
       "value": -0
     },
@@ -5165,7 +5207,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "55% of the difference",
+      "display": "55%",
       "key": "rca.speed.subject.D.outputTokens.share",
       "value": 0.5511151205368906
     },
@@ -5176,13 +5218,13 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "42% of the difference",
+      "display": "42%",
       "key": "rca.speed.subject.D.perCallLatency.share",
       "value": 0.4166666666666667
     },
     {
       "available": true,
-      "display": "-6.0 s per question (Orion Max minus Model D, model time)",
+      "display": "-6.0 s per question",
       "key": "rca.speed.subject.D.total",
       "value": -6
     },
@@ -5899,7 +5941,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "23% of input tokens read from the cache",
+      "display": "23%",
       "key": "tokens.cacheReadShare",
       "value": 0.22988505747126436
     },
@@ -6283,9 +6325,9 @@ The counts and the configuration facts the analysis states, each numbered as the
       },
       {
         "axis": "cost",
-        "bestHypothesis": "HC2.1",
-        "reason": "Established (High): it passed every check, and a real difference between the two models was shown.",
-        "status": "RootCauseEstablished"
+        "bestHypothesis": "HC4.1",
+        "reason": "Ruled out (Not supported) because its own test rules it out: Model D's cache-read share is 28% against the models' median of 26%.",
+        "status": "NotEstablished"
       }
     ],
     "checks": [
@@ -6967,7 +7009,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 5,
+    "engineVersion": 6,
     "evidence": [
       {
         "atRisk": [
@@ -7598,6 +7640,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Orion Max and Model A",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model A",
@@ -7627,6 +7670,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Orion Max",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "A Mann–Whitney contrast is established after the Holm adjustment.",
         "robustness": [],
         "shortStatement": "Noise within Orion Max",
@@ -7657,6 +7701,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max and Model B",
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model B",
@@ -7687,6 +7732,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max and Model C",
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model C",
@@ -7717,6 +7763,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max and Model D",
         "number": 4,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the Intelligence Index is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model D",
@@ -7756,6 +7803,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max, Model A, Model B, Model C and Model D",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "One model answered the question well.",
         "robustness": [],
         "shortStatement": "Shared failures: instrument",
@@ -7786,6 +7834,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Orion Max and Model A",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model A",
@@ -7815,6 +7864,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max and Model B",
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model B",
@@ -7844,6 +7894,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max and Model C",
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model C",
@@ -7873,6 +7924,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max and Model D",
         "number": 4,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the model time is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model D",
@@ -7910,6 +7962,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model D and Orion Max",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The decode-rate share is larger.",
         "robustness": [
           {
@@ -7966,6 +8019,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model C and Orion Max",
         "nextRunNumber": 1,
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "The decode-rate share is larger.",
         "robustness": [
           {
@@ -8022,6 +8076,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Model B and Orion Max",
         "nextRunNumber": 1,
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "The decode-rate share is larger.",
         "robustness": [
           {
@@ -8075,6 +8130,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Orion Max",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The ρ interval includes zero.",
         "robustness": [
           {
@@ -8122,6 +8178,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
@@ -8165,6 +8222,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max and Model A",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the cost per question is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model A",
@@ -8194,6 +8252,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max and Model B",
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the cost per question is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model B",
@@ -8223,6 +8282,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max and Model C",
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the cost per question is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model C",
@@ -8252,206 +8312,11 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max and Model D",
         "number": 4,
+        "priceEffect": false,
         "refutedIf": "A paired test of the two on the cost per question is established after adjustment.",
         "robustness": [],
         "shortStatement": "Noise: Orion Max vs Model D",
         "statement": "The cost per question difference between Orion Max and Model D is within sampling noise."
-      },
-      {
-        "against": [
-          "The volume effect is 31% (31–32%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.026411264046843817,
-        "factKeys": [
-          "rca.cost.subject.D.all.price.share",
-          "rca.cost.subject.D.total"
-        ],
-        "for": [
-          "Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference."
-        ],
-        "grade": "High",
-        "gradeReasons": [],
-        "id": "HC2",
-        "key": "HC2.1",
-        "kind": "pair",
-        "label": "Model D's higher price per token, compared with Orion Max",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "D",
-          "subject"
-        ],
-        "modelsText": "Model D and Orion Max",
-        "number": 1,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.6885105330251258,
-        "shareLower": 0.6821542167660242,
-        "shareUpper": 0.6946130761822287,
-        "shortStatement": "Price per token: Model D",
-        "statement": "Model D costs more than Orion Max mainly from its price per token."
-      },
-      {
-        "against": [
-          "The volume effect is 30% (30–31%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.018792880218132888,
-        "factKeys": [
-          "rca.cost.subject.C.all.price.share",
-          "rca.cost.subject.C.total"
-        ],
-        "for": [
-          "Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference."
-        ],
-        "grade": "High",
-        "gradeReasons": [],
-        "id": "HC2",
-        "key": "HC2.2",
-        "kind": "pair",
-        "label": "Model C's higher price per token, compared with Orion Max",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "C",
-          "subject"
-        ],
-        "modelsText": "Model C and Orion Max",
-        "number": 2,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.6968068304832366,
-        "shareLower": 0.6902657261070169,
-        "shareUpper": 0.7030744603212624,
-        "shortStatement": "Price per token: Model C",
-        "statement": "Model C costs more than Orion Max mainly from its price per token."
-      },
-      {
-        "against": [
-          "The volume effect is 29% (29–30%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.011859864660170447,
-        "factKeys": [
-          "rca.cost.subject.B.all.price.share",
-          "rca.cost.subject.B.total"
-        ],
-        "for": [
-          "Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference."
-        ],
-        "grade": "High",
-        "gradeReasons": [],
-        "id": "HC2",
-        "key": "HC2.3",
-        "kind": "pair",
-        "label": "Model B's higher price per token, compared with Orion Max",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "B",
-          "subject"
-        ],
-        "modelsText": "Model B and Orion Max",
-        "number": 3,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.7067857366013377,
-        "shareLower": 0.700055545622766,
-        "shareUpper": 0.7132190392428142,
-        "shortStatement": "Price per token: Model B",
-        "statement": "Model B costs more than Orion Max mainly from its price per token."
-      },
-      {
-        "against": [
-          "The volume effect is 28% (27–29%) of the difference."
-        ],
-        "axis": "cost",
-        "confounds": [],
-        "explains": 0.005602724508327252,
-        "factKeys": [
-          "rca.cost.subject.A.all.price.share",
-          "rca.cost.subject.A.total"
-        ],
-        "for": [
-          "Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference."
-        ],
-        "grade": "High",
-        "gradeReasons": [],
-        "id": "HC2",
-        "key": "HC2.4",
-        "kind": "pair",
-        "label": "Model A's higher price per token, compared with Orion Max",
-        "loci": [
-          "model"
-        ],
-        "locus": "model",
-        "models": [
-          "A",
-          "subject"
-        ],
-        "modelsText": "Model A and Orion Max",
-        "number": 4,
-        "refutedIf": "The volume effect is larger.",
-        "robustness": [
-          {
-            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
-            "name": "Leave one question out",
-            "status": "Passed"
-          },
-          {
-            "detail": "No configuration key differs beyond the model.",
-            "name": "Configuration",
-            "status": "Passed"
-          }
-        ],
-        "share": 0.71922009092776,
-        "shareLower": 0.7123096297876061,
-        "shareUpper": 0.7258059219416408,
-        "shortStatement": "Price per token: Model A",
-        "statement": "Model A costs more than Orion Max mainly from its price per token."
       },
       {
         "against": [],
@@ -8482,6 +8347,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
@@ -8527,6 +8393,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model D and Orion Max",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
           {
@@ -8584,6 +8451,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model C and Orion Max",
         "number": 2,
+        "priceEffect": false,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
           {
@@ -8641,6 +8509,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model B and Orion Max",
         "number": 3,
+        "priceEffect": false,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
           {
@@ -8698,6 +8567,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Model A and Orion Max",
         "number": 4,
+        "priceEffect": false,
         "refutedIf": "The cache-read share is comparable to the other models'.",
         "robustness": [
           {
@@ -8721,6 +8591,206 @@ The counts and the configuration facts the analysis states, each numbered as the
         "shareUpper": 0.06741876767770795,
         "shortStatement": "Weak caching: Model A",
         "statement": "Weak prompt caching raises Model A's cost against Orion Max."
+      },
+      {
+        "against": [
+          "The volume effect is 31% (31–32%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.026411264046843817,
+        "factKeys": [
+          "rca.cost.subject.D.all.price.share",
+          "rca.cost.subject.D.total"
+        ],
+        "for": [
+          "Price per token, all components accounts for 69% (68–69%) of the $0.038 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.1",
+        "kind": "pair",
+        "label": "Model D's higher price per token, compared with Orion Max",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "D",
+          "subject"
+        ],
+        "modelsText": "Model D and Orion Max",
+        "number": 1,
+        "priceEffect": true,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.6885105330251258,
+        "shareLower": 0.6821542167660242,
+        "shareUpper": 0.6946130761822287,
+        "shortStatement": "Price per token: Model D",
+        "statement": "Model D costs more than Orion Max mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 30% (30–31%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.018792880218132888,
+        "factKeys": [
+          "rca.cost.subject.C.all.price.share",
+          "rca.cost.subject.C.total"
+        ],
+        "for": [
+          "Price per token, all components accounts for 70% (69–70%) of the $0.027 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.2",
+        "kind": "pair",
+        "label": "Model C's higher price per token, compared with Orion Max",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "C",
+          "subject"
+        ],
+        "modelsText": "Model C and Orion Max",
+        "number": 2,
+        "priceEffect": true,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.6968068304832366,
+        "shareLower": 0.6902657261070169,
+        "shareUpper": 0.7030744603212624,
+        "shortStatement": "Price per token: Model C",
+        "statement": "Model C costs more than Orion Max mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 29% (29–30%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.011859864660170447,
+        "factKeys": [
+          "rca.cost.subject.B.all.price.share",
+          "rca.cost.subject.B.total"
+        ],
+        "for": [
+          "Price per token, all components accounts for 71% (70–71%) of the $0.017 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.3",
+        "kind": "pair",
+        "label": "Model B's higher price per token, compared with Orion Max",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "B",
+          "subject"
+        ],
+        "modelsText": "Model B and Orion Max",
+        "number": 3,
+        "priceEffect": true,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.7067857366013377,
+        "shareLower": 0.700055545622766,
+        "shareUpper": 0.7132190392428142,
+        "shortStatement": "Price per token: Model B",
+        "statement": "Model B costs more than Orion Max mainly from its price per token."
+      },
+      {
+        "against": [
+          "The volume effect is 28% (27–29%) of the difference."
+        ],
+        "axis": "cost",
+        "confounds": [],
+        "explains": 0.005602724508327252,
+        "factKeys": [
+          "rca.cost.subject.A.all.price.share",
+          "rca.cost.subject.A.total"
+        ],
+        "for": [
+          "Price per token, all components accounts for 72% (71–73%) of the $0.0078 per-question cost difference."
+        ],
+        "grade": "High",
+        "gradeReasons": [],
+        "id": "HC2",
+        "key": "HC2.4",
+        "kind": "pair",
+        "label": "Model A's higher price per token, compared with Orion Max",
+        "loci": [
+          "model"
+        ],
+        "locus": "model",
+        "models": [
+          "A",
+          "subject"
+        ],
+        "modelsText": "Model A and Orion Max",
+        "number": 4,
+        "priceEffect": true,
+        "refutedIf": "The volume effect is larger.",
+        "robustness": [
+          {
+            "detail": "The deciding share keeps its sign and stays the largest without the question that contributes most.",
+            "name": "Leave one question out",
+            "status": "Passed"
+          },
+          {
+            "detail": "No configuration key differs beyond the model.",
+            "name": "Configuration",
+            "status": "Passed"
+          }
+        ],
+        "share": 0.71922009092776,
+        "shareLower": 0.7123096297876061,
+        "shareUpper": 0.7258059219416408,
+        "shortStatement": "Price per token: Model A",
+        "statement": "Model A costs more than Orion Max mainly from its price per token."
       }
     ],
     "knownFacts": [
@@ -9366,8 +9436,10 @@ The counts and the configuration facts the analysis states, each numbered as the
         "axis": "intelligence",
         "comparativeKeys": [],
         "hypothesisKeys": [],
+        "neighbor": "A",
         "number": 1,
         "orderEstablished": false,
+        "priceCard": false,
         "signals": [
           "tied for first of 5 models on Accuracy",
           "tied for first of 5 models on Completeness"
@@ -9381,8 +9453,10 @@ The counts and the configuration facts the analysis states, each numbered as the
         "axis": "intelligence",
         "comparativeKeys": [],
         "hypothesisKeys": [],
+        "neighbor": "C",
         "number": 2,
         "orderEstablished": true,
+        "priceCard": false,
         "signals": [
           "lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4)",
           "1 isolated miss (Q1)"
@@ -9402,8 +9476,10 @@ The counts and the configuration facts the analysis states, each numbered as the
           "HS3.1"
         ],
         "number": 3,
+        "priceCard": false,
         "signals": [
           "median model time 20.0 s",
+          "against Orion Max: output tokens carries 55% of the 6.0 s difference",
           "output generation 59% of its time per question",
           "2.5 model calls per answer"
         ],
@@ -9415,15 +9491,16 @@ The counts and the configuration facts the analysis states, each numbered as the
       {
         "axis": "cost",
         "comparativeKeys": [
-          "HC2.2",
-          "HC4.2"
+          "HC4.2",
+          "HC2.2"
         ],
         "grade": "High",
         "hypothesisKeys": [
-          "HC2.2",
-          "HC4.2"
+          "HC4.2",
+          "HC2.2"
         ],
         "number": 4,
+        "priceCard": true,
         "signals": [
           "$0.060 per question",
           "uncached input 44% of its cost per question",
@@ -9873,6 +9950,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 131 · format version 15 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 16 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

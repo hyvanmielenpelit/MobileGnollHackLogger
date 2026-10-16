@@ -284,6 +284,43 @@ public class BenchmarkPanelDiagnosticsTests
         });
     }
 
+    [Fact]
+    public void FamilyGap_OfTwoSuiteEntries_PairsEachSuitesQuestionsOnTheirOwnIds()
+    {
+        // A battery result: each entry holds a run of suite 5 (questions 1–3) and a run of suite 6
+        // (questions 101–103) whose order indices repeat suite 5's. Under member A the OpenAI candidate is
+        // 10 points ahead on every question of both suites; under member B 10 points behind.
+        BenchmarkRun SecondSuite(BenchmarkRun run)
+        {
+            run.BenchmarkSuiteId = 6;
+            foreach (var answer in run.Answers) answer.BenchmarkQuestionId += 100;
+            return run;
+        }
+
+        var entries = new List<(string, string, IReadOnlyList<BenchmarkRun>)>
+        {
+            Entry("openai",
+                PanelRun(1, OpenAI, Uniform(80, 70, questions: 3), withReader: false),
+                SecondSuite(PanelRun(2, OpenAI, Uniform(60, 50, questions: 3), withReader: false))),
+            Entry("anthropic",
+                PanelRun(3, Anthropic, Uniform(70, 80, questions: 3), withReader: false),
+                SecondSuite(PanelRun(4, Anthropic, Uniform(50, 60, questions: 3), withReader: false)))
+        };
+
+        var result = BenchmarkPanelDiagnostics.Compute(entries);
+
+        Assert.True(result.Applicable);
+        var gap = MemberPairGap(result);
+
+        // Six pairs: pairing on order index would merge the suites into three.
+        Assert.Equal(6, gap.PairedQuestionCount);
+        Assert.False(gap.InsufficientData);
+        Assert.Equal(10.0, gap.GapA.Value!.Value, 9);
+        Assert.Equal(-10.0, gap.GapB.Value!.Value, 9);
+        Assert.Equal(0.0, gap.GapPanel.Value!.Value, 9);
+        Assert.Equal(20.0, gap.InteractionContrast!.Value!.Value, 9);
+    }
+
     // --- Indices and rankings -----------------------------------------------------------------------
 
     [Fact]
@@ -420,6 +457,52 @@ public class BenchmarkPanelDiagnosticsTests
         Assert.Equal(90, entry.MemberAIndex);
         Assert.Equal(90, entry.MemberBIndex);
         Assert.Equal(90, entry.PanelIndex);
+    }
+
+    [Fact]
+    public void RankReversals_OfLabelledIndices_AreTheStrictReversals_InRowOrder_SkippingTiesAndMissingIndices()
+    {
+        // Under the first grader: X 80.5, T 80.5, Y 72.4, Z 60, N none. Under the second: N 90, Y 78, X 70, T 65, Z 60.
+        //   X–Y and T–Y reverse; X–T is tied under the first grader; every pair with Z agrees; N has no first index.
+        var rows = new List<(string EntryKey, string EntryLabel, double? First, double? Second)>
+        {
+            ("x", "Model X", 80.5, 70.0),
+            ("y", "Model Y", 72.4, 78.0),
+            ("t", "Model T", 80.5, 65.0),
+            ("n", "Model N", null, 90.0),
+            ("z", "Model Z", 60.0, 60.0)
+        };
+
+        var pairs = BenchmarkPanelDiagnostics.RankReversals(rows, "Member A", "member B");
+
+        Assert.Equal(new[] { ("x", "y"), ("t", "y") }, pairs.Select(p => (p.FirstEntryKey, p.SecondEntryKey)));
+        Assert.Equal("Model X", pairs[0].FirstEntryLabel);
+        Assert.Equal("Model Y", pairs[0].SecondEntryLabel);
+        Assert.Equal(
+            "Member A ranks Model X above Model Y (80.5 vs 72.4); member B ranks Model Y above Model X (78.0 vs 70.0).",
+            pairs[0].Description);
+    }
+
+    [Fact]
+    public void RankReversals_OfLabelledIndices_PutsTheFirstGradersHigherEntryFirst_AndIgnoresATieUnderTheSecond()
+    {
+        var rows = new List<(string EntryKey, string EntryLabel, double? First, double? Second)>
+        {
+            ("low", "Model L", 60.0, 80.0),
+            ("high", "Model H", 70.0, 75.0),
+            ("even", "Model E", 65.0, 80.0)
+        };
+
+        var pairs = BenchmarkPanelDiagnostics.RankReversals(rows, "The panel", "the reference reader");
+
+        // L–H and E–H reverse; L–E is tied under the second grader. H is the first grader's higher entry of both.
+        Assert.Equal(new[] { ("high", "low"), ("high", "even") }, pairs.Select(p => (p.FirstEntryKey, p.SecondEntryKey)));
+        Assert.Equal(
+            "The panel ranks Model H above Model L (70.0 vs 60.0); the reference reader ranks Model L above Model H (80.0 vs 75.0).",
+            pairs[0].Description);
+        Assert.Empty(BenchmarkPanelDiagnostics.RankReversals(
+            new List<(string EntryKey, string EntryLabel, double? First, double? Second)> { ("a", "Model A", 70.0, null), ("b", "Model B", 60.0, 80.0) },
+            "Member A", "member B"));
     }
 
     // --- Accusation audit ---------------------------------------------------------------------------

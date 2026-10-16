@@ -1702,6 +1702,35 @@ describe('model-comparison-charts', () => {
       expect(boxes[0].x + boxes[0].width).toBeLessThanOrEqual(AREA.right - 10);
     });
 
+    it('sets the first ring 2 px outside the mark radius, so an unobstructed plate sits right beside its mark', () => {
+      const [box] = placeDirectLabels([anchor('A', 100, 100)], AREA, 9);
+
+      // The right-hand candidate: its near edge 11 px out, centred on the mark.
+      expect(box.x).toBe(111);
+      expect(box.y).toBe(92);
+    });
+
+    it('puts a lone mark\'s plate in a free quadrant within 3 px of its radius when both whiskers block the sides', () => {
+      const mark = anchor('A', 200, 150);
+      const whiskers = [
+        { left: 195, top: 110, right: 205, bottom: 190 },
+        { left: 160, top: 145, right: 240, bottom: 155 },
+      ];
+      const [box] = placeDirectLabels([mark], AREA, 9, { rects: whiskers });
+
+      const nearestX = Math.min(Math.max(mark.x, box.x), box.x + box.width);
+      const nearestY = Math.min(Math.max(mark.y, box.y), box.y + box.height);
+      const distance = Math.hypot(mark.x - nearestX, mark.y - nearestY);
+      expect(distance).toBeGreaterThanOrEqual(9 - 0.01);
+      expect(distance).toBeLessThanOrEqual(9 + 3);
+      for (const whisker of whiskers) {
+        expect(boxOverlapsRect(box, whisker)).toBe(false);
+      }
+      // A diagonal candidate's near corner is the plate point nearest the mark.
+      expect(nearestX === box.x || nearestX === box.x + box.width).toBe(true);
+      expect(nearestY === box.y || nearestY === box.y + box.height).toBe(true);
+    });
+
     describe('segment geometry', () => {
       it('separates crossing, collinear-overlapping and disjoint segments', () => {
         expect(segmentsIntersect({ x: 0, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }, { x: 10, y: 0 })).toBe(true);
@@ -1732,11 +1761,18 @@ describe('model-comparison-charts', () => {
     function runDirectPlugin(
       blocks: readonly DirectLabelBlock[],
       marks: readonly { x: number; y: number }[],
-    ): { calls: DirectCall[]; fills: string[]; rectFills: string[]; halos: { color: string; width: number }[] } {
+    ): {
+      calls: DirectCall[];
+      fills: string[];
+      rectFills: string[];
+      halos: { color: string; width: number }[];
+      strokes: string[];
+    } {
       const calls: DirectCall[] = [];
       const fills: string[] = [];
       const rectFills: string[] = [];
       const halos: { color: string; width: number }[] = [];
+      const strokes: string[] = [];
       const record = (op: string) => (...args: unknown[]) => calls.push({ op, args });
       const ctx = {
         save: record('save'),
@@ -1744,7 +1780,10 @@ describe('model-comparison-charts', () => {
         beginPath: record('beginPath'),
         moveTo: record('moveTo'),
         lineTo: record('lineTo'),
-        stroke: record('stroke'),
+        stroke: (...args: unknown[]) => {
+          strokes.push(ctx.strokeStyle);
+          calls.push({ op: 'stroke', args });
+        },
         fillRect: (...args: unknown[]) => {
           rectFills.push(ctx.fillStyle);
           calls.push({ op: 'fillRect', args });
@@ -1783,7 +1822,7 @@ describe('model-comparison-charts', () => {
         { blocks, highlightedIndex: 1 } as never,
         false as never,
       );
-      return { calls, fills, rectFills, halos };
+      return { calls, fills, rectFills, halos, strokes };
     }
 
     it('draws a name-only label as text with a 3 px surface halo, keeping the hue rule and no plate', () => {
@@ -1816,9 +1855,56 @@ describe('model-comparison-charts', () => {
       expect(written).toContain('Model B');
       // A leader per label, each a moveTo and a lineTo of its own.
       expect(calls.filter((c) => c.op === 'moveTo').length).toBe(2);
-      // Each runs from 1 px outside the 6 px mark, clear of its border, to the plate 14 px out.
+      // Each runs from 1 px outside the 6 px mark, clear of its border, to the plate 11 px out: the
+      // first ring, 2 px outside the 9 px radius the placer keeps clear.
       expect(calls.filter((c) => c.op === 'moveTo').map((c) => c.args)).toEqual([[107, 100], [207, 180]]);
-      expect(calls.filter((c) => c.op === 'lineTo').map((c) => c.args)).toEqual([[114, 100], [214, 180]]);
+      expect(calls.filter((c) => c.op === 'lineTo').map((c) => c.args)).toEqual([[111, 100], [211, 180]]);
+    });
+
+    it('strokes the leaders in the ink, not the muted ink', () => {
+      const { strokes } = runDirectPlugin(
+        [block('Model A'), block('Model B')],
+        [{ x: 100, y: 100 }, { x: 200, y: 180 }],
+      );
+
+      expect(strokes).toEqual([CHART_INK.secondary, CHART_INK.secondary]);
+    });
+
+    it('maps the plugin colors to the primary and secondary ink under highContrastLabels, and only there', () => {
+      const pluginOptions = (spec: { config: { options?: { plugins?: unknown } } }) =>
+        (spec.config.options?.plugins as Record<string, DirectLabelPluginOptions>)[directLabelPlugin.id];
+
+      // The dark theme: the default inks add no key; the stronger ones do.
+      const dark = buildQualitySpeedScatter(PROFILE_FIXTURE, { ...BASE_FIGURE_OPTIONS, directLabels: true });
+      expect('inkColor' in pluginOptions(dark)).toBe(false);
+      expect('mutedColor' in pluginOptions(dark)).toBe(false);
+      const darkContrast = buildQualitySpeedScatter(PROFILE_FIXTURE, {
+        ...BASE_FIGURE_OPTIONS,
+        directLabels: true,
+        highContrastLabels: true,
+      });
+      expect(pluginOptions(darkContrast).inkColor).toBe(CHART_INK.primary);
+      expect(pluginOptions(darkContrast).mutedColor).toBe(CHART_INK.secondary);
+
+      // The light theme, through the figure set the component builds from.
+      const light: FigureStyle = {
+        ...DEFAULT_FIGURE_STYLE,
+        appearance: { ...DEFAULT_APPEARANCE_STYLE, theme: 'light' },
+      };
+      const theme = resolveFigureTheme(light.appearance);
+      const plain = buildComparisonFigures(PROFILE_FIXTURE, { context: CONTEXT, style: light, directLabels: true });
+      const contrast = buildComparisonFigures(PROFILE_FIXTURE, {
+        context: CONTEXT,
+        style: light,
+        directLabels: true,
+        highContrastLabels: true,
+      });
+      for (const key of ['qualitySpeed', 'qualityCost', 'speedCost'] as const) {
+        expect(pluginOptions(plain[key]).inkColor, key).toBe(theme.chart.inkSecondary);
+        expect(pluginOptions(plain[key]).mutedColor, key).toBe(theme.chart.inkMuted);
+        expect(pluginOptions(contrast[key]).inkColor, key).toBe(theme.chart.inkPrimary);
+        expect(pluginOptions(contrast[key]).mutedColor, key).toBe(theme.chart.inkSecondary);
+      }
     });
 
     it('gives the highlighted model the accent its mark already wears', () => {
@@ -3767,8 +3853,8 @@ describe('the figure theme in the charts', () => {
       expect(fills).toContain('#9a6b12');
       expect(fills).toContain('#52514e');
       expect(fills).not.toContain(ACCENT);
-      // Both leaders, in the muted color at 1.5 px.
-      expect(strokes).toEqual(['#6b6a66', '#6b6a66']);
+      // Both leaders, in the ink at 1.5 px.
+      expect(strokes).toEqual(['#52514e', '#52514e']);
       expect(strokeWidths).toEqual([1.5, 1.5]);
     });
   });

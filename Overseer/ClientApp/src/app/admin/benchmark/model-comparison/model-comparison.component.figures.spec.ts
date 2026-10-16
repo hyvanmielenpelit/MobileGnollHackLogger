@@ -11,13 +11,15 @@ import {
 } from './model-comparison.component';
 import {
   AVAILABILITY_MARKER_NOTE,
+  CHART_INK,
   FRONTIER_UNCERTAINTY_NOTE,
   MEAN_TIME_NO_INTERVAL_NOTE,
   P1_STACK_BREAKPOINT_PX,
   availabilityMarkerPlugin,
+  directLabelPlugin,
   errorBarPlugin
 } from './model-comparison-charts';
-import type { AvailabilityMarkerPluginOptions } from './model-comparison-charts';
+import type { AvailabilityMarkerPluginOptions, DirectLabelPluginOptions } from './model-comparison-charts';
 import { toChartEntries } from './model-comparison.models';
 import { DEFAULT_FIGURE_STYLE, HIDDEN_INTERVALS_NOTE } from './figure-style';
 import type { FigureStyle } from './figure-style';
@@ -415,6 +417,37 @@ describe('ModelComparisonComponent', () => {
     expect(component.scatterInlineValues).toBe(true);
     expect(styleControl('mc-style-scatter-inlineValues').checked).toBe(true);
     expect(scatterBlocks()!.every(b => b.values.length === 2)).toBe(true);
+  });
+
+  it('draws the document figures\' direct labels in the primary and secondary ink, and the page\'s in its usual inks', () => {
+    render(buildDto(comparableSet(3)), 2);
+    expect(component.scatterDirectLabels).toBe(true);
+    const theme = component.figureTheme;
+    const inks = (plugins: unknown): { ink: string; muted: string } => {
+      const options = (plugins as Record<string, DirectLabelPluginOptions>)[directLabelPlugin.id];
+      return { ink: options.inkColor ?? CHART_INK.secondary, muted: options.mutedColor ?? CHART_INK.muted };
+    };
+
+    // The interactive build passes no flag.
+    expect(component.scatterCards.length).toBe(3);
+    for (const card of component.scatterCards) {
+      expect(inks(card.options?.plugins), card.id).toEqual({ ink: theme.chart.inkSecondary, muted: theme.chart.inkMuted });
+    }
+
+    type DocumentScatter = { readonly id: string; readonly config: { readonly options?: { readonly plugins?: unknown } } };
+    const builder = component as unknown as {
+      buildDocumentFigures(comparison: unknown, variant: unknown, orientation: 'vertical'): {
+        figures: { readonly qualitySpeed: DocumentScatter; readonly qualityCost: DocumentScatter; readonly speedCost: DocumentScatter };
+      };
+    };
+    // The plain build and the covered build, which a comparison-scope document takes.
+    for (const variant of [{ kind: 'named' }, { kind: 'named', coveredKeys: ['run:1', 'run:2'] }]) {
+      const { figures } = builder.buildDocumentFigures(component.comparison, variant, 'vertical');
+      for (const spec of [figures.qualitySpeed, figures.qualityCost, figures.speedCost]) {
+        expect(inks(spec.config.options?.plugins), `${spec.id} ${JSON.stringify(variant)}`)
+          .toEqual({ ink: theme.chart.inkPrimary, muted: theme.chart.inkSecondary });
+      }
+    }
   });
 
   it('fills single-run bars from the Charts tab, persists it, and keeps no second copy of the control', () => {

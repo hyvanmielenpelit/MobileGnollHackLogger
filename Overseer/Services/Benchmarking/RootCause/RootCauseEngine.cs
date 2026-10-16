@@ -193,7 +193,7 @@ public sealed class RootCauseInput
 public static class RootCauseEngine
 {
     /// <summary>The version stored on every result.</summary>
-    public const int Version = 5;
+    public const int Version = 6;
 
     public const string ComparisonScope = "Comparison";
     public const string ModelScope = "Model";
@@ -284,6 +284,10 @@ public static class RootCauseEngine
             }
         }
         foreach (var pair in ctx.Pairs) drafts.AddRange(RootCauseHypotheses.PairRules(ctx, pair, nullStands));
+        foreach (var model in input.Models)
+        {
+            if (RootCauseHypotheses.StyleConflict(ctx, model) is { } hq5) drafts.Add(hq5);
+        }
 
         var shared = ctx.SharedFailureQuestions();
         if (RootCauseHypotheses.SharedFailures(ctx, shared.Questions, shared.Models) is { } hq3) drafts.Add(hq3);
@@ -295,10 +299,13 @@ public static class RootCauseEngine
         if (RootCauseHypotheses.SharedLeadGroupNote(ctx, drafts) is { } sharedGroupNote) result.Notes.Add(sharedGroupNote);
 
         var graded = drafts.Select(d => (Hypothesis: RootCauseHypotheses.Grade(d, ctx.Name), Draft: d)).ToList();
-        var kept = RootCauseHypotheses.Keep(graded, targets, RootCauseProfiles.Answers);
+        var kept = RootCauseHypotheses.Keep(graded, targets, RootCauseProfiles.Answers, (target, h) => RootCauseProfiles.PartnerRank(ctx, target, h));
+
+        // By axis, nulls first; a price effect, which the price cards show, after every other hypothesis of its axis.
         kept = kept
             .OrderBy(k => RootCauseAxes.All.ToList().IndexOf(k.Hypothesis.Axis))
             .ThenBy(k => k.Hypothesis.Kind == "null" ? 0 : 1)
+            .ThenBy(k => k.Hypothesis.PriceEffect ? 1 : 0)
             .ThenByDescending(k => RootCauseGrades.Rank(k.Hypothesis.Grade))
             .ThenBy(k => k.Draft.PairNullStands == true ? 1 : 0)
             .ThenBy(k => k.Hypothesis.Explains.HasValue ? 0 : 1)
@@ -1389,13 +1396,14 @@ internal sealed class RootCauseContext
 ///   rca.axis.&lt;axis&gt;.status, rca.axis.&lt;axis&gt;.best           axis = intelligence, speed, cost
 ///   rca.known.&lt;n&gt;
 ///   rca.hypothesis.&lt;id&gt;.&lt;n&gt;.statement, .label, .ref, .axis, .models, .locus, .grade, .gradeReasons, .for, .against,
-///     .refutedIf, .nextRun or .check, .share, .interval
+///     .refutedIf, .nextRun or .check, .share, .interval, .priceCard (a price effect only)
 ///   rca.graders.familyGap.count; rca.graders.familyGap.&lt;n&gt;.providers, .underA, .underB, .contrast, .notable
-///   rca.question.&lt;n&gt;.text, .model, .status, .hypotheses, .signals      n = 1 highest score, 2 lowest, 3 slowest, 4 most expensive
+///   rca.question.&lt;n&gt;.text, .model, .neighbor (questions 1 and 2), .status, .hypotheses, .signals
+///     n = 1 highest score, 2 lowest, 3 slowest, 4 most expensive
 ///   rca.profile.&lt;T&gt;.lostPointsOn, .weakestDimension, .lowestRank, .strength.&lt;n&gt;, .flag.&lt;n&gt;, .flags
-///   rca.speed.&lt;T&gt;.&lt;T&gt;.total (a difference not established is stated, not decomposed);
-///     rca.speed.&lt;T&gt;.&lt;T&gt;.&lt;component&gt;.share, .interval
-///   rca.cost.&lt;T&gt;.&lt;T&gt;.total; rca.cost.&lt;T&gt;.&lt;T&gt;.&lt;component&gt;.&lt;volume|price&gt;.share (component all: every component)
+///   rca.speed.&lt;T&gt;.&lt;T&gt;.total, first minus second; .decomposed (false: a difference not established is stated, not
+///     decomposed); rca.speed.&lt;T&gt;.&lt;T&gt;.&lt;component&gt;.share, .interval
+///   rca.cost.&lt;T&gt;.&lt;T&gt;.total, .decomposed; rca.cost.&lt;T&gt;.&lt;T&gt;.&lt;component&gt;.&lt;volume|price&gt;.share (component all: every component)
 ///   rca.quality.&lt;T&gt;.&lt;T&gt;.total; rca.quality.&lt;T&gt;.&lt;T&gt;.dimension.&lt;d&gt;.points, .other.points
 ///   rca.atRisk.&lt;T&gt;.&lt;segment&gt;, rca.atRisk.&lt;T&gt;.total
 ///   rca.within.&lt;T&gt;.time.&lt;segment&gt;.seconds, .time.&lt;segment&gt;.share; rca.within.&lt;T&gt;.cost.&lt;component&gt;.share
@@ -1411,8 +1419,14 @@ public static class RootCauseFacts
 
     private static readonly HashSet<string> EvidenceKeys = new(RootCauseEvidence.FactKeys, StringComparer.Ordinal);
 
-    /// <summary>The end of a pair difference's display when the difference itself may be chance.</summary>
-    private const string NotDecomposed = "; the difference may be chance, so it is not split into parts";
+    /// <summary>The display of a pair's <c>.decomposed</c> fact, stated when the difference itself may be chance.</summary>
+    public const string NotDecomposedDisplay = "not split into parts: the difference may be chance";
+
+    /// <summary>The display of a price effect's <c>.priceCard</c> fact.</summary>
+    public const string PriceCardDisplay = "known from the price cards, not a cause the runs found";
+
+    /// <summary>The display of question 4's status when its best comparative hypothesis is a price effect.</summary>
+    public const string PriceCardStatusDisplay = RootCauseGrades.PriceCardWord;
 
     /// <summary>
     /// Whether a fact stays off the Executive Summary's fact list: every <c>rca.*</c> fact, and every
@@ -1458,11 +1472,14 @@ public static class RootCauseFacts
             string prefix = "rca.hypothesis." + h.Id + "." + Inv(h.Number) + ".";
             facts.Text(prefix + "statement", h.Statement);
             if (!string.IsNullOrWhiteSpace(h.Label)) facts.Text(prefix + "label", h.Label);
-            facts.Text(prefix + "ref", h.Key + " (" + RootCauseLabels.Topic(h) + ")");
+            facts.Text(prefix + "ref", h.Key);
             facts.Text(prefix + "axis", RootCauseAxes.Name(h.Axis));
             facts.Text(prefix + "models", h.ModelsText);
             facts.Text(prefix + "locus", h.Locus);
-            facts.Add(prefix + "grade", h.Grade, h.Kind == "null" ? RootCauseGrades.NullWordWithGrade(h.Grade) : RootCauseGrades.Display(h.Grade));
+            facts.Add(prefix + "grade", h.Grade, h.Kind == "null" ? RootCauseGrades.NullWordWithGrade(h.Grade)
+                : h.PriceEffect ? RootCauseGrades.PriceCardWordWithGrade(h.Grade)
+                : RootCauseGrades.Display(h.Grade));
+            if (h.PriceEffect) facts.Add(prefix + "priceCard", true, PriceCardDisplay);
             facts.Text(prefix + "gradeReasons", h.GradeReasons.Count == 0 ? "every condition of the grade is met" : string.Join("; ", h.GradeReasons));
             facts.Text(prefix + "for", h.For.Count == 0 ? "none recorded" : string.Join(" ", h.For));
             facts.Text(prefix + "against", h.Against.Count == 0 ? "none recorded" : string.Join(" ", h.Against));
@@ -1476,30 +1493,31 @@ public static class RootCauseFacts
             }
         }
 
+        // A pair total is the first model minus the second, the amount alone; a difference that may be chance is not
+        // decomposed, which its own fact says.
         foreach (var pair in result.SpeedPairs)
         {
             string prefix = "rca.speed." + pair.First + "." + pair.Second + ".";
-            string notDecomposed = pair.NotEstablished ? NotDecomposed : string.Empty;
             if ((pair.UnavailableReason != null && !pair.NotEstablished) || pair.Difference is not double total)
             {
                 facts.Unavailable(prefix + "total", pair.UnavailableReason ?? "Not computed.");
                 continue;
             }
-            facts.Add(prefix + "total", total / 1000.0,
-                BenchmarkReportFormat.SignedOneDecimal(total / 1000.0) + " s per question (" + name(pair.First) + " minus " + name(pair.Second) + ", model time" + notDecomposed + ")");
+            facts.Add(prefix + "total", total / 1000.0, BenchmarkReportFormat.SignedOneDecimal(total / 1000.0) + " s per question");
+            if (pair.NotEstablished) facts.Add(prefix + "decomposed", false, NotDecomposedDisplay);
             foreach (var c in pair.Components) AddShare(facts, prefix + c.Key, c);
         }
 
         foreach (var pair in result.CostPairs)
         {
             string prefix = "rca.cost." + pair.First + "." + pair.Second + ".";
-            string notDecomposed = pair.NotEstablished ? NotDecomposed : string.Empty;
             if ((pair.UnavailableReason != null && !pair.NotEstablished) || pair.Difference is not double total)
             {
                 facts.Unavailable(prefix + "total", pair.UnavailableReason ?? "Not computed.");
                 continue;
             }
-            facts.Add(prefix + "total", total, Signed(BenchmarkReportFormat.Usd(Math.Abs(total)), total) + " per question (" + name(pair.First) + " minus " + name(pair.Second) + notDecomposed + ")");
+            facts.Add(prefix + "total", total, Signed(BenchmarkReportFormat.Usd(Math.Abs(total)), total) + " per question");
+            if (pair.NotEstablished) facts.Add(prefix + "decomposed", false, NotDecomposedDisplay);
             foreach (var c in pair.Components) AddShare(facts, prefix + c.Key + "." + c.Effect, c);
         }
 
@@ -1508,7 +1526,9 @@ public static class RootCauseFacts
             string prefix = "rca.question." + Inv(question.Number) + ".";
             facts.Text(prefix + "text", question.Text);
             facts.Add(prefix + "model", question.Token, name(question.Token));
-            facts.Add(prefix + "status", question.Grade ?? RootCauseGrades.Word(null), RootCauseGrades.WordWithGrade(question.Grade));
+            if (question.Neighbor != null) facts.Add(prefix + "neighbor", question.Neighbor, name(question.Neighbor));
+            facts.Add(prefix + "status", question.Grade ?? RootCauseGrades.Word(null),
+                question.PriceCard ? PriceCardStatusDisplay : RootCauseGrades.WordWithGrade(question.Grade));
             facts.Add(prefix + "hypotheses", question.HypothesisKeys.Count,
                 question.HypothesisKeys.Count == 0 ? "none fired" : BenchmarkReportFormat.LetterList(question.HypothesisKeys));
             facts.Text(prefix + "signals", question.Signals.Count == 0 ? "none recorded" : string.Join("; ", question.Signals));
@@ -1542,8 +1562,7 @@ public static class RootCauseFacts
         foreach (var split in result.QualitySplits)
         {
             string prefix = "rca.quality." + split.First + "." + split.Second + ".";
-            facts.Add(prefix + "total", split.IndexDifference,
-                BenchmarkReportFormat.SignedOneDecimal(split.IndexDifference) + " index points (" + name(split.First) + " minus " + name(split.Second) + ")");
+            facts.Add(prefix + "total", split.IndexDifference, BenchmarkReportFormat.SignedOneDecimal(split.IndexDifference) + " index points");
             foreach (var c in split.Components)
             {
                 string key = c.Key == "other" ? prefix + "other.points" : prefix + "dimension." + c.Key + ".points";
@@ -1560,10 +1579,10 @@ public static class RootCauseFacts
             }
             else
             {
-                foreach (var s in summary.AtRisk) facts.Add(prefix + s.Key, s.Value, BenchmarkReportFormat.OneDecimal(s.Value) + " index points at risk (upper bound, not a causal estimate)");
+                foreach (var s in summary.AtRisk) facts.Add(prefix + s.Key, s.Value, BenchmarkReportFormat.OneDecimal(s.Value) + " index points");
                 double total = summary.AtRisk.Sum(s => s.Value);
-                facts.Add(prefix + "total", total, BenchmarkReportFormat.OneDecimal(total) + " index points at risk against the model's median answer of "
-                    + BenchmarkReportFormat.Whole(summary.MedianQuality.Value) + " (upper bound, not a causal estimate)");
+                facts.Add(prefix + "total", total, BenchmarkReportFormat.OneDecimal(total) + " index points below a median answer of "
+                    + BenchmarkReportFormat.Whole(summary.MedianQuality.Value));
             }
 
             string within = "rca.within." + summary.Token + ".";
@@ -1718,7 +1737,7 @@ public static class RootCauseFacts
             facts.Unavailable(prefix + ".share", "The difference is zero.");
             return;
         }
-        facts.Add(prefix + ".share", share, RootCauseHypotheses.Pct(share) + " of the difference");
+        facts.Add(prefix + ".share", share, RootCauseHypotheses.Pct(share));
         if (component.ShareLower is double lo && component.ShareUpper is double hi) facts.Text(prefix + ".interval", RootCauseHypotheses.Interval(lo, hi));
         else facts.Unavailable(prefix + ".interval", "No interval could be computed.");
     }
@@ -1800,7 +1819,7 @@ public static class RootCauseLabels
 
     /// <summary>
     /// The rule's topic alone, with no model name: <c>answers without tools</c>, <c>no intelligence difference</c>,
-    /// <c>points lost in the advanced band</c>; the hypothesis' reference fact reads <c>HQ1.1 (answers without tools)</c>.
+    /// <c>points lost in the advanced band</c>. The labels read it; the hypothesis' reference fact is its key alone, <c>HQ1.1</c>.
     /// </summary>
     internal static string Topic(RootCauseHypothesis hypothesis)
     {
@@ -1969,9 +1988,13 @@ public static class RootCauseProfiles
         return tested || ctx.IntervalsOverlap(pair) == false;
     }
 
+    /// <summary>The rules whose pair hypotheses answer question 1: mechanisms of the pair itself, the graders (HQ4) and the thinking level (HQ8).</summary>
+    private static readonly string[] LeadRules = { "HQ4", "HQ8" };
+
     /// <summary>
     /// Whether <paramref name="hypothesis"/> answers the research question of <paramref name="target"/>. Question 1
-    /// asks why a model did well: the pair hypotheses on the axis where it is the better side. The others ask why
+    /// asks why a model did well: only the pair hypotheses that locate the gap in the pair itself (HQ4, HQ8) with the
+    /// model as the better side, never one that locates it in the other model's own failures. The others ask why
     /// it did badly: the pair hypotheses on the axis where it is the worse side, and its own within-model ones.
     /// HQ3, which is about every model, answers none.
     /// </summary>
@@ -1983,15 +2006,57 @@ public static class RootCauseProfiles
         string token = target.Model.Token;
         if (h.Axis != target.Axis || h.Id == "HQ3" || h.Models.Count == 0) return false;
         return target.Number == 1
-            ? h.Kind == "pair" && h.Models.Count == 2 && h.Models[1] == token
+            ? h.Kind == "pair" && h.Models.Count == 2 && h.Models[1] == token && LeadRules.Contains(h.Id, StringComparer.Ordinal)
             : (h.Kind == "pair" && h.Models.Count == 2 && h.Models[0] == token) || (h.Kind == "within" && h.Models[0] == token);
     }
 
     /// <summary>
+    /// The models a question 3 or 4 compares its model with, most telling first: its same-model siblings at another
+    /// thinking level, the nearest level first; then the reference; then the fastest model (question 3) or the
+    /// cheapest (question 4); then every other model in model order. The model itself is never among them.
+    /// </summary>
+    internal static List<string> PartnerPreference(RootCauseContext ctx, RootCauseQuestionTarget target)
+    {
+        var model = target.Model;
+        var order = ctx.Models
+            .Where(m => m.Token != model.Token && RootCauseHypotheses.SameModelAtTwoLevels(model, m))
+            .OrderBy(m => Math.Abs(RootCauseHypotheses.ThinkingRank(m.ThinkingLevel) - RootCauseHypotheses.ThinkingRank(model.ThinkingLevel)))
+            .ThenBy(m => m.Token, StringComparer.Ordinal)
+            .Select(m => m.Token)
+            .ToList();
+        if (ctx.Input.ReferenceToken is string reference) order.Add(reference);
+        var extreme = target.Number == 4
+            ? ctx.Models.Where(m => !m.CostDegraded && m.CostPerQuestionUsd.HasValue)
+                .OrderBy(m => m.CostPerQuestionUsd!.Value).ThenBy(m => m.Token, StringComparer.Ordinal).FirstOrDefault()
+            : ctx.Models.Where(m => !m.SpeedDegraded && m.ModelTimeP50Ms.HasValue)
+                .OrderBy(m => m.ModelTimeP50Ms!.Value).ThenBy(m => m.Token, StringComparer.Ordinal).FirstOrDefault();
+        if (extreme != null) order.Add(extreme.Token);
+        order.AddRange(ctx.Models.Select(m => m.Token));
+        return order.Where(t => t != model.Token && ctx.Models.Any(m => m.Token == t)).Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    /// <summary>
+    /// Where a hypothesis stands in its question's preference, lower first: for questions 3 and 4, the place of the
+    /// pair hypothesis' other model in <see cref="PartnerPreference"/> (a within-model one, or a model outside it,
+    /// last); 0 for questions 1 and 2, which keep rank order.
+    /// </summary>
+    internal static int PartnerRank(RootCauseContext ctx, RootCauseQuestionTarget target, RootCauseHypothesis hypothesis)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(hypothesis);
+        if (target.Number is not (3 or 4)) return 0;
+        if (hypothesis.Kind != "pair" || hypothesis.Models.Count != 2) return int.MaxValue;
+        string partner = hypothesis.Models[0] == target.Model.Token ? hypothesis.Models[1] : hypothesis.Models[0];
+        int index = PartnerPreference(ctx, target).IndexOf(partner);
+        return index < 0 ? int.MaxValue : index;
+    }
+
+    /// <summary>
     /// The research questions of <paramref name="targets"/>, each with the kept hypotheses that answer it: the
-    /// comparative (pair) ones, then the model's own within-model ones, each in rank order. The grade is the best
-    /// comparative grade at Low or higher; when there is none, the best within-model grade at Low or higher,
-    /// capped at Low.
+    /// comparative (pair) ones, then the model's own within-model ones, each in rank order, the comparative ones
+    /// of questions 3 and 4 first by <see cref="PartnerRank"/>. The grade is that of the first comparative one at
+    /// Low or higher; when there is none, the best within-model grade at Low or higher, capped at Low. Question 4
+    /// is answered from the price cards when that first comparative one is a price effect.
     /// </summary>
     internal static List<RootCauseQuestion> Questions(RootCauseContext ctx, RootCauseResult result, IReadOnlyList<RootCauseQuestionTarget> targets)
     {
@@ -1999,9 +2064,9 @@ public static class RootCauseProfiles
         var questions = new List<RootCauseQuestion>();
         foreach (var target in targets)
         {
-            // result.Hypotheses is already in rank order.
+            // result.Hypotheses is already in rank order; the stable sort keeps it within a partner.
             var answering = result.Hypotheses.Where(h => Answers(target, h)).ToList();
-            var comparative = answering.Where(h => h.Kind == "pair").ToList();
+            var comparative = answering.Where(h => h.Kind == "pair").OrderBy(h => PartnerRank(ctx, target, h)).ToList();
             var within = answering.Where(h => h.Kind == "within").ToList();
             var bestComparative = comparative.FirstOrDefault(h => RootCauseGrades.Rank(h.Grade) >= lowRank);
             var bestWithin = within.FirstOrDefault(h => RootCauseGrades.Rank(h.Grade) >= lowRank);
@@ -2017,6 +2082,8 @@ public static class RootCauseProfiles
                 WithinKeys = within.Select(h => h.Key).ToList(),
                 WithinOnly = bestComparative == null && within.Count > 0,
                 OrderEstablished = target.OrderEstablished,
+                Neighbor = target.Number is 1 or 2 ? target.Neighbor.Token : null,
+                PriceCard = target.Number == 4 && bestComparative?.PriceEffect == true,
                 Signals = Signals(ctx, target, result)
             });
         }
@@ -2036,7 +2103,7 @@ public static class RootCauseProfiles
         if (single.Count == 0) return null;
 
         string cap = RootCauseGrades.WordWithGrade(RootCauseGrades.Moderate);
-        bool priceEffect = hypotheses.Any(h => h.Id == "HC2" && h.Grade != RootCauseGrades.NotSupported);
+        bool priceEffect = hypotheses.Any(h => h.PriceEffect && h.Grade != RootCauseGrades.NotSupported);
         string secondRun = " until a second run of each suite is made"
                            + (priceEffect ? ", apart from a price effect, which follows from the price cards." : ".");
         if (single.Count == ctx.Models.Count)
@@ -2352,28 +2419,15 @@ public static class RootCauseProfiles
 
     /// <summary>
     /// Question 3: the component carrying most of the slowest model's time difference against a decomposed
-    /// neighbor: its analyzed same-model sibling at another thinking level (the nearest level first), else the
-    /// reference, else the fastest model. <c>against Model D: latency per call (time to first token) carries 62%
-    /// of the 4.1 s difference</c>. Null when none of those pairs is decomposed.
+    /// neighbor, the first in <see cref="PartnerPreference"/>: its analyzed same-model sibling at another thinking
+    /// level (the nearest level first), else the reference, else the fastest model, else any other.
+    /// <c>against Model D: latency per call (time to first token) carries 62% of the 4.1 s difference</c>. Null
+    /// when none of those pairs is decomposed.
     /// </summary>
     private static string? SlowestSignal(RootCauseContext ctx, RootCauseQuestionTarget target, RootCauseResult result)
     {
         var slowest = target.Model;
-        var others = ctx.Models
-            .Where(m => m.Token != slowest.Token && RootCauseHypotheses.SameModelAtTwoLevels(slowest, m))
-            .OrderBy(m => Math.Abs(RootCauseHypotheses.ThinkingRank(m.ThinkingLevel) - RootCauseHypotheses.ThinkingRank(slowest.ThinkingLevel)))
-            .ThenBy(m => m.Token, StringComparer.Ordinal)
-            .Select(m => m.Token)
-            .ToList();
-        if (ctx.Input.ReferenceToken is string reference) others.Add(reference);
-        if (ctx.Models.Where(m => !m.SpeedDegraded && m.ModelTimeP50Ms.HasValue)
-                .OrderBy(m => m.ModelTimeP50Ms!.Value).ThenBy(m => m.Token, StringComparer.Ordinal)
-                .FirstOrDefault() is { } fastest)
-        {
-            others.Add(fastest.Token);
-        }
-
-        foreach (string other in others.Where(t => t != slowest.Token).Distinct(StringComparer.Ordinal))
+        foreach (string other in PartnerPreference(ctx, target))
         {
             var pair = result.SpeedPairs.FirstOrDefault(p =>
                 ((p.First == slowest.Token && p.Second == other) || (p.First == other && p.Second == slowest.Token))

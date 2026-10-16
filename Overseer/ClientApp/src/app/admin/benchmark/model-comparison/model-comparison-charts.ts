@@ -925,6 +925,11 @@ export interface FigureOptions {
   readonly directLabels?: boolean;
   /** Draws each scatter mark's two measured values on the canvas, beside it. Off unless the caller asks. */
   readonly inlineValues?: boolean;
+  /**
+   * Draws the direct labels' names, values and leaders in the theme's primary ink, and their measure
+   * names and faded names in its secondary ink. Off unless the caller asks.
+   */
+  readonly highContrastLabels?: boolean;
   /** Bar and trade-off styling. Defaults to {@link DEFAULT_FIGURE_STYLE}. */
   readonly style?: FigureStyle;
   /** Colours and fonts. Absent: the dark theme, whatever `style.appearance` says. */
@@ -1168,8 +1173,20 @@ function directLabelMetrics(size: number, font: DirectLabelFont = {}): {
   };
 }
 
-/** Rings tried in turn, in pixels out from the mark. Past the last one the fallback applies. */
-const DIRECT_LABEL_RINGS = [14, 28, 42] as const;
+/** The rings past the first, in pixels out from the mark. Past the last one the fallback applies. */
+const DIRECT_LABEL_RINGS = [16, 28, 42] as const;
+
+/** How far the first ring sits outside the mark radius the placer keeps labels clear of. */
+const DIRECT_LABEL_FIRST_RING_GAP = 2;
+
+/**
+ * Rings tried in turn, in pixels out from the mark: the first just outside the mark radius, then
+ * the fixed rings beyond it.
+ */
+function directLabelRings(markRadius: number): number[] {
+  const first = markRadius + DIRECT_LABEL_FIRST_RING_GAP;
+  return [first, ...DIRECT_LABEL_RINGS.filter((ring) => ring > first)];
+}
 
 /** Padding around the label text, so the backing plate does not touch the glyphs. */
 const DIRECT_LABEL_PAD_X = 3;
@@ -1326,12 +1343,25 @@ const DIRECT_LABEL_DIRECTIONS: readonly { dx: number; dy: number }[] = [
   { dx: -0.7071, dy: 0.7071 },
 ];
 
-/** The ring offset moves the box edge nearest the mark, so a wide label is not pulled in by half. */
+/**
+ * The ring offset moves the box edge nearest the mark, so a wide label is not pulled in by half. A
+ * diagonal candidate puts the plate's near corner on the ring.
+ */
 function candidateBox(
   anchor: DirectLabelAnchor,
   direction: { dx: number; dy: number },
   ring: number,
 ): { x: number; y: number; width: number; height: number } {
+  if (direction.dx !== 0 && direction.dy !== 0) {
+    const cornerX = anchor.x + direction.dx * ring;
+    const cornerY = anchor.y + direction.dy * ring;
+    return {
+      x: direction.dx > 0 ? cornerX : cornerX - anchor.width,
+      y: direction.dy > 0 ? cornerY : cornerY - anchor.height,
+      width: anchor.width,
+      height: anchor.height,
+    };
+  }
   const centreX = anchor.x + direction.dx * (ring + anchor.width / 2);
   const centreY = anchor.y + direction.dy * (ring + anchor.height / 2);
   return {
@@ -1453,12 +1483,13 @@ export function placeDirectLabels(
 ): DirectLabelBox[] {
   const ordered = [...anchors].sort((a, b) => a.x - b.x || a.y - b.y || a.key.localeCompare(b.key));
   const placed: DirectLabelBox[] = [];
+  const rings = directLabelRings(markRadius);
 
   for (const anchor of ordered) {
     let chosen: { x: number; y: number; width: number; height: number } | null = null;
     let bestScore = Number.POSITIVE_INFINITY;
 
-    for (const ring of DIRECT_LABEL_RINGS) {
+    for (const ring of rings) {
       for (const direction of DIRECT_LABEL_DIRECTIONS) {
         const box = candidateBox(anchor, direction, ring);
         const rect = boxRect(box);
@@ -1489,7 +1520,7 @@ export function placeDirectLabels(
       }
     }
 
-    const fallback = candidateBox(anchor, DIRECT_LABEL_DIRECTIONS[0], DIRECT_LABEL_RINGS[0]);
+    const fallback = candidateBox(anchor, DIRECT_LABEL_DIRECTIONS[0], rings[0]);
     const box = chosen ?? clampIntoArea(fallback, area);
     placed.push({ ...box, key: anchor.key, anchorX: anchor.x, anchorY: anchor.y });
   }
@@ -1544,9 +1575,9 @@ export interface DirectLabelPluginOptions {
   readonly surfaceColor?: string;
   /** The highlighted plate's rule and name. Defaults to the dark theme's accent. */
   readonly accentColor?: string;
-  /** Names and values. Defaults to the dark theme's secondary ink. */
+  /** Names, values and leaders. Defaults to the dark theme's secondary ink. */
   readonly inkColor?: string;
-  /** Leaders and measure names. Defaults to the dark theme's muted ink. */
+  /** Measure names and faded models' names. Defaults to the dark theme's muted ink. */
   readonly mutedColor?: string;
 }
 
@@ -1749,7 +1780,7 @@ export const directLabelPlugin: Plugin = {
     const highlighted = options?.highlightedIndex === undefined ? undefined : String(options.highlightedIndex);
 
     // Leaders first, so a plate covers the end of its own line rather than the line crossing it.
-    ctx.strokeStyle = muted;
+    ctx.strokeStyle = ink;
     ctx.lineWidth = LEADER_WIDTH_PX;
     for (const box of boxes) {
       strokeLeader(ctx, box, markEdgeRadius);
@@ -2306,17 +2337,19 @@ function providerKeyItems(entries: readonly ModelComparisonEntry[], theme: Resol
 /**
  * The direct-label plugin's font and colour keys that differ from its defaults: a family under a
  * bundled font, a name weight other than 400, and the colours where the theme's are not the dark ones.
+ * Under high contrast the inks are the theme's primary and secondary in place of its secondary and muted.
  */
 function directLabelThemeOptions(
   theme: ResolvedFigureTheme,
+  highContrast = false,
 ): Pick<DirectLabelPluginOptions, 'fontFamily' | 'nameFontWeight' | 'surfaceColor' | 'accentColor' | 'inkColor' | 'mutedColor'> {
   return {
     ...(theme.fonts.chartStack === null ? {} : { fontFamily: theme.fonts.chartStack }),
     ...(theme.fonts.labelWeight === 400 ? {} : { nameFontWeight: theme.fonts.labelWeight }),
     ...unlessDefault('surfaceColor', theme.chart.surface, CHART_SURFACE),
     ...unlessDefault('accentColor', theme.chart.accent, ACCENT),
-    ...unlessDefault('inkColor', theme.chart.inkSecondary, CHART_INK.secondary),
-    ...unlessDefault('mutedColor', theme.chart.inkMuted, CHART_INK.muted),
+    ...unlessDefault('inkColor', highContrast ? theme.chart.inkPrimary : theme.chart.inkSecondary, CHART_INK.secondary),
+    ...unlessDefault('mutedColor', highContrast ? theme.chart.inkSecondary : theme.chart.inkMuted, CHART_INK.muted),
   };
 }
 
@@ -2492,7 +2525,7 @@ function buildScatter(
                 markRadiusPx: style.markRadiusPx,
                 // A hidden whisker must not push a label away from empty space.
                 avoidWhiskers: style.intervals,
-                ...directLabelThemeOptions(theme),
+                ...directLabelThemeOptions(theme, options.highContrastLabels ?? false),
               } satisfies DirectLabelPluginOptions,
             }
           : {}),
@@ -4091,6 +4124,8 @@ export interface FigureSetOptions {
   readonly directLabels?: boolean;
   /** Draws each scatter mark's two measured values on the canvas, beside it. Off unless the caller asks. */
   readonly inlineValues?: boolean;
+  /** Draws the direct labels in the stronger inks; see {@link FigureOptions.highContrastLabels}. Off unless the caller asks. */
+  readonly highContrastLabels?: boolean;
   readonly highlightedKey?: string | null;
   readonly selectedKeys?: readonly string[];
   /** Bar and trade-off styling. Defaults to {@link DEFAULT_FIGURE_STYLE}. */
@@ -4129,6 +4164,7 @@ export function buildComparisonFigures(
     speedMeasure,
     directLabels: options.directLabels ?? false,
     inlineValues: options.inlineValues ?? false,
+    highContrastLabels: options.highContrastLabels ?? false,
     style: options.style ?? DEFAULT_FIGURE_STYLE,
     theme,
   };

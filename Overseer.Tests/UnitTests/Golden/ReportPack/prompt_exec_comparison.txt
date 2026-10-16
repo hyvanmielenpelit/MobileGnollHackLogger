@@ -33,6 +33,7 @@ NUMBERS AND NAMES:
 - A fact whose value is a whole sentence — every notable.N.summary, and any value that begins with a capital letter and ends with a full stop — is written as a sentence of its own, at most once, never inside parentheses, and never continued after its full stop.
 - A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took one and a half times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.
 - Never list several 'N of M' tokens in a row, and never end a clause with one: say right after each what it counts.
+- Never join two fact tokens with 'to', or with 'from … to', unless both print a bare figure in the same unit, such as two percentages; and never repeat beside a token the words it already prints.
 - Refer to a question exactly as the QUESTION MATRIX does, for example Q7. This is the only form in which a digit may appear.
 - Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader). In the Executive Summary say 'one grader' or 'both graders' instead.
 - Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.

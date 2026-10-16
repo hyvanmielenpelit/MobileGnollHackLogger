@@ -526,6 +526,14 @@ public static class BenchmarkComparisonReportFacts
         }
         AddVsReferenceFacts(facts, questions, lettered.Select(l => (l.Letter, l.Item.Sheet)).ToList(), maps, referenceLetter);
 
+        var panelComparison = batteries
+            ? WithBatteryPanelDiagnostics(comparison, lettered.Select(l => l.Item).ToList())
+            : comparison;
+        bool batteryComposites = batteries && panelComparison.PanelDiagnostics is { Applicable: true };
+        var judgeDependentPairs = batteries
+            ? BatteryJudgeDependentPairs(batteryComposites, lettered.Select(l => l.Item).ToList(), letterOf)
+            : JudgeDependentPairsOf(panelComparison, letterOf);
+
         var notable = BenchmarkNotableFindings.Detect(new BenchmarkNotableFindingsInput
         {
             Models = lettered.Select(l => NotableModelOf(l.Letter, l.Item)).ToList(),
@@ -533,7 +541,7 @@ public static class BenchmarkComparisonReportFacts
             Families = families,
             ReferenceLetter = referenceLetter,
             ReferenceIsBaselineModel = sheet.ReferenceIsBaselineModel == true,
-            JudgeDependentPairs = JudgeDependentPairsOf(comparison, letterOf)
+            JudgeDependentPairs = judgeDependentPairs
         });
         var factKeys = facts.Sorted().Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
         foreach (var finding in notable)
@@ -550,8 +558,11 @@ public static class BenchmarkComparisonReportFacts
             RootCauseEvidence.Build(l.Item.Runs, input.CandidatePricing, l.Item.SuiteOfRun, l.Item.BatteryId, l.Item.Entry.BatteryName),
             Dimensions.Select(d => NumberOf(l.Item.Sheet, "dimension." + d)).ToList(),
             BoolOf(l.Item.Sheet, "style.responseStyleConflict"),
-            comparison,
-            NumberOf(l.Item.Sheet, BenchmarkBatteryReportFacts.PanelVerificationClearedSensitivityKey))).ToList();
+            panelComparison,
+            NumberOf(l.Item.Sheet, BenchmarkBatteryReportFacts.PanelVerificationClearedSensitivityKey),
+            memberAIndex: batteryComposites ? NumberOf(l.Item.Sheet, PanelMemberAAloneKey) : null,
+            memberBIndex: batteryComposites ? NumberOf(l.Item.Sheet, PanelMemberBAloneKey) : null,
+            referenceReaderIndex: batteryComposites ? NumberOf(l.Item.Sheet, PanelReferenceReaderIndexKey) : null)).ToList();
         var rootCause = RootCauseEngine.Compute(new RootCauseInput
         {
             Scope = RootCauseEngine.ComparisonScope,
@@ -562,9 +573,9 @@ public static class BenchmarkComparisonReportFacts
             Models = modelInputs,
             ReferenceToken = referenceLetter,
             PairTests = PairTestsOf(families, input, letterOf),
-            JudgeDependentPairs = JudgeDependentPairsOf(comparison, letterOf).Select(p => new RootCausePair(p.First, p.Second)).ToList(),
+            JudgeDependentPairs = judgeDependentPairs.Select(p => new RootCausePair(p.First, p.Second)).ToList(),
             Graders = sheet.Graders.Select(g => (g.Role, g.Provider)).ToList(),
-            FamilyGaps = RootCauseEvidence.FamilyGaps(comparison),
+            FamilyGaps = RootCauseEvidence.FamilyGaps(panelComparison),
             Catalog = input.Catalog ?? new RootCauseCatalog(),
             Battery = batteries,
             Questions = RootCauseEvidence.QuestionRefs(questions)
@@ -592,9 +603,18 @@ public static class BenchmarkComparisonReportFacts
         content.ModelNotes = WeakestAnswers(lettered.Select(l => (l.Letter, l.Item)).ToList(), questions, maps);
 
         var withText = content.Questions?.Select(q => q.Number).ToHashSet() ?? new HashSet<int>();
+        var resolutions = lettered.ToDictionary(
+            l => l.Letter, l => ResolutionsByMatrixNumber(l.Item, maps[l.Letter]), StringComparer.Ordinal);
         foreach (var question in questions)
         {
             question.Detailed = withText.Contains(question.Number);
+            foreach (var cell in question.Models ?? new List<BenchmarkReportQuestionModelScore>())
+            {
+                if (resolutions.TryGetValue(cell.Letter, out var byNumber) && byNumber.TryGetValue(question.Number, out var names))
+                {
+                    cell.CriticalErrorResolutions = names;
+                }
+            }
             question.ExcerptLetters = content.Runs
                 .Where(r => r.Questions.Any(q => q.Number == question.Number))
                 .Select(r => r.Letter ?? string.Empty)
@@ -1015,6 +1035,121 @@ public static class BenchmarkComparisonReportFacts
             .Where(p => letterOf.ContainsKey(p.FirstEntryKey) && letterOf.ContainsKey(p.SecondEntryKey))
             .Select(p => (letterOf[p.FirstEntryKey], letterOf[p.SecondEntryKey]))
             .ToList();
+    }
+
+    // A battery result's member-alone and reference-reader composites under the declared weights, on the Overall
+    // Index's scale (BenchmarkBatteryReportFacts).
+    private const string PanelMemberAAloneKey = "panel.memberAAlone";
+    private const string PanelMemberBAloneKey = "panel.memberBAlone";
+    private const string PanelReferenceReaderIndexKey = "panel.referenceReaderIndex";
+
+    /// <summary>
+    /// A battery comparison with judge-family diagnostics over the covered results' member runs: the comparison
+    /// itself when it carries diagnostics already or no member run is a panel run, else a copy holding
+    /// <see cref="BenchmarkPanelDiagnostics.Compute"/> over them. The diagnostics' indices pool answers as one
+    /// suite does; the family gaps they carry are per-question differences, which the battery weighting does
+    /// not enter.
+    /// </summary>
+    private static BenchmarkModelComparisonDto WithBatteryPanelDiagnostics(
+        BenchmarkModelComparisonDto comparison, IReadOnlyList<BenchmarkComparisonReportEntry> entries)
+    {
+        if (comparison.PanelDiagnostics != null || !entries.SelectMany(e => e.Runs).Any(BenchmarkRunFinalizer.IsPanelRun))
+        {
+            return comparison;
+        }
+
+        var diagnostics = BenchmarkPanelDiagnostics.Compute(entries
+            .Select(e => (e.Entry.Key, e.Entry.Label, e.Runs))
+            .ToList());
+        return new BenchmarkModelComparisonDto
+        {
+            SubjectKind = comparison.SubjectKind,
+            PricingBasis = comparison.PricingBasis,
+            PricingBasisLabel = comparison.PricingBasisLabel,
+            ComputedAtUtc = comparison.ComputedAtUtc,
+            BaselineSuiteId = comparison.BaselineSuiteId,
+            BaselineSuiteName = comparison.BaselineSuiteName,
+            BaselineBatteryName = comparison.BaselineBatteryName,
+            BaselineEntryKeys = comparison.BaselineEntryKeys,
+            BaselineKeyValues = comparison.BaselineKeyValues,
+            BaselineSignature = comparison.BaselineSignature,
+            ModelAxisKeys = comparison.ModelAxisKeys,
+            Entries = comparison.Entries,
+            ComparableCount = comparison.ComparableCount,
+            ExcludedCount = comparison.ExcludedCount,
+            ThinkingLevelsDiffer = comparison.ThinkingLevelsDiffer,
+            SpeedAxisCaveat = comparison.SpeedAxisCaveat,
+            Explanation = comparison.Explanation,
+            ExcludedMeasures = comparison.ExcludedMeasures,
+            PanelDiagnostics = BenchmarkModelComparison.ToDto(diagnostics),
+            BaselineModel = comparison.BaselineModel,
+            BaselineModelEntryKey = comparison.BaselineModelEntryKey,
+            BaselineModelState = comparison.BaselineModelState
+        };
+    }
+
+    /// <summary>
+    /// The covered battery results whose order depends on which panel member grades, by letter: the pairs that the
+    /// member A alone and member B alone composites order strictly oppositely (the labelled-index
+    /// <c>BenchmarkPanelDiagnostics.RankReversals</c>), in letter order, the one member A ranks higher first. Empty unless <paramref name="onePanel"/>: the
+    /// diagnostics apply, so every result was graded by the same panel.
+    /// </summary>
+    private static List<(string First, string Second)> BatteryJudgeDependentPairs(
+        bool onePanel, IReadOnlyList<BenchmarkComparisonReportEntry> entries, IReadOnlyDictionary<string, string> letterOf)
+    {
+        if (!onePanel) return new List<(string, string)>();
+
+        var rows = entries
+            .Select(e => (e.Entry.Key, e.Entry.Label, NumberOf(e.Sheet, PanelMemberAAloneKey), NumberOf(e.Sheet, PanelMemberBAloneKey)))
+            .ToList();
+        return BenchmarkPanelDiagnostics.RankReversals(rows, "Member A", "member B")
+            .Where(p => letterOf.ContainsKey(p.FirstEntryKey) && letterOf.ContainsKey(p.SecondEntryKey))
+            .Select(p => (letterOf[p.FirstEntryKey], letterOf[p.SecondEntryKey]))
+            .ToList();
+    }
+
+    /// <summary>
+    /// The critical-error resolution of each of a covered model's answers, by matrix number: every answer of its runs
+    /// scored under <see cref="BenchmarkCriticalErrorResolver.FirstScoringMethod"/> or later that records one, as the
+    /// <see cref="BenchmarkCriticalErrorResolution"/> name, in run-id order and then the run's question order. An
+    /// answer is matched to the model's own question by suite (a battery result's), question and item revision. A
+    /// question none of whose answers records a resolution is absent.
+    /// </summary>
+    private static Dictionary<int, List<string>> ResolutionsByMatrixNumber(BenchmarkComparisonReportEntry item, IReadOnlyDictionary<int, int> map)
+    {
+        var ownNumber = new Dictionary<(int Suite, string QuestionKey, int? ItemRevision), int>();
+        foreach (var question in item.Sheet.Questions)
+        {
+            ownNumber.TryAdd((question.Suite ?? 0, question.QuestionKey, question.ItemRevisionUsed), question.Number);
+        }
+
+        var byNumber = new Dictionary<int, List<string>>();
+        foreach (var run in item.Runs.OrderBy(r => r.Id))
+        {
+            if (!BenchmarkCriticalErrorResolver.Applies(run)) continue;
+
+            int suite = 0;
+            if (item.SuiteOfRun != null && !item.SuiteOfRun.TryGetValue(run.Id, out suite)) continue;
+
+            foreach (var answer in (run.Answers ?? new List<BenchmarkRunAnswer>()).OrderBy(a => a.OrderIndex).ThenBy(a => a.Id))
+            {
+                if (answer.CriticalErrorResolution is not BenchmarkCriticalErrorResolution resolution) continue;
+                if (!ownNumber.TryGetValue((suite, BenchmarkReportFacts.QuestionKeyOf(answer), answer.ItemRevisionUsed), out int own)
+                    || !map.TryGetValue(own, out int number))
+                {
+                    continue;
+                }
+
+                if (!byNumber.TryGetValue(number, out var names))
+                {
+                    names = new List<string>();
+                    byNumber[number] = names;
+                }
+                names.Add(resolution.ToString());
+            }
+        }
+
+        return byNumber;
     }
 
     /// <summary>

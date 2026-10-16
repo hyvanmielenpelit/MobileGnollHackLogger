@@ -7,6 +7,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 
@@ -838,8 +839,23 @@ public static partial class BenchmarkReportPackPrompt
     }
 
     /// <summary>
-    /// A rubric without its <c>SOURCE</c> paragraphs: each runs from a line starting <c>SOURCE</c> to
-    /// the next blank line or the end.
+    /// A <c>SOURCE</c> label opening a line, plain or bold: <c>SOURCE —</c>, <c>SOURCE:</c>, <c>**SOURCE** —</c>,
+    /// <c>**SOURCE**:</c>, <c>**SOURCE:**</c>, <c>SOURCES</c> alone on its line. A hyphen joining a word
+    /// (<c>SOURCE-CODE</c>) is no label.
+    /// </summary>
+    private static readonly Regex SourceLabelRegex = new(
+        @"^\s*(?:\*\*|__)?SOURCES?(?:\*\*|__)?\s*(?:[:—–]|-(?!\p{L})|$)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>A line opening with another bold rubric label, such as <c>**REQUIRED**</c> or <c>**CRITICAL ERROR**</c>.</summary>
+    private static readonly Regex BoldLabelRegex = new(@"^\s*\*\*[A-Z][A-Z ]{2,}\*\*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>A Markdown heading line.</summary>
+    private static readonly Regex RubricHeadingRegex = new(@"^\s{0,3}#{1,6}(?:\s|$)", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// A rubric without its <c>SOURCE</c> paragraphs: each runs from a line opening with a <c>SOURCE</c> label
+    /// (<see cref="SourceLabelRegex"/>) to the next blank line, the next line opening with another bold label, the
+    /// next heading or the end. A bold label or heading that ends one is kept.
     /// </summary>
     internal static string WithoutSourceParagraphs(string rubric)
     {
@@ -848,14 +864,15 @@ public static partial class BenchmarkReportPackPrompt
         bool skipping = false;
         foreach (string line in lines)
         {
-            if (line.TrimStart().StartsWith("SOURCE", StringComparison.Ordinal))
+            if (SourceLabelRegex.IsMatch(line))
             {
                 skipping = true;
                 continue;
             }
             if (skipping)
             {
-                if (line.Trim().Length > 0) continue;
+                bool ends = line.Trim().Length == 0 || BoldLabelRegex.IsMatch(line) || RubricHeadingRegex.IsMatch(line);
+                if (!ends) continue;
                 skipping = false;
             }
             kept.Add(line);

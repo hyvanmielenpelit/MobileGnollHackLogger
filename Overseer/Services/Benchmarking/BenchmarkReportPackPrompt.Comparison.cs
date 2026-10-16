@@ -110,7 +110,8 @@ public static partial class BenchmarkReportPackPrompt
     {
         "A fact whose value is a whole sentence — every notable.N.summary, and any value that begins with a capital letter and ends with a full stop — is written as a sentence of its own, at most once, never inside parentheses, and never continued after its full stop.",
         "A fact whose value names a model and a verb, such as a pair's speed or cost ratio (it reads 'Model A took one and a half times as long as Model F …'), already says who did what: write it alone as the clause, never with a model or that verb before it.",
-        "Never list several 'N of M' tokens in a row, and never end a clause with one: say right after each what it counts."
+        "Never list several 'N of M' tokens in a row, and never end a clause with one: say right after each what it counts.",
+        "Never join two fact tokens with 'to', or with 'from … to', unless both print a bare figure in the same unit, such as two percentages; and never repeat beside a token the words it already prints."
     };
 
     /// <summary>When an issue is the headline's, its word count against the cap.</summary>

@@ -218,7 +218,7 @@ public static class BenchmarkModelComparison
         };
     }
 
-    private static BenchmarkPanelDiagnosticsDto ToDto(BenchmarkPanelDiagnosticsResult result)
+    internal static BenchmarkPanelDiagnosticsDto ToDto(BenchmarkPanelDiagnosticsResult result)
     {
         static BenchmarkPanelEstimateDto Estimate(BenchmarkPanelEstimate e) =>
             new() { Value = e.Value, CiLow = e.CiLow, CiHigh = e.CiHigh };

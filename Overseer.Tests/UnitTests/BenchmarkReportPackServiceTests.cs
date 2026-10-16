@@ -353,6 +353,133 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(0, h.Provider.Calls);
     }
 
+    // --- Battery comparisons: judge-family diagnostics and critical-error resolutions ----------------------
+
+    /// <summary>The first member run of the second battery the comparison tests seed, clear of the first's.</summary>
+    private const long SecondBatteryFirstRunId = 9101;
+
+    /// <summary>A comparison-scope request over two battery results.</summary>
+    private static BenchmarkReportPackRequest BatteryComparisonRequest(Harness h, params long[] batteryRunIds) => new()
+    {
+        BatteryRunIds = batteryRunIds.ToList(),
+        PricingBasis = BenchmarkModelComparisonPricingBasis.AsRun,
+        Scope = BenchmarkReportScope.Comparison,
+        Audiences = new List<BenchmarkReportAudience> { BenchmarkReportAudience.ExecutiveSummary },
+        WriterModelConfigurationId = h.Writer.Id
+    };
+
+    /// <summary>
+    /// Two analysed panel batteries graded by one panel and reference reader: an OpenAI model and an Anthropic
+    /// model scoring 10 points higher on every question. The reference reader leaves the Anthropic model's first
+    /// suite A answer ungraded, so the run-level diagnostics withhold that model's reader index while the battery's
+    /// reader composite skips the missing score.
+    /// </summary>
+    private static async Task<(long Luna, long Opus)> SeedPanelBatteriesAsync(Harness h)
+    {
+        long luna = await h.SeedBatteryAsync(panel: true);
+        long opus = await h.SeedBatteryAsync(SecondBatteryFirstRunId, "claude-opus-5", "Anthropic", shift: 10, panel: true, adjust: run =>
+        {
+            if (run.BenchmarkSuiteId != BenchmarkBatteryTestData.SuiteA) return;
+            var first = run.Answers.Single(a => a.OrderIndex == 1);
+            first.SecondOpinionQualityScore = null;
+            first.SecondOpinionTrigger = null;
+        });
+        return (luna, opus);
+    }
+
+    [Fact]
+    public async Task ABatteryPanelComparison_CarriesTheGraderFamilyGaps_IntoTheRootCauseAnalysis()
+    {
+        await using var h = await Harness.CreateAsync();
+        var (luna, opus) = await SeedPanelBatteriesAsync(h);
+
+        var prep = await h.PrepareComparisonAsync(BatteryComparisonRequest(h, luna, opus));
+
+        // The comparison itself carries no diagnostics; the report path computes them from the member runs.
+        Assert.Equal(BenchmarkModelComparisonSubjectKinds.Batteries, prep.Comparison.SubjectKind);
+        Assert.Null(prep.Comparison.PanelDiagnostics);
+
+        var rca = prep.Sheet.RootCause;
+        Assert.NotNull(rca);
+        var gap = Assert.Single(rca!.FamilyGaps ?? new List<Overseer.Services.Benchmarking.RootCause.RootCauseFamilyGap>());
+        Assert.Equal(("Anthropic", "OpenAI"), (gap.Provider1, gap.Provider2));
+        Assert.False(gap.IsMemberProviderPair);
+
+        // The two batteries' five questions pair on question id and item revision across both suites.
+        Assert.Equal(5, gap.PairedQuestionCount);
+        Assert.False(gap.InsufficientData);
+        Assert.Equal(10.0, gap.GapA.Value!.Value, 9);
+        Assert.Equal(10.0, gap.GapB.Value!.Value, 9);
+        Assert.Equal(10.0, gap.GapPanel.Value!.Value, 9);
+    }
+
+    [Fact]
+    public async Task ABatteryPanelComparison_RulesOutHQ4_OnTheReaderComposite_WhenBothMembersAndTheReaderOrderThePairAlike()
+    {
+        await using var h = await Harness.CreateAsync();
+        var (luna, opus) = await SeedPanelBatteriesAsync(h);
+
+        var prep = await h.PrepareComparisonAsync(BatteryComparisonRequest(h, luna, opus));
+
+        // Both batteries carry their member-alone and reader composites on the Overall Index's scale.
+        string opusLetter = prep.Sheet.Models!.Single(m => m.EntryKey == BenchmarkBatteryModelComparison.KeyOf(opus)).Letter;
+        Assert.Contains(prep.Sheet.Facts, f => f.Key == $"model.{opusLetter}.panel.referenceReaderIndex" && f.Available);
+
+        // Member B shares the Anthropic model's provider, so HQ4 fires; the members order the pair alike, so no
+        // pair is judge-dependent; and the reader composite, which the run-level diagnostics would withhold for the
+        // Anthropic model, orders it alike too.
+        var rca = prep.Sheet.RootCause!;
+        var graders = rca.Hypotheses.Where(x => x.Id == "HQ4").ToList();
+        Assert.NotEmpty(graders);
+        Assert.All(graders, x =>
+        {
+            Assert.Equal(Overseer.Services.Benchmarking.RootCause.RootCauseGrades.NotSupported, x.Grade);
+            Assert.Contains("Both panel members and the reference reader order the two alike.", x.Against);
+        });
+        Assert.DoesNotContain(prep.Sheet.NotableFindings ?? new List<BenchmarkReportNotableFinding>(), f => f.Kind == BenchmarkNotableFindings.JudgeDependentOrder);
+    }
+
+    [Fact]
+    public async Task ABatteryComparison_ListsEachCellsCriticalErrorResolutions_IncludingAnAnswerWithNoExcerpt()
+    {
+        await using var h = await Harness.CreateAsync();
+        const long overturnedRunId = BatteryFirstRunId + 2;
+        void ScoredUnderMethod13(BenchmarkRun run)
+        {
+            run.ScoringMethodVersion = BenchmarkCriticalErrorResolver.FirstScoringMethod;
+            foreach (var answer in run.Answers) answer.CriticalErrorResolution = BenchmarkCriticalErrorResolution.None;
+            if (run.Id == overturnedRunId)
+            {
+                run.Answers.Single(a => a.OrderIndex == 1).CriticalErrorResolution = BenchmarkCriticalErrorResolution.OverturnedByVerifier;
+            }
+        }
+
+        // Two rounds each: a question's detail is its median round, the lower one at two rounds, so the overturned
+        // answer of round 2 (4 points higher) is never excerpted.
+        long luna = await h.SeedBatteryAsync(rounds: 2, adjust: ScoredUnderMethod13);
+        long opus = await h.SeedBatteryAsync(SecondBatteryFirstRunId, "claude-opus-5", shift: 10, rounds: 2, adjust: ScoredUnderMethod13);
+
+        var prep = await h.PrepareComparisonAsync(BatteryComparisonRequest(h, luna, opus));
+
+        string lunaLetter = prep.Sheet.Models!.Single(m => m.EntryKey == BenchmarkBatteryModelComparison.KeyOf(luna)).Letter;
+        string opusLetter = prep.Sheet.Models!.Single(m => m.EntryKey == BenchmarkBatteryModelComparison.KeyOf(opus)).Letter;
+        var question = prep.Sheet.Questions.Single(q => q.Reference == "S1-Q1");
+
+        var lunaCell = question.Models!.Single(c => c.Letter == lunaLetter);
+        Assert.Equal(new[] { "None", "OverturnedByVerifier" }, lunaCell.CriticalErrorResolutions);
+        var opusCell = question.Models!.Single(c => c.Letter == opusLetter);
+        Assert.Equal(new[] { "None", "None" }, opusCell.CriticalErrorResolutions);
+
+        var excerpts = prep.Content.Runs.Where(r => r.Questions.Any(q => q.Number == question.Number)).ToList();
+        Assert.Contains(excerpts, r => r.Letter == lunaLetter);
+        Assert.DoesNotContain(excerpts, r => r.RunId == overturnedRunId);
+        Assert.DoesNotContain(excerpts.SelectMany(r => r.Questions), q => q.CriticalErrorResolution == "OverturnedByVerifier");
+
+        // A question of the other suite records only its own answers' resolutions.
+        var other = prep.Sheet.Questions.Single(q => q.Reference == "S2-Q1");
+        Assert.Equal(new[] { "None", "None" }, other.Models!.Single(c => c.Letter == lunaLetter).CriticalErrorResolutions);
+    }
+
     /// <summary>The <c>error</c> of an anonymous <c>{ error }</c> body, unescaped.</summary>
     private static string? ErrorOf(object? body) => body?.GetType().GetProperty("error")?.GetValue(body) as string;
 
@@ -1950,17 +2077,67 @@ public class BenchmarkReportPackServiceTests
             return job;
         }
 
-        /// <summary>One round of both suites of <see cref="BenchmarkBatteryTestData.Definition"/>, analysed; returns the battery run id.</summary>
-        public async Task<long> SeedBatteryAsync()
+        /// <summary>
+        /// <paramref name="rounds"/> rounds of both suites of <see cref="BenchmarkBatteryTestData.Definition"/>, analysed;
+        /// returns the battery run id. Round r is runs <paramref name="firstRunId"/> + 2(r − 1) (suite A) and the next
+        /// (suite B) of <paramref name="modelId"/> by <paramref name="provider"/>, scoring <paramref name="shift"/> + 4(r − 1)
+        /// above the suites' own scores. With <paramref name="panel"/> every run is a panel run with a reference reader
+        /// (<see cref="AsRefereedPanelRun"/>); <paramref name="adjust"/> then changes each run before it is saved.
+        /// </summary>
+        public async Task<long> SeedBatteryAsync(
+            long firstRunId = BatteryFirstRunId,
+            string modelId = "gpt-5.6-luna",
+            string provider = "OpenAI",
+            int shift = 0,
+            int rounds = 1,
+            bool panel = false,
+            Action<BenchmarkRun>? adjust = null)
         {
-            long id = await BenchmarkBatteryTestData.SeedAsync(
-                Db,
-                BenchmarkBatteryTestData.Definition(),
-                (BenchmarkBatteryTestData.SuiteARun(BatteryFirstRunId), 0, 1),
-                (BenchmarkBatteryTestData.SuiteBRun(BatteryFirstRunId + 1), 1, 1));
+            var members = new List<(BenchmarkRun Run, int SuiteIndex, int Round)>();
+            for (int round = 1; round <= rounds; round++)
+            {
+                long runId = firstRunId + 2 * (round - 1);
+                int roundShift = shift + 4 * (round - 1);
+                var suiteA = BenchmarkBatteryTestData.SuiteARun(runId, modelId, roundShift);
+                var suiteB = BenchmarkBatteryTestData.SuiteBRun(runId + 1, modelId, roundShift);
+                foreach (var run in new[] { suiteA, suiteB })
+                {
+                    if (!string.Equals(provider, "OpenAI", StringComparison.Ordinal))
+                    {
+                        run.TestedModelSnapshot = BenchmarkModelSnapshots.Model(
+                            provider: provider, modelId: modelId, displayName: modelId, thinkingLevel: "high", maxOutputTokens: 32000);
+                    }
+                    if (panel) AsRefereedPanelRun(run);
+                    adjust?.Invoke(run);
+                }
+                members.Add((suiteA, 0, round));
+                members.Add((suiteB, 1, round));
+            }
+
+            long id = await BenchmarkBatteryTestData.SeedAsync(Db, BenchmarkBatteryTestData.Definition(), members.ToArray());
             var (analysis, _, _, error) = await BenchmarkBatteryTestData.Service(Db).AnalyseAsync(id, null, null, CancellationToken.None);
             Assert.True(analysis != null, error);
             return id;
+        }
+
+        /// <summary>
+        /// A panel run (<see cref="BenchmarkBatteryTestData.AsPanelRun"/>: member A Google, member B Anthropic) whose
+        /// reference reader, a second Google model, scores every answer as the panel does.
+        /// </summary>
+        public static BenchmarkRun AsRefereedPanelRun(BenchmarkRun run)
+        {
+            BenchmarkBatteryTestData.AsPanelRun(run);
+            run.SecondOpinionAssessorModelConfigurationId = 11;
+            run.SecondOpinionAssessorModelSnapshot = BenchmarkModelSnapshots.Model(provider: "Google", modelId: "gemini-reader", displayName: "Gemini Reader");
+            run.SecondOpinionEffectiveMaxOutputTokens = 16000;
+            run.SecondOpinionModeUsed = (int)BenchmarkSecondOpinionMode.All;
+            run.SecondOpinionBlindUsed = true;
+            foreach (var answer in run.Answers)
+            {
+                answer.SecondOpinionQualityScore = answer.QualityScore;
+                answer.SecondOpinionTrigger = "All";
+            }
+            return run;
         }
 
         /// <summary>Runs one battery-completion job for the battery run through the service, over the fake writer.</summary>

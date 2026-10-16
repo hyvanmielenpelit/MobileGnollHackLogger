@@ -229,7 +229,8 @@ public sealed class RootCauseModelEvidence
 ///   .retriesPerAnswer, .servedTierMismatch
 ///   tokens.reasoningPerQuestion, .reasoningShare, .cacheReadShare
 ///   cost.component.&lt;c&gt;.perQuestion           c = uncachedInput, cacheRead, cacheWrite, output, reasoning
-///   price.&lt;c&gt;.perMillion                      the card's nominal price
+///   price.&lt;c&gt;.perMillion                      the card's nominal price, the amount alone
+///   price.cardsDiffer                             only when the runs' cards differ
 ///   servedTier
 ///   score.withTools, score.withoutTools
 ///   outcome.confirmedCriticalRate                 with its Wilson interval in the display
@@ -250,6 +251,12 @@ public static class RootCauseEvidence
 
     /// <summary>The end of an output figure's display for a model whose provider does not report reasoning separately.</summary>
     public const string ThinkingIncluded = " (thinking included)";
+
+    /// <summary>The fact stated when the price cards of a model's runs differ: its <c>price.&lt;c&gt;.perMillion</c> facts are the lowest-id run's.</summary>
+    public const string PricesDifferKey = "price.cardsDiffer";
+
+    /// <summary>The display of <see cref="PricesDifferKey"/>.</summary>
+    public const string PricesDifferDisplay = "the runs' cards differ; the lowest-id run's prices are shown";
 
     /// <summary>
     /// The evidence of one model over <paramref name="runs"/>, which carry their answers, their tool calls
@@ -649,7 +656,7 @@ public static class RootCauseEvidence
         "cost.component.uncachedInput.perQuestion", "cost.component.cacheRead.perQuestion", "cost.component.cacheWrite.perQuestion",
         "cost.component.output.perQuestion", "cost.component.reasoning.perQuestion",
         "price.uncachedInput.perMillion", "price.cacheRead.perMillion", "price.cacheWrite.perMillion",
-        "price.output.perMillion", "price.reasoning.perMillion",
+        "price.output.perMillion", "price.reasoning.perMillion", PricesDifferKey,
         "servedTier", "score.withTools", "score.withoutTools", "outcome.confirmedCriticalRate",
         "config.serviceTier", "config.reasoningMode", "config.parallelMode", "config.maxOutputTokens"
     };
@@ -658,6 +665,8 @@ public static class RootCauseEvidence
     /// The per-model facts of § A3 for <paramref name="evidence"/>, unprefixed. A figure whose source
     /// columns are missing is unavailable with the reason, never zero; a model degraded on an axis has
     /// that axis' figures unavailable with <paramref name="speedDegradedReason"/> or <paramref name="costDegradedReason"/>.
+    /// The prices print the amount alone: <paramref name="pricingBasisKind"/> is not printed with them, since the
+    /// document states its pricing basis once (<c>rca.pricingBasis</c>).
     /// </summary>
     internal static void AddFacts(
         BenchmarkReportFacts.FactList facts,
@@ -753,7 +762,7 @@ public static class RootCauseEvidence
         else
         {
             double share = withInput.Sum(a => (double)(a.CacheReadTokens ?? 0)) / withInput.Sum(a => (double)a.InputTokens!.Value);
-            facts.Add("tokens.cacheReadShare", share, BenchmarkReportFormat.Percent(share * 100) + " of input tokens read from the cache");
+            facts.Add("tokens.cacheReadShare", share, BenchmarkReportFormat.Percent(share * 100));
         }
 
         var costed = evidence.Answers.Where(a => a.ComponentCost != null).ToList();
@@ -780,9 +789,7 @@ public static class RootCauseEvidence
             }
             else if (evidence.PricesPerMillion[k] is double price)
             {
-                string basis = pricingBasisKind == BenchmarkReportFacts.PricingBasisCatalog ? "today's catalog" : "the run's stored card";
-                facts.Add(priceKey, price, "$" + price.ToString("0.00##", CultureInfo.InvariantCulture) + " per million tokens ("
-                    + basis + (evidence.PricesDiffer ? "; the runs' cards differ, the lowest-id run's shown" : string.Empty) + ")");
+                facts.Add(priceKey, price, "$" + price.ToString("0.00##", CultureInfo.InvariantCulture) + " per million tokens");
             }
             else
             {
@@ -791,6 +798,7 @@ public static class RootCauseEvidence
                     : NoPriceReason);
             }
         }
+        if (evidence.PricesDiffer) facts.Add(PricesDifferKey, true, PricesDifferDisplay);
 
         if (string.IsNullOrWhiteSpace(evidence.ServedTier)) facts.Unavailable("servedTier", "No answer recorded the tier it was served at.");
         else facts.Add("servedTier", evidence.ServedTier, evidence.ServedTier);
@@ -843,7 +851,10 @@ public static class RootCauseEvidence
     /// <summary>
     /// One model's engine input from its comparison entry, its runs' evidence and its sheet figures: the
     /// dimension means (accuracy to readability), the response-style conflict and, for a battery result,
-    /// the advisory verification-cleared Overall Index.
+    /// the advisory verification-cleared Overall Index. The index under each panel member alone and under the
+    /// reference reader come from the comparison's panel diagnostics; <paramref name="memberAIndex"/>,
+    /// <paramref name="memberBIndex"/> and <paramref name="referenceReaderIndex"/>, when given, win over them (a
+    /// battery's declared-weights composites, on the Overall Index's scale).
     /// </summary>
     public static RootCauseModelInput ModelInput(
         BenchmarkModelComparisonEntryDto entry,
@@ -855,7 +866,10 @@ public static class RootCauseEvidence
         IReadOnlyList<double?> dimensions,
         bool styleConflict,
         BenchmarkModelComparisonDto comparison,
-        double? verificationClearedIndex = null)
+        double? verificationClearedIndex = null,
+        double? memberAIndex = null,
+        double? memberBIndex = null,
+        double? referenceReaderIndex = null)
     {
         ArgumentNullException.ThrowIfNull(entry);
         ArgumentNullException.ThrowIfNull(comparison);
@@ -893,9 +907,9 @@ public static class RootCauseEvidence
             StyleConflict = styleConflict,
             DifferenceKeys = entry.Differences.Select(d => d.Name).Distinct(StringComparer.Ordinal).ToList(),
             VerificationClearedIndex = verificationClearedIndex,
-            MemberAIndex = panel?.MemberAIndex,
-            MemberBIndex = panel?.MemberBIndex,
-            ReferenceReaderIndex = panel?.ReferenceIndex,
+            MemberAIndex = memberAIndex ?? panel?.MemberAIndex,
+            MemberBIndex = memberBIndex ?? panel?.MemberBIndex,
+            ReferenceReaderIndex = referenceReaderIndex ?? panel?.ReferenceIndex,
             Evidence = evidence
         };
     }

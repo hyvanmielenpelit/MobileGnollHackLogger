@@ -423,7 +423,8 @@ internal static class RootCauseReportFixture
             [BenchmarkReportSlots.Limitations] = "The benchmark asks single questions, so longer conversations are not measured."
         };
 
-        // One answer per research question the sheet asks, citing its status and, where one fired, a hypothesis reference.
+        // One answer per research question the sheet asks, citing its status and, where one fired, a hypothesis reference
+        // after the words that say what it is about: the reference prints the bare id ("…is HC2.2.").
         foreach (var question in sheet.RootCause?.Questions ?? new List<RootCauseQuestion>())
         {
             string prefix = "rca.question." + question.Number + ".";
@@ -431,9 +432,15 @@ internal static class RootCauseReportFixture
             string? reference = question.HypothesisKeys
                 .Select(k => "rca.hypothesis." + k + ".ref")
                 .FirstOrDefault(keys.Contains);
+            string about = question.Number switch
+            {
+                3 => "time per question",
+                4 => "cost per question",
+                _ => "Intelligence Index"
+            };
             sections[BenchmarkReportSlots.RootCauseAnswerSlots[question.Number - 1]] =
                 "For " + T(prefix + "model") + " the measured signals are " + T(prefix + "signals") + ". The answer strength is " + T(prefix + "status") + "."
-                + (reference != null ? " The leading hypothesis is " + T(reference) + "." : string.Empty);
+                + (reference != null ? " The leading hypothesis about its " + about + " is " + T(reference) + "." : string.Empty);
         }
 
         return new BenchmarkReportWriterOutput

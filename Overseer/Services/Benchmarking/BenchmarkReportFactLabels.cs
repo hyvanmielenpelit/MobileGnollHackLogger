@@ -89,6 +89,7 @@ public static class BenchmarkReportFactLabels
         ["tokens.reasoningPerQuestion"] = "Reasoning tokens per question",
         ["tokens.reasoningShare"] = "Reasoning share of output tokens",
         ["tokens.cacheReadShare"] = "Cache-read share of input tokens",
+        ["price.cardsDiffer"] = "Price cards differ between the runs",
         ["servedTier"] = "Served service tier",
         ["score.withTools"] = "Mean score of answers with a tool call",
         ["score.withoutTools"] = "Mean score of answers without a tool call",
@@ -688,6 +689,7 @@ public static class BenchmarkReportFactLabels
         ["check"] = "check",
         ["share"] = "share of the difference",
         ["interval"] = "95% interval of the share",
+        ["priceCard"] = "price effect, known from the price cards",
     };
 
     /// <summary>The parts of a research question's facts (<c>rca.question.&lt;n&gt;.&lt;part&gt;</c>).</summary>
@@ -695,6 +697,7 @@ public static class BenchmarkReportFactLabels
     {
         ["text"] = "question",
         ["model"] = "model",
+        ["neighbor"] = "model the place is measured against",
         ["status"] = "answer strength",
         ["hypotheses"] = "hypotheses about the model",
         ["signals"] = "measured signals",
@@ -815,25 +818,31 @@ public static class BenchmarkReportFactLabels
                 label = "Research question " + parts[2] + ": " + questionPart;
                 return true;
 
-            // rca.profile.<T>.<part>, rca.profile.<T>.strength.<n>, rca.profile.<T>.flag.<n>
+            // rca.profile.<T>.<part>, rca.profile.<T>.strength.<n>, rca.profile.<T>.flag.<n>: Model C's profile, which a named copy names
             case "profile" when parts.Length >= 4 && TokenName(parts[2]) is string profiled:
+                string profile = char.ToUpperInvariant(profiled[0]) + profiled[1..] + "'s profile: ";
                 if (parts.Length == 4 && ProfileParts.TryGetValue(parts[3], out var profilePart))
                 {
-                    label = "Profile, " + profiled + ": " + profilePart;
+                    label = profile + profilePart;
                     return true;
                 }
                 if (parts.Length == 5 && parts[3] is "strength" or "flag" && IsIndex(parts[4]))
                 {
-                    label = "Profile, " + profiled + ": " + parts[3] + " " + parts[4];
+                    label = profile + parts[3] + " " + parts[4];
                     return true;
                 }
                 return false;
 
-            // rca.speed.<F>.<S>.total, rca.speed.<F>.<S>.<component>.share or .interval
+            // rca.speed.<F>.<S>.total, .decomposed, rca.speed.<F>.<S>.<component>.share or .interval
             case "speed" when parts.Length >= 5 && TokenName(parts[2]) is string first && TokenName(parts[3]) is string second:
                 if (parts.Length == 5 && parts[4] == "total")
                 {
                     label = "Model time difference per question, " + first + " against " + second;
+                    return true;
+                }
+                if (parts.Length == 5 && parts[4] == "decomposed")
+                {
+                    label = "Model time difference per question, " + first + " against " + second + ": split into parts";
                     return true;
                 }
                 if (parts.Length == 6 && SpeedComponentNames.TryGetValue(parts[4], out var speedComponent) && parts[5] is "share" or "interval")
@@ -843,11 +852,16 @@ public static class BenchmarkReportFactLabels
                 }
                 return false;
 
-            // rca.cost.<F>.<S>.total, rca.cost.<F>.<S>.<component>.<volume|price>.share or .interval
+            // rca.cost.<F>.<S>.total, .decomposed, rca.cost.<F>.<S>.<component>.<volume|price>.share or .interval
             case "cost" when parts.Length >= 5 && TokenName(parts[2]) is string first && TokenName(parts[3]) is string second:
                 if (parts.Length == 5 && parts[4] == "total")
                 {
                     label = "Cost difference per question, " + first + " against " + second;
+                    return true;
+                }
+                if (parts.Length == 5 && parts[4] == "decomposed")
+                {
+                    label = "Cost difference per question, " + first + " against " + second + ": split into parts";
                     return true;
                 }
                 if (parts.Length == 7 && parts[5] is "volume" or "price" && parts[6] is "share" or "interval"
@@ -879,16 +893,16 @@ public static class BenchmarkReportFactLabels
                 }
                 return false;
 
-            // rca.atRisk.<T>.<segment>, rca.atRisk.<T>.total
+            // rca.atRisk.<T>.<segment>, rca.atRisk.<T>.total: an upper bound, never points lost
             case "atRisk" when parts.Length == 4 && TokenName(parts[2]) is string model:
                 if (parts[3] == "total")
                 {
-                    label = "Index points at risk, " + model;
+                    label = "Index points at risk, " + model + " (upper bound)";
                     return true;
                 }
                 if (SegmentNames.TryGetValue(parts[3], out var segment))
                 {
-                    label = "Index points at risk, " + model + ": " + segment;
+                    label = "Index points at risk, " + model + ": " + segment + " (upper bound)";
                     return true;
                 }
                 return false;

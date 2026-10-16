@@ -542,7 +542,10 @@ public static partial class BenchmarkReportPackRenderer
         }
     }
 
-    /// <summary>An item's evidence in words: each fact by its label and value, each question with the models' scores; empty for none.</summary>
+    /// <summary>
+    /// An item's evidence in words: each fact by its label and value (a model profile's entry by the model's name,
+    /// <see cref="RcaProfileEvidence"/>), each question with the models' scores; empty for none.
+    /// </summary>
     private static string EvidenceText(Context ctx, BenchmarkReportWriterItem item)
     {
         var parts = new List<string>();
@@ -555,7 +558,8 @@ public static partial class BenchmarkReportPackRenderer
                 continue;
             }
             var fact = Fact(ctx, id);
-            parts.Add(ComparisonFactLabel(ctx, id) + (fact == null ? string.Empty : ": " + (fact.Available ? Shown(ctx, fact) : BenchmarkReportFacts.NotAvailable)));
+            parts.Add(RcaProfileEvidence(ctx, id, fact)
+                ?? ComparisonFactLabel(ctx, id) + (fact == null ? string.Empty : ": " + (fact.Available ? Shown(ctx, fact) : BenchmarkReportFacts.NotAvailable)));
         }
 
         var listed = numbers.Distinct().OrderBy(n => n).ToList();
@@ -577,7 +581,8 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// A comparison-scope fact's label: <c>Model B's critical errors</c> for <c>model.B.errors.critical</c>,
-    /// <c>Model A against Model C: …</c> for a pair's fact, each model named in a named copy.
+    /// <c>Model A against Model C: …</c> for a pair's fact, each model named in a named copy; in a named copy, any other
+    /// label's <c>Model A</c> names the model too (<see cref="NamedLetters"/>).
     /// </summary>
     private static string ComparisonFactLabel(Context ctx, string key)
     {
@@ -592,7 +597,7 @@ public static partial class BenchmarkReportPackRenderer
             string rest = string.Join('.', parts.Skip(3));
             return NameOfLetter(ctx, parts[1]) + " against " + NameOfLetter(ctx, parts[2]) + ": " + LowerFirst(PairFactLabel(rest));
         }
-        return Label(key);
+        return ctx.Anonymized ? Label(key) : NamedLetters(ctx, Label(key));
     }
 
     private static string ModelFactLabel(string rest) => rest switch

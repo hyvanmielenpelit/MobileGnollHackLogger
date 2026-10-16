@@ -460,12 +460,15 @@ public class BenchmarkReportPackPromptTests
         Assert.DoesNotContain("\n  member B:", message);
     }
 
-    [Fact]
-    public void UserMessage_LeavesOutTheRubricsSourceParagraphs()
+    [Theory]
+    [InlineData("SOURCE —")]
+    [InlineData("**SOURCE** —")]
+    [InlineData("**SOURCE**:")]
+    public void UserMessage_LeavesOutTheRubricsSourceParagraphs(string label)
     {
         var content = ReportPackWriterTestData.Content();
         content.Runs[0].Questions[0].ExpectedPoints =
-            "- A lawful character may receive Excalibur.\n\nSOURCE — fountain.c:212 dipfountain() rolls the chance.\nsee also artifact.c:88\n\n- The chance is one in six per dip.";
+            "- A lawful character may receive Excalibur.\n\n" + label + " fountain.c:212 dipfountain() rolls the chance.\nsee also artifact.c:88\n\n- The chance is one in six per dip.";
 
         string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.ExecutiveSummary, ReportPackWriterTestData.Sheet(), content).UserMessage;
 
@@ -477,6 +480,31 @@ public class BenchmarkReportPackPromptTests
         Assert.Equal("Keep this.", BenchmarkReportPackPrompt.WithoutSourceParagraphs("SOURCE: a.c:1\nb.c:2\n\nKeep this."));
         Assert.Equal("Keep this.", BenchmarkReportPackPrompt.WithoutSourceParagraphs("Keep this.\n\nSOURCE — a.c:1"));
         Assert.Equal("No citation here.", BenchmarkReportPackPrompt.WithoutSourceParagraphs("No citation here."));
+    }
+
+    [Theory]
+    // The bold label the default suites write, its paragraph ended by a blank line.
+    [InlineData("**REQUIRED**\n- A point.\n\n**SOURCE** — `src/role.c` line 12\n`include/objclass.h`\n\n**CRITICAL ERROR**\n- Wrong.",
+        "**REQUIRED**\n- A point.\n\n**CRITICAL ERROR**\n- Wrong.")]
+    // Inline, with no blank line around it: the next bold label ends it and is kept.
+    [InlineData("**REQUIRED**\n- A point.\n**SOURCE** — src/objnam.c:40\n**CRITICAL ERROR**\n- Sends the player away.",
+        "**REQUIRED**\n- A point.\n**CRITICAL ERROR**\n- Sends the player away.")]
+    // Indented, with a continuation line.
+    [InlineData("- A point.\n\n   SOURCE: a.c:1\n   b.c:2\n\n- Another.", "- A point.\n\n- Another.")]
+    // Two SOURCE paragraphs are each removed.
+    [InlineData("**SOURCE** — a.c:1\n\n- Kept.\n\n**SOURCE** — b.c:2\nmore\n", "- Kept.")]
+    // The colon after the bold, and inside it.
+    [InlineData("- Kept.\n\n**SOURCE**: `src/role.c`, gnoll race entry", "- Kept.")]
+    [InlineData("- Kept.\n\n**SOURCE:** src/role.c", "- Kept.")]
+    [InlineData("- Kept.\n\n__SOURCES__ — a.c, b.c", "- Kept.")]
+    // A heading ends it and is kept.
+    [InlineData("**SOURCE** — a.c\n## Notes\nKept.", "## Notes\nKept.")]
+    // Another bold label is no SOURCE label, and neither is a hyphenated word.
+    [InlineData("- Kept.\n\n**NOTE** — a reader's note.\n\n**SOURCE** — a.c:1", "- Kept.\n\n**NOTE** — a reader's note.")]
+    [InlineData("SOURCE-CODE REFERENCES are allowed here.", "SOURCE-CODE REFERENCES are allowed here.")]
+    public void WithoutSourceParagraphs_StripsEveryFormOfTheLabel_AndKeepsTheOtherLabels(string rubric, string expected)
+    {
+        Assert.Equal(expected, BenchmarkReportPackPrompt.WithoutSourceParagraphs(rubric));
     }
 
     [Fact]
@@ -1135,7 +1163,7 @@ public class BenchmarkReportPackPromptTests
         Assert.Equal("- The tokens of a Not supported hypothesis support only a negated cause (not due to, not because).", lines[causal + 1]);
 
         string rule33 = Assert.Single(lines, l => l.StartsWith("- Rule 33, causes:", StringComparison.Ordinal));
-        Assert.Contains("'Part of the gap " + wording + " {{" + kept + "ref}}.'", rule33, StringComparison.Ordinal);
+        Assert.Contains("'Part of the gap " + wording + " <what it is about, in your own words> ({{" + kept + "ref}}).'", rule33, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -1176,6 +1204,199 @@ public class BenchmarkReportPackPromptTests
         // A question no hypothesis answers says so; the within-only line would contradict it.
         var fourth = Assert.Single(NotesOf(4));
         Assert.StartsWith(noAnswer, fourth, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AQuestionFourKnownFromThePriceCards_AsksForThePricesAndNoCertaintyWord()
+    {
+        string priceCard = Overseer.Services.Benchmarking.RootCause.RootCauseFacts.PriceCardStatusDisplay;
+        var (prompt, _, _) = RegradedRootCausePrompt("Moderate", (3, "Moderate", null, null), (4, priceCard, null, null));
+
+        var lines = prompt.UserMessage.Split('\n').ToList();
+        string slot = Overseer.Services.Benchmarking.RootCause.RootCauseClaimSupport.AnswerSlot(4);
+        int at = lines.FindIndex(l => l.StartsWith("- " + slot + ":", StringComparison.Ordinal));
+        Assert.True(at >= 0);
+        var notes = lines.Skip(at + 1).TakeWhile(l => l.StartsWith("  ", StringComparison.Ordinal)).ToList();
+        string note = Assert.Single(notes);
+        Assert.StartsWith("  its answer is known from the price cards: say that the price per token differs, cite ", note, StringComparison.Ordinal);
+        Assert.EndsWith(", and use no certainty word.", note, StringComparison.Ordinal);
+
+        // Question 3 is not a price question.
+        int third = lines.FindIndex(l => l.StartsWith("- " + Overseer.Services.Benchmarking.RootCause.RootCauseClaimSupport.AnswerSlot(3) + ":", StringComparison.Ordinal));
+        Assert.DoesNotContain(lines.Skip(third + 1).TakeWhile(l => l.StartsWith("  ", StringComparison.Ordinal)), l => l.Contains("price cards", StringComparison.Ordinal));
+
+        // The system prompt states the rule without data.
+        Assert.Contains("When THE QUESTIONS says its answer is known from the price cards, say that the price per token differs, cite the model's price.<component>.perMillion facts, and use no certainty word.", prompt.SystemPrompt);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheRootCauseSystemPrompt_LeadsWithIntelligenceOrSpeed_AndNeverWithAPriceEffect(bool comparison)
+    {
+        string system = BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(comparison);
+        const string order = "Take the axes in the order intelligence, speed, cost, and lead with the first whose status is Root cause established or Probable cause; cost may lead only when neither other axis has one.";
+
+        string headline = Assert.Single(system.Split('\n'), l => l.StartsWith("- headline:", StringComparison.Ordinal));
+        Assert.Contains(order, headline);
+        Assert.Contains("is what the price cards show, never the cause the runs found", headline);
+        string conclusions = Assert.Single(system.Split('\n'), l => l.StartsWith("- " + BenchmarkReportSlots.Conclusions + ":", StringComparison.Ordinal));
+        Assert.Contains("take the axes in the order intelligence, speed, cost;", conclusions);
+        Assert.Contains("never call it the axis' root cause", conclusions);
+
+        // Prove is a certainty word now, so the instructions never use it.
+        Assert.DoesNotContain("configuration proves", system);
+        Assert.Contains("a decomposition or the configuration shows.", system);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheRootCauseSystemPrompt_StatesTheCitationShareAndParenthesisRules(bool comparison)
+    {
+        string system = BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(comparison);
+
+        Assert.Contains("- A hypothesis' rca.hypothesis.<id>.<n>.ref token prints its id alone. Name what the hypothesis is about in your own words, once per paragraph, then cite its .ref token after it", system);
+        Assert.Contains("Cite several hypotheses of one rule once, as a range of their first and last .ref tokens joined by an en dash", system);
+        Assert.Contains("- Never put a parenthesis inside another, and never put a model token inside parentheses: model names carry their own.", system);
+        Assert.Contains("as its .share token followed by 'of the gap'", system);
+        Assert.Contains("Never join two fact tokens with 'to', or with 'from … to', unless both print a bare figure in the same unit", system);
+        Assert.DoesNotContain("four related hypotheses", system);
+    }
+
+    [Fact]
+    public void TheRootCauseSystemPrompt_DefinesAControl_AndAComparisonNamesNone()
+    {
+        const string control = "A control is only an earlier run of another model that answered the same questions under the same graders and settings, as CONTROLS lists it; "
+            + "never call a measurement, a count, a figure or a check a control, and in a comparison, which has none, never use the word.";
+        string comparison = BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(true);
+        string model = BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(false);
+
+        Assert.Contains(control, comparison);
+        Assert.Contains(control, model);
+
+        string Slot(string system, string slot) => Assert.Single(system.Split('\n'), l => l.StartsWith("- " + slot + ":", StringComparison.Ordinal));
+
+        // A comparison has no controls: its slots ask for none, and its TERMS leave the term out.
+        Assert.DoesNotContain("CONTROLS", Slot(comparison, BenchmarkReportSlots.Scope));
+        Assert.DoesNotContain("control", Slot(comparison, BenchmarkReportSlots.EvidenceIntelligence), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("control", Slot(comparison, BenchmarkReportSlots.Limitations), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("\n- Control\n", comparison);
+
+        Assert.Contains("where CONTROLS applies, which controls there are and the control limit", Slot(model, BenchmarkReportSlots.Scope));
+        Assert.Contains("the item-level controls", Slot(model, BenchmarkReportSlots.EvidenceIntelligence));
+        Assert.Contains("or the control limit", Slot(model, BenchmarkReportSlots.Limitations));
+        Assert.Contains("\n- Control\n", model);
+    }
+
+    [Fact]
+    public void TheRootCauseFacts_HaveTheirReadingNotes_UnderFacts()
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var sheet = built.Sheet!;
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, built.Content!).UserMessage;
+
+        int facts = message.IndexOf("FACTS (write {{key}} to place a figure; key = value as printed)\n", StringComparison.Ordinal);
+        Assert.True(facts >= 0);
+        int first = message.IndexOf("\n" + sheet.Facts.OrderBy(f => f.Key, StringComparer.Ordinal).First().Key + " = ", facts, StringComparison.Ordinal);
+        Assert.True(first > facts);
+        string notes = message[facts..first];
+
+        Assert.Contains("\nrca.speed.<F>.<S>.*, rca.cost.<F>.<S>.* and rca.quality.<F>.<S>.* compare model F with model S as F minus S: ", notes);
+        Assert.Contains("Speed is model time per question.", notes);
+        Assert.Contains("\nrca.atRisk.* are index points at risk: an upper bound on what a failure signal could have cost, never points lost.", notes);
+        Assert.Contains("\nmodel.X.price.<component>.perMillion are prices per million tokens on the pricing basis {{rca.pricingBasis}}", notes);
+        Assert.Contains("\nmodel.X.tokens.cacheReadShare is the share of the model's input tokens read from the cache", notes);
+
+        // A note appears only for a kind of fact the sheet has.
+        bool decomposed = sheet.Facts.Any(f => f.Key.StartsWith("rca.", StringComparison.Ordinal) && f.Key.EndsWith(".decomposed", StringComparison.Ordinal));
+        Assert.Equal(decomposed, notes.Contains(".decomposed = false: that pair's difference is not split into parts", StringComparison.Ordinal));
+        bool differ = sheet.Facts.Any(f => f.Key.EndsWith(".price.cardsDiffer", StringComparison.Ordinal));
+        Assert.Equal(differ, notes.Contains("price.cardsDiffer: that model's runs used different price cards", StringComparison.Ordinal));
+
+        // A per-model sheet names its own facts without the model prefix.
+        var run = RootCauseReportFixture.RunSheet(controls: false);
+        string alone = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, run,
+            BenchmarkReportContent.Build(new[] { RootCauseReportFixture.Runs()[RootCauseReportFixture.SubjectRunId] }, 120)).UserMessage;
+        Assert.Contains("\nprice.<component>.perMillion are prices per million tokens on the pricing basis {{rca.pricingBasis}}", alone);
+        Assert.DoesNotContain("model.X.", alone);
+    }
+
+    [Fact]
+    public void TheRootCauseChecks_ShowARangeAndAShare_AndNeverLeadTheCausalExampleWithAPriceEffect()
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var sheet = built.Sheet!;
+        var lines = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, built.Content!).UserMessage.Split('\n');
+
+        string rule31 = Assert.Single(lines, l => l.StartsWith("- Rule 31, sentence shapes:", StringComparison.Ordinal));
+        Assert.Contains("after your own words for what it is about", rule31);
+        Assert.Contains("never put a parenthesis inside another", rule31);
+        Assert.Matches(@"as a range such as \{\{rca\.hypothesis\.([A-Z0-9-]+)\.\d+\.ref\}\}–\{\{rca\.hypothesis\.\1\.\d+\.ref\}\}", rule31);
+
+        // The causal example takes a mechanism that is no price effect wherever the sheet has one.
+        var keys = sheet.Facts.Where(f => f.Available).Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+        var hypotheses = sheet.RootCause!.Hypotheses;
+        var priceEffects = hypotheses.Where(h => h.PriceEffect).Select(h => "{{rca.hypothesis." + h.Key + ".").ToList();
+        bool otherCause = hypotheses.Any(h => h.Kind != "null" && !h.PriceEffect
+            && Overseer.Services.Benchmarking.RootCause.RootCauseGrades.Rank(h.Grade) >= Overseer.Services.Benchmarking.RootCause.RootCauseGrades.Rank(Overseer.Services.Benchmarking.RootCause.RootCauseGrades.Low)
+            && keys.Contains("rca.hypothesis." + h.Key + ".ref"));
+        string rule33 = Assert.Single(lines, l => l.StartsWith("- Rule 33, causes:", StringComparison.Ordinal));
+        if (otherCause)
+        {
+            Assert.DoesNotContain(priceEffects, p => rule33.Contains(p, StringComparison.Ordinal));
+        }
+    }
+
+    // The validator's rule 31 on parentheses and 'to' -----------------------------------------------
+
+    private static List<BenchmarkReportValidationNote> TokenShapeNotes(string paragraph)
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var output = RootCauseReportFixture.Writer(built.Sheet!, comparison: true);
+        output.Sections[BenchmarkReportSlots.HypothesesSpeed] = paragraph;
+        return BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.RootCauseAnalysis, output, built.Sheet!, built.Content!)
+            .Where(n => n.Rule == BenchmarkReportPackValidator.ComparisonTokenShapeRule
+                        && n.Location.StartsWith("sections." + BenchmarkReportSlots.HypothesesSpeed, StringComparison.Ordinal))
+            .ToList();
+    }
+
+    [Fact]
+    public void Rule31_FlagsAParenthesisInsideAnother_AndKeepsTheText()
+    {
+        var nested = TokenShapeNotes("The slowest pair waits longest ({{model:A}} against the others (per call)), as the table shows.");
+        Assert.Contains(nested, n => n.Message.StartsWith("Puts a parenthesis inside another", StringComparison.Ordinal));
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(BenchmarkReportPackValidator.ComparisonTokenShapeRule));
+
+        Assert.DoesNotContain(TokenShapeNotes("The slowest pair waits longest ({{model:A}} against the others), as the table shows."),
+            n => n.Message.StartsWith("Puts a parenthesis inside another", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Rule31_FlagsTwoWordedFactsJoinedByTo_ButNotTwoBareFiguresInOneUnit()
+    {
+        const string joined = "Joins facts with 'to'";
+        var sheet = RootCauseReportFixture.ComparisonFacts().Sheet!;
+        var atRisk = sheet.Facts.Where(f => f.Available && Regex.IsMatch(f.Key, @"^rca\.atRisk\.[A-Z]+\.total$")).Select(f => f.Key).OrderBy(k => k, StringComparer.Ordinal).Take(2).ToList();
+        var shares = sheet.Facts.Where(f => f.Available && Regex.IsMatch(f.Key, @"^model\.[A-Z]+\.tokens\.cacheReadShare$")).Select(f => f.Key).OrderBy(k => k, StringComparer.Ordinal).Take(2).ToList();
+        var prices = sheet.Facts.Where(f => f.Available && Regex.IsMatch(f.Key, @"^model\.[A-Z]+\.price\.output\.perMillion$")).Select(f => f.Key).OrderBy(k => k, StringComparer.Ordinal).Take(2).ToList();
+        Assert.Equal(2, atRisk.Count);
+        Assert.Equal(2, shares.Count);
+        Assert.Equal(2, prices.Count);
+
+        // A total reads '… index points below a median answer of …': a worded display.
+        var worded = TokenShapeNotes("The points at risk run from {{" + atRisk[0] + "}} to {{" + atRisk[1] + "}} across the models.");
+        Assert.Contains(worded, n => n.Message.StartsWith(joined, StringComparison.Ordinal) && n.Message.Contains("{{" + atRisk[0] + "}} to {{" + atRisk[1] + "}}", StringComparison.Ordinal));
+
+        // Two percentages, or two prices per million tokens, are bare figures in one unit.
+        Assert.DoesNotContain(TokenShapeNotes("The cache share runs from {{" + shares[0] + "}} to {{" + shares[1] + "}} across the models."),
+            n => n.Message.StartsWith(joined, StringComparison.Ordinal));
+        Assert.DoesNotContain(TokenShapeNotes("The output price runs from {{" + prices[0] + "}} to {{" + prices[1] + "}} across the models."),
+            n => n.Message.StartsWith(joined, StringComparison.Ordinal));
+
+        // Two figures in different units are not.
+        Assert.Contains(TokenShapeNotes("The figures run from {{" + shares[0] + "}} to {{" + prices[1] + "}} across the models."),
+            n => n.Message.StartsWith(joined, StringComparison.Ordinal));
     }
 
     // Comparison scope --------------------------------------------------------------------------

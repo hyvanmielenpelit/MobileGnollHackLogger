@@ -24,8 +24,9 @@ using Overseer.Models;
 /// causal word directly after <c>not</c>, <c>never</c> or <c>cannot</c> rules a cause out: any hypothesis' token,
 /// a Not supported one's included, or an axis token supports it.</item>
 /// <item>A certainty word (<see cref="CertaintyWords"/>), anywhere, needs in the same sentence a token of a
-/// hypothesis graded High, its label included, or the <c>rca.axis.&lt;axis&gt;.status</c> token of an axis whose
-/// root cause is established. A certainty word after <c>not</c>, <c>never</c> or <c>cannot</c> is not one.</item>
+/// hypothesis graded High that is no price effect (its <c>.priceCard</c> fact), its label included, or the
+/// <c>rca.axis.&lt;axis&gt;.status</c> token of an axis whose root cause is established. A certainty word after
+/// <c>not</c>, <c>never</c> or <c>cannot</c> is not one.</item>
 /// <item>The conclusions cite every axis' <see cref="StatusKey"/>.</item>
 /// </list>
 /// </summary>
@@ -39,6 +40,9 @@ public sealed class RootCauseClaimSupport
     /// <summary>The suffix of a hypothesis' label, a noun phrase that may sit inside a sentence.</summary>
     public const string LabelSuffix = ".label";
 
+    /// <summary>The part of a price effect's <c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.priceCard</c> fact, true when it is known from the price cards.</summary>
+    public const string PriceCardPart = "priceCard";
+
     /// <summary>Causal wording, matched as whole words and phrases, ignoring case.</summary>
     public static readonly IReadOnlyList<string> CausalWords = new[]
     {
@@ -48,7 +52,7 @@ public sealed class RootCauseClaimSupport
     /// <summary>Certainty wording, matched as whole words and phrases, ignoring case, unless negated.</summary>
     public static readonly IReadOnlyList<string> CertaintyWords = new[]
     {
-        "established", "confirmed", "proven", "definitely", "certainly", "root cause was found"
+        "established", "confirmed", "proven", "prove", "proves", "proved", "definitely", "certainly", "root cause was found"
     };
 
     /// <summary>Hedge wording, matched as whole words and phrases, ignoring case: a cause resting on Low hypotheses only needs one.</summary>
@@ -114,8 +118,9 @@ public sealed class RootCauseClaimSupport
             .Distinct(StringComparer.Ordinal)
             .OrderBy(p => p, StringComparer.Ordinal)
             .ToList();
+        // A price effect graded High is read off the price cards, not found by the runs: it supports no certainty word.
         _highPrefixes = new HashSet<string>(
-            HypothesisPrefixes.Where(p => string.Equals(Value(p + "grade"), RootCauseGrades.High, StringComparison.Ordinal)),
+            HypothesisPrefixes.Where(p => string.Equals(Value(p + "grade"), RootCauseGrades.High, StringComparison.Ordinal) && !IsTrue(p + PriceCardPart)),
             StringComparer.Ordinal);
         _supportedPrefixes = new HashSet<string>(
             HypothesisPrefixes.Where(p => RootCauseGrades.Rank(Value(p + "grade")) >= RootCauseGrades.Rank(RootCauseGrades.Low)),
@@ -377,6 +382,11 @@ public sealed class RootCauseClaimSupport
             ? string.Join('.', parts.Take(4)) + "."
             : null;
     }
+
+    /// <summary>The fact is present, available and its value is <c>true</c>.</summary>
+    private bool IsTrue(string key)
+        => _facts.TryGetValue(key, out var fact) && fact.Available
+           && fact.Value is JsonValue value && value.TryGetValue(out bool flag) && flag;
 
     /// <summary>A fact's raw string value, else its display; null when the fact is missing or unavailable.</summary>
     private string? Value(string key)

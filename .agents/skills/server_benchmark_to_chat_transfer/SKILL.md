@@ -778,6 +778,7 @@ breakdown, and the wire-level check now in place.
 - **Cost**: per question from US$0.0029 (GPT-6 Luna `high`, the cheapest) to US$0.194 (GPT-6 Astra, about 66.5 times the reference); Claude thinking was printed as zero reasoning (E5).
 - **Transfer Action**: generator fixes in `comparison_4_rca_review/implementation_plan_v2.md` (Root Cause Analysis engine 4 → 5, comparison format 19 → 20, per-model format 14 → 15); no change to `ChatService.BuildSystemPrompt`, `Overseer/ToolGuides` or `RecommendedModels`. Claude 5.5 Sonnet (medium) answered 9 of 36 questions without any tool call (T1, routing, rung 6 then 3 after replication): logged, not acted on, one run per suite being motivating only.
 - **Verification Outcome**: pending the runbook's R1 (the replicate of all nine models).
+- **Round A** (2026-10-16, `comparison_4_rca_review/implementation_plan_A_v3.md`): battery panel diagnostics in the report path; price effects known from the cards; Appendix G limited to cited and critical-error questions. No chat change.
 ---
 
 ## 12. Cross-References

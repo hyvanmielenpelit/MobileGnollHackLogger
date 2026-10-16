@@ -10,8 +10,9 @@ using Overseer.Services.Benchmarking.RootCause;
 using Xunit;
 
 /// <summary>
-/// The Root Cause Analysis claim rules (32–36) in both scopes, its writer-hypothesis and observation
-/// checks, and the v1 validator changes every comparison document shares: rule 16 checks the pair a
+/// The Root Cause Analysis claim rules (32–36) in both scopes, among them prove as a certainty word and a price
+/// effect that supports a cause but no certainty, the hypothesis references as bare ids, its writer-hypothesis and
+/// observation checks, and the v1 validator changes every comparison document shares: rule 16 checks the pair a
 /// comparative word relates, rule 31 flags misused fact shapes, rule 37 flags bare model letters, and
 /// <c>HeadlineIssues</c>.
 /// </summary>
@@ -275,8 +276,8 @@ public class RootCauseValidatorTests
 
     /// <summary>
     /// A comparison-scope Root Cause Analysis sheet of two models asking <paramref name="questions"/>: three
-    /// axes not established, a Moderate hypothesis, a High one, a Low one and a Not supported one (each with a
-    /// statement and a label), and one next run.
+    /// axes not established, a Moderate hypothesis, a High one, a Low one, a Not supported one and a High price
+    /// effect (each with a statement, a label and a reference that is its id alone), and one next run.
     /// </summary>
     private static BenchmarkReportFactSheet QuestionSheet(params int[] questions)
     {
@@ -287,19 +288,24 @@ public class RootCauseValidatorTests
             TextFact("rca.axis.speed.status", RootCauseStatuses.NotEstablished, "Not established"),
             TextFact("rca.hypothesis.HC1.1.grade", RootCauseGrades.Low),
             TextFact("rca.hypothesis.HC1.1.label", "higher output price of Model B"),
-            TextFact("rca.hypothesis.HC1.1.ref", "HC1.1 (higher token volume)"),
+            TextFact("rca.hypothesis.HC1.1.ref", "HC1.1"),
             TextFact("rca.hypothesis.HC1.1.statement", "Model B pays a higher output price than Model A."),
+            TextFact("rca.hypothesis.HC2.1.grade", RootCauseGrades.High, RootCauseGrades.PriceCardWordWithGrade(RootCauseGrades.High)),
+            TextFact("rca.hypothesis.HC2.1.label", "Model B's higher price per token, compared with Model A"),
+            new() { Key = "rca.hypothesis.HC2.1.priceCard", Value = System.Text.Json.Nodes.JsonValue.Create(true), Display = RootCauseFacts.PriceCardDisplay },
+            TextFact("rca.hypothesis.HC2.1.ref", "HC2.1"),
+            TextFact("rca.hypothesis.HC2.1.statement", "Model B costs more than Model A mainly from its price per token."),
             TextFact("rca.hypothesis.HQ1.1.grade", RootCauseGrades.Moderate),
             TextFact("rca.hypothesis.HQ1.1.label", "critical errors of Model B against Model A"),
-            TextFact("rca.hypothesis.HQ1.1.ref", "HQ1.1 (answers without tools)"),
+            TextFact("rca.hypothesis.HQ1.1.ref", "HQ1.1"),
             TextFact("rca.hypothesis.HQ1.1.statement", "Model B made more critical errors than Model A."),
             TextFact("rca.hypothesis.HS1.1.grade", RootCauseGrades.High),
             TextFact("rca.hypothesis.HS1.1.label", "longer outputs of Model B"),
-            TextFact("rca.hypothesis.HS1.1.ref", "HS1.1 (more model calls)"),
+            TextFact("rca.hypothesis.HS1.1.ref", "HS1.1"),
             TextFact("rca.hypothesis.HS1.1.statement", "Model B writes longer answers than Model A."),
             TextFact("rca.hypothesis.HS4.1.grade", RootCauseGrades.NotSupported, RootCauseGrades.Display(RootCauseGrades.NotSupported)),
             TextFact("rca.hypothesis.HS4.1.label", "slower first token of Model B"),
-            TextFact("rca.hypothesis.HS4.1.ref", "HS4.1 (slower decoding)"),
+            TextFact("rca.hypothesis.HS4.1.ref", "HS4.1"),
             TextFact("rca.hypothesis.HS4.1.statement", "Model B waits longer for its first token than Model A."),
             TextFact("rca.run.1.summary", "a replicate of every model"),
         };
@@ -528,6 +534,74 @@ public class RootCauseValidatorTests
                                     && n.Location.StartsWith("sections." + BenchmarkReportSlots.AnswerBest, StringComparison.Ordinal));
         Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCertaintyRule
                                           && n.Location.StartsWith("sections." + BenchmarkReportSlots.AnswerSpeed, StringComparison.Ordinal));
+    }
+
+    // --- Rule 34: prove is a certainty word; a price effect supports none ----------------------------
+
+    private static List<BenchmarkReportValidationNote> CertaintyNotes(string slot, string paragraph)
+        => ValidateSections(QuestionSheet(), new Dictionary<string, string> { [slot] = paragraph })
+            .Where(n => n.Rule == BenchmarkReportPackValidator.RootCauseCertaintyRule && n.Location.StartsWith("sections." + slot, StringComparison.Ordinal))
+            .ToList();
+
+    [Theory]
+    [InlineData("The configuration proves that the cost gap comes from {{rca.hypothesis.HQ1.1.label}}.", false)]
+    [InlineData("The runs prove that the cost gap comes from {{rca.hypothesis.HQ1.1.label}}.", false)]
+    [InlineData("The runs proved that the cost gap comes from {{rca.hypothesis.HQ1.1.label}}.", false)]
+    [InlineData("The runs do not prove that the cost gap comes from {{rca.hypothesis.HQ1.1.label}}.", true)]
+    [InlineData("The runs prove that the speed gap comes from {{rca.hypothesis.HS1.1.label}}.", true)]
+    public void Rule34_ProveIsACertaintyWord_UnlessNegated(string paragraph, bool kept)
+    {
+        var notes = CertaintyNotes(BenchmarkReportSlots.Conclusions, paragraph);
+
+        if (kept) Assert.Empty(notes);
+        else Assert.NotEmpty(notes);
+        Assert.Contains("proves", RootCauseClaimSupport.CertaintyWords);
+    }
+
+    [Fact]
+    public void Rule34_APriceEffectGradedHigh_SupportsACauseButNoCertainty()
+    {
+        var support = RootCauseClaimSupport.From(QuestionSheet());
+        Assert.True(support.SupportsCausal("rca.hypothesis.HC2.1.label"));
+        Assert.False(support.SupportsCertainty("rca.hypothesis.HC2.1.label"));
+        Assert.True(support.SupportsCertainty("rca.hypothesis.HS1.1.label"));
+        Assert.DoesNotContain("rca.hypothesis.HC2.1.*", support.CertaintySupport());
+        Assert.Contains("rca.hypothesis.HC2.1.*", support.CausalSupport());
+
+        const string slot = BenchmarkReportSlots.HypothesesCost;
+        var certain = ValidateSections(QuestionSheet(), new Dictionary<string, string>
+        {
+            [slot] = "The cost gap is certainly due to {{rca.hypothesis.HC2.1.label}}."
+        }).Where(n => n.Location.StartsWith("sections." + slot, StringComparison.Ordinal)).ToList();
+        Assert.Contains(certain, n => n.Rule == BenchmarkReportPackValidator.RootCauseCertaintyRule);
+        Assert.DoesNotContain(certain, n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule);
+
+        // A causal sentence on the price effect, or beside the cost axis' status, needs no certainty and stands.
+        Assert.Empty(CausalClaimNotes(slot, "The cost gap is due to {{rca.hypothesis.HC2.1.ref}}, which the price cards show."));
+        Assert.Empty(CertaintyNotes(slot, "The cost gap is due to {{rca.hypothesis.HC2.1.ref}}, which the price cards show."));
+        Assert.Empty(CausalClaimNotes(slot, "Per {{rca.axis.cost.status}}, the cost gap is due to the price per token."));
+        Assert.Empty(CertaintyNotes(slot, "Per {{rca.axis.cost.status}}, the cost gap is due to the price per token."));
+    }
+
+    [Fact]
+    public void AHypothesisReference_IsItsIdAlone_AndStandsInsideASentence()
+    {
+        var sheet = QuestionSheet();
+        Assert.All(sheet.Facts.Where(f => f.Key.EndsWith(".ref", StringComparison.Ordinal)), f =>
+            Assert.Equal(f.Key["rca.hypothesis.".Length..^".ref".Length], f.Display));
+
+        const string slot = BenchmarkReportSlots.HypothesesSpeed;
+        var notes = ValidateSections(sheet, new Dictionary<string, string>
+        {
+            [slot] = "Longer outputs may explain the gap, as {{rca.hypothesis.HS1.1.ref}} finds."
+        }).Where(n => n.Location.StartsWith("sections." + slot, StringComparison.Ordinal)).ToList();
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.ComparisonTokenShapeRule);
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule);
+
+        // The engine's own sheet: every reference is the hypothesis' key.
+        var comparison = ComparisonSheet;
+        Assert.All(comparison.RootCause!.Hypotheses, h =>
+            Assert.Equal(h.Key, comparison.Facts.Single(f => f.Key == "rca.hypothesis." + h.Key + ".ref").Display));
     }
 
     // --- Rule 37: no bare model letter in a comparison -------------------------------------------------

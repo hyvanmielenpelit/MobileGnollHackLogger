@@ -112,9 +112,11 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// The format version of a per-model document. From version 15 its Root Cause Analysis gives each cited
     /// question's answer excerpts and rubric without its source paragraphs, states the wall time per question
-    /// with tools included, and glosses each term once.
+    /// with tools included, and glosses each term once. From version 16 its Root Cause Analysis gives in Appendix G only
+    /// the cited and the critical-error questions, leaves out an empty Appendix E and letters the rest on, and prints one
+    /// output cost column.
     /// </summary>
-    public const int ReportFormatVersion = 15;
+    public const int ReportFormatVersion = 16;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
@@ -129,8 +131,11 @@ public static partial class BenchmarkReportPackRenderer
     /// From version 20 the Root Cause Analysis states its main findings in code under What we found, gives each
     /// tied rank as the span of places the model's interval allows, and prints each table, paired test and
     /// known fact once.
+    /// From version 21 a price effect reads as known from the price cards, question 1 without a comparative cause
+    /// states the measured lead, Appendix G gives only the cited and the critical-error questions, an empty Appendix E
+    /// is left out with the rest lettered on, the cost tables have one output column, and an evidence line names its models.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 20;
+    public const int ComparisonReportFormatVersion = 21;
 
     /// <summary>The comparison format version whose Root Cause Analysis writer output first carries the answer slots.</summary>
     private const int AnswerSlotsFormatVersion = 16;
@@ -2094,8 +2099,8 @@ public static partial class BenchmarkReportPackRenderer
     /// <summary>
     /// One line under an item: <c>Both graders — accuracy · Q6 (59 / 100), Q10 (57 / 100) · the claim
     /// verifier refuted an answer sentence on Q6</c>. The rows it cites, each with its support label for
-    /// the item's questions (<see cref="BenchmarkReportFacts.RowSupportLabelFor"/>), the facts it cites by label,
-    /// its questions with their scores, and, with <paramref name="listsRefutations"/>, the questions on
+    /// the item's questions (<see cref="BenchmarkReportFacts.RowSupportLabelFor"/>), the facts it cites by label (a
+    /// model profile's entry by the model's name, <see cref="RcaProfileEvidence"/>), its questions with their scores, and, with <paramref name="listsRefutations"/>, the questions on
     /// which the verifier refuted the answer's own text; each part only where it applies. A strength's
     /// line lists no refutation. At most <see cref="EvidenceQuestionLimit"/> questions are listed, the
     /// highest scores first for a strength and the lowest first otherwise, then <c>and N more</c>.
@@ -2129,7 +2134,8 @@ public static partial class BenchmarkReportPackRenderer
             if (QuestionNumber(ctx, id) != null || rows.Any(r => string.Equals(r.Id, id, StringComparison.Ordinal))) continue;
 
             var fact = Fact(ctx, id);
-            parts.Add(FactLabel(ctx, id) + (fact == null ? string.Empty : ": " + (fact.Available ? Shown(ctx, fact) : BenchmarkReportFacts.NotAvailable)));
+            parts.Add(RcaProfileEvidence(ctx, id, fact)
+                ?? FactLabel(ctx, id) + (fact == null ? string.Empty : ": " + (fact.Available ? Shown(ctx, fact) : BenchmarkReportFacts.NotAvailable)));
         }
 
         var numbers = CitedQuestions(ctx, item, ids);
@@ -2372,10 +2378,10 @@ public static partial class BenchmarkReportPackRenderer
             dropped);
     }
 
-    /// <summary>A table cell that reads as zero or as missing, as <see cref="DropConstantColumns"/> counts it.</summary>
+    /// <summary>A table cell that reads as zero or as missing, as <see cref="DropConstantColumns"/> counts it, a trailing footnote mark <c>*</c> aside.</summary>
     private static bool IsZeroLikeCell(string? cell)
     {
-        string text = (cell ?? string.Empty).Trim();
+        string text = (cell ?? string.Empty).Trim().TrimEnd('*').TrimEnd();
         return text is "0" or "0.0" or "0.0 s" or "0%" or "$0" or "$0.0000" or "$0.000" or NoValue or BenchmarkReportFacts.NotAvailable
                || text.StartsWith("not recorded", StringComparison.Ordinal)
                || Regex.IsMatch(text, @"^0 of \d+$", RegexOptions.CultureInvariant);
@@ -2576,12 +2582,14 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// A fact's label with the peer naming applied: a peer's own fact reads <c>Model A's …</c> when
-    /// peers are anonymized and <c>Grok 5's …</c> when they are named.
+    /// peers are anonymized and <c>Grok 5's …</c> when they are named; in a named copy, any other label's
+    /// <c>Model A</c> names the peer too (<see cref="NamedLetters"/>).
     /// </summary>
     private static string FactLabel(Context ctx, string key)
     {
         string label = Label(key);
-        if (ctx.Anonymized || !key.StartsWith("peer.", StringComparison.Ordinal)) return label;
+        if (ctx.Anonymized) return label;
+        if (!key.StartsWith("peer.", StringComparison.Ordinal)) return NamedLetters(ctx, label);
 
         string[] parts = key.Split('.');
         var peer = parts.Length >= 3 ? ctx.Sheet.Peers.FirstOrDefault(p => string.Equals(p.Letter, parts[1], StringComparison.Ordinal)) : null;
@@ -2825,7 +2833,7 @@ public static partial class BenchmarkReportPackRenderer
         /// <summary>The document explains its terms (<see cref="RootCause.RootCauseGlossary"/>): a Root Cause Analysis does, no other document does.</summary>
         public bool TracksTerms => Document.Audience == BenchmarkReportAudience.RootCauseAnalysis && !ChatConsistency;
 
-        /// <summary>The glossary keys of the terms the document uses so far, for its Key terms section and Appendix H.</summary>
+        /// <summary>The glossary keys of the terms the document uses so far, for its Key terms section and its glossary appendix.</summary>
         public HashSet<string> UsedTerms { get; } = new(StringComparer.Ordinal);
 
         /// <summary>The glossary keys whose gloss the template text has printed: each term is glossed once, at its first use.</summary>

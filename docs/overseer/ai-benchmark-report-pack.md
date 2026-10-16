@@ -1179,7 +1179,13 @@ source notes and cut-off tables leaking into the writer's input, and the slots r
   with who was right — *Answer sentence accused by a grader — supported (the grader was wrong)*. The
   per-question column *Refuted answer sentences* counts only refuted rulings on the answer's own text
   (the fact sheet's `RefutedAnswerSentences`); a sheet stored without it keeps *Refuted claims*.
-- **Writer input**: the rubric's `SOURCE` paragraphs are removed from the prompt; answer excerpts are cut
+- **Writer input**: the rubric's `SOURCE` paragraphs are removed from the prompt
+  (`BenchmarkReportPackPrompt.WithoutSourceParagraphs`, shared by every writer prompt and by the
+  rendered rubrics). A paragraph is a line whose label is `SOURCE` or `SOURCES`, plain or in bold
+  (`**SOURCE** —`, `__SOURCE__:`), followed by a colon, a dash or the line end, together with its
+  continuation up to a blank line, a bold-label line (`**NOTE**`) or a heading; every such paragraph of a
+  rubric is removed. Before 2026-10-16 only the plain label matched, so the bold form the rubrics use
+  reached both the writer and the document; answer excerpts are cut
   at a sentence end or line break and never inside a Markdown table (*"… (a table follows in the
   answer)"*).
 - **Writer prompt**: the one grader vocabulary (§ 2); a job for each slot; the reliability slot says when
@@ -2800,7 +2806,7 @@ rules 3, 4 and 5 to that form: a plain `Q7`, or a reference to no question of th
 Every question gets a **one-line row** — band, mean score over the runs that scored it, critical errors,
 refuted claims, tool calls. At most `Benchmark:ReportPack:BatteryDetailQuestionsPerSuite` (default
 **6**) questions per suite also get **full detail**: the question as asked, its rubric without its
-`SOURCE` paragraphs, one answer excerpt from the run whose score was the median of the question's rounds,
+`SOURCE` paragraphs (plain or bold label, § 7), one answer excerpt from the run whose score was the median of the question's rounds,
 and the graders' comments on it. They are chosen, per suite, in this order (harness 54): questions with
 a **confirmed** critical error (most rounds first, then the lowest mean); questions where a panel member
 raised a critical error that was **not confirmed** — overturned by the claim verifier or unresolved,
@@ -3777,6 +3783,24 @@ gap minus member B's, per question) with its 95 % interval, withheld under 5 pai
 `.contrast` and `.notable` (the contrast's interval excludes zero). A panel score is the mean of two
 members, so a contrast of *d* moves a cross-provider pair by about *d* ÷ 2.
 
+**A battery comparison** carries no panel diagnostics on the comparison itself
+(`BenchmarkBatteryModelComparison.Build` leaves `PanelDiagnostics` null, so the Model Comparison page
+shows none for batteries). The report path computes them: `BenchmarkComparisonReportFacts.Build` runs
+`BenchmarkPanelDiagnostics.Compute` over the covered entries' member runs, already loaded with their
+answers (the grader snapshots it fingerprints are `AutoInclude` navigations), and works on a copy of the
+comparison that carries them. Answers pair on the global question id and item revision, so the two
+suites' questions never mix. `Compute` pools a battery's answers with the single-suite formula, so its
+per-entry indices are **not** on the battery's weighted scale; they serve only the family gaps, which are
+per-question differences. The indices HQ4 compares are the battery's declared-weights composites instead
+(`panel.memberAAlone`, `panel.memberBAlone`, `panel.referenceReaderIndex`, passed to
+`RootCauseEvidence.ModelInput` as `memberAIndex`, `memberBIndex` and `referenceReaderIndex`, each winning
+over the diagnostics entry), and the judge-dependent pairs are the strict reversals of the two member
+composites (`BenchmarkPanelDiagnostics.RankReversals` on labelled indices: a tie is not a reversal, a
+missing index is skipped), which feed both HQ4 and the notable findings. Two consequences are accepted:
+a family gap is unweighted across suites, and the reader composite skips the questions the reader left
+ungraded, whereas the run-level reader index is withheld unless the reader graded every answer, so HQ4
+can be refuted on a battery where a run-level comparison would leave it standing.
+
 **Decompositions** (`RootCauseDecomposition`), all exact, per pair — the reference against each model,
 plus the leader and the last model on each axis — and within one model by group (difficulty band, or
 suite on a battery), the overall model on one side and the group on the other:
@@ -3813,7 +3837,10 @@ and stating only what a test or a count proves, with its kind (`test`, `count`, 
 `configuration`) and the fact keys it rests on: *"Model A's median model time is 1.5 times Model F's on
 the same questions, established after Holm across 8 tests"*; *"Decode accounts for 71% (58–80%) of the
 per-question time difference between Model C and Model F"*; *"Model I answered 9 of 36 questions without
-a tool call"*.
+a tool call"*. At most 24 are kept (`MaxFacts`); the first 6 count and configuration facts
+(`ReservedCountAndConfigurationFacts`) always keep their slots, and the tests and decompositions fill the
+rest in rule order (engine version 6). Before, the tests and decompositions filled the list first, so a
+large comparison had no count or configuration fact left for Appendix E.
 
 ### Confidence grades and axis status
 
@@ -3851,6 +3878,18 @@ hypotheses fired reads *Not established* with *"Only hypotheses about one model'
 this axis; none compares the models."* A run- or battery-completion document has no pairs and takes the
 best hypothesis of either kind.
 
+**A price effect never decides an axis** (engine version 6). An HC2 whose price effect follows from the
+price cards — catalog pricing, or neither side's prices differing between runs — is marked `PriceEffect`
+(`RootCauseHypothesis.PriceEffect`, the fact `rca.hypothesis.<id>.<n>.priceCard`). It is what the price
+cards show, not a cause the runs found, so `AxisStatus` judges only the other candidates; an axis on
+which price effects alone fired reads *Not established* with *"Only price-per-token differences fired on
+this axis; they are known from the price cards, not a cause the runs found."* (`PriceOnlyAxisReason`).
+Where another cost hypothesis fired, it is the axis' best, even when it is ruled out. A price effect keeps
+its grade, sorts after every other hypothesis of its axis, and prints as *Known from the price cards
+(High)* (`RootCauseGrades.PriceCardWordWithGrade`, also the `.grade` display). It still answers question
+4 and supports a causal sentence about cost (rule 33), but not a certainty word (rule 34), and it is exempt
+from the single-run cap. A stored result without the flag keeps the status it was written with.
+
 ### The hypothesis rules
 
 Each rule fires on a pre-declared condition, names the models (the worse first), and computes its
@@ -3866,7 +3905,7 @@ differs; excluded and degraded entries take part only on the axes they are compa
 | HQ2 | Intelligence | A's shortfall is concentrated in confirmed critical errors | model | Critical-error at-risk points at least half the gap | Caps unresolved or overturned (method 13); the shortfall is spread across many questions |
 | HQ3 | Intelligence | Shared failures on specific questions point to the instrument, not the models | suite / corpus / chat | `sharedLow` questions; every model or nearly every model below 50 | One model answered well |
 | HQ4 | Intelligence | The order depends on the graders | harness | Judge-dependent pair; a scoring grader (member A, member B, or the assessor of a single-assessor run) whose provider matches exactly one side — the reference reader, second reader and claim verifier never count; panel disagreement rate at least twice the median. For a pair of the members' own two providers with an available interaction contrast it is **quantified**: share 0.5 × \|contrast\| ÷ the pair's gap, interval from the halved contrast bounds, established when the contrast's interval excludes zero | Both members and the reference reader order the two alike, and the pair is not judge-dependent (`PanelAgreementCheck` plus both reader indices); without a reader the rule is not refuted |
-| HQ5 | Intelligence | Completeness was lowest under the concise style | chat | `responseStyleConflict` true for the models concerned | — (never graded above *Low*: no comparison run covers style; it states a condition, not a cause, as `server_benchmark_to_chat_transfer` § 3 requires) |
+| HQ5 | Intelligence | Completeness was A's lowest dimension under the concise style. **Once per model**, not per pair (`RootCauseHypotheses.StyleConflict`, engine version 6): kind `within`, group `style:<token>`, about A alone, for each model whose `responseStyleConflict` is true and that is the lower-scoring side of some analyzed pair | chat | `responseStyleConflict` true | A run of the reference model with the detailed response style shows that Completeness is no longer its lowest dimension, which tests the style effect under this configuration and is indicative for the other models (never graded above *Low*: no comparison run covers style; it states a condition, not a cause, as `server_benchmark_to_chat_transfer` § 3 requires) |
 | HQ6 | Intelligence | A guessed where it should have abstained | model | `wrongInsteadOfAbstaining` higher, with Wilson intervals not overlapping (the measure is *Unavailable* under 3 incorrect or not-attempted outcomes) | Intervals overlap |
 | HQ7 | Intelligence | Budget, truncation or output defects cost A points | harness / provider | `toolLimitHits`, `truncated`, `outputDefects` at-risk points, at least 1 and above B's | Zero signals; points at risk under 1 |
 | HQ8 | Intelligence | A's lower thinking level explains the gap | model | Same model at two levels in the set; the dimension test at the lower level | Thinking-level inversion (the notable finding) |
@@ -3878,7 +3917,7 @@ differs; excluded and degraded entries take part only on the axes they are compa
 | HS5 | Speed | Own waits or retries inflated A's time | harness / provider | `ownWaitShare` or `retriesPerAnswer` above the median | Under 5 % of the gap |
 | HS6 | Speed | Served tier differed from the requested tier | provider | `servedTierMismatch` | No mismatch |
 | HC1 | Cost | A costs more mainly from token volume | model / chat | Volume effect largest; tokens per question ratio established | Price effect larger |
-| HC2 | Cost | A costs more mainly from per-token price | model | Price effect largest. Under catalog pricing, or when neither side's prices differ between runs, it carries no *Replicates* check but a *configuration* check (*"Compare the two models' price cards; the price effect follows from them."*), and the single-run grade cap exempts it | Volume larger |
+| HC2 | Cost | A costs more mainly from per-token price | model | Price effect largest. Under catalog pricing, or when neither side's prices differ between runs, it carries no *Replicates* check but a *configuration* check (*"Compare the two models' price cards; the price effect follows from them."*), the single-run grade cap exempts it, and it is a **price effect**: *Known from the price cards*, never an axis' root cause (*Confidence grades and axis status*) | Volume larger |
 | HC3 | Cost | Reasoning tokens drive A's cost | model | Reasoning component largest; both sides report reasoning separately | — |
 | HC4 | Cost | Weak prompt caching raises A's cost | chat / provider | `cacheReadShare` below the median by 20 points or more, and the uncached-input component is largest | Cache-read share comparable |
 | HC5 | Cost | More tool rounds multiply A's input tokens | chat / model | Input-volume effect largest and `modelCallsPerAnswer` higher | Calls per answer comparable |
@@ -3931,9 +3970,28 @@ with Model E"*, *"Vega Pro's higher price per token, compared with Orion Max"*) 
 *"{model}'s {topic}"* (*"Model D's time spent on tool rounds"*). `MaxWords` (10) caps the topic only, so
 a model name is never cut. Labels appear in Conclusions and Appendix C; the hypothesis tables print the
 id alone in their first cell. From engine version 5 each hypothesis also has
-`rca.hypothesis.<id>.<n>.ref`, the id with the rule's topic and no model names (*"HQ1.1 (answers without
-tools)"*, `RootCauseLabels.Topic`), and the writer cites a hypothesis in prose by its `.ref` token, never
-by chaining labels into a sentence; rule 33 accepts any token under the hypothesis prefix.
+`rca.hypothesis.<id>.<n>.ref`, and the writer cites a hypothesis in prose by its `.ref` token, never by
+chaining labels into a sentence; rule 33 accepts any token under the hypothesis prefix. From engine
+version 6 the `.ref` displays the **id alone** (*"HQ1.1"*; version 5 added the rule's topic, *"HQ1.1
+(answers without tools)"*, which put a parenthesis inside the writer's own and repeated topics the
+writer had just named). `RootCauseLabels.Topic` still builds the labels. The writer names what the
+hypothesis is about in its own words, once per paragraph, and cites the `.ref` after it; several
+hypotheses of one rule are cited once, as a range (*HQ1.1–HQ1.3*).
+
+**Displays print the figure alone** (engine version 6), so that a token reads inside the writer's
+sentence without repeating it or nesting parentheses: a share is the bare percentage (*"72%"*, no longer
+*"… of the difference"*), which the writer gives as *"… of the gap"* after the cause; a pair total
+`rca.<axis>.<F>.<S>.total` is the amount alone (*"+46.1 s per question"*, *"+$0.012 per question"*,
+*"+3.2 index points"*), its direction (F minus S; speed is model time) stated once in a FACTS note of the
+prompt; a speed or cost difference that is not established has its own fact,
+`rca.<speed|cost>.<F>.<S>.decomposed` = false (*"not split into parts: the difference may be chance"*);
+an at-risk figure is *"3.2 index points"*, its total *"10.7 index points below a median answer of 89"*,
+its label ending *(upper bound)*; `tokens.cacheReadShare` is the bare percentage; and
+`price.<c>.perMillion` is *"$0.50 per million tokens"*, the pricing basis stated once, with differing
+cards their own fact, `price.cardsDiffer` (*"the runs' cards differ; the lowest-id run's prices are
+shown"*). Under FACTS the prompt prints one note per kind of such fact on the sheet (*"rca.atRisk.\*
+are index points at risk: an upper bound on what a failure signal could have cost, never points
+lost."*).
 
 **Null hypotheses** keep their grade value and sort order, but documents print their grade as what it
 means: a rejected null as *Rejected — a real difference (Not supported)*, a null that stands as *Stands —
@@ -3965,22 +4023,47 @@ Each is the facts `rca.question.<n>.text`, `.model`, `.hypotheses` (the kept hyp
 comparative first, then within-model, *"none fired"* without one), `.status` (the strength in plain
 words: *Established (High)*, *Probable (Moderate)*, *Suggestive (Low)*, or *Unknown*), `.signals` (the
 model's top measured signals, from its profile), `.withinOnly` (no comparative hypothesis graded Low or
-higher answers it) and, for questions 1 and 2, `.orderEstablished`. Question 1 takes the pair hypotheses
-where the model is the **better** side, and as its first signal the dimension split of its lead over the
+higher answers it) and, for questions 1 and 2, `.orderEstablished` and `.neighbor` (engine version 6:
+the runner-up for question 1, the model above for question 2, displayed by name; also
+`RootCauseQuestion.Neighbor`). Question 1 takes only the hypotheses about the pair itself, **HQ4 and HQ8
+with the leader as their second model**: the other intelligence rules locate the mechanism in the other
+model (its tool use, its critical errors, its guessing), which says why the runner-up lost points, not
+why the leader scored highest (engine version 6; before, it took every pair hypothesis where the model
+was the better side). With none, its status is null. As its first signal it takes the dimension split of its lead over the
 runner-up (*"most of the lead over {runner-up} is Completeness (+2.7 of +4.4 points)"*, or *"the largest
 part"* under half), computed beside the analyzed pairs when that pair is not one of them; then its
-strengths. Question 3's signals add, when such a decomposed speed pair exists, the slowest model against
-its analyzed sibling at another thinking level, else the reference, else the fastest model: *"against
-{other}: {component} carries {share} of the {x} s difference"*; questions 2 to 4 take the pair
-hypotheses where it is the **worse** side and its own within-model hypotheses. HQ3 (shared failures)
-answers none of them. The strength is the best **comparative** grade at Low or higher; when there is
-none it is the best within-model grade capped at Low, so a question answered only by the model's own
-breakdown reads *Suggestive* at most; with neither it is *Unknown*. The writer answers each in its answer
-slot, starting with the reason, and is told when the order is not established or only the model's own
-breakdown answers; code prints the answer's strength above it with the comparative and within-model
-hypotheses named apart (*"Answer strength: Probable (Moderate) — against the other models, see HS1.1;
-its own breakdown, see WS3.3."*), or *"no hypothesis about this model fired — see its profile"*. A result
-stored before engine 4 prints the single list it was written with.
+strengths. Questions 2 to 4 take the pair hypotheses where the model is the **worse** side and its own
+within-model hypotheses. HQ3 (shared failures) answers none of them.
+
+**The partner a question is answered against** (`RootCauseProfiles.PartnerPreference`, engine version
+6) is, nearest first: the same model at another thinking level (the nearest level first), then the
+reference, then the fastest model (question 3) or the cheapest (question 4), then the rest in model
+order. Questions 3 and 4 order their comparative hypotheses by this partner before rank and take the
+first graded Low or higher as their strength; `Keep`'s per-question reservation follows the same order,
+so the preferred partner's hypothesis is kept even when another pair's is. Question 3's signals add, when
+such a decomposed speed pair exists, the slowest model against the first partner in that order: *"against
+{other}: {component} carries {share} of the {x} s difference"*.
+
+The strength is the best **comparative** grade at Low or higher; when there is none it is the best
+within-model grade capped at Low, so a question answered only by the model's own breakdown reads
+*Suggestive* at most; with neither it is *Unknown*. When question 4's strength comes from a price effect,
+`RootCauseQuestion.PriceCard` is true and `rca.question.4.status` displays *Known from the price cards*.
+The writer answers each in its answer slot, starting with the reason, and is told when the order is not
+established or only the model's own breakdown answers, and, for a price-card question 4, to cite the
+model's `price.*.perMillion` cards with no certainty word; code prints the answer's strength above it
+with the comparative and within-model hypotheses named apart (*"Answer strength: Probable (Moderate) —
+against the other models, see HS1.1; its own breakdown, see WS3.3."*), or *"no hypothesis about this
+model fired — see its profile"*. From format 21 (per-model format 16):
+
+- a price-card question 4 prints *"Known from the price cards — see HC2.2."*, naming its first price
+  effect graded Low or higher (and its own breakdown after it, as above);
+- question 1 with comparative hypotheses none of which is graded Low or higher, or with none at all,
+  prints the measured lead instead, naming the runner-up from `Neighbor` and the verdict from
+  `.orderEstablished`: *"Measured lead over Vega Pro: not established — see its split; no cause
+  compared."*, or *"…; no cause graded Low or higher, see HQ4.1."* when HQ4 or HQ8 was ruled out. A result
+  stored without `Neighbor` prints *"Measured lead: …"*.
+
+A result stored before engine 4 prints the single list it was written with.
 
 **Model profiles** (`RootCauseProfiles.Build`), `rca.profile.<T>.*`, are code-written from facts already
 on the sheet, so they cannot be dropped by a rule and never use a causal word:
@@ -4253,6 +4336,39 @@ their `SOURCE` paragraphs, and each flagged answer's *Critical error:* resolutio
 places no browser *Intelligence* figure at *Evidence: intelligence* (server and client placement). A
 stored document missing a new fact or field renders with the wording it had.
 
+**From format 21** (per-model format 16, engine version 6):
+
+- **Appendix E** is left out, heading and list bullet, when it has no count or configuration fact to list,
+  and the appendices after it close up: Reproducibility becomes E, Question details F and the Glossary G,
+  the titles, the appendix list and the *Key terms* lead's pointer to the glossary all computed
+  (`RcaAppendixLetters`). A document with no analysis at all keeps E for its note. With the known-facts
+  quota above it is rarely empty.
+- **Appendix G** prints the questions the writer cited, the **critical-error** questions and the control
+  items, and no longer those with only a refuted answer sentence or a disputed claim. A question is a
+  critical-error question when one of its cells records a critical error (`CriticalError`, or
+  `CriticalErrorCount` above zero, the only signal under scoring method 12) or a resolution other than
+  `None` — confirmed (`Agreed`, `UpheldByVerifier`) or overturned (`OverturnedByVerifier`) — in
+  `BenchmarkReportQuestionModelScore.CriticalErrorResolutions`, or when a content answer stores one. The
+  rubrics are printed without their `SOURCE` paragraphs, plain or bold (§ 7). The G bullet reads *"the
+  questions the writer cites, those with a critical error, confirmed or overturned, and the control
+  items"*.
+- **Critical-error resolutions per cell.** `BenchmarkComparisonReportFacts.Build` fills each matrix cell's
+  `CriticalErrorResolutions` (scoring method 13 or later) from every answer of the model's runs on the
+  question, not only the excerpted one: one `BenchmarkCriticalErrorResolution` name per answer, `None`
+  included, in run and answer order, null where no answer records one (every method-12 run and every
+  sheet stored before). In comparison scope the *Critical error:* line reads them, drops `None`,
+  deduplicates per model and joins the models, so an answer with no excerpt is named too; a cell without
+  the field falls back to the content answers.
+- **One output column.** When any row's provider counts thinking inside its output tokens, the cost table
+  and Appendix B's tokens table head their visible-output column *Output*, and a merged row prints its
+  output with thinking included there, marked `*`, rather than in a column of its own (the *Reasoning*
+  column stays for the providers that report it, and is dropped when no row does); and the note reads *"\* Thinking included; the provider does not
+  report it separately."* A trailing `*` does not stop a column from being dropped as zero
+  (`IsZeroLikeCell`).
+- **Evidence labels name the models.** An `rca.profile.<T>.*` fact cited as evidence prints as
+  *"{model}: {display}"*, and fact labels resolve letters to names in the named copy (letters stay in the
+  anonymized one). The profile labels read *"Model E's profile: flag 1"*.
+
 The table below is the structure **before format 16**, kept for reading a PDF or Word file downloaded
 then. A stored document opened now renders in the structure above, its answer callouts saying to
 regenerate (§ 7):
@@ -4334,12 +4450,12 @@ names exactly the tokens the validator accepts.
 |---|---|---|
 | 32 (`RootCauseEvidenceCausalRule`) | A causal word (`RootCauseClaimSupport.CausalWords`: *because*, *due to*, *caused*, *causes*, *explains*, *driven by*, *root cause*, *leads to*, *results in*, whole words and phrases ignoring case) in `scope`, an `evidence*` slot or an observation | The paragraph or item is dropped |
 | 33 (`RootCauseCausalClaimRule`) | A causal word in an answer slot, a `hypotheses*` slot, `conclusions` or `nextRuns` with no token of a hypothesis graded **Low or higher** (`rca.hypothesis.<id>.<n>.*`, its `.label` included) or of an axis (`rca.axis.<axis>.*`) in the same sentence; in `nextRuns` only, an `rca.run.<n>.*` token serves as well, since the run order is decided by code. A causal word resting only on hypotheses graded Low needs a hedge word (`HedgeWords`: *may*, *might*, *could*, *possibly*, *probably*, *likely*, *perhaps*, *suggests*, *suggest*, *consistent with*) in the sentence. A **negated** causal word (directly after *not*, *never* or *cannot*, with *be*, *been*, *the* or *a* allowed between; *not only* asserts a cause and does not count) rules a cause out and may cite any hypothesis, *Not supported* included | The paragraph is dropped |
-| 34 (`RootCauseCertaintyRule`) | A certainty word (`CertaintyWords`: *established*, *confirmed*, *proven*, *definitely*, *certainly*, *root cause was found*), anywhere, without a token of a *High* hypothesis, or the `rca.axis.<axis>.status` token of an axis whose root cause is established, in the same sentence; a certainty word after *not*, *never* or *cannot* does not count | The paragraph or item is dropped |
+| 34 (`RootCauseCertaintyRule`) | A certainty word (`CertaintyWords`: *established*, *confirmed*, *proven*, *prove*, *proves*, *proved*, *definitely*, *certainly*, *root cause was found*), anywhere, without a token of a *High* hypothesis that is not a price effect (its `.priceCard` fact not true), or the `rca.axis.<axis>.status` token of an axis whose root cause is established, in the same sentence; a certainty word after *not*, *never* or *cannot* does not count (*does not prove* passes) | The paragraph or item is dropped |
 | 35 (`RootCauseWriterHypothesisRule`) | A `writerHypotheses` item without an axis, a statement, evidence for, a refuted-if statement or a known locus (`model`, `chat`, `harness`, `suite`, `corpus`, `provider`), with a confidence other than *Low*, or citing a model or fact that does not exist; each of its texts is capped at 40 words | The item is dropped |
 | 36 (`RootCauseAxisStatusRule`) | `conclusions` does not cite each axis' `rca.axis.<axis>.status`. An answer slot need not cite its question's `rca.question.<n>.status`: code prints the answer strength above it | A **warning**, checked over the kept text |
 
 A hypothesis' **label** is a noun phrase that appears in tables; the writer cites a hypothesis in prose
-by its **`.ref`** token (*HQ1.1 (answers without tools)*, engine version 5), which carries a cause for
+by its **`.ref`** token (*HQ1.1*, the id alone from engine version 6), which carries a cause for
 rule 33 and, for a *High* hypothesis, certainty for rule 34 like any other token under the hypothesis
 prefix; the rule-33 and rule-34 examples in CHECK are built from it, and the repair message for rule 33
 names it. Its **statement** is a sentence and stands alone. The writer names a cause for "the gaps" only
@@ -4350,6 +4466,21 @@ cause, and says that a *Not supported* hypothesis' tokens support only a negated
 because*). A *Low* hypothesis is a lead, not a cause, which is why rule 33 asks for the hedge. The answer slots exist only for the questions the sheet asks: an answer slot
 is required when `rca.question.<n>.text` is on the sheet, and a filled slot for a question not asked is a
 rule-1 issue.
+
+**Readable prose** (from 2026-10-16). The headline takes the axes in the order intelligence, speed, cost
+and leads with the first whose status is *Root cause established* or *Probable cause*; cost leads only
+when neither other axis has one, and a price-per-token difference is what the price cards show, never the
+cause found (`AxisOrderRule`; the conclusions slot and the rule-33 and rule-34 examples of CHECK follow
+the same order, price effects last). The writer never puts a parenthesis inside another or a model token
+inside parentheses, never joins two fact tokens with *to* or *from … to* unless both print a bare figure
+in one unit, and never repeats beside a token the words it already prints (`TokenShapeReminders`, shared
+with the comparison Executive Summary). The validator warns under rule 31, in a Root Cause Analysis only
+and keeping the text, on a parenthesis inside another (read with the tokens resolved) and on two worded
+fact displays joined by *to*. A **control** is defined once (`ControlWordRule`): *"A control is only an
+earlier run of another model that answered the same questions under the same graders and settings, as
+CONTROLS lists it; never call a measurement, a count, a figure or a check a control, and in a comparison,
+which has none, never use the word."*; in comparison scope the scope, intelligence-evidence and
+limitations slots name no controls and no control limit, and the prompt's TERMS leave out *Control*.
 
 The caps (`BenchmarkReportPackValidator.RootCauseSlotMaxWords`): the headline 35 words; each answer slot
 60 (`RootCauseAnswerMaxWords`); `scope` and `limitations` 120; `nextRuns` 50; each `evidence*` slot 100;

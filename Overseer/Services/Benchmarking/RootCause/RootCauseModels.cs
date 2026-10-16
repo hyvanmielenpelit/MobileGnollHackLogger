@@ -80,11 +80,22 @@ public static class RootCauseGrades
             : grade == NotSupported ? "Rejected — a real difference (" + Display(grade) + ")"
             : "Stands — may be chance (" + Display(grade) + ")";
 
-    /// <summary>A hypothesis' grade as documents print it: <see cref="NullWordWithGrade"/> for a null, else <see cref="WordWithGrade"/>.</summary>
+    /// <summary>What a price effect is in plain words, in place of its grade's word: it is read off the price cards.</summary>
+    public const string PriceCardWord = "Known from the price cards";
+
+    /// <summary><c>Known from the price cards (High)</c>: a price effect's plain words with its grade; <c>Unknown</c> for none.</summary>
+    public static string PriceCardWordWithGrade(string? grade)
+        => Rank(grade) < 0 ? Word(grade) : PriceCardWord + " (" + Display(grade) + ")";
+
+    /// <summary>
+    /// A hypothesis' grade as documents print it: <see cref="NullWordWithGrade"/> for a null,
+    /// <see cref="PriceCardWordWithGrade"/> for a price effect, else <see cref="WordWithGrade"/>.
+    /// </summary>
     public static string HypothesisWordWithGrade(RootCauseHypothesis hypothesis)
     {
         ArgumentNullException.ThrowIfNull(hypothesis);
-        return hypothesis.Kind == "null" ? NullWordWithGrade(hypothesis.Grade) : WordWithGrade(hypothesis.Grade);
+        if (hypothesis.Kind == "null") return NullWordWithGrade(hypothesis.Grade);
+        return hypothesis.PriceEffect ? PriceCardWordWithGrade(hypothesis.Grade) : WordWithGrade(hypothesis.Grade);
     }
 }
 
@@ -277,7 +288,7 @@ public sealed class RootCauseResult
     /// <summary>Numbered from 1, as the <c>rca.known.&lt;n&gt;</c> facts.</summary>
     public List<RootCauseKnownFact> KnownFacts { get; set; } = new();
 
-    /// <summary>Every hypothesis shown in the document, by axis, then nulls first, then by grade and share.</summary>
+    /// <summary>Every hypothesis shown in the document, by axis, then nulls first and price effects last, then by grade and share.</summary>
     public List<RootCauseHypothesis> Hypotheses { get; set; } = new();
 
     /// <summary>One per axis, in <see cref="RootCauseAxes.All"/> order.</summary>
@@ -360,15 +371,19 @@ public sealed class RootCauseQuestion
     public string Text { get; set; } = string.Empty;
 
     /// <summary>
-    /// The best grade among <see cref="ComparativeKeys"/> at Low or higher; when there is none, the best grade among
+    /// The grade of the first of <see cref="ComparativeKeys"/> at Low or higher; when there is none, the best grade among
     /// <see cref="WithinKeys"/> at Low or higher, capped at Low; null when neither has one.
     /// </summary>
     public string? Grade { get; set; }
 
-    /// <summary>The kept non-null hypotheses about the model on the axis: the comparative ones, then the within-model ones, each best grade first.</summary>
+    /// <summary>The kept non-null hypotheses about the model on the axis: the comparative ones in <see cref="ComparativeKeys"/>' order, then the within-model ones, best grade first.</summary>
     public List<string> HypothesisKeys { get; set; } = new();
 
-    /// <summary>The kept pair hypotheses that answer the question, best grade first; null in a result written before engine version 4.</summary>
+    /// <summary>
+    /// The kept pair hypotheses that answer the question, best grade first; for questions 3 and 4, by the compared
+    /// model's preference first (its sibling at another thinking level, the reference, the fastest or cheapest model,
+    /// then the rest), then best grade first. Null in a result written before engine version 4.
+    /// </summary>
     public List<string>? ComparativeKeys { get; set; }
 
     /// <summary>The kept within-model hypotheses of the model on the axis, best grade first; null in a result written before engine version 4.</summary>
@@ -382,6 +397,20 @@ public sealed class RootCauseQuestion
     /// by a paired test or by intervals that do not overlap; null for questions 3 and 4.
     /// </summary>
     public bool? OrderEstablished { get; set; }
+
+    /// <summary>
+    /// Questions 1 and 2 only: the token of the neighbor the model's place is measured against (the runner-up for
+    /// question 1, the model above for question 2); null for questions 3 and 4, and in a result written before
+    /// engine version 6.
+    /// </summary>
+    public string? Neighbor { get; set; }
+
+    /// <summary>
+    /// Question 4 only: the best comparative hypothesis that answers it is a price effect
+    /// (<see cref="RootCauseHypothesis.PriceEffect"/>), so the answer is known from the price cards; false otherwise,
+    /// and in a result written before engine version 6.
+    /// </summary>
+    public bool PriceCard { get; set; }
 
     /// <summary>The model's top measured signals on the axis, each a descriptive phrase.</summary>
     public List<string> Signals { get; set; } = new();
@@ -599,6 +628,13 @@ public sealed class RootCauseHypothesis
     public string Grade { get; set; } = RootCauseGrades.Low;
 
     public List<string> GradeReasons { get; set; } = new();
+
+    /// <summary>
+    /// A price-per-token effect (HC2) that follows from the price cards rather than from what the runs did: the
+    /// runs share their cards, or they are priced at today's catalog. It never establishes its axis and prints as
+    /// <see cref="RootCauseGrades.PriceCardWord"/>. False in a result written before engine version 6.
+    /// </summary>
+    public bool PriceEffect { get; set; }
 
     /// <summary>The deciding share of the difference (0 to 1), where the hypothesis has one.</summary>
     public double? Share { get; set; }

@@ -220,7 +220,7 @@ The benchmark asks single questions, so longer conversations are not measured.
 - **D. Run settings:** every launcher setting of each run to make next.
 - **E. Known facts:** the counts and the configuration facts the analysis states; its tests and decompositions are in the body and in Appendices A and B.
 - **F. Reproducibility:** run ids, dates, hashes and the pricing basis.
-- **G. Question details:** the questions the writer cites, those with a disputed claim or a critical error, and the control items, each with its answer excerpts.
+- **G. Question details:** the questions the writer cites, those with a critical error, confirmed or overturned, and the control items, each with its answer excerpts.
 - **H. Glossary:** every term this document uses, in plain words.
 
 ## Appendix A: Intelligence detail
@@ -936,31 +936,31 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "$0.125 per million tokens (today's catalog)",
+      "display": "$0.125 per million tokens",
       "key": "price.cacheRead.perMillion",
       "value": 0.125
     },
     {
       "available": true,
-      "display": "$1.50 per million tokens (today's catalog)",
+      "display": "$1.50 per million tokens",
       "key": "price.cacheWrite.perMillion",
       "value": 1.5
     },
     {
       "available": true,
-      "display": "$10.00 per million tokens (today's catalog)",
+      "display": "$10.00 per million tokens",
       "key": "price.output.perMillion",
       "value": 10
     },
     {
       "available": true,
-      "display": "$10.00 per million tokens (today's catalog)",
+      "display": "$10.00 per million tokens",
       "key": "price.reasoning.perMillion",
       "value": 10
     },
     {
       "available": true,
-      "display": "$1.25 per million tokens (today's catalog)",
+      "display": "$1.25 per million tokens",
       "key": "price.uncachedInput.perMillion",
       "value": 1.25
     },
@@ -1205,31 +1205,31 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.subject.budgetOrDefect",
       "value": 0
     },
     {
       "available": true,
-      "display": "0.0 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.0 index points",
       "key": "rca.atRisk.subject.criticalError",
       "value": 0
     },
     {
       "available": true,
-      "display": "9.8 index points at risk (upper bound, not a causal estimate)",
+      "display": "9.8 index points",
       "key": "rca.atRisk.subject.noTool",
       "value": 9.833333333333334
     },
     {
       "available": true,
-      "display": "0.8 index points at risk (upper bound, not a causal estimate)",
+      "display": "0.8 index points",
       "key": "rca.atRisk.subject.otherLow",
       "value": 0.8333333333333333
     },
     {
       "available": true,
-      "display": "10.7 index points at risk against the model's median answer of 89 (upper bound, not a causal estimate)",
+      "display": "10.7 index points below a median answer of 89",
       "key": "rca.atRisk.subject.total",
       "value": 10.666666666666668
     },
@@ -1412,7 +1412,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "H0-W.1 (no difference within one model's own questions)",
+      "display": "H0-W.1",
       "key": "rca.hypothesis.H0-W.1.ref"
     },
     {
@@ -1468,7 +1468,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WC1.1 (output cost)",
+      "display": "WC1.1",
       "key": "rca.hypothesis.WC1.1.ref"
     },
     {
@@ -1535,7 +1535,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WS2.1 (time spent generating output)",
+      "display": "WS2.1",
       "key": "rca.hypothesis.WS2.1.ref"
     },
     {
@@ -1603,7 +1603,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "WS3.1 (time spent on tool rounds)",
+      "display": "WS3.1",
       "key": "rca.hypothesis.WS3.1.ref"
     },
     {
@@ -1968,7 +1968,7 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
-      "display": "23% of input tokens read from the cache",
+      "display": "23%",
       "key": "tokens.cacheReadShare",
       "value": 0.22988505747126436
     },
@@ -2395,7 +2395,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "unit": "usd"
       }
     ],
-    "engineVersion": 5,
+    "engineVersion": 6,
     "evidence": [
       {
         "atRisk": [
@@ -2544,6 +2544,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Orion Max",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "A Mann–Whitney contrast is established after the Holm adjustment.",
         "robustness": [],
         "shortStatement": "Noise within Orion Max",
@@ -2578,6 +2579,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         "modelsText": "Orion Max",
         "nextRunNumber": 1,
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The ρ interval includes zero.",
         "robustness": [
           {
@@ -2625,6 +2627,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "The reasoning share is under one half.",
         "robustness": [
           {
@@ -2673,6 +2676,7 @@ The counts and the configuration facts the analysis states, each numbered as the
         ],
         "modelsText": "Orion Max",
         "number": 1,
+        "priceEffect": false,
         "refutedIf": "Another component is larger.",
         "robustness": [
           {
@@ -2964,6 +2968,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 131 · format version 15 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 16 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

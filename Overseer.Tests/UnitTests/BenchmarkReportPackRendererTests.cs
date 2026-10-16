@@ -1530,12 +1530,12 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion20()
+    public void AComparisonDocument_IsCurrentAtFormatVersion21()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(20, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 20 · ", text);
+        Assert.Equal(21, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 21 · ", text);
         Assert.Contains(" · models named*", text);
     }
 
@@ -1611,7 +1611,7 @@ public class BenchmarkReportPackRendererTests
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Root Cause Analysis: comparison format 20, model-scope format 15
+    // Root Cause Analysis: comparison format 21, model-scope format 16
     // ---------------------------------------------------------------------------------------------
 
     private static readonly BenchmarkReportRenderOptions RcaNamed = new() { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named };
@@ -1752,6 +1752,281 @@ public class BenchmarkReportPackRendererTests
             },
             writer: Cite), RcaNamed), "### What the graders recorded");
         Assert.DoesNotContain("*Critical errors:*", stored);
+    }
+
+    [Fact]
+    public void AnObservation_StatesTheResolutionOfAnAnswerThatHasNoExcerpt_OncePerModel()
+    {
+        var original = RootCauseReportFixture.ComparisonDocument();
+        var content = BenchmarkReportJson.Deserialize<BenchmarkReportContentSnapshot>(original.ContentJson);
+        var facts = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(original.FactsJson);
+        var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(original.WriterOutputJson);
+        int number = writer.Observations![0].Questions![0];
+        var excerpted = content.Runs.Where(r => r.Questions.Any(q => q.Number == number)).Select(r => r.Letter).ToHashSet(StringComparer.Ordinal);
+        string letter = facts.Questions.Single(q => q.Number == number).Models!.Select(c => c.Letter).First(l => !excerpted.Contains(l));
+
+        var document = RcaDocument(
+            sheet =>
+            {
+                foreach (var cell in sheet.Questions.SelectMany(q => q.Models ?? new List<BenchmarkReportQuestionModelScore>())) cell.CriticalErrorResolutions = null;
+                sheet.Questions.Single(q => q.Number == number).Models!.Single(c => c.Letter == letter).CriticalErrorResolutions =
+                    new List<string> { "None", "UpheldByVerifier", "UpheldByVerifier" };
+            },
+            c =>
+            {
+                foreach (var item in c.Runs.SelectMany(r => r.Questions)) item.CriticalErrorResolution = null;
+            });
+
+        string observations = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaNamed), "### What the graders recorded");
+
+        string model = facts.Peers.Single(p => p.Letter == letter).Label;
+        Assert.Contains("  - *Critical errors:* " + model + " on Q" + number.ToString(CultureInfo.InvariantCulture)
+            + ": upheld by the claim verifier (cap applied).\n", observations);
+
+        string anonymized = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaAnonymized), "### What the graders recorded");
+        Assert.Contains("  - *Critical errors:* Model " + letter + " on Q" + number.ToString(CultureInfo.InvariantCulture)
+            + ": upheld by the claim verifier (cap applied).\n", anonymized);
+    }
+
+    [Fact]
+    public void AnEvidenceLine_NamesTheModelsOfARootCauseFact_InTheNamedCopy_AndLettersThemInTheAnonymizedOne()
+    {
+        var facts = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(RootCauseReportFixture.ComparisonDocument().FactsJson);
+        var profile = facts.Facts.First(f => f.Available && f.Key.StartsWith("rca.profile.", StringComparison.Ordinal)
+                                             && facts.Peers.Any(p => p.Letter == f.Key.Split('.')[2]));
+        var atRisk = facts.Facts.First(f => f.Available && f.Key.StartsWith("rca.atRisk.", StringComparison.Ordinal) && f.Key.EndsWith(".total", StringComparison.Ordinal));
+        string profiled = profile.Key.Split('.')[2], risked = atRisk.Key.Split('.')[2];
+        var document = RcaDocument(writer: w => w.Observations![0].Evidence = new List<string> { profile.Key, atRisk.Key });
+
+        string named = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaNamed), "### What the graders recorded");
+        string Label(string letter) => facts.Peers.Single(p => p.Letter == letter).Label;
+        Assert.Contains("  - *Evidence:* " + Label(profiled) + ": ", named);
+        Assert.Contains(" · Index points at risk, " + Label(risked) + " (upper bound): " + atRisk.Display, named);
+        Assert.DoesNotContain("profile: ", named);
+        Assert.DoesNotContain("Profile, ", named);
+
+        string anonymized = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaAnonymized), "### What the graders recorded");
+        Assert.Contains("  - *Evidence:* Model " + profiled + ": ", anonymized);
+        Assert.Contains(" · Index points at risk, Model " + risked + " (upper bound): " + atRisk.Display, anonymized);
+        Assert.DoesNotContain(Label(profiled), anonymized);
+    }
+
+    [Fact]
+    public void AppendixG_GivesTheCitedAndTheCriticalErrorQuestions_ButNotOneWithARefutedSentenceAlone()
+    {
+        var content = BenchmarkReportJson.Deserialize<BenchmarkReportContentSnapshot>(RootCauseReportFixture.ComparisonDocument().ContentJson);
+        var detailed = content.Runs.SelectMany(r => r.Questions).Select(q => q.Number).Distinct().OrderBy(n => n).ToList();
+        Assert.True(detailed.Count >= 2, "the fixture is expected to give two questions in detail");
+        int refuted = detailed[0], flagged = detailed[1];
+
+        // The writer cites no question, so only a critical error brings a question into the appendix.
+        BenchmarkReportDocument With(Action<BenchmarkReportQuestionModelScore> flag) => RcaDocument(
+            sheet =>
+            {
+                foreach (var q in sheet.Questions)
+                {
+                    q.CriticalError = false;
+                    q.CriticalErrorCount = null;
+                    foreach (var cell in q.Models ?? new List<BenchmarkReportQuestionModelScore>())
+                    {
+                        cell.CriticalError = false;
+                        cell.CriticalErrorCount = null;
+                        cell.CriticalErrorResolutions = null;
+                        cell.RefutedClaims = 0;
+                        cell.RefutedAnswerSentences = 0;
+                    }
+                }
+                var refutedCell = sheet.Questions.Single(q => q.Number == refuted).Models!.First();
+                refutedCell.RefutedClaims = 2;
+                refutedCell.RefutedAnswerSentences = 2;
+                flag(sheet.Questions.Single(q => q.Number == flagged).Models!.First());
+            },
+            c =>
+            {
+                foreach (var item in c.Runs.SelectMany(r => r.Questions)) item.CriticalErrorResolution = null;
+            },
+            w =>
+            {
+                w.Observations = new List<BenchmarkReportWriterItem>();
+                w.WriterHypotheses = new List<BenchmarkReportWriterHypothesis>();
+            });
+        static bool Has(string appendix, int number)
+        {
+            string label = "\n### Q" + number.ToString(CultureInfo.InvariantCulture);
+            return appendix.Contains(label + "\n", StringComparison.Ordinal) || appendix.Contains(label + ": ", StringComparison.Ordinal);
+        }
+        string Appendix(BenchmarkReportDocument document)
+        {
+            var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+            var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
+            Assert.Empty(BenchmarkReportPackValidator.CitedQuestions(writer, sheet));
+            return RcaSection(BenchmarkReportPackRenderer.Render(document, RcaNamed), "## Appendix G: Question details");
+        }
+
+        // Overturned, confirmed, and flagged on a method-12 run that records no resolution: each is printed.
+        foreach (var flag in new Action<BenchmarkReportQuestionModelScore>[]
+        {
+            c => c.CriticalErrorResolutions = new List<string> { "OverturnedByVerifier" },
+            c => { c.CriticalError = true; c.CriticalErrorResolutions = new List<string> { "None", "Agreed" }; },
+            c => c.CriticalError = true
+        })
+        {
+            string appendix = Appendix(With(flag));
+            Assert.True(Has(appendix, flagged), appendix);
+            Assert.False(Has(appendix, refuted), appendix);
+        }
+
+        // An answer resolved as None had no critical error.
+        string none = Appendix(With(c => c.CriticalErrorResolutions = new List<string> { "None", "None" }));
+        Assert.False(Has(none, flagged), none);
+        Assert.False(Has(none, refuted), none);
+        Assert.Contains("No question given in detail is cited.", none);
+    }
+
+    [Fact]
+    public void AppendixG_StripsABoldInlineSourceParagraph_FromTheRubric()
+    {
+        const string Rubric = "- The first rubric point.\n\n**SOURCE** — src/monst.c lines 10 to 20, the cited source text.\n\n- The second rubric point.";
+        var document = RcaDocument(content: content =>
+        {
+            foreach (var question in content.Questions!)
+            {
+                question.ExpectedPoints = Rubric;
+                question.ExpectedPointsRecorded = true;
+            }
+            foreach (var item in content.Runs.SelectMany(r => r.Questions)) item.CriticalErrorResolution = "UpheldByVerifier";
+        });
+
+        string appendix = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaNamed), "## Appendix G: Question details");
+
+        Assert.Contains("> - The first rubric point.\n", appendix);
+        Assert.Contains("> - The second rubric point.\n", appendix);
+        Assert.DoesNotContain("SOURCE", appendix);
+        Assert.DoesNotContain("src/monst.c", appendix);
+    }
+
+    [Fact]
+    public void WithoutACountOrConfigurationFact_AppendixE_IsLeftOut_AndTheLaterAppendicesAreLetteredOn()
+    {
+        string current = BenchmarkReportPackRenderer.Render(RcaDocument(), RcaNamed);
+        Assert.Contains("\n## Appendix E: Known facts\n", current);
+        Assert.Contains("\n## Appendix H: Glossary\n", current);
+        Assert.Contains("and Appendix H defines every term this document uses.", current);
+
+        var document = RcaDocument(sheet => sheet.RootCause!.KnownFacts.RemoveAll(k => k.Kind is RootCauseKnownFacts.KindCount or RootCauseKnownFacts.KindConfiguration));
+        string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
+
+        Assert.DoesNotContain("Known facts", RcaSection(text, "## Appendices"));
+        Assert.DoesNotContain("## Appendix E: Known facts", text);
+        Assert.DoesNotContain("No rule found a count or a configuration fact to state.", text);
+        Assert.DoesNotContain("## Appendix H", text);
+        foreach (string heading in new[] { "## Appendix E: Reproducibility", "## Appendix F: Question details", "## Appendix G: Glossary" })
+        {
+            Assert.Contains("\n" + heading + "\n", text);
+        }
+        string list = RcaSection(text, "## Appendices");
+        Assert.Contains("- **D. Run settings:** ", list);
+        Assert.Contains("\n- **E. Reproducibility:** ", list);
+        Assert.Contains("\n- **F. Question details:** ", list);
+        Assert.Contains("\n- **G. Glossary:** ", list);
+        Assert.Contains("and Appendix G defines every term this document uses.", RcaSection(text, "## Key terms"));
+    }
+
+    [Fact]
+    public void TheCostAndTokenTables_HaveOneOutputColumn_MarkingAFigureWithThinkingIncluded()
+    {
+        static void Merge(List<RootCauseSegment> segments)
+        {
+            var output = segments.Single(s => s.Key == RootCauseSegments.Output);
+            double reasoning = segments.Where(s => s.Key == RootCauseSegments.Reasoning).Sum(s => s.Value);
+            segments.RemoveAll(s => s.Key is RootCauseSegments.Output or RootCauseSegments.Reasoning);
+            segments.Add(new RootCauseSegment
+            {
+                Key = RootCauseSegments.OutputWithThinking,
+                Label = RootCauseSegments.Label(RootCauseSegments.OutputWithThinking),
+                Value = output.Value + reasoning
+            });
+        }
+
+        double cost = 0, tokens = 0;
+        var document = RcaDocument(sheet =>
+        {
+            var row = sheet.RootCause!.CostRows.First(r => r.Total.HasValue && r.Token != null);
+            Merge(row.Segments);
+            cost = row.Segments.Single(s => s.Key == RootCauseSegments.OutputWithThinking).Value;
+            var evidence = sheet.RootCause.Evidence.First(e => e.Tokens.Any(s => s.Key == RootCauseSegments.Output));
+            Merge(evidence.Tokens);
+            tokens = evidence.Tokens.Single(s => s.Key == RootCauseSegments.OutputWithThinking).Value;
+        });
+        string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
+
+        string costs = RcaSection(text, "### Where the cost goes");
+        Assert.Contains(" | Output |", costs);
+        Assert.DoesNotContain("Visible output |", costs);
+        Assert.DoesNotContain("Output, thinking included", costs);
+        Assert.Contains(" | " + BenchmarkReportFormat.Usd(cost) + "* |", costs);
+        Assert.Contains(" \\* Thinking included; the provider does not report it separately.*\n", costs);
+
+        string tokenTable = RcaSection(text, "### Tokens per question");
+        Assert.Contains(" | Output |", tokenTable);
+        Assert.DoesNotContain("Output, thinking included", tokenTable);
+        Assert.Contains(" | " + BenchmarkReportFormat.Count(tokens) + "* |", tokenTable);
+        Assert.Contains("\\* Thinking included; the provider does not report it separately.*\n", tokenTable);
+
+        // Without a merged figure, the column is the visible output and no note is printed.
+        string plain = BenchmarkReportPackRenderer.Render(RcaDocument(), RcaNamed);
+        Assert.Contains(" | Visible output |", RcaSection(plain, "### Where the cost goes"));
+        Assert.DoesNotContain("Thinking included;", plain);
+    }
+
+    [Fact]
+    public void QuestionOne_WithoutAComparativeCause_StatesItsMeasuredLead_AndQuestionFour_FromThePriceCards_SaysSo()
+    {
+        static RootCauseQuestion Question(int number, string? grade, IReadOnlyList<string> comparative, IReadOnlyList<string> within) => new()
+        {
+            Number = number,
+            Axis = number == 1 ? RootCauseAxes.Intelligence : RootCauseAxes.Cost,
+            Token = "A",
+            Text = "Why?",
+            Grade = grade,
+            HypothesisKeys = comparative.Concat(within).ToList(),
+            ComparativeKeys = comparative.ToList(),
+            WithinKeys = within.ToList(),
+            OrderEstablished = number == 1 ? true : null
+        };
+        static string Name(string token) => token == "B" ? "Vega Pro" : "Model " + token;
+
+        var lead = Question(1, null, Array.Empty<string>(), Array.Empty<string>());
+        lead.Neighbor = "B";
+        Assert.Equal("Measured lead over Vega Pro: established — see its split; no cause compared.", BenchmarkReportPackRenderer.RcaAnswerStrength(lead, Name));
+        lead.OrderEstablished = false;
+        Assert.Equal("Measured lead over Vega Pro: not established — see its split; no cause compared.", BenchmarkReportPackRenderer.RcaAnswerStrength(lead, Name));
+
+        // Stored before the neighbor was recorded, the lead is not named.
+        lead.Neighbor = null;
+        Assert.Equal("Measured lead: not established — see its split; no cause compared.", BenchmarkReportPackRenderer.RcaAnswerStrength(lead));
+
+        var ruledOut = Question(1, null, new[] { "HQ4.1" }, Array.Empty<string>());
+        ruledOut.Neighbor = "B";
+        Assert.Equal("Measured lead over Vega Pro: established — see its split; no cause graded Low or higher, see HQ4.1.",
+            BenchmarkReportPackRenderer.RcaAnswerStrength(ruledOut, Name));
+        Assert.Equal("Probable (Moderate) — against the other models, see HQ8.1.",
+            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(1, RootCauseGrades.Moderate, new[] { "HQ8.1" }, Array.Empty<string>()), Name));
+
+        var hypotheses = new List<RootCauseHypothesis>
+        {
+            new() { Id = "HC1", Number = 1, Key = "HC1.1", Kind = "pair", Axis = RootCauseAxes.Cost, Grade = RootCauseGrades.Low },
+            new() { Id = "HC2", Number = 3, Key = "HC2.3", Kind = "pair", Axis = RootCauseAxes.Cost, Grade = RootCauseGrades.High, PriceEffect = true }
+        };
+        var priced = Question(4, RootCauseGrades.High, new[] { "HC2.3", "HC1.1" }, new[] { "WC1.1" });
+        priced.PriceCard = true;
+        Assert.Equal("Known from the price cards — see HC2.3; its own breakdown, see WC1.1.",
+            BenchmarkReportPackRenderer.RcaAnswerStrength(priced, Name, hypotheses));
+
+        // Stored before the flag, it prints its grade as it did then.
+        priced.PriceCard = false;
+        Assert.Equal("Established (High) — against the other models, see HC2.3 and HC1.1; its own breakdown, see WC1.1.",
+            BenchmarkReportPackRenderer.RcaAnswerStrength(priced, Name, hypotheses));
     }
 
     [Fact]
@@ -1945,7 +2220,7 @@ public class BenchmarkReportPackRendererTests
 
         string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
 
-        Assert.Contains(" · generated under format version 19 · rendered with format version 20 · ", text);
+        Assert.Contains(" · generated under format version 19 · rendered with format version 21 · ", text);
         Assert.DoesNotContain("Grader family:", text);
         foreach (string resolution in new[] { "agreed by both members", "upheld by the claim verifier", "overturned by the claim verifier", "unresolved (averaged)", "single assessor" })
         {
@@ -2157,10 +2432,10 @@ public class BenchmarkReportPackRendererTests
     {
         Assert.Equal(4, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
         Assert.Equal(4, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(15, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(20, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
-        Assert.Equal(15, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(20, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(16, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(21, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(16, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(21, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         Assert.Contains(" · format version 4 · ", text);

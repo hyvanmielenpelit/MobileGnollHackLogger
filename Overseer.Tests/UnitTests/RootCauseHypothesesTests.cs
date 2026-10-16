@@ -8,8 +8,9 @@ using Xunit;
 
 /// <summary>
 /// The grading of the root-cause hypotheses (§ A2): every grade boundary, the null cap, the control
-/// limit, the per-axis keep limits and the hypothesis a research question reserves, the amount a
-/// hypothesis explains, and the axis status with and without pairs.
+/// limit, the per-axis keep limits and the hypothesis a research question reserves (question 1 only one about the
+/// pair itself, the slowest model its preferred partner's), the amount a hypothesis explains, and the axis status
+/// with and without pairs and beside a price effect.
 /// </summary>
 public class RootCauseHypothesesTests
 {
@@ -332,6 +333,95 @@ public class RootCauseHypothesesTests
 
         Assert.Equal(RootCauseHypotheses.MaxPerAxis, kept.Count(k => k.Hypothesis.Kind != "null"));
         Assert.DoesNotContain(kept, k => k.Hypothesis.Models[0] == "H");
+    }
+
+    /// <summary>The question why <paramref name="token"/> scored highest, its runner-up <paramref name="neighbor"/>.</summary>
+    private static RootCauseQuestionTarget Highest(string token, string neighbor)
+        => new(1, RootCauseAxes.Intelligence, new RootCauseModelInput { Token = token }, new RootCauseModelInput { Token = neighbor },
+            "Why did Model " + token + " score highest?", true);
+
+    [Fact]
+    public void Keep_ReservesForQuestionOne_OnlyAHypothesisAboutThePairItself()
+    {
+        // H leads G. G's own failures (HQ1) say nothing about why H leads; the thinking level (HQ8) does.
+        RootCauseDraft? ownFailures = null, thinking = null;
+        var graded = EightModels(add =>
+        {
+            add(ownFailures = About(Draft(id: "HQ1", axis: RootCauseAxes.Intelligence, group: "G|H", nullStands: true, share: 0.9, checks: AllPassed()), "G", "H"));
+            add(thinking = About(Draft(id: "HQ8", axis: RootCauseAxes.Intelligence, group: "G|H", nullStands: true, share: 0.2, checks: AllPassed()), "G", "H"));
+        });
+
+        var plain = RootCauseHypotheses.Keep(graded);
+        Assert.DoesNotContain(plain, k => k.Hypothesis.Models.Contains("H"));
+
+        var kept = RootCauseHypotheses.Keep(graded, new[] { Highest("H", "G") }, RootCauseProfiles.Answers);
+        var reserved = Assert.Single(kept, k => k.Hypothesis.Models.Contains("H"));
+        Assert.Same(thinking, reserved.Draft);
+        Assert.DoesNotContain(kept, k => ReferenceEquals(k.Draft, ownFailures));
+
+        // Without a hypothesis about the pair itself, question 1 reserves nothing.
+        var onlyFailures = EightModels(add => add(About(Draft(id: "HQ1", axis: RootCauseAxes.Intelligence, group: "G|H", nullStands: true, checks: AllPassed()), "G", "H")));
+        var none = RootCauseHypotheses.Keep(onlyFailures, new[] { Highest("H", "G") }, RootCauseProfiles.Answers);
+        Assert.Equal(RootCauseHypotheses.MaxPerAxis, none.Count(k => k.Hypothesis.Kind != "null"));
+        Assert.DoesNotContain(none, k => k.Hypothesis.Models.Contains("H"));
+    }
+
+    [Fact]
+    public void Keep_ReservesThePreferredPartnersHypothesis_ForTheSlowestModel_EvenWhenAnotherIsKept()
+    {
+        // Twelve High speed hypotheses about models A to G fill the axis; H, the slowest, has one against A, which ranks
+        // high enough to be kept, and a weaker one against its sibling S, which the cut leaves out.
+        var graded = new List<(RootCauseHypothesis, RootCauseDraft)>();
+        void Add(RootCauseDraft draft) => graded.Add((Grade(draft), draft));
+        string[] others = { "A", "B", "C", "D", "E", "F", "G" };
+        for (int g = 0; g < RootCauseHypotheses.MaxPerAxis - 1; g++)
+        {
+            Add(About(Draft(id: "HS1", group: "G" + g, share: 0.5, checks: AllPassed()), others[g % others.Length], others[(g + 1) % others.Length]));
+        }
+        var againstReference = About(Draft(id: "HS2", group: "A|H", share: 0.9, checks: AllPassed()), "H", "A");
+        var againstSibling = About(Draft(id: "HS2", group: "H|S", nullStands: true, share: 0.2, checks: AllPassed()), "H", "S");
+        Add(againstReference);
+        Add(againstSibling);
+        Add(About(Draft(id: "HS1", group: "G11", share: 0.6, checks: AllPassed()), "B", "C"));
+        var slowest = new RootCauseQuestionTarget(3, RootCauseAxes.Speed, new RootCauseModelInput { Token = "H" }, new RootCauseModelInput { Token = "G" },
+            "Why is Model H slowest?", null);
+        int Preference(RootCauseQuestionTarget target, RootCauseHypothesis h) => h.Models.Contains("S") ? 0 : h.Models.Contains("A") ? 1 : 2;
+
+        var plain = RootCauseHypotheses.Keep(graded, new[] { slowest }, RootCauseProfiles.Answers);
+        Assert.Contains(plain, k => ReferenceEquals(k.Draft, againstReference));
+        Assert.DoesNotContain(plain, k => ReferenceEquals(k.Draft, againstSibling));
+
+        var kept = RootCauseHypotheses.Keep(graded, new[] { slowest }, RootCauseProfiles.Answers, Preference);
+        Assert.Contains(kept, k => ReferenceEquals(k.Draft, againstReference));
+        Assert.Contains(kept, k => ReferenceEquals(k.Draft, againstSibling));
+        Assert.Equal(RootCauseHypotheses.MaxPerAxis + 1, kept.Count(k => k.Hypothesis.Kind != "null"));
+    }
+
+    [Fact]
+    public void TheAxisStatus_SetsAPriceEffectAside()
+    {
+        var price = Draft(id: "HC2", axis: RootCauseAxes.Cost, group: "A|B", checks: AllPassed());
+        price.PriceEffect = true;
+        var kept = RootCauseHypotheses.Keep(new[] { price }.Select(d => (Grade(d), d)).ToList());
+        Assert.Equal(RootCauseGrades.High, kept[0].Hypothesis.Grade);
+        Assert.True(kept[0].Hypothesis.PriceEffect);
+
+        // A High price effect alone does not establish the axis.
+        var alone = RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, kept, hasPairs: true);
+        Assert.Equal(RootCauseStatuses.NotEstablished, alone.Status);
+        Assert.Equal(RootCauseHypotheses.PriceOnlyAxisReason, alone.Reason);
+        Assert.Null(alone.BestHypothesis);
+        Assert.Equal(RootCauseStatuses.NotEstablished, RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, kept).Status);
+
+        // Beside a weaker hypothesis that is no price effect, that one sets the status.
+        var volumeChecks = AllPassed();
+        volumeChecks[1] = Check(RootCauseHypotheses.Replicates, RootCauseCheckStatuses.Failed);
+        var volume = Draft(id: "HC1", axis: RootCauseAxes.Cost, group: "A|C", checks: volumeChecks);
+        var both = RootCauseHypotheses.Keep(new[] { price, volume }.Select(d => (Grade(d), d)).ToList());
+        var status = RootCauseHypotheses.AxisStatus(RootCauseAxes.Cost, both, hasPairs: true);
+        Assert.Equal(RootCauseStatuses.Probable, status.Status);
+        Assert.Equal("HC1.1", status.BestHypothesis);
+        Assert.Equal(RootCauseGrades.PriceCardWordWithGrade(RootCauseGrades.High), RootCauseGrades.HypothesisWordWithGrade(both.Single(k => k.Hypothesis.Id == "HC2").Hypothesis));
     }
 
     [Fact]

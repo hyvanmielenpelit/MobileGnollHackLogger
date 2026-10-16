@@ -12,7 +12,7 @@ using Xunit;
 
 /// <summary>
 /// The Root Cause Analysis term registry, and how the document uses it: the Key terms section lists the terms the
-/// Summary and the Conclusions use and Appendix H every term the document uses, each term is glossed once, a
+/// Summary and the Conclusions use and the glossary appendix every term the document uses, each term is glossed once, a
 /// writer's repeated gloss included, a null hypothesis' grade reads in plain words, and the fact sheet section
 /// exists only in the Markdown copy.
 /// </summary>
@@ -120,7 +120,7 @@ public class RootCauseGlossaryTests
 
     [Theory]
     [MemberData(nameof(DocumentNames))]
-    public void TheKeyTermsSection_ListsTheSummarysAndConclusionsTerms_AndAppendixH_EveryUsedTerm(string name)
+    public void TheKeyTermsSection_ListsTheSummarysAndConclusionsTerms_AndTheGlossary_EveryUsedTerm(string name)
     {
         string text = BenchmarkReportPackRenderer.Render(Document(name), FullNamed, out var used);
         var expected = RootCauseGlossary.Alphabetical(used).ToList();
@@ -139,13 +139,16 @@ public class RootCauseGlossaryTests
         Assert.Equal(expected.Select(Row).Where(rows.Contains), rows);
         Assert.Contains(Row(RootCauseGlossary.Get(RootCauseGlossary.GradeWords)), rows);
 
-        // A term only the detail after the Summary uses is defined in Appendix H, not listed among the key terms.
+        // A term only the detail after the Summary uses is defined in the glossary, not listed among the key terms.
         foreach (string detailOnly in new[] { RootCauseGlossary.Locus, RootCauseGlossary.DecompositionShare, RootCauseGlossary.BootstrapInterval, RootCauseGlossary.ToolRound })
         {
             if (used.Contains(detailOnly)) Assert.DoesNotContain(Row(RootCauseGlossary.Get(detailOnly)), rows);
         }
 
-        var entries = Section(text, "## Appendix H: Glossary")
+        // The glossary is Appendix H, or G when the document has no Known facts appendix; the Key terms lead names it.
+        string letter = text.Contains("\n## Appendix E: Known facts\n", StringComparison.Ordinal) ? "H" : "G";
+        Assert.Contains("and Appendix " + letter + " defines every term this document uses.", Section(text, "## Key terms"));
+        var entries = Section(text, "## Appendix " + letter + ": Glossary")
             .Split('\n')
             .Where(l => l.StartsWith("- **", StringComparison.Ordinal))
             .ToList();

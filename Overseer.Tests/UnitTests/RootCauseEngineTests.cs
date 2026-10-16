@@ -3,6 +3,8 @@ namespace Overseer.Tests.UnitTests;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using MobileGnollHackLogger.Data;
+using Overseer.Models;
 using Overseer.Services.Benchmarking;
 using Overseer.Services.Benchmarking.RootCause;
 using Overseer.Services.Telemetry;
@@ -14,8 +16,10 @@ using Xunit;
 /// in, the item-level control table, the chart rows and determinism; and for three compared models: which
 /// differences are decomposed, the research questions and their signals, the model profiles, the hypothesis
 /// labels and references, the grader rules and family gaps, nulls without a family test, the thinking level as a
-/// configuration, price effects, the next runs a standing null, a thinking hypothesis and a style hypothesis
-/// propose, and reasoning a provider does not report separately.
+/// configuration, price effects and a cost axis they alone fire on, the next runs a standing null, a thinking
+/// hypothesis and a style hypothesis propose, and reasoning a provider does not report separately; the panel
+/// indices a caller gives the engine input, the bare fact displays, the hypotheses each research question takes and
+/// in which order, the style hypothesis once per model, and the known facts' quota.
 /// </summary>
 public class RootCauseEngineTests
 {
@@ -551,12 +555,12 @@ public class RootCauseEngineTests
         int low = RootCauseGrades.Rank(RootCauseGrades.Low);
         foreach (var question in result.Questions)
         {
-            // Why highest: the pairs where the model is the better side. Why lowest, slowest or most expensive:
-            // the pairs where it is the worse side, and its own within-model hypotheses.
+            // Why highest: the pairs where the model is the better side and the gap lies in the pair itself (HQ4, HQ8).
+            // Why lowest, slowest or most expensive: the pairs where it is the worse side, and its own within-model hypotheses.
             var about = result.Hypotheses
                 .Where(h => h.Axis == question.Axis && h.Id != "HQ3")
                 .Where(h => question.Number == 1
-                    ? h.Kind == "pair" && h.Models[1] == question.Token
+                    ? h.Kind == "pair" && h.Models[1] == question.Token && h.Id is "HQ4" or "HQ8"
                     : (h.Kind == "pair" && h.Models[0] == question.Token) || (h.Kind == "within" && h.Models[0] == question.Token))
                 .ToList();
             var comparative = about.Where(h => h.Kind == "pair").ToList();
@@ -568,25 +572,49 @@ public class RootCauseEngineTests
             Assert.Equal(comparative.Select(h => h.Key).OrderBy(k => k, StringComparer.Ordinal), question.ComparativeKeys!.OrderBy(k => k, StringComparer.Ordinal));
             Assert.Equal(within.Select(h => h.Key).OrderBy(k => k, StringComparer.Ordinal), question.WithinKeys!.OrderBy(k => k, StringComparer.Ordinal));
             Assert.Equal(question.ComparativeKeys.Concat(question.WithinKeys), question.HypothesisKeys);
-            foreach (var keys in new[] { question.ComparativeKeys, question.WithinKeys })
-            {
-                var ranks = keys.Select(k => RootCauseGrades.Rank(about.Single(h => h.Key == k).Grade)).ToList();
-                Assert.Equal(ranks.OrderByDescending(r => r).ToList(), ranks);
-            }
 
-            // The best comparative grade at Low or higher; else the best within-model one, capped at Low.
-            string? bestComparative = comparative.Where(h => RootCauseGrades.Rank(h.Grade) >= low)
-                .OrderByDescending(h => RootCauseGrades.Rank(h.Grade)).Select(h => h.Grade).FirstOrDefault();
+            // Questions 3 and 4 order their comparative hypotheses by the compared model first: no model of the three
+            // has a sibling at another level, so the reference (A), then the fastest (C) or the cheapest (A), then B.
+            // Within one compared model, and on questions 1 and 2, best grade first.
+            string[]? partners = question.Number switch { 3 => new[] { "A", "C" }, 4 => new[] { "A", "B" }, _ => null };
+            int Preference(string key)
+            {
+                var h = about.Single(x => x.Key == key);
+                return partners == null ? 0 : Array.IndexOf(partners, h.Models[0] == question.Token ? h.Models[1] : h.Models[0]);
+            }
+            var order = question.ComparativeKeys
+                .Select(k => about.Single(h => h.Key == k))
+                .Select(h => (Partner: Preference(h.Key), Price: h.PriceEffect ? 1 : 0, Rank: -RootCauseGrades.Rank(h.Grade)))
+                .ToList();
+            Assert.Equal(order.OrderBy(o => o.Partner).ThenBy(o => o.Price).ThenBy(o => o.Rank).ToList(), order);
+            var withinRanks = question.WithinKeys.Select(k => RootCauseGrades.Rank(about.Single(h => h.Key == k).Grade)).ToList();
+            Assert.Equal(withinRanks.OrderByDescending(r => r).ToList(), withinRanks);
+
+            // The first comparative grade at Low or higher in that order; else the best within-model one, capped at Low.
+            var first = question.ComparativeKeys.Select(k => about.Single(h => h.Key == k)).FirstOrDefault(h => RootCauseGrades.Rank(h.Grade) >= low);
+            string? bestComparative = first?.Grade;
             string? bestWithin = within.Where(h => RootCauseGrades.Rank(h.Grade) >= low)
                 .OrderByDescending(h => RootCauseGrades.Rank(h.Grade)).Select(h => h.Grade).FirstOrDefault();
             string? best = bestComparative ?? (bestWithin != null ? RootCauseGrades.Capped(bestWithin, RootCauseGrades.Low) : null);
             Assert.Equal(best, question.Grade);
             Assert.Equal(bestComparative == null && within.Count > 0, question.WithinOnly);
+            Assert.Equal(question.Number == 4 && first?.PriceEffect == true, question.PriceCard);
 
             string prefix = "rca.question." + question.Number + ".";
             Assert.Equal(question.Text, byKey[prefix + "text"].Display);
             Assert.Equal("Model " + question.Token, byKey[prefix + "model"].Display);
-            Assert.Equal(RootCauseGrades.WordWithGrade(best), byKey[prefix + "status"].Display);
+            Assert.Equal(question.PriceCard ? RootCauseGrades.PriceCardWord : RootCauseGrades.WordWithGrade(best), byKey[prefix + "status"].Display);
+            if (question.Number <= 2)
+            {
+                Assert.Equal("B", question.Neighbor);
+                Assert.Equal("Model B", byKey[prefix + "neighbor"].Display);
+                Assert.Equal("B", byKey[prefix + "neighbor"].Value!.GetValue<string>());
+            }
+            else
+            {
+                Assert.Null(question.Neighbor);
+                Assert.False(byKey.ContainsKey(prefix + "neighbor"));
+            }
             Assert.True(byKey.ContainsKey(prefix + "hypotheses"));
             Assert.True(byKey.ContainsKey(prefix + "signals"));
             Assert.Equal(question.WithinOnly, byKey[prefix + "withinOnly"].Value!.GetValue<bool>());
@@ -595,13 +623,15 @@ public class RootCauseEngineTests
             Assert.All(byKey.Keys.Where(k => k.StartsWith(prefix, StringComparison.Ordinal)), k => Assert.True(RootCauseFacts.WriterHidden(k), k));
         }
 
-        // Model A scored highest: no hypothesis about where it lost, and only strengths as its signals.
+        // Model A scored highest: no hypothesis about where it lost, none about the runner-up's own failures, and only
+        // strengths as its signals.
         var highest = result.Questions[0];
         Assert.All(highest.HypothesisKeys, k =>
         {
             var h = result.Hypotheses.Single(x => x.Key == k);
             Assert.Equal("pair", h.Kind);
             Assert.Equal("A", h.Models[1]);
+            Assert.Contains(h.Id, new[] { "HQ4", "HQ8" });
         });
         Assert.DoesNotContain(highest.Signals, s => s.StartsWith("lost points on", StringComparison.Ordinal));
         Assert.Contains(result.Questions[1].HypothesisKeys, k => result.Hypotheses.Single(h => h.Key == k).Kind == "within");
@@ -704,9 +734,9 @@ public class RootCauseEngineTests
     }
 
     [Fact]
-    public void TheEngineVersion_IsFive()
+    public void TheEngineVersion_IsSix()
     {
-        Assert.Equal(5, RootCauseEngine.Version);
+        Assert.Equal(6, RootCauseEngine.Version);
     }
 
     [Fact]
@@ -821,6 +851,10 @@ public class RootCauseEngineTests
         var best = comparative.First(h => RootCauseGrades.Rank(h.Grade) >= RootCauseGrades.Rank(RootCauseGrades.Low));
         Assert.Equal(best.Grade, slowest.Grade);
         Assert.False(slowest.WithinOnly);
+
+        // No model has a sibling at another level, so the reference leads, before the fastest model.
+        Assert.Equal("A", comparative[0].Models[1]);
+        Assert.Equal("A", best.Models[1]);
     }
 
     [Fact]
@@ -1057,10 +1091,13 @@ public class RootCauseEngineTests
         var byKey = facts.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
         Assert.Equal("Rejected — a real difference (Not supported)", byKey["rca.hypothesis." + h0.Key + ".grade"].Display);
         Assert.Equal(RootCauseGrades.NotSupported, byKey["rca.hypothesis." + h0.Key + ".grade"].Value!.GetValue<string>());
-        Assert.Equal(h0.Key + " (no intelligence difference)", byKey["rca.hypothesis." + h0.Key + ".ref"].Display);
+        Assert.Equal(h0.Key, byKey["rca.hypothesis." + h0.Key + ".ref"].Display);
+        Assert.Equal("no intelligence difference", RootCauseLabels.Topic(h0));
         Assert.All(result.Hypotheses, h =>
         {
-            Assert.Equal(h.Key + " (" + RootCauseLabels.Topic(h) + ")", byKey["rca.hypothesis." + h.Key + ".ref"].Display);
+            // The reference is the bare id; the topic stays for the label.
+            Assert.Equal(h.Key, byKey["rca.hypothesis." + h.Key + ".ref"].Display);
+            if (h.Id != "H0-W") Assert.Contains(RootCauseLabels.Topic(h), h.Label, StringComparison.Ordinal);
             Assert.DoesNotContain("Model ", RootCauseLabels.Topic(h), StringComparison.Ordinal);
             Assert.True(BenchmarkReportFactLabels.TryLabel("rca.hypothesis." + h.Key + ".ref", out _));
         });
@@ -1143,6 +1180,341 @@ public class RootCauseEngineTests
         Assert.EndsWith("until a second run of each suite is made.", RootCauseEngine.Compute(ComparisonInput()).GradeCap);
     }
 
+    [Fact]
+    public void APriceOnlyCostAxis_IsNotEstablished_AndItsMostExpensiveModelIsKnownFromThePriceCards()
+    {
+        // Model B reads and writes as many tokens as Model A at twice the price: only the price effect fires on cost.
+        var result = RootCauseEngine.Compute(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0),
+            Compared("B", 2, 75, 1.6, 1.0, price: 2.0)));
+
+        var hc2 = Assert.Single(result.Hypotheses, h => h.Id == "HC2");
+        Assert.True(hc2.PriceEffect);
+        Assert.NotEqual(RootCauseGrades.NotSupported, hc2.Grade);
+        Assert.DoesNotContain(result.Hypotheses, h => h.Axis == RootCauseAxes.Cost && h.Kind == "pair" && !h.PriceEffect);
+        Assert.Equal(RootCauseGrades.PriceCardWordWithGrade(hc2.Grade), RootCauseGrades.HypothesisWordWithGrade(hc2));
+        Assert.StartsWith("Known from the price cards (", RootCauseGrades.HypothesisWordWithGrade(hc2), StringComparison.Ordinal);
+
+        var cost = result.Axes.Single(a => a.Axis == RootCauseAxes.Cost);
+        Assert.Equal(RootCauseStatuses.NotEstablished, cost.Status);
+        Assert.Equal(RootCauseHypotheses.PriceOnlyAxisReason, cost.Reason);
+        Assert.Null(cost.BestHypothesis);
+
+        // A price effect sorts after every other non-null hypothesis of its axis.
+        var costOrder = result.Hypotheses.Where(h => h.Axis == RootCauseAxes.Cost && h.Kind != "null").ToList();
+        Assert.Same(hc2, costOrder[^1]);
+
+        var mostExpensive = Assert.Single(result.Questions, q => q.Number == 4);
+        Assert.Equal("B", mostExpensive.Token);
+        Assert.True(mostExpensive.PriceCard);
+        Assert.Equal(hc2.Grade, mostExpensive.Grade);
+        Assert.All(result.Questions.Where(q => q.Number != 4), q => Assert.False(q.PriceCard));
+
+        var facts = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(facts, result, t => "Model " + t);
+        var sorted = facts.Sorted().ToList();
+        var byKey = sorted.ToDictionary(f => f.Key, StringComparer.Ordinal);
+        string prefix = "rca.hypothesis." + hc2.Key + ".";
+        Assert.Equal(RootCauseGrades.PriceCardWordWithGrade(hc2.Grade), byKey[prefix + "grade"].Display);
+        Assert.Equal(hc2.Grade, byKey[prefix + "grade"].Value!.GetValue<string>());
+        Assert.True(byKey[prefix + "priceCard"].Value!.GetValue<bool>());
+        Assert.Equal(RootCauseFacts.PriceCardDisplay, byKey[prefix + "priceCard"].Display);
+        Assert.DoesNotContain(sorted, f => f.Key.EndsWith(".priceCard", StringComparison.Ordinal) && !f.Key.StartsWith(prefix, StringComparison.Ordinal));
+        Assert.Equal(RootCauseGrades.PriceCardWord, byKey["rca.question.4.status"].Display);
+        Assert.False(byKey["rca.axis.cost.best"].Available);
+        Assert.Equal(RootCauseHypotheses.PriceOnlyAxisReason, byKey["rca.axis.cost.best"].UnavailableReason);
+
+        // The price effect supports a causal word but no certainty word, and the cost axis is not established.
+        var support = RootCauseClaimSupport.From(new BenchmarkReportFactSheet { Facts = sorted });
+        Assert.True(support.SupportsCausal(prefix + "statement"));
+        Assert.False(support.SupportsCertainty(prefix + "statement"));
+        Assert.DoesNotContain(RootCauseAxes.Cost, support.EstablishedAxes);
+        Assert.DoesNotContain(support.CertaintySupport(), item => item.StartsWith(prefix, StringComparison.Ordinal));
+    }
+
+    // --- Engine inputs and fact displays -------------------------------------------------------------------
+
+    [Fact]
+    public void ModelInput_TakesTheGivenIndices_OverThePanelDiagnostics()
+    {
+        var entry = new BenchmarkModelComparisonEntryDto { Key = "battery:7", Label = "Orion (high)", Provider = "Northwind", ModelId = "orion", RunIds = { 7 } };
+        var diagnosed = new BenchmarkModelComparisonDto
+        {
+            PanelDiagnostics = new BenchmarkPanelDiagnosticsDto
+            {
+                Applicable = true,
+                Entries = { new BenchmarkPanelEntryIndicesDto { EntryKey = "battery:7", MemberAIndex = 80, MemberBIndex = 70, ReferenceIndex = 75 } }
+            }
+        };
+        RootCauseModelInput Build(BenchmarkModelComparisonDto comparison, double? memberA = null, double? memberB = null, double? readerIndex = null)
+            => RootCauseEvidence.ModelInput(entry, "A", "A", false, Array.Empty<BenchmarkRun>(), new RootCauseModelEvidence(), new double?[4], false, comparison,
+                memberAIndex: memberA, memberBIndex: memberB, referenceReaderIndex: readerIndex);
+
+        var fromPanel = Build(diagnosed);
+        Assert.Equal(80.0, fromPanel.MemberAIndex);
+        Assert.Equal(70.0, fromPanel.MemberBIndex);
+        Assert.Equal(75.0, fromPanel.ReferenceReaderIndex);
+
+        var given = Build(diagnosed, 81.5, 72.25, 77.75);
+        Assert.Equal(81.5, given.MemberAIndex);
+        Assert.Equal(72.25, given.MemberBIndex);
+        Assert.Equal(77.75, given.ReferenceReaderIndex);
+
+        // Each given index wins on its own; the others still come from the diagnostics.
+        var reader = Build(diagnosed, readerIndex: 60.5);
+        Assert.Equal(80.0, reader.MemberAIndex);
+        Assert.Equal(70.0, reader.MemberBIndex);
+        Assert.Equal(60.5, reader.ReferenceReaderIndex);
+
+        // A battery comparison without diagnostics has the given indices alone.
+        var battery = Build(new BenchmarkModelComparisonDto(), 81.5, 72.25, 77.75);
+        Assert.Equal(81.5, battery.MemberAIndex);
+        Assert.Equal(72.25, battery.MemberBIndex);
+        Assert.Equal(77.75, battery.ReferenceReaderIndex);
+        var none = Build(new BenchmarkModelComparisonDto());
+        Assert.Null(none.MemberAIndex);
+        Assert.Null(none.MemberBIndex);
+        Assert.Null(none.ReferenceReaderIndex);
+    }
+
+    [Fact]
+    public void TheShareTotalAndAtRiskDisplays_AreTheFiguresAlone_AndANotDecomposedDifferenceSaysSoInItsOwnFact()
+    {
+        var result = RootCauseEngine.Compute(ComparisonInput());
+        var facts = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(facts, result, t => "Model " + t);
+        var available = facts.Sorted().Where(f => f.Available).ToList();
+        var byKey = available.ToDictionary(f => f.Key, StringComparer.Ordinal);
+
+        var shares = available.Where(f => (f.Key.StartsWith("rca.speed.", StringComparison.Ordinal) || f.Key.StartsWith("rca.cost.", StringComparison.Ordinal))
+                                          && f.Key.EndsWith(".share", StringComparison.Ordinal)).ToList();
+        Assert.NotEmpty(shares);
+        Assert.All(shares, f =>
+        {
+            Assert.EndsWith("%", f.Display, StringComparison.Ordinal);
+            Assert.DoesNotContain("difference", f.Display, StringComparison.Ordinal);
+        });
+
+        var totals = available.Where(f => f.Key.StartsWith("rca.", StringComparison.Ordinal) && f.Key.EndsWith(".total", StringComparison.Ordinal)
+                                          && (f.Key.StartsWith("rca.speed.", StringComparison.Ordinal) || f.Key.StartsWith("rca.cost.", StringComparison.Ordinal)
+                                              || f.Key.StartsWith("rca.quality.", StringComparison.Ordinal))).ToList();
+        Assert.NotEmpty(totals);
+        Assert.All(totals, f =>
+        {
+            Assert.DoesNotContain("(", f.Display, StringComparison.Ordinal);
+            Assert.DoesNotContain("minus", f.Display, StringComparison.Ordinal);
+            Assert.DoesNotContain("Model ", f.Display, StringComparison.Ordinal);
+            Assert.EndsWith(f.Key.StartsWith("rca.quality.", StringComparison.Ordinal) ? " index points" : " per question", f.Display, StringComparison.Ordinal);
+        });
+        Assert.Matches(@"^[+-]\d+\.\d s per question$", byKey["rca.speed.A.B.total"].Display);
+
+        // A difference that may be chance is stated with its own .decomposed fact; a decomposed one has none.
+        foreach (var pair in result.SpeedPairs.Concat(result.CostPairs).Where(p => p.Difference.HasValue && (p.UnavailableReason == null || p.NotEstablished)))
+        {
+            string key = "rca." + pair.Axis + "." + pair.First + "." + pair.Second + ".decomposed";
+            if (pair.NotEstablished)
+            {
+                Assert.False(byKey[key].Value!.GetValue<bool>());
+                Assert.Equal(RootCauseFacts.NotDecomposedDisplay, byKey[key].Display);
+            }
+            else
+            {
+                Assert.False(byKey.ContainsKey(key), key);
+            }
+        }
+        Assert.True(byKey.ContainsKey("rca.speed.A.C.decomposed"));
+
+        // Points at risk are the figure alone; the total names the median it is measured against.
+        foreach (var summary in result.Evidence)
+        {
+            foreach (var segment in summary.AtRisk)
+            {
+                Assert.Matches(@"^\d+\.\d index points$", byKey["rca.atRisk." + summary.Token + "." + segment.Key].Display);
+            }
+            Assert.Matches(@"^\d+\.\d index points below a median answer of \d+$", byKey["rca.atRisk." + summary.Token + ".total"].Display);
+        }
+    }
+
+    [Fact]
+    public void TheCacheShareAndPriceDisplays_AreTheFiguresAlone_AndDifferingCardsAreTheirOwnFact()
+    {
+        RootCauseModelEvidence Evidence(bool differ) => new()
+        {
+            Answers = Enumerable.Range(1, 4).Select(q => new RootCauseAnswerRecord
+            {
+                ItemKey = "q" + q + "@1",
+                QuestionKey = "q" + q,
+                Ok = true,
+                InputTokens = 1000,
+                CacheReadTokens = 900,
+                OutputTokens = 200
+            }).ToList(),
+            RunCount = 2,
+            RunsPerSuite = 1,
+            Priced = true,
+            PricesPerMillion = new double?[] { 0.5, 0.05, null, 50, 50 },
+            PricesDiffer = differ
+        };
+
+        var facts = new BenchmarkReportFacts.FactList();
+        RootCauseEvidence.AddFacts(facts, Evidence(differ: true), pricingBasisKind: BenchmarkReportFacts.PricingBasisCatalog);
+        var byKey = facts.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
+
+        Assert.Equal(BenchmarkReportFormat.Percent(0.9 * 100), byKey["tokens.cacheReadShare"].Display);
+        Assert.Equal("$0.50 per million tokens", byKey["price.uncachedInput.perMillion"].Display);
+        Assert.Equal("$0.05 per million tokens", byKey["price.cacheRead.perMillion"].Display);
+        Assert.Equal("$50.00 per million tokens", byKey["price.output.perMillion"].Display);
+        Assert.True(byKey[RootCauseEvidence.PricesDifferKey].Value!.GetValue<bool>());
+        Assert.Equal(RootCauseEvidence.PricesDifferDisplay, byKey[RootCauseEvidence.PricesDifferKey].Display);
+        Assert.True(RootCauseFacts.WriterHidden(RootCauseEvidence.PricesDifferKey));
+        Assert.True(RootCauseFacts.WriterHidden("model.B." + RootCauseEvidence.PricesDifferKey));
+
+        var same = new BenchmarkReportFacts.FactList();
+        RootCauseEvidence.AddFacts(same, Evidence(differ: false));
+        Assert.DoesNotContain(same.Sorted(), f => f.Key == RootCauseEvidence.PricesDifferKey);
+        Assert.Equal("$0.50 per million tokens", same.Sorted().Single(f => f.Key == "price.uncachedInput.perMillion").Display);
+    }
+
+    // --- The research questions' hypotheses -----------------------------------------------------------------
+
+    [Fact]
+    public void QuestionOne_IgnoresTheRunnerUpsOwnFailures_ButKeepsTheGradersAndTheThinkingLevel()
+    {
+        var target = new RootCauseQuestionTarget(1, RootCauseAxes.Intelligence, new RootCauseModelInput { Token = "A" }, new RootCauseModelInput { Token = "B" },
+            "Why did Model A score highest?", true);
+        RootCauseHypothesis Pair(string id, string worse, string better)
+            => new() { Id = id, Axis = RootCauseAxes.Intelligence, Kind = "pair", Models = { worse, better } };
+
+        foreach (string id in new[] { "HQ1", "HQ2", "HQ5", "HQ6", "HQ7", "HQ9" })
+        {
+            Assert.False(RootCauseProfiles.Answers(target, Pair(id, "B", "A")), id);
+        }
+        foreach (string id in new[] { "HQ4", "HQ8" })
+        {
+            Assert.True(RootCauseProfiles.Answers(target, Pair(id, "B", "A")), id);
+            Assert.False(RootCauseProfiles.Answers(target, Pair(id, "A", "B")), id);
+        }
+
+        // Question 2 still takes the lowest model's own failures.
+        var lowest = new RootCauseQuestionTarget(2, RootCauseAxes.Intelligence, new RootCauseModelInput { Token = "B" }, new RootCauseModelInput { Token = "A" },
+            "Why did Model B score lowest?", true);
+        Assert.True(RootCauseProfiles.Answers(lowest, Pair("HQ1", "B", "A")));
+
+        // Model B is Model A's model at a lower thinking level and answers without tools more often: question 1 keeps
+        // the thinking level and leaves B's own failures to question 2.
+        var result = RootCauseEngine.Compute(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0, q => 85 + q % 3, modelId: "orion", thinkingLevel: "high"),
+            Compared("B", 2, 75, 1.6, 1.2, q => q % 3 == 0 ? 55 : 82, noTool: q => q % 3 == 0, modelId: "orion", thinkingLevel: "medium"),
+            Compared("C", 3, 60, 0.9, 2.0)));
+        var highest = Assert.Single(result.Questions, q => q.Number == 1);
+        Assert.Equal("B", highest.Neighbor);
+        Assert.Contains(highest.ComparativeKeys!, k => k.StartsWith("HQ8.", StringComparison.Ordinal));
+        Assert.All(highest.HypothesisKeys, k => Assert.Contains(result.Hypotheses.Single(h => h.Key == k).Id, new[] { "HQ4", "HQ8" }));
+        Assert.Contains(result.Hypotheses, h => h.Id == "HQ1" && h.Models[0] == "B" && h.Models[1] == "A");
+        Assert.Empty(highest.WithinKeys!);
+    }
+
+    [Fact]
+    public void QuestionThree_LeadsWithTheSiblingAtAnotherLevel_ThenTheReference_ThenTheFastest()
+    {
+        // B, D and E are one model at high, medium and low thinking; A is the reference; C is the fastest and cheapest.
+        var ctx = new RootCauseContext(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0),
+            Compared("B", 2, 75, 2.0, 1.2, modelId: "model-b", thinkingLevel: "high"),
+            Compared("C", 3, 70, 0.8, 0.9),
+            Compared("D", 4, 65, 1.4, 1.1, modelId: "model-b", thinkingLevel: "medium"),
+            Compared("E", 5, 60, 1.2, 2.0, modelId: "model-b", thinkingLevel: "low")));
+        var targets = RootCauseProfiles.Targets(ctx);
+
+        var slowest = targets.Single(t => t.Number == 3);
+        Assert.Equal("B", slowest.Model.Token);
+        Assert.Equal(new[] { "D", "E", "A", "C" }, RootCauseProfiles.PartnerPreference(ctx, slowest));
+        var mostExpensive = targets.Single(t => t.Number == 4);
+        Assert.Equal("E", mostExpensive.Model.Token);
+        Assert.Equal(new[] { "D", "B", "A", "C" }, RootCauseProfiles.PartnerPreference(ctx, mostExpensive));
+
+        RootCauseHypothesis Speed(string worse, string better)
+            => new() { Id = "HS1", Axis = RootCauseAxes.Speed, Kind = "pair", Models = { worse, better } };
+        Assert.Equal(0, RootCauseProfiles.PartnerRank(ctx, slowest, Speed("B", "D")));
+        Assert.Equal(2, RootCauseProfiles.PartnerRank(ctx, slowest, Speed("B", "A")));
+        Assert.Equal(3, RootCauseProfiles.PartnerRank(ctx, slowest, Speed("B", "C")));
+        Assert.Equal(0, RootCauseProfiles.PartnerRank(ctx, targets.Single(t => t.Number == 1), Speed("B", "C")));
+
+        // Model C is Model B's model at medium thinking, and an analyzed pair with it: question 3 leads with it, ahead
+        // of the reference, though both pairs are decomposed.
+        var result = RootCauseEngine.Compute(ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0),
+            Compared("B", 2, 75, 1.6, 1.2),
+            Compared("C", 3, 60, 0.9, 2.0, modelId: "model-b", thinkingLevel: "medium")));
+        var question = Assert.Single(result.Questions, q => q.Number == 3);
+        var comparative = question.ComparativeKeys!.Select(k => result.Hypotheses.Single(h => h.Key == k)).ToList();
+        Assert.NotEmpty(comparative);
+        Assert.Equal("C", comparative[0].Models[1]);
+        Assert.Equal(comparative.Select(h => h.Models[1] == "C" ? 0 : 1).OrderBy(x => x), comparative.Select(h => h.Models[1] == "C" ? 0 : 1));
+        Assert.Equal(comparative.First(h => RootCauseGrades.Rank(h.Grade) >= RootCauseGrades.Rank(RootCauseGrades.Low)).Grade, question.Grade);
+    }
+
+    [Fact]
+    public void TheStyleHypothesis_IsStatedOncePerModel_AboutThatModelAlone()
+    {
+        var input = ComparisonInput(
+            Compared("A", 1, 85, 1.0, 1.0, styleConflict: true),
+            Compared("B", 2, 75, 1.6, 1.2, styleConflict: true),
+            Compared("C", 3, 60, 0.9, 2.0, styleConflict: true));
+        var ctx = new RootCauseContext(input);
+
+        // Model A is the worse side of no pair, so only B and C have one, though each is in two pairs.
+        var drafts = input.Models.Select(m => RootCauseHypotheses.StyleConflict(ctx, m)).OfType<RootCauseDraft>().ToList();
+        Assert.Equal(new[] { "B", "C" }, drafts.Select(d => Assert.Single(d.Models)));
+        Assert.All(drafts, d =>
+        {
+            Assert.Equal("HQ5", d.Id);
+            Assert.Equal("within", d.Kind);
+            Assert.Equal("style:" + d.Models[0], d.Group);
+            Assert.Equal(RootCauseHypotheses.StyleRefutedIf, d.RefutedIf);
+            Assert.Equal(RootCauseRunKinds.StylePair, d.NextRunKind);
+            Assert.Equal(RootCauseGrades.Low, RootCauseHypotheses.Grade(d, ctx.Name).Grade);
+        });
+        Assert.Equal("Completeness was Model B's lowest dimension under the concise response style.", drafts[0].Statement);
+        Assert.Contains("indicative for the other models", RootCauseHypotheses.StyleRefutedIf, StringComparison.Ordinal);
+
+        var result = RootCauseEngine.Compute(input);
+        Assert.All(result.Hypotheses.Where(h => h.Id == "HQ5").GroupBy(h => h.Models[0]), g => Assert.Single(g));
+        Assert.All(result.Hypotheses.Where(h => h.Id == "HQ5"), h =>
+        {
+            Assert.Equal("within", h.Kind);
+            Assert.Equal("Model " + h.Models[0] + "'s Completeness under the concise response style", h.Label);
+        });
+    }
+
+    [Fact]
+    public void TheKnownFacts_KeepSlotsForCountsAndConfiguration()
+    {
+        var tests = Enumerable.Range(1, 30).Select(i => new RootCauseKnownFact { Kind = RootCauseKnownFacts.KindTest, Text = "Test " + i });
+        var counts = Enumerable.Range(1, 8).Select(i => new RootCauseKnownFact
+        {
+            Kind = i % 2 == 0 ? RootCauseKnownFacts.KindConfiguration : RootCauseKnownFacts.KindCount,
+            Text = "Count " + i
+        });
+
+        var facts = RootCauseKnownFacts.Select(tests.Concat(counts).ToList());
+
+        int reserved = RootCauseKnownFacts.ReservedCountAndConfigurationFacts;
+        Assert.Equal(RootCauseKnownFacts.MaxFacts, facts.Count);
+        Assert.Equal(Enumerable.Range(1, RootCauseKnownFacts.MaxFacts), facts.Select(f => f.Number));
+        Assert.Equal(Enumerable.Range(1, RootCauseKnownFacts.MaxFacts - reserved).Select(i => "Test " + i),
+            facts.Where(f => f.Kind == RootCauseKnownFacts.KindTest).Select(f => f.Text));
+        Assert.Equal(Enumerable.Range(1, reserved).Select(i => "Count " + i),
+            facts.Where(f => f.Kind != RootCauseKnownFacts.KindTest).Select(f => f.Text));
+
+        // With fewer counts than the reserved slots, the tests fill the rest; with few candidates, every one is kept.
+        var few = RootCauseKnownFacts.Select(tests.Concat(counts.Take(2)).ToList());
+        Assert.Equal(RootCauseKnownFacts.MaxFacts, few.Count);
+        Assert.Equal(RootCauseKnownFacts.MaxFacts - 2, few.Count(f => f.Kind == RootCauseKnownFacts.KindTest));
+        Assert.Equal(new[] { "Count 1", "Count 2" }, few.Skip(RootCauseKnownFacts.MaxFacts - 2).Select(f => f.Text));
+        Assert.Equal(5, RootCauseKnownFacts.Select(tests.Take(3).Concat(counts.Take(2)).ToList()).Count);
+    }
+
     // --- Next runs -----------------------------------------------------------------------------------------
 
     [Fact]
@@ -1216,12 +1588,13 @@ public class RootCauseEngineTests
             Compared("B", 2, 75, 1.6, 1.2, styleConflict: true),
             Compared("C", 3, 60, 0.9, 2.0, styleConflict: true));
         var ctx = new RootCauseContext(input);
-        var graded = ctx.Pairs
-            .SelectMany(p => RootCauseHypotheses.PairRules(ctx, p, new Dictionary<string, bool>()))
-            .Where(d => d.Id == "HQ5")
+        Assert.DoesNotContain(ctx.Pairs.SelectMany(p => RootCauseHypotheses.PairRules(ctx, p, new Dictionary<string, bool>())), d => d.Id == "HQ5");
+        var graded = input.Models
+            .Select(m => RootCauseHypotheses.StyleConflict(ctx, m))
+            .OfType<RootCauseDraft>()
             .Select(d => (Hypothesis: RootCauseHypotheses.Grade(d, ctx.Name), Draft: d))
             .ToList();
-        Assert.True(graded.Count >= 2);
+        Assert.Equal(2, graded.Count);
         var kept = RootCauseHypotheses.Keep(graded);
 
         var (runs, _) = RootCauseNextRuns.Build(ctx, kept, systemFirst: false);

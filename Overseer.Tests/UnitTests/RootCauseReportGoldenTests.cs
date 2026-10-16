@@ -81,16 +81,28 @@ public class RootCauseReportGoldenTests
                 Sha256 = new string('0', 64)
             }).ToList()
         };
-        string text = BenchmarkReportPackRenderer.Render(Document(name), options);
+        var document = Document(name);
+        string text = BenchmarkReportPackRenderer.Render(document, options);
 
-        string[] headings =
+        // Appendix E is there only when the analysis lists a count or a configuration fact; without it the letters close up.
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+        bool knownFacts = sheet.RootCause!.KnownFacts.Any(k => k.Kind is RootCauseKnownFacts.KindCount or RootCauseKnownFacts.KindConfiguration);
+        var headings = new List<string>
         {
             "Summary", "Why each model scored as it did", "Scope and design", "Evidence: intelligence", "Evidence: speed", "Evidence: cost",
             "Hypotheses", "Conclusions", "What to run next", "Limitations and threats to validity", "Appendices",
             "Appendix A: Intelligence detail", "Appendix B: Speed and cost decompositions", "Appendix C: Hypothesis details",
-            "Appendix D: Run settings", "Appendix E: Known facts", "Appendix F: Reproducibility", "Appendix G: Question details",
-            "Appendix H: Glossary", "Fact sheet", "Evaluation terms"
+            "Appendix D: Run settings"
         };
+        headings.AddRange(knownFacts
+            ? new[] { "Appendix E: Known facts", "Appendix F: Reproducibility", "Appendix G: Question details", "Appendix H: Glossary" }
+            : new[] { "Appendix E: Reproducibility", "Appendix F: Question details", "Appendix G: Glossary" });
+        headings.AddRange(new[] { "Fact sheet", "Evaluation terms" });
+        if (!knownFacts)
+        {
+            Assert.DoesNotContain("## Appendix E: Known facts", text);
+            Assert.DoesNotContain("- **E. Known facts:**", text);
+        }
         int last = -1;
         foreach (string heading in headings)
         {
@@ -183,9 +195,15 @@ public class RootCauseReportGoldenTests
         Assert.Equal(questions.Count, CountOf(summary, "> [!NOTE]\n> **Question.** **Why "));
         foreach (var question in questions)
         {
-            string strength = question.HypothesisKeys.Count > 0
-                ? RootCauseGrades.WordWithGrade(question.Grade)
-                : "no hypothesis about this model fired — see its profile.";
+            // Question 1 without a comparative cause states its measured lead; question 4 from the price cards says so.
+            string strength = question.Number == 1 && question.ComparativeKeys != null && question.Grade == null
+                              && (question.WithinKeys ?? new List<string>()).Count == 0 && question.OrderEstablished.HasValue
+                ? "Measured lead over "
+                : question.PriceCard
+                    ? RootCauseGrades.PriceCardWord + " — see HC2."
+                    : question.HypothesisKeys.Count > 0
+                        ? RootCauseGrades.WordWithGrade(question.Grade)
+                        : "no hypothesis about this model fired — see its profile.";
             int at = summary.IndexOf("> **Question.** **" + NamedQuestion(sheet, question.Text) + "**\n>\n> *Answer strength: "
                 + strength, StringComparison.Ordinal);
             Assert.True(at >= 0, question.Text);
