@@ -11,7 +11,8 @@ using Xunit;
 
 /// <summary>
 /// The writer's replies as one Markdown file, built from the job held in memory: the header, a section per document
-/// and per call, a reply that holds a code fence kept inside a longer one, the no-reply and cut lines, and LF only.
+/// and per call, a reply that holds a code fence kept inside a longer one, the no-reply and cut lines, the output limit,
+/// the reasoning tokens and a later turn's request, and LF only.
 /// The endpoint that serves it is tested with the service, in <see cref="BenchmarkReportPackServiceTests"/>.
 /// </summary>
 public class BenchmarkReportPackWriterRepliesTests
@@ -122,6 +123,44 @@ public class BenchmarkReportPackWriterRepliesTests
         Assert.Contains("\n\nNo reply (provider error: boom).\n", markdown, StringComparison.Ordinal);
         Assert.Contains(longReply[..BenchmarkReportPackJob.MaxFailedReplyChars] + "\n```\n\n(cut at 200,000 characters)\n", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain(longReply, markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheOutputLimit_TheReasoningTokens_AndALaterTurnsRequest_AreShown()
+    {
+        var job = new BenchmarkReportPackJob
+        {
+            Id = "job-2",
+            PackId = PackId,
+            SubjectKey = "comparison:4",
+            SubjectLabel = "Comparison #4",
+            Scope = BenchmarkReportScope.Comparison,
+            WriterDisplayName = "Writer One",
+            WriterProvider = "ReportWriterTest",
+            WriterModelId = "writer-1",
+            WriterMaxOutputTokens = 32_000,
+            Cts = new CancellationTokenSource(),
+            Documents = { new BenchmarkReportPackDocumentProgress { Audience = BenchmarkReportAudience.RootCauseAnalysis, SubjectLabel = "Comparison #4" } }
+        };
+        var draft = Call(BenchmarkReportPackCallKinds.Draft, 39);
+        draft.OutputTokens = 16_000;
+        draft.ReasoningTokens = 14_950;
+        draft.FinishReason = "MAX_TOKENS";
+        job.RecordCall(job.Documents[0], draft, "{ \"headline\": ");
+        const string request = "Fix these issues:\n```\nrule 1\n```";
+        job.RecordCall(job.Documents[0], Call(BenchmarkReportPackCallKinds.Revision, 50), FencedReply, request: request);
+
+        string markdown = BenchmarkReportPackWriterReplies.BuildMarkdown(job, Captured);
+
+        Assert.Contains("- Writer: Writer One (ReportWriterTest, writer-1) · Output limit 32,000 tokens (reasoning included) · Writer prompt SHA-256: not recorded\n",
+            markdown, StringComparison.Ordinal);
+        Assert.Contains(" · 191,795 in / 0 cached / 16,000 out tokens (14,950 reasoning) · $0.44 · finish MAX_TOKENS · ", markdown, StringComparison.Ordinal);
+        Assert.Contains(" · 191,795 in / 0 cached / 5,666 out tokens · $0.44 · finish STOP · ", markdown, StringComparison.Ordinal);
+
+        // The first turn's request is the prompt, not recorded; the revision's request precedes its reply.
+        Assert.Single(markdown.Split("Request (the message this turn added):").Skip(1));
+        Assert.Contains("Request (the message this turn added):\n\n````text\n" + request + "\n````\n\n````json\n" + FencedReply + "\n````\n",
+            markdown, StringComparison.Ordinal);
     }
 
     [Fact]

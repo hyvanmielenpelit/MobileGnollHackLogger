@@ -140,6 +140,29 @@ describe('explainDocumentStatus', () => {
     expect(lines[added + 2]).toBe('      Added text: Cost: {{rca.axis.cost.status}}');
   });
 
+  it('counts the sentences a salvage removed as one shortened paragraph, not as removals', () => {
+    const sentence = (text: string): BenchmarkReportPackValidationIssueDto => ({
+      ...issue(33, 'Cause without a hypothesis', 'removesItem', 'Hypotheses: speed, paragraph 1',
+        'Uses a causal word without a hypothesis. Only this sentence was removed, so the section kept its paragraph.', true, text),
+      sentenceOnly: true
+    });
+    const ex = explainDocumentStatus({
+      status: 'CompletedWithWarnings',
+      firstTurnIssues: [issue(1, 'Missing or unexpected section', 'removesItem', 'Reply', 'The reply is not valid JSON.', false)],
+      finalIssues: [sentence('Every grade is Moderate because each model ran once.'), sentence('The gap is due to length.')],
+      firstDraftClean: false,
+      calls: [call('Draft'), call('Revision'), call('Revision')]
+    });
+
+    expect(ex.summary).toBe('This document is usable. One paragraph was shortened.');
+    expect(ex.checks).toContain('Final: 2 sentences removed.');
+    expect(ex.checks).not.toContain('removal');
+    expect(ex.removed.map(item => [item.shortened, item.text])).toEqual([
+      [true, 'Every grade is Moderate because each model ran once.'],
+      [true, 'The gap is due to length.']
+    ]);
+  });
+
   it('keeps a note of a removing rule whose text was kept as a warning, as the server marks it', () => {
     const kept = issue(7, 'Over the word or item limit', 'warningTextKept', 'Conclusions',
       'Kept over its cap at 131 words: every remaining sentence states an axis\'s status.', false);

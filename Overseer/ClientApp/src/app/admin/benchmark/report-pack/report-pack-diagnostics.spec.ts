@@ -224,6 +224,28 @@ describe('report-pack-diagnostics', () => {
     expect(expected[0]).toBe('This document is usable. One paragraph was removed and one warning was kept.');
   });
 
+  it('prints the writer\'s output limit and each call\'s reasoning tokens when the job recorded them', () => {
+    const call = (kind: string, reasoningTokens?: number | null): BenchmarkReportPackCallDto => ({
+      kind, startedAtUtc: '2026-10-16T11:28:39Z', durationMs: 220000, inputTokens: 190000, cachedInputTokens: 0, outputTokens: 16000,
+      reasoningTokens, costUsd: 0.54, finishReason: 'MAX_TOKENS', requestMessages: 2, requestCharacters: 667293
+    });
+    const document: BenchmarkReportPackDocumentProgressDto = {
+      audience: RootCauseAnalysis, status: 'Failed', documentId: null, errorMessage: 'Dropped.', modelCalls: 3,
+      calls: [call('Draft', 14950), call('Revision', null), call('Revision')]
+    };
+    const lines = buildReportPackDiagnostics(input({ job: job({ writerMaxOutputTokens: 32000, documents: [document] }) })).split('\n');
+
+    expect(lines).toContain('Writer output limit: 32,000 tokens (reasoning included)');
+    expect(lines).toContain('    Call 1: Draft, started 2026-10-16 11:28:39 UTC, 3 min 40 s, 190,000 in / 0 cached / 16,000 out tokens (14,950 reasoning), '
+      + '$0.54, finish MAX_TOKENS, 2 messages, 667,293 characters');
+    expect(lines).toContain('    Call 2: Revision, started 2026-10-16 11:28:39 UTC, 3 min 40 s, 190,000 in / 0 cached / 16,000 out tokens, '
+      + '$0.54, finish MAX_TOKENS, 2 messages, 667,293 characters');
+    expect(lines.filter(line => line.includes('reasoning)'))).toHaveLength(1);
+
+    const older = buildReportPackDiagnostics(input()).split('\n');
+    expect(older).toContain('Writer output limit: not recorded');
+  });
+
   it('reads the suite id as not recorded for a comparison that is not of battery results, and the preparation notes as none', () => {
     const lines = buildReportPackDiagnostics(input({ job: job({ suiteId: null, preparationNotes: [] }), context: { ...CONTEXT, suiteId: null } })).split('\n');
     expect(lines).toContain('Suite id: not recorded');

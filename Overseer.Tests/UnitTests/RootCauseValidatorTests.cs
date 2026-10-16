@@ -120,6 +120,60 @@ public class RootCauseValidatorTests
         Assert.DoesNotContain(Validate(comparison, cited), n => n.Rule == BenchmarkReportPackValidator.RootCauseCausalClaimRule);
     }
 
+    // --- Sentence salvage of a required slot ------------------------------------------------------
+
+    private const string UncitedCause = "Every speed hypothesis is graded Moderate because each model ran once per suite.";
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ARequiredSlotsOnlyParagraph_LosesItsFaultySentenceAlone(bool comparison)
+    {
+        var (sheet, content) = Scope(comparison);
+        var output = Writer(comparison);
+        string clean = output.Sections[BenchmarkReportSlots.HypothesesSpeed];
+        output.Sections[BenchmarkReportSlots.HypothesesSpeed] = clean + " " + UncitedCause + " The next runs add replicates.";
+
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, sheet, content);
+
+        Assert.False(cleaned.Fatal, cleaned.FatalReason);
+        Assert.Equal(clean + " The next runs add replicates.", cleaned.Output.Sections[BenchmarkReportSlots.HypothesesSpeed]);
+        var location = "sections." + BenchmarkReportSlots.HypothesesSpeed + "[p1]";
+        var removed = Assert.Single(cleaned.Notes, n => n.Dropped && n.Location == location);
+        Assert.True(removed.SentenceOnly);
+        Assert.Equal(BenchmarkReportPackValidator.RootCauseCausalClaimRule, removed.Rule);
+        Assert.Equal(UncitedCause, removed.Text);
+        Assert.EndsWith(" Only this sentence was removed, so the section kept its paragraph.", removed.Message);
+    }
+
+    [Fact]
+    public void ARequiredSlotWhoseEverySentenceFails_StillFailsTheDocument()
+    {
+        var output = Writer(comparison: true);
+        output.Sections[BenchmarkReportSlots.HypothesesSpeed] = UncitedCause + " The gap is caused by the output length.";
+
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, ComparisonSheet, ComparisonContent);
+
+        Assert.True(cleaned.Fatal);
+        Assert.Equal($"Every paragraph of the required slot \"{BenchmarkReportSlots.HypothesesSpeed}\" was dropped.", cleaned.FatalReason);
+        Assert.DoesNotContain(cleaned.Notes, n => n.SentenceOnly);
+    }
+
+    [Fact]
+    public void ARequiredSlotWithAnotherCleanParagraph_StillDropsTheFaultyParagraphWhole()
+    {
+        var output = Writer(comparison: true);
+        string clean = output.Sections[BenchmarkReportSlots.HypothesesSpeed];
+        output.Sections[BenchmarkReportSlots.HypothesesSpeed] = clean + "\n\n" + UncitedCause + " The next runs add replicates.";
+
+        var cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, ComparisonSheet, ComparisonContent);
+
+        Assert.False(cleaned.Fatal);
+        Assert.Equal(clean, cleaned.Output.Sections[BenchmarkReportSlots.HypothesesSpeed]);
+        Assert.Contains(cleaned.Notes, n => n.Dropped && n.Location == "sections." + BenchmarkReportSlots.HypothesesSpeed + "[p2]");
+        Assert.DoesNotContain(cleaned.Notes, n => n.SentenceOnly);
+    }
+
     // --- Rule 34: certainty needs a High hypothesis or an established status -----------------------
 
     [Fact]

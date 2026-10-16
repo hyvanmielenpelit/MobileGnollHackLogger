@@ -1819,6 +1819,15 @@ public class BenchmarkReportPackValidatorTests
     }
 
     [Fact]
+    public void Rule16_TokenIsACostWord()
+    {
+        // A cost sentence: the established cost pair passes, the unestablished one asks for its cost result.
+        Assert.Empty(RankingNotes("{{model:A}} has a higher token volume than {{model:C}}."));
+        var note = Assert.Single(RankingNotes("{{model:A}} has a higher token volume than {{model:B}}."));
+        Assert.Contains("{{model:A}} against {{model:B}} on cost", note.Message);
+    }
+
+    [Fact]
     public void Rule16_OneNotePerSentence_ListsEveryUnhedgedPair()
     {
         var note = Assert.Single(RankingNotes("{{model:A}}, {{model:B}} and {{model:C}} scored higher than the others."));

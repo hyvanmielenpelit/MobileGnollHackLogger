@@ -3563,6 +3563,8 @@ export interface BenchmarkReportPackCallDto {
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
+  /** The reasoning tokens inside `outputTokens`; null when the provider reported none, absent from an older server. */
+  reasoningTokens?: number | null;
   /** Null when the call had no resolvable price. */
   costUsd: number | null;
   /** The provider's finish or stop reason; null when it gave none. */
@@ -3595,6 +3597,8 @@ export interface BenchmarkReportPackValidationIssueDto {
   text?: string | null;
   /** Overseer wrote this text in place of a removed one; `text` is what it wrote. Absent from an older server. */
   addedByOverseer?: boolean;
+  /** Only the sentence in `text` was removed; the rest of its paragraph was kept. Absent from an older server. */
+  sentenceOnly?: boolean;
 }
 
 export interface BenchmarkReportPackJobLogEntryDto {
@@ -3638,6 +3642,8 @@ export interface BenchmarkReportPackJobDto {
   writerProvider?: string | null;
   writerModelId?: string | null;
   writerThinkingLevel?: string | null;
+  /** The output token limit each writer call was sent, reasoning included; null until the writer is bound. */
+  writerMaxOutputTokens?: number | null;
   /** The comparison's reference model, as its label; null when it has none. */
   referenceModel?: string | null;
   /** The comparison's entries, e.g. `battery:13`; empty for a completion job. */

@@ -1902,7 +1902,7 @@ public static partial class BenchmarkReportPackRenderer
         foreach (var note in dropped)
         {
             Line(sb, "- **" + Cell(BenchmarkReportRuleCatalog.LocationLabel(note.Location, titles)) + "** (rule " + Inv(note.Rule) + ", "
-                + BenchmarkReportRuleCatalog.Name(note.Rule) + ")"
+                + BenchmarkReportRuleCatalog.Name(note.Rule) + (note.SentenceOnly ? ", one sentence" : string.Empty) + ")"
                 + (full && !string.IsNullOrWhiteSpace(note.Message) ? ": " + OneLine(note.Message) : string.Empty));
             if (full && !string.IsNullOrWhiteSpace(note.Text))
             {

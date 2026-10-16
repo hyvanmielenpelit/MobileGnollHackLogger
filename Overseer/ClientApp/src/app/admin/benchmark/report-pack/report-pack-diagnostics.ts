@@ -141,15 +141,20 @@ function replyPart(call: BenchmarkReportPackCallDto): string {
   return call.replyChars === null ? ', no reply' : `, reply ${count(call.replyChars)} characters`;
 }
 
+/** ` (14,950 reasoning)` when the call reported reasoning tokens; empty otherwise. */
+function reasoningPart(call: BenchmarkReportPackCallDto): string {
+  return (call.reasoningTokens ?? 0) > 0 ? ` (${count(call.reasoningTokens)} reasoning)` : '';
+}
+
 /**
- * `Call 2: Revision, started 2026-09-28 10:00:50 UTC, 32 s, 6,000 in / 1,000 cached / 1,500 out tokens,
- * $0.05, finish stop, 4 messages, 20,000 characters, reply 5,100 characters`; a shortening turn reads
- * `Shortening turn`.
+ * `Call 2: Revision, started 2026-09-28 10:00:50 UTC, 32 s, 6,000 in / 1,000 cached / 1,500 out tokens
+ * (900 reasoning), $0.05, finish stop, 4 messages, 20,000 characters, reply 5,100 characters`; a shortening
+ * turn reads `Shortening turn`.
  */
 function callLine(call: BenchmarkReportPackCallDto, index: number): string {
   const duration = Number.isFinite(call.durationMs) ? formatElapsed(call.durationMs) : NOT_RECORDED;
   return `    Call ${index + 1}: ${orNotRecorded(reportCallKindLabel(call.kind))}, started ${time(call.startedAtUtc)}, ${duration}, `
-    + `${count(call.inputTokens)} in / ${count(call.cachedInputTokens)} cached / ${count(call.outputTokens)} out tokens, `
+    + `${count(call.inputTokens)} in / ${count(call.cachedInputTokens)} cached / ${count(call.outputTokens)} out tokens${reasoningPart(call)}, `
     + `${cost(call.costUsd)}, finish ${orNotRecorded(call.finishReason)}, `
     + `${count(call.requestMessages)} messages, ${count(call.requestCharacters)} characters${replyPart(call)}`;
 }
@@ -470,6 +475,9 @@ export function buildReportPackDiagnostics(input: ReportPackDiagnosticsInput): s
   lines.push(`Writer provider: ${orNotRecorded(job?.writerProvider)}`);
   lines.push(`Writer model id: ${orNotRecorded(job?.writerModelId)}`);
   lines.push(`Writer thinking level: ${orNotRecorded(job?.writerThinkingLevel)}`);
+  lines.push(`Writer output limit: ${typeof job?.writerMaxOutputTokens === 'number'
+    ? `${count(job.writerMaxOutputTokens)} tokens (reasoning included)`
+    : NOT_RECORDED}`);
   lines.push(`Report format version: ${orNotRecorded(job?.reportFormatVersion)}`);
   lines.push(`Engine version: ${job?.engineVersion === null ? 'none (no Root Cause Analysis)' : orNotRecorded(job?.engineVersion)}`);
   lines.push(`PDF layout version: ${orNotRecorded(job?.pdfLayoutVersion)}`);

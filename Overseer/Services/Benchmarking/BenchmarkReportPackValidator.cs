@@ -461,7 +461,7 @@ public static class BenchmarkReportPackValidator
     public static readonly IReadOnlyList<string> SpeedWords = new[] { "time", "faster", "slower", "latency", "seconds" };
 
     /// <summary>Words rule 16 reads as a sentence about cost, matched as whole words, ignoring case.</summary>
-    public static readonly IReadOnlyList<string> CostWords = new[] { "cost", "costs", "cheaper", "expensive", "spend", "price", "priced", "tokens" };
+    public static readonly IReadOnlyList<string> CostWords = new[] { "cost", "costs", "cheaper", "expensive", "spend", "price", "priced", "token", "tokens" };
 
     /// <summary>Words that keep a sentence about quality for rule 16 whatever speed or cost word it holds.</summary>
     public static readonly IReadOnlyList<string> QualityWords = new[] { "score", "scored", "index", "intelligence", "accuracy", "quality", "completeness" };
@@ -884,6 +884,8 @@ public static class BenchmarkReportPackValidator
     /// <see cref="IsWarningRule"/>: their text is kept. A capped slot still over its cap loses sentences from its
     /// end (<see cref="TrimToCap"/>). A note on a paragraph or item carries that paragraph's or item's raw text in
     /// <see cref="BenchmarkReportValidationNote.Text"/>, removed or kept; a trimmed paragraph's, the sentences removed.
+    /// A required slot that would lose every paragraph keeps each paragraph that passes once its faulty sentences are
+    /// removed (<see cref="SalvageBySentence"/>).
     /// </summary>
     public static BenchmarkReportCleanResult DropInvalid(
         BenchmarkReportAudience audience,
@@ -926,17 +928,36 @@ public static class BenchmarkReportPackValidator
 
             var paragraphs = SplitParagraphs(text);
             var kept = new List<(int Index, string Text)>();
+            var droppedNotes = new Dictionary<int, List<BenchmarkReportValidationNote>>();
             for (int p = 0; p < paragraphs.Count; p++)
             {
                 var issues = ParagraphIssues(ctx, slot, paragraphs[p], ParagraphLocation(slot, p));
                 if (issues.Any(Blocks))
                 {
-                    notes.AddRange(WithText(MarkDropped(issues), paragraphs[p]));
+                    var paragraphNotes = WithText(MarkDropped(issues), paragraphs[p]).ToList();
+                    droppedNotes[p] = paragraphNotes;
+                    notes.AddRange(paragraphNotes);
                 }
                 else
                 {
                     notes.AddRange(WithText(issues, paragraphs[p]));
                     kept.Add((p, paragraphs[p]));
+                }
+            }
+
+            bool salvaged = false;
+            if (kept.Count == 0)
+            {
+                foreach (int p in droppedNotes.Keys.OrderBy(i => i))
+                {
+                    if (SalvageBySentence(ctx, slot, paragraphs[p], ParagraphLocation(slot, p)) is not { } salvage) continue;
+
+                    var replaced = droppedNotes[p];
+                    int at = notes.IndexOf(replaced[0]);
+                    notes.RemoveRange(at, replaced.Count);
+                    notes.InsertRange(at, salvage.Notes);
+                    kept.Add((p, salvage.Text));
+                    salvaged = true;
                 }
             }
 
@@ -955,7 +976,7 @@ public static class BenchmarkReportPackValidator
             }
             else
             {
-                copy.Sections[slot] = kept.Count == paragraphs.Count && !trimmed ? text : string.Join("\n\n", kept.Select(k => k.Text));
+                copy.Sections[slot] = kept.Count == paragraphs.Count && !trimmed && !salvaged ? text : string.Join("\n\n", kept.Select(k => k.Text));
 
                 // Nothing to drop for a slot-wide check: its note is recorded against the kept text.
                 CheckChatSlot(ctx, slot, copy.Sections[slot], location, notes);
@@ -1112,6 +1133,44 @@ public static class BenchmarkReportPackValidator
         if (!ctx.RootCause || !string.Equals(slot, BenchmarkReportSlots.Conclusions, StringComparison.Ordinal)) return false;
         var cited = CitedTokens(sentence);
         return RootCauseAxes.All.Any(a => cited.Contains(RootCauseClaimSupport.StatusKey(a)));
+    }
+
+    /// <summary>
+    /// A dropped paragraph of a required slot without its faulty sentences: each sentence is checked alone, the ones
+    /// with a blocking issue are removed, and the rest is kept when it passes every blocking rule as a whole paragraph.
+    /// Each removed sentence gets a dropped <see cref="BenchmarkReportValidationNote.SentenceOnly"/> note with its first
+    /// blocking issue and the sentence as its text; the rest's warnings carry the rest. Null when no sentence fails
+    /// alone, when none is left, or when the rest still fails.
+    /// </summary>
+    private static (string Text, List<BenchmarkReportValidationNote> Notes)? SalvageBySentence(
+        Context ctx, string slot, string paragraph, string location)
+    {
+        var removed = new List<(string Sentence, BenchmarkReportValidationNote Issue)>();
+        var rest = new List<string>();
+        foreach (var (start, end) in SentenceSpans(paragraph))
+        {
+            string sentence = paragraph[start..end].Trim();
+            var blocking = ParagraphIssues(ctx, slot, sentence, location).FirstOrDefault(Blocks);
+            if (blocking != null) removed.Add((sentence, blocking));
+            else rest.Add(sentence);
+        }
+        if (removed.Count == 0 || rest.Count == 0) return null;
+
+        string text = string.Join(" ", rest);
+        var restIssues = ParagraphIssues(ctx, slot, text, location);
+        if (restIssues.Any(Blocks)) return null;
+
+        var notes = removed.Select(r => new BenchmarkReportValidationNote
+        {
+            Rule = r.Issue.Rule,
+            Location = location,
+            Message = r.Issue.Message.TrimEnd() + " Only this sentence was removed, so the section kept its paragraph.",
+            Dropped = true,
+            SentenceOnly = true,
+            Text = CapText(r.Sentence)
+        }).ToList();
+        notes.AddRange(WithText(restIssues, text));
+        return (text, notes);
     }
 
     /// <summary>

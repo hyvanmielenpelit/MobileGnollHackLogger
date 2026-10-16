@@ -72,7 +72,7 @@ public sealed class BenchmarkReportPackPreparation
     public IReadOnlyList<BenchmarkReportValidationNote> Notes { get; init; } = Array.Empty<BenchmarkReportValidationNote>();
 
     public const int DefaultAnswerExcerptChars = 600;
-    public const int DefaultMaxOutputTokens = 16000;
+    public const int DefaultMaxOutputTokens = 32000;
 
     /// <summary>Why the Report Pack refuses a subject with no peer: its documents compare models.</summary>
     public const string PeerlessReportRefusal =
@@ -95,6 +95,17 @@ public sealed class BenchmarkReportPackPreparation
 
     public static int MaxOutputTokens(IConfiguration configuration)
         => Math.Max(1024, configuration.GetValue<int?>("Benchmark:ReportPack:MaxOutputTokens") ?? DefaultMaxOutputTokens);
+
+    /// <summary>
+    /// The output token limit a writer call is sent, reasoning included: <see cref="MaxOutputTokens"/>, lowered to
+    /// the writer model's catalog limit when the catalog knows one.
+    /// </summary>
+    public static int WriterMaxOutputTokens(IConfiguration configuration, string provider, string modelId)
+    {
+        int cap = MaxOutputTokens(configuration);
+        int catalogLimit = PricingMetadata.Value.GetMetadata(provider, modelId).MaxOutputTokens;
+        return catalogLimit > 0 ? Math.Min(cap, catalogLimit) : cap;
+    }
 
     /// <summary>The questions per suite a battery prompt gives in full detail at most.</summary>
     public static int BatteryDetailQuestionsPerSuite(IConfiguration? configuration)
@@ -966,7 +977,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     }
 
     /// <summary>One writer turn: the raw reply, the terminal error, and what it cost.</summary>
-    private sealed record WriterTurn(string? FinalText, string? Error, int InputTokens, int OutputTokens, long DurationMs, decimal? CostUsd);
+    private sealed record WriterTurn(string? FinalText, string? Error, int InputTokens, int OutputTokens, long DurationMs, decimal? CostUsd,
+        string? FinishReason = null, int ReasoningTokens = 0);
 
     /// <summary>
     /// The messages a writer call sends and their characters: the system prompt and every message of its
@@ -1033,7 +1045,6 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         {
             ct.ThrowIfCancellationRequested();
             int excerptChars = BenchmarkReportPackPreparation.AnswerExcerptChars(_configuration);
-            int maxOutputTokens = BenchmarkReportPackPreparation.MaxOutputTokens(_configuration);
 
             var subjects = SubjectsOf(job);
             var state = new JobState { SeveralSubjects = subjects.Count > 1 };
@@ -1056,7 +1067,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 FailAll(job, bindFailure ?? "Writer model configuration not found or disabled.");
                 return;
             }
-            var (config, endpoint, apiKey, pricing) = binding;
+            var (config, endpoint, apiKey, pricing, maxOutputTokens) = binding;
 
             int completed = 0;
             int failed = 0;
@@ -1125,8 +1136,12 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         }
     }
 
-    /// <summary>The writer a job writes with: its configuration bound to the job's snapshot, its endpoint, key and price card.</summary>
-    private sealed record WriterBinding(SystemAiApiConfiguration Config, AiEndpointDescriptor Endpoint, string ApiKey, ModelPricing? Pricing);
+    /// <summary>
+    /// The writer a job writes with: its configuration bound to the job's snapshot, its endpoint, key, price card and
+    /// the output token limit each call is sent.
+    /// </summary>
+    private sealed record WriterBinding(SystemAiApiConfiguration Config, AiEndpointDescriptor Endpoint, string ApiKey, ModelPricing? Pricing,
+        int MaxOutputTokens);
 
     /// <summary>
     /// The job's writer, with the settings captured when the job started; the failure message when its
@@ -1158,6 +1173,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         job.WriterProvider = config.Provider;
         job.WriterModelId = config.ModelId;
         job.WriterThinkingLevel = config.ThinkingLevel;
+        int maxOutputTokens = BenchmarkReportPackPreparation.WriterMaxOutputTokens(_configuration, config.Provider, config.ModelId);
+        job.WriterMaxOutputTokens = maxOutputTokens;
 
         string apiKey = _cryptoService.Decrypt(config.EncryptedApiKey!, config.ApiKeyNonce!, config.ApiKeyTag!, "SYSTEM_API_KEY");
         var pricing = _pricingService.Resolve(config);
@@ -1166,7 +1183,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             job.AddLog("No price card resolves for the writer; document costs are not recorded.", "warning");
         }
 
-        return (new WriterBinding(config, endpoint!, apiKey, pricing), null);
+        return (new WriterBinding(config, endpoint!, apiKey, pricing, maxOutputTokens), null);
     }
 
     /// <summary>
@@ -1335,7 +1352,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             SystemModelId = config.Id,
             PromptCacheKey = $"benchmark:report-pack:{config.ModelId}",
             CacheConversationTail = false,
-            // First turn, repair turn, final shortening or headline turn.
+            // One budget counts every turn of the document: the first turn, the repair turns and the final turn.
             Budget = new AgentRunBudget { MaxTotalModelCalls = MaxWriterCalls },
             SeedHistory = new List<object>
             {
@@ -1362,6 +1379,14 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             return false;
         }
 
+        // The output limit a turn's reply stopped at, logged; null when the reply ended on its own.
+        int? CutOffAt(WriterTurn turn)
+        {
+            if (turn.Error != null || !StoppedAtOutputLimit(turn.FinishReason)) return null;
+            job.AddLog($"{name}: the reply stopped at the output token limit ({Thousands(maxOutputTokens)} tokens, {Thousands(turn.ReasoningTokens)} reasoning).", "warning");
+            return maxOutputTokens;
+        }
+
         BenchmarkReportWriterOutput output;
         var notes = new List<BenchmarkReportValidationNote>(prep.Notes);
         try
@@ -1375,7 +1400,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             }
 
             job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Checking);
-            var (parsed, issues) = ParseAndValidate(audience, first.FinalText, prep);
+            var (parsed, issues) = ParseAndValidate(audience, first.FinalText, prep, CutOffAt(first));
             var firstOutput = parsed;
             if (parsed != null) draftCounts = BenchmarkReportPackValidator.SlotWordCounts(audience, parsed, prep.Sheet, prep.Content);
             firstIssues = issues;
@@ -1389,10 +1414,11 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Revising, RevisionDetail(issues));
                 job.AddLog($"{name}: {issues.Count} validation issue(s) ({RuleCounts(issues)}); sending one repair turn.", "warning");
 
+                string repairMessage = RepairMessage(issues, prep.Scope, parsed?.Headline, draftCounts, audience);
                 runRequest.SeedHistory.Add(new { role = "assistant", content = first.FinalText ?? string.Empty });
-                runRequest.SeedHistory.Add(new { role = "user", content = RepairMessage(issues, prep.Scope, parsed?.Headline, draftCounts, audience) });
+                runRequest.SeedHistory.Add(new { role = "user", content = repairMessage });
 
-                repair = await RunTurnAsync(job, progress, runRequest, config, pricing, BenchmarkReportPackCallKinds.Revision, ct);
+                repair = await RunTurnAsync(job, progress, runRequest, config, pricing, BenchmarkReportPackCallKinds.Revision, ct, repairMessage);
                 turns.Add(repair);
                 job.SetDocumentPhase(progress, BenchmarkReportPackPhases.CheckingRevision);
                 if (repair.Error != null)
@@ -1402,7 +1428,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 }
                 else
                 {
-                    var (repairedOutput, repairedIssues) = ParseAndValidate(audience, repair.FinalText, prep);
+                    var (repairedOutput, repairedIssues) = ParseAndValidate(audience, repair.FinalText, prep, CutOffAt(repair));
                     if (repairedOutput != null)
                     {
                         parsed = repairedOutput;
@@ -1419,6 +1445,44 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                     else
                     {
                         finalIssues = repairedIssues;
+                    }
+                }
+            }
+
+            // An unreadable first reply spent the repair turn on rebuilding its JSON: the first readable reply gets a
+            // repair turn of its own when it has issues. The final turn then follows the last of them.
+            if (firstOutput == null && parsed != null && issues.Count > 0 && repair is { Error: null } && turns.Count < MaxWriterCalls)
+            {
+                job.SetDocumentPhase(progress, BenchmarkReportPackPhases.Revising, RevisionDetail(issues));
+                job.AddLog($"{name}: the first reply could not be read, so the revised reply gets a repair turn of its own: "
+                    + $"{issues.Count} validation issue(s) ({RuleCounts(issues)}).", "warning");
+
+                string secondMessage = RepairMessage(issues, prep.Scope, parsed.Headline, revisionCounts, audience);
+                runRequest.SeedHistory.Add(new { role = "assistant", content = repair.FinalText ?? string.Empty });
+                runRequest.SeedHistory.Add(new { role = "user", content = secondMessage });
+
+                repair = await RunTurnAsync(job, progress, runRequest, config, pricing, BenchmarkReportPackCallKinds.Revision, ct, secondMessage);
+                turns.Add(repair);
+                job.SetDocumentPhase(progress, BenchmarkReportPackPhases.CheckingRevision);
+                if (repair.Error != null)
+                {
+                    job.AddLog($"{name}: provider error on the second repair turn: {repair.Error}; the revised reply is used.", "warning");
+                }
+                else
+                {
+                    var (secondOutput, secondIssues) = ParseAndValidate(audience, repair.FinalText, prep, CutOffAt(repair));
+                    if (secondOutput != null)
+                    {
+                        parsed = secondOutput;
+                        issues = secondIssues;
+                        finalIssues = secondIssues;
+                        revisionIssues = secondIssues;
+                        revisionCounts = BenchmarkReportPackValidator.SlotWordCounts(audience, secondOutput, prep.Sheet, prep.Content);
+                    }
+                    else
+                    {
+                        string error = secondIssues.FirstOrDefault()?.Message ?? "the reply is not a JSON object";
+                        job.AddLog($"{name}: the second repair reply could not be parsed ({error.TrimEnd('.')}); the revised reply is used.", "warning");
                     }
                 }
             }
@@ -1479,19 +1543,17 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                     var headlineIssues = askHeadline
                         ? BenchmarkReportPackValidator.HeadlineIssues(audience, parsed.Headline, prep.Sheet, prep.Content)
                         : Array.Empty<BenchmarkReportValidationNote>();
+                    string finalMessage = BenchmarkReportPackPrompt.BuildShortenMessage(
+                        slots, headlineIssues, BenchmarkReportPackValidator.WordCount(parsed.Headline ?? string.Empty),
+                        audience == BenchmarkReportAudience.RootCauseAnalysis);
                     runRequest.SeedHistory.Add(new { role = "assistant", content = repair.FinalText ?? string.Empty });
-                    runRequest.SeedHistory.Add(new
-                    {
-                        role = "user",
-                        content = BenchmarkReportPackPrompt.BuildShortenMessage(
-                            slots, headlineIssues, BenchmarkReportPackValidator.WordCount(parsed.Headline ?? string.Empty),
-                            audience == BenchmarkReportAudience.RootCauseAnalysis)
-                    });
+                    runRequest.SeedHistory.Add(new { role = "user", content = finalMessage });
 
                     var finalTurn = await RunTurnAsync(job, progress, runRequest, config, pricing,
-                        slots.Count > 0 ? BenchmarkReportPackCallKinds.Shorten : BenchmarkReportPackCallKinds.Headline, ct);
+                        slots.Count > 0 ? BenchmarkReportPackCallKinds.Shorten : BenchmarkReportPackCallKinds.Headline, ct, finalMessage);
                     turns.Add(finalTurn);
                     job.SetDocumentPhase(progress, BenchmarkReportPackPhases.CheckingRevision);
+                    CutOffAt(finalTurn);
 
                     var reply = finalTurn.Error == null ? BenchmarkReportPackParser.Parse(finalTurn.FinalText) : null;
                     IReadOnlyList<BenchmarkReportValidationNote> turnHeadlineIssues = Array.Empty<BenchmarkReportValidationNote>();
@@ -1608,7 +1670,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 {
                     var titles = BenchmarkReportRuleCatalog.SlotTitlesFor(audience);
                     job.AddLog($"{name}: {removed.Count} item(s) removed by validation: "
-                        + string.Join("; ", removed.Select(n => BenchmarkReportRuleCatalog.LocationLabel(n.Location, titles) + " (" + BenchmarkReportRuleCatalog.Name(n.Rule) + ")"))
+                        + string.Join("; ", removed.Select(n => BenchmarkReportRuleCatalog.LocationLabel(n.Location, titles)
+                            + " (" + BenchmarkReportRuleCatalog.Name(n.Rule) + (n.SentenceOnly ? ", one sentence" : string.Empty) + ")"))
                         + ".", "warning");
                 }
                 foreach (string axis in restored)
@@ -1949,8 +2012,19 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             : BenchmarkReportPackPrompt.BuildRepairMessage(issues, scope == BenchmarkReportScope.Comparison, headline,
                 wordCounts, audience == BenchmarkReportAudience.RootCauseAnalysis);
 
-    /// <summary>The writer calls a document may take: the first turn, the repair turn and one final turn.</summary>
-    private const int MaxWriterCalls = 3;
+    /// <summary>
+    /// The writer calls a document may take: the first turn, the repair turn, a second repair turn when the first reply
+    /// was unreadable, and one final turn.
+    /// </summary>
+    private const int MaxWriterCalls = 4;
+
+    /// <summary>
+    /// A reply cut off at its output token limit: Google's <c>MAX_TOKENS</c>, Anthropic's <c>max_tokens</c> (the same
+    /// word, ignoring case) and the OpenAI Responses API's <c>max_output_tokens</c>.
+    /// </summary>
+    private static bool StoppedAtOutputLimit(string? finishReason)
+        => string.Equals(finishReason, "max_tokens", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(finishReason, "max_output_tokens", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsHeadlineNote(BenchmarkReportValidationNote note)
         => string.Equals(note.Location, "headline", StringComparison.Ordinal);
@@ -1994,6 +2068,9 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
     }
 
     private static string Number(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>"16,000".</summary>
+    private static string Thousands(int value) => value.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
 
     /// <summary>
     /// The word count of every capped section, turn by turn, in slot order: the first draft's, the revision's, the
@@ -2059,20 +2136,26 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         }
     }
 
-    /// <summary>The parsed output (null when unparseable) and every validation issue, a parse failure included.</summary>
+    /// <summary>
+    /// The parsed output (null when unparseable) and every validation issue, a parse failure included. The parse failure
+    /// of a reply that stopped at the output limit (<paramref name="cutOffAtTokens"/>) says so.
+    /// </summary>
     private static (BenchmarkReportWriterOutput? Output, IReadOnlyList<BenchmarkReportValidationNote> Issues) ParseAndValidate(
-        BenchmarkReportAudience audience, string? rawText, BenchmarkReportPackPreparation prep)
+        BenchmarkReportAudience audience, string? rawText, BenchmarkReportPackPreparation prep, int? cutOffAtTokens = null)
     {
         var parsed = BenchmarkReportPackParser.Parse(rawText);
         if (!parsed.Success || parsed.Output == null)
         {
+            string error = parsed.Error ?? "The reply is not a JSON object.";
             return (null, new[]
             {
                 new BenchmarkReportValidationNote
                 {
                     Rule = 1,
                     Location = "reply",
-                    Message = parsed.Error ?? "The reply is not a JSON object."
+                    Message = cutOffAtTokens is int limit
+                        ? $"The reply stopped at the output token limit ({Thousands(limit)} tokens, reasoning included), so its JSON is incomplete: {error}"
+                        : error
                 }
             });
         }
@@ -2081,7 +2164,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
 
     /// <summary>
     /// Sends the request once, records the call's usage under <see cref="UsageRoleContext"/>, and records the
-    /// call on the document's progress row as <paramref name="kind"/> (<see cref="BenchmarkReportPackCallKinds"/>).
+    /// call on the document's progress row as <paramref name="kind"/> (<see cref="BenchmarkReportPackCallKinds"/>),
+    /// with the user message a later turn added (<paramref name="requestMessage"/>).
     /// </summary>
     private async Task<WriterTurn> RunTurnAsync(
         BenchmarkReportPackJob job,
@@ -2090,7 +2174,8 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         SystemAiApiConfiguration config,
         ModelPricing? pricing,
         string kind,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? requestMessage = null)
     {
         var runResult = new AgentRunResult();
         var (messages, characters) = RequestSize(runRequest);
@@ -2110,7 +2195,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             if (runResult.TotalPromptTokens > 0 || runResult.OutputTokens > 0)
             {
                 var (canceledInput, canceledOutput, canceledCost) = await TryRecordUsageAsync(job, progress, config, pricing, runResult, sw.ElapsedMilliseconds);
-                RecordCall(job, progress, kind, startedAtUtc, sw.ElapsedMilliseconds, canceledInput, canceledOutput, canceledCost, runResult, messages, characters, "canceled");
+                RecordCall(job, progress, kind, startedAtUtc, sw.ElapsedMilliseconds, canceledInput, canceledOutput, canceledCost, runResult, messages, characters, "canceled", requestMessage);
             }
             throw;
         }
@@ -2121,18 +2206,23 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         sw.Stop();
 
         var (inputTokens, outputTokens, cost) = await TryRecordUsageAsync(job, progress, config, pricing, runResult, sw.ElapsedMilliseconds);
-        RecordCall(job, progress, kind, startedAtUtc, sw.ElapsedMilliseconds, inputTokens, outputTokens, cost, runResult, messages, characters, terminalError);
-        return new WriterTurn(runResult.FinalText, terminalError, inputTokens, outputTokens, sw.ElapsedMilliseconds, cost);
+        RecordCall(job, progress, kind, startedAtUtc, sw.ElapsedMilliseconds, inputTokens, outputTokens, cost, runResult, messages, characters, terminalError, requestMessage);
+        return new WriterTurn(runResult.FinalText, terminalError, inputTokens, outputTokens, sw.ElapsedMilliseconds, cost,
+            runResult.ProviderFinishReason, BenchmarkDescriptionService.SumReasoningTokens(runResult));
     }
 
     /// <summary>
-    /// One writer call on the document's progress row: its kind, timing, tokens, cost, finish reason and request size,
-    /// with its raw reply and provider error kept on the job for the writer-replies download.
+    /// One writer call on the document's progress row: its kind, timing, tokens with their reasoning share, cost, finish
+    /// reason and request size, with its raw reply, provider error and a later turn's user message kept on the job for
+    /// the writer-replies download.
     /// </summary>
     private static void RecordCall(
         BenchmarkReportPackJob job, BenchmarkReportPackDocumentProgress progress, string kind, DateTime startedAtUtc, long durationMs,
-        int inputTokens, int outputTokens, decimal? cost, AgentRunResult runResult, int messages, long characters, string? error)
-        => job.RecordCall(progress, new BenchmarkReportPackCallDto
+        int inputTokens, int outputTokens, decimal? cost, AgentRunResult runResult, int messages, long characters, string? error,
+        string? requestMessage)
+    {
+        int reasoning = BenchmarkDescriptionService.SumReasoningTokens(runResult);
+        job.RecordCall(progress, new BenchmarkReportPackCallDto
         {
             Kind = kind,
             StartedAtUtc = startedAtUtc,
@@ -2140,11 +2230,13 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
             InputTokens = inputTokens,
             CachedInputTokens = runResult.CacheReadTokens,
             OutputTokens = outputTokens,
+            ReasoningTokens = reasoning > 0 ? reasoning : null,
             CostUsd = cost == null ? null : (double)cost.Value,
             FinishReason = runResult.ProviderFinishReason,
             RequestMessages = messages,
             RequestCharacters = characters
-        }, runResult.FinalText, error);
+        }, runResult.FinalText, error, requestMessage);
+    }
 
     private async Task<(int InputTokens, int OutputTokens, decimal? Cost)> TryRecordUsageAsync(
         BenchmarkReportPackJob job,
@@ -2775,7 +2867,6 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
         try
         {
             ct.ThrowIfCancellationRequested();
-            int maxOutputTokens = BenchmarkReportPackPreparation.MaxOutputTokens(_configuration);
 
             var (binding, bindFailure) = await BindWriterAsync(job, ct);
             if (binding == null)
@@ -2783,7 +2874,7 @@ public class BenchmarkReportPackService : IBenchmarkRunReportWriter
                 FailAll(job, bindFailure ?? "Writer model configuration not found or disabled.");
                 return;
             }
-            var (config, endpoint, apiKey, pricing) = binding;
+            var (config, endpoint, apiKey, pricing, maxOutputTokens) = binding;
 
             var (targets, controls) = await ChatConsistencyRunsAsync(result, ct);
             IReadOnlyList<string>? requestIds = null;

@@ -106,10 +106,10 @@ public static class BenchmarkReportRuleCatalog
             "Prose holds no Markdown heading, table or HTML; the document supplies its own structure.",
             BenchmarkReportRuleSeverity.RemovesItem, Removed,
             "Write plain sentences only, with no headings, tables or HTML."),
-        R(9, "Text copied from an answer",
-            "Prose shares no long run of words with the graded answers or rubrics.",
+        R(9, "Text copied from the data",
+            "Prose shares no run of eight words with the questions, rubrics, answer excerpts, grader comments and evidence, or the claim verifier's rulings.",
             BenchmarkReportRuleSeverity.RemovesItem, Removed,
-            "Describe the answers in your own words instead of quoting them."),
+            "Describe the questions, answers, grader comments and verifier rulings in your own words instead of quoting them."),
         R(10, "Model name written out",
             "Prose names no peer model, model id or other provider; models are named by their tokens.",
             BenchmarkReportRuleSeverity.RemovesItem, Removed,
@@ -395,7 +395,8 @@ public static class BenchmarkReportRuleCatalog
             Severity = SeverityValue(SeverityFor(note.Rule, note.Location, note.Dropped, note.AddedByOverseer, draft)),
             LocationLabel = LocationLabel(note.Location, slotTitles),
             Text = note.Text,
-            AddedByOverseer = note.AddedByOverseer
+            AddedByOverseer = note.AddedByOverseer,
+            SentenceOnly = note.SentenceOnly
         };
 
     private static BenchmarkReportRuleInfo R(int rule, string name, string meaning, BenchmarkReportRuleSeverity severity, string forReader, string fix)

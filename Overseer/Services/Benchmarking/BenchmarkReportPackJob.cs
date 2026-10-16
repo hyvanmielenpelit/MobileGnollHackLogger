@@ -94,6 +94,15 @@ public sealed class BenchmarkReportPackCallReply
 
     /// <summary>The provider's error when the call failed; null otherwise.</summary>
     public string? Error { get; init; }
+
+    /// <summary>
+    /// The user message this turn added to the conversation, cut at <see cref="BenchmarkReportPackJob.MaxFailedReplyChars"/>;
+    /// null for the first turn.
+    /// </summary>
+    public string? Request { get; init; }
+
+    /// <summary>The request was cut at <see cref="BenchmarkReportPackJob.MaxFailedReplyChars"/>.</summary>
+    public bool RequestTruncated { get; init; }
 }
 
 public class BenchmarkReportPackJobLogEntry
@@ -170,6 +179,9 @@ public class BenchmarkReportPackJob
 
     public string? WriterModelId { get; set; }
     public string? WriterThinkingLevel { get; set; }
+
+    /// <summary>The output token limit each writer call is sent, reasoning included; null until the writer is bound.</summary>
+    public int? WriterMaxOutputTokens { get; set; }
 
     /// <summary>The comparison's reference model, as its label; null when it has none.</summary>
     public string? ReferenceModel { get; set; }
@@ -324,23 +336,28 @@ public class BenchmarkReportPackJob
     }
 
     /// <summary>
-    /// One writer call of a document, in call order, with its raw reply and its provider error; its usage is counted
-    /// by <see cref="AddUsage(BenchmarkReportPackDocumentProgress?, long, long, decimal?)"/>. The reply is kept in
-    /// memory, cut at <see cref="MaxFailedReplyChars"/>, and only its length travels on the call
-    /// (<see cref="BenchmarkReportPackCallDto.ReplyChars"/>).
+    /// One writer call of a document, in call order, with its raw reply, its provider error and the user message a
+    /// later turn added; its usage is counted by <see cref="AddUsage(BenchmarkReportPackDocumentProgress?, long, long, decimal?)"/>.
+    /// The reply and the request are kept in memory, each cut at <see cref="MaxFailedReplyChars"/>, and only the
+    /// reply's length travels on the call (<see cref="BenchmarkReportPackCallDto.ReplyChars"/>).
     /// </summary>
-    public void RecordCall(BenchmarkReportPackDocumentProgress document, BenchmarkReportPackCallDto call, string? reply = null, string? error = null)
+    public void RecordCall(BenchmarkReportPackDocumentProgress document, BenchmarkReportPackCallDto call, string? reply = null,
+        string? error = null, string? request = null)
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(call);
         bool hasReply = !string.IsNullOrEmpty(reply);
         bool truncated = hasReply && reply!.Length > MaxFailedReplyChars;
+        bool hasRequest = !string.IsNullOrEmpty(request);
+        bool requestTruncated = hasRequest && request!.Length > MaxFailedReplyChars;
         var kept = new BenchmarkReportPackCallReply
         {
             Text = !hasReply ? null : truncated ? reply![..MaxFailedReplyChars] : reply,
             Length = hasReply ? reply!.Length : 0,
             Truncated = truncated,
-            Error = error
+            Error = error,
+            Request = !hasRequest ? null : requestTruncated ? request![..MaxFailedReplyChars] : request,
+            RequestTruncated = requestTruncated
         };
         call.ReplyChars = hasReply ? reply!.Length : null;
         lock (_lock)
@@ -395,7 +412,8 @@ public class BenchmarkReportPackJob
             .Take(max)
             .Select(n => new BenchmarkReportValidationNote
             {
-                Rule = n.Rule, Location = n.Location, Message = n.Message, Dropped = n.Dropped, Text = n.Text, AddedByOverseer = n.AddedByOverseer
+                Rule = n.Rule, Location = n.Location, Message = n.Message, Dropped = n.Dropped, Text = n.Text, AddedByOverseer = n.AddedByOverseer,
+                SentenceOnly = n.SentenceOnly
             })
             .ToList();
 
@@ -433,6 +451,7 @@ public class BenchmarkReportPackJob
         InputTokens = call.InputTokens,
         CachedInputTokens = call.CachedInputTokens,
         OutputTokens = call.OutputTokens,
+        ReasoningTokens = call.ReasoningTokens,
         CostUsd = call.CostUsd,
         FinishReason = call.FinishReason,
         RequestMessages = call.RequestMessages,
@@ -520,6 +539,7 @@ public class BenchmarkReportPackJob
                 WriterProvider = WriterProvider,
                 WriterModelId = WriterModelId,
                 WriterThinkingLevel = WriterThinkingLevel,
+                WriterMaxOutputTokens = WriterMaxOutputTokens,
                 ReferenceModel = ReferenceModel,
                 Entries = Entries.ToList(),
                 PreparationNotes = PreparationNotes.Select(n =>

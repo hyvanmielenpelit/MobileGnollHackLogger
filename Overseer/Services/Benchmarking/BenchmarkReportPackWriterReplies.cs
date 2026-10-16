@@ -9,9 +9,9 @@ using Overseer.Models;
 
 /// <summary>
 /// The writer's raw replies of a report-pack job as one Markdown file, built on request from the job Overseer holds in
-/// memory: a header naming the job, the writer and the versions, then one section per document and, under it, one per
-/// writer call with its timing, tokens, cost, finish reason and reply, each reply in a fence longer than any backtick
-/// run it holds. Lines end with LF. The file is internal: the replies come before Overseer's checks, removals and
+/// memory: a header naming the job, the writer, its output limit and the versions, then one section per document and,
+/// under it, one per writer call with its timing, tokens, cost, finish reason, the user message a later turn added and
+/// the reply, each request and reply in a fence longer than any backtick run it holds. Lines end with LF. The file is internal: the replies come before Overseer's checks, removals and
 /// additions.
 /// </summary>
 public static class BenchmarkReportPackWriterReplies
@@ -29,7 +29,9 @@ public static class BenchmarkReportPackWriterReplies
                  + "Overseer team. The stored document is what Overseer kept of them.");
         Line(sb);
         Line(sb, $"- Job: {job.Id} · Pack: {job.PackId} · Captured (UTC): {Time(capturedUtc)}");
-        Line(sb, $"- Writer: {WriterText(job)} · Writer prompt SHA-256: {job.WriterPromptSha256 ?? "not recorded"}");
+        Line(sb, $"- Writer: {WriterText(job)}"
+                 + (job.WriterMaxOutputTokens is int limit ? $" · Output limit {Count(limit)} tokens (reasoning included)" : string.Empty)
+                 + $" · Writer prompt SHA-256: {job.WriterPromptSha256 ?? "not recorded"}");
 
         var documents = job.WriterReplies();
         bool rootCause = documents.Any(d => d.Document.Audience == BenchmarkReportAudience.RootCauseAnalysis);
@@ -61,21 +63,20 @@ public static class BenchmarkReportPackWriterReplies
                 Line(sb);
                 Line(sb, CallLine(call, reply));
                 Line(sb);
+                if (reply.Request != null)
+                {
+                    Line(sb, "Request (the message this turn added):");
+                    Line(sb);
+                    Fenced(sb, reply.Request, "text", reply.RequestTruncated);
+                    Line(sb);
+                }
                 if (reply.Text == null)
                 {
                     Line(sb, reply.Error == null ? "No reply." : $"No reply (provider error: {reply.Error}).");
                     continue;
                 }
 
-                string fence = new('`', Math.Max(3, LongestBacktickRun(reply.Text) + 1));
-                Line(sb, fence + "json");
-                Line(sb, reply.Text.Replace("\r\n", "\n").Replace('\r', '\n'));
-                Line(sb, fence);
-                if (reply.Truncated)
-                {
-                    Line(sb);
-                    Line(sb, $"(cut at {BenchmarkReportPackJob.MaxFailedReplyChars.ToString("N0", CultureInfo.InvariantCulture)} characters)");
-                }
+                Fenced(sb, reply.Text, "json", reply.Truncated);
             }
         }
 
@@ -83,8 +84,25 @@ public static class BenchmarkReportPackWriterReplies
     }
 
     /// <summary>
-    /// <c>Started 2026-10-16 11:28:39 UTC · 2 min 22 s · 191,795 in / 0 cached / 5,666 out tokens · $0.44 · finish STOP ·
-    /// reply 22,113 characters</c>; the parts the call did not record are left out.
+    /// <paramref name="text"/> in a fence longer than any backtick run it holds, followed by a line saying so when it
+    /// was cut.
+    /// </summary>
+    private static void Fenced(StringBuilder sb, string text, string language, bool truncated)
+    {
+        string fence = new('`', Math.Max(3, LongestBacktickRun(text) + 1));
+        Line(sb, fence + language);
+        Line(sb, text.Replace("\r\n", "\n").Replace('\r', '\n'));
+        Line(sb, fence);
+        if (truncated)
+        {
+            Line(sb);
+            Line(sb, $"(cut at {BenchmarkReportPackJob.MaxFailedReplyChars.ToString("N0", CultureInfo.InvariantCulture)} characters)");
+        }
+    }
+
+    /// <summary>
+    /// <c>Started 2026-10-16 11:28:39 UTC · 2 min 22 s · 191,795 in / 0 cached / 5,666 out tokens (4,120 reasoning) · $0.44 ·
+    /// finish STOP · reply 22,113 characters</c>; the parts the call did not record are left out.
     /// </summary>
     private static string CallLine(BenchmarkReportPackCallDto call, BenchmarkReportPackCallReply reply)
     {
@@ -92,7 +110,8 @@ public static class BenchmarkReportPackWriterReplies
         {
             "Started " + Time(call.StartedAtUtc) + " UTC",
             Duration(call.DurationMs),
-            $"{Count(call.InputTokens)} in / {Count(call.CachedInputTokens)} cached / {Count(call.OutputTokens)} out tokens",
+            $"{Count(call.InputTokens)} in / {Count(call.CachedInputTokens)} cached / {Count(call.OutputTokens)} out tokens"
+                + (call.ReasoningTokens is long reasoning and > 0 ? $" ({Count(reasoning)} reasoning)" : string.Empty),
             call.CostUsd is double cost ? Cost(cost) : "cost unknown"
         };
         if (!string.IsNullOrWhiteSpace(call.FinishReason)) parts.Add("finish " + call.FinishReason);

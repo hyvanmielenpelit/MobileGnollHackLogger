@@ -329,7 +329,7 @@ the retired audiences (§ 17); their numbers stay unused.
 | 6 | A strength may not cite a weakness row and a weakness may not cite a strength row; a finding citing only Conflicting rows must say the graders disagree |
 | 7 | Length limits: headline at most 35 words; a question topic at most 12 words; in the Executive Summary at most 3 strengths and 3 weaknesses, each at most 30 words, *What this means for use as a game assistant* (`meaning`) at most 90 words, *How reliable this result is* (`confidence`) at most 60 words and the *How it compares* paragraph (`comparison`) at most 70 words; the Root Cause Analysis caps are in § 17. A cap counts the writer's raw text, in which every `{{token}}` is one word however long its value; the prompt of every audience says so |
 | 8 | No headings, tables or HTML inside any text |
-| 9 | No run of 8 or more words shared with any question, rubric, answer or grader-evidence text, including a comparison's *weakest answers* grader comments (`ModelNotes`, § 15) |
+| 9 | No run of 8 or more words shared with any question, rubric, answer or grader-evidence text, the claim verifier's claims and rationales, or a comparison's *weakest answers* grader comments (`ModelNotes`, § 15) |
 | 10 | No peer names, model ids or providers in prose |
 | 11 | No significance language: *significant*, *significantly*, *statistically*, *reliably better* or *worse*, *clearly outperforms* |
 | 12 | US English: no word of the fixed British-spelling list (`BenchmarkReportPackValidator.BritishSpellings`: *colour, behaviour, analyse, analysed, organise, recognise, favour, honour, centre, defence, catalogue, programme, grey, travelled, modelling, labelled, cancelled, judgement*), matched as whole words ignoring case, in any prose |
@@ -388,7 +388,15 @@ without saying what each counts.
    are in the message, never in the catalog's fix text. The job log says how many issues the first
    reply had, counted per rule (*"7 validation issue(s) (rule 2: 5, rule 16: 2); sending one repair
    turn."*). A repair reply that cannot be parsed is logged as a warning, and the first reply is used
-   instead.
+   instead. A first reply that **cannot be parsed** gets the repair turn too, and the readable reply that
+   comes back gets **a repair turn of its own** when it has issues, since the first one was spent on
+   rebuilding the JSON (*"the first reply could not be read, so the revised reply gets a repair turn of its
+   own: …"*); the final turn of item 5 then follows the last revision. A reply whose finish reason says it
+   stopped at the **output token limit** (`MAX_TOKENS`, `max_tokens` or `max_output_tokens`) is logged as
+   a warning with the limit and its reasoning tokens (*"the reply stopped at the output token limit (32,000
+   tokens, 14,950 reasoning)."*), and its rule-1 note, which the repair message repeats to the writer,
+   reads *"The reply stopped at the output token limit (32,000 tokens, reasoning included), so its JSON is
+   incomplete: …"*.
 2. What still fails after the repair is **dropped** — the item or paragraph is removed from the stored
    output, the note records `Dropped`, and the document is stored as **CompletedWithWarnings**. An
    over-cap slot with a word limit (`meaning`, `confidence`, `comparison`, and every Root Cause
@@ -400,7 +408,15 @@ without saying what each counts.
    kept over its cap with a rule-7 warning (*"Kept over its cap at 131 words: every sentence left to
    remove states an axis's status."*, severity *warning, text kept*). Each trimmed paragraph gets one rule-7 note (*"Removed its last sentence
    to bring "Hypotheses: speed" within 120 words."*) with the removed sentences as its `Text`. Items and
-   topics over their caps are still dropped whole.
+   topics over their caps are still dropped whole. **A required slot that would lose every paragraph** is
+   salvaged by sentence first (`SalvageBySentence`): each of its paragraphs is split into sentences, each
+   sentence is checked alone, the ones with a blocking issue are removed, and the rest is kept when it
+   passes every blocking rule as a whole paragraph. Each removed sentence gets its own dropped note with
+   `SentenceOnly`, the sentence as its `Text` and *"Only this sentence was removed, so the section kept its
+   paragraph."* after the rule's message; the job log and the stored document's *Removed content* add
+   *"one sentence"* after the rule's name, and the why-dialog counts it as a shortened paragraph. This runs
+   only where the document would otherwise fail; a slot with another clean paragraph still loses a faulty
+   paragraph whole.
 3. **Rules 12 to 19 never drop** (`BenchmarkReportPackValidator.IsWarningRule`); a zero-count token
    after a negation (rule 19) is kept after the repair turn like the others. A spelling slip, an
    interval adjective, a mention of the claim verifier, an unhedged comparison across overlapping
@@ -433,10 +449,13 @@ without saying what each counts.
    otherwise the repaired output stands. An unparseable reply is logged as a warning and ignored. A
    rule-7 warning records the outcome (*"Hypotheses: speed and Conclusions were over their caps after
    the repair; they were shortened in a final turn."*). A document therefore takes **at most three model
-   calls** (`AgentRunBudget.MaxTotalModelCalls = 3`): the first, the repair turn and the shortening
-   turn, which replaces the comparison-only headline-only turn of earlier versions.
-6. A missing headline, a headline the rescue could not fix, or an empty required slot cannot be dropped
-   around: the **document fails** and no row is stored. A headline whose only fault is rule 12 is kept.
+   calls, or four when the first reply was unreadable** (`AgentRunBudget.MaxTotalModelCalls = 4`, one
+   budget counted across every turn of the document): the first, the repair turn, the second repair turn
+   of item 1 and the shortening turn, which replaces the comparison-only headline-only turn of earlier
+   versions.
+6. A missing headline, a headline the rescue could not fix, or a required slot left empty — missing, or
+   with no paragraph that survives the sentence salvage of item 2 — cannot be dropped around: the
+   **document fails** and no row is stored. A headline whose only fault is rule 12 is kept.
 
 **A revision should be the exception.** The repair turn resends the system prompt, the whole first
 user message with its fact sheet, the first reply and the issues, so it roughly doubles a document's
@@ -503,36 +522,44 @@ marks the document *Completed with warnings*, and so does an added-by-Overseer n
   automatic check found 20 issues in the first draft: ranking without the overlap caveat (13), …"*. The
   status values are unchanged (`Repairing` stays on the wire; the UI shows it as *Revising*);
 - `firstDraftClean`, and `calls`: every writer call with its kind (`Draft`, `Revision`, `Shorten`,
-  `Headline`), start, duration, input, cached-input and output tokens, cost, finish reason, the messages
+  `Headline`), start, duration, input, cached-input and output tokens, the reasoning tokens inside the
+  output (`reasoningTokens`, null when the provider reported none), cost, finish reason, the messages
   and characters sent, and `replyChars`, the length of that call's reply (null when there was none);
 - its first-turn issues, the revision's own issues (the repaired reply's validation before any drop;
   null without a revision), its final issues and, for a failed document, its last raw reply (cut at
   200,000 characters), as `firstTurnIssues`, `revisionIssues`, `finalIssues` and `failedReply`, each
-  issue with its `ruleName`, `severity`, `locationLabel`, `text` and `addedByOverseer`.
+  issue with its `ruleName`, `severity`, `locationLabel`, `text`, `addedByOverseer` and `sentenceOnly`.
   `firstTurnIssues` is sent **while the job runs**, once the document has reached `Revising`; the others
   only once the job has ended;
 - `wordCounts`, once the job has ended: per capped slot its location, label, cap and raw word counts in
   the draft, the revision, the shortening turn and the final text, with the final per-paragraph counts.
 
 **The writer's replies.** Each writer call's raw reply, cut at 200,000 characters, is kept on the job in
-memory, never in the polled job object and never in the diagnostics file.
+memory, never in the polled job object and never in the diagnostics file, and so is the user message each
+later turn (a repair, second repair, shortening or headline turn) added to the conversation, cut the same
+way; the first turn's request, the system prompt and the fact sheet, is not kept, since the writer prompt's
+SHA-256 and the request size identify it.
 `GET report-packs/jobs/{jobId}/writer-replies` (§ 9) builds one Markdown file from them on request
 (`BenchmarkReportPackWriterReplies.BuildMarkdown`, LF line endings): a header marked **INTERNAL** with the
-job, pack, capture time, writer, writer prompt SHA-256 and versions; then per document its status, and
-per call its kind, start, duration, tokens, cost, finish reason and reply length, followed by the reply
-verbatim in a fence one backtick longer than its longest backtick run (*"No reply (provider error: …)."*
-when there was none; *"(cut at 200,000 characters)"* when cut). Only the latest report job is held
+job, pack, capture time, writer, its output limit (*"Output limit 32,000 tokens (reasoning included)"*),
+writer prompt SHA-256 and versions; then per document its status, and per call its kind, start, duration,
+tokens with their reasoning share (*"16,000 out tokens (14,950 reasoning)"*), cost, finish reason and reply
+length; a later turn's request under *"Request (the message this turn added):"* in its own fence; and the
+reply verbatim in a fence one backtick longer than its longest backtick run (*"No reply (provider error:
+…)."* when there was none; *"(cut at 200,000 characters)"* when cut). Only the latest report job is held
 (`BenchmarkReportPackJobManager`), so the replies last until the next report-pack or run-completion job
 starts, or Overseer restarts; then the endpoint answers 404. It covers report-pack jobs (the Model
 Comparison wizard's Write step and the per-model packs), not the chat consistency reports step or the
 run-completion writing dialog. Admin-only, like every endpoint of this controller.
 
 The job itself carries its context: report format, engine, PDF and Word layout versions, the writer
-prompt's SHA-256, the writer's provider, model id and thinking level, the reference model, the entries
+prompt's SHA-256, the writer's provider, model id and thinking level, the output token limit each writer
+call is sent (`writerMaxOutputTokens`, reasoning included), the reference model, the entries
 (`battery:13`, …) and the preparation notes. The job log's line *"N item(s) removed by validation"* is
 written only when N > 0 and names each removed location and rule.
 
-The Report Pack diagnostics print all of it (§ 12): the context, one line per call, *First draft
+The Report Pack diagnostics print all of it (§ 12): the context with *Writer output limit*, one line per
+call with its reasoning tokens when known, *First draft
 clean*, `== Word counts ==` (*"Hypotheses: speed — cap 120 — draft 135, revision 128, shortened 117,
 final 117 (raw words; a token counts as one) — paragraphs 52, 65"*), the revision's issues and how they
 differ from the first draft's (*fixed by the revision*, *still there*, *new in the revision*, matched by
@@ -1301,7 +1328,7 @@ pack), `rca_run_with_controls.md` and `rca_run_no_controls.md` (run completion),
 
 | Key | Default | Meaning |
 |---|---|---|
-| `Benchmark:ReportPack:MaxOutputTokens` | 16000 | The writer call's output limit |
+| `Benchmark:ReportPack:MaxOutputTokens` | 32000 | The writer call's output limit, reasoning included; lowered to the writer model's catalog limit (`BenchmarkReportPackPreparation.WriterMaxOutputTokens`). The provider request timeout (`AiRateLimitSettings:RequestTimeoutSeconds`) bounds the call, so the cap divided by the writer's output rate must stay under it |
 | `Benchmark:ReportPack:AnswerExcerptChars` | 600 | The length answer excerpts are cut to in `ContentJson` |
 
 The excerpt length used is stored on each row, so changing the setting never changes a re-render. The
@@ -4600,7 +4627,11 @@ when the best hypotheses cover more than one pair, and gives its share when it n
 axis status once (*"Cost: {{rca.axis.cost.status}}."*) and never repeats the status words beside it; it
 does not gloss terms, which the document glosses. CLAIM SUPPORT lists only the hypotheses graded Low or higher as support for a
 cause, and says that a *Not supported* hypothesis' tokens support only a negated one (*not due to*, *not
-because*). A *Low* hypothesis is a lead, not a cause, which is why rule 33 asks for the hedge. The answer slots exist only for the questions the sheet asks: an answer slot
+because*). A *Low* hypothesis is a lead, not a cause, which is why rule 33 asks for the hedge. A grade's
+reason, which code prints under each hypothesis, is written without a causal word (*"graded Moderate, with
+one run per suite"*, never *"graded Moderate because each model ran once per suite"*): the validator cannot
+check that a stated reason is the one code computed, so rule 33 has no exemption for it; the claim rules
+and the rule 32–36 repair reminders say so (`GradeReasonRule`). The answer slots exist only for the questions the sheet asks: an answer slot
 is required when `rca.question.<n>.text` is on the sheet, and a filled slot for a question not asked is a
 rule-1 issue.
 
@@ -4731,7 +4762,7 @@ publisher never uploads one (§ 13).
   recalibration after the first five jobs of each; with the repair-turn range of § 9, roughly $0.3–0.8
   per run in model scope.
 - **Calls.** The first call, one repair turn and, when only word caps and/or the headline still block,
-  one shortening turn: at most three per document (§ 3).
+  one shortening turn: at most three per document, or four when the first reply was unreadable (§ 3).
 - **Prompt rules of engine version 7.** The writer names an axis before its status token (*Speed:
   {{rca.axis.speed.status}}*) and never puts two status or grade tokens side by side; cites a check
   inside a sentence by `{{rca.check.<n>.summary}}`; says, where `{{rca.axis.<axis>.priceNote}}` exists,

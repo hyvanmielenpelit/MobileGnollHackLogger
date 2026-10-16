@@ -70,12 +70,17 @@ public static partial class BenchmarkReportPackPrompt
         return sb.ToString();
     }
 
+    /// <summary>How a grade's reason is written without a causal word; in the claim rules and their repair reminders.</summary>
+    private const string GradeReasonRule =
+        "- A grade's reason, which code gives under each hypothesis as its reasons, is written without a causal word: 'graded Moderate, with one run per suite', never 'graded Moderate because each model ran once per suite'.";
+
     /// <summary>The repair reminders of a Root Cause Analysis' claim rules, when an issue is one of rules 32 to 36.</summary>
     private static void AppendRootCauseRepairReminders(StringBuilder sb, IReadOnlyList<BenchmarkReportValidationNote> issues)
     {
         if (!issues.Any(i => i.Rule is >= BenchmarkReportPackValidator.RootCauseEvidenceCausalRule and <= BenchmarkReportPackValidator.RootCauseAxisStatusRule)) return;
 
         Line(sb, $"- No causal word ({string.Join(", ", RootCauseClaimSupport.CausalWords)}) in the scope, the evidence slots or the observations; in the answer slots, the hypotheses slots, the conclusions and the next runs, only in a sentence that cites a hypothesis graded Low or higher (an rca.hypothesis token such as its .ref), hedged with a word such as may or possibly when it is Low, or its axis (an rca.axis token); in the next runs, the run's rca.run token serves too. A Not supported hypothesis is cited only to rule a cause out (not due to).");
+        Line(sb, GradeReasonRule);
         Line(sb, $"- A certainty word ({string.Join(", ", RootCauseClaimSupport.CertaintyWords)}) only in a sentence that cites a High hypothesis or an established axis status, as CLAIM SUPPORT lists them; otherwise write probable or not established.");
         Line(sb, "- Every writer hypothesis has an axis, a statement, evidence for, a refuted-if statement, a locus of model, chat, harness, suite, corpus or provider, and confidence Low, and cites only models and facts of the data.");
         Line(sb, "- The conclusions cite every axis's rca.axis.<axis>.status token. Never write a hypothesis id or label in the prose: say in your own words what the hypothesis is about, then cite its rca.hypothesis.<id>.<n>.ref token, which prints its id.");
@@ -305,6 +310,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "CLAIM DISCIPLINE (code checks every sentence; a paragraph or item that breaks one of the first four rules is removed, and the others ask for a revision):");
         Line(sb, $"- Causal words ({Join(RootCauseClaimSupport.CausalWords)}) never appear in the scope, the evidence slots or the observations.");
         Line(sb, $"- In the answer slots, the hypotheses slots, the conclusions and the next runs, a causal word needs, in the same sentence, a token of the hypothesis it states (rca.hypothesis.<id>.<n>.*, normally its .ref) or of its axis (rca.axis.<axis>.*), as CLAIM SUPPORT lists them. In the next runs, the rca.run.<n>.* token of the run the sentence describes serves as well. That hypothesis is graded Low or higher, and the sentence is hedged ({Join(RootCauseClaimSupport.HedgeWords)}) when it is Low; a Not supported hypothesis is cited only to rule a cause out ('is not due to').");
+        Line(sb, GradeReasonRule);
         Line(sb, $"- Certainty words ({Join(RootCauseClaimSupport.CertaintyWords)}) need, in the same sentence, a token of a hypothesis graded High or the status token of an axis whose root cause is established, as CLAIM SUPPORT lists them. Elsewhere write probable, consistent with or not established; 'not established' is always allowed. Describe a paired test's result as what the paired test finds, never as established or confirmed.");
         Line(sb, "- A writer hypothesis without an axis, a statement, evidence for, a refuted-if statement or a known locus, with a confidence other than Low, or citing a model or a fact the data does not have, is removed.");
         Line(sb, "- The conclusions cite every axis's status token: {{rca.axis.intelligence.status}}, {{rca.axis.speed.status}} and {{rca.axis.cost.status}}.");

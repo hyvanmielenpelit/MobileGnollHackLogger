@@ -1277,6 +1277,13 @@ public sealed class BenchmarkReportValidationNote
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool AddedByOverseer { get; set; }
 
+    /// <summary>
+    /// Only the sentence in <see cref="Text"/> was removed; the rest of its paragraph was kept. False on
+    /// every other note and on notes stored before it was kept.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool SentenceOnly { get; set; }
+
     /// <summary>The longest <see cref="Text"/> kept.</summary>
     public const int MaxTextLength = 2000;
 }
@@ -1677,6 +1684,9 @@ public class BenchmarkReportPackCallDto
     public long CachedInputTokens { get; set; }
     public long OutputTokens { get; set; }
 
+    /// <summary>The reasoning tokens inside <see cref="OutputTokens"/>; null when the provider reported none.</summary>
+    public long? ReasoningTokens { get; set; }
+
     /// <summary>Null when the call had no resolvable price.</summary>
     public double? CostUsd { get; set; }
 
@@ -1715,6 +1725,9 @@ public class BenchmarkReportPackValidationIssueDto
 
     /// <summary>The text is Overseer's, written in place of a removed one.</summary>
     public bool AddedByOverseer { get; set; }
+
+    /// <summary>Only the sentence in <see cref="Text"/> was removed; the rest of its paragraph was kept.</summary>
+    public bool SentenceOnly { get; set; }
 }
 
 public class BenchmarkReportPackJobLogEntryDto
@@ -1776,6 +1789,9 @@ public class BenchmarkReportPackJobDto
     public string? WriterProvider { get; set; }
     public string? WriterModelId { get; set; }
     public string? WriterThinkingLevel { get; set; }
+
+    /// <summary>The output token limit each writer call was sent, reasoning included; null until the writer is bound.</summary>
+    public int? WriterMaxOutputTokens { get; set; }
 
     /// <summary>The comparison's reference model, as its label; null when it has none.</summary>
     public string? ReferenceModel { get; set; }

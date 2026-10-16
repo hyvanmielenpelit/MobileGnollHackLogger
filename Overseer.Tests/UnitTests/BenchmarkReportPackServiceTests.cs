@@ -1599,6 +1599,164 @@ public class BenchmarkReportPackServiceTests
     }
 
     [Fact]
+    public async Task AnUnreadableFirstReply_GetsASecondRepairTurn_WhenTheRevisionHasIssues()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string valid = ValidExecutiveReply(prep);
+        h.Provider.Replies.Enqueue(valid[..(valid.Length / 2)]);
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, extraStrength: "It handled 7 hard questions."));
+        h.Provider.Replies.Enqueue(valid);
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        Assert.Equal(3, h.Provider.Calls);
+        var progress = Assert.Single(job.ToDto().Documents);
+        Assert.Equal(new[] { BenchmarkReportPackCallKinds.Draft, BenchmarkReportPackCallKinds.Revision, BenchmarkReportPackCallKinds.Revision },
+            progress.Calls.Select(c => c.Kind));
+        Assert.Equal(1, Assert.Single(progress.FirstTurnIssues!).Rule);
+        Assert.Empty(progress.RevisionIssues!);
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportDocumentStatus.Completed, document.Status);
+        Assert.Contains(job.ToDto().Log, l => l.Severity == "warning"
+            && l.Message.Contains("the first reply could not be read, so the revised reply gets a repair turn of its own: ", StringComparison.Ordinal));
+
+        // Each repair turn carries the previous reply and its repair message on the same conversation.
+        Assert.Equal(new[] { h.Provider.MessageCounts[0], h.Provider.MessageCounts[0] + 2, h.Provider.MessageCounts[0] + 4 }, h.Provider.MessageCounts);
+    }
+
+    [Fact]
+    public async Task AnUnreadableFirstReply_WithACleanRevision_TakesTwoCalls()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string valid = ValidExecutiveReply(prep);
+        h.Provider.Replies.Enqueue(valid[..(valid.Length / 2)]);
+        h.Provider.Replies.Enqueue(valid);
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        Assert.Equal(2, h.Provider.Calls);
+        Assert.DoesNotContain(job.ToDto().Log, l => l.Message.Contains("the first reply could not be read", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task AReadableFirstReply_StillGetsOneRepairTurn()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string reply = ExecutiveReply(prep, extraStrength: "It handled 7 hard questions.");
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(reply);
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(2, h.Provider.Calls);
+        var progress = Assert.Single(job.ToDto().Documents);
+        Assert.Equal(new[] { BenchmarkReportPackCallKinds.Draft, BenchmarkReportPackCallKinds.Revision }, progress.Calls.Select(c => c.Kind));
+        var document = Assert.Single(await h.Db.BenchmarkReportDocuments.ToListAsync(TestContext.Current.CancellationToken));
+        Assert.Equal(BenchmarkReportDocumentStatus.CompletedWithWarnings, document.Status);
+    }
+
+    [Fact]
+    public async Task AReplyCutOffAtTheOutputLimit_SaysSoInItsRuleOneNote_AndTheLog()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        string valid = ValidExecutiveReply(prep);
+        h.Provider.FinishReasons.Enqueue("MAX_TOKENS");
+        h.Provider.ReasoningTokens = 600;
+        h.Provider.Replies.Enqueue(valid[..(valid.Length / 2)]);
+        h.Provider.Replies.Enqueue(valid);
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Equal(BenchmarkReportPackJobStatus.Completed, job.Status);
+        var dto = job.ToDto();
+        var progress = Assert.Single(dto.Documents);
+        var note = Assert.Single(progress.FirstTurnIssues!);
+        Assert.Equal(1, note.Rule);
+        Assert.StartsWith("The reply stopped at the output token limit (32,000 tokens, reasoning included), so its JSON is incomplete: ", note.Message);
+        Assert.Contains(dto.Log, l => l.Severity == "warning"
+            && l.Message.EndsWith("the reply stopped at the output token limit (32,000 tokens, 600 reasoning).", StringComparison.Ordinal));
+
+        // The repair turn tells the writer why its reply was incomplete.
+        Assert.Contains("The reply stopped at the output token limit", h.Provider.Requests.ToArray()[1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task EachCall_RecordsItsReasoningTokens_AndALaterTurnItsRequest()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.ReasoningTokens = 600;
+        h.Provider.Replies.Enqueue(ExecutiveReply(prep, headline: "{{subject}} answered 3 questions well."));
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        var progress = Assert.Single(job.ToDto().Documents);
+        Assert.Equal(2, progress.Calls.Count);
+        Assert.All(progress.Calls, c => Assert.Equal(600L, c.ReasoningTokens));
+
+        var (_, calls) = Assert.Single(job.WriterReplies());
+        Assert.All(calls, c => Assert.Equal(600L, c.Call.ReasoningTokens));
+        Assert.Null(calls[0].Reply.Request);
+        Assert.False(string.IsNullOrWhiteSpace(calls[1].Reply.Request));
+
+        // The request recorded is the user message the repair turn sent last.
+        using var sent = JsonDocument.Parse(h.Provider.Requests.ToArray()[1]);
+        var lastMessage = sent.RootElement.EnumerateArray().Last();
+        Assert.Equal(lastMessage.GetProperty("content").GetString(), calls[1].Reply.Request);
+    }
+
+    [Fact]
+    public async Task ACallWithoutReasoningTokens_RecordsNone()
+    {
+        await using var h = await Harness.CreateAsync();
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        Assert.Null(Assert.Single(Assert.Single(job.ToDto().Documents).Calls).ReasoningTokens);
+    }
+
+    [Fact]
+    public async Task TheWriterCall_IsSentTheConfiguredOutputLimit_AndTheJobRecordsIt()
+    {
+        await using var h = await Harness.CreateAsync(maxOutputTokens: 40000);
+        var prep = await h.PrepareAsync();
+        h.Provider.Replies.Enqueue(ValidExecutiveReply(prep));
+
+        var job = await h.RunAsync(BenchmarkReportAudience.ExecutiveSummary, TestContext.Current.CancellationToken);
+
+        // The fake writer's model is not in the catalog, so nothing lowers the configured limit.
+        Assert.Equal(40000, Assert.Single(h.Provider.MaxOutputTokensLog));
+        Assert.Equal(40000, job.ToDto().WriterMaxOutputTokens);
+    }
+
+    [Theory]
+    [InlineData(null, "Google", "gemini-4-argon", BenchmarkReportPackPreparation.DefaultMaxOutputTokens)]
+    [InlineData(40000, "Google", "gemini-4-argon", 40000)]
+    [InlineData(100000, "Google", "gemini-4-argon", 65536)]
+    [InlineData(100000, WriterProvider.Name, "writer-1", 100000)]
+    public void TheWriterOutputLimit_IsTheConfiguredOne_LoweredToTheCatalogLimit(int? configured, string provider, string modelId, int expected)
+    {
+        var settings = new Dictionary<string, string?>();
+        if (configured is int value)
+        {
+            settings["Benchmark:ReportPack:MaxOutputTokens"] = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+
+        Assert.Equal(expected, BenchmarkReportPackPreparation.WriterMaxOutputTokens(configuration, provider, modelId));
+    }
+
+    [Fact]
     public async Task TheValidationDiagnostics_AreNullWhileTheJobRuns_AndFilledOnceItEnds()
     {
         var running = new BenchmarkReportPackJob
@@ -2076,16 +2234,21 @@ public class BenchmarkReportPackServiceTests
         /// <summary>The seeded runs' own configuration: provider, model id and thinking level.</summary>
         public SystemAiApiConfiguration SameConfiguration { get; private set; } = default!;
 
-        public static async Task<Harness> CreateAsync(int maxRunsPerHour = 100)
+        public static async Task<Harness> CreateAsync(int maxRunsPerHour = 100, int? maxOutputTokens = null)
         {
             var options = BenchmarkRunExamTests.InMemoryOptions();
             var seeded = await BenchmarkRunExamTests.SeedSuiteWithRunsAsync(options);
-            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            var settings = new Dictionary<string, string?>
             {
                 ["AesEncryptionKey"] = Convert.ToBase64String(new byte[32]),
                 ["Benchmark:Compliance:MaxRunsPerHour"] = maxRunsPerHour.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["Benchmark:Compliance:MaxRunsPerDay"] = "100"
-            }).Build();
+            };
+            if (maxOutputTokens is int limit)
+            {
+                settings["Benchmark:ReportPack:MaxOutputTokens"] = limit.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
 
             var harness = new Harness
             {
@@ -2450,6 +2613,15 @@ public class BenchmarkReportPackServiceTests
         public int[] MessageCounts => MessageCountLog.ToArray();
         public ConcurrentQueue<string> Requests { get; } = new();
 
+        /// <summary>The finish reason of each call in turn; <c>stop</c> once it is empty.</summary>
+        public ConcurrentQueue<string> FinishReasons { get; } = new();
+
+        /// <summary>The reasoning tokens each call's usage report carries, inside its output tokens.</summary>
+        public int ReasoningTokens { get; set; }
+
+        /// <summary>The output token limit each request was sent.</summary>
+        public ConcurrentQueue<int?> MaxOutputTokensLog { get; } = new();
+
         public string ProviderName => Name;
         public IReadOnlyList<string> SupportedServiceTiers => new[] { "default" };
 
@@ -2461,6 +2633,7 @@ public class BenchmarkReportPackServiceTests
         {
             Interlocked.Increment(ref Calls);
             MessageCountLog.Enqueue(messageHistory.Count);
+            MaxOutputTokensLog.Enqueue(maxOutputTokens);
             try
             {
                 Requests.Enqueue(JsonSerializer.Serialize(messageHistory));
@@ -2490,10 +2663,11 @@ public class BenchmarkReportPackServiceTests
                 {
                     TotalPromptTokens = PromptTokens,
                     UncachedInputTokens = PromptTokens,
-                    OutputTokens = OutputTokens
+                    OutputTokens = OutputTokens,
+                    ReasoningTokens = ReasoningTokens
                 }
             };
-            yield return new ChatEvent { Type = "finish_reason", Data = "stop" };
+            yield return new ChatEvent { Type = "finish_reason", Data = FinishReasons.TryDequeue(out var finish) ? finish : "stop" };
         }
 
         public void AppendAssistantToolCallsToHistory(List<object> messageHistory, string iterationText, List<JsonElement> toolCalls, List<JsonElement>? providerHistoryItems = null) { }

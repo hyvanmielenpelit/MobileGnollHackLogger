@@ -147,8 +147,14 @@ export function tokenSegments(text: string | null | undefined): TextSegment[] {
 /** The word-cap rule, whose trimming removes sentences from the end of a section. */
 const WORD_CAP_RULE = 7;
 
-/** A word-cap note that removed trailing sentences rather than the paragraph (*Removed its last 2 sentences…*). */
+/**
+ * A note that removed sentences rather than the paragraph: a word-cap note's trailing sentences (*Removed its last 2
+ * sentences…*), or one faulty sentence of a paragraph otherwise kept (`sentenceOnly`).
+ */
 function isShortening(issue: BenchmarkReportPackValidationIssueDto): boolean {
+  if (issue.sentenceOnly === true) {
+    return true;
+  }
   return issue.rule === WORD_CAP_RULE && issue.dropped && /^Removed its last\b/i.test(issue.message ?? '');
 }
 
@@ -282,8 +288,10 @@ function summaryOf(
       const parts: string[] = [];
       const shortened = removed.filter(issue => issue.shortened);
       const whole = removed.filter(issue => !issue.shortened);
-      if (shortened.length > 0) {
-        parts.push(`${numberWord(shortened.length)} ${removedNoun(shortened, shortened.length)} ${shortened.length === 1 ? 'was' : 'were'} shortened`);
+      // Each sentence a salvage removed has its own note, so a paragraph is counted once per location.
+      const shortenedCount = new Set(shortened.map(issue => issue.location)).size;
+      if (shortenedCount > 0) {
+        parts.push(`${numberWord(shortenedCount)} ${removedNoun(shortened, shortenedCount)} ${shortenedCount === 1 ? 'was' : 'were'} shortened`);
       }
       if (whole.length > 0) {
         parts.push(`${numberWord(whole.length)} ${removedNoun(whole, whole.length)} ${whole.length === 1 ? 'was' : 'were'} removed`);
