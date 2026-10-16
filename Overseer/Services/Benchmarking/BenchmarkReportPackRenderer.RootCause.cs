@@ -384,7 +384,7 @@ public static partial class BenchmarkReportPackRenderer
 
         string name = PlainName(ctx, cheapest.Peer);
         string price = name + " is the cheapest model, at " + BenchmarkReportFormat.Usd(cheapest.Entry.CostPerQuestionUsd!.Value) + " per question";
-        if (ctx.Comparison && RcaCheapestPairedTests(ctx, cheapest.Peer.Letter) is { } paired)
+        if (ctx.Comparison && cheapest.Peer is { } peer && RcaCheapestPairedTests(ctx, peer.Letter) is { } paired)
         {
             UseTerms(ctx, RootCauseGlossary.PairedTest);
             string which = paired.Tested == rows.Count - 1 ? " other models" : " models they compare it with";
