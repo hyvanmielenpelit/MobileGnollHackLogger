@@ -47,6 +47,7 @@ import {
   REPORT_PACK_UNEVEN_MODELS_REASON,
   ReportPackContext,
   ReportPackPanelComponent,
+  initialComparisonPreviewRequest,
   reportPackContextWindowRefusal
 } from './report-pack-panel.component';
 
@@ -1056,6 +1057,66 @@ describe('ReportPackPanelComponent', () => {
 
     expect(component.writerId).toBe(8);
     expect(answerPreview().request.body.writerModelConfigurationId).toBe(8);
+    fixture.destroy();
+  }));
+
+  it('sends no preview while the writer list is pending, then one with the remembered writer', fakeAsync(() => {
+    localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ writerConfigId: 8 }));
+    fixture.componentRef.setInput('context', CONTEXT);
+    fixture.detectChanges();
+    const writers = http.expectOne(SYSTEM_CONFIGS_URL);
+    answerActiveJob(null);
+
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS * 3);
+    http.expectNone(PREVIEW_URL);
+    expect(component.previewPending).toBe(true);
+
+    writers.flush(CONFIGS);
+    fixture.detectChanges();
+    expect(component.writerId).toBe(8);
+    expect(answerPreview().request.body.writerModelConfigurationId).toBe(8);
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
+    expect(component.previewPending).toBe(false);
+    fixture.destroy();
+  }));
+
+  it('sends one preview without a writer when the writer list fails', fakeAsync(() => {
+    localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ writerConfigId: 8 }));
+    fixture.componentRef.setInput('context', CONTEXT);
+    fixture.detectChanges();
+    const writers = http.expectOne(SYSTEM_CONFIGS_URL);
+    answerActiveJob(null);
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
+
+    writers.flush({ error: 'Down.' }, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+    expect(component.writersError).toBe('The report writers could not be loaded.');
+    expect(answerPreview().request.body.writerModelConfigurationId).toBe(0);
+    tick(REPORT_PACK_PREVIEW_DEBOUNCE_MS);
+    http.expectNone(PREVIEW_URL);
+    expect(component.previewPending).toBe(false);
+    fixture.destroy();
+  }));
+
+  it('sends initialComparisonPreviewRequest\'s body as its first comparison preview', fakeAsync(() => {
+    const context: ReportPackContext = { ...CONTEXT, baselineModelEntryKey: 'run:2' };
+    openPanel({ context });
+
+    const first = answerPreview().request.body;
+    expect(first.referenceEntryKey).toBe('run:2');
+    expect(first).toEqual(initialComparisonPreviewRequest(context, {}));
+    expect(initialComparisonPreviewRequest(context, { documentScope: 'comparison', writerConfigId: 8 })).toEqual(first);
+    expect(initialComparisonPreviewRequest(context, { documentScope: 'model' })).toBeNull();
+    fixture.destroy();
+  }));
+
+  it('sends initialComparisonPreviewRequest\'s body with the remembered writer when one is restored', fakeAsync(() => {
+    localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ writerConfigId: 7 }));
+    openPanel();
+
+    expect(answerPreview().request.body).toEqual({ ...initialComparisonPreviewRequest(CONTEXT)!, writerModelConfigurationId: 7 });
     fixture.destroy();
   }));
 

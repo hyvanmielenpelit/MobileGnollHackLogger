@@ -802,6 +802,7 @@ public class RootCauseValidatorTests
     [InlineData("{{model:A}} gave {{model.A.profile.noToolAnswers}} without tool calls.", "without', 'tool")]
     [InlineData("{{model:A}} hit a tool limit on {{model.A.profile.toolLimitHits}}, hitting the limit often.", "tool', 'limit")]
     [InlineData("{{model:A}} recorded {{model.A.errors.critical}} with a critical error.", "critical', 'error")]
+    [InlineData("On tool calls, {{model:A}} had {{model.A.profile.noToolAnswers}}.", "tool")]
     public void Rule39_FlagsWordsBesideACountThatRepeatWhatItCounts_AsAWarning(string overview, string repeated)
     {
         var note = Assert.Single(ValidateExecutive(overview), n => n.Rule == BenchmarkReportPackValidator.CountRepetitionRule);
@@ -816,9 +817,36 @@ public class RootCauseValidatorTests
     [Theory]
     [InlineData("{{model:A}} wrote {{model.A.profile.noToolAnswers}}, more than any other model.")]
     [InlineData("Without tools, {{model:A}} answered few questions well; it gave {{model.A.errors.critical}}.")]
+    [InlineData("{{model:A}} had {{model.A.profile.noToolAnswers}} and {{model:B}} {{model.B.profile.noToolAnswers}}.")]
     public void Rule39_LeavesACountWrittenAsANounPhraseAlone(string overview)
     {
         Assert.DoesNotContain(ValidateExecutive(overview), n => n.Rule == BenchmarkReportPackValidator.CountRepetitionRule);
+    }
+
+    [Fact]
+    public void Rule39_FlagsEverySameKindCountOfASentence_ThatRepeatsWhatOneOfThemCounts()
+    {
+        var notes = ValidateExecutive("Four models answered without tools, most notably {{model:A}} with {{model.A.profile.noToolAnswers}} and {{model:B}} with {{model.B.profile.noToolAnswers}}.")
+            .Where(n => n.Rule == BenchmarkReportPackValidator.CountRepetitionRule)
+            .ToList();
+
+        // Only the first token stands within the window, but the sentence names the signal for both.
+        Assert.Collection(notes,
+            n => Assert.StartsWith("{{model.A.profile.noToolAnswers}} already prints '", n.Message, StringComparison.Ordinal),
+            n => Assert.StartsWith("{{model.B.profile.noToolAnswers}} already prints '", n.Message, StringComparison.Ordinal));
+        Assert.All(notes, n => Assert.Contains("'without', 'tools' say it again", n.Message, StringComparison.Ordinal));
+        Assert.Contains("'{{model:B}} had {{model.B.profile.noToolAnswers}}'", notes[1].Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Rule39_TheMessageGivesTheRewrite_AndForbidsAnOpeningPhrase()
+    {
+        var note = Assert.Single(ValidateExecutive("On tool calls, {{model:A}} had {{model.A.profile.noToolAnswers}}."),
+            n => n.Rule == BenchmarkReportPackValidator.CountRepetitionRule);
+
+        Assert.Contains("{{model:A}} had {{model.A.profile.noToolAnswers}}", note.Message, StringComparison.Ordinal);
+        Assert.Contains("opening phrase such as 'On tool calls,'", note.Message, StringComparison.Ordinal);
+        Assert.Contains("'tool' says it again", note.Message, StringComparison.Ordinal);
     }
 
     [Theory]

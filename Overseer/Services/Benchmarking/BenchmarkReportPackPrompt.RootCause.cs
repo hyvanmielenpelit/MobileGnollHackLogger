@@ -237,9 +237,11 @@ public static partial class BenchmarkReportPackPrompt
                 ? $"At most {RootCauseCap(slot, false)} words, under the code-rendered design, which already prints the grading panel and the harness version: do not repeat them. Say what this design can and cannot decide: how many models and runs it rests on, citing {{{{comparison.runsPerSuite}}}} and {{{{comparison.suiteCount}}}}, whether they share graders and settings, citing {{{{comparison.configDifferences}}}} for the settings, and which entries are degraded or excluded. State it; use no causal word."
                 : $"At most {RootCauseCap(slot, false)} words, under the code-rendered design, which already prints the grading panel and the harness version: do not repeat them. Say what this design can and cannot decide: how many models and runs it rests on, whether they share graders and settings, which entries are degraded or excluded, and, where CONTROLS applies, which controls there are and the control limit. State it; use no causal word.",
             BenchmarkReportSlots.EvidenceIntelligence =>
-                evidenceCap + ", under the intelligence evidence tables: where the points were lost, which failure signals several models share and which only one shows, "
+                evidenceCap + ", under the intelligence evidence tables: where the points were lost, which failure signals several models share and which only one shows"
+                + " — a signal several models share is told by each model's count token, which names the signal itself, so never name it beside the tokens; "
                 + (comparisonScope ? "what the per-question results show. " : "what the per-question results and the item-level controls show. ") + evidenceUse
-                + " The document prints under the dimensions table which dimension is lowest for how many models and how far below Accuracy: never restate it or count those models yourself.",
+                + " The document prints under the dimensions table which dimension is lowest for how many models and how far below Accuracy: never restate it or count those models yourself."
+                + " The critical errors are printed in the table and in What the graders recorded: never list them again.",
             BenchmarkReportSlots.EvidenceSpeed =>
                 evidenceCap + ", under the timing decomposition: which components make up the time per question and how they differ between the models or the groups of questions. " + evidenceUse,
             BenchmarkReportSlots.EvidenceCost =>
@@ -804,10 +806,26 @@ public static partial class BenchmarkReportPackPrompt
             .OrderBy(f => f.Key.EndsWith(".profile.noToolAnswers", StringComparison.Ordinal) ? 0 : 1)
             .ThenBy(f => f.Key, StringComparer.Ordinal)
             .FirstOrDefault();
+        // A shared-signal example is one count kind for two models, answers without a tool call first.
+        var shared = facts.Values
+            .Where(f => BenchmarkReportFormat.CountQualifier(f.Display ?? string.Empty).Length > 0)
+            .Select(f => (f.Key, Owner: CountOwner(f.Key, comparison)))
+            .Where(x => x.Owner.Token.Length > 0)
+            .GroupBy(x => x.Owner.Kind, StringComparer.Ordinal)
+            .Select(g => g.OrderBy(x => x.Key, StringComparer.Ordinal).DistinctBy(x => x.Owner.Token, StringComparer.Ordinal).Take(2).ToList())
+            .Where(g => g.Count == 2)
+            .OrderBy(g => g[0].Owner.Kind == "profile.noToolAnswers" ? 0 : 1)
+            .ThenBy(g => g[0].Owner.Kind, StringComparer.Ordinal)
+            .FirstOrDefault();
+        string several = shared != null
+            ? $"'{shared[0].Owner.Token} had {T(shared[0].Key)} and {shared[1].Owner.Token} {T(shared[1].Key)}'"
+            : "'<model token> had <its count token> and <model token> <its count token>'";
         Line(sb, "- Rule 39, counts: " + (count != null
             ? $"{T(count.Key)} already prints '{BenchmarkReportFormat.CountQualifier(count.Display)}', so write it as a noun phrase with none of those words beside it"
             : "a count token already prints what it counts, so write it as a noun phrase with none of its words beside it")
-            + "; never add 'with', 'without' or 'that' words after it that repeat it.");
+            + "; never add 'with', 'without' or 'that' words after it that repeat it"
+            + "; to say that several models share a signal, name each model with its own token and nothing else about it, as " + several
+            + "; never name the signal beside them or open the sentence with it, as in 'On tool calls,', 'Across the panel,' or 'answers without tools, most notably'.");
 
         Line(sb, "- Rule 38, shares: " + (share != null
                 ? $"a share stands beside its own hypothesis's .ref only, as '{T(share + "share")} of the gap ({T(share + "ref")})'"
@@ -890,6 +908,22 @@ public static partial class BenchmarkReportPackPrompt
         var facts = new Dictionary<string, BenchmarkReportFact>(StringComparer.Ordinal);
         foreach (var fact in sheet.Facts.Where(f => f.Available)) facts.TryAdd(fact.Key, fact);
         return facts;
+    }
+
+    /// <summary>
+    /// The model token a fact belongs to and its kind, the key without the model's prefix: <c>{{model:X}}</c> for a
+    /// comparison's <c>model.X.*</c> fact; on a per-model sheet <c>{{peer:X}}</c> for a <c>peer.X.*</c> fact and
+    /// <c>{{subject}}</c> for any other. Empty strings for a comparison fact of no model.
+    /// </summary>
+    private static (string Token, string Kind) CountOwner(string key, bool comparison)
+    {
+        var parts = key.Split('.');
+        if (parts.Length > 2 && parts[0] == (comparison ? "model" : "peer"))
+        {
+            return ((comparison ? "{{model:" : "{{peer:") + parts[1] + "}}", string.Join('.', parts.Skip(2)));
+        }
+        if (comparison || parts[0] == "peer") return (string.Empty, string.Empty);
+        return ("{{" + RootCauseEngine.SubjectToken + "}}", key);
     }
 
     /// <summary>What the document is about, its evidence cap, its pricing basis, whether the system comes first, and the engine's notes.</summary>

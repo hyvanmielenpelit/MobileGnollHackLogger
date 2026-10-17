@@ -838,6 +838,7 @@ public class BenchmarkReportPackPromptTests
         Assert.All(texts, text =>
         {
             Assert.Contains(rule, text);
+            Assert.Contains("never move them into an opening phrase before the model, such as 'On tool calls,'", text);
             Assert.DoesNotContain("say right after", text);
             Assert.DoesNotContain("had a critical error", text);
         });
@@ -848,7 +849,27 @@ public class BenchmarkReportPackPromptTests
     {
         string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote>());
 
-        Assert.Contains("A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after; never put it after 'no' or make it the object of 'made'.", message);
+        Assert.Contains("A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after, "
+            + "and never move them into an opening phrase before the model, such as 'On tool calls,'; never put it after 'no' or make it the object of 'made'.", message);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RepairMessage_ForARepeatedCount_GivesTheRewrite_AndForbidsAnOpeningPhrase(bool comparisonScope)
+    {
+        var built = BenchmarkReportPackFixture.ComparisonFacts();
+        var output = BenchmarkReportPackFixture.ComparisonWriter(BenchmarkReportAudience.ExecutiveSummary, built.Sheet!);
+        output.Sections[BenchmarkReportSlots.Overview] = "On tool calls, {{model:A}} had {{model.A.profile.noToolAnswers}}.";
+        var note = Assert.Single(BenchmarkReportPackValidator.Validate(BenchmarkReportAudience.ExecutiveSummary, output, built.Sheet!, built.Content!),
+            n => n.Rule == BenchmarkReportPackValidator.CountRepetitionRule);
+
+        string message = BenchmarkReportPackPrompt.BuildRepairMessage(new List<BenchmarkReportValidationNote> { note }, comparisonScope: comparisonScope);
+
+        Assert.Contains($"(1): {BenchmarkReportRuleCatalog.Get(BenchmarkReportPackValidator.CountRepetitionRule).Fix}\n", message);
+        Assert.Contains("Write it as '{{model:A}} had {{model.A.profile.noToolAnswers}}'", message);
+        Assert.Contains("not in an opening phrase such as 'On tool calls,'", message);
+        Assert.Contains("never move them into an opening phrase before the model, such as 'On tool calls,'", message);
     }
 
     [Theory]
@@ -1125,6 +1146,9 @@ public class BenchmarkReportPackPromptTests
         Assert.StartsWith("- Rule 36, statuses:", lines[11]);
         Assert.Contains("{{rca.axis.intelligence.status}}", lines[11]);
         Assert.Contains(".profile.noToolAnswers}} already prints 'without a tool call'", lines[7]);
+        Assert.Contains("to say that several models share a signal, name each model with its own token and nothing else about it, "
+            + "as '{{model:A}} had {{model.A.profile.noToolAnswers}} and {{model:B}} {{model.B.profile.noToolAnswers}}'; "
+            + "never name the signal beside them or open the sentence with it, as in 'On tool calls,'", lines[7]);
         Assert.Contains("{{model:", lines[4]);
         Assert.Contains("noun phrase", lines[6]);
         Assert.Contains("'95% interval'", lines[1]);
@@ -1163,6 +1187,9 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("Never mention a price-card difference: the document lists them itself.", system);
         Assert.Contains("Leave this slot out only when HYPOTHESES says so for its axis.", system);
         Assert.Contains("The document prints under the dimensions table which dimension is lowest for how many models and how far below Accuracy: never restate it or count those models yourself.", system);
+        Assert.Contains("which only one shows — a signal several models share is told by each model's count token, which names the signal itself, so never name it beside the tokens; ", system);
+        Assert.Contains("The critical errors are printed in the table and in What the graders recorded: never list them again.", system);
+        Assert.Contains("never move them into an opening phrase before the model, such as 'On tool calls,'", system);
         Assert.Equal(comparison, system.Contains("A comparative that describes a setting, as in 'a higher thinking level', ranks no model", StringComparison.Ordinal));
     }
 

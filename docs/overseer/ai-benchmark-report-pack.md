@@ -355,7 +355,7 @@ the retired audiences (§ 17); their numbers stay unused.
 | 32–36 | Root Cause Analysis only: the claim discipline of § 17 (`RootCauseEvidenceCausalRule`, `RootCauseCausalClaimRule`, `RootCauseCertaintyRule`, `RootCauseWriterHypothesisRule`, `RootCauseAxisStatusRule`; 36 is a warning) |
 | 37 | *Bare model letter* (`BareModelLetterRule`), comparison scope only: read with every token stripped, the prose holds no *Model X* or *Models X and Y* (`\bModels? [A-Z]{1,2}\b`, case-sensitive) — a model is named only through its `{{model:X}}` token, in every slot and list, the writer's hypotheses included. A **warning**: it asks for the repair turn and keeps the text; a named copy renders a bare letter that resolves to a peer as the model's name |
 | 38 | *Share beside another hypothesis* (`RootCauseShareBesideRefRule`), Root Cause Analysis only: a `{{rca.hypothesis.<id>.<n>.share}}` token whose nearest following parenthesis, at most six words on in the same sentence and read on the writer's own text, cites any hypothesis reference other than its own `.ref` alone — a range or a list (*"45% of the gap (HQ1.1–HQ1.3)"*). The message names the share and the references and points to `{{rca.rule.<id>.shareSpan}}` where the sheet has it. A **warning**: it asks for the repair turn and keeps the text |
-| 39 | *Words repeated beside a count* (`CountRepetitionRule`), every scope: a count token whose qualifier (`BenchmarkReportFormat.CountQualifier`) shares a content word with the writer's own words within five words before it or four after it, in the same sentence. A content word has four letters or more, is no word of `CountRepetitionStopWords` (*with, that, this, from, each, their, were, which*) and no counted noun (*answers, questions, runs, attempts, calls, checks*), and two words match when the first five letters of one begin the other (*tools*, *tool*). The message quotes what the token prints and the repeated words. A **warning**: it asks for the repair turn and keeps the text |
+| 39 | *Words repeated beside a count* (`CountRepetitionRule`), every scope: a count token whose qualifier (`BenchmarkReportFormat.CountQualifier`) shares a content word with the writer's own words within five words before it or four after it, in the same sentence. A content word has four letters or more, is no word of `CountRepetitionStopWords` (*with, that, this, from, each, their, were, which*) and no counted noun (*answers, questions, runs, attempts, calls, checks*), and two words match when the first five letters of one begin the other (*tools*, *tool*). The repetition belongs to the sentence: every other count token of the same sentence with the same qualifier as a flagged one is flagged with it, with the same words, so a draft that names a signal once and cites two models' counts gets a note for each token. The message quotes what the token prints and the repeated words, gives the rewrite with the model leading (*"Write it as {{model:X}} had {{model.X.profile.noToolAnswers}}"*) and asks for those words to be left out of the whole sentence — not before the model, not in an opening phrase (*'On tool calls,'* when a repeated word is *tool*), and not after the token. A **warning**: it asks for the repair turn and keeps the text |
 | 40 | *Repeats what code prints* (`RootCauseCodePrintedRule`), Root Cause Analysis only: the `unexpectedResults` slot cites a fact of an unexpected result other than its reference — `rca.anomaly.<n>.summary`, `.prior`, `.confounds`, `.graders`, `.settledBy` or `.tested` — which Overseer prints in the *Unexpected results* section; the writer cites a result by `{{rca.anomaly.<n>.ref}}` alone and says what the grader comments show. A **warning**: it asks for the repair turn and keeps the text. Up to format 25 it flagged the conclusions citing an axis's `{{rca.axis.<axis>.priceNote}}`, and before format 25 an answer slot citing its question's `{{rca.question.<n>.signals}}`; neither fact nor slot exists now |
 | 41 | *Unavailable figure cited* (`UnavailableTokenRule`), every Root Cause Analysis and every comparison-wide document: a token of a fact the sheet holds without a value, which prints *not available* (*"… are not available and not available"*). The writer says in plain words that a figure is unavailable and why, and never cites its token. A **warning**: it asks for the repair turn and keeps the text |
 | 42 | *Next runs out of order* (`RootCauseNextRunsOrderRule`), Root Cause Analysis only, on the `nextRuns` slot: read in order of first appearance, the `rca.run.<n>.*` tokens ascend, the first is run 1 where the sheet has one, and no `rca.check.<n>.*` token comes before the first run unless run 1's `rca.run.1.purpose` is model selection. The message names code's order (*"Write the runs in code's order: {{rca.run.1.summary}} first, then {{rca.run.2.summary}}; a check comes after them."*). A **warning**: it asks for the repair turn and keeps the text |
@@ -377,7 +377,10 @@ Analysis prompt, and their repair messages, also carry the **token-shape reminde
 (`BenchmarkReportPackPrompt.TokenShapeReminders`): a sentence-valued fact is a sentence of its own, at
 most once, never inside parentheses and never continued after its full stop; a fact whose value names a
 model and a verb is written alone as the clause; and a count token already says what it counts, so it
-is written as a noun phrase with none of its words repeated beside it (rule 39).
+is written as a noun phrase with none of its words repeated beside it, and never moved into an opening
+phrase before the model such as *'On tool calls,'* (rule 39). The Root Cause Analysis prompt's rule 39
+line also shows how several models share a signal: each model named with its own count token and
+nothing else about it, the signal never named beside them nor opening the sentence.
 
 **Counts say what they count** (format 23, per-model format 19, chat consistency format 6). Every *N of
 M* fact a writer can cite prints its own qualifier after its noun, built by
@@ -2015,9 +2018,27 @@ The request of the preview, the start and the layout preview is
   entry up to 15 minutes stale. In comparison scope, on a miss the comparison is computed once and handed to the paired tests
   (a `BenchmarkPairedTestsService.CompareAsync` overload that takes it, used for both families, whose
   result is not put in the wizard's paired-test cache), so it is no longer computed three times. Start's
-  pre-flight reads the cache too; the job always prepares fresh. Each preview logs one `Information`
-  line, *"Report Pack <scope> preview: preparation cache hit|miss|not used; key … ms, compare … ms,
-  preparation … ms, lists … ms, estimate … ms."*
+  pre-flight reads the cache too; the job always prepares fresh.
+
+  **One comparison preparation in flight per key** (`BenchmarkReportPackPreviewCache.GetOrPrepareAsync`).
+  A comparison-scope miss starts the comparison, the covered/bounds/reference refusals and the
+  preparation in a dependency-injection scope of its own, with its own database context, on a token
+  bounded by `Benchmark:ReportPack:PreviewPreparationTimeoutSeconds` (default 180) rather than the
+  request's. A second request for the same key joins the preparation in flight instead of starting
+  another, and a request the client aborts stops only its own wait (`499`): the preparation finishes and
+  fills the cache, so the next request for that key is a hit. An entry is cached; a refusal is returned
+  to every waiter and not cached; a preparation stopped by its timeout answers 200 with the refusal
+  *"The estimate took longer than N seconds to prepare and was stopped. Try again."*
+  (`BenchmarkReportPackPreviewCache.TimeoutRefusal`), not cached; an exception reaches the waiters of
+  that preparation and is not cached; the in-flight slot is freed whatever the outcome. Model-scope
+  previews prepare inline on the request.
+
+  Each preview logs one `Information` line, *"Report Pack <scope> preview: preparation cache
+  hit|miss|not used; key … ms, compare … ms, preparation … ms (paired … , load … , facts … , prompts …),
+  joined True|False, lists … ms, estimate … ms."* The sub-stage timings split a comparison preparation
+  into the paired tests, the loading of the battery or runs, the fact sheet with the root-cause engine,
+  and the prompt builds that count the documents' characters; a model-scope preview fills only the
+  prompt builds.
 - `POST /api/admin/benchmark/report-packs/documents`: The stored documents of a preview request, with
   nothing prepared (`BenchmarkReportPackDocumentsDto`): it finds the numbered comparison and reads the
   same three document queries the preview reads, and never computes the comparison, the paired tests, a
@@ -2581,7 +2602,15 @@ its report."*
     up this run**) and a **Redraw charts** action (§ 17). The list follows
     the preview, asked 300 ms after the last change of scope, models, reference or writer, an answer for an
     older choice dropped; a preview always asks for every document type, so checking or unchecking a row
-    sends no request. The flags and chart counts come from the documents list
+    sends no request. The first preview waits for the writer list, so it carries the remembered writer
+    and gives the dollar estimate in one round trip, and no cold preview is aborted for a writer that
+    arrived late; while the list is awaited the estimate is pending, and a failed list sends the preview
+    without a writer. Step 2 warms the cache: when the comparison is shown, step 3 can open, the panel
+    does not yet exist and the stored document scope is a comparison of at least two models, the model
+    comparison sends the panel's first comparison preview body
+    (`initialComparisonPreviewRequest`, writer 0, every comparison audience) once per distinct body and
+    ignores its answer, so step 3 opens on a hit (the key ignores the writer and audiences); a change of
+    covered models or reference before step 3 makes a different key. The flags and chart counts come from the documents list
     (`GET report-documents?comparisonId=`, § 9), fetched as soon as the context names the comparison, in
     parallel with the first preview (after the preview, when only the preview supplies the number), and
     merged into the rows in either arrival order. While it is awaited, the section is busy and shows a small spinner

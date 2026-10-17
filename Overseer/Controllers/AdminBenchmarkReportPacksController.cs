@@ -139,9 +139,12 @@ public class AdminBenchmarkReportPacksController : ControllerBase
     /// <see cref="ContextWindowRefusalShare"/> (the client refuses from the checked documents; Start
     /// refuses over the requested ones), the totals over the requested documents, the same-provider
     /// warning and any other refusal. Computes the fact sheets and the prompts, or reads them from
-    /// <see cref="BenchmarkReportPackPreviewCache"/>. Battery results mixed with runs or groups, and
-    /// a comparison-scope reference model that is not a covered model, are a 400; a request the client
-    /// aborts is a 499.
+    /// <see cref="BenchmarkReportPackPreviewCache"/>; a comparison-scope preparation runs once per cache
+    /// key in a scope of its own, joined by any identical preview while it runs, and goes on to fill the
+    /// cache when the request that started it is aborted, up to
+    /// <c>Benchmark:ReportPack:PreviewPreparationTimeoutSeconds</c>. Battery results mixed with runs or
+    /// groups, and a comparison-scope reference model that is not a covered model, are a 400; a request
+    /// the client aborts is a 499.
     /// </summary>
     [HttpPost("report-packs/preview")]
     public async Task<IActionResult> Preview([FromBody] BenchmarkReportPackRequest request, CancellationToken ct)
@@ -497,46 +500,52 @@ public class AdminBenchmarkReportPacksController : ControllerBase
 
         if (entry == null)
         {
-            stage.Restart();
-            var (comparison, error) = await _comparisonService.CompareAsync(BenchmarkReportPackPreparation.ComparisonRequest(request), ct);
-            timings.CompareMs = stage.ElapsedMilliseconds;
-            if (comparison == null)
+            int? comparisonId = numbered?.Id;
+            BenchmarkReportPackPreviewPreparationResult prepared;
+            if (cacheKey == null)
             {
-                preview.Refusal = error ?? "The comparison could not be computed.";
+                prepared = await PrepareComparisonPreviewAsync(
+                    _db, _comparisonService, PairedTests(), _configuration, ReleaseDate, request, excerptChars, comparisonId, ct);
+            }
+            else
+            {
+                // The preparation may outlive this request: it reads nothing request-scoped.
+                var scopeFactory = _scopeFactory;
+                var configuration = _configuration;
+                var metadata = _modelMetadata;
+                prepared = await _previewCache!.GetOrPrepareAsync(
+                    cacheKey,
+                    token => PrepareComparisonPreviewInScopeAsync(scopeFactory, configuration, metadata, request, excerptChars, comparisonId, token),
+                    PreviewPreparationTimeout(),
+                    ct);
+            }
+
+            if (prepared.Cached) timings.Hit = true;
+            timings.Joined = prepared.Joined;
+            timings.CompareMs = prepared.CompareMs;
+            timings.PrepareMs = prepared.PrepareMs;
+            timings.PairedMs = prepared.Timings?.PairedMs ?? 0;
+            timings.LoadMs = prepared.Timings?.LoadMs ?? 0;
+            timings.FactsMs = prepared.Timings?.FactsMs ?? 0;
+            timings.PromptMs = prepared.Timings?.PromptMs ?? 0;
+            if (prepared.ComparableEntryCount is int comparable)
+            {
+                preview.ComparisonEntryCount = comparable;
+                preview.ComparisonId = numbered?.Id;
+                preview.ComparisonName = numbered?.DisplayName;
+            }
+
+            if (prepared.Entry == null)
+            {
+                preview.Refusal = prepared.Refusal ?? "The comparison could not be computed.";
+                if (prepared.CoveredRefusal)
+                {
+                    preview.OtherModelSets = await CoveredSetsAsync(numbered?.Id, comparisonKey, exceptSetKey: null, ct);
+                }
                 LogPreview(BenchmarkReportScope.Comparison, timings);
                 return preview;
             }
-
-            preview.ComparisonEntryCount = comparison.Entries.Count(e => !e.Excluded);
-            preview.ComparisonId = numbered?.Id;
-            preview.ComparisonName = numbered?.DisplayName;
-
-            var covered = BenchmarkComparisonReportFacts.CoveredKeysOf(comparison, request.CoveredEntryKeys);
-            string? refusal = BenchmarkComparisonReportFacts.CoveredRefusal(comparison, covered)
-                ?? BenchmarkComparisonReportFacts.BoundsRefusal(covered.Count)
-                ?? BenchmarkComparisonReportFacts.ReferenceRefusalOf(comparison, covered, request.ReferenceEntryKey);
-            if (refusal != null)
-            {
-                preview.Refusal = refusal;
-                preview.OtherModelSets = await CoveredSetsAsync(numbered?.Id, comparisonKey, exceptSetKey: null, ct);
-                LogPreview(BenchmarkReportScope.Comparison, timings);
-                return preview;
-            }
-
-            stage.Restart();
-            var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareComparisonAsync(
-                _db, _comparisonService, request, excerptChars, numbered?.Id, ct, _configuration, PairedTests(), comparison, ReleaseDate);
-            if (prep == null)
-            {
-                timings.PrepareMs = stage.ElapsedMilliseconds;
-                preview.Refusal = prepRefusal;
-                preview.OtherModelSets = await CoveredSetsAsync(numbered?.Id, comparisonKey, exceptSetKey: null, ct);
-                LogPreview(BenchmarkReportScope.Comparison, timings);
-                return preview;
-            }
-            entry = PreviewEntryOf(prep);
-            timings.PrepareMs = stage.ElapsedMilliseconds;
-            if (cacheKey != null) _previewCache!.Set(cacheKey, entry);
+            entry = prepared.Entry;
         }
         else
         {
@@ -590,22 +599,132 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         return preview;
     }
 
-    /// <summary>The milliseconds of one preview's stages, and whether its preparations came from the cache.</summary>
+    /// <summary>
+    /// A comparison-scope preview's cold preparation on <paramref name="db"/>: the comparison, the
+    /// covered-model, bounds and reference refusals, then the preparation and its preview entry, with
+    /// each stage's milliseconds. Reads nothing but its arguments.
+    /// </summary>
+    private static async Task<BenchmarkReportPackPreviewPreparationResult> PrepareComparisonPreviewAsync(
+        ApplicationDbContext db,
+        BenchmarkModelComparisonService comparisonService,
+        BenchmarkPairedTestsService pairedTests,
+        IConfiguration configuration,
+        Func<string, string, string?> releaseDate,
+        BenchmarkReportPackRequest request,
+        int excerptChars,
+        int? comparisonId,
+        CancellationToken ct)
+    {
+        var stage = System.Diagnostics.Stopwatch.StartNew();
+        var (comparison, error) = await comparisonService.CompareAsync(BenchmarkReportPackPreparation.ComparisonRequest(request), ct);
+        long compareMs = stage.ElapsedMilliseconds;
+        if (comparison == null)
+        {
+            return new BenchmarkReportPackPreviewPreparationResult
+            {
+                Refusal = error ?? "The comparison could not be computed.",
+                CompareMs = compareMs
+            };
+        }
+
+        int comparable = comparison.Entries.Count(e => !e.Excluded);
+        var covered = BenchmarkComparisonReportFacts.CoveredKeysOf(comparison, request.CoveredEntryKeys);
+        string? refusal = BenchmarkComparisonReportFacts.CoveredRefusal(comparison, covered)
+            ?? BenchmarkComparisonReportFacts.BoundsRefusal(covered.Count)
+            ?? BenchmarkComparisonReportFacts.ReferenceRefusalOf(comparison, covered, request.ReferenceEntryKey);
+        if (refusal != null)
+        {
+            return new BenchmarkReportPackPreviewPreparationResult
+            {
+                Refusal = refusal,
+                ComparableEntryCount = comparable,
+                CoveredRefusal = true,
+                CompareMs = compareMs
+            };
+        }
+
+        stage.Restart();
+        var timings = new BenchmarkReportPackPrepareTimings();
+        var (prep, prepRefusal) = await BenchmarkReportPackPreparation.PrepareComparisonAsync(
+            db, comparisonService, request, excerptChars, comparisonId, ct, configuration, pairedTests, comparison, releaseDate, timings);
+        if (prep == null)
+        {
+            return new BenchmarkReportPackPreviewPreparationResult
+            {
+                Refusal = prepRefusal,
+                ComparableEntryCount = comparable,
+                CoveredRefusal = true,
+                CompareMs = compareMs,
+                PrepareMs = stage.ElapsedMilliseconds,
+                Timings = timings
+            };
+        }
+
+        var entry = PreviewEntryOf(prep, timings);
+        return new BenchmarkReportPackPreviewPreparationResult
+        {
+            Entry = entry,
+            ComparableEntryCount = comparable,
+            CompareMs = compareMs,
+            PrepareMs = stage.ElapsedMilliseconds,
+            Timings = timings
+        };
+    }
+
+    /// <summary>
+    /// <see cref="PrepareComparisonPreviewAsync"/> in a scope of its own, with its own database context,
+    /// comparison service and price cards, so it can go on after the request that started it is gone.
+    /// </summary>
+    private static async Task<BenchmarkReportPackPreviewPreparationResult> PrepareComparisonPreviewInScopeAsync(
+        IServiceScopeFactory scopeFactory,
+        IConfiguration configuration,
+        ModelMetadataService metadata,
+        BenchmarkReportPackRequest request,
+        int excerptChars,
+        int? comparisonId,
+        CancellationToken ct)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var services = scope.ServiceProvider;
+        var db = services.GetRequiredService<ApplicationDbContext>();
+        var comparisonService = services.GetRequiredService<BenchmarkModelComparisonService>();
+        var pairedTests = new BenchmarkPairedTestsService(db, comparisonService, null, services.GetRequiredService<ModelPricingService>());
+        return await PrepareComparisonPreviewAsync(
+            db, comparisonService, pairedTests, configuration, (p, m) => metadata.GetMetadata(p, m).ReleaseDate,
+            request, excerptChars, comparisonId, ct);
+    }
+
+    /// <summary>How long a comparison-scope preview preparation may run: <c>Benchmark:ReportPack:PreviewPreparationTimeoutSeconds</c>, 180 s by default.</summary>
+    private TimeSpan PreviewPreparationTimeout()
+        => TimeSpan.FromSeconds(Math.Max(0,
+            _configuration.GetValue<int?>("Benchmark:ReportPack:PreviewPreparationTimeoutSeconds")
+                ?? BenchmarkReportPackPreviewCache.DefaultPreparationTimeoutSeconds));
+
+    /// <summary>
+    /// The milliseconds of one preview's stages, the comparison-scope preparation's own stages among them,
+    /// whether its preparations came from the cache, and whether it joined a preparation already in flight.
+    /// </summary>
     private sealed class PreviewTimings
     {
         public bool? Hit { get; set; }
         public long KeyMs { get; set; }
         public long CompareMs { get; set; }
         public long PrepareMs { get; set; }
+        public long PairedMs { get; set; }
+        public long LoadMs { get; set; }
+        public long FactsMs { get; set; }
+        public long PromptMs { get; set; }
+        public bool Joined { get; set; }
         public long ListsMs { get; set; }
         public long EstimateMs { get; set; }
     }
 
     private void LogPreview(BenchmarkReportScope scope, PreviewTimings timings)
         => _logger.LogInformation(
-            "Report Pack {Scope} preview: preparation cache {CacheResult}; key {KeyMs} ms, compare {CompareMs} ms, preparation {PrepareMs} ms, lists {ListsMs} ms, estimate {EstimateMs} ms.",
+            "Report Pack {Scope} preview: preparation cache {CacheResult}; key {KeyMs} ms, compare {CompareMs} ms, preparation {PrepareMs} ms (paired {PairedMs}, load {LoadMs}, facts {FactsMs}, prompts {PromptMs}), joined {Joined}, lists {ListsMs} ms, estimate {EstimateMs} ms.",
             scope, timings.Hit switch { true => "hit", false => "miss", null => "not used" },
-            timings.KeyMs, timings.CompareMs, timings.PrepareMs, timings.ListsMs, timings.EstimateMs);
+            timings.KeyMs, timings.CompareMs, timings.PrepareMs, timings.PairedMs, timings.LoadMs, timings.FactsMs, timings.PromptMs,
+            timings.Joined, timings.ListsMs, timings.EstimateMs);
 
     /// <summary>
     /// A model-scope subject's preview entry: from the preparation cache, else prepared over
@@ -640,10 +759,16 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         stage.Restart();
         var (prep, refusal) = await BenchmarkReportPackPreparation.PrepareAsync(
             _db, _comparisonService, subjectRequest, excerptChars, ct, _configuration, comparison);
-        timings.PrepareMs += stage.ElapsedMilliseconds;
-        if (prep == null) return (null, refusal, comparison);
+        if (prep == null)
+        {
+            timings.PrepareMs += stage.ElapsedMilliseconds;
+            return (null, refusal, comparison);
+        }
 
-        var entry = PreviewEntryOf(prep);
+        var prepTimings = new BenchmarkReportPackPrepareTimings();
+        var entry = PreviewEntryOf(prep, prepTimings);
+        timings.PrepareMs += stage.ElapsedMilliseconds;
+        timings.PromptMs += prepTimings.PromptMs;
         if (cacheKey != null) _previewCache!.Set(cacheKey, entry);
         return (entry, null, comparison);
     }
@@ -672,9 +797,16 @@ public class AdminBenchmarkReportPacksController : ControllerBase
         return (entry, null);
     }
 
-    /// <summary>What the preview and Start's pre-flight read from a preparation, with each offered document's prompt length.</summary>
-    private static BenchmarkReportPackPreviewEntry PreviewEntryOf(BenchmarkReportPackPreparation prep)
-        => new()
+    /// <summary>
+    /// What the preview and Start's pre-flight read from a preparation, with each offered document's
+    /// prompt length; <paramref name="timings"/>, when given, receives the prompt builds' milliseconds.
+    /// </summary>
+    private static BenchmarkReportPackPreviewEntry PreviewEntryOf(BenchmarkReportPackPreparation prep, BenchmarkReportPackPrepareTimings? timings = null)
+    {
+        var prompts = System.Diagnostics.Stopwatch.StartNew();
+        var promptChars = OfferedAudiences(prep.Scope).ToDictionary(a => a, a => PromptCharsOf(prep, a));
+        if (timings != null) timings.PromptMs = prompts.ElapsedMilliseconds;
+        return new()
         {
             Scope = prep.Scope,
             Subject = prep.Subject,
@@ -696,8 +828,9 @@ public class AdminBenchmarkReportPacksController : ControllerBase
             ComparisonEntryCount = prep.ComparisonEntryCount,
             ComparableEntryCount = prep.Comparison.Entries.Count(e => !e.Excluded),
             ReferenceEntryKey = prep.ReferenceEntryKey,
-            PromptChars = OfferedAudiences(prep.Scope).ToDictionary(a => a, a => PromptCharsOf(prep, a))
+            PromptChars = promptChars
         };
+    }
 
     /// <summary>The audiences a document of the scope is written for, in audience order.</summary>
     private static IReadOnlyList<BenchmarkReportAudience> OfferedAudiences(BenchmarkReportScope scope)

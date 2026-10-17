@@ -23,6 +23,20 @@ using Overseer.Services.Providers;
 using StatusCodes = Microsoft.AspNetCore.Http.StatusCodes;
 
 /// <summary>
+/// The milliseconds of a comparison-scope preparation's stages
+/// (<see cref="BenchmarkReportPackPreparation.PrepareComparisonAsync"/>): the paired tests, the runs or
+/// battery results loaded with their answers, the comparison sheet built from them, and the prompt
+/// builds that count each document's length, which the preview fills in.
+/// </summary>
+public sealed class BenchmarkReportPackPrepareTimings
+{
+    public long PairedMs { get; set; }
+    public long LoadMs { get; set; }
+    public long FactsMs { get; set; }
+    public long PromptMs { get; set; }
+}
+
+/// <summary>
 /// What a report pack is built from: the comparison, the fact sheet and its content snapshot. For
 /// model scope the sheet is the subject's; for comparison scope (<see cref="Scope"/>) it describes every
 /// covered model, and <see cref="Subject"/> is the covered model lettered A.
@@ -438,7 +452,8 @@ public sealed class BenchmarkReportPackPreparation
     /// (<see cref="BenchmarkComparisonReportFacts.ReferenceRefusal"/>). Over <paramref name="comparison"/>
     /// when it is given; computed from the request otherwise. <paramref name="releaseDate"/> gives a model's
     /// catalog release date (provider, model id → ISO date or null); without it the release prior is not
-    /// evaluated. Makes no model call.
+    /// evaluated. <paramref name="timings"/>, when given, receives the paired-test, loading and fact-sheet
+    /// milliseconds. Makes no model call.
     /// </summary>
     public static async Task<(BenchmarkReportPackPreparation? Preparation, string? Refusal)> PrepareComparisonAsync(
         ApplicationDbContext db,
@@ -450,7 +465,8 @@ public sealed class BenchmarkReportPackPreparation
         IConfiguration? configuration = null,
         BenchmarkPairedTestsService? pairedTests = null,
         BenchmarkModelComparisonDto? comparison = null,
-        Func<string, string, string?>? releaseDate = null)
+        Func<string, string, string?>? releaseDate = null,
+        BenchmarkReportPackPrepareTimings? timings = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (MixesSources(request)) return (null, BenchmarkBatteryModelComparison.MixedSourcesError);
@@ -472,9 +488,12 @@ public sealed class BenchmarkReportPackPreparation
         string referenceKey = string.IsNullOrWhiteSpace(request.ReferenceEntryKey)
             ? BenchmarkComparisonReportFacts.InLetterOrder(restricted.Entries)[0].Key
             : request.ReferenceEntryKey.Trim();
+        var stage = Stopwatch.StartNew();
         var (reference, allPairs, pairedUnavailable) = await PairedFamiliesAsync(
             pairedTests ?? new BenchmarkPairedTestsService(db, comparisonService), restricted, request.PricingBasis, referenceKey, ct);
+        if (timings != null) timings.PairedMs = stage.ElapsedMilliseconds;
 
+        stage.Restart();
         bool batteries = string.Equals(comparison.SubjectKind, BenchmarkModelComparisonSubjectKinds.Batteries, StringComparison.Ordinal);
         var catalog = await RootCauseNextRuns.LoadCatalogAsync(db, configuration, ct);
         var releaseDates = ReleaseDatesOf(restricted.Entries, releaseDate);
@@ -483,8 +502,10 @@ public sealed class BenchmarkReportPackPreparation
         if (batteries)
         {
             var (entries, batteryRuns, batteryRefusal, pricing) = await BatteryEntriesAsync(db, restricted, answerExcerptChars, BatteryDetailQuestionsPerSuite(configuration), ct);
+            if (timings != null) timings.LoadMs = stage.ElapsedMilliseconds;
             if (entries == null) return (null, batteryRefusal);
             runs = batteryRuns;
+            stage.Restart();
             built = BenchmarkComparisonReportFacts.Build(new BenchmarkComparisonReportFactsInput
             {
                 Comparison = comparison,
@@ -499,6 +520,7 @@ public sealed class BenchmarkReportPackPreparation
                 Catalog = catalog,
                 ReleaseDates = releaseDates
             });
+            if (timings != null) timings.FactsMs = stage.ElapsedMilliseconds;
         }
         else
         {
@@ -517,9 +539,13 @@ public sealed class BenchmarkReportPackPreparation
             {
                 availability[entry.Key] = await AvailabilityOfAsync(availabilityService, entry, ct);
             }
+            var candidatePricing = await CandidatePricingAsync(db, runs, comparison);
+            if (timings != null) timings.LoadMs = stage.ElapsedMilliseconds;
+            stage.Restart();
             built = BenchmarkComparisonReportFacts.BuildFromRuns(
                 comparison, covered, runs.ToDictionary(r => r.Id), answerExcerptChars, reference, allPairs, pairedUnavailable, comparisonId, availability,
-                referenceKey, await CandidatePricingAsync(db, runs, comparison), catalog, releaseDates);
+                referenceKey, candidatePricing, catalog, releaseDates);
+            if (timings != null) timings.FactsMs = stage.ElapsedMilliseconds;
         }
         if (built.Sheet == null || built.Content == null) return (null, built.Refusal ?? "The fact sheet could not be computed.");
         if (runs.Count == 0) return (null, "The covered models' runs no longer exist.");

@@ -228,7 +228,7 @@ public static class BenchmarkReportRuleCatalog
             "A count token already says what it counts, so the words beside it do not say it again.",
             BenchmarkReportRuleSeverity.Warning,
             "The text was kept, but it says twice what the count counts.",
-            "Write each count token as a noun phrase and remove the words beside it that repeat what it already prints."),
+            "Lead with the model and let each count token name what it counts, as in \"the model had\" and the token; leave the counted words out of the whole sentence, an opening phrase included."),
         R(BenchmarkReportPackValidator.RootCauseCodePrintedRule, "Repeats what code prints",
             "The unexpected results cite each result only by its reference, never the summary, configuration, graders or next run that Overseer prints in their section.",
             BenchmarkReportRuleSeverity.Warning,

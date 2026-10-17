@@ -302,7 +302,7 @@ function serverMessage(error: HttpErrorResponse): string | null {
 }
 
 /** The panel's stored record: the last writer used, the document scope and the sidebar's width. */
-interface StoredReportPackSettings {
+export interface StoredReportPackSettings {
   writerConfigId?: number;
   sidebarWidth?: number;
   documentScope?: ReportDocumentScopeMode;
@@ -337,6 +337,64 @@ function writeStoredSettings(patch: StoredReportPackSettings): void {
   } catch {
     // Storage unavailable: the choice is simply not remembered.
   }
+}
+
+/** The sources and pricing basis of a comparison's Report Pack requests; battery ids only for a comparison of battery results. */
+function reportPackRequestBase(
+  context: ReportPackContext
+): Pick<BenchmarkReportPackRequest, 'runIds' | 'groupIds' | 'batteryRunIds' | 'pricingBasis'> {
+  const batteryRunIds = context.batteryRunIds ?? [];
+  return {
+    runIds: [...context.runIds],
+    groupIds: [...context.groupIds],
+    ...(batteryRunIds.length > 0 ? { batteryRunIds: [...batteryRunIds] } : {}),
+    pricingBasis: context.pricingBasis === 'AsRun'
+      ? BenchmarkReportPackPricingBasis.AsRun
+      : BenchmarkReportPackPricingBasis.Current
+  };
+}
+
+/** What a Report Pack request carries after its models: the documents, the writer, the acknowledgment and a start's replacements. */
+type ReportPackRequestTail =
+  Pick<BenchmarkReportPackRequest, 'audiences' | 'writerModelConfigurationId' | 'acknowledgeSameProvider' | 'replaceDocumentIds'>;
+
+/** A comparison-scope request over `coveredKeys`. */
+function comparisonReportPackRequest(
+  context: ReportPackContext,
+  coveredKeys: readonly string[],
+  referenceEntryKey: string | null,
+  tail: ReportPackRequestTail
+): BenchmarkReportPackRequest {
+  return {
+    ...reportPackRequestBase(context), subjectKey: '', scope: BenchmarkReportScope.Comparison, coveredEntryKeys: [...coveredKeys], ...tail,
+    // Sent only when named, so a request without a reference is unchanged by it.
+    ...(referenceEntryKey !== null ? { referenceEntryKey } : {})
+  };
+}
+
+/**
+ * The panel's first comparison-scope preview request for `context`, with no writer: the default covered
+ * models and Reference model and every comparison document type, as the panel asks on opening. Null when
+ * the stored document scope is One model at a time or no model is offered. The server's preview cache
+ * leaves the writer out of its key, so this request prepares what the panel's first preview reads.
+ */
+export function initialComparisonPreviewRequest(
+  context: ReportPackContext,
+  stored: StoredReportPackSettings = readStoredSettings()
+): BenchmarkReportPackRequest | null {
+  if ((stored.documentScope ?? 'comparison') !== 'comparison') {
+    return null;
+  }
+  const baseline = context.baselineModelEntryKey ?? null;
+  const covered = defaultCoveredKeys(comparisonModelOptions(context.entries), baseline);
+  if (covered.length === 0) {
+    return null;
+  }
+  return comparisonReportPackRequest(context, covered, baseline !== null && covered.includes(baseline) ? baseline : null, {
+    audiences: reportAudiencesFor('comparison').map(option => option.audience),
+    writerModelConfigurationId: 0,
+    acknowledgeSameProvider: false
+  });
 }
 
 /** One preview request in the debounced queue, with what it was asked for. */
@@ -596,8 +654,10 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   private listDocuments: BenchmarkReportPackDocumentsDto | null = null;
   /** The scope and models `listDocuments` answers. */
   private listDocumentsSignature: string | null = null;
-  /** A change is waiting out the debounce, or its preview is in flight. */
+  /** A change is waiting out the debounce or the writer list, or its preview is in flight. */
   previewPending = false;
+  /** A preview waits for the writer list, so it is sent with the remembered writer. */
+  private previewAwaitingWriters = false;
   previewError: string | null = null;
   /** The same-provider warning a 409 carried, shown until the models or writer change. */
   private serverWarning: string | null = null;
@@ -1438,31 +1498,17 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     const audiences = options.preview
       ? this.audiences.map(option => option.audience)
       : this.audiences.map(option => option.audience).filter(audience => checked.some(row => row.audience === audience));
-    const batteryRunIds = context.batteryRunIds ?? [];
-    const base = {
-      runIds: [...context.runIds],
-      groupIds: [...context.groupIds],
-      ...(batteryRunIds.length > 0 ? { batteryRunIds: [...batteryRunIds] } : {}),
-      pricingBasis: context.pricingBasis === 'AsRun'
-        ? BenchmarkReportPackPricingBasis.AsRun
-        : BenchmarkReportPackPricingBasis.Current
-    };
     const replaceDocumentIds = checked
       .map(row => row.document?.documentId)
       .filter((id): id is number => typeof id === 'number');
-    const tail = {
+    const tail: ReportPackRequestTail = {
       audiences,
       writerModelConfigurationId: this.writerId ?? 0,
       acknowledgeSameProvider: options.acknowledgeSameProvider ?? false,
       ...(options.preview ? {} : { replaceDocumentIds })
     };
     if (this.scopeMode === 'comparison') {
-      // Sent only when named, so a request without a reference is unchanged by it.
-      const reference = this.referenceEntryKey;
-      return {
-        ...base, subjectKey: '', scope: BenchmarkReportScope.Comparison, coveredEntryKeys: [...chosen], ...tail,
-        ...(reference !== null ? { referenceEntryKey: reference } : {})
-      };
+      return comparisonReportPackRequest(context, chosen, this.referenceEntryKey, tail);
     }
     const subjects = options.layout
       ? [chosen[0]]
@@ -1472,7 +1518,7 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
     if (subjects.length === 0) {
       return null;
     }
-    return { ...base, subjectKey: subjects[0], scope: BenchmarkReportScope.Model, subjectKeys: subjects, ...tail };
+    return { ...reportPackRequestBase(context), subjectKey: subjects[0], scope: BenchmarkReportScope.Model, subjectKeys: subjects, ...tail };
   }
 
   // -------------------------------------------------------------------------------------------
@@ -1480,8 +1526,9 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   // -------------------------------------------------------------------------------------------
 
   /**
-   * Asks for the preview after the debounce. Changing the scope or the models lists the documents
-   * afresh; changing the writer or the reference keeps the list and estimates again.
+   * Asks for the preview after the debounce; while the writer list is loading, after it arrives
+   * instead. Changing the scope or the models lists the documents afresh; changing the writer or the
+   * reference keeps the list and estimates again.
    */
   schedulePreview(): void {
     const request = this.buildRequest({ preview: true });
@@ -1490,7 +1537,13 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
       this.previewListSignature = null;
     }
     this.previewError = null;
-    if (!request || this.destroyed) {
+    this.previewAwaitingWriters = false;
+    if (request && this.writersLoading && !this.destroyed) {
+      this.latestTicket = null;
+      this.previewQueue.next(null);
+      this.previewAwaitingWriters = true;
+      this.previewPending = true;
+    } else if (!request || this.destroyed) {
       this.latestTicket = null;
       this.previewQueue.next(null);
       this.previewPending = false;
@@ -2352,9 +2405,13 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
   // Writers
   // -------------------------------------------------------------------------------------------
 
+  /** Loads the writers; a preview asked for meanwhile is sent when they arrive, or when they fail. */
   private loadWriters(): void {
     this.writersLoading = true;
     this.writersError = null;
+    if (this.previewPending && this.latestTicket !== null) {
+      this.schedulePreview();
+    }
     this.writersSub?.unsubscribe();
     this.writersSub = this.adminService.getSystemConfigs().subscribe({
       next: configs => {
@@ -2362,11 +2419,17 @@ export class ReportPackPanelComponent implements OnInit, OnDestroy {
         this.writersLoaded = true;
         this.writers = (configs ?? []).filter(c => (c.modelRole & 4) === 4 && c.hasApiKey && c.isEnabled);
         this.applyRememberedWriter();
+        if (this.previewAwaitingWriters) {
+          this.schedulePreview();
+        }
         this.cdr.markForCheck();
       },
       error: () => {
         this.writersLoading = false;
         this.writersError = 'The report writers could not be loaded.';
+        if (this.previewAwaitingWriters) {
+          this.schedulePreview();
+        }
         this.cdr.markForCheck();
       }
     });

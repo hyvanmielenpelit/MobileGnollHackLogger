@@ -1,6 +1,8 @@
 import { DebugElement } from '@angular/core';
-import { ComponentFixture } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { HttpTestingController } from '@angular/common/http/testing';
 import { By } from '@angular/platform-browser';
+import { REPORT_PACK_STORAGE_KEY, initialComparisonPreviewRequest } from '../report-pack/report-pack-panel.component';
 import { ComparisonFigureCard, ModelComparisonComponent } from './model-comparison.component';
 import { MAX_PLOTTED_ENTRIES, P1_STACK_BREAKPOINT_PX, directLabelPlugin } from './model-comparison-charts';
 import { DEFAULT_FIGURE_STYLE } from './figure-style';
@@ -1205,5 +1207,68 @@ describe('ModelComparisonComponent', () => {
     expect(component.canGoNext).toBe(true);
     expect(component.nextBlockedReason).toBe('');
     expect(fixture.debugElement.query(By.css('.mc-wizard-blocked'))).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Step 3's first preview, sent from step 2
+  // -------------------------------------------------------------------------------------------
+
+  describe('the step 3 preview sent ahead of the panel', () => {
+    const PREVIEW_URL = '/api/admin/benchmark/report-packs/preview';
+
+    it('is sent once when the comparison arrives, with the panel\'s first request, and again only for a new body', () => {
+      const http = TestBed.inject(HttpTestingController);
+      const dto = buildDto(comparableSet(3));
+      render(dto);
+
+      const sent = http.expectOne(PREVIEW_URL);
+      expect(sent.request.method).toBe('POST');
+      expect(sent.request.body).toEqual(initialComparisonPreviewRequest(component.reportPackContext!, {}));
+      expect(sent.request.body.writerModelConfigurationId).toBe(0);
+      sent.flush({});
+
+      // A recompute of the same entries asks the same: nothing more is sent.
+      fixture.componentRef.setInput('comparison', { ...dto });
+      fixture.detectChanges();
+      http.expectNone(PREVIEW_URL);
+
+      // Other entries are another request.
+      fixture.componentRef.setInput('comparison', buildDto(comparableSet(4)));
+      fixture.detectChanges();
+      expect(http.expectOne(PREVIEW_URL).request.body.coveredEntryKeys).toEqual(['run:1', 'run:2', 'run:3', 'run:4']);
+    });
+
+    it('is not sent once step 3 has been opened', () => {
+      const http = TestBed.inject(HttpTestingController);
+      render(buildDto(comparableSet(3)), 3);
+      expect(component.visited3).toBe(true);
+      // Sent when the comparison arrived, before step 3 opened.
+      http.expectOne(PREVIEW_URL);
+
+      fixture.componentRef.setInput('comparison', buildDto(comparableSet(4)));
+      fixture.detectChanges();
+      http.expectNone(PREVIEW_URL);
+    });
+
+    it('is not sent when step 3 opens on per-model documents', () => {
+      localStorage.setItem(REPORT_PACK_STORAGE_KEY, JSON.stringify({ documentScope: 'model' }));
+      const http = TestBed.inject(HttpTestingController);
+      render(buildDto(comparableSet(3)));
+
+      http.expectNone(PREVIEW_URL);
+    });
+
+    it('changes nothing on screen when it fails', () => {
+      const http = TestBed.inject(HttpTestingController);
+      render(buildDto(comparableSet(3)));
+      const host = fixture.nativeElement as HTMLElement;
+      const before = (host.textContent ?? '').replace(/\s+/g, ' ');
+
+      http.expectOne(PREVIEW_URL).flush({ error: 'Down.' }, { status: 500, statusText: 'Server Error' });
+      fixture.detectChanges();
+
+      expect((host.textContent ?? '').replace(/\s+/g, ' ')).toBe(before);
+      expect(component.step).toBe(2);
+    });
   });
 });

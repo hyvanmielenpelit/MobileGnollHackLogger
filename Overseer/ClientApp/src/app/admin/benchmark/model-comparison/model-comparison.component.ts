@@ -186,7 +186,8 @@ import {
   BenchmarkReportPackJobDto,
   ReportDocumentChartLayout
 } from '../../../services/admin-benchmark.service';
-import { ReportPackContext, ReportPackPanelComponent } from '../report-pack/report-pack-panel.component';
+import { ReportPackContext, ReportPackPanelComponent, initialComparisonPreviewRequest } from '../report-pack/report-pack-panel.component';
+import { MIN_COMPARISON_DOCUMENT_ENTRIES } from '../report-pack/comparison-model-options';
 import type { DocumentChartsComposer } from '../report-pack/report-chart-layout-preview';
 import {
   ComposedReportChart,
@@ -1073,6 +1074,7 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     if (!change.firstChange) {
       this.applyComparisonToStep(change.previousValue as BenchmarkModelComparisonDto | null);
     }
+    this.prefetchReportPackPreview();
   }
 
   ngAfterViewInit(): void {
@@ -1153,6 +1155,8 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     this.cancelScheduledStyle();
     this.cancelScheduledTableMeasure();
     this.teardownAll();
+    this.reportPackPrefetchSub?.unsubscribe();
+    this.reportPackPrefetchSub = null;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -2138,6 +2142,9 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
   private publishQueue: Promise<unknown> = Promise.resolve();
   private pendingPublishes = 0;
   private reportPackContextCache: { comparison: BenchmarkModelComparisonDto; basis: string; context: ReportPackContext } | null = null;
+  /** The body of the step 3 preview last sent ahead of the panel, as JSON. */
+  private reportPackPrefetchSignature: string | null = null;
+  private reportPackPrefetchSub: Subscription | null = null;
   private documentsContextCache: {
     keys: string;
     ids: string;
@@ -2312,6 +2319,30 @@ export class ModelComparisonComponent implements OnInit, OnChanges, AfterViewIni
     };
     this.reportPackContextCache = { comparison, basis, context };
     return context;
+  }
+
+  /**
+   * Sends the step 3 panel's first preview request once per body while the panel does not exist yet:
+   * nothing while step 3 cannot open, for too few models to cover, or under a stored One model at a
+   * time scope. The answer is not read and an error changes nothing.
+   */
+  private prefetchReportPackPreview(): void {
+    if (this.visited3 || !this.isStepReachable(3)) {
+      return;
+    }
+    const context = this.reportPackContext;
+    const request = context ? initialComparisonPreviewRequest(context) : null;
+    if (!request || (request.coveredEntryKeys?.length ?? 0) < MIN_COMPARISON_DOCUMENT_ENTRIES) {
+      return;
+    }
+    const signature = JSON.stringify(request);
+    if (signature === this.reportPackPrefetchSignature) {
+      return;
+    }
+    this.reportPackPrefetchSignature = signature;
+    this.reportPackPrefetchSub?.unsubscribe();
+    // Warms the server's step 3 preview cache.
+    this.reportPackPrefetchSub = this.benchmarkService.previewReportPack(request).subscribe({ error: () => undefined });
   }
 
   /**

@@ -79,7 +79,7 @@ public static partial class BenchmarkReportPackPrompt
         Line(sb, "- Never quote the questions, rubrics, answers or grader comments: no run of eight words may match them. Describe a question by its topic.");
         Line(sb, "- Never name a model, provider or product. Never call a difference significant, statistically anything, reliably better or worse, or say a model clearly outperforms another; say only whether intervals overlap, or whether a paired interval excludes zero.");
         Line(sb, "- A sentence ranking {{subject}} against a peer whose interval overlaps it says that the intervals overlap or that the order is not established; where that peer's pairedExcludesZero fact is true, it says instead that on the same questions the higher-scoring model scored higher on average and that the paired interval excludes zero. No hype or filler words.");
-        Line(sb, "- A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after; never put it after 'no' or make it the object of 'made'.");
+        Line(sb, "- A count token already says what it counts, as in 'N of M answers without a tool call': write it as a noun phrase and never repeat its words beside it, before or after, and never move them into an opening phrase before the model, such as 'On tool calls,'; never put it after 'no' or make it the object of 'made'.");
         Line(sb, "- No headings, tables or HTML inside any text. Keep the word and item limits.");
         return sb.ToString();
     }

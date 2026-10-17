@@ -1756,9 +1756,31 @@ public static class BenchmarkReportPackValidator
         // Rule 39: the writer's own words repeat what a count token already says it counts.
         foreach (var (key, display, repeated) in RepeatedCountWords(ctx, text))
         {
+            string model = CountModelToken(ctx, key) ?? "the model";
+            string opening = repeated.Any(w => w.StartsWith("tool", StringComparison.OrdinalIgnoreCase))
+                ? "an opening phrase such as 'On tool calls,'"
+                : "an opening phrase before the model";
             Issue(notes, CountRepetitionRule, location,
-                $"{{{{{key}}}}} already prints '{BenchmarkReportFormat.CountQualifier(display)}'; remove '{string.Join("', '", repeated)}' from beside it: write the token as a noun phrase and never repeat its words.");
+                $"{{{{{key}}}}} already prints '{BenchmarkReportFormat.CountQualifier(display)}', so '{string.Join("', '", repeated)}' {(repeated.Count == 1 ? "says" : "say")} it again. "
+                + $"Write it as '{model} had {{{{{key}}}}}', and leave those words out of the whole sentence: not before the model, not in {opening}, and not after the token.");
         }
+    }
+
+    /// <summary>
+    /// Rule 39: the model token a rewrite of <paramref name="key"/> leads with: <c>{{model:X}}</c> for a comparison's
+    /// <c>model.X.*</c> fact, <c>{{peer:X}}</c> for a per-model sheet's <c>peer.X.*</c> fact and <c>{{subject}}</c> for its
+    /// other facts; null where no model token fits.
+    /// </summary>
+    private static string? CountModelToken(Context ctx, string key)
+    {
+        var parts = key.Split('.');
+        bool prefixed = parts.Length > 2 && ctx.PeerLetters.Contains(parts[1]);
+        if (ctx.Comparison)
+        {
+            return prefixed && parts[0] == "model" ? "{{model:" + parts[1] + "}}" : null;
+        }
+        if (prefixed && parts[0] == "peer") return "{{peer:" + parts[1] + "}}";
+        return ctx.ChatConsistency ? null : "{{" + RootCauseEngine.SubjectToken + "}}";
     }
 
     /// <summary>
@@ -1767,6 +1789,8 @@ public static class BenchmarkReportPackValidator
     /// <see cref="CountRepetitionWordsAfter"/> after it, in the same sentence; with the token's display and the writer's
     /// repeated words. A content word has four letters or more, is no word of <see cref="CountRepetitionStopWords"/> and no
     /// counted noun, and two words match when one's first five letters begin the other's (<c>tools</c>, <c>tool</c>).
+    /// The repetition belongs to the sentence, so every other count token of that sentence with the same qualifier is
+    /// returned too, with the same repeated words; tokens come in sentence order.
     /// </summary>
     private static List<(string Key, string Display, List<string> Repeated)> RepeatedCountWords(Context ctx, string? text)
     {
@@ -1794,6 +1818,7 @@ public static class BenchmarkReportPackValidator
         foreach (string sentence in SentenceSplitRegex.Split(masked))
         {
             var words = CountRepetitionWordRegex.Matches(sentence).Select(m => m.Value).ToList();
+            var counts = new List<(string Key, string Display, string Qualifier, List<string> Repeated)>();
             for (int i = 0; i < words.Count; i++)
             {
                 var placeholder = TokenPlaceholderRegex.Match(words[i]);
@@ -1801,7 +1826,8 @@ public static class BenchmarkReportPackValidator
                 string key = tokens[int.Parse(placeholder.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture)];
                 string? display = ctx.FactDisplay(key)?.Trim();
                 if (display == null || !CountValuedRegex.IsMatch(display)) continue;
-                var own = BenchmarkReportFormat.CountQualifier(display)
+                string qualifier = BenchmarkReportFormat.CountQualifier(display);
+                var own = qualifier
                     .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)
                     .Select(w => w.Trim(',', ';', '.', '(', ')'))
                     .Where(Content)
@@ -1815,7 +1841,20 @@ public static class BenchmarkReportPackValidator
                     .Where(w => Content(w) && own.Any(q => Same(q, w)))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
-                if (repeated.Count > 0) found.Add((key, display, repeated));
+                counts.Add((key, display, qualifier, repeated));
+            }
+
+            // A count token of the same qualifier as a flagged one shares its repeated words.
+            foreach (var count in counts)
+            {
+                var repeated = count.Repeated.Count > 0
+                    ? count.Repeated
+                    : counts
+                        .Where(c => c.Repeated.Count > 0 && string.Equals(c.Qualifier, count.Qualifier, StringComparison.Ordinal))
+                        .SelectMany(c => c.Repeated)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                if (repeated.Count > 0) found.Add((count.Key, count.Display, repeated));
             }
         }
         return found;

@@ -1166,6 +1166,209 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(0, h.Provider.Calls);
     }
 
+    [Fact]
+    public async Task ComparisonPreviews_OfOneKey_ShareOnePreparation_AndTheSecondIsLoggedAsJoined()
+    {
+        await using var h = await Harness.CreateAsync();
+        using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
+        var cache = new BenchmarkReportPackPreviewCache(memory);
+        var gate = new PreparationGate();
+        cache.BeforePrepare = gate.WaitAsync;
+        var logger = new RecordingLogger();
+        await using var otherDb = new ApplicationDbContext(h.Options);
+
+        var first = h.Controller(previewCache: cache, logger: logger).Preview(h.ComparisonRequest(), CancellationToken.None);
+        await gate.Entered.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        var second = h.Controller(previewCache: cache, db: otherDb, logger: logger)
+            .Preview(h.ComparisonRequest(writerId: h.SameProvider.Id), CancellationToken.None);
+        await UntilAsync(() => cache.JoinedWaiters == 1, "The second preview never joined the first one's preparation.");
+        gate.Open();
+
+        var previews = (await Task.WhenAll(first, second))
+            .Select(r => (BenchmarkReportPackPreviewDto)Assert.IsType<OkObjectResult>(r).Value!)
+            .ToList();
+        Assert.All(previews, p => Assert.Null(p.Refusal));
+        Assert.Equal(previews[0].Estimates.Select(e => e.PromptChars), previews[1].Estimates.Select(e => e.PromptChars));
+        Assert.Contains("same provider", previews[1].SameProviderWarning);
+        Assert.Equal(1, gate.Count);
+        Assert.Equal(1, memory.Count);
+        Assert.Equal(0, cache.InFlightCount);
+        Assert.Equal(new[] { false, true }, logger.Values("Joined").Cast<bool>().OrderBy(j => j));
+        Assert.Equal(new object?[] { "miss", "miss" }, logger.Values("CacheResult"));
+        Assert.Equal(0, h.Provider.Calls);
+    }
+
+    [Fact]
+    public async Task AnAbortedComparisonPreview_Is499_ItsPreparationGoesOn_AndTheNextPreviewIsACacheHit()
+    {
+        await using var h = await Harness.CreateAsync();
+        using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
+        var cache = new BenchmarkReportPackPreviewCache(memory);
+        var gate = new PreparationGate();
+        cache.BeforePrepare = gate.WaitAsync;
+        var logger = new RecordingLogger();
+
+        using var abort = new CancellationTokenSource();
+        var aborted = h.Controller(previewCache: cache, logger: logger).Preview(h.ComparisonRequest(), abort.Token);
+        await gate.Entered.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        abort.Cancel();
+        Assert.Equal(499, Assert.IsType<StatusCodeResult>(await aborted).StatusCode);
+        Assert.Equal(0, memory.Count);
+
+        // The preparation was never the request's to cancel: it finishes and stores its entry.
+        gate.Open();
+        await UntilAsync(() => cache.InFlightCount == 0, "The aborted preview's preparation never finished.");
+        Assert.Equal(1, memory.Count);
+
+        var next = (BenchmarkReportPackPreviewDto)Assert.IsType<OkObjectResult>(
+            await h.Controller(previewCache: cache, logger: logger).Preview(h.ComparisonRequest(), CancellationToken.None)).Value!;
+        Assert.Null(next.Refusal);
+        Assert.NotEmpty(next.Estimates);
+        Assert.Equal(1, gate.Count);
+        Assert.Equal("hit", (string?)logger.Values("CacheResult").Last());
+    }
+
+    [Fact]
+    public async Task AReferenceRefusal_ReachesEveryWaiterOfThePreparation_AndIsNotCached()
+    {
+        await using var h = await Harness.CreateAsync();
+        using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
+        var cache = new BenchmarkReportPackPreviewCache(memory);
+        var gate = new PreparationGate();
+        cache.BeforePrepare = gate.WaitAsync;
+        await using var otherDb = new ApplicationDbContext(h.Options);
+        var covered = h.Seeded.RunIds.Take(2).Select(id => "run:" + id).ToList();
+        BenchmarkReportPackRequest Refused()
+        {
+            var request = h.ComparisonRequest(covered: covered);
+            request.ReferenceEntryKey = "run:" + h.Seeded.RunIds[2];
+            return request;
+        }
+
+        var first = h.Controller(previewCache: cache).Preview(Refused(), CancellationToken.None);
+        await gate.Entered.WaitAsync(TimeSpan.FromSeconds(30), TestContext.Current.CancellationToken);
+        var second = h.Controller(previewCache: cache, db: otherDb).Preview(Refused(), CancellationToken.None);
+        await UntilAsync(() => cache.JoinedWaiters == 1, "The second preview never joined the first one's preparation.");
+        gate.Open();
+
+        foreach (var result in await Task.WhenAll(first, second))
+        {
+            Assert.Equal(BenchmarkComparisonReportFacts.ReferenceRefusal, ErrorOf(Assert.IsType<BadRequestObjectResult>(result).Value));
+        }
+        Assert.Equal(1, gate.Count);
+        Assert.Equal(0, memory.Count);
+        Assert.Equal(0, cache.InFlightCount);
+
+        // Nothing was stored, so the next preview prepares again.
+        var third = await h.Controller(previewCache: cache).Preview(Refused(), CancellationToken.None);
+        Assert.Equal(BenchmarkComparisonReportFacts.ReferenceRefusal, ErrorOf(Assert.IsType<BadRequestObjectResult>(third).Value));
+        Assert.Equal(2, gate.Count);
+        Assert.Equal(0, memory.Count);
+    }
+
+    [Fact]
+    public async Task AComparisonPreviewPreparation_StoppedByItsTimeout_IsARefusal_AndFreesItsSlot()
+    {
+        await using var h = await Harness.CreateAsync(previewPreparationTimeoutSeconds: 0);
+        using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
+        var cache = new BenchmarkReportPackPreviewCache(memory);
+        int started = 0;
+        cache.BeforePrepare = async token =>
+        {
+            Interlocked.Increment(ref started);
+            await Task.Delay(Timeout.Infinite, token);
+        };
+
+        // Each preview starts a preparation of its own: the timed-out one left no slot to join.
+        for (int attempt = 1; attempt <= 2; attempt++)
+        {
+            var preview = (BenchmarkReportPackPreviewDto)Assert.IsType<OkObjectResult>(
+                await h.Controller(previewCache: cache).Preview(h.ComparisonRequest(), CancellationToken.None)).Value!;
+            Assert.Equal(BenchmarkReportPackPreviewCache.TimeoutRefusal(TimeSpan.Zero), preview.Refusal);
+            Assert.Empty(preview.Estimates);
+            Assert.Equal(attempt, Volatile.Read(ref started));
+            Assert.Equal(0, cache.InFlightCount);
+            Assert.Equal(0, memory.Count);
+        }
+        Assert.Equal(0, cache.JoinedWaiters);
+    }
+
+    [Fact]
+    public async Task APreviewPreparationThatThrows_ReachesItsWaiter_IsNotCached_AndFreesItsSlot()
+    {
+        using var memory = new MemoryCache(new MemoryCacheOptions { SizeLimit = 100 });
+        var cache = new BenchmarkReportPackPreviewCache(memory);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => cache.GetOrPrepareAsync(
+            "key", _ => throw new InvalidOperationException("The preparation failed."), TimeSpan.FromMinutes(1), CancellationToken.None));
+        Assert.Equal(0, cache.InFlightCount);
+        Assert.Equal(0, memory.Count);
+
+        var refused = await cache.GetOrPrepareAsync(
+            "key", _ => Task.FromResult(new BenchmarkReportPackPreviewPreparationResult { Refusal = "Refused." }),
+            TimeSpan.FromMinutes(1), CancellationToken.None);
+        Assert.Equal("Refused.", refused.Refusal);
+        Assert.False(refused.Joined);
+        Assert.False(refused.Cached);
+        Assert.Equal(0, cache.InFlightCount);
+        Assert.Equal(0, memory.Count);
+    }
+
+    /// <summary>
+    /// A <see cref="BenchmarkReportPackPreviewCache.BeforePrepare"/> that counts each preparation and
+    /// holds it until <see cref="Open"/>, or until the preparation's own token is canceled.
+    /// </summary>
+    private sealed class PreparationGate
+    {
+        private readonly TaskCompletionSource _entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _open = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+
+        /// <summary>Completes when the first preparation reaches the gate.</summary>
+        public Task Entered => _entered.Task;
+
+        public void Open() => _open.TrySetResult();
+
+        public async Task WaitAsync(CancellationToken ct)
+        {
+            Interlocked.Increment(ref _count);
+            _entered.TrySetResult();
+            await _open.Task.WaitAsync(ct);
+        }
+    }
+
+    /// <summary>Waits until <paramref name="condition"/> holds, failing with <paramref name="because"/> after 30 seconds.</summary>
+    private static async Task UntilAsync(Func<bool> condition, string because)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < deadline, because);
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+    }
+
+    /// <summary>The controller's log, each entry's structured values in order.</summary>
+    private sealed class RecordingLogger : ILogger<AdminBenchmarkReportPacksController>
+    {
+        private readonly ConcurrentQueue<IReadOnlyList<KeyValuePair<string, object?>>> _entries = new();
+
+        /// <summary>The value named <paramref name="name"/> of each entry that has one, in log order.</summary>
+        public List<object?> Values(string name)
+            => _entries.Where(e => e.Any(kv => kv.Key == name)).Select(e => e.First(kv => kv.Key == name).Value).ToList();
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (state is IReadOnlyList<KeyValuePair<string, object?>> values) _entries.Enqueue(values.ToList());
+        }
+    }
+
     /// <summary>The model catalog with every model's context window set to one size.</summary>
     private sealed class FixedWindowMetadata(int window) : ModelMetadataService
     {
@@ -1232,9 +1435,10 @@ public class BenchmarkReportPackServiceTests
         Assert.Equal(0, memory.Count);
         Assert.Equal(calls, h.Provider.Calls);
 
-        // The preview of the same request compares, on that context.
+        // The preview of the same request compares, on that context when it prepares in the request.
+        var inline = h.Controller(comparisonService: new BenchmarkModelComparisonService(disposed));
         await Assert.ThrowsAnyAsync<ObjectDisposedException>(
-            () => controller.Preview(h.ComparisonRequest(covered: all), CancellationToken.None));
+            () => inline.Preview(h.ComparisonRequest(covered: all), CancellationToken.None));
     }
 
     [Fact]
@@ -2590,7 +2794,7 @@ public class BenchmarkReportPackServiceTests
         /// <summary>The seeded runs' own configuration: provider, model id and thinking level.</summary>
         public SystemAiApiConfiguration SameConfiguration { get; private set; } = default!;
 
-        public static async Task<Harness> CreateAsync(int maxRunsPerHour = 100, int? maxOutputTokens = null)
+        public static async Task<Harness> CreateAsync(int maxRunsPerHour = 100, int? maxOutputTokens = null, int? previewPreparationTimeoutSeconds = null)
         {
             var options = BenchmarkRunExamTests.InMemoryOptions();
             var seeded = await BenchmarkRunExamTests.SeedSuiteWithRunsAsync(options);
@@ -2603,6 +2807,10 @@ public class BenchmarkReportPackServiceTests
             if (maxOutputTokens is int limit)
             {
                 settings["Benchmark:ReportPack:MaxOutputTokens"] = limit.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            if (previewPreparationTimeoutSeconds is int timeout)
+            {
+                settings["Benchmark:ReportPack:PreviewPreparationTimeoutSeconds"] = timeout.ToString(System.Globalization.CultureInfo.InvariantCulture);
             }
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
 
@@ -2834,19 +3042,45 @@ public class BenchmarkReportPackServiceTests
             return job;
         }
 
+        /// <summary>
+        /// A controller over <see cref="Db"/>, or over <paramref name="db"/> for a request running beside
+        /// another, with <see cref="ScopeFactory"/> for the preparations that leave the request's scope.
+        /// </summary>
         public AdminBenchmarkReportPacksController Controller(
             ModelMetadataService? metadata = null, BenchmarkReportPackPreviewCache? previewCache = null,
-            BenchmarkModelComparisonService? comparisonService = null) => new(
-            Db,
-            Jobs,
-            new BenchmarkComplianceGuard(Configuration, Db),
-            comparisonService ?? new BenchmarkModelComparisonService(Db),
-            new ModelPricingService(new ModelMetadataService(), Db),
-            new EndpointPolicy(Configuration),
-            scopeFactory: null!,
-            Configuration,
-            modelMetadata: metadata,
-            previewCache: previewCache);
+            BenchmarkModelComparisonService? comparisonService = null, ApplicationDbContext? db = null,
+            ILogger<AdminBenchmarkReportPacksController>? logger = null)
+        {
+            var context = db ?? Db;
+            return new(
+                context,
+                Jobs,
+                new BenchmarkComplianceGuard(Configuration, context),
+                comparisonService ?? new BenchmarkModelComparisonService(context),
+                new ModelPricingService(new ModelMetadataService(), context),
+                new EndpointPolicy(Configuration),
+                ScopeFactory,
+                Configuration,
+                modelMetadata: metadata,
+                previewCache: previewCache,
+                logger: logger);
+        }
+
+        private ServiceProvider? _scopeServices;
+
+        /// <summary>Scopes over the test database, each with its own context, comparison service and price cards.</summary>
+        public IServiceScopeFactory ScopeFactory => (_scopeServices ??= BuildScopeServices()).GetRequiredService<IServiceScopeFactory>();
+
+        private ServiceProvider BuildScopeServices()
+        {
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddScoped(_ => new ApplicationDbContext(Options));
+            services.AddSingleton(new ModelMetadataService());
+            services.AddScoped(sp => new ModelPricingService(sp.GetRequiredService<ModelMetadataService>(), sp.GetRequiredService<ApplicationDbContext>()));
+            services.AddScoped(sp => new BenchmarkModelComparisonService(sp.GetRequiredService<ApplicationDbContext>()));
+            return services.BuildServiceProvider();
+        }
 
         /// <summary>
         /// Stores a fixture document of <paramref name="audience"/> about the request's subject, keyed by
@@ -2951,7 +3185,11 @@ public class BenchmarkReportPackServiceTests
                 charts);
         }
 
-        public async ValueTask DisposeAsync() => await Db.DisposeAsync();
+        public async ValueTask DisposeAsync()
+        {
+            if (_scopeServices != null) await _scopeServices.DisposeAsync();
+            await Db.DisposeAsync();
+        }
     }
 
     /// <summary>

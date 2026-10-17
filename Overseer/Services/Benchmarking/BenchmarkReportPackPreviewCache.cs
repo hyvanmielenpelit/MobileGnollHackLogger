@@ -1,6 +1,7 @@
 namespace Overseer.Services.Benchmarking;
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -10,6 +11,8 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using MobileGnollHackLogger.Data;
 using Overseer.Models;
 using Overseer.Services.Benchmarking.RootCause;
@@ -55,26 +58,74 @@ public sealed class BenchmarkReportPackPreviewEntry
 }
 
 /// <summary>
+/// The outcome of one comparison-scope preview preparation run by
+/// <see cref="BenchmarkReportPackPreviewCache.GetOrPrepareAsync"/>: the entry, or the refusal instead.
+/// </summary>
+public sealed record BenchmarkReportPackPreviewPreparationResult
+{
+    public BenchmarkReportPackPreviewEntry? Entry { get; init; }
+    public string? Refusal { get; init; }
+
+    /// <summary>The comparison's entries that are not Excluded; null when the comparison could not be computed.</summary>
+    public int? ComparableEntryCount { get; init; }
+
+    /// <summary>A refusal of the covered models, the reference or the preparation, shown with the comparison's other covered sets.</summary>
+    public bool CoveredRefusal { get; init; }
+
+    public long CompareMs { get; init; }
+    public long PrepareMs { get; init; }
+    public BenchmarkReportPackPrepareTimings? Timings { get; init; }
+
+    /// <summary>The waiter joined a preparation another request started.</summary>
+    public bool Joined { get; init; }
+
+    /// <summary>The entry was already in the cache; nothing was prepared.</summary>
+    public bool Cached { get; init; }
+}
+
+/// <summary>
 /// The Report Pack preview's preparations (<see cref="BenchmarkReportPackPreviewEntry"/>), kept for
 /// 15 minutes so a writer or checkbox change does not compute the comparison, the paired tests, the
 /// fact sheet and the prompts again. The key (<see cref="KeyAsync"/>) is a SHA-256 over the request
 /// without its writer, documents, acknowledgment and replacements, the settings the preparation reads,
 /// the code versions, and every changeable database value the comparison and the preparation read; an
 /// entry can still be up to 15 minutes stale for anything the key does not cover. A job always prepares
-/// fresh. A singleton over the global <see cref="IMemoryCache"/>, one size unit per entry.
+/// fresh. A singleton over the global <see cref="IMemoryCache"/>, one size unit per entry. A comparison-scope
+/// preparation (<see cref="GetOrPrepareAsync"/>) runs once per key at a time, and outlives the request
+/// that started it up to its timeout.
 /// </summary>
 public sealed class BenchmarkReportPackPreviewCache
 {
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(15);
 
+    /// <summary>The seconds a preparation started by <see cref="GetOrPrepareAsync"/> may take without <c>Benchmark:ReportPack:PreviewPreparationTimeoutSeconds</c>.</summary>
+    public const int DefaultPreparationTimeoutSeconds = 180;
+
     private const string KeyPrefix = "benchmark-report-pack-preview:";
 
     private readonly IMemoryCache _cache;
+    private readonly ILogger<BenchmarkReportPackPreviewCache> _logger;
 
-    public BenchmarkReportPackPreviewCache(IMemoryCache cache)
+    /// <summary>The preparations in flight, one per key.</summary>
+    private readonly ConcurrentDictionary<string, Lazy<Task<BenchmarkReportPackPreviewPreparationResult>>> _inFlight =
+        new(StringComparer.Ordinal);
+
+    private int _joinedWaiters;
+
+    public BenchmarkReportPackPreviewCache(IMemoryCache cache, ILogger<BenchmarkReportPackPreviewCache>? logger = null)
     {
         _cache = cache;
+        _logger = logger ?? NullLogger<BenchmarkReportPackPreviewCache>.Instance;
     }
+
+    /// <summary>Awaited at the start of each preparation with its timeout token; null outside tests.</summary>
+    internal Func<CancellationToken, Task>? BeforePrepare { get; set; }
+
+    /// <summary>How many waiters have joined a preparation already in flight.</summary>
+    internal int JoinedWaiters => Volatile.Read(ref _joinedWaiters);
+
+    /// <summary>The preparations in flight.</summary>
+    internal int InFlightCount => _inFlight.Count;
 
     public bool TryGet(string key, out BenchmarkReportPackPreviewEntry? entry)
         => _cache.TryGetValue(KeyPrefix + key, out entry) && entry != null;
@@ -87,6 +138,91 @@ public sealed class BenchmarkReportPackPreviewCache
             AbsoluteExpirationRelativeToNow = Lifetime,
             Size = 1
         });
+    }
+
+    /// <summary>The refusal of a preparation stopped by its timeout.</summary>
+    public static string TimeoutRefusal(TimeSpan timeout)
+        => $"The estimate took longer than {timeout.TotalSeconds.ToString("0.#", CultureInfo.InvariantCulture)} seconds to prepare and was stopped. Try again.";
+
+    /// <summary>
+    /// The entry of <paramref name="key"/> from the cache; else the result of the preparation in flight
+    /// for it; else the result of <paramref name="prepare"/>, started on a token canceled after
+    /// <paramref name="timeout"/>, never on <paramref name="requestToken"/>. An entry is stored; a
+    /// refusal, a timeout (<see cref="TimeoutRefusal"/>) and an exception reach every waiter and are not
+    /// stored. <paramref name="requestToken"/> cancels only this caller's wait: the preparation goes on
+    /// and stores its entry. The in-flight slot is freed when the preparation ends, whatever its outcome.
+    /// </summary>
+    public async Task<BenchmarkReportPackPreviewPreparationResult> GetOrPrepareAsync(
+        string key,
+        Func<CancellationToken, Task<BenchmarkReportPackPreviewPreparationResult>> prepare,
+        TimeSpan timeout,
+        CancellationToken requestToken)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(prepare);
+        if (TryGet(key, out var cached)) return CachedResult(cached!);
+
+        Lazy<Task<BenchmarkReportPackPreviewPreparationResult>> created = null!;
+        created = new Lazy<Task<BenchmarkReportPackPreviewPreparationResult>>(
+            () => Observed(Task.Run(() => PrepareCoreAsync(key, prepare, timeout, created))),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+        var slot = _inFlight.GetOrAdd(key, created);
+        bool joined = !ReferenceEquals(slot, created);
+        if (joined) Interlocked.Increment(ref _joinedWaiters);
+
+        var result = await slot.Value.WaitAsync(requestToken).ConfigureAwait(false);
+        return joined && !result.Joined ? result with { Joined = true } : result;
+    }
+
+    private static BenchmarkReportPackPreviewPreparationResult CachedResult(BenchmarkReportPackPreviewEntry entry)
+        => new() { Entry = entry, ComparableEntryCount = entry.ComparableEntryCount, Cached = true };
+
+    /// <summary>The task, its exception observed even when every waiter has stopped waiting; it is logged where it is thrown.</summary>
+    private static Task<BenchmarkReportPackPreviewPreparationResult> Observed(Task<BenchmarkReportPackPreviewPreparationResult> task)
+    {
+        task.ContinueWith(
+            static t => { _ = t.Exception; },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+        return task;
+    }
+
+    /// <summary>One preparation of <paramref name="key"/>, run once for <paramref name="slot"/> and its waiters.</summary>
+    private async Task<BenchmarkReportPackPreviewPreparationResult> PrepareCoreAsync(
+        string key,
+        Func<CancellationToken, Task<BenchmarkReportPackPreviewPreparationResult>> prepare,
+        TimeSpan timeout,
+        Lazy<Task<BenchmarkReportPackPreviewPreparationResult>> slot)
+    {
+        try
+        {
+            // An entry stored between the caller's cache read and its slot.
+            if (TryGet(key, out var stored)) return CachedResult(stored!);
+
+            using var timeoutSource = new CancellationTokenSource(timeout);
+            try
+            {
+                if (BeforePrepare is { } before) await before(timeoutSource.Token).ConfigureAwait(false);
+                var result = await prepare(timeoutSource.Token).ConfigureAwait(false);
+                if (result.Entry != null) Set(key, result.Entry);
+                return result;
+            }
+            catch (OperationCanceledException) when (timeoutSource.IsCancellationRequested)
+            {
+                _logger.LogWarning("Report Pack preview preparation stopped after its timeout of {Timeout}.", timeout);
+                return new BenchmarkReportPackPreviewPreparationResult { Refusal = TimeoutRefusal(timeout) };
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Report Pack preview preparation failed.");
+            throw;
+        }
+        finally
+        {
+            _inFlight.TryRemove(new KeyValuePair<string, Lazy<Task<BenchmarkReportPackPreviewPreparationResult>>>(key, slot));
+        }
     }
 
     /// <summary>
