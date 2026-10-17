@@ -1,5 +1,76 @@
 [
   {
+    "version": "1.3.0",
+    "date": "2026-10-17T19:15:57Z",
+    "summary": "A release focused on fair use, clearer costs and smoother model management: usage limits now explain themselves, every response shows what it really cost, and a model that is retired no longer leaves your chat stuck. Models and API keys have moved into Settings, and the Overseer loads faster.",
+    "changes": [
+      {
+        "type": "feature",
+        "text": "Added support for two new models: Claude 5.5 Haiku and Gemini 4 Argon."
+      },
+      {
+        "type": "feature",
+        "text": "When a model you use is retired or no longer offered by its provider, the Overseer now tells you so, suggests a replacement, and lets you switch to another model in a few clicks instead of failing with an error. Gemini 3.7 Flash has been retired."
+      },
+      {
+        "type": "improvement",
+        "text": "Your Models and API Keys pages now live under Settings, so all your personal options are in one place."
+      },
+      {
+        "type": "improvement",
+        "text": "The cost shown under each response now includes the work done by sub-agents the Overseer asked for help, and shows that part separately, so the figure reflects what the answer really cost."
+      },
+      {
+        "type": "improvement",
+        "text": "Long chats with Claude 5.5 Haiku now keep their history short enough to stay at the lower price tier, and costs above that tier are estimated correctly."
+      },
+      {
+        "type": "improvement",
+        "text": "Clear messages now explain when you reach a usage limit: a message that is too long (with a hint to attach long text as a file instead), too many messages in a short time, answers already being generated in other chats, or today's AI usage limit, which resets at 00:00 UTC."
+      },
+      {
+        "type": "improvement",
+        "text": "If your access to the AI chat is blocked, the chat now shows a banner with the reason. You can still sign in, read and export your chats, change your settings and delete your account."
+      },
+      {
+        "type": "improvement",
+        "text": "The Privacy page has a new Acceptable use section that links to each AI provider's usage policy and explains what happens in case of misuse."
+      },
+      {
+        "type": "improvement",
+        "text": "Links to other websites in the Overseer's answers now open in a new tab, so following one never closes your chat."
+      },
+      {
+        "type": "improvement",
+        "text": "The Overseer starts up faster, because parts of the app are now loaded only when you open them."
+      },
+      {
+        "type": "improvement",
+        "text": "Percentages are now written the same way everywhere, for example 96%."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed the Models page losing or redrawing its list when it reloads."
+      },
+      {
+        "type": "fix",
+        "text": "Fixed oversized arrows in the Settings page's section index on narrow screens."
+      },
+      {
+        "type": "security",
+        "text": "Signing out everywhere, deleting your account or a change to your account's access now also takes effect in chats that are already open, not only on the next page load."
+      },
+      {
+        "type": "security",
+        "text": "Failed sign-in attempts from the game no longer lock your account; they only pause further attempts for a short while, so someone guessing your password cannot lock you out."
+      },
+      {
+        "type": "security",
+        "text": "Hardened the Overseer's tools, including source code and dumplog search, against misuse."
+      }
+    ]
+  },
+  {
     "version": "1.2.0",
     "date": "2026-10-06T16:41:08Z",
     "summary": "A major release that sharpens the Overseer's game advice and makes API keys safer to manage: keys are now verified before they are saved, administrators can share default keys and are warned by email when a key fails, and confidential chats behave exactly as their settings say. The AI Intelligence Benchmark grows into a full evaluation suite with multi-suite batteries, statistical model comparisons, exportable charts and AI-written PDF and Word reports.",
