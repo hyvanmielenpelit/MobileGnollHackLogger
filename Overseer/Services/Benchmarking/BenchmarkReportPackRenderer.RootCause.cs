@@ -12,8 +12,7 @@ using Overseer.Services.Benchmarking.RootCause;
 /// <summary>
 /// The Root Cause Analysis, in comparison scope (every covered model as an equal) and model scope (a subject
 /// with its peers, or a run or battery run on its own with its controls), answer first. The body: the summary
-/// (the headline, the main findings code states, each research question with the writer's answer, the models at a
-/// glance and how sure the grades can be); the key terms the summary and the conclusions use
+/// (the headline, the findings code ranks, the models at a glance and how sure the grades can be); the key terms the summary and the conclusions use
 /// (<see cref="RootCauseGlossary"/>), each term glossed once in the text, at its first use; why each model scored as
 /// it did; scope and design; the evidence on intelligence, speed and cost; the hypotheses per axis with the writer's
 /// own; the conclusions; the runs to make next; limitations and threats to validity. Then the lettered appendices:
@@ -24,7 +23,7 @@ using Overseer.Services.Benchmarking.RootCause;
 /// and, in the Markdown copy, the fact sheet. A table column that is zero or not recorded in every row is left out,
 /// and the table's note says so. Every table is computed by code from the stored
 /// <see cref="RootCauseResult"/> and facts; the writer's slots follow the code-rendered part of their section.
-/// The headline, the questions, the caveats, the writer's hypotheses and the conclusions stand in GitHub alert
+/// The headline, the caveats, the writer's hypotheses and the conclusions stand in GitHub alert
 /// callouts (<c>&gt; [!NOTE]</c> and the like), each opened by a bold label. Figures go at the four Root Cause
 /// Analysis anchors. Models are named, or lettered in an anonymized copy, except the subject of a per-model
 /// document and the controls, which are evidence and always named.
@@ -65,10 +64,6 @@ public static partial class BenchmarkReportPackRenderer
 
     private const string RcaControlsNote = "Controls' mean: the mean score of the controls that scored the question. Instrument-suspect: the "
         + "subject and every control scored below 50. Model-specific: the subject scored below 50 while every control scored 75 or above.";
-
-    private const string RcaAnswersBeforeFormat16 = "*Written before format 16; regenerate to get the answers.*";
-
-    private const string RcaAnswersBeforeSlots = "*Written before the answers were added; regenerate to get them.*";
 
     private static void RenderRootCauseAnalysis(StringBuilder sb, Context ctx)
     {
@@ -230,9 +225,8 @@ public static partial class BenchmarkReportPackRenderer
     // ---------------------------------------------------------------------------------------------
 
     /// <summary>
-    /// The headline as the key finding, then the main findings code states (<see cref="RcaFindings"/>); each research
-    /// question with its answer strength, its measured signals and the writer's answer; every model at a glance; and the grade words with the
-    /// cap the run counts put on them and, where it stands out, the grader-family gap.
+    /// The headline as the key finding, then the findings code ranks (<see cref="RcaFindings"/>); every model at a glance;
+    /// and the grade words with the cap the run counts put on them.
     /// </summary>
     private static void RcaSummary(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
@@ -246,31 +240,6 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "- " + finding);
         }
         if (findings.Count > 0) Line(sb);
-
-        var questions = (result?.Questions ?? new List<RootCauseQuestion>()).OrderBy(q => q.Number).ToList();
-        if (questions.Count > 0)
-        {
-            UseTerms(ctx, RootCauseGlossary.GradeWords, RootCauseGlossary.Hypothesis);
-            Heading(sb, "### The questions");
-            bool answered = BenchmarkReportSlots.RootCauseAnswerSlots.Any(s => ctx.Writer.Sections.ContainsKey(s));
-            foreach (var question in questions)
-            {
-                var lines = new List<string>
-                {
-                    "**Question.** **" + SheetText(ctx, question.Text) + "**",
-                    string.Empty,
-                    "*Answer strength: " + RcaAnswerStrength(question, token => RcaTokenName(ctx, token), result?.Hypotheses) + "*",
-                    string.Empty
-                };
-                if (RcaSignalsLine(ctx, question.Number) is string signals)
-                {
-                    lines.Add(signals);
-                    lines.Add(string.Empty);
-                }
-                lines.Add(RcaAnswer(ctx, question.Number, answered));
-                Callout(sb, "NOTE", lines);
-            }
-        }
 
         Heading(sb, "### At a glance");
         RcaGlance(sb, ctx, result);
@@ -291,161 +260,435 @@ public static partial class BenchmarkReportPackRenderer
             caveat.Add("The intelligence hypotheses that could lie in the model or in the instrument are capped at " + RootCauseGrades.WordWithGrade(limit)
                 + (string.IsNullOrWhiteSpace(result.ControlLimitReason) ? "." : ": " + OneLine(result.ControlLimitReason).TrimEnd('.') + "."));
         }
-        if (RcaFamilyGapSentence(ctx, result) is string familyGap)
+        if (RcaFamilyGap(result) != null)
         {
             caveat.Add(string.Empty);
-            caveat.Add(familyGap);
+            caveat.Add("The order between models of those two providers depends on the panel's balance; see What we found.");
         }
         Callout(sb, "WARNING", caveat);
     }
 
-    /// <summary>A no-tool share at or above this, for any model, is one of the Summary's findings.</summary>
+    /// <summary>The most bullets What we found prints under the key finding.</summary>
+    private const int RcaMaxFindings = 5;
+
+    /// <summary>A share of answers without tools at or above this is a finding.</summary>
     private const double RcaNoToolFindingShare = 0.20;
 
+    /// <summary>With two or more models, a model's share of answers without tools is a finding at this many times the other models' median.</summary>
+    private const double RcaNoToolContrast = 2.0;
+
+    /// <summary>Value for money is a finding when a model not established to differ from the cheapest costs this many times as much.</summary>
+    private const double RcaValueCostRatio = 3.0;
+
+    /// <summary>A higher thinking level is a finding when it takes or costs this many times as much as the lower.</summary>
+    private const double RcaThinkingRatio = 1.5;
+
+    /// <summary>The most thinking-level pairs, and the most notable findings, What we found prints.</summary>
+    private const int RcaMaxPerCandidate = 2;
+
+    /// <summary>The differences from the reference are a finding when one that is not established is at least this many index points.</summary>
+    private const double RcaReferenceGapPoints = 3.0;
+
     /// <summary>
-    /// Up to four sentences code builds from the stored figures, for What we found: which models the paired tests
-    /// against the reference establish above or below it; the cheapest model and how many others its Intelligence
-    /// Index interval overlaps; the dimension lowest for at least two thirds of the models; and each model that
-    /// answered 20% or more of its scored answers without a tool call. Empty without an analysis.
+    /// The kinds of notable finding What we found prints: not grader disagreement or a judge-dependent order, which the profile
+    /// flags and the grader family cover, and not answer length, which is no finding about quality, speed or cost.
+    /// </summary>
+    private static bool RcaNotableKind(string kind) => kind is BenchmarkNotableFindings.CheaperAndBetter or BenchmarkNotableFindings.FasterAndBetter
+        or BenchmarkNotableFindings.ThinkingLevelInversion or BenchmarkNotableFindings.LeaderMiss or BenchmarkNotableFindings.UnderdogWin
+        or BenchmarkNotableFindings.SharedFailure or BenchmarkNotableFindings.DifficultyInversion or BenchmarkNotableFindings.CriticalErrorConcentration
+        or BenchmarkNotableFindings.OutputTrouble or BenchmarkNotableFindings.ToolUseOutlier or BenchmarkNotableFindings.ProviderErrors;
+
+    /// <summary>One bullet of What we found, with the terms it uses.</summary>
+    private sealed record RcaFinding(string Text, IReadOnlyList<string> Terms);
+
+    /// <summary>A model of the analysis as What we found reads it; its time and cost are null where its figures are degraded.</summary>
+    private sealed record RcaModel(string Token, string? Letter, BenchmarkReportEntryFigures Entry, string? Provider, string? ModelId, string? ThinkingLevel)
+    {
+        public double? Time => Entry.SpeedDegraded ? null : Entry.ModelTimeP50Ms;
+
+        public double? Cost => Entry.CostDegraded ? null : Entry.CostPerQuestionUsd;
+    }
+
+    /// <summary>Whether one model is established to score higher or lower than another.</summary>
+    private enum RcaQuality
+    {
+        NotEstablished,
+        Higher,
+        Lower
+    }
+
+    /// <summary>
+    /// What we found's bullets, in the project's order and at most <see cref="RcaMaxFindings"/>: what bears on the Overseer chat
+    /// (answers without tools, a weakness every model shares), then the benchmark itself (the grader family), then model
+    /// selection (value for money, thinking levels, the notable findings, the differences from the reference). Each is printed
+    /// only when its gate passes, so none restates an extreme the At a glance table shows. Empty without an analysis.
     /// </summary>
     private static List<string> RcaFindings(Context ctx, RootCauseResult? result)
     {
         var findings = new List<string>();
         if (result == null) return findings;
 
-        if (ctx.Comparison && RcaReferenceFinding(ctx) is string reference) findings.Add(reference);
-        if (RcaCheapestFinding(ctx) is string cheapest) findings.Add(cheapest);
-        if (RcaLowestDimension(result.Profiles) is { } lowest && lowest.Count * 3 >= lowest.Of * 2)
+        void Add(RcaFinding? finding)
         {
-            UseTerms(ctx, RootCauseGlossary.Dimension);
-            findings.Add(lowest.Text);
+            if (finding == null || findings.Count >= RcaMaxFindings) return;
+            UseTerms(ctx, finding.Terms.ToArray());
+            findings.Add(finding.Text);
         }
 
-        var noTool = result.Evidence
-            .Where(e => e.ScoredAnswers > 0 && e.NoToolAnswers / (double)e.ScoredAnswers >= RcaNoToolFindingShare - 1e-9)
-            .ToList();
-        if (noTool.Count > 0)
-        {
-            UseTerms(ctx, RootCauseGlossary.NoToolAnswers);
-            string Share(RootCauseModelEvidenceSummary e)
-                => Inv(e.NoToolAnswers) + " of " + Inv(e.ScoredAnswers) + " scored answers (" + RootCauseHypotheses.Pct(e.NoToolAnswers / (double)e.ScoredAnswers) + ")";
-            findings.Add(noTool.Count == 1
-                ? RcaTokenName(ctx, noTool[0].Token) + " answered " + Share(noTool[0]) + " without any tool call."
-                : "Answers without any tool call: " + string.Join("; ", noTool.Select(e => RcaTokenName(ctx, e.Token) + ", " + Share(e))) + ".");
-        }
+        Add(RcaNoToolFinding(ctx, result));
+        Add(RcaSharedWeaknessFinding(ctx, result));
+        if (RcaFamilyGapSentence(ctx, result) is string family) Add(new RcaFinding(family, Array.Empty<string>()));
+        var value = RcaValueFinding(ctx);
+        Add(value?.Finding);
+        var levels = RcaThinkingLevelFindings(ctx);
+        foreach (var level in levels) Add(level.Finding);
+        if (!ctx.Comparison) return findings;
+
+        foreach (var notable in RcaNotableFindings(ctx, value?.Cheapest, levels.Select(l => (l.Low, l.High)).ToList())) Add(notable);
+        if (value == null || value.Cheapest.Letter != RcaReferenceLetter(ctx)) Add(RcaReferenceFinding(ctx));
         return findings;
     }
 
     /// <summary>
-    /// <c>Against the reference, Orion Max, the paired tests establish that Vega Pro scored higher and that Lyra Mini scored
-    /// lower; no other difference is established.</c>; null without a reference family or an intelligence test in it.
+    /// Whether <paramref name="x"/> is established to score higher or lower than <paramref name="y"/>, as the notable findings
+    /// and the tied ranks read it: by the pair's intelligence test where it establishes the order (in the all-pairs family, else
+    /// in the reference family), otherwise by Intelligence Index intervals that do not overlap.
     /// </summary>
-    private static string? RcaReferenceFinding(Context ctx)
+    private static RcaQuality RcaQualityVerdict(Context ctx, RcaModel x, RcaModel y)
+    {
+        if (x.Letter is string a && y.Letter is string b && RcaTestVerdict(RcaIntelligenceTest(ctx, a, b), a) is RcaQuality tested and not RcaQuality.NotEstablished)
+        {
+            return tested;
+        }
+        return RcaIntervalVerdict(x.Entry, y.Entry);
+    }
+
+    /// <summary>The order a paired test establishes for <paramref name="letter"/> against the other model of the pair.</summary>
+    private static RcaQuality RcaTestVerdict(BenchmarkReportPairedTest? test, string letter)
+    {
+        string? winner = test is not { Established: true } ? null : test.Favors == "First" ? test.FirstLetter : test.Favors == "Second" ? test.SecondLetter : null;
+        return winner == null ? RcaQuality.NotEstablished : winner == letter ? RcaQuality.Higher : RcaQuality.Lower;
+    }
+
+    /// <summary>The order the Intelligence Index intervals establish for <paramref name="x"/> against <paramref name="y"/>: where they do not overlap.</summary>
+    private static RcaQuality RcaIntervalVerdict(BenchmarkReportEntryFigures x, BenchmarkReportEntryFigures y)
+    {
+        if (x.QualityLower is double xLower && y.QualityUpper is double yUpper && xLower > yUpper) return RcaQuality.Higher;
+        if (x.QualityUpper is double xUpper && y.QualityLower is double yLower && xUpper < yLower) return RcaQuality.Lower;
+        return RcaQuality.NotEstablished;
+    }
+
+    /// <summary>The intelligence test made on the pair of <paramref name="a"/> and <paramref name="b"/>: in the all-pairs family, else in the reference family; null when neither made one.</summary>
+    private static BenchmarkReportPairedTest? RcaIntelligenceTest(Context ctx, string a, string b)
+    {
+        var families = ctx.Sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>();
+        foreach (var family in families.Where(f => f.Mode == "AllPairs").Concat(families.Where(f => f.Mode != "AllPairs")))
+        {
+            var tests = family.Measures.FirstOrDefault(m => m.Measure == BenchmarkPairedTests.IntelligenceMeasure);
+            if (tests == null || tests.NotTestedReason != null) continue;
+            var pair = tests.Pairs.FirstOrDefault(p => (p.FirstLetter == a && p.SecondLetter == b) || (p.FirstLetter == b && p.SecondLetter == a));
+            if (pair != null && pair.NotTestedReason == null && pair.AdjustedPValue != null) return pair;
+        }
+        return null;
+    }
+
+    /// <summary>The models of the analysis in the order <see cref="RcaRows"/> gives them.</summary>
+    private static List<RcaModel> RcaModels(Context ctx)
+        => RcaRows(ctx)
+            .Select(r => r.Peer is { } peer
+                ? new RcaModel(peer.Letter, peer.Letter, r.Entry, peer.Provider, peer.ModelId, peer.ThinkingLevel)
+                : new RcaModel(RootCauseEngine.SubjectToken, null, r.Entry, ctx.Sheet.SubjectProvider, ctx.Sheet.SubjectModelId, ctx.Sheet.SubjectThinkingLevel))
+            .ToList();
+
+    /// <summary>A ratio as What we found prints it: one decimal below 10 (<c>2.3</c>), whole from 10 (<c>67</c>).</summary>
+    private static string RcaTimes(double ratio)
+        => Math.Round(ratio, 1, MidpointRounding.AwayFromZero) < 10 ? BenchmarkReportFormat.OneDecimal(ratio) : BenchmarkReportFormat.Whole(ratio);
+
+    /// <summary>The median of <paramref name="values"/>; zero when there is none.</summary>
+    private static double RcaMedian(IEnumerable<double> values)
+    {
+        var sorted = values.OrderBy(v => v).ToList();
+        if (sorted.Count == 0) return 0;
+        int mid = sorted.Count / 2;
+        return sorted.Count % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2.0;
+    }
+
+    /// <summary>
+    /// Answers without tools: each model that answered at least 20% of its scored answers without a tool call and, with two or more
+    /// models, at least twice the other models' median share, contrasted with the most any other model did; one shared sentence when
+    /// every model is at or above 20%. A model on its own needs the 20% only. Null when no model qualifies.
+    /// </summary>
+    private static RcaFinding? RcaNoToolFinding(Context ctx, RootCauseResult result)
+    {
+        var models = result.Evidence.Where(e => e.ScoredAnswers > 0).ToList();
+        if (models.Count == 0) return null;
+        static double ShareOf(RootCauseModelEvidenceSummary e) => e.NoToolAnswers / (double)e.ScoredAnswers;
+        static bool Qualifies(double share) => share >= RcaNoToolFindingShare - 1e-9;
+        string Answered(RootCauseModelEvidenceSummary e)
+            => RcaTokenName(ctx, e.Token) + " answered " + Inv(e.NoToolAnswers) + " of " + Inv(e.ScoredAnswers) + " scored answers ("
+               + RootCauseHypotheses.Pct(ShareOf(e)) + ")";
+        var terms = new[] { RootCauseGlossary.NoToolAnswers };
+
+        if (models.Count == 1)
+        {
+            return Qualifies(ShareOf(models[0])) ? new RcaFinding(Answered(models[0]) + " without any tool call.", terms) : null;
+        }
+        if (models.All(e => Qualifies(ShareOf(e))))
+        {
+            double least = Math.Floor(models.Min(ShareOf) * 100 + 1e-9);
+            return new RcaFinding("Every model answered at least " + BenchmarkReportFormat.Percent(least) + " of its scored answers without any tool call.", terms);
+        }
+
+        var outliers = models
+            .Where(e => Qualifies(ShareOf(e))
+                        && ShareOf(e) >= RcaNoToolContrast * RcaMedian(models.Where(o => !ReferenceEquals(o, e)).Select(ShareOf)) - 1e-9)
+            .ToList();
+        if (outliers.Count == 0) return null;
+
+        int most = models.Except(outliers).Max(e => e.NoToolAnswers);
+        string others = most == 0 ? "no other model did so"
+            : most == 1 ? "no other model did so more than once"
+            : "no other model did so more than " + Inv(most) + " times";
+        return new RcaFinding(BenchmarkReportFormat.LetterList(outliers.Select(Answered).ToList()) + " without any tool call; " + others + ".", terms);
+    }
+
+    /// <summary>
+    /// A weakness every model shares: the dimension lowest for every model with four dimensions, or for at least two thirds of them
+    /// where the response-style rule marks at least two thirds of those (<see cref="RcaConciseStyle"/>), with the response style named
+    /// when the rule marks them; null otherwise.
+    /// </summary>
+    private static RcaFinding? RcaSharedWeaknessFinding(Context ctx, RootCauseResult result)
+    {
+        if (RcaLowestDimension(result.Profiles) is not { } lowest) return null;
+        bool style = lowest.Marked * 3 >= lowest.Count * 2 && RcaConciseStyle(ctx);
+        if (lowest.Count != lowest.Of && !(lowest.Count * 3 >= lowest.Of * 2 && style)) return null;
+
+        string text = BenchmarkReportFactLabels.Dimensions[lowest.Dimension].Name + " is the weakest dimension of " + Inv(lowest.Count) + " of "
+            + Inv(lowest.Of) + " models";
+        if (lowest.Gaps is string gaps) text += ", " + gaps + " points below Accuracy";
+        if (style) text += ", under the production chat's concise response style";
+        var terms = style ? new[] { RootCauseGlossary.Dimension, RootCauseGlossary.ResponseStyle } : new[] { RootCauseGlossary.Dimension };
+        return new RcaFinding(text + "; a pattern this wide does not tell the models apart.", terms);
+    }
+
+    /// <summary>
+    /// The sheet's response-style facts allow the concise style: it records none, or at least one is true. Under the detailed style
+    /// every one is false.
+    /// </summary>
+    private static bool RcaConciseStyle(Context ctx)
+    {
+        const string key = "style.responseStyleConflict";
+        var facts = ctx.Sheet.Facts.Where(f => f.Key == key || f.Key.EndsWith("." + key, StringComparison.Ordinal)).ToList();
+        return facts.Count == 0 || facts.Any(f => f.Available && BenchmarkReportPackPrompt.IsTrue(f));
+    }
+
+    /// <summary>The value-for-money bullet and the cheapest model it is about.</summary>
+    private sealed record RcaValue(RcaFinding Finding, RcaModel Cheapest);
+
+    /// <summary>
+    /// Value for money, with three or more priced models and one uniquely cheapest: the other priced models split by
+    /// <see cref="RcaQualityVerdict"/> against it into those established higher, each with its cost ratio, the rest, by count with the
+    /// dearest, and those established lower, each with its ratio. <c>Vega Pro costs the least, at $0.003 per question. Only Orion Max is
+    /// established to score higher, at 67 times its cost; the other 6 models, up to Lyra Max at 39 times its cost, are not; Lyra Mini
+    /// scores lower at 13 times its cost.</c> Null unless a model is established higher or one of the rest costs at least
+    /// <see cref="RcaValueCostRatio"/> times as much.
+    /// </summary>
+    private static RcaValue? RcaValueFinding(Context ctx)
+    {
+        var priced = RcaModels(ctx).Where(m => m.Cost.HasValue).ToList();
+        if (priced.Count < 3) return null;
+        double least = priced.Min(m => m.Cost!.Value);
+        if (least <= 0 || priced.Count(m => m.Cost == least) > 1) return null;
+        var cheapest = priced.First(m => m.Cost == least);
+
+        var higher = new List<RcaModel>();
+        var lower = new List<RcaModel>();
+        var rest = new List<RcaModel>();
+        foreach (var model in priced.Where(m => !ReferenceEquals(m, cheapest)).OrderBy(m => m.Cost!.Value))
+        {
+            switch (RcaQualityVerdict(ctx, model, cheapest))
+            {
+                case RcaQuality.Higher: higher.Add(model); break;
+                case RcaQuality.Lower: lower.Add(model); break;
+                default: rest.Add(model); break;
+            }
+        }
+        if (higher.Count == 0 && !rest.Any(m => m.Cost!.Value >= RcaValueCostRatio * least)) return null;
+
+        string Name(RcaModel m) => RcaTokenName(ctx, m.Token);
+        string Times(RcaModel m) => RcaTimes(m.Cost!.Value / least);
+        string Names(List<RcaModel> models) => BenchmarkReportFormat.LetterList(models.Select(Name).ToList());
+        string Ratios(List<RcaModel> models) => BenchmarkReportFormat.LetterList(models.Select(Times).ToList()) + " times its cost";
+
+        var parts = new List<string>();
+        if (higher.Count == 0)
+        {
+            parts.Add("No model is established to score higher");
+        }
+        else
+        {
+            parts.Add((rest.Count + lower.Count > 0 ? "Only " : string.Empty) + Names(higher) + (higher.Count == 1 ? " is" : " are")
+                + " established to score higher, at " + Ratios(higher));
+        }
+        if (rest.Count > 0)
+        {
+            var dearest = rest[^1];
+            string either = higher.Count == 0 ? " established to score lower either" : string.Empty;
+            parts.Add(rest.Count == 1
+                ? "the other model, " + Name(dearest) + " at " + Times(dearest) + " times its cost, is not" + either
+                : "the other " + Inv(rest.Count) + " models, up to " + Name(dearest) + " at " + Times(dearest) + " times its cost, are not" + either);
+        }
+        if (lower.Count > 0)
+        {
+            parts.Add(Names(lower) + (lower.Count == 1 ? " scores" : " score") + " lower at " + Ratios(lower));
+        }
+
+        string text = Name(cheapest) + " costs the least, at " + BenchmarkReportFormat.Usd(least) + " per question. " + string.Join("; ", parts) + ".";
+        return new RcaValue(new RcaFinding(text, Array.Empty<string>()), cheapest);
+    }
+
+    /// <summary>
+    /// Thinking levels: one model id at two thinking levels (<see cref="BenchmarkNotableFindings.SameModel(string, string, string, string)"/>,
+    /// ordered by <see cref="BenchmarkNotableFindings.CompareLevels"/>) where the higher level is not established above the lower and
+    /// takes or costs at least <see cref="RcaThinkingRatio"/> times as much; at most <see cref="RcaMaxPerCandidate"/> pairs, the largest
+    /// time ratio first, each with the letters of its lower and higher level.
+    /// </summary>
+    private static List<(RcaFinding Finding, string? Low, string? High)> RcaThinkingLevelFindings(Context ctx)
+    {
+        var models = RcaModels(ctx);
+        var pairs = new List<(RcaModel Low, RcaModel High, double? Time, double? Cost)>();
+        foreach (var low in models)
+        {
+            foreach (var high in models.Where(m => !ReferenceEquals(m, low)))
+            {
+                if (!BenchmarkNotableFindings.SameModel(low.Provider, low.ModelId, high.Provider, high.ModelId)) continue;
+                if (BenchmarkNotableFindings.CompareLevels(low.ThinkingLevel, high.ThinkingLevel) is not < 0) continue;
+                if (RcaQualityVerdict(ctx, high, low) == RcaQuality.Higher) continue;
+                double? time = high.Time is double ht && low.Time is double lt && lt > 0 ? ht / lt : null;
+                double? cost = high.Cost is double hc && low.Cost is double lc && lc > 0 ? hc / lc : null;
+                if (!(time >= RcaThinkingRatio) && !(cost >= RcaThinkingRatio)) continue;
+                pairs.Add((low, high, time, cost));
+            }
+        }
+
+        var found = new List<(RcaFinding, string?, string?)>();
+        foreach (var (low, high, time, cost) in pairs.OrderByDescending(p => p.Time ?? 0).ThenByDescending(p => p.Cost ?? 0).Take(RcaMaxPerCandidate))
+        {
+            string scores = high.Entry.QualityIndex is double hq && low.Entry.QualityIndex is double lq
+                ? " (" + BenchmarkReportFormat.Whole(hq) + " against " + BenchmarkReportFormat.Whole(lq) + ")"
+                : string.Empty;
+            var more = new List<string>();
+            if (time >= RcaThinkingRatio) more.Add("takes " + RcaTimes(time!.Value) + " times as long");
+            if (cost >= RcaThinkingRatio) more.Add("costs " + RcaTimes(cost!.Value) + " times as much");
+            string text = RcaTokenName(ctx, high.Token) + " is not established to score higher than " + RcaTokenName(ctx, low.Token)
+                + ", the same model at a lower thinking level" + scores + ", but " + string.Join(" and ", more) + ".";
+            found.Add((new RcaFinding(text, Array.Empty<string>()), low.Letter, high.Letter));
+        }
+        return found;
+    }
+
+    /// <summary>
+    /// The sheet's notable findings of a kind <see cref="RcaNotableKind"/> accepts, in their stored order, at most <see cref="RcaMaxPerCandidate"/>, as
+    /// <see cref="NotableText"/> prints them; a cheaper-and-better finding about <paramref name="cheapest"/>, which value for money
+    /// states, and a thinking-level inversion of a pair in <paramref name="levels"/>, which the thinking-level bullet states, left out.
+    /// </summary>
+    private static List<RcaFinding> RcaNotableFindings(Context ctx, RcaModel? cheapest, IReadOnlyList<(string? Low, string? High)> levels)
+    {
+        bool Stated(BenchmarkReportNotableFinding finding) => finding.Kind switch
+        {
+            BenchmarkNotableFindings.CheaperAndBetter => cheapest?.Letter is string letter && finding.Models.Contains(letter, StringComparer.Ordinal),
+            BenchmarkNotableFindings.ThinkingLevelInversion => levels.Any(l => l.Low != null && l.High != null && finding.Models.Count == 2
+                && finding.Models.Contains(l.Low, StringComparer.Ordinal) && finding.Models.Contains(l.High, StringComparer.Ordinal)),
+            _ => false
+        };
+
+        return (ctx.Sheet.NotableFindings ?? new List<BenchmarkReportNotableFinding>())
+            .OrderBy(f => f.Number)
+            .Where(f => RcaNotableKind(f.Kind) && !Stated(f))
+            .Take(RcaMaxPerCandidate)
+            .Select(f => new RcaFinding(NotableText(ctx, f), Array.Empty<string>()))
+            .ToList();
+    }
+
+    /// <summary>The reference model's letter: the reference family's, else the first model's; null without a reference family.</summary>
+    private static string? RcaReferenceLetter(Context ctx)
+    {
+        var family = (ctx.Sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>()).FirstOrDefault(f => f.Mode != "AllPairs");
+        return family == null ? null : family.ReferenceLetter ?? OrderedPeers(ctx.Sheet).FirstOrDefault()?.Letter ?? "A";
+    }
+
+    /// <summary>
+    /// The differences from the reference, where one that neither the paired tests nor the 95% intervals establish is at least
+    /// <see cref="RcaReferenceGapPoints"/> index points: <c>Against the reference model, Orion Max, the paired tests establish only Vega Pro
+    /// higher and Lyra Mini lower; the 95% intervals separate Nova Lite from it; the other 5 differences, up to 5 points, may be chance.</c>
+    /// Null otherwise, and without a reference family or an intelligence test in it.
+    /// </summary>
+    private static RcaFinding? RcaReferenceFinding(Context ctx)
     {
         var family = (ctx.Sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>()).FirstOrDefault(f => f.Mode != "AllPairs");
         var tests = family?.Measures.FirstOrDefault(m => m.Measure == BenchmarkPairedTests.IntelligenceMeasure);
         if (family == null || tests == null || tests.NotTestedReason != null || tests.Pairs.Count == 0) return null;
 
-        string reference = family.ReferenceLetter ?? OrderedPeers(ctx.Sheet).FirstOrDefault()?.Letter ?? "A";
+        string reference = RcaReferenceLetter(ctx)!;
+        var entries = RcaModels(ctx).Where(m => m.Letter != null).ToDictionary(m => m.Letter!, m => m.Entry, StringComparer.Ordinal);
         var above = new List<string>();
         var below = new List<string>();
+        var separated = new List<string>();
+        int open = 0;
+        double widest = 0;
         foreach (var pair in tests.Pairs.Select(p => ReferenceSecond(p, reference)).Where(p => p.SecondLetter == reference))
         {
-            if (pair.NotTestedReason != null || pair.AdjustedPValue == null || !pair.Established) continue;
-            if (pair.Favors == "First") above.Add(NameOfLetter(ctx, pair.FirstLetter));
-            else if (pair.Favors == "Second") below.Add(NameOfLetter(ctx, pair.FirstLetter));
+            if (pair.NotTestedReason != null || pair.AdjustedPValue == null) continue;
+            switch (RcaTestVerdict(pair, pair.FirstLetter))
+            {
+                case RcaQuality.Higher: above.Add(NameOfLetter(ctx, pair.FirstLetter)); continue;
+                case RcaQuality.Lower: below.Add(NameOfLetter(ctx, pair.FirstLetter)); continue;
+            }
+            if (entries.TryGetValue(pair.FirstLetter, out var own) && entries.TryGetValue(reference, out var theirs)
+                && RcaIntervalVerdict(own, theirs) != RcaQuality.NotEstablished)
+            {
+                separated.Add(NameOfLetter(ctx, pair.FirstLetter));
+                continue;
+            }
+            open++;
+            if (pair.Effect is double effect) widest = Math.Max(widest, Math.Abs(effect));
         }
+        if (open == 0 || widest < RcaReferenceGapPoints) return null;
 
-        UseTerms(ctx, RootCauseGlossary.PairedTest, RootCauseGlossary.ReferenceModel);
-        string lead = "Against the reference model, " + NameOfLetter(ctx, reference) + ", the paired tests ";
-        if (above.Count == 0 && below.Count == 0) return lead + "establish no difference in intelligence.";
-
-        var parts = new List<string>();
-        if (above.Count > 0) parts.Add("that " + BenchmarkReportFormat.LetterList(above) + " scored higher");
-        if (below.Count > 0) parts.Add("that " + BenchmarkReportFormat.LetterList(below) + " scored lower");
-        bool all = above.Count + below.Count == tests.Pairs.Count;
-        return lead + "establish " + string.Join(" and ", parts) + (all ? "." : "; no other difference is established.");
-    }
-
-    /// <summary>
-    /// <c>Vega Pro is the cheapest model, at $0.030 per question; the paired tests above establish that 2 of the 4 other
-    /// models differ from it in quality.</c> where a paired intelligence test covers the cheapest model, and otherwise
-    /// <c>Vega Pro is the cheapest model, at $0.030 per question, and its Intelligence Index interval overlaps those of 2 of
-    /// the other 4 models.</c>; null with fewer than two models with a cost, or without the cheapest model's interval.
-    /// </summary>
-    private static string? RcaCheapestFinding(Context ctx)
-    {
-        var rows = RcaRows(ctx);
-        var priced = rows.Where(r => !r.Entry.CostDegraded && r.Entry.CostPerQuestionUsd.HasValue).ToList();
-        if (priced.Count < 2) return null;
-
-        var cheapest = priced.OrderBy(r => r.Entry.CostPerQuestionUsd!.Value).First();
-        if (priced.Count(r => r.Entry.CostPerQuestionUsd == cheapest.Entry.CostPerQuestionUsd) > 1) return null;
-        if (cheapest.Entry.QualityLower is not double lower || cheapest.Entry.QualityUpper is not double upper) return null;
-
-        var others = rows.Where(r => !ReferenceEquals(r.Entry, cheapest.Entry) && r.Entry.QualityLower.HasValue && r.Entry.QualityUpper.HasValue).ToList();
-        if (others.Count == 0) return null;
-        int overlapping = others.Count(r => !(r.Entry.QualityLower!.Value > upper) && !(lower > r.Entry.QualityUpper!.Value));
-
-        string name = PlainName(ctx, cheapest.Peer);
-        string price = name + " is the cheapest model, at " + BenchmarkReportFormat.Usd(cheapest.Entry.CostPerQuestionUsd!.Value) + " per question";
-        if (ctx.Comparison && cheapest.Peer is { } peer && RcaCheapestPairedTests(ctx, peer.Letter) is { } paired)
+        var established = new List<string>();
+        if (above.Count > 0) established.Add(BenchmarkReportFormat.LetterList(above) + " higher");
+        if (below.Count > 0) established.Add(BenchmarkReportFormat.LetterList(below) + " lower");
+        var terms = new List<string> { RootCauseGlossary.PairedTest, RootCauseGlossary.ReferenceModel };
+        string text = "Against the reference model, " + NameOfLetter(ctx, reference) + ", the paired tests establish "
+            + (established.Count == 0 ? "no difference" : "only " + string.Join(" and ", established));
+        if (separated.Count > 0)
         {
-            UseTerms(ctx, RootCauseGlossary.PairedTest);
-            string which = paired.Tested == rows.Count - 1 ? " other models" : " models they compare it with";
-            return price + "; the paired tests" + (paired.Above ? " above" : string.Empty) + " establish "
-                + (paired.Differ == 0
-                    ? "that none of the " + Inv(paired.Tested) + which + " differs from it in quality."
-                    : "that " + Inv(paired.Differ) + " of the " + Inv(paired.Tested) + which + (paired.Differ == 1 ? " differs" : " differ") + " from it in quality.");
+            terms.Add(RootCauseGlossary.Interval95);
+            text += "; the 95% intervals separate " + BenchmarkReportFormat.LetterList(separated) + " from it";
         }
-
-        UseTerms(ctx, RootCauseGlossary.IntelligenceIndex, RootCauseGlossary.Interval95);
-        string overlap = overlapping == 0
-            ? "its Intelligence Index interval overlaps no other model's"
-            : "its Intelligence Index interval overlaps " + (overlapping == others.Count ? "those of all " + Inv(others.Count) + " other models"
-                : "those of " + Inv(overlapping) + " of the other " + Inv(others.Count) + " models");
-        return price + ", and " + overlap + ".";
+        bool other = established.Count + separated.Count > 0;
+        text += "; " + (open == 1
+            ? (other ? "the other difference" : "the difference") + ", of " + BenchmarkReportFormat.Whole(widest) + " points, may be chance."
+            : (other ? "the other " : "the ") + Inv(open) + " differences, up to " + BenchmarkReportFormat.Whole(widest) + " points, may be chance.");
+        return new RcaFinding(text, terms);
     }
 
-    /// <summary>
-    /// The paired intelligence tests that cover the model with <paramref name="letter"/>: from the reference family when it is
-    /// the reference (the tests <see cref="RcaReferenceFinding"/> reads, so they stand above), else from the all-pairs
-    /// family, else its one test against the reference. How many were tested and how many establish a difference; null
-    /// when none covers it.
-    /// </summary>
-    private static (int Tested, int Differ, bool Above)? RcaCheapestPairedTests(Context ctx, string letter)
-    {
-        var families = ctx.Sheet.PairedTests ?? new List<BenchmarkReportPairedFamily>();
-        var reference = families.FirstOrDefault(f => f.Mode != "AllPairs");
-        var allPairs = families.FirstOrDefault(f => f.Mode == "AllPairs");
-        string referenceLetter = reference?.ReferenceLetter ?? OrderedPeers(ctx.Sheet).FirstOrDefault()?.Letter ?? "A";
-        bool isReference = reference != null && referenceLetter == letter;
-
-        foreach (var family in isReference ? new[] { reference } : new[] { allPairs, reference })
-        {
-            var tests = family?.Measures.FirstOrDefault(m => m.Measure == BenchmarkPairedTests.IntelligenceMeasure);
-            if (tests == null || tests.NotTestedReason != null) continue;
-            var covering = tests.Pairs
-                .Where(p => (p.FirstLetter == letter || p.SecondLetter == letter) && p.NotTestedReason == null && p.AdjustedPValue != null)
-                .ToList();
-            if (covering.Count == 0) continue;
-            int differ = covering.Count(p => p.Established && p.Favors is "First" or "Second");
-            bool above = isReference && RcaReferenceFinding(ctx) != null;
-            return (covering.Count, differ, above);
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// For How sure are we?: the gap between the candidates of the two panel members' own providers under each member,
-    /// and their contrast, when the contrast's 95% interval excludes zero; null otherwise and on a result stored without
-    /// the family gaps. The providers are named unless the copy withholds them.
-    /// </summary>
-    private static string? RcaFamilyGapSentence(Context ctx, RootCauseResult? result)
+    /// <summary>The grader-family gap What we found states: the members' provider pair whose contrast's 95% interval excludes zero; null otherwise.</summary>
+    private static RootCauseFamilyGap? RcaFamilyGap(RootCauseResult? result)
     {
         var gap = result?.FamilyGaps?.FirstOrDefault(g => g.IsMemberProviderPair && !g.InsufficientData
             && g.Contrast is { Value: not null } contrast && contrast.ExcludesZero());
-        if (gap == null || gap.GapA.Value == null || gap.GapB.Value == null) return null;
+        return gap == null || gap.GapA.Value == null || gap.GapB.Value == null ? null : gap;
+    }
+
+    /// <summary>
+    /// For What we found: the gap between the candidates of the two panel members' own providers under each member, and their
+    /// contrast, when the contrast's 95% interval excludes zero (<see cref="RcaFamilyGap"/>); null otherwise and on a result stored
+    /// without the family gaps. The providers are named unless the copy withholds them.
+    /// </summary>
+    private static string? RcaFamilyGapSentence(Context ctx, RootCauseResult? result)
+    {
+        if (RcaFamilyGap(result) is not { } gap) return null;
 
         UseTerms(ctx, RootCauseGlossary.PanelMember, RootCauseGlossary.Interval95);
         bool named = !ProviderWithheld(ctx, gap.Provider1.Trim()) && !ProviderWithheld(ctx, gap.Provider2.Trim());
@@ -455,83 +698,6 @@ public static partial class BenchmarkReportPackRenderer
         return "Grader family: the quality gap of " + pair + " is " + RootCauseFacts.GapText(gap.GapA)
                + " under Panel member A and " + RootCauseFacts.GapText(gap.GapB) + " under Panel member B, a contrast of "
                + RootCauseFacts.GapText(gap.Contrast!) + ". The order between models of those two providers depends on the panel's balance.";
-    }
-
-    /// <summary>
-    /// A research question's measured signals, <c>*Measured signals:* …</c>, from its <c>rca.question.&lt;n&gt;.signals</c>
-    /// fact resolved as the writer's prose is; null before <see cref="SignalsLineFormatVersion"/> (in comparison scope
-    /// <see cref="ComparisonSignalsLineFormatVersion"/>), or when the fact is missing, unavailable or records none.
-    /// </summary>
-    private static string? RcaSignalsLine(Context ctx, int question)
-    {
-        int since = ctx.Comparison ? ComparisonSignalsLineFormatVersion : SignalsLineFormatVersion;
-        if (ctx.Document.ReportFormatVersion < since) return null;
-        string key = "rca.question." + Inv(question) + ".signals";
-        if (Fact(ctx, key) is not { Available: true } fact || string.Equals(fact.Display, "none recorded", StringComparison.Ordinal)) return null;
-        return "*Measured signals:* " + Prose(ctx, "{{" + key + "}}");
-    }
-
-    /// <summary>
-    /// A research question's answer strength, after <c>Answer strength: </c>: the grade with the comparative
-    /// hypotheses apart from the model's own within-model ones; the grade with every hypothesis together for a
-    /// result stored before engine version 4 or when no hypothesis is graded Low or higher; a note when none fired.
-    /// Question 1 with no comparative hypothesis graded Low or higher states its measured lead over the runner-up
-    /// (<see cref="RootCauseQuestion.Neighbor"/>, named by <paramref name="name"/>; unnamed in a result stored without
-    /// it) and whether that lead is established; question 4 answered from the price cards
-    /// (<see cref="RootCauseQuestion.PriceCard"/>) says so and cites its price effect, found among
-    /// <paramref name="hypotheses"/>.
-    /// </summary>
-    internal static string RcaAnswerStrength(
-        RootCauseQuestion question, Func<string, string>? name = null, IReadOnlyList<RootCauseHypothesis>? hypotheses = null)
-    {
-        ArgumentNullException.ThrowIfNull(question);
-        string grade = RootCauseGrades.WordWithGrade(question.Grade);
-        var within = question.WithinKeys ?? new List<string>();
-        string own = within.Count > 0 ? BenchmarkReportFormat.LetterList(within) : string.Empty;
-
-        if (question.Number == 1 && question.ComparativeKeys is { } lead && question.Grade == null && within.Count == 0
-            && question.OrderEstablished is bool established)
-        {
-            string over = question.Neighbor is string neighbor ? " over " + (name?.Invoke(neighbor) ?? neighbor) : string.Empty;
-            return "Measured lead" + over + ": " + (established ? "established" : "not established") + " — see its split; "
-                   + (lead.Count == 0 ? "no cause compared." : "no cause graded Low or higher, see " + BenchmarkReportFormat.LetterList(lead) + ".");
-        }
-
-        if (question.PriceCard && question.ComparativeKeys is { Count: > 0 } priced)
-        {
-            int low = RootCauseGrades.Rank(RootCauseGrades.Low);
-            string key = priced.FirstOrDefault(k => hypotheses?.FirstOrDefault(x => x.Key == k) is { PriceEffect: true } effect
-                                                    && RootCauseGrades.Rank(effect.Grade) >= low)
-                         ?? priced.FirstOrDefault(k => k.StartsWith("HC2.", StringComparison.Ordinal))
-                         ?? priced[0];
-            return RootCauseGrades.PriceCardWord + " — see " + key + (within.Count > 0 ? "; its own breakdown, see " + own : string.Empty) + ".";
-        }
-
-        if (question.HypothesisKeys.Count == 0) return "No hypothesis about this model fired — see its profile.";
-        if (question.ComparativeKeys is not { } comparative || question.Grade == null || (comparative.Count == 0 && !question.WithinOnly))
-        {
-            return grade + " — see " + BenchmarkReportFormat.LetterList(question.HypothesisKeys) + ".";
-        }
-
-        if (question.WithinOnly)
-        {
-            return grade + " — no hypothesis graded Low or higher compares it with the other models; its own breakdown, see "
-                   + own + ", says where its own time, cost or points go.";
-        }
-        return grade + " — against the other models, see " + BenchmarkReportFormat.LetterList(comparative)
-               + (within.Count > 0 ? "; its own breakdown, see " + own : string.Empty) + ".";
-    }
-
-    /// <summary>
-    /// The writer's answer to a research question; a note when it was not written, or when the writer output
-    /// holds no answer slot at all, as a document written before them does.
-    /// </summary>
-    private static string RcaAnswer(Context ctx, int number, bool answered)
-    {
-        string slot = BenchmarkReportSlots.RootCauseAnswerSlots[number - 1];
-        if (ctx.Writer.Sections.TryGetValue(slot, out var text) && !string.IsNullOrWhiteSpace(text)) return Prose(ctx, text);
-        if (answered || (ctx.Comparison && ctx.Document.ReportFormatVersion >= AnswerSlotsFormatVersion)) return "*Not written.*";
-        return ctx.Comparison ? RcaAnswersBeforeFormat16 : RcaAnswersBeforeSlots;
     }
 
     /// <summary>
@@ -847,10 +1013,11 @@ public static partial class BenchmarkReportPackRenderer
     /// (11.0 to 37.0 points below Accuracy), and at least 13 points below Accuracy for 8 of them.</c> The second clause counts
     /// the models the response-style rule (<see cref="BenchmarkChatTransfer.HasResponseStyleConflict"/>) marks, Completeness
     /// strictly lowest and at least 13 points below Accuracy, and is left out when it marks every one of them. With the
-    /// models counted and the models with all four dimensions; null with fewer than two such models, or when no dimension
-    /// is lowest for two of them.
+    /// models counted, the models with all four dimensions, the dimension's index, its gaps below Accuracy (null for
+    /// Accuracy itself) and the models the rule marks; null with fewer than two such models, or when no dimension is lowest
+    /// for two of them.
     /// </summary>
-    private static (string Text, int Count, int Of)? RcaLowestDimension(IReadOnlyList<RootCauseModelProfile> profiles)
+    private static (string Text, int Count, int Of, int Dimension, string? Gaps, int Marked)? RcaLowestDimension(IReadOnlyList<RootCauseModelProfile> profiles)
     {
         var complete = profiles
             .Where(p => p.Dimensions.Count == 4 && p.Dimensions.All(d => d.HasValue))
@@ -870,7 +1037,7 @@ public static partial class BenchmarkReportPackRenderer
         int count = lowest.Count();
         string name = BenchmarkReportFactLabels.Dimensions[lowest.Key].Name;
         string text = name + " is the lowest dimension for " + Inv(count) + " of " + Inv(complete.Count) + " models";
-        if (lowest.Key == 0) return (text + ".", count, complete.Count);
+        if (lowest.Key == 0) return (text + ".", count, complete.Count, lowest.Key, null, 0);
 
         double low = lowest.Min(x => x.Gap), high = lowest.Max(x => x.Gap);
         string gaps = BenchmarkReportFormat.OneDecimal(low) == BenchmarkReportFormat.OneDecimal(high)
@@ -878,16 +1045,13 @@ public static partial class BenchmarkReportPackRenderer
             : BenchmarkReportFormat.OneDecimal(low) + " to " + BenchmarkReportFormat.OneDecimal(high);
         text += " (" + gaps + " points below Accuracy)";
 
-        if (lowest.Key == 1)
+        int marked = lowest.Count(x => BenchmarkChatTransfer.HasResponseStyleConflict(false, x.Dimensions[0], x.Dimensions[1], x.Dimensions[2], x.Dimensions[3]));
+        if (lowest.Key == 1 && marked < count)
         {
-            int marked = lowest.Count(x => BenchmarkChatTransfer.HasResponseStyleConflict(false, x.Dimensions[0], x.Dimensions[1], x.Dimensions[2], x.Dimensions[3]));
-            if (marked < count)
-            {
-                text += ", and at least " + BenchmarkReportFormat.CompactDecimal(BenchmarkChatTransfer.LevelStepThreshold) + " points below Accuracy for "
-                        + (marked == 0 ? "none" : Inv(marked)) + " of them";
-            }
+            text += ", and at least " + BenchmarkReportFormat.CompactDecimal(BenchmarkChatTransfer.LevelStepThreshold) + " points below Accuracy for "
+                    + (marked == 0 ? "none" : Inv(marked)) + " of them";
         }
-        return (text + ".", count, complete.Count);
+        return (text + ".", count, complete.Count, lowest.Key, gaps, marked);
     }
 
     /// <summary>The paired-test family the body prints: the reference family, else the first.</summary>
@@ -1440,6 +1604,7 @@ public static partial class BenchmarkReportPackRenderer
 
     private static void RcaConclusions(StringBuilder sb, Context ctx, RootCauseResult? result)
     {
+        UseTerms(ctx, RootCauseGlossary.Hypothesis);
         Heading(sb, "## Conclusions");
         if (result == null || result.Axes.Count == 0)
         {

@@ -1110,7 +1110,9 @@ public class BenchmarkReportPackPromptTests
         Assert.StartsWith("- Rule 41, unavailable figures:", lines[11]);
         Assert.StartsWith("- Rule 42, next runs in code's order:", lines[12]);
         Assert.StartsWith("- Rule 43, one model's figure:", lines[13]);
-        Assert.Contains("{{rca.question.1.signals}}", lines[10]);
+        Assert.StartsWith("- Rule 40, what code prints: the conclusions never cite ", lines[10]);
+        Assert.DoesNotContain("rca.question.", lines[10]);
+        Assert.DoesNotContain("answers", lines[10]);
         Assert.Contains("{{rca.run.1.summary}} comes first", lines[12]);
         Assert.StartsWith("- Rule 3, digits:", lines[1]);
         Assert.StartsWith("- Rule 16, rankings", lines[2]);
@@ -1131,11 +1133,9 @@ public class BenchmarkReportPackPromptTests
     /// <summary>
     /// The fixture comparison's Root Cause Analysis prompt with every hypothesis graded Not supported except the
     /// first mechanism with a label (<c>Kept</c>), graded <paramref name="grade"/>; <c>Refuted</c> is the next
-    /// mechanism with a label. The sheet's research questions are replaced by <paramref name="questions"/>, each
-    /// with its status and, where given, its <c>orderEstablished</c> and <c>withinOnly</c> facts.
+    /// mechanism with a label.
     /// </summary>
-    private static (BenchmarkReportWriterPrompt Prompt, string Kept, string Refuted) RegradedRootCausePrompt(
-        string grade, params (int Number, string Status, bool? OrderEstablished, bool? WithinOnly)[] questions)
+    private static (BenchmarkReportWriterPrompt Prompt, string Kept, string Refuted) RegradedRootCausePrompt(string grade)
     {
         const string hypothesis = "rca.hypothesis.";
         const string notSupported = "NotSupported";
@@ -1156,21 +1156,12 @@ public class BenchmarkReportPackPromptTests
         string kept = mechanisms[0];
         string refuted = mechanisms[1];
 
-        var facts = sheet.Facts
-            .Where(f => !f.Key.StartsWith("rca.question.", StringComparison.Ordinal))
+        sheet.Facts = sheet.Facts
             .Select(f => IsGrade(f.Key)
                 ? NewFact(f.Key, System.Text.Json.Nodes.JsonValue.Create(f.Key == kept + "grade" ? grade : notSupported), Shown(f.Key == kept + "grade" ? grade : notSupported))
                 : f)
+            .OrderBy(f => f.Key, StringComparer.Ordinal)
             .ToList();
-        foreach (var q in questions)
-        {
-            string prefix = "rca.question." + q.Number.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".";
-            facts.Add(NewFact(prefix + "text", System.Text.Json.Nodes.JsonValue.Create("Why does this model stand where it does?"), "Why does this model stand where it does?"));
-            facts.Add(NewFact(prefix + "status", System.Text.Json.Nodes.JsonValue.Create(q.Status), q.Status));
-            if (q.OrderEstablished is bool order) facts.Add(NewFact(prefix + "orderEstablished", System.Text.Json.Nodes.JsonValue.Create(order), order ? "yes" : "no"));
-            if (q.WithinOnly is bool within) facts.Add(NewFact(prefix + "withinOnly", System.Text.Json.Nodes.JsonValue.Create(within), within ? "yes" : "no"));
-        }
-        sheet.Facts = facts.OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
 
         return (BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, built.Content!), kept, refuted);
     }
@@ -1195,69 +1186,6 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("'Part of the gap " + wording + " <what it is about, in your own words> ({{" + kept + "ref}}).'", rule33, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void TheRootCauseQuestions_SayWhenNoHypothesisAnswers_WhenTheOrderIsNotEstablished_AndWhenOnlyTheModelsOwnBreakdownAnswers()
-    {
-        const string noAnswer = "  no hypothesis answers this question:";
-        const string order = "  the order is not established: say so in the answer's first sentence.";
-        const string within = "  only hypotheses about this model's own breakdown answer it: say that they describe where its own time, cost or points go, not why it differs from the other models.";
-        var (prompt, _, _) = RegradedRootCausePrompt("Moderate",
-            (1, "Unknown", false, false),
-            (2, "Moderate", true, false),
-            (3, "Low", null, true),
-            (4, "Unknown", null, true));
-
-        string message = prompt.UserMessage;
-        int start = message.IndexOf("THE QUESTIONS (", StringComparison.Ordinal);
-        Assert.True(start >= 0);
-        int end = message.IndexOf("\n\n", start, StringComparison.Ordinal);
-        var lines = message[start..end].Split('\n').Skip(1).ToList();
-
-        List<string> NotesOf(int question)
-        {
-            string slot = Overseer.Services.Benchmarking.RootCause.RootCauseClaimSupport.AnswerSlot(question);
-            int at = lines.FindIndex(l => l.StartsWith("- " + slot + ":", StringComparison.Ordinal));
-            Assert.True(at >= 0, "No line for question " + question);
-            return lines.Skip(at + 1).TakeWhile(l => l.StartsWith("  ", StringComparison.Ordinal)).ToList();
-        }
-
-        var first = NotesOf(1);
-        Assert.Equal(2, first.Count);
-        Assert.StartsWith(noAnswer, first[0], StringComparison.Ordinal);
-        Assert.Equal(order, first[1]);
-
-        Assert.Empty(NotesOf(2));
-
-        Assert.Equal(new[] { within }, NotesOf(3));
-
-        // A question no hypothesis answers says so; the within-only line would contradict it.
-        var fourth = Assert.Single(NotesOf(4));
-        Assert.StartsWith(noAnswer, fourth, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void AQuestionFourKnownFromThePriceCards_AsksForThePricesAndNoCertaintyWord()
-    {
-        string priceCard = Overseer.Services.Benchmarking.RootCause.RootCauseFacts.PriceCardStatusDisplay;
-        var (prompt, _, _) = RegradedRootCausePrompt("Moderate", (3, "Moderate", null, null), (4, priceCard, null, null));
-
-        var lines = prompt.UserMessage.Split('\n').ToList();
-        string slot = Overseer.Services.Benchmarking.RootCause.RootCauseClaimSupport.AnswerSlot(4);
-        int at = lines.FindIndex(l => l.StartsWith("- " + slot + ":", StringComparison.Ordinal));
-        Assert.True(at >= 0);
-        var notes = lines.Skip(at + 1).TakeWhile(l => l.StartsWith("  ", StringComparison.Ordinal)).ToList();
-        string note = Assert.Single(notes);
-        Assert.StartsWith("  its answer is known from the price cards: say that the price per token differs, cite ", note, StringComparison.Ordinal);
-        Assert.EndsWith(", and use no certainty word.", note, StringComparison.Ordinal);
-
-        // Question 3 is not a price question.
-        int third = lines.FindIndex(l => l.StartsWith("- " + Overseer.Services.Benchmarking.RootCause.RootCauseClaimSupport.AnswerSlot(3) + ":", StringComparison.Ordinal));
-        Assert.DoesNotContain(lines.Skip(third + 1).TakeWhile(l => l.StartsWith("  ", StringComparison.Ordinal)), l => l.Contains("price cards", StringComparison.Ordinal));
-
-        // The system prompt states the rule without data.
-        Assert.Contains("When THE QUESTIONS says its answer is known from the price cards, say that the price per token differs, cite the model's price.<component>.perMillion facts, and use no certainty word.", prompt.SystemPrompt);
-    }
-
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
@@ -1269,6 +1197,14 @@ public class BenchmarkReportPackPromptTests
         string headline = Assert.Single(system.Split('\n'), l => l.StartsWith("- headline:", StringComparison.Ordinal));
         Assert.Contains(order, headline);
         Assert.Contains("is what the price cards show, never the cause the runs found", headline);
+        Assert.Contains("say what most explains the differences between the models, naming at most two causes, the most consequential first.", headline);
+        Assert.Contains("Never restate a ranking the At a glance table shows (which model scored highest or lowest, was fastest, slowest or cheapest). "
+            + "Never mention price per token in the headline: the conclusions state it.", headline);
+        Assert.Contains("Under the headline, code prints its own findings — answers without tools, a weakness every model shares, the grader family, "
+            + "value for money, thinking levels and the notable findings: do not repeat them.", headline);
+        Assert.DoesNotContain("When the axis has a price note", headline);
+        Assert.DoesNotContain("the headline (printed as the Key finding) and the conclusions say", system);
+        Assert.Contains("When {{rca.axis.<axis>.priceNote}} exists, the conclusions say that price per token explains the largest gaps", system);
         string conclusions = Assert.Single(system.Split('\n'), l => l.StartsWith("- " + BenchmarkReportSlots.Conclusions + ":", StringComparison.Ordinal));
         Assert.Contains("take the axes in the order intelligence, speed, cost;", conclusions);
         Assert.Contains("never call it the axis's root cause", conclusions);
@@ -1386,12 +1322,37 @@ public class BenchmarkReportPackPromptTests
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
+    public void TheRootCausePrompt_AsksNoResearchQuestion_AndListsNoQuestionFact(bool comparison)
+    {
+        var sheet = comparison ? RootCauseReportFixture.ComparisonFacts().Sheet! : RootCauseReportFixture.ModelPackSheet();
+        var content = comparison ? RootCauseReportFixture.ComparisonFacts().Content! : new BenchmarkReportContentSnapshot();
+        Assert.Contains(sheet.Facts, f => f.Key.StartsWith("rca.question.", StringComparison.Ordinal));
+
+        var prompt = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, content);
+        foreach (string text in new[] { prompt.SystemPrompt, prompt.UserMessage })
+        {
+            Assert.DoesNotContain("THE QUESTIONS", text);
+            foreach (string slot in BenchmarkReportSlots.RootCauseAnswerSlots) Assert.DoesNotContain(slot, text);
+        }
+
+        // The sheet still holds the question facts; FACTS lists none of them.
+        string message = prompt.UserMessage;
+        int start = message.IndexOf("\nFACTS (", StringComparison.Ordinal);
+        Assert.True(start >= 0);
+        string facts = message[start..message.IndexOf("\n\n", start + 1, StringComparison.Ordinal)];
+        Assert.Contains("rca.axis.", facts);
+        Assert.DoesNotContain("rca.question.", facts);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
     public void TheRootCauseSlots_LeaveWhatCodePrintsToCode_AndTakeTheNextRunsInCodesOrder(bool comparison)
     {
         string system = BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(comparison);
 
         Assert.DoesNotContain("the measured signals of the model's profile", system);
-        Assert.Contains("Code prints the answer strength, the hypothesis ids and the measured signals above the answer, so do not restate them and never cite rca.question.<n>.signals: start with the reason.", system);
+        Assert.DoesNotContain("rca.question.", system);
         Assert.Contains("The conclusions table prints each axis's price note: never cite rca.axis.<axis>.priceNote here, and mention the price cards once", system);
         Assert.Contains("say that the first run to make is {{rca.run.1.summary}} and what it settles, then the others in the order NEXT RUNS gives", system);
         Assert.DoesNotContain("say which run to make first", system);

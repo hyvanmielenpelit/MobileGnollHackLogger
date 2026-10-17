@@ -1531,84 +1531,13 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void AComparisonDocument_IsCurrentAtFormatVersion24()
+    public void AComparisonDocument_IsCurrentAtFormatVersion25()
     {
         string text = RenderComparison(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
 
-        Assert.Equal(24, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
-        Assert.Contains(" · format version 24 · ", text);
+        Assert.Equal(25, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Contains(" · format version 25 · ", text);
         Assert.Contains(" · models named*", text);
-    }
-
-    [Fact]
-    public void AStoredRootCauseAnalysis_WithoutComparativeKeys_PrintsTheAnswerStrengthItPrintedThen()
-    {
-        var document = RootCauseReportFixture.ComparisonDocument();
-        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
-        var questions = sheet.RootCause!.Questions;
-        Assert.NotEmpty(questions);
-        foreach (var question in questions)
-        {
-            question.ComparativeKeys = null;
-            question.WithinKeys = null;
-            question.WithinOnly = false;
-        }
-        document.FactsJson = BenchmarkReportJson.Serialize(sheet);
-
-        string text = BenchmarkReportPackRenderer.Render(document,
-            new BenchmarkReportRenderOptions { Disclosure = BenchmarkReportDisclosure.Full, PeerNaming = BenchmarkReportPeerNaming.Named });
-
-        foreach (var question in questions)
-        {
-            string strength = question.HypothesisKeys.Count > 0
-                ? RootCauseGrades.WordWithGrade(question.Grade) + " — see " + BenchmarkReportFormat.LetterList(question.HypothesisKeys) + "."
-                : "No hypothesis about this model fired — see its profile.";
-            Assert.Contains("> *Answer strength: " + strength + "*\n", text);
-        }
-        Assert.DoesNotContain("— against the other models, see ", text);
-        Assert.DoesNotContain("its own breakdown, see ", text);
-
-        // Stored without the new fields, the JSON reads back null.
-        var stored = BenchmarkReportJson.Deserialize<RootCauseQuestion>("{\"number\":1,\"axis\":\"intelligence\",\"token\":\"A\",\"text\":\"Why?\",\"hypothesisKeys\":[\"HQ1.1\"]}");
-        Assert.Null(stored.ComparativeKeys);
-        Assert.Null(stored.WithinKeys);
-        Assert.False(stored.WithinOnly);
-        Assert.Null(stored.OrderEstablished);
-        Assert.Equal("Unknown — see HQ1.1.", BenchmarkReportPackRenderer.RcaAnswerStrength(stored));
-    }
-
-    [Fact]
-    public void ANewRootCauseAnalysis_SeparatesComparativeFromWithinModelHypotheses_InTheAnswerStrength()
-    {
-        static RootCauseQuestion Question(string? grade, IReadOnlyList<string> comparative, IReadOnlyList<string> within, bool withinOnly) => new()
-        {
-            Number = 3,
-            Axis = RootCauseAxes.Speed,
-            Token = "E",
-            Text = "Why is Model E slowest?",
-            Grade = grade,
-            HypothesisKeys = comparative.Concat(within).ToList(),
-            ComparativeKeys = comparative.ToList(),
-            WithinKeys = within.ToList(),
-            WithinOnly = withinOnly
-        };
-
-        Assert.Equal("Probable (Moderate) — against the other models, see HS1.1; its own breakdown, see WS3.3 and WS2.1.",
-            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(RootCauseGrades.Moderate, new[] { "HS1.1" }, new[] { "WS3.3", "WS2.1" }, false)));
-        Assert.Equal("Established (High) — against the other models, see HS1.1 and HS3.2.",
-            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(RootCauseGrades.High, new[] { "HS1.1", "HS3.2" }, Array.Empty<string>(), false)));
-        Assert.Equal("Suggestive (Low) — no hypothesis graded Low or higher compares it with the other models; its own breakdown, see WS3.3 and WS2.1, "
-                     + "says where its own time, cost or points go.",
-            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(RootCauseGrades.Low, Array.Empty<string>(), new[] { "WS3.3", "WS2.1" }, true)));
-        Assert.Equal("Suggestive (Low) — no hypothesis graded Low or higher compares it with the other models; its own breakdown, see WS2.1, "
-                     + "says where its own time, cost or points go.",
-            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(RootCauseGrades.Low, new[] { "HS4.1" }, new[] { "WS2.1" }, true)));
-
-        // Every hypothesis Not supported: the grade is unknown, with every hypothesis together.
-        Assert.Equal("Unknown — see HS4.1 and WS2.1.",
-            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(null, new[] { "HS4.1" }, new[] { "WS2.1" }, true)));
-        Assert.Equal("No hypothesis about this model fired — see its profile.",
-            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(null, Array.Empty<string>(), Array.Empty<string>(), false)));
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1656,28 +1585,6 @@ public class BenchmarkReportPackRendererTests
             .DefaultIfEmpty(text.Length - 1)
             .Min();
         return text[start..(end + 1)];
-    }
-
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void AResearchQuestionBox_PrintsItsMeasuredSignals_FromTheCurrentFormatVersionOnly(bool comparison)
-    {
-        var document = comparison
-            ? RcaDocument()
-            : RootCauseReportFixture.ModelDocument(RootCauseReportFixture.ModelPackSheet(), BenchmarkReportDocumentOrigin.ReportPack);
-        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
-        int signals = sheet.Facts.Count(f => f.Available && f.Key.StartsWith("rca.question.", StringComparison.Ordinal)
-            && f.Key.EndsWith(".signals", StringComparison.Ordinal) && f.Display != "none recorded");
-        Assert.True(signals > 0);
-        Assert.Equal(comparison ? 24 : 20, document.ReportFormatVersion);
-
-        string current = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaNamed), "### The questions");
-        Assert.Equal(signals, current.Split("> *Measured signals:* ").Length - 1);
-        Assert.True(current.IndexOf("*Answer strength: ", StringComparison.Ordinal) < current.IndexOf("*Measured signals:* ", StringComparison.Ordinal));
-
-        document.ReportFormatVersion = comparison ? 23 : 19;
-        Assert.DoesNotContain("*Measured signals:*", BenchmarkReportPackRenderer.Render(document, RcaNamed));
     }
 
     [Fact]
@@ -2025,56 +1932,6 @@ public class BenchmarkReportPackRendererTests
     }
 
     [Fact]
-    public void QuestionOne_WithoutAComparativeCause_StatesItsMeasuredLead_AndQuestionFour_FromThePriceCards_SaysSo()
-    {
-        static RootCauseQuestion Question(int number, string? grade, IReadOnlyList<string> comparative, IReadOnlyList<string> within) => new()
-        {
-            Number = number,
-            Axis = number == 1 ? RootCauseAxes.Intelligence : RootCauseAxes.Cost,
-            Token = "A",
-            Text = "Why?",
-            Grade = grade,
-            HypothesisKeys = comparative.Concat(within).ToList(),
-            ComparativeKeys = comparative.ToList(),
-            WithinKeys = within.ToList(),
-            OrderEstablished = number == 1 ? true : null
-        };
-        static string Name(string token) => token == "B" ? "Vega Pro" : "Model " + token;
-
-        var lead = Question(1, null, Array.Empty<string>(), Array.Empty<string>());
-        lead.Neighbor = "B";
-        Assert.Equal("Measured lead over Vega Pro: established — see its split; no cause compared.", BenchmarkReportPackRenderer.RcaAnswerStrength(lead, Name));
-        lead.OrderEstablished = false;
-        Assert.Equal("Measured lead over Vega Pro: not established — see its split; no cause compared.", BenchmarkReportPackRenderer.RcaAnswerStrength(lead, Name));
-
-        // Stored before the neighbor was recorded, the lead is not named.
-        lead.Neighbor = null;
-        Assert.Equal("Measured lead: not established — see its split; no cause compared.", BenchmarkReportPackRenderer.RcaAnswerStrength(lead));
-
-        var ruledOut = Question(1, null, new[] { "HQ4.1" }, Array.Empty<string>());
-        ruledOut.Neighbor = "B";
-        Assert.Equal("Measured lead over Vega Pro: established — see its split; no cause graded Low or higher, see HQ4.1.",
-            BenchmarkReportPackRenderer.RcaAnswerStrength(ruledOut, Name));
-        Assert.Equal("Probable (Moderate) — against the other models, see HQ8.1.",
-            BenchmarkReportPackRenderer.RcaAnswerStrength(Question(1, RootCauseGrades.Moderate, new[] { "HQ8.1" }, Array.Empty<string>()), Name));
-
-        var hypotheses = new List<RootCauseHypothesis>
-        {
-            new() { Id = "HC1", Number = 1, Key = "HC1.1", Kind = "pair", Axis = RootCauseAxes.Cost, Grade = RootCauseGrades.Low },
-            new() { Id = "HC2", Number = 3, Key = "HC2.3", Kind = "pair", Axis = RootCauseAxes.Cost, Grade = RootCauseGrades.High, PriceEffect = true }
-        };
-        var priced = Question(4, RootCauseGrades.High, new[] { "HC2.3", "HC1.1" }, new[] { "WC1.1" });
-        priced.PriceCard = true;
-        Assert.Equal("Known from the price cards — see HC2.3; its own breakdown, see WC1.1.",
-            BenchmarkReportPackRenderer.RcaAnswerStrength(priced, Name, hypotheses));
-
-        // Stored before the flag, it prints its grade as it did then.
-        priced.PriceCard = false;
-        Assert.Equal("Established (High) — against the other models, see HC2.3 and HC1.1; its own breakdown, see WC1.1.",
-            BenchmarkReportPackRenderer.RcaAnswerStrength(priced, Name, hypotheses));
-    }
-
-    [Fact]
     public void ReferenceSecond_TurnsADifferenceOrARatio_SoTheReferenceIsTheSecondModel()
     {
         var difference = new BenchmarkReportPairedTest
@@ -2177,11 +2034,413 @@ public class BenchmarkReportPackRendererTests
         string sentence = "Completeness is the lowest dimension for " + models + " of " + models + " models (10.0 to 20.0 points below Accuracy), "
             + "and at least 13 points below Accuracy for " + (models - 1) + " of them.";
         Assert.Contains(sentence + "\n", RcaSection(text, "## Evidence: intelligence"));
-        Assert.Contains("- " + sentence + "\n", RcaSection(text, "### What we found"));
+
+        // What we found builds its own sentence on the same figures.
+        string shared = Assert.Single(RcaFindings(text), f => f.StartsWith("Completeness is the weakest dimension", StringComparison.Ordinal));
+        Assert.StartsWith("Completeness is the weakest dimension of " + models + " of " + models + " models, 10.0 to 20.0 points below Accuracy", shared);
+        Assert.EndsWith("; a pattern this wide does not tell the models apart.", shared);
+    }
+
+    // --- What we found ---------------------------------------------------------------------------
+
+    /// <summary>The bullets of What we found, without their dashes.</summary>
+    private static List<string> RcaFindings(string text)
+        => RcaSection(text, "### What we found").Split('\n')
+            .Where(l => l.StartsWith("- ", StringComparison.Ordinal))
+            .Select(l => l[2..])
+            .ToList();
+
+    /// <summary>The fixture comparison's entry for the model with <paramref name="letter"/>.</summary>
+    private static BenchmarkReportEntryFigures RcaEntry(BenchmarkReportFactSheet sheet, string letter)
+        => sheet.Entries.Single(e => e.EntryKey == sheet.Peers.Single(p => p.Letter == letter).EntryKey);
+
+    /// <summary>
+    /// The fixture comparison with every What we found candidate silent: no answers without tools, no profile dimensions,
+    /// no paired test, no notable finding, no family gap, the Intelligence Index intervals overlapping, costs within 1.5 times
+    /// of each other and one time for every model.
+    /// </summary>
+    private static void RcaQuiet(BenchmarkReportFactSheet sheet)
+    {
+        foreach (var evidence in sheet.RootCause!.Evidence)
+        {
+            evidence.ScoredAnswers = 36;
+            evidence.NoToolAnswers = 0;
+        }
+        foreach (var profile in sheet.RootCause.Profiles) profile.Dimensions = new List<double?>();
+        sheet.RootCause.FamilyGaps = null;
+        sheet.PairedTests = new List<BenchmarkReportPairedFamily>();
+        sheet.NotableFindings = new List<BenchmarkReportNotableFinding>();
+        sheet.Facts.RemoveAll(f => f.Key.StartsWith("notable.", StringComparison.Ordinal));
+        var letters = sheet.Peers.Select(p => p.Letter).OrderBy(l => l, StringComparer.Ordinal).ToList();
+        for (int i = 0; i < letters.Count; i++)
+        {
+            var entry = RcaEntry(sheet, letters[i]);
+            entry.QualityIndex = 70;
+            entry.QualityLower = 60;
+            entry.QualityUpper = 80;
+            entry.CostPerQuestionUsd = 0.020 + 0.002 * i;
+            entry.CostDegraded = false;
+            entry.ModelTimeP50Ms = 10_000;
+            entry.SpeedDegraded = false;
+        }
+    }
+
+    /// <summary>A paired intelligence test of <paramref name="first"/> against <paramref name="second"/> (first minus second).</summary>
+    private static BenchmarkReportPairedTest RcaTest(string first, string second, double effect, bool established)
+        => new()
+        {
+            FirstLetter = first, SecondLetter = second, PairedItems = 12, EffectKind = "Difference", Effect = effect,
+            Lower = effect - 2, Upper = effect + 2, PValue = established ? 0.001 : 0.4, AdjustedPValue = established ? 0.004 : 0.8,
+            Established = established, Favors = established ? (effect > 0 ? "First" : "Second") : "None"
+        };
+
+    /// <summary>A reference family with A as the reference and the given intelligence tests.</summary>
+    private static BenchmarkReportPairedFamily RcaReferenceFamily(params BenchmarkReportPairedTest[] tests)
+        => new()
+        {
+            Mode = "Reference",
+            ReferenceLetter = "A",
+            Measures = new List<BenchmarkReportPairedMeasure>
+            {
+                new() { Measure = BenchmarkPairedTests.IntelligenceMeasure, FamilySize = tests.Length, Adjustment = "Holm", Pairs = tests.ToList() }
+            }
+        };
+
+    [Fact]
+    public void WhatWeFound_IsSilent_WhenNoCandidateClearsItsGate()
+    {
+        Assert.Empty(RcaFindings(BenchmarkReportPackRenderer.Render(RcaDocument(RcaQuiet), RcaNamed)));
     }
 
     [Fact]
-    public void TheSummary_StatesTheCheapestModel_AndAGraderFamilyGap_OnlyWhereItsContrastExcludesZero()
+    public void WhatWeFound_AnswersWithoutTools_NeedsTheContrast()
+    {
+        string With(params (int NoTool, int Scored)[] counts)
+        {
+            var document = RcaDocument(s =>
+            {
+                RcaQuiet(s);
+                var evidence = s.RootCause!.Evidence.OrderBy(e => e.Token, StringComparer.Ordinal).ToList();
+                for (int i = 0; i < evidence.Count; i++) (evidence[i].NoToolAnswers, evidence[i].ScoredAnswers) = counts[Math.Min(i, counts.Length - 1)];
+            });
+            return string.Join("\n", RcaFindings(BenchmarkReportPackRenderer.Render(document, RcaNamed)));
+        }
+
+        // One model at 25%, the others at most 3 of 36: at least twice their median.
+        Assert.Equal("Orion Max answered 9 of 36 scored answers (25%) without any tool call; no other model did so more than 3 times.",
+            With((9, 36), (3, 36), (2, 36)));
+        Assert.Equal("Orion Max answered 9 of 36 scored answers (25%) without any tool call; no other model did so.", With((9, 36), (0, 36)));
+
+        // Just under twice the others' median: no finding.
+        Assert.Equal(string.Empty, With((25, 100), (13, 100)));
+
+        // Every model at or above 20%: one shared sentence.
+        Assert.Equal("Every model answered at least 33% of its scored answers without any tool call.", With((34, 100), (33, 100), (40, 100)));
+    }
+
+    [Fact]
+    public void WhatWeFound_SharedWeakness_OnlyWhenEveryModelOrTheStyleRuleAgrees()
+    {
+        const string end = "; a pattern this wide does not tell the models apart.";
+        const string style = ", under the production chat's concise response style";
+        string With(Func<int, List<double?>> dimensions, bool detailed = false)
+        {
+            var document = RcaDocument(s =>
+            {
+                RcaQuiet(s);
+                var profiles = s.RootCause!.Profiles;
+                for (int i = 0; i < profiles.Count; i++) profiles[i].Dimensions = dimensions(i);
+                s.Facts.RemoveAll(f => f.Key.EndsWith("style.responseStyleConflict", StringComparison.Ordinal));
+                if (detailed)
+                {
+                    foreach (var peer in s.Peers)
+                    {
+                        s.Facts.Add(new BenchmarkReportFact { Key = "model." + peer.Letter + ".style.responseStyleConflict", Value = JsonValue.Create(false), Display = "no" });
+                    }
+                }
+            });
+            return string.Join("\n", RcaFindings(BenchmarkReportPackRenderer.Render(document, RcaNamed)));
+        }
+
+        // Every model: printed, with the style when the rule marks them.
+        Assert.Equal("Completeness is the weakest dimension of 5 of 5 models, 20.0 points below Accuracy" + style + end,
+            With(_ => new List<double?> { 90, 70, 85, 88 }));
+        Assert.Equal("Completeness is the weakest dimension of 5 of 5 models, 20.0 points below Accuracy" + end,
+            With(_ => new List<double?> { 90, 70, 85, 88 }, detailed: true));
+        Assert.Equal("Completeness is the weakest dimension of 5 of 5 models, 10.0 points below Accuracy" + end,
+            With(_ => new List<double?> { 90, 80, 85, 88 }));
+
+        // Four of five: only where the style rule marks at least two thirds of them.
+        Func<int, List<double?>> fourOfFive(double completeness) => i => i == 0
+            ? new List<double?> { 90, 85, 70, 88 }
+            : new List<double?> { 90, completeness, 85, 88 };
+        Assert.Equal("Completeness is the weakest dimension of 4 of 5 models, 20.0 points below Accuracy" + style + end, With(fourOfFive(70)));
+        Assert.Equal(string.Empty, With(fourOfFive(80)));
+        Assert.Equal(string.Empty, With(fourOfFive(70), detailed: true));
+    }
+
+    [Fact]
+    public void WhatWeFound_ValueForMoney_PartitionsTheOtherModels()
+    {
+        void Set(BenchmarkReportFactSheet s, string letter, double cost, double lower, double upper)
+        {
+            var entry = RcaEntry(s, letter);
+            entry.CostPerQuestionUsd = cost;
+            entry.QualityLower = lower;
+            entry.QualityUpper = upper;
+            entry.QualityIndex = (lower + upper) / 2;
+        }
+        BenchmarkReportDocument Value(Action<BenchmarkReportFactSheet>? more = null) => RcaDocument(s =>
+        {
+            RcaQuiet(s);
+            Set(s, "E", 0.001, 50, 60);  // the cheapest
+            Set(s, "A", 0.067, 70, 80);  // established higher: its interval is above E's
+            Set(s, "B", 0.039, 55, 65);  // not established either way
+            Set(s, "C", 0.005, 55, 65);  // not established either way
+            Set(s, "D", 0.013, 30, 40);  // established lower
+            more?.Invoke(s);
+        });
+
+        Assert.Equal(new[]
+            {
+                "Zeta Prime costs the least, at $0.0010 per question. Only Orion Max is established to score higher, at 67 times its cost; "
+                + "the other 2 models, up to Vega Pro at 39 times its cost, are not; Nova Lite scores lower at 13 times its cost."
+            },
+            RcaFindings(BenchmarkReportPackRenderer.Render(Value(), RcaNamed)));
+
+        // A paired test that establishes nothing leaves the order to the intervals, as the notable findings read it.
+        var untested = Value(s => s.PairedTests = new List<BenchmarkReportPairedFamily>
+        {
+            new()
+            {
+                Mode = "AllPairs",
+                Measures = new List<BenchmarkReportPairedMeasure>
+                {
+                    new() { Measure = BenchmarkPairedTests.IntelligenceMeasure, FamilySize = 2, Adjustment = "Holm", Pairs = new List<BenchmarkReportPairedTest> { RcaTest("A", "E", 20, false), RcaTest("D", "E", -20, false) } }
+                }
+            }
+        });
+        Assert.Equal(RcaFindings(BenchmarkReportPackRenderer.Render(Value(), RcaNamed)), RcaFindings(BenchmarkReportPackRenderer.Render(untested, RcaNamed)));
+
+        // Nothing established higher and nothing three times as dear among the rest: silent.
+        string cheap = string.Join("\n", RcaFindings(BenchmarkReportPackRenderer.Render(Value(s =>
+        {
+            Set(s, "A", 0.002, 55, 65);
+            Set(s, "B", 0.0029, 55, 65);
+            Set(s, "C", 0.0025, 55, 65);
+        }), RcaNamed)));
+        Assert.DoesNotContain("costs the least", cheap);
+
+        // Nothing established higher, one of the rest three times as dear: the rest by count, up to the dearest.
+        Assert.Equal("Zeta Prime costs the least, at $0.0010 per question. No model is established to score higher; the other 3 models, up to Orion Max "
+            + "at 67 times its cost, are not established to score lower either; Nova Lite scores lower at 13 times its cost.",
+            Assert.Single(RcaFindings(BenchmarkReportPackRenderer.Render(Value(s => Set(s, "A", 0.067, 55, 65)), RcaNamed))));
+
+        // A degraded cost is not priced: the cheapest is then Lyra Mini.
+        string degraded = Assert.Single(RcaFindings(BenchmarkReportPackRenderer.Render(Value(s => RcaEntry(s, "E").CostDegraded = true), RcaNamed)));
+        Assert.StartsWith("Lyra Mini costs the least, at $0.0050 per question. ", degraded);
+        Assert.DoesNotContain("Zeta Prime", degraded);
+    }
+
+    [Fact]
+    public void WhatWeFound_ThinkingLevel_OnlyWhenTheHigherLevelIsNotEstablishedAbove_AndCostsMore()
+    {
+        const string inversion = "Model C, at thinking level high, has an Intelligence Index of 83, at least that of Model B; took 0.36 times as long.";
+        BenchmarkReportDocument Levels(double highTime, double highCost) => RcaDocument(s =>
+        {
+            RcaQuiet(s);
+            foreach (var letter in new[] { "B", "C" })
+            {
+                var peer = s.Peers.Single(p => p.Letter == letter);
+                peer.Provider = "Northwind";
+                peer.ModelId = "vega-pro";
+                peer.ThinkingLevel = letter == "B" ? "max" : "high";
+                RcaEntry(s, letter).QualityIndex = 83;
+            }
+            RcaEntry(s, "B").ModelTimeP50Ms = highTime;
+            RcaEntry(s, "B").CostPerQuestionUsd = highCost;
+            RcaEntry(s, "C").ModelTimeP50Ms = 10_000;
+            RcaEntry(s, "C").CostPerQuestionUsd = 0.020;
+            s.NotableFindings = new List<BenchmarkReportNotableFinding>
+            {
+                new() { Number = 1, Kind = BenchmarkNotableFindings.ThinkingLevelInversion, Models = new List<string> { "B", "C" }, Summary = inversion }
+            };
+        });
+
+        // The pair prints from the thinking-level bullet, and the notable finding on it is left out.
+        Assert.Equal(new[]
+            {
+                "Vega Pro is not established to score higher than Lyra Mini, the same model at a lower thinking level (83 against 83), "
+                + "but takes 2.8 times as long and costs 2.3 times as much."
+            },
+            RcaFindings(BenchmarkReportPackRenderer.Render(Levels(28_000, 0.046), RcaNamed)));
+
+        // Below 1.5 times on both, the notable finding prints as stored, its models named as the copy names them.
+        Assert.Equal(new[] { "Lyra Mini, at thinking level high, has an Intelligence Index of 83, at least that of Vega Pro; took 0.36 times as long." },
+            RcaFindings(BenchmarkReportPackRenderer.Render(Levels(12_000, 0.024), RcaNamed)));
+
+        // The higher level established above the lower: no thinking-level bullet.
+        var above = Levels(28_000, 0.046);
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(above.FactsJson);
+        RcaEntry(sheet, "B").QualityLower = 90;
+        RcaEntry(sheet, "B").QualityUpper = 95;
+        above.FactsJson = BenchmarkReportJson.Serialize(sheet);
+        Assert.DoesNotContain(RcaFindings(BenchmarkReportPackRenderer.Render(above, RcaNamed)), f => f.Contains("thinking level", StringComparison.Ordinal) && f.StartsWith("Vega Pro", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void WhatWeFound_NotableFindings_SkipsTheCheaperAndBetterTheValueBulletStates()
+    {
+        static BenchmarkReportNotableFinding Notable(int number, string kind, string summary, params string[] models)
+            => new() { Number = number, Kind = kind, Models = models.ToList(), Summary = summary };
+        var document = RcaDocument(s =>
+        {
+            RcaQuiet(s);
+            RcaEntry(s, "E").CostPerQuestionUsd = 0.001;
+            RcaEntry(s, "D").CostPerQuestionUsd = 0.004;
+            s.NotableFindings = new List<BenchmarkReportNotableFinding>
+            {
+                Notable(1, BenchmarkNotableFindings.CheaperAndBetter, "Model E scored higher than Model B at half its cost.", "B", "E"),
+                Notable(2, BenchmarkNotableFindings.AnswerLengthOutlier, "Model C writes the longest answers.", "C"),
+                Notable(3, BenchmarkNotableFindings.LeaderMiss, "Model A scored 40 on Q2, where the others scored 80.", "A"),
+                Notable(4, BenchmarkNotableFindings.FasterAndBetter, "Model A scored higher than Model B at half its time.", "A", "B"),
+                Notable(5, BenchmarkNotableFindings.SharedFailure, "Every model scored below 50 on Q3.")
+            };
+        });
+
+        var findings = RcaFindings(BenchmarkReportPackRenderer.Render(document, RcaNamed));
+        Assert.Equal(3, findings.Count);
+        Assert.StartsWith("Zeta Prime costs the least, at $0.0010 per question. ", findings[0]);
+        Assert.Equal("Orion Max scored 40 on Q2, where the others scored 80.", findings[1]);
+        Assert.Equal("Orion Max scored higher than Vega Pro at half its time.", findings[2]);
+    }
+
+    [Fact]
+    public void WhatWeFound_ReferenceDifferences_LeftOutWhenTheCheapestIsTheReference()
+    {
+        BenchmarkReportDocument Reference(double cEffect, bool cheapReference = false) => RcaDocument(s =>
+        {
+            RcaQuiet(s);
+            s.PairedTests = new List<BenchmarkReportPairedFamily>
+            {
+                // A minus each other model: B established below A, the rest may be chance.
+                RcaReferenceFamily(RcaTest("A", "B", 6, true), RcaTest("A", "C", cEffect, false), RcaTest("A", "D", 1, false), RcaTest("A", "E", -2, false))
+            };
+            if (cheapReference)
+            {
+                RcaEntry(s, "A").CostPerQuestionUsd = 0.001;
+                RcaEntry(s, "C").CostPerQuestionUsd = 0.005;
+            }
+        });
+
+        Assert.Equal(new[] { "Against the reference model, Orion Max, the paired tests establish only Vega Pro lower; the other 3 differences, up to 4 points, may be chance." },
+            RcaFindings(BenchmarkReportPackRenderer.Render(Reference(4), RcaNamed)));
+
+        // A difference the tests leave open but the intervals separate is named apart, and is not one that may be chance.
+        var separated = RcaDocument(s =>
+        {
+            RcaQuiet(s);
+            s.PairedTests = new List<BenchmarkReportPairedFamily>
+            {
+                RcaReferenceFamily(RcaTest("A", "B", 6, true), RcaTest("A", "C", 4, false), RcaTest("A", "D", 35, false), RcaTest("A", "E", -2, false))
+            };
+            RcaEntry(s, "D").QualityLower = 30;
+            RcaEntry(s, "D").QualityUpper = 40;
+        });
+        Assert.Equal(new[]
+            {
+                "Against the reference model, Orion Max, the paired tests establish only Vega Pro lower; the 95% intervals separate Nova Lite from it; "
+                + "the other 2 differences, up to 4 points, may be chance."
+            },
+            RcaFindings(BenchmarkReportPackRenderer.Render(separated, RcaNamed)));
+
+        // Every difference not established below 3 points: nothing surprising to say.
+        Assert.Empty(RcaFindings(BenchmarkReportPackRenderer.Render(Reference(2.5), RcaNamed)));
+
+        // The cheapest model is the reference: value for money gives the verdicts against it, and this bullet is left out.
+        var cheap = RcaFindings(BenchmarkReportPackRenderer.Render(Reference(4, cheapReference: true), RcaNamed));
+        string value = Assert.Single(cheap);
+        Assert.StartsWith("Orion Max costs the least, at $0.0010 per question. No model is established to score higher; ", value);
+        Assert.EndsWith("; Vega Pro scores lower at 22 times its cost.", value);
+    }
+
+    /// <summary>The fixture comparison with every What we found candidate firing.</summary>
+    private static BenchmarkReportDocument RcaEveryFinding() => RcaDocument(s =>
+    {
+        RcaQuiet(s);
+        var ordered = s.Peers.OrderBy(p => p.Letter, StringComparer.Ordinal).ToList();
+        foreach (var evidence in s.RootCause!.Evidence) evidence.NoToolAnswers = evidence.Token == "A" ? 9 : 0;
+        foreach (var profile in s.RootCause.Profiles) profile.Dimensions = new List<double?> { 90, 70, 85, 88 };
+        s.RootCause.FamilyGaps = new List<RootCauseFamilyGap>
+        {
+            new()
+            {
+                Provider1 = ordered[0].Provider, Provider2 = ordered[1].Provider, PairedQuestionCount = 12, IsMemberProviderPair = true,
+                GapA = new RootCauseGapEstimate { Value = 3.9, Lower = 1.2, Upper = 6.6 },
+                GapB = new RootCauseGapEstimate { Value = -1.2, Lower = -3.0, Upper = 0.6 },
+                GapPanel = new RootCauseGapEstimate { Value = 1.4, Lower = 0.1, Upper = 2.7 },
+                Contrast = new RootCauseGapEstimate { Value = 5.1, Lower = 2.0, Upper = 8.2 }
+            }
+        };
+        RcaEntry(s, "E").CostPerQuestionUsd = 0.001;
+        foreach (var letter in new[] { "B", "C" })
+        {
+            var peer = s.Peers.Single(p => p.Letter == letter);
+            peer.Provider = "Northwind";
+            peer.ModelId = "vega-pro";
+            peer.ThinkingLevel = letter == "B" ? "max" : "high";
+        }
+        RcaEntry(s, "B").ModelTimeP50Ms = 28_000;
+        s.PairedTests = new List<BenchmarkReportPairedFamily>
+        {
+            RcaReferenceFamily(RcaTest("A", "B", 6, true), RcaTest("A", "C", 4, false), RcaTest("A", "D", 1, false), RcaTest("A", "E", -2, false))
+        };
+        s.NotableFindings = new List<BenchmarkReportNotableFinding>
+        {
+            new() { Number = 1, Kind = BenchmarkNotableFindings.LeaderMiss, Models = new List<string> { "A" }, Summary = "Model A scored 40 on Q2, where the others scored 80." }
+        };
+    });
+
+    [Fact]
+    public void WhatWeFound_PrintsAtMostFive_InTheProjectOrder()
+    {
+        var findings = RcaFindings(BenchmarkReportPackRenderer.Render(RcaEveryFinding(), RcaNamed));
+
+        Assert.Equal(5, findings.Count);
+        Assert.StartsWith("Orion Max answered 9 of 36 scored answers (25%) without any tool call; no other model did so.", findings[0]);
+        Assert.StartsWith("Completeness is the weakest dimension of 5 of 5 models", findings[1]);
+        Assert.StartsWith("Grader family: ", findings[2]);
+        Assert.StartsWith("Zeta Prime costs the least", findings[3]);
+        Assert.StartsWith("Vega Pro is not established to score higher than Lyra Mini, the same model at a lower thinking level", findings[4]);
+    }
+
+    [Fact]
+    public void WhatWeFound_UsesNoCausalWord_AndNamesModelsAsTheCopyDoes()
+    {
+        var document = RcaEveryFinding();
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
+
+        var named = RcaFindings(BenchmarkReportPackRenderer.Render(document, RcaNamed));
+        var anonymized = RcaFindings(BenchmarkReportPackRenderer.Render(document, RcaAnonymized));
+        Assert.Equal(5, anonymized.Count);
+        foreach (string finding in named.Concat(anonymized))
+        {
+            Assert.DoesNotMatch(RootCauseClaimSupport.CausalRegex, finding);
+        }
+
+        Assert.Contains(named, f => f.Contains("Orion Max", StringComparison.Ordinal));
+        foreach (var peer in sheet.Peers)
+        {
+            Assert.DoesNotContain(anonymized, f => f.Contains(peer.Label, StringComparison.Ordinal));
+            Assert.DoesNotContain(anonymized, f => f.Contains(peer.Provider, StringComparison.Ordinal));
+        }
+        Assert.StartsWith("Model A answered 9 of 36 scored answers (25%)", anonymized[0]);
+        Assert.StartsWith("Model E costs the least", anonymized[3]);
+        Assert.StartsWith("Model B is not established to score higher than Model C, ", anonymized[4]);
+    }
+
+    [Fact]
+    public void TheGraderFamilySentence_IsUnderWhatWeFound_AndTheCaveatPointsToIt()
     {
         var document = RcaDocument(s =>
         {
@@ -2199,39 +2458,77 @@ public class BenchmarkReportPackRendererTests
             };
         });
         var peers = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson).Peers.OrderBy(p => p.Letter, StringComparer.Ordinal).ToList();
+        const string pointer = "> The order between models of those two providers depends on the panel's balance; see What we found.\n";
 
         string named = BenchmarkReportPackRenderer.Render(document, RcaNamed);
-        Assert.Contains(" is the cheapest model, at $", RcaSection(named, "### What we found"));
-        Assert.Contains("> Grader family: the quality gap of models from " + peers[0].Provider + " minus models from " + peers[1].Provider
+        Assert.Contains("- Grader family: the quality gap of models from " + peers[0].Provider + " minus models from " + peers[1].Provider
             + ", the two panel members' own providers, is +3.9 points (95% interval +1.2 to +6.6) under Panel member A and -1.2 points (95% interval "
             + "-3.0 to +0.6) under Panel member B, a contrast of +5.1 points (95% interval +2.0 to +8.2). The order between models of those two "
-            + "providers depends on the panel's balance.\n", RcaSection(named, "### How sure are we?"));
+            + "providers depends on the panel's balance.\n", RcaSection(named, "### What we found"));
+        string caveat = RcaSection(named, "### How sure are we?");
+        Assert.Contains(pointer, caveat);
+        Assert.DoesNotContain("Grader family:", caveat);
 
-        string anonymized = RcaSection(BenchmarkReportPackRenderer.Render(document, RcaAnonymized), "### How sure are we?");
-        Assert.Contains("> Grader family: the quality gap of models from one panel member's provider minus models from the other member's provider is +3.9 points", anonymized);
-        Assert.DoesNotContain(peers[0].Provider, anonymized);
+        string anonymized = BenchmarkReportPackRenderer.Render(document, RcaAnonymized);
+        Assert.Contains("- Grader family: the quality gap of models from one panel member's provider minus models from the other member's provider is +3.9 points",
+            RcaSection(anonymized, "### What we found"));
+        Assert.DoesNotContain(peers[0].Provider, RcaSection(anonymized, "## Summary"));
+        Assert.Contains(pointer, RcaSection(anonymized, "### How sure are we?"));
 
-        // A contrast whose interval includes zero, and a result stored without the gaps, print no sentence.
+        // A contrast whose interval includes zero, and a result stored without the gaps, print neither.
         var included = RcaDocument(s => s.RootCause!.FamilyGaps = new List<RootCauseFamilyGap>
         {
             new() { Provider1 = "P", Provider2 = "Q", IsMemberProviderPair = true, GapA = new() { Value = 1 }, GapB = new() { Value = 0 }, Contrast = new() { Value = 1, Lower = -1, Upper = 3 } }
         });
-        Assert.DoesNotContain("Grader family:", BenchmarkReportPackRenderer.Render(included, RcaNamed));
-        Assert.DoesNotContain("Grader family:", BenchmarkReportPackRenderer.Render(RcaDocument(), RcaNamed));
+        foreach (string text in new[] { BenchmarkReportPackRenderer.Render(included, RcaNamed), BenchmarkReportPackRenderer.Render(RcaDocument(), RcaNamed) })
+        {
+            Assert.DoesNotContain("Grader family:", text);
+            Assert.DoesNotContain("see What we found.", text);
+        }
     }
 
-    [Fact]
-    public void TheCheapestModelBullet_StatesItsPairedTests_AndTheIntervalOverlapOnlyWithoutThem()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheSummary_HasNoResearchQuestions(bool comparison)
     {
-        static string Cheapest(string text) => Assert.Single(RcaSection(text, "### What we found").Split('\n'),
-            l => l.Contains(" is the cheapest model, at $", StringComparison.Ordinal));
+        static BenchmarkReportDocument Fresh(bool comparison) => comparison
+            ? RcaDocument()
+            : RootCauseReportFixture.ModelDocument(RootCauseReportFixture.ModelPackSheet(), BenchmarkReportDocumentOrigin.ReportPack);
+        static void AssertNoQuestions(string text)
+        {
+            string summary = RcaSection(text, "## Summary");
+            Assert.DoesNotContain("### The questions", summary);
+            Assert.DoesNotContain("Answer strength", summary);
+            Assert.DoesNotContain("**Question.**", summary);
+            Assert.DoesNotContain("*Measured signals:*", summary);
+        }
 
-        string paired = Cheapest(BenchmarkReportPackRenderer.Render(RcaDocument(), RcaNamed));
-        Assert.Matches(@"; the paired tests( above)? establish that (none|\d+) of the \d+ (other models|models they compare it with) (differs?|differ) from it in quality\.$", paired);
-        Assert.DoesNotContain("Intelligence Index interval overlaps", paired);
+        var current = Fresh(comparison);
+        Assert.NotEmpty(BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(current.FactsJson).RootCause!.Questions);
+        string text = BenchmarkReportPackRenderer.Render(current, RcaNamed);
+        AssertNoQuestions(text);
 
-        string unpaired = Cheapest(BenchmarkReportPackRenderer.Render(RcaDocument(s => s.PairedTests = new List<BenchmarkReportPairedFamily>()), RcaNamed));
-        Assert.Contains(" per question, and its Intelligence Index interval overlaps", unpaired);
+        // A document stored under the previous format, its answers in its writer output, renders the same way, and a question
+        // cited only in an answer is not among Appendix G's cited questions.
+        var stored = Fresh(comparison);
+        stored.ReportFormatVersion = comparison ? 24 : 20;
+        var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(stored.FactsJson);
+        var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(stored.WriterOutputJson);
+        var before = BenchmarkReportPackValidator.CitedQuestions(writer, sheet);
+        var uncited = sheet.Questions.First(q => !before.Contains(q.Number));
+        string reference = string.IsNullOrWhiteSpace(uncited.Reference) ? "Q" + uncited.Number.ToString(CultureInfo.InvariantCulture) : uncited.Reference!;
+        foreach (string slot in BenchmarkReportSlots.RootCauseAnswerSlots) writer.Sections[slot] = "A stored answer about " + reference + ".";
+        stored.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
+        Assert.Equal(before, BenchmarkReportPackValidator.CitedQuestions(writer, sheet));
+
+        string old = BenchmarkReportPackRenderer.Render(stored, RcaNamed);
+        AssertNoQuestions(old);
+        Assert.DoesNotContain("A stored answer", old);
+        static string Appendix(string t) => t[t.IndexOf("\n## Appendix G", StringComparison.Ordinal)..];
+        var unanswered = Fresh(comparison);
+        unanswered.ReportFormatVersion = stored.ReportFormatVersion;
+        Assert.Equal(Appendix(BenchmarkReportPackRenderer.Render(unanswered, RcaNamed)), Appendix(old));
     }
 
     [Fact]
@@ -2279,7 +2576,7 @@ public class BenchmarkReportPackRendererTests
 
         string text = BenchmarkReportPackRenderer.Render(document, RcaNamed);
 
-        Assert.Contains(" · generated under format version 19 · rendered with format version 24 · ", text);
+        Assert.Contains(" · generated under format version 19 · rendered with format version 25 · ", text);
         Assert.DoesNotContain("Grader family:", text);
         foreach (string resolution in new[] { "agreed by both members", "upheld by the claim verifier", "overturned by the claim verifier", "unresolved (averaged)", "single assessor" })
         {
@@ -2491,10 +2788,10 @@ public class BenchmarkReportPackRendererTests
     {
         Assert.Equal(6, BenchmarkReportPackRenderer.ChatConsistencyReportFormatVersion);
         Assert.Equal(6, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.ChatConsistency));
-        Assert.Equal(20, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
-        Assert.Equal(24, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
-        Assert.Equal(20, BenchmarkReportPackRenderer.ReportFormatVersion);
-        Assert.Equal(24, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
+        Assert.Equal(21, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Model));
+        Assert.Equal(25, BenchmarkReportPackRenderer.CurrentFormatVersion(BenchmarkReportScope.Comparison));
+        Assert.Equal(21, BenchmarkReportPackRenderer.ReportFormatVersion);
+        Assert.Equal(25, BenchmarkReportPackRenderer.ComparisonReportFormatVersion);
 
         string text = RenderChatConsistency(BenchmarkReportAudience.ExecutiveSummary, BenchmarkReportDisclosure.Full, BenchmarkReportPeerNaming.Named);
         Assert.Contains(" · format version 6 · ", text);

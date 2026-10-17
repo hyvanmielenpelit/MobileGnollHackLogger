@@ -70,7 +70,6 @@ public sealed class RootCauseClaimSupport
     /// <summary>The slots that weigh the hypotheses: a causal word there needs a hypothesis or axis token in its sentence (rule 33).</summary>
     public static readonly IReadOnlyList<string> InferenceSlots = new[]
     {
-        BenchmarkReportSlots.AnswerBest, BenchmarkReportSlots.AnswerWorst, BenchmarkReportSlots.AnswerSpeed, BenchmarkReportSlots.AnswerCost,
         BenchmarkReportSlots.HypothesesIntelligence, BenchmarkReportSlots.HypothesesSpeed, BenchmarkReportSlots.HypothesesCost,
         BenchmarkReportSlots.Conclusions, BenchmarkReportSlots.NextRuns
     };
@@ -131,9 +130,6 @@ public sealed class RootCauseClaimSupport
         SupportedHypothesisPrefixes = HypothesisPrefixes.Where(_supportedPrefixes.Contains).ToList();
         Axes = RootCauseAxes.All.Where(a => facts.ContainsKey(StatusKey(a))).ToList();
         EstablishedAxes = Axes.Where(a => string.Equals(Value(StatusKey(a)), RootCauseStatuses.Established, StringComparison.Ordinal)).ToList();
-        Questions = Enumerable.Range(1, BenchmarkReportSlots.RootCauseAnswerSlots.Count)
-            .Where(n => facts.ContainsKey(QuestionTextKey(n)))
-            .ToList();
     }
 
     /// <summary>The support of <paramref name="sheet"/>'s facts; the first fact of a repeated key counts.</summary>
@@ -175,33 +171,8 @@ public sealed class RootCauseClaimSupport
     /// <summary>The axes whose status is Root cause established, in document order.</summary>
     public IReadOnlyList<string> EstablishedAxes { get; }
 
-    /// <summary>
-    /// The research questions the sheet asks, from 1 to 4, ascending: each has its <c>rca.question.&lt;n&gt;.text</c>
-    /// fact, and its answer slot is <see cref="BenchmarkReportSlots.RootCauseAnswerSlots"/>' n-th.
-    /// </summary>
-    public IReadOnlyList<int> Questions { get; }
-
     /// <summary><c>rca.axis.&lt;axis&gt;.status</c>.</summary>
     public static string StatusKey(string axis) => AxisPrefix + axis + ".status";
-
-    /// <summary><c>rca.question.&lt;n&gt;.status</c>.</summary>
-    public static string QuestionStatusKey(int question) => QuestionPrefix + question.ToString(CultureInfo.InvariantCulture) + ".status";
-
-    /// <summary><c>rca.question.&lt;n&gt;.text</c>, whose presence says the sheet asks the question.</summary>
-    public static string QuestionTextKey(int question) => QuestionPrefix + question.ToString(CultureInfo.InvariantCulture) + ".text";
-
-    /// <summary>The answer slot of question <paramref name="question"/> (1 to 4).</summary>
-    public static string AnswerSlot(int question) => BenchmarkReportSlots.RootCauseAnswerSlots[question - 1];
-
-    /// <summary>The question an answer slot answers, 1 to 4; null for any other slot.</summary>
-    public static int? QuestionOf(string slot)
-    {
-        for (int i = 0; i < BenchmarkReportSlots.RootCauseAnswerSlots.Count; i++)
-        {
-            if (string.Equals(BenchmarkReportSlots.RootCauseAnswerSlots[i], slot, StringComparison.Ordinal)) return i + 1;
-        }
-        return null;
-    }
 
     /// <summary>The token is a fact of the sheet.</summary>
     public bool HasFact(string key) => _facts.ContainsKey(key);

@@ -174,7 +174,10 @@ public static class BenchmarkReportSlots
     public const string AnswerSpeed = "answerSpeed";                       // The questions: why the slowest model is slowest
     public const string AnswerCost = "answerCost";                         // The questions: why the most expensive model costs most
 
-    /// <summary>A Root Cause Analysis' answer slots, one per research question, in question order.</summary>
+    /// <summary>
+    /// A Root Cause Analysis' answer slots, one per research question, in question order. Slots of documents
+    /// stored before comparison format 25; no longer requested.
+    /// </summary>
     public static IReadOnlyList<string> RootCauseAnswerSlots { get; } = new[] { AnswerBest, AnswerWorst, AnswerSpeed, AnswerCost };
 
     /// <summary>The most items of a Root Cause Analysis' <c>observations</c> list.</summary>
@@ -186,12 +189,14 @@ public static class BenchmarkReportSlots
     /// <summary>A Root Cause Analysis' slots, in document order.</summary>
     public static IReadOnlyList<string> RootCauseSlotOrder { get; } = new[]
     {
-        AnswerBest, AnswerWorst, AnswerSpeed, AnswerCost,
         Scope, EvidenceIntelligence, EvidenceSpeed, EvidenceCost, HypothesesIntelligence, HypothesesSpeed, HypothesesCost,
         Conclusions, NextRuns, Limitations
     };
 
-    /// <summary>The section title of each Root Cause Analysis slot.</summary>
+    /// <summary>
+    /// The section title of each Root Cause Analysis slot. The answer slots' titles are those of documents
+    /// stored before comparison format 25, whose validation notes still name them.
+    /// </summary>
     public static IReadOnlyDictionary<string, string> RootCauseSlotTitles { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         [AnswerBest] = "The questions: the highest score",

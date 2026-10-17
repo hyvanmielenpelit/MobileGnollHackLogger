@@ -109,17 +109,16 @@ public sealed record BenchmarkReportSlotWordCount(
 /// <para>A Root Cause Analysis, in comparison or model scope, adds the claim discipline of rules 32 to 36,
 /// each built from <see cref="RootCauseClaimSupport"/>, which the prompt shares: rule 32, a causal word in
 /// the scope or an evidence slot, or in an observation, drops the paragraph or item; rule 33, a causal word
-/// in an answer slot, a hypotheses slot, the conclusions or the next runs that states a cause without a token of
+/// in a hypotheses slot, the conclusions or the next runs that states a cause without a token of
 /// a hypothesis graded Low or higher or of an axis in its sentence (in the next runs, a run token too), or on
 /// hypotheses graded Low only without a hedge word, or a negated causal word without any hypothesis or axis
 /// token, drops the paragraph; rule 34, a certainty word
 /// anywhere without a High hypothesis token or an established axis status token in its sentence, drops the
 /// paragraph or item; rule 35, a writer hypothesis without an axis, statement, evidence for, refuted-if
 /// statement or known locus, with a confidence other than Low, or citing a model or fact that does not
-/// exist, is dropped; rule 36, a warning, wants the conclusions to cite every axis's status. An answer slot
-/// is required only for a question the sheet asks
-/// (<see cref="RootCauseClaimSupport.Questions"/>). Rule 31 applies to it in both scopes, a hypothesis's
-/// label excepted, and rule 4 wants a topic for every question it cites whose text the writer was given. Rule 38
+/// exist, is dropped; rule 36, a warning, wants the conclusions to cite every axis's status. Rule 31 applies
+/// in both scopes, a hypothesis's label excepted, and rule 4 wants a topic for every question it cites whose
+/// text the writer was given. Rule 38
 /// (<see cref="RootCauseShareBesideRefRule"/>), a warning, flags a hypothesis's share beside a range or a list of other
 /// hypotheses' references.</para>
 ///
@@ -128,8 +127,7 @@ public sealed record BenchmarkReportSlotWordCount(
 /// them is bare.</para>
 ///
 /// <para>Rules 40 to 43 are warnings. Rule 40 (<see cref="RootCauseCodePrintedRule"/>) flags, in a Root Cause Analysis, an
-/// answer citing its question's measured signals or the conclusions citing an axis's price note, which Overseer prints beside
-/// them; rule 41 (<see cref="UnavailableTokenRule"/>), in a Root Cause Analysis or a comparison-scope document, a token of a
+/// the conclusions citing an axis's price note, which Overseer prints beside them; rule 41 (<see cref="UnavailableTokenRule"/>), in a Root Cause Analysis or a comparison-scope document, a token of a
 /// fact without a value, which prints "not available"; rule 42 (<see cref="RootCauseNextRunsOrderRule"/>) a Root Cause
 /// Analysis' next runs written in another order than code's; and rule 43 (<see cref="BorrowedModelFigureRule"/>), in a
 /// comparison-scope Root Cause Analysis, one model's figure given for another model whose own figure differs.</para>
@@ -377,9 +375,6 @@ public static class BenchmarkReportPackValidator
     public const int RootCauseConclusionsMaxWords = 120;
     public const int RootCauseNextRunsMaxWords = 50;
     public const int RootCauseLimitationsMaxWords = 120;
-
-    /// <summary>Each answer slot of a Root Cause Analysis (<see cref="BenchmarkReportSlots.RootCauseAnswerSlots"/>).</summary>
-    public const int RootCauseAnswerMaxWords = 60;
 
     /// <summary>Each observation of a Root Cause Analysis.</summary>
     public const int RootCauseObservationMaxWords = 35;
@@ -706,8 +701,6 @@ public static class BenchmarkReportPackValidator
     /// </summary>
     public static int? RootCauseSlotMaxWords(string slot, bool completion) => slot switch
     {
-        BenchmarkReportSlots.AnswerBest or BenchmarkReportSlots.AnswerWorst or BenchmarkReportSlots.AnswerSpeed or BenchmarkReportSlots.AnswerCost
-            => RootCauseAnswerMaxWords,
         BenchmarkReportSlots.Scope => RootCauseScopeMaxWords,
         BenchmarkReportSlots.EvidenceIntelligence or BenchmarkReportSlots.EvidenceSpeed or BenchmarkReportSlots.EvidenceCost
             => completion ? RootCauseCompletionEvidenceMaxWords : RootCauseEvidenceMaxWords,
@@ -1754,8 +1747,8 @@ public static class BenchmarkReportPackValidator
     }
 
     /// <summary>
-    /// The axes rule 16 reads a ranking sentence on: speed or cost by its slot (an evidence, hypotheses or
-    /// answer slot of that axis); otherwise speed and cost by their words (<see cref="SpeedWords"/>,
+    /// The axes rule 16 reads a ranking sentence on: speed or cost by its slot (an evidence or hypotheses
+    /// slot of that axis); otherwise speed and cost by their words (<see cref="SpeedWords"/>,
     /// <see cref="CostWords"/>) when the sentence holds no <see cref="QualityWords"/> word; and the quality
     /// axis, <see cref="RootCauseAxes.Intelligence"/>, for every other sentence.
     /// </summary>
@@ -1763,9 +1756,9 @@ public static class BenchmarkReportPackValidator
     {
         switch (slot)
         {
-            case BenchmarkReportSlots.EvidenceSpeed or BenchmarkReportSlots.HypothesesSpeed or BenchmarkReportSlots.AnswerSpeed:
+            case BenchmarkReportSlots.EvidenceSpeed or BenchmarkReportSlots.HypothesesSpeed:
                 return new[] { RootCauseAxes.Speed };
-            case BenchmarkReportSlots.EvidenceCost or BenchmarkReportSlots.HypothesesCost or BenchmarkReportSlots.AnswerCost:
+            case BenchmarkReportSlots.EvidenceCost or BenchmarkReportSlots.HypothesesCost:
                 return new[] { RootCauseAxes.Cost };
         }
 
@@ -2738,21 +2731,16 @@ public static class BenchmarkReportPackValidator
         => TokenRegex.Matches(text).Select(m => m.Groups[1].Value.Trim()).ToHashSet(StringComparer.Ordinal);
 
     /// <summary>
-    /// Rule 40 on one paragraph of a Root Cause Analysis: an answer slot citing a question's measured signals
-    /// (<c>rca.question.&lt;n&gt;.signals</c>), or the conclusions citing an axis's price note
-    /// (<c>rca.axis.&lt;axis&gt;.priceNote</c>), both of which Overseer prints beside the section.
+    /// Rule 40 on one paragraph of a Root Cause Analysis: the conclusions citing an axis's price note
+    /// (<c>rca.axis.&lt;axis&gt;.priceNote</c>), which Overseer prints beside the section.
     /// </summary>
     private static void CheckCodePrinted(Context ctx, string slot, string paragraph, string location, List<BenchmarkReportValidationNote> notes)
     {
         if (!ctx.RootCause || string.IsNullOrWhiteSpace(paragraph)) return;
-        bool answer = RootCauseClaimSupport.QuestionOf(slot) is int;
-        bool conclusions = string.Equals(slot, BenchmarkReportSlots.Conclusions, StringComparison.Ordinal);
-        if (!answer && !conclusions) return;
+        if (!string.Equals(slot, BenchmarkReportSlots.Conclusions, StringComparison.Ordinal)) return;
 
         var printed = CitedTokens(paragraph)
-            .Where(k => answer
-                ? k.StartsWith("rca.question.", StringComparison.Ordinal) && k.EndsWith(".signals", StringComparison.Ordinal)
-                : k.StartsWith("rca.axis.", StringComparison.Ordinal) && k.EndsWith(".priceNote", StringComparison.Ordinal))
+            .Where(k => k.StartsWith("rca.axis.", StringComparison.Ordinal) && k.EndsWith(".priceNote", StringComparison.Ordinal))
             .OrderBy(k => k, StringComparer.Ordinal);
         foreach (string key in printed)
         {
@@ -3049,7 +3037,10 @@ public static class BenchmarkReportPackValidator
     {
         var found = new HashSet<int>();
         var texts = new List<string?> { output.Headline };
-        texts.AddRange((output.Sections ?? new Dictionary<string, string>()).Values);
+        // A stored document's answer slots are not shown, so a question cited only there does not count.
+        texts.AddRange((output.Sections ?? new Dictionary<string, string>())
+            .Where(s => !BenchmarkReportSlots.RootCauseAnswerSlots.Contains(s.Key, StringComparer.Ordinal))
+            .Select(s => s.Value));
         foreach (var item in output.Observations ?? new List<BenchmarkReportWriterItem>())
         {
             texts.Add(item?.Text);
@@ -3425,8 +3416,6 @@ public static class BenchmarkReportPackValidator
     private static string UnknownSlotMessage(Context ctx, string key)
         => ctx.Spec.PeerOnlySlots.Contains(key, StringComparer.Ordinal)
             ? $"\"{key}\" is a slot of the {DocumentName(ctx.Spec.Audience)} with peers only; a stand-alone document has none. Its slots are {string.Join(", ", ctx.RequiredSlots)}."
-            : ctx.RootCause && RootCauseClaimSupport.QuestionOf(key) != null
-            ? $"\"{key}\" answers a question this data does not ask; leave it out. The document's slots are {string.Join(", ", ctx.RequiredSlots)}."
             : $"\"{key}\" is not a slot of the {DocumentName(ctx.Spec.Audience)}; its slots are {string.Join(", ", ctx.RequiredSlots)}.";
 
     private static string UnusedListMessage(BenchmarkReportAudienceSpec spec, string array)
@@ -3555,11 +3544,7 @@ public static class BenchmarkReportPackValidator
             var slots = Comparison
                 ? Spec.ComparisonSlotsFor(hasNotableFindings: BenchmarkNotableFindings.CountOf(sheet) > 0)
                 : Spec.SlotsFor(hasPeers: sheet.Peers.Count > 0);
-
-            // An answer slot belongs to the document only when the sheet asks its question.
-            RequiredSlots = RootCause
-                ? slots.Where(s => RootCauseClaimSupport.QuestionOf(s) is not int n || RootCauseClaims.Questions.Contains(n)).ToList()
-                : slots;
+            RequiredSlots = slots;
             FactKeys = new HashSet<string>(sheet.Facts.Select(f => f.Key), StringComparer.Ordinal);
             _availableFacts = new HashSet<string>(sheet.Facts.Where(f => f.Available).Select(f => f.Key), StringComparer.Ordinal);
             _trueFacts = new HashSet<string>(

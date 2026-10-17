@@ -230,7 +230,7 @@ public static class BenchmarkReportRuleCatalog
             "The text was kept, but it says twice what the count counts.",
             "Write each count token as a noun phrase and remove the words beside it that repeat what it already prints."),
         R(BenchmarkReportPackValidator.RootCauseCodePrintedRule, "Repeats what code prints",
-            "A section's prose does not cite the measured signals or the price note that Overseer prints beside it.",
+            "The conclusions do not cite the price note that Overseer prints beside them.",
             BenchmarkReportRuleSeverity.Warning,
             Kept,
             "Remove the token Overseer already prints beside the section and say in your own words what matters."),

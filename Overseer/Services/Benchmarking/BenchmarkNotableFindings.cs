@@ -351,10 +351,13 @@ public static class BenchmarkNotableFindings
     }
 
     /// <summary>The same provider and model id, trimmed and ignoring case.</summary>
-    private static bool SameModel(BenchmarkNotableModel a, BenchmarkNotableModel b)
-        => !string.IsNullOrWhiteSpace(a.ModelId)
-           && string.Equals(a.Provider?.Trim(), b.Provider?.Trim(), StringComparison.OrdinalIgnoreCase)
-           && string.Equals(a.ModelId.Trim(), b.ModelId?.Trim(), StringComparison.OrdinalIgnoreCase);
+    private static bool SameModel(BenchmarkNotableModel a, BenchmarkNotableModel b) => SameModel(a.Provider, a.ModelId, b.Provider, b.ModelId);
+
+    /// <summary>The same provider and model id, trimmed and ignoring case; never for a missing model id.</summary>
+    internal static bool SameModel(string? providerA, string? modelIdA, string? providerB, string? modelIdB)
+        => !string.IsNullOrWhiteSpace(modelIdA)
+           && string.Equals(providerA?.Trim(), providerB?.Trim(), StringComparison.OrdinalIgnoreCase)
+           && string.Equals(modelIdA.Trim(), modelIdB?.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>The named thinking levels from the lowest up.</summary>
     private static readonly IReadOnlyDictionary<string, int> LevelRanks = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)

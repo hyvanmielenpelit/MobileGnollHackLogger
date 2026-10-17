@@ -119,9 +119,12 @@ public static partial class BenchmarkReportPackRenderer
     /// Analysis names each control's thinking level once. From version 19 a mean figure reads "a mean of …", a group of
     /// hypotheses is described by its share span, the cheapest-model bullet reads the paired tests where they cover the
     /// model, and a count fact says what it counts. From version 20 a research question's box prints its measured signals under its
-    /// answer strength, and a response-style conflict reads as a noun phrase.
+    /// answer strength, and a response-style conflict reads as a noun phrase. From version 21 the Root Cause Analysis' Summary
+    /// has no research questions and its writer output no answer slots, and What we found prints the findings code ranks:
+    /// answers without tools, a weakness every model shares, the grader family, value for money, thinking levels, the notable
+    /// findings and the differences from the reference.
     /// </summary>
-    public const int ReportFormatVersion = 20;
+    public const int ReportFormatVersion = 21;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
@@ -146,20 +149,14 @@ public static partial class BenchmarkReportPackRenderer
     /// differences, and a count fact says what it counts.
     /// From version 24 a research question's box prints its measured signals under its answer strength, and a response-style
     /// conflict reads as a noun phrase.
+    /// From version 25 the Root Cause Analysis' Summary has no research questions and its writer output no answer slots, and
+    /// What we found prints the findings code ranks: answers without tools, a weakness every model shares, the grader family,
+    /// value for money, thinking levels, the notable findings and the differences from the reference.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 24;
-
-    /// <summary>The comparison format version whose Root Cause Analysis writer output first carries the answer slots.</summary>
-    private const int AnswerSlotsFormatVersion = 16;
+    public const int ComparisonReportFormatVersion = 25;
 
     /// <summary>The comparison format version whose answer excerpts were first allotted in rounds across the questions.</summary>
     private const int RoundExcerptsFormatVersion = 20;
-
-    /// <summary>The per-model format version whose research question boxes first print their measured signals.</summary>
-    private const int SignalsLineFormatVersion = 20;
-
-    /// <summary>The comparison format version whose research question boxes first print their measured signals.</summary>
-    private const int ComparisonSignalsLineFormatVersion = 24;
 
     /// <summary>
     /// The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.

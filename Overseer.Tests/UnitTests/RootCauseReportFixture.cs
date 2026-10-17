@@ -383,8 +383,7 @@ internal static class RootCauseReportFixture
 
     /// <summary>
     /// A Root Cause Analysis writer output over <paramref name="sheet"/> meant to pass every rule: each slot
-    /// citing the axis statuses and a hypothesis where it weighs one, an answer to each research question the
-    /// sheet asks citing its status and a hypothesis' reference (<c>.ref</c>), observations citing a question and an evidence id,
+    /// citing the axis statuses and a hypothesis where it weighs one, observations citing a question and an evidence id,
     /// one writer hypothesis at Low, and a topic for each question it cites whose text was given.
     /// </summary>
     public static BenchmarkReportWriterOutput Writer(BenchmarkReportFactSheet sheet, bool comparison)
@@ -422,26 +421,6 @@ internal static class RootCauseReportFixture
             [BenchmarkReportSlots.NextRuns] = "The runs are ordered chat first, then the benchmark, then model selection.",
             [BenchmarkReportSlots.Limitations] = "The benchmark asks single questions, so longer conversations are not measured."
         };
-
-        // One answer per research question the sheet asks, citing its status and, where one fired, a hypothesis reference
-        // after the words that say what it is about: the reference prints the bare id ("…is HC2.2.").
-        foreach (var question in sheet.RootCause?.Questions ?? new List<RootCauseQuestion>())
-        {
-            string prefix = "rca.question." + question.Number + ".";
-            if (!keys.Contains(prefix + "text")) continue;
-            string? reference = question.HypothesisKeys
-                .Select(k => "rca.hypothesis." + k + ".ref")
-                .FirstOrDefault(keys.Contains);
-            string about = question.Number switch
-            {
-                3 => "time per question",
-                4 => "cost per question",
-                _ => "Intelligence Index"
-            };
-            sections[BenchmarkReportSlots.RootCauseAnswerSlots[question.Number - 1]] =
-                "For " + T(prefix + "model") + " the answer strength is " + T(prefix + "status") + "."
-                + (reference != null ? " The leading hypothesis about its " + about + " is " + T(reference) + "." : string.Empty);
-        }
 
         return new BenchmarkReportWriterOutput
         {

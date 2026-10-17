@@ -315,8 +315,6 @@ public class RootCauseValidatorTests
     [InlineData(BenchmarkReportSlots.HypothesesIntelligence, 120)]
     [InlineData(BenchmarkReportSlots.Conclusions, 120)]
     [InlineData(BenchmarkReportSlots.NextRuns, 50)]
-    [InlineData(BenchmarkReportSlots.AnswerBest, 60)]
-    [InlineData(BenchmarkReportSlots.AnswerCost, 60)]
     public void TheSlotCaps_AreTheirWordLimits(string slot, int cap)
     {
         Assert.Equal(cap, BenchmarkReportPackValidator.RootCauseSlotMaxWords(slot, completion: false));
@@ -541,53 +539,37 @@ public class RootCauseValidatorTests
     }
 
     [Fact]
-    public void TheAnswerSlots_NeedNoQuestionStatus()
+    public void AFilledAnswerSlot_IsAnUnknownSlot_AndASheetWithQuestionsRequiresNone()
     {
         var sheet = QuestionSheet(1, 3);
+        sheet.Facts.Add(TextFact("rca.question.1.signals", "tied for first of 2 models on Accuracy"));
 
-        // Only the questions the sheet asks have a slot of the document.
+        // The sheet asks two research questions, and no answer slot is required.
         var empty = ValidateSections(sheet, new Dictionary<string, string>());
-        Assert.Contains(empty, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.AnswerBest);
-        Assert.Contains(empty, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.AnswerSpeed);
-        Assert.DoesNotContain(empty, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.AnswerWorst);
-        Assert.DoesNotContain(empty, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.AnswerCost);
+        foreach (string slot in BenchmarkReportSlots.RootCauseAnswerSlots)
+        {
+            Assert.DoesNotContain(empty, n => n.Location.StartsWith("sections." + slot, StringComparison.Ordinal));
+        }
 
-        const string uncited = "The best model scored highest on the hard questions.";
+        // A filled answer slot is an unknown slot (rule 1), whatever it cites, and is dropped.
         var sections = new Dictionary<string, string>
         {
-            [BenchmarkReportSlots.AnswerBest] = uncited,
-            [BenchmarkReportSlots.AnswerSpeed] = "Its answers run longer, as {{rca.hypothesis.HS1.1.label}} suggests.",
-            [BenchmarkReportSlots.AnswerWorst] = "The lowest model lost points on hard questions.",
+            [BenchmarkReportSlots.AnswerBest] = "It makes fewer critical errors ({{rca.hypothesis.HQ1.1.ref}}): {{rca.question.1.signals}}.",
+            [BenchmarkReportSlots.AnswerSpeed] = "It is certainly slower through {{rca.hypothesis.HS1.1.label}}.",
         };
         var notes = ValidateSections(sheet, sections);
+        foreach (string slot in sections.Keys)
+        {
+            var note = Assert.Single(notes, n => n.Location.StartsWith("sections." + slot, StringComparison.Ordinal));
+            Assert.Equal(1, note.Rule);
+            Assert.StartsWith("\"" + slot + "\" is not a slot of the ", note.Message, StringComparison.Ordinal);
+        }
+        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCodePrintedRule);
 
-        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule
-                                          && n.Location.StartsWith("sections." + BenchmarkReportSlots.AnswerBest, StringComparison.Ordinal));
-        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseAxisStatusRule
-                                          && n.Location.StartsWith("sections." + BenchmarkReportSlots.AnswerSpeed, StringComparison.Ordinal));
-        Assert.Contains(notes, n => n.Rule == 1 && n.Location == "sections." + BenchmarkReportSlots.AnswerWorst && n.Message.Contains("does not ask", StringComparison.Ordinal));
-
-        // An answer without a status token is kept as written.
         var output = new BenchmarkReportWriterOutput { Headline = "The models differ on every axis." };
         foreach (var (slot, text) in sections) output.Sections[slot] = text;
         var cleaned = BenchmarkReportPackValidator.DropInvalid(Rca, output, sheet, new BenchmarkReportContentSnapshot());
-        Assert.Equal(uncited, cleaned.Output.Sections[BenchmarkReportSlots.AnswerBest]);
-        Assert.False(cleaned.Output.Sections.ContainsKey(BenchmarkReportSlots.AnswerWorst));
-    }
-
-    [Fact]
-    public void ACertaintyWordInAnAnswer_StillNeedsItsSupport()
-    {
-        var notes = ValidateSections(QuestionSheet(1, 3), new Dictionary<string, string>
-        {
-            [BenchmarkReportSlots.AnswerBest] = "It certainly lost points to {{rca.hypothesis.HQ1.1.label}}.",
-            [BenchmarkReportSlots.AnswerSpeed] = "It is certainly slower through {{rca.hypothesis.HS1.1.label}}.",
-        });
-
-        Assert.Contains(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCertaintyRule
-                                    && n.Location.StartsWith("sections." + BenchmarkReportSlots.AnswerBest, StringComparison.Ordinal));
-        Assert.DoesNotContain(notes, n => n.Rule == BenchmarkReportPackValidator.RootCauseCertaintyRule
-                                          && n.Location.StartsWith("sections." + BenchmarkReportSlots.AnswerSpeed, StringComparison.Ordinal));
+        Assert.DoesNotContain(cleaned.Output.Sections.Keys, k => BenchmarkReportSlots.RootCauseAnswerSlots.Contains(k));
     }
 
     // --- Rule 34: prove is a certainty word; a price effect supports none ----------------------------
@@ -978,23 +960,6 @@ public class RootCauseValidatorTests
         => ValidateSections(sheet, new Dictionary<string, string> { [slot] = paragraph })
             .Where(n => n.Rule == rule)
             .ToList();
-
-    [Fact]
-    public void Rule40_AnAnswerCitingItsSignals_IsAWarning_AndAnAnswerInItsOwnWordsIsNot()
-    {
-        var sheet = QuestionSheet(1);
-        sheet.Facts.Add(TextFact("rca.question.1.signals", "tied for first of 2 models on Accuracy"));
-        string slot = BenchmarkReportSlots.RootCauseAnswerSlots[0];
-
-        var note = Assert.Single(RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseCodePrintedRule, slot,
-            "It makes fewer critical errors ({{rca.hypothesis.HQ1.1.ref}}): {{rca.question.1.signals}}."));
-        Assert.Equal("{{rca.question.1.signals}} is printed by Overseer beside this section; remove it and say in your own words what matters.", note.Message);
-        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
-        Assert.False(BenchmarkReportPackValidator.BlocksText(note));
-
-        Assert.Empty(RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseCodePrintedRule, slot,
-            "It makes fewer critical errors ({{rca.hypothesis.HQ1.1.ref}}), so its answers lose fewer points."));
-    }
 
     [Fact]
     public void Rule40_TheConclusionsCitingAPriceNote_IsAWarning_ButAHypothesesParagraphMayCiteIt()

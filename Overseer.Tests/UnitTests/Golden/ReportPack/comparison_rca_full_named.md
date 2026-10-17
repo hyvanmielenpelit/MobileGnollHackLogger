@@ -19,47 +19,10 @@
 > [!IMPORTANT]
 > **Key finding.** Intelligence: Not established; speed: Not established; cost: Not established.
 
-- Against the reference model, Orion Max, the paired tests establish no difference in intelligence.
-- Zeta Prime is the cheapest model, at $0.010 per question; the paired tests establish that none of the 4 other models differs from it in quality.
-- Answers without any tool call: Orion Max, 2 of 6 scored answers (33%); Vega Pro, 2 of 6 scored answers (33%); Lyra Mini, 2 of 6 scored answers (33%); Nova Lite, 2 of 6 scored answers (33%); Zeta Prime, 2 of 6 scored answers (33%).
-
-### The questions
-
-> [!NOTE]
-> **Question.** **Why did Orion Max score highest, though its lead over Vega Pro is not established?**
->
-> *Answer strength: Measured lead over Vega Pro: not established — see its split; no cause compared.*
->
-> *Measured signals:* Tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness
->
-> For Orion Max the answer strength is Unknown.
-
-> [!NOTE]
-> **Question.** **Why did Zeta Prime score lowest?**
->
-> *Answer strength: No hypothesis about this model fired — see its profile.*
->
-> *Measured signals:* Lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1)
->
-> For Zeta Prime the answer strength is Unknown.
-
-> [!NOTE]
-> **Question.** **Why is Zeta Prime slowest?**
->
-> *Answer strength: Suggestive (Low) — no hypothesis graded Low or higher compares it with the other models; its own breakdown, see WS3.3 and WS2.1, says where its own time, cost or points go.*
->
-> *Measured signals:* Median model time 20.0 s; output generation 59% of its time per question; 2.5 model calls per answer
->
-> For Zeta Prime the answer strength is Suggestive (Low). The leading hypothesis about its time per question is WS3.3.
-
-> [!NOTE]
-> **Question.** **Why is Nova Lite the most expensive?**
->
-> *Answer strength: Known from the price cards — see HC2.2; its own breakdown, see WC1.2.*
->
-> *Measured signals:* $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache
->
-> For Nova Lite the answer strength is Known from the price cards. The leading hypothesis about its cost per question is HC4.2.
+- Every model answered at least 33% of its scored answers without any tool call.
+- Zeta Prime costs the least, at $0.010 per question. Lyra Mini, Vega Pro, Orion Max and Nova Lite are established to score higher, at 2.0, 3.0, 5.0 and 6.0 times its cost.
+- Vega Pro scored higher than Nova Lite at 0.50 times its cost per question, established by 95% intervals that do not overlap.
+- Nova Lite scored higher than Zeta Prime at 0.40 times its median answer time, established by 95% intervals that do not overlap.
 
 ### At a glance
 
@@ -94,9 +57,7 @@ The terms the summary and the conclusions use, each in plain words. A term is al
 | Intelligence Index | The overall answer-quality score, out of a hundred. |
 | Isolated miss | A question one model missed while the others did well. |
 | Median and mean | The middle value, and the plain average. |
-| Paired test | A comparison of two models on the same questions. |
 | Points at risk | The most index points a failure signal could have cost. |
-| Reference model | The model every other model is tested against. |
 | Replicate run | A second run of the same model, to see if results repeat. |
 | Robustness check | A test of whether a result survives a small change. |
 | Runs per suite | How many times each model answered each suite. |
@@ -16114,6 +16075,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 212 · format version 24 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
+*Document ID 212 · format version 25 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · models named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

@@ -175,7 +175,7 @@ public class RootCauseReportGoldenTests
     }
 
     [Fact]
-    public void TheSummary_PutsTheQuestionsInCallouts()
+    public void TheSummary_HasWhatWeFound_AtAGlance_AndHowSureAreWe_Only()
     {
         var document = Document("comparison");
         var sheet = BenchmarkReportJson.Deserialize<BenchmarkReportFactSheet>(document.FactsJson);
@@ -190,59 +190,34 @@ public class RootCauseReportGoldenTests
         Assert.Contains(sheet.RootCause!.Hypotheses, h => h.Id == "HC2" && h.Grade != RootCauseGrades.NotSupported);
         Assert.Contains("| Model | Intelligence | Median time | Cost per question | Where it lost most points | Flags |\n", summary);
 
-        var questions = sheet.RootCause!.Questions;
-        Assert.Equal(new[] { 1, 2, 3, 4 }, questions.Select(q => q.Number));
-        Assert.Equal(questions.Count, CountOf(summary, "> [!NOTE]\n> **Question.** **Why "));
-        foreach (var question in questions)
-        {
-            // Question 1 without a comparative cause states its measured lead; question 4 from the price cards says so.
-            string strength = question.Number == 1 && question.ComparativeKeys != null && question.Grade == null
-                              && (question.WithinKeys ?? new List<string>()).Count == 0 && question.OrderEstablished.HasValue
-                ? "Measured lead over "
-                : question.PriceCard
-                    ? RootCauseGrades.PriceCardWord + " — see HC2."
-                    : question.HypothesisKeys.Count > 0
-                        ? RootCauseGrades.WordWithGrade(question.Grade)
-                        : "No hypothesis about this model fired — see its profile.";
-            int at = summary.IndexOf("> **Question.** **" + NamedQuestion(sheet, question.Text) + "**\n>\n> *Answer strength: "
-                + strength, StringComparison.Ordinal);
-            Assert.True(at >= 0, question.Text);
-            string callout = summary[at..summary.IndexOf("\n\n", at, StringComparison.Ordinal)];
-            Assert.Contains(">\n> For ", callout);
-            Assert.Contains(">\n> *Measured signals:* ", callout);
-            Assert.DoesNotContain("the measured signals are", callout);
-            Assert.All(callout.Split('\n'), line => Assert.StartsWith(">", line));
-        }
+        // The research questions are still computed, but the Summary prints none of them.
+        Assert.NotEmpty(sheet.RootCause!.Questions);
+        Assert.Equal(new[] { "### What we found", "### At a glance", "### How sure are we?" },
+            summary.Split('\n').Where(l => l.StartsWith("### ", StringComparison.Ordinal)));
+        Assert.DoesNotContain("**Question.**", summary);
+        Assert.DoesNotContain("Answer strength", summary);
+        Assert.DoesNotContain("> [!NOTE]", summary);
 
-        // One model on its own has no question to answer.
         string alone = BenchmarkReportPackRenderer.Render(Document("runNoControls"), FullNamed);
         Assert.DoesNotContain("### The questions", alone);
         Assert.Contains("> [!IMPORTANT]\n> **Key finding.** ", alone);
     }
 
     [Fact]
-    public void AnOldRootCauseAnalysis_SaysToRegenerate_InItsAnswerCallouts()
+    public void AnOldRootCauseAnalysis_WithStoredAnswers_RendersWithoutTheQuestions()
     {
         var document = Document("comparison");
         var writer = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(document.WriterOutputJson);
-        foreach (string slot in BenchmarkReportSlots.RootCauseAnswerSlots) writer.Sections.Remove(slot);
+        foreach (string slot in BenchmarkReportSlots.RootCauseAnswerSlots) writer.Sections[slot] = "A stored answer to the research question.";
         document.WriterOutputJson = BenchmarkReportJson.Serialize(writer);
-        document.ReportFormatVersion = 15;
+        document.ReportFormatVersion = 24;
 
-        string text = BenchmarkReportPackRenderer.Render(document, FullNamed);
-        string summary = Section(text, "## Summary");
+        string summary = Section(BenchmarkReportPackRenderer.Render(document, FullNamed), "## Summary");
 
-        Assert.Equal(4, CountOf(summary, "> *Written before format 16; regenerate to get the answers.*\n"));
+        Assert.DoesNotContain("### The questions", summary);
+        Assert.DoesNotContain("A stored answer", summary);
+        Assert.DoesNotContain("regenerate to get the answers", summary);
         Assert.DoesNotContain("*Not written.*", summary);
-
-        // A current document missing one answer says it was not written.
-        var current = Document("comparison");
-        var partial = BenchmarkReportJson.Deserialize<BenchmarkReportWriterOutput>(current.WriterOutputJson);
-        partial.Sections.Remove(BenchmarkReportSlots.AnswerCost);
-        current.WriterOutputJson = BenchmarkReportJson.Serialize(partial);
-        string missing = Section(BenchmarkReportPackRenderer.Render(current, FullNamed), "## Summary");
-        Assert.Equal(1, CountOf(missing, "> *Not written.*\n"));
-        Assert.DoesNotContain("Written before format 16", missing);
     }
 
     [Theory]
@@ -337,16 +312,6 @@ public class RootCauseReportGoldenTests
         int count = 0;
         for (int at = text.IndexOf(value, StringComparison.Ordinal); at >= 0; at = text.IndexOf(value, at + value.Length, StringComparison.Ordinal)) count++;
         return count;
-    }
-
-    /// <summary>A question's text as a named copy prints it: each <c>Model X</c> by its label.</summary>
-    private static string NamedQuestion(BenchmarkReportFactSheet sheet, string text)
-    {
-        foreach (var peer in sheet.Peers.OrderByDescending(p => p.Letter.Length))
-        {
-            text = text.Replace("Model " + peer.Letter + " ", peer.Label + " ", StringComparison.Ordinal);
-        }
-        return text;
     }
 
     [Fact]

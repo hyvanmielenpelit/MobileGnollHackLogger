@@ -16,46 +16,8 @@
 > [!IMPORTANT]
 > **Key finding.** Intelligence: Not established; speed: Probable cause; cost: Not established.
 
-- Zeta Prime is the cheapest model, at $0.010 per question, and its Intelligence Index interval overlaps no other model's.
-- Answers without any tool call: Orion Max, 2 of 6 scored answers (33%); Vega Pro, 2 of 6 scored answers (33%); Lyra Mini, 2 of 6 scored answers (33%); Nova Lite, 2 of 6 scored answers (33%); Zeta Prime, 2 of 6 scored answers (33%).
-
-### The questions
-
-> [!NOTE]
-> **Question.** **Why did Orion Max score highest, though its lead over Vega Pro is not established?**
->
-> *Answer strength: Measured lead over Vega Pro: not established — see its split; no cause compared.*
->
-> *Measured signals:* Tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness
->
-> For Orion Max the answer strength is Unknown.
-
-> [!NOTE]
-> **Question.** **Why did Zeta Prime score lowest?**
->
-> *Answer strength: No hypothesis about this model fired — see its profile.*
->
-> *Measured signals:* Lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1)
->
-> For Model D the answer strength is Unknown.
-
-> [!NOTE]
-> **Question.** **Why is Zeta Prime slowest?**
->
-> *Answer strength: Probable (Moderate) — against the other models, see HS3.1.*
->
-> *Measured signals:* Median model time 20.0 s; against Orion Max: output tokens carries 55% of the 6.0 s difference; output generation 59% of its time per question; 2.5 model calls per answer
->
-> For Model D the answer strength is Probable (Moderate). The leading hypothesis about its time per question is HS3.1.
-
-> [!NOTE]
-> **Question.** **Why is Nova Lite the most expensive?**
->
-> *Answer strength: Known from the price cards — see HC2.2.*
->
-> *Measured signals:* $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache
->
-> For Model C the answer strength is Known from the price cards. The leading hypothesis about its cost per question is HC4.2.
+- Every model answered at least 33% of its scored answers without any tool call.
+- Zeta Prime costs the least, at $0.010 per question. Lyra Mini, Vega Pro, Orion Max and Nova Lite are established to score higher, at 2.0, 3.0, 5.0 and 6.0 times its cost.
 
 ### At a glance
 
@@ -10005,6 +9967,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 131 · format version 20 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 21 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*
