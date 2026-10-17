@@ -439,7 +439,7 @@ internal static class RootCauseReportFixture
                 _ => "Intelligence Index"
             };
             sections[BenchmarkReportSlots.RootCauseAnswerSlots[question.Number - 1]] =
-                "For " + T(prefix + "model") + " the measured signals are " + T(prefix + "signals") + ". The answer strength is " + T(prefix + "status") + "."
+                "For " + T(prefix + "model") + " the answer strength is " + T(prefix + "status") + "."
                 + (reference != null ? " The leading hypothesis about its " + about + " is " + T(reference) + "." : string.Empty);
         }
 

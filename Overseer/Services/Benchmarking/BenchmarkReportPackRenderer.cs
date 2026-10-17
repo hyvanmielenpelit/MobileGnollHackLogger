@@ -118,9 +118,10 @@ public static partial class BenchmarkReportPackRenderer
     /// run-in label start with a capital. From version 18 the controls table of a run- or battery-completion Root Cause
     /// Analysis names each control's thinking level once. From version 19 a mean figure reads "a mean of …", a group of
     /// hypotheses is described by its share span, the cheapest-model bullet reads the paired tests where they cover the
-    /// model, and a count fact says what it counts.
+    /// model, and a count fact says what it counts. From version 20 a research question's box prints its measured signals under its
+    /// answer strength, and a response-style conflict reads as a noun phrase.
     /// </summary>
-    public const int ReportFormatVersion = 19;
+    public const int ReportFormatVersion = 20;
 
     /// <summary>
     /// The format version of a comparison-scope document (<see cref="BenchmarkReportScope.Comparison"/>). From
@@ -143,14 +144,22 @@ public static partial class BenchmarkReportPackRenderer
     /// From version 23 a mean figure reads "a mean of …", a group of hypotheses is described by its share span, the
     /// cheapest-model bullet reads the paired tests, comparison-wide facts give the runs, suites and configuration
     /// differences, and a count fact says what it counts.
+    /// From version 24 a research question's box prints its measured signals under its answer strength, and a response-style
+    /// conflict reads as a noun phrase.
     /// </summary>
-    public const int ComparisonReportFormatVersion = 23;
+    public const int ComparisonReportFormatVersion = 24;
 
     /// <summary>The comparison format version whose Root Cause Analysis writer output first carries the answer slots.</summary>
     private const int AnswerSlotsFormatVersion = 16;
 
     /// <summary>The comparison format version whose answer excerpts were first allotted in rounds across the questions.</summary>
     private const int RoundExcerptsFormatVersion = 20;
+
+    /// <summary>The per-model format version whose research question boxes first print their measured signals.</summary>
+    private const int SignalsLineFormatVersion = 20;
+
+    /// <summary>The comparison format version whose research question boxes first print their measured signals.</summary>
+    private const int ComparisonSignalsLineFormatVersion = 24;
 
     /// <summary>
     /// The format version of a chat consistency document (<see cref="BenchmarkReportScope.ChatConsistency"/>), versioned on its own.
@@ -1829,7 +1838,7 @@ public static partial class BenchmarkReportPackRenderer
         }
     }
 
-    /// <summary>The response-style line: the conflict as a clause, <c>none</c> without one.</summary>
+    /// <summary>The response-style line: the conflict's display, <c>none</c> without one.</summary>
     private static void StyleLine(StringBuilder sb, Context ctx)
     {
         const string key = "style.responseStyleConflict";

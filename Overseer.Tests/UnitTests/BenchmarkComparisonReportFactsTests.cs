@@ -45,6 +45,61 @@ public class BenchmarkComparisonReportFactsTests
             k => Assert.False(BenchmarkComparisonReportFacts.IsModelFact(k)));
     }
 
+    /// <summary>
+    /// A comparison of batteries over the five fixture models, each per-model sheet carrying the battery counts
+    /// as the battery fact builder adds them: whole numbers through <see cref="BenchmarkReportFacts.FactList"/>.
+    /// </summary>
+    private static BenchmarkReportFactSheet BatteryComparisonSheet(params int[] runsPerSuite)
+    {
+        var comparison = FiveModelComparison();
+        var runs = FiveModelRuns();
+        var entries = new List<BenchmarkComparisonReportEntry>();
+        for (int i = 0; i < comparison.Entries.Count; i++)
+        {
+            var entry = comparison.Entries[i];
+            var sheet = BenchmarkReportFacts.Build(new BenchmarkReportFactsInput
+            {
+                Comparison = comparison,
+                SubjectKey = entry.Key,
+                Runs = runs,
+                IncludeRootCause = false
+            }).Sheet!;
+            int perSuite = runsPerSuite[i], suites = 2, members = perSuite * suites;
+            var battery = new BenchmarkReportFacts.FactList();
+            battery.Add("battery.suiteCount", suites, suites + " suites");
+            battery.Add("battery.runsPerSuite", perSuite, perSuite + (perSuite == 1 ? " run" : " runs"));
+            battery.Add("battery.memberRuns", members, members + " runs");
+            sheet.Facts.AddRange(battery.Sorted());
+            entries.Add(new BenchmarkComparisonReportEntry { Entry = entry, Sheet = sheet, Content = new BenchmarkReportContentSnapshot() });
+        }
+        comparison.SubjectKind = BenchmarkModelComparisonSubjectKinds.Batteries;
+
+        var built = BenchmarkComparisonReportFacts.Build(new BenchmarkComparisonReportFactsInput { Comparison = comparison, Entries = entries });
+        Assert.True(built.Sheet != null, built.Refusal);
+        return built.Sheet!;
+    }
+
+    [Fact]
+    public void OnABatteryComparison_TheComparisonWideCountsReadTheWholeNumberBatteryFacts()
+    {
+        var sheet = BatteryComparisonSheet(1, 1, 1, 1, 1);
+
+        Assert.Equal("1 run per suite", Display(sheet, "comparison.runsPerSuite"));
+        Assert.Equal("2 suites", Display(sheet, "comparison.suiteCount"));
+        Assert.Equal("2 runs per model", Display(sheet, "comparison.memberRuns"));
+        Assert.All(new[] { "comparison.runsPerSuite", "comparison.suiteCount", "comparison.memberRuns" },
+            k => Assert.True(Fact(sheet, k).Available));
+    }
+
+    [Fact]
+    public void OnABatteryComparison_DifferentRunsPerSuiteReadAsASpan()
+    {
+        var sheet = BatteryComparisonSheet(1, 2, 1, 1, 1);
+
+        Assert.Equal("1 to 2 runs per suite", Display(sheet, "comparison.runsPerSuite"));
+        Assert.Equal("2 to 4 runs per model", Display(sheet, "comparison.memberRuns"));
+    }
+
     [Fact]
     public void Letters_FollowTheIntelligenceIndex_TiesByEntryKey()
     {

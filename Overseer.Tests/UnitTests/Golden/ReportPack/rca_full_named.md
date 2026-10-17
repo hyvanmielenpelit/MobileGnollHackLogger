@@ -26,28 +26,36 @@
 >
 > *Answer strength: Measured lead over Vega Pro: not established — see its split; no cause compared.*
 >
-> For Orion Max the measured signals are tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness. The answer strength is Unknown.
+> *Measured signals:* Tied for first of 5 models on Accuracy; tied for first of 5 models on Completeness
+>
+> For Orion Max the answer strength is Unknown.
 
 > [!NOTE]
 > **Question.** **Why did Zeta Prime score lowest?**
 >
 > *Answer strength: No hypothesis about this model fired — see its profile.*
 >
-> For Model D the measured signals are lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1). The answer strength is Unknown.
+> *Measured signals:* Lost points on low-scoring answers, mostly Accuracy: 5.6 index points on 3 questions (Q1, Q3 and Q4); 1 isolated miss (Q1)
+>
+> For Model D the answer strength is Unknown.
 
 > [!NOTE]
 > **Question.** **Why is Zeta Prime slowest?**
 >
 > *Answer strength: Probable (Moderate) — against the other models, see HS3.1.*
 >
-> For Model D the measured signals are median model time 20.0 s; against Orion Max: output tokens carries 55% of the 6.0 s difference; output generation 59% of its time per question; 2.5 model calls per answer. The answer strength is Probable (Moderate). The leading hypothesis about its time per question is HS3.1.
+> *Measured signals:* Median model time 20.0 s; against Orion Max: output tokens carries 55% of the 6.0 s difference; output generation 59% of its time per question; 2.5 model calls per answer
+>
+> For Model D the answer strength is Probable (Moderate). The leading hypothesis about its time per question is HS3.1.
 
 > [!NOTE]
 > **Question.** **Why is Nova Lite the most expensive?**
 >
 > *Answer strength: Known from the price cards — see HC2.2.*
 >
-> For Model C the measured signals are $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache. The answer strength is Known from the price cards. The leading hypothesis about its cost per question is HC4.2.
+> *Measured signals:* $0.060 per question; uncached input 44% of its cost per question; 27% of input tokens read from the cache
+>
+> For Model C the answer strength is Known from the price cards. The leading hypothesis about its cost per question is HC4.2.
 
 ### At a glance
 
@@ -5071,6 +5079,11 @@ The counts and the configuration facts the analysis states, each numbered as the
     },
     {
       "available": true,
+      "display": "M, model selection",
+      "key": "rca.run.1.purpose"
+    },
+    {
+      "available": true,
       "display": "Run 1, a replicate of all five models",
       "key": "rca.run.1.summary"
     },
@@ -9992,6 +10005,6 @@ The counts and the configuration facts the analysis states, each numbered as the
 
 ---
 
-*Document ID 131 · format version 19 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
+*Document ID 131 · format version 20 · created 2026-09-28 10:42 UTC · writer Claude Opus 5.5 (Anthropic, claude-opus-5-5) · disclosure Full · peers named*
 
 *Figures and tables were computed by Overseer. The prose was written by Claude Opus 5.5 from those figures and checked automatically for structure, permitted figures and references, word limits, disclosure of benchmark text, peer names, significance claims, interval-overlap wording, hype words and spelling; the checks do not verify the prose's interpretations.*

@@ -1105,7 +1105,13 @@ public class BenchmarkReportPackPromptTests
         int start = message.IndexOf("CHECK BEFORE YOU ANSWER (", StringComparison.Ordinal);
         Assert.True(start > 0);
         var lines = message[start..].Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        Assert.Equal(10, lines.Length);
+        Assert.Equal(14, lines.Length);
+        Assert.StartsWith("- Rule 40, what code prints:", lines[10]);
+        Assert.StartsWith("- Rule 41, unavailable figures:", lines[11]);
+        Assert.StartsWith("- Rule 42, next runs in code's order:", lines[12]);
+        Assert.StartsWith("- Rule 43, one model's figure:", lines[13]);
+        Assert.Contains("{{rca.question.1.signals}}", lines[10]);
+        Assert.Contains("{{rca.run.1.summary}} comes first", lines[12]);
         Assert.StartsWith("- Rule 3, digits:", lines[1]);
         Assert.StartsWith("- Rule 16, rankings", lines[2]);
         Assert.StartsWith("- Every model at once:", lines[3]);
@@ -1355,7 +1361,8 @@ public class BenchmarkReportPackPromptTests
         Assert.Contains("WORD BUDGET (every {{token}} is one word, however long its value; count each section before answering and aim at least one sentence under its cap):", system);
         Assert.Contains("- " + BenchmarkReportSlots.HypothesesSpeed + ", " + BenchmarkReportPackValidator.RootCauseHypothesesMaxWords + " words\n", system.Replace("\r\n", "\n"));
         Assert.Contains("never repeat them, and never list hypothesis or null references", system);
-        Assert.Contains("one sentence on the nulls in total, such as 'most pair nulls are rejected'", system);
+        Assert.DoesNotContain("one sentence on the nulls in total", system);
+        Assert.Contains("Overseer prints the nulls that stand and those rejected beside the paragraph: do not count or restate them.", system);
         Assert.Contains("which already prints the grading panel and the harness version: do not repeat them.", system);
         Assert.Contains("the one run per suite, the harness version and what it did not record", system);
 
@@ -1374,6 +1381,52 @@ public class BenchmarkReportPackPromptTests
         {
             Assert.DoesNotContain("comparison.runsPerSuite", system);
         }
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TheRootCauseSlots_LeaveWhatCodePrintsToCode_AndTakeTheNextRunsInCodesOrder(bool comparison)
+    {
+        string system = BenchmarkReportPackPrompt.BuildRootCauseSystemPrompt(comparison);
+
+        Assert.DoesNotContain("the measured signals of the model's profile", system);
+        Assert.Contains("Code prints the answer strength, the hypothesis ids and the measured signals above the answer, so do not restate them and never cite rca.question.<n>.signals: start with the reason.", system);
+        Assert.Contains("The conclusions table prints each axis's price note: never cite rca.axis.<axis>.priceNote here, and mention the price cards once", system);
+        Assert.Contains("say that the first run to make is {{rca.run.1.summary}} and what it settles, then the others in the order NEXT RUNS gives", system);
+        Assert.DoesNotContain("say which run to make first", system);
+        Assert.Contains("A share span already says 'of each gap': never put 'across' or 'for' directly before it.", system);
+        Assert.Contains("never estimate it, and never cite its token, which prints 'not available'.", system);
+    }
+
+    [Fact]
+    public void TheNextRuns_AreListedInCodesOrder_AndModelSelectionWaitsOnlyWhenARunWaits()
+    {
+        var built = RootCauseReportFixture.ComparisonFacts();
+        var sheet = built.Sheet!;
+        var result = sheet.RootCause!;
+        result.RecommendedRuns.Add(new Overseer.Services.Benchmarking.RootCause.RootCauseRecommendedRun
+        {
+            Number = result.RecommendedRuns.Max(r => r.Number) + 1,
+            Purpose = Overseer.Services.Benchmarking.RootCause.RootCausePurposes.ModelSelection,
+            PredictedTier = "Comparable"
+        });
+        var numbers = result.RecommendedRuns.Select(r => r.Number).OrderBy(n => n).ToList();
+        result.SystemFirst = true;
+        foreach (var run in result.RecommendedRuns) run.AfterSystemHypotheses = false;
+
+        string message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, built.Content!).UserMessage;
+
+        Assert.Contains("Write them in this order: " + string.Join(", ", numbers.Select(n => "{{rca.run." + n + ".summary}}"))
+            + "; a check comes before a run only when that run is a model-selection run.", message);
+        Assert.DoesNotContain("Model selection waits:", message);
+        Assert.DoesNotContain("The system comes first", message);
+        Assert.DoesNotContain("holds the model-selection runs back", message);
+
+        result.RecommendedRuns.Single(r => r.Number == numbers[^1]).AfterSystemHypotheses = true;
+        message = BenchmarkReportPackPrompt.Build(BenchmarkReportAudience.RootCauseAnalysis, sheet, built.Content!).UserMessage;
+
+        Assert.Contains("Model selection waits: a harness or suite hypothesis is graded Moderate or higher, so the model-selection runs come after it is settled. The chat runs still come first.", message);
     }
 
     [Fact]

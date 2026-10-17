@@ -196,7 +196,7 @@ public class RootCauseLanguageTests
             {
                 Key = ConflictKey,
                 Value = System.Text.Json.Nodes.JsonValue.Create(true),
-                Display = "Completeness is the lowest dimension, 13.5 points below Accuracy"
+                Display = "Completeness 13.5 points below Accuracy, its lowest dimension"
             },
         };
 
@@ -223,7 +223,6 @@ public class RootCauseLanguageTests
     }
 
     [Theory]
-    [InlineData("Completeness was graded under the concise style at {{" + ConflictKey + "}}.", ConflictKey)]
     [InlineData("The grade of {{model:B}} rests on {{" + ReasonsKey + "}}.", ReasonsKey)]
     public void ASentenceShapedFact_AfterWordsOfTheWritersSentence_IsARepairableWarning(string paragraph, string key)
     {
@@ -236,6 +235,7 @@ public class RootCauseLanguageTests
 
     [Theory]
     [InlineData("{{" + ConflictKey + "}}. That gap is the largest of any model.")]
+    [InlineData("Completeness was graded under the concise style at {{" + ConflictKey + "}}.")]
     [InlineData("The grade of {{model:B}} is low for these reasons:\n- {{" + ReasonsKey + "}}")]
     [InlineData("Why the grade is low: {{" + ReasonsKey + "}}.")]
     [InlineData("The writer cites {{rca.hypothesis.HQ1.1.label}} inside a sentence.")]
@@ -253,9 +253,8 @@ public class RootCauseLanguageTests
         Assert.True(RootCauseClaimSupport.IsSentenceShaped("rca.check.1"));
         Assert.True(RootCauseClaimSupport.IsSentenceShaped("rca.question.2.text"));
         Assert.True(RootCauseClaimSupport.IsSentenceShaped("rca.profile.A.flags"));
-        Assert.True(RootCauseClaimSupport.IsSentenceShaped(ConflictKey, "Completeness is the lowest dimension, 13.5 points below Accuracy"));
 
-        Assert.False(RootCauseClaimSupport.IsSentenceShaped(ConflictKey, "no response-style conflict"));
+        Assert.False(RootCauseClaimSupport.IsSentenceShaped(ConflictKey));
         Assert.False(RootCauseClaimSupport.IsSentenceShaped("rca.hypothesis.HQ1.1.label"));
         Assert.False(RootCauseClaimSupport.IsSentenceShaped("rca.profile.A.flag.1"));
         Assert.False(RootCauseClaimSupport.IsSentenceShaped("model.A.quality.index"));

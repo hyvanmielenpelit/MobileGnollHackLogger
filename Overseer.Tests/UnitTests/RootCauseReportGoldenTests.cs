@@ -209,7 +209,8 @@ public class RootCauseReportGoldenTests
             Assert.True(at >= 0, question.Text);
             string callout = summary[at..summary.IndexOf("\n\n", at, StringComparison.Ordinal)];
             Assert.Contains(">\n> For ", callout);
-            Assert.Contains(" the measured signals are ", callout);
+            Assert.Contains(">\n> *Measured signals:* ", callout);
+            Assert.DoesNotContain("the measured signals are", callout);
             Assert.All(callout.Split('\n'), line => Assert.StartsWith(">", line));
         }
 

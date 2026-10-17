@@ -681,7 +681,7 @@ public class BenchmarkReportFactsTests
         // Member A alone (80 everywhere) has no conflict; the panel row's Completeness is 32.5 below Accuracy.
         var style = FactOf(panel, "style.responseStyleConflict");
         Assert.True(style.Value!.GetValue<bool>());
-        Assert.Equal("Completeness is the lowest dimension, 32.5 points below Accuracy", style.Display);
+        Assert.Equal("Completeness 32.5 points below Accuracy, its lowest dimension", style.Display);
         Assert.True(BenchmarkReportPackPrompt.IsTrue(style));
 
         var single = BuildSheet(Input(Comparison(Entry("run:1", new long[] { 1 }, "Subject", "OpenAI", 80)), "run:1", SimpleRun(1, "OpenAI")));

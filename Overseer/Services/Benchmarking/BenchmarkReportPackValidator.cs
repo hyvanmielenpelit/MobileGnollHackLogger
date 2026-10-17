@@ -127,6 +127,13 @@ public sealed record BenchmarkReportSlotWordCount(
 /// beside a count token, what its display already says it counts; rule 31's run of counts is flagged only where one of
 /// them is bare.</para>
 ///
+/// <para>Rules 40 to 43 are warnings. Rule 40 (<see cref="RootCauseCodePrintedRule"/>) flags, in a Root Cause Analysis, an
+/// answer citing its question's measured signals or the conclusions citing an axis's price note, which Overseer prints beside
+/// them; rule 41 (<see cref="UnavailableTokenRule"/>), in a Root Cause Analysis or a comparison-scope document, a token of a
+/// fact without a value, which prints "not available"; rule 42 (<see cref="RootCauseNextRunsOrderRule"/>) a Root Cause
+/// Analysis' next runs written in another order than code's; and rule 43 (<see cref="BorrowedModelFigureRule"/>), in a
+/// comparison-scope Root Cause Analysis, one model's figure given for another model whose own figure differs.</para>
+///
 /// <para>A chat consistency sheet (<see cref="BenchmarkReportFactSheet.IsChatConsistency"/>) is checked
 /// against its audience's chat consistency slots and word caps, with the claim discipline of rules
 /// C1 to C7 (rule numbers 22 to 28), the readable-text rule C8 (rule 29) and the repetition rule C9 (rule 30)
@@ -322,6 +329,43 @@ public static class BenchmarkReportPackValidator
     /// <summary>A word of the writer's, or a token's placeholder, for rule 39.</summary>
     private static readonly Regex CountRepetitionWordRegex = new("\u0001\\d+\u0002|[A-Za-z][A-Za-z'-]*", RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
+    /// <summary>
+    /// Rule 40: in a Root Cause Analysis, an answer slot cites <c>rca.question.&lt;n&gt;.signals</c>, or the conclusions cite
+    /// <c>rca.axis.&lt;axis&gt;.priceNote</c>, both of which Overseer prints beside the section. A warning.
+    /// </summary>
+    public const int RootCauseCodePrintedRule = 40;
+
+    /// <summary>
+    /// Rule 41: in a Root Cause Analysis or a comparison-scope document, a token of a fact the sheet holds but has no value
+    /// for, which prints "not available". A warning.
+    /// </summary>
+    public const int UnavailableTokenRule = 41;
+
+    /// <summary>
+    /// Rule 42: a Root Cause Analysis' next runs cite the runs in another order than code's numbers, start with another run
+    /// than run 1, or put a check before the runs when run 1 is no model-selection run. A warning.
+    /// </summary>
+    public const int RootCauseNextRunsOrderRule = 42;
+
+    /// <summary>
+    /// Rule 43: in a comparison-scope Root Cause Analysis, a model's figure token (<c>model.&lt;X&gt;.*</c>,
+    /// <c>rca.atRisk.&lt;X&gt;.*</c>, <c>rca.within.&lt;X&gt;.*</c>) given <c>for</c> another model whose own figure differs or
+    /// is missing. A warning.
+    /// </summary>
+    public const int BorrowedModelFigureRule = 43;
+
+    /// <summary>Rule 43: a model's figure key, with its family, its letter and the rest of the key.</summary>
+    private static readonly Regex ModelScopedKeyRegex = new(
+        @"^(?<family>model|rca\.atRisk|rca\.within)\.(?<letter>[A-Z]+)\.(?<rest>.+)$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>Rule 43: <c>for</c> as a whole word, followed by a token's placeholder.</summary>
+    private static readonly Regex ForPlaceholderRegex = new(
+        "(?<![\\p{L}\\p{N}])for\\s+(?=\u0001)", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+    /// <summary>Rule 43: what may join two model tokens of one list: a comma, <c>and</c>, or both.</summary>
+    private static readonly Regex ModelListJoinRegex = new(
+        @"^\s*(?:,\s*(?:and\s+)?|and\s+)$", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     // Root Cause Analysis slot caps.
     public const int RootCauseScopeMaxWords = 120;
     public const int RootCauseEvidenceMaxWords = 100;
@@ -348,7 +392,8 @@ public static class BenchmarkReportPackValidator
         => rule is UsSpellingRule or IntervalWidthRule or VerifierInSummaryRule or OverlapHedgeRule
             or HypeWordRule or ZeroTokenNegationRule or ModelCoverageRule or ChatInconclusiveMdeRule
             or ChatRepetitionRule or ComparisonTokenShapeRule or RootCauseAxisStatusRule or BareModelLetterRule
-            or RootCauseShareBesideRefRule or CountRepetitionRule;
+            or RootCauseShareBesideRefRule or CountRepetitionRule or RootCauseCodePrintedRule or UnavailableTokenRule
+            or RootCauseNextRunsOrderRule or BorrowedModelFigureRule;
 
     /// <summary>Words rule 19 reads as a negation, matched as whole words, ignoring case.</summary>
     public static readonly IReadOnlyList<string> NegationWords = new[] { "no", "none", "never", "without", "zero" };
@@ -786,6 +831,7 @@ public static class BenchmarkReportPackValidator
         CheckChatHoursCited(ctx, output.Headline, sections, notes);
         CheckChatMdeCited(ctx, output.Headline, sections, notes);
         CheckRootCauseConclusions(ctx, sections, notes);
+        CheckRootCauseNextRuns(ctx, sections, notes);
 
         foreach (string key in ExtraSlots(ctx.RequiredSlots, sections))
         {
@@ -1323,6 +1369,7 @@ public static class BenchmarkReportPackValidator
         CheckIntervalWidth(ctx, slot, paragraph, location, issues);
         CheckChatClaims(ctx, slot, paragraph, location, issues);
         CheckRootCauseClaims(ctx, slot, paragraph, location, issues);
+        CheckCodePrinted(ctx, slot, paragraph, location, issues);
         return issues;
     }
 
@@ -1512,6 +1559,27 @@ public static class BenchmarkReportPackValidator
         if (ctx.RootCause)
         {
             CheckShareBesideRef(ctx, text, location, notes);
+        }
+
+        // Rule 41: a token of a fact without a value, which prints "not available".
+        if (ctx.RootCause || ctx.Comparison)
+        {
+            var unavailable = TokenRegex.Matches(text)
+                .Select(m => m.Groups[1].Value)
+                .Where(ctx.IsUnavailableFact)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            foreach (string key in unavailable)
+            {
+                Issue(notes, UnavailableTokenRule, location,
+                    $"{{{{{key}}}}} has no value in this data and prints 'not available'; leave it out, or say in plain words that the figure is unavailable and why.");
+            }
+        }
+
+        // Rule 43: one model's figure given for another.
+        if (ctx.RootCause && ctx.Comparison)
+        {
+            CheckBorrowedModelFigures(ctx, text, location, notes);
         }
 
         // Rule 17: hype and filler words.
@@ -2484,7 +2552,7 @@ public static class BenchmarkReportPackValidator
     /// Rule 31, a warning, on one prose string of a Root Cause Analysis: a sentence-shaped fact
     /// (<see cref="RootCauseClaimSupport.IsSentenceShaped"/>), one whose display is a clause, a sentence or a list
     /// of clauses, preceded in its sentence by a word of the writer's own: it reads as a broken sentence
-    /// (<c>graded under the concise style at Completeness is the lowest dimension</c>). Standing at the start of a
+    /// (<c>the grade rests on both models ran only once per suite</c>). Standing at the start of a
     /// sentence, after a list marker or after a colon it is left alone. A display that already reads as a
     /// sentence is <see cref="CheckTokenShape"/>'s. A warning, never a drop: dropping would remove whole answers.
     /// </summary>
@@ -2495,7 +2563,7 @@ public static class BenchmarkReportPackValidator
         var (all, spans) = ResolveTokens(ctx, text);
         var misplaced = spans
             .Where(s => !IsSentenceValuedDisplay(s.Key, s.Display.Trim()))
-            .Where(s => RootCauseClaimSupport.IsSentenceShaped(s.Key, s.Display))
+            .Where(s => RootCauseClaimSupport.IsSentenceShaped(s.Key))
             .Where(s => !StartsSentence(all, s.Start))
             .Select(s => "{{" + s.Key + "}}")
             .Distinct(StringComparer.Ordinal)
@@ -2668,6 +2736,147 @@ public static class BenchmarkReportPackValidator
     /// <summary>The fact keys a text cites, trimmed.</summary>
     private static HashSet<string> CitedTokens(string text)
         => TokenRegex.Matches(text).Select(m => m.Groups[1].Value.Trim()).ToHashSet(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Rule 40 on one paragraph of a Root Cause Analysis: an answer slot citing a question's measured signals
+    /// (<c>rca.question.&lt;n&gt;.signals</c>), or the conclusions citing an axis's price note
+    /// (<c>rca.axis.&lt;axis&gt;.priceNote</c>), both of which Overseer prints beside the section.
+    /// </summary>
+    private static void CheckCodePrinted(Context ctx, string slot, string paragraph, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        if (!ctx.RootCause || string.IsNullOrWhiteSpace(paragraph)) return;
+        bool answer = RootCauseClaimSupport.QuestionOf(slot) is int;
+        bool conclusions = string.Equals(slot, BenchmarkReportSlots.Conclusions, StringComparison.Ordinal);
+        if (!answer && !conclusions) return;
+
+        var printed = CitedTokens(paragraph)
+            .Where(k => answer
+                ? k.StartsWith("rca.question.", StringComparison.Ordinal) && k.EndsWith(".signals", StringComparison.Ordinal)
+                : k.StartsWith("rca.axis.", StringComparison.Ordinal) && k.EndsWith(".priceNote", StringComparison.Ordinal))
+            .OrderBy(k => k, StringComparer.Ordinal);
+        foreach (string key in printed)
+        {
+            Issue(notes, RootCauseCodePrintedRule, location,
+                $"{{{{{key}}}}} is printed by Overseer beside this section; remove it and say in your own words what matters.");
+        }
+    }
+
+    /// <summary>A next run's or a check's token, <c>rca.run.&lt;n&gt;.*</c> or <c>rca.check.&lt;n&gt;</c> and its parts, for rule 42.</summary>
+    private static readonly Regex NextRunTokenRegex = new(@"^rca\.(?<kind>run|check)\.(?<n>\d+)(?:\..+)?$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>A next run's summary fact, <c>rca.run.&lt;n&gt;.summary</c>, for rule 42's message.</summary>
+    private static readonly Regex RunSummaryKeyRegex = new(@"^rca\.run\.(?<n>\d+)\.summary$", RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Rule 42, a warning: the runs and checks the next runs cite, in order of first appearance, follow code's order: the
+    /// run numbers ascend, run 1 comes first where the sheet has it, and no check comes before the first run unless run 1
+    /// is a model-selection run (<c>rca.run.1.purpose</c>).
+    /// </summary>
+    private static void CheckRootCauseNextRuns(Context ctx, IReadOnlyDictionary<string, string> sections, List<BenchmarkReportValidationNote> notes)
+    {
+        if (!ctx.RootCause || !sections.TryGetValue(BenchmarkReportSlots.NextRuns, out string? text) || string.IsNullOrWhiteSpace(text)) return;
+
+        var order = new List<(bool Run, int Number)>();
+        foreach (Match match in TokenRegex.Matches(text))
+        {
+            string key = match.Groups[1].Value.Trim();
+            var cited = NextRunTokenRegex.Match(key);
+            if (!cited.Success || !ctx.FactKeys.Contains(key)) continue;
+            var item = (cited.Groups["kind"].Value == "run", int.Parse(cited.Groups["n"].Value, NumberStyles.None, CultureInfo.InvariantCulture));
+            if (!order.Contains(item)) order.Add(item);
+        }
+        var runs = order.Where(o => o.Run).Select(o => o.Number).ToList();
+        if (runs.Count == 0) return;
+
+        string? purpose = ctx.FactDisplay("rca.run.1.purpose");
+        bool modelSelectionFirst = purpose == RootCausePurposes.Text(RootCausePurposes.ModelSelection);
+        bool ascending = runs.Zip(runs.Skip(1)).All(p => p.First < p.Second);
+        bool runOneFirst = !ctx.FactKeys.Contains("rca.run.1.summary") || runs[0] == 1;
+        bool checkFirst = purpose != null && !modelSelectionFirst && order.TakeWhile(o => !o.Run).Any();
+        if (ascending && runOneFirst && !checkFirst) return;
+
+        var summaries = ctx.FactKeys
+            .Select(k => RunSummaryKeyRegex.Match(k))
+            .Where(m => m.Success)
+            .OrderBy(m => int.Parse(m.Groups["n"].Value, NumberStyles.None, CultureInfo.InvariantCulture))
+            .Select(m => "{{" + m.Value + "}}")
+            .ToList();
+        string expected = summaries[0] + " first" + string.Concat(summaries.Skip(1).Select(s => ", then " + s));
+        string checks = modelSelectionFirst
+            ? "a check may come before " + (summaries.Count == 1 ? "it" : "them") + ", since the first run is a model-selection run"
+            : "a check comes after " + (summaries.Count == 1 ? "it" : "them");
+        Issue(notes, RootCauseNextRunsOrderRule, SectionLocation(BenchmarkReportSlots.NextRuns), $"Write the runs in code's order: {expected}; {checks}.");
+    }
+
+    /// <summary>
+    /// Rule 43 on one prose string of a comparison-scope Root Cause Analysis: a model's figure token (<see cref="ModelScopedKeyRegex"/>)
+    /// followed in its sentence, before the next fact token, by <c>for</c> and a list of model tokens, where a listed model other
+    /// than the token's own has no such figure, has it without a value, or has another display. One note per figure token.
+    /// </summary>
+    private static void CheckBorrowedModelFigures(Context ctx, string text, string location, List<BenchmarkReportValidationNote> notes)
+    {
+        if (string.IsNullOrWhiteSpace(text) || !TokenRegex.IsMatch(text)) return;
+
+        var tokens = new List<string>();
+        string masked = TokenRegex.Replace(text, m =>
+        {
+            tokens.Add(m.Groups[1].Value.Trim());
+            return "\u0001" + (tokens.Count - 1).ToString(CultureInfo.InvariantCulture) + "\u0002";
+        });
+        string KeyAt(Match placeholder) => tokens[int.Parse(placeholder.Groups[1].Value, NumberStyles.None, CultureInfo.InvariantCulture)];
+        static string? LetterOf(string key) => key.StartsWith("model:", StringComparison.Ordinal) ? key["model:".Length..] : null;
+
+        var reported = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string sentence in SentenceSplitRegex.Split(masked))
+        {
+            var placeholders = TokenPlaceholderRegex.Matches(sentence).ToList();
+            for (int i = 0; i < placeholders.Count; i++)
+            {
+                string key = KeyAt(placeholders[i]);
+                var scoped = ModelScopedKeyRegex.Match(key);
+                if (!scoped.Success || !ctx.FactKeys.Contains(key)) continue;
+
+                // The writer's text up to the next fact token; model tokens do not end it.
+                int next = i + 1;
+                while (next < placeholders.Count && LetterOf(KeyAt(placeholders[next])) != null) next++;
+                int start = placeholders[i].Index + placeholders[i].Length;
+                string segment = sentence[start..(next < placeholders.Count ? placeholders[next].Index : sentence.Length)];
+
+                var forWord = ForPlaceholderRegex.Match(segment);
+                if (!forWord.Success) continue;
+                var letters = new List<string>();
+                int at = forWord.Index + forWord.Length;
+                foreach (Match model in TokenPlaceholderRegex.Matches(segment))
+                {
+                    if (model.Index < at) continue;
+                    if (letters.Count > 0 && !ModelListJoinRegex.IsMatch(segment[at..model.Index])) break;
+                    if (LetterOf(KeyAt(model)) is not string letter) break;
+                    letters.Add(letter);
+                    at = model.Index + model.Length;
+                }
+
+                string own = scoped.Groups["letter"].Value;
+                string display = ctx.FactDisplay(key) ?? string.Empty;
+                var wrong = new List<string>();
+                foreach (string letter in letters.Distinct(StringComparer.Ordinal).Where(l => l != own))
+                {
+                    string other = scoped.Groups["family"].Value + "." + letter + "." + scoped.Groups["rest"].Value;
+                    if (!ctx.FactKeys.Contains(other) || ctx.IsUnavailableFact(other))
+                    {
+                        wrong.Add($"{{{{model:{letter}}}}} has no such figure");
+                    }
+                    else if (!string.Equals(ctx.FactDisplay(other), display, StringComparison.Ordinal))
+                    {
+                        wrong.Add($"{{{{model:{letter}}}}}'s is {{{{{other}}}}} ({ctx.FactDisplay(other)})");
+                    }
+                }
+                if (wrong.Count == 0 || !reported.Add(key)) continue;
+
+                Issue(notes, BorrowedModelFigureRule, location,
+                    $"{{{{{key}}}}} prints {{{{model:{own}}}}}'s figure; {string.Join("; ", wrong)}: cite each model's own token.");
+            }
+        }
+    }
 
     /// <summary>
     /// Rule 35 and the prose rules on one writer hypothesis of a Root Cause Analysis: an axis, a statement,
@@ -3578,6 +3787,9 @@ public static class BenchmarkReportPackValidator
             => _availableFacts.Contains(pairPrefix + measure + "." + BenchmarkComparisonReportFacts.ReferenceFamilyName)
                || _availableFacts.Contains(pairPrefix + measure + "." + BenchmarkComparisonReportFacts.AllPairsFamilyName)
                || _availableFacts.Contains(pairPrefix + measure + ".short");
+
+        /// <summary>The sheet holds a fact keyed <paramref name="key"/>, without a value.</summary>
+        public bool IsUnavailableFact(string key) => FactKeys.Contains(key) && !_availableFacts.Contains(key);
 
         public bool IsValidToken(string inner)
         {

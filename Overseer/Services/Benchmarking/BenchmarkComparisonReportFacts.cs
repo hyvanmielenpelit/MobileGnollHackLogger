@@ -1580,15 +1580,15 @@ public static class BenchmarkComparisonReportFacts
     {
         int? Whole(double? value) => value is double v ? (int)Math.Round(v, MidpointRounding.AwayFromZero) : null;
         var perSuite = lettered.Select(l => batteries
-            ? Whole(NumberOf(l.Item.Sheet, "battery.runsPerSuite"))
+            ? Whole(AnyNumberOf(l.Item.Sheet, "battery.runsPerSuite"))
             : l.Item.Entry.RunIds.Distinct().Count()).ToList();
-        var suites = lettered.Select(l => batteries ? Whole(NumberOf(l.Item.Sheet, "battery.suiteCount")) : 1).ToList();
+        var suites = lettered.Select(l => batteries ? Whole(AnyNumberOf(l.Item.Sheet, "battery.suiteCount")) : 1).ToList();
 
         AddSpanFact(facts, "comparison.runsPerSuite", perSuite, "run", "runs", " per suite");
         AddSpanFact(facts, "comparison.suiteCount", suites, "suite", "suites", string.Empty);
         if (batteries)
         {
-            var members = lettered.Select(l => Whole(NumberOf(l.Item.Sheet, "battery.memberRuns"))).ToList();
+            var members = lettered.Select(l => Whole(AnyNumberOf(l.Item.Sheet, "battery.memberRuns"))).ToList();
             AddSpanFact(facts, "comparison.memberRuns", members, "run", "runs", " per model");
         }
 

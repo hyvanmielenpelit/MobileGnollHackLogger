@@ -221,8 +221,7 @@ public sealed class RootCauseClaimSupport
     /// <summary>The kinds of fact <see cref="IsSentenceShaped"/> marks, in words, for the prompt and the validator's notes.</summary>
     public const string SentenceShapedKinds =
         "a hypothesis's statement, evidence for or against, refuted-if statement or grade reasons; a known fact; a check; "
-        + "an axis's price note; a research question or its signals; a model's list of flags; a notable finding's summary; "
-        + "and a response-style conflict";
+        + "an axis's price note; a research question or its signals; a model's list of flags; and a notable finding's summary";
 
     /// <summary>
     /// Whether a fact's display is a sentence, a clause or a list of clauses rather than a noun phrase, so the
@@ -230,22 +229,15 @@ public sealed class RootCauseClaimSupport
     /// sentence: <c>rca.hypothesis.&lt;id&gt;.&lt;n&gt;.statement</c>, <c>.for</c>, <c>.against</c>,
     /// <c>.refutedIf</c> and <c>.gradeReasons</c>; <c>rca.known.&lt;n&gt;</c>; <c>rca.check.&lt;n&gt;</c>;
     /// <c>rca.axis.&lt;axis&gt;.priceNote</c>; <c>rca.question.&lt;n&gt;.text</c> and <c>.signals</c>;
-    /// <c>rca.profile.&lt;T&gt;.flags</c>; <c>notable.&lt;n&gt;.summary</c>; and <c>style.responseStyleConflict</c>,
-    /// bare or under a model's letter, when its <paramref name="display"/> states a conflict (it opens with a capital
-    /// letter). A hypothesis' label, a check's <c>rca.check.&lt;n&gt;.summary</c> and each single flag are noun phrases
-    /// and are never marked.
+    /// <c>rca.profile.&lt;T&gt;.flags</c>; and <c>notable.&lt;n&gt;.summary</c>. A hypothesis' label, a check's <c>rca.check.&lt;n&gt;.summary</c>, each single flag and
+    /// <c>style.responseStyleConflict</c> are noun phrases and are never marked.
     /// </summary>
-    public static bool IsSentenceShaped(string key, string? display = null)
+    public static bool IsSentenceShaped(string key)
     {
         if (string.IsNullOrEmpty(key)) return false;
         string bare = ModelKeyPrefixRegex.Replace(key, string.Empty);
         string[] parts = bare.Split('.');
 
-        if (bare == "style.responseStyleConflict")
-        {
-            string text = (display ?? string.Empty).TrimStart();
-            return text.Length > 0 && char.IsUpper(text[0]);
-        }
         if (parts.Length == 3 && parts[0] == "notable" && parts[2] == "summary") return true;
         if (parts.Length < 3 || parts[0] != "rca") return false;
 

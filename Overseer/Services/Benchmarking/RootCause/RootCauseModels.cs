@@ -167,6 +167,14 @@ public static class RootCausePurposes
         Benchmark => 1,
         _ => 2
     };
+
+    /// <summary>The purpose in words, with its letter: <c>C, the Overseer chat</c>.</summary>
+    public static string Text(string? purpose) => purpose switch
+    {
+        Chat => "C, the Overseer chat",
+        Benchmark => "B, the benchmark",
+        _ => "M, model selection"
+    };
 }
 
 /// <summary>How strongly a run is recommended.</summary>

@@ -945,9 +945,12 @@ public static class BenchmarkReportFactLabels
                 label = "Control " + parts[2] + ": " + controlPart;
                 return true;
 
-            // rca.run.<n>.summary, rca.check.<n>, rca.check.<n>.summary
+            // rca.run.<n>.summary, rca.run.<n>.purpose, rca.check.<n>, rca.check.<n>.summary
             case "run" when parts.Length == 4 && IsIndex(parts[2]) && parts[3] == "summary":
                 label = "Recommended run " + parts[2];
+                return true;
+            case "run" when parts.Length == 4 && IsIndex(parts[2]) && parts[3] == "purpose":
+                label = "Recommended run " + parts[2] + ", purpose";
                 return true;
             case "check" when parts.Length == 3 && IsIndex(parts[2]):
                 label = "Check " + parts[2];

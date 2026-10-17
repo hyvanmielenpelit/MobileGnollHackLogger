@@ -231,7 +231,7 @@ public static partial class BenchmarkReportPackRenderer
 
     /// <summary>
     /// The headline as the key finding, then the main findings code states (<see cref="RcaFindings"/>); each research
-    /// question with its answer strength and the writer's answer; every model at a glance; and the grade words with the
+    /// question with its answer strength, its measured signals and the writer's answer; every model at a glance; and the grade words with the
     /// cap the run counts put on them and, where it stands out, the grader-family gap.
     /// </summary>
     private static void RcaSummary(StringBuilder sb, Context ctx, RootCauseResult? result)
@@ -262,6 +262,11 @@ public static partial class BenchmarkReportPackRenderer
                     "*Answer strength: " + RcaAnswerStrength(question, token => RcaTokenName(ctx, token), result?.Hypotheses) + "*",
                     string.Empty
                 };
+                if (RcaSignalsLine(ctx, question.Number) is string signals)
+                {
+                    lines.Add(signals);
+                    lines.Add(string.Empty);
+                }
                 lines.Add(RcaAnswer(ctx, question.Number, answered));
                 Callout(sb, "NOTE", lines);
             }
@@ -450,6 +455,20 @@ public static partial class BenchmarkReportPackRenderer
         return "Grader family: the quality gap of " + pair + " is " + RootCauseFacts.GapText(gap.GapA)
                + " under Panel member A and " + RootCauseFacts.GapText(gap.GapB) + " under Panel member B, a contrast of "
                + RootCauseFacts.GapText(gap.Contrast!) + ". The order between models of those two providers depends on the panel's balance.";
+    }
+
+    /// <summary>
+    /// A research question's measured signals, <c>*Measured signals:* …</c>, from its <c>rca.question.&lt;n&gt;.signals</c>
+    /// fact resolved as the writer's prose is; null before <see cref="SignalsLineFormatVersion"/> (in comparison scope
+    /// <see cref="ComparisonSignalsLineFormatVersion"/>), or when the fact is missing, unavailable or records none.
+    /// </summary>
+    private static string? RcaSignalsLine(Context ctx, int question)
+    {
+        int since = ctx.Comparison ? ComparisonSignalsLineFormatVersion : SignalsLineFormatVersion;
+        if (ctx.Document.ReportFormatVersion < since) return null;
+        string key = "rca.question." + Inv(question) + ".signals";
+        if (Fact(ctx, key) is not { Available: true } fact || string.Equals(fact.Display, "none recorded", StringComparison.Ordinal)) return null;
+        return "*Measured signals:* " + Prose(ctx, "{{" + key + "}}");
     }
 
     /// <summary>
@@ -1467,7 +1486,7 @@ public static partial class BenchmarkReportPackRenderer
             Line(sb, "In the order to make them: the Overseer chat first (C), then the benchmark (B), then model selection (M). "
                 + "Appendix D gives each run's launcher settings.");
             Line(sb);
-            if (analysis.SystemFirst)
+            if (analysis.SystemFirst && runs.Any(r => r.AfterSystemHypotheses))
             {
                 Line(sb, "A harness or suite hypothesis is graded Moderate or higher, so the model-selection runs wait until the system hypotheses are settled.");
                 Line(sb);
@@ -1485,7 +1504,7 @@ public static partial class BenchmarkReportPackRenderer
                 Line(sb, RcaRow(
                     Inv(run.Number),
                     Capitalized(RootCauseNextRuns.KindPhrase(run.Kind)) + " (" + run.Mark.ToLowerInvariant() + ")",
-                    RcaPurposeText(run.Purpose),
+                    RootCausePurposes.Text(run.Purpose),
                     Cell(modelText),
                     Cell(RcaSettlesText(run.HypothesisIds)),
                     estimate.Length == 0 ? "not estimated" : estimate));
@@ -1633,13 +1652,6 @@ public static partial class BenchmarkReportPackRenderer
         if (analyzed != null) return RcaTokenName(ctx, analyzed.Token);
         return ctx.Comparison && ctx.Anonymized ? "another configured model" : label;
     }
-
-    private static string RcaPurposeText(string purpose) => purpose switch
-    {
-        RootCausePurposes.Chat => "C, the Overseer chat",
-        RootCausePurposes.Benchmark => "B, the benchmark",
-        _ => "M, model selection"
-    };
 
     private static string RcaCheckText(string status) => status switch
     {
@@ -2243,7 +2255,7 @@ public static partial class BenchmarkReportPackRenderer
         Line(sb);
         foreach (var run in runs.OrderBy(r => r.Number))
         {
-            Heading(sb, "### Run " + Inv(run.Number) + ": " + RootCauseNextRuns.KindName(run.Kind) + " (" + RcaPurposeText(run.Purpose) + ", " + run.Mark.ToLowerInvariant() + ")");
+            Heading(sb, "### Run " + Inv(run.Number) + ": " + RootCauseNextRuns.KindName(run.Kind) + " (" + RootCausePurposes.Text(run.Purpose) + ", " + run.Mark.ToLowerInvariant() + ")");
             var decides = (run.DecidesItems ?? new List<string>()).Where(d => !string.IsNullOrWhiteSpace(d)).ToList();
             if (decides.Count > 1)
             {

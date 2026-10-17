@@ -306,7 +306,7 @@ public static partial class BenchmarkReportPackPrompt
         }
         Line(sb, "- Refer to a question exactly as the QUESTION MATRIX does, for example Q7. This is the only form in which a digit may appear.");
         Line(sb, "- Never name any model, provider or product, including the graders. Call the graders by the role names listed in GRADERS, in lower case: panel member A, panel member B, the reference reader and the claim verifier (in a single-assessor run, the assessor and the second reader). In the Executive Summary say 'one grader' or 'both graders' instead.");
-        Line(sb, "- Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why, and never estimate it.");
+        Line(sb, "- Mention an unavailable figure only where leaving it out would mislead the reader; then say in plain words that it is unavailable and why; never estimate it, and never cite its token, which prints 'not available'.");
         Line(sb, "- In the prose, never write a fact key outside its {{key}} token, and never describe the facts list, the fact sheet or how the data was given to you.");
         Line(sb, "- State a value that several models share once, for all of them; never list equal values one by one.");
         Line(sb);

@@ -1431,7 +1431,7 @@ internal sealed class RootCauseContext
 ///   rca.within.&lt;T&gt;.time.&lt;segment&gt;.seconds, .time.&lt;segment&gt;.share; rca.within.&lt;T&gt;.cost.&lt;component&gt;.share
 ///   rca.controls.count, .providers, .limit; rca.controls.&lt;n&gt;.model, .runId or .batteryRunId, .date, .provider, .sharedQuestions
 ///   rca.control.deficit.mean, .interval; rca.control.instrumentSuspect, rca.control.modelSpecific
-///   rca.run.&lt;n&gt;.summary, rca.check.&lt;n&gt;, rca.check.&lt;n&gt;.summary, rca.systemFirst, rca.pricingBasis
+///   rca.run.&lt;n&gt;.summary, .purpose, rca.check.&lt;n&gt;, rca.check.&lt;n&gt;.summary, rca.systemFirst, rca.pricingBasis
 /// </summary>
 public static class RootCauseFacts
 {
@@ -1728,6 +1728,7 @@ public static class RootCauseFacts
         foreach (var run in result.RecommendedRuns)
         {
             facts.Text("rca.run." + Inv(run.Number) + ".summary", RootCauseNextRuns.Summary(run, RunModelName, result.Models.Count));
+            facts.Text("rca.run." + Inv(run.Number) + ".purpose", RootCausePurposes.Text(run.Purpose));
         }
         foreach (var check in result.Checks)
         {

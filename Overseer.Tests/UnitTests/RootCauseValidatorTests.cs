@@ -971,4 +971,146 @@ public class RootCauseValidatorTests
         Assert.True(cleaned.Fatal);
         Assert.True(cleaned.HeadlineOnlyFatal);
     }
+
+    // --- Rules 40 to 43: what code prints, unavailable figures, the next runs' order, borrowed figures ---
+
+    private static List<BenchmarkReportValidationNote> RuleNotes(BenchmarkReportFactSheet sheet, int rule, string slot, string paragraph)
+        => ValidateSections(sheet, new Dictionary<string, string> { [slot] = paragraph })
+            .Where(n => n.Rule == rule)
+            .ToList();
+
+    [Fact]
+    public void Rule40_AnAnswerCitingItsSignals_IsAWarning_AndAnAnswerInItsOwnWordsIsNot()
+    {
+        var sheet = QuestionSheet(1);
+        sheet.Facts.Add(TextFact("rca.question.1.signals", "tied for first of 2 models on Accuracy"));
+        string slot = BenchmarkReportSlots.RootCauseAnswerSlots[0];
+
+        var note = Assert.Single(RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseCodePrintedRule, slot,
+            "It makes fewer critical errors ({{rca.hypothesis.HQ1.1.ref}}): {{rca.question.1.signals}}."));
+        Assert.Equal("{{rca.question.1.signals}} is printed by Overseer beside this section; remove it and say in your own words what matters.", note.Message);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+        Assert.False(BenchmarkReportPackValidator.BlocksText(note));
+
+        Assert.Empty(RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseCodePrintedRule, slot,
+            "It makes fewer critical errors ({{rca.hypothesis.HQ1.1.ref}}), so its answers lose fewer points."));
+    }
+
+    [Fact]
+    public void Rule40_TheConclusionsCitingAPriceNote_IsAWarning_ButAHypothesesParagraphMayCiteIt()
+    {
+        var sheet = QuestionSheet();
+        sheet.Facts.Add(TextFact("rca.axis.cost.priceNote", "Price per token explains the largest cost gaps."));
+
+        Assert.Single(RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportSlots.Conclusions,
+            "Cost: {{rca.axis.cost.status}}. {{rca.axis.cost.priceNote}}"));
+        Assert.Empty(RuleNotes(sheet, BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportSlots.HypothesesCost,
+            "{{rca.axis.cost.priceNote}} The other hypotheses are weaker."));
+    }
+
+    [Fact]
+    public void Rule41_ATokenWithoutAValue_IsAWarning_AndAnAvailableOneIsNot()
+    {
+        var sheet = QuestionSheet();
+        sheet.Facts.Add(new BenchmarkReportFact { Key = "comparison.memberRuns", Display = "not available", Available = false, UnavailableReason = "Not every model records this count." });
+        sheet.Facts.Add(TextFact("comparison.suiteCount", "2 suites"));
+
+        var note = Assert.Single(RuleNotes(sheet, BenchmarkReportPackValidator.UnavailableTokenRule, BenchmarkReportSlots.Scope,
+            "Each model rests on {{comparison.memberRuns}} across {{comparison.suiteCount}}."));
+        Assert.StartsWith("{{comparison.memberRuns}} has no value in this data and prints 'not available'", note.Message, StringComparison.Ordinal);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+
+        Assert.Empty(RuleNotes(sheet, BenchmarkReportPackValidator.UnavailableTokenRule, BenchmarkReportSlots.Scope,
+            "Each model rests on runs across {{comparison.suiteCount}}."));
+    }
+
+    /// <summary><see cref="QuestionSheet"/> with a second run, run 1's purpose and one check.</summary>
+    private static BenchmarkReportFactSheet NextRunsSheet(string firstPurpose)
+    {
+        var sheet = QuestionSheet();
+        sheet.Facts.Add(TextFact("rca.run.1.purpose", RootCausePurposes.Text(firstPurpose)));
+        sheet.Facts.Add(TextFact("rca.run.2.summary", "a response-style pair of every model"));
+        sheet.Facts.Add(TextFact("rca.run.2.purpose", RootCausePurposes.Text(RootCausePurposes.ModelSelection)));
+        sheet.Facts.Add(TextFact("rca.check.1", CheckSentence));
+        sheet.Facts.Add(TextFact("rca.check.1.summary", "Check 1, a panel swap with two graders of other providers"));
+        return sheet;
+    }
+
+    [Theory]
+    [InlineData(RootCausePurposes.Chat, "First {{rca.check.1.summary}}. Then make {{rca.run.1.summary}} and {{rca.run.2.summary}}.", true)]
+    [InlineData(RootCausePurposes.ModelSelection, "First {{rca.check.1.summary}}. Then make {{rca.run.1.summary}} and {{rca.run.2.summary}}.", false)]
+    [InlineData(RootCausePurposes.Chat, "Make {{rca.run.2.summary}} first. Then make {{rca.run.1.summary}}.", true)]
+    [InlineData(RootCausePurposes.Chat, "Make {{rca.run.1.summary}} first, then {{rca.run.2.summary}}. Afterwards, {{rca.check.1.summary}}.", false)]
+    public void Rule42_TheNextRuns_FollowCodesOrder(string firstPurpose, string paragraph, bool flagged)
+    {
+        var notes = RuleNotes(NextRunsSheet(firstPurpose), BenchmarkReportPackValidator.RootCauseNextRunsOrderRule, BenchmarkReportSlots.NextRuns, paragraph);
+
+        if (!flagged)
+        {
+            Assert.Empty(notes);
+            return;
+        }
+        var note = Assert.Single(notes);
+        Assert.Equal("sections." + BenchmarkReportSlots.NextRuns, note.Location);
+        Assert.Equal("Write the runs in code's order: {{rca.run.1.summary}} first, then {{rca.run.2.summary}}; a check comes after them.", note.Message);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+    }
+
+    /// <summary><see cref="QuestionSheet"/> with four models, an at-risk figure and an output price each; A and B share both.</summary>
+    private static BenchmarkReportFactSheet BorrowedFigureSheet()
+    {
+        var sheet = QuestionSheet();
+        sheet.Peers.AddRange(new[] { "C", "D" }
+            .Select((l, i) => new BenchmarkReportPeer { Letter = l, EntryKey = "run:" + (52 + i), Label = "Orion " + l, Provider = "Northwind", State = "Comparable" }));
+        foreach (var (letter, risk, price) in new[] { ("A", "1.6 points", "$10.00"), ("B", "1.6 points", "$10.00"), ("C", "2.4 points", "$12.00") })
+        {
+            sheet.Facts.Add(TextFact("rca.atRisk." + letter + ".criticalError", risk));
+            sheet.Facts.Add(TextFact("model." + letter + ".price.output.perMillion", price + " per million tokens"));
+        }
+        return sheet;
+    }
+
+    [Theory]
+    [InlineData("Critical errors put {{rca.atRisk.A.criticalError}} at risk for {{model:A}} and {{model:B}}.", null)]
+    [InlineData("Critical errors put {{rca.atRisk.A.criticalError}} at risk for {{model:A}}, {{model:B}} and {{model:C}}.",
+        "{{rca.atRisk.A.criticalError}} prints {{model:A}}'s figure; {{model:C}}'s is {{rca.atRisk.C.criticalError}} (2.4 points): cite each model's own token.")]
+    [InlineData("Output prices start at {{model.A.price.output.perMillion}} for {{model:A}} and {{model:B}}.", null)]
+    [InlineData("Output prices start at {{model.A.price.output.perMillion}} for {{model:B}}, {{model:C}} and {{model:D}}.",
+        "{{model.A.price.output.perMillion}} prints {{model:A}}'s figure; {{model:C}}'s is {{model.C.price.output.perMillion}} ($12.00 per million tokens); {{model:D}} has no such figure: cite each model's own token.")]
+    [InlineData("Critical errors put {{rca.atRisk.A.criticalError}} at risk for {{model:A}} and {{rca.atRisk.C.criticalError}} for {{model:C}}.", null)]
+    public void Rule43_AModelsFigure_GivenForAnotherModel_IsFlaggedOnlyWhereTheFiguresDiffer(string paragraph, string? message)
+    {
+        var notes = RuleNotes(BorrowedFigureSheet(), BenchmarkReportPackValidator.BorrowedModelFigureRule, BenchmarkReportSlots.EvidenceCost, paragraph);
+
+        if (message == null)
+        {
+            Assert.Empty(notes);
+            return;
+        }
+        var note = Assert.Single(notes);
+        Assert.Equal(message, note.Message);
+        Assert.True(BenchmarkReportPackValidator.IsWarningRule(note.Rule));
+    }
+
+    [Fact]
+    public void Rules40To43_AreInTheCatalog_AsWarningsWithDigitFreeFixes()
+    {
+        foreach (int rule in new[]
+                 {
+                     BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportPackValidator.UnavailableTokenRule,
+                     BenchmarkReportPackValidator.RootCauseNextRunsOrderRule, BenchmarkReportPackValidator.BorrowedModelFigureRule
+                 })
+        {
+            Assert.True(BenchmarkReportPackValidator.IsWarningRule(rule));
+            var info = BenchmarkReportRuleCatalog.Get(rule);
+            Assert.NotNull(info);
+            Assert.Equal(BenchmarkReportRuleSeverity.Warning, info!.Severity);
+            Assert.DoesNotContain(info.Fix, char.IsDigit);
+        }
+        Assert.Equal(new[] { 40, 41, 42, 43 }, new[]
+        {
+            BenchmarkReportPackValidator.RootCauseCodePrintedRule, BenchmarkReportPackValidator.UnavailableTokenRule,
+            BenchmarkReportPackValidator.RootCauseNextRunsOrderRule, BenchmarkReportPackValidator.BorrowedModelFigureRule
+        });
+    }
 }

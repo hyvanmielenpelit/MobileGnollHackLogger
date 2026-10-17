@@ -6135,7 +6135,7 @@ public class BenchmarkReportBuilderTests
         Assert.Contains("Completeness is the weakest dimension by 34.5 points", BenchmarkReportBuilder.BuildMarkdownReport(run));
         var conflict = PackSheetOf(run).Facts.Single(f => f.Key == "style.responseStyleConflict");
         Assert.True(conflict.Value!.GetValue<bool>());
-        Assert.Equal("Completeness is the lowest dimension, 34.5 points below Accuracy", conflict.Display);
+        Assert.Equal("Completeness 34.5 points below Accuracy, its lowest dimension", conflict.Display);
     }
 
     [Fact]

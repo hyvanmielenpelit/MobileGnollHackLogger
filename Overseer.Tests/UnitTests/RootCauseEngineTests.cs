@@ -493,6 +493,26 @@ public class RootCauseEngineTests
     }
 
     [Fact]
+    public void EveryRecommendedRun_HasAPurposeFact_WordedAsTheRunTableWordsIt()
+    {
+        var result = RootCauseEngine.Compute(Input(Controls()));
+        Assert.NotEmpty(result.RecommendedRuns);
+
+        var facts = new BenchmarkReportFacts.FactList();
+        RootCauseFacts.Add(facts, result, t => "Model " + t);
+        var byKey = facts.Sorted().ToDictionary(f => f.Key, StringComparer.Ordinal);
+        foreach (var run in result.RecommendedRuns)
+        {
+            string key = "rca.run." + run.Number.ToString(System.Globalization.CultureInfo.InvariantCulture) + ".purpose";
+            Assert.Equal(RootCausePurposes.Text(run.Purpose), byKey[key].Display);
+            Assert.True(BenchmarkReportFactLabels.TryLabel(key, out _), "No label for " + key);
+        }
+        Assert.Equal("C, the Overseer chat", RootCausePurposes.Text(RootCausePurposes.Chat));
+        Assert.Equal("B, the benchmark", RootCausePurposes.Text(RootCausePurposes.Benchmark));
+        Assert.Equal("M, model selection", RootCausePurposes.Text(RootCausePurposes.ModelSelection));
+    }
+
+    [Fact]
     public void AReplicate_FoldsTheTimeOfDayAndThinkingPairRunsItCovers()
     {
         // The subject's time is mostly time to first token (WS1, a time-of-day repeat), and it answered every
